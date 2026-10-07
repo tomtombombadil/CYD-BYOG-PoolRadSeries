@@ -25,8 +25,12 @@ enum class Act : uint8_t { TurnLeft, TurnRight, TurnAround, Forward, StepLeft, S
 void draw(pic::Canvas& c);
 // Does a move; redraws the canvas. False if nothing changed.
 bool act(Act a, pic::Canvas& c);
-// A tap on the canvas (pixel x, y): the party panel = next map.
+// A tap on the canvas (pixel x, y): the party panel = next map; in the
+// AREA view, a square = move the party there.
 bool tap(int x, int y, pic::Canvas& c);
+
+// Puts the party on square (x, y), facing as it was (testing).
+void teleport(int x, int y);
 
 // For the companion panel
 const geo::Map* map();

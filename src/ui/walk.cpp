@@ -361,7 +361,25 @@ bool tap(int x, int y, pic::Canvas& c)
         }
     }
     if (x >= 17 * 8 && y < 15 * 8) return act(Act::NextMap, c);     // the party panel
+    // In the AREA view a tap on a square moves the party there (Tom: a way
+    // past walls for testing). The window follows the party, so far
+    // squares take a few taps.
+    const int col = x / 8 - view3d::kCell0, row = y / 8 - view3d::kCell0;
+    if (area_view && col >= 0 && col < view3d::kCells && row >= 0 && row < view3d::kCells) {
+        auto clamp = [](int v) { return v < 0 ? 0 : v > 5 ? 5 : v; };
+        teleport(col + clamp(px - 5), row + clamp(py - 5));
+        draw(c);
+        return true;
+    }
     return false;
+}
+
+void teleport(int x, int y)
+{
+    if (!d || x < 0 || x >= geo::kSize || y < 0 || y >= geo::kSize) return;
+    px = x;
+    py = y;
+    note = "Moved here. Area = the 3D view.";
 }
 
 const geo::Map* map() { return d && d->map.loaded ? &d->map : nullptr; }

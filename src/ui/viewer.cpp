@@ -868,7 +868,12 @@ ui::Rect walk_key(int k)
     return ui::Rect{};
 }
 
-// The Gold Box Companion strip (480x320): the whole map, the party arrow
+// Where the Companion strip draws the map (480x320)
+constexpr int kCompCell = 9, kCompMapY = 70;
+int comp_map_x() { return pic::kScreenW + (ui::width() - pic::kScreenW - kCompCell * geo::kSize) / 2; }
+
+// The Gold Box Companion strip (480x320): the whole map, the party arrow;
+// a tap on a square moves the party there (testing)
 void draw_companion()
 {
     if (!ui::large()) return;
@@ -883,7 +888,7 @@ void draw_companion()
     ui::text(x0 + 8, 46, l2, style::kTextMuted, ui::Font::Small);
     const geo::Map* m = walk::map();
     if (!m) return;
-    const int cell = 9, mx = x0 + (w - cell * geo::kSize) / 2, my = 70;
+    const int cell = kCompCell, mx = comp_map_x(), my = kCompMapY;
     g.fillRect(mx, my, cell * geo::kSize + 1, cell * geo::kSize + 1, style::kKey);
     for (int y = 0; y < geo::kSize; ++y)
         for (int x = 0; x < geo::kSize; ++x) {
@@ -908,6 +913,7 @@ void draw_companion()
     g.fillTriangle(fx, fy, lx, ly, rx, ry, style::kGold);
     ui::text(x0 + 8, my + cell * geo::kSize + 8, "White: wall", style::kTextMuted, ui::Font::Small);
     ui::text(x0 + 8, my + cell * geo::kSize + 24, "Gold: door, red: locked", style::kTextMuted, ui::Font::Small);
+    ui::text(x0 + 8, my + cell * geo::kSize + 40, "Tap a square to go there", style::kTextMuted, ui::Font::Small);
 }
 
 void draw_walk_keys()
@@ -965,6 +971,14 @@ void tap_walk(const ui::Tap& t)
         walk::act(kActs[k], frame::canvas());
         frame::present();
         if (k == kWNext || k == kWArea || ui::large()) draw_companion();
+        return;
+    }
+    if (ui::large() && t.x >= comp_map_x() && t.y >= kCompMapY && t.x < comp_map_x() + kCompCell * geo::kSize &&
+        t.y < kCompMapY + kCompCell * geo::kSize) {
+        walk::teleport((t.x - comp_map_x()) / kCompCell, (t.y - kCompMapY) / kCompCell);
+        walk::draw(frame::canvas());
+        frame::present();
+        draw_companion();
         return;
     }
     int cx, cy;

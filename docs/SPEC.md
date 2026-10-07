@@ -142,7 +142,9 @@ stay in the session's scratch space, never in the repo.
    touch, auto-map. v0.7.0: the viewer's **Walk Test** (Curse) walks every 3D
    map the area scripts load, with the exploring keys, the AREA view and (on
    480x320) the Companion map; walls and doors only, no events yet; locked doors let the party through
-   with a note (Tom: for testing).
+   with a note (Tom: for testing); tapping a square in the AREA view or on
+   the Companion map moves the party there (v0.7.3, Tom: to reach parts of a
+   map cut off by walls).
 4. **ECL script engine**: events, text, menus, pictures, area changes.
 5. **Party**: characters (create / load), inventory, camp, shops.
 6. **Combat.**
