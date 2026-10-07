@@ -145,10 +145,20 @@ Darkness. Milestones 2-6 are built against Azure Bonds' files.
 The games tell the player to "read journal entry N" from the printed
 Adventurer's Journal. The GOG releases include the journals as PDFs.
 
-What the GOG Curse journal PDF is (checked 2026-10-06; 17 pages, scanned
-two-page spreads at 300 dpi, SHA-256 d4712a05...f2f3):
-- Its text layer is Acrobat OCR, and the entries are set in a calligraphic
-  font: the OCR text is garbled ("6razecl {i!(g, fire") - **unusable**.
+What the GOG Curse journal PDFs are (checked 2026-10-06 / 07):
+- There are **two different Curse journal PDFs**, both scans of the printed
+  journal as two-page spreads:
+  - the copy **in the game's install folder** ("Adventurers Journal.pdf",
+    6.8 MB, 150 dpi, SHA-256 7c918ead661b...) - every GOG player has this one;
+  - a 300 dpi copy (12 MB, Acrobat "Paper Capture" OCR, SHA-256
+    d4712a050919...), which Tom attached first - probably GOG's separate
+    extras download.
+  The converter targets the install-folder copy first; a rectangle table can
+  be added for the other later (each table is keyed by the PDF's SHA-256).
+- All nine journals in Tom's Project (four PRS games + Krynn, Savage
+  Frontier) are 150 dpi scans except Treasures (lower).
+- The text layers are OCR and unusable for the calligraphic entry font
+  ("6razecl {i!(g, fire"); the Curse install copy has none at all.
 - Several entries are **pictures and maps** (Entry 4 is a sewer map, 8 a
   drawing, 9 a symbol), which text would lose anyway.
 - Entries run in columns and continue into the next column or page.
@@ -160,7 +170,9 @@ So the journal is shown as **pictures of the entries**, not text:
   - coordinates only, no content; the PDF is recognised by its SHA-256),
   stacks the pieces of an entry into one image, reduces it to 16 colours at
   the panel widths (310 and 470 px wide) and writes the result next to that
-  game's files on the SD card (e.g. `/GOLDBOX/CURSE/JOURNAL.BIN`).
+  game's files on the SD card (e.g. `/GOLDBOX/CURSE/JOURNAL.BIN`). At 150
+  dpi a text column is ~340 px wide: about 1:1 on 320-wide panels, scaled
+  up ~1.4x on 480-wide ones.
 - Planned as a page on the flasher site that runs entirely in the browser
   (pdf.js; nothing is uploaded), so players need no install. A mockup at
   320x240 reads well (script text ~9 px x-height).
