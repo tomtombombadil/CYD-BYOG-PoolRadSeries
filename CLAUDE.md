@@ -53,6 +53,10 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   synthetic files. Screenshots of real game graphics stay out of the repo.
 - Game files are read from `/GOLDBOX/<folder>/` on the SD card, never copied
   into flash.
+- Tom may attach his own game files to a session for testing. Keep them in
+  the session's scratch space only (never under the repo; .gitignore blocks
+  *.DAX / *.pdf as a backstop), use them to check decoders, and never
+  commit their bytes, pictures or text - tests stay synthetic.
 
 ## Licensing
 MIT. Only copy code from MIT/BSD/Apache/zlib/public-domain sources and keep

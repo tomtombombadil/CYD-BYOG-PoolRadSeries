@@ -3,3 +3,9 @@
 *.bin
 !docs/**/*.bin
 __pycache__/
+
+# Game files never go in the repo (bring your own game)
+*.DAX
+*.dax
+*.pdf
+/gamefiles/
