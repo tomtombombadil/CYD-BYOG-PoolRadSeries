@@ -60,10 +60,12 @@ Boards (from CYD-Classic-Games; landscape for this engine):
 The games draw a 320x200 screen. The canvas is presented:
 
 - **320x240 panels**: 1:1 at the top; the 40 rows below are free for controls.
-- **480x320 panels**: either **1.5x** (480x300, fills the panel, 20 rows left)
-  or **1:1** centred with room for a companion panel and bigger controls.
-  Settings -> "Game Screen: 1.5x / 1:1" switches it today so Tom can compare on
-  the 3.5" / 4.0" (open decision 1).
+- **480x320 panels** (Tom, 2026-10-06): **1:1, never scaled**, with a
+  **Gold Box Companion panel** beside it and controls below. The 160x320 strip
+  on the right holds the auto-map, party hit points and active spells; the
+  320x120 area under the game screen holds the controls. The viewer's
+  Settings -> "Game Screen: 1.5x" stays for now as a viewer-only experiment;
+  the game screens won't use it.
 
 ## 5. File formats (status)
 
@@ -91,25 +93,40 @@ The games draw a 320x200 screen. The canvas is presented:
 6. **Combat.**
 7. **All four games**: the per-game differences (PoD's VGA graphics), party
    transfer between games.
+
+Order of the games (Tom, 2026-10-06): **Curse of the Azure Bonds first** - its
+engine is the best documented (coab), and most of that work carries over -
+then **Pool of Radiance**, then Secret of the Silver Blades and Pools of
+Darkness. Milestones 2-6 are built against Azure Bonds' files.
 8. **Sound and companion features** (auto-map panel, journal entry lookup,
    rest-until-healed, re-memorise spells - as options).
 
-## 7. Open decisions (Tom's)
+## 7. The journal (Tom, 2026-10-06)
 
-1. **480x320 layout**: game 1.5x full screen, or 1:1 with a companion panel
-   (auto-map + party HP) and bigger controls? Try both in the viewer.
-2. **First game**: Pool of Radiance (the series' start), or Curse of the Azure
-   Bonds first (its engine is the best documented, through coab) and then back
-   to PoR?
-3. **Controls**: tap the game's own menu words on screen (they are small 8x8
-   text at 1:1), on-screen keys in the free rows, or both.
-4. **Journal**: the games say "read journal entry N". Show just the number (the
-   player reads their own journal / PDF), or optionally read entries from a
-   text file the player puts on the card themselves?
-5. **Copy protection** (code wheel / journal word checks): skip it, since the
+The games tell the player to "read journal entry N" from the printed
+Adventurer's Journal. The GOG releases include the journals as PDFs. Plan:
+
+- A **journal converter**, run by the player on their own computer, reads the
+  journal PDF from *their* copy and writes the entries to the SD card next to
+  that game's files (e.g. `/GOLDBOX/CURSE/JOURNAL.TXT`, one block per entry).
+  Text-layer PDFs are read directly; scanned pages would need OCR.
+- The engine shows entry N on screen when the game asks for it (and from the
+  companion panel). Without the file it just shows the entry number.
+- The repo, the firmware and the flasher site never contain journal text;
+  tests use made-up entries. Same rule as the DAX files.
+- Form of the converter (a page on the flasher site that works locally in the
+  browser, or a Python tool) is decided once a real journal PDF has been
+  looked at: entry layout differs per game and the PDFs may be scans.
+
+## 8. Open decisions (Tom's)
+
+1. **Controls**: tap the game's own menu words on screen (small 8x8 text at
+   1:1), on-screen keys in the free rows, or both.
+2. **Copy protection** (code wheel / journal word checks): skip it, since the
    player must already own the game files?
+3. **Journal converter**: in the browser (no install) or a Python tool.
 
-## 8. Engine UI rules (carried over from CYD-Classic-Games)
+## 9. Engine UI rules (carried over from CYD-Classic-Games)
 
 - Big targets, stylus taps (Tom uses a DS Lite stylus, firm presses). A tap acts
   on release, at the point where the stylus came down. No drags or swipes.

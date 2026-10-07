@@ -24,6 +24,15 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
 - Kept unchanged in `docs/archive/gemini/`, NOT built. Review and reasons:
   `docs/gemini-review.md`. Don't revive that code; its formats are wrong.
 
+## Decisions (Tom, 2026-10-06)
+- 480x320: the game screen stays 1:1 (never scaled for play) with a Gold Box
+  Companion panel (auto-map, party HP, spells) to its right; controls below.
+- Build order: Curse of the Azure Bonds first, then Pool of Radiance, Silver
+  Blades, Pools of Darkness.
+- Journal: a converter reads the journal PDF from the player's own copy and
+  writes the entries to their SD card; the engine shows entry N. No journal
+  text ever in the repo, firmware or site (SPEC section 7).
+
 ## Bring your own game - hard rules
 - The repo and firmware contain nothing from the games: no DAX files, no
   extracted pictures, text, journal entries or code. Tests build their own
