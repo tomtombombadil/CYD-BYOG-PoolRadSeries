@@ -12,6 +12,7 @@
 
 #include "engine/dax.h"
 #include "engine/ecl.h"
+#include "engine/ecl_vm.h"
 #include "engine/exepack.h"
 #include "engine/geo.h"
 #include "engine/icon.h"
@@ -1287,6 +1288,142 @@ static void test_ecl()
     CHECK(!none.has_geo() && !none.has_walls());
 }
 
+// Packs A-Z, space and digits the way the scripts' strings are packed
+static void op_str(Bytes& b, const char* t)
+{
+    std::vector<int> v;
+    for (const char* c = t; *c; ++c) v.push_back(*c >= 'A' && *c <= 'Z' ? *c - 0x40 : *c);
+    while (v.size() % 4) v.push_back(0);
+    Bytes packed;
+    for (size_t i = 0; i < v.size(); i += 4) {
+        packed.push_back(static_cast<uint8_t>(v[i] << 2 | v[i + 1] >> 4));
+        packed.push_back(static_cast<uint8_t>((v[i + 1] & 15) << 4 | v[i + 2] >> 2));
+        packed.push_back(static_cast<uint8_t>((v[i + 2] & 3) << 6 | v[i + 3]));
+    }
+    b.push_back(0x80);
+    b.push_back(static_cast<uint8_t>(packed.size()));
+    b.insert(b.end(), packed.begin(), packed.end());
+}
+
+struct TestHost : ecl::Host {
+    Bytes next;                 // the block NEWECL loads
+    int map = -1, walls[4] = {-2, -2, -2, -2}, pic = -1, loads = 0;
+    bool load_script(int, uint8_t* code, uint32_t* len) override
+    {
+        ++loads;
+        if (next.size() < 2) return false;
+        memcpy(code, next.data() + 2, next.size() - 2);
+        *len = static_cast<uint32_t>(next.size() - 2);
+        return true;
+    }
+    void load_map(int g) override { map = g; }
+    void load_walls(int set, int block) override { walls[set] = block; }
+    void picture(int id, int) override { pic = id; }
+    void redraw() override {}
+    void log(const char*) override {}
+};
+
+static void test_ecl_vm()
+{
+    {
+        char out[16];
+        const uint8_t hi[] = {0x20, 0x90};     // "HI"
+        ecl::unpack_string(hi, 2, out, sizeof out);
+        CHECK(strcmp(out, "HI") == 0);
+    }
+    const profile::Profile* p = profile::find(games::Game::CurseOfTheAzureBonds, 57789, 62432);
+    CHECK(p && p->ecl_ops);
+    if (!p || !p->ecl_ops) return;
+    // first (entry 4):
+    //   SAVE 5 -> 0x4C00; ADD [0x4C00] + 3 -> 0x4C01; COMPARE [0x4C01], 8;
+    //   IF = PRINTCLEAR "HELLO"; IF != PRINT "WRONG"
+    //   SAVE 9 -> party x; LOAD FILES 4, 2, 255; LOAD PIECES 3, 255, 9
+    //   GOSUB clock; VERTICAL MENU 0x4C02 "PICK" 2 items "ONE" "TWO"
+    //   RANDOM 3 -> 0x4C03; NEWECL 7
+    // clock: ECL CLOCK 75 minutes (slot 1); PICTURE 12; RETURN
+    // other entries: EXIT
+    Bytes c;
+    const uint16_t kBase = 0x8000;
+    for (int i = 0; i < 5; ++i) { c.push_back(0); op_addr(c, 0); }
+    auto patch = [&](size_t at, size_t target) {
+        c[at] = 1;
+        c[at + 1] = static_cast<uint8_t>((kBase + target) & 0xFF);
+        c[at + 2] = static_cast<uint8_t>((kBase + target) >> 8);
+    };
+    const size_t first = c.size();
+    c.push_back(0x09); op_imm(c, 5); op_addr(c, 0x4C00);
+    c.push_back(0x04); op_addr(c, 0x4C00); op_imm(c, 3); op_addr(c, 0x4C01);
+    c.push_back(0x03); op_addr(c, 0x4C01); op_imm(c, 8);
+    c.push_back(0x16); c.push_back(0x12); op_str(c, "HELLO");
+    c.push_back(0x17); c.push_back(0x11); op_str(c, "WRONG");
+    c.push_back(0x09); op_imm(c, 9); op_addr(c, 0xC04B);
+    c.push_back(0x21); op_imm(c, 4); op_imm(c, 2); op_imm(c, 255);
+    c.push_back(0x37); op_imm(c, 3); op_imm(c, 255); op_imm(c, 9);
+    c.push_back(0x02); op_addr(c, 0);
+    const size_t gosub_at = c.size() - 3;
+    c.push_back(0x15); op_addr(c, 0x4C02); op_str(c, "PICK"); op_imm(c, 2); op_str(c, "ONE"); op_str(c, "TWO");
+    c.push_back(0x08); op_imm(c, 3); op_addr(c, 0x4C03);
+    c.push_back(0x20); op_imm(c, 7);
+    const size_t clock = c.size();
+    c.push_back(0x34); op_imm(c, 75); op_imm(c, 1);
+    c.push_back(0x0E); op_imm(c, 12);
+    c.push_back(0x13);
+    const size_t quiet = c.size();
+    c.push_back(0x00);
+    for (int i = 0; i < 4; ++i) patch(1 + i * 4, quiet);
+    patch(1 + 4 * 4, first);
+    patch(gosub_at, clock);
+
+    ecl::GameState gs;
+    TestHost host;
+    host.next = {0, 0, 0x00};               // the block NEWECL loads: no entries (fails init)
+    memcpy(gs.code, c.data(), c.size());
+    gs.code_len = static_cast<uint32_t>(c.size());
+    ecl::Vm vm(gs, host, *p->ecl_ops);
+    CHECK(vm.init_script());
+    CHECK(vm.entry(4) == kBase + first && vm.entry(0) == kBase + quiet);
+    CHECK(vm.run(vm.entry(0)) == ecl::Stop::Stopped);
+
+    ecl::Stop r = vm.run(vm.entry(4));
+    CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Print && vm.clear() && strcmp(vm.text(), "HELLO") == 0);
+    CHECK(vm.get(0x4C00) == 5 && vm.get(0x4C01) == 8 && vm.flag(0) && !vm.flag(1));
+    r = vm.resume();
+    CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::ListMenu);
+    CHECK(strcmp(vm.prompt(), "PICK") == 0 && vm.items() == 2 && strcmp(vm.item(1), "TWO") == 0);
+    CHECK(gs.x == 9 && gs.moved);
+    CHECK(host.map == 4 && vm.get(0x4BC5) == 4);
+    CHECK(host.walls[1] == 3 && host.walls[2] == -1 && host.walls[3] == 9);
+    CHECK(host.pic == 12);
+    CHECK(vm.get(0x4BC7) == 5 && vm.get(0x4BC8) == 1 && vm.get(0x4BC9) == 1);   // 1:15
+    // The answer, then NEWECL whose block won't load: an error, nothing run
+    r = vm.answer(1);
+    CHECK(vm.get(0x4C02) == 1 && vm.get(0x4C03) <= 3);
+    CHECK(host.loads == 1 && r == ecl::Stop::Error);
+
+    // A loadable next block: NEWECL switches script
+    Bytes nb = {0x12, 0x34};
+    for (int i = 0; i < 5; ++i) { nb.push_back(0); op_addr(nb, kBase + 20); }
+    nb.push_back(0x00);
+    host.next = nb;
+    memcpy(gs.code, c.data(), c.size());
+    gs.code_len = static_cast<uint32_t>(c.size());
+    CHECK(vm.init_script());
+    r = vm.run(vm.entry(4));
+    while (r == ecl::Stop::Waiting) r = vm.wait() == ecl::Wait::ListMenu ? vm.answer(0) : vm.resume();
+    CHECK(r == ecl::Stop::NewScript && gs.script == 7 && gs.code_len == nb.size() - 2);
+    CHECK(vm.entry(4) == kBase + 20);
+    CHECK(vm.get(0x4C00) == 0);             // a new script clears its variables
+
+    // An endless loop is stopped
+    Bytes loop;
+    for (int i = 0; i < 5; ++i) { loop.push_back(0); op_addr(loop, kBase + 20); }
+    loop.push_back(0x01); op_addr(loop, kBase + 20);
+    memcpy(gs.code, loop.data(), loop.size());
+    gs.code_len = static_cast<uint32_t>(loop.size());
+    CHECK(vm.init_script());
+    CHECK(vm.run(vm.entry(0)) == ecl::Stop::Error);
+}
+
 static Bytes make_geo(const std::vector<std::tuple<int, int, int, int, int>>& walls)
 {
     // walls: x, y, dir, type, door
@@ -1395,6 +1532,7 @@ int main()
     test_png();
     test_icon();
     test_ecl();
+    test_ecl_vm();
     test_geo_view();
     if (failures) {
         printf("%d check(s) failed\n", failures);

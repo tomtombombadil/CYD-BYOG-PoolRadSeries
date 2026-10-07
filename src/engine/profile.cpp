@@ -30,6 +30,8 @@ const ecl::OpSet kCurseEcl = [] {
         1, 3, 1, 3, 1, 1, 0, 3, 1, 0, 0, 1, 1,
     };
     for (int i = 0; i < 0x41; ++i) s.sizes[i] = sizes[i];
+    s.sizes[0x34] = 2;   // ECL CLOCK and ADD NPC read 2 operands (coab's table
+    s.sizes[0x36] = 2;   // says 1; with 2, more of Curse's scripts decode)
     s.exit = 0x00; s.go_to = 0x01; s.go_sub = 0x02; s.ret = 0x13; s.new_ecl = 0x20;
     s.on_goto = 0x25; s.on_gosub = 0x26; s.if_first = 0x16; s.if_last = 0x1B;
     s.load_files = 0x21; s.load_pieces = 0x37;
@@ -43,7 +45,8 @@ const Profile kProfiles[] = {
      20830,
      "TITLE.DAX", kCurseTitle, sizeof kCurseTitle / sizeof kCurseTitle[0],
      "GAME.OVR", 272137, 706, 218, {3, 8},
-     2, 6, 203, "SKY.DAX", 252, &kCurseEcl},
+     2, 6, 203, "SKY.DAX", 252, &kCurseEcl,
+     0x6D9A, 2, 1},
 };
 
 } // namespace

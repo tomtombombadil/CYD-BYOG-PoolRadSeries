@@ -108,8 +108,14 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   for game files. This will take a minute." (Tom). Icons come from the
   player's goggame-<id>.ico / .dll on the card (`engine/icon.*`), never from
   the repo.
+- Play Test (`src/ui/play.*`, v0.8.0): the script machine is
+  `engine/ecl_vm.*` (plain C++, host-tested with synthetic scripts); the
+  front end only shows what it asks for (Wait: Print, Menu, ListMenu,
+  Number, String, Pause) and answers. Things that need a party are logged
+  and passed over until M5/M6 - never faked. While text or a one-choice
+  menu waits, any key goes on (like "press a key").
 - PortMaster ports are a stretch goal (Tom): keep everything portable.
-- Game screens (Walk Test now, the games later): canvas 1:1 at the top left
+- Game screens (Walk Test, Play Test now, the games later): canvas 1:1 at the top left
   (`frame::set_left`), controls below it, on 480x320 the Companion strip on
   the right (SPEC section 4). Which map / walls an area uses comes from its
   ECL script (`ecl::find_map_load`), never from tables in the repo.

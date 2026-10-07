@@ -79,6 +79,11 @@ struct Profile {
     const char*  sky_file;
     uint8_t      horizon_block;
     const ecl::OpSet* ecl_ops;         // the script's opcodes (nullptr: unknown)
+
+    // Scripts and the 3D view while playing
+    uint16_t     sky_colours;          // DS offset of the 16 sky colours (area words
+                                       // 0x4BFD / 0x4BFE pick one)
+    uint8_t      start_area, start_script;   // a new game: ECL<area> block <script>
 };
 
 // The game's program file name (to look for it), or nullptr if no

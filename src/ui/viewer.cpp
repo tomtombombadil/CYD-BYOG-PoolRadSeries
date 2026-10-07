@@ -18,6 +18,7 @@
 #include "hal/panel_prefs.h"
 #include "hal/sdcard.h"
 #include "look.h"
+#include "play.h"
 #include "walk.h"
 #include "ui.h"
 
@@ -25,7 +26,7 @@ namespace viewer {
 
 namespace {
 
-enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Walk, Settings };
+enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Walk, Play, Settings };
 
 Env       env_;
 Settings* cfg = nullptr;
@@ -64,6 +65,8 @@ int                block_sel = 0;    // entry number in index_
 
 // Walk test
 const char* walk_error = nullptr;
+// Play test
+const char* play_error = nullptr;
 
 // Screen test
 int         look_page = 0;
@@ -424,11 +427,12 @@ void draw_files()
         ui::key(ui::grid_cell(i, file_cols(), kFileRows), label);
     }
     if (look::available(game_dirs[game_sel].game)) {
-        // < Prev | Screen Test | Walk Test | Next >
-        ui::key(ui::bottom_key(0, 4), "< Prev", p.page > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
-        ui::key(ui::bottom_key(1, 4), "Screen\nTest");
-        ui::key(ui::bottom_key(2, 4), "Walk\nTest");
-        ui::key(ui::bottom_key(3, 4), "Next >", p.page + 1 < p.pages() ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+        // < Prev | Screen Test | Walk Test | Play Test | Next >
+        ui::key(ui::bottom_key(0, 5), "< Prev", p.page > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+        ui::key(ui::bottom_key(1, 5), "Screen\nTest");
+        ui::key(ui::bottom_key(2, 5), "Walk\nTest");
+        ui::key(ui::bottom_key(3, 5), "Play\nTest");
+        ui::key(ui::bottom_key(4, 5), "Next >", p.page + 1 < p.pages() ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
     } else {
         draw_pager_keys(p);
     }
@@ -439,15 +443,24 @@ void tap_files(const ui::Tap& t)
     if (ui::back_rect().contains(t.x, t.y)) { go(Screen::Home); return; }
     Pager p{n_files, file_cols() * kFileRows, file_page};
     const bool has_look = look::available(game_dirs[game_sel].game);
-    bool look_hit = false, walk_hit = false;
+    bool look_hit = false, walk_hit = false, play_hit = false;
     if (has_look) {
-        const int k = bottom_hit(t, 4);
+        const int k = bottom_hit(t, 5);
         if (k == 0 && p.page > 0) { --file_page; dirty = true; return; }
-        if (k == 3 && p.page + 1 < p.pages()) { ++file_page; dirty = true; return; }
+        if (k == 4 && p.page + 1 < p.pages()) { ++file_page; dirty = true; return; }
         look_hit = k == 1;
         walk_hit = k == 2;
+        play_hit = k == 3;
     } else if (pager_tap(t, p, &file_page)) {
         dirty = true;
+        return;
+    }
+    if (play_hit) {
+        frame::set_scale(frame::Scale::One);    // the game's screen: 1:1 at the top left
+        frame::set_left(true);
+        frame::set_ega_palette();
+        play_error = play::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game, frame::canvas());
+        go(Screen::Play);
         return;
     }
     if (walk_hit) {
@@ -872,9 +885,20 @@ ui::Rect walk_key(int k)
 constexpr int kCompCell = 9, kCompMapY = 70;
 int comp_map_x() { return pic::kScreenW + (ui::width() - pic::kScreenW - kCompCell * geo::kSize) / 2; }
 
-// The Gold Box Companion strip (480x320): the whole map, the party arrow;
-// a tap on a square moves the party there (testing)
-void draw_companion()
+// What the Companion strip shows: the Walk Test's or the Play Test's party
+struct MapSource {
+    const geo::Map* (*map)();
+    int (*x)();
+    int (*y)();
+    int (*dir)();
+    void (*describe)(char*, char*, int);
+    bool teleport;      // a tap on a square moves the party there (Walk Test)
+};
+const MapSource kWalkMap{walk::map, walk::pos_x, walk::pos_y, walk::dir, walk::describe, true};
+const MapSource kPlayMap{play::map, play::pos_x, play::pos_y, play::dir, play::describe, false};
+
+// The Gold Box Companion strip (480x320): the whole map, the party arrow
+void draw_companion(const MapSource& ms = kWalkMap)
 {
     if (!ui::large()) return;
     LGFX& g = ui::gfx();
@@ -882,11 +906,11 @@ void draw_companion()
     g.fillRect(x0, 0, w, ui::height(), style::kBackground);
     g.drawFastVLine(x0, 0, ui::height(), style::kKeyEdge);
     char l1[48], l2[48];
-    walk::describe(l1, l2, sizeof l1);
+    ms.describe(l1, l2, sizeof l1);
     ui::text(x0 + 8, 6, "Map", style::kGold);
     ui::text(x0 + 8, 30, l1, style::kText, ui::Font::Small);
     ui::text(x0 + 8, 46, l2, style::kTextMuted, ui::Font::Small);
-    const geo::Map* m = walk::map();
+    const geo::Map* m = ms.map();
     if (!m) return;
     const int cell = kCompCell, mx = comp_map_x(), my = kCompMapY;
     g.fillRect(mx, my, cell * geo::kSize + 1, cell * geo::kSize + 1, style::kKey);
@@ -904,19 +928,20 @@ void draw_companion()
             }
         }
     // The party: a triangle pointing the way it faces
-    const int cx = mx + walk::pos_x() * cell + cell / 2, cy = my + walk::pos_y() * cell + cell / 2;
+    const int cx = mx + ms.x() * cell + cell / 2, cy = my + ms.y() * cell + cell / 2;
     const int r = cell / 2 - 1;
-    const int dir = walk::dir();
+    const int dir = ms.dir();
     const int fx = cx + geo::dx(dir) * r, fy = cy + geo::dy(dir) * r;
     const int lx = cx + geo::dx((dir + 6) & 7) * r - geo::dx(dir) * r, ly = cy + geo::dy((dir + 6) & 7) * r - geo::dy(dir) * r;
     const int rx = cx + geo::dx((dir + 2) & 7) * r - geo::dx(dir) * r, ry = cy + geo::dy((dir + 2) & 7) * r - geo::dy(dir) * r;
     g.fillTriangle(fx, fy, lx, ly, rx, ry, style::kGold);
     ui::text(x0 + 8, my + cell * geo::kSize + 8, "White: wall", style::kTextMuted, ui::Font::Small);
     ui::text(x0 + 8, my + cell * geo::kSize + 24, "Gold: door, red: locked", style::kTextMuted, ui::Font::Small);
-    ui::text(x0 + 8, my + cell * geo::kSize + 40, "Tap a square to go there", style::kTextMuted, ui::Font::Small);
+    if (ms.teleport)
+        ui::text(x0 + 8, my + cell * geo::kSize + 40, "Tap a square to go there", style::kTextMuted, ui::Font::Small);
 }
 
-void draw_walk_keys()
+void draw_walk_keys(const char* side_label = "Next Map")
 {
     ui::key_arrow(walk_key(kWTurnL), ui::Arrow::TurnLeft);
     ui::key_arrow(walk_key(kWStepL), ui::Arrow::Left);
@@ -925,7 +950,7 @@ void draw_walk_keys()
     ui::key_arrow(walk_key(kWTurnR), ui::Arrow::TurnRight);
     ui::key_arrow(walk_key(kWAround), ui::Arrow::TurnAround);
     ui::key(walk_key(kWArea), "Area");
-    if (ui::large()) ui::key(walk_key(kWNext), "Next Map");
+    if (ui::large()) ui::key(walk_key(kWNext), side_label);
     ui::key(walk_key(kWEsc), "Esc");
 }
 
@@ -985,6 +1010,85 @@ void tap_walk(const ui::Tap& t)
     if (frame::to_canvas(t.x, t.y, cx, cy) && walk::tap(cx, cy, frame::canvas())) {
         frame::present();
         draw_companion();
+    }
+}
+
+// ---- Play test --------------------------------------------------------------
+// A new game run by the game's own scripts. The same controls as the Walk
+// Test; 480x320's side column has Look in place of Next Map (320x240: Look
+// is on the game's menu line).
+
+int play_last_x = -1, play_last_y = -1, play_last_dir = -1;
+const geo::Map* play_last_map = nullptr;
+
+void leave_play()
+{
+    play::close();
+    play_error = nullptr;
+    frame::set_left(false);
+    frame::set_scale(cfg->scale_15x ? frame::Scale::OneAndHalf : frame::Scale::One);
+    go(Screen::Files);
+}
+
+// Shows what the scripts changed: the canvas rows, and the Companion when
+// the party moved
+void present_play()
+{
+    int y0, y1;
+    play::take_dirty(y0, y1);
+    if (y1 > y0) frame::present_rows(y0, y1);
+    if (play::pos_x() != play_last_x || play::pos_y() != play_last_y || play::dir() != play_last_dir ||
+        play::map() != play_last_map) {
+        play_last_x = play::pos_x();
+        play_last_y = play::pos_y();
+        play_last_dir = play::dir();
+        play_last_map = play::map();
+        draw_companion(kPlayMap);
+    }
+}
+
+void draw_play()
+{
+    if (play_error) {
+        ui::clear();
+        ui::header("Play Test", true);
+        int y = ui::header_h() + ui::gap() * 3;
+        wrap_text(ui::gap() * 3, y, ui::width() - ui::gap() * 6, play_error, ui::Font::Normal, style::kText, true);
+        return;
+    }
+    frame::set_ega_palette();
+    play::draw(frame::canvas());
+    ui::clear();
+    frame::present();
+    int y0, y1;
+    play::take_dirty(y0, y1);
+    draw_walk_keys("Look");
+    play_last_map = nullptr;
+    play_last_x = -1;
+    present_play();
+}
+
+void tap_play(const ui::Tap& t)
+{
+    if (play_error) {
+        if (ui::back_rect().contains(t.x, t.y)) leave_play();
+        return;
+    }
+    static const play::Act kActs[kWKeys] = {play::Act::TurnLeft, play::Act::StepLeft, play::Act::Forward,
+                                            play::Act::StepRight, play::Act::TurnRight, play::Act::TurnAround,
+                                            play::Act::Area, play::Act::Look, play::Act::Forward};
+    for (int k = 0; k < kWKeys; ++k) {
+        const ui::Rect r = walk_key(k);
+        if (r.w == 0 || !r.contains(t.x, t.y)) continue;
+        if (k == kWEsc) { leave_play(); return; }
+        play::act(kActs[k], frame::canvas());
+        present_play();
+        return;
+    }
+    int cx, cy;
+    if (frame::to_canvas(t.x, t.y, cx, cy)) {
+        play::tap(cx, cy, frame::canvas());
+        present_play();
     }
 }
 
@@ -1081,10 +1185,15 @@ void tick()
         case Screen::View:     tap_view(t); break;
         case Screen::Look:     tap_look(t); break;
         case Screen::Walk:     tap_walk(t); break;
+        case Screen::Play:     tap_play(t); break;
         case Screen::Settings: tap_settings(t); break;
         }
     }
     if (screen == Screen::Look && !look_error && !dirty) present(look::tick(millis(), frame::canvas()));
+    if (screen == Screen::Play && !play_error && !dirty) {
+        play::tick(millis(), frame::canvas());
+        present_play();
+    }
     if (!dirty) return;
     dirty = false;
     switch (screen) {
@@ -1094,6 +1203,7 @@ void tick()
     case Screen::View:     draw_view(); break;
     case Screen::Look:     draw_look(); break;
     case Screen::Walk:     draw_walk(); break;
+    case Screen::Play:     draw_play(); break;
     case Screen::Settings: draw_settings(); break;
     }
 }

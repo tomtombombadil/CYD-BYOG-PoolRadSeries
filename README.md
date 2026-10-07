@@ -70,6 +70,13 @@ The games aren't playable yet; this build shows what is inside their files.
    square on the map beside the game screen. On 480x320
    the whole map is drawn beside the game screen. No events yet - only
    walls and doors (for testing, locked doors let you through and say so).
+   **Play Test** starts a new game of Curse run by the game's own scripts:
+   the opening, then events as you walk - text (tap, or any key, to go
+   on), menus (tap a word on the menu line, or a line of a list), pictures
+   and the clock. The game's own menu line works too: **Area**, **Search**
+   (on / off), **Look**. There's no party yet, so anything that needs one
+   (combat, treasure, checks) is skipped; on 480x320 **Look** is also a
+   key beside the pad and the map shows beside the game screen.
 3. **Blocks**: each piece inside the file. **Gold keys are pictures** (size and
    frame count shown); navy keys are other data. Tap one.
 4. **Picture**: `< Prev` / `Next >` step through the frames, then the next
