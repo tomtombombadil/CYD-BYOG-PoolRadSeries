@@ -53,6 +53,10 @@ void key(const Rect& r, const char* label, KeyStyle s = KeyStyle::Normal);
 // left_inset: room kept free at the key's left (for a picture); the text
 // is centred in the rest.
 void key2(const Rect& r, const char* label, const char* sub, KeyStyle s = KeyStyle::Normal, int left_inset = 0);
+// A key showing a movement arrow instead of words.
+enum class Arrow : uint8_t { Forward, Left, Right, TurnLeft, TurnRight, TurnAround };
+void key_arrow(const Rect& r, Arrow a, KeyStyle s = KeyStyle::Normal);
+
 // The fill colour of a key in style s (to draw pictures on it)
 uint16_t key_fill(KeyStyle s);
 

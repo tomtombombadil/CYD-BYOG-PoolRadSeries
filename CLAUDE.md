@@ -106,6 +106,10 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   player's goggame-<id>.ico / .dll on the card (`engine/icon.*`), never from
   the repo.
 - PortMaster ports are a stretch goal (Tom): keep everything portable.
+- Game screens (Walk Test now, the games later): canvas 1:1 at the top left
+  (`frame::set_left`), controls below it, on 480x320 the Companion strip on
+  the right (SPEC section 4). Which map / walls an area uses comes from its
+  ECL script (`ecl::find_map_load`), never from tables in the repo.
 - Portability (SPEC section 11): game logic takes key events like the
   original (letters, arrows / keypad, Enter, Esc); the CYD front end turns
   taps into keys. Nothing platform-specific in `src/engine/`.

@@ -29,12 +29,12 @@ struct Data {
     char              press_key[text::kMaxString] = {};
     char              data_dir[96] = {};
     const profile::Profile* prof = nullptr;
+    dax::Index idx;          // reused for each file opened
 };
 
 Data* d = nullptr;
 char  msg[160];
 char  src_line[64];
-dax::Index idx;          // 2.3 KB: one, reused for each file opened here
 
 enum Page { kTitle, kText, kTextScreen, kOuter, kCombat, kTiles, kPages };
 int page = kTitle;
@@ -86,10 +86,10 @@ bool draw_title_picture(pic::Canvas& c, int block, int row, int col)
     if (!open_file(d->data_dir, d->prof->title_file, f)) return false;
     library::FileSource src(f);
     bool ok = false;
-    if (dax::read_index(src, idx) == dax::Status::Ok) {
-        const dax::Entry* e = idx.find(static_cast<uint8_t>(block));
+    if (dax::read_index(src, d->idx) == dax::Status::Ok) {
+        const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
         if (e) {
-            dax::RleReader r(src, idx, *e);
+            dax::RleReader r(src, d->idx, *e);
             uint8_t hdr[pic::kHeaderSize];
             pic::Header h;
             ok = r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_header(hdr, e->raw_size, h) &&
@@ -297,8 +297,8 @@ const char* open(const char* data_dir, games::Game g)
     }
     {
         library::FileSource tsrc(f);
-        const bool ok = dax::read_index(tsrc, idx) == dax::Status::Ok &&
-                        layout::load_tiles(tsrc, idx, p->tiles_block, d->tiles) && font::load(tsrc, idx, d->font);
+        const bool ok = dax::read_index(tsrc, d->idx) == dax::Status::Ok &&
+                        layout::load_tiles(tsrc, d->idx, p->tiles_block, d->tiles) && font::load(tsrc, d->idx, d->font);
         f.close();
         if (!ok) {
             close();

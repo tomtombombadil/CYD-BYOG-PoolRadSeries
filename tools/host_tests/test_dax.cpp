@@ -7,17 +7,22 @@
 #include <cstring>
 #include <random>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "engine/dax.h"
+#include "engine/ecl.h"
 #include "engine/exepack.h"
+#include "engine/geo.h"
 #include "engine/icon.h"
 #include "engine/inflate.h"
 #include "engine/png.h"
 #include "inflate_vectors.h"
 #include "engine/layout.h"
 #include "engine/printcalls.h"
+#include "engine/profile.h"
 #include "engine/text.h"
+#include "engine/view3d.h"
 #include "engine/font.h"
 #include "engine/games.h"
 #include "engine/picture.h"
@@ -1212,6 +1217,165 @@ static void test_icon()
     CHECK(!icon::find(sb, f));
 }
 
+// ---- ECL / GEO / 3D view ----------------------------------------------------
+static void op_imm(Bytes& b, uint8_t v) { b.push_back(0); b.push_back(v); }
+static void op_addr(Bytes& b, uint16_t a) { b.push_back(1); b.push_back(a & 0xFF); b.push_back(a >> 8); }
+
+static void test_ecl()
+{
+    const profile::Profile* p = profile::find(games::Game::CurseOfTheAzureBonds, 57789, 62432);
+    CHECK(p && p->ecl_ops);
+    const ecl::OpSet& set = *p->ecl_ops;
+    // Code layout (offsets from the code start = VM 0x8000):
+    //   0: 5 entry points (4 bytes each); all but the first point at 'quiet'
+    //  20: GOTO main                      (5 bytes)
+    //  25: junk data the script jumps over
+    //  31: main: LOAD FILES 7, 2, 255     (1 + 6)
+    //  38: IF =                           (1)
+    //  39: GOSUB sub                      (4)
+    //  43: LOAD PIECES 3, 127, 9          (1 + 6)
+    //  50: LOAD FILES 9, 2, 255           (not the first: ignored)
+    //  57: VERTICAL MENU mem, str, 2 + 2 items, then EXIT
+    //  quiet: EXIT
+    Bytes code;
+    const uint16_t kBase = 0x8000;
+    for (int i = 0; i < 5; ++i) { code.push_back(0); op_addr(code, 0); }     // patched below
+    code.push_back(0x01); op_addr(code, 0);                                   // GOTO main (patched)
+    const size_t goto_at = code.size() - 3;
+    for (int i = 0; i < 6; ++i) code.push_back(0xEE);                         // junk
+    const size_t main_at = code.size();
+    code.push_back(0x21); op_imm(code, 7); op_imm(code, 2); op_imm(code, 255);
+    code.push_back(0x16);
+    code.push_back(0x02); op_addr(code, 0);
+    const size_t gosub_at = code.size() - 3;
+    code.push_back(0x37); op_imm(code, 3); op_imm(code, 127); op_imm(code, 9);
+    code.push_back(0x21); op_imm(code, 9); op_imm(code, 2); op_imm(code, 255);
+    code.push_back(0x15); op_addr(code, 0x4B00); code.push_back(0x80); code.push_back(2); code.push_back(0x55); code.push_back(0x66);
+    op_imm(code, 2); op_imm(code, 1); op_imm(code, 2);
+    code.push_back(0x00);
+    const size_t quiet = code.size();
+    code.push_back(0x00);
+    auto patch = [&](size_t at, size_t target) {
+        code[at] = 1;
+        code[at + 1] = static_cast<uint8_t>((kBase + target) & 0xFF);
+        code[at + 2] = static_cast<uint8_t>((kBase + target) >> 8);
+    };
+    patch(1, 20);
+    for (int i = 1; i < 5; ++i) patch(1 + i * 4, quiet);
+    patch(goto_at, main_at);
+    patch(gosub_at, quiet);
+    Bytes block = {0x12, 0x34};
+    block.insert(block.end(), code.begin(), code.end());
+
+    ecl::Insn in;
+    CHECK(ecl::decode(code.data(), static_cast<uint32_t>(code.size()), static_cast<uint32_t>(main_at), set, in));
+    CHECK(in.op == 0x21 && in.count == 3 && in.ops[0].immediate() && in.ops[0].low == 7 && in.next == main_at + 7);
+    CHECK(ecl::decode(code.data(), static_cast<uint32_t>(code.size()), static_cast<uint32_t>(quiet - 15), set, in));
+    CHECK(in.op == 0x15 && in.count == 5 && in.next == quiet - 1);
+    CHECK(!ecl::decode(code.data(), static_cast<uint32_t>(code.size()), 25, set, in));    // junk
+    uint32_t ent[5];
+    CHECK(ecl::entries(code.data(), static_cast<uint32_t>(code.size()), set, ent) && ent[0] == 20 && ent[4] == quiet);
+
+    const ecl::MapLoad m = ecl::find_map_load(block.data(), static_cast<uint32_t>(block.size()), set);
+    CHECK(m.has_geo() && m.geo == 7);
+    CHECK(m.has_walls() && m.walls[0] == 3 && m.walls[1] == ecl::kNone && m.walls[2] == 9);
+    // Without the GOTO's target reachable (entry to quiet only): nothing
+    Bytes quiet_only = block;
+    quiet_only[2 + 1] = static_cast<uint8_t>((kBase + quiet) & 0xFF);
+    quiet_only[2 + 2] = static_cast<uint8_t>((kBase + quiet) >> 8);
+    const ecl::MapLoad none = ecl::find_map_load(quiet_only.data(), static_cast<uint32_t>(quiet_only.size()), set);
+    CHECK(!none.has_geo() && !none.has_walls());
+}
+
+static Bytes make_geo(const std::vector<std::tuple<int, int, int, int, int>>& walls)
+{
+    // walls: x, y, dir, type, door
+    Bytes raw(1026, 0);
+    uint8_t* pl = raw.data() + 2;
+    for (const auto& w : walls) {
+        const int x = std::get<0>(w), y = std::get<1>(w), d = std::get<2>(w), t = std::get<3>(w), door = std::get<4>(w);
+        const int i = x + y * 16;
+        if (d == 0) pl[i] = static_cast<uint8_t>((pl[i] & 0x0F) | t << 4);
+        if (d == 2) pl[i] = static_cast<uint8_t>((pl[i] & 0xF0) | t);
+        if (d == 4) pl[256 + i] = static_cast<uint8_t>((pl[256 + i] & 0x0F) | t << 4);
+        if (d == 6) pl[256 + i] = static_cast<uint8_t>((pl[256 + i] & 0xF0) | t);
+        pl[768 + i] = static_cast<uint8_t>(pl[768 + i] | door << d);
+    }
+    pl[512 + 3 + 4 * 16] = 0x90;
+    return raw;
+}
+
+static void test_geo_view()
+{
+    // A corridor: the party at (5, 9) facing north; a wall type 2 across the
+    // front of (5, 7) - two squares ahead; a door (locked) east of (5, 9)
+    const Bytes g = make_geo({{5, 7, 0, 2, 0}, {5, 9, 2, 1, 2}, {5, 9, 6, 1, 1}, {0, 0, 0, 3, 0}});
+    const Bytes file = make_dax({{40, g}, {41, Bytes(10, 0)}});
+    dax::MemorySource src(file.data(), static_cast<uint32_t>(file.size()));
+    static dax::Index idx;
+    CHECK(dax::read_index(src, idx) == dax::Status::Ok);
+    static geo::Map m;
+    CHECK(!geo::load(src, idx, 41, m));
+    CHECK(geo::load(src, idx, 40, m) && m.loaded);
+    CHECK(geo::wall(m, 5, 7, geo::North) == 2 && geo::wall(m, 5, 7, geo::East) == 0);
+    CHECK(geo::passage(m, 5, 9, geo::East) == 2 && geo::passage(m, 5, 9, geo::West) == 1 && geo::passage(m, 5, 9, geo::North) == 1);
+    CHECK(geo::door(m, 5, 9, geo::East) == 2 && geo::flags(m, 3, 4) == 0x90);
+    CHECK(geo::wall(m, 16, 16, geo::North) == 3 && geo::wall(m, -16, 0, geo::North) == 3);      // wraps
+    CHECK(geo::dx(geo::East) == 1 && geo::dy(geo::North) == -1 && strcmp(geo::dir_name(5), "SW") == 0);
+
+    // A world: common tile n is solid colour n % 16 (colour 13 -> 12); wall
+    // set 1, piece 2 (type 2) uses tile 9 everywhere, set 2 its own tile 46
+    static view3d::World w;
+    Bytes common;
+    put16(common, 8); put16(common, 1); put16(common, 0); put16(common, 0); common.push_back(45);
+    for (int i = 0; i < 8; ++i) common.push_back(0);
+    for (int t = 0; t < 45; ++t) {
+        int c = (t + 1) % 16;
+        if (c == 13) c = 12;
+        for (int b = 0; b < 32; ++b) common.push_back(static_cast<uint8_t>(c << 4 | c));
+    }
+    Bytes wd(780 * 2, 0);
+    for (int k = 0; k < 156; ++k) wd[1 * 156 + k] = 9;          // set 1 piece 1 (type 2)
+    for (int k = 0; k < 156; ++k) wd[780 + 0 * 156 + k] = 46;   // set 2 piece 0 (type 6): own tile 1
+    const Bytes tiles = make_dax({{203, common}, {7, wd}});
+    dax::MemorySource ts(tiles.data(), static_cast<uint32_t>(tiles.size()));
+    CHECK(dax::read_index(ts, idx) == dax::Status::Ok);
+    CHECK(view3d::load_tiles(ts, idx, 203, w.common) && w.common.count == 45);
+    int n = 0;
+    CHECK(!view3d::load_walls(ts, idx, 3, 7, w, &n));              // 2 parts don't fit from set 3
+    CHECK(view3d::load_walls(ts, idx, 1, 7, w, &n) && n == 2 && w.walls[0].loaded && w.walls[1].loaded);
+    CHECK(w.walls[1].id[0][0] == 46 + 70);                         // moved to set 2's range
+    CHECK(view3d::tiles_block(7, 1, 0) == 7 && view3d::tiles_block(14, 2, 1) == 142);
+
+    static uint8_t px[pic::kScreenW * pic::kScreenH];
+    pic::Canvas c{px, pic::kScreenW, pic::kScreenH};
+    c.clear(1);
+    view3d::draw(c, w, m, 5, 9, geo::North, 11);
+    auto at = [&](int x, int y) { return px[y * pic::kScreenW + x]; };
+    CHECK(at(30, 30) == 11 && at(30, 100) == 8 && at(30, 24 + 45) == 0);   // sky, ground, the line
+    CHECK(at(1, 1) == 1);                                          // outside the view: untouched
+    // The far front wall: view cells rows 4-5, column 5 = pixels (64-71, 56-71)
+    CHECK(at(67, 60) == 9 && at(67, 70) == 9);
+    // Turned east: the locked door is in the near right side wall (group 8)
+    c.clear(1);
+    view3d::draw(c, w, m, 5, 9, geo::East, 0);
+    CHECK(at(30, 30) == 0);                                        // indoor sky
+    // Type 1 = set 1 piece 0: not filled in (no tiles) -> nothing drawn there
+    // Area map without frame tiles: nothing; with: arrow at the party
+    static layout::Tiles ft;
+    for (int t = 0; t < layout::kTiles; ++t)
+        for (int i = 0; i < 64; ++i) ft.px[t][i] = static_cast<uint8_t>(t < 4 ? 14 : (t - 4) % 16 == 13 ? 12 : (t - 4) % 16);
+    ft.loaded = true;
+    w.frame = &ft;
+    c.clear(1);
+    view3d::draw_area_map(c, w, m, 5, 9, geo::East);
+    // window: x from 0, y from 4 (9 - 5); the party at cell (5, 5) of the window
+    CHECK(at(24 + 5 * 8 + 3, 24 + 5 * 8 + 3) == 14);
+    // (5, 7) has a north wall: map piece 4 + 1 -> colour 1, at window (5, 3)
+    CHECK(at(24 + 5 * 8 + 3, 24 + 3 * 8 + 3) == 1);
+    CHECK(at(24 + 2 * 8 + 3, 24 + 2 * 8 + 3) == 0);                // nothing there: piece 4 -> colour 0
+}
+
 int main()
 {
     test_rle_known_bytes();
@@ -1230,6 +1394,8 @@ int main()
     test_inflate();
     test_png();
     test_icon();
+    test_ecl();
+    test_geo_view();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;

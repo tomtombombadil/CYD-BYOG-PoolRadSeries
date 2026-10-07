@@ -29,6 +29,10 @@ void set_ega_palette();
 void set_scale(Scale s);    // OneAndHalf only takes effect on 480-wide panels
 Scale scale();
 
+// Game layout: the canvas at the panel's top left (1:1), leaving the right
+// strip of a 480x320 panel for the Gold Box Companion. Otherwise centred.
+void set_left(bool left);
+
 // Where the canvas lands on the panel.
 ui::Rect area();
 

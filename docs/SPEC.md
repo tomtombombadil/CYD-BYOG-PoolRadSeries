@@ -123,8 +123,9 @@ stay in the session's scratch space, never in the repo.
 | Combat screen: its frame ends at row 22; row 23 = a status line (range, "Spell: ...", "Item: ..."), row 24 = the menu as on every screen | `src/engine/layout.*` | Checked (coab). |
 | Menu line (row 24): choices start at capitals / digits; prompt colour 13, key letters 15, the rest 10, the chosen word reversed (15 background) | `src/engine/text.*` | **v0.4.0**. Touch: tapping a word moves the highlight to it, shows it for 250 ms, then acts (its trailing space counts, so no gaps between targets; the tap area starts a row higher, at row 23 - Tom, v0.5.1). The chosen word stays chosen next time, as in the games. |
 | Game icons: GOG's goggame-<id>.ico (ICONDIR) or goggame-<id>.dll (PE resources RT_GROUP_ICON 14 -> RT_ICON 3), copied by the player into the game's folder; images are DIBs (1/4/8/24/32 bit + mask) or PNG (GOG's 256 x 256, RGBA). The biggest is drawn, scaled down (alpha-weighted averaging) to 128 px on 320x240, 192 px on 480x320 | `src/engine/icon.*`, `png.*`, `inflate.*` (streaming, 32 KB window - based on CYD-Classic-Games' inflate) | **v0.6.0**: checked on the real goggame .ico / .dll of six games. START.EXE (DOS) has no icon; Support.ico is GOG's generic one, ignored. |
-| GEO map block (1026 bytes): 2-byte header + four 256-byte planes (wall types as nibbles, a byte per cell, 2 bits per direction) | - | M3. |
-| WALLDEF (780 bytes a wall set) + 8X8D tile sets | - | M3. |
+| GEO map block (1026 bytes): 2 bytes, then four 256-byte planes (a byte per square, x + y * 16): N / E wall types (nibbles), S / W wall types, a flags byte (>= 0x80 = under a roof: indoor sky colour), door states (2 bits per side: 0 solid, 1 open, 2 locked, 3 barred); wraps at the edges | `src/engine/geo.*` | **v0.7.0** (Curse). |
+| WALLDEFn: n x 780 bytes = wall sets (5 pieces x 156 tile numbers in 10 groups: far front / sides, middle front / sides, near front / sides, far corner); a 2- or 3-part block fills the next sets too and its tiles are 8X8Dn blocks id*10+1.. ; tile numbers 1-45 common (8X8D1 #203), 46-115 / 116-185 / 186-255 sets 1-3 (a set's own numbers stored as set 1's, moved up 70 / 140), 256+ frame tiles | `src/engine/view3d.*` | **v0.7.0** (Curse): drawn far to near like the games; sky (area colour; indoor black / outdoor light blue until area data is read), black line, ground (8), SKY #252 horizon; AREA map from frame tiles 260-275 + the party arrow 256-259. |
+| ECL scripts: 2 header bytes; 5 entry points; opcode + operands (code, low, [high] / packed string); per-game opcode table (Curse's in the profile) | `src/engine/ecl.*` | **v0.7.0**: decoding + following jumps from the entry points; finds each area script's first LOAD FILES (GEO block) and LOAD PIECES (wall sets) - all 18 Curse 3D maps. PoolRad's scripts use other opcodes (its profile will need its own table). Running scripts = M4. |
 | ECL script: 65 opcodes 0x00-0x40, packed text | - | M4. |
 | Monsters (MONnCHA: 285 B PoolRad, 422 B Curse, 439 B Secret, 510 B Darkness), items, characters, saves | - | M5-M6. Record sizes differ per game - per-game profiles. |
 
@@ -138,7 +139,9 @@ stay in the session's scratch space, never in the repo.
    viewer's Screen Test), title sequence + credits, text windows and the menu
    line (v0.4.0). Done for Curse; the other games get theirs on their turn.
 3. **3D view and walking**: GEO + WALLDEF + 8X8D drawing, turning and stepping by
-   touch, auto-map.
+   touch, auto-map. v0.7.0: the viewer's **Walk Test** (Curse) walks every 3D
+   map the area scripts load, with the exploring keys, the AREA view and (on
+   480x320) the Companion map; walls and doors only, no events yet.
 4. **ECL script engine**: events, text, menus, pictures, area changes.
 5. **Party**: characters (create / load), inventory, camp, shops.
 6. **Combat.**

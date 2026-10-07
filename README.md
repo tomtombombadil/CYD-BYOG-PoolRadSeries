@@ -61,6 +61,12 @@ The games aren't playable yet; this build shows what is inside their files.
    sequence and credits (tap = next picture), a text window printing and the
    menu line (tap to go on; tap a menu word to choose it), the screen frames
    and their tiles. `< Prev` / `Next >` step through the pages.
+   **Walk Test** walks the game's 3D areas (every map the game's area
+   scripts load, with their own walls): the arrow keys turn, step forward,
+   side-step and turn around; **Area** shows the game's area map; tap the
+   party panel (or **Next** on the menu line) for the next map. On 480x320
+   the whole map is drawn beside the game screen. No events yet - only
+   walls and doors (locked doors stop you).
 3. **Blocks**: each piece inside the file. **Gold keys are pictures** (size and
    frame count shown); navy keys are other data. Tap one.
 4. **Picture**: `< Prev` / `Next >` step through the frames, then the next

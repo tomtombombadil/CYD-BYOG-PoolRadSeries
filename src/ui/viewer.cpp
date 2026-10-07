@@ -18,13 +18,14 @@
 #include "hal/panel_prefs.h"
 #include "hal/sdcard.h"
 #include "look.h"
+#include "walk.h"
 #include "ui.h"
 
 namespace viewer {
 
 namespace {
 
-enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Settings };
+enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Walk, Settings };
 
 Env       env_;
 Settings* cfg = nullptr;
@@ -60,6 +61,9 @@ pic::Anim          cur_anim;                    // the animation being viewed
 int                cur_anim_block = -1;
 int                block_page = 0;
 int                block_sel = 0;    // entry number in index_
+
+// Walk test
+const char* walk_error = nullptr;
 
 // Screen test
 int         look_page = 0;
@@ -401,7 +405,15 @@ void draw_files()
         if (n > 4 && strcasecmp(label + n - 4, ".DAX") == 0) label[n - 4] = 0;
         ui::key(ui::grid_cell(i, file_cols(), kFileRows), label);
     }
-    draw_pager_keys(p, look::available(game_dirs[game_sel].game) ? "Screen Test" : nullptr);
+    if (look::available(game_dirs[game_sel].game)) {
+        // < Prev | Screen Test | Walk Test | Next >
+        ui::key(ui::bottom_key(0, 4), "< Prev", p.page > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+        ui::key(ui::bottom_key(1, 4), "Screen\nTest");
+        ui::key(ui::bottom_key(2, 4), "Walk\nTest");
+        ui::key(ui::bottom_key(3, 4), "Next >", p.page + 1 < p.pages() ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+    } else {
+        draw_pager_keys(p);
+    }
 }
 
 void tap_files(const ui::Tap& t)
@@ -409,8 +421,24 @@ void tap_files(const ui::Tap& t)
     if (ui::back_rect().contains(t.x, t.y)) { go(Screen::Home); return; }
     Pager p{n_files, file_cols() * kFileRows, file_page};
     const bool has_look = look::available(game_dirs[game_sel].game);
-    bool look_hit = false;
-    if (pager_tap(t, p, &file_page, has_look, &look_hit)) { dirty = true; return; }
+    bool look_hit = false, walk_hit = false;
+    if (has_look) {
+        const int k = bottom_hit(t, 4);
+        if (k == 0 && p.page > 0) { --file_page; dirty = true; return; }
+        if (k == 3 && p.page + 1 < p.pages()) { ++file_page; dirty = true; return; }
+        look_hit = k == 1;
+        walk_hit = k == 2;
+    } else if (pager_tap(t, p, &file_page)) {
+        dirty = true;
+        return;
+    }
+    if (walk_hit) {
+        walk_error = walk::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game);
+        frame::set_scale(frame::Scale::One);    // the game's screen: 1:1 at the top left
+        frame::set_left(true);
+        go(Screen::Walk);
+        return;
+    }
     if (look_hit) {
         look_error = look::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game);
         look_page = 0;
@@ -783,6 +811,151 @@ void tap_look(const ui::Tap& t)
     if (frame::to_canvas(t.x, t.y, cx, cy)) present(look::tap(cx, cy, millis(), frame::canvas()));
 }
 
+// ---- Walk test --------------------------------------------------------------
+
+// Controls under the game screen (SPEC section 4). 320x240: one row of 8
+// keys. 480x320: a 3x3 pad like a numeric keypad (7 / 9 turn, 8 forward,
+// 4 / 6 side-step, 2 turn around) with Area / Next Map / Esc beside it.
+enum WalkKey { kWTurnL, kWStepL, kWFwd, kWStepR, kWTurnR, kWAround, kWArea, kWNext, kWEsc, kWKeys };
+
+ui::Rect walk_key(int k)
+{
+    const int gp = ui::gap();
+    const int top = pic::kScreenH + gp;
+    const int h_all = ui::height() - top - gp;
+    if (!ui::large()) {
+        // Row of 8: TurnL StepL Fwd StepR TurnR Around Area Esc (Next Map: menu / panel tap)
+        static const int kOrder[kWKeys] = {0, 1, 2, 3, 4, 5, 6, -1, 7};
+        const int i = kOrder[k];
+        if (i < 0) return ui::Rect{};
+        const int w = (pic::kScreenW - gp * 9) / 8;
+        return {gp + i * (w + gp), top, w, h_all};
+    }
+    const int kh = (h_all - gp * 2) / 3;
+    const int pad_w = 210, kw = (pad_w - gp * 4) / 3;
+    auto pad = [&](int col, int row) { return ui::Rect{gp + col * (kw + gp), top + row * (kh + gp), kw, kh}; };
+    const int rx = pad_w + gp, rw = pic::kScreenW - rx - gp;
+    auto side = [&](int row) { return ui::Rect{rx, top + row * (kh + gp), rw, kh}; };
+    switch (k) {
+    case kWTurnL:  return pad(0, 0);
+    case kWFwd:    return pad(1, 0);
+    case kWTurnR:  return pad(2, 0);
+    case kWStepL:  return pad(0, 1);
+    case kWStepR:  return pad(2, 1);
+    case kWAround: return pad(1, 2);
+    case kWArea:   return side(0);
+    case kWNext:   return side(1);
+    case kWEsc:    return side(2);
+    }
+    return ui::Rect{};
+}
+
+// The Gold Box Companion strip (480x320): the whole map, the party arrow
+void draw_companion()
+{
+    if (!ui::large()) return;
+    LGFX& g = ui::gfx();
+    const int x0 = pic::kScreenW, w = ui::width() - x0;
+    g.fillRect(x0, 0, w, ui::height(), style::kBackground);
+    g.drawFastVLine(x0, 0, ui::height(), style::kKeyEdge);
+    char l1[48], l2[48];
+    walk::describe(l1, l2, sizeof l1);
+    ui::text(x0 + 8, 6, "Map", style::kGold);
+    ui::text(x0 + 8, 30, l1, style::kText, ui::Font::Small);
+    ui::text(x0 + 8, 46, l2, style::kTextMuted, ui::Font::Small);
+    const geo::Map* m = walk::map();
+    if (!m) return;
+    const int cell = 9, mx = x0 + (w - cell * geo::kSize) / 2, my = 70;
+    g.fillRect(mx, my, cell * geo::kSize + 1, cell * geo::kSize + 1, style::kKey);
+    for (int y = 0; y < geo::kSize; ++y)
+        for (int x = 0; x < geo::kSize; ++x) {
+            const int sx = mx + x * cell, sy = my + y * cell;
+            for (int d = 0; d < 8; d += 2) {
+                if (!geo::wall(*m, x, y, d)) continue;
+                const int door = geo::door(*m, x, y, d);
+                const uint16_t col = door == 1 ? style::kGold : door >= 2 ? style::kWarn : style::kText;
+                if (d == 0) g.drawFastHLine(sx, sy, cell + 1, col);
+                if (d == 4) g.drawFastHLine(sx, sy + cell, cell + 1, col);
+                if (d == 6) g.drawFastVLine(sx, sy, cell + 1, col);
+                if (d == 2) g.drawFastVLine(sx + cell, sy, cell + 1, col);
+            }
+        }
+    // The party: a triangle pointing the way it faces
+    const int cx = mx + walk::pos_x() * cell + cell / 2, cy = my + walk::pos_y() * cell + cell / 2;
+    const int r = cell / 2 - 1;
+    const int dir = walk::dir();
+    const int fx = cx + geo::dx(dir) * r, fy = cy + geo::dy(dir) * r;
+    const int lx = cx + geo::dx((dir + 6) & 7) * r - geo::dx(dir) * r, ly = cy + geo::dy((dir + 6) & 7) * r - geo::dy(dir) * r;
+    const int rx = cx + geo::dx((dir + 2) & 7) * r - geo::dx(dir) * r, ry = cy + geo::dy((dir + 2) & 7) * r - geo::dy(dir) * r;
+    g.fillTriangle(fx, fy, lx, ly, rx, ry, style::kGold);
+    ui::text(x0 + 8, my + cell * geo::kSize + 8, "White: wall", style::kTextMuted, ui::Font::Small);
+    ui::text(x0 + 8, my + cell * geo::kSize + 24, "Gold: door, red: locked", style::kTextMuted, ui::Font::Small);
+}
+
+void draw_walk_keys()
+{
+    ui::key_arrow(walk_key(kWTurnL), ui::Arrow::TurnLeft);
+    ui::key_arrow(walk_key(kWStepL), ui::Arrow::Left);
+    ui::key_arrow(walk_key(kWFwd), ui::Arrow::Forward);
+    ui::key_arrow(walk_key(kWStepR), ui::Arrow::Right);
+    ui::key_arrow(walk_key(kWTurnR), ui::Arrow::TurnRight);
+    ui::key_arrow(walk_key(kWAround), ui::Arrow::TurnAround);
+    ui::key(walk_key(kWArea), "Area");
+    if (ui::large()) ui::key(walk_key(kWNext), "Next Map");
+    ui::key(walk_key(kWEsc), "Esc");
+}
+
+void leave_walk()
+{
+    walk::close();
+    walk_error = nullptr;
+    frame::set_left(false);
+    frame::set_scale(cfg->scale_15x ? frame::Scale::OneAndHalf : frame::Scale::One);
+    go(Screen::Files);
+}
+
+void draw_walk()
+{
+    if (walk_error) {
+        ui::clear();
+        ui::header("Walk Test", true);
+        int y = ui::header_h() + ui::gap() * 3;
+        wrap_text(ui::gap() * 3, y, ui::width() - ui::gap() * 6, walk_error, ui::Font::Normal, style::kText, true);
+        return;
+    }
+    frame::set_ega_palette();
+    walk::draw(frame::canvas());
+    ui::clear();
+    frame::present();
+    draw_walk_keys();
+    draw_companion();
+}
+
+void tap_walk(const ui::Tap& t)
+{
+    if (walk_error) {
+        if (ui::back_rect().contains(t.x, t.y)) leave_walk();
+        return;
+    }
+    static const walk::Act kActs[kWKeys] = {walk::Act::TurnLeft, walk::Act::StepLeft, walk::Act::Forward,
+                                            walk::Act::StepRight, walk::Act::TurnRight, walk::Act::TurnAround,
+                                            walk::Act::Area, walk::Act::NextMap, walk::Act::Forward};
+    for (int k = 0; k < kWKeys; ++k) {
+        const ui::Rect r = walk_key(k);
+        if (r.w == 0 || !r.contains(t.x, t.y)) continue;
+        if (k == kWEsc) { leave_walk(); return; }
+        walk::act(kActs[k], frame::canvas());
+        frame::present();
+        if (k == kWNext || k == kWArea || ui::large()) draw_companion();
+        return;
+    }
+    int cx, cy;
+    if (frame::to_canvas(t.x, t.y, cx, cy) && walk::tap(cx, cy, frame::canvas())) {
+        frame::present();
+        draw_companion();
+    }
+}
+
 // ---- Settings --------------------------------------------------------------
 
 enum SetKey { kBrightDown, kBrightUp, kInvert, kSwap, kRotate, kCalibrate, kScale, kSetKeys };
@@ -875,6 +1048,7 @@ void tick()
         case Screen::Blocks:   tap_blocks(t); break;
         case Screen::View:     tap_view(t); break;
         case Screen::Look:     tap_look(t); break;
+        case Screen::Walk:     tap_walk(t); break;
         case Screen::Settings: tap_settings(t); break;
         }
     }
@@ -887,6 +1061,7 @@ void tick()
     case Screen::Blocks:   draw_blocks(); break;
     case Screen::View:     draw_view(); break;
     case Screen::Look:     draw_look(); break;
+    case Screen::Walk:     draw_walk(); break;
     case Screen::Settings: draw_settings(); break;
     }
 }

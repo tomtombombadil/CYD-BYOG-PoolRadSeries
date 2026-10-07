@@ -22,7 +22,9 @@ uint16_t panel_color(const pic::Rgb& c)
     return static_cast<uint16_t>((v >> 8) | (v << 8));
 }
 
-bool scaled() { return mode == Scale::OneAndHalf && ui::large(); }
+bool at_left = false;
+
+bool scaled() { return mode == Scale::OneAndHalf && ui::large() && !at_left; }
 
 } // namespace
 
@@ -59,12 +61,13 @@ void set_ega_palette()
 }
 
 void set_scale(Scale s) { mode = s; }
+void set_left(bool left) { at_left = left; }
 Scale scale() { return mode; }
 
 ui::Rect area()
 {
     if (scaled()) return {0, 0, 480, 300};
-    const int x = (ui::width() - pic::kScreenW) / 2;
+    const int x = at_left ? 0 : (ui::width() - pic::kScreenW) / 2;
     return {x, 0, pic::kScreenW, pic::kScreenH};
 }
 

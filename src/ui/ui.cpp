@@ -144,6 +144,52 @@ void key(const Rect& r, const char* label, KeyStyle s)
     g->drawString(nl + 1, r.x + r.w / 2, top + lh);
 }
 
+void key_arrow(const Rect& r, Arrow a, KeyStyle s)
+{
+    key(r, "", s);
+    const uint16_t col = s == KeyStyle::Dim ? style::kTextMuted : style::kGold;
+    const int cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+    int sz = (r.w < r.h ? r.w : r.h) * 3 / 10;
+    if (sz < 6) sz = 6;
+    const int t = sz / 3 < 3 ? 3 : sz / 3;          // line thickness
+    const int hh = sz * 2 / 3;                       // arrow head half size
+    switch (a) {
+    case Arrow::Forward:
+        g->fillTriangle(cx, cy - sz, cx - hh, cy - sz + hh, cx + hh, cy - sz + hh, col);
+        g->fillRect(cx - t / 2, cy - sz + hh, t, sz * 2 - hh, col);
+        break;
+    case Arrow::Left:
+        g->fillTriangle(cx - sz, cy, cx - sz + hh, cy - hh, cx - sz + hh, cy + hh, col);
+        g->fillRect(cx - sz + hh, cy - t / 2, sz * 2 - hh, t, col);
+        break;
+    case Arrow::Right:
+        g->fillTriangle(cx + sz, cy, cx + sz - hh, cy - hh, cx + sz - hh, cy + hh, col);
+        g->fillRect(cx - sz, cy - t / 2, sz * 2 - hh, t, col);
+        break;
+    case Arrow::TurnLeft:
+    case Arrow::TurnRight: {
+        // Up from the bottom, then across with the head at the end
+        const int dir = a == Arrow::TurnLeft ? -1 : 1;
+        const int sx = cx - dir * sz / 2;            // the upright stroke
+        const int ty = cy - sz / 3;                  // the cross stroke
+        g->fillRect(sx - t / 2, ty - t / 2, t, cy + sz - ty + t / 2, col);
+        const int ex = cx + dir * (sz - hh);
+        g->fillRect(dir < 0 ? ex : sx - t / 2, ty - t / 2, dir < 0 ? sx + t / 2 - ex : ex - sx + t / 2, t, col);
+        g->fillTriangle(cx + dir * sz, ty, ex, ty - hh, ex, ty + hh, col);
+        break;
+    }
+    case Arrow::TurnAround: {
+        // Up the right, across the top, down the left with the head
+        const int rx = cx + sz / 2, lx = cx - sz / 2, top = cy - sz * 2 / 3;
+        g->fillRect(rx - t / 2, top, t, cy + sz - top, col);
+        g->fillRect(lx - t / 2, top, rx - lx + t, t, col);
+        g->fillRect(lx - t / 2, top, t, cy + sz - hh - top, col);
+        g->fillTriangle(lx, cy + sz, lx - hh, cy + sz - hh, lx + hh, cy + sz - hh, col);
+        break;
+    }
+    }
+}
+
 uint16_t key_fill(KeyStyle s)
 {
     return s == KeyStyle::Lit ? style::kKeyLit : s == KeyStyle::Dim ? style::kKeyDim : style::kKey;

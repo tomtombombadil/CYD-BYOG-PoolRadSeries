@@ -14,6 +14,7 @@
 
 #include <cstdint>
 
+#include "ecl.h"
 #include "games.h"
 
 namespace profile {
@@ -70,6 +71,14 @@ struct Profile {
     uint32_t     credits_at;     // first print call
     uint32_t     credits_base;   // its code segment's start in the file
     uint8_t      credits_bars[2];   // rows of the frame's bars on that screen
+
+    // 3D areas: files GEOn / WALLDEFn / 8X8Dn / ECLn.DAX for areas
+    // first_area .. last_area; the common wall tiles; the horizon picture
+    uint8_t      first_area, last_area;
+    uint8_t      common_tiles_block;   // in 8X8D1.DAX
+    const char*  sky_file;
+    uint8_t      horizon_block;
+    const ecl::OpSet* ecl_ops;         // the script's opcodes (nullptr: unknown)
 };
 
 // The game's program file name (to look for it), or nullptr if no
