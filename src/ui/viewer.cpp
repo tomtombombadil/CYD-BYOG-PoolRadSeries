@@ -9,6 +9,7 @@
 
 #include "app/library.h"
 #include "engine/dax.h"
+#include "engine/font.h"
 #include "engine/games.h"
 #include "engine/picture.h"
 #include "frame.h"
@@ -50,6 +51,8 @@ pic::Header        pic_hdr[dax::kMaxEntries];   // picture, or an animation's fi
 bool               is_pic[dax::kMaxEntries];    // something to draw (picture or animation)
 bool               is_anim[dax::kMaxEntries];   // an animation (PIC, SPRIT...); pic_hdr.frames = its frames
 bool               is_vga[dax::kMaxEntries];    // a 256-colour picture (Pools of Darkness)
+bool               is_font[dax::kMaxEntries];   // the game's 8x8 font (block 201 of an 8X8D file)
+font::Font         cur_font;
 pic::Anim          cur_anim;                    // the animation being viewed
 int                cur_anim_block = -1;
 int                block_page = 0;
@@ -106,8 +109,17 @@ bool open_file(int i)
     src = new (src_mem) library::FileSource(cur_file);
     index_status = dax::read_index(*src, index_);
     for (int e = 0; e < index_.count; ++e) {
-        is_pic[e] = is_anim[e] = is_vga[e] = false;
+        is_pic[e] = is_anim[e] = is_vga[e] = is_font[e] = false;
         const dax::Entry& en = index_.entries[e];
+        if (en.id == font::kBlockId && en.raw_size == font::kBlockBytes) {
+            // Shown as a sheet of its glyphs plus a line of text
+            is_pic[e] = is_font[e] = true;
+            pic_hdr[e] = pic::Header{};
+            pic_hdr[e].height = pic::kScreenH;
+            pic_hdr[e].width_cols = pic::kScreenW / 8;
+            pic_hdr[e].frames = 1;
+            continue;
+        }
         {
             dax::RleReader r(*src, index_, en);
             uint8_t hdr[pic::kHeaderSize];
@@ -288,7 +300,9 @@ void draw_blocks()
         const dax::Entry& en = index_.entries[e];
         char label[16], sub[24];
         snprintf(label, sizeof label, "#%u", en.id);
-        if (is_pic[e]) {
+        if (is_font[e]) {
+            snprintf(sub, sizeof sub, "Font");
+        } else if (is_pic[e]) {
             snprintf(sub, sizeof sub, "%dx%d x%d", pic_hdr[e].width_px(), pic_hdr[e].height, pic_hdr[e].frames);
         } else {
             snprintf(sub, sizeof sub, "%u B", en.raw_size);
@@ -340,7 +354,9 @@ ui::Rect view_key(int i)
 void view_info(char* out, size_t cap)
 {
     const dax::Entry& en = index_.entries[block_sel];
-    if (is_anim[block_sel] && cur_anim_block == block_sel) {
+    if (is_font[block_sel]) {
+        snprintf(out, cap, "%s #%u  the game's font: %d glyphs of 8x8", files[file_sel], en.id, font::kGlyphs);
+    } else if (is_anim[block_sel] && cur_anim_block == block_sel) {
         const pic::Header& h = cur_anim.frame[frame_no];
         snprintf(out, cap, "%s #%u  %dx%d  frame %d/%d  at %u,%u  delay %lu", files[file_sel], en.id, h.width_px(),
                  h.height, frame_no + 1, cur_anim.frames, h.x_cell, h.y_cell, (unsigned long)cur_anim.delay[frame_no]);
@@ -394,6 +410,21 @@ void draw_hex()
     ui::key(ui::bottom_key(2, 3), "Block >");
 }
 
+// The font: every glyph in a grid (glyph number = row * 20 + column), then
+// some text printed with it
+void draw_font_sheet(pic::Canvas& c)
+{
+    c.clear(0);
+    for (int g = 0; g < font::kGlyphs; ++g) {
+        const int x = 2 + (g % 20) * 16, y = 2 + (g / 20) * 16;
+        c.fill(x - 1, y - 1, 10, 10, 1);
+        font::draw_glyph(c, cur_font, g, x, y, 15, 1);
+    }
+    font::draw_text(c, cur_font, "THE QUICK BROWN FOX JUMPS OVER", 1, 20, 14, 0);
+    font::draw_text(c, cur_font, "THE LAZY DOG. 0123456789 !?:,'\"-", 1, 21, 14, 0);
+    font::draw_text(c, cur_font, "Mixed Case Prints In Capitals", 1, 23, 11, 0);
+}
+
 // PIC and FINAL files store animation frames as changes from the first one
 bool xor_frames()
 {
@@ -408,7 +439,10 @@ void draw_picture()
     const int x = (pic::kScreenW - h.width_px()) / 2, y = (pic::kScreenH - h.height) / 2;
     bool ok;
     frame::set_ega_palette();
-    if (is_vga[block_sel]) {
+    if (is_font[block_sel]) {
+        ok = font::load(*src, index_, cur_font);
+        if (ok) draw_font_sheet(c);
+    } else if (is_vga[block_sel]) {
         // Its own palette: entries it doesn't set stay black
         static pic::Rgb pal[256];
         for (auto& p : pal) p = pic::Rgb{0, 0, 0};

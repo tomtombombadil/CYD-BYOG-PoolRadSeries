@@ -49,6 +49,7 @@ The games aren't playable yet; this build shows what is inside their files.
    Other data shows as a hex dump.
 
 Good files to try in Curse: `TITLE.DAX` (title screens, blocks 1-4),
+`8X8D1.DAX` block #201 (the game's own font, from v0.2.0),
 `PICn.DAX` / `BIGPICn.DAX` (event pictures), `HEAD*.DAX` / `BODY*.DAX`
 (portraits), `SKY.DAX`, `COMSPR.DAX` (combat figures). Pools of Darkness's
 256-colour pictures show too (from v0.1.3), except its animations (`PIC1`,

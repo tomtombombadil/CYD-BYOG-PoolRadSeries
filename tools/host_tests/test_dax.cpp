@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "engine/dax.h"
+#include "engine/font.h"
 #include "engine/games.h"
 #include "engine/picture.h"
 
@@ -351,6 +352,48 @@ static void test_vga()
     CHECK(ok);
 }
 
+// Font block: 177 glyphs; glyph g's rows are made-up patterns
+static void test_font()
+{
+    Bytes raw(font::kBlockBytes);
+    for (int g = 0; g < font::kGlyphs; ++g)
+        for (int r = 0; r < 8; ++r) raw[g * 8 + r] = static_cast<uint8_t>((g * 7 + r * 13) & 0xFF);
+    const Bytes file = make_dax({{200, Bytes(16, 1)}, {201, raw}});
+    dax::MemorySource src(file.data(), static_cast<uint32_t>(file.size()));
+    static dax::Index idx;
+    CHECK(dax::read_index(src, idx) == dax::Status::Ok);
+    static font::Font f;
+    CHECK(font::load(src, idx, f) && f.loaded);
+    CHECK(font::glyph_of('A') == 1 && font::glyph_of('a') == 1 && font::glyph_of(' ') == 32 &&
+          font::glyph_of('0') == 48 && font::glyph_of('?') == 63);
+    static uint8_t px[pic::kScreenW * pic::kScreenH];
+    pic::Canvas c{px, pic::kScreenW, pic::kScreenH};
+    c.clear(9);
+    CHECK(font::draw_text(c, f, "AB", 38, 24, 15, 0) == 40);
+    CHECK(font::draw_text(c, f, "XYZ", 39, 0, 15, -1) == 40);    // clipped at the right edge
+    bool ok = true;
+    for (int g = 0; g < 2; ++g)
+        for (int r = 0; r < 8; ++r)
+            for (int b = 0; b < 8; ++b) {
+                const bool ink = (raw[(1 + g) * 8 + r] >> (7 - b)) & 1;
+                if (px[(192 + r) * pic::kScreenW + 304 + g * 8 + b] != (ink ? 15 : 0)) ok = false;
+            }
+    CHECK(ok);
+    // transparent paper keeps what was there
+    ok = true;
+    for (int r = 0; r < 8; ++r)
+        for (int b = 0; b < 8; ++b) {
+            const bool ink = (raw[24 * 8 + r] >> (7 - b)) & 1;
+            if (px[r * pic::kScreenW + 312 + b] != (ink ? 15 : 9)) ok = false;
+        }
+    CHECK(ok);
+    // a file without a proper block 201
+    const Bytes nofont = make_dax({{201, Bytes(100, 0)}});
+    dax::MemorySource s2(nofont.data(), static_cast<uint32_t>(nofont.size()));
+    CHECK(dax::read_index(s2, idx) == dax::Status::Ok);
+    CHECK(!font::load(s2, idx, f));
+}
+
 static void test_games()
 {
     using games::Game;
@@ -377,6 +420,7 @@ int main()
     test_picture();
     test_anim();
     test_vga();
+    test_font();
     test_games();
     if (failures) {
         printf("%d check(s) failed\n", failures);
