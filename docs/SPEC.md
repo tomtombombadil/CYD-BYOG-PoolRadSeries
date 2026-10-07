@@ -195,7 +195,8 @@ First look at Tom's GOG files with `dax_inspect` (2026-10-07):
 | Death Knights of Krynn | DAX, all blocks read | EGA pictures + animations, all parse (415) |
 | Treasures of the Savage Frontier | DAX, all blocks read | VGA pictures like Darkness (460) |
 | Dark Queen of Krynn | **"HLIB" containers** (`.TLB` / `.GLB`, files split over DISK1-3 folders), plus GAME.FON | not looked at yet - a newer engine generation |
-| Gateway, FRUA | not checked yet (zips too big to fetch) | |
+| Gateway to the Savage Frontier | DAX, all blocks read | EGA pictures parse (238); only 1 animation - its PIC files differ, to check |
+| Unlimited Adventures (FRUA) | "HLIB" `.TLB` / `.GLB` like Dark Queen, plus PCX / LBM pictures | not looked at yet |
 
 ## 10. Engine UI rules (carried over from CYD-Classic-Games)
 
