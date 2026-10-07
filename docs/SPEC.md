@@ -104,8 +104,9 @@ The games draw a 320x200 screen. The canvas is presented:
 | What | Where | Status |
 |---|---|---|
 | DAX archive: u16 index size, 9-byte entries (id, u32 offset, u16 unpacked, u16 packed), RLE blocks (control `c >= 0`: copy `c+1` bytes; `c < 0`: repeat next byte `-c` times) | `src/engine/dax.*` | Done, host-tested. Confirm on real files (M1). |
-| EGA picture block: u16 height, u16 width in 8-px columns, u16 x, u16 y, u8 frames, 8 unknown bytes, then nibble-packed pixels (high first) | `src/engine/picture.*` | Done for Curse of the Azure Bonds' layout. Check PoR and Silver Blades on real files (M1). |
-| VGA pictures (Pools of Darkness) | - | To do: different format, 256 colours. |
+| EGA picture block: u16 height, u16 width in 8-px columns, u16 x, u16 y, u8 frames, 8 unknown bytes, then nibble-packed pixels (high first) | `src/engine/picture.*` | Confirmed on Tom's Curse files (v0.1.1): TITLE, BIGPICn, HEAD*, BODY*, SKY, COMSPR look right. Some PoolRad and Secret files parse too. |
+| Animation block (PICn, FINALn, SPRITn): u8 frames, then per frame u32 delay, u16 height, u16 width cols, u16 x, u16 y, u8, 8 unknown bytes, packed pixels; PIC / FINAL frames after the first XORed with the first | `src/engine/picture.*` | v0.1.2, host-tested; check on Curse PIC1.DAX. |
+| VGA pictures (Pools of Darkness) | - | To do: different format, 256 colours. None of Darkness's blocks parse as EGA pictures (Tom, v0.1.1). |
 | GEO map block: 2-byte header + four 256-byte planes (wall types as nibbles, a byte per cell, 2 bits per direction) | - | M3. |
 | WALLDEF (5 x 156-byte wall sets) + 8X8D tile sets | - | M3. |
 | ECL script: 65 opcodes 0x00-0x40, packed text | - | M4. |

@@ -64,4 +64,41 @@ bool parse_header(const uint8_t* p, uint32_t raw_size, Header& out, uint32_t* ex
 // Returns false if the block ran out of data.
 bool draw(dax::RleReader& r, const Header& h, int frame, Canvas& c, int x, int y, int mask = -1);
 
+// Packed pixels already in memory (h.frame_bytes() bytes of one frame).
+void draw_pixels(const uint8_t* data, const Header& h, Canvas& c, int x, int y, int mask = -1);
+
+// ---- Animations ------------------------------------------------------------
+// Event pictures and sprites (PICn, FINALn, SPRITn ... in Curse): a series of
+// frames, each with its own header (format learned from coab; Tom's real
+// Curse PIC1.DAX blocks didn't parse as single pictures):
+//   u8  frames
+//   per frame:
+//     u32 delay       how long it shows (game ticks)
+//     u16 height, u16 width (8-px columns), u16 x, u16 y, u8 unknown
+//     u8  extra[8]
+//     height x width * 4 bytes of packed pixels
+// In PIC and FINAL files every frame after the first is stored XORed with
+// the first frame's packed bytes (all but the last byte, as the original
+// program does it) - only the changes from the first frame are non-zero.
+constexpr size_t kAnimFrameHeader = 21;
+constexpr int kMaxAnimFrames = 32;
+
+struct Anim {
+    int      frames = 0;
+    Header   frame[kMaxAnimFrames];      // frames = 1 in each
+    uint32_t delay[kMaxAnimFrames];
+    uint32_t data_at[kMaxAnimFrames];    // offset of the frame's pixels in the block
+};
+
+// Reads the whole block from r (positioned at its start). True only if the
+// frame headers chain up to exactly raw_size bytes.
+bool parse_anim(dax::RleReader& r, uint32_t raw_size, Anim& out);
+
+// Draws one frame. xor_first: the block is from a PIC / FINAL file.
+// Needs a scratch buffer of the first frame's size when xor_first and
+// frame > 0 (allocated here, freed before returning). False on short data
+// or no memory.
+bool draw_anim(dax::ByteSource& src, const dax::Index& idx, const dax::Entry& e, const Anim& a, int frame,
+               bool xor_first, Canvas& c, int x, int y, int mask = -1);
+
 } // namespace pic

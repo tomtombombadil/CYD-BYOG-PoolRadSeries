@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <new>
+#include <strings.h>
 
 #include "app/library.h"
 #include "engine/dax.h"
@@ -45,8 +46,11 @@ library::FileSource* src = nullptr;
 alignas(library::FileSource) uint8_t src_mem[sizeof(library::FileSource)];
 dax::Index         index_;
 dax::Status        index_status = dax::Status::Ok;
-pic::Header        pic_hdr[dax::kMaxEntries];
-bool               is_pic[dax::kMaxEntries];
+pic::Header        pic_hdr[dax::kMaxEntries];   // picture, or an animation's first frame
+bool               is_pic[dax::kMaxEntries];    // something to draw (picture or animation)
+bool               is_anim[dax::kMaxEntries];   // an animation (PIC, SPRIT...); pic_hdr.frames = its frames
+pic::Anim          cur_anim;                    // the animation being viewed
+int                cur_anim_block = -1;
 int                block_page = 0;
 int                block_sel = 0;    // entry number in index_
 
@@ -101,12 +105,23 @@ bool open_file(int i)
     src = new (src_mem) library::FileSource(cur_file);
     index_status = dax::read_index(*src, index_);
     for (int e = 0; e < index_.count; ++e) {
-        is_pic[e] = false;
-        dax::RleReader r(*src, index_, index_.entries[e]);
-        uint8_t hdr[pic::kHeaderSize];
-        if (r.read(hdr, sizeof hdr) == sizeof hdr)
-            is_pic[e] = pic::parse_header(hdr, index_.entries[e].raw_size, pic_hdr[e]);
+        is_pic[e] = is_anim[e] = false;
+        const dax::Entry& en = index_.entries[e];
+        {
+            dax::RleReader r(*src, index_, en);
+            uint8_t hdr[pic::kHeaderSize];
+            if (r.read(hdr, sizeof hdr) == sizeof hdr) is_pic[e] = pic::parse_header(hdr, en.raw_size, pic_hdr[e]);
+        }
+        if (!is_pic[e]) {
+            dax::RleReader r(*src, index_, en);
+            if (pic::parse_anim(r, en.raw_size, cur_anim)) {
+                is_pic[e] = is_anim[e] = true;
+                pic_hdr[e] = cur_anim.frame[0];
+                pic_hdr[e].frames = static_cast<uint8_t>(cur_anim.frames);
+            }
+        }
     }
+    cur_anim_block = -1;
     Serial.printf("[viewer] %s: %s, %d blocks\n", path, dax::status_text(index_status), index_.count);
     return index_status == dax::Status::Ok;
 }
@@ -216,8 +231,14 @@ void draw_files()
     char title[80];
     snprintf(title, sizeof title, "%s  %d/%d", games::short_title(game_dirs[game_sel].game), p.page + 1, p.pages());
     ui::header(title, true);
-    for (int i = 0; i < p.per_page && p.first() + i < n_files; ++i)
-        ui::key(ui::grid_cell(i, file_cols(), kFileRows), files[p.first() + i]);
+    for (int i = 0; i < p.per_page && p.first() + i < n_files; ++i) {
+        // Every file here is a .DAX: show the name without it, so it fits
+        char label[library::kNameLen];
+        strlcpy(label, files[p.first() + i], sizeof label);
+        const size_t n = strlen(label);
+        if (n > 4 && strcasecmp(label + n - 4, ".DAX") == 0) label[n - 4] = 0;
+        ui::key(ui::grid_cell(i, file_cols(), kFileRows), label);
+    }
     draw_pager_keys(p);
 }
 
@@ -309,7 +330,11 @@ ui::Rect view_key(int i)
 void view_info(char* out, size_t cap)
 {
     const dax::Entry& en = index_.entries[block_sel];
-    if (is_pic[block_sel]) {
+    if (is_anim[block_sel] && cur_anim_block == block_sel) {
+        const pic::Header& h = cur_anim.frame[frame_no];
+        snprintf(out, cap, "%s #%u  %dx%d  frame %d/%d  at %u,%u  delay %lu", files[file_sel], en.id, h.width_px(),
+                 h.height, frame_no + 1, cur_anim.frames, h.x_cell, h.y_cell, (unsigned long)cur_anim.delay[frame_no]);
+    } else if (is_pic[block_sel]) {
         const pic::Header& h = pic_hdr[block_sel];
         snprintf(out, cap, "%s #%u  %dx%d  frame %d/%d  at %u,%u", files[file_sel], en.id, h.width_px(), h.height,
                  frame_no + 1, h.frames, h.x_cell, h.y_cell);
@@ -329,7 +354,7 @@ int hex_lines()
 void draw_hex()
 {
     ui::clear();
-    char title[96];
+    char title[128];
     view_info(title, sizeof title);
     ui::header(title, true);
     const dax::Entry& en = index_.entries[block_sel];
@@ -359,19 +384,39 @@ void draw_hex()
     ui::key(ui::bottom_key(2, 3), "Block >");
 }
 
+// PIC and FINAL files store animation frames as changes from the first one
+bool xor_frames()
+{
+    return strncasecmp(files[file_sel], "PIC", 3) == 0 || strncasecmp(files[file_sel], "FINAL", 5) == 0;
+}
+
 void draw_picture()
 {
     pic::Canvas& c = frame::canvas();
     c.clear(0);
     const pic::Header& h = pic_hdr[block_sel];
-    dax::RleReader r(*src, index_, index_.entries[block_sel]);
-    r.skip(pic::kHeaderSize);
     const int x = (pic::kScreenW - h.width_px()) / 2, y = (pic::kScreenH - h.height) / 2;
-    const bool ok = pic::draw(r, h, frame_no, c, x, y);
+    bool ok;
+    if (is_anim[block_sel]) {
+        if (cur_anim_block != block_sel) {
+            dax::RleReader r(*src, index_, index_.entries[block_sel]);
+            pic::parse_anim(r, index_.entries[block_sel].raw_size, cur_anim);
+            cur_anim_block = block_sel;
+        }
+        // Frames keep their positions relative to the first frame
+        const pic::Header& f0 = cur_anim.frame[0];
+        const pic::Header& fh = cur_anim.frame[frame_no];
+        const int fx = x + (fh.x_cell - f0.x_cell) * 8, fy = y + (fh.y_cell - f0.y_cell) * 8;
+        ok = pic::draw_anim(*src, index_, index_.entries[block_sel], cur_anim, frame_no, xor_frames(), c, fx, fy);
+    } else {
+        dax::RleReader r(*src, index_, index_.entries[block_sel]);
+        r.skip(pic::kHeaderSize);
+        ok = pic::draw(r, h, frame_no, c, x, y);
+    }
     ui::clear();
     frame::present();
 
-    char info[96];
+    char info[128];
     view_info(info, sizeof info);
     if (!ok) strlcat(info, "  (data short)", sizeof info);
     const ui::Rect a = frame::area();

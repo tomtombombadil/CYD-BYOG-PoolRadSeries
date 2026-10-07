@@ -1,6 +1,7 @@
 #include "picture.h"
 
 #include <cstring>
+#include <new>
 
 namespace pic {
 
@@ -63,6 +64,83 @@ bool draw(dax::RleReader& r, const Header& h, int frame, Canvas& c, int x, int y
         }
     }
     return true;
+}
+
+void draw_pixels(const uint8_t* data, const Header& h, Canvas& c, int x, int y, int mask)
+{
+    const int row_bytes = h.width_cols * 4;
+    for (int row = 0; row < h.height; ++row) {
+        const int py = y + row;
+        if (py < 0 || py >= c.h) continue;
+        uint8_t* line = c.px + py * c.w;
+        const uint8_t* src = data + row * row_bytes;
+        for (int i = 0; i < row_bytes; ++i) {
+            const int px = x + i * 2;
+            const uint8_t hi = static_cast<uint8_t>(src[i] >> 4), lo = static_cast<uint8_t>(src[i] & 0x0F);
+            if (px >= 0 && px < c.w && hi != mask) line[px] = hi;
+            if (px + 1 >= 0 && px + 1 < c.w && lo != mask) line[px + 1] = lo;
+        }
+    }
+}
+
+bool parse_anim(dax::RleReader& r, uint32_t raw_size, Anim& out)
+{
+    out.frames = 0;
+    const int n = r.next();
+    if (n <= 0 || n > kMaxAnimFrames) return false;
+    uint32_t at = 1;
+    for (int f = 0; f < n; ++f) {
+        uint8_t hd[kAnimFrameHeader];
+        if (r.read(hd, sizeof hd) != sizeof hd) return false;
+        at += kAnimFrameHeader;
+        Header& h = out.frame[f];
+        out.delay[f] = static_cast<uint32_t>(hd[0] | (hd[1] << 8) | (hd[2] << 16)) | (static_cast<uint32_t>(hd[3]) << 24);
+        h.height = static_cast<uint16_t>(hd[4] | (hd[5] << 8));
+        h.width_cols = static_cast<uint16_t>(hd[6] | (hd[7] << 8));
+        h.x_cell = static_cast<uint16_t>(hd[8] | (hd[9] << 8));
+        h.y_cell = static_cast<uint16_t>(hd[10] | (hd[11] << 8));
+        memcpy(h.extra, hd + 13, 8);
+        h.frames = 1;
+        if (h.height == 0 || h.height > kScreenH || h.width_cols == 0 || h.width_cols > kScreenW / 8) return false;
+        out.data_at[f] = at;
+        const uint32_t fb = h.frame_bytes();
+        if (at + fb > raw_size || r.skip(fb) != fb) return false;
+        at += fb;
+    }
+    if (at != raw_size) return false;
+    out.frames = n;
+    return true;
+}
+
+bool draw_anim(dax::ByteSource& src, const dax::Index& idx, const dax::Entry& e, const Anim& a, int frame,
+               bool xor_first, Canvas& c, int x, int y, int mask)
+{
+    if (frame < 0 || frame >= a.frames) return false;
+    const Header& h = a.frame[frame];
+    const uint32_t n = h.frame_bytes();
+    uint8_t* buf = new (std::nothrow) uint8_t[n];
+    if (!buf) return false;
+    bool ok;
+    {
+        dax::RleReader r(src, idx, e);
+        ok = r.skip(a.data_at[frame]) == a.data_at[frame] && r.read(buf, n) == n;
+    }
+    if (ok && xor_first && frame > 0) {
+        const uint32_t n0 = a.frame[0].frame_bytes();
+        uint8_t* first = new (std::nothrow) uint8_t[n0];
+        if (!first) {
+            ok = false;
+        } else {
+            dax::RleReader r(src, idx, e);
+            ok = r.skip(a.data_at[0]) == a.data_at[0] && r.read(first, n0) == n0;
+            const uint32_t m = (n < n0 ? n : n0);
+            for (uint32_t i = 0; ok && i + 1 < m; ++i) buf[i] ^= first[i];
+            delete[] first;
+        }
+    }
+    if (ok) draw_pixels(buf, h, c, x, y, mask);
+    delete[] buf;
+    return ok;
 }
 
 } // namespace pic

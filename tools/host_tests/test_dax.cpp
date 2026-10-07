@@ -243,6 +243,72 @@ static void test_picture()
     CHECK(!pic::parse_header(wide.data(), static_cast<uint32_t>(wide.size()), h));    // wider than the screen
 }
 
+// Animation block: 3 frames of 8x2 px (1 column, 2 rows = 8 bytes each);
+// frames 1-2 stored XORed with frame 0 except the last byte.
+static void test_anim()
+{
+    const uint8_t f0[8] = {0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0};
+    const uint8_t f1[8] = {0x11, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0x77};
+    const uint8_t f2[8] = {0x12, 0x34, 0x00, 0x78, 0x9A, 0xBC, 0xDE, 0xF0};
+    const uint8_t* frames[3] = {f0, f1, f2};
+    for (int xor_mode = 0; xor_mode < 2; ++xor_mode) {
+        Bytes raw;
+        raw.push_back(3);
+        for (int f = 0; f < 3; ++f) {
+            put32(raw, 10 + f);    // delay
+            put16(raw, 2);         // height
+            put16(raw, 1);         // width (columns)
+            put16(raw, 3);         // x
+            put16(raw, 4);         // y
+            raw.push_back(0);      // unknown
+            for (int i = 0; i < 8; ++i) raw.push_back(0xEE);
+            for (int i = 0; i < 8; ++i) {
+                uint8_t b = frames[f][i];
+                if (xor_mode && f > 0 && i < 7) b ^= f0[i];
+                raw.push_back(b);
+            }
+        }
+        const Bytes file = make_dax({{1, raw}});
+        dax::MemorySource src(file.data(), static_cast<uint32_t>(file.size()));
+        static dax::Index idx;
+        CHECK(dax::read_index(src, idx) == dax::Status::Ok);
+        const dax::Entry& e = idx.entries[0];
+        static pic::Anim a;
+        {
+            dax::RleReader r(src, idx, e);
+            CHECK(pic::parse_anim(r, e.raw_size, a));
+        }
+        CHECK(a.frames == 3 && a.delay[2] == 12 && a.frame[1].width_px() == 8 && a.frame[1].x_cell == 3);
+        // A single-picture header must not accept it, nor an animation parse a picture
+        uint8_t hdr[pic::kHeaderSize];
+        { dax::RleReader r(src, idx, e); r.read(hdr, sizeof hdr); }
+        pic::Header h;
+        CHECK(!pic::parse_header(hdr, e.raw_size, h));
+        static uint8_t px[pic::kScreenW * pic::kScreenH];
+        pic::Canvas c{px, pic::kScreenW, pic::kScreenH};
+        for (int f = 0; f < 3; ++f) {
+            c.clear(pic::kTransparent);
+            CHECK(pic::draw_anim(src, idx, e, a, f, xor_mode == 1, c, 0, 0));
+            bool ok = true;
+            for (int row = 0; row < 2; ++row)
+                for (int i = 0; i < 4; ++i) {
+                    const uint8_t b = frames[f][row * 4 + i];
+                    if (px[row * pic::kScreenW + i * 2] != (b >> 4) || px[row * pic::kScreenW + i * 2 + 1] != (b & 15)) ok = false;
+                }
+            CHECK(ok);
+        }
+    }
+    // A picture block is not an animation
+    const Bytes pr = make_picture(4, 2, 1, 0, 0);
+    const Bytes file = make_dax({{2, pr}});
+    dax::MemorySource src(file.data(), static_cast<uint32_t>(file.size()));
+    static dax::Index idx;
+    dax::read_index(src, idx);
+    static pic::Anim a;
+    dax::RleReader r(src, idx, idx.entries[0]);
+    CHECK(!pic::parse_anim(r, idx.entries[0].raw_size, a));
+}
+
 static void test_games()
 {
     using games::Game;
@@ -267,6 +333,7 @@ int main()
     test_round_trip();
     test_bad_files();
     test_picture();
+    test_anim();
     test_games();
     if (failures) {
         printf("%d check(s) failed\n", failures);
