@@ -153,8 +153,9 @@ What the GOG Curse journal PDFs are (checked 2026-10-06 / 07):
   - a 300 dpi copy (12 MB, Acrobat "Paper Capture" OCR, SHA-256
     d4712a050919...), which Tom attached first - probably GOG's separate
     extras download.
-  The converter targets the install-folder copy first; a rectangle table can
-  be added for the other later (each table is keyed by the PDF's SHA-256).
+  The converter supports only the install-folder copy (Tom, 2026-10-07:
+  stick to the one in the Project files); each rectangle table is keyed by
+  the PDF's SHA-256, so another version would need its own table.
 - All nine journals in Tom's Project (four PRS games + Krynn, Savage
   Frontier) are 150 dpi scans except Treasures (lower).
 - The text layers are OCR and unusable for the calligraphic entry font
