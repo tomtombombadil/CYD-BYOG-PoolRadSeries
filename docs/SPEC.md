@@ -113,7 +113,9 @@ stay in the session's scratch space, never in the repo.
 | VGA picture (Darkness): u8 height, u8 width cols, u16 x, u16 y, u8 frames, u8, u8 first palette index, u8 count-1, palette (6-bit RGB), one EGA nibble per entry, 4 bytes, then 1 byte a pixel | `src/engine/picture.*` | **Confirmed** on 479 Darkness blocks: TITLE, BIGPIC, BACK, SKYGRND, CBODY, CHEAD, COMSPR, CPIC, DUNGCOM, WILDCOM, BORDERS, CURSOR. |
 | VGA animations (Darkness PIC1, SPRIT1) and 8X8D1 tile sets | - | To do: header starts u16 height, u16 width cols, u16 x, u16 y, then a different layout. Darkness is last in the build order. |
 | Font: block 201 of an 8X8D file (8X8D1 PoolRad / Curse, 8X8D5 Secret, 8X8D0 Darkness): 177 glyphs x 8 bytes, bit 7 = left pixel; glyph = upper-case ASCII mod 64, 64+ = symbols and frame bits. PoolRad, Curse, Secret identical; Darkness differs | `src/engine/font.*` | **v0.2.0**, checked on all four games' files; the viewer shows it as a glyph sheet + sample text. |
-| Screen frame tiles: 8X8D1 block 202 (40 tiles) and 203 (45 tiles), EGA pictures of 8x8 frames | (picture decoder) | Decode already. Which tile goes where is a table in the game's START.EXE (Curse: found at offset 45232); how to read those tables from the player's own START.EXE is the next M2 step. |
+| Game program (START.EXE; Darkness GAME.EXE): Microsoft **EXEPACK** - MZ header, packed program, at CS:0 an 18-byte header (real IP, CS, mem start, size, SP, SS, dest len in paragraphs, skip len, "RB"); unpacked backwards from the end: command byte, length (high byte, low byte), 0xB0 fill (value byte) / 0xB2 copy, bit 0 = last; the bytes below the last output byte stay as they are | `src/engine/exepack.*` | **v0.3.0**: unpacks every Gold Box program Tom has (Curse, PoolRad, Secret, Darkness, Champions, Death Knights, Gateway, Treasures) identically to a reference unpacker. `read()` unpacks just a byte range straight from the file - no 60 KB buffer. |
+| Per-release program facts: file size + unpacked size identify the release; data segment base + table addresses | `src/engine/profile.*` | Curse GOG (`START.EXE` 57,789 bytes, 62,432 unpacked, DS at 0x48D0). Other games: their frame tables aren't where Curse keeps them (and don't match Curse's) - find them when each game's turn comes. |
+| Screen frame: tiles = 8X8D1 block 202 (a picture block 8 high, 1 column, 40 frames; colour 13 not drawn); frame tile = 30 + table value, 3D-view frame tile = 20 + value. Tables (one byte a cell) in the program's data segment: top, bar, bottom (40), left, right (24), the explore screen's split column (17) and 3D-view frame (4 x 15), combat's three columns (23) | `src/engine/layout.*` | **v0.3.0** (Curse). Screens: outer border (rows 0-23, row 24 = menu line), + bar at row 16 (text screen), exploring (3D view cells 3-13, party right of column 16, text rows 17-22), combat (columns 0 / 22 / 39). The viewer's **Screen Test** draws them from Tom's own files. |
 | GEO map block (1026 bytes): 2-byte header + four 256-byte planes (wall types as nibbles, a byte per cell, 2 bits per direction) | - | M3. |
 | WALLDEF (780 bytes a wall set) + 8X8D tile sets | - | M3. |
 | ECL script: 65 opcodes 0x00-0x40, packed text | - | M4. |
@@ -125,7 +127,8 @@ stay in the session's scratch space, never in the repo.
    card, lists DAX files and blocks, draws EGA pictures (all frames), hex-dumps
    the rest. Proves: SD on every board (incl. the 2.8" with software touch),
    the DAX and picture decoders on Tom's real files, 1:1 vs 1.5x on 480x320.
-2. **The game's look**: its font, screen frame and title screens; text windows.
+2. **The game's look**: its font (v0.2.0), screen frame (v0.3.0, Curse - the
+   viewer's Screen Test), title screens; text windows.
 3. **3D view and walking**: GEO + WALLDEF + 8X8D drawing, turning and stepping by
    touch, auto-map.
 4. **ECL script engine**: events, text, menus, pictures, area changes.
@@ -200,6 +203,12 @@ Treasures) and Forgotten Realms Unlimited Adventures (FRUA - playing its
 user-made designs). The engine keeps everything game-specific behind a
 per-game profile from the start, so they can be added to this repo after the
 four Pool of Radiance series games. Not started.
+
+Recognised on the card from v0.3.0 (folder names Tom uses: CHAMPIONS, DEATH,
+QUEEN, GATEWAY, TREASURE, UNLIMIT, or the full titles; also KRYNN, SAVAGE,
+FRUA): the DAX games open in the viewer like the main four; Dark Queen and
+Unlimited Adventures are listed as "newer format" (their .TLB / .GLB files,
+looked for up to two folders down, can't be read yet).
 
 First look at Tom's GOG files with `dax_inspect` (2026-10-07):
 

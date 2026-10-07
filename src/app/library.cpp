@@ -10,11 +10,14 @@ namespace library {
 
 namespace {
 
-bool is_dax(const char* name)
+bool ends_with(const char* name, const char* ext)
 {
     const size_t n = strlen(name);
-    return n > 4 && strcasecmp(name + n - 4, ".DAX") == 0;
+    return n > 4 && strcasecmp(name + n - 4, ext) == 0;
 }
+
+bool is_dax(const char* name) { return ends_with(name, ".DAX"); }
+bool is_hlib(const char* name) { return ends_with(name, ".TLB") || ends_with(name, ".GLB"); }
 
 // Last path component (Arduino-ESP32 3.x File::name() is already that, but
 // older cores gave the full path)
@@ -29,6 +32,21 @@ int count_dax(fs::File& dir)
     int n = 0;
     for (fs::File f = dir.openNextFile(); f; f = dir.openNextFile()) {
         if (!f.isDirectory() && is_dax(base_name(f.name()))) ++n;
+        f.close();
+    }
+    return n;
+}
+
+// .TLB / .GLB files in dir and up to `depth` folders below it
+int count_hlib(fs::File& dir, int depth)
+{
+    int n = 0;
+    for (fs::File f = dir.openNextFile(); f; f = dir.openNextFile()) {
+        if (f.isDirectory()) {
+            if (depth > 0) n += count_hlib(f, depth - 1);
+        } else if (is_hlib(base_name(f.name()))) {
+            ++n;
+        }
         f.close();
     }
     return n;
@@ -67,6 +85,12 @@ ScanResult scan(GameDir* out, int max, int* n)
                     sub.close();
                 }
             }
+            g.format = Format::Dax;
+            if (dax == 0) {
+                d.rewindDirectory();
+                dax = count_hlib(d, 2);
+                g.format = Format::Hlib;
+            }
             if (dax > 0) {
                 g.game = games::from_folder_name(g.folder);
                 g.dax_files = dax;
@@ -77,8 +101,8 @@ ScanResult scan(GameDir* out, int max, int* n)
     }
     root.close();
 
-    // Insertion sort: game number (Unknown last), then folder name
-    auto key = [](const GameDir& g) { return g.game == games::Game::Unknown ? 99 : games::number(g.game); };
+    // Insertion sort: list order (Unknown last), then folder name
+    auto key = [](const GameDir& g) { return games::list_order(g.game); };
     for (int i = 1; i < *n; ++i) {
         GameDir t = out[i];
         int j = i - 1;

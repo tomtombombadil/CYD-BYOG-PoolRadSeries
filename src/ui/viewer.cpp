@@ -15,13 +15,14 @@
 #include "frame.h"
 #include "hal/panel_prefs.h"
 #include "hal/sdcard.h"
+#include "look.h"
 #include "ui.h"
 
 namespace viewer {
 
 namespace {
 
-enum class Screen : uint8_t { Home, Files, Blocks, View, Settings };
+enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Settings };
 
 Env       env_;
 Settings* cfg = nullptr;
@@ -57,6 +58,10 @@ pic::Anim          cur_anim;                    // the animation being viewed
 int                cur_anim_block = -1;
 int                block_page = 0;
 int                block_sel = 0;    // entry number in index_
+
+// Screen test
+int         look_page = 0;
+const char* look_error = nullptr;   // why it couldn't open
 
 // Block view
 int  frame_no = 0;
@@ -177,7 +182,7 @@ bool pager_tap(const ui::Tap& t, Pager& p, int* page, bool has_middle = false, b
 
 // ---- Home ------------------------------------------------------------------
 
-constexpr int kHomeCols = 2, kHomeRows = 2;
+constexpr int kHomeCols = 2, kHomeRows = 3;
 
 void draw_home()
 {
@@ -206,8 +211,13 @@ void draw_home()
         for (int i = 0; i < p.per_page && p.first() + i < n_games; ++i) {
             const library::GameDir& g = game_dirs[p.first() + i];
             char sub[64];
-            snprintf(sub, sizeof sub, "%s - %d files", g.folder, g.dax_files);
-            ui::key2(ui::grid_cell(i, kHomeCols, kHomeRows), games::short_title(g.game), sub);
+            if (g.format == library::Format::Hlib) {
+                snprintf(sub, sizeof sub, "%s - newer format", g.folder);
+                ui::key2(ui::grid_cell(i, kHomeCols, kHomeRows), games::short_title(g.game), sub, ui::KeyStyle::Dim);
+            } else {
+                snprintf(sub, sizeof sub, "%s - %d files", g.folder, g.dax_files);
+                ui::key2(ui::grid_cell(i, kHomeCols, kHomeRows), games::short_title(g.game), sub);
+            }
         }
     }
     const bool more = n_games > kHomeCols * kHomeRows;
@@ -233,7 +243,8 @@ void tap_home(const ui::Tap& t)
     for (int i = 0; i < p.per_page && p.first() + i < n_games; ++i) {
         if (ui::grid_cell(i, kHomeCols, kHomeRows).contains(t.x, t.y)) {
             game_sel = p.first() + i;
-            n_files = library::list_dax(game_dirs[game_sel].data_dir, files, library::kMaxFiles);
+            n_files = game_dirs[game_sel].format == library::Format::Dax
+                    ? library::list_dax(game_dirs[game_sel].data_dir, files, library::kMaxFiles) : 0;
             file_page = 0;
             go(Screen::Files);
             return;
@@ -253,6 +264,19 @@ void draw_files()
     char title[80];
     snprintf(title, sizeof title, "%s  %d/%d", games::short_title(game_dirs[game_sel].game), p.page + 1, p.pages());
     ui::header(title, true);
+    if (game_dirs[game_sel].format == library::Format::Hlib) {
+        // The Dark Queen of Krynn and Unlimited Adventures
+        const int x = ui::gap() * 3;
+        int y = ui::header_h() + ui::gap() * 3;
+        const int lh = ui::line_h() + 4;
+        ui::text(x, y, games::title(game_dirs[game_sel].game), style::kGold);
+        y += lh * 3 / 2;
+        ui::text(x, y, "Its files are .TLB / .GLB libraries,", style::kText);
+        y += lh;
+        ui::text(x, y, "a newer format the viewer", style::kText);
+        y += lh;
+        ui::text(x, y, "can't read yet.", style::kText);
+    }
     for (int i = 0; i < p.per_page && p.first() + i < n_files; ++i) {
         // Every file here is a .DAX: show the name without it, so it fits
         char label[library::kNameLen];
@@ -261,14 +285,22 @@ void draw_files()
         if (n > 4 && strcasecmp(label + n - 4, ".DAX") == 0) label[n - 4] = 0;
         ui::key(ui::grid_cell(i, file_cols(), kFileRows), label);
     }
-    draw_pager_keys(p);
+    draw_pager_keys(p, look::available(game_dirs[game_sel].game) ? "Screen Test" : nullptr);
 }
 
 void tap_files(const ui::Tap& t)
 {
     if (ui::back_rect().contains(t.x, t.y)) { go(Screen::Home); return; }
     Pager p{n_files, file_cols() * kFileRows, file_page};
-    if (pager_tap(t, p, &file_page)) { dirty = true; return; }
+    const bool has_look = look::available(game_dirs[game_sel].game);
+    bool look_hit = false;
+    if (pager_tap(t, p, &file_page, has_look, &look_hit)) { dirty = true; return; }
+    if (look_hit) {
+        look_error = look::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game);
+        look_page = 0;
+        go(Screen::Look);
+        return;
+    }
     for (int i = 0; i < p.per_page && p.first() + i < n_files; ++i) {
         if (ui::grid_cell(i, file_cols(), kFileRows).contains(t.x, t.y)) {
             file_sel = p.first() + i;
@@ -548,6 +580,88 @@ void tap_view(const ui::Tap& t)
     else { show_info = !show_info; dirty = true; }
 }
 
+// ---- Screen test -----------------------------------------------------------
+
+void draw_look()
+{
+    if (look_error) {
+        ui::clear();
+        ui::header("Screen Test", true);
+        // The message, wrapped at spaces to the screen width
+        const int x = ui::gap() * 3, maxw = ui::width() - x * 2;
+        int y = ui::header_h() + ui::gap() * 3;
+        const char* s = look_error;
+        while (*s) {
+            char line[96];
+            int n = 0, cut = 0;
+            while (s[n] && n < (int)sizeof line - 1) {
+                line[n] = s[n];
+                line[n + 1] = 0;
+                if (ui::text_width(line) > maxw) break;
+                if (s[n] == ' ') cut = n;
+                ++n;
+            }
+            if (s[n] && cut > 0) n = cut;
+            line[n] = 0;
+            ui::text(x, y, line, style::kText);
+            y += ui::line_h() + 4;
+            s += n;
+            while (*s == ' ') ++s;
+        }
+        return;
+    }
+    frame::set_ega_palette();
+    look::draw(look_page, frame::canvas());
+    ui::clear();
+    frame::present();
+    char info[128];
+    snprintf(info, sizeof info, "%d/%d  %s  (%s)", look_page + 1, look::pages(), look::page_name(look_page),
+             look::source());
+    const ui::Rect a = frame::area();
+    if (view_has_keys()) {
+        if (view_key(0).y - (a.y + a.h) >= ui::line_h(ui::Font::Small) + 4)
+            ui::text(ui::gap(), a.y + a.h + 3, info, style::kTextMuted, ui::Font::Small);
+        ui::key(view_key(0), "< Prev", look_page > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+        ui::key(view_key(1), "Back");
+        ui::key(view_key(2), "Next >", look_page + 1 < look::pages() ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+    } else {
+        ui::text(ui::gap(), a.y + a.h + 3, info, style::kTextMuted, ui::Font::Small);
+    }
+}
+
+void leave_look()
+{
+    look::close();
+    look_error = nullptr;
+    go(Screen::Files);
+}
+
+void look_step(int dir)
+{
+    const int np = look_page + dir;
+    if (np >= 0 && np < look::pages()) { look_page = np; dirty = true; }
+}
+
+void tap_look(const ui::Tap& t)
+{
+    if (look_error) {
+        if (ui::back_rect().contains(t.x, t.y)) leave_look();
+        return;
+    }
+    if (view_has_keys()) {
+        if (view_key(0).contains(t.x, t.y)) { look_step(-1); return; }
+        if (view_key(1).contains(t.x, t.y)) { leave_look(); return; }
+        if (view_key(2).contains(t.x, t.y)) { look_step(1); return; }
+    }
+    // 1.5x: the picture is the control (left / right third, middle = back)
+    const ui::Rect a = frame::area();
+    if (!a.contains(t.x, t.y)) return;
+    const int third = (t.x - a.x) * 3 / a.w;
+    if (third == 0) look_step(-1);
+    else if (third == 2) look_step(1);
+    else if (!view_has_keys()) leave_look();
+}
+
 // ---- Settings --------------------------------------------------------------
 
 enum SetKey { kBrightDown, kBrightUp, kInvert, kSwap, kRotate, kCalibrate, kScale, kSetKeys };
@@ -639,6 +753,7 @@ void tick()
         case Screen::Files:    tap_files(t); break;
         case Screen::Blocks:   tap_blocks(t); break;
         case Screen::View:     tap_view(t); break;
+        case Screen::Look:     tap_look(t); break;
         case Screen::Settings: tap_settings(t); break;
         }
     }
@@ -649,6 +764,7 @@ void tick()
     case Screen::Files:    draw_files(); break;
     case Screen::Blocks:   draw_blocks(); break;
     case Screen::View:     draw_view(); break;
+    case Screen::Look:     draw_look(); break;
     case Screen::Settings: draw_settings(); break;
     }
 }

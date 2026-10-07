@@ -90,6 +90,14 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   Arduino), host-tested in `tools/host_tests/`. `src/ui/frame.*` holds the one
   320x200 canvas (palette indexes) and presents it 1:1 or 1.5x (480x320).
   `src/ui/ui.*` = keys, header, touch filter for the engine's own screens.
+- Facts that live in a game's program (START.EXE / GAME.EXE, EXEPACK-packed;
+  e.g. the screen frame's tile tables) are read from the player's copy at
+  run time (`engine/exepack.*` unpacks just the bytes asked for), found via a
+  per-release entry in `engine/profile.*` (file size + unpacked size, data
+  segment base, table addresses). Never copy those tables into the repo.
+- SD folders Tom uses (2026-10-07): POOLRAD, CURSE, SECRET, DARKNESS,
+  CHAMPIONS, DEATH, QUEEN, GATEWAY, TREASURE, UNLIMIT (`engine/games.*`;
+  QUEEN / UNLIMIT are .TLB/.GLB "newer format" games, listed, not readable).
 - Stream DAX blocks (`dax::RleReader`) instead of loading whole blocks where
   possible; RAM is tight (largest free block ~75-110 KB).
 - Toolchain: pioarduino platform 55.03.312-1 (Arduino-ESP32 3.3.x), LovyanGFX

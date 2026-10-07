@@ -22,39 +22,56 @@ void squash(const char* in, char* out, size_t cap)
 
 bool has(const char* s, const char* word) { return strstr(s, word) != nullptr; }
 
+struct Info {
+    const char* title;
+    const char* short_title;
+    const char* folder;
+    Series      series;
+    int         order;
+};
+
+const Info& info(Game g)
+{
+    static const Info kInfo[kGameCount] = {
+        {"Unknown Gold Box Game", "Unknown Game", "", Series::Unknown, 99},
+        {"Pool of Radiance", "Pool of Radiance", "POOLRAD", Series::PoolOfRadiance, 1},
+        {"Curse of the Azure Bonds", "Azure Bonds", "CURSE", Series::PoolOfRadiance, 2},
+        {"Secret of the Silver Blades", "Silver Blades", "SECRET", Series::PoolOfRadiance, 3},
+        {"Pools of Darkness", "Pools of Darkness", "DARKNESS", Series::PoolOfRadiance, 4},
+        {"Champions of Krynn", "Champions of Krynn", "CHAMPIONS", Series::Krynn, 5},
+        {"Death Knights of Krynn", "Death Knights", "DEATH", Series::Krynn, 6},
+        {"The Dark Queen of Krynn", "Dark Queen", "QUEEN", Series::Krynn, 7},
+        {"Gateway to the Savage Frontier", "Gateway", "GATEWAY", Series::SavageFrontier, 8},
+        {"Treasures of the Savage Frontier", "Treasures", "TREASURE", Series::SavageFrontier, 9},
+        {"Unlimited Adventures", "Unlimited Adv.", "UNLIMIT", Series::Unlimited, 10},
+    };
+    const int i = static_cast<int>(g);
+    return kInfo[i >= 0 && i < kGameCount ? i : 0];
+}
+
 } // namespace
 
-const char* title(Game g)
-{
-    switch (g) {
-    case Game::PoolOfRadiance:          return "Pool of Radiance";
-    case Game::CurseOfTheAzureBonds:    return "Curse of the Azure Bonds";
-    case Game::SecretOfTheSilverBlades: return "Secret of the Silver Blades";
-    case Game::PoolsOfDarkness:         return "Pools of Darkness";
-    case Game::Unknown:                 break;
-    }
-    return "Unknown Gold Box Game";
-}
-
-const char* short_title(Game g)
-{
-    switch (g) {
-    case Game::PoolOfRadiance:          return "Pool of Radiance";
-    case Game::CurseOfTheAzureBonds:    return "Azure Bonds";
-    case Game::SecretOfTheSilverBlades: return "Silver Blades";
-    case Game::PoolsOfDarkness:         return "Pools of Darkness";
-    case Game::Unknown:                 break;
-    }
-    return "Unknown Game";
-}
-
-int number(Game g) { return static_cast<int>(g); }
+const char* title(Game g) { return info(g).title; }
+const char* short_title(Game g) { return info(g).short_title; }
+const char* folder_hint(Game g) { return info(g).folder; }
+Series series(Game g) { return info(g).series; }
+bool main_series(Game g) { return series(g) == Series::PoolOfRadiance; }
+int list_order(Game g) { return info(g).order; }
+int number(Game g) { return list_order(g); }
 
 Game from_folder_name(const char* name)
 {
     char s[64];
     squash(name, s, sizeof s);
-    // Darkness first: "POOLS OF DARKNESS" / "POOLDARK" also contain POOL.
+    // Order matters: "THE DARK QUEEN OF KRYNN" contains DARK (Pools of
+    // Darkness), "POOLS OF DARKNESS" contains POOL, and both Savage
+    // Frontier games contain SAVAGE.
+    if (has(s, "UNLIMIT") || has(s, "FRUA")) return Game::UnlimitedAdventures;
+    if (has(s, "QUEEN") || has(s, "DQK")) return Game::DarkQueenOfKrynn;
+    if (has(s, "DEATH") || has(s, "KNIGHT") || has(s, "DKK")) return Game::DeathKnightsOfKrynn;
+    if (has(s, "CHAMPION") || has(s, "KRYNN")) return Game::ChampionsOfKrynn;
+    if (has(s, "TREASURE")) return Game::TreasuresOfTheSavageFrontier;
+    if (has(s, "GATEWAY") || has(s, "SAVAGE")) return Game::GatewayToTheSavageFrontier;
     if (has(s, "DARK")) return Game::PoolsOfDarkness;
     if (has(s, "SILVER") || has(s, "BLADE") || has(s, "SECRET") || has(s, "SOTSB")) return Game::SecretOfTheSilverBlades;
     if (has(s, "CURSE") || has(s, "AZURE") || has(s, "COTAB") || has(s, "BONDS")) return Game::CurseOfTheAzureBonds;

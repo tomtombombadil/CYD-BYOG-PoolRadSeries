@@ -9,6 +9,8 @@
 #include <vector>
 
 #include "engine/dax.h"
+#include "engine/exepack.h"
+#include "engine/layout.h"
 #include "engine/font.h"
 #include "engine/games.h"
 #include "engine/picture.h"
@@ -410,6 +412,253 @@ static void test_games()
     CHECK(games::from_folder_name("POOLDARK") == Game::PoolsOfDarkness);
     CHECK(games::from_folder_name("Pools of Darkness") == Game::PoolsOfDarkness);
     CHECK(games::from_folder_name("Hillsfar") == Game::Unknown);
+    // The other Gold Box games: Tom's SD folder names and GOG's titles
+    const struct { const char* name; Game g; } more[] = {
+        {"CHAMPIONS", Game::ChampionsOfKrynn},
+        {"Champions of Krynn", Game::ChampionsOfKrynn},
+        {"DEATH", Game::DeathKnightsOfKrynn},
+        {"Death Knights of Krynn", Game::DeathKnightsOfKrynn},
+        {"QUEEN", Game::DarkQueenOfKrynn},
+        {"The Dark Queen of Krynn", Game::DarkQueenOfKrynn},
+        {"GATEWAY", Game::GatewayToTheSavageFrontier},
+        {"Gateway to the Savage Frontier", Game::GatewayToTheSavageFrontier},
+        {"TREASURE", Game::TreasuresOfTheSavageFrontier},
+        {"Treasures of the Savage Frontier", Game::TreasuresOfTheSavageFrontier},
+        {"UNLIMIT", Game::UnlimitedAdventures},
+        {"Unlimited Adventures", Game::UnlimitedAdventures},
+        {"FRUA", Game::UnlimitedAdventures},
+    };
+    for (const auto& m : more) CHECK(games::from_folder_name(m.name) == m.g);
+    CHECK(games::main_series(Game::CurseOfTheAzureBonds));
+    CHECK(!games::main_series(Game::DarkQueenOfKrynn));
+    CHECK(!games::main_series(Game::Unknown));
+    // Every game has its own list place, and the short titles are short
+    for (int i = 1; i < games::kGameCount; ++i) {
+        const Game g = static_cast<Game>(i);
+        CHECK(strlen(games::short_title(g)) <= 18);
+        CHECK(games::from_folder_name(games::folder_hint(g)) == g);
+        CHECK(games::from_folder_name(games::title(g)) == g);
+        for (int j = 1; j < i; ++j) CHECK(games::list_order(static_cast<Game>(j)) != games::list_order(g));
+    }
+    CHECK(games::list_order(Game::Unknown) > games::list_order(Game::UnlimitedAdventures));
+}
+
+// ---- EXEPACK ---------------------------------------------------------------
+// A test packer: keeps image[0, prefix) as it is and packs the rest as fill
+// runs (4+ equal bytes) and literal copies, the way the unpacker reads them
+// (backwards). Header variant: 18 bytes with skip_len, or 16 without.
+static Bytes make_exe(const Bytes& image, size_t prefix, bool hdr18, uint16_t skip = 1)
+{
+    Bytes packed(image.begin(), image.begin() + static_cast<long>(prefix));
+    bool first = true;
+    size_t i = prefix;
+    while (i < image.size()) {
+        size_t run = 1;
+        while (i + run < image.size() && image[i + run] == image[i] && run < 0xFFFF) ++run;
+        const uint8_t last = first ? 1 : 0;
+        first = false;
+        if (run >= 4) {
+            packed.push_back(image[i]);
+            put16(packed, static_cast<uint32_t>(run));    // low byte first going forwards
+            packed.push_back(static_cast<uint8_t>(0xB0 | last));
+            i += run;
+        } else {
+            size_t n = 0;
+            while (i + n < image.size() && n < 0xFFFF) {
+                size_t r2 = 1;
+                while (i + n + r2 < image.size() && image[i + n + r2] == image[i + n]) ++r2;
+                if (r2 >= 4) break;
+                n += r2;
+            }
+            packed.insert(packed.end(), image.begin() + static_cast<long>(i), image.begin() + static_cast<long>(i + n));
+            put16(packed, static_cast<uint32_t>(n));
+            packed.push_back(static_cast<uint8_t>(0xB2 | last));
+            i += n;
+        }
+    }
+    while (packed.size() % 16) packed.push_back(0xFF);
+    for (int k = 1; k < skip; ++k) packed.insert(packed.end(), 16, 0);
+    const uint16_t cs = static_cast<uint16_t>(packed.size() / 16);
+
+    Bytes exe;
+    exe.push_back('M');
+    exe.push_back('Z');
+    put16(exe, 0);       // bytes in last page (not checked)
+    put16(exe, 0);       // pages
+    put16(exe, 0);       // relocations
+    put16(exe, 2);       // header paragraphs
+    put16(exe, 0);
+    put16(exe, 0xFFFF);
+    put16(exe, 0);       // ss
+    put16(exe, 0);       // sp
+    put16(exe, 0);       // checksum
+    put16(exe, 18);      // ip: the stub after the 18-byte header
+    put16(exe, cs);
+    while (exe.size() < 32) exe.push_back(0);
+    exe.insert(exe.end(), packed.begin(), packed.end());
+    put16(exe, 0x2F);    // real ip
+    put16(exe, 0);       // real cs
+    put16(exe, 0);
+    put16(exe, 0x200);
+    put16(exe, 0x4000);  // real sp
+    put16(exe, 0x1234);  // real ss
+    put16(exe, static_cast<uint32_t>(image.size() / 16));
+    if (hdr18) put16(exe, skip);
+    exe.push_back('R');
+    exe.push_back('B');
+    for (int k = 0; k < 40; ++k) exe.push_back(0x90);    // "stub"
+    return exe;
+}
+
+static Bytes test_image()
+{
+    // An unpacked prefix, then runs and literals; a multiple of 16 bytes
+    Bytes img;
+    std::mt19937 rng(7);
+    for (int k = 0; k < 37; ++k) img.push_back(static_cast<uint8_t>(rng()));
+    for (int block = 0; block < 30; ++block) {
+        img.insert(img.end(), 40 + block, static_cast<uint8_t>(block * 9));
+        for (int k = 0; k < 17; ++k) img.push_back(static_cast<uint8_t>(rng() | 1));
+    }
+    img.insert(img.end(), 300, 0);
+    while (img.size() % 16) img.push_back(0x55);
+    return img;
+}
+
+static void test_exepack()
+{
+    const Bytes img = test_image();
+    for (int variant = 0; variant < 3; ++variant) {
+        const Bytes exe = variant == 0 ? make_exe(img, 37, true) : variant == 1 ? make_exe(img, 37, false)
+                                                                               : make_exe(img, 37, true, 3);
+        CHECK(exe.size() < img.size());
+        dax::MemorySource src(exe.data(), static_cast<uint32_t>(exe.size()));
+        exepack::Info in;
+        CHECK(exepack::parse(src, in) == exepack::Status::Ok);
+        CHECK(in.image_size == img.size() && in.load_start == 32 && in.ip == 0x2F && in.ss == 0x1234 && in.sp == 0x4000);
+        Bytes out(img.size());
+        CHECK(exepack::read(src, in, 0, out.data(), out.size()) == exepack::Status::Ok);
+        CHECK(out == img);
+        // Any piece, including ones across the kept prefix and run edges
+        bool ok = true;
+        for (uint32_t pos = 0; pos + 50 <= img.size(); pos += 23) {
+            uint8_t piece[50];
+            if (exepack::read(src, in, pos, piece, sizeof piece) != exepack::Status::Ok ||
+                memcmp(piece, img.data() + pos, sizeof piece) != 0)
+                ok = false;
+        }
+        CHECK(ok);
+        uint8_t one;
+        CHECK(exepack::read(src, in, static_cast<uint32_t>(img.size()) - 1, &one, 1) == exepack::Status::Ok && one == img.back());
+        CHECK(exepack::read(src, in, static_cast<uint32_t>(img.size()), &one, 1) == exepack::Status::BadData);
+    }
+    // Damaged: a command byte that isn't one
+    Bytes bad = make_exe(img, 37, true);
+    {
+        dax::MemorySource src(bad.data(), static_cast<uint32_t>(bad.size()));
+        exepack::Info in;
+        CHECK(exepack::parse(src, in) == exepack::Status::Ok);
+        uint32_t p = in.load_start + in.packed_end;
+        while (bad[p - 1] == 0xFF) --p;
+        bad[p - 1] = 0x42;
+        uint8_t b;
+        CHECK(exepack::read(src, in, 0, &b, 1) == exepack::Status::BadData);
+    }
+    // Not packed / not a program
+    Bytes plain = make_exe(img, 37, true);
+    plain[plain.size() - 41] = 'X';     // the "B" of "RB"
+    dax::MemorySource s2(plain.data(), static_cast<uint32_t>(plain.size()));
+    exepack::Info in;
+    CHECK(exepack::parse(s2, in) == exepack::Status::NotPacked);
+    const Bytes junk(100, 7);
+    dax::MemorySource s3(junk.data(), static_cast<uint32_t>(junk.size()));
+    CHECK(exepack::parse(s3, in) == exepack::Status::NotExe);
+}
+
+// ---- Screen frame ----------------------------------------------------------
+static void test_layout()
+{
+    // Tiles: tile n, pixel (row r, column x) = (n + r + x) % 16 (make_picture)
+    const Bytes file = make_dax({{201, Bytes(10, 0)}, {202, make_picture(8, 1, 40, 0, 0)}, {203, make_picture(8, 2, 40, 0, 0)}});
+    dax::MemorySource dsrc(file.data(), static_cast<uint32_t>(file.size()));
+    static dax::Index idx;
+    CHECK(dax::read_index(dsrc, idx) == dax::Status::Ok);
+    static layout::Tiles t;
+    CHECK(!layout::load_tiles(dsrc, idx, 203, t));     // 16 pixels wide
+    CHECK(!layout::load_tiles(dsrc, idx, 201, t));
+    CHECK(layout::load_tiles(dsrc, idx, 202, t) && t.loaded);
+    CHECK(t.px[5][0] == 5 && t.px[5][9] == 7 && t.px[39][63] == (39 + 14) % 16);
+
+    // A program whose data segment holds the tables: value = cell % 10
+    // (view tables % 20)
+    profile::Profile p{};
+    p.data_base = 0x100;
+    p.frame = {0x10, 0x40, 0x70, 0xA0, 0xC0, 0xE0, 0x100, 0x110, 0x120, 0x130, 0x140, 0x160, 0x180};
+    Bytes img(0x400, 0);
+    auto fill = [&](uint16_t at, int n, int mod) {
+        for (int i = 0; i < n; ++i) img[p.data_base + at + i] = static_cast<uint8_t>(i % mod);
+    };
+    fill(0x10, 40, 10); fill(0x40, 40, 10); fill(0x70, 40, 10); fill(0xA0, 24, 10); fill(0xC0, 24, 10);
+    fill(0xE0, 17, 10); fill(0x100, 15, 20); fill(0x110, 15, 20); fill(0x120, 15, 20); fill(0x130, 15, 20);
+    fill(0x140, 23, 10); fill(0x160, 23, 10); fill(0x180, 23, 10);
+    for (int k = 0; k < 0x100; ++k) img[k] = static_cast<uint8_t>(k * 3);     // code before DS
+    const Bytes exe = make_exe(img, 0x100, true);     // code kept unpacked
+    dax::MemorySource esrc(exe.data(), static_cast<uint32_t>(exe.size()));
+    exepack::Info in;
+    CHECK(exepack::parse(esrc, in) == exepack::Status::Ok);
+    static layout::Tables tb;
+    CHECK(layout::load_tables(esrc, in, p, tb) == layout::Status::Ok && tb.loaded);
+    CHECK(tb.top[13] == 3 && tb.left[23] == 3 && tb.view_top[14] == 14 && tb.combat_right[22] == 2);
+
+    static uint8_t px[pic::kScreenW * pic::kScreenH];
+    pic::Canvas c{px, pic::kScreenW, pic::kScreenH};
+    auto at = [&](int x, int y) { return px[y * pic::kScreenW + x]; };
+    // Expected pixel of tile n at (x, y) inside it; 13 is masked
+    auto tp = [](int n, int x, int y) { return (n + y + x) % 16; };
+
+    c.clear(9);
+    layout::outer(c, tb, t);
+    // top row, column 7: tile 30 + 7; pixel (2, 1)
+    CHECK(at(7 * 8 + 2, 1) == tp(37, 2, 1));
+    // left column, row 12 (value 2): tile 32
+    CHECK(at(3, 12 * 8 + 4) == tp(32, 3, 4));
+    // right column 39, row 5: tile 35
+    CHECK(at(39 * 8 + 6, 5 * 8 + 0) == tp(35, 6, 0));
+    // bottom row 23, column 21: tile 31
+    CHECK(at(21 * 8 + 1, 23 * 8 + 1) == tp(31, 1, 1));
+    // inside cleared, row 24 untouched
+    CHECK(at(100, 100) == 0 && at(100, 24 * 8 + 3) == 9);
+    // Pixels of colour 13 aren't drawn: top col 6 = tile 36, pixel (5, 4)
+    // is (36 + 4 + 5) % 16 = 13
+    CHECK(at(6 * 8 + 5, 4) == 9 && at(6 * 8 + 4, 4) == tp(36, 4, 4));
+
+    c.clear(9);
+    layout::explore(c, tb, t);
+    CHECK(at(10 * 8 + 1, 16 * 8 + 1) == tp(30, 1, 1));            // bar row 16, col 10 (value 0)
+    CHECK(at(16 * 8 + 2, 5 * 8 + 2) == tp(35, 2, 2));             // split col 16, row 5
+    CHECK(at(9 * 8 + 0, 2 * 8 + 1) == tp(29, 0, 1));              // view top, col 9: 20 + 9
+    CHECK(at(2 * 8 + 4, 12 * 8 + 0) == tp(32, 4, 0));             // view left, row 12: 20 + 12
+    CHECK(at(14 * 8 + 0, 3 * 8 + 0) == tp(23, 0, 0));             // view right, row 3
+    CHECK(at(8 * 8 + 4, 8 * 8 + 4) == 0);                         // the 3D view, cleared
+
+    c.clear(9);
+    layout::combat(c, tb, t);
+    CHECK(at(22 * 8 + 1, 7 * 8 + 1) == tp(37, 1, 1));
+    CHECK(at(5 * 8 + 1, 22 * 8 + 1) == tp(35, 1, 1));             // bottom bar on row 22
+    CHECK(at(5, 23 * 8 + 2) == 0 && at(5, 24 * 8 + 2) == 9);
+
+    // Values that can't be tiles: refused
+    img[p.data_base + 0x10 + 4] = 10;
+    const Bytes exe2 = make_exe(img, 0x100, true);
+    dax::MemorySource e2(exe2.data(), static_cast<uint32_t>(exe2.size()));
+    CHECK(exepack::parse(e2, in) == exepack::Status::Ok);
+    CHECK(layout::load_tables(e2, in, p, tb) == layout::Status::BadTables && !tb.loaded);
+
+    // The known release is found only by both sizes
+    CHECK(profile::find(games::Game::CurseOfTheAzureBonds, 57789, 62432) != nullptr);
+    CHECK(profile::find(games::Game::CurseOfTheAzureBonds, 57789, 62400) == nullptr);
+    CHECK(profile::find(games::Game::PoolOfRadiance, 57789, 62432) == nullptr);
+    CHECK(profile::program_name(games::Game::CurseOfTheAzureBonds) != nullptr);
 }
 
 int main()
@@ -422,6 +671,8 @@ int main()
     test_vga();
     test_font();
     test_games();
+    test_exepack();
+    test_layout();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;

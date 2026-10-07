@@ -8,9 +8,10 @@ Yellow Display", from your own copy of the games.
 is included; you copy the original DOS game files to a microSD card and the board
 reads them from there.
 
-> **Early development.** v0.1.0 is milestone 1: a library and asset viewer that
-> finds your games on the card and shows the pictures inside their files. The
-> games aren't playable yet. Roadmap: [docs/SPEC.md](docs/SPEC.md).
+> **Early development.** A library and asset viewer that finds your games on
+> the card and shows the pictures inside their files, the games' own font and
+> (Curse of the Azure Bonds) the game's screen frame. The games aren't
+> playable yet. Roadmap: [docs/SPEC.md](docs/SPEC.md).
 
 ## Install
 
@@ -35,12 +36,20 @@ Tested with this firmware so far: the 4.0".
    `GOLDBOX/POOLRAD`, `GOLDBOX/CURSE`, `GOLDBOX/SECRET`, `GOLDBOX/DARKNESS`.
    Any folder name containing the game's name works.
 
-## Using the asset viewer (v0.1)
+The other Gold Box games are recognised too (folders `CHAMPIONS`, `DEATH`,
+`QUEEN`, `GATEWAY`, `TREASURE`, `UNLIMIT`, or their full names), so their files
+can be looked at; they're planned after the four. The Dark Queen of Krynn and
+Unlimited Adventures use a newer file format the viewer can't read yet.
+
+## Using the asset viewer
 
 The games aren't playable yet; this build shows what is inside their files.
 
 1. **Library**: one key per game found on the card. Tap one.
-2. **Files**: the game's DAX archives. Tap one.
+2. **Files**: the game's DAX archives. Tap one. For Curse of the Azure Bonds
+   the middle key, **Screen Test**, shows the game's screen frame (exploring,
+   text, outer, combat, and its tiles), drawn from your own `START.EXE` and
+   `8X8D1.DAX` - `< Prev` / `Next >` step through them.
 3. **Blocks**: each piece inside the file. **Gold keys are pictures** (size and
    frame count shown); navy keys are other data. Tap one.
 4. **Picture**: `< Prev` / `Next >` step through the frames, then the next

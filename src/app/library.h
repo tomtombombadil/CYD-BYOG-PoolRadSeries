@@ -11,24 +11,33 @@
 
 namespace library {
 
+// How a game keeps its files.
+//   Dax:  .DAX archives (the Pool of Radiance series, Champions and Death
+//         Knights of Krynn, the Savage Frontier games) - readable.
+//   Hlib: "HLIB" .TLB / .GLB libraries in DISK1-3 folders (The Dark Queen
+//         of Krynn, Unlimited Adventures) - recognised, not readable yet.
+enum class Format : uint8_t { Dax, Hlib };
+
 struct GameDir {
     char         folder[40];      // folder name under /GOLDBOX
     char         data_dir[96];    // where the DAX files are, relative to /GOLDBOX:
                                   // the folder itself, or one folder inside it
                                   // (a whole GOG install copied as it is)
     games::Game  game;
-    int          dax_files;
+    Format       format;
+    int          dax_files;       // .DAX files (Dax), .TLB + .GLB files (Hlib)
 };
 
-constexpr int kMaxGames = 8;
+constexpr int kMaxGames = 16;
 constexpr int kMaxFiles = 96;
 constexpr int kNameLen  = 32;
 
 enum class ScanResult : uint8_t { Ok, NoCard, NoRootFolder };
 
-// Lists the game folders (only those holding at least one .DAX file, in
-// the folder or in one of its own folders), sorted by game number then
-// name. *n = how many.
+// Lists the game folders, sorted by games::list_order() then name: those
+// holding .DAX files (in the folder or one folder down), and those holding
+// .TLB / .GLB files (in the folder or up to two folders down - Dark Queen
+// keeps them in DISK1-3). *n = how many.
 ScanResult scan(GameDir* out, int max, int* n);
 
 // The .DAX files in a game's data_dir, sorted by name.
