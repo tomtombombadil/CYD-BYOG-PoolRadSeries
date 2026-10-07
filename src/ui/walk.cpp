@@ -92,7 +92,36 @@ void find_maps()
         }
         f.close();
     }
-    Serial.printf("[walk] %d maps found in the area scripts\n", d->n_maps);
+    // One entry per map: several scripts may load the same GEO block with
+    // different wall sets (Curse's area 2 map 1: an opening script loads a
+    // set the walking scripts don't use). Keep the sets most of its scripts
+    // load; on a tie, the later script's.
+    int out = 0;
+    for (int i = 0; i < d->n_maps; ++i) {
+        const MapRef& r = d->maps[i];
+        bool dup = false;
+        for (int k = 0; k < out; ++k)
+            if (d->maps[k].area == r.area && d->maps[k].load.geo == r.load.geo) dup = true;
+        if (dup) continue;
+        auto same_walls = [](const ecl::MapLoad& a, const ecl::MapLoad& b) {
+            return memcmp(a.walls, b.walls, sizeof a.walls) == 0;
+        };
+        int best = i, best_n = 0;
+        for (int j = i; j < d->n_maps; ++j) {
+            const MapRef& c = d->maps[j];
+            if (c.area != r.area || c.load.geo != r.load.geo) continue;
+            int n = 0;
+            for (int k = i; k < d->n_maps; ++k)
+                if (d->maps[k].area == r.area && d->maps[k].load.geo == r.load.geo && same_walls(d->maps[k].load, c.load)) ++n;
+            if (n >= best_n) {
+                best_n = n;
+                best = j;
+            }
+        }
+        d->maps[out++] = d->maps[best];
+    }
+    Serial.printf("[walk] %d scripts load a 3D map: %d maps\n", d->n_maps, out);
+    d->n_maps = out;
 }
 
 // A square near the middle with a way out; faces that way
@@ -181,8 +210,13 @@ bool move(int dir)
         px = (px + geo::dx(dir)) & 15;
         py = (py + geo::dy(dir)) & 15;
         note = "";
+    } else if (p == 0) {
+        note = "Blocked.";
     } else {
-        note = p == 0 ? "Blocked." : "Locked.";
+        // Tom: for testing, locked doors let the party through and say so
+        px = (px + geo::dx(dir)) & 15;
+        py = (py + geo::dy(dir)) & 15;
+        note = "Locked - passed for testing.";
     }
     return true;
 }

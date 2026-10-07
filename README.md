@@ -66,7 +66,7 @@ The games aren't playable yet; this build shows what is inside their files.
    side-step and turn around; **Area** shows the game's area map; tap the
    party panel (or **Next** on the menu line) for the next map. On 480x320
    the whole map is drawn beside the game screen. No events yet - only
-   walls and doors (locked doors stop you).
+   walls and doors (for testing, locked doors let you through and say so).
 3. **Blocks**: each piece inside the file. **Gold keys are pictures** (size and
    frame count shown); navy keys are other data. Tap one.
 4. **Picture**: `< Prev` / `Next >` step through the frames, then the next

@@ -1344,7 +1344,7 @@ static void test_geo_view()
     int n = 0;
     CHECK(!view3d::load_walls(ts, idx, 3, 7, w, &n));              // 2 parts don't fit from set 3
     CHECK(view3d::load_walls(ts, idx, 1, 7, w, &n) && n == 2 && w.walls[0].loaded && w.walls[1].loaded);
-    CHECK(w.walls[1].id[0][0] == 46 + 70);                         // moved to set 2's range
+    CHECK(w.walls[1].id[0][0] == 46);                              // part 2 numbers its own tiles already
     CHECK(view3d::tiles_block(7, 1, 0) == 7 && view3d::tiles_block(14, 2, 1) == 142);
 
     static uint8_t px[pic::kScreenW * pic::kScreenH];

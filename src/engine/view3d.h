@@ -16,7 +16,9 @@
 //   116-185 set 2's, 186-255 set 3's (8X8Dn.DAX, 70 tiles a set), 256-295
 //   the frame tiles (8X8D1 block 202: arrows 256-259, map pieces 260-275).
 //   A set's own numbers (from 45 up) are stored as if for set 1 and moved up
-//   by 70 / 140 for sets 2 / 3 when loaded.
+//   by 70 / 140 when loaded into set 2 / 3. A block of 2 or 3 parts numbers
+//   its later parts' tiles on from the first's (46-185 / 46-255) and every
+//   part moves by the first part's amount.
 #pragma once
 
 #include <cstdint>

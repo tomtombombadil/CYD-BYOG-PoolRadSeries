@@ -190,8 +190,11 @@ bool load_walls(dax::ByteSource& src, const dax::Index& idx, int set, uint8_t bl
     for (int i = 0; i < n; ++i) {
         WallSet& ws = w.walls[set - 1 + i];
         if (r.read(&ws.id[0][0], kWallSetBytes) != kWallSetBytes) return false;
-        // Numbers from 45 up are this set's own tiles: move them to its range
-        const int shift = (set - 1 + i) * kSetTiles;
+        // Numbers from 45 up are this set's own tiles: move them to its range.
+        // Every part of a block moves by its first set's amount - a 2- or
+        // 3-part block's later parts already number their tiles after the
+        // first part's (as the games do it)
+        const int shift = (set - 1) * kSetTiles;
         for (int p = 0; p < kPieces; ++p)
             for (int k = 0; k < kPieceTiles; ++k)
                 if (ws.id[p][k] >= kCommonTiles) ws.id[p][k] = static_cast<uint8_t>(ws.id[p][k] + shift);
