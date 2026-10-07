@@ -29,7 +29,12 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   (their DOS files and their journal PDFs).
 - Controls: tap what the game shows (menu words, list lines, combat squares);
   keys only for what isn't on screen - one row of 8 under the game on
-  320x240, a 3x3 pad + keys under it on 480x320 (SPEC section 4).
+  320x240, a 3x3 pad + keys under it on 480x320 (SPEC section 4). Exploring
+  keys include Side-step Left / Right (an engine addition; same checks as a
+  step into that square).
+- Copy protection: skipped - never asked, treated as answered.
+- Later: Krynn, Savage Frontier and FRUA in this repo, after the four games.
+  Keep game-specific code behind a per-game profile so they fit.
 - 480x320: the game screen stays 1:1 (never scaled for play) with a Gold Box
   Companion panel (auto-map, party HP, spells) to its right; controls below.
 - Build order: Curse of the Azure Bonds first, then Pool of Radiance, Silver

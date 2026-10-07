@@ -140,13 +140,23 @@ So the journal is shown as **pictures of the entries**, not text:
   only. Same rule as the DAX files.
 - Each game's journal gets its own table once its GOG PDF has been looked at.
 
-## 8. Open decisions (Tom's)
+## 8. Copy protection (Tom, 2026-10-06)
 
-1. **Controls**: confirm the layout in `docs/controls-proposal.png`.
-2. **Copy protection** (code wheel / journal word checks): skip it, since the
-   player must already own the game files?
+Skipped. The player supplies their own game files, so the journal word
+checks / code wheel questions are never asked; when the game's code reaches
+one, the engine carries on as if it was answered correctly.
 
-## 9. Engine UI rules (carried over from CYD-Classic-Games)
+## 9. Other Gold Box games (later)
+
+Same engine family, same bring-your-own-game rules: the Krynn games
+(Champions, Death Knights, Dark Queen), the Savage Frontier games (Gateway,
+Treasures) and Forgotten Realms Unlimited Adventures (FRUA - playing its
+user-made designs). They differ in file formats (later games add VGA
+pictures), scripts and rules. The engine keeps everything game-specific
+behind a per-game profile from the start, so they can be added to this repo
+after the four Pool of Radiance series games. Not started.
+
+## 10. Engine UI rules (carried over from CYD-Classic-Games)
 
 - Big targets, stylus taps (Tom uses a DS Lite stylus, firm presses). A tap acts
   on release, at the point where the stylus came down. No drags or swipes.
