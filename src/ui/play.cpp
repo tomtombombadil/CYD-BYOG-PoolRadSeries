@@ -45,6 +45,15 @@ struct Data {
     char           press_key[text::kMaxString] = {};
     char           data_dir[96] = {};
     const profile::Profile* prof = nullptr;
+
+    // The event picture (a PIC animation): its file stays open while shown
+    pic::Anim      anim;
+    fs::File       anim_file;
+    dax::Index     anim_idx;
+
+    // The wilderness map's places (from the program)
+    uint8_t        city_x[32] = {}, city_y[32] = {};
+    int            cities = 0;
 };
 
 Data* d = nullptr;
@@ -71,6 +80,24 @@ uint32_t     pause_until = 0;
 int          list_row0 = 0;         // first row of a list menu's items
 bool         list_wait = false;     // the prompt printed; the list is up
 char         menu_text[160];
+
+// Event picture animation
+int          anim_block = -1;       // the PIC block shown (-1: none)
+int          anim_frame = 0;
+uint32_t     anim_at = 0;           // when the frame was drawn
+int          bigpic = -1;           // the big picture shown
+int          last_pic = -1;         // the last event picture loaded
+
+// The wilderness map's blinking square
+bool         cursor_on = false;
+int          cursor_px = 0, cursor_py = 0;
+uint8_t      cursor_under[64];
+uint32_t     cursor_at = 0;
+
+// Typing (INPUT NUMBER / STRING) on the menu line
+Input        input_mode = Input::None;
+char         input_buf[ecl::kMaxInput + 1];
+int          input_len = 0;
 
 constexpr int kCharMs = 12;
 
@@ -124,8 +151,20 @@ uint8_t sky_colour()
     return d->sky[idx];
 }
 
+void draw_frame(pic::Canvas& c);
+void draw_panel(pic::Canvas& c);
+
 void draw_view(pic::Canvas& c)
 {
+    if (bigpic >= 0) {
+        // A big picture covers the screen: outdoors it stays (the wilderness
+        // map); in a 3D area the exploring screen comes back
+        if (!vm->get(0x4BE6)) return;
+        bigpic = -1;
+        pic_shown = false;
+        draw_frame(c);
+        draw_panel(c);
+    }
     if (pic_shown) return;
     if (!d->map.loaded) {
         c.fill(24, 24, 88, 88, 0);
@@ -192,7 +231,7 @@ void idle_menu(pic::Canvas& c)
 
 // Script pictures (PICTURE): event pictures in the view, the big ones over
 // the top of the screen, a head and body for people
-bool draw_block(pic::Canvas& c, const char* stem, int block, int x, int y, bool anim)
+bool draw_block(pic::Canvas& c, const char* stem, int block, int x, int y)
 {
     char name[24];
     area_file(name, sizeof name, stem);
@@ -203,18 +242,83 @@ bool draw_block(pic::Canvas& c, const char* stem, int block, int x, int y, bool 
     const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
     if (e) {
         dax::RleReader r(src, d->idx, *e);
-        if (anim) {
-            static pic::Anim a;
-            if (pic::parse_anim(r, e->raw_size, a)) ok = pic::draw_anim(src, d->idx, *e, a, 0, true, c, x, y);
-        } else {
-            uint8_t hdr[pic::kHeaderSize];
-            pic::Header h;
-            ok = r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_header(hdr, e->raw_size, h) &&
-                 pic::draw(r, h, 0, c, x, y);
-        }
+        uint8_t hdr[pic::kHeaderSize];
+        pic::Header h;
+        ok = r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_header(hdr, e->raw_size, h) &&
+             pic::draw(r, h, 0, c, x, y);
     }
     f.close();
     return ok;
+}
+
+void anim_stop()
+{
+    anim_block = -1;
+    if (d->anim_file) d->anim_file.close();
+}
+
+void anim_draw(int frame)
+{
+    if (anim_block < 0) return;
+    library::FileSource src(d->anim_file);
+    const dax::Entry* e = d->anim_idx.find(static_cast<uint8_t>(anim_block));
+    if (e) pic::draw_anim(src, d->anim_idx, *e, d->anim, frame, true, *cv, 24, 24);
+    dirty_rows(3, 13);
+}
+
+// An event picture: PIC<area> block id, drawn in the view; it animates
+// while the game waits at a menu
+bool anim_start(int id)
+{
+    anim_stop();
+    char name[24];
+    area_file(name, sizeof name, "PIC");
+    if (!open_file(name, d->anim_file)) return false;
+    library::FileSource src(d->anim_file);
+    const dax::Entry* e = nullptr;
+    if (dax::read_index(src, d->anim_idx) == dax::Status::Ok) e = d->anim_idx.find(static_cast<uint8_t>(id));
+    if (e) {
+        dax::RleReader r(src, d->anim_idx, *e);
+        if (pic::parse_anim(r, e->raw_size, d->anim) && d->anim.frames > 0) {
+            anim_block = id;
+            anim_frame = 0;
+            anim_at = millis();
+            last_pic = id;
+            anim_draw(0);
+            return true;
+        }
+    }
+    d->anim_file.close();
+    return false;
+}
+
+// The wilderness map's square: shown / hidden in turn while waiting
+bool cursor_wanted()
+{
+    const profile::Profile& p = *d->prof;
+    return p.wild.bigpic && bigpic == p.wild.bigpic && last_pic != p.wild.hide_pic && d->cities > 0 &&
+           vm->get(p.wild.city_var) < d->cities;
+}
+
+void cursor_hide()
+{
+    if (!cursor_on) return;
+    for (int r = 0; r < 8; ++r) memcpy(cv->px + (cursor_py + r) * cv->w + cursor_px, cursor_under + r * 8, 8);
+    cursor_on = false;
+    dirty(cursor_py, cursor_py + 8);
+}
+
+void cursor_show()
+{
+    if (cursor_on) return;
+    const int city = vm->get(d->prof->wild.city_var);
+    cursor_px = d->city_x[city] * 8;
+    cursor_py = d->city_y[city] * 8;
+    if (cursor_px < 0 || cursor_px + 8 > cv->w || cursor_py + 8 > cv->h) return;
+    for (int r = 0; r < 8; ++r) memcpy(cursor_under + r * 8, cv->px + (cursor_py + r) * cv->w + cursor_px, 8);
+    cv->fill(cursor_px, cursor_py, 8, 8, 15);
+    cursor_on = true;
+    dirty(cursor_py, cursor_py + 8);
 }
 
 // ---- the script host ------------------------------------------------------------
@@ -289,7 +393,10 @@ struct Host : ecl::Host {
     void picture(int id, int head) override
     {
         pic::Canvas& c = *cv;
+        cursor_hide();
         if (id == 0xFF) {
+            anim_stop();
+            bigpic = -1;
             if (pic_shown) {
                 pic_shown = false;
                 draw_view(c);
@@ -297,22 +404,32 @@ struct Host : ecl::Host {
             return;
         }
         if (head == 0xFF && id >= 0x78) {
+            anim_stop();
+            bigpic = id;
             // Big picture: the frame with a bar at row 16, the picture inside
             layout::outer(c, d->tables, d->frame_tiles);
             layout::bar(c, d->tables, d->frame_tiles, 16);
-            draw_block(c, "BIGPIC", id, 8, 8, false);
+            draw_block(c, "BIGPIC", id, 8, 8);
             dirty(0, 17 * 8);
         } else if (head == 0xFF) {
             c.fill(24, 24, 88, 88, 0);
-            draw_block(c, "PIC", id, 24, 24, true);
+            anim_start(id);
             dirty_rows(3, 13);
         } else {
+            anim_stop();
             c.fill(24, 24, 88, 88, 0);
-            draw_block(c, "HEAD", head, 24, 24, false);
-            draw_block(c, "BODY", id, 24, 64, false);
+            draw_block(c, "HEAD", head, 24, 24);
+            draw_block(c, "BODY", id, 24, 64);
             dirty_rows(3, 13);
         }
         pic_shown = true;
+    }
+    void anim_step() override
+    {
+        if (anim_block < 0) return;
+        anim_draw(anim_frame);
+        anim_frame = (anim_frame + 1) % d->anim.frames;
+        anim_at = millis();
     }
     void redraw() override
     {
@@ -326,6 +443,13 @@ struct Host : ecl::Host {
 // ---- running scripts -------------------------------------------------------------
 
 void handle(ecl::Stop r);
+
+void draw_input(pic::Canvas& c)
+{
+    clear_menu_line(c);
+    put(c, input_buf, 0, text::kMenuRow, 10);
+    if (input_len < 40) c.fill(input_len * 8, text::kMenuRow * 8, 8, 8, 15);     // the cursor
+}
 
 void begin_wait(pic::Canvas& c)
 {
@@ -376,15 +500,14 @@ void begin_wait(pic::Canvas& c)
         list_wait = false;
         break;
     case ecl::Wait::Number:
-        Serial.println("[play] INPUT NUMBER: no keyboard yet, answered 0");
-        waiting = false;
-        handle(vm->answer(0));
-        return;
     case ecl::Wait::String:
-        Serial.println("[play] INPUT STRING: no keyboard yet, answered blank");
-        waiting = false;
-        handle(vm->answer_string(""));
-        return;
+        // Typed on the menu line, as in the games (the front end shows a
+        // keyboard)
+        input_mode = vm->wait() == ecl::Wait::Number ? Input::Number : Input::Text;
+        input_len = 0;
+        input_buf[0] = 0;
+        draw_input(c);
+        break;
     case ecl::Wait::Pause:
         pause_until = millis() + vm->pause_ms();
         break;
@@ -433,6 +556,7 @@ void do_move()
 void handle(ecl::Stop r)
 {
     pic::Canvas& c = *cv;
+    cursor_hide();
     if (r == ecl::Stop::Waiting) {
         idle_cycles = 0;
         begin_wait(c);
@@ -550,6 +674,10 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c)
         if (p && layout::load_tables(src, info, *p, d->tables) != layout::Status::Ok) p = nullptr;
         if (p) {
             exepack::read(src, info, p->data_base + p->sky_colours, d->sky, sizeof d->sky);
+            if (p->wild.bigpic && p->wild.count <= sizeof d->city_x &&
+                exepack::read(src, info, p->data_base + p->wild.xs, d->city_x, p->wild.count) == exepack::Status::Ok &&
+                exepack::read(src, info, p->data_base + p->wild.ys, d->city_y, p->wild.count) == exepack::Status::Ok)
+                d->cities = p->wild.count;
             if (!text::read_pascal(src, info, p->press_any_key, d->press_key, sizeof d->press_key))
                 strcpy(d->press_key, "Tap to go on");
         }
@@ -602,6 +730,9 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c)
     area_view = false;
     pic_shown = false;
     waiting = false;
+    anim_block = bigpic = last_pic = -1;
+    cursor_on = false;
+    input_mode = Input::None;
     idle_cycles = 0;
     w = text::Writer{};
     draw_frame(c);
@@ -613,6 +744,8 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c)
 
 void close()
 {
+    if (d) anim_stop();
+    input_mode = Input::None;
     if (vm) {
         vm->~Vm();
         vm = nullptr;
@@ -744,6 +877,23 @@ void tick(uint32_t now, pic::Canvas& c)
     if (!d || !waiting) return;
     cv = &c;
     const ecl::Wait wt = vm->wait();
+    // While the game waits for the player: the event picture animates (at
+    // a menu, as in the games) and the wilderness map's square blinks
+    const bool asking = wt == ecl::Wait::Menu || (wt == ecl::Wait::ListMenu && list_wait) ||
+                        wt == ecl::Wait::Number || wt == ecl::Wait::String;
+    if (wt == ecl::Wait::Menu && anim_block >= 0 && d->anim.frames > 1) {
+        const uint32_t delay = d->anim.delay[anim_frame] ? d->anim.delay[anim_frame] * 100 : 100;
+        if (now - anim_at >= delay) {
+            anim_frame = (anim_frame + 1) % d->anim.frames;
+            anim_draw(anim_frame);
+            anim_at = now;
+        }
+    }
+    if (asking && cursor_wanted() && now - cursor_at >= (cursor_on ? 400u : 300u)) {
+        if (cursor_on) cursor_hide();
+        else cursor_show();
+        cursor_at = now;
+    }
     if (wt == ecl::Wait::Pause) {
         if (static_cast<int32_t>(now - pause_until) >= 0) {
             waiting = false;
@@ -772,6 +922,39 @@ void tick(uint32_t now, pic::Canvas& c)
     } else if (w.state == text::State::Done) {
         finish_print_wait();
     }
+}
+
+Input input() { return d ? input_mode : Input::None; }
+
+void input_key(char k, pic::Canvas& c)
+{
+    if (!d || input_mode == Input::None) return;
+    cv = &c;
+    if (k == '\n') {
+        const bool number = input_mode == Input::Number;
+        input_mode = Input::None;
+        clear_menu_line(c);
+        waiting = false;
+        if (number) {
+            long v = atol(input_buf);
+            if (v > 65535) v = 65535;
+            handle(vm->answer(static_cast<int>(v)));
+        } else {
+            handle(vm->answer_string(input_buf));
+        }
+        return;
+    }
+    if (k == '\b') {
+        if (input_len > 0) input_buf[--input_len] = 0;
+    } else {
+        if (k >= 'a' && k <= 'z') k = static_cast<char>(k - 32);
+        const bool ok = input_mode == Input::Number ? (k >= '0' && k <= '9' && input_len < 5)
+                                                    : (k >= ' ' && k <= 'Z' && input_len < ecl::kMaxInput);
+        if (!ok) return;
+        input_buf[input_len++] = k;
+        input_buf[input_len] = 0;
+    }
+    draw_input(c);
 }
 
 void take_dirty(int& y0, int& y1)

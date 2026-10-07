@@ -74,7 +74,11 @@ The games aren't playable yet; this build shows what is inside their files.
    the opening, then events as you walk - text (tap, or any key, to go
    on), menus (tap a word on the menu line, or a line of a list), pictures
    and the clock. The game's own menu line works too: **Area**, **Search**
-   (on / off), **Look**. There's no party yet, so anything that needs one
+   (on / off), **Look**. Event pictures animate while the game waits for
+   you; when the game asks for a word or a number, a keyboard comes up (the
+   typing shows on the menu line; Enter answers). Travel works too: the
+   wilderness map, with a blinking square where the party is, and the areas
+   you go into. There's no party yet, so anything that needs one
    (combat, treasure, checks) is skipped; on 480x320 **Look** is also a
    key beside the pad and the map shows beside the game screen.
 3. **Blocks**: each piece inside the file. **Gold keys are pictures** (size and

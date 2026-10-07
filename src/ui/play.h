@@ -31,6 +31,13 @@ void tap(int x, int y, pic::Canvas& c);
 // Moves printing text and pauses on. Call often.
 void tick(uint32_t now_ms, pic::Canvas& c);
 
+// Typing: the game asks for a number or a line of text (INPUT NUMBER /
+// STRING). The front end shows a keyboard while input() != None and sends
+// keys: 'A'-'Z', '0'-'9', ' ', punctuation, '\b' = delete, '\n' = done.
+enum class Input : uint8_t { None, Number, Text };
+Input input();
+void input_key(char k, pic::Canvas& c);
+
 // Canvas rows changed since the last call (y1 == 0: none).
 void take_dirty(int& y0, int& y1);
 

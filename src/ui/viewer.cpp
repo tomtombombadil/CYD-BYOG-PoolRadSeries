@@ -14,6 +14,7 @@
 #include "engine/icon.h"
 #include "engine/inflate.h"
 #include "engine/picture.h"
+#include "engine/text.h"
 #include "frame.h"
 #include "hal/panel_prefs.h"
 #include "hal/sdcard.h"
@@ -1021,8 +1022,77 @@ void tap_walk(const ui::Tap& t)
 int play_last_x = -1, play_last_y = -1, play_last_dir = -1;
 const geo::Map* play_last_map = nullptr;
 
+// The keyboard for the game's questions (INPUT NUMBER / STRING). 320x240:
+// the letters over the top of the game screen (the text window and the
+// menu line, where the typing shows, stay in sight), Del / Space / Enter
+// under it. 480x320: the letters under the game screen, Del / Space /
+// Enter in the Companion strip.
+constexpr char kKbChars[] = "1234567890QWERTYUIOPASDFGHJKL-ZXCVBNM'.?";
+constexpr int  kKbCols = 10, kKbRows = 4, kKbKeys = kKbCols * kKbRows;
+enum KbAction { kKbDel = kKbKeys, kKbSpace, kKbEnter, kKbAll };
+bool kb_shown = false;
+
+ui::Rect kb_key(int k)
+{
+    const int gp = 2;
+    if (k < kKbKeys) {
+        const int col = k % kKbCols, row = k / kKbCols;
+        const int x0 = 0, w = ui::large() ? ui::width() : pic::kScreenW;
+        const int y0 = ui::large() ? pic::kScreenH : 0;
+        const int h = ui::large() ? ui::height() - pic::kScreenH : text::kTextArea.y0 * 8;
+        const int kw = (w - gp) / kKbCols, kh = (h - gp) / kKbRows;
+        return {x0 + gp + col * kw, y0 + gp + row * kh, kw - gp, kh - gp};
+    }
+    const int i = k - kKbKeys;
+    if (ui::large()) {
+        const int x0 = pic::kScreenW, w = ui::width() - x0, h = pic::kScreenH / 3;
+        return {x0 + gp, gp + i * h, w - gp * 2, h - gp * 2};
+    }
+    const int top = pic::kScreenH + gp, w = pic::kScreenW / 3;
+    return {gp + i * w, top, w - gp * 2, ui::height() - top - gp};
+}
+
+bool kb_usable(int k, play::Input in)
+{
+    if (in != play::Input::Number) return true;
+    return k >= kKbKeys ? k != kKbSpace : (kKbChars[k] >= '0' && kKbChars[k] <= '9');
+}
+
+void draw_keyboard()
+{
+    LGFX& g = ui::gfx();
+    const play::Input in = play::input();
+    if (ui::large()) {
+        g.fillRect(0, pic::kScreenH, ui::width(), ui::height() - pic::kScreenH, style::kBackground);
+        g.fillRect(pic::kScreenW, 0, ui::width() - pic::kScreenW, pic::kScreenH, style::kBackground);
+    } else {
+        g.fillRect(0, 0, pic::kScreenW, text::kTextArea.y0 * 8, style::kBackground);
+        g.fillRect(0, pic::kScreenH, ui::width(), ui::height() - pic::kScreenH, style::kBackground);
+    }
+    for (int k = 0; k < kKbAll; ++k) {
+        char label[2] = {k < kKbKeys ? kKbChars[k] : '\0', '\0'};
+        const char* l = k < kKbKeys ? label : k == kKbDel ? "Del" : k == kKbSpace ? "Space" : "Enter";
+        ui::key(kb_key(k), l, kb_usable(k, in) ? (k == kKbEnter ? ui::KeyStyle::Lit : ui::KeyStyle::Normal)
+                                               : ui::KeyStyle::Dim);
+    }
+}
+
+bool tap_keyboard(const ui::Tap& t)
+{
+    const play::Input in = play::input();
+    for (int k = 0; k < kKbAll; ++k) {
+        if (!kb_key(k).contains(t.x, t.y)) continue;
+        if (!kb_usable(k, in)) return true;
+        const char c = k < kKbKeys ? kKbChars[k] : k == kKbDel ? '\b' : k == kKbSpace ? ' ' : '\n';
+        play::input_key(c, frame::canvas());
+        return true;
+    }
+    return true;     // the keyboard takes every tap while it is up
+}
+
 void leave_play()
 {
+    kb_shown = false;
     play::close();
     play_error = nullptr;
     frame::set_left(false);
@@ -1036,7 +1106,18 @@ void present_play()
 {
     int y0, y1;
     play::take_dirty(y0, y1);
+    if (kb_shown && !ui::large() && y0 < text::kTextArea.y0 * 8) y0 = text::kTextArea.y0 * 8;   // under the keys
     if (y1 > y0) frame::present_rows(y0, y1);
+    const bool want_kb = play::input() != play::Input::None;
+    if (want_kb && !kb_shown) {
+        kb_shown = true;
+        draw_keyboard();
+    } else if (!want_kb && kb_shown) {
+        kb_shown = false;
+        dirty = true;               // the whole game screen again
+        return;
+    }
+    if (kb_shown) return;
     if (play::pos_x() != play_last_x || play::pos_y() != play_last_y || play::dir() != play_last_dir ||
         play::map() != play_last_map) {
         play_last_x = play::pos_x();
@@ -1062,6 +1143,7 @@ void draw_play()
     frame::present();
     int y0, y1;
     play::take_dirty(y0, y1);
+    kb_shown = false;
     draw_walk_keys("Look");
     play_last_map = nullptr;
     play_last_x = -1;
@@ -1072,6 +1154,11 @@ void tap_play(const ui::Tap& t)
 {
     if (play_error) {
         if (ui::back_rect().contains(t.x, t.y)) leave_play();
+        return;
+    }
+    if (kb_shown) {
+        tap_keyboard(t);
+        present_play();
         return;
     }
     static const play::Act kActs[kWKeys] = {play::Act::TurnLeft, play::Act::StepLeft, play::Act::Forward,

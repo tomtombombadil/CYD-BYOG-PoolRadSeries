@@ -84,6 +84,16 @@ struct Profile {
     uint16_t     sky_colours;          // DS offset of the 16 sky colours (area words
                                        // 0x4BFD / 0x4BFE pick one)
     uint8_t      start_area, start_script;   // a new game: ECL<area> block <script>
+
+    // The wilderness map (a big picture): a blinking square marks the
+    // party's place while the game waits for the player
+    struct {
+        uint8_t  bigpic;               // its BIGPIC block (0: no wilderness map)
+        uint16_t city_var;             // script word holding the place's number
+        uint16_t xs, ys;               // DS offsets of the places' columns / rows (8-px cells)
+        uint8_t  count;                // places in those tables
+        uint8_t  hide_pic;             // no square after this event picture was shown
+    } wild;
 };
 
 // The game's program file name (to look for it), or nullptr if no

@@ -558,6 +558,13 @@ Stop Vm::step()
         const uint16_t w = o[0].word();
         if (w == 0x2E10) {
             h_.redraw();
+        } else if (w == 0x6803) {
+            // The event picture's next frame, then the game's delay
+            h_.anim_step();
+            int speed = get(0x4BFC) & 0xFF;
+            if (speed == 0) speed = 4;
+            pause_ms_ = static_cast<uint32_t>(speed) * 100;
+            return wait_for(Wait::Pause);
         } else if (w == 0xC01E) {
             s_.x = (s_.x + (s_.dir == 2 ? 1 : s_.dir == 6 ? -1 : 0)) & 15;
             s_.y = (s_.y + (s_.dir == 4 ? 1 : s_.dir == 0 ? -1 : 0)) & 15;
@@ -610,7 +617,7 @@ Stop Vm::step()
         return Stop::Running;
     }
     case 0x39: return stub(1, "WHO");
-    case 0x3A: {                                // DELAY
+    case 0x3A: {                                // DELAY: the game's delay (speed x 0.1 s)
         ++pc_;
         int speed = get(0x4BFC) & 0xFF;
         if (speed == 0) speed = 4;

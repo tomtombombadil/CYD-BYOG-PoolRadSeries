@@ -38,6 +38,7 @@ namespace ecl {
 
 constexpr uint32_t kCodeSize = 0x1E00;
 constexpr int kMaxStrings = 16;
+constexpr int kMaxInput = 40;       // INPUT STRING: characters the player may type
 
 struct GameState {
     uint8_t  area1[0x800] = {};
@@ -58,8 +59,8 @@ enum class Wait : uint8_t {
     Print,        // text(): print it (clear first if clear()), then resume()
     Menu,         // items: a menu on the menu line, answer(index)
     ListMenu,     // prompt + items as a list in the text area, answer(index)
-    Number,       // answer(number)
-    String,       // answer_string(text)
+    Number,       // answer(number), up to 65535 (typed on the menu line)
+    String,       // answer_string(text), up to kMaxInput characters
     Pause,        // pause_ms(), then resume()
 };
 
@@ -75,6 +76,7 @@ public:
     virtual void load_walls(int set, int block) = 0;    // block < 0: none
     virtual void picture(int id, int head) = 0;         // id 0xFF: back to the view
     virtual void redraw() = 0;                          // view, party panel, position
+    virtual void anim_step() {}                         // the event picture's next frame (CALL 6803)
     virtual void log(const char* what) = 0;
 };
 

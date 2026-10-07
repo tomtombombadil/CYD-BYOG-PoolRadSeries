@@ -46,7 +46,8 @@ const Profile kProfiles[] = {
      "TITLE.DAX", kCurseTitle, sizeof kCurseTitle / sizeof kCurseTitle[0],
      "GAME.OVR", 272137, 706, 218, {3, 8},
      2, 6, 203, "SKY.DAX", 252, &kCurseEcl,
-     0x6D9A, 2, 1},
+     0x6D9A, 2, 1,
+     {0x79, 0x4CA1, 0x6D5A, 0x6D7A, 32, 0x50}},
 };
 
 } // namespace

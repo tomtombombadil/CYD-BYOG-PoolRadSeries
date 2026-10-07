@@ -114,6 +114,9 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   Number, String, Pause) and answers. Things that need a party are logged
   and passed over until M5/M6 - never faked. While text or a one-choice
   menu waits, any key goes on (like "press a key").
+  The game's questions (INPUT NUMBER / STRING) use an on-screen keyboard
+  in the viewer (`play::input()` / `play::input_key()`); event pictures
+  animate only while a menu waits (as in the games).
 - PortMaster ports are a stretch goal (Tom): keep everything portable.
 - Game screens (Walk Test, Play Test now, the games later): canvas 1:1 at the top left
   (`frame::set_left`), controls below it, on 480x320 the Companion strip on

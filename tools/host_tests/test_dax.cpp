@@ -1307,7 +1307,7 @@ static void op_str(Bytes& b, const char* t)
 
 struct TestHost : ecl::Host {
     Bytes next;                 // the block NEWECL loads
-    int map = -1, walls[4] = {-2, -2, -2, -2}, pic = -1, loads = 0;
+    int map = -1, walls[4] = {-2, -2, -2, -2}, pic = -1, loads = 0, frames = 0;
     bool load_script(int, uint8_t* code, uint32_t* len) override
     {
         ++loads;
@@ -1320,6 +1320,7 @@ struct TestHost : ecl::Host {
     void load_walls(int set, int block) override { walls[set] = block; }
     void picture(int id, int) override { pic = id; }
     void redraw() override {}
+    void anim_step() override { ++frames; }
     void log(const char*) override {}
 };
 
@@ -1413,6 +1414,18 @@ static void test_ecl_vm()
     CHECK(r == ecl::Stop::NewScript && gs.script == 7 && gs.code_len == nb.size() - 2);
     CHECK(vm.entry(4) == kBase + 20);
     CHECK(vm.get(0x4C00) == 0);             // a new script clears its variables
+
+    // CALL 6803: the picture's next frame, then the game's delay (speed 4 = 0.4 s)
+    Bytes an;
+    for (int i = 0; i < 5; ++i) { an.push_back(0); op_addr(an, kBase + 20); }
+    an.push_back(0x2D); op_addr(an, 0x6803);
+    an.push_back(0x00);
+    memcpy(gs.code, an.data(), an.size());
+    gs.code_len = static_cast<uint32_t>(an.size());
+    CHECK(vm.init_script());
+    r = vm.run(vm.entry(0));
+    CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Pause && vm.pause_ms() == 400 && host.frames == 1);
+    CHECK(vm.resume() == ecl::Stop::Stopped);
 
     // An endless loop is stopped
     Bytes loop;
