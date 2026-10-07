@@ -100,9 +100,12 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   CHAMPIONS, DEATH, QUEEN, GATEWAY, TREASURE, UNLIMIT (`engine/games.*`;
   QUEEN / UNLIMIT are .TLB/.GLB "newer format" games, listed, not readable).
 - Library (Tom, 2026-10-07): title bar shows the firmware version (to see
-  which build is flashed); ONE game a page - its GOG icon as big as fits
-  (256 px PNG scaled to 128 / 192 px), the full title wrapped beside it; < >
-  page through games; "Rescan / Card" on two lines. Icons come from the
+  which build is flashed); ONE game a page, no key look, the whole space
+  between header and bottom keys - its GOG icon as big as fits (scaled from
+  the 256 px PNG: ~154 px on 320x240, ~194 px on 480x320), the title and
+  info lines wrapped inside the space beside it; < > page through games;
+  "Rescan / Card" on two lines; while scanning: "Scanning your microSD card
+  for game files. This will take a minute." (Tom). Icons come from the
   player's goggame-<id>.ico / .dll on the card (`engine/icon.*`), never from
   the repo.
 - PortMaster ports are a stretch goal (Tom): keep everything portable.

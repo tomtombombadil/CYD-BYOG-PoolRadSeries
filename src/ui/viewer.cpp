@@ -97,8 +97,18 @@ void close_file()
     if (cur_file) cur_file.close();
 }
 
+int wrap_text(int x, int y, int w, const char* s, ui::Font font, uint16_t col, bool draw, int max_lines = 0);
+
 void rescan()
 {
+    // Scanning takes a while (a big card, the first boot): say so (Tom)
+    ui::clear();
+    char title[48];
+    snprintf(title, sizeof title, "Gold Box Library  %s", env_.version);
+    ui::header(title, false);
+    wrap_text(ui::gap() * 4, ui::header_h() + ui::gap() * 6, ui::width() - ui::gap() * 8,
+              "Scanning your microSD card for game files. This will take a minute.", ui::Font::Large, style::kText,
+              true);
     close_file();
     sd_lost();               // forget a card that was pulled; sd_begin retries
     scan_result = library::scan(game_dirs, library::kMaxGames, &n_games);
@@ -195,15 +205,22 @@ bool pager_tap(const ui::Tap& t, Pager& p, int* page, bool has_middle = false, b
 // as large as fits (GOG's 256 px PNG scaled to 128 px on 320x240, 192 px on
 // 480x320), the full title and its folder beside it. < > go through games.
 
-ui::Rect home_card() { return ui::grid_cell(0, 1, 1); }
+// The whole space between the header and the bottom keys (Tom: no key
+// look - one game a page, so use all of it)
+ui::Rect home_card()
+{
+    const int top = ui::header_h() + ui::gap();
+    return {0, top, ui::width(), ui::height() - ui::key_h() - ui::gap() * 2 - top};
+}
 
-// The largest of the usual icon sizes that fits the card
+// As big as fits (Tom: bigger is better): the card's height, at most half
+// its width, at most the 256 px original
 int icon_size(const ui::Rect& card)
 {
-    static const int kSizes[] = {256, 192, 128, 96, 64, 48, 32};
-    for (int sz : kSizes)
-        if (sz <= card.h - ui::gap() * 2 && sz <= card.w / 2) return sz;
-    return 0;
+    int sz = card.h - ui::gap() * 2;
+    if (sz > card.w / 2) sz = card.w / 2;
+    if (sz > icon::kMaxOut) sz = icon::kMaxOut;
+    return sz < 16 ? 0 : sz;
 }
 
 // The icon, a row at a time, blended onto the card's colour
@@ -243,7 +260,7 @@ bool draw_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle st)
         IconDraw* d = static_cast<IconDraw*>(malloc(sizeof(IconDraw)));
         ok = d && (!fo.png || window);
         if (ok) {
-            const uint16_t c = ui::key_fill(st);
+            const uint16_t c = style::kBackground;
             d->x = x;
             d->y = y;
             d->br = ((c >> 11) & 31) * 255 / 31;
@@ -265,7 +282,7 @@ bool draw_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle st)
 
 // Prints text word-wrapped into width w from (x, y); returns the y after it.
 // max_lines 0 = no limit; with draw false it only measures.
-int wrap_text(int x, int y, int w, const char* s, ui::Font font, uint16_t col, bool draw, int max_lines = 0)
+int wrap_text(int x, int y, int w, const char* s, ui::Font font, uint16_t col, bool draw, int max_lines)
 {
     const int lh = ui::line_h(font);
     char line[96];
@@ -321,28 +338,29 @@ void draw_home()
         const ui::Rect card = home_card();
         const bool hlib = g.format == library::Format::Hlib;
         const ui::KeyStyle st = hlib ? ui::KeyStyle::Dim : ui::KeyStyle::Normal;
-        ui::key(card, "", st);
         const int gp = ui::gap();
         const int ipx = g.icon[0] ? icon_size(card) : 0;
         const int ix = card.x + gp * 2, iy = card.y + (card.h - ipx) / 2;
         const int tx = ipx ? ix + ipx + gp * 3 : card.x + gp * 4;
-        const int tw = card.x + card.w - gp * 3 - tx;
+        const int tw = card.x + card.w - gp * 2 - tx;      // text stays inside this box
 
-        // The text block, centred top to bottom
+        // The text block, centred top to bottom; every line wraps
         char l1[48], l2[48], l3[48];
         snprintf(l1, sizeof l1, "Folder: %s", g.folder);
         if (hlib) snprintf(l2, sizeof l2, "Newer format");
         else snprintf(l2, sizeof l2, "%d game files", g.dax_files);
         snprintf(l3, sizeof l3, "Game %d of %d", home_page + 1, n_games);
-        const int sh = ui::line_h(ui::Font::Small) + 3;
         const uint16_t tcol = hlib ? style::kTextMuted : style::kText;
-        const int title_end = wrap_text(tx, 0, tw, games::title(g.game), ui::Font::Large, tcol, false, 4);
-        const int block = title_end + gp * 2 + sh * 3;
-        int y = card.y + (card.h - block) / 2;
+        const ui::Font sf = ui::Font::Small;
+        const int title_h = wrap_text(tx, 0, tw, games::title(g.game), ui::Font::Large, tcol, false, 4);
+        const int sub_h = wrap_text(tx, 0, tw, l1, sf, 0, false) + wrap_text(tx, 0, tw, l2, sf, 0, false) +
+                          wrap_text(tx, 0, tw, l3, sf, 0, false);
+        int y = card.y + (card.h - (title_h + gp * 2 + sub_h + gp * 2)) / 2;
+        if (y < card.y) y = card.y;
         y = wrap_text(tx, y, tw, games::title(g.game), ui::Font::Large, tcol, true, 4) + gp * 2;
-        ui::text(tx, y, l1, style::kTextMuted, ui::Font::Small);
-        ui::text(tx, y + sh, l2, style::kTextMuted, ui::Font::Small);
-        ui::text(tx, y + sh * 2, l3, style::kTextMuted, ui::Font::Small);
+        y = wrap_text(tx, y, tw, l1, sf, style::kTextMuted, true) + gp;
+        y = wrap_text(tx, y, tw, l2, sf, style::kTextMuted, true) + gp;
+        wrap_text(tx, y, tw, l3, sf, style::kTextMuted, true);
         if (ipx) draw_icon(g, ix, iy, ipx, st);
     }
     const bool more = n_games > 1;
