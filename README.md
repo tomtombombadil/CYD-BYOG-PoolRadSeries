@@ -25,7 +25,7 @@ or Edge on a computer - pick your board, click Install.
 | 3.5" ESP32-32E, 320x480 | `TTB-CYD-PRS_3.5in_ST7796_Resistive` |
 | 4.0" ESP32-32E, 320x480 | `TTB-CYD-PRS_4.0in_ST7796_Resistive` |
 
-None of these has been tested with this firmware yet.
+Tested with this firmware so far: the 4.0".
 
 ## Your games on the SD card
 
@@ -34,6 +34,24 @@ None of these has been tested with this firmware yet.
 3. Copy each game's folder from your own install into it, e.g.
    `GOLDBOX/POOLRAD`, `GOLDBOX/CURSE`, `GOLDBOX/SECRET`, `GOLDBOX/DARKNESS`.
    Any folder name containing the game's name works.
+
+## Using the asset viewer (v0.1)
+
+The games aren't playable yet; this build shows what is inside their files.
+
+1. **Library**: one key per game found on the card. Tap one.
+2. **Files**: the game's DAX archives. Tap one.
+3. **Blocks**: each piece inside the file. **Gold keys are pictures** (size and
+   frame count shown); navy keys are other data. Tap one.
+4. **Picture**: `< Prev` / `Next >` step through the frames, then the next
+   block. Tapping the left / right third of the picture does the same; the
+   middle shows the block's details. `Back` returns to the list.
+   Other data shows as a hex dump.
+
+Good files to try in Curse: `TITLE.DAX` (title screens, blocks 1-4),
+`PICn.DAX` / `BIGPICn.DAX` (event pictures), `HEAD*.DAX` / `BODY*.DAX`
+(portraits), `SKY.DAX`, `COMSPR.DAX` (combat figures). Pools of Darkness
+pictures won't show yet (a different, 256-colour format).
 
 ## Building
 

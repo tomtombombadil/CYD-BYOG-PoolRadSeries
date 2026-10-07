@@ -74,6 +74,31 @@ The games draw a 320x200 screen. The canvas is presented:
   Settings -> "Game Screen: 1.5x" stays for now as a viewer-only experiment;
   the game screens won't use it.
 
+### Controls (Tom, 2026-10-06; mockup `docs/controls-proposal.png`)
+
+- **Tap what the game shows.** A menu word on the game screen ("AREA CAST
+  VIEW ENCAMP ...") = pressing its key; a line in a list = choosing it (and
+  Enter); a square on the combat map = stepping / aiming toward it; "press
+  any key" prompts = tap the game screen.
+- **Keys only for what isn't on screen**, changing with what the game does:
+  - 320x240: one row of 8 square keys (~37x34) in the 40 rows under the game.
+    Exploring: Turn Left, Side-step Left, Forward, Side-step Right, Turn
+    Right, Turn Around, Esc, and a Companion key (auto-map, journal, party
+    on a full-screen page). Combat: the 8 direction arrows.
+  - 480x320: the 320x120 area under the game holds a 3x3 pad laid out like a
+    numeric keypad (Tom): exploring 7 = Turn Left, 8 = Forward, 9 = Turn
+    Right, 4 = Side-step Left, 6 = Side-step Right, 2 = Turn Around; combat:
+    all 8 directions. Beside it Enter / Esc / Keys. The companion panel has
+    Journal and Map.
+- **Side-steps** (Tom remembers them from the games). coab's Curse code only
+  has forward, turn left / right and turn around on the arrow keys (numpad
+  4 / 6 send the same keys as the arrows), so for Curse at least the engine
+  adds them: one square left or right of the facing, without turning, with
+  the same wall / door / event checks as a normal step into that square (as
+  if the party turned, stepped and turned back). If a game has its own
+  side-step, use its behaviour.
+- Typed text (names, numbers): an on-screen keyboard until it's done.
+
 ## 5. File formats (status)
 
 | What | Where | Status |

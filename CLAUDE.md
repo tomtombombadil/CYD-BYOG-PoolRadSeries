@@ -30,8 +30,9 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
 - Controls: tap what the game shows (menu words, list lines, combat squares);
   keys only for what isn't on screen - one row of 8 under the game on
   320x240, a 3x3 pad + keys under it on 480x320 (SPEC section 4). Exploring
-  keys include Side-step Left / Right (an engine addition; same checks as a
-  step into that square).
+  keys include Side-step Left / Right (same checks as a step into that
+  square). Pad = numeric keypad: 7 / 9 turn, 8 forward, 4 / 6 side-step,
+  2 turn around (Tom).
 - Copy protection: skipped - never asked, treated as answered.
 - Later: Krynn, Savage Frontier and FRUA in this repo, after the four games.
   Keep game-specific code behind a per-game profile so they fit.
@@ -68,7 +69,7 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   `custom_board_title`, `custom_board_hint`, `custom_board_tested` drive CI,
   releases and the flasher - platformio.ini is the single source of truth.
 - `custom_board_tested = no` on every board until Tom has run THIS firmware on
-  it (all five as of v0.1.0).
+  it. Tested: 4.0" ST7796 (v0.1.1 - finds all four games on SD).
 - 2.8" ESP32-2432S028: touch is bit-banged (`touch_xpt2046_soft.hpp`, an
   `lgfx::ITouch`) so the SD card can have VSPI. Keep it that way - the engine
   needs the card.
