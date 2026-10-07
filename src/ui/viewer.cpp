@@ -90,8 +90,8 @@ void rescan()
 bool open_file(int i)
 {
     close_file();
-    char path[128];
-    library::path_of(game_dirs[game_sel].folder, files[i], path, sizeof path);
+    char path[160];
+    library::path_of(game_dirs[game_sel].data_dir, files[i], path, sizeof path);
     cur_file = sd_fs().open(path, "r");
     if (!cur_file) {
         index_status = dax::Status::ReadError;
@@ -155,13 +155,13 @@ void draw_home()
                           : "No game files in GOLDBOX.";
         ui::text(x, y, first, style::kGold);
         y += lh * 3 / 2;
-        ui::text(x, y, "Copy each game's original DOS files", style::kText);
+        ui::text(x, y, "Copy each game's folder from your GOG", style::kText);
         y += lh;
-        ui::text(x, y, "to a folder on a FAT32 microSD card:", style::kText);
+        ui::text(x, y, "install to a FAT32 microSD card:", style::kText);
         y += lh;
         ui::text(x, y, "/GOLDBOX/POOLRAD   /GOLDBOX/CURSE", style::kGold);
         y += lh;
-        ui::text(x, y, "/GOLDBOX/SILVER    /GOLDBOX/DARKNESS", style::kGold);
+        ui::text(x, y, "/GOLDBOX/SECRET    /GOLDBOX/DARKNESS", style::kGold);
         y += lh;
         ui::text(x, y, "then tap Rescan Card.", style::kText);
     } else {
@@ -196,7 +196,7 @@ void tap_home(const ui::Tap& t)
     for (int i = 0; i < p.per_page && p.first() + i < n_games; ++i) {
         if (ui::grid_cell(i, kHomeCols, kHomeRows).contains(t.x, t.y)) {
             game_sel = p.first() + i;
-            n_files = library::list_dax(game_dirs[game_sel].folder, files, library::kMaxFiles);
+            n_files = library::list_dax(game_dirs[game_sel].data_dir, files, library::kMaxFiles);
             file_page = 0;
             go(Screen::Files);
             return;

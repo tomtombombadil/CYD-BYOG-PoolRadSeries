@@ -46,12 +46,31 @@ ScanResult scan(GameDir* out, int max, int* n)
 
     for (fs::File d = root.openNextFile(); d && *n < max; d = root.openNextFile()) {
         if (d.isDirectory()) {
-            const int dax = count_dax(d);
+            GameDir& g = out[*n];
+            strlcpy(g.folder, base_name(d.name()), sizeof g.folder);
+            strlcpy(g.data_dir, g.folder, sizeof g.data_dir);
+            int dax = count_dax(d);
+            if (dax == 0) {
+                // A whole install copied as it is: the game files may sit one
+                // folder down (next to DOSBox's own folder)
+                d.rewindDirectory();
+                for (fs::File sub = d.openNextFile(); sub; sub = d.openNextFile()) {
+                    if (sub.isDirectory()) {
+                        const int n2 = count_dax(sub);
+                        if (n2 > 0) {
+                            dax = n2;
+                            snprintf(g.data_dir, sizeof g.data_dir, "%s/%s", g.folder, base_name(sub.name()));
+                            sub.close();
+                            break;
+                        }
+                    }
+                    sub.close();
+                }
+            }
             if (dax > 0) {
-                GameDir& g = out[(*n)++];
-                strlcpy(g.folder, base_name(d.name()), sizeof g.folder);
                 g.game = games::from_folder_name(g.folder);
                 g.dax_files = dax;
+                ++*n;
             }
         }
         d.close();
@@ -72,11 +91,11 @@ ScanResult scan(GameDir* out, int max, int* n)
     return ScanResult::Ok;
 }
 
-int list_dax(const char* folder, char (*names)[kNameLen], int max)
+int list_dax(const char* data_dir, char (*names)[kNameLen], int max)
 {
     if (!sd_begin()) return 0;
-    char path[96];
-    snprintf(path, sizeof path, "%s/%s", games::kRootDir, folder);
+    char path[128];
+    snprintf(path, sizeof path, "%s/%s", games::kRootDir, data_dir);
     fs::File dir = sd_fs().open(path);
     if (!dir || !dir.isDirectory()) return 0;
     int n = 0;
@@ -99,9 +118,9 @@ int list_dax(const char* folder, char (*names)[kNameLen], int max)
     return n;
 }
 
-void path_of(const char* folder, const char* file, char* out, size_t cap)
+void path_of(const char* data_dir, const char* file, char* out, size_t cap)
 {
-    snprintf(out, cap, "%s/%s/%s", games::kRootDir, folder, file);
+    snprintf(out, cap, "%s/%s/%s", games::kRootDir, data_dir, file);
 }
 
 FileSource::FileSource(fs::File f) : f_(f), size_(static_cast<uint32_t>(f.size())) {}

@@ -252,6 +252,9 @@ static void test_games()
     CHECK(games::from_folder_name("COAB") == Game::Unknown);
     CHECK(games::from_folder_name("cotab") == Game::CurseOfTheAzureBonds);
     CHECK(games::from_folder_name("SILVER") == Game::SecretOfTheSilverBlades);
+    CHECK(games::from_folder_name("SECRET") == Game::SecretOfTheSilverBlades);
+    CHECK(games::from_folder_name("CURSE") == Game::CurseOfTheAzureBonds);
+    CHECK(games::from_folder_name("DARKNESS") == Game::PoolsOfDarkness);
     CHECK(games::from_folder_name("Secret_of_the_Silver_Blades") == Game::SecretOfTheSilverBlades);
     CHECK(games::from_folder_name("POOLDARK") == Game::PoolsOfDarkness);
     CHECK(games::from_folder_name("Pools of Darkness") == Game::PoolsOfDarkness);

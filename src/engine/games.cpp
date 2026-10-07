@@ -56,7 +56,7 @@ Game from_folder_name(const char* name)
     squash(name, s, sizeof s);
     // Darkness first: "POOLS OF DARKNESS" / "POOLDARK" also contain POOL.
     if (has(s, "DARK")) return Game::PoolsOfDarkness;
-    if (has(s, "SILVER") || has(s, "BLADE") || has(s, "SOTSB")) return Game::SecretOfTheSilverBlades;
+    if (has(s, "SILVER") || has(s, "BLADE") || has(s, "SECRET") || has(s, "SOTSB")) return Game::SecretOfTheSilverBlades;
     if (has(s, "CURSE") || has(s, "AZURE") || has(s, "COTAB") || has(s, "BONDS")) return Game::CurseOfTheAzureBonds;
     if (has(s, "RADIANCE") || has(s, "POOLRAD") || has(s, "POR")) return Game::PoolOfRadiance;
     return Game::Unknown;

@@ -32,7 +32,7 @@ None of these has been tested with this firmware yet.
 1. Format a microSD card as FAT32.
 2. Make a folder `GOLDBOX` at the top of the card.
 3. Copy each game's folder from your own install into it, e.g.
-   `GOLDBOX/POOLRAD`, `GOLDBOX/CURSE`, `GOLDBOX/SILVER`, `GOLDBOX/DARKNESS`.
+   `GOLDBOX/POOLRAD`, `GOLDBOX/CURSE`, `GOLDBOX/SECRET`, `GOLDBOX/DARKNESS`.
    Any folder name containing the game's name works.
 
 ## Building

@@ -10,9 +10,16 @@ Display boards, from the player's own copy of the games:
 
 ## 1. Bring your own game
 
+Names used throughout (Tom, 2026-10-06): **PoolRad**, **Curse**, **Secret**,
+**Darkness**. The target files are the **GOG releases** (the DOS game files
+inside the GOG install, and the PDFs that come with them).
+
 - The firmware contains **no** game data, pictures, text or code from SSI.
 - The player copies the original **DOS** files of each game from their own copy
-  (e.g. the GOG release) into a folder under `/GOLDBOX/` on a FAT32 microSD card.
+  (the GOG release) into a folder under `/GOLDBOX/` on a FAT32 microSD card -
+  suggested names `POOLRAD`, `CURSE`, `SECRET`, `DARKNESS`. A whole GOG
+  install folder copied as it is also works: if the folder has no DAX files,
+  the engine looks one folder down.
 - Folder names are free; the game is recognised from words in the name
   (`POOLRAD`, `Pool of Radiance`, `CURSE`, `AZURE`, `SILVER`, `BLADES`, `DARK...`) -
   `src/engine/games.*`. A folder with DAX files and no known name still shows up.
@@ -104,27 +111,40 @@ Darkness. Milestones 2-6 are built against Azure Bonds' files.
 ## 7. The journal (Tom, 2026-10-06)
 
 The games tell the player to "read journal entry N" from the printed
-Adventurer's Journal. The GOG releases include the journals as PDFs. Plan:
+Adventurer's Journal. The GOG releases include the journals as PDFs.
 
-- A **journal converter**, run by the player on their own computer, reads the
-  journal PDF from *their* copy and writes the entries to the SD card next to
-  that game's files (e.g. `/GOLDBOX/CURSE/JOURNAL.TXT`, one block per entry).
-  Text-layer PDFs are read directly; scanned pages would need OCR.
-- The engine shows entry N on screen when the game asks for it (and from the
-  companion panel). Without the file it just shows the entry number.
-- The repo, the firmware and the flasher site never contain journal text;
-  tests use made-up entries. Same rule as the DAX files.
-- Form of the converter (a page on the flasher site that works locally in the
-  browser, or a Python tool) is decided once a real journal PDF has been
-  looked at: entry layout differs per game and the PDFs may be scans.
+What the GOG Curse journal PDF is (checked 2026-10-06; 17 pages, scanned
+two-page spreads at 300 dpi, SHA-256 d4712a05...f2f3):
+- Its text layer is Acrobat OCR, and the entries are set in a calligraphic
+  font: the OCR text is garbled ("6razecl {i!(g, fire") - **unusable**.
+- Several entries are **pictures and maps** (Entry 4 is a sewer map, 8 a
+  drawing, 9 a symbol), which text would lose anyway.
+- Entries run in columns and continue into the next column or page.
+
+So the journal is shown as **pictures of the entries**, not text:
+- A **journal converter** run by the player on their own computer opens the
+  journal PDF from *their* GOG copy, cuts each entry out of the page images
+  using a table of rectangles for that exact PDF (page + position per piece
+  - coordinates only, no content; the PDF is recognised by its SHA-256),
+  stacks the pieces of an entry into one image, reduces it to 16 colours at
+  the panel widths (310 and 470 px wide) and writes the result next to that
+  game's files on the SD card (e.g. `/GOLDBOX/CURSE/JOURNAL.BIN`).
+- Planned as a page on the flasher site that runs entirely in the browser
+  (pdf.js; nothing is uploaded), so players need no install. A mockup at
+  320x240 reads well (script text ~9 px x-height).
+- The engine shows entry N full-screen with Prev Page / Back / Next Page
+  keys when the game asks for it, and from the Journal key. Without the file
+  it shows the entry number.
+- The repo, the firmware and the flasher site never contain journal text or
+  images; tests use made-up entries; the rectangle tables are coordinates
+  only. Same rule as the DAX files.
+- Each game's journal gets its own table once its GOG PDF has been looked at.
 
 ## 8. Open decisions (Tom's)
 
-1. **Controls**: tap the game's own menu words on screen (small 8x8 text at
-   1:1), on-screen keys in the free rows, or both.
+1. **Controls**: confirm the layout in `docs/controls-proposal.png`.
 2. **Copy protection** (code wheel / journal word checks): skip it, since the
    player must already own the game files?
-3. **Journal converter**: in the browser (no install) or a Python tool.
 
 ## 9. Engine UI rules (carried over from CYD-Classic-Games)
 

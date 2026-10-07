@@ -5,8 +5,9 @@
 //
 // The player copies each game's folder (the original DOS files, from their
 // own copy) into /GOLDBOX/ on the card. Any folder name works; the game is
-// recognised from words in the name (POOLRAD, "Pool of Radiance", CURSE,
-// AZURE, SILVER, BLADES, DARK...). A folder with DAX files but no matching
+// recognised from words in the name: Tom's short names POOLRAD, CURSE,
+// SECRET, DARKNESS, the full titles (as GOG names its install folders), or
+// AZURE, SILVER, BLADES, DARK... A folder with DAX files but no matching
 // name still shows up, as "Unknown Gold Box game".
 #pragma once
 

@@ -25,13 +25,21 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   `docs/gemini-review.md`. Don't revive that code; its formats are wrong.
 
 ## Decisions (Tom, 2026-10-06)
+- Game names: PoolRad, Curse, Secret, Darkness. Target = the GOG releases
+  (their DOS files and their journal PDFs).
+- Controls: tap what the game shows (menu words, list lines, combat squares);
+  keys only for what isn't on screen - one row of 8 under the game on
+  320x240, a 3x3 pad + keys under it on 480x320 (SPEC section 4).
 - 480x320: the game screen stays 1:1 (never scaled for play) with a Gold Box
   Companion panel (auto-map, party HP, spells) to its right; controls below.
 - Build order: Curse of the Azure Bonds first, then Pool of Radiance, Silver
   Blades, Pools of Darkness.
-- Journal: a converter reads the journal PDF from the player's own copy and
-  writes the entries to their SD card; the engine shows entry N. No journal
-  text ever in the repo, firmware or site (SPEC section 7).
+- Journal: a converter (browser page, pdf.js, local only) cuts each entry
+  out of the player's own GOG journal PDF as a picture, using per-PDF
+  rectangle tables, and writes them to their SD card; the engine shows entry
+  N. The GOG PDFs are scans whose OCR text is garbled, and entries include
+  maps - so pictures, not text. No journal text or images ever in the repo,
+  firmware or site (SPEC section 7).
 
 ## Bring your own game - hard rules
 - The repo and firmware contain nothing from the games: no DAX files, no

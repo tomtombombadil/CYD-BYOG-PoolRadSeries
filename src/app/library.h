@@ -13,6 +13,9 @@ namespace library {
 
 struct GameDir {
     char         folder[40];      // folder name under /GOLDBOX
+    char         data_dir[96];    // where the DAX files are, relative to /GOLDBOX:
+                                  // the folder itself, or one folder inside it
+                                  // (a whole GOG install copied as it is)
     games::Game  game;
     int          dax_files;
 };
@@ -23,15 +26,16 @@ constexpr int kNameLen  = 32;
 
 enum class ScanResult : uint8_t { Ok, NoCard, NoRootFolder };
 
-// Lists the game folders (only those holding at least one .DAX file),
-// sorted by game number then name. *n = how many.
+// Lists the game folders (only those holding at least one .DAX file, in
+// the folder or in one of its own folders), sorted by game number then
+// name. *n = how many.
 ScanResult scan(GameDir* out, int max, int* n);
 
-// The .DAX files in one game folder, sorted by name.
-int list_dax(const char* folder, char (*names)[kNameLen], int max);
+// The .DAX files in a game's data_dir, sorted by name.
+int list_dax(const char* data_dir, char (*names)[kNameLen], int max);
 
-// "/GOLDBOX/<folder>/<file>"
-void path_of(const char* folder, const char* file, char* out, size_t cap);
+// "/GOLDBOX/<data_dir>/<file>"
+void path_of(const char* data_dir, const char* file, char* out, size_t cap);
 
 // A DAX source over an open SD file. Keeps a 512-byte read-ahead buffer.
 class FileSource : public dax::ByteSource {
