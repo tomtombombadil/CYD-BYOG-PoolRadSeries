@@ -137,9 +137,14 @@ void title_next(pic::Canvas& c)
 
 text::Writer w;
 text::Menu   menu;
+int          menu_sel = 2;     // the chosen word stays chosen, as in the games
+char         pending = 0;      // a chosen word's key, acted on once its highlight was seen
+uint32_t     pending_at = 0;
 int          char_ms = 12;     // the games' usual speed
 uint32_t     t_last = 0;
 bool         t_started = false;
+
+constexpr uint32_t kChoiceShowMs = 250;
 
 void text_start(pic::Canvas& c)
 {
@@ -158,7 +163,7 @@ Rows text_after(pic::Canvas& c)
     }
     if (w.state == text::State::Done) {
         text::build(menu, "", "Again Quick Normal");
-        menu.selected = char_ms == 0 ? 1 : 2;
+        menu.selected = menu_sel;
         text::draw(c, d->font, menu);
         return cell_rows(text::kMenuRow, text::kMenuRow);
     }
@@ -167,6 +172,7 @@ Rows text_after(pic::Canvas& c)
 
 void draw_text_page(pic::Canvas& c)
 {
+    pending = 0;
     c.clear(0);
     layout::explore(c, d->tables, d->tiles);
     put_text(c, "3D VIEW", 5, 8, 7);
@@ -205,6 +211,9 @@ void draw_still(pic::Canvas& c)
         layout::combat(c, tb, t);
         put_text(c, "BATTLEFIELD", 6, 10, 7);
         put_text(c, "COMBAT", 26, 2);
+        // The combat frame ends a row higher: row 23 is its status line
+        // (range, the spell or item being used), row 24 the menu as always
+        put_text(c, "STATUS LINE", 0, 23, 10);
         put_text(c, "MENU LINE", 0, 24, 14);
         break;
     case kTiles:
@@ -360,6 +369,13 @@ Rows tick(uint32_t now, pic::Canvas& c)
         }
         return Rows{};
     }
+    if (page == kText && pending && now - pending_at >= kChoiceShowMs) {
+        if (pending == 'Q') char_ms = 0;
+        if (pending == 'N') char_ms = 12;
+        pending = 0;
+        text_start(c);
+        return join(cell_rows(w.r.y0, w.r.y1), cell_rows(text::kMenuRow, text::kMenuRow));
+    }
     if (page == kText && w.state == text::State::Writing) {
         if (!t_started) {
             t_last = now;
@@ -399,14 +415,15 @@ Rows tap(int x, int y, uint32_t now, pic::Canvas& c)
         t_last = now;
         return join(cell_rows(w.r.y0, w.r.y1), text_after(c));
     case text::State::Done: {
-        if (y / 8 != text::kMenuRow) return Rows{};
+        if (pending || y / 8 != text::kMenuRow) return Rows{};
         const int item = text::hit(menu, x / 8);
         if (item < 0) return Rows{};
-        const char k = text::key(menu, item);
-        if (k == 'Q') char_ms = 0;
-        if (k == 'N') char_ms = 12;
-        text_start(c);
-        return join(cell_rows(w.r.y0, w.r.y1), cell_rows(text::kMenuRow, text::kMenuRow));
+        // The highlight moves to the tapped word first, then it acts
+        menu_sel = menu.selected = item;
+        text::draw(c, d->font, menu);
+        pending = text::key(menu, item);
+        pending_at = now;
+        return cell_rows(text::kMenuRow, text::kMenuRow);
     }
     default:
         return Rows{};

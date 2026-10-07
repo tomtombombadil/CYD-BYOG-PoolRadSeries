@@ -11,6 +11,7 @@
 #include "engine/dax.h"
 #include "engine/font.h"
 #include "engine/games.h"
+#include "engine/icon.h"
 #include "engine/picture.h"
 #include "frame.h"
 #include "hal/panel_prefs.h"
@@ -184,10 +185,56 @@ bool pager_tap(const ui::Tap& t, Pager& p, int* page, bool has_middle = false, b
 
 constexpr int kHomeCols = 2, kHomeRows = 3;
 
+int icon_px() { return ui::large() ? 48 : 32; }
+
+// The game's icon (from the player's own GOG files) at the key's left.
+void draw_icon(const ui::Rect& r, const library::GameDir& g, ui::KeyStyle st)
+{
+    const int want = icon_px();
+    char path[160];
+    snprintf(path, sizeof path, "%s/%s", games::kRootDir, g.icon);
+    fs::File f = sd_fs().open(path, "r");
+    if (!f) return;
+    library::FileSource src(f);
+    icon::Found fo;
+    uint8_t* px = nullptr;
+    bool ok = icon::find(src, want, fo);
+    if (ok) {
+        px = static_cast<uint8_t*>(malloc(fo.w * fo.h * 4));
+        ok = px && icon::decode(src, fo, px);
+    }
+    f.close();
+    if (!ok) {
+        free(px);
+        Serial.printf("[library] no usable icon in %s\n", path);
+        return;
+    }
+    // Blend onto the key's colour; nearest-pixel scaling to the size wanted
+    const uint16_t bg = ui::key_fill(st);
+    const int br = ((bg >> 11) & 31) * 255 / 31, bgc = ((bg >> 5) & 63) * 255 / 63, bb = (bg & 31) * 255 / 31;
+    LGFX& gx = ui::gfx();
+    const int x0 = r.x + ui::gap(), y0 = r.y + (r.h - want) / 2;
+    gx.startWrite();
+    for (int y = 0; y < want; ++y) {
+        for (int x = 0; x < want; ++x) {
+            const uint8_t* p = px + ((y * fo.h / want) * fo.w + x * fo.w / want) * 4;
+            const int a = st == ui::KeyStyle::Dim ? p[3] / 2 : p[3];
+            const int cr = (p[0] * a + br * (255 - a)) / 255;
+            const int cg = (p[1] * a + bgc * (255 - a)) / 255;
+            const int cb = (p[2] * a + bb * (255 - a)) / 255;
+            gx.drawPixel(x0 + x, y0 + y, gx.color565(cr, cg, cb));
+        }
+    }
+    gx.endWrite();
+    free(px);
+}
+
 void draw_home()
 {
     ui::clear();
-    ui::header("Gold Box Library", false);
+    char title[48];
+    snprintf(title, sizeof title, "Gold Box Library  %s", env_.version);
+    ui::header(title, false);
     if (scan_result != library::ScanResult::Ok || n_games == 0) {
         const int x = ui::gap() * 3;
         int y = ui::header_h() + ui::gap() * 3;
@@ -210,14 +257,23 @@ void draw_home()
         Pager p{n_games, kHomeCols * kHomeRows, home_page};
         for (int i = 0; i < p.per_page && p.first() + i < n_games; ++i) {
             const library::GameDir& g = game_dirs[p.first() + i];
+            const ui::Rect r = ui::grid_cell(i, kHomeCols, kHomeRows);
+            const bool hlib = g.format == library::Format::Hlib;
+            const ui::KeyStyle st = hlib ? ui::KeyStyle::Dim : ui::KeyStyle::Normal;
+            const char* label = games::short_title(g.game);
+            // Room for the icon only if the name still fits beside it
+            int inset = 0;
+            if (g.icon[0] && r.h >= icon_px() + 4) inset = icon_px() + ui::gap() * 2;
+            if (inset && ui::text_width(label) > r.w - inset - ui::gap()) inset = 0;
             char sub[64];
-            if (g.format == library::Format::Hlib) {
-                snprintf(sub, sizeof sub, "%s - newer format", g.folder);
-                ui::key2(ui::grid_cell(i, kHomeCols, kHomeRows), games::short_title(g.game), sub, ui::KeyStyle::Dim);
-            } else {
-                snprintf(sub, sizeof sub, "%s - %d files", g.folder, g.dax_files);
-                ui::key2(ui::grid_cell(i, kHomeCols, kHomeRows), games::short_title(g.game), sub);
+            if (hlib) snprintf(sub, sizeof sub, "%s - newer format", g.folder);
+            else snprintf(sub, sizeof sub, "%s - %d files", g.folder, g.dax_files);
+            if (ui::text_width(sub, ui::Font::Small) > r.w - inset - ui::gap()) {
+                if (hlib) snprintf(sub, sizeof sub, "newer format");
+                else snprintf(sub, sizeof sub, "%d files", g.dax_files);
             }
+            ui::key2(r, label, sub, st, inset);
+            if (inset) draw_icon(r, g, st);
         }
     }
     const bool more = n_games > kHomeCols * kHomeRows;

@@ -11,6 +11,7 @@
 
 #include "engine/dax.h"
 #include "engine/exepack.h"
+#include "engine/icon.h"
 #include "engine/layout.h"
 #include "engine/printcalls.h"
 #include "engine/text.h"
@@ -813,6 +814,170 @@ static void test_printcalls()
     CHECK(printcalls::read(src, calls, seg + 3, l, 8) == 0);     // strings don't read
 }
 
+// ---- Icons -----------------------------------------------------------------
+// A DIB icon image: pixel (x, y) colour from col(x, y) (RGB; for paletted
+// images an index), see-through where clear(x, y)
+static Bytes make_dib(int w, int bits, uint32_t (*col)(int, int), bool (*clear)(int, int), bool alpha)
+{
+    Bytes b;
+    const int colours = bits <= 8 ? 1 << bits : 0;
+    put32(b, 40); put32(b, w); put32(b, w * 2); put16(b, 1); put16(b, bits); put32(b, 0);
+    put32(b, 0); put32(b, 0); put32(b, 0); put32(b, colours); put32(b, 0);
+    for (int i = 0; i < colours; ++i) {      // palette: index i = grey-ish (i*16, i, 255-i)
+        b.push_back(static_cast<uint8_t>(255 - i)); b.push_back(static_cast<uint8_t>(i)); b.push_back(static_cast<uint8_t>(i * 16)); b.push_back(0);
+    }
+    const int stride = ((w * bits + 31) / 32) * 4, mstride = ((w + 31) / 32) * 4;
+    for (int y = w - 1; y >= 0; --y) {       // bottom-up
+        Bytes row(stride, 0);
+        for (int x = 0; x < w; ++x) {
+            const uint32_t c = col(x, y);
+            if (bits == 32) { row[x*4] = c & 0xFF; row[x*4+1] = (c >> 8) & 0xFF; row[x*4+2] = (c >> 16) & 0xFF; row[x*4+3] = alpha ? (clear(x, y) ? 0 : 200) : 0; }
+            else if (bits == 24) { row[x*3] = c & 0xFF; row[x*3+1] = (c >> 8) & 0xFF; row[x*3+2] = (c >> 16) & 0xFF; }
+            else if (bits == 8) row[x] = static_cast<uint8_t>(c);
+            else if (bits == 4) row[x / 2] |= static_cast<uint8_t>((c & 15) << ((x & 1) ? 0 : 4));
+            else row[x / 8] |= static_cast<uint8_t>((c & 1) << (7 - (x & 7)));
+        }
+        b.insert(b.end(), row.begin(), row.end());
+    }
+    for (int y = w - 1; y >= 0; --y) {
+        Bytes row(mstride, 0);
+        for (int x = 0; x < w; ++x)
+            if (clear(x, y)) row[x / 8] |= static_cast<uint8_t>(0x80 >> (x & 7));
+        b.insert(b.end(), row.begin(), row.end());
+    }
+    return b;
+}
+
+static uint32_t col_rgb(int x, int y) { return static_cast<uint32_t>(x * 4) << 16 | static_cast<uint32_t>(y * 4) << 8 | 0x33; }
+static uint32_t col_idx(int x, int y) { return static_cast<uint32_t>((x + y) & 15); }
+static bool clear_corner(int x, int y) { return x < 2 && y < 2; }
+
+static Bytes make_ico(const std::vector<std::pair<int, Bytes>>& imgs)
+{
+    Bytes b;
+    put16(b, 0); put16(b, 1); put16(b, static_cast<uint32_t>(imgs.size()));
+    uint32_t off = 6 + 16 * static_cast<uint32_t>(imgs.size());
+    for (const auto& im : imgs) {
+        b.push_back(static_cast<uint8_t>(im.first)); b.push_back(static_cast<uint8_t>(im.first));
+        b.push_back(0); b.push_back(0); put16(b, 1); put16(b, 32);
+        put32(b, static_cast<uint32_t>(im.second.size())); put32(b, off);
+        off += static_cast<uint32_t>(im.second.size());
+    }
+    for (const auto& im : imgs) b.insert(b.end(), im.second.begin(), im.second.end());
+    return b;
+}
+
+// A minimal PE with one resource section: RT_ICON 1, 2 and RT_GROUP_ICON 1
+static Bytes make_pe(const Bytes& icon1, const Bytes& icon2)
+{
+    const uint32_t kVa = 0x2000, kRaw = 0x200;
+    Bytes rs;   // the resource section, offsets from its start
+    auto dir = [&](const std::vector<std::pair<uint32_t, uint32_t>>& entries) {
+        const uint32_t at = static_cast<uint32_t>(rs.size());
+        for (int i = 0; i < 12; ++i) rs.push_back(0);
+        put16(rs, 0); put16(rs, static_cast<uint32_t>(entries.size()));
+        for (const auto& e : entries) { put32(rs, e.first); put32(rs, e.second); }
+        return at;
+    };
+    auto patch32 = [&](uint32_t at, uint32_t v) { for (int i = 0; i < 4; ++i) rs[at + i] = static_cast<uint8_t>(v >> (i * 8)); };
+    // root: type 3 -> A, type 14 -> B (patched below)
+    const uint32_t root = dir({{3, 0}, {14, 0}});
+    const uint32_t a = dir({{1, 0}, {2, 0}});
+    const uint32_t a1 = dir({{1033, 0}}), a2 = dir({{1033, 0}});
+    const uint32_t b = dir({{1, 0}});
+    const uint32_t b1 = dir({{1033, 0}});
+    auto data_entry = [&](uint32_t dir_at) {
+        const uint32_t de = static_cast<uint32_t>(rs.size());
+        for (int i = 0; i < 16; ++i) rs.push_back(0);
+        patch32(dir_at + 16 + 4, de);
+        return de;
+    };
+    const uint32_t de1 = data_entry(a1), de2 = data_entry(a2), deg = data_entry(b1);
+    patch32(root + 16 + 4, 0x80000000u | a);
+    patch32(root + 24 + 4, 0x80000000u | b);
+    patch32(a + 16 + 4, 0x80000000u | a1);
+    patch32(a + 24 + 4, 0x80000000u | a2);
+    patch32(b + 16 + 4, 0x80000000u | b1);
+    auto blob = [&](uint32_t de, const Bytes& data) {
+        const uint32_t at = static_cast<uint32_t>(rs.size());
+        rs.insert(rs.end(), data.begin(), data.end());
+        patch32(de, kVa + at);
+        patch32(de + 4, static_cast<uint32_t>(data.size()));
+    };
+    blob(de1, icon1);
+    blob(de2, icon2);
+    Bytes grp;
+    put16(grp, 0); put16(grp, 1); put16(grp, 2);
+    for (int i = 0; i < 2; ++i) {
+        const Bytes& im = i ? icon2 : icon1;
+        grp.push_back(0); grp.push_back(0); grp.push_back(0); grp.push_back(0); put16(grp, 1); put16(grp, 32);
+        put32(grp, static_cast<uint32_t>(im.size())); put16(grp, static_cast<uint32_t>(i + 1));
+    }
+    blob(deg, grp);
+
+    Bytes pe(0x40, 0);
+    pe[0] = 'M'; pe[1] = 'Z'; pe[0x3C] = 0x40;
+    pe.push_back('P'); pe.push_back('E'); pe.push_back(0); pe.push_back(0);
+    put16(pe, 0x14C); put16(pe, 1); put32(pe, 0); put32(pe, 0); put32(pe, 0); put16(pe, 224); put16(pe, 0);
+    const size_t opt = pe.size();
+    pe.resize(opt + 224, 0);
+    pe[opt] = 0x0B; pe[opt + 1] = 0x01;                     // PE32
+    const size_t dd = opt + 96 + 2 * 8;                     // resource directory
+    for (int i = 0; i < 4; ++i) { pe[dd + i] = static_cast<uint8_t>(kVa >> (i * 8)); pe[dd + 4 + i] = static_cast<uint8_t>(rs.size() >> (i * 8)); }
+    const char name[8] = {'.', 'r', 's', 'r', 'c', 0, 0, 0};
+    pe.insert(pe.end(), name, name + 8);
+    put32(pe, static_cast<uint32_t>(rs.size())); put32(pe, kVa); put32(pe, static_cast<uint32_t>(rs.size())); put32(pe, kRaw);
+    for (int i = 0; i < 16; ++i) pe.push_back(0);
+    pe.resize(kRaw, 0);
+    pe.insert(pe.end(), rs.begin(), rs.end());
+    return pe;
+}
+
+static void test_icon()
+{
+    const Bytes i16 = make_dib(16, 4, col_idx, clear_corner, false);
+    const Bytes i32 = make_dib(32, 32, col_rgb, clear_corner, true);
+    const Bytes i32m = make_dib(32, 32, col_rgb, clear_corner, false);   // no alpha: mask decides
+    const Bytes i48 = make_dib(48, 24, col_rgb, clear_corner, false);
+    Bytes png = {0x89, 'P', 'N', 'G', 13, 10, 26, 10};
+    png.resize(200, 0);
+
+    const Bytes ico = make_ico({{16, i16}, {32, i32}, {48, i48}, {0, png}});
+    dax::MemorySource s(ico.data(), static_cast<uint32_t>(ico.size()));
+    icon::Found f;
+    CHECK(icon::find(s, 32, f) && f.w == 32 && f.bits == 32);
+    CHECK(icon::find(s, 48, f) && f.w == 48 && f.bits == 24);
+    CHECK(icon::find(s, 40, f) && f.w == 32);        // largest smaller one
+    CHECK(icon::find(s, 8, f) && f.w == 16);         // none smaller: the smallest
+    static uint8_t px[icon::kMaxSize * icon::kMaxSize * 4];
+    CHECK(icon::find(s, 32, f) && icon::decode(s, f, px));
+    CHECK(px[0 * 4 + 3] == 0);                                         // see-through corner
+    const uint8_t* p = px + (5 * 32 + 7) * 4;                          // (7, 5)
+    CHECK(p[0] == 28 && p[1] == 20 && p[2] == 0x33 && p[3] == 200);
+    CHECK(icon::find(s, 16, f) && f.bits == 4 && icon::decode(s, f, px));
+    p = px + (3 * 16 + 4) * 4;                                         // index 7: (112, 7, 248)
+    CHECK(p[0] == 112 && p[1] == 7 && p[2] == 248 && p[3] == 255);
+    CHECK(px[(1 * 16 + 1) * 4 + 3] == 0);
+
+    const Bytes ico2 = make_ico({{32, i32m}});
+    dax::MemorySource s2(ico2.data(), static_cast<uint32_t>(ico2.size()));
+    CHECK(icon::find(s2, 32, f) && icon::decode(s2, f, px));
+    CHECK(px[3] == 0 && px[(10 * 32 + 10) * 4 + 3] == 255);
+    const Bytes only_png = make_ico({{0, png}});
+    dax::MemorySource s3(only_png.data(), static_cast<uint32_t>(only_png.size()));
+    CHECK(!icon::find(s3, 32, f));
+
+    const Bytes pe = make_pe(i16, i32);
+    dax::MemorySource s4(pe.data(), static_cast<uint32_t>(pe.size()));
+    CHECK(icon::find(s4, 32, f) && f.w == 32 && icon::decode(s4, f, px));
+    p = px + (5 * 32 + 7) * 4;
+    CHECK(p[0] == 28 && p[1] == 20 && p[3] == 200);
+    CHECK(icon::find(s4, 16, f) && f.w == 16);
+    const Bytes junk(300, 1);
+    dax::MemorySource s5(junk.data(), static_cast<uint32_t>(junk.size()));
+    CHECK(!icon::find(s5, 32, f));
+}
+
 int main()
 {
     test_rle_known_bytes();
@@ -828,6 +993,7 @@ int main()
     test_text();
     test_menu();
     test_printcalls();
+    test_icon();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;

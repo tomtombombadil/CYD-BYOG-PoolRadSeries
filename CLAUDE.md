@@ -98,6 +98,9 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
 - SD folders Tom uses (2026-10-07): POOLRAD, CURSE, SECRET, DARKNESS,
   CHAMPIONS, DEATH, QUEEN, GATEWAY, TREASURE, UNLIMIT (`engine/games.*`;
   QUEEN / UNLIMIT are .TLB/.GLB "newer format" games, listed, not readable).
+- Library title bar shows the firmware version (Tom: to see which build is
+  flashed). Game icons come from the player's goggame-<id>.ico / .dll on the
+  card (`engine/icon.*`), never from the repo.
 - Stream DAX blocks (`dax::RleReader`) instead of loading whole blocks where
   possible; RAM is tight (largest free block ~75-110 KB).
 - Toolchain: pioarduino platform 55.03.312-1 (Arduino-ESP32 3.3.x), LovyanGFX

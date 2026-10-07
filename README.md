@@ -36,6 +36,12 @@ Tested with this firmware so far: the 4.0".
    `GOLDBOX/POOLRAD`, `GOLDBOX/CURSE`, `GOLDBOX/SECRET`, `GOLDBOX/DARKNESS`.
    Any folder name containing the game's name works.
 
+**Game icons (optional):** the DOS games have no icons of their own; GOG's
+install folder holds each game's icon in a `goggame-<number>.ico` or
+`goggame-<number>.dll` file. Copy that file into the game's folder on the card
+and the library shows the icon next to the game's name. (GOG's `Support.ico`
+is the same generic GOG icon for every game, so it is ignored.)
+
 The other Gold Box games are recognised too (folders `CHAMPIONS`, `DEATH`,
 `QUEEN`, `GATEWAY`, `TREASURE`, `UNLIMIT`, or their full names), so their files
 can be looked at; they're planned after the four. The Dark Queen of Krynn and
@@ -45,7 +51,8 @@ Unlimited Adventures use a newer file format the viewer can't read yet.
 
 The games aren't playable yet; this build shows what is inside their files.
 
-1. **Library**: one key per game found on the card. Tap one.
+1. **Library** (the firmware version is in its title bar): one key per game
+   found on the card, with its icon if you copied it. Tap one.
 2. **Files**: the game's DAX archives. Tap one. For Curse of the Azure Bonds
    the middle key, **Screen Test**, shows the game's own look, drawn from your
    files (`START.EXE`, `GAME.OVR`, `TITLE.DAX`, `8X8D1.DAX`): the title

@@ -37,6 +37,34 @@ int count_dax(fs::File& dir)
     return n;
 }
 
+// How good a file is as the game's icon: 3 goggame-*.ico, 2 goggame-*.dll,
+// 1 another .ico, 0 none
+int icon_rank(const char* name)
+{
+    const bool gog = strncasecmp(name, "goggame-", 8) == 0;
+    if (ends_with(name, ".ICO")) {
+        if (gog) return 3;
+        return strcasecmp(name, "Support.ico") == 0 ? 0 : 1;
+    }
+    if (gog && ends_with(name, ".DLL")) return 2;
+    return 0;
+}
+
+// The best icon file in dir (relative path rel_dir/<name> into out)
+void find_icon(fs::File& dir, const char* rel_dir, char* out, size_t cap, int& best)
+{
+    dir.rewindDirectory();
+    for (fs::File f = dir.openNextFile(); f; f = dir.openNextFile()) {
+        const char* nm = base_name(f.name());
+        const int r = f.isDirectory() ? 0 : icon_rank(nm);
+        if (r > best) {
+            best = r;
+            snprintf(out, cap, "%s/%s", rel_dir, nm);
+        }
+        f.close();
+    }
+}
+
 // .TLB / .GLB files in dir and up to `depth` folders below it
 int count_hlib(fs::File& dir, int depth)
 {
@@ -94,6 +122,16 @@ ScanResult scan(GameDir* out, int max, int* n)
             if (dax > 0) {
                 g.game = games::from_folder_name(g.folder);
                 g.dax_files = dax;
+                g.icon[0] = 0;
+                int best = 0;
+                find_icon(d, g.folder, g.icon, sizeof g.icon, best);
+                if (strcmp(g.data_dir, g.folder) != 0) {
+                    char sub_path[128];
+                    snprintf(sub_path, sizeof sub_path, "%s/%s", games::kRootDir, g.data_dir);
+                    fs::File sub = fs.open(sub_path);
+                    if (sub && sub.isDirectory()) find_icon(sub, g.data_dir, g.icon, sizeof g.icon, best);
+                    if (sub) sub.close();
+                }
                 ++*n;
             }
         }

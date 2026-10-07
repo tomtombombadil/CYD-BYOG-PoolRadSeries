@@ -124,9 +124,14 @@ void key(const Rect& r, const char* label, KeyStyle s)
     text_center(r, label, s == KeyStyle::Dim ? style::kTextMuted : style::kText);
 }
 
-void key2(const Rect& r, const char* label, const char* sub, KeyStyle s)
+uint16_t key_fill(KeyStyle s)
 {
-    const uint16_t fill = s == KeyStyle::Lit ? style::kKeyLit : s == KeyStyle::Dim ? style::kKeyDim : style::kKey;
+    return s == KeyStyle::Lit ? style::kKeyLit : s == KeyStyle::Dim ? style::kKeyDim : style::kKey;
+}
+
+void key2(const Rect& r, const char* label, const char* sub, KeyStyle s, int left_inset)
+{
+    const uint16_t fill = key_fill(s);
     const int rad = large() ? 6 : 4;
     g->fillRoundRect(r.x, r.y, r.w, r.h, rad, fill);
     g->drawRoundRect(r.x, r.y, r.w, r.h, rad, s == KeyStyle::Lit ? style::kGold : style::kKeyEdge);
@@ -135,10 +140,11 @@ void key2(const Rect& r, const char* label, const char* sub, KeyStyle s)
     use_font(Font::Normal);
     g->setTextColor(s == KeyStyle::Dim ? style::kTextMuted : style::kText);
     g->setTextDatum(textdatum_t::top_center);
-    g->drawString(label, r.x + r.w / 2, top);
+    const int cx = r.x + left_inset + (r.w - left_inset) / 2;
+    g->drawString(label, cx, top);
     use_font(Font::Small);
     g->setTextColor(s == KeyStyle::Lit ? style::kText : style::kTextMuted);
-    g->drawString(sub, r.x + r.w / 2, top + lh + 2);
+    g->drawString(sub, cx, top + lh + 2);
 }
 
 void text(int x, int y, const char* s, uint16_t color, Font f)

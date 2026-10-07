@@ -26,6 +26,9 @@ struct GameDir {
     games::Game  game;
     Format       format;
     int          dax_files;       // .DAX files (Dax), .TLB + .GLB files (Hlib)
+    char         icon[128];       // the game's icon file, relative to /GOLDBOX ("" = none):
+                                  // GOG's goggame-<id>.ico / .dll, or another .ico
+                                  // (not GOG's generic Support.ico)
 };
 
 constexpr int kMaxGames = 16;
