@@ -53,6 +53,12 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   synthetic files. Screenshots of real game graphics stay out of the repo.
 - Game files are read from `/GOLDBOX/<folder>/` on the SD card, never copied
   into flash.
+- Tom's GOG game files are in this Claude Project's files (zips, one per
+  game; 2026-10-07): fetch with the Projects tool (`project_read`), unzip to
+  the session's scratch space (e.g. /tmp/claude-0/games/<game>), check with
+  `tools/dax_tool/dax_inspect`. project_read refuses files over ~20 MB; the
+  Curse, Secret, Champions, Death Knights, Dark Queen and Treasures zips
+  load, the PoolRad, Darkness, Gateway and FRUA zips don't (yet).
 - Tom may attach his own game files to a session for testing. Keep them in
   the session's scratch space only (never under the repo; .gitignore blocks
   *.DAX / *.pdf as a backstop), use them to check decoders, and never
