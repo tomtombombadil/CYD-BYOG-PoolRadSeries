@@ -32,7 +32,8 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   320x240, a 3x3 pad + keys under it on 480x320 (SPEC section 4). Exploring
   keys include Side-step Left / Right (same checks as a step into that
   square). Pad = numeric keypad: 7 / 9 turn, 8 forward, 4 / 6 side-step,
-  2 turn around (Tom).
+  2 turn around (Tom). 320x240 row (Tom, 2026-10-07): Side-step Left,
+  Turn Left, Forward, Turn Right, Side-step Right, Turn Around, Area, Esc.
 - Copy protection: skipped - never asked, treated as answered.
 - Later: Krynn, Savage Frontier and FRUA in this repo, after the four games.
   Keep game-specific code behind a per-game profile so they fit.

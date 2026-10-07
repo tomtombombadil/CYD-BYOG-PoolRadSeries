@@ -856,8 +856,8 @@ ui::Rect walk_key(int k)
     const int top = pic::kScreenH + gp;
     const int h_all = ui::height() - top - gp;
     if (!ui::large()) {
-        // Row of 8: TurnL StepL Fwd StepR TurnR Around Area Esc (Next Map: menu / panel tap)
-        static const int kOrder[kWKeys] = {0, 1, 2, 3, 4, 5, 6, -1, 7};
+        // Row of 8: StepL TurnL Fwd TurnR StepR Around Area Esc (Next Map: menu / panel tap)
+        static const int kOrder[kWKeys] = {1, 0, 2, 4, 3, 5, 6, -1, 7};
         const int i = kOrder[k];
         if (i < 0) return ui::Rect{};
         const int w = (pic::kScreenW - gp * 9) / 8;

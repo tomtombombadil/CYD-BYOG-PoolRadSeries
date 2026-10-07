@@ -82,9 +82,10 @@ The games draw a 320x200 screen. The canvas is presented:
   any key" prompts = tap the game screen.
 - **Keys only for what isn't on screen**, changing with what the game does:
   - 320x240: one row of 8 square keys (~37x34) in the 40 rows under the game.
-    Exploring: Turn Left, Side-step Left, Forward, Side-step Right, Turn
-    Right, Turn Around, Esc, and a Companion key (auto-map, journal, party
-    on a full-screen page). Combat: the 8 direction arrows.
+    Exploring: Side-step Left, Turn Left, Forward, Turn Right, Side-step
+    Right, Turn Around (Tom, 2026-10-07: side-steps outside the turns), Esc,
+    and a Companion key (auto-map, journal, party on a full-screen page).
+    Combat: the 8 direction arrows.
   - 480x320: the 320x120 area under the game holds a 3x3 pad laid out like a
     numeric keypad (Tom): exploring 7 = Turn Left, 8 = Forward, 9 = Turn
     Right, 4 = Side-step Left, 6 = Side-step Right, 2 = Turn Around; combat:
