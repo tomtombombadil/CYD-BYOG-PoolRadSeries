@@ -49,6 +49,7 @@ dax::Status        index_status = dax::Status::Ok;
 pic::Header        pic_hdr[dax::kMaxEntries];   // picture, or an animation's first frame
 bool               is_pic[dax::kMaxEntries];    // something to draw (picture or animation)
 bool               is_anim[dax::kMaxEntries];   // an animation (PIC, SPRIT...); pic_hdr.frames = its frames
+bool               is_vga[dax::kMaxEntries];    // a 256-colour picture (Pools of Darkness)
 pic::Anim          cur_anim;                    // the animation being viewed
 int                cur_anim_block = -1;
 int                block_page = 0;
@@ -105,12 +106,21 @@ bool open_file(int i)
     src = new (src_mem) library::FileSource(cur_file);
     index_status = dax::read_index(*src, index_);
     for (int e = 0; e < index_.count; ++e) {
-        is_pic[e] = is_anim[e] = false;
+        is_pic[e] = is_anim[e] = is_vga[e] = false;
         const dax::Entry& en = index_.entries[e];
         {
             dax::RleReader r(*src, index_, en);
             uint8_t hdr[pic::kHeaderSize];
-            if (r.read(hdr, sizeof hdr) == sizeof hdr) is_pic[e] = pic::parse_header(hdr, en.raw_size, pic_hdr[e]);
+            const size_t got = r.read(hdr, sizeof hdr);
+            if (got == sizeof hdr) is_pic[e] = pic::parse_header(hdr, en.raw_size, pic_hdr[e]);
+            pic::VgaHeader vh;
+            if (!is_pic[e] && got >= pic::kVgaHeaderSize && pic::parse_vga_header(hdr, en.raw_size, vh)) {
+                is_pic[e] = is_vga[e] = true;
+                pic_hdr[e] = pic::Header{};
+                pic_hdr[e].height = vh.height;
+                pic_hdr[e].width_cols = vh.width_cols;
+                pic_hdr[e].frames = vh.frames;
+            }
         }
         if (!is_pic[e]) {
             dax::RleReader r(*src, index_, en);
@@ -397,7 +407,22 @@ void draw_picture()
     const pic::Header& h = pic_hdr[block_sel];
     const int x = (pic::kScreenW - h.width_px()) / 2, y = (pic::kScreenH - h.height) / 2;
     bool ok;
-    if (is_anim[block_sel]) {
+    frame::set_ega_palette();
+    if (is_vga[block_sel]) {
+        // Its own palette: entries it doesn't set stay black
+        static pic::Rgb pal[256];
+        for (auto& p : pal) p = pic::Rgb{0, 0, 0};
+        dax::RleReader r(*src, index_, index_.entries[block_sel]);
+        uint8_t hdr[pic::kVgaHeaderSize];
+        pic::VgaHeader vh;
+        ok = r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_vga_header(hdr, index_.entries[block_sel].raw_size, vh) &&
+             pic::read_vga_palette(r, vh, pal);
+        for (int i = 0; i < 256; ++i) frame::set_palette(i, pal[i]);
+        if (ok) {
+            dax::RleReader r2(*src, index_, index_.entries[block_sel]);
+            ok = pic::draw_vga(r2, vh, frame_no, c, x, y);
+        }
+    } else if (is_anim[block_sel]) {
         if (cur_anim_block != block_sel) {
             dax::RleReader r(*src, index_, index_.entries[block_sel]);
             pic::parse_anim(r, index_.entries[block_sel].raw_size, cur_anim);

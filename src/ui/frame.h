@@ -21,7 +21,8 @@ bool begin();
 
 pic::Canvas& canvas();
 
-// Palette entries 0-255 (RGB). Index 16 (transparent) shows as black.
+// Palette entries 0-255 (RGB). set_ega_palette() sets 0-15 and makes 16
+// (EGA "transparent") black; a 256-colour picture sets what it needs.
 void set_palette(int index, const pic::Rgb& c);
 void set_ega_palette();
 

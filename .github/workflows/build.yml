@@ -68,6 +68,8 @@ jobs:
         run: |
           g++ -std=c++17 -O1 -Wall -Werror -fsanitize=address,undefined -Isrc -o test_dax tools/host_tests/test_dax.cpp src/engine/*.cpp
           ./test_dax
+      - name: PC inspection tool builds
+        run: g++ -std=c++17 -O1 -Wall -Werror -Isrc -o dax_inspect tools/dax_tool/dax_inspect.cpp src/engine/*.cpp
 
   build:
     needs: [boards, tests]

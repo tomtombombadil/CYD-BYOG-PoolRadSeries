@@ -39,7 +39,8 @@ bool parse_header(const uint8_t* p, uint32_t raw_size, Header& out, uint32_t* ex
     if (out.frames == 0) return false;
     const uint64_t need = kHeaderSize + static_cast<uint64_t>(out.frames) * out.frame_bytes();
     if (need > raw_size) return false;
-    if (extra_bytes) *extra_bytes = static_cast<uint32_t>(raw_size - need);
+    if (need != raw_size) return false;
+    if (extra_bytes) *extra_bytes = 0;
     return true;
 }
 
@@ -141,6 +142,52 @@ bool draw_anim(dax::ByteSource& src, const dax::Index& idx, const dax::Entry& e,
     if (ok) draw_pixels(buf, h, c, x, y, mask);
     delete[] buf;
     return ok;
+}
+
+bool parse_vga_header(const uint8_t* p, uint32_t raw_size, VgaHeader& out)
+{
+    if (raw_size < kVgaHeaderSize) return false;
+    out.height = p[0];
+    out.width_cols = p[1];
+    out.frames = p[6];
+    out.first = p[8];
+    out.count = static_cast<uint16_t>(p[9] + 1);
+    if (out.height == 0 || out.width_cols == 0 || out.width_cols > kScreenW / 8 || out.frames == 0) return false;
+    if (out.first + out.count > 256) return false;
+    out.pixels_at = static_cast<uint32_t>(kVgaHeaderSize + out.count * 3 + (out.count + 1) / 2 + 4);
+    const uint64_t need = out.pixels_at + static_cast<uint64_t>(out.frames) * out.frame_bytes();
+    return need == raw_size;
+}
+
+bool read_vga_palette(dax::RleReader& r, const VgaHeader& h, Rgb* rgb256)
+{
+    for (int i = 0; i < h.count; ++i) {
+        uint8_t v[3];
+        if (r.read(v, 3) != 3) return false;
+        // 6-bit to 8-bit: 63 -> 255
+        rgb256[h.first + i] = Rgb{static_cast<uint8_t>(v[0] << 2 | v[0] >> 4), static_cast<uint8_t>(v[1] << 2 | v[1] >> 4),
+                                  static_cast<uint8_t>(v[2] << 2 | v[2] >> 4)};
+    }
+    return true;
+}
+
+bool draw_vga(dax::RleReader& r, const VgaHeader& h, int frame, Canvas& c, int x, int y, int mask)
+{
+    if (frame < 0 || frame >= h.frames) return false;
+    const uint32_t skip = h.pixels_at + static_cast<uint32_t>(frame) * h.frame_bytes();
+    if (r.skip(skip) != skip) return false;
+    const int w = h.width_px();
+    for (int row = 0; row < h.height; ++row) {
+        const int py = y + row;
+        uint8_t* line = (py >= 0 && py < c.h) ? c.px + py * c.w : nullptr;
+        for (int i = 0; i < w; ++i) {
+            const int b = r.next();
+            if (b < 0) return false;
+            const int px = x + i;
+            if (line && px >= 0 && px < c.w && b != mask) line[px] = static_cast<uint8_t>(b);
+        }
+    }
+    return true;
 }
 
 } // namespace pic

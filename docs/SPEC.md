@@ -101,16 +101,22 @@ The games draw a 320x200 screen. The canvas is presented:
 
 ## 5. File formats (status)
 
+Checked against Tom's GOG files of all four games on 2026-10-06 with
+`tools/dax_tool/dax_inspect` (every DAX file, every block). The games' files
+stay in the session's scratch space, never in the repo.
+
 | What | Where | Status |
 |---|---|---|
-| DAX archive: u16 index size, 9-byte entries (id, u32 offset, u16 unpacked, u16 packed), RLE blocks (control `c >= 0`: copy `c+1` bytes; `c < 0`: repeat next byte `-c` times) | `src/engine/dax.*` | Done, host-tested. Confirm on real files (M1). |
-| EGA picture block: u16 height, u16 width in 8-px columns, u16 x, u16 y, u8 frames, 8 unknown bytes, then nibble-packed pixels (high first) | `src/engine/picture.*` | Confirmed on Tom's Curse files (v0.1.1): TITLE, BIGPICn, HEAD*, BODY*, SKY, COMSPR look right. Some PoolRad and Secret files parse too. |
-| Animation block (PICn, FINALn, SPRITn): u8 frames, then per frame u32 delay, u16 height, u16 width cols, u16 x, u16 y, u8, 8 unknown bytes, packed pixels; PIC / FINAL frames after the first XORed with the first | `src/engine/picture.*` | v0.1.2, host-tested; check on Curse PIC1.DAX. |
-| VGA pictures (Pools of Darkness) | - | To do: different format, 256 colours. None of Darkness's blocks parse as EGA pictures (Tom, v0.1.1). |
-| GEO map block: 2-byte header + four 256-byte planes (wall types as nibbles, a byte per cell, 2 bits per direction) | - | M3. |
-| WALLDEF (5 x 156-byte wall sets) + 8X8D tile sets | - | M3. |
+| DAX archive: u16 index size, 9-byte entries (id, u32 offset, u16 unpacked, u16 packed), RLE blocks (control `c >= 0`: copy `c+1` bytes; `c < 0`: repeat next byte `-c` times) | `src/engine/dax.*` | **Confirmed**: every DAX file of all four games reads (3,661 blocks). |
+| EGA picture: u16 height, u16 width in 8-px columns, u16 x, u16 y, u8 frames, 8 unknown bytes, nibble-packed pixels (high first); the frames fill the block exactly | `src/engine/picture.*` | **Confirmed** on PoolRad (600), Curse (477), Secret (353): TITLE, BIGPIC, HEAD, BODY, CBODY, CHEAD, COMSPR, CPIC, SKY, 8X8D tile sets (70 tiles each), DUNGCOM / WILDCOM / RANDCOM, TILES. |
+| EGA animation (PICn, FINALn, SPRITn): u8 frames, then per frame u32 delay, u16 height, u16 width cols, u16 x, u16 y, u8, 8 unknown bytes, packed pixels; PIC / FINAL frames after the first XORed with the first | `src/engine/picture.*` | **Confirmed** on PoolRad (183), Curse (102), Secret (72); frames checked by eye. SPRIT blocks = 3 frames: near / middle / far. |
+| VGA picture (Darkness): u8 height, u8 width cols, u16 x, u16 y, u8 frames, u8, u8 first palette index, u8 count-1, palette (6-bit RGB), one EGA nibble per entry, 4 bytes, then 1 byte a pixel | `src/engine/picture.*` | **Confirmed** on 479 Darkness blocks: TITLE, BIGPIC, BACK, SKYGRND, CBODY, CHEAD, COMSPR, CPIC, DUNGCOM, WILDCOM, BORDERS, CURSOR. |
+| VGA animations (Darkness PIC1, SPRIT1) and 8X8D1 tile sets | - | To do: header starts u16 height, u16 width cols, u16 x, u16 y, then a different layout. Darkness is last in the build order. |
+| Font: 8X8D1.DAX block 201 (1416 bytes in all four games) | - | M2. |
+| GEO map block (1026 bytes): 2-byte header + four 256-byte planes (wall types as nibbles, a byte per cell, 2 bits per direction) | - | M3. |
+| WALLDEF (780 bytes a wall set) + 8X8D tile sets | - | M3. |
 | ECL script: 65 opcodes 0x00-0x40, packed text | - | M4. |
-| Characters, items, monsters, saves | - | M5-M6. Differ per game. |
+| Monsters (MONnCHA: 285 B PoolRad, 422 B Curse, 439 B Secret, 510 B Darkness), items, characters, saves | - | M5-M6. Record sizes differ per game - per-game profiles. |
 
 ## 6. Milestones
 

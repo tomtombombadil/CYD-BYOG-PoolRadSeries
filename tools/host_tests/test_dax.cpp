@@ -309,6 +309,48 @@ static void test_anim()
     CHECK(!pic::parse_anim(r, idx.entries[0].raw_size, a));
 }
 
+// 256-colour picture (Pools of Darkness layout): 2 frames of 8x3 px,
+// palette entries 40..43
+static void test_vga()
+{
+    Bytes raw = {3, 1, 0, 0, 0, 0, 2, 0, 40, 3};
+    const uint8_t pal[4][3] = {{63, 0, 0}, {0, 63, 0}, {0, 0, 63}, {21, 42, 63}};
+    for (auto& p : pal) raw.insert(raw.end(), p, p + 3);
+    raw.push_back(0x12);                     // EGA map, 4 nibbles
+    raw.push_back(0x34);
+    for (int i = 0; i < 4; ++i) raw.push_back(0);
+    for (int f = 0; f < 2; ++f)
+        for (int i = 0; i < 24; ++i) raw.push_back(static_cast<uint8_t>(40 + (i + f) % 4));
+    const Bytes file = make_dax({{9, raw}});
+    dax::MemorySource src(file.data(), static_cast<uint32_t>(file.size()));
+    static dax::Index idx;
+    CHECK(dax::read_index(src, idx) == dax::Status::Ok);
+    const dax::Entry& e = idx.entries[0];
+    pic::VgaHeader vh;
+    CHECK(pic::parse_vga_header(raw.data(), e.raw_size, vh));
+    CHECK(vh.height == 3 && vh.width_px() == 8 && vh.frames == 2 && vh.first == 40 && vh.count == 4);
+    CHECK(!pic::parse_vga_header(raw.data(), e.raw_size - 1, vh));
+    pic::Header h;
+    CHECK(!pic::parse_header(raw.data(), e.raw_size, h));      // not an EGA picture
+    static pic::Rgb rgb[256];
+    {
+        dax::RleReader r(src, idx, e);
+        r.skip(pic::kVgaHeaderSize);
+        CHECK(pic::read_vga_palette(r, vh, rgb));
+    }
+    CHECK(rgb[40].r == 255 && rgb[40].g == 0 && rgb[43].g == 170 && rgb[43].b == 255);
+    static uint8_t px[pic::kScreenW * pic::kScreenH];
+    pic::Canvas c{px, pic::kScreenW, pic::kScreenH};
+    c.clear(0);
+    dax::RleReader r(src, idx, e);
+    CHECK(pic::draw_vga(r, vh, 1, c, 10, 20));
+    bool ok = true;
+    for (int row = 0; row < 3; ++row)
+        for (int col = 0; col < 8; ++col)
+            if (px[(20 + row) * pic::kScreenW + 10 + col] != 40 + (row * 8 + col + 1) % 4) ok = false;
+    CHECK(ok);
+}
+
 static void test_games()
 {
     using games::Game;
@@ -334,6 +376,7 @@ int main()
     test_bad_files();
     test_picture();
     test_anim();
+    test_vga();
     test_games();
     if (failures) {
         printf("%d check(s) failed\n", failures);

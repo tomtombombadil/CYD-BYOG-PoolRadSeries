@@ -47,7 +47,9 @@ pic::Canvas& canvas() { return cv; }
 
 void set_palette(int index, const pic::Rgb& c)
 {
-    if (index >= 0 && index < 256 && index != pic::kTransparent) lut[index] = panel_color(c);
+    // Index 16 is the EGA pictures' "transparent"; a 256-colour palette
+    // uses it as a real colour
+    if (index >= 0 && index < 256) lut[index] = panel_color(c);
 }
 
 void set_ega_palette()

@@ -54,8 +54,9 @@ struct Header {
 };
 
 // Parses the 17 header bytes. True only if the sizes make sense for a block
-// of raw_size bytes (some data, and frames * frame_bytes fits). *extra_bytes
-// (optional) gets how many bytes are left over after the last frame.
+// of raw_size bytes and the frames fill it exactly (true of every picture in
+// Tom's PoolRad, Curse and Secret files; looser checks took some Pools of
+// Darkness blocks for pictures). *extra_bytes is always 0 when it's true.
 bool parse_header(const uint8_t* p, uint32_t raw_size, Header& out, uint32_t* extra_bytes = nullptr);
 
 // Draws frame `frame` of a picture whose header has been read from r (r is
@@ -100,5 +101,44 @@ bool parse_anim(dax::RleReader& r, uint32_t raw_size, Anim& out);
 // or no memory.
 bool draw_anim(dax::ByteSource& src, const dax::Index& idx, const dax::Entry& e, const Anim& a, int frame,
                bool xor_first, Canvas& c, int x, int y, int mask = -1);
+
+// ---- VGA pictures (Pools of Darkness) -------------------------------------
+// Worked out from Tom's GOG Darkness files (2026-10-06); TITLE, COMSPR,
+// CHEAD and BORDERS blocks fill exactly:
+//   u8  height        pixel rows
+//   u8  width         in 8-pixel columns
+//   u16 x, u16 y      (zero so far)
+//   u8  frames
+//   u8  unknown
+//   u8  first         first palette index the picture sets
+//   u8  count - 1     palette entries it sets
+//   count x 3 bytes   palette, 6-bit VGA values (0-63)
+//   (count + 1) / 2   one nibble per entry: its EGA colour (for EGA cards)
+//   4 bytes           unknown (zero so far)
+//   frames x height x width bytes: one palette index per pixel
+constexpr size_t kVgaHeaderSize = 10;
+
+struct VgaHeader {
+    uint8_t  height = 0;
+    uint8_t  width_cols = 0;
+    uint8_t  frames = 0;
+    uint8_t  first = 0;
+    uint16_t count = 0;            // palette entries
+    uint32_t pixels_at = 0;        // offset of the first frame's pixels
+
+    int width_px() const { return width_cols * 8; }
+    uint32_t frame_bytes() const { return static_cast<uint32_t>(height) * width_px(); }
+};
+
+// Parses the 10 header bytes; true only if the block's size matches exactly.
+bool parse_vga_header(const uint8_t* p, uint32_t raw_size, VgaHeader& out);
+
+// Reads the palette entries from r (positioned just after the 10-byte
+// header) into rgb[first .. first + count - 1] as 8-bit RGB.
+bool read_vga_palette(dax::RleReader& r, const VgaHeader& h, Rgb* rgb256);
+
+// Draws frame `frame`; r positioned at the block start. Pixels equal to mask
+// (0-255) are left out; -1 draws all.
+bool draw_vga(dax::RleReader& r, const VgaHeader& h, int frame, Canvas& c, int x, int y, int mask = -1);
 
 } // namespace pic
