@@ -52,8 +52,9 @@ Unlimited Adventures use a newer file format the viewer can't read yet.
 
 The games aren't playable yet; this build shows what is inside their files.
 
-1. **Library** (the firmware version is in its title bar): one key per game
-   found on the card, with its icon if you copied it. Tap one.
+1. **Library** (the firmware version is in its title bar): one game a page,
+   with its icon if you copied it; `<` / `>` go through the games. Tap the
+   game to open it.
 2. **Files**: the game's DAX archives. Tap one. For Curse of the Azure Bonds
    the middle key, **Screen Test**, shows the game's own look, drawn from your
    files (`START.EXE`, `GAME.OVR`, `TITLE.DAX`, `8X8D1.DAX`): the title

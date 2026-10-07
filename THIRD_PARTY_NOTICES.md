@@ -8,6 +8,9 @@
   LGPL-2.1 / Apache-2.0.
 
 ## Copied from Tom's own projects (MIT)
+- From CYD-Classic-Games: `src/games/common/inflate.*` (raw DEFLATE
+  decoder) is the base of `src/engine/inflate.*`, changed to stream through
+  a 32 KB window.
 - From CYD-Classic-Games: `src/boards/*` (board files), `src/hal/storage.*`,
   `sdcard.*`, `touch_cal.*`, `panel_prefs.*`, `tools/version.py`,
   `tools/make_site.py`, `web/index.html`, `.github/workflows/build.yml` (adapted).

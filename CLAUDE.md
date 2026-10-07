@@ -99,9 +99,13 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
 - SD folders Tom uses (2026-10-07): POOLRAD, CURSE, SECRET, DARKNESS,
   CHAMPIONS, DEATH, QUEEN, GATEWAY, TREASURE, UNLIMIT (`engine/games.*`;
   QUEEN / UNLIMIT are .TLB/.GLB "newer format" games, listed, not readable).
-- Library title bar shows the firmware version (Tom: to see which build is
-  flashed). Game icons come from the player's goggame-<id>.ico / .dll on the
-  card (`engine/icon.*`), never from the repo.
+- Library (Tom, 2026-10-07): title bar shows the firmware version (to see
+  which build is flashed); ONE game a page - its GOG icon as big as fits
+  (256 px PNG scaled to 128 / 192 px), the full title wrapped beside it; < >
+  page through games; "Rescan / Card" on two lines. Icons come from the
+  player's goggame-<id>.ico / .dll on the card (`engine/icon.*`), never from
+  the repo.
+- PortMaster ports are a stretch goal (Tom): keep everything portable.
 - Portability (SPEC section 11): game logic takes key events like the
   original (letters, arrows / keypad, Enter, Esc); the CYD front end turns
   taps into keys. Nothing platform-specific in `src/engine/`.

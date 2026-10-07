@@ -122,7 +122,7 @@ stay in the session's scratch space, never in the repo.
 | Text window: printed a character at a time (game speed 4 = 12 ms) into a cell rectangle (text area rows 17-22 x cols 1-38; rows 21-22; combat panel rows 1-21 x cols 23-38); a word = punctuation + letters + punctuation + one space, wrapped whole if it (with its space) doesn't fit, longer-than-a-line words broken; leading spaces dropped after a wrap; area full = "Press any key to continue" (colour 13, row 24), clear, go on | `src/engine/text.*` | **v0.4.0** (behaviour from coab, own code). Touch: a tap = the key; a tap while printing finishes the page. |
 | Combat screen: its frame ends at row 22; row 23 = a status line (range, "Spell: ...", "Item: ..."), row 24 = the menu as on every screen | `src/engine/layout.*` | Checked (coab). |
 | Menu line (row 24): choices start at capitals / digits; prompt colour 13, key letters 15, the rest 10, the chosen word reversed (15 background) | `src/engine/text.*` | **v0.4.0**. Touch: tapping a word moves the highlight to it, shows it for 250 ms, then acts (its trailing space counts, so no gaps between targets; the tap area starts a row higher, at row 23 - Tom, v0.5.1). The chosen word stays chosen next time, as in the games. |
-| Game icons: GOG's goggame-<id>.ico (ICONDIR) or goggame-<id>.dll (PE resources RT_GROUP_ICON 14 -> RT_ICON 3), copied by the player into the game's folder; DIB images (1/4/8/24/32 bit + mask; PNG entries skipped), 32 px on 320x240, 48 px on 480x320 | `src/engine/icon.*` | **v0.5.0**: checked on real GOG PE / ICO files (codewheel.exe, Support.ico - both generic, so Support.ico is ignored); waiting for Tom's goggame files. START.EXE (DOS) has no icon. |
+| Game icons: GOG's goggame-<id>.ico (ICONDIR) or goggame-<id>.dll (PE resources RT_GROUP_ICON 14 -> RT_ICON 3), copied by the player into the game's folder; images are DIBs (1/4/8/24/32 bit + mask) or PNG (GOG's 256 x 256, RGBA). The biggest is drawn, scaled down (alpha-weighted averaging) to 128 px on 320x240, 192 px on 480x320 | `src/engine/icon.*`, `png.*`, `inflate.*` (streaming, 32 KB window - based on CYD-Classic-Games' inflate) | **v0.6.0**: checked on the real goggame .ico / .dll of six games. START.EXE (DOS) has no icon; Support.ico is GOG's generic one, ignored. |
 | GEO map block (1026 bytes): 2-byte header + four 256-byte planes (wall types as nibbles, a byte per cell, 2 bits per direction) | - | M3. |
 | WALLDEF (780 bytes a wall set) + 8X8D tile sets | - | M3. |
 | ECL script: 65 opcodes 0x00-0x40, packed text | - | M4. |
@@ -254,5 +254,6 @@ a PC, PortMaster handhelds):
   (PortMaster) or keyboard maps onto the same keys.
 - A port = a new front end: open files (`ByteSource` over stdio), show the
   canvas (e.g. an SDL2 texture, scaled), turn input into keys, timing, sound.
-  An SDL2 desktop build would also be a fast way to test on a PC; not
-  planned unless Tom wants it.
+  Tom (2026-10-07): PortMaster versions are a **stretch goal** - keep the
+  engine easy to port; an SDL2 front end is held in reserve (a PC test build
+  isn't wanted for its own sake).

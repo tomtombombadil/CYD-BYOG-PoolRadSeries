@@ -12,6 +12,9 @@
 #include "engine/dax.h"
 #include "engine/exepack.h"
 #include "engine/icon.h"
+#include "engine/inflate.h"
+#include "engine/png.h"
+#include "inflate_vectors.h"
 #include "engine/layout.h"
 #include "engine/printcalls.h"
 #include "engine/text.h"
@@ -933,49 +936,280 @@ static Bytes make_pe(const Bytes& icon1, const Bytes& icon2)
     return pe;
 }
 
+// ---- inflate / PNG -----------------------------------------------------------
+static Bytes inflate_pattern()
+{
+    Bytes d;
+    for (int i = 0; i < 1200; ++i) d.push_back(static_cast<uint8_t>(((i * 7) ^ (i >> 4)) & 0xFF));
+    for (int k = 0; k < 40; ++k) for (const char* c = "the gold box "; *c; ++c) d.push_back(static_cast<uint8_t>(*c));
+    for (int k = 0; k < 3; ++k) for (int i = 0; i < 256; ++i) d.push_back(static_cast<uint8_t>(i));
+    return d;
+}
+
+struct MemIn : inflate::Input {
+    const uint8_t* p; size_t n, i = 0;
+    MemIn(const uint8_t* d, size_t len) : p(d), n(len) {}
+    int byte() override { return i < n ? p[i++] : -1; }
+};
+struct VecOut : inflate::Output {
+    Bytes v; size_t limit = 1 << 20;
+    bool put(uint8_t b) override { v.push_back(b); return v.size() < limit; }
+};
+
+static void test_inflate()
+{
+    static uint8_t window[inflate::kWindow];
+    const Bytes want = inflate_pattern();
+    for (int k = 0; k < 2; ++k) {
+        const uint8_t* z = k ? kDeflateFixed : kDeflateDynamic;
+        const size_t n = k ? sizeof kDeflateFixed : sizeof kDeflateDynamic;
+        MemIn in(z, n);
+        VecOut out;
+        CHECK(inflate::raw(in, out, window));
+        CHECK(out.v == want);
+        // cut short: fails, never reads past the end
+        MemIn shorter(z, n / 2);
+        VecOut out2;
+        CHECK(!inflate::raw(shorter, out2, window));
+        // the output side can stop it
+        MemIn again(z, n);
+        VecOut out3;
+        out3.limit = 100;
+        CHECK(!inflate::raw(again, out3, window) && out3.v.size() == 100);
+    }
+    // stored block
+    const Bytes stored = {0x01, 5, 0, 0xFA, 0xFF, 'h', 'e', 'l', 'l', 'o'};
+    MemIn in(stored.data(), stored.size());
+    VecOut out;
+    CHECK(inflate::raw(in, out, window) && out.v == Bytes({'h', 'e', 'l', 'l', 'o'}));
+    const Bytes bad = {0x01, 5, 0, 0xFB, 0xFF, 'h'};
+    MemIn in2(bad.data(), bad.size());
+    VecOut out2;
+    CHECK(!inflate::raw(in2, out2, window));
+}
+
+static void put_be32(Bytes& b, uint32_t v)
+{
+    for (int i = 3; i >= 0; --i) b.push_back(static_cast<uint8_t>(v >> (i * 8)));
+}
+
+static void png_chunk(Bytes& b, const char* type, const Bytes& data)
+{
+    put_be32(b, static_cast<uint32_t>(data.size()));
+    b.insert(b.end(), type, type + 4);
+    b.insert(b.end(), data.begin(), data.end());
+    put_be32(b, 0);     // CRC (not checked)
+}
+
+// A PNG of w x h from raw pixel bytes (bpp bytes a pixel), each row with a
+// different filter, IDAT split in two, deflate as stored blocks
+static Bytes make_png(int w, int h, int colour, int bpp, const Bytes& raw, const Bytes& plte, const Bytes& trns)
+{
+    const size_t stride = static_cast<size_t>(w) * bpp;
+    Bytes filtered;
+    for (int y = 0; y < h; ++y) {
+        const int f = y % 5;
+        filtered.push_back(static_cast<uint8_t>(f));
+        for (size_t i = 0; i < stride; ++i) {
+            const int x = raw[y * stride + i];
+            const int a = i >= static_cast<size_t>(bpp) ? raw[y * stride + i - bpp] : 0;
+            const int b = y > 0 ? raw[(y - 1) * stride + i] : 0;
+            const int c = (y > 0 && i >= static_cast<size_t>(bpp)) ? raw[(y - 1) * stride + i - bpp] : 0;
+            int pred = 0;
+            if (f == 1) pred = a;
+            if (f == 2) pred = b;
+            if (f == 3) pred = (a + b) / 2;
+            if (f == 4) {
+                const int p = a + b - c, pa = abs(p - a), pb = abs(p - b), pc = abs(p - c);
+                pred = (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c);
+            }
+            filtered.push_back(static_cast<uint8_t>(x - pred));
+        }
+    }
+    Bytes z = {0x78, 0x01};
+    for (size_t at = 0; at < filtered.size(); at += 1000) {
+        const size_t n = filtered.size() - at < 1000 ? filtered.size() - at : 1000;
+        z.push_back(at + n >= filtered.size() ? 1 : 0);
+        put16(z, static_cast<uint32_t>(n));
+        put16(z, static_cast<uint32_t>(~n & 0xFFFF));
+        z.insert(z.end(), filtered.begin() + static_cast<long>(at), filtered.begin() + static_cast<long>(at + n));
+    }
+    put_be32(z, 0);   // adler32 (not checked)
+    Bytes pngb = {0x89, 'P', 'N', 'G', 13, 10, 26, 10};
+    Bytes ihdr;
+    put_be32(ihdr, static_cast<uint32_t>(w));
+    put_be32(ihdr, static_cast<uint32_t>(h));
+    ihdr.push_back(8); ihdr.push_back(static_cast<uint8_t>(colour)); ihdr.push_back(0); ihdr.push_back(0); ihdr.push_back(0);
+    png_chunk(pngb, "IHDR", ihdr);
+    if (!plte.empty()) png_chunk(pngb, "PLTE", plte);
+    if (!trns.empty()) png_chunk(pngb, "tRNS", trns);
+    const size_t half = z.size() / 2;
+    png_chunk(pngb, "IDAT", Bytes(z.begin(), z.begin() + static_cast<long>(half)));
+    png_chunk(pngb, "IDAT", Bytes(z.begin() + static_cast<long>(half), z.end()));
+    png_chunk(pngb, "IEND", Bytes());
+    return pngb;
+}
+
+static Bytes rgba_pattern(int w, int h)
+{
+    Bytes raw;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            raw.push_back(static_cast<uint8_t>(x * 3)); raw.push_back(static_cast<uint8_t>(y * 5));
+            raw.push_back(static_cast<uint8_t>(x ^ y)); raw.push_back(static_cast<uint8_t>((x + y) % 3 ? 255 : 0));
+        }
+    return raw;
+}
+
+struct Collect {
+    Bytes px;
+    int w = 0, rows = 0, last_y = -1;
+    bool order = true;
+};
+static bool collect_png(int y, const uint8_t* rgba, void* ctx)
+{
+    Collect& c = *static_cast<Collect*>(ctx);
+    if (y != c.last_y + 1) c.order = false;
+    c.last_y = y;
+    c.px.insert(c.px.end(), rgba, rgba + c.w * 4);
+    ++c.rows;
+    return true;
+}
+
+static void test_png()
+{
+    static uint8_t window[inflate::kWindow];
+    const int w = 37, h = 23;
+    const Bytes raw = rgba_pattern(w, h);
+    const Bytes img = make_png(w, h, 6, 4, raw, Bytes(), Bytes());
+    dax::MemorySource s(img.data(), static_cast<uint32_t>(img.size()));
+    png::Info info;
+    CHECK(png::probe(s, 0, static_cast<uint32_t>(img.size()), info) && info.w == w && info.h == h && info.colour == 6);
+    Collect c;
+    c.w = w;
+    CHECK(png::decode(s, 0, static_cast<uint32_t>(img.size()), window, collect_png, &c));
+    CHECK(c.rows == h && c.order && c.px == raw);
+
+    // palette + tRNS
+    Bytes idx, plte, trns = {0, 128};
+    for (int i = 0; i < 4; ++i) { plte.push_back(static_cast<uint8_t>(i * 60)); plte.push_back(10); plte.push_back(static_cast<uint8_t>(250 - i)); }
+    for (int i = 0; i < 6 * 5; ++i) idx.push_back(static_cast<uint8_t>(i % 4));
+    const Bytes pimg = make_png(6, 5, 3, 1, idx, plte, trns);
+    dax::MemorySource ps(pimg.data(), static_cast<uint32_t>(pimg.size()));
+    Collect pc;
+    pc.w = 6;
+    CHECK(png::decode(ps, 0, static_cast<uint32_t>(pimg.size()), window, collect_png, &pc));
+    CHECK(pc.rows == 5 && pc.px[0 * 4 + 3] == 0 && pc.px[1 * 4 + 3] == 128 && pc.px[2 * 4 + 3] == 255);
+    CHECK(pc.px[3 * 4] == 180 && pc.px[3 * 4 + 2] == 247);
+
+    // damaged: a bad filter type
+    Bytes bad = img;
+    const size_t idat = 8 + 25;                          // first IDAT chunk
+    bad[idat + 8 + 2 + 5] = 9;                           // first row's filter byte (after zlib + stored header)
+    dax::MemorySource bs(bad.data(), static_cast<uint32_t>(bad.size()));
+    Collect bc;
+    bc.w = w;
+    CHECK(!png::decode(bs, 0, static_cast<uint32_t>(bad.size()), window, collect_png, &bc));
+    // interlaced: refused
+    Bytes il = img;
+    il[8 + 8 + 12] = 1;
+    dax::MemorySource is(il.data(), static_cast<uint32_t>(il.size()));
+    CHECK(!png::probe(is, 0, static_cast<uint32_t>(il.size()), info));
+}
+
+// ---- Icons -----------------------------------------------------------------
+struct Rendered {
+    Bytes px;
+    int rows = 0, w = 0;
+};
+static void collect_icon(int, const uint8_t* rgba, int w, void* ctx)
+{
+    Rendered& r = *static_cast<Rendered*>(ctx);
+    r.w = w;
+    r.px.insert(r.px.end(), rgba, rgba + w * 4);
+    ++r.rows;
+}
+
 static void test_icon()
 {
+    static uint8_t window[inflate::kWindow];
     const Bytes i16 = make_dib(16, 4, col_idx, clear_corner, false);
     const Bytes i32 = make_dib(32, 32, col_rgb, clear_corner, true);
     const Bytes i32m = make_dib(32, 32, col_rgb, clear_corner, false);   // no alpha: mask decides
     const Bytes i48 = make_dib(48, 24, col_rgb, clear_corner, false);
-    Bytes png = {0x89, 'P', 'N', 'G', 13, 10, 26, 10};
-    png.resize(200, 0);
+    const Bytes big = make_png(64, 64, 6, 4, rgba_pattern(64, 64), Bytes(), Bytes());
 
-    const Bytes ico = make_ico({{16, i16}, {32, i32}, {48, i48}, {0, png}});
+    const Bytes ico = make_ico({{16, i16}, {32, i32}, {48, i48}});
     dax::MemorySource s(ico.data(), static_cast<uint32_t>(ico.size()));
     icon::Found f;
-    CHECK(icon::find(s, 32, f) && f.w == 32 && f.bits == 32);
-    CHECK(icon::find(s, 48, f) && f.w == 48 && f.bits == 24);
-    CHECK(icon::find(s, 40, f) && f.w == 32);        // largest smaller one
-    CHECK(icon::find(s, 8, f) && f.w == 16);         // none smaller: the smallest
-    static uint8_t px[icon::kMaxSize * icon::kMaxSize * 4];
-    CHECK(icon::find(s, 32, f) && icon::decode(s, f, px));
-    CHECK(px[0 * 4 + 3] == 0);                                         // see-through corner
-    const uint8_t* p = px + (5 * 32 + 7) * 4;                          // (7, 5)
-    CHECK(p[0] == 28 && p[1] == 20 && p[2] == 0x33 && p[3] == 200);
-    CHECK(icon::find(s, 16, f) && f.bits == 4 && icon::decode(s, f, px));
-    p = px + (3 * 16 + 4) * 4;                                         // index 7: (112, 7, 248)
+    CHECK(icon::find(s, f) && f.w == 48 && f.bits == 24 && !f.png);    // the biggest
+    Rendered r;
+    CHECK(icon::render(s, f, 48, 48, nullptr, collect_icon, &r) && r.rows == 48 && r.w == 48);
+    const uint8_t* p = r.px.data() + (5 * 48 + 7) * 4;                  // (7, 5)
+    CHECK(p[0] == 28 && p[1] == 20 && p[2] == 0x33 && p[3] == 255);
+    CHECK(r.px[3] == 0);                                                // see-through corner
+    // halved: 2 x 2 blocks averaged; the corner block is all see-through
+    Rendered half;
+    CHECK(icon::render(s, f, 24, 24, nullptr, collect_icon, &half) && half.rows == 24 && half.w == 24);
+    p = half.px.data() + (2 * 24 + 3) * 4;                              // source (6..7, 4..5)
+    CHECK(p[0] == 26 && p[1] == 18 && p[3] == 255 && half.px[3] == 0);
+    // doubled: pixels repeated
+    Rendered dbl;
+    CHECK(icon::render(s, f, 96, 96, nullptr, collect_icon, &dbl) && dbl.rows == 96);
+    CHECK(memcmp(dbl.px.data() + (10 * 96 + 14) * 4, r.px.data() + (5 * 48 + 7) * 4, 4) == 0);
+    CHECK(memcmp(dbl.px.data() + (11 * 96 + 15) * 4, r.px.data() + (5 * 48 + 7) * 4, 4) == 0);
+
+    // 32-bit with alpha, and the 4-bit palette one, via an .ico of each
+    const Bytes ico32 = make_ico({{32, i32}});
+    dax::MemorySource s32(ico32.data(), static_cast<uint32_t>(ico32.size()));
+    Rendered r32;
+    CHECK(icon::find(s32, f) && f.bits == 32 && icon::render(s32, f, 32, 32, nullptr, collect_icon, &r32));
+    p = r32.px.data() + (5 * 32 + 7) * 4;
+    CHECK(p[0] == 28 && p[1] == 20 && p[3] == 200 && r32.px[3] == 0);
+    const Bytes ico4 = make_ico({{16, i16}});
+    dax::MemorySource s4(ico4.data(), static_cast<uint32_t>(ico4.size()));
+    Rendered r4;
+    CHECK(icon::find(s4, f) && f.bits == 4 && icon::render(s4, f, 16, 16, nullptr, collect_icon, &r4));
+    p = r4.px.data() + (3 * 16 + 4) * 4;                                // index 7: (112, 7, 248)
     CHECK(p[0] == 112 && p[1] == 7 && p[2] == 248 && p[3] == 255);
-    CHECK(px[(1 * 16 + 1) * 4 + 3] == 0);
+    const Bytes icom = make_ico({{32, i32m}});
+    dax::MemorySource sm(icom.data(), static_cast<uint32_t>(icom.size()));
+    Rendered rm;
+    CHECK(icon::find(sm, f) && icon::render(sm, f, 32, 32, nullptr, collect_icon, &rm));
+    CHECK(rm.px[3] == 0 && rm.px[(10 * 32 + 10) * 4 + 3] == 255);
 
-    const Bytes ico2 = make_ico({{32, i32m}});
-    dax::MemorySource s2(ico2.data(), static_cast<uint32_t>(ico2.size()));
-    CHECK(icon::find(s2, 32, f) && icon::decode(s2, f, px));
-    CHECK(px[3] == 0 && px[(10 * 32 + 10) * 4 + 3] == 255);
-    const Bytes only_png = make_ico({{0, png}});
-    dax::MemorySource s3(only_png.data(), static_cast<uint32_t>(only_png.size()));
-    CHECK(!icon::find(s3, 32, f));
+    // A PNG entry wins when it's the biggest; it needs the window
+    const Bytes icop = make_ico({{32, i32}, {64, big}});
+    dax::MemorySource sp(icop.data(), static_cast<uint32_t>(icop.size()));
+    CHECK(icon::find(sp, f) && f.png && f.w == 64);
+    Rendered rp;
+    CHECK(!icon::render(sp, f, 64, 64, nullptr, collect_icon, &rp));
+    CHECK(icon::render(sp, f, 64, 64, window, collect_icon, &rp) && rp.rows == 64);
+    const Bytes want = rgba_pattern(64, 64);
+    bool same = true;
+    for (size_t i = 0; i < want.size(); i += 4) {
+        if (want[i + 3] != rp.px[i + 3]) same = false;
+        if (want[i + 3] && memcmp(&want[i], &rp.px[i], 3) != 0) same = false;
+    }
+    CHECK(same);
+    Rendered rq;
+    CHECK(icon::render(sp, f, 32, 32, window, collect_icon, &rq) && rq.rows == 32 && rq.w == 32);
 
+    // In a PE (.dll)
     const Bytes pe = make_pe(i16, i32);
-    dax::MemorySource s4(pe.data(), static_cast<uint32_t>(pe.size()));
-    CHECK(icon::find(s4, 32, f) && f.w == 32 && icon::decode(s4, f, px));
-    p = px + (5 * 32 + 7) * 4;
+    dax::MemorySource spe(pe.data(), static_cast<uint32_t>(pe.size()));
+    Rendered rpe;
+    CHECK(icon::find(spe, f) && f.w == 32 && icon::render(spe, f, 32, 32, nullptr, collect_icon, &rpe));
+    p = rpe.px.data() + (5 * 32 + 7) * 4;
     CHECK(p[0] == 28 && p[1] == 20 && p[3] == 200);
-    CHECK(icon::find(s4, 16, f) && f.w == 16);
     const Bytes junk(300, 1);
-    dax::MemorySource s5(junk.data(), static_cast<uint32_t>(junk.size()));
-    CHECK(!icon::find(s5, 32, f));
+    dax::MemorySource sj(junk.data(), static_cast<uint32_t>(junk.size()));
+    CHECK(!icon::find(sj, f));
+    Bytes png_only = {0x89, 'P', 'N', 'G', 13, 10, 26, 10};
+    png_only.resize(200, 0);
+    const Bytes ico_bad = make_ico({{0, png_only}});
+    dax::MemorySource sb(ico_bad.data(), static_cast<uint32_t>(ico_bad.size()));
+    CHECK(!icon::find(sb, f));
 }
 
 int main()
@@ -993,6 +1227,8 @@ int main()
     test_text();
     test_menu();
     test_printcalls();
+    test_inflate();
+    test_png();
     test_icon();
     if (failures) {
         printf("%d check(s) failed\n", failures);

@@ -1,5 +1,7 @@
 #include "ui.h"
 
+#include <cstring>
+
 #include <Arduino.h>
 #include <cstdlib>
 
@@ -27,6 +29,7 @@ const lgfx::IFont* font_of(Font f)
         if (large()) return &fonts::DejaVu12;
         return &fonts::Font0;
     case Font::Mono:   return &fonts::Font0;
+    case Font::Large:  return large() ? &fonts::DejaVu24 : &fonts::DejaVu18;
     case Font::Normal: break;
     }
     return large() ? &fonts::DejaVu18 : &fonts::DejaVu12;
@@ -121,7 +124,24 @@ void key(const Rect& r, const char* label, KeyStyle s)
     const int rad = large() ? 6 : 4;
     g->fillRoundRect(r.x, r.y, r.w, r.h, rad, fill);
     g->drawRoundRect(r.x, r.y, r.w, r.h, rad, s == KeyStyle::Lit ? style::kGold : style::kKeyEdge);
-    text_center(r, label, s == KeyStyle::Dim ? style::kTextMuted : style::kText);
+    const uint16_t col = s == KeyStyle::Dim ? style::kTextMuted : style::kText;
+    const char* nl = strchr(label, '\n');
+    if (!nl) {
+        text_center(r, label, col);
+        return;
+    }
+    // Two lines, close together
+    char first[48];
+    const size_t n = static_cast<size_t>(nl - label) < sizeof first - 1 ? static_cast<size_t>(nl - label) : sizeof first - 1;
+    memcpy(first, label, n);
+    first[n] = 0;
+    use_font(Font::Normal);
+    const int lh = g->fontHeight() - (large() ? 3 : 2);
+    const int top = r.y + (r.h - lh * 2) / 2;
+    g->setTextColor(col);
+    g->setTextDatum(textdatum_t::top_center);
+    g->drawString(first, r.x + r.w / 2, top);
+    g->drawString(nl + 1, r.x + r.w / 2, top + lh);
 }
 
 uint16_t key_fill(KeyStyle s)

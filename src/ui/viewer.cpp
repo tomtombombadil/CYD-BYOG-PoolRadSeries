@@ -12,6 +12,7 @@
 #include "engine/font.h"
 #include "engine/games.h"
 #include "engine/icon.h"
+#include "engine/inflate.h"
 #include "engine/picture.h"
 #include "frame.h"
 #include "hal/panel_prefs.h"
@@ -186,61 +187,104 @@ bool pager_tap(const ui::Tap& t, Pager& p, int* page, bool has_middle = false, b
 
 // ---- Home ------------------------------------------------------------------
 
-constexpr int kHomeCols = 2, kHomeRows = 3;
+// One game a page (Tom: names are long, icons should be big): its GOG icon
+// as large as fits (GOG's 256 px PNG scaled to 128 px on 320x240, 192 px on
+// 480x320), the full title and its folder beside it. < > go through games.
 
-int icon_px() { return ui::large() ? 48 : 32; }
+ui::Rect home_card() { return ui::grid_cell(0, 1, 1); }
 
-// The icon size that fits a key with its name beside it (0 = none). A
-// long name on 480x320 gets the 32-pixel icon rather than none.
-int icon_fit(const ui::Rect& r, const char* label)
+// The largest of the usual icon sizes that fits the card
+int icon_size(const ui::Rect& card)
 {
-    for (int px = icon_px(); px >= 32; px -= 16) {
-        const int inset = px + ui::gap() * 2;
-        if (r.h >= px + 4 && ui::text_width(label) <= r.w - inset - ui::gap()) return px;
-    }
+    static const int kSizes[] = {256, 192, 128, 96, 64, 48, 32};
+    for (int sz : kSizes)
+        if (sz <= card.h - ui::gap() * 2 && sz <= card.w / 2) return sz;
     return 0;
 }
 
-// The game's icon (from the player's own GOG files) at the key's left,
-// `want` pixels square.
-void draw_icon(const ui::Rect& r, const library::GameDir& g, ui::KeyStyle st, int want)
+// The icon, a row at a time, blended onto the card's colour
+struct IconDraw {
+    int x, y;
+    uint8_t br, bg, bb, dim;
+    lgfx::rgb888_t line[icon::kMaxOut];
+};
+
+void icon_row(int y, const uint8_t* rgba, int w, void* ctx)
 {
+    IconDraw& d = *static_cast<IconDraw*>(ctx);
+    for (int x = 0; x < w; ++x) {
+        const uint8_t* p = rgba + x * 4;
+        const int a = d.dim ? p[3] / 2 : p[3];
+        d.line[x] = lgfx::rgb888_t((p[0] * a + d.br * (255 - a)) / 255, (p[1] * a + d.bg * (255 - a)) / 255,
+                                   (p[2] * a + d.bb * (255 - a)) / 255);
+    }
+    ui::gfx().pushImage(d.x, d.y + y, w, 1, d.line);
+}
+
+// Draws the game's icon (from the player's own GOG files) at (x, y), size
+// px square. False if there's none or it can't be read.
+bool draw_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle st)
+{
+    if (!g.icon[0]) return false;
     char path[160];
     snprintf(path, sizeof path, "%s/%s", games::kRootDir, g.icon);
     fs::File f = sd_fs().open(path, "r");
-    if (!f) return;
+    if (!f) return false;
     library::FileSource src(f);
     icon::Found fo;
-    uint8_t* px = nullptr;
-    bool ok = icon::find(src, want, fo);
+    bool ok = icon::find(src, fo);
     if (ok) {
-        px = static_cast<uint8_t*>(malloc(fo.w * fo.h * 4));
-        ok = px && icon::decode(src, fo, px);
+        const uint32_t t0 = millis();
+        uint8_t* window = fo.png ? static_cast<uint8_t*>(malloc(inflate::kWindow)) : nullptr;
+        IconDraw* d = static_cast<IconDraw*>(malloc(sizeof(IconDraw)));
+        ok = d && (!fo.png || window);
+        if (ok) {
+            const uint16_t c = ui::key_fill(st);
+            d->x = x;
+            d->y = y;
+            d->br = ((c >> 11) & 31) * 255 / 31;
+            d->bg = ((c >> 5) & 63) * 255 / 63;
+            d->bb = (c & 31) * 255 / 31;
+            d->dim = st == ui::KeyStyle::Dim;
+            ui::gfx().startWrite();
+            ok = icon::render(src, fo, px, px, window, icon_row, d);
+            ui::gfx().endWrite();
+        }
+        free(d);
+        free(window);
+        Serial.printf("[library] icon %s: %dx%d%s -> %d px, %s, %lu ms\n", path, fo.w, fo.h, fo.png ? " png" : "", px,
+                      ok ? "ok" : "failed", (unsigned long)(millis() - t0));
     }
     f.close();
-    if (!ok) {
-        free(px);
-        Serial.printf("[library] no usable icon in %s\n", path);
-        return;
-    }
-    // Blend onto the key's colour; nearest-pixel scaling to the size wanted
-    const uint16_t bg = ui::key_fill(st);
-    const int br = ((bg >> 11) & 31) * 255 / 31, bgc = ((bg >> 5) & 63) * 255 / 63, bb = (bg & 31) * 255 / 31;
-    LGFX& gx = ui::gfx();
-    const int x0 = r.x + ui::gap(), y0 = r.y + (r.h - want) / 2;
-    gx.startWrite();
-    for (int y = 0; y < want; ++y) {
-        for (int x = 0; x < want; ++x) {
-            const uint8_t* p = px + ((y * fo.h / want) * fo.w + x * fo.w / want) * 4;
-            const int a = st == ui::KeyStyle::Dim ? p[3] / 2 : p[3];
-            const int cr = (p[0] * a + br * (255 - a)) / 255;
-            const int cg = (p[1] * a + bgc * (255 - a)) / 255;
-            const int cb = (p[2] * a + bb * (255 - a)) / 255;
-            gx.drawPixel(x0 + x, y0 + y, gx.color565(cr, cg, cb));
+    return ok;
+}
+
+// Prints text word-wrapped into width w from (x, y); returns the y after it.
+// max_lines 0 = no limit; with draw false it only measures.
+int wrap_text(int x, int y, int w, const char* s, ui::Font font, uint16_t col, bool draw, int max_lines = 0)
+{
+    const int lh = ui::line_h(font);
+    char line[96];
+    int lines = 0;
+    while (*s && (max_lines == 0 || lines < max_lines)) {
+        int n = 0, cut = 0;
+        while (s[n] && n < (int)sizeof line - 1) {
+            line[n] = s[n];
+            line[n + 1] = 0;
+            if (ui::text_width(line, font) > w) break;
+            if (s[n] == ' ') cut = n;
+            ++n;
         }
+        if (s[n] && cut > 0) n = cut;
+        if (n == 0) n = 1;
+        line[n] = 0;
+        if (draw) ui::text(x, y, line, col, font);
+        y += lh;
+        ++lines;
+        s += n;
+        while (*s == ' ') ++s;
     }
-    gx.endWrite();
-    free(px);
+    return y;
 }
 
 void draw_home()
@@ -268,56 +312,59 @@ void draw_home()
         y += lh;
         ui::text(x, y, "then tap Rescan Card.", style::kText);
     } else {
-        Pager p{n_games, kHomeCols * kHomeRows, home_page};
-        for (int i = 0; i < p.per_page && p.first() + i < n_games; ++i) {
-            const library::GameDir& g = game_dirs[p.first() + i];
-            const ui::Rect r = ui::grid_cell(i, kHomeCols, kHomeRows);
-            const bool hlib = g.format == library::Format::Hlib;
-            const ui::KeyStyle st = hlib ? ui::KeyStyle::Dim : ui::KeyStyle::Normal;
-            const char* label = games::short_title(g.game);
-            // Room for the icon only if the name still fits beside it
-            const int ipx = g.icon[0] ? icon_fit(r, label) : 0;
-            const int inset = ipx ? ipx + ui::gap() * 2 : 0;
-            char sub[64];
-            if (hlib) snprintf(sub, sizeof sub, "%s - newer format", g.folder);
-            else snprintf(sub, sizeof sub, "%s - %d files", g.folder, g.dax_files);
-            if (ui::text_width(sub, ui::Font::Small) > r.w - inset - ui::gap()) {
-                if (hlib) snprintf(sub, sizeof sub, "newer format");
-                else snprintf(sub, sizeof sub, "%d files", g.dax_files);
-            }
-            ui::key2(r, label, sub, st, inset);
-            if (ipx) draw_icon(r, g, st, ipx);
-        }
+        if (home_page >= n_games) home_page = n_games - 1;
+        const library::GameDir& g = game_dirs[home_page];
+        const ui::Rect card = home_card();
+        const bool hlib = g.format == library::Format::Hlib;
+        const ui::KeyStyle st = hlib ? ui::KeyStyle::Dim : ui::KeyStyle::Normal;
+        ui::key(card, "", st);
+        const int gp = ui::gap();
+        const int ipx = g.icon[0] ? icon_size(card) : 0;
+        const int ix = card.x + gp * 2, iy = card.y + (card.h - ipx) / 2;
+        const int tx = ipx ? ix + ipx + gp * 3 : card.x + gp * 4;
+        const int tw = card.x + card.w - gp * 3 - tx;
+
+        // The text block, centred top to bottom
+        char l1[48], l2[48], l3[48];
+        snprintf(l1, sizeof l1, "Folder: %s", g.folder);
+        if (hlib) snprintf(l2, sizeof l2, "Newer format");
+        else snprintf(l2, sizeof l2, "%d game files", g.dax_files);
+        snprintf(l3, sizeof l3, "Game %d of %d", home_page + 1, n_games);
+        const int sh = ui::line_h(ui::Font::Small) + 3;
+        const uint16_t tcol = hlib ? style::kTextMuted : style::kText;
+        const int title_end = wrap_text(tx, 0, tw, games::title(g.game), ui::Font::Large, tcol, false, 4);
+        const int block = title_end + gp * 2 + sh * 3;
+        int y = card.y + (card.h - block) / 2;
+        y = wrap_text(tx, y, tw, games::title(g.game), ui::Font::Large, tcol, true, 4) + gp * 2;
+        ui::text(tx, y, l1, style::kTextMuted, ui::Font::Small);
+        ui::text(tx, y + sh, l2, style::kTextMuted, ui::Font::Small);
+        ui::text(tx, y + sh * 2, l3, style::kTextMuted, ui::Font::Small);
+        if (ipx) draw_icon(g, ix, iy, ipx, st);
     }
-    const bool more = n_games > kHomeCols * kHomeRows;
-    ui::key(ui::bottom_key(0, more ? 4 : 2), "Rescan Card");
+    const bool more = n_games > 1;
+    ui::key(ui::bottom_key(0, more ? 4 : 2), "Rescan\nCard");
     ui::key(ui::bottom_key(1, more ? 4 : 2), "Settings");
     if (more) {
-        Pager p{n_games, kHomeCols * kHomeRows, home_page};
-        ui::key(ui::bottom_key(2, 4), "<", p.page > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
-        ui::key(ui::bottom_key(3, 4), ">", p.page + 1 < p.pages() ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+        ui::key(ui::bottom_key(2, 4), "<", home_page > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+        ui::key(ui::bottom_key(3, 4), ">", home_page + 1 < n_games ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
     }
 }
 
 void tap_home(const ui::Tap& t)
 {
-    const bool more = n_games > kHomeCols * kHomeRows;
+    const bool more = n_games > 1;
     const int k = bottom_hit(t, more ? 4 : 2);
-    Pager p{n_games, kHomeCols * kHomeRows, home_page};
     if (k == 0) { rescan(); dirty = true; return; }
     if (k == 1) { go(Screen::Settings); return; }
-    if (k == 2 && p.page > 0) { --home_page; dirty = true; return; }
-    if (k == 3 && p.page + 1 < p.pages()) { ++home_page; dirty = true; return; }
-    if (scan_result != library::ScanResult::Ok) return;
-    for (int i = 0; i < p.per_page && p.first() + i < n_games; ++i) {
-        if (ui::grid_cell(i, kHomeCols, kHomeRows).contains(t.x, t.y)) {
-            game_sel = p.first() + i;
-            n_files = game_dirs[game_sel].format == library::Format::Dax
-                    ? library::list_dax(game_dirs[game_sel].data_dir, files, library::kMaxFiles) : 0;
-            file_page = 0;
-            go(Screen::Files);
-            return;
-        }
+    if (k == 2 && home_page > 0) { --home_page; dirty = true; return; }
+    if (k == 3 && home_page + 1 < n_games) { ++home_page; dirty = true; return; }
+    if (scan_result != library::ScanResult::Ok || n_games == 0) return;
+    if (home_card().contains(t.x, t.y)) {
+        game_sel = home_page;
+        n_files = game_dirs[game_sel].format == library::Format::Dax
+                ? library::list_dax(game_dirs[game_sel].data_dir, files, library::kMaxFiles) : 0;
+        file_page = 0;
+        go(Screen::Files);
     }
 }
 

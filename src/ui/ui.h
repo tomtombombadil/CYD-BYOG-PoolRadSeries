@@ -47,6 +47,7 @@ void header(const char* title, bool back);
 Rect back_rect();      // the header's "<" key (valid when drawn with back)
 
 enum class KeyStyle : uint8_t { Normal, Lit, Dim };
+// A '\n' in the label splits it over two lines.
 void key(const Rect& r, const char* label, KeyStyle s = KeyStyle::Normal);
 // Two-line key: label + smaller muted line under it.
 // left_inset: room kept free at the key's left (for a picture); the text
@@ -55,7 +56,7 @@ void key2(const Rect& r, const char* label, const char* sub, KeyStyle s = KeySty
 // The fill colour of a key in style s (to draw pictures on it)
 uint16_t key_fill(KeyStyle s);
 
-enum class Font : uint8_t { Small, Normal, Mono };
+enum class Font : uint8_t { Small, Normal, Mono, Large };
 void text(int x, int y, const char* s, uint16_t color = style::kText, Font f = Font::Normal);
 void text_center(const Rect& r, const char* s, uint16_t color = style::kText, Font f = Font::Normal);
 int text_width(const char* s, Font f = Font::Normal);
