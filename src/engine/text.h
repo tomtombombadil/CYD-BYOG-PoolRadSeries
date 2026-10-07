@@ -81,6 +81,9 @@ void clear(pic::Canvas& c, const Region& r);
 // ---- Menu line -------------------------------------------------------------
 
 constexpr int kMenuRow = 24;
+// Taps for the menu line count from the row above it (the frame's bottom
+// row, or combat's status line) - one 8-pixel row is a thin target (Tom).
+constexpr int kMenuTapTop = (kMenuRow - 1) * 8;
 constexpr int kMaxItems = 20;
 
 struct MenuColors {

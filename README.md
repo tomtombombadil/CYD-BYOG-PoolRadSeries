@@ -38,7 +38,8 @@ Tested with this firmware so far: the 4.0".
 
 **Game icons (optional):** the DOS games have no icons of their own; GOG's
 install folder holds each game's icon in a `goggame-<number>.ico` or
-`goggame-<number>.dll` file. Copy that file into the game's folder on the card
+`goggame-<number>.dll` file. Copy that file into the game's folder on the card (for Pool of Radiance it
+sits one folder above the game files)
 and the library shows the icon next to the game's name. (GOG's `Support.ico`
 is the same generic GOG icon for every game, so it is ignored.)
 

@@ -50,10 +50,14 @@ int icon_rank(const char* name)
     return 0;
 }
 
-// The best icon file in dir (relative path rel_dir/<name> into out)
-void find_icon(fs::File& dir, const char* rel_dir, char* out, size_t cap, int& best)
+// The best icon file in /GOLDBOX/<rel_dir> (as rel_dir/<name> into out).
+// Opens the folder afresh rather than rewinding a listing already read.
+void find_icon(fs::FS& fs, const char* rel_dir, char* out, size_t cap, int& best)
 {
-    dir.rewindDirectory();
+    char path[160];
+    snprintf(path, sizeof path, "%s/%s", games::kRootDir, rel_dir);
+    fs::File dir = fs.open(path);
+    if (!dir || !dir.isDirectory()) return;
     for (fs::File f = dir.openNextFile(); f; f = dir.openNextFile()) {
         const char* nm = base_name(f.name());
         const int r = f.isDirectory() ? 0 : icon_rank(nm);
@@ -63,6 +67,7 @@ void find_icon(fs::File& dir, const char* rel_dir, char* out, size_t cap, int& b
         }
         f.close();
     }
+    dir.close();
 }
 
 // .TLB / .GLB files in dir and up to `depth` folders below it
@@ -99,8 +104,10 @@ ScanResult scan(GameDir* out, int max, int* n)
             if (dax == 0) {
                 // A whole install copied as it is: the game files may sit one
                 // folder down (next to DOSBox's own folder)
-                d.rewindDirectory();
-                for (fs::File sub = d.openNextFile(); sub; sub = d.openNextFile()) {
+                char path[96];
+                snprintf(path, sizeof path, "%s/%s", games::kRootDir, g.folder);
+                fs::File again = fs.open(path);
+                for (fs::File sub = again ? again.openNextFile() : fs::File(); sub; sub = again.openNextFile()) {
                     if (sub.isDirectory()) {
                         const int n2 = count_dax(sub);
                         if (n2 > 0) {
@@ -112,11 +119,15 @@ ScanResult scan(GameDir* out, int max, int* n)
                     }
                     sub.close();
                 }
+                if (again) again.close();
             }
             g.format = Format::Dax;
             if (dax == 0) {
-                d.rewindDirectory();
-                dax = count_hlib(d, 2);
+                char path[96];
+                snprintf(path, sizeof path, "%s/%s", games::kRootDir, g.folder);
+                fs::File again = fs.open(path);
+                if (again && again.isDirectory()) dax = count_hlib(again, 2);
+                if (again) again.close();
                 g.format = Format::Hlib;
             }
             if (dax > 0) {
@@ -124,14 +135,8 @@ ScanResult scan(GameDir* out, int max, int* n)
                 g.dax_files = dax;
                 g.icon[0] = 0;
                 int best = 0;
-                find_icon(d, g.folder, g.icon, sizeof g.icon, best);
-                if (strcmp(g.data_dir, g.folder) != 0) {
-                    char sub_path[128];
-                    snprintf(sub_path, sizeof sub_path, "%s/%s", games::kRootDir, g.data_dir);
-                    fs::File sub = fs.open(sub_path);
-                    if (sub && sub.isDirectory()) find_icon(sub, g.data_dir, g.icon, sizeof g.icon, best);
-                    if (sub) sub.close();
-                }
+                find_icon(fs, g.folder, g.icon, sizeof g.icon, best);
+                if (strcmp(g.data_dir, g.folder) != 0) find_icon(fs, g.data_dir, g.icon, sizeof g.icon, best);
                 ++*n;
             }
         }

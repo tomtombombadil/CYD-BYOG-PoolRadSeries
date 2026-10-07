@@ -54,7 +54,8 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
 - Game files are read from `/GOLDBOX/<folder>/` on the SD card, never copied
   into flash.
 - Tom's GOG game files are in this Claude Project's files: one zip per game
-  (game files only, no PDFs - all ten load, 2026-10-07) plus each journal as
+  (game files + GOG's goggame-* files incl. the icon .ico/.dll, no PDFs -
+  2026-10-07) plus each journal as
   "<SHORT> - ... Journal.pdf". Fetch zips with the Projects tool
   (`project_read` -> local file), unzip to the session's scratch space (e.g.
   /tmp/claude-0/games/<game>), check with `tools/dax_tool/dax_inspect`.
@@ -101,6 +102,9 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
 - Library title bar shows the firmware version (Tom: to see which build is
   flashed). Game icons come from the player's goggame-<id>.ico / .dll on the
   card (`engine/icon.*`), never from the repo.
+- Portability (SPEC section 11): game logic takes key events like the
+  original (letters, arrows / keypad, Enter, Esc); the CYD front end turns
+  taps into keys. Nothing platform-specific in `src/engine/`.
 - Stream DAX blocks (`dax::RleReader`) instead of loading whole blocks where
   possible; RAM is tight (largest free block ~75-110 KB).
 - Toolchain: pioarduino platform 55.03.312-1 (Arduino-ESP32 3.3.x), LovyanGFX

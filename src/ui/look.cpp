@@ -415,7 +415,7 @@ Rows tap(int x, int y, uint32_t now, pic::Canvas& c)
         t_last = now;
         return join(cell_rows(w.r.y0, w.r.y1), text_after(c));
     case text::State::Done: {
-        if (pending || y / 8 != text::kMenuRow) return Rows{};
+        if (pending || y < text::kMenuTapTop) return Rows{};
         const int item = text::hit(menu, x / 8);
         if (item < 0) return Rows{};
         // The highlight moves to the tapped word first, then it acts

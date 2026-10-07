@@ -99,6 +99,9 @@ void rescan()
     scan_result = library::scan(game_dirs, library::kMaxGames, &n_games);
     home_page = 0;
     Serial.printf("[library] scan: %d game folder(s), result %d\n", n_games, (int)scan_result);
+    for (int i = 0; i < n_games; ++i)
+        Serial.printf("[library]   %s: %s, icon %s\n", game_dirs[i].folder, games::short_title(game_dirs[i].game),
+                      game_dirs[i].icon[0] ? game_dirs[i].icon : "(none)");
 }
 
 bool open_file(int i)
@@ -187,10 +190,21 @@ constexpr int kHomeCols = 2, kHomeRows = 3;
 
 int icon_px() { return ui::large() ? 48 : 32; }
 
-// The game's icon (from the player's own GOG files) at the key's left.
-void draw_icon(const ui::Rect& r, const library::GameDir& g, ui::KeyStyle st)
+// The icon size that fits a key with its name beside it (0 = none). A
+// long name on 480x320 gets the 32-pixel icon rather than none.
+int icon_fit(const ui::Rect& r, const char* label)
 {
-    const int want = icon_px();
+    for (int px = icon_px(); px >= 32; px -= 16) {
+        const int inset = px + ui::gap() * 2;
+        if (r.h >= px + 4 && ui::text_width(label) <= r.w - inset - ui::gap()) return px;
+    }
+    return 0;
+}
+
+// The game's icon (from the player's own GOG files) at the key's left,
+// `want` pixels square.
+void draw_icon(const ui::Rect& r, const library::GameDir& g, ui::KeyStyle st, int want)
+{
     char path[160];
     snprintf(path, sizeof path, "%s/%s", games::kRootDir, g.icon);
     fs::File f = sd_fs().open(path, "r");
@@ -262,9 +276,8 @@ void draw_home()
             const ui::KeyStyle st = hlib ? ui::KeyStyle::Dim : ui::KeyStyle::Normal;
             const char* label = games::short_title(g.game);
             // Room for the icon only if the name still fits beside it
-            int inset = 0;
-            if (g.icon[0] && r.h >= icon_px() + 4) inset = icon_px() + ui::gap() * 2;
-            if (inset && ui::text_width(label) > r.w - inset - ui::gap()) inset = 0;
+            const int ipx = g.icon[0] ? icon_fit(r, label) : 0;
+            const int inset = ipx ? ipx + ui::gap() * 2 : 0;
             char sub[64];
             if (hlib) snprintf(sub, sizeof sub, "%s - newer format", g.folder);
             else snprintf(sub, sizeof sub, "%s - %d files", g.folder, g.dax_files);
@@ -273,7 +286,7 @@ void draw_home()
                 else snprintf(sub, sizeof sub, "%d files", g.dax_files);
             }
             ui::key2(r, label, sub, st, inset);
-            if (inset) draw_icon(r, g, st);
+            if (ipx) draw_icon(r, g, st, ipx);
         }
     }
     const bool more = n_games > kHomeCols * kHomeRows;
