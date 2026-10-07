@@ -298,6 +298,7 @@ void tap_files(const ui::Tap& t)
     if (look_hit) {
         look_error = look::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game);
         look_page = 0;
+        frame::set_scale(frame::Scale::One);    // the game's screen: always 1:1
         go(Screen::Look);
         return;
     }
@@ -611,7 +612,7 @@ void draw_look()
         return;
     }
     frame::set_ega_palette();
-    look::draw(look_page, frame::canvas());
+    look::enter(look_page, frame::canvas());
     ui::clear();
     frame::present();
     char info[128];
@@ -633,7 +634,14 @@ void leave_look()
 {
     look::close();
     look_error = nullptr;
+    // The game screen is always 1:1 here; back to the viewer's own choice
+    frame::set_scale(cfg->scale_15x ? frame::Scale::OneAndHalf : frame::Scale::One);
     go(Screen::Files);
+}
+
+void present(const look::Rows& r)
+{
+    if (r.y1 > r.y0) frame::present_rows(r.y0, r.y1);
 }
 
 void look_step(int dir)
@@ -653,13 +661,10 @@ void tap_look(const ui::Tap& t)
         if (view_key(1).contains(t.x, t.y)) { leave_look(); return; }
         if (view_key(2).contains(t.x, t.y)) { look_step(1); return; }
     }
-    // 1.5x: the picture is the control (left / right third, middle = back)
-    const ui::Rect a = frame::area();
-    if (!a.contains(t.x, t.y)) return;
-    const int third = (t.x - a.x) * 3 / a.w;
-    if (third == 0) look_step(-1);
-    else if (third == 2) look_step(1);
-    else if (!view_has_keys()) leave_look();
+    // Taps on the game screen go to the page (title: next picture; text:
+    // go on, menu line)
+    int cx, cy;
+    if (frame::to_canvas(t.x, t.y, cx, cy)) present(look::tap(cx, cy, millis(), frame::canvas()));
 }
 
 // ---- Settings --------------------------------------------------------------
@@ -757,6 +762,7 @@ void tick()
         case Screen::Settings: tap_settings(t); break;
         }
     }
+    if (screen == Screen::Look && !look_error && !dirty) present(look::tick(millis(), frame::canvas()));
     if (!dirty) return;
     dirty = false;
     switch (screen) {

@@ -6,11 +6,14 @@
 #include <cstdlib>
 #include <cstring>
 #include <random>
+#include <string>
 #include <vector>
 
 #include "engine/dax.h"
 #include "engine/exepack.h"
 #include "engine/layout.h"
+#include "engine/printcalls.h"
+#include "engine/text.h"
 #include "engine/font.h"
 #include "engine/games.h"
 #include "engine/picture.h"
@@ -661,6 +664,155 @@ static void test_layout()
     CHECK(profile::program_name(games::Game::CurseOfTheAzureBonds) != nullptr);
 }
 
+// ---- Text ------------------------------------------------------------------
+// A font whose glyph g is a solid block with g's bits in row 0, so what was
+// printed can be read back from the canvas.
+static void make_test_font(font::Font& f)
+{
+    for (int g = 0; g < font::kGlyphs; ++g)
+        for (int r = 0; r < 8; ++r) f.glyph[g][r] = r == 0 ? static_cast<uint8_t>(g) : 0xFF;
+    f.loaded = true;
+}
+
+// The character printed at a cell: '.' if blank (all paper), '?' if unknown
+static char cell_char(const pic::Canvas& c, int col, int row)
+{
+    const uint8_t* p = c.px + row * 8 * c.w + col * 8;
+    if (p[c.w * 3] == 0) return '.';   // row 3 of the glyph is ink unless blank
+    int g = 0;
+    for (int b = 0; b < 8; ++b)
+        if (p[b] != 0) g |= 0x80 >> b;
+    if (g == 32) return ' ';
+    if (g >= 1 && g <= 26) return static_cast<char>('A' + g - 1);
+    if (g >= 33 && g < 64) return static_cast<char>(g);
+    return '?';
+}
+
+static std::string row_text(const pic::Canvas& c, int row, int x0, int x1)
+{
+    std::string s;
+    for (int x = x0; x <= x1; ++x) s += cell_char(c, x, row);
+    return s;
+}
+
+static void test_text()
+{
+    static font::Font f;
+    make_test_font(f);
+    static uint8_t px[pic::kScreenW * pic::kScreenH];
+    pic::Canvas c{px, pic::kScreenW, pic::kScreenH};
+    c.clear(7);
+
+    // A 10 x 3 window at columns 2-11, rows 5-7
+    const text::Region r{2, 5, 11, 7};
+    text::Writer w;
+    text::begin(w, c, "ONE TWO THREE, FOUR! FIVE SIX ABCDEFGHIJKLMN END", r, 15, true);
+    CHECK(w.state == text::State::Writing);
+    CHECK(c.px[5 * 8 * c.w + 2 * 8] == 0 && c.px[4 * 8 * c.w + 2 * 8] == 7);   // area cleared, not outside
+    CHECK(text::step(w, c, f, 3) == text::State::Writing);
+    CHECK(row_text(c, 5, 2, 11) == "ONE.......");
+    CHECK(text::step(w, c, f, -1) == text::State::PageFull);
+    CHECK(row_text(c, 5, 2, 11) == "ONE TWO ..");      // "THREE, " doesn't fit with its space
+    CHECK(row_text(c, 6, 2, 11) == "THREE, ...");      // punctuation stays with its word
+    CHECK(row_text(c, 7, 2, 11) == "FOUR! ....");      // "FIVE " would fit only without its space
+    text::next_page(w, c);
+    CHECK(row_text(c, 5, 2, 11) == "..........");
+    CHECK(text::step(w, c, f, -1) == text::State::Done);
+    CHECK(row_text(c, 5, 2, 11) == "FIVE SIX ."); // the leading space was dropped
+    CHECK(row_text(c, 6, 2, 11) == "ABCDEFGHIJ");      // too long for a line: broken
+    CHECK(row_text(c, 7, 2, 11) == "KLMN END..");
+    CHECK(w.col == 10 && w.row == 7);
+    // The next text goes on from the cursor
+    text::begin(w, c, "XY", r, 15, false);
+    CHECK(text::step(w, c, f, -1) == text::State::Done);
+    CHECK(row_text(c, 7, 2, 11) == "KLMN ENDXY");
+    CHECK(w.col == 2 && w.row == 8);                   // filled the line: cursor wraps
+    text::begin(w, c, "", r, 15, false);
+    CHECK(w.state == text::State::Done);
+
+    // Pascal strings
+    Bytes b = {5, 'H', 'E', 'L', 'L', 'O', 3, 'A', 1, 'B', 0, 9, 'S', 'H'};
+    dax::MemorySource src(b.data(), static_cast<uint32_t>(b.size()));
+    char out[text::kMaxString];
+    CHECK(text::read_pascal(src, 0, out, sizeof out) && strcmp(out, "HELLO") == 0);
+    CHECK(!text::read_pascal(src, 6, out, sizeof out));      // a control byte
+    CHECK(!text::read_pascal(src, 10, out, sizeof out));     // empty
+    CHECK(!text::read_pascal(src, 11, out, sizeof out));     // runs past the end
+    CHECK(!text::read_pascal(src, 0, out, 4));               // too long for the buffer
+    // ... and from a packed program
+    Bytes img(0x200, 0);
+    const char* msg = "Press any key";
+    img[0x150] = static_cast<uint8_t>(strlen(msg));
+    memcpy(&img[0x151], msg, strlen(msg));
+    const Bytes exe = make_exe(img, 0x40, true);
+    dax::MemorySource es(exe.data(), static_cast<uint32_t>(exe.size()));
+    exepack::Info in;
+    CHECK(exepack::parse(es, in) == exepack::Status::Ok);
+    CHECK(text::read_pascal(es, in, 0x150, out, sizeof out) && strcmp(out, msg) == 0);
+    CHECK(!text::read_pascal(es, in, 0x1F0, out, sizeof out));
+}
+
+static void test_menu()
+{
+    static font::Font f;
+    make_test_font(f);
+    static uint8_t px[pic::kScreenW * pic::kScreenH];
+    pic::Canvas c{px, pic::kScreenW, pic::kScreenH};
+    c.clear(7);
+    text::Menu m;
+    text::build(m, "DO: ", "Area Cast View 2nd");
+    CHECK(m.count == 4);
+    CHECK(m.start[0] == 0 && m.end[0] == 3 && m.start[1] == 5 && m.end[1] == 8 && m.start[3] == 15 && m.end[3] == 17);
+    CHECK(text::key(m, 2) == 'V' && text::key(m, 3) == '2' && text::key(m, 4) == 0);
+    // Hits: the prompt is 4 columns; a choice's trailing space belongs to it
+    CHECK(text::hit(m, 3) == -1 && text::hit(m, 4) == 0 && text::hit(m, 8) == 0 && text::hit(m, 9) == 1);
+    CHECK(text::hit(m, 21) == 3 && text::hit(m, 22) == -1);
+    m.selected = 1;
+    text::draw(c, f, m);
+    const int y = text::kMenuRow * 8 + 3;      // a solid row of every glyph
+    auto at = [&](int col) { return c.px[y * c.w + col * 8]; };
+    CHECK(at(0) == 13);                        // prompt colour
+    CHECK(at(4) == 15 && at(5) == 10);         // key letter, rest of the word
+    CHECK(at(9) == 0 && at(12) == 0);          // the chosen word: reversed (black ink)
+    CHECK(c.px[(text::kMenuRow * 8) * c.w + 9 * 8 + 7] == 15 || c.px[(text::kMenuRow * 8) * c.w + 9 * 8] == 15);
+    CHECK(at(19) == 15 && at(20) == 10);       // "2" is a key, "n" isn't
+    CHECK(at(30) == 0 && c.px[(text::kMenuRow * 8 - 1) * c.w] == 7);   // rest of row 24 cleared, row 23 untouched
+}
+
+static void test_printcalls()
+{
+    // A fake overlay: code segment at 0x40, two strings, then two print calls
+    Bytes ovr(0x40, 0x90);
+    const uint32_t seg = 0x40;
+    auto add_str = [&](const char* s) {
+        const uint32_t off = static_cast<uint32_t>(ovr.size()) - seg;
+        ovr.push_back(static_cast<uint8_t>(strlen(s)));
+        ovr.insert(ovr.end(), s, s + strlen(s));
+        return off;
+    };
+    const uint32_t a = add_str("credits"), b2 = add_str("by: someone");
+    const uint32_t calls = static_cast<uint32_t>(ovr.size());
+    auto call = [&](int col, int row, int fg, int bg, uint32_t off) {
+        const uint8_t blk[printcalls::kBlock] = {
+            0xB0, (uint8_t)col, 0x50, 0xB0, (uint8_t)row, 0x50, 0xB0, (uint8_t)fg, 0x50, 0xB0, (uint8_t)bg, 0x50,
+            0x8D, 0x7E, 0xDB, 0x16, 0x57, 0xBF, (uint8_t)(off & 0xFF), (uint8_t)(off >> 8), 0x0E, 0x57,
+            0x9A, 1, 2, 3, 4, 0x9A, 5, 6, 7, 8};
+        ovr.insert(ovr.end(), blk, blk + sizeof blk);
+    };
+    call(2, 1, 10, 0, a);
+    call(9, 2, 11, 0, b2);
+    ovr.push_back(0x89);    // mov sp, bp ... the end
+    ovr.insert(ovr.end(), 40, 0);
+    dax::MemorySource src(ovr.data(), static_cast<uint32_t>(ovr.size()));
+    printcalls::Line l[8];
+    CHECK(printcalls::read(src, calls, seg, l, 8) == 2);
+    CHECK(l[0].row == 1 && l[0].col == 2 && l[0].fg == 10 && strcmp(l[0].s, "credits") == 0);
+    CHECK(l[1].row == 2 && l[1].col == 9 && l[1].fg == 11 && strcmp(l[1].s, "by: someone") == 0);
+    CHECK(printcalls::read(src, calls, seg, l, 1) == 1);
+    CHECK(printcalls::read(src, calls + 1, seg, l, 8) == 0);     // not on a call
+    CHECK(printcalls::read(src, calls, seg + 3, l, 8) == 0);     // strings don't read
+}
+
 int main()
 {
     test_rle_known_bytes();
@@ -673,6 +825,9 @@ int main()
     test_games();
     test_exepack();
     test_layout();
+    test_text();
+    test_menu();
+    test_printcalls();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;

@@ -36,6 +36,15 @@ struct FrameTables {
     uint16_t combat_right;   //   column 39, rows 0-22
 };
 
+// One step of the title sequence: a TITLE.DAX picture at a cell position,
+// or (block 0) the credits screen; then a wait (a tap skips it).
+struct TitleStep {
+    uint8_t  block;          // 0 = credits
+    uint8_t  row, col;       // where the picture's top left goes, in cells
+    bool     clear;          // clear the screen first
+    uint16_t wait_ms;        // 0 = go straight on
+};
+
 struct Profile {
     games::Game  game;
     const char*  release;        // shown to the player, e.g. "GOG"
@@ -46,6 +55,21 @@ struct Profile {
     FrameTables  frame;
     const char*  tiles_file;     // the 8x8 tiles the frame is made of
     uint8_t      tiles_block;
+
+    // Strings in the program: "Press any key to continue" (text windows)
+    uint32_t     press_any_key;  // image offset of the Pascal string
+
+    // The title sequence
+    const char*      title_file;
+    const TitleStep* title;
+    int              title_steps;
+
+    // GAME.OVR (the overlay file): the credits screen's print calls
+    const char*  overlay;
+    uint32_t     overlay_size;
+    uint32_t     credits_at;     // first print call
+    uint32_t     credits_base;   // its code segment's start in the file
+    uint8_t      credits_bars[2];   // rows of the frame's bars on that screen
 };
 
 // The game's program file name (to look for it), or nullptr if no

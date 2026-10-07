@@ -10,7 +10,7 @@ reads them from there.
 
 > **Early development.** A library and asset viewer that finds your games on
 > the card and shows the pictures inside their files, the games' own font and
-> (Curse of the Azure Bonds) the game's screen frame. The games aren't
+> (Curse of the Azure Bonds) its title sequence, screen frame and text windows. The games aren't
 > playable yet. Roadmap: [docs/SPEC.md](docs/SPEC.md).
 
 ## Install
@@ -47,9 +47,11 @@ The games aren't playable yet; this build shows what is inside their files.
 
 1. **Library**: one key per game found on the card. Tap one.
 2. **Files**: the game's DAX archives. Tap one. For Curse of the Azure Bonds
-   the middle key, **Screen Test**, shows the game's screen frame (exploring,
-   text, outer, combat, and its tiles), drawn from your own `START.EXE` and
-   `8X8D1.DAX` - `< Prev` / `Next >` step through them.
+   the middle key, **Screen Test**, shows the game's own look, drawn from your
+   files (`START.EXE`, `GAME.OVR`, `TITLE.DAX`, `8X8D1.DAX`): the title
+   sequence and credits (tap = next picture), a text window printing and the
+   menu line (tap to go on; tap a menu word to choose it), the screen frames
+   and their tiles. `< Prev` / `Next >` step through the pages.
 3. **Blocks**: each piece inside the file. **Gold keys are pictures** (size and
    frame count shown); navy keys are other data. Tap one.
 4. **Picture**: `< Prev` / `Next >` step through the frames, then the next
