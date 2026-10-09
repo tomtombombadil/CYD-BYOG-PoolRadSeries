@@ -8,6 +8,7 @@
 // script), SETVAR=addr=value, CHOICES=digits, TYPE=text, TELE=x,y,dir,
 // FINDLOCK, PAUSESHOT, ANIMSHOTS, MS (ms to settle). Needs an out/ folder.
 #include "ui/play.cpp"
+#include "engine/rules.h"
 #include <vector>
 #include <string>
 uint32_t g_now = 1000;
@@ -120,6 +121,39 @@ int main(int argc, char** argv)
     if (getenv("CHOICES")) for (const char* q = getenv("CHOICES"); *q; ++q) if (*q >= '0' && *q <= '9') choices.push_back(*q - '0');
     settle(0, getenv("MS") ? atoi(getenv("MS")) : 60000);
     shot("start");
+    if (getenv("RUNAT")) {
+        // Run the script from an address (e.g. a shop), then BUY=n,n,...
+        // buys those goods for character 0, READY=i readies their item i
+        unsigned a; sscanf(getenv("RUNAT"), "%x", &a);
+        play::then = play::Then::Idle;
+        play::handle(play::vm->run((uint16_t)a));
+        settle(0, 5000);
+        printf("  screen %d, %d goods, menu [%s]\n", (int)play::screen, play::ground->n, play::menu.s);
+        if (play::screen == play::Screen::Shop) {
+            shot("shop");
+            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
+            tap_word('B');
+            shot("buy_list");
+            if (getenv("BUY")) for (const char* q = getenv("BUY"); *q; ) { int n = atoi(q); play::plist.index = n; tap_word('B'); g_now += 5000; play::tick(g_now, C); while (*q && *q != ',') ++q; if (*q) ++q; }
+            shot("bought");
+            tap_word('E');
+            tap_word('V');
+            shot("view");
+            if (tap_word('I')) {
+                if (getenv("READY")) for (const char* q = getenv("READY"); *q; ) { play::plist.index = atoi(q); tap_word('R'); g_now += 5000; play::tick(g_now, C); while (*q && *q != ',') ++q; if (*q) ++q; }
+                shot("items");
+                tap_word('E');
+                shot("view2");
+            }
+            play::tap(2, 2, C);
+            tap_word('E');
+            settle(0, 5000);
+            shot("after_shop");
+            const party::Character& ch = play::pt->m[0];
+            char n[20]; ch.name(n, 20);
+            printf("  %s: AC %d THAC0 %d %dd%d%+d items %d gold worth %d\n", n, ch.ac(), ch.thac0(), ch.dice(), ch.dice_sides(), ch.damage_bonus(), ch.n_items, rules::gold_worth(ch));
+        }
+    }
     if (getenv("FINDLOCK")) for (int y = 0; y < 16; ++y) for (int x = 0; x < 16; ++x) for (int dd = 0; dd < 8; dd += 2) if (geo::passage(play::d->map, x, y, dd) >= 2) printf("locked %d,%d,%d\n", x, y, dd);
     if (getenv("TELE")) { int x, y, dd; sscanf(getenv("TELE"), "%d,%d,%d", &x, &y, &dd); play::d->gs.x = x; play::d->gs.y = y; play::d->gs.dir = dd; play::after_move_redraw(); }
     const char* moves = argc > 2 ? argv[2] : "FFFF";

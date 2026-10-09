@@ -14,6 +14,9 @@ namespace {
 // View Character: the class (27-byte slots, 18 with "unknown"), race,
 // alignment, sex, coin and health names at 0xB898-0xBC37 of the unpacked
 // program; the screen's words in GAME.OVR (as its code prints them).
+// Items: 255 name words in 21-byte slots at 0xBC37 (word 1 first); the
+// ITEMS file; arrows 73, quarrels 28, darts 9, flask of oil 86; elves'
+// bow / sword bonus types 41-44, 37, 36 (coab's lists); the shop's words.
 // Title: picture 1 for 5 s; picture 2 with 3 on it at row 11, column 6 for
 // 10 s; picture 4 at row 11 for 10 s; the credits for 10 s.
 constexpr TitleStep kCurseTitle[] = {
@@ -58,7 +61,11 @@ const Profile kProfiles[] = {
      {0xB133, 12, 42, 0x20111, 0x1EE80, 0x37E31, 0x37E36, "CURSE.CFG"},
      {{0xB898, 27, 18}, {0xBA7E, 10, 8}, {0xBACE, 17, 9}, {0xBB67, 7, 2}, {0xBB75, 11, 7}, {0xBBC2, 13, 9},
       0x27094, 0x2709A, 0x2709F, 0x270BD, 0x270C5, 0x270D7, 0x276AA, 0x276B1, 0x276B8, 0x276C7,
-      0x276D6, 0x276E8, 0x27BA8, 5}},
+      0x276D6, 0x276E8, 0x27BA8, 5},
+     {{0xBC37, 21, 255}, "ITEMS", 73, 28, 9, 86, 0x87, 0xB1, {41, 42, 43, 44, 37, 36},
+      0x773D, 0x7745, 0x3CF1A, 0x3CF20, 0x3CF26, 0x7D3F, 0x7D18, 0x7B5D, 0x2916E,
+      0x2859A, 0x285A0, 0x2856B, 0x37AF6, 0x37AFD, 0x28EF7, 0x28F03, 0x28F0F, 0x28F1E, 0x38F44,
+      0x270CA, 0x270D1}},
 };
 
 } // namespace

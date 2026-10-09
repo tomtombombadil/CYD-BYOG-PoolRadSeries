@@ -122,6 +122,26 @@ struct Profile {
                  encumbrance, movement, exit;
         uint8_t  stats_stride;         // "STR ", "INT " ... one after another
     } view;
+
+    // Items: the name words (word 1 first) in the program, the item type
+    // table file, and item types the rules treat specially
+    struct {
+        NameTable   words;
+        const char* types_file;
+        uint8_t     arrow, quarrel, dart, flask;   // missiles, flask of oil (names)
+        uint8_t     keep1, keep2;                  // name words that keep a missile's name singular
+        uint8_t     elf_bonus[6];                  // +1 to hit for elves (bows, short / long sword)
+        uint32_t    buy_items, buy;                // GAME.OVR: "Items: " (the shop's list), "Buy"
+        uint32_t    list_next, list_prev, list_exit;   //   a list's " Next", " Prev", " Exit"
+        uint32_t    shop_menu, shop_menu_money;    //   "Buy View Pool Appraise Exit" / with Take, Share
+        uint32_t    no_money;                      //   "Not enough Money."
+        uint32_t    overloaded;                    //   "Overloaded"
+        // A character's items: "Items", "Ready Item", "Ready", " Yes  ", " No   ",
+        // "It's Cursed", "Wrong Class", "already using ", "Your hands are full!",
+        // "'s"; View Character's "Weapon", "Armor"
+        uint32_t    title, heading, ready, yes, no, cursed, wrong_class, already, hands_full, plural_s,
+                    weapon, armour;
+    } items;
 };
 
 // The game's program file name (to look for it), or nullptr if no

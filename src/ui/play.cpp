@@ -12,9 +12,11 @@
 #include "engine/exepack.h"
 #include "engine/font.h"
 #include "engine/journal.h"
+#include "engine/items.h"
 #include "engine/layout.h"
 #include "engine/party.h"
 #include "engine/profile.h"
+#include "engine/rules.h"
 #include "engine/savegame.h"
 #include "engine/text.h"
 #include "engine/view3d.h"
@@ -75,6 +77,13 @@ struct Data {
     // View Character's words (from the program and GAME.OVR)
     char           cls[18][27] = {}, race[8][10] = {}, alignment[9][17] = {}, sex[2][7] = {}, money[7][11] = {},
                    health[9][13] = {};
+    // Items: shop and item list words (GAME.OVR)
+    rules::ItemFacts facts{};
+    char           w_items[12] = {}, w_buy[8] = {}, w_next[8] = {}, w_prev[8] = {}, w_exit[8] = {},
+                   w_shop[48] = {}, w_shop_money[48] = {}, w_no_money[24] = {}, w_over[16] = {},
+                   w_title[8] = {}, w_heading[16] = {}, w_ready[8] = {}, w_yes[8] = {}, w_no[8] = {},
+                   w_cursed[16] = {}, w_wrong[16] = {}, w_already[20] = {}, w_hands[24] = {}, w_s[4] = {},
+                   w_weapon[8] = {}, w_armour[8] = {};
     char           v_npc[8] = {}, v_age[8] = {}, v_stat[6][8] = {}, v_level[8] = {}, v_exp[8] = {}, v_status[8] = {},
                    v_ac[8] = {}, v_hp[8] = {}, v_thac0[12] = {}, v_damage[20] = {}, v_enc[24] = {}, v_move[16] = {},
                    v_exit[8] = {};
@@ -82,6 +91,8 @@ struct Data {
 
 Data* d = nullptr;
 party::Party* pt = nullptr;
+items::Names* names = nullptr;     // item name words and types
+items::Ground* ground = nullptr;   // treasure / a shop's goods (own block: RAM is tight)
 ecl::Vm* vm = nullptr;
 Host* host = nullptr;
 alignas(ecl::Vm) uint8_t vm_mem[sizeof(ecl::Vm)];
@@ -90,9 +101,22 @@ pic::Canvas* cv = nullptr;
 
 // Which screen: the party menu (the games' first screen), its "Load Which
 // Game" question, or the game itself
-enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View };
+enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
+
+// A list to pick from, as the games draw them (shop goods, a character's
+// items): lines in a cell area, the chosen one highlighted (colour 15
+// behind), the menu line "<what> Next Prev Exit"
+struct PickList {
+    int row0 = 1, row1 = 22, col0 = 1;
+    int n = 0, index = 0, top = 0;
+    int rows() const { return row1 - row0 + 1; }
+} plist;
+
+// A message on the menu line ("Not enough Money."), then the menu again
+uint32_t note_until = 0;
+int last_pic_id = -1, last_pic_head = 0xFF;   // the script's picture (shops come back to it)
 int  pm_item[Data::kItems];   // the menu item on each list line
 int  pm_lines = 0;
 char pm_saves[12];            // save slots found ("AB")
@@ -587,8 +611,8 @@ void begin_adventuring();
 // and age (row 3), alignment, class, the six stats from row 7, coins from
 // row 7 (names right-aligned to column 19), levels and experience (row
 // 15), AC / HP / THAC0 / damage / encumbrance / movement (rows 17-18),
-// health (row 22). Weapon and armour (rows 20-21) need the item names
-// (to come); the menu line offers what the engine can do (Exit).
+// weapon and armour (rows 20-21), health (row 22); the menu line offers
+// what the engine can do (Items, Exit).
 
 const char* name_of(const char* table, int stride, int count, int i)
 {
@@ -680,9 +704,25 @@ void draw_character(pic::Canvas& c)
     put(c, d->v_move, 25, 18, 15);
     snprintf(t, sizeof t, "%d", mv);
     put(c, t, 34, 18, 10);
+    // The readied weapon and armour
+    const int wi = items::readied_in(ch->items, ch->n_items, *names, items::kSlotWeapon);
+    const int ai = items::readied_in(ch->items, ch->n_items, *names, items::kSlotArmour);
+    if (wi >= 0) {
+        put(c, d->w_weapon, 1, 20, 15);
+        names->name(items::Item{ch->items[wi]}, t, sizeof t);
+        put(c, t, 8, 20, 10);
+    }
+    if (ai >= 0) {
+        put(c, d->w_armour, 2, 21, 15);
+        names->name(items::Item{ch->items[ai]}, t, sizeof t);
+        put(c, t, 8, 21, 10);
+    }
     put(c, d->v_status, 1, 22, 15);
     put(c, name_of(d->health[0], 13, 9, ch->health()), 8, 22, 10);
-    text::build(menu, "", d->v_exit);
+    // What the character can do: Items (when they have some), Exit
+    char keys[40];
+    snprintf(keys, sizeof keys, "%s%s%s", ch->n_items ? d->w_title : "", ch->n_items ? " " : "", d->v_exit);
+    text::build(menu, "", keys);
     menu.selected = 0;
     show_menu_line(c);
 }
@@ -693,6 +733,334 @@ void view_character(pic::Canvas& c)
     view_from = screen;
     screen = Screen::View;
     draw_character(c);
+}
+
+// ---- Picking from a list, items, the shop ---------------------------------------
+
+void back_from_view(pic::Canvas& c);
+void host_picture(int id, int head);
+void handle(ecl::Stop r);
+void draw_items(pic::Canvas& c);
+void draw_buy(pic::Canvas& c);
+void draw_shop(pic::Canvas& c);
+
+// The menu line again after a message
+void redraw_menu(pic::Canvas& c)
+{
+    note_until = 0;
+    show_menu_line(c);
+}
+
+// A message on the menu line for the game's delay (as the games do)
+void note(pic::Canvas& c, const char* t)
+{
+    clear_menu_line(c);
+    put(c, t, 0, text::kMenuRow, 10);
+    int speed = vm->get(0x4BFC) & 0xFF;
+    if (speed == 0) speed = 4;
+    note_until = millis() + static_cast<uint32_t>(speed) * 300;
+    if (!note_until) note_until = 1;
+}
+
+// The shop's goods are listed last first (as the games list them)
+const uint8_t* goods(int i) { return ground->item[ground->n - 1 - i]; }
+
+// One line of the list being shown
+void list_line(int i, char* out, size_t cap)
+{
+    if (screen == Screen::ShopBuy) {
+        char nm[48];
+        const uint8_t* it = goods(i);
+        names->name(items::Item{it}, nm, sizeof nm);
+        snprintf(out, cap, "%-21s%9d", nm, rules::price(it, vm->get(0x7F6D) & 0xFF));
+    } else {
+        const party::Character* ch = pt->sel();
+        char nm[48];
+        names->name(items::Item{ch->items[i]}, nm, sizeof nm);
+        snprintf(out, cap, "%s%s", items::Item{ch->items[i]}.readied() ? d->w_yes : d->w_no, nm);
+    }
+}
+
+void draw_list(pic::Canvas& c, const char* prompt, const char* what)
+{
+    PickList& l = plist;
+    if (l.index >= l.n) l.index = l.n ? l.n - 1 : 0;
+    if (l.index < l.top) l.top = l.index;
+    if (l.index >= l.top + l.rows()) l.top = l.index - l.rows() + 1;
+    c.fill(l.col0 * 8, l.row0 * 8, (39 - l.col0) * 8, l.rows() * 8, 0);
+    for (int r = 0; r < l.rows() && l.top + r < l.n; ++r) {
+        char line[64];
+        list_line(l.top + r, line, sizeof line);
+        // trailing spaces aren't highlighted (as the games trim the line)
+        size_t n = strlen(line);
+        while (n && line[n - 1] == ' ') line[--n] = 0;
+        const int row = l.row0 + r;
+        if (l.top + r == l.index) {
+            int lead = 0;
+            while (line[lead] == ' ') ++lead;
+            c.fill((l.col0 + lead) * 8, row * 8, static_cast<int>(n - lead) * 8, 8, 15);
+            font::draw_text(c, d->font, line + lead, l.col0 + lead, row, 0, -1);
+        } else {
+            put(c, line, l.col0, row, 10);
+        }
+    }
+    char keys[60];
+    snprintf(keys, sizeof keys, "%s%s%s%s", what, l.top + l.rows() < l.n ? d->w_next : "", l.top > 0 ? d->w_prev : "",
+             d->w_exit[0] == ' ' ? d->w_exit : " Exit");
+    text::build(menu, prompt, keys);
+    menu.selected = 0;
+    show_menu_line(c);
+    dirty(0, pic::kScreenH);
+}
+
+// ---- A character's items --------------------------------------------------------
+// "MATHEW's Items" (row 1), a bar at row 2, "Ready Item" (row 3), the items
+// from row 5 as " Yes  Long Sword" / " No   Plate Mail"; menu: Ready (the
+// rest - Use, Trade, Drop, Halve, Join - to come) Next Prev Exit.
+
+void draw_items(pic::Canvas& c)
+{
+    const party::Character* ch = pt->sel();
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    layout::bar(c, d->tables, d->frame_tiles, 2);
+    char t[40];
+    ch->name(t, sizeof t);
+    strncat(t, d->w_s, sizeof t - strlen(t) - 1);
+    put(c, t, 1, 1, !ch->in_combat() ? 12 : ch->enemy() ? 14 : 11);
+    char nm[20];
+    ch->name(nm, sizeof nm);
+    put(c, d->w_title, static_cast<int>(strlen(nm)) + 4, 1, 10);
+    put(c, d->w_heading, 1, 3, 15);
+    plist.row0 = 5;
+    plist.row1 = 22;
+    plist.col0 = 1;
+    plist.n = ch->n_items;
+    draw_list(c, "", d->w_ready);
+}
+
+void open_items(pic::Canvas& c)
+{
+    if (!pt->sel() || !pt->sel()->n_items) return;
+    screen = Screen::Items;
+    plist = PickList{};
+    draw_items(c);
+}
+
+// Ready / unready an item, with the games' checks
+void ready_item(int i, pic::Canvas& c)
+{
+    party::Character& ch = *pt->sel();
+    uint8_t* r = ch.items[i];
+    const items::Item it{r};
+    char t[64];
+    if (it.readied()) {
+        if (it.cursed()) {
+            note(c, d->w_cursed);
+            return;
+        }
+        r[0x34] = 0;
+    } else {
+        const items::TypeInfo& ti = names->type(it.type());
+        int other = -1;
+        // What's already in the hands / that slot
+        if (ti.slot <= 8) other = items::readied_in(ch.items, ch.n_items, *names, ti.slot);
+        if (ti.slot == 9) {
+            int k = 0;
+            for (int j = 0; j < ch.n_items; ++j)
+                if (items::Item{ch.items[j]}.readied() && names->type(items::Item{ch.items[j]}.type()).slot == 9) {
+                    ++k;
+                    other = j;
+                }
+            if (k < 2) other = -1;
+        }
+        if (it.type() == d->facts.arrow || it.type() == d->facts.quarrel)
+            for (int j = 0; j < ch.n_items; ++j)
+                if (j != i && items::Item{ch.items[j]}.readied() && items::Item{ch.items[j]}.type() == it.type()) other = j;
+        if ((ch.rec[0x12B] & ti.classes) == 0) {
+            note(c, d->w_wrong);
+            return;
+        }
+        if (other >= 0) {
+            char nm[48];
+            names->name(items::Item{ch.items[other]}, nm, sizeof nm);
+            snprintf(t, sizeof t, "%s%s", d->w_already, nm);
+            note(c, t);
+            return;
+        }
+        if (ch.rec[0x185] + ti.hands > 2) {
+            note(c, d->w_hands);
+            return;
+        }
+        r[0x34] = 1;
+        if (r[0x3E] > 0x7F) Serial.println("[play] magic item effects (not in the engine yet)");
+    }
+    rules::recalc(ch, *names, d->facts);
+    draw_items(c);
+}
+
+// ---- The shop -------------------------------------------------------------------
+// A script sets the shop flag, sets out the goods (TREASURE) and starts a
+// "fight" (COMBAT): the shop's menu "Buy View Pool Appraise Exit" (Take
+// and Share when coins lie on the counter) under the shop's picture and
+// the party list. Buy lists the goods ("Items: ", name and price); the
+// selected character pays (from the pool when they can't), if they can
+// carry it.
+
+void shop_menu(pic::Canvas& c)
+{
+    text::build(menu, "", ground->any_money() ? d->w_shop_money : d->w_shop);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+void draw_shop(pic::Canvas& c)
+{
+    // The exploring screen with the shop's picture, as the script left it
+    anim_stop();
+    bigpic = -1;
+    pic_shown = false;
+    head_shown = body_shown = -1;
+    draw_frame(c);
+    if (last_pic_id >= 0) host_picture(last_pic_id, last_pic_head);
+    else draw_view(c);
+    draw_panel(c);
+    shop_menu(c);
+}
+
+void open_shop(pic::Canvas& c)
+{
+    screen = Screen::Shop;
+    text::clear(c, text::kTextArea);
+    dirty_rows(17, 22);
+    if (pt->count) draw_party(c, 17);
+    shop_menu(c);
+}
+
+void leave_shop(pic::Canvas& c)
+{
+    screen = Screen::Game;
+    clear_menu_line(c);
+    waiting = false;
+    handle(vm->resume());
+}
+
+void draw_buy(pic::Canvas& c)
+{
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    plist.row0 = 1;
+    plist.row1 = 22;
+    plist.col0 = 1;
+    plist.n = ground->n;
+    draw_list(c, d->w_items, d->w_buy);
+}
+
+void buy(int i, pic::Canvas& c)
+{
+    party::Character* ch = pt->sel();
+    if (!ch || i < 0 || i >= ground->n) return;
+    const uint8_t* it = goods(i);
+    const int cost = rules::price(it, vm->get(0x7F6D) & 0xFF);
+    const bool own = cost <= rules::gold_worth(*ch);
+    if (!own && cost > rules::gold_worth(ground->money)) {
+        note(c, d->w_no_money);
+        return;
+    }
+    if (rules::too_heavy(*ch, it, *names, d->facts)) {
+        note(c, d->w_over);
+        return;
+    }
+    rules::add_item(*ch, it);
+    if (own) rules::pay(*ch, cost);
+    else rules::pay(ground->money, cost);
+    rules::recalc(*ch, *names, d->facts);
+    char nm[48];
+    names->name(items::Item{it}, nm, sizeof nm);
+    Serial.printf("[play] bought %s for %d\n", nm, cost);
+    draw_buy(c);
+}
+
+void shop_tap(int x, int y, pic::Canvas& c)
+{
+    const int row = y / 8, col = x / 8;
+    if (note_until) {
+        redraw_menu(c);
+        return;
+    }
+    if (y >= text::kMenuTapTop) {
+        switch (text::key(menu, text::hit(menu, col))) {
+        case 'B':
+            screen = Screen::ShopBuy;
+            plist = PickList{};
+            draw_buy(c);
+            break;
+        case 'V':
+            view_character(c);
+            break;
+        case 'E':
+            leave_shop(c);
+            break;
+        case 0:
+            break;
+        default:
+            note(c, "Not in the engine yet.");
+            break;
+        }
+        return;
+    }
+    // A character in the party list: they're the one buying
+    if (col >= 17 && row >= 4 && row < 4 + pt->count) {
+        pt->selected = row - 4;
+        draw_party(c, 17);
+    }
+}
+
+// Taps on a list: a line chooses it; the menu line acts on it
+void list_tap(int x, int y, pic::Canvas& c)
+{
+    PickList& l = plist;
+    const int row = y / 8, col = x / 8;
+    if (note_until) {
+        redraw_menu(c);
+        return;
+    }
+    if (y < text::kMenuTapTop) {
+        const int i = l.top + row - l.row0;
+        if (row >= l.row0 && row <= l.row1 && i < l.n) {
+            l.index = i;
+            if (screen == Screen::ShopBuy) draw_buy(c);
+            else draw_items(c);
+        }
+        return;
+    }
+    const char k = text::key(menu, text::hit(menu, col));
+    if (k == 'N' && l.top + l.rows() < l.n) {
+        l.top += l.rows();
+        l.index = l.top;
+    } else if (k == 'P' && l.top > 0) {
+        l.top = l.top > l.rows() ? l.top - l.rows() : 0;
+        l.index = l.top;
+    } else if (k == 'E') {
+        if (screen == Screen::ShopBuy) {
+            screen = Screen::Shop;
+            draw_shop(c);
+        } else {
+            screen = Screen::View;
+            draw_character(c);
+        }
+        return;
+    } else if (k == 'B' && screen == Screen::ShopBuy) {
+        buy(l.index, c);
+        return;
+    } else if (k == 'R' && screen == Screen::Items) {
+        ready_item(l.index, c);
+        return;
+    } else {
+        return;
+    }
+    if (screen == Screen::ShopBuy) draw_buy(c);
+    else draw_items(c);
 }
 
 void draw_party_menu(pic::Canvas& c);
@@ -738,8 +1106,17 @@ void pm_tap(int x, int y, pic::Canvas& c)
 {
     const int row = y / 8, col = x / 8;
     if (screen == Screen::View) {
-        // Exit (the only choice yet): a tap on it, or anywhere
-        back_from_view(c);
+        // Items on the menu line opens the list; anything else is Exit
+        if (y >= text::kMenuTapTop && text::key(menu, text::hit(menu, col)) == 'I') open_items(c);
+        else back_from_view(c);
+        return;
+    }
+    if (screen == Screen::Items || screen == Screen::ShopBuy) {
+        list_tap(x, y, c);
+        return;
+    }
+    if (screen == Screen::Shop) {
+        shop_tap(x, y, c);
         return;
     }
     if (screen == Screen::LoadWhich) {
@@ -770,6 +1147,26 @@ void pm_tap(int x, int y, pic::Canvas& c)
 void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
 {
     const auto& pp = d->prof->party;
+    // Item names: the words in the program, the types in ITEMS
+    const auto& pi = d->prof->items;
+    if (!names) names = new (std::nothrow) items::Names;
+    if (names && pi.words.at) {
+        const size_t n = static_cast<size_t>(pi.words.stride) * pi.words.count;
+        uint8_t* buf = static_cast<uint8_t*>(malloc(n));
+        if (buf && exepack::read(exe, info, pi.words.at, buf, n) == exepack::Status::Ok)
+            names->set_words(buf, pi.words.count, pi.words.stride);
+        free(buf);
+        names->set_plural(items::Names::Plural{pi.arrow, pi.quarrel, pi.dart, pi.flask, pi.keep1, pi.keep2});
+        d->facts.arrow = pi.arrow;
+        d->facts.quarrel = pi.quarrel;
+        memcpy(d->facts.elf_bonus, pi.elf_bonus, sizeof d->facts.elf_bonus);
+        fs::File tf;
+        if (pi.types_file && open_file(pi.types_file, tf)) {
+            library::FileSource src(tf);
+            names->read_types(src);
+            tf.close();
+        }
+    }
     d->items = 0;
     if (pp.items && pp.count <= Data::kItems && pp.stride >= 41) {
         uint8_t* buf = static_cast<uint8_t*>(malloc(static_cast<size_t>(pp.count) * pp.stride));
@@ -826,6 +1223,17 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
             {pv.hp, d->v_hp, sizeof d->v_hp}, {pv.thac0, d->v_thac0, sizeof d->v_thac0},
             {pv.damage, d->v_damage, sizeof d->v_damage}, {pv.encumbrance, d->v_enc, sizeof d->v_enc},
             {pv.movement, d->v_move, sizeof d->v_move}, {pv.exit, d->v_exit, sizeof d->v_exit},
+            {pi.buy_items, d->w_items, sizeof d->w_items}, {pi.buy, d->w_buy, sizeof d->w_buy},
+            {pi.list_next, d->w_next, sizeof d->w_next}, {pi.list_prev, d->w_prev, sizeof d->w_prev},
+            {pi.list_exit, d->w_exit, sizeof d->w_exit}, {pi.shop_menu, d->w_shop, sizeof d->w_shop},
+            {pi.shop_menu_money, d->w_shop_money, sizeof d->w_shop_money},
+            {pi.no_money, d->w_no_money, sizeof d->w_no_money}, {pi.overloaded, d->w_over, sizeof d->w_over},
+            {pi.title, d->w_title, sizeof d->w_title}, {pi.heading, d->w_heading, sizeof d->w_heading},
+            {pi.ready, d->w_ready, sizeof d->w_ready}, {pi.yes, d->w_yes, sizeof d->w_yes},
+            {pi.no, d->w_no, sizeof d->w_no}, {pi.cursed, d->w_cursed, sizeof d->w_cursed},
+            {pi.wrong_class, d->w_wrong, sizeof d->w_wrong}, {pi.already, d->w_already, sizeof d->w_already},
+            {pi.hands_full, d->w_hands, sizeof d->w_hands}, {pi.plural_s, d->w_s, sizeof d->w_s},
+            {pi.weapon, d->w_weapon, sizeof d->w_weapon}, {pi.armour, d->w_armour, sizeof d->w_armour},
         };
         for (auto& wd : words)
             if (wd.at) text::read_pascal(src, wd.at, wd.out, wd.cap);
@@ -929,6 +1337,8 @@ struct Host : ecl::Host {
     {
         pic::Canvas& c = *cv;
         cursor_hide();
+        last_pic_id = id == 0xFF ? -1 : id;
+        last_pic_head = head;
         if (id == 0xFF) {
             anim_stop();
             bigpic = -1;
@@ -1027,12 +1437,27 @@ struct Host : ecl::Host {
         f.close();
         dirty_rows(3, 13);
     }
+    void load_items(int block, items::Ground& g) override
+    {
+        char name[24];
+        area_file(name, sizeof name, "ITEM");
+        fs::File f;
+        if (!open_dax(name, f)) return;
+        library::FileSource src(f);
+        const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
+        if (e) {
+            dax::RleReader r(src, d->idx, *e);
+            while (g.n < items::kMaxGround && r.read(g.item[g.n], items::kRecordSize) == items::kRecordSize) ++g.n;
+        }
+        f.close();
+        Serial.printf("[play] %s #%d: %d items\n", name, block, g.n);
+    }
     void log(const char* what) override { Serial.printf("[ecl %d:%04X] %s\n", d->gs.script, vm->pc() + 0x8000, what); }
 };
 
 // ---- running scripts -------------------------------------------------------------
 
-void handle(ecl::Stop r);
+void host_picture(int id, int head) { host->picture(id, head); }
 
 void draw_input(pic::Canvas& c)
 {
@@ -1103,6 +1528,9 @@ void begin_wait(pic::Canvas& c)
         break;
     case ecl::Wait::Pause:
         pause_until = millis() + vm->pause_ms();
+        break;
+    case ecl::Wait::Shop:
+        open_shop(c);
         break;
     case ecl::Wait::None:
         waiting = false;
@@ -1273,6 +1701,10 @@ void finish_print_wait()
 void back_from_view(pic::Canvas& c)
 {
     screen = view_from;
+    if (screen == Screen::Shop) {
+        draw_shop(c);
+        return;
+    }
     if (screen != Screen::Game) {
         draw_party_menu(c);
         return;
@@ -1393,12 +1825,16 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c)
     // The party menu first, as the games begin
     host = new (std::nothrow) Host;
     pt = new (std::nothrow) party::Party;
-    if (!host || !pt) {
+    ground = new (std::nothrow) items::Ground;
+    if (!host || !pt || !names || !ground) {
         close();
         return "Not enough memory.";
     }
     vm = new (vm_mem) ecl::Vm(d->gs, *host, *d->prof->ecl_ops);
     vm->set_party(pt);
+    vm->set_ground(ground);
+    note_until = 0;
+    last_pic_id = -1;
     ecl::GameState& gs = d->gs;
     gs.game_area = d->prof->start_area;
     gs.x = 7;
@@ -1436,6 +1872,10 @@ void close()
     host = nullptr;
     delete pt;
     pt = nullptr;
+    delete names;
+    names = nullptr;
+    delete ground;
+    ground = nullptr;
     delete d;
     d = nullptr;
 }
@@ -1585,7 +2025,12 @@ void tap(int x, int y, pic::Canvas& c)
 
 void tick(uint32_t now, pic::Canvas& c)
 {
-    if (!d || !waiting || screen != Screen::Game) return;
+    if (!d) return;
+    if (note_until && static_cast<int32_t>(now - note_until) >= 0) {
+        cv = &c;
+        redraw_menu(c);
+    }
+    if (!waiting || screen != Screen::Game) return;
     cv = &c;
     const ecl::Wait wt = vm->wait();
     // While the game waits for the player: the event picture animates (at

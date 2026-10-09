@@ -34,6 +34,7 @@
 #include <cstdint>
 
 #include "ecl.h"
+#include "items.h"
 #include "party.h"
 
 namespace ecl {
@@ -64,6 +65,7 @@ enum class Wait : uint8_t {
     Number,       // answer(number), up to 65535 (typed on the menu line)
     String,       // answer_string(text), up to kMaxInput characters
     Pause,        // pause_ms(), then resume()
+    Shop,         // COMBAT with the shop flag: the shop's goods are ground(); resume() when the party leaves
 };
 
 enum class Stop : uint8_t { Running, Waiting, Stopped, NewScript, Error };
@@ -85,6 +87,9 @@ public:
     // block `id`) drawn in a freshly drawn 3D view, `distance` 0-2 away
     virtual int wall_type(int x, int y, int dir) { (void)x; (void)y; (void)dir; return 1; }
     virtual void sprite(int id, int distance) { (void)id; (void)distance; }
+    // TREASURE: the items of ITEM<area> block `block` (shop goods, a
+    // treasure) added to g
+    virtual void load_items(int block, items::Ground& g) { (void)block; (void)g; }
     virtual void log(const char* what) = 0;
 };
 
@@ -99,6 +104,9 @@ public:
 
     // The party the scripts see (nullptr: none)
     void set_party(const party::Party* p) { party_ = p; }
+    // Treasure and shop goods the scripts set out (TREASURE)
+    void set_ground(items::Ground* g) { ground_ = g; }
+    bool monsters() const { return monsters_; }
 
     Stop run(uint16_t address);
     Stop resume();
@@ -150,6 +158,8 @@ private:
     GameState& s_;
     Host& h_;
     const party::Party* party_ = nullptr;
+    items::Ground* ground_ = nullptr;
+    bool monsters_ = false;             // LOAD MONSTER since the last CLEARMONSTERS
     const OpSet& set_;
     uint16_t entry_[5] = {};
     uint32_t pc_ = 0;               // offset in the code

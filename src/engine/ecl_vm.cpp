@@ -564,7 +564,9 @@ Stop Vm::step()
         else store_string(o[1].word(), string_of(o[0]));
         return Stop::Running;
     case 0x0A: return stub(1, "LOAD CHARACTER");
-    case 0x0B: return stub(3, "LOAD MONSTER");
+    case 0x0B:                                  // LOAD MONSTER (monsters themselves: combat, to come)
+        monsters_ = true;
+        return stub(3, "LOAD MONSTER");
     case 0x0C: {                                // SETUP MONSTER: sprite, how far, picture
         if (!need(3)) return Stop::Error;
         enc_.sprite = static_cast<uint8_t>(value(o[0]));
@@ -636,8 +638,10 @@ Stop Vm::step()
         ++pc_;
         if (!flags_[op_ - 0x16]) skip_next();
         return Stop::Running;
-    case 0x1C:                                  // CLEARMONSTERS
+    case 0x1C:                                  // CLEARMONSTERS: and the treasure
         ++pc_;
+        monsters_ = false;
+        if (ground_) ground_->clear();
         return Stop::Running;
     case 0x1D:                                  // PARTYSTRENGTH
         if (!need(1)) return Stop::Error;
@@ -696,6 +700,21 @@ Stop Vm::step()
     case 0x23: return stub(4, "SURPRISE");
     case 0x24:                                  // COMBAT
         ++pc_;
+        if (!monsters_) {
+            // No monsters: a shop or temple the script opened, or the
+            // treasure after a fight
+            if (get(0x7F6C) == 1) {
+                set(0x7F6C, 0);
+                return wait_for(Wait::Shop);
+            }
+            if (get(0x7EE2) == 1) {
+                set(0x7EE2, 0);
+                h_.log("TEMPLE (not in the engine yet)");
+                return Stop::Running;
+            }
+            h_.log("treasure after a fight (not in the engine yet)");
+            return Stop::Running;
+        }
         h_.log("COMBAT (not in the engine yet)");
         text_ = "(Combat isn't in the engine yet.)";
         clear_ = false;
@@ -711,7 +730,16 @@ Stop Vm::step()
         }
         return Stop::Running;
     }
-    case 0x27: return stub(8, "TREASURE");
+    case 0x27: {                                // TREASURE: 7 coin amounts, ITEM<area> block
+        if (!need(8)) return Stop::Error;
+        if (ground_) {
+            for (int m = 0; m < 7; ++m) ground_->money[m] = value(o[m]);
+            const int block = value(o[7]) & 0xFF;
+            if (block < 0x80) h_.load_items(block, *ground_);
+            else if (block != 0xFF) h_.log("TREASURE: random items (not in the engine yet)");
+        }
+        return Stop::Running;
+    }
     case 0x28: return stub(3, "ROB");
     case 0x29: {                                // ENCOUNTER MENU
         // sprite, how far, picture, result word, 5 results, 3 texts (near,

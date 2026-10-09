@@ -24,7 +24,9 @@
 #include "engine/png.h"
 #include "inflate_vectors.h"
 #include "engine/layout.h"
+#include "engine/items.h"
 #include "engine/party.h"
+#include "engine/rules.h"
 #include "engine/savegame.h"
 #include "engine/printcalls.h"
 #include "engine/profile.h"
@@ -1314,7 +1316,8 @@ static void op_str(Bytes& b, const char* t)
 struct TestHost : ecl::Host {
     Bytes next;                 // the block NEWECL loads
     int map = -1, walls[4] = {-2, -2, -2, -2}, pic = -1, loads = 0, frames = 0;
-    int sprite_id = -1, sprite_dist = -1, sprites = 0;
+    int sprite_id = -1, sprite_dist = -1, sprites = 0, items_block = -1;
+    void load_items(int block, items::Ground&) override { items_block = block; }
     bool load_script(int, uint8_t* code, uint32_t* len) override
     {
         ++loads;
@@ -1870,6 +1873,106 @@ static void test_party()
     CHECK(dir[0] == 0);
 }
 
+// Item names, types, the rules' recalculation, money, the shop in the VM
+static void test_items()
+{
+    // Made-up words in 21-byte slots: 1 "Long Sword", 2 "+1", 3 "Long", 4 "Arrow"
+    const char* words[] = {"Long Sword", "+1", "Long", "Arrow", "Flask of Oil"};
+    std::vector<uint8_t> tab(21 * 5, 0);
+    for (int i = 0; i < 5; ++i) {
+        tab[i * 21] = static_cast<uint8_t>(strlen(words[i]));
+        memcpy(&tab[i * 21 + 1], words[i], strlen(words[i]));
+    }
+    items::Names n;
+    n.set_words(tab.data(), 5, 21);
+    n.set_plural(items::Names::Plural{73, 28, 9, 86, 0x87, 0xB1});
+    CHECK(strcmp(n.word(3), "Long") == 0 && n.word(0)[0] == 0 && n.word(9)[0] == 0);
+    // Types: 36 a one-handed melee weapon d8; 58 armour AC 3 (0x80 + 57); 59 a shield
+    std::vector<uint8_t> types(2 + items::kTypes * 16, 0);
+    auto ty = [&](int t, int k) -> uint8_t& { return types[2 + t * 16 + k]; };
+    ty(36, 0) = 0; ty(36, 1) = 1; ty(36, 9) = 1; ty(36, 10) = 8; ty(36, 13) = 0xFF; ty(36, 14) = 0x04;
+    ty(58, 0) = 2; ty(58, 6) = 0x80 + 57;   // AC 3 = 57 ty(58, 13) = 0xFF;
+    ty(59, 0) = 1; ty(59, 1) = 1; ty(59, 6) = 0x81; ty(59, 13) = 0xFF;
+    ty(73, 0) = 10; ty(73, 13) = 0xFF;
+    dax::MemorySource tsrc(types.data(), static_cast<uint32_t>(types.size()));
+    CHECK(n.read_types(tsrc) && n.type(58).slot == 2 && n.type(58).ac == 0x80 + 57 && n.type(36).dice == 1);
+
+    uint8_t sword[items::kRecordSize] = {}, plate[items::kRecordSize] = {}, shield[items::kRecordSize] = {},
+            arrows[items::kRecordSize] = {};
+    sword[0x2E] = 36; sword[0x31] = 1; sword[0x30] = 2; sword[0x32] = 1; sword[0x35] = 2;
+    sword[0x37] = 60; sword[0x3A] = 15;
+    plate[0x2E] = 58; plate[0x31] = 1; plate[0x37] = 0xC2; plate[0x38] = 1;   // weight 450
+    plate[0x3A] = 0x90; plate[0x3B] = 1;                                         // value 400
+    shield[0x2E] = 59; shield[0x31] = 1; shield[0x37] = 100;
+    arrows[0x2E] = 73; arrows[0x31] = 4; arrows[0x39] = 10;
+    char t[64];
+    n.name(items::Item{sword}, t, sizeof t);
+    CHECK(strcmp(t, "Long Sword") == 0);                 // word 2 ("+1") hidden until identified
+    n.name(items::Item{sword}, t, sizeof t, true);
+    CHECK(strcmp(t, "Long Sword +1") == 0);
+    n.name(items::Item{arrows}, t, sizeof t);
+    CHECK(strcmp(t, "10 Arrows") == 0);
+
+    // A fighter: Str 18/00, Dex 17, base AC 10 (50), THAC0 20 (40), move 12
+    party::Character ch;
+    ch.rec[0x11] = 18; ch.rec[0x1C] = 100; ch.rec[0x17] = 17;
+    ch.rec[0x73] = 40; ch.rec[0x74] = 7; ch.rec[0x10B] = 5; ch.rec[0xE4] = 12;
+    ch.rec[0x11E] = 1; ch.rec[0x120] = 2; ch.rec[0x124] = 50; ch.rec[0x125] = 1; ch.rec[0x12B] = 0xFF;
+    ch.rec[0x103] = 0x2C; ch.rec[0x104] = 0x01;          // 300 platinum
+    const rules::ItemFacts f{73, 28, {41, 42, 43, 44, 37, 36}};
+    CHECK(rules::strength_group(ch) == 23 && rules::dex_ac_bonus(ch) == 3 && rules::max_encumbrance(ch) == 3000);
+    rules::recalc(ch, n, f);
+    CHECK(ch.ac() == 7 && ch.thac0() == 17 && ch.dice() == 1 && ch.dice_sides() == 2 && ch.damage_bonus() == 6);
+    CHECK(ch.encumbrance() == 300 && ch.movement() == 12);
+    CHECK(rules::gold_worth(ch) == 1500);
+    // Buy and ready a sword, plate and shield
+    CHECK(rules::price(plate, 0x10) == 400 && rules::price(plate, 0x08) == 200 && rules::price(arrows, 0x10) == 1);
+    CHECK(!rules::too_heavy(ch, plate, n, f));
+    for (const uint8_t* it : {sword, plate, shield}) {
+        CHECK(rules::add_item(ch, it));
+        ch.items[ch.n_items - 1][0x34] = 1;
+    }
+    rules::pay(ch, 415);
+    CHECK(rules::gold_worth(ch) == 1085);
+    CHECK(ch.money(4) == 217 && ch.money(3) == 0);       // 84 platinum paid, 1 back in change
+    rules::recalc(ch, n, f);
+    CHECK(ch.ac() == -1);                                // plate 57 + shield 1 + dex 3 = 61
+    CHECK(ch.thac0() == 16 && ch.dice() == 1 && ch.dice_sides() == 8 && ch.damage_bonus() == 7);   // +1 sword, Str 18/00
+    CHECK(ch.movement() == 9 && ch.encumbrance() == 217 + 60 + 450 + 100);
+    CHECK(items::readied_in(ch.items, ch.n_items, n, items::kSlotArmour) == 1);
+    int pool[7] = {50, 0, 0, 0, 0, 0, 0};
+    CHECK(rules::gold_worth(pool) == 0);
+    pool[3] = 3;
+    rules::pay(pool, 2);
+    CHECK(rules::gold_worth(pool) == 1);
+
+    // The VM: TREASURE sets out goods, COMBAT with the shop flag opens the shop
+    const profile::Profile* p = profile::find(games::Game::CurseOfTheAzureBonds, 57789, 62432);
+    if (!p || !p->ecl_ops) return;
+    Bytes c;
+    const uint16_t kBase = 0x8000;
+    for (int i = 0; i < 5; ++i) { c.push_back(0); op_addr(c, kBase + 20); }
+    c.push_back(0x09); op_imm(c, 1); op_addr(c, 0x7F6C);
+    c.push_back(0x1C);
+    c.push_back(0x27); for (int i = 0; i < 7; ++i) op_imm(c, i == 3 ? 9 : 0); op_imm(c, 5);
+    c.push_back(0x24);
+    c.push_back(0x24);                                   // a second COMBAT: no flag, no monsters
+    c.push_back(0x00);
+    ecl::GameState gs;
+    TestHost host;
+    memcpy(gs.code, c.data(), c.size());
+    gs.code_len = static_cast<uint32_t>(c.size());
+    items::Ground g;
+    g.n = 3;
+    ecl::Vm vm(gs, host, *p->ecl_ops);
+    vm.set_ground(&g);
+    CHECK(vm.init_script());
+    ecl::Stop r = vm.run(kBase + 20);
+    CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Shop);
+    CHECK(g.n == 0 && g.money[3] == 9 && host.items_block == 5 && vm.get(0x7F6C) == 0);
+    CHECK(vm.resume() == ecl::Stop::Stopped);
+}
+
 int main()
 {
     test_rle_known_bytes();
@@ -1893,6 +1996,7 @@ int main()
     test_journal();
     test_geo_view();
     test_party();
+    test_items();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;
