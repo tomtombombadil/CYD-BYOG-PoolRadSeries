@@ -25,6 +25,28 @@ bool     dragging = false;      // the press moved: a drag, its release no tap
 int      cur_x = 0, cur_y = 0;  // where the press is now (readings that agreed)
 int      moved_x = 0, moved_y = 0;   // drag movement not yet collected
 
+// The keys on screen (for the tap highlight): rect and style, since the
+// last clear(); 255 = the header's back key
+struct KeyRec {
+    Rect    r;
+    uint8_t style;
+};
+constexpr int kMaxKeys = 40;
+KeyRec   keys[kMaxKeys];
+int      n_keys = 0;
+uint32_t key_gen = 0;           // counts key drawing (a key redrawn since a flash?)
+
+void note_key(const Rect& r, uint8_t style)
+{
+    ++key_gen;
+    for (int i = 0; i < n_keys; ++i)
+        if (keys[i].r.x == r.x && keys[i].r.y == r.y && keys[i].r.w == r.w && keys[i].r.h == r.h) {
+            keys[i].style = style;
+            return;
+        }
+    if (n_keys < kMaxKeys) keys[n_keys++] = {r, style};
+}
+
 constexpr int kAgreePx = 8;
 constexpr uint32_t kPollMs = 15;
 
@@ -134,7 +156,12 @@ bool touch_point(int& x, int& y)
     return down;
 }
 
-void clear() { g->fillScreen(style::kBackground); }
+void clear()
+{
+    g->fillScreen(style::kBackground);
+    n_keys = 0;
+    ++key_gen;
+}
 
 Rect back_rect() { return {0, 0, header_h() * 3 / 2, header_h()}; }
 
@@ -153,6 +180,7 @@ void header(const char* title, bool back)
             g->drawLine(cx - s / 2 + t, cy, cx + s / 2 + t, cy + s, style::kGold);
         }
         tx = r.w;
+        note_key(r, 255);
     }
     use_font(Font::Normal);
     g->setTextColor(style::kText);
@@ -162,6 +190,7 @@ void header(const char* title, bool back)
 
 void key(const Rect& r, const char* label, KeyStyle s)
 {
+    note_key(r, static_cast<uint8_t>(s));
     const uint16_t fill = s == KeyStyle::Lit ? style::kKeyLit : s == KeyStyle::Dim ? style::kKeyDim : style::kKey;
     const int rad = large() ? 6 : 4;
     g->fillRoundRect(r.x, r.y, r.w, r.h, rad, fill);
@@ -239,6 +268,7 @@ uint16_t key_fill(KeyStyle s)
 
 void key2(const Rect& r, const char* label, const char* sub, KeyStyle s, int left_inset)
 {
+    note_key(r, static_cast<uint8_t>(s));
     const uint16_t fill = key_fill(s);
     const int rad = large() ? 6 : 4;
     g->fillRoundRect(r.x, r.y, r.w, r.h, rad, fill);
@@ -300,6 +330,69 @@ Rect grid_cell(int i, int cols, int rows, bool leave_bottom_row)
     const int h = (bottom - top - gp * (rows - 1)) / rows;
     const int c = i % cols, r = i / cols;
     return {gp + c * (w + gp), top + r * (h + gp), w, h};
+}
+
+// ---- tap highlight ------------------------------------------------------------
+// (Tom, 2026-10-09: resistive screens are finicky and the engine can be
+// slow to answer, so a tapped key lights up FIRST; one already lit blinks
+// off and on)
+
+namespace {
+
+uint32_t flash_gen = 0;
+int      flash_key = -1;
+
+void ring(const Rect& r, uint16_t outer, uint16_t inner, int width)
+{
+    const int rad = large() ? 6 : 4;
+    g->drawRoundRect(r.x, r.y, r.w, r.h, rad, outer);
+    for (int i = 1; i < width; ++i) g->drawRoundRect(r.x + i, r.y + i, r.w - i * 2, r.h - i * 2, rad, inner);
+}
+
+uint16_t fill_of(uint8_t st)
+{
+    return st == 255 ? style::kHeader : key_fill(static_cast<KeyStyle>(st));
+}
+
+} // namespace
+
+int tap_flash(const Tap& t)
+{
+    flash_key = -1;
+    for (int i = n_keys - 1; i >= 0; --i) {
+        const KeyRec& k = keys[i];
+        if (!k.r.contains(t.x, t.y) || k.style == static_cast<uint8_t>(KeyStyle::Dim)) continue;
+        const int w = large() ? 4 : 3;
+        g->startWrite();
+        if (k.style == static_cast<uint8_t>(KeyStyle::Lit)) {
+            // already lit: off, then on again
+            ring(k.r, fill_of(k.style), fill_of(k.style), w);
+            g->endWrite();
+            delay(70);
+            g->startWrite();
+        }
+        ring(k.r, style::kText, style::kGold, w);
+        g->endWrite();
+        flash_key = i;
+        flash_gen = key_gen;
+        return i;
+    }
+    return -1;
+}
+
+void tap_unflash()
+{
+    if (flash_key < 0 || flash_gen != key_gen || flash_key >= n_keys) {
+        flash_key = -1;
+        return;
+    }
+    const KeyRec& k = keys[flash_key];
+    const uint16_t edge = k.style == 255 ? style::kHeader
+                        : k.style == static_cast<uint8_t>(KeyStyle::Lit) ? style::kGold : style::kKeyEdge;
+    g->startWrite();
+    ring(k.r, edge, fill_of(k.style), large() ? 4 : 3);
+    g->endWrite();
+    flash_key = -1;
 }
 
 } // namespace ui

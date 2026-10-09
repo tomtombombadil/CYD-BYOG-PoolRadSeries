@@ -241,8 +241,14 @@ int          input_len = 0;
 
 constexpr int kCharMs = 12;
 
+// The tap highlight's place on the canvas (rows y0..y1), and whether
+// anything was drawn there since (then it isn't put back)
+int  fb_y0 = -1, fb_y1 = -1;
+bool fb_touched = false;
+
 void dirty(int y0, int y1)
 {
+    if (fb_y0 >= 0 && y0 < fb_y1 && y1 > fb_y0) fb_touched = true;
     if (dirty1 == 0) {
         dirty0 = y0;
         dirty1 = y1;
@@ -375,14 +381,18 @@ void draw_frame(pic::Canvas& c)
     dirty(0, pic::kScreenH);
 }
 
+bool menu_on = false;            // the menu line shows `menu` (for the tap highlight)
+
 void show_menu_line(pic::Canvas& c)
 {
+    menu_on = true;
     text::draw(c, d->font, menu);
     dirty_rows(text::kMenuRow, text::kMenuRow);
 }
 
 void clear_menu_line(pic::Canvas& c)
 {
+    menu_on = false;
     c.fill(0, text::kMenuRow * 8, pic::kScreenW, 8, 0);
     dirty_rows(text::kMenuRow, text::kMenuRow);
 }
@@ -2876,6 +2886,145 @@ bool act(Act a, pic::Canvas& c)
     draw_view(c);
     draw_position(c);
     return true;
+}
+
+// ---- tap highlight (Tom, 2026-10-09) ---------------------------------------------
+// What a tap will act on - a menu line word, a list line, a party menu
+// line - lights up (its letters in the highlight colour) before the tap is
+// acted on; one already lit blinks off and on. Put back afterwards unless
+// something was drawn there meanwhile.
+
+namespace {
+
+struct Flash {
+    int x0 = 0, y0 = 0, w = 0, h = 0;
+    uint8_t* orig = nullptr;
+};
+Flash fl;
+
+// The cells (row, first and last column) a tap at canvas (x, y) acts on
+bool tap_target(int x, int y, int* row, int* c0, int* c1)
+{
+    const int r = y / 8, col = x / 8;
+    if (note_until) return false;                   // the tap puts a message away
+    auto menu_word = [&](int item) {
+        if (item < 0 || item >= menu.count) return false;
+        const int p = static_cast<int>(strlen(menu.prompt));
+        *row = text::kMenuRow;
+        *c0 = p + menu.start[item];
+        *c1 = p + menu.end[item];
+        return true;
+    };
+    // "press a key" (one choice): a tap anywhere is it
+    if (menu_on && screen == Screen::Game && waiting && vm->wait() == ecl::Wait::Menu && vm->items() == 1)
+        return menu_word(0);
+    if (menu_on && y >= text::kMenuTapTop) return menu_word(text::hit(menu, col));
+    if (screen == Screen::Game) {
+        if (waiting && vm->wait() == ecl::Wait::ListMenu && list_wait) {
+            const int i = r - list_row0;
+            if (r < text::kTextArea.y0 || r > text::kTextArea.y1 || i < 0 || i >= vm->items()) return false;
+            *row = r;
+            *c0 = text::kTextArea.x0;
+            *c1 = text::kTextArea.x1;
+            return true;
+        }
+        return false;
+    }
+    if (screen == Screen::PartyMenu && r >= 12 && r < 12 + pm_lines) {
+        *row = r;
+        *c0 = 1;
+        *c1 = 38;
+        return true;
+    }
+    if ((screen == Screen::Items || screen == Screen::ShopBuy || screen == Screen::AddList ||
+         screen == Screen::CreatePick) &&
+        r >= plist.row0 && r <= plist.row1 && plist.top + r - plist.row0 < plist.n) {
+        *row = r;
+        *c0 = plist.col0;
+        *c1 = 38;
+        return true;
+    }
+    return false;
+}
+
+void ink(pic::Canvas& c, uint8_t colour)
+{
+    for (int j = 0; j < fl.h; ++j) {
+        uint8_t* p = c.px + static_cast<size_t>(fl.y0 + j) * c.w + fl.x0;
+        const uint8_t* o = fl.orig + static_cast<size_t>(j) * fl.w;
+        for (int i = 0; i < fl.w; ++i) p[i] = o[i] ? colour : 0;
+    }
+}
+
+} // namespace
+
+bool tap_highlight(int x, int y, pic::Canvas& c, int* y0, int* y1)
+{
+    tap_highlight_end(c);
+    if (!d) return false;
+    int row, c0, c1;
+    if (!tap_target(x, y, &row, &c0, &c1)) return false;
+    if (c0 < 0) c0 = 0;
+    if (c1 > 39) c1 = 39;
+    if (c1 < c0) return false;
+    fl.x0 = c0 * 8;
+    fl.y0 = row * 8;
+    fl.w = (c1 - c0 + 1) * 8;
+    fl.h = 8;
+    fl.orig = static_cast<uint8_t*>(malloc(static_cast<size_t>(fl.w) * fl.h));
+    if (!fl.orig) return false;
+    bool lit = true, any = false;
+    for (int j = 0; j < fl.h; ++j) {
+        const uint8_t* p = c.px + static_cast<size_t>(fl.y0 + j) * c.w + fl.x0;
+        memcpy(fl.orig + static_cast<size_t>(j) * fl.w, p, fl.w);
+        for (int i = 0; i < fl.w; ++i)
+            if (p[i]) {
+                any = true;
+                if (p[i] != 15) lit = false;
+            }
+    }
+    if (!any) {
+        free(fl.orig);
+        fl.orig = nullptr;
+        return false;
+    }
+    *y0 = fl.y0;
+    *y1 = fl.y0 + fl.h;
+    if (lit) {
+        // already lit: off, then on again (the viewer shows each step)
+        ink(c, 0);
+        return true;
+    }
+    ink(c, 15);
+    fb_y0 = fl.y0;
+    fb_y1 = fl.y0 + fl.h;
+    fb_touched = false;
+    return true;
+}
+
+bool tap_highlight_blink(pic::Canvas& c)
+{
+    if (!fl.orig || fb_y0 >= 0) return false;      // nothing blinking
+    ink(c, 15);
+    fb_y0 = fl.y0;
+    fb_y1 = fl.y0 + fl.h;
+    fb_touched = false;
+    return true;
+}
+
+void tap_highlight_end(pic::Canvas& c)
+{
+    if (!fl.orig) return;
+    if (fb_y0 >= 0 && !fb_touched) {
+        for (int j = 0; j < fl.h; ++j)
+            memcpy(c.px + static_cast<size_t>(fl.y0 + j) * c.w + fl.x0, fl.orig + static_cast<size_t>(j) * fl.w, fl.w);
+        const int a = fl.y0, b = fl.y0 + fl.h;
+        fb_y0 = fb_y1 = -1;
+        dirty(a, b);
+    }
+    fb_y0 = fb_y1 = -1;
+    free(fl.orig);
+    fl.orig = nullptr;
 }
 
 void tap(int x, int y, pic::Canvas& c)

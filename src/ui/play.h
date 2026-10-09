@@ -31,6 +31,14 @@ void draw(pic::Canvas& c);
 bool act(Act a, pic::Canvas& c);
 // A tap on the canvas (pixel x, y): menu words, list lines, "press a key".
 void tap(int x, int y, pic::Canvas& c);
+// The tap highlight (Tom, 2026-10-09): call before tap(). Lights up what
+// the tap will act on; true when the canvas changed (rows *y0..*y1 to
+// show). When it was lit already it blanks it first: show that, then call
+// tap_highlight_blink (lit again: show that too). tap_highlight_end after
+// tap() puts it back unless something was drawn there (marks it dirty).
+bool tap_highlight(int x, int y, pic::Canvas& c, int* y0, int* y1);
+bool tap_highlight_blink(pic::Canvas& c);
+void tap_highlight_end(pic::Canvas& c);
 // Moves printing text and pauses on. Call often.
 void tick(uint32_t now_ms, pic::Canvas& c);
 

@@ -207,6 +207,12 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
 - Picture viewers' keys (Tom, 2026-10-09): Back | Zoom | Prev Page | Next
   Page; Zoom cycles levels (whole / width / full size), the key names the
   level shown.
+- Tap highlight (Tom, 2026-10-09): what a tap acts on lights up FIRST,
+  before any slow work - engine keys get a bright ring (`ui::tap_flash`,
+  every key drawn with ui::key / key2 / key_arrow is known), the game
+  screen's menu words, list lines and party menu lines turn to the
+  highlight colour (`play::tap_highlight`); one already lit blinks off and
+  on. New tappable things must take part.
 - Errors stay on screen until tapped (Tom, 2026-10-09) - never timed. The
   games' own timed messages ("Not enough Money.") keep the games' timing.
 - Sounds: go easy - no sound on plain key presses.

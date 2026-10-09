@@ -75,6 +75,14 @@ void text_center(const Rect& r, const char* s, uint16_t color = style::kText, Fo
 int text_width(const char* s, Font f = Font::Normal);
 int line_h(Font f = Font::Normal);
 
+// The tap highlight (Tom, 2026-10-09): call tap_flash with a tap BEFORE
+// acting on it - the key under it (drawn since the last clear(), not Dim)
+// gets a bright ring at once (one already Lit blinks off and on first).
+// tap_unflash() after acting puts the key back as it was, unless keys were
+// drawn meanwhile (the screen changed). The header's back key counts.
+int  tap_flash(const Tap& t);
+void tap_unflash();
+
 // The bottom key row: n equal keys across the screen; returns key i's rect.
 Rect bottom_key(int i, int n);
 // A grid of keys filling the area between the header and the bottom row.

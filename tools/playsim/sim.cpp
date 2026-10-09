@@ -94,6 +94,15 @@ int main(int argc, char** argv)
     for (int i = 0; i < play::pm_lines; ++i) printf(" [%s]", play::d->item[play::pm_item[i]]);
     printf("\n  prompt [%s] heads [%s] [%s] save dir [%s]\n", play::d->choose, play::d->name_head, play::d->ac_hp_head, play::d->save_dir);
     shot("party_menu");
+    if (getenv("HLTEST")) {
+        // The tap highlight on a party menu line, then put back
+        int y0, y1;
+        const bool on = play::tap_highlight(24, (12 + pm_line('C')) * 8 + 2, C, &y0, &y1);
+        printf("  highlight %d rows %d-%d\n", on, on ? y0 : 0, on ? y1 : 0);
+        shot("hl_on");
+        play::tap_highlight_end(C);
+        shot("hl_off");
+    }
     if (getenv("CREATE")) {
         // CREATE=race,sex,class,alignment (list positions), NAME=...
         auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };

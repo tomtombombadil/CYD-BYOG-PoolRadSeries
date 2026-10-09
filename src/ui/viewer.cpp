@@ -2238,7 +2238,17 @@ void tap_play(const ui::Tap& t)
     }
     int cx, cy;
     if (frame::to_canvas(t.x, t.y, cx, cy)) {
+        // What the tap acts on lights up first (Tom, 2026-10-09)
+        int y0, y1;
+        if (play::tap_highlight(cx, cy, frame::canvas(), &y0, &y1)) {
+            frame::present_rows(y0, y1);
+            if (play::tap_highlight_blink(frame::canvas())) {
+                delay(70);
+                frame::present_rows(y0, y1);
+            }
+        }
         play::tap(cx, cy, frame::canvas());
+        play::tap_highlight_end(frame::canvas());
         if (play::exit_requested()) {
             leave_play();
             return;
@@ -2496,6 +2506,7 @@ void tick()
 {
     ui::Tap t;
     if (ui::poll_tap(t)) {
+        ui::tap_flash(t);            // the tapped key lights up first (Tom, 2026-10-09)
         switch (screen) {
         case Screen::Home:     tap_home(t); break;
         case Screen::Files:    tap_files(t); break;
@@ -2512,6 +2523,7 @@ void tick()
             if (!logui::tap(t)) go(logui::from_scan() ? Screen::Home : Screen::Settings);
             break;
         }
+        ui::tap_unflash();           // back as it was, unless the screen changed
     }
     if (screen == Screen::Logs && !dirty) logui::tick();
     if (screen == Screen::Settings && !dirty) settings_tick();
