@@ -20,9 +20,10 @@
 #include "engine/text.h"
 #include "frame.h"
 #include "hal/panel_prefs.h"
+#include "hal/bigstack.h"
 #include "hal/sdcard.h"
 #include "look.h"
-#include "netui.h"
+#include "logui.h"
 #include "pdfview.h"
 #include "play.h"
 #include "walk.h"
@@ -32,7 +33,7 @@ namespace viewer {
 
 namespace {
 
-enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Walk, Play, Journal, Pdf, GameMenu, Settings, Net };
+enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Walk, Play, Journal, Pdf, GameMenu, Settings, Logs };
 
 Env       env_;
 Settings* cfg = nullptr;
@@ -116,8 +117,8 @@ void go(Screen s)
         delete A;
         A = nullptr;
     }
-    // Drags: the Settings slider; the Net screens set their own
-    if (s != Screen::Net) ui::allow_drag(s == Screen::Settings);
+    // Drags: the Settings slider; the Logs screen sets its own
+    if (s != Screen::Logs) ui::allow_drag(s == Screen::Settings);
     screen = s;
     dirty = true;
 }
@@ -372,7 +373,19 @@ bool draw_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle st)
         f.close();
         if (ok) return true;
     }
-    return render_icon(g, x, y, px, st, true, true);
+    struct Job {
+        const library::GameDir* g;
+        int                     x, y, px;
+        ui::KeyStyle            st;
+        bool                    ok;
+    } job{&g, x, y, px, st, false};
+    run_on_big_stack(
+        [](void* p) {
+            auto* j = static_cast<Job*>(p);
+            j->ok = render_icon(*j->g, j->x, j->y, j->px, j->st, true, true);
+        },
+        &job);
+    return job.ok;
 }
 
 // Prints text word-wrapped into width w from (x, y); returns the y after it.
@@ -609,6 +622,30 @@ void prepare_journal_now(const library::GameDir& g)
     scan_say(line, true, nullptr);
 }
 
+// The scan's second part: the icons at this screen's size, the journals
+// (deep decoding: run_on_big_stack)
+void prepare_made(void*)
+{
+    const int px = icon_size(home_card());
+    for (int i = 0; i < n_games; ++i) {
+        const library::GameDir& g = game_dirs[i];
+        if (!g.icon[0] || !px) continue;
+        scan_say("Preparing the game icon...", false, nullptr);
+        char line[160];
+        const char* why = "";
+        const bool ok = render_icon(g, 0, 0, px, ui::KeyStyle::Normal, false, true, &why);
+        if (ok)
+            snprintf(line, sizeof line, "Prepared the %s icon", games::short_title(g.game));
+        else
+            snprintf(line, sizeof line, "The %s icon wasn't prepared: %s (free %u KB, largest block %u KB). The library tries again when it shows it.",
+                     games::short_title(g.game), why, (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
+                     (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
+        scan_say(line, true, nullptr);
+    }
+    for (int i = 0; i < n_games; ++i)
+        if (game_dirs[i].journal[0]) prepare_journal(game_dirs[i]);
+}
+
 void rescan()
 {
     scr = new (std::nothrow) ScanScreen;
@@ -628,33 +665,18 @@ void rescan()
     scan_result = library::scan(game_dirs, library::kMaxGames, &n_games, scan_say, nullptr);
     home_page = 0;
 
-    // What the board makes from the player's files, once: the icons at
-    // this screen's size
-    const int px = icon_size(home_card());
-    for (int i = 0; i < n_games; ++i) {
-        const library::GameDir& g = game_dirs[i];
-        if (!g.icon[0] || !px) continue;
-        scan_say("Preparing the game icon...", false, nullptr);
-        char line[160];
-        const char* why = "";
-        const bool ok = render_icon(g, 0, 0, px, ui::KeyStyle::Normal, false, true, &why);
-        if (ok)
-            snprintf(line, sizeof line, "Prepared the %s icon", games::short_title(g.game));
-        else
-            snprintf(line, sizeof line, "The %s icon wasn't prepared: %s (free %u KB, largest block %u KB). The library tries again when it shows it.",
-                     games::short_title(g.game), why, (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
-                     (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
-        scan_say(line, true, nullptr);
-    }
-    // The library first: whatever happens while the journals are made, the
-    // board doesn't scan again on its own
+    // The library first: whatever happens while the icons and journals are
+    // made, the board doesn't scan again on its own
     if (scan_result == library::ScanResult::Ok) {
         scan_say(library::save_library(game_dirs, n_games) ? "Saved the library: the board won't scan again until you tap Rescan Card."
                                                            : "The library couldn't be saved on the card.",
                  false, nullptr);
     }
-    for (int i = 0; i < n_games; ++i)
-        if (game_dirs[i].journal[0]) prepare_journal(game_dirs[i]);
+    // What the board makes from the player's files, once (icons, journals:
+    // PNG / PDF / JPEG decoding, on a stack of its own)
+    if (!run_on_big_stack(prepare_made, nullptr))
+        scan_say("Not enough memory to make the icons and journal pictures now: tap Rescan Card to try again.", false,
+                 nullptr);
     scan_say("Done. Look through the list, then tap Continue.", false, nullptr);
     // The list stays up to be read (Tom, 2026-10-09): the whole log,
     // scrolling, until Continue
@@ -677,9 +699,9 @@ void rescan()
     }
     delete scr;
     scr = nullptr;
-    netui::open_logs(true, fallback);
+    logui::open(true, fallback);
     free(fallback);
-    go(Screen::Net);
+    go(Screen::Logs);
 }
 
 void draw_home()
@@ -1874,7 +1896,14 @@ bool open_book()
     if (!game_dirs[game_sel].journal[0]) return false;
     char path[200];
     snprintf(path, sizeof path, "%s/%s", games::kRootDir, game_dirs[game_sel].journal);
-    if (!pdfview::open(path)) return false;
+    struct Job {
+        const char* path;
+        bool        ok;
+    } job{path, false};
+    // PDF parsing on a stack of its own (deep)
+    if (!run_on_big_stack([](void* p) { auto* j = static_cast<Job*>(p); j->ok = pdfview::open(j->path); }, &job) ||
+        !job.ok)
+        return false;
     pdf_page = 1;
     pdf_zoom = false;
     go(Screen::Pdf);
@@ -1941,7 +1970,18 @@ void draw_pdf()
     ui::key(ui::bottom_key(3, 4), "Next Page", pdf_page < pdfview::pages() ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
     const ui::Rect a = pdf_area();
     ui::text(ui::gap() * 3, a.y + ui::gap() * 2, "Reading the page...", style::kTextMuted, ui::Font::Small);
-    const bool ok = pdfview::draw(pdf_page, a, pdf_zoom, pdf_vx, pdf_vy, &pdf_fit);
+    // JPEG decoding on a stack of its own (deep)
+    struct Job {
+        ui::Rect a;
+        bool     ok;
+    } job{a, false};
+    const bool ran = run_on_big_stack(
+        [](void* p) {
+            auto* j = static_cast<Job*>(p);
+            j->ok = pdfview::draw(pdf_page, j->a, pdf_zoom, pdf_vx, pdf_vy, &pdf_fit);
+        },
+        &job);
+    const bool ok = ran && job.ok;
     LGFX& g = ui::gfx();
     if (!ok) {
         g.fillRect(0, a.y, a.w, a.h, style::kBackground);
@@ -2131,11 +2171,11 @@ void tap_play(const ui::Tap& t)
 
 // The keys (Tom, 2026-10-09): Brightness is a slider in one key's space;
 // Swap Red/Blue shows red, green and blue blocks to check the colours by;
-// WiFi and Logs. More than fit go on further pages (arrows bottom right).
-enum SetItem { kBright, kWifi, kInvert, kSwap, kRotate, kCalibrate, kScale, kLogs };
+// Logs. More than fit go on further pages (arrows bottom right).
+enum SetItem { kBright, kInvert, kSwap, kRotate, kCalibrate, kScale, kLogs };
 
-const SetItem kSetLarge[] = {kBright, kWifi, kInvert, kSwap, kRotate, kCalibrate, kScale, kLogs};
-const SetItem kSetSmall[] = {kBright, kWifi, kInvert, kSwap, kRotate, kLogs, kCalibrate};
+const SetItem kSetLarge[] = {kBright, kLogs, kInvert, kSwap, kRotate, kCalibrate, kScale};
+const SetItem kSetSmall[] = {kBright, kLogs, kInvert, kSwap, kRotate, kCalibrate};
 int set_page = 0;
 
 int set_rows() { return ui::large() ? 4 : 3; }
@@ -2217,7 +2257,6 @@ void draw_set_item(int slot, SetItem it)
     auto lit = [](bool on) { return on ? ui::KeyStyle::Lit : ui::KeyStyle::Normal; };
     switch (it) {
     case kBright:    draw_slider(r); break;
-    case kWifi:      ui::key(r, "WiFi"); break;
     case kInvert:    ui::key(r, "Invert Colors", lit(pp.invert)); break;
     case kSwap:      draw_swap(r, pp.swap_rb); break;
     case kRotate:    ui::key(r, "Rotate 180", lit(cfg->flipped)); break;
@@ -2244,15 +2283,20 @@ void draw_settings()
     char l[3][64];
     const unsigned fr = (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024);
     const unsigned lb = (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024);
+    // PSRAM (extra RAM chip): none on the five boards (their GPIO 16 / 17
+    // drive the RGB LED - the original ESP32's PSRAM pins)
+    char ps[24];
+    if (ESP.getPsramSize()) snprintf(ps, sizeof ps, "PSRAM %u KB", (unsigned)(ESP.getPsramSize() / 1024));
+    else snprintf(ps, sizeof ps, "no PSRAM");
     int n;
     if (paged) {
         snprintf(l[0], sizeof l[0], "%s (%s)", env_.version, env_.build);
         snprintf(l[1], sizeof l[1], "%s", BOARD_NAME);
-        snprintf(l[2], sizeof l[2], "Free %u KB, largest %u KB", fr, lb);
+        snprintf(l[2], sizeof l[2], "Free %u KB, largest %u KB, %s", fr, lb, ps);
         n = 3;
     } else {
         snprintf(l[0], sizeof l[0], "%s (%s)  %s", env_.version, env_.build, BOARD_NAME);
-        snprintf(l[1], sizeof l[1], "Free memory %u KB, largest block %u KB", fr, lb);
+        snprintf(l[1], sizeof l[1], "Free memory %u KB, largest block %u KB, %s", fr, lb, ps);
         n = 2;
     }
     const int lh = ui::line_h(ui::Font::Small) + 2;
@@ -2308,13 +2352,9 @@ void tap_settings(const ui::Tap& t)
                 settings_save(*cfg);
             }
             return;
-        case kWifi:
-            netui::open_wifi();
-            go(Screen::Net);
-            return;
         case kLogs:
-            netui::open_logs(false);
-            go(Screen::Net);
+            logui::open(false);
+            go(Screen::Logs);
             return;
         case kInvert: pp.invert = !pp.invert; panel_prefs_set(g, pp); break;
         case kSwap:   pp.swap_rb = !pp.swap_rb; panel_prefs_set(g, pp); break;
@@ -2340,7 +2380,6 @@ void begin(const Env& env, Settings& settings)
 {
     env_ = env;
     cfg = &settings;
-    netui::begin(env.version, env.build);
     frame::set_scale(cfg->scale_15x ? frame::Scale::OneAndHalf : frame::Scale::One);
     // The library as the last scan found it; a scan only when there is none
     // (Tom: scan once, then only on Rescan Card)
@@ -2389,12 +2428,12 @@ void tick()
         case Screen::Pdf:      tap_pdf(t); break;
         case Screen::GameMenu: tap_game_menu(t); break;
         case Screen::Settings: tap_settings(t); break;
-        case Screen::Net:
-            if (!netui::tap(t)) go(netui::from_scan() ? Screen::Home : Screen::Settings);
+        case Screen::Logs:
+            if (!logui::tap(t)) go(logui::from_scan() ? Screen::Home : Screen::Settings);
             break;
         }
     }
-    if (screen == Screen::Net && !dirty) netui::tick();
+    if (screen == Screen::Logs && !dirty) logui::tick();
     if (screen == Screen::Settings && !dirty) settings_tick();
     if (screen == Screen::Look && !look_error && !dirty) present(look::tick(millis(), frame::canvas()));
     if (screen == Screen::Play && !play_error && !dirty) {
@@ -2415,7 +2454,7 @@ void tick()
     case Screen::Pdf:      draw_pdf(); break;
     case Screen::GameMenu: draw_game_menu(); break;
     case Screen::Settings: draw_settings(); break;
-    case Screen::Net:      netui::draw(); break;
+    case Screen::Logs:      logui::draw(); break;
     }
 }
 

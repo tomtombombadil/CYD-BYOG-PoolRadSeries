@@ -180,39 +180,22 @@ stay in the session's scratch space, never in the repo.
   the "Processing" line shows the free memory; a restart by a crash,
   watchdog or brownout is noted in `_CYD/RESTART.TXT`.
 
-## 5c. Settings, logs, WiFi, email (Tom, 2026-10-09; v0.21.0)
+## 5c. Settings and logs (Tom, 2026-10-09)
 
 - Settings keys (2 columns; 3 rows on 320x240, 4 on 480x320; more than fit
   go on further pages, arrow keys bottom right): Brightness (a slider in
   one key's space, "Brightness nn%" in small text above it; tap a point or
-  drag), WiFi, Invert Colors, Swap Red/Blue (red, green and blue blocks
+  drag), Logs, Invert Colors, Swap Red/Blue (red, green and blue blocks
   named in them, to see whether a swap is needed), Rotate 180, Recalibrate
-  Touch, Game Screen 1.5x (480x320), Logs. 320x240 page 1: Brightness,
-  WiFi, Invert, Swap, Rotate, Logs; page 2: Recalibrate Touch.
+  Touch, Game Screen 1.5x (480x320). The bottom line: version, board,
+  free memory, largest block, PSRAM ("no PSRAM" on all five boards).
 - Logs: `_CYD/SCAN.TXT` (Card Scan), `_CYD/RESTART.TXT` (Restarts),
   `_CYD/ERRORS.TXT` (Errors: every error the Play Test showed, with the
   time since power-on) in a scrolling box: a tap in its top half goes up a
   page, bottom half down a page, dragging scrolls; long lines wrap; the
-  last 32 KB of a longer file. Keys: Card Scan, Restarts, Errors, Email
-  Logs.
-- Email Logs: to cyd.classic.games.logs@gmail.com, subject
-  "CYD-BYOG-GoldBoxGameEngine logs - <version> (<commit>) - <board>", a
-  text part (firmware, board, memory, time up) and the three logs
-  attached (`engine/smtp.*`: EHLO, STARTTLS on port 587 / TLS from the
-  start on 465, AUTH PLAIN, MIME with base64 attachments; host-tested).
-  Mail servers don't take mail from a device that doesn't sign in, so the
-  board signs in to the player's own account (Account key: address, app
-  password - Gmail's spaces are dropped - and server "host:port", guessed
-  from the address: Gmail smtp.gmail.com:465 ...). TLS is checked against
-  the framework's built-in certificate authorities.
-- WiFi: the networks found (strongest first, signal bars, a lock for a
-  password), the saved one lit; tap one -> the on-screen keyboard
-  (`ui/keyboard.*`: four rows of ten, Shift, #+=, Space, Delete, Done) for
-  its password -> connect; saved only once it connected. Other Network
-  (a hidden one by name), Forget, Look Again. WiFi is on only while the
-  WiFi screen is open or mail is sent (memory). Network and mail account
-  are kept in NVS ("byog-net"), never on the card. Linking WiFi costs
-  ~23 KB of static RAM even while it's off.
+  last 32 KB of a longer file. They come off the board on the card.
+- WiFi and emailing the logs were in v0.21.0 and taken out in v0.22.0
+  (Tom): WiFi took ~23 KB of RAM for good, and the games need every KB.
 
 ## 6. Milestones
 
@@ -248,7 +231,10 @@ stay in the session's scratch space, never in the repo.
    paths fixed on the board (saves, characters), errors stay until tapped.
    v0.21.1: memory for the Play Test again (WiFi's static RAM had taken
    the room; the asset viewer's tables now live on the heap only on its
-   screens, the Play Test's state is in smaller blocks).
+   screens, the Play Test's state is in smaller blocks). v0.22.0: WiFi /
+   email out again, loop() back to 8 KB of stack (deep decoding on a stack
+   of its own while it runs), 4 SD file slots: ~27 KB more free memory
+   than v0.20.0.
    Next: the temple, Rest, training.
 6. **Combat.**
 7. **All four games**: the per-game differences (PoD's VGA graphics), party

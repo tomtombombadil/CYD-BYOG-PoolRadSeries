@@ -59,9 +59,9 @@ void recalibrate()
 
 } // namespace
 
-// The card scan makes the journal from the PDF (pdf / JPEG decoding several
-// calls deep under the viewer): 16 KB of stack for loop() instead of 8
-SET_LOOP_TASK_STACK_SIZE(16 * 1024);
+// loop() keeps Arduino's 8 KB of stack: the deep PDF / JPEG work runs on a
+// stack of its own while it runs (hal/bigstack.h; v0.19.1-v0.21.1 gave
+// loop() 16 KB all the time)
 
 void setup()
 {

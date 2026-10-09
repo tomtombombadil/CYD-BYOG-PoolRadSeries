@@ -59,14 +59,13 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   v0.13.0), `journal_tables.cpp` from
   `tools/journal/make_table.py` (run on the player's PDF in scratch space;
   check every entry by eye; renders stay in scratch).
-- Settings / logs / WiFi / email (Tom, 2026-10-09; SPEC 5c): the card
-  scan ends at its scrolling log until Continue; Settings has a brightness
-  slider, Swap Red/Blue with red / green / blue blocks, WiFi and Logs keys,
-  pages with arrows bottom right when keys don't fit. Logs mail to
-  cyd.classic.games.logs@gmail.com, subject tag
-  "CYD-BYOG-GoldBoxGameEngine", from the player's own account (app
-  password) - never put an account or password in the repo. WiFi only on
-  while needed (`app/net.*`, `ui/netui.*`).
+- Settings / logs (Tom, 2026-10-09; SPEC 5c): the card scan ends at its
+  scrolling log until Continue; Settings has a brightness slider, Swap
+  Red/Blue with red / green / blue blocks, a Logs key (Card Scan, Restarts,
+  Errors), pages with arrows bottom right when keys don't fit. Logs come
+  off the board on the card (`/GOLDBOX/_CYD/*.TXT`). NO WiFi / email (Tom,
+  v0.22.0: tried in v0.21.0, ~23 KB of RAM for good - every KB goes to the
+  games). Don't link WiFi, BT or other networking libraries.
 - Engine Menu (Tom, 2026-10-09): the Play Test's Area key became a Menu
   key (both screen sizes) opening the engine's own tabbed screen: Journal
   (entries met so far) and Journal PDF (the book) now; further engine
@@ -184,6 +183,13 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   viewer's `Assets`), the Play Test's state in pieces (Data, World,
   GameState, Party each a block of its own), and check `pio run` RAM
   (DRAM .bss) before / after any change that links a new library.
+  The boards have NO PSRAM (GPIO 16 / 17, the original ESP32's PSRAM pins,
+  drive the RGB LED; Settings shows "no PSRAM"). loop() has Arduino's 8 KB
+  stack; deep work (PNG / PDF / JPEG: the scan's icons and journals, the
+  journal book, Home's icon decode) runs via `hal/bigstack.h` on a 16 KB
+  stack of its own only while it runs. The SD card mounts with 4 file
+  slots (~4 KB of RAM each): never more than 3 files open at once.
+  v0.22.0: static RAM 48 KB (v0.20.0 63 KB, v0.21.0 90 KB).
 - Toolchain: pioarduino platform 55.03.312-1 (Arduino-ESP32 3.3.x), LovyanGFX
   1.2.x, huge_app.csv (no OTA - the web flasher is the update path).
 - Claude's local builds: PlatformIO in a venv; the proxy CA must be appended to

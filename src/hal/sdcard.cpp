@@ -21,7 +21,11 @@ bool sd_begin()
         sd_spi.begin(BOARD_PIN_SD_SCK, BOARD_PIN_SD_MISO, BOARD_PIN_SD_MOSI, BOARD_PIN_SD_CS);
         spi_started = true;
     }
-    mounted = SD.begin(BOARD_PIN_SD_CS, sd_spi, 20000000);
+    // 4 files open at most (the default 5): each slot costs ~4 KB of RAM
+    // (4096-byte sector buffer) from the start; the engine never has more
+    // than 3 open (scan log + a source + an output; event picture + book
+    // + a DAX file)
+    mounted = SD.begin(BOARD_PIN_SD_CS, sd_spi, 20000000, "/sd", 4);
     if (mounted) {
         Serial.printf("[sd] card mounted, %llu MB\n", (unsigned long long)(SD.cardSize() >> 20));
     }
