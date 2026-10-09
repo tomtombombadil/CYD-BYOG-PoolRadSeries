@@ -21,6 +21,88 @@ const uint8_t kClockScale[7] = {10, 10, 6, 24, 30, 12, 0};   // 0 = 256
 
 } // namespace
 
+uint32_t Vm::game_delay() const
+{
+    int speed = get(0x4BFC) & 0xFF;
+    if (speed == 0) speed = 4;
+    return static_cast<uint32_t>(speed) * 100;
+}
+
+int Vm::sight() const
+{
+    if (!get(0x4BE6)) return 2;
+    int x = s_.x, y = s_.y, n = 0;
+    while (n < 2 && h_.wall_type(x, y, s_.dir) == 0) {
+        ++n;
+        x = (x + (s_.dir == 2 ? 1 : s_.dir == 6 ? -1 : 0)) & 15;
+        y = (y + (s_.dir == 4 ? 1 : s_.dir == 0 ? -1 : 0)) & 15;
+    }
+    return n;
+}
+
+void Vm::reset_encounter()
+{
+    enc_.sprite_on = enc_.pic_on = enc_.pic_due = false;
+}
+
+// The monsters as the party sees them: their sprite in the 3D view (0-2
+// squares away), and once they are next to the party their picture (not
+// while the encounter menu is up). True when the picture should follow
+// after a moment, so the sprite is seen first
+bool Vm::show_encounter()
+{
+    const bool dungeon = get(0x4BE6) != 0;
+    bool drew_sprite = false;
+    if (!enc_.pic_on && dungeon) {
+        h_.sprite(enc_.sprite, enc_.distance);
+        enc_.sprite_on = drew_sprite = true;
+    }
+    const uint8_t head = static_cast<uint8_t>(get(0x7EE1) & 0xFF);
+    if ((!enc_.pic_on || enc_.head != head) && enc_.distance == 0 && dungeon && !enc_.in_menu) {
+        enc_.head = head;
+        enc_.pic_on = true;
+        if (drew_sprite) {
+            enc_.pic_due = true;
+            return true;
+        }
+        h_.picture(enc_.pic, head);
+    }
+    return false;
+}
+
+// The encounter menu's steps: the text for the distance, then the menu
+Stop Vm::encounter_step()
+{
+    if (enc_phase_ == EncPhase::Note) {
+        if (!enc_again_) {
+            enc_phase_ = EncPhase::None;
+            enc_.in_menu = false;
+            return Stop::Running;
+        }
+        enc_phase_ = EncPhase::Text;
+    }
+    const bool dungeon = get(0x4BE6) != 0;
+    if (enc_phase_ == EncPhase::Text) {
+        // The text for this distance, else the next one round that has text
+        enc_phase_ = EncPhase::Menu;
+        const int d = enc_.distance < 0 ? 0 : enc_.distance > 2 ? 2 : enc_.distance;
+        const char* t = "";
+        for (int k = 0; k < 3 && !*t; ++k) t = enc_text_[(d + k) % 3] ? enc_text_[(d + k) % 3] : "";
+        if (*t) {
+            text_ = t;
+            clear_ = dungeon;
+            return wait_for(Wait::Print);
+        }
+    }
+    static const char* const kNear[4] = {"Combat", "Wait", "Flee", "Parlay"};
+    static const char* const kFar[4] = {"Combat", "Wait", "Flee", "Advance"};
+    const bool near = enc_.distance == 0 || !dungeon;
+    n_items_ = 4;
+    for (int i = 0; i < 4; ++i) item_[i] = near ? kNear[i] : kFar[i];
+    prompt_ = "";
+    return wait_for(Wait::Menu);
+}
+
 void Vm::advance_clock(int slot, int amount)
 {
     for (int carry = amount; slot >= 0 && slot < 7 && carry; ++slot) {
@@ -207,6 +289,9 @@ bool Vm::init_script(bool reload)
     for (int i = 0; i < 5; ++i) entry_[i] = static_cast<uint16_t>(e[i] == 0xFFFFFFFFu ? 0 : kBase + e[i]);
     sp_ = 0;
     for (bool& f : flags_) f = false;
+    reset_encounter();
+    enc_phase_ = EncPhase::None;
+    enc_.in_menu = false;
     set(0x7EE1, 0xFF);                 // no head picture
     set(0x7ED2, 0);
     set(0x7ED3, 0);
@@ -222,6 +307,7 @@ void Vm::stop_script()
 {
     stop_ = true;
     sp_ = 0;
+    reset_encounter();
 }
 
 void Vm::compare(uint16_t a, uint16_t b)
@@ -260,6 +346,15 @@ Stop Vm::run(uint16_t address)
 Stop Vm::resume()
 {
     wait_ = Wait::None;
+    if (enc_.pic_due) {
+        // The monster's picture, after its sprite was seen for a moment
+        enc_.pic_due = false;
+        h_.picture(enc_.pic, enc_.head);
+    }
+    if (enc_phase_ != EncPhase::None) {
+        const Stop r = encounter_step();
+        if (r != Stop::Running) return r;
+    }
     while (!stop_) {
         if (--budget_ <= 0) {
             h_.log("script ran too long; stopped");
@@ -274,6 +369,82 @@ Stop Vm::resume()
 
 Stop Vm::answer(int v)
 {
+    if (enc_phase_ == EncPhase::Menu) {
+        // The encounter menu: Combat, Wait, Flee, then Advance (seen from
+        // afar) or Parlay (close by / outdoors). What each leads to comes
+        // from the script; the result word: 0 the monsters flee, 1 combat,
+        // 2 the party flees, 3 parlay
+        const bool near = enc_.distance == 0 || !get(0x4BE6);
+        int sel = v;
+        if (near && sel == 3) sel = 4;
+        if (sel < 0 || sel > 4) sel = 1;
+        // No party yet: its slowest and fastest movement taken as 12
+        // (a person on foot) until characters exist
+        const int party_min = 12, party_max = 12;
+        auto result = [&](int r) {
+            set(enc_dest_, static_cast<uint16_t>(r));
+            enc_again_ = false;
+        };
+        auto note = [&](const char* t, bool again) {
+            text_ = t;
+            clear_ = true;
+            enc_again_ = again;
+            enc_phase_ = EncPhase::Note;
+            return wait_for(Wait::Print);
+        };
+        auto approach = [&]() {
+            if (enc_.distance > 0) {
+                --enc_.distance;
+                show_encounter();
+                enc_again_ = true;
+                return true;
+            }
+            return false;
+        };
+        enc_again_ = false;
+        switch (enc_result_[sel]) {
+        case 0:
+            if (sel != 2) result(1);
+            else result(party_min >= enc_flee_ ? 2 : 1);
+            break;
+        case 1:
+            if (sel == 0) result(1);
+            else if (sel == 1) return note("Both sides wait.", true);
+            else if (sel == 2) result(2);
+            else if (sel == 3) {
+                if (!approach()) return note("Both sides wait.", true);
+            } else if (!approach()) result(3);
+            break;
+        case 2:
+            if (sel == 0 && enc_monster_speed_ <= party_max) {
+                result(1);
+                break;
+            }
+            result(0);
+            return note("The monsters flee.", false);
+        case 3:
+            if (sel == 0) result(1);
+            else if (sel == 1 || sel == 3) {
+                if (!approach()) return note("Both sides wait.", true);
+            } else if (sel == 2) result(2);
+            else if (!approach()) result(3);
+            break;
+        default:
+            if (sel == 0) result(1);
+            else if (sel == 2) result(2);
+            else if (!approach()) result(3);
+            break;
+        }
+        if (enc_again_) {
+            enc_phase_ = EncPhase::Text;
+            const Stop r = encounter_step();
+            if (r != Stop::Running) return r;
+        } else {
+            enc_phase_ = EncPhase::None;
+            enc_.in_menu = false;
+        }
+        return resume();
+    }
     switch (op_) {
     case 0x15:                          // VERTICAL MENU: the index
     case 0x2B:                          // HORIZONTAL MENU: the index (a byte)
@@ -393,14 +564,36 @@ Stop Vm::step()
         return Stop::Running;
     case 0x0A: return stub(1, "LOAD CHARACTER");
     case 0x0B: return stub(3, "LOAD MONSTER");
-    case 0x0C: return stub(3, "SETUP MONSTER");
-    case 0x0D:                                  // APPROACH
+    case 0x0C: {                                // SETUP MONSTER: sprite, how far, picture
+        if (!need(3)) return Stop::Error;
+        enc_.sprite = static_cast<uint8_t>(value(o[0]));
+        enc_.max = value(o[1]) & 0xFF;
+        enc_.pic = static_cast<uint8_t>(value(o[2]));
+        enc_.distance = sight();
+        if (enc_.distance > enc_.max) enc_.distance = enc_.max;
+        if (show_encounter()) {
+            pause_ms_ = game_delay();
+            return wait_for(Wait::Pause);
+        }
+        return Stop::Running;
+    }
+    case 0x0D:                                  // APPROACH: the monsters come a square closer
         ++pc_;
+        if (enc_.distance > 0) {
+            --enc_.distance;
+            if (show_encounter()) {
+                pause_ms_ = game_delay();
+                return wait_for(Wait::Pause);
+            }
+        }
         return Stop::Running;
-    case 0x0E:                                  // PICTURE
+    case 0x0E: {                                // PICTURE
         if (!need(1)) return Stop::Error;
-        h_.picture(value(o[0]) & 0xFF, get(0x7EE1) & 0xFF);
+        const int id = value(o[0]) & 0xFF;
+        if (id == 0xFF) reset_encounter();
+        h_.picture(id, get(0x7EE1) & 0xFF);
         return Stop::Running;
+    }
     case 0x0F:                                  // INPUT NUMBER
     case 0x10:                                  // INPUT STRING
         if (!need(2)) return Stop::Error;
@@ -520,14 +713,23 @@ Stop Vm::step()
     case 0x27: return stub(8, "TREASURE");
     case 0x28: return stub(3, "ROB");
     case 0x29: {                                // ENCOUNTER MENU
+        // sprite, how far, picture, result word, 5 results, 3 texts (near,
+        // middle, far), the speed the party needs to flee, the monsters' speed
         if (!need(14)) return Stop::Error;
-        dest_ = o[3].word();
-        static const char* const kItems[4] = {"Combat", "Wait", "Flee", "Parlay"};
-        n_items_ = 4;
-        for (int i = 0; i < 4; ++i) item_[i] = kItems[i];
-        prompt_ = "";
-        h_.log("ENCOUNTER MENU (no monsters yet)");
-        return wait_for(Wait::Menu);
+        enc_.sprite = static_cast<uint8_t>(value(o[0]));
+        enc_.max = value(o[1]) & 0xFF;
+        enc_.pic = static_cast<uint8_t>(value(o[2]));
+        enc_dest_ = o[3].word();
+        for (int i = 0; i < 5; ++i) enc_result_[i] = static_cast<uint8_t>(value(o[4 + i]));
+        for (int i = 0; i < 3; ++i) enc_text_[i] = o[9 + i].code >= 0x80 ? string_of(o[9 + i]) : "";
+        enc_flee_ = static_cast<uint8_t>(value(o[12]));
+        enc_monster_speed_ = static_cast<uint8_t>(value(o[13]));
+        enc_.in_menu = true;
+        enc_.distance = sight();
+        if (enc_.distance > enc_.max) enc_.distance = enc_.max;
+        show_encounter();
+        enc_phase_ = EncPhase::Text;
+        return encounter_step();
     }
     case 0x2A:                                  // GETTABLE
         if (!need(3)) return Stop::Error;
@@ -632,7 +834,7 @@ Stop Vm::step()
     case 0x3C: return stub(1, "PROTECTION");    // copy protection: skipped (Tom)
     case 0x3D:                                  // CLEAR BOX
         ++pc_;
-        h_.redraw();
+        h_.clear_box();
         return Stop::Running;
     case 0x3E:                                  // DUMP
         ++pc_;

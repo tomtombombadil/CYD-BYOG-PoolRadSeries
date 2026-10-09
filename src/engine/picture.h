@@ -66,7 +66,10 @@ bool parse_header(const uint8_t* p, uint32_t raw_size, Header& out, uint32_t* ex
 bool draw(dax::RleReader& r, const Header& h, int frame, Canvas& c, int x, int y, int mask = -1);
 
 // Packed pixels already in memory (h.frame_bytes() bytes of one frame).
-void draw_pixels(const uint8_t* data, const Header& h, Canvas& c, int x, int y, int mask = -1);
+// mask: a colour left out (-1: none); from / to: a colour drawn as another
+// (sprites: 0 is see-through and 13 is drawn black)
+void draw_pixels(const uint8_t* data, const Header& h, Canvas& c, int x, int y, int mask = -1, int from = -1,
+                 int to = 0);
 
 // ---- Animations ------------------------------------------------------------
 // Event pictures and sprites (PICn, FINALn, SPRITn ... in Curse): a series of
@@ -100,7 +103,7 @@ bool parse_anim(dax::RleReader& r, uint32_t raw_size, Anim& out);
 // frame > 0 (allocated here, freed before returning). False on short data
 // or no memory.
 bool draw_anim(dax::ByteSource& src, const dax::Index& idx, const dax::Entry& e, const Anim& a, int frame,
-               bool xor_first, Canvas& c, int x, int y, int mask = -1);
+               bool xor_first, Canvas& c, int x, int y, int mask = -1, int from = -1, int to = 0);
 
 // ---- VGA pictures (Pools of Darkness) -------------------------------------
 // Worked out from Tom's GOG Darkness files (2026-10-06); TITLE, COMSPR,

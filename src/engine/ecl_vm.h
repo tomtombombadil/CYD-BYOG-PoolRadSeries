@@ -75,8 +75,14 @@ public:
     virtual void load_map(int geo_block) = 0;
     virtual void load_walls(int set, int block) = 0;    // block < 0: none
     virtual void picture(int id, int head) = 0;         // id 0xFF: back to the view
-    virtual void redraw() = 0;                          // view, party panel, position
+    virtual void redraw() = 0;                          // the 3D view again (a picture goes), position
+    virtual void clear_box() { redraw(); }              // the exploring frame again, the picture kept
     virtual void anim_step() {}                         // the event picture's next frame (CALL 6803)
+    // Encounters: the wall type on side `dir` of square (x, y) (0 = none),
+    // to see how far the party can see; and a monster's sprite (SPRITn
+    // block `id`) drawn in a freshly drawn 3D view, `distance` 0-2 away
+    virtual int wall_type(int x, int y, int dir) { (void)x; (void)y; (void)dir; return 1; }
+    virtual void sprite(int id, int distance) { (void)id; (void)distance; }
     virtual void log(const char* what) = 0;
 };
 
@@ -129,6 +135,12 @@ private:
     void stop_script();
     Stop wait_for(Wait w);
     void add_string(const char* src, size_t n, bool packed);
+    // Encounters (SETUP MONSTER, APPROACH, ENCOUNTER MENU)
+    int  sight() const;                 // squares the party can see ahead (0-2)
+    bool show_encounter();              // true: the picture is due after a short pause
+    void reset_encounter();
+    Stop encounter_step();              // the encounter menu, after a wait
+    uint32_t game_delay() const;
 
     GameState& s_;
     Host& h_;
@@ -152,6 +164,20 @@ private:
     char*    slot_[kMaxStrings] = {};
     int      n_slots_ = 0;
     char     num_[8] = {};
+
+    struct Encounter {
+        bool sprite_on = false, pic_on = false, in_menu = false, pic_due = false;
+        uint8_t sprite = 0, pic = 0, head = 0xFF;
+        int distance = 0, max = 0;
+    } enc_;
+    // The encounter menu in progress: what it waits for next
+    enum class EncPhase : uint8_t { None, Text, Menu, Note };
+    EncPhase enc_phase_ = EncPhase::None;
+    uint16_t enc_dest_ = 0;
+    uint8_t  enc_result_[5] = {};
+    uint8_t  enc_flee_ = 0, enc_monster_speed_ = 0;
+    const char* enc_text_[3] = {};
+    bool     enc_again_ = false;
 
     const char* text_ = "";
     bool clear_ = false;

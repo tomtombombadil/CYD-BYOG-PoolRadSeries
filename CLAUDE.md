@@ -34,6 +34,9 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   square). Pad = numeric keypad: 7 / 9 turn, 8 forward, 4 / 6 side-step,
   2 turn around (Tom). 320x240 row (Tom, 2026-10-07): Side-step Left,
   Turn Left, Forward, Turn Right, Side-step Right, Turn Around, Area, Esc.
+- Play Test follows the real games, not test shortcuts: locked doors stop
+  the party ("Locked." - Bash / Pick / Knock come with the party), the 3D
+  view comes back when a script redraws it (CALL 2E10) or the party moves.
 - Copy protection: skipped - never asked, treated as answered.
 - Later: Krynn, Savage Frontier and FRUA in this repo, after the four games.
   Keep game-specific code behind a per-game profile so they fit.
@@ -118,6 +121,10 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   The game's questions (INPUT NUMBER / STRING) use an on-screen keyboard
   in the viewer (`play::input()` / `play::input_key()`); event pictures
   animate only while a menu waits (as in the games).
+- `tools/playsim/` (Claude's side, Linux): runs the Play Test on the PC
+  against the game files in scratch space (shims for Arduino / SD); use it
+  to check script behaviour and take canvas snapshots before pushing.
+  Snapshots of real game screens stay in scratch, never in the repo.
 - PortMaster ports are a stretch goal (Tom): keep everything portable.
 - Game screens (Walk Test, Play Test now, the games later): canvas 1:1 at the top left
   (`frame::set_left`), controls below it, on 480x320 the Companion strip on

@@ -1308,6 +1308,7 @@ static void op_str(Bytes& b, const char* t)
 struct TestHost : ecl::Host {
     Bytes next;                 // the block NEWECL loads
     int map = -1, walls[4] = {-2, -2, -2, -2}, pic = -1, loads = 0, frames = 0;
+    int sprite_id = -1, sprite_dist = -1, sprites = 0;
     bool load_script(int, uint8_t* code, uint32_t* len) override
     {
         ++loads;
@@ -1321,6 +1322,13 @@ struct TestHost : ecl::Host {
     void picture(int id, int) override { pic = id; }
     void redraw() override {}
     void anim_step() override { ++frames; }
+    int wall_type(int, int, int) override { return 0; }      // open ground all round
+    void sprite(int id, int distance) override
+    {
+        sprite_id = id;
+        sprite_dist = distance;
+        ++sprites;
+    }
     void log(const char*) override {}
 };
 
@@ -1426,6 +1434,60 @@ static void test_ecl_vm()
     r = vm.run(vm.entry(0));
     CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Pause && vm.pause_ms() == 400 && host.frames == 1);
     CHECK(vm.resume() == ecl::Stop::Stopped);
+
+    // SETUP MONSTER sprite 7, at most 1 square away, picture 9: the sprite
+    // one square off; APPROACH: the sprite next to the party, then (after a
+    // pause) the picture
+    Bytes mon;
+    for (int i = 0; i < 5; ++i) { mon.push_back(0); op_addr(mon, kBase + 20); }
+    mon.push_back(0x0C); op_imm(mon, 7); op_imm(mon, 1); op_imm(mon, 9);
+    mon.push_back(0x0D);
+    mon.push_back(0x00);
+    memcpy(gs.code, mon.data(), mon.size());
+    gs.code_len = static_cast<uint32_t>(mon.size());
+    CHECK(vm.init_script());
+    vm.set(0x4BE6, 1);
+    host.pic = -1;
+    r = vm.run(vm.entry(0));
+    CHECK(host.sprites == 2 && host.sprite_id == 7 && host.sprite_dist == 0);
+    CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Pause && host.pic == -1);
+    CHECK(vm.resume() == ecl::Stop::Stopped && host.pic == 9);
+
+    // ENCOUNTER MENU: 2 squares off (open ground, max 2), the far text, then
+    // Combat Wait Flee Advance. Results all "1" (fight on Combat, Wait = both
+    // wait, Advance = come closer)
+    Bytes em;
+    for (int i = 0; i < 5; ++i) { em.push_back(0); op_addr(em, kBase + 20); }
+    em.push_back(0x29);
+    op_imm(em, 3); op_imm(em, 2); op_imm(em, 4); op_addr(em, 0x4C05);
+    for (int i = 0; i < 5; ++i) op_imm(em, 1);
+    op_str(em, "NEAR"); op_str(em, "MID"); op_str(em, "FAR");
+    op_imm(em, 6); op_imm(em, 9);
+    em.push_back(0x00);
+    memcpy(gs.code, em.data(), em.size());
+    gs.code_len = static_cast<uint32_t>(em.size());
+    CHECK(vm.init_script());
+    vm.set(0x4BE6, 1);
+    vm.set(0x4C05, 77);
+    r = vm.run(vm.entry(0));
+    CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Print && strcmp(vm.text(), "FAR") == 0);
+    CHECK(host.sprite_id == 3 && host.sprite_dist == 2);
+    r = vm.resume();
+    CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Menu && strcmp(vm.item(3), "Advance") == 0);
+    r = vm.answer(3);                       // Advance: one square closer, the menu again
+    CHECK(host.sprite_dist == 1 && r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Print &&
+          strcmp(vm.text(), "MID") == 0);
+    r = vm.resume();
+    CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Menu);
+    r = vm.answer(1);                       // Wait: "Both sides wait."
+    CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Print && strcmp(vm.text(), "Both sides wait.") == 0);
+    r = vm.resume();                        // the text again, then the menu
+    CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Print);
+    r = vm.resume();
+    CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Menu);
+    CHECK(vm.get(0x4C05) == 77);
+    r = vm.answer(0);                       // Combat
+    CHECK(r == ecl::Stop::Stopped && vm.get(0x4C05) == 1);
 
     // An endless loop is stopped
     Bytes loop;

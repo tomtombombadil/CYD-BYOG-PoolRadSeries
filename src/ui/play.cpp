@@ -29,6 +29,7 @@ enum class Then : uint8_t {
     NewFirst,      // a new script's first run ended: its step script next
     NewStep,       // ... then its arrival script
     Look,          // the search script ran for Look
+    Door,          // a locked door stopped the party: "Locked." waits for a key
 };
 
 struct Host;
@@ -50,6 +51,9 @@ struct Data {
     pic::Anim      anim;
     fs::File       anim_file;
     dax::Index     anim_idx;
+
+    // A monster's sprite in the 3D view (SPRITn)
+    pic::Anim      sprite;
 
     // The wilderness map's places (from the program)
     uint8_t        city_x[32] = {}, city_y[32] = {};
@@ -87,6 +91,7 @@ int          anim_frame = 0;
 uint32_t     anim_at = 0;           // when the frame was drawn
 int          bigpic = -1;           // the big picture shown
 int          last_pic = -1;         // the last event picture loaded
+int          head_shown = -1, body_shown = -1;   // a person's head and body shown
 
 // The wilderness map's blinking square
 bool         cursor_on = false;
@@ -420,6 +425,8 @@ struct Host : ecl::Host {
             c.fill(24, 24, 88, 88, 0);
             draw_block(c, "HEAD", head, 24, 24);
             draw_block(c, "BODY", id, 24, 64);
+            head_shown = head;
+            body_shown = id;
             dirty_rows(3, 13);
         }
         pic_shown = true;
@@ -433,9 +440,62 @@ struct Host : ecl::Host {
     }
     void redraw() override
     {
+        // The 3D view comes back over any picture (CALL 2E10)
+        cursor_hide();
+        anim_stop();
+        pic_shown = false;
+        head_shown = body_shown = -1;
         d->gs.roof = geo::flags(d->map, d->gs.x, d->gs.y);
         draw_view(*cv);
         draw_position(*cv);
+    }
+    void clear_box() override
+    {
+        // The exploring frame, party panel and position again, the text
+        // window cleared; an event picture stays
+        pic::Canvas& c = *cv;
+        cursor_hide();
+        bigpic = -1;
+        draw_frame(c);
+        draw_panel(c);
+        if (anim_block >= 0) {
+            anim_draw(0);
+        } else if (pic_shown && head_shown >= 0) {
+            draw_block(c, "HEAD", head_shown, 24, 24);
+            draw_block(c, "BODY", body_shown, 24, 64);
+        } else {
+            pic_shown = false;
+            draw_view(c);
+        }
+    }
+    int wall_type(int x, int y, int dir) override { return d->map.loaded ? geo::wall(d->map, x, y, dir) : 1; }
+    void sprite(int id, int distance) override
+    {
+        // The 3D view, the monsters' sprite on it: frame = how far away,
+        // placed by the frame's own position (8-px cells from the view's
+        // corner); colour 0 is see-through, 13 is drawn black
+        pic::Canvas& c = *cv;
+        anim_stop();
+        pic_shown = false;
+        head_shown = body_shown = -1;
+        area_view = false;
+        draw_view(c);
+        char name[24];
+        area_file(name, sizeof name, "SPRIT");
+        fs::File f;
+        if (!open_dax(name, f)) return;
+        library::FileSource src(f);
+        const dax::Entry* e = d->idx.find(static_cast<uint8_t>(id));
+        if (e) {
+            dax::RleReader r(src, d->idx, *e);
+            if (pic::parse_anim(r, e->raw_size, d->sprite) && distance >= 0 && distance < d->sprite.frames) {
+                const pic::Header& h = d->sprite.frame[distance];
+                pic::draw_anim(src, d->idx, *e, d->sprite, distance, false, c, (h.x_cell + 3) * 8, (h.y_cell + 3) * 8, 0,
+                               13, 0);
+            }
+        }
+        f.close();
+        dirty_rows(3, 13);
     }
     void log(const char* what) override { Serial.printf("[ecl %d:%04X] %s\n", d->gs.script, vm->pc() + 0x8000, what); }
 };
@@ -525,7 +585,11 @@ void run_entry(int i, Then next)
 
 void after_move_redraw()
 {
+    // After every step the games draw the 3D view again: pictures go
+    cursor_hide();
+    anim_stop();
     pic_shown = false;
+    head_shown = body_shown = -1;
     d->gs.roof = geo::flags(d->map, d->gs.x, d->gs.y);
     d->gs.wall_ahead = static_cast<uint8_t>(geo::wall(d->map, d->gs.x, d->gs.y, d->gs.dir));
     draw_view(*cv);
@@ -535,14 +599,18 @@ void after_move_redraw()
 // The step the player asked for (dir = the way the party goes)
 int step_dir = 0;
 
-void do_move()
+// Moves the party (after the step script). False when a locked door
+// stopped it (the caller asks for a key first)
+bool do_move()
 {
     ecl::GameState& g = d->gs;
     vm->set(0x4BF0, static_cast<uint16_t>(g.x));
     vm->set(0x4BF1, static_cast<uint16_t>(g.y));
+    bool locked = false;
     if (vm->get(0x7EC9) < 0xFF && d->map.loaded) {
         const int p = geo::passage(d->map, g.x, g.y, step_dir);
-        if (p >= 1) {      // locked doors let the party through for now (Tom: testing)
+        locked = p >= 2;        // locked or barred: the party would need to bash or pick it
+        if (p == 1) {
             g.x = (g.x + geo::dx(step_dir)) & 15;
             g.y = (g.y + geo::dy(step_dir)) & 15;
             // A minute a step, ten when searching (clock slot 1 / 2)
@@ -550,7 +618,25 @@ void do_move()
         }
     }
     vm->set(0x7EC9, 0);
+    if (locked) return false;
     after_move_redraw();
+    return true;
+}
+
+// "Locked." on the menu line. Bash / Pick / Knock need characters, so for
+// now the only answer is Exit
+void door_prompt(pic::Canvas& c)
+{
+    text::build(menu, "Locked. ", "Exit");
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+void door_done()
+{
+    clear_menu_line(*cv);
+    after_move_redraw();
+    run_entry(1, Then::Arrive);
 }
 
 void handle(ecl::Stop r)
@@ -577,9 +663,15 @@ void handle(ecl::Stop r)
     }
     switch (then) {
     case Then::Move:
-        do_move();
+        if (!do_move()) {
+            then = Then::Door;
+            door_prompt(c);
+            return;
+        }
         run_entry(1, Then::Arrive);
         return;
+    case Then::Door:
+        break;
     case Then::NewFirst:
         vm->set(0x4BF2, d->gs.script);
         after_move_redraw();
@@ -775,6 +867,10 @@ bool act(Act a, pic::Canvas& c)
         tap(0, 0, c);
         return true;
     }
+    if (then == Then::Door) {
+        door_done();
+        return true;
+    }
     if (then != Then::Idle) return false;
     ecl::GameState& g = d->gs;
     switch (a) {
@@ -848,6 +944,10 @@ void tap(int x, int y, pic::Canvas& c)
         default:
             break;
         }
+        return;
+    }
+    if (then == Then::Door) {
+        door_done();
         return;
     }
     if (then != Then::Idle) return;

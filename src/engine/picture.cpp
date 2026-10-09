@@ -67,7 +67,7 @@ bool draw(dax::RleReader& r, const Header& h, int frame, Canvas& c, int x, int y
     return true;
 }
 
-void draw_pixels(const uint8_t* data, const Header& h, Canvas& c, int x, int y, int mask)
+void draw_pixels(const uint8_t* data, const Header& h, Canvas& c, int x, int y, int mask, int from, int to)
 {
     const int row_bytes = h.width_cols * 4;
     for (int row = 0; row < h.height; ++row) {
@@ -78,8 +78,8 @@ void draw_pixels(const uint8_t* data, const Header& h, Canvas& c, int x, int y, 
         for (int i = 0; i < row_bytes; ++i) {
             const int px = x + i * 2;
             const uint8_t hi = static_cast<uint8_t>(src[i] >> 4), lo = static_cast<uint8_t>(src[i] & 0x0F);
-            if (px >= 0 && px < c.w && hi != mask) line[px] = hi;
-            if (px + 1 >= 0 && px + 1 < c.w && lo != mask) line[px + 1] = lo;
+            if (px >= 0 && px < c.w && hi != mask) line[px] = hi == from ? static_cast<uint8_t>(to) : hi;
+            if (px + 1 >= 0 && px + 1 < c.w && lo != mask) line[px + 1] = lo == from ? static_cast<uint8_t>(to) : lo;
         }
     }
 }
@@ -114,7 +114,7 @@ bool parse_anim(dax::RleReader& r, uint32_t raw_size, Anim& out)
 }
 
 bool draw_anim(dax::ByteSource& src, const dax::Index& idx, const dax::Entry& e, const Anim& a, int frame,
-               bool xor_first, Canvas& c, int x, int y, int mask)
+               bool xor_first, Canvas& c, int x, int y, int mask, int from, int to)
 {
     if (frame < 0 || frame >= a.frames) return false;
     const Header& h = a.frame[frame];
@@ -139,7 +139,7 @@ bool draw_anim(dax::ByteSource& src, const dax::Index& idx, const dax::Entry& e,
             delete[] first;
         }
     }
-    if (ok) draw_pixels(buf, h, c, x, y, mask);
+    if (ok) draw_pixels(buf, h, c, x, y, mask, from, to);
     delete[] buf;
     return ok;
 }
