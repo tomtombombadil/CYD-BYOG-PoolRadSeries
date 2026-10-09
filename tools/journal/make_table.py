@@ -4,7 +4,9 @@ Claude's side tool, run on the player's own journal PDF in scratch space -
 never on files in the repo. Extract the page images first:
     pdfimages -j "<journal>.pdf" <dir>/p
 then
-    python3 -I tools/journal/make_table.py curse <dir> <out.json>
+    python3 -I tools/journal/make_table.py curse <dir> src/engine/journal_tables.cpp
+It rewrites the whole file from all the journals' saved tables
+(tools/journal/tables.json, coordinates only), adding or replacing this one.
 
 How it works: a heading ("Journal Entry N", "Tavern Tale N") starts with a
 hollow blue box; the boxes are found on each page spread (two book pages,
@@ -16,6 +18,7 @@ against the rendered entries.
 """
 import glob
 import json
+import os
 import sys
 
 import numpy as np
@@ -62,6 +65,8 @@ def curse_layout(t):
 LAYOUTS = {
     'curse': {
         'sha256': '7c918ead661b353e7da606b9137929f1dee2c9c203408b0b751cf719cd8529bb',
+        'pdf_size': 6779800,
+        'pdf_id': '36ce730a4edce39469cb5215e05df63d',     # the trailer's /ID
         'game': 'CURSE',
         'title': "Curse of the Azure Bonds - Adventurer's Journal (GOG, the copy in the game folder)",
         'cols': [(55, 437), (440, 817), (868, 1252), (1254, 1636)],
@@ -154,16 +159,53 @@ def main():
                 ps.append([p, x, y0, w, y1 - y0])
             entries.append({'k': kind, 'n': n, 'p': ps})
 
+    store = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tables.json')
     try:
-        table = json.load(open(out_path))
+        table = json.load(open(store))
     except (OSError, ValueError):
         table = {'format': 1, 'dpi': 150, 'journals': []}
     table['journals'] = [j for j in table['journals'] if j['sha256'] != L['sha256']]
-    table['journals'].append({'game': L['game'], 'title': L['title'], 'sha256': L['sha256'], 'entries': entries})
-    with open(out_path, 'w') as f:
+    table['journals'].append({'name': name, 'game': L['game'], 'title': L['title'], 'sha256': L['sha256'],
+                              'pdf_size': L['pdf_size'], 'pdf_id': L['pdf_id'], 'entries': entries})
+    with open(store, 'w') as f:
         json.dump(table, f, separators=(',', ':'))
+    write_cpp(table, out_path)
     print(f"{name}: {sum(e['k'] == 'J' for e in entries)} journal entries, "
           f"{sum(e['k'] == 'T' for e in entries)} tavern tales")
+
+
+def write_cpp(table, path):
+    out = ['// Made by tools/journal/make_table.py - do not edit.',
+           '// Where each journal entry is in the player\'s own journal PDF: PDF page',
+           '// numbers and pixel rectangles of the page pictures. No journal content.',
+           '#include "journal.h"', '', 'namespace journal {', '', 'namespace {', '']
+    names = []
+    for j in table['journals']:
+        n = j['name']
+        names.append(n)
+        pieces, defs = [], []
+        for e in j['entries']:
+            defs.append(f"    {{'{e['k']}', {e['n']}, {len(pieces)}, {len(e['p'])}}},")
+            for p, x, y, w, h in e['p']:
+                pieces.append(f'    {{{p}, {x}, {y}, {w}, {h}}},')
+        out.append(f"// {j['title']}")
+        out.append(f'const Piece k_{n}_pieces[] = {{')
+        out += pieces
+        out.append('};')
+        out.append(f'const EntryDef k_{n}_entries[] = {{')
+        out += defs
+        out.append('};')
+        out.append(f'const Table k_{n} = {{"{j["title"]}", {j["pdf_size"]}u, "{j["pdf_id"]}", k_{n}_entries,')
+        out.append(f'    {len(defs)}, k_{n}_pieces, {len(pieces)}}};')
+        out.append('')
+    out.append('} // namespace')
+    out.append('')
+    out.append('const Table* const kTables[] = {' + ', '.join(f'&k_{n}' for n in names) + '};')
+    out.append(f'const int kTableCount = {len(names)};')
+    out.append('')
+    out.append('} // namespace journal')
+    with open(path, 'w') as f:
+        f.write('\n'.join(out) + '\n')
 
 
 if __name__ == '__main__':

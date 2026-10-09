@@ -199,9 +199,8 @@ What the GOG Curse journal PDFs are (checked 2026-10-06 / 07):
   - a 300 dpi copy (12 MB, Acrobat "Paper Capture" OCR, SHA-256
     d4712a050919...), which Tom attached first - probably GOG's separate
     extras download.
-  The converter supports only the install-folder copy (Tom, 2026-10-07:
-  stick to the one in the Project files); each rectangle table is keyed by
-  the PDF's SHA-256, so another version would need its own table.
+  Only the install-folder copy is supported (Tom, 2026-10-07: stick to the
+  one in the Project files); another edition needs its own table.
 - All nine journals in Tom's Project (four PRS games + Krynn, Savage
   Frontier) are 150 dpi scans except Treasures (lower).
 - The text layers are OCR and unusable for the calligraphic entry font
@@ -210,51 +209,44 @@ What the GOG Curse journal PDFs are (checked 2026-10-06 / 07):
   drawing, 9 a symbol), which text would lose anyway.
 - Entries run in columns and continue into the next column or page.
 
-So the journal is shown as **pictures of the entries**, not text:
-- A **journal converter** run by the player on their own computer opens the
-  journal PDF from *their* GOG copy, cuts each entry out of the page images
-  using a table of rectangles for that exact PDF (page + position per piece
-  - coordinates only, no content; the PDF is recognised by its SHA-256),
-  stacks the pieces of an entry into one image, reduces it to 16 colours at
-  the panel widths (310 and 470 px wide) and writes the result next to that
-  game's files on the SD card (e.g. `/GOLDBOX/CURSE/JOURNAL.BIN`). At 150
-  dpi a text column is ~340 px wide: about 1:1 on 320-wide panels, scaled
-  up ~1.4x on 480-wide ones.
-- Planned as a page on the flasher site that runs entirely in the browser
-  (pdf.js; nothing is uploaded), so players need no install. A mockup at
-  320x240 reads well (script text ~9 px x-height).
-- The engine shows entry N full-screen with Prev Page / Back / Next Page
-  keys when the game asks for it, and from the Journal key. Without the file
-  it shows the entry number.
-- The repo, the firmware and the flasher site never contain journal text or
-  images; tests use made-up entries; the rectangle tables are coordinates
-  only. Same rule as the DAX files.
-- Each game's journal gets its own table once its GOG PDF has been looked at.
+So the journal is shown as **pictures of the entries**, not text, cut out
+of the player's own PDF with a table of rectangles for that exact PDF
+(coordinates only). The repo, the firmware and the flasher site never
+contain journal text or images; tests use made-up pictures. Each game's
+journal gets its own table once its GOG PDF has been looked at.
 
-Built (v0.10.0, Curse):
-- `web/journal/` = the converter page (pdf.js 3.11.174 from cdnjs; SHA-256
-  with crypto.subtle, a JS fallback when the page is opened from a file).
-  `web/journal/tables.json` = the rectangle tables: per journal its SHA-256
-  and entries {k: 'J' journal entry / 'T' tavern tale, n, p: [[PDF page,
-  x, y, w, h] ...]} in pixels of the page rendered at 150 dpi.
-  `tools/journal/make_table.py` makes a table from the player's PDF page
-  images (headings found by their hollow blue box; an entry runs to the
-  next heading column by column; pieces trimmed to the rows with ink;
-  per-journal fixes for pictures across both columns and entries out of
-  order), checked by eye. Curse (install-folder PDF): entries 1-59 (1 is on
-  page 1, 2-59 on pages 10-24; 59 comes before 58), Tavern Tales 1-62.
-- Each entry's pieces are stacked, the paper and show-through turned
-  white, scaled to 310 and 470 px wide, reduced to 16 colours (median cut,
-  white = index 0) and run-length coded: `JOURNAL.BIN` (format in
-  `src/engine/journal.h`; Curse: 121 entries, ~7 MB). The page can save
-  straight into a folder (Chrome / Edge) or download the file.
-- The engine (`engine/journal.*`, Play Test) watches the printed text for
-  "JOURNAL ENTRY n" / "JOURNAL AS ENTRY n" / "TAVERN TALE n" (numbers may
-  come in the next PRINT) and, when the game next waits for a key, shows
-  the entry full-screen: header "Journal Entry 31  1/2", Prev Page / Back
-  to Game / Next Page. Without the file it says how to make it.
-- Not yet: a Journal key to look entries up any time; zoom for the maps
-  that span both columns (they are scaled down to the screen width).
+v0.10.0 did this in a browser page (pdf.js) on the player's PC; Tom
+(2026-10-09) wants no PC step: since v0.12.0 the board does it.
+
+How it works (v0.12.0, Curse):
+- The card scan finds a .pdf with "journal" in its name in the game's
+  folder, reads its cross-reference table and page tree (`engine/pdf.*`,
+  classic xref only) and recognises the edition by file size + the
+  trailer's /ID (`journal::find_table`). Curse install-folder PDF: 6779800
+  bytes, /ID 36ce730a4edce39469cb5215e05df63d.
+- `engine/journal_tables.cpp` (made by `tools/journal/make_table.py`, which
+  also keeps `tools/journal/tables.json`) lists each entry's pieces: PDF
+  page, x, y, w, h in pixels of the page's picture (150 dpi). Curse:
+  entries 1-59 (1 on PDF page 2; 2-59 on pages 6-13; 59 comes before 58),
+  Tavern Tales 1-62; 138 pieces. Checked by eye against the rendered
+  entries (renders stay in scratch).
+- Each page is one baseline JPEG (4:2:0, 16 x 16 MCUs); `engine/jpeg.*`
+  wraps ChaN's TJpgDec (`third_party/`), decoding only the MCUs the pieces
+  need and stopping below the last one. Pixels are stored as one of 256
+  colours (a 6 x 6 x 6 cube + 40 greys); paper and show-through (lum > 185,
+  not blue; blue: lum > 225) become white.
+- `_CYD/<folder>/JOURNAL.DAT` (format in `engine/journal.h`, "GBJ2" written
+  last; Curse ~15 MB) keeps every piece at the scan's resolution; a later
+  scan keeps a file made from the same PDF. The scan log lists a PDF it
+  doesn't know with its size and /ID, so a table can be added.
+- The engine watches the printed text for "JOURNAL ENTRY n" / "JOURNAL AS
+  ENTRY n" / "TAVERN TALE n" (numbers may come in the next PRINT) and, when
+  the game next waits for a key, shows the entry: scaled (bilinear) to the
+  screen's width, on white, header "Journal Entry 31  1/2", Prev Page /
+  Back to Game / Next Page. Without JOURNAL.DAT: "Read Journal Entry 31 in
+  your Adventurer's Journal." (as the original).
+- Next: a Journal page with the entries received so far; zoom for maps;
+  the PDF viewer fallback (page through the book, zoom) for other editions.
 
 ## 8. Copy protection (Tom, 2026-10-06)
 

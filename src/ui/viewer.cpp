@@ -14,6 +14,7 @@
 #include "engine/icon.h"
 #include "engine/inflate.h"
 #include "engine/journal.h"
+#include "engine/pdf.h"
 #include "engine/picture.h"
 #include "engine/text.h"
 #include "frame.h"
@@ -449,6 +450,93 @@ void scan_say(const char* text, bool replace, void*)
     else for (int i = 0; i < scr->n; ++i) scan_draw_row(i);
 }
 
+// JOURNAL.DAT is written piece by piece, wherever the pieces go
+struct SdOutput : journal::Output {
+    fs::File f;
+    bool write_at(uint32_t pos, const uint8_t* d, size_t n) override
+    {
+        return f.seek(pos) && f.write(d, n) == n;
+    }
+};
+
+struct JournalProgress {
+    const char* title;
+};
+
+void journal_progress(int done, int total, void* ctx)
+{
+    char line[100];
+    snprintf(line, sizeof line, "Processing the %s journal: page %d of %d", static_cast<JournalProgress*>(ctx)->title,
+             done, total);
+    scan_say(line, true, nullptr);
+    delay(1);
+}
+
+// The journal's entries, made once from the player's own PDF (Tom: on the
+// board, during the scan; a PDF it doesn't know is reported, not guessed)
+void prepare_journal(const library::GameDir& g)
+{
+    char line[160], path[200];
+    const char* title = games::title(g.game);
+    snprintf(path, sizeof path, "%s/%s", games::kRootDir, g.journal);
+    fs::File f = sd_fs().open(path, "r");
+    if (!f) return;
+    library::FileSource src(f);
+    pdf::Doc* doc = new (std::nothrow) pdf::Doc;
+    const bool readable = doc && pdf::open(src, *doc);
+    const journal::Table* t = readable ? journal::find_table(src.size(), doc->id) : nullptr;
+    if (!t) {
+        snprintf(line, sizeof line,
+                 readable ? "The %s journal is an edition this engine doesn't know yet (size %u, id %s): its entries "
+                            "can't be shown."
+                          : "The %s journal can't be read as a PDF.",
+                 title, static_cast<unsigned>(src.size()), doc ? doc->id : "");
+        scan_say(line, false, nullptr);
+        delete doc;
+        f.close();
+        return;
+    }
+    delete doc;
+    int nj = 0, nt = 0;
+    for (int i = 0; i < t->n_entries; ++i) (t->entries[i].kind == 'T' ? nt : nj)++;
+    char out_path[160];
+    library::cache_path(g, "JOURNAL.DAT", out_path, sizeof out_path);
+    {
+        fs::File old = sd_fs().open(out_path, "r");
+        if (old) {
+            library::FileSource os(old);
+            journal::Info info;
+            const bool ready = journal::read_info(os, info) && strcmp(info.pdf_id, t->pdf_id) == 0 &&
+                               info.entries == t->n_entries;
+            old.close();
+            if (ready) {
+                snprintf(line, sizeof line, "The %s journal is ready (made by an earlier scan)", title);
+                scan_say(line, false, nullptr);
+                f.close();
+                return;
+            }
+        }
+    }
+    snprintf(line, sizeof line, "Processing the %s journal...", title);
+    scan_say(line, false, nullptr);
+    SdOutput out;
+    bool ok = library::make_cache_dirs(g);
+    if (ok) out.f = sd_fs().open(out_path, "w");
+    JournalProgress jp{title};
+    const uint32_t t0 = millis();
+    ok = ok && out.f && journal::make(src, *t, out, journal_progress, &jp);
+    if (out.f) out.f.close();
+    f.close();
+    if (ok) {
+        snprintf(line, sizeof line, "Prepared the %s journal: %d journal entries, %d tavern tales (%lu s)", title, nj, nt,
+                 static_cast<unsigned long>((millis() - t0) / 1000));
+    } else {
+        sd_fs().remove(out_path);
+        snprintf(line, sizeof line, "The %s journal couldn't be processed (card full, or not enough memory).", title);
+    }
+    scan_say(line, true, nullptr);
+}
+
 void rescan()
 {
     scr = new (std::nothrow) ScanScreen;
@@ -480,6 +568,8 @@ void rescan()
         snprintf(line, sizeof line, ok ? "Prepared the %s icon" : "The %s icon couldn't be read", games::short_title(g.game));
         scan_say(line, true, nullptr);
     }
+    for (int i = 0; i < n_games; ++i)
+        if (game_dirs[i].journal[0]) prepare_journal(game_dirs[i]);
     if (scan_result == library::ScanResult::Ok) {
         scan_say(library::save_library(game_dirs, n_games) ? "Saved the library: the board won't scan again until you tap Rescan Card."
                                                            : "The library couldn't be saved on the card.",
@@ -1274,25 +1364,34 @@ bool tap_keyboard(const ui::Tap& t)
 }
 
 // ---- Journal ------------------------------------------------------------
-// An entry of the Adventurer's Journal (or a tavern tale), as a picture
-// from JOURNAL.BIN in the game's folder (made by the Journal Converter on
-// the flasher site from the player's own GOG journal). Pages through it with
-// Prev Page / Next Page; Back returns to the game.
+// An entry of the Adventurer's Journal (or a tavern tale): the pictures the
+// card scan made from the player's own journal PDF (_CYD/<folder>/
+// JOURNAL.DAT), scaled to the screen's width. Prev Page / Next Page; Back
+// to Game returns to the game.
+
+constexpr int kMaxJournalPieces = 8;
 
 struct JournalView {
     char     kind = 'J';
     int      number = 0;
-    int      top = 0;                     // first picture row on screen
-    bool     have = false;                // the file and entry were found
-    const char* why = "";
-    journal::Picture pic;
-    lgfx::rgb888_t pal[16];
-    lgfx::rgb888_t line[journal::kMaxWidth];
-    int      x0 = 0, y0 = 0;
+    int      top = 0;                     // first row on screen (scaled)
+    bool     have = false;
+    char     why[200] = {};
+    journal::Info info;
+    int      count = 0;
+    journal::PieceInfo piece[kMaxJournalPieces];
+    int      out_w[kMaxJournalPieces] = {}, out_h[kMaxJournalPieces] = {};
+    int      total_h = 0;
+    int      scale256 = 256;              // screen pixels per scan pixel x 256
+    lgfx::rgb888_t pal[256];
+    lgfx::rgb888_t line[480];
+    uint16_t sx0[480];                    // per screen column: scan column and weight
+    uint8_t  sxf[480];
+    uint8_t  row[2][1700];
+    int      row_y[2] = {-1, -1};
+    int      row_piece = -1;
 };
 JournalView* jv = nullptr;
-
-constexpr char kJournalFile[] = "JOURNAL.BIN";
 
 ui::Rect journal_area()
 {
@@ -1304,7 +1403,7 @@ int journal_step() { return journal_area().h - 24; }        // a page, keeping a
 bool journal_source(fs::File& f)
 {
     char path[160];
-    library::path_of(game_dirs[game_sel].data_dir, kJournalFile, path, sizeof path);
+    library::cache_path(game_dirs[game_sel], "JOURNAL.DAT", path, sizeof path);
     f = sd_fs().open(path, "r");
     return static_cast<bool>(f);
 }
@@ -1317,24 +1416,39 @@ void open_journal(char kind, int number)
     jv->number = number;
     jv->top = 0;
     jv->have = false;
-    jv->why = "The journal file isn't on the card yet. Make JOURNAL.BIN with the Journal Converter on the flasher "
-              "page and copy it into this game's folder, next to its .DAX files.";
+    jv->row_y[0] = jv->row_y[1] = -1;
+    jv->row_piece = -1;
+    const library::GameDir& g = game_dirs[game_sel];
+    const char* what = kind == 'T' ? "Tavern Tale" : "Journal Entry";
+    // Without the pictures: as the original game, the printed journal
+    snprintf(jv->why, sizeof jv->why, "Read %s %d in your Adventurer's Journal.%s", what, number,
+             !g.journal[0] ? ""
+                           : " (The journal PDF in this game's folder isn't prepared: tap Rescan Card in the library. "
+                             "If it still isn't, the scan log says why.)");
     fs::File f;
     if (journal_source(f)) {
         library::FileSource src(f);
-        journal::Info info;
-        if (!journal::read_info(src, info)) {
-            jv->why = "JOURNAL.BIN in this game's folder can't be read. Make it again with the Journal Converter.";
-        } else {
-            const int wi = journal::pick_width(info, ui::width() - 4);
-            if (journal::find(src, info, kind, number, wi, jv->pic)) {
-                jv->have = true;
-                for (int i = 0; i < 16; ++i) {
-                    const uint16_t c = jv->pic.palette[i];
-                    jv->pal[i] = lgfx::rgb888_t(((c >> 11) & 31) * 255 / 31, ((c >> 5) & 63) * 255 / 63, (c & 31) * 255 / 31);
+        int first = 0;
+        if (journal::read_info(src, jv->info) && journal::find(src, jv->info, kind, number, &first, &jv->count) &&
+            jv->count <= kMaxJournalPieces) {
+            bool ok = true;
+            int maxw = 0;
+            for (int i = 0; i < jv->count && ok; ++i) {
+                ok = journal::piece(src, jv->info, first + i, jv->piece[i]) && jv->piece[i].w <= 1700;
+                if (jv->piece[i].w > maxw) maxw = jv->piece[i].w;
+            }
+            if (ok && maxw > 0) {
+                const int room = ui::width() - 6;
+                jv->scale256 = room * 256 / maxw;
+                jv->total_h = 0;
+                for (int i = 0; i < jv->count; ++i) {
+                    jv->out_w[i] = jv->piece[i].w * jv->scale256 / 256;
+                    jv->out_h[i] = jv->piece[i].h * jv->scale256 / 256;
+                    jv->total_h += jv->out_h[i];
                 }
-            } else {
-                jv->why = "That entry isn't in this game's JOURNAL.BIN.";
+                for (int i = 0; i < 256; ++i)
+                    jv->pal[i] = lgfx::rgb888_t(jv->info.palette[i][0], jv->info.palette[i][1], jv->info.palette[i][2]);
+                jv->have = true;
             }
         }
         f.close();
@@ -1342,11 +1456,62 @@ void open_journal(char kind, int number)
     go(Screen::Journal);
 }
 
-void journal_row(int y, const uint8_t* row, int w, void* ctx)
+// Screen row y of piece i (scaled), sampled from the two scan rows round it
+void journal_draw_row(library::FileSource& src, int i, int y, int sy_screen)
 {
-    JournalView& v = *static_cast<JournalView*>(ctx);
-    for (int x = 0; x < w; ++x) v.line[x] = v.pal[row[x] & 15];
-    ui::gfx().pushImage(v.x0, v.y0 + y - v.top, w, 1, v.line);
+    JournalView& v = *jv;
+    const journal::PieceInfo& p = v.piece[i];
+    if (v.row_piece != i) {
+        // The columns this piece's screen pixels come from
+        for (int x = 0; x < v.out_w[i] && x < 480; ++x) {
+            int s = ((x * 2 + 1) * 256 * 128 / v.scale256 - 128);     // (x + 0.5) / f - 0.5, in 1/256
+            if (s < 0) s = 0;
+            int x0 = s >> 8;
+            if (x0 >= p.w - 1) { x0 = p.w - 1; s = x0 << 8; }
+            v.sx0[x] = static_cast<uint16_t>(x0);
+            v.sxf[x] = static_cast<uint8_t>(s & 255);
+        }
+        v.row_piece = i;
+        v.row_y[0] = v.row_y[1] = -1;
+    }
+    int s = ((y * 2 + 1) * 256 * 128 / v.scale256 - 128);
+    if (s < 0) s = 0;
+    int y0 = s >> 8;
+    if (y0 >= p.h - 1) { y0 = p.h - 1; s = y0 << 8; }
+    const int y1 = y0 + 1 < p.h ? y0 + 1 : y0;
+    const int fy = s & 255;
+    // The two scan rows (kept from the last screen row when they match)
+    const int need[2] = {y0, y1};
+    uint8_t* rows[2] = {nullptr, nullptr};
+    bool used[2] = {false, false};
+    for (int k = 0; k < 2; ++k)
+        for (int j = 0; j < 2 && !rows[k]; ++j)
+            if (v.row_y[j] == need[k]) {
+                rows[k] = v.row[j];
+                used[j] = true;
+            }
+    for (int k = 0; k < 2; ++k) {
+        if (rows[k]) continue;
+        const int j = used[0] ? 1 : 0;
+        src.read_at(p.offset + static_cast<uint32_t>(need[k]) * p.w, v.row[j], p.w);
+        v.row_y[j] = need[k];
+        used[j] = true;
+        rows[k] = v.row[j];
+    }
+    const int ox = (ui::width() - v.out_w[i]) / 2;
+    for (int x = 0; x < v.out_w[i] && x < 480; ++x) {
+        const int x0 = v.sx0[x], x1 = x0 + 1 < p.w ? x0 + 1 : x0, fx = v.sxf[x];
+        const lgfx::rgb888_t& a = v.pal[rows[0][x0]];
+        const lgfx::rgb888_t& b = v.pal[rows[0][x1]];
+        const lgfx::rgb888_t& c = v.pal[rows[1][x0]];
+        const lgfx::rgb888_t& d = v.pal[rows[1][x1]];
+        auto mix = [&](int pa, int pb, int pc, int pd) {
+            const int top = pa * (256 - fx) + pb * fx, bot = pc * (256 - fx) + pd * fx;
+            return static_cast<uint8_t>((top * (256 - fy) + bot * fy) >> 16);
+        };
+        v.line[x] = lgfx::rgb888_t(mix(a.r, b.r, c.r, d.r), mix(a.g, b.g, c.g, d.g), mix(a.b, b.b, c.b, d.b));
+    }
+    ui::gfx().pushImage(ox, sy_screen, v.out_w[i] < 480 ? v.out_w[i] : 480, 1, v.line);
 }
 
 void draw_journal()
@@ -1355,15 +1520,14 @@ void draw_journal()
     char title[48];
     const char* what = jv && jv->kind == 'T' ? "Tavern Tale" : "Journal Entry";
     const ui::Rect a = journal_area();
-    if (jv && jv->have && jv->pic.h > a.h) {
-        const int pages = (jv->pic.h - a.h + journal_step() - 1) / journal_step() + 1;
-        const int page = jv->top / journal_step() + 1;
-        snprintf(title, sizeof title, "%s %d  %d/%d", what, jv ? jv->number : 0, page, pages);
+    if (jv && jv->have && jv->total_h > a.h) {
+        const int pages = (jv->total_h - a.h + journal_step() - 1) / journal_step() + 1;
+        snprintf(title, sizeof title, "%s %d  %d/%d", what, jv->number, jv->top / journal_step() + 1, pages);
     } else {
         snprintf(title, sizeof title, "%s %d", what, jv ? jv->number : 0);
     }
     ui::header(title, true);
-    const bool more = jv && jv->have && jv->top + a.h < jv->pic.h;
+    const bool more = jv && jv->have && jv->top + a.h < jv->total_h;
     ui::key(ui::bottom_key(0, 3), "Prev Page", jv && jv->top > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
     ui::key(ui::bottom_key(1, 3), "Back to Game");
     ui::key(ui::bottom_key(2, 3), "Next Page", more ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
@@ -1372,17 +1536,24 @@ void draw_journal()
                   ui::Font::Normal, style::kText, true);
         return;
     }
-    // The page of the picture, on white like the journal's paper
+    // On white, like the journal's paper
     LGFX& g = ui::gfx();
     g.fillRect(0, a.y, a.w, a.h, TFT_WHITE);
     fs::File f;
     if (!journal_source(f)) return;
     library::FileSource src(f);
-    jv->x0 = (ui::width() - jv->pic.w) / 2;
-    jv->y0 = a.y;
-    const int rows = jv->pic.h - jv->top < a.h ? jv->pic.h - jv->top : a.h;
     g.startWrite();
-    journal::rows(src, jv->pic, jv->top, rows, journal_row, jv);
+    int y0 = 0;                           // where the piece starts (scaled)
+    for (int i = 0; i < jv->count; ++i) {
+        for (int y = 0; y < jv->out_h[i]; ++y) {
+            const int sy = y0 + y - jv->top;
+            if (sy < 0) continue;
+            if (sy >= a.h) break;
+            journal_draw_row(src, i, y, a.y + sy);
+        }
+        y0 += jv->out_h[i];
+        if (y0 - jv->top >= a.h) break;
+    }
     g.endWrite();
     f.close();
 }
@@ -1404,7 +1575,7 @@ void tap_journal(const ui::Tap& t)
     if (k == 0 && jv->top > 0) {
         jv->top = jv->top > journal_step() ? jv->top - journal_step() : 0;
         dirty = true;
-    } else if (k == 2 && jv->top + a.h < jv->pic.h) {
+    } else if (k == 2 && jv->top + a.h < jv->total_h) {
         jv->top += journal_step();
         dirty = true;
     }

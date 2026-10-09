@@ -84,8 +84,8 @@ The games aren't playable yet; this build shows what is inside their files.
    wilderness map, with a blinking square where the party is, and the areas
    you go into. There's no party yet, so anything that needs one
    (combat, treasure, checks) is skipped; when the game says "record it in
-   journal entry 31" the entry comes up on screen (make its file first with
-   the Journal Converter on the flasher page - see below); on 480x320 **Look** is also a
+   journal entry 31" the entry comes up on screen (from the journal PDF in
+   the game's folder - see below); on 480x320 **Look** is also a
    key beside the pad and the map shows beside the game screen.
 3. **Blocks**: each piece inside the file. **Gold keys are pictures** (size and
    frame count shown); navy keys are other data. Tap one.
@@ -123,11 +123,11 @@ MIT license.
 
 ## The Adventurer's Journal
 
-The games refer to numbered entries in the printed journal. The
-[Journal Converter](https://tomtombombadil.github.io/CYD-BYOG-PoolRadSeries/journal/)
-turns your own GOG journal PDF (the one in the game's folder) into
-`JOURNAL.BIN` in your browser - nothing is uploaded. Copy it into the
-game's folder on the card, next to its .DAX files. Curse of the Azure Bonds
-is supported so far. Neither the repository nor the firmware contains any
-journal text or pictures: the converter only knows where each entry sits on
-the PDF's pages.
+The games refer to numbered entries in the printed journal. Copy the
+journal PDF from your GOG game (e.g. `Adventurers Journal.pdf`) into the
+game's folder on the card. The card scan cuts every entry out of your PDF
+(Curse of the Azure Bonds: about 15 MB in `GOLDBOX/_CYD/CURSE/JOURNAL.DAT`,
+a few minutes, once) and the board shows an entry when the game mentions it.
+The firmware knows only where each entry sits on the pages of the GOG PDF -
+no journal text or pictures are in the firmware or this repository. A PDF it
+doesn't know is reported in the scan log (`GOLDBOX/_CYD/SCAN.TXT`).

@@ -53,7 +53,11 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   a PDF viewer to page through / zoom the book, for other editions or an
   unknown PDF. Copyright rule: nothing from the journal (text, pictures) is
   ever distributed - files made on the player's device from their copy are
-  fine (SPEC section 7).
+  fine (SPEC section 7). Built v0.12.0: `engine/pdf.*` (page pictures),
+  `engine/jpeg.*` + `third_party/tjpgd.*` (TJpgDec), `engine/journal.*`
+  (JOURNAL.DAT, mention finder), `journal_tables.cpp` from
+  `tools/journal/make_table.py` (run on the player's PDF in scratch space;
+  check every entry by eye; renders stay in scratch).
 - Card scan (Tom, 2026-10-09): scan ONCE; boot reads the scan log and
   loads the library from it. Rescan Card is the only rescan - never
   check the card for changes on its own. Everything the board makes from
@@ -78,7 +82,7 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   (`project_read` -> local file), unzip to the session's scratch space (e.g.
   /tmp/claude-0/games/<game>), check with `tools/dax_tool/dax_inspect`.
   project_read refuses files over ~20 MB, and gives only the TEXT of a PDF
-  (Curse's comes back empty) - the journal converter needs the PDF's page
+  (Curse's comes back empty) - making a journal table needs the PDF's page
   images, so journals must be uploaded inside zips to get their bytes.
 - Tom may attach his own game files to a session for testing. Keep them in
   the session's scratch space only (never under the repo; .gitignore blocks

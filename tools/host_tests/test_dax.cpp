@@ -18,6 +18,9 @@
 #include "engine/icon.h"
 #include "engine/inflate.h"
 #include "engine/journal.h"
+#include "engine/jpeg.h"
+#include "engine/pdf.h"
+#include "jpeg_vectors.h"
 #include "engine/png.h"
 #include "inflate_vectors.h"
 #include "engine/layout.h"
@@ -1500,84 +1503,148 @@ static void test_ecl_vm()
     CHECK(vm.run(vm.entry(0)) == ecl::Stop::Error);
 }
 
-// A JOURNAL.BIN like the converter writes: entries at two widths
-static Bytes journal_picture(int w, int h, int seed)
-{
-    Bytes data;
-    for (int y = 0; y < h; ++y) {
-        int x = 0;
-        while (x < w) {
-            const int c = (x / 16 + y + seed) & 15;
-            int run = 1 + ((x + y * 3 + seed) % 16);
-            if (run > 16 - x % 16) run = 16 - x % 16;
-            if (x + run > w) run = w - x;
-            data.push_back(static_cast<uint8_t>((run - 1) << 4 | c));
-            x += run;
-        }
-    }
+// A small PDF like the GOG journals: each page one JPEG (synthetic ones)
+struct MemOut : journal::Output {
     Bytes b;
-    put16(b, w); put16(b, h);
-    for (int i = 0; i < 16; ++i) put16(b, i * 0x1111);
-    put32(b, static_cast<uint32_t>(data.size()));
-    b.insert(b.end(), data.begin(), data.end());
-    return b;
-}
-static int journal_expect(int x, int y, int seed) { return (x / 16 + y + seed) & 15; }
+    bool write_at(uint32_t pos, const uint8_t* d, size_t n) override
+    {
+        if (b.size() < pos + n) b.resize(pos + n);
+        memcpy(b.data() + pos, d, n);
+        return true;
+    }
+};
 
-struct RowCheck { int seed, w, first, seen; bool ok; };
-static void row_check(int y, const uint8_t* row, int w, void* ctx)
+static Bytes make_pdf()
 {
-    RowCheck& r = *static_cast<RowCheck*>(ctx);
-    if (w != r.w || y != r.first + r.seen) r.ok = false;
-    for (int x = 0; x < w; ++x)
-        if (row[x] != journal_expect(x, y, r.seed)) r.ok = false;
-    ++r.seen;
+    std::string s = "%PDF-1.4\n%\xe2\xe3\xcf\xd3\n";
+    std::vector<size_t> off(10, 0);
+    auto obj = [&](int n, const std::string& body) {
+        off[n] = s.size();
+        s += std::to_string(n) + " 0 obj\n" + body + "\nendobj\n";
+    };
+    auto image = [&](int n, int w, int h, const uint8_t* data, size_t len, int len_obj) {
+        off[n] = s.size();
+        s += std::to_string(n) + " 0 obj\n<</Type/XObject/Subtype/Image/Width " + std::to_string(w) + "/Height " +
+             std::to_string(h) + "/BitsPerComponent 8/Filter/DCTDecode/ColorSpace/DeviceRGB/Length " +
+             std::to_string(len_obj) + " 0 R>>stream\r\n";
+        s.append(reinterpret_cast<const char*>(data), len);
+        s += "\r\nendstream\nendobj\n";
+        off[len_obj] = s.size();
+        s += std::to_string(len_obj) + " 0 obj\n" + std::to_string(len) + "\nendobj\n";
+    };
+    obj(1, "<</Type/Catalog/Pages 2 0 R>>");
+    obj(2, "<</Type/Pages/Kids[3 0 R 4 0 R]/Count 2/Resources<</XObject<</Im9 7 0 R>>>>>>");
+    obj(3, "<</Type/Page/Parent 2 0 R/MediaBox[0 0 31 23]/Resources<</XObject<</Im1 5 0 R>>/ProcSet[/PDF/ImageC]>>>>");
+    obj(4, "<</Type/Page/Parent 2 0 R/MediaBox[0 0 20 16]>>");       // inherits its /Resources
+    image(5, kJpeg0W, kJpeg0H, kJpeg0, sizeof kJpeg0, 6);
+    image(7, kJpeg1W, kJpeg1H, kJpeg1, sizeof kJpeg1, 8);
+    const size_t xref = s.size();
+    s += "xref\n0 9\n0000000000 65535 f \n";
+    for (int n = 1; n <= 8; ++n) {
+        char e[24];
+        snprintf(e, sizeof e, "%010zu 00000 n \n", off[n]);
+        s += e;
+    }
+    s += "trailer\n<</Size 9/Root 1 0 R/ID[<0A1B2C3D4E5F60718293A4B5C6D7E8F9><00112233445566778899AABBCCDDEEFF>]>>\n";
+    s += "startxref\n" + std::to_string(xref) + "\n%%EOF\n";
+    return Bytes(s.begin(), s.end());
 }
 
 static void test_journal()
 {
-    // Entries J1, T12, J31 at widths 310 and 470
-    const char kinds[3] = {'J', 'T', 'J'};
-    const int nums[3] = {1, 12, 31};
-    const int widths[2] = {310, 470};
-    Bytes f = {'G', 'B', 'J', '1', 1, 2};
-    put16(f, 3);
-    for (int w : widths) put16(f, w);
-    const size_t index_at = f.size();
-    f.resize(f.size() + 3 * (4 + 8));
-    for (int e = 0; e < 3; ++e) {
-        uint8_t* r = f.data() + index_at + e * 12;
-        r[0] = static_cast<uint8_t>(kinds[e]);
-        r[1] = 0;
-        r[2] = static_cast<uint8_t>(nums[e]);
-        r[3] = 0;
-        for (int wi = 0; wi < 2; ++wi) {
-            const uint32_t at = static_cast<uint32_t>(f.size());
-            Bytes pic = journal_picture(widths[wi], 20 + e, e * 5 + wi);
-            f.insert(f.end(), pic.begin(), pic.end());
-            r = f.data() + index_at + e * 12;
-            for (int i = 0; i < 4; ++i) r[4 + 4 * wi + i] = static_cast<uint8_t>(at >> (8 * i));
-        }
+    // JPEG: decodes close to what PIL makes of it, and want() skips MCUs
+    {
+        dax::MemorySource src(kJpeg0, sizeof kJpeg0);
+        static uint8_t pool[jpeg::kPoolSize];
+        jpeg::Info info;
+        CHECK(jpeg::probe(src, 0, sizeof kJpeg0, pool, info) && info.width == kJpeg0W && info.height == kJpeg0H &&
+              info.mcu_w == 16 && info.mcu_h == 16);
+        struct Got { std::vector<uint8_t> rgb; int blocks = 0; } got;
+        got.rgb.assign(kJpeg0W * kJpeg0H * 3, 0);
+        auto block = [](int x, int y, int w, int h, const uint8_t* rgb, void* ctx) {
+            Got& g = *static_cast<Got*>(ctx);
+            ++g.blocks;
+            for (int r = 0; r < h; ++r)
+                memcpy(&g.rgb[((y + r) * kJpeg0W + x) * 3], rgb + r * w * 3, w * 3);
+            return true;
+        };
+        CHECK(jpeg::decode(src, 0, sizeof kJpeg0, pool, nullptr, block, &got));
+        long diff = 0;
+        for (size_t i = 0; i < got.rgb.size(); ++i) diff += std::abs(got.rgb[i] - kJpeg0Rgb[i]);
+        CHECK(got.blocks == 12 && diff / static_cast<long>(got.rgb.size()) < 4);
+        // Only the top-left MCU, then stop
+        Got one;
+        one.rgb.assign(kJpeg0W * kJpeg0H * 3, 0);
+        auto want = [](int x, int y, int, int, void*) { return y > 0 ? -1 : (x == 0 ? 1 : 0); };
+        CHECK(jpeg::decode(src, 0, sizeof kJpeg0, pool, want, block, &one) && one.blocks == 1);
     }
-    dax::MemorySource src(f.data(), f.size());
+
+    // PDF: the pages in order, their pictures (the second inherits /Resources)
+    Bytes pdf_bytes = make_pdf();
+    dax::MemorySource psrc(pdf_bytes.data(), pdf_bytes.size());
+    static pdf::Doc doc;
+    CHECK(pdf::open(psrc, doc) && doc.root == 1 && strcmp(doc.id, "0a1b2c3d4e5f60718293a4b5c6d7e8f9") == 0);
+    int pages[8];
+    CHECK(pdf::pages(psrc, doc, pages, 8) == 2 && pages[0] == 3 && pages[1] == 4);
+    pdf::Image im;
+    CHECK(pdf::page_image(psrc, doc, 3, im) && im.jpeg && im.width == kJpeg0W && im.data_len == sizeof kJpeg0 &&
+          memcmp(pdf_bytes.data() + im.data_at, kJpeg0, sizeof kJpeg0) == 0);
+    CHECK(pdf::page_image(psrc, doc, 4, im) && im.width == kJpeg1W && im.data_len == sizeof kJpeg1);
+    Bytes notpdf = {'%', 'P', 'S', '!'};
+    dax::MemorySource nsrc(notpdf.data(), notpdf.size());
+    CHECK(!pdf::open(nsrc, doc));
+    CHECK(pdf::open(psrc, doc));
+
+    // JOURNAL.DAT from a table: J1 = two pieces on page 1, T7 = one on page 2
+    static const journal::Piece kPieces[] = {{1, 2, 3, 40, 20}, {1, 30, 30, 20, 18}, {2, 0, 5, 40, 27}};
+    static const journal::EntryDef kEntries[] = {{'J', 1, 0, 2}, {'T', 7, 2, 1}};
+    static const journal::Table kTable = {"test", static_cast<uint32_t>(pdf_bytes.size()),
+                                          "0a1b2c3d4e5f60718293a4b5c6d7e8f9", kEntries, 2, kPieces, 3};
+    MemOut out;
+    int calls = 0;
+    auto prog = [](int done, int total, void* ctx) { ++*static_cast<int*>(ctx); (void)done; (void)total; };
+    CHECK(journal::make(psrc, kTable, out, prog, &calls) && calls == 2);
+    dax::MemorySource jsrc(out.b.data(), out.b.size());
     journal::Info info;
-    CHECK(journal::read_info(src, info) && info.widths == 2 && info.entries == 3 && info.width[1] == 470);
-    CHECK(journal::pick_width(info, 320) == 0 && journal::pick_width(info, 480) == 1 && journal::pick_width(info, 200) == 0);
-    journal::Picture p;
-    CHECK(!journal::find(src, info, 'T', 31, 0, p));
-    CHECK(journal::find(src, info, 'J', 31, 1, p) && p.w == 470 && p.h == 22 && p.palette[3] == 0x3333);
-    RowCheck rc{2 * 5 + 1, 470, 5, 0, true};
-    CHECK(journal::rows(src, p, 5, 10, row_check, &rc) && rc.ok && rc.seen == 10);
-    RowCheck all{2 * 5 + 1, 470, 0, 0, true};
-    CHECK(journal::rows(src, p, 0, 1000, row_check, &all) && all.ok && all.seen == 22);
-    // Data that ends early is bad
-    journal::Picture cut = p;
-    cut.data_len = 10;
-    RowCheck rc2{2 * 5 + 1, 470, 0, 0, true};
-    CHECK(!journal::rows(src, cut, 0, 22, row_check, &rc2));
-    Bytes notj = {'G', 'B', 'J', '2', 1, 1, 0, 0, 0, 0};
-    dax::MemorySource nsrc(notj.data(), notj.size());
-    CHECK(!journal::read_info(nsrc, info));
+    CHECK(journal::read_info(jsrc, info) && info.entries == 2 && info.pieces == 3 &&
+          strcmp(info.pdf_id, "0a1b2c3d4e5f60718293a4b5c6d7e8f9") == 0);
+    int first = -1, count = 0;
+    CHECK(!journal::find(jsrc, info, 'J', 7, &first, &count));
+    CHECK(journal::find(jsrc, info, 'T', 7, &first, &count) && first == 2 && count == 1);
+    CHECK(journal::find(jsrc, info, 'J', 1, &first, &count) && first == 0 && count == 2);
+    // Each piece holds the page's pixels there, as index_of() stores them
+    const struct { const uint8_t* rgb; int w; } page_rgb[2] = {{kJpeg0Rgb, kJpeg0W}, {kJpeg1Rgb, kJpeg1W}};
+    for (int i = 0; i < 3; ++i) {
+        journal::PieceInfo pi;
+        CHECK(journal::piece(jsrc, info, i, pi) && pi.w == kPieces[i].w && pi.h == kPieces[i].h);
+        int close = 0, total = 0;
+        for (int y = 0; y < pi.h; ++y)
+            for (int x = 0; x < pi.w; ++x) {
+                const uint8_t* p = page_rgb[kPieces[i].page - 1].rgb +
+                                   ((kPieces[i].y + y) * page_rgb[kPieces[i].page - 1].w + kPieces[i].x + x) * 3;
+                uint8_t r, g, b;
+                journal::palette_rgb(out.b[pi.offset + y * pi.w + x], &r, &g, &b);
+                const uint8_t want = journal::index_of(p[0], p[1], p[2]);
+                uint8_t wr, wg, wb;
+                journal::palette_rgb(want, &wr, &wg, &wb);
+                close += std::abs(r - wr) + std::abs(g - wg) + std::abs(b - wb) <= 60;
+                ++total;
+            }
+        CHECK(close * 100 >= total * 97);
+    }
+    // A table for another PDF: not found
+    CHECK(journal::find_table(123, "00") == nullptr);
+    // Half made (no "GBJ2"): not read
+    Bytes half = out.b;
+    half[0] = 0;
+    dax::MemorySource hsrc(half.data(), half.size());
+    CHECK(!journal::read_info(hsrc, info));
+    // Palette: paper is white, ink is kept
+    uint8_t r, g, b;
+    journal::palette_rgb(journal::index_of(240, 236, 220), &r, &g, &b);
+    CHECK(r == 255 && g == 255 && b == 255);
+    journal::palette_rgb(journal::index_of(30, 110, 180), &r, &g, &b);
+    CHECK(b > r + 60);
 
     // Mentions in the games' text
     int n = 0;

@@ -15,10 +15,16 @@
   `sdcard.*`, `touch_cal.*`, `panel_prefs.*`, `tools/version.py`,
   `tools/make_site.py`, `web/index.html`, `.github/workflows/build.yml` (adapted).
 
+## Included third-party code
+- **TJpgDec R0.03** (Tiny JPEG Decompressor), (C) ChaN 2021,
+  http://elm-chan.org/fsw/tjpgd/ - `src/engine/third_party/tjpgd.*`, from
+  Bodmer's TJpg_Decoder copy with his byte-swap change removed. License:
+  "No restriction on use. You can use, modify and redistribute it for
+  personal, non-profit or commercial products UNDER YOUR RESPONSIBILITY.
+  Redistributions of source code must retain the above copyright notice."
+  Our changes are marked "CYD BYOG" (an MCU skip callback, C++ casts).
+
 ## Loaded by the web pages (not copied into the repo)
-- **pdf.js** 3.11.174 (Mozilla, Apache License 2.0), https://mozilla.github.io/pdf.js/ -
-  the Journal Converter (`web/journal/`) loads it from cdnjs to read the
-  player's own journal PDF in their browser.
 - **ESP Web Tools** (Apache License 2.0) - the installer page loads it from unpkg.
 
 ## Used for reference only (nothing copied)
@@ -28,5 +34,6 @@
 
 ## Game data
 None. The player supplies their own original game files on the SD card.
-The journal tables (`web/journal/tables.json`) hold only page numbers and
-positions inside the player's own journal PDF - no text or pictures.
+The journal tables (`src/engine/journal_tables.cpp`, `tools/journal/tables.json`)
+hold only page numbers and positions inside the player's own journal PDF -
+no text or pictures.
