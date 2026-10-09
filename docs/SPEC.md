@@ -245,8 +245,16 @@ How it works (v0.12.0, Curse):
   screen's width, on white, header "Journal Entry 31  1/2", Prev Page /
   Back to Game / Next Page. Without JOURNAL.DAT: "Read Journal Entry 31 in
   your Adventurer's Journal." (as the original).
-- Next: a Journal page with the entries received so far; zoom for maps;
-  the PDF viewer fallback (page through the book, zoom) for other editions.
+- v0.13.0: **Zoom** on the entry screen (Prev Page | Zoom | Back to Game |
+  Next Page) shows the scan's own size (the maps); wider than the screen,
+  a tap on the left / right third moves the view (no dragging). **The book
+  view** (`ui/pdfview.*`), the fallback for an unknown edition or an
+  unprepared journal: "Open Journal PDF" on the entry screen pages through
+  the PDF - whole pages (decoded at 1/2-1/8 with TJpgDec's scaling, fitted),
+  Zoom or a tap on a spot = the scan's size there, taps on the edges move
+  it; only the MCUs in view are decoded, stopping below the view.
+- Next: a list of the entries received so far (where its key goes: asked
+  Tom 2026-10-09).
 
 ## 8. Copy protection (Tom, 2026-10-06)
 

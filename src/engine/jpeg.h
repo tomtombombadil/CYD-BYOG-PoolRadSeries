@@ -25,9 +25,11 @@ using WantFn = int (*)(int x, int y, int w, int h, void* ctx);
 using BlockFn = bool (*)(int x, int y, int w, int h, const uint8_t* rgb, void* ctx);
 
 // The JPEG at [at, at + len) in src. pool: kPoolSize bytes. want may be
-// nullptr (everything). False on bad data (a stop asked for is not one).
+// nullptr (everything); it gets full-size coordinates. scale 0-3 = 1/1,
+// 1/2, 1/4, 1/8: block() then gets the smaller picture's coordinates.
+// False on bad data (a stop asked for is not one).
 bool decode(dax::ByteSource& src, uint32_t at, uint32_t len, void* pool, WantFn want, BlockFn block, void* ctx,
-            Info* info = nullptr);
+            Info* info = nullptr, int scale = 0);
 
 // Only the size and MCU size.
 bool probe(dax::ByteSource& src, uint32_t at, uint32_t len, void* pool, Info& info);

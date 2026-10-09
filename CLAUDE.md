@@ -55,7 +55,8 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   ever distributed - files made on the player's device from their copy are
   fine (SPEC section 7). Built v0.12.0: `engine/pdf.*` (page pictures),
   `engine/jpeg.*` + `third_party/tjpgd.*` (TJpgDec), `engine/journal.*`
-  (JOURNAL.DAT, mention finder), `journal_tables.cpp` from
+  (JOURNAL.DAT, mention finder), `ui/pdfview.*` (the book view fallback,
+  v0.13.0), `journal_tables.cpp` from
   `tools/journal/make_table.py` (run on the player's PDF in scratch space;
   check every entry by eye; renders stay in scratch).
 - Card scan (Tom, 2026-10-09): scan ONCE; boot reads the scan log and

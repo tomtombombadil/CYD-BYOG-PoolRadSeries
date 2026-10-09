@@ -69,12 +69,12 @@ bool prepare(tjpgd::JDEC& jd, Ctx& c, void* pool, Info* info)
 } // namespace
 
 bool decode(dax::ByteSource& src, uint32_t at, uint32_t len, void* pool, WantFn want, BlockFn block, void* ctx,
-            Info* info)
+            Info* info, int scale)
 {
     Ctx c{&src, at, at + len, want, block, ctx, false};
     tjpgd::JDEC jd;
-    if (!prepare(jd, c, pool, info)) return false;
-    const tjpgd::JRESULT r = tjpgd::jd_decomp(&jd, out_fn, 0);
+    if (scale < 0 || scale > 3 || !prepare(jd, c, pool, info)) return false;
+    const tjpgd::JRESULT r = tjpgd::jd_decomp(&jd, out_fn, static_cast<uint8_t>(scale));
     return r == tjpgd::JDR_OK || (r == tjpgd::JDR_INTR && c.stopped);
 }
 

@@ -1,4 +1,4 @@
-/* CYD BYOG: RGB888 output, no scaling, fastest decode (9.6 KB workspace). */
+/* CYD BYOG: RGB888 output, 1/2 - 1/8 scaling (the PDF viewer's overview), fastest decode (9.6 KB workspace). */
 /*----------------------------------------------*/
 /* TJpgDec System Configurations R0.03          */
 /*----------------------------------------------*/
@@ -13,7 +13,7 @@
 /  2: Grayscale (8-bit/pix)
 */
 
-#define	JD_USE_SCALE	0
+#define	JD_USE_SCALE	1
 /* Switches output descaling feature.
 /  0: Disable
 /  1: Enable
