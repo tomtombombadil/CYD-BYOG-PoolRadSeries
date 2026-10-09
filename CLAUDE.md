@@ -201,8 +201,12 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
 - No "are you sure" confirmations. Title Case for keys and headings; status
   and help lines in sentence case.
 - Long-press only with Tom's OK, never the only way to do something.
-- Dragging (Tom, 2026-10-09) only where something scrolls or slides (the
-  logs, the brightness slider) and never the only way: taps do it too.
+- Dragging (Tom, 2026-10-09) only where something scrolls, slides or pans
+  (the logs, the brightness slider, the journal entry and book pictures -
+  those move when the stylus lifts) and never the only way: taps do it too.
+- Picture viewers' keys (Tom, 2026-10-09): Back | Zoom | Prev Page | Next
+  Page; Zoom cycles levels (whole / width / full size), the key names the
+  level shown.
 - Errors stay on screen until tapped (Tom, 2026-10-09) - never timed. The
   games' own timed messages ("Not enough Money.") keep the games' timing.
 - Sounds: go easy - no sound on plain key presses.

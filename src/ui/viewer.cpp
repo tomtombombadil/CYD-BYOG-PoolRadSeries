@@ -117,8 +117,9 @@ void go(Screen s)
         delete A;
         A = nullptr;
     }
-    // Drags: the Settings slider; the Logs screen sets its own
-    if (s != Screen::Logs) ui::allow_drag(s == Screen::Settings);
+    // Drags: the Settings slider, the journal entry and book pictures;
+    // the Logs screen sets its own
+    if (s != Screen::Logs) ui::allow_drag(s == Screen::Settings || s == Screen::Journal || s == Screen::Pdf);
     screen = s;
     dirty = true;
 }
@@ -1645,7 +1646,7 @@ struct JournalView {
     int      number = 0;
     int      top = 0;                     // first row on screen (scaled)
     int      left = 0;                    // zoomed in: first scan column shown
-    bool     zoom = false;                // the scan's own size (maps)
+    int      fit = 1;                     // kFitWhole / kFitWidth / kFitFull (the Zoom key cycles them)
     bool     have = false;
     bool     has_pdf = false;             // the game's folder has a journal PDF (the book view)
     char     why[220] = {};
@@ -1667,10 +1668,38 @@ struct JournalView {
 };
 JournalView* jv = nullptr;
 
+// Zoom levels (Tom, 2026-10-09: the Zoom key cycles them): the whole
+// entry / page, its width across the screen, the scan's own pixels
+enum { kFitWhole = 0, kFitWidth = 1, kFitFull = 2, kFits = 3 };
+const char* const kFitKey[2][kFits] = {{"Zoom\nWhole", "Zoom\nWidth", "Zoom\nFull Size"},
+                                       {"Zoom\nWhole Page", "Zoom\nPage Width", "Zoom\nFull Size"}};
+
+// Dragging the picture (Tom, 2026-10-09): it moves when the stylus lifts
+// (redrawing a scan as it moves would be too slow); taps on its edges too
+int  pan_x = 0, pan_y = 0;
+bool panning = false;
+bool pan_done(int* dx, int* dy)
+{
+    int x, y;
+    const bool on = ui::drag(x, y);
+    pan_x += x;
+    pan_y += y;
+    if (on) {
+        panning = true;
+        return false;
+    }
+    const bool done = panning;
+    panning = false;
+    *dx = pan_x;
+    *dy = pan_y;
+    pan_x = pan_y = 0;
+    return done;
+}
+
 // The book view (the journal PDF's pages)
 int  pdf_page = 1;
-bool pdf_zoom = false;
-int  pdf_vx = 0, pdf_vy = 0;
+int  pdf_level = kFitWhole;
+int  pdf_vx = 0, pdf_vy = 0;           // the view's top left, in shown pixels
 ui::Rect pdf_fit;
 
 ui::Rect journal_area()
@@ -1693,7 +1722,18 @@ void journal_layout()
 {
     JournalView& v = *jv;
     const int room = ui::width() - 6;
-    v.scale256 = v.zoom ? 256 : room * 256 / v.maxw;
+    int full_h = 0;
+    for (int i = 0; i < v.count; ++i) full_h += v.piece[i].h;
+    if (v.fit == kFitFull) {
+        v.scale256 = 256;
+    } else {
+        v.scale256 = room * 256 / v.maxw;
+        if (v.fit == kFitWhole && full_h > 0) {
+            const int fh = journal_area().h * 256 / full_h;
+            if (fh < v.scale256) v.scale256 = fh;
+        }
+        if (v.scale256 < 1) v.scale256 = 1;
+    }
     v.shown_w = v.maxw * v.scale256 / 256;
     if (v.shown_w > ui::width()) v.shown_w = ui::width();
     if (v.shown_w > 480) v.shown_w = 480;
@@ -1702,7 +1742,10 @@ void journal_layout()
         v.out_h[i] = v.piece[i].h * v.scale256 / 256;
         v.total_h += v.out_h[i];
     }
-    const int max_left = v.zoom && v.maxw > v.shown_w ? v.maxw - v.shown_w : 0;
+    const int max_left = v.fit == kFitFull && v.maxw > v.shown_w ? v.maxw - v.shown_w : 0;
+    const int max_top = v.total_h > journal_area().h ? v.total_h - journal_area().h : 0;
+    if (v.top > max_top) v.top = max_top;
+    if (v.top < 0) v.top = 0;
     if (v.left > max_left) v.left = max_left;
     if (v.left < 0) v.left = 0;
     v.row_piece = -1;
@@ -1715,7 +1758,7 @@ void open_journal(char kind, int number)
     jv->kind = kind;
     jv->number = number;
     jv->top = jv->left = 0;
-    jv->zoom = false;
+    jv->fit = kFitWidth;
     jv->have = false;
     jv->row_y[0] = jv->row_y[1] = -1;
     jv->row_piece = -1;
@@ -1824,8 +1867,8 @@ void journal_draw_row(library::FileSource& src, int i, int y, int sy_screen)
     ui::gfx().pushImage((ui::width() - v.shown_w) / 2, sy_screen, v.shown_w, 1, v.line);
 }
 
-// Keys: with the entry, Prev Page | Zoom | Back to Game | Next Page;
-// without it, Open Journal PDF (when there is one) | Back to Game
+// Keys (Tom, 2026-10-09): with the entry, Back | Zoom | Prev Page | Next
+// Page; without it, Back | Open Journal PDF (when there is one)
 int journal_keys() { return jv && jv->have ? 4 : (jv && jv->has_pdf ? 2 : 1); }
 
 void draw_journal()
@@ -1844,13 +1887,13 @@ void draw_journal()
     const int nk = journal_keys();
     if (nk == 4) {
         const bool more = jv->top + a.h < jv->total_h;
-        ui::key(ui::bottom_key(0, 4), "Prev Page", jv->top > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
-        ui::key(ui::bottom_key(1, 4), "Zoom", jv->zoom ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
-        ui::key(ui::bottom_key(2, 4), back_label());
+        ui::key(ui::bottom_key(0, 4), back_label());
+        ui::key(ui::bottom_key(1, 4), kFitKey[0][jv->fit], jv->fit != kFitWidth ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+        ui::key(ui::bottom_key(2, 4), "Prev Page", jv->top > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
         ui::key(ui::bottom_key(3, 4), "Next Page", more ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
     } else {
-        if (nk == 2) ui::key(ui::bottom_key(0, 2), "Open Journal\nPDF");
-        ui::key(ui::bottom_key(nk - 1, nk), from_menu ? "Back" : "Back to Game");
+        ui::key(ui::bottom_key(0, nk), from_menu ? "Back" : "Back to Game");
+        if (nk == 2) ui::key(ui::bottom_key(1, 2), "Open Journal\nPDF");
     }
     if (!jv || !jv->have) {
         wrap_text(ui::gap() * 3, a.y + ui::gap() * 2, ui::width() - ui::gap() * 6, jv ? jv->why : "",
@@ -1905,7 +1948,8 @@ bool open_book()
         !job.ok)
         return false;
     pdf_page = 1;
-    pdf_zoom = false;
+    pdf_level = kFitWhole;
+    pdf_vx = pdf_vy = 0;
     go(Screen::Pdf);
     return true;
 }
@@ -1915,8 +1959,8 @@ void tap_journal(const ui::Tap& t)
     if (ui::back_rect().contains(t.x, t.y)) { leave_journal(); return; }
     const int nk = journal_keys();
     const int k = bottom_hit(t, nk);
-    if (k == nk - 1 - (nk == 4 ? 1 : 0)) { leave_journal(); return; }     // Back to Game
-    if (nk == 2 && k == 0) {
+    if (k == 0) { leave_journal(); return; }                  // Back
+    if (nk == 2 && k == 1) {
         if (!open_book()) {
             strlcpy(jv->why, "The journal PDF couldn't be read as a book of scanned pages.", sizeof jv->why);
             dirty = true;
@@ -1925,25 +1969,25 @@ void tap_journal(const ui::Tap& t)
     }
     if (!jv || !jv->have) return;
     const ui::Rect a = journal_area();
-    if (k == 0 && jv->top > 0) {
+    if (k == 2 && jv->top > 0) {
         jv->top = jv->top > journal_step() ? jv->top - journal_step() : 0;
         dirty = true;
     } else if (k == 3 && jv->top + a.h < jv->total_h) {
         jv->top += journal_step();
         dirty = true;
     } else if (k == 1) {
-        // Zoom: the scan's own size, where the maps are readable; keep the
-        // same part of the entry in view
-        const int old = jv->scale256;
-        jv->zoom = !jv->zoom;
+        // Zoom: the next level (width -> full size -> whole -> width), the
+        // same part of the entry staying in view
+        const int64_t mid = jv->total_h > 0 ? (static_cast<int64_t>(jv->top) + a.h / 2) * 65536 / jv->total_h : 0;
+        jv->fit = (jv->fit + 1) % kFits;
         journal_layout();
-        jv->top = jv->top * jv->scale256 / old;
-        jv->left = jv->zoom ? (jv->maxw - jv->shown_w) / 2 : 0;
+        jv->top = static_cast<int>(mid * jv->total_h / 65536) - a.h / 2;
+        jv->left = jv->fit == kFitFull ? (jv->maxw - jv->shown_w) / 2 : 0;
         journal_layout();
         dirty = true;
-    } else if (k < 0 && jv->zoom && a.contains(t.x, t.y) && jv->maxw > jv->shown_w) {
-        // Zoomed in on something wider than the screen: tap the left or
-        // right edge to move that way (no dragging)
+    } else if (k < 0 && jv->fit == kFitFull && a.contains(t.x, t.y) && jv->maxw > jv->shown_w) {
+        // At full size on something wider than the screen: tap the left or
+        // right edge to move that way (or drag)
         const int step = jv->shown_w * 2 / 3;
         if (t.x < a.w / 3) jv->left -= step;
         else if (t.x > a.w * 2 / 3) jv->left += step;
@@ -1952,10 +1996,26 @@ void tap_journal(const ui::Tap& t)
     }
 }
 
+// A drag on the entry moves it (when the stylus lifts)
+void tick_journal()
+{
+    int dx, dy;
+    if (!pan_done(&dx, &dy) || !jv || !jv->have) return;
+    jv->top -= dy;
+    jv->left -= dx * 256 / (jv->scale256 > 0 ? jv->scale256 : 256);
+    journal_layout();
+    dirty = true;
+}
+
 // ---- The journal PDF as a book ------------------------------------------
-// Whole pages; Zoom shows the scan's own size, moved by tapping the edges.
+// Whole pages; Zoom cycles whole page -> page width -> full size (the
+// scan's pixels); drag the page, or tap its edges, to move round it.
 
 ui::Rect pdf_area() { return journal_area(); }
+pdfview::Fit pdf_fit_of(int level)
+{
+    return level == kFitFull ? pdfview::Fit::Full : level == kFitWidth ? pdfview::Fit::Width : pdfview::Fit::Page;
+}
 
 void draw_pdf()
 {
@@ -1964,33 +2024,52 @@ void draw_pdf()
     snprintf(title, sizeof title, "Journal PDF  Page %d of %d", pdf_page, pdfview::pages());
     if (from_menu) draw_tabs(kTabPdf);
     else ui::header(title, true);
-    ui::key(ui::bottom_key(0, 4), "Prev Page", pdf_page > 1 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
-    ui::key(ui::bottom_key(1, 4), "Zoom", pdf_zoom ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
-    ui::key(ui::bottom_key(2, 4), from_menu ? "Back to\nGame" : back_label());
+    // Keys (Tom, 2026-10-09): Back | Zoom | Prev Page | Next Page
+    ui::key(ui::bottom_key(0, 4), from_menu ? "Back to\nGame" : back_label());
+    ui::key(ui::bottom_key(1, 4), kFitKey[1][pdf_level], pdf_level != kFitWhole ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+    ui::key(ui::bottom_key(2, 4), "Prev Page", pdf_page > 1 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
     ui::key(ui::bottom_key(3, 4), "Next Page", pdf_page < pdfview::pages() ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
     const ui::Rect a = pdf_area();
     ui::text(ui::gap() * 3, a.y + ui::gap() * 2, "Reading the page...", style::kTextMuted, ui::Font::Small);
     // JPEG decoding on a stack of its own (deep)
     struct Job {
-        ui::Rect a;
-        bool     ok;
-    } job{a, false};
-    const bool ran = run_on_big_stack(
+        ui::Rect        a;
+        pdfview::Result r;
+    } job{a, pdfview::Result::NoMemory};
+    run_on_big_stack(
         [](void* p) {
             auto* j = static_cast<Job*>(p);
-            j->ok = pdfview::draw(pdf_page, j->a, pdf_zoom, pdf_vx, pdf_vy, &pdf_fit);
+            j->r = pdfview::draw(pdf_page, j->a, pdf_fit_of(pdf_level), &pdf_vx, &pdf_vy, &pdf_fit);
         },
         &job);
-    const bool ok = ran && job.ok;
     LGFX& g = ui::gfx();
-    if (!ok) {
+    if (job.r != pdfview::Result::Ok) {
         g.fillRect(0, a.y, a.w, a.h, style::kBackground);
-        ui::text(ui::gap() * 3, a.y + ui::gap() * 2, "This page has no scanned picture.", style::kText);
-    } else if (!pdf_zoom) {
+        char why[160];
+        if (job.r == pdfview::Result::NoPicture)
+            snprintf(why, sizeof why, "This page has no scanned picture.");
+        else if (job.r == pdfview::Result::BadData)
+            snprintf(why, sizeof why, "This page's picture couldn't be read.");
+        else
+            snprintf(why, sizeof why, "Not enough memory to show this page (free %u KB, largest block %u KB).",
+                     (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
+                     (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
+        wrap_text(ui::gap() * 3, a.y + ui::gap() * 2, a.w - ui::gap() * 6, why, ui::Font::Normal, style::kText, true);
+    } else {
         // Clear round the page (the "Reading" line)
         g.fillRect(a.x, a.y, a.w, pdf_fit.y - a.y, style::kBackground);
         g.fillRect(a.x, pdf_fit.y, pdf_fit.x - a.x, pdf_fit.h, style::kBackground);
     }
+}
+
+// A drag on the page moves it (when the stylus lifts)
+void tick_pdf()
+{
+    int dx, dy;
+    if (!pan_done(&dx, &dy)) return;
+    pdf_vx -= dx;
+    pdf_vy -= dy;
+    dirty = true;                    // pdfview::draw keeps the view on the page
 }
 
 void tap_pdf(const ui::Tap& t)
@@ -2004,7 +2083,7 @@ void tap_pdf(const ui::Tap& t)
             go(Screen::GameMenu);
             return;
         }
-        if (bottom_hit(t, 4) == 2) {
+        if (bottom_hit(t, 4) == 0) {
             pdfview::close();
             leave_menu();
             return;
@@ -2016,30 +2095,36 @@ void tap_pdf(const ui::Tap& t)
     }
     const ui::Rect a = pdf_area();
     const int k = bottom_hit(t, 4);
-    int pw = 0, ph = 0;
-    pdfview::page_size(pdf_page, &pw, &ph);
-    if (k == 0 && pdf_page > 1) {
-        --pdf_page;
-        pdf_zoom = false;
-    } else if (k == 3 && pdf_page < pdfview::pages()) {
-        ++pdf_page;
-        pdf_zoom = false;
-    } else if (k == 1) {
-        pdf_zoom = !pdf_zoom;
-        pdf_vx = (pw - a.w) / 2;
-        pdf_vy = 0;
-    } else if (k == 2) {
+    if (k == 0) {
         leave_journal();
         return;
+    } else if (k == 2 && pdf_page > 1) {
+        --pdf_page;
+        pdf_vx = pdf_vy = 0;
+    } else if (k == 3 && pdf_page < pdfview::pages()) {
+        ++pdf_page;
+        pdf_vx = pdf_vy = 0;
+    } else if (k == 1) {
+        // The next level, the middle of the view staying in the middle
+        int w0 = 1, h0 = 1, w1 = 1, h1 = 1;
+        pdfview::shown_size(pdf_page, a, pdf_fit_of(pdf_level), &w0, &h0);
+        const int next = (pdf_level + 1) % kFits;
+        pdfview::shown_size(pdf_page, a, pdf_fit_of(next), &w1, &h1);
+        const int64_t cx = (static_cast<int64_t>(pdf_vx) + (w0 < a.w ? w0 : a.w) / 2) * 65536 / (w0 > 0 ? w0 : 1);
+        const int64_t cy = (static_cast<int64_t>(pdf_vy) + (h0 < a.h ? h0 : a.h) / 2) * 65536 / (h0 > 0 ? h0 : 1);
+        pdf_level = next;
+        pdf_vx = static_cast<int>(cx * w1 / 65536) - a.w / 2;
+        pdf_vy = next == kFitWidth ? 0 : static_cast<int>(cy * h1 / 65536) - a.h / 2;
     } else if (k < 0 && a.contains(t.x, t.y)) {
-        if (!pdf_zoom) {
-            // Tap a spot on the whole page: see it at the scan's size
-            if (!pdf_fit.contains(t.x, t.y) || pdf_fit.w == 0) return;
-            pdf_zoom = true;
+        if (pdf_level == kFitWhole) {
+            // Tap a spot on the whole page: see it at full size
+            int pw = 0, ph = 0;
+            if (!pdf_fit.contains(t.x, t.y) || pdf_fit.w == 0 || !pdfview::page_size(pdf_page, &pw, &ph)) return;
+            pdf_level = kFitFull;
             pdf_vx = (t.x - pdf_fit.x) * pw / pdf_fit.w - a.w / 2;
             pdf_vy = (t.y - pdf_fit.y) * ph / pdf_fit.h - a.h / 2;
         } else {
-            // Tap an edge to move that way (no dragging)
+            // Tap an edge to move that way (or drag)
             const int sx = a.w * 2 / 3, sy = a.h * 2 / 3;
             if (t.x < a.x + a.w / 4) pdf_vx -= sx;
             else if (t.x > a.x + a.w * 3 / 4) pdf_vx += sx;
@@ -2049,12 +2134,7 @@ void tap_pdf(const ui::Tap& t)
     } else {
         return;
     }
-    // Keep the view on the page
-    if (pdf_vx > pw - a.w) pdf_vx = pw - a.w;
-    if (pdf_vy > ph - a.h) pdf_vy = ph - a.h;
-    if (pdf_vx < 0) pdf_vx = 0;
-    if (pdf_vy < 0) pdf_vy = 0;
-    dirty = true;
+    dirty = true;                    // pdfview::draw keeps the view on the page
 }
 
 void leave_play()
@@ -2435,6 +2515,8 @@ void tick()
     }
     if (screen == Screen::Logs && !dirty) logui::tick();
     if (screen == Screen::Settings && !dirty) settings_tick();
+    if (screen == Screen::Journal && !dirty) tick_journal();
+    if (screen == Screen::Pdf && !dirty) tick_pdf();
     if (screen == Screen::Look && !look_error && !dirty) present(look::tick(millis(), frame::canvas()));
     if (screen == Screen::Play && !play_error && !dirty) {
         play::tick(millis(), frame::canvas());

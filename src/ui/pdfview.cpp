@@ -23,60 +23,117 @@ struct State {
 };
 State* st = nullptr;
 
-// One drawing: the part of the (scaled) page picture in view, a band of
-// MCU rows at a time, put on the panel scaled by k (nearest pixel)
+// The scale for a fit: the JPEG decoded at 1 / (1 << s), then each panel
+// pixel takes the nearest decoded pixel (kd: panel pixels per decoded
+// pixel x 65536, at most 1:1); sw x sh: the page's size on the panel
+struct Scale {
+    int s = 0;
+    int64_t kd = 65536;
+    int sw = 0, sh = 0;
+};
+
+Scale fit_scale(int w, int h, const ui::Rect& r, Fit fit)
+{
+    Scale c;
+    if (w < 1 || h < 1) return c;
+    // k: panel pixels per scan pixel x 65536
+    int64_t k = 65536;
+    if (fit == Fit::Width) {
+        k = static_cast<int64_t>(r.w) * 65536 / w;
+    } else if (fit == Fit::Page) {
+        const int64_t kx = static_cast<int64_t>(r.w) * 65536 / w, ky = static_cast<int64_t>(r.h) * 65536 / h;
+        k = kx < ky ? kx : ky;
+    }
+    if (k > 65536) k = 65536;            // never bigger than the scan
+    if (k < 1) k = 1;
+    c.s = 0;
+    while (c.s < 3 && (k << (c.s + 1)) <= 65536) ++c.s;   // decode as small as still fills it
+    c.kd = k << c.s;
+    c.sw = static_cast<int>((static_cast<int64_t>(w >> c.s) * c.kd) / 65536);
+    c.sh = static_cast<int>((static_cast<int64_t>(h >> c.s) * c.kd) / 65536);
+    if (c.sw < 1) c.sw = 1;
+    if (c.sh < 1) c.sh = 1;
+    return c;
+}
+
+// One drawing. The panel rows an MCU row makes are gathered in a small
+// band (a few rows when scaled down) and pushed whole; when there's no
+// memory for it (full size: 16 rows), each block goes straight to the
+// panel (v0.23.0 - the old 23 KB decode band didn't fit beside the Play
+// Test)
 struct Draw {
-    int scale = 0;                 // decode 1 / (1 << scale)
-    int vx = 0, vy = 0, vw = 0, vh = 0;    // view, in scaled picture pixels
-    int ox = 0, oy = 0, ow = 0, oh = 0;    // where it goes on the panel
-    int k256 = 256;                // panel pixels per picture pixel x 256
-    int band_y = -1, band_h = 16;
-    uint8_t* band = nullptr;       // band_h rows of vw (RGB888)
+    Scale c;
+    int vx = 0, vy = 0;            // the view's top left, in shown pixels
+    int ox = 0, oy = 0, ow = 0, oh = 0;    // where the page goes on the panel
+    lgfx::rgb888_t* band = nullptr;        // band_rows x ow, or nullptr
+    int band_rows = 0;
+    int64_t band_y0 = -1, band_y1 = -1;    // shown rows the band holds now
     lgfx::rgb888_t line[480];
 };
 
-void emit(Draw& d)
-{
-    if (d.band_y < 0) return;
-    // Panel rows whose picture row is in this band
-    for (int j = 0; j < d.oh; ++j) {
-        const int sy = d.vy + j * 256 / d.k256;
-        if (sy < d.band_y) continue;
-        if (sy >= d.band_y + d.band_h) break;
-        const uint8_t* row = d.band + static_cast<size_t>(sy - d.band_y) * d.vw * 3;
-        for (int i = 0; i < d.ow && i < 480; ++i) {
-            int sx = i * 256 / d.k256;
-            if (sx >= d.vw) sx = d.vw - 1;
-            d.line[i] = lgfx::rgb888_t(row[sx * 3], row[sx * 3 + 1], row[sx * 3 + 2]);
-        }
-        ui::gfx().pushImage(d.ox, d.oy + j, d.ow, 1, d.line);
-    }
-}
+// Decoded pixel <-> shown pixel
+int64_t first_shown(const Draw& d, int64_t dec) { return (dec * d.c.kd + 65535) / 65536; }
+int dec_of(const Draw& d, int64_t shown) { return static_cast<int>(shown * 65536 / d.c.kd); }
 
 int want(int x, int y, int mw, int mh, void* ctx)
 {
     Draw& d = *static_cast<Draw*>(ctx);
-    const int s = d.scale;
-    const int fx0 = d.vx << s, fy0 = d.vy << s, fx1 = (d.vx + d.vw) << s, fy1 = (d.vy + d.vh) << s;
+    const int s = d.c.s;
+    const int fx0 = dec_of(d, d.vx) << s, fy0 = dec_of(d, d.vy) << s;
+    const int fx1 = (dec_of(d, d.vx + d.ow) + 1) << s, fy1 = (dec_of(d, d.vy + d.oh) + 1) << s;
     if (y >= fy1) return -1;
     return (x < fx1 && x + mw > fx0 && y < fy1 && y + mh > fy0) ? 1 : 0;
+}
+
+// The band's rows to the panel
+void flush(Draw& d)
+{
+    if (!d.band || d.band_y0 < 0) return;
+    for (int64_t Y = d.band_y0; Y < d.band_y1; ++Y) {
+        if (Y < d.vy || Y >= d.vy + d.oh) continue;
+        ui::gfx().pushImage(d.ox, d.oy + static_cast<int>(Y - d.vy), d.ow, 1,
+                            d.band + static_cast<size_t>(Y - d.band_y0) * d.ow);
+    }
+    d.band_y0 = d.band_y1 = -1;
 }
 
 bool block(int x, int y, int w, int h, const uint8_t* rgb, void* ctx)
 {
     Draw& d = *static_cast<Draw*>(ctx);
-    if (y != d.band_y) {
-        emit(d);
-        d.band_y = y;
-    }
-    for (int r = 0; r < h && r < d.band_h; ++r) {
-        const uint8_t* s = rgb + static_cast<size_t>(r) * w * 3;
-        uint8_t* out = d.band + static_cast<size_t>(r) * d.vw * 3;
-        for (int c = 0; c < w; ++c, s += 3) {
-            const int px = x + c - d.vx;
-            if (px < 0 || px >= d.vw) continue;
-            memcpy(out + px * 3, s, 3);
+    if (d.band) {
+        const int64_t y0 = first_shown(d, y), y1 = first_shown(d, y + h);
+        if (y0 != d.band_y0) {
+            flush(d);
+            d.band_y0 = y0;
+            d.band_y1 = y1 - y0 <= d.band_rows ? y1 : y0 + d.band_rows;
         }
+    }
+    // The shown pixels this block covers, inside the view
+    int64_t X0 = first_shown(d, x), X1 = first_shown(d, x + w);
+    int64_t Y0 = first_shown(d, y), Y1 = first_shown(d, y + h);
+    if (X0 < d.vx) X0 = d.vx;
+    if (X1 > d.vx + d.ow) X1 = d.vx + d.ow;
+    if (Y0 < d.vy) Y0 = d.vy;
+    if (Y1 > d.vy + d.oh) Y1 = d.vy + d.oh;
+    if (X0 >= X1 || Y0 >= Y1) return true;
+    for (int64_t Y = Y0; Y < Y1; ++Y) {
+        int ry = dec_of(d, Y) - y;
+        if (ry >= h) ry = h - 1;
+        const uint8_t* row = rgb + static_cast<size_t>(ry) * w * 3;
+        int n = 0;
+        lgfx::rgb888_t* out = d.line;
+        if (d.band) {
+            if (Y < d.band_y0 || Y >= d.band_y1) continue;
+            out = d.band + static_cast<size_t>(Y - d.band_y0) * d.ow + (X0 - d.vx);
+        }
+        for (int64_t X = X0; X < X1 && n < 480; ++X, ++n) {
+            int rx = dec_of(d, X) - x;
+            if (rx >= w) rx = w - 1;
+            const uint8_t* p = row + rx * 3;
+            out[n] = lgfx::rgb888_t(p[0], p[1], p[2]);
+        }
+        if (!d.band)
+            ui::gfx().pushImage(d.ox + static_cast<int>(X0 - d.vx), d.oy + static_cast<int>(Y - d.vy), n, 1, d.line);
     }
     return true;
 }
@@ -129,60 +186,54 @@ bool page_size(int page, int* w, int* h)
     return true;
 }
 
-bool draw(int page, const ui::Rect& r, bool zoom, int vx, int vy, ui::Rect* fit_rect)
+bool shown_size(int page, const ui::Rect& r, Fit fit, int* w, int* h)
 {
-    if (!st || page < 1 || page > st->n) return false;
+    int pw, ph;
+    if (!page_size(page, &pw, &ph)) return false;
+    const Scale c = fit_scale(pw, ph, r, fit);
+    *w = c.sw;
+    *h = c.sh;
+    return true;
+}
+
+Result draw(int page, const ui::Rect& r, Fit fit, int* vx, int* vy, ui::Rect* fit_rect)
+{
+    if (!st || page < 1 || page > st->n) return Result::NoPicture;
     pdf::Image img;
-    if (!pdf::page_image(*st->src, st->doc, st->page_obj[page - 1], img) || !img.jpeg) return false;
+    if (!pdf::page_image(*st->src, st->doc, st->page_obj[page - 1], img) || !img.jpeg) return Result::NoPicture;
     uint8_t* pool = static_cast<uint8_t*>(malloc(jpeg::kPoolSize));
     Draw* d = new (std::nothrow) Draw;
-    bool ok = pool && d;
+    Result res = pool && d ? Result::Ok : Result::NoMemory;
     jpeg::Info info;
-    ok = ok && jpeg::probe(*st->src, img.data_at, img.data_len, pool, info);
-    if (ok) {
-        if (zoom) {
-            d->scale = 0;
-            d->vw = r.w < info.width ? r.w : info.width;
-            d->vh = r.h < info.height ? r.h : info.height;
-            d->vx = vx < 0 ? 0 : vx > info.width - d->vw ? info.width - d->vw : vx;
-            d->vy = vy < 0 ? 0 : vy > info.height - d->vh ? info.height - d->vh : vy;
-            d->k256 = 256;
-        } else {
-            // The biggest of 1/2, 1/4, 1/8 that fits, then stretched to fill
-            d->scale = 3;
-            for (int s = 1; s <= 3; ++s)
-                if ((info.width >> s) <= r.w && (info.height >> s) <= r.h) {
-                    d->scale = s;
-                    break;
-                }
-            d->vx = d->vy = 0;
-            d->vw = info.width >> d->scale;
-            d->vh = info.height >> d->scale;
-            const int kx = r.w * 256 / d->vw, ky = r.h * 256 / d->vh;
-            d->k256 = kx < ky ? kx : ky;
-        }
-        d->ow = d->vw * d->k256 / 256;
-        d->oh = d->vh * d->k256 / 256;
-        if (d->ow > r.w) d->ow = r.w;
-        if (d->oh > r.h) d->oh = r.h;
+    if (res == Result::Ok && !jpeg::probe(*st->src, img.data_at, img.data_len, pool, info)) res = Result::BadData;
+    if (res == Result::Ok) {
+        d->c = fit_scale(info.width, info.height, r, fit);
+        // The view on the page; a page smaller than the view is centred
+        const int maxx = d->c.sw > r.w ? d->c.sw - r.w : 0, maxy = d->c.sh > r.h ? d->c.sh - r.h : 0;
+        if (*vx > maxx) *vx = maxx;
+        if (*vy > maxy) *vy = maxy;
+        if (*vx < 0) *vx = 0;
+        if (*vy < 0) *vy = 0;
+        d->vx = *vx;
+        d->vy = *vy;
+        d->ow = d->c.sw < r.w ? d->c.sw : r.w;
+        d->oh = d->c.sh < r.h ? d->c.sh : r.h;
         d->ox = r.x + (r.w - d->ow) / 2;
         d->oy = r.y + (r.h - d->oh) / 2;
         if (fit_rect) *fit_rect = ui::Rect{d->ox, d->oy, d->ow, d->oh};
-        d->band_h = info.mcu_h >> d->scale;
-        if (d->band_h < 1) d->band_h = 1;
-        d->band = static_cast<uint8_t*>(malloc(static_cast<size_t>(d->vw) * d->band_h * 3));
-        ok = d->band != nullptr;
-        if (ok) {
-            ui::gfx().startWrite();
-            ok = jpeg::decode(*st->src, img.data_at, img.data_len, pool, want, block, d, nullptr, d->scale);
-            if (ok) emit(*d);
-            ui::gfx().endWrite();
-        }
+        // The band: the shown rows one MCU row makes (small when scaled down)
+        d->band_rows = static_cast<int>(((info.mcu_h >> d->c.s) * d->c.kd + 65535) / 65536) + 1;
+        d->band = static_cast<lgfx::rgb888_t*>(malloc(sizeof(lgfx::rgb888_t) * d->band_rows * d->ow));
+        ui::gfx().startWrite();
+        if (!jpeg::decode(*st->src, img.data_at, img.data_len, pool, want, block, d, nullptr, d->c.s))
+            res = Result::BadData;
+        flush(*d);
+        ui::gfx().endWrite();
         free(d->band);
     }
     delete d;
     free(pool);
-    return ok;
+    return res;
 }
 
 } // namespace pdfview

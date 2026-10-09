@@ -316,6 +316,18 @@ How it works (v0.12.0, Curse):
   it; only the MCUs in view are decoded, stopping below the view.
 - v0.16.0: the Menu key's Journal tab lists the entries received so far
   (section 4); its Journal PDF tab is the book view.
+- v0.23.0 (Tom): both screens' keys are Back | Zoom | Prev Page | Next
+  Page. Zoom cycles three levels, the key naming the one shown: entries
+  Width (the start) -> Full Size (the scan's pixels) -> Whole (the entry
+  fits the screen); the book Whole Page (the start) -> Page Width -> Full
+  Size; the middle of the view stays in view. Dragging the picture moves
+  it (applied when the stylus lifts - redrawing a scan as it moves is too
+  slow); taps on the edges still move it. The book draws each decoded
+  block straight to the panel (a few panel rows gathered when scaled
+  down) - the old 23 KB decode band didn't fit beside the Play Test, which
+  made Zoom say "This page has no scanned picture." Errors now say what
+  went wrong (no picture / not readable / not enough memory, with the
+  numbers).
 
 ## 8. Copy protection (Tom, 2026-10-06)
 
