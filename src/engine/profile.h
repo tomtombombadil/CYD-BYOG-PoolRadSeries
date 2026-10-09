@@ -79,6 +79,8 @@ enum ShopWord {
     kCollection, kGemsKey, kJewelryKey, kExitKey, kAppraisePrompt, kGemValued, kGp, kSellKey, kSellKeep, kYouCan,
     kJewelValued, kNoGems, kGemWord, kGemsWord, kJewelWord, kJewelsWord,   // Appraise
     kCoinType, kSelectWord, kHowMuch, kWillTake, kOverPool,     // Take
+    kTrainConscious, kTrainCost, kTrainClass, kTrainExp,        // a training hall (Train Character)
+    kWillBecome, kALevel, kAndALevel, kWishTrain, kCongrats,
     kShopWords
 };
 

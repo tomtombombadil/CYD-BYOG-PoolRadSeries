@@ -2125,10 +2125,11 @@ static void test_create()
     CHECK(a.level(classes::Fighter) == 5 && a.exp() == 25000);
     // More experience: one more level, then nothing to train
     a.rec[0x127] = 0x40; a.rec[0x128] = 0x9C; a.rec[0x129] = 0;   // 40000
+    CHECK(create::trainable(a, t) == 1 << classes::Fighter);
     const int hp = a.hp_max();
     CHECK(create::train(a, t, f, d1, false));
     CHECK(a.level(classes::Fighter) == 6 && a.rec[0x73] == 46 && a.hp_max() > hp);
-    CHECK(!create::train(a, t, f, d1, false));
+    CHECK(!create::train(a, t, f, d1, false) && create::trainable(a, t) == 0);
 
     create::set_name(a, "A VERY LONG NAME INDEED");
     char name[20];

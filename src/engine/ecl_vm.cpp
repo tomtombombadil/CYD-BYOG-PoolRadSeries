@@ -841,6 +841,7 @@ Stop Vm::step()
     case 0x38: {                                // PROGRAM
         if (!need(1)) return Stop::Error;
         const int v = value(o[0]) & 0xFF;
+        if (v == 0) return wait_for(Wait::PartyMenu);      // the party menu, then on
         snprintf(line, sizeof line, "PROGRAM %d (not in the engine yet)", v);
         h_.log(line);
         if (v == 3 || v == 8 || v == 9) stop_script();

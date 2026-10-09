@@ -67,6 +67,7 @@ enum class Wait : uint8_t {
     Pause,        // pause_ms(), then resume()
     Shop,         // COMBAT with the shop flag: the shop's goods are ground(); resume() when the party leaves
     Temple,       // COMBAT with the temple flag: the temple (healing); resume() when the party leaves
+    PartyMenu,    // PROGRAM 0: the party menu (training halls); resume() at BEGIN Adventuring
 };
 
 enum class Stop : uint8_t { Running, Waiting, Stopped, NewScript, Error };

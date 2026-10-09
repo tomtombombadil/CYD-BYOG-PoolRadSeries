@@ -76,4 +76,12 @@ int con_hp_adj(const party::Character& c, const classes::Tables& t);
 // could be trained.
 bool train(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, bool silent);
 
+// The classes a character has the experience for (and no race limit), as
+// class mask bits (the tables' class masks; a training hall's 0x7EA8 uses
+// the same bits)
+int trainable(const party::Character& c, const classes::Tables& t);
+// Trains the classes in mask one level up: class bonuses, hit points
+// (silent: a magic-user's spells, as at creation)
+void train_classes(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, int mask, bool silent);
+
 } // namespace create

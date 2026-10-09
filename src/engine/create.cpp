@@ -356,9 +356,8 @@ void set_name(party::Character& c, const char* name)
     memcpy(c.rec + 1, name, n);
 }
 
-bool train(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, bool silent)
+int trainable(const party::Character& c, const classes::Tables& t)
 {
-    uint8_t* r = c.rec;
     int mask = 0;
     const uint32_t xp = c.exp();
     for (int k = 0; k < classes::kClasses; ++k) {
@@ -367,7 +366,12 @@ bool train(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
         const int32_t need = t.exp_needed(k, lv);
         if (need > 0 && static_cast<uint32_t>(need) <= xp) mask |= t.u8(static_cast<uint16_t>(t.lay.class_masks + k));
     }
-    if (!mask) return false;
+    return mask;
+}
+
+void train_classes(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, int mask, bool silent)
+{
+    uint8_t* r = c.rec;
     int held = 0;
     for (int k = 0; k < classes::kClasses; ++k) {
         if (c.level(k) <= 0) continue;
@@ -387,7 +391,7 @@ bool train(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
         default: break;
         }
     }
-    if (r[kHitDice] <= r[kMultiLevel]) return true;
+    if (r[kHitDice] <= r[kMultiLevel]) return;
     const int gain = hp_roll(c, t, f, d, mask);
     if (held < 1) held = 1;
     int inc = gain / held;
@@ -398,6 +402,13 @@ bool train(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
     const int lost = r[kHpMax] - r[kHp];
     r[kHpMax] = static_cast<uint8_t>(r[kHpMax] + up);
     r[kHp] = static_cast<uint8_t>(r[kHpMax] - lost);
+}
+
+bool train(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, bool silent)
+{
+    const int mask = trainable(c, t);
+    if (!mask) return false;
+    train_classes(c, t, f, d, mask, silent);
     return true;
 }
 

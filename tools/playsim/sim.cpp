@@ -229,7 +229,7 @@ int main(int argc, char** argv)
         play::handle(play::vm->run((uint16_t)a));
         settle(0, 5000);
         printf("  screen %d, %d goods, menu [%s]\n", (int)play::screen, play::ground->n, play::menu.s);
-        if (play::screen == play::Screen::Shop && getenv("SHOPRUN")) {
+        if ((play::screen == play::Screen::Shop || play::screen == play::Screen::PartyMenu) && getenv("SHOPRUN")) {
             // SHOPRUN: letters tap menu words, digits pick a list line, %n taps
             // party row n (the shop's list at column 17), =n; types a number
             // and Enter, '#' shows the screen and menu
@@ -242,6 +242,10 @@ int main(int argc, char** argv)
                     printf("  screen %d temple %d menu [%s%s] %s HP %d/%d gold worth %d counter %d %d %d %d %d gems %d jewels %d items %d\n", (int)play::screen, (int)play::temple, play::menu.prompt, play::menu.s, nm, ch.hp(), ch.hp_max(), rules::gold_worth(ch), play::ground->money[0], play::ground->money[1], play::ground->money[2], play::ground->money[3], play::ground->money[4], ch.money(5), ch.money(6), ch.n_items);
                     char t[16]; snprintf(t, 16, "shoprun%d", n++); shot(t);
                 } else if (*q == '%') { ++q; play::tap(17 * 8 + 2, (4 + (*q - '0')) * 8 + 2, C); }
+                else if (*q == '^') { ++q; play::tap(24, (12 + pm_line(*q)) * 8 + 2, C); }   // a party menu line
+                else if (*q == '&') { party::Character& w = *play::pt->sel(); w.rec[0x127] = 0xA0; w.rec[0x128] = 0x86; w.rec[0x129] = 0x01; }   // 100000 xp (a test)
+                else if (*q == '?') { for (int k = 0; k < 8; ++k) printf(" %d", play::pt->sel()->level(k)); printf(" levels, xp %u, HP %d/%d\n", play::pt->sel()->exp(), play::pt->sel()->hp(), play::pt->sel()->hp_max()); }
+                else if (*q == '!') { ++q; play::tap(16, (4 + (*q - '0')) * 8 + 2, C); }       // party menu: select row n
                 else if (*q == '$') { party::Character& w = *play::pt->sel(); w.rec[0xFB + 10] = 3; w.rec[0xFB + 12] = 2; }   // 3 gems, 2 jewels (a test)
                 else if (*q == '=') { ++q; while (*q && *q != ';') play::input_key(*q++, C); play::input_key('\n', C); }
                 else if (*q >= '0' && *q <= '9') play::plist.index = *q - '0';

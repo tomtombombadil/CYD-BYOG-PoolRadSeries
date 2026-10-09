@@ -920,10 +920,11 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
 // 16 items), Join, in a shop Sell (player characters) and Id; Exit.
 
 enum class Ask : uint8_t { None, Overwrite, Drop, DropSure, Reroll, SaveNew, OverwriteNew, DropItem, SellDeal, IdDeal,
-                          LeaveCoins, CureAnyway, PayCure };
+                          LeaveCoins, CureAnyway, PayCure, Train };
 void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt);
 
 bool shop_yes_no(Ask what, char k, pic::Canvas& c);
+bool train_yes_no(Ask what, char k, pic::Canvas& c);
 
 const char* iw(int i) { return d->iw[i]; }
 int  item_at = -1;                 // the item an offer / question is about
@@ -1551,6 +1552,7 @@ void yes_no_tap(int x, int y, pic::Canvas& c)
     if (create_yes_no(what, k, c)) return;
     if (items_yes_no(what, k, c)) return;
     if (shop_yes_no(what, k, c)) return;
+    if (train_yes_no(what, k, c)) return;
     party::Character* ch = pt->sel();
     char nm[20] = {}, t[64];
     if (ch) ch->name(nm, sizeof nm);
@@ -1766,13 +1768,13 @@ void end_create(pic::Canvas& c)
 }
 
 // The rule tables and facts, read from the program for the occasion
-bool load_making()
+bool load_rules(Making*& m)
 {
     const auto& pc = d->prof->create;
     if (!pc.ds_image) return false;
-    mk = new (std::nothrow) Making;
-    if (!mk) return false;
-    mk->dice = create::Dice(static_cast<uint32_t>(millis()) * 2654435761u + 1);
+    m = new (std::nothrow) Making;
+    if (!m) return false;
+    m->dice = create::Dice(static_cast<uint32_t>(millis()) * 2654435761u + 1);
     fs::File f;
     if (!open_file(d->prof->program, f)) return false;
     bool ok = false;
@@ -1783,19 +1785,19 @@ bool load_making()
             const size_t n = pc.tables.hi - pc.tables.lo;
             uint8_t* buf = static_cast<uint8_t*>(malloc(n));
             ok = buf && exepack::read(src, info, pc.ds_image + pc.tables.lo, buf, n) == exepack::Status::Ok &&
-                 mk->tables.set(pc.tables, buf, n);
+                 m->tables.set(pc.tables, buf, n);
             free(buf);
             uint8_t hp[16];
             ok = ok && exepack::read(src, info, pc.ds_image + pc.hp_count, hp, 8) == exepack::Status::Ok &&
                  exepack::read(src, info, pc.ds_image + pc.hp_dice, hp + 8, 8) == exepack::Status::Ok &&
-                 exepack::read(src, info, pc.ds_image + pc.icon_colours, mk->facts.icon_colours, 6) ==
+                 exepack::read(src, info, pc.ds_image + pc.icon_colours, m->facts.icon_colours, 6) ==
                      exepack::Status::Ok;
-            memcpy(mk->facts.hp_count, hp, 8);
-            memcpy(mk->facts.hp_dice, hp + 8, 8);
+            memcpy(m->facts.hp_count, hp, 8);
+            memcpy(m->facts.hp_dice, hp + 8, 8);
         }
     }
     f.close();
-    create::Facts& fa = mk->facts;
+    create::Facts& fa = m->facts;
     fa.con_save = pc.con_save;
     fa.dwarf_orc = pc.dwarf_orc;
     fa.giants = pc.giants;
@@ -1815,11 +1817,13 @@ bool load_making()
     if (open_file(d->prof->overlay, f)) {
         library::FileSource src(f);
         for (int i = 0; i < 9; ++i)
-            if (at[i]) text::read_pascal(src, at[i], mk->words[i], sizeof mk->words[i]);
+            if (at[i]) text::read_pascal(src, at[i], m->words[i], sizeof m->words[i]);
         f.close();
     }
     return ok;
 }
+
+bool load_making() { return load_rules(mk); }
 
 const char* option_name(int i)
 {
@@ -1990,6 +1994,7 @@ bool create_yes_no(Ask what, char k, pic::Canvas& c)
 // out. (The games' shopkeeper reminds the party of coins left behind.)
 
 bool temple = false;               // the shop screen is the temple's (Heal instead of Buy)
+bool in_game_menu = false;          // the party menu a script opened (PROGRAM 0)
 create::Dice rng;                   // the temple's dice, appraising
 
 // One of the shop's / temple's words, read from GAME.OVR when needed (the
@@ -2632,6 +2637,117 @@ void list_tap(int x, int y, pic::Canvas& c)
 void draw_party_menu(pic::Canvas& c);
 void back_from_view(pic::Canvas& c);
 
+// ---- Train Character (a training hall: a script sets 0x7EA8, the classes it
+// trains) ---------------------------------------------------------------------
+// The games' checks ("we only train conscious people", "Training costs
+// 1000 gp.", "We don't train that class here", "Not Enough Experience"),
+// then "NAME will become:" (row 4, column 4) / "    a level 6 Fighter"
+// (row 5, column 6) and "Do you wish to train? Yes No": "Congratulations...",
+// 1000 gp, one level (one class: the one needing the most experience),
+// hit points. (A magic-user's new spell: with the spells.)
+
+Making* trainer = nullptr;          // the rule tables while training
+int     train_mask = 0;
+
+void end_training()
+{
+    delete trainer;
+    trainer = nullptr;
+    train_mask = 0;
+}
+
+void train_note(int word, pic::Canvas& c)
+{
+    char t[48];
+    sw(word, t, sizeof t);
+    draw_party_menu(c);
+    note(c, t);
+}
+
+void train_character(pic::Canvas& c)
+{
+    party::Character* chp = pt->sel();
+    if (!chp) return;
+    party::Character& ch = *chp;
+    if (ch.health() != party::Okay) {
+        train_note(profile::kTrainConscious, c);
+        return;
+    }
+    if (rules::gold_worth(ch) < 1000) {
+        train_note(profile::kTrainCost, c);
+        return;
+    }
+    if (!trainer && !load_rules(trainer)) {
+        end_training();
+        error(c, "Not in the engine yet.");
+        return;
+    }
+    const classes::Tables& t = trainer->tables;
+    const int here = vm->get(0x7EA8) & 0xFF;
+    int has = 0;
+    for (int k = 0; k < classes::kClasses; ++k)
+        if (ch.level(k) > 0) has |= t.u8(static_cast<uint16_t>(t.lay.class_masks + k));
+    // The class that needs the most experience of those ready (one a time)
+    const int ready = create::trainable(ch, t);
+    int best = -1;
+    int32_t most = 0;
+    for (int k = 0; k < classes::kClasses; ++k)
+        if (ready & t.u8(static_cast<uint16_t>(t.lay.class_masks + k))) {
+            const int32_t need = t.exp_needed(k, ch.level(k));
+            if (need > most) {
+                most = need;
+                best = k;
+            }
+        }
+    if (!(has & here)) {
+        end_training();
+        train_note(profile::kTrainClass, c);
+        return;
+    }
+    train_mask = best >= 0 ? t.u8(static_cast<uint16_t>(t.lay.class_masks + best)) & here : 0;
+    if (!train_mask) {
+        end_training();
+        train_note(profile::kTrainExp, c);
+        return;
+    }
+    // "NAME will become:" and the new levels
+    c.fill(8, 8, 38 * 8, 22 * 8, 0);
+    char nm[20], w1[24], line[48];
+    ch.name(nm, sizeof nm);
+    put(c, nm, 4, 4, ch.npc() ? 10 : 11);
+    sw(profile::kWillBecome, w1, sizeof w1);
+    put(c, w1, 4 + static_cast<int>(strlen(nm)), 4, 10);
+    int row = 5;
+    for (int k = 0; k < classes::kClasses; ++k) {
+        if (ch.level(k) <= 0 || !(t.u8(static_cast<uint16_t>(t.lay.class_masks + k)) & train_mask)) continue;
+        sw(row == 5 ? profile::kALevel : profile::kAndALevel, w1, sizeof w1);
+        snprintf(line, sizeof line, "%s%d %s", w1, ch.level(k) + 1, name_of(d->cls[0], 27, 18, k));
+        put(c, line, 6, row++, 10);
+    }
+    dirty(0, pic::kScreenH);
+    sw(profile::kWishTrain, w1, sizeof w1);
+    ask_yes_no(c, Ask::Train, w1);
+}
+
+bool train_yes_no(Ask what, char k, pic::Canvas& c)
+{
+    if (what != Ask::Train) return false;
+    screen = Screen::PartyMenu;
+    party::Character* ch = pt->sel();
+    if (k == 'Y' && ch && trainer && train_mask) {
+        rules::pay(*ch, 1000);
+        create::train_classes(*ch, trainer->tables, trainer->facts, trainer->dice, train_mask, false);
+        rules::recalc(*ch, *names, d->facts);
+        if (ch->level(classes::MagicUser) > 0) Serial.println("[play] training: a new spell to learn (not in the engine yet)");
+        end_training();
+        train_note(profile::kCongrats, c);
+        return true;
+    }
+    end_training();
+    draw_party_menu(c);
+    return true;
+}
+
 void pm_choose(int i, pic::Canvas& c)
 {
     switch (pm_key(i)) {
@@ -2683,6 +2799,9 @@ void pm_choose(int i, pic::Canvas& c)
             snprintf(t, sizeof t, "%s%s%s", rw(Data::kDrop), nm, rw(Data::kForever));
             ask_yes_no(c, Ask::Drop, t);
         }
+        return;
+    case 'T':
+        train_character(c);
         return;
     default:
         pm_prompt(c, "Not in the engine yet.");
@@ -3188,6 +3307,12 @@ void begin_wait(pic::Canvas& c)
         temple = true;
         open_shop(c);
         break;
+    case ecl::Wait::PartyMenu:          // PROGRAM 0: the party menu, BEGIN goes on
+        in_game_menu = true;
+        anim_stop();
+        screen = Screen::PartyMenu;
+        draw_party_menu(c);
+        break;
     case ecl::Wait::None:
         waiting = false;
         break;
@@ -3387,6 +3512,17 @@ void back_from_view(pic::Canvas& c)
 void begin_adventuring()
 {
     pic::Canvas& c = *cv;
+    if (in_game_menu) {
+        // PROGRAM 0's party menu: back to the game where the script was
+        in_game_menu = false;
+        screen = Screen::Game;
+        draw_frame(c);
+        draw_view(c);
+        draw_panel(c);
+        waiting = false;
+        handle(vm->resume());
+        return;
+    }
     ecl::GameState& gs = d->gs;
     const int last = vm->get(0x4BF2) & 0xFF;
     const bool resume = d->loaded && last != 0;
@@ -3936,7 +4072,7 @@ bool back(pic::Canvas& c)
     if (screen == Screen::YesNo && !mk) {
         const Ask what = ask;
         ask = Ask::None;
-        if (items_yes_no(what, 'N', c) || shop_yes_no(what, 'N', c)) return true;
+        if (items_yes_no(what, 'N', c) || shop_yes_no(what, 'N', c) || train_yes_no(what, 'N', c)) return true;
         ask = what;
     }
     if (screen == Screen::TradeWho) {
