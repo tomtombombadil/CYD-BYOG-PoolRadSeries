@@ -27,6 +27,7 @@
 #include "inflate_vectors.h"
 #include "engine/layout.h"
 #include "engine/items.h"
+#include "engine/magic.h"
 #include "engine/party.h"
 #include "engine/rules.h"
 #include "engine/savegame.h"
@@ -2266,6 +2267,54 @@ static void test_temple()
     }
 }
 
+static void test_magic()
+{
+    static classes::Tables t;
+    make_tables(t);
+    static party::Party p;
+    p = party::Party{};
+    p.count = 1;
+    party::Character& c = p.m[0];
+    c.rec[0x109] = 3;                                         // a level 3 cleric
+    c.rec[0x15] = 12;                                        // Wis 12
+    c.rec[0x12D] = 2; c.rec[0x12E] = 1;                      // 2 first-level, 1 second-level spells a day
+    c.rec[0x79 + 0] = c.rec[0x79 + 1] = c.rec[0x79 + 3] = 1;    // knows spells 1, 2, 4
+    c.rec[0x79 + 4] = 1;                                       // and 5, a magic-user's (Int 0: can't use it)
+    uint8_t ids[16];
+    CHECK(magic::known(c, t, ids, 16) == 3 && ids[0] == 1 && ids[1] == 2 && ids[2] == 4);
+    CHECK(magic::any_room(c, t) && magic::room(c, t, magic::Cleric, 1) == 2);
+    CHECK(magic::add(c, t, 1) && magic::add(c, t, 2) && !magic::add(c, t, 3) && magic::add(c, t, 4) && !magic::add(c, t, 4));
+    CHECK(magic::room(c, t, magic::Cleric, 1) == 0 && magic::memorizing(c));
+    CHECK(magic::in_memory(c, t, true, ids, 16) == 3 && magic::in_memory(c, t, false, ids, 16) == 0);
+    CHECK(magic::rest_minutes(c, t) == 4 * 60 + 4 * 15 && c.rec[0x72] == 4);
+    // Cancel and again
+    magic::cancel(c);
+    CHECK(!magic::memorizing(c) && magic::room(c, t, magic::Cleric, 1) == 2);
+    CHECK(magic::add(c, t, 1) && magic::add(c, t, 2) && magic::add(c, t, 4));
+    magic::rest_minutes(c, t);
+    // The rest: 4 hours' start, then 2 steps, 3 steps (a 1st), 6 steps (a 2nd)
+    c.rec[0x78] = 20; c.rec[0x1A4] = 10;
+    c.n_affects = 2;
+    c.affects[0][0] = 0x21; c.affects[0][1] = 30;           // 30 minutes
+    c.affects[1][0] = 0x22;                                  // lasting
+    magic::Rest r;
+    magic::begin(r);
+    int learnt[3] = {}, n = 0, steps = 0;
+    while (n < 3 && steps < 400) {
+        const magic::Step st = magic::step(r, p, t);
+        ++steps;
+        if (st.learnt[0]) learnt[n++] = st.learnt[0];
+    }
+    CHECK(n == 3 && learnt[0] == 1 && learnt[1] == 2 && learnt[2] == 4 && steps == 59);
+    CHECK(!magic::memorizing(c) && magic::in_memory(c, t, false, ids, 16) == 3);
+    CHECK(c.n_affects == 1 && c.affects[0][0] == 0x22);       // the timed one ran out
+    // A day's rest heals a point
+    for (int k = steps; k < 288; ++k) magic::step(r, p, t);
+    CHECK(c.hp() == 11);
+    // Casting takes it out
+    CHECK(magic::remove(c, 2) && !magic::remove(c, 2) && magic::in_memory(c, t, false, ids, 16) == 2);
+}
+
 int main()
 {
     test_rle_known_bytes();
@@ -2292,6 +2341,7 @@ int main()
     test_items();
     test_item_piles();
     test_temple();
+    test_magic();
     test_create();
     if (failures) {
         printf("%d check(s) failed\n", failures);

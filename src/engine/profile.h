@@ -84,6 +84,16 @@ enum ShopWord {
     kShopWords
 };
 
+// Spells and resting: GAME.OVR offsets of Pascal strings, in this order
+enum MagicWord {
+    kSpellsWord, kInMemory, kInGrimoire, kToMemorize, kChooseSpell, kMemorizeKey,   // "Spells " ... "Memorize"
+    kMemorizeThese, kMemorizeThese2, kCanMemorize,              // "Memorize These Spells? ", "can memorize:"
+    kClericSpells, kDruidSpells, kMuSpells,                     // "    Cleric Spells:" ...
+    kCannotMemorize, kNoCondition, kMemorizeSpells,             // "cannot memorize any spells", "is in no condition to ", ...
+    kRestTime, kRestMenu, kStopResting, kHealedAll, kHasMemorized, kInterrupted,
+    kMagicWords
+};
+
 struct Profile {
     games::Game  game;
     const char*  release;        // shown to the player, e.g. "GOG"
@@ -212,6 +222,17 @@ struct Profile {
     uint32_t         shop_words[kShopWords];
     rules::CureFacts cures;
     uint8_t          gem_type, gem_word, jewel_word;
+
+    // Spells: the camp's magic menu ("Cast Memorize Scribe Display Rest
+    // Exit") and the level names ("1st Level") and spell names in the
+    // program; the words above; script words for encounters while resting
+    // (steps between checks, the chance in %)
+    struct {
+        uint32_t  menu;
+        NameTable levels, names;
+        uint32_t  words[kMagicWords];
+        uint16_t  rest_period, rest_chance;
+    } magic;
 };
 
 // The game's program file name (to look for it), or nullptr if no

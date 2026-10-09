@@ -48,6 +48,29 @@ static void item_ops(const char* ops)
     }
     shot("item_ops");
 }
+// Ops on any screen (CAMPRUN): letters tap menu words, digits pick a list
+// line, %n taps party row n at column 17, &n taps text row n, =n; types a
+// number, '#' prints the screen, '~' runs ticks for a minute of game time
+static void run_ops(const char* q)
+{
+    auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+    int n = 0;
+    for (; *q; ++q) {
+        if (*q == '#') {
+            const party::Character& ch = *play::pt->sel();
+            char nm[20]; ch.name(nm, 20);
+            printf("  screen %d menu [%s%s] %s HP %d/%d\n", (int)play::screen, play::menu.prompt, play::menu.s, nm, ch.hp(), ch.hp_max());
+            char t[16]; snprintf(t, 16, "ops%d", n++); shot(t);
+        } else if (*q == '%') { ++q; play::tap(17 * 8 + 2, (4 + (*q - '0')) * 8 + 2, C); }
+        else if (*q == '&') { ++q; int r = 0; while (*q >= '0' && *q <= '9') r = r * 10 + (*q++ - '0'); --q; play::tap(4 * 8 + 2, r * 8 + 2, C); }
+        else if (*q == '=') { ++q; while (*q && *q != ';') play::input_key(*q++, C); play::input_key('\n', C); }
+        else if (*q == '?') { const party::Character& ch = *play::pt->sel(); printf("  list:"); for (int i = 0; i < 84; ++i) if (ch.rec[0x1E + i]) printf(" %s%d", ch.rec[0x1E + i] & 0x80 ? "*" : "", ch.rec[0x1E + i] & 0x7F); printf("  (to learn %d)\n", ch.rec[0x72]); }
+        else if (*q == '~') { for (int k = 0; k < 600; ++k) { g_now += 100; play::tick(g_now, C); } }
+        else if (*q >= '0' && *q <= '9') play::plist.index = *q - '0';
+        else tap_word(*q);
+        g_now += 5000; play::tick(g_now, C);
+    }
+}
 static std::string last_text;
 static std::vector<int> choices; static size_t ci = 0;
 static int next_choice(int dflt) { return ci < choices.size() ? choices[ci++] : dflt; }
@@ -220,6 +243,7 @@ int main(int argc, char** argv)
     }
     if (getenv("CHOICES")) for (const char* q = getenv("CHOICES"); *q; ++q) if (*q >= '0' && *q <= '9') choices.push_back(*q - '0');
     settle(0, getenv("MS") ? atoi(getenv("MS")) : 60000);
+    if (getenv("CAMPRUN")) run_ops(getenv("CAMPRUN"));
     shot("start");
     if (getenv("RUNAT")) {
         // Run the script from an address (e.g. a shop), then BUY=n,n,...

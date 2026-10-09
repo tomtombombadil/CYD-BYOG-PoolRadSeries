@@ -16,6 +16,7 @@
 #include "engine/classes.h"
 #include "engine/create.h"
 #include "engine/items.h"
+#include "engine/magic.h"
 #include "engine/layout.h"
 #include "engine/party.h"
 #include "engine/profile.h"
@@ -95,6 +96,7 @@ struct Data {
     char           guy_name[kMaxGuys][16] = {};
     bool           guy_added[kMaxGuys] = {};
     int            guys = 0;
+    char           w_magic[44] = {}, w_level[5][12] = {};    // the magic menu, "1st Level" ...
     char           w_save_which[24] = {}, w_slots[24] = {}, w_saving[24] = {}, w_camp_menu[40] = {},
                    w_camp[8] = {}, w_makes_camp[28] = {};
 
@@ -128,7 +130,8 @@ pic::Canvas* cv = nullptr;
 // Which screen: the party menu (the games' first screen), its "Load Which
 // Game" question, or the game itself
 enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich, AddFrom,
-                               AddList, YesNo, CreatePick, CreateName, TradeWho, Heal, Take, Appraise };
+                               AddList, YesNo, CreatePick, CreateName, TradeWho, Heal, Take, Appraise, Magic,
+                               SpellList, Rest };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
 Screen save_from = Screen::PartyMenu;   // where Save Which Game goes back to
@@ -920,11 +923,19 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
 // 16 items), Join, in a shop Sell (player characters) and Id; Exit.
 
 enum class Ask : uint8_t { None, Overwrite, Drop, DropSure, Reroll, SaveNew, OverwriteNew, DropItem, SellDeal, IdDeal,
-                          LeaveCoins, CureAnyway, PayCure, Train };
+                          LeaveCoins, CureAnyway, PayCure, Train, MemorizeThese, StopRest };
 void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt);
 
 bool shop_yes_no(Ask what, char k, pic::Canvas& c);
 bool train_yes_no(Ask what, char k, pic::Canvas& c);
+bool magic_yes_no(Ask what, char k, pic::Canvas& c);
+void open_magic(pic::Canvas& c);
+void open_rest(pic::Canvas& c, bool from_magic);
+void magic_tap(int x, int y, pic::Canvas& c);
+void spells_tap(int x, int y, pic::Canvas& c);
+void rest_tap(int x, int y, pic::Canvas& c);
+void rest_tick(uint32_t now, pic::Canvas& c);
+void run_entry(int i, Then next);
 
 const char* iw(int i) { return d->iw[i]; }
 int  item_at = -1;                 // the item an offer / question is about
@@ -1410,8 +1421,13 @@ void open_camp(pic::Canvas& c)
     draw_camp(c);
 }
 
+void end_magic();
+
 void leave_camp(pic::Canvas& c)
 {
+    // Spells not yet memorized are forgotten when the camp breaks (the games)
+    for (int i = 0; i < pt->count; ++i) magic::cancel(pt->m[i]);
+    end_magic();
     screen = Screen::Game;
     text::clear(c, text::kTextArea);
     dirty_rows(17, 22);
@@ -1430,6 +1446,8 @@ void camp_tap(int x, int y, pic::Canvas& c)
         switch (text::key(menu, text::hit(menu, col))) {
         case 'S': ask_save(c); break;
         case 'V': view_character(c); break;
+        case 'M': open_magic(c); break;
+        case 'R': open_rest(c, false); break;
         case 'E': leave_camp(c); break;
         case 0: break;
         default: error(c, "Not in the engine yet."); break;
@@ -1553,6 +1571,7 @@ void yes_no_tap(int x, int y, pic::Canvas& c)
     if (items_yes_no(what, k, c)) return;
     if (shop_yes_no(what, k, c)) return;
     if (train_yes_no(what, k, c)) return;
+    if (magic_yes_no(what, k, c)) return;
     party::Character* ch = pt->sel();
     char nm[20] = {}, t[64];
     if (ch) ch->name(nm, sizeof nm);
@@ -2637,6 +2656,526 @@ void list_tap(int x, int y, pic::Canvas& c)
 void draw_party_menu(pic::Canvas& c);
 void back_from_view(pic::Canvas& c);
 
+// ---- Magic (the camp's): Memorize, Rest --------------------------------------------
+// The magic menu "Cast Memorize Scribe Display Rest Exit" under the camp
+// screen. Memorize: "NAME's Spells in Grimoire" (row 1), the spells they
+// know by level ("1st Level" headings) from row 5 to 15, "NAME can
+// memorize:" with a row of counts a kind (rows 19-22), "Choose Spell:
+// Memorize Exit"; at the end "NAME's Spells to Memorize" and "Memorize
+// these spells? Yes No" (No forgets them). Rest: "Rest Time: 00:04:15"
+// (row 17; the unit being set in colour 15), "Rest Days Hours Mins Add
+// Subtract Exit" - the time the spells need, changed in days, hours or 5
+// minutes; resting runs five minutes a step: a day heals everyone a point
+// ("The Whole Party Is Healed"), "NAME has memorized SPELL", an encounter
+// can break in ("Your repose is suddenly interrupted!": the camp ends and
+// the area's camp-interrupted script runs); a tap asks "Stop Resting?".
+// (Cast, Scribe, Display: with the spells' effects.)
+
+Making* mrules = nullptr;           // the rule tables while camping
+struct SpellNames {
+    char name[101][24];
+};
+SpellNames* spn = nullptr;
+
+void mw(int i, char* out, size_t cap)
+{
+    out[0] = 0;
+    const uint32_t at = d->prof->magic.words[i];
+    fs::File f;
+    if (!at || !open_file(d->prof->overlay, f)) return;
+    library::FileSource src(f);
+    text::read_pascal(src, at, out, cap);
+    f.close();
+}
+
+void end_magic()
+{
+    delete mrules;
+    mrules = nullptr;
+    delete spn;
+    spn = nullptr;
+}
+
+// The rule tables and spell names (from the program), for the camp
+bool load_magic()
+{
+    if (!mrules && !load_rules(mrules)) {
+        end_magic();
+        return false;
+    }
+    if (spn) return true;
+    spn = new (std::nothrow) SpellNames;
+    if (!spn) return false;
+    memset(spn, 0, sizeof *spn);
+    const profile::NameTable& nt = d->prof->magic.names;
+    fs::File f;
+    if (!nt.at || !open_file(d->prof->program, f)) return true;
+    library::FileSource src(f);
+    exepack::Info info;
+    if (exepack::parse(src, info) == exepack::Status::Ok) {
+        const size_t n = static_cast<size_t>(nt.stride) * nt.count;
+        uint8_t* buf = static_cast<uint8_t*>(malloc(n));
+        if (buf && exepack::read(src, info, nt.at, buf, n) == exepack::Status::Ok)
+            for (int i = 0; i < nt.count && i < 101; ++i) {
+                const uint8_t* e = buf + static_cast<size_t>(i) * nt.stride;
+                const int len = e[0] < 23 ? e[0] : 23;
+                memcpy(spn->name[i], e + 1, len);
+                spn->name[i][len] = 0;
+            }
+        free(buf);
+    }
+    f.close();
+    return true;
+}
+
+const char* spell_name(int s) { return spn && s >= 0 && s <= 100 ? spn->name[s] : ""; }
+
+void draw_magic_menu(pic::Canvas& c)
+{
+    text::build(menu, "", d->w_magic);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+void open_magic(pic::Canvas& c)
+{
+    if (!load_magic()) {
+        error(c, "Not enough memory.");
+        return;
+    }
+    screen = Screen::Magic;
+    draw_magic_menu(c);
+}
+
+void back_to_magic(pic::Canvas& c)
+{
+    screen = Screen::Magic;
+    draw_camp(c);
+    draw_magic_menu(c);
+}
+
+// A character's words on the text rows: "NAME text" (rows 19-20, colour 10)
+void say_status(pic::Canvas& c, const char* what, int row = 19, uint8_t colour = 10)
+{
+    char nm[20], t[64];
+    pt->sel()->name(nm, sizeof nm);
+    snprintf(t, sizeof t, "%s %s", nm, what);
+    c.fill(8, row * 8, 38 * 8, 8, 0);
+    put(c, t, 1, row, colour);
+    dirty_rows(row, row);
+}
+
+// ---- the spell list
+struct SpellLines {
+    uint8_t id[60];                 // 0: a level heading (level in lvl)
+    uint8_t lvl[60];
+    int     n = 0;
+    int     top = 0, sel = -1;
+    bool    learning = false;       // "to Memorize" (else the grimoire)
+} sl;
+
+void build_lines(const uint8_t* ids, int n)
+{
+    sl.n = 0;
+    int last = 0;
+    const classes::Tables& t = mrules->tables;
+    for (int i = 0; i < n && sl.n < 59; ++i) {
+        const int lv = t.spell_level(ids[i]);
+        if (lv != last) {
+            sl.id[sl.n] = 0;
+            sl.lvl[sl.n++] = static_cast<uint8_t>(lv);
+            last = lv;
+        }
+        sl.id[sl.n] = ids[i];
+        sl.lvl[sl.n++] = static_cast<uint8_t>(lv);
+    }
+    sl.top = 0;
+    sl.sel = -1;
+    for (int i = 0; i < sl.n; ++i)
+        if (sl.id[i]) {
+            sl.sel = i;
+            break;
+        }
+}
+
+int list_rows() { return sl.learning ? 22 - 5 + 1 : 15 - 5 + 1; }
+
+// "NAME can memorize:" and the counts a kind (cleric, druid, magic-user)
+void draw_counts(pic::Canvas& c)
+{
+    const party::Character& ch = *pt->sel();
+    const classes::Tables& t = mrules->tables;
+    c.fill(8, 17 * 8, 38 * 8, 6 * 8, 0);
+    char w1[24];
+    mw(profile::kCanMemorize, w1, sizeof w1);
+    say_status(c, w1, 19);
+    int row = 20;
+    static const int kKind[3] = {profile::kClericSpells, profile::kDruidSpells, profile::kMuSpells};
+    for (int k = 0; k < 3; ++k) {
+        bool any = false;
+        for (int lv = 1; lv <= 5; ++lv)
+            if (ch.rec[0x12D + k * 5 + lv - 1]) any = true;
+        if (!any || row > 22) continue;
+        mw(kKind[k], w1, sizeof w1);
+        put(c, w1, 1, row, 10);
+        for (int lv = 1; lv <= 5; ++lv) {
+            if (!ch.rec[0x12D + k * 5 + lv - 1]) continue;
+            char n[4];
+            snprintf(n, sizeof n, "%d", magic::room(ch, t, k, lv));
+            put(c, n, 20 + (lv - 1) * 3, row, 10);
+        }
+        ++row;
+    }
+    dirty_rows(17, 22);
+}
+
+void draw_spells(pic::Canvas& c)
+{
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    char nm[20], t[48], a[12], b[16];
+    pt->sel()->name(nm, sizeof nm);
+    snprintf(t, sizeof t, "%s%s", nm, d->w_s);
+    put(c, t, 1, 1, pt->sel()->npc() ? 10 : 11);
+    mw(profile::kSpellsWord, a, sizeof a);
+    mw(sl.learning ? profile::kToMemorize : profile::kInGrimoire, b, sizeof b);
+    snprintf(t, sizeof t, "%s%s", a, b);
+    put(c, t, static_cast<int>(strlen(nm)) + 4, 1, 10);
+    const int rows = list_rows();
+    for (int r = 0; r < rows && sl.top + r < sl.n; ++r) {
+        const int i = sl.top + r;
+        const int row = 5 + r;
+        if (!sl.id[i]) {
+            put(c, d->w_level[sl.lvl[i] - 1], 1, row, 15);
+            continue;
+        }
+        char line[32];
+        snprintf(line, sizeof line, "  %s", spell_name(sl.id[i]));
+        if (i == sl.sel && !sl.learning) {
+            c.fill(3 * 8, row * 8, static_cast<int>(strlen(line) - 2) * 8, 8, 15);
+            font::draw_text(c, d->font, line + 2, 3, row, 0, -1);
+        } else {
+            put(c, line, 1, row, 10);
+        }
+    }
+    if (!sl.learning) draw_counts(c);
+    // The menu
+    char keys[40], prompt[20], k1[12];
+    keys[0] = 0;
+    prompt[0] = 0;
+    if (!sl.learning) {
+        mw(profile::kChooseSpell, prompt, sizeof prompt);
+        mw(profile::kMemorizeKey, k1, sizeof k1);
+        snprintf(keys, sizeof keys, "%s%s%s%s", k1, sl.top + rows < sl.n ? d->w_next : "", sl.top > 0 ? d->w_prev : "",
+                 d->w_exit);
+        text::build(menu, prompt, keys);
+        menu.selected = 0;
+        show_menu_line(c);
+    }
+    dirty(0, pic::kScreenH);
+}
+
+// "Spells to Memorize" and the question
+void confirm_memorize(pic::Canvas& c, int word)
+{
+    uint8_t ids[84];
+    const int n = magic::in_memory(*pt->sel(), mrules->tables, true, ids, 84);
+    sl.learning = true;
+    build_lines(ids, n);
+    screen = Screen::SpellList;
+    draw_spells(c);
+    char q[28];
+    mw(word, q, sizeof q);
+    ask_yes_no(c, Ask::MemorizeThese, q);
+}
+
+void show_grimoire(pic::Canvas& c)
+{
+    uint8_t ids[100];
+    const int n = magic::known(*pt->sel(), mrules->tables, ids, 100);
+    sl.learning = false;
+    build_lines(ids, n);
+    screen = Screen::SpellList;
+    draw_spells(c);
+}
+
+void memorize(pic::Canvas& c)
+{
+    party::Character& ch = *pt->sel();
+    if (ch.health() == party::Animated || !ch.in_combat()) {
+        char a[28], b[20], t[48];
+        mw(profile::kNoCondition, a, sizeof a);
+        mw(profile::kMemorizeSpells, b, sizeof b);
+        snprintf(t, sizeof t, "%s%s", a, b);
+        say_status(c, t);
+        return;
+    }
+    if (magic::memorizing(ch)) {
+        confirm_memorize(c, profile::kMemorizeThese);
+        return;
+    }
+    if (!magic::any_room(ch, mrules->tables)) {
+        char t[32];
+        mw(profile::kCannotMemorize, t, sizeof t);
+        say_status(c, t);
+        return;
+    }
+    show_grimoire(c);
+}
+
+void spells_tap(int x, int y, pic::Canvas& c)
+{
+    const int row = y / 8;
+    if (y < text::kMenuTapTop) {
+        const int i = sl.top + row - 5;
+        if (row >= 5 && row < 5 + list_rows() && i < sl.n && sl.id[i]) {
+            sl.sel = i;
+            draw_spells(c);
+        }
+        return;
+    }
+    const char k = text::key(menu, text::hit(menu, x / 8));
+    if (k == 'M' && sl.sel >= 0) {
+        magic::add(*pt->sel(), mrules->tables, sl.id[sl.sel]);
+        draw_counts(c);
+        draw_spells(c);
+    } else if (k == 'N' && sl.top + list_rows() < sl.n) {
+        sl.top += list_rows();
+        draw_spells(c);
+    } else if (k == 'P' && sl.top > 0) {
+        sl.top = sl.top > list_rows() ? sl.top - list_rows() : 0;
+        draw_spells(c);
+    } else if (k == 'E') {
+        if (magic::memorizing(*pt->sel())) confirm_memorize(c, profile::kMemorizeThese2);
+        else back_to_magic(c);
+    }
+}
+
+// ---- Rest
+struct RestRun {
+    int  left = 0;                  // minutes still to rest
+    int  unit = 2;                  // being set: 2 minutes, 3 hours, 4 days
+    bool running = false, from_magic = false, interrupted = false;
+    int  enc = 0;                   // steps since the last encounter check
+    uint32_t pause_until = 0;       // a message stays a moment
+    int  shown = 0;                 // steps since the time was shown
+    magic::Rest r;
+} rest;
+
+void draw_rest_time(pic::Canvas& c)
+{
+    char w1[16], t[12];
+    c.fill(8, 17 * 8, 38 * 8, 8, 0);
+    mw(profile::kRestTime, w1, sizeof w1);
+    put(c, w1, 1, 17, 10);
+    const int days = rest.left / 1440, hours = rest.left / 60 % 24, mins = rest.left % 60;
+    const int v[3] = {days, hours, mins};
+    for (int i = 0; i < 3; ++i) {
+        snprintf(t, sizeof t, "%02d", v[i]);
+        const int unit = 4 - i;
+        put(c, t, 12 + i * 3, 17, !rest.running && unit == rest.unit ? 15 : 10);
+        if (i < 2) put(c, ":", 14 + i * 3, 17, 10);
+    }
+    dirty_rows(17, 17);
+}
+
+void rest_menu(pic::Canvas& c)
+{
+    char words[48];
+    mw(profile::kRestMenu, words, sizeof words);
+    text::build(menu, "", words);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+void open_rest(pic::Canvas& c, bool from_magic)
+{
+    if (!load_magic()) {
+        error(c, "Not enough memory.");
+        return;
+    }
+    int most = 0;
+    for (int i = 0; i < pt->count; ++i) {
+        const int m = magic::rest_minutes(pt->m[i], mrules->tables);
+        if (m > most) most = m;
+    }
+    rest = RestRun{};
+    rest.left = most;
+    rest.from_magic = from_magic;
+    screen = Screen::Rest;
+    text::clear(c, text::kTextArea);
+    dirty_rows(17, 22);
+    draw_rest_time(c);
+    rest_menu(c);
+}
+
+void end_rest(pic::Canvas& c)
+{
+    rest.running = false;
+    text::clear(c, text::kTextArea);
+    dirty_rows(17, 22);
+    if (rest.interrupted) {
+        // The camp breaks up; the area's camp-interrupted script runs
+        rest.interrupted = false;
+        leave_camp(c);
+        run_entry(3, Then::Idle);
+        return;
+    }
+    if (rest.from_magic) back_to_magic(c);
+    else {
+        screen = Screen::Camp;
+        draw_camp(c);
+    }
+}
+
+void rest_tap(int x, int y, pic::Canvas& c)
+{
+    if (rest.running) {
+        // A tap asks to stop (the games: a key)
+        char q[20];
+        mw(profile::kStopResting, q, sizeof q);
+        ask_yes_no(c, Ask::StopRest, q);
+        return;
+    }
+    if (y < text::kMenuTapTop) return;
+    const char k = text::key(menu, text::hit(menu, x / 8));
+    switch (k) {
+    case 'R':
+        if (rest.left <= 0) break;
+        rest.running = true;
+        magic::begin(rest.r);
+        clear_menu_line(c);
+        draw_rest_time(c);
+        break;
+    case 'D': rest.unit = 4; break;
+    case 'H': rest.unit = 3; break;
+    case 'M': rest.unit = 2; break;
+    case 'A': rest.left += rest.unit == 4 ? 1440 : rest.unit == 3 ? 60 : 5; break;
+    case 'S':
+        rest.left -= rest.unit == 4 ? 1440 : rest.unit == 3 ? 60 : 5;
+        if (rest.left < 0) rest.left = 0;
+        break;
+    case 'E': end_rest(c); return;
+    default: return;
+    }
+    if (rest.left > 99 * 1440) rest.left = 99 * 1440;
+    if (screen == Screen::Rest) draw_rest_time(c);
+}
+
+// Resting: a few steps each tick, the messages as they come
+void rest_tick(uint32_t now, pic::Canvas& c)
+{
+    if (!rest.running || screen != Screen::Rest) return;
+    if (rest.pause_until && static_cast<int32_t>(now - rest.pause_until) < 0) return;
+    if (rest.pause_until) {
+        rest.pause_until = 0;
+        c.fill(8, 18 * 8, 38 * 8, 4 * 8, 0);
+        dirty_rows(18, 21);
+        if (rest.interrupted) {
+            end_rest(c);
+            return;
+        }
+    }
+    int speed = vm->get(0x4BFC) & 0xFF;
+    if (speed == 0) speed = 4;
+    const uint32_t delay = static_cast<uint32_t>(speed) * 300;
+    for (int k = 0; k < 6 && rest.left > 0; ++k) {
+        rest.left -= 5;
+        if (rest.left < 0) rest.left = 0;
+        vm->advance_clock(1, 5);
+        const magic::Step st = magic::step(rest.r, *pt, mrules->tables);
+        bool said = false;
+        if (st.healed) {
+            char t[32];
+            mw(profile::kHealedAll, t, sizeof t);
+            put(c, t, 1, 19, 10);
+            draw_party(c, 17);
+            said = true;
+        }
+        for (int i = 0; i < pt->count && !said; ++i)
+            if (st.learnt[i]) {
+                char nm[20], w1[20], t[64];
+                pt->m[i].name(nm, sizeof nm);
+                mw(profile::kHasMemorized, w1, sizeof w1);
+                snprintf(t, sizeof t, "%s %s %s", nm, w1, spell_name(st.learnt[i]));
+                put(c, t, 1, 19, 10);
+                said = true;
+            }
+        // An encounter can break in
+        const int period = vm->get(d->prof->magic.rest_period), chance = vm->get(d->prof->magic.rest_chance);
+        if (period > 0 && ++rest.enc >= period) {
+            rest.enc = 0;
+            if (rng.roll(100, 1) <= chance) {
+                char t[40];
+                mw(profile::kInterrupted, t, sizeof t);
+                c.fill(8, 19 * 8, 38 * 8, 8, 0);
+                put(c, t, 1, 19, 15);
+                rest.interrupted = true;
+                said = true;
+            }
+        }
+        if (said) {
+            dirty_rows(17, 22);
+            draw_rest_time(c);
+            rest.pause_until = now + delay;
+            if (!rest.pause_until) rest.pause_until = 1;
+            return;
+        }
+    }
+    draw_rest_time(c);
+    draw_position(c);
+    if (rest.left <= 0) {
+        rest.running = false;
+        end_rest(c);
+    }
+}
+
+bool magic_yes_no(Ask what, char k, pic::Canvas& c)
+{
+    if (what == Ask::MemorizeThese) {
+        if (k != 'Y') magic::cancel(*pt->sel());
+        back_to_magic(c);
+        return true;
+    }
+    if (what == Ask::StopRest) {
+        screen = Screen::Rest;
+        if (k == 'Y') {
+            rest.running = false;
+            end_rest(c);
+        } else {
+            clear_menu_line(c);
+        }
+        return true;
+    }
+    return false;
+}
+
+void magic_tap(int x, int y, pic::Canvas& c)
+{
+    const int row = y / 8, col = x / 8;
+    if (note_until) {
+        redraw_menu(c);
+        return;
+    }
+    if (y >= text::kMenuTapTop) {
+        switch (text::key(menu, text::hit(menu, col))) {
+        case 'M': memorize(c); break;
+        case 'R': open_rest(c, true); break;
+        case 'E':
+            screen = Screen::Camp;
+            draw_camp(c);
+            break;
+        case 0: break;
+        default: error(c, "Not in the engine yet."); break;      // Cast, Scribe, Display: with the spells
+        }
+        return;
+    }
+    if (col >= 17 && row >= 4 && row < 4 + pt->count && bigpic < 0) {
+        pt->selected = row - 4;
+        draw_party(c, 17);
+    }
+}
+
 // ---- Train Character (a training hall: a script sets 0x7EA8, the classes it
 // trains) ---------------------------------------------------------------------
 // The games' checks ("we only train conscious people", "Training costs
@@ -2837,6 +3376,18 @@ void pm_tap(int x, int y, pic::Canvas& c)
         appraise_tap(x, y, c);
         return;
     }
+    if (screen == Screen::Magic) {
+        magic_tap(x, y, c);
+        return;
+    }
+    if (screen == Screen::SpellList) {
+        spells_tap(x, y, c);
+        return;
+    }
+    if (screen == Screen::Rest) {
+        rest_tap(x, y, c);
+        return;
+    }
     if (screen == Screen::AddFrom) {
         add_from_tap(x, y, c);
         return;
@@ -2999,6 +3550,11 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
     if (!d->ac_hp_head[0]) strcpy(d->ac_hp_head, "AC  HP");
     if (!d->v_exit[0]) strcpy(d->v_exit, "Exit");
     if (pp.camp_menu) text::read_pascal(exe, info, pp.camp_menu, d->w_camp_menu, sizeof d->w_camp_menu);
+    const auto& pm = d->prof->magic;
+    if (pm.menu) text::read_pascal(exe, info, pm.menu, d->w_magic, sizeof d->w_magic);
+    for (int i = 0; i < 5 && pm.levels.at; ++i)
+        text::read_pascal(exe, info, pm.levels.at + static_cast<uint32_t>(i) * pm.levels.stride, d->w_level[i],
+                          sizeof d->w_level[i]);
     {
         const uint32_t at[Data::kRosterWords] = {pp.add_from, pp.add_sources, pp.add_prompt, pp.add, pp.added,
                                                  pp.paladin_evil, pp.rangers, pp.no_evil, pp.overwrite, pp.qmark,
@@ -3999,6 +4555,11 @@ void tick(uint32_t now, pic::Canvas& c)
         cv = &c;
         redraw_menu(c);
     }
+    if (screen == Screen::Rest) {
+        cv = &c;
+        rest_tick(now, c);
+        return;
+    }
     if (!waiting || screen != Screen::Game) return;
     cv = &c;
     const ecl::Wait wt = vm->wait();
@@ -4072,7 +4633,9 @@ bool back(pic::Canvas& c)
     if (screen == Screen::YesNo && !mk) {
         const Ask what = ask;
         ask = Ask::None;
-        if (items_yes_no(what, 'N', c) || shop_yes_no(what, 'N', c) || train_yes_no(what, 'N', c)) return true;
+        if (items_yes_no(what, 'N', c) || shop_yes_no(what, 'N', c) || train_yes_no(what, 'N', c) ||
+            magic_yes_no(what, 'N', c))
+            return true;
         ask = what;
     }
     if (screen == Screen::TradeWho) {

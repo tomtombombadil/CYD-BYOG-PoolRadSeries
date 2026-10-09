@@ -33,6 +33,10 @@ namespace {
 // cures' prices and the effects they take away, a kept gem / jewel's type
 // and name word - constants in the game's code (coab's notes, checked
 // against the strings the code prints).
+// Spells: the magic menu (START.EXE image 0xB033), level names (0xB480,
+// 41-byte slots), spell names (0xD39F, 41-byte slots, spell 0 empty); the
+// spell list and rest words in GAME.OVR; resting's encounter check: the
+// area words 0x7ED2 (steps) / 0x7ED3 (chance).
 // Title: picture 1 for 5 s; picture 2 with 3 on it at row 11, column 6 for
 // 10 s; picture 4 at row 11 for 10 s; the credits for 10 s.
 constexpr TitleStep kCurseTitle[] = {
@@ -104,7 +108,11 @@ const Profile kProfiles[] = {
       0x24C2E, 0x24C4D, 0x24C65, 0x24C84, 0x24C9A, 0x24CA8, 0x24CB7, 0x24CC4, 0x24CDB},
      {{1000, 1000, 100, 350, 600, 5000, 1000, 5500, 3500, 2000},
       0x21, {0x1F, 0x22, 0x2B, 0x2C, 0x20, 0x39}, 0x44, 0x37, 0x16, 0x0F, 0x20, 0x24},
-     70, 0x65, 0xD6},
+     70, 0x65, 0xD6,
+     {0xB033, {0xB480, 41, 5}, {0xD39F, 41, 101},
+      {0x27B87, 0x2A486, 0x2A490, 0x2A4BB, 0x2E177, 0x2E141, 0x19878, 0x198AB, 0x194FB, 0x19509, 0x1951C, 0x1952F,
+       0x19890, 0x192C4, 0x192EB, 0x2B35E, 0x2B460, 0x2BA11, 0x2B5DD, 0x2B6A8, 0x2BA20},
+      0x7ED2, 0x7ED3}},
 };
 
 } // namespace
