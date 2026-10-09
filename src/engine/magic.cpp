@@ -104,6 +104,22 @@ int known(const party::Character& c, const classes::Tables& t, uint8_t* ids, int
     return n;
 }
 
+int learnable(const party::Character& c, const classes::Tables& t, uint8_t* ids, int cap)
+{
+    int n = 0;
+    for (int s = 1; s < t.lay.spell_count && s <= 100 && n < cap; ++s)
+        if (usable(t, s) && cast_count(c, t.spell_class(s), t.spell_level(s)) > 0 && can_use(c, t, s) &&
+            !c.rec[kBookAt + s - 1])
+            ids[n++] = static_cast<uint8_t>(s);
+    sort_by_level(t, ids, n);
+    return n;
+}
+
+void learn(party::Character& c, int s)
+{
+    if (s >= 1 && s <= 100) c.rec[kBookAt + s - 1] = 1;
+}
+
 bool add(party::Character& c, const classes::Tables& t, int s)
 {
     if (!usable(t, s) || room(c, t, t.spell_class(s), t.spell_level(s)) <= 0) return false;
@@ -134,7 +150,98 @@ bool remove(party::Character& c, int s)
     return false;
 }
 
-int rest_minutes(party::Character& c, const classes::Tables& t)
+bool is_scroll(const Scrolls& sc, const uint8_t* it)
+{
+    if (!sc.names) return false;
+    const int slot = sc.names->type(it[0x2E]).slot;
+    return slot >= 11 && slot <= 13;
+}
+
+int scroll_spells(party::Character& c, const classes::Tables& t, const Scrolls& sc, bool scribing, uint8_t* ids,
+                  int cap)
+{
+    int n = 0;
+    const bool cleric = classes::skill_level(c, classes::Cleric) > 0;
+    for (int i = 0; i < c.n_items; ++i) {
+        uint8_t* it = c.items[i];
+        if (!is_scroll(sc, it)) continue;
+        if ((sc.read_magic && c.has_affect(sc.read_magic)) || (cleric && sc.names->type(it[0x2E]).slot == 12))
+            it[0x35] = 0;                   // read: its spells are known
+        if (it[0x35]) continue;
+        for (int k = 0; k < 3 && n < cap; ++k) {
+            const uint8_t v = it[kScrollAt + k];
+            if (scribing ? v > 0x80 : v > 0) ids[n++] = v & 0x7F;
+        }
+    }
+    sort_by_level(t, ids, n);
+    return n;
+}
+
+Scribe scribe(party::Character& c, const classes::Tables& t, const Scrolls& sc, int s)
+{
+    if (s >= 1 && s <= 100 && c.rec[kBookAt + s - 1]) return Scribe::Known;
+    for (int i = 0; i < c.n_items; ++i)
+        if (is_scroll(sc, c.items[i]))
+            for (int k = 0; k < 3; ++k)
+                if (c.items[i][kScrollAt + k] == (s | 0x80)) return Scribe::Already;
+    if (cast_count(c, t.spell_class(s), t.spell_level(s)) <= 0) return Scribe::Cannot;
+    for (int i = 0; i < c.n_items; ++i)
+        if (is_scroll(sc, c.items[i]))
+            for (int k = 0; k < 3; ++k)
+                if (c.items[i][kScrollAt + k] == s) {
+                    c.items[i][kScrollAt + k] = static_cast<uint8_t>(s | 0x80);
+                    return Scribe::Ok;
+                }
+    return Scribe::Cannot;
+}
+
+bool scribing(const party::Character& c, const Scrolls& sc)
+{
+    for (int i = 0; i < c.n_items; ++i)
+        if (is_scroll(sc, c.items[i]))
+            for (int k = 0; k < 3; ++k)
+                if (c.items[i][kScrollAt + k] > 0x80) return true;
+    return false;
+}
+
+void cancel_scribes(party::Character& c, const Scrolls& sc)
+{
+    for (int i = 0; i < c.n_items; ++i)
+        if (is_scroll(sc, c.items[i]))
+            for (int k = 0; k < 3; ++k) c.items[i][kScrollAt + k] &= 0x7F;
+}
+
+void scribed(party::Character& c, const Scrolls& sc, int i, int k)
+{
+    if (i < 0 || i >= c.n_items || k < 0 || k > 2) return;
+    uint8_t* it = c.items[i];
+    const int s = it[kScrollAt + k] & 0x7F;
+    if (s >= 1 && s <= 100) c.rec[kBookAt + s - 1] = 1;
+    it[kScrollAt + k] = 0;
+    it[0x30] = static_cast<uint8_t>(it[0x30] - 1);
+    if (it[0x30] < sc.one_spell) {
+        // Used up
+        for (int j = i; j + 1 < c.n_items; ++j) memcpy(c.items[j], c.items[j + 1], party::kItemSize);
+        --c.n_items;
+        memset(c.items[c.n_items], 0, party::kItemSize);
+    }
+}
+
+// The next spell to scribe (item, slot) in the games' order, or false
+static bool next_scribe(const party::Character& c, const Scrolls& sc, int* item, int* slot)
+{
+    for (int i = 0; i < c.n_items; ++i)
+        if (is_scroll(sc, c.items[i]))
+            for (int k = 0; k < 3; ++k)
+                if (c.items[i][kScrollAt + k] > 0x80) {
+                    *item = i;
+                    *slot = k;
+                    return true;
+                }
+    return false;
+}
+
+int rest_minutes(party::Character& c, const classes::Tables& t, const Scrolls& sc)
 {
     int max_level = 0, total = 0;
     for (int i = 0; i < kListSize; ++i) {
@@ -144,6 +251,15 @@ int rest_minutes(party::Character& c, const classes::Tables& t)
         if (lv > max_level) max_level = lv;
         total += lv;
     }
+    for (int i = 0; i < c.n_items; ++i)
+        if (is_scroll(sc, c.items[i]))
+            for (int k = 0; k < 3; ++k) {
+                const uint8_t v = c.items[i][kScrollAt + k];
+                if (v <= 0x80) continue;
+                const int lv = t.spell_level(v & 0x7F);
+                if (lv > max_level) max_level = lv;
+                total += lv;
+            }
     int hours = 0;
     if (total > 0) hours = 4;
     if (max_level > 2) hours = 6;
@@ -178,10 +294,21 @@ int tick_affects(party::Character& c, int minutes)
     return ended;
 }
 
-Step step(Rest& r, party::Party& p, const classes::Tables& t)
+// The level of what comes next (a spell to scribe first, then one to
+// memorize), 0: nothing
+static int next_level(const party::Character& c, const classes::Tables& t, const Scrolls& sc)
+{
+    int i, k;
+    if (next_scribe(c, sc, &i, &k)) return t.spell_level(c.items[i][kScrollAt + k] & 0x7F);
+    const int next = first_learning(c);
+    return next >= 0 ? t.spell_level(c.rec[kListAt + next] & 0x7F) : 0;
+}
+
+Step step(Rest& r, party::Party& p, const classes::Tables& t, const Scrolls& sc)
 {
     Step st;
     for (int& l : st.learnt) l = 0;
+    for (int& l : st.scribed) l = 0;
     // A day's rest heals a point
     if (++r.steps >= 8 * 36) {
         r.steps = 0;
@@ -194,13 +321,17 @@ Step step(Rest& r, party::Party& p, const classes::Tables& t)
         party::Character& c = p.m[i];
         if (r.wait[i] > 0) --r.wait[i];
         if (r.wait[i] == 0 && c.rec[kToLearnAt] == 0) {
+            int item, slot;
             const int at = first_learning(c);
-            if (at >= 0) {
+            if (next_scribe(c, sc, &item, &slot)) {
+                st.scribed[i] = c.items[item][kScrollAt + slot] & 0x7F;
+                scribed(c, sc, item, slot);
+                r.wait[i] = next_level(c, t, sc) * 3;
+            } else if (at >= 0) {
                 const int s = c.rec[kListAt + at] & 0x7F;
                 c.rec[kListAt + at] = static_cast<uint8_t>(s);
                 st.learnt[i] = s;
-                const int next = first_learning(c);
-                r.wait[i] = next >= 0 ? t.spell_level(c.rec[kListAt + next] & 0x7F) * 3 : 0;
+                r.wait[i] = next_level(c, t, sc) * 3;
             }
         }
     }
@@ -209,10 +340,7 @@ Step step(Rest& r, party::Party& p, const classes::Tables& t)
         r.hour = 0;
         for (int i = 0; i < p.count; ++i) {
             party::Character& c = p.m[i];
-            if (c.rec[kToLearnAt] > 0 && --c.rec[kToLearnAt] == 0) {
-                const int next = first_learning(c);
-                r.wait[i] = next >= 0 ? t.spell_level(c.rec[kListAt + next] & 0x7F) * 2 : 0;
-            }
+            if (c.rec[kToLearnAt] > 0 && --c.rec[kToLearnAt] == 0) r.wait[i] = next_level(c, t, sc) * 2;
         }
     }
     for (int i = 0; i < p.count; ++i) tick_affects(p.m[i], 5);

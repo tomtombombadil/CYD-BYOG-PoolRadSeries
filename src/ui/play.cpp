@@ -807,7 +807,8 @@ void redraw_menu(pic::Canvas& c)
 {
     note_until = 0;
     note_held = false;
-    show_menu_line(c);
+    if (screen == Screen::PartyMenu) pm_prompt(c);      // the party menu's own prompt
+    else show_menu_line(c);
 }
 
 // A message on the menu line for the game's delay (as the games do)
@@ -924,7 +925,8 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
 // 16 items), Join, in a shop Sell (player characters) and Id; Exit.
 
 enum class Ask : uint8_t { None, Overwrite, Drop, DropSure, Reroll, SaveNew, OverwriteNew, DropItem, SellDeal, IdDeal,
-                          LeaveCoins, CureAnyway, PayCure, Train, MemorizeThese, StopRest, LoseIt, AlterDrop, QuitDos };
+                          LeaveCoins, CureAnyway, PayCure, Train, MemorizeThese, StopRest, LoseIt, AlterDrop, QuitDos,
+                          ScribeThese, ScribeThese2 };
 void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt);
 
 bool shop_yes_no(Ask what, char k, pic::Canvas& c);
@@ -1424,13 +1426,17 @@ void open_camp(pic::Canvas& c)
 }
 
 void end_magic();
+magic::Scrolls scroll_facts();
 void open_alter(pic::Canvas& c);
 void fix_party(pic::Canvas& c);
 
 void leave_camp(pic::Canvas& c)
 {
     // Spells not yet memorized are forgotten when the camp breaks (the games)
-    for (int i = 0; i < pt->count; ++i) magic::cancel(pt->m[i]);
+    for (int i = 0; i < pt->count; ++i) {
+        magic::cancel(pt->m[i]);
+        magic::cancel_scribes(pt->m[i], scroll_facts());
+    }
     end_magic();
     screen = Screen::Game;
     text::clear(c, text::kTextArea);
@@ -2790,7 +2796,19 @@ struct SpellLines {
     int     top = 0, sel = -1;
     bool    learning = false;       // "to Memorize" (else the grimoire)
     bool    casting = false;        // "in Memory" (Cast)
+    bool    scrolls = false;        // scrolls' spells: "on Scrolls" (Scribe) / "to Scribe" (with learning)
+    bool    choosing = false;       // training's new spell: "to Choose", Learn (no Exit)
 } sl;
+
+// The scrolls' facts for the magic rules
+magic::Scrolls scroll_facts()
+{
+    magic::Scrolls sc;
+    sc.names = names;
+    sc.one_spell = d->prof->magic.scroll_one_spell;
+    sc.read_magic = d->prof->magic.read_magic;
+    return sc;
+}
 
 void build_lines(const uint8_t* ids, int n)
 {
@@ -2816,7 +2834,7 @@ void build_lines(const uint8_t* ids, int n)
         }
 }
 
-int list_rows() { return sl.learning || sl.casting ? 22 - 5 + 1 : 15 - 5 + 1; }
+int list_rows() { return sl.learning || sl.casting || sl.scrolls || sl.choosing ? 22 - 5 + 1 : 15 - 5 + 1; }
 
 // "NAME can memorize:" and the counts a kind (cleric, druid, magic-user)
 void draw_counts(pic::Canvas& c)
@@ -2856,7 +2874,9 @@ void draw_spells(pic::Canvas& c)
     snprintf(t, sizeof t, "%s%s", nm, d->w_s);
     put(c, t, 1, 1, pt->sel()->npc() ? 10 : 11);
     mw(profile::kSpellsWord, a, sizeof a);
-    mw(sl.learning ? profile::kToMemorize : sl.casting ? profile::kInMemory : profile::kInGrimoire, b, sizeof b);
+    if (sl.choosing) cw(profile::kToChoose, b, sizeof b);
+    else if (sl.scrolls) cw(sl.learning ? profile::kToScribe : profile::kOnScrolls, b, sizeof b);
+    else mw(sl.learning ? profile::kToMemorize : sl.casting ? profile::kInMemory : profile::kInGrimoire, b, sizeof b);
     snprintf(t, sizeof t, "%s%s", a, b);
     put(c, t, static_cast<int>(strlen(nm)) + 4, 1, 10);
     const int rows = list_rows();
@@ -2876,7 +2896,7 @@ void draw_spells(pic::Canvas& c)
             put(c, line, 1, row, 10);
         }
     }
-    if (!sl.learning && !sl.casting) draw_counts(c);
+    if (!sl.learning && !sl.casting && !sl.scrolls && !sl.choosing) draw_counts(c);
     // The menu
     char keys[40], prompt[20], k1[12];
     keys[0] = 0;
@@ -2884,9 +2904,11 @@ void draw_spells(pic::Canvas& c)
     if (!sl.learning) {
         mw(profile::kChooseSpell, prompt, sizeof prompt);
         if (sl.casting) cw(profile::kCastKey, k1, sizeof k1);
+        else if (sl.scrolls) cw(profile::kScribeKey, k1, sizeof k1);
+        else if (sl.choosing) cw(profile::kLearnKey, k1, sizeof k1);
         else mw(profile::kMemorizeKey, k1, sizeof k1);
         snprintf(keys, sizeof keys, "%s%s%s%s", k1, sl.top + rows < sl.n ? d->w_next : "", sl.top > 0 ? d->w_prev : "",
-                 d->w_exit);
+                 sl.choosing ? "" : d->w_exit);
         text::build(menu, prompt, keys);
         menu.selected = 0;
         show_menu_line(c);
@@ -2901,6 +2923,8 @@ void confirm_memorize(pic::Canvas& c, int word)
     const int n = magic::in_memory(*pt->sel(), mrules->tables, true, ids, 84);
     sl.learning = true;
     sl.casting = false;
+    sl.scrolls = false;
+    sl.choosing = false;
     build_lines(ids, n);
     screen = Screen::SpellList;
     draw_spells(c);
@@ -2915,8 +2939,148 @@ void show_grimoire(pic::Canvas& c)
     const int n = magic::known(*pt->sel(), mrules->tables, ids, 100);
     sl.learning = false;
     sl.casting = false;
+    sl.scrolls = false;
+    sl.choosing = false;
     build_lines(ids, n);
     screen = Screen::SpellList;
+    draw_spells(c);
+}
+
+// ---- Scribe: "NAME's Spells on Scrolls" (the scrolls they can read; rows
+// 5-22), "Choose Spell: Scribe Exit"; a spell known already, being scribed
+// already or one they can't learn: "You already know that spell", "You
+// are already scibing that spell", "You can not scribe that spell." on
+// the menu line; leaving: "Spells to Scribe" and "Scribe these spells? Yes
+// No" (No forgets them; already scribing when it opens: "Scribe These
+// Spells?" first). The rest scribes them before memorizing ("NAME has
+// scribed SPELL"): into the spell book, off the scroll (used up: gone).
+void show_scrolls(pic::Canvas& c);
+
+void confirm_scribe(pic::Canvas& c, int word, Ask what)
+{
+    uint8_t ids[48];
+    const int n = magic::scroll_spells(*pt->sel(), mrules->tables, scroll_facts(), true, ids, 48);
+    sl.learning = true;
+    sl.casting = false;
+    sl.scrolls = true;
+    sl.choosing = false;
+    build_lines(ids, n);
+    screen = Screen::SpellList;
+    draw_spells(c);
+    char q[28];
+    cw(word, q, sizeof q);
+    ask_yes_no(c, what, q);
+}
+
+void show_scrolls(pic::Canvas& c)
+{
+    uint8_t ids[48];
+    const int n = magic::scroll_spells(*pt->sel(), mrules->tables, scroll_facts(), false, ids, 48);
+    if (n == 0) {
+        back_to_magic(c);
+        char t[32];
+        cw(profile::kNoCopyable, t, sizeof t);
+        say_status(c, t);
+        return;
+    }
+    const int keep = sl.scrolls && !sl.learning && sl.sel >= 0 ? sl.id[sl.sel] : 0;
+    sl.learning = false;
+    sl.casting = false;
+    sl.scrolls = true;
+    sl.choosing = false;
+    build_lines(ids, n);
+    for (int i = 0; keep && i < sl.n; ++i)
+        if (sl.id[i] == keep) {
+            sl.sel = i;
+            while (sl.sel >= sl.top + list_rows()) sl.top += list_rows();
+            break;
+        }
+    screen = Screen::SpellList;
+    draw_spells(c);
+}
+
+void open_scribe(pic::Canvas& c)
+{
+    party::Character& ch = *pt->sel();
+    if (ch.health() == party::Animated || !ch.in_combat()) {
+        char a[28], b[24], t[52];
+        mw(profile::kNoCondition, a, sizeof a);
+        cw(profile::kScribeAny, b, sizeof b);
+        snprintf(t, sizeof t, "%s%s", a, b);
+        say_status(c, t);
+        return;
+    }
+    sl.scrolls = false;
+    sl.choosing = false;
+    if (magic::scribing(ch, scroll_facts())) {
+        confirm_scribe(c, profile::kScribeThese, Ask::ScribeThese);
+        return;
+    }
+    show_scrolls(c);
+}
+
+// ---- Training's new spell: "NAME's Spells to Choose" (rows 5-22),
+// "Choose Spell: Learn" (no Exit: one must be chosen), then
+// "Congratulations..."
+void train_note(int word, pic::Canvas& c);
+
+bool open_learn(pic::Canvas& c)
+{
+    if (!load_magic()) {
+        end_magic();
+        return false;
+    }
+    uint8_t ids[60];
+    const int n = magic::learnable(*pt->sel(), mrules->tables, ids, 60);
+    if (n == 0) {
+        end_magic();
+        return false;
+    }
+    sl.learning = sl.casting = sl.scrolls = false;
+    sl.choosing = true;
+    build_lines(ids, n);
+    screen = Screen::SpellList;
+    draw_spells(c);
+    return true;
+}
+
+void learn_tap(char k, pic::Canvas& c)
+{
+    if (k == 'L' && sl.sel >= 0) {
+        magic::learn(*pt->sel(), sl.id[sl.sel]);
+        sl.choosing = false;
+        end_magic();
+        screen = Screen::PartyMenu;
+        train_note(profile::kCongrats, c);
+        return;
+    }
+    if (k == 'N' && sl.top + list_rows() < sl.n) sl.top += list_rows();
+    else if (k == 'P' && sl.top > 0) sl.top = sl.top > list_rows() ? sl.top - list_rows() : 0;
+    else return;
+    draw_spells(c);
+}
+
+void scribe_tap(char k, pic::Canvas& c)
+{
+    if (k == 'S' && sl.sel >= 0) {
+        char t[40];
+        switch (magic::scribe(*pt->sel(), mrules->tables, scroll_facts(), sl.id[sl.sel])) {
+        case magic::Scribe::Ok: return;
+        case magic::Scribe::Known: cw(profile::kAlreadyKnow, t, sizeof t); break;
+        case magic::Scribe::Already: cw(profile::kAlreadyScribing, t, sizeof t); break;
+        case magic::Scribe::Cannot: cw(profile::kCannotScribe, t, sizeof t); break;
+        }
+        note(c, t);
+        return;
+    }
+    if (k == 'E') {
+        if (magic::scribing(*pt->sel(), scroll_facts())) confirm_scribe(c, profile::kScribeThese2, Ask::ScribeThese2);
+        else back_to_magic(c);
+        return;
+    }
+    if (k == 'N' && sl.top + list_rows() < sl.n) sl.top += list_rows();
+    else if (k == 'P' && sl.top > 0) sl.top = sl.top > list_rows() ? sl.top - list_rows() : 0;
+    else return;
     draw_spells(c);
 }
 
@@ -2960,6 +3124,14 @@ void spells_tap(int x, int y, pic::Canvas& c)
         return;
     }
     const char k = text::key(menu, text::hit(menu, x / 8));
+    if (sl.choosing) {
+        learn_tap(k, c);
+        return;
+    }
+    if (sl.scrolls) {
+        scribe_tap(k, c);
+        return;
+    }
     if (sl.casting) {
         if (k == 'C' && sl.sel >= 0) choose_spell(sl.id[sl.sel], c);
         else if (k == 'E') cast_done(c);
@@ -3032,7 +3204,7 @@ void open_rest(pic::Canvas& c, bool from_magic)
     }
     int most = 0;
     for (int i = 0; i < pt->count; ++i) {
-        const int m = magic::rest_minutes(pt->m[i], mrules->tables);
+        const int m = magic::rest_minutes(pt->m[i], mrules->tables, scroll_facts());
         if (m > most) most = m;
     }
     rest = RestRun{};
@@ -3120,7 +3292,7 @@ void rest_tick(uint32_t now, pic::Canvas& c)
         if (rest.left < 0) rest.left = 0;
         vm->advance_clock(1, 5);
         vm->take_minutes();                 // (the rest's step runs the effects)
-        const magic::Step st = magic::step(rest.r, *pt, mrules->tables);
+        const magic::Step st = magic::step(rest.r, *pt, mrules->tables, scroll_facts());
         bool said = false;
         if (st.healed) {
             char t[32];
@@ -3129,6 +3301,15 @@ void rest_tick(uint32_t now, pic::Canvas& c)
             draw_party(c, 17);
             said = true;
         }
+        for (int i = 0; i < pt->count && !said; ++i)
+            if (st.scribed[i]) {
+                char nm[20], w1[20], t[64];
+                pt->m[i].name(nm, sizeof nm);
+                cw(profile::kHasScribed, w1, sizeof w1);
+                snprintf(t, sizeof t, "%s %s %s", nm, w1, spell_name(st.scribed[i]));
+                put(c, t, 1, 19, 10);
+                said = true;
+            }
         for (int i = 0; i < pt->count && !said; ++i)
             if (st.learnt[i]) {
                 char nm[20], w1[20], t[64];
@@ -3207,6 +3388,12 @@ bool magic_yes_no(Ask what, char k, pic::Canvas& c)
         lose_spell(k == 'Y', c);
         return true;
     }
+    if (what == Ask::ScribeThese || what == Ask::ScribeThese2) {
+        if (k != 'Y') magic::cancel_scribes(*pt->sel(), scroll_facts());
+        if (k != 'Y' && what == Ask::ScribeThese) show_scrolls(c);
+        else back_to_magic(c);
+        return true;
+    }
     if (what == Ask::MemorizeThese) {
         if (k != 'Y') magic::cancel(*pt->sel());
         back_to_magic(c);
@@ -3236,6 +3423,7 @@ void magic_tap(int x, int y, pic::Canvas& c)
         switch (text::key(menu, text::hit(menu, col))) {
         case 'C': open_cast(c); break;
         case 'M': memorize(c); break;
+        case 'S': open_scribe(c); break;
         case 'D': open_effects(c); break;
         case 'R': open_rest(c, true); break;
         case 'E':
@@ -3243,7 +3431,7 @@ void magic_tap(int x, int y, pic::Canvas& c)
             draw_camp(c);
             break;
         case 0: break;
-        default: error(c, "Not in the engine yet."); break;      // Scribe: with scrolls
+        default: error(c, "Not in the engine yet."); break;
         }
         return;
     }
@@ -3376,6 +3564,8 @@ void show_memory(pic::Canvas& c)
     const int keep = sl.casting && sl.sel >= 0 ? sl.id[sl.sel] : 0;
     sl.learning = false;
     sl.casting = true;
+    sl.scrolls = false;
+    sl.choosing = false;
     build_lines(ids, n);
     for (int i = 0; keep && i < sl.n; ++i)
         if (sl.id[i] == keep) {
@@ -3955,6 +4145,8 @@ void train_character(pic::Canvas& c)
     ask_yes_no(c, Ask::Train, w1);
 }
 
+bool open_learn(pic::Canvas& c);
+
 bool train_yes_no(Ask what, char k, pic::Canvas& c)
 {
     if (what != Ask::Train) return false;
@@ -3962,10 +4154,12 @@ bool train_yes_no(Ask what, char k, pic::Canvas& c)
     party::Character* ch = pt->sel();
     if (k == 'Y' && ch && trainer && train_mask) {
         rules::pay(*ch, 1000);
+        const int mu = ch->level(classes::MagicUser);
         create::train_classes(*ch, trainer->tables, trainer->facts, trainer->dice, train_mask, false);
         rules::recalc(*ch, *names, d->facts);
-        if (ch->level(classes::MagicUser) > 0) Serial.println("[play] training: a new spell to learn (not in the engine yet)");
         end_training();
+        // A magic-user's new level (or a ranger's past 8th): a new spell
+        if ((ch->level(classes::MagicUser) > mu || ch->level(classes::Ranger) > 8) && open_learn(c)) return true;
         train_note(profile::kCongrats, c);
         return true;
     }
@@ -5349,7 +5543,9 @@ bool back_from_magic(pic::Canvas& c)
         draw_camp(c);
         return true;
     case Screen::SpellList:
+        if (sl.choosing) return true;          // a spell must be chosen
         if (sl.casting) cast_done(c);
+        else if (sl.scrolls) scribe_tap('E', c);
         else if (magic::memorizing(*pt->sel())) confirm_memorize(c, profile::kMemorizeThese2);
         else back_to_magic(c);
         return true;

@@ -101,6 +101,9 @@ enum CastWord {
     kCastAny, kNoSpells, kCastKey, kCasts, kCantCastHere, kLoseIt, kCastOnWhom,   // "cast any spells" ... "Cast Spell on whom"
     kFullyHealed, kPartlyHealed, kIsCured, kIsUnaffected, kCanSee, kUnpoisoned,  // what a spell did
     kRaised, kUncursed, kItemUncursed, kNoEffects,                               // ... " <No Spell Effects>"
+    kScribeKey, kOnScrolls, kToScribe, kNoCopyable, kAlreadyKnow, kAlreadyScribing,   // Scribe: "Scribe" ...
+    kCannotScribe, kScribeThese, kScribeThese2, kScribeAny, kHasScribed,           // ... "has scribed"
+    kToChoose, kLearnKey,                                                         // training's "to Choose", "Learn"
     kCastWords
 };
 
@@ -269,6 +272,8 @@ struct Profile {
         uint8_t                   n_spell_named;
         const EffectName*         named;
         uint8_t                   n_named;
+        // Scrolls: the item word "With 1 Spell", Read Magic's effect
+        uint8_t                   scroll_one_spell, read_magic;
     } magic;
 
     // The camp's Alter: its menu ("Order Drop Speed Icon Pics Exit"), the

@@ -2320,6 +2320,63 @@ static void test_magic()
     CHECK(c.hp() == 11);
     // Casting takes it out
     CHECK(magic::remove(c, 2) && !magic::remove(c, 2) && magic::in_memory(c, t, false, ids, 16) == 2);
+
+    // Scrolls: type 61 a magic-user's scroll (slot 11), 62 a cleric's (slot 12)
+    static items::Names names;
+    std::vector<uint8_t> types(2 + items::kTypes * 16, 0);
+    types[2 + 61 * 16] = 11;
+    types[2 + 62 * 16] = 12;
+    dax::MemorySource tsrc(types.data(), static_cast<uint32_t>(types.size()));
+    CHECK(names.read_types(tsrc));
+    magic::Scrolls sc;
+    sc.names = &names;
+    sc.one_spell = 0xD2;
+    sc.read_magic = 0x10;
+    party::Character& m = p.m[0];
+    m = party::Character{};
+    m.rec[0x109 + classes::MagicUser] = 3;
+    m.rec[0x13] = 15;                                         // Int 15
+    m.rec[0x137] = 2; m.rec[0x138] = 1;                       // magic-user: 2 first-level, 1 second-level a day
+    m.rec[0x79 + 5 - 1] = 1;                                  // knows spell 5
+    m.n_items = 3;
+    m.items[0][0x2E] = 61; m.items[0][0x30] = 0xD4;           // "With 3 Spells": 5, 6, 7
+    m.items[0][0x3C] = 5; m.items[0][0x3D] = 6; m.items[0][0x3E] = 7;
+    m.items[1][0x2E] = 62; m.items[1][0x30] = 0xD2; m.items[1][0x3C] = 1;   // a cleric's: hidden
+    m.items[1][0x35] = 4;
+    m.items[2][0x2E] = 36;                                    // not a scroll
+    CHECK(magic::is_scroll(sc, m.items[0]) && magic::is_scroll(sc, m.items[1]) && !magic::is_scroll(sc, m.items[2]));
+    CHECK(magic::scroll_spells(m, t, sc, false, ids, 16) == 3 && ids[0] == 5 && ids[1] == 6 && ids[2] == 7);
+    CHECK(magic::scribe(m, t, sc, 5) == magic::Scribe::Known);
+    CHECK(magic::scribe(m, t, sc, 6) == magic::Scribe::Ok && magic::scribe(m, t, sc, 6) == magic::Scribe::Already);
+    m.rec[0x138] = 0;
+    CHECK(magic::scribe(m, t, sc, 7) == magic::Scribe::Cannot);  // no second-level spells
+    CHECK(magic::scribing(m, sc) && magic::scroll_spells(m, t, sc, true, ids, 16) == 1 && ids[0] == 6);
+    // Read Magic reads the hidden one
+    magic::scribe(m, t, sc, 7);
+    spells::add_affect(m, 0x10, 30, 0, false);
+    CHECK(magic::scroll_spells(m, t, sc, false, ids, 16) == 4 && m.items[1][0x35] == 0);
+    // The rest: 4 hours + a first-level spell; then it's in the book and off the scroll
+    CHECK(magic::rest_minutes(m, t, sc) == 4 * 60 + 15);
+    p.count = 1;
+    magic::begin(r);
+    int got = 0;
+    for (int k = 0; k < 100 && !got; ++k) got = magic::step(r, p, t, sc).scribed[0];
+    CHECK(got == 6 && m.rec[0x79 + 6 - 1] == 1 && m.items[0][0x3D] == 0 && m.items[0][0x30] == 0xD3 && m.n_items == 3);
+    CHECK(!magic::scribing(m, sc));
+    // Used up: the last spell scribed takes the scroll
+    m.items[1][0x3C] = 1 | 0x80;
+    m.rec[0x12D] = 1;
+    magic::scribed(m, sc, 1, 0);
+    CHECK(m.n_items == 2 && m.items[1][0x2E] == 36 && m.rec[0x79] == 1);
+    // Training's new spell: first- and second-level magic-user spells not known
+    m.rec[0x138] = 1;
+    CHECK(magic::learnable(m, t, ids, 16) == 1 && ids[0] == 7);   // 5, 6 known now
+    magic::learn(m, 7);
+    CHECK(magic::learnable(m, t, ids, 16) == 0);
+    // Cancelled
+    m.items[0][0x3C] = 5 | 0x80;
+    magic::cancel_scribes(m, sc);
+    CHECK(!magic::scribing(m, sc) && m.items[0][0x3C] == 5);
 }
 
 // Casting outside combat: synthetic spells (made-up numbers in the games'

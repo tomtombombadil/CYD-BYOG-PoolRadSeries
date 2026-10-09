@@ -1,7 +1,8 @@
-// Spells in a character's memory, memorizing them and resting (Curse
-// first): the list in the character record, how many of each level a
-// character may hold, the time a rest needs, and the rest itself, five
-// minutes a step (healing, spells memorized one after another, effects
+// Spells in a character's memory, memorizing them, scribing scrolls and
+// resting (Curse first): the list in the character record, how many of
+// each level a character may hold, scrolls' spells copied into the spell
+// book, the time a rest needs, and the rest itself, five minutes a step
+// (healing, spells scribed and memorized one after another, effects
 // running out). Plain C++, host-tested. Rules learned from coab (the Curse
 // reimplementation); own code.
 #pragma once
@@ -9,6 +10,7 @@
 #include <cstdint>
 
 #include "classes.h"
+#include "items.h"
 #include "party.h"
 
 namespace magic {
@@ -36,6 +38,11 @@ int in_memory(const party::Character& c, const classes::Tables& t, bool learning
 // The spells they know and can use (the spell book), by level then number
 int known(const party::Character& c, const classes::Tables& t, uint8_t* ids, int cap);
 
+// A new spell to learn (training a magic-user): the spells of levels
+// they have slots for, that they can use and don't know yet
+int learnable(const party::Character& c, const classes::Tables& t, uint8_t* ids, int cap);
+void learn(party::Character& c, int spell);
+
 // Starts memorizing a spell (false: no room)
 bool add(party::Character& c, const classes::Tables& t, int spell);
 // Forgets the spells being memorized
@@ -44,10 +51,33 @@ bool memorizing(const party::Character& c);
 // Takes a memorized spell out (cast); false if it isn't there
 bool remove(party::Character& c, int spell);
 
-// The rest needed for what's being memorized (minutes): an hour's start
-// (4 hours, 6 for spells past 2nd level) and 15 minutes a spell level;
-// sets the record's hours-before-the-first-spell
-int rest_minutes(party::Character& c, const classes::Tables& t);
+// ---- Scrolls: up to three spells in an item's effect bytes (0x3C-0x3E;
+// + 0x80 while being scribed); the item's second name word counts them
+// ("With 1 Spell" ... - the scroll is used up below the first)
+constexpr int kScrollAt = 0x3C;
+struct Scrolls {
+    const items::Names* names = nullptr;    // the item types (slots 11-13 are scrolls)
+    uint8_t one_spell = 0;                  // the word "With 1 Spell"
+    uint8_t read_magic = 0;                 // Read Magic's effect: scrolls can be read
+};
+bool is_scroll(const Scrolls& sc, const uint8_t* item);
+// The spells on their scrolls they can read (identified, Read Magic on
+// them, or a cleric with a clerics' scroll - which makes them known), or
+// only those being scribed; by level then number
+int scroll_spells(party::Character& c, const classes::Tables& t, const Scrolls& sc, bool scribing, uint8_t* ids,
+                  int cap);
+enum class Scribe : uint8_t { Ok, Known, Already, Cannot };
+// Marks a scroll's spell for scribing (the first scroll holding it)
+Scribe scribe(party::Character& c, const classes::Tables& t, const Scrolls& sc, int spell);
+bool scribing(const party::Character& c, const Scrolls& sc);
+void cancel_scribes(party::Character& c, const Scrolls& sc);
+// The spell scribed: into the spell book, off the scroll (used up: gone)
+void scribed(party::Character& c, const Scrolls& sc, int item, int slot);
+
+// The rest needed for what's being memorized and scribed (minutes): an
+// hour's start (4 hours, 6 for spells past 2nd level) and 15 minutes a
+// spell level; sets the record's hours-before-the-first-spell
+int rest_minutes(party::Character& c, const classes::Tables& t, const Scrolls& sc = Scrolls{});
 
 // ---- A rest, five minutes a step
 struct Rest {
@@ -60,12 +90,13 @@ struct Rest {
 struct Step {
     bool healed = false;            // a day's rest: everyone 1 HP
     int  learnt[party::kMaxParty];  // a spell memorized this step (0: none)
+    int  scribed[party::kMaxParty]; // a spell scribed this step (0: none)
 };
 
 // Starts a rest (the waits cleared)
 void begin(Rest& r);
 // Five minutes of rest for the party
-Step step(Rest& r, party::Party& p, const classes::Tables& t);
+Step step(Rest& r, party::Party& p, const classes::Tables& t, const Scrolls& sc = Scrolls{});
 
 // Effects running out: `minutes` off each timed one (those at 0 last);
 // how many ended
