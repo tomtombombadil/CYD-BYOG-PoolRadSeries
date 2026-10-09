@@ -39,6 +39,7 @@
 #include "engine/games.h"
 #include "engine/picture.h"
 #include "engine/spells.h"
+#include "engine/combat.h"
 
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); ++failures; } } while (0)
@@ -1999,6 +2000,8 @@ static void test_items()
     ecl::Stop r = vm.run(kBase + 20);
     CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Shop);
     CHECK(g.n == 0 && g.money[3] == 9 && host.items_block == 5 && vm.get(0x7F6C) == 0);
+    // The second COMBAT: the after-fight step (treasure)
+    CHECK(vm.resume() == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Treasure);
     CHECK(vm.resume() == ecl::Stop::Stopped);
     // The temple flag: COMBAT opens the temple
     Bytes tc;
@@ -2521,6 +2524,128 @@ static void test_spells()
     CHECK(spells::fix_heal(p, 50) == 43 && p.m[2].hp() == 20);
 }
 
+// Combat: a made-up open field, made-up placement tables (the games'
+// layout), fighters with made-up records
+static void test_combat()
+{
+    static combat::Tables t;
+    memset(&t, 0, sizeof t);
+    t.ground[0x37][0] = 1; t.ground[0x37][1] = 1;             // floor: cost 1, eye 1
+    t.ground[0x01][0] = 0xFF; t.ground[0x01][1] = 1; t.ground[0x01][2] = 2;   // wall
+    t.ground[0x1F][0] = 1; t.ground[0x1F][1] = 1;             // a body
+    const uint8_t facing[4] = {7, 2, 3, 6};
+    memcpy(t.facing, facing, 4);
+    for (int f = 0; f < 4; ++f)
+        for (int k = 0; k < 4; ++k) {
+            t.formation[f][k] = static_cast<uint8_t>(f * 2);
+            t.fallback[f][k] = static_cast<uint8_t>(((f + 2) & 3) * 2);
+        }
+    for (int i = 0; i < 8; ++i) { t.start_x[i] = 5; t.start_y[i] = 2; }
+    for (int sh = 0; sh < 5; ++sh)
+        for (int r = 0; r < 6; ++r) { t.shapes[sh][r][0] = 0; t.shapes[sh][r][1] = 10; }
+    static combat::Battle b;
+    b = combat::Battle{};
+    for (int y = 0; y < combat::kH; ++y)
+        for (int x = 0; x < combat::kW; ++x) b.ground[y][x] = 0x37;
+    static uint8_t rec[8][party::kRecordSize];
+    memset(rec, 0, sizeof rec);
+    for (int i = 0; i < 7; ++i) {
+        uint8_t* r = rec[i];
+        r[0x196] = 1; r[0x197] = i >= 3; r[0xDE] = 1;
+        r[0x78] = r[0x1A4] = 20;
+        r[0x1A5] = 12;                                       // movement
+        r[0x11C] = 2;                                        // an attack a round
+        r[0x199] = 100;                                      // hits all but a 1
+        r[0x19A] = 50; r[0x19B] = 48;                        // AC 10
+        r[0x19E] = 1; r[0x1A0] = 6;                          // 1d6
+        r[0x17] = 10;
+        b.f[i].rec = r;
+        b.f[i].member = i < 3 ? i : -1;
+        b.f[i].monster = i < 3 ? -1 : i - 3;
+    }
+    b.n = 7;
+    b.party_size = 3;
+    combat::place(b, t, 2, 2, nullptr, nullptr);
+    int on = 0, cells = 0;
+    double px = 0, mx = 0;
+    for (int i = 0; i < b.n; ++i)
+        if (b.f[i].size) {
+            ++on;
+            (i < 3 ? px : mx) += b.f[i].x;
+        }
+    for (int y = 0; y < combat::kH; ++y)
+        for (int x = 0; x < combat::kW; ++x)
+            if (b.who[y][x]) ++cells;
+    CHECK(on == 7 && cells == 7);
+    CHECK(mx / 4 > px / 3);                                  // the enemies stand east of the party
+    CHECK(b.f[0].facing == 2 && b.f[3].facing == 6);
+    // Moving: 2 a straight step, 3 a diagonal one; others and edges block
+    b.f[0].x = 10; b.f[0].y = 10; b.f[1].x = 11; b.f[1].y = 10;
+    b.f[2].x = 0; b.f[2].y = 0;
+    for (int i = 3; i < 7; ++i) { b.f[i].x = 20 + i; b.f[i].y = 10; }
+    combat::occupancy(b);
+    bool edge;
+    int blocker;
+    CHECK(combat::step_cost(b, t, 0, 0, &edge, &blocker) == 2 && combat::step_cost(b, t, 0, 1, &edge, &blocker) == 3);
+    CHECK(combat::step_cost(b, t, 0, 2, &edge, &blocker) == 0xFF && blocker == 1);
+    CHECK(combat::step_cost(b, t, 2, 7, &edge, &blocker) == 0xFF && edge);
+    // Range and sight: 3 squares east = 3; a wall between hides
+    int sq;
+    CHECK(combat::path(b, t, 0, 13, 10, false, &sq) && sq == 6);
+    CHECK(combat::path(b, t, 0, 12, 12, false, &sq) && sq == 6);          // 2 diagonal steps = 3 squares
+    b.ground[10][12] = 0x01;
+    CHECK(!combat::path(b, t, 0, 14, 10, false, &sq) && combat::path(b, t, 0, 14, 10, true, &sq));
+    b.ground[10][12] = 0x37;
+    CHECK(combat::direction(10, 10, 14, 10) == 2 && combat::direction(10, 10, 12, 8) == 1 &&
+          combat::direction(10, 10, 10, 6) == 0 && combat::direction(10, 10, 11, 14) == 4);
+    // Damage: 0 unconscious, below dying (bleeding), -10 dead
+    CHECK(combat::damage(b, 4, 20) && b.f[4].status() == party::Unconscious && !b.f[4].up());
+    CHECK(combat::damage(b, 5, 23) && b.f[5].status() == party::Dying && b.f[5].bleeding == 3);
+    CHECK(combat::damage(b, 6, 30) && b.f[6].status() == party::Dead);
+    CHECK(!combat::damage(b, 3, 5) && b.f[3].hp() == 15);
+    // A party member down leaves a body
+    CHECK(combat::damage(b, 2, 25) && b.ground[0][0] == 0x1F && b.f[2].size == 0);
+    // Bleeding: past 9 they're dead; the fight goes on while both sides stand
+    b.f[2].bleeding = 9;
+    CHECK(!combat::end_round(b) && b.f[2].status() == party::Dead && b.f[5].status() == party::Dying);
+    CHECK(combat::anyone_dying(b) == false && combat::bandage(b) == -1);
+    // Initiative: everyone standing acts; the next is the highest delay
+    create::Dice d(3);
+    combat::start_round(b, d);
+    CHECK(b.f[0].delay >= 1 && b.f[0].moves == 24 && b.f[0].attacks[0] == 1 && b.f[4].delay == 0);
+    const int first = combat::next(b, d);
+    CHECK(first >= 0 && b.f[first].up());
+    for (int i = 0; i < b.n; ++i)
+        if (b.f[i].up()) CHECK(b.f[i].delay <= b.f[first].delay);
+    // The monster's turn: next to member 1? No - it steps west toward them
+    combat::Plan pl = combat::think(b, t, 3, d);
+    CHECK(pl.act == combat::Act::Step && (pl.dir == 6 || pl.dir == 5 || pl.dir == 7));
+    // Adjacent: it attacks
+    b.f[3].x = 12; b.f[3].y = 10;
+    combat::occupancy(b);
+    pl = combat::think(b, t, 3, d);
+    CHECK(pl.act == combat::Act::Attack && pl.target == 1);
+    b.f[3].attacks[0] = 1;
+    const combat::Attack at = combat::attack(b, 3, 1, nullptr, d);
+    CHECK(at.n == 1 && b.f[3].attacks[0] == 0 && b.no_action == b.round + 15);
+    if (at.any) CHECK(b.f[1].hp() < 20);
+    // Attacks a round: 3 half attacks = 1, 2, 1, 2
+    CHECK(combat::attacks_this_round(3, 0) == 1 && combat::attacks_this_round(3, 1) == 2 &&
+          combat::attacks_this_round(2, 1) == 1);
+    CHECK(combat::dex_reaction(17) == 2 && combat::dex_reaction(4) == -2 && combat::dex_reaction(10) == 0);
+    // The end: the beaten monsters' experience (per HP x rolled HP + base) and coins
+    rec[4][0x13E] = 5; rec[4][0x12C] = 10; rec[4][0x13C] = 20;   // 70
+    rec[5][0xFB + 3 * 2] = 30;                                    // 30 gold
+    const combat::Outcome o = combat::finish(b, nullptr);
+    CHECK(o.result == combat::Won && o.exp == 70 && o.money[3] == 30);
+    const int m[7] = {0, 0, 0, 400, 0, 1, 0};
+    CHECK(combat::money_exp(m) == 400 + 250);
+    // Shared by the two standing (member 2 is dead): a fighter with Str 16 gets 10% more
+    rec[0][0x75] = 2; rec[0][0x11] = 16;
+    CHECK(combat::award(b, 1000) == 500);
+    CHECK(rec[0][0x127] == (550 & 0xFF) && rec[0][0x128] == (550 >> 8) && rec[1][0x127] == (500 & 0xFF));
+}
+
 int main()
 {
     test_rle_known_bytes();
@@ -2549,6 +2674,7 @@ int main()
     test_temple();
     test_magic();
     test_spells();
+    test_combat();
     test_create();
     if (failures) {
         printf("%d check(s) failed\n", failures);

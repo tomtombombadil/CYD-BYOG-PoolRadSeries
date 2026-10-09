@@ -17,6 +17,7 @@
 #include "classes.h"
 #include "rules.h"
 #include "spells.h"
+#include "combat.h"
 #include "ecl.h"
 #include "games.h"
 
@@ -113,6 +114,22 @@ enum AlterWord {
     kSpeedIs, kSpeedRange, kFaster, kSlower, kSpeedExit, kSpeedPrompt,   // "Game Speed = " ... "Game Speed:"
     kWillBeGone, kDropFromParty, kQuitToDos, kBidsFarewell, kDumped, kRelief,
     kAlterWords
+};
+
+// Combat's words (GAME.OVR offsets of Pascal strings), in this order
+enum FightWord {
+    kBattleBegins, kFMove, kFViewAim, kFUse, kFCast, kFTurn, kFQuickDone,          // "A battle begins...", the menu
+    kMoveLeft, kFleeAsk, kCantGo, kNotWithWeapon,                                  // "Move/Attack, Move Left = " ...
+    kRangeIs, kFTarget, kNextPrevManual, kCenterExit, kAimPrompt,                  // "Range = " ... "Aim:"
+    kFGuard, kDelayQuit, kFBandage, kSpeedExitW, kGuarding, kGameSpeed, kSpeedClose, kFSlower, kFFaster, kFExit,
+    kBackstabs, kSlays, kAttacksW, kFromBehind, kCruelBlow, kHittingFor, kPointW, kPointsW, kOfDamage, kMisses,
+    kLostSpell, kGoesDown, kIsDying, kIsKilled,
+    kTeammateDying, kContinueBattle, kGotAway, kEscapeBlocked, kAttackAlly, kFleesPanic, kForcedFlee, kSurrenders,
+    kBandaged, kSweeps, kHitpoints, kAcW, kHelpless,
+    kHasFled, kLostFight, kHasWon, kFoundTreasure, kEachReceives, kExpPoints, kPressEnter, kRejoice, kPressAnyKey,
+    kTakeColon, kMoneyItems, kViewPoolExit, kExitSp, kDetectExit, kViewTakePoolShare, kViewTakePool,
+    kTreasureLeft, kClaimTreasure, kItemsColon, kTakeW,
+    kFightWords
 };
 
 // An effect's name in the effects list (Display): a GAME.OVR string
@@ -283,6 +300,14 @@ struct Profile {
         uint32_t menu, select, place;
         uint32_t words[kAlterWords];
     } alter;
+
+    // Combat: the program's tables, the words, the effects that end with
+    // a fight
+    struct {
+        combat::TableAt tables;
+        uint32_t        words[kFightWords];
+        uint8_t         ends[20];
+    } fight;
 };
 
 // The game's program file name (to look for it), or nullptr if no

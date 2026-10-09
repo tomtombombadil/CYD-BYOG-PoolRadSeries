@@ -1,0 +1,1720 @@
+// Combat (Curse first): the Play Test's front end for engine/combat - part
+// of play.cpp (included inside its anonymous namespace: it uses the Play
+// Test's screen, words and files).
+//
+// LOAD MONSTER reads MON<area>CHA (the record), SPC (effects) and ITM
+// (items) of the monster, its CPIC<area> icon; COMBAT then builds the
+// battlefield (indoors from the 3D map, outdoors a random field), places
+// both sides and plays the rounds: initiative, each fighter's turn - the
+// player's menu "Move View Aim Use Cast Turn Quick Done" (Move: tap a
+// square next to the fighter - or the pad - to step or attack that way,
+// the menu line to stop; Aim: "Next Prev Manual Target Center Exit", or tap
+// someone on the field; Done: "Guard Delay Quit Bandage Speed Exit"), the
+// computer's turns for monsters and Quick fighters; attacks, damage,
+// dying and bleeding, the round's end. Then "The party has won." with the
+// experience, and the treasure ("View Take Pool Share Exit").
+//
+// The screen (as the games draw it): the combat frame, a 7 x 7 view of the
+// field (24 x 24 squares from pixel 8, 8), the fighter whose turn it is on
+// the right (name, "Hitpoints", "AC", the readied weapon; messages from
+// row 10), row 23 for "Range = N", the menu on row 24. Colours 0 and 8 are
+// swapped while fighting (the field's black shows dark grey).
+
+constexpr int kViewX = 8, kViewY = 8, kSq = 24;
+
+struct MonsterLoad {
+    combat::Monster* m = nullptr;
+    int n = 0, cap = 0;
+    combat::Group g[combat::kMaxGroups];
+    int groups = 0;
+};
+MonsterLoad* ml = nullptr;
+
+void fight_clear_monsters()
+{
+    if (!ml) return;
+    free(ml->m);
+    delete ml;
+    ml = nullptr;
+}
+
+// Reads DAX block `block` of a file (raw bytes), up to cap; its size or -1
+int read_block(const char* file, int block, uint8_t* out, int cap)
+{
+    fs::File f;
+    if (!open_dax(file, f)) return -1;
+    library::FileSource src(f);
+    int n = -1;
+    const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
+    if (e) {
+        dax::RleReader r(src, d->idx, *e);
+        const uint32_t want = e->raw_size < static_cast<uint32_t>(cap) ? e->raw_size : static_cast<uint32_t>(cap);
+        n = static_cast<int>(r.read(out, want));
+    }
+    f.close();
+    return n;
+}
+
+void fight_load_monster(int id, int copies, int icon)
+{
+    if (!ml) ml = new (std::nothrow) MonsterLoad;
+    if (!ml || ml->groups >= combat::kMaxGroups || ml->n >= combat::kMaxMonsters) return;
+    uint8_t rec[party::kRecordSize];
+    // MON<area>CHA.DAX
+    char cha[24];
+    snprintf(cha, sizeof cha, "MON%dCHA.DAX", d->gs.game_area);
+    if (read_block(cha, id, rec, sizeof rec) != static_cast<int>(sizeof rec)) {
+        Serial.printf("[play] %s #%d: no monster\n", cha, id);
+        return;
+    }
+    combat::Group& g = ml->g[ml->groups];
+    g = combat::Group{};
+    g.id = static_cast<uint8_t>(id);
+    g.icon = static_cast<uint8_t>(icon);
+    char itm[24];
+    snprintf(itm, sizeof itm, "MON%dITM.DAX", d->gs.game_area);
+    uint8_t buf[combat::kGroupItems * items::kRecordSize];
+    const int ni = read_block(itm, id, buf, sizeof buf);
+    if (ni > 0) {
+        g.n_items = static_cast<uint8_t>(ni / items::kRecordSize);
+        memcpy(g.item, buf, static_cast<size_t>(g.n_items) * items::kRecordSize);
+    }
+    uint8_t aff[combat::kMonsterAffects * party::kAffectSize];
+    char spc[24];
+    snprintf(spc, sizeof spc, "MON%dSPC.DAX", d->gs.game_area);
+    const int na = read_block(spc, id, aff, sizeof aff);
+    if (copies < 1) copies = 1;
+    if (ml->n + copies > combat::kMaxMonsters) copies = combat::kMaxMonsters - ml->n;
+    if (ml->n + copies > ml->cap) {
+        const int cap = ml->n + copies;
+        void* p = realloc(ml->m, static_cast<size_t>(cap) * sizeof(combat::Monster));
+        if (!p) {
+            Serial.println("[play] LOAD MONSTER: not enough memory");
+            return;
+        }
+        ml->m = static_cast<combat::Monster*>(p);
+        ml->cap = cap;
+    }
+    for (int k = 0; k < copies; ++k) {
+        combat::Monster& m = ml->m[ml->n++];
+        memset(&m, 0, sizeof m);
+        memcpy(m.rec, rec, sizeof rec);
+        m.n_aff = na > 0 ? na / static_cast<int>(party::kAffectSize) : 0;
+        memcpy(m.aff, aff, static_cast<size_t>(m.n_aff) * party::kAffectSize);
+        m.group = static_cast<uint8_t>(ml->groups);
+    }
+    ++ml->groups;
+    Serial.printf("[play] LOAD MONSTER %d x%d (icon %d): %d monsters\n", id, copies, icon, ml->n);
+}
+
+// ---- Pictures, 4 bits a pixel
+struct Pic4 {
+    uint8_t w = 0, h = 0;
+    uint8_t* px[2] = {};                // ready, attack: rows of w / 2 bytes
+};
+
+void free_pic(Pic4& p)
+{
+    free(p.px[0]);
+    free(p.px[1]);
+    p = Pic4{};
+}
+
+// Frame `frame` of a picture block into 4-bit rows (malloc'd); w, h
+uint8_t* load_pic4(const char* file, int block, int frame, int* w, int* h)
+{
+    fs::File f;
+    if (!open_dax(file, f)) return nullptr;
+    library::FileSource src(f);
+    uint8_t* out = nullptr;
+    const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
+    if (e) {
+        dax::RleReader r(src, d->idx, *e);
+        uint8_t hdr[pic::kHeaderSize];
+        pic::Header ph;
+        if (r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_header(hdr, e->raw_size, ph) && frame < ph.frames) {
+            const uint32_t fb = ph.frame_bytes();
+            out = static_cast<uint8_t*>(malloc(fb));
+            bool ok = out != nullptr;
+            for (int k = 0; ok && k <= frame; ++k) ok = r.read(out, fb) == fb;
+            if (!ok) {
+                free(out);
+                out = nullptr;
+            } else {
+                *w = ph.width_px();
+                *h = ph.height;
+            }
+        }
+    }
+    f.close();
+    return out;
+}
+
+inline int nib(const uint8_t* p, int w, int x, int y)
+{
+    const uint8_t b = p[y * (w / 2) + x / 2];
+    return x & 1 ? b & 15 : b >> 4;
+}
+inline void set_nib(uint8_t* p, int w, int x, int y, int v)
+{
+    uint8_t& b = p[y * (w / 2) + x / 2];
+    b = static_cast<uint8_t>(x & 1 ? (b & 0xF0) | (v & 15) : (b & 0x0F) | (v << 4));
+}
+
+// Draws a 4-bit picture clipped to (cx0, cy0)-(cx1, cy1): mirrored, colour 0 see-through
+void blit4(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y, bool mirror, bool see_through, int cx0,
+           int cy0, int cx1, int cy1)
+{
+    if (!p) return;
+    for (int j = 0; j < h; ++j) {
+        const int yy = y + j;
+        if (yy < cy0 || yy >= cy1) continue;
+        uint8_t* row = c.px + static_cast<size_t>(yy) * c.w;
+        for (int i = 0; i < w; ++i) {
+            const int xx = x + i;
+            if (xx < cx0 || xx >= cx1) continue;
+            const int v = nib(p, w, mirror ? w - 1 - i : i, j);
+            if (see_through && v == 0) continue;
+            row[xx] = static_cast<uint8_t>(v);
+        }
+    }
+}
+
+// ---- The fight's state (on the heap while fighting)
+enum class FSt : uint8_t {
+    Begin, Turn, Menu, Move, Aim, DoneMenu, Speed, Ai, Pages, RoundEnd, Results, Destroyed, AllyAsk, FleeAsk,
+    ContinueAsk
+};
+
+struct Page {
+    char    line[5][40];
+    uint8_t colour[5];
+    int     lines = 0;
+};
+
+struct Fight {
+    combat::Battle b;
+    combat::Tables t;
+    uint8_t  (*tile)[kSq * kSq / 2] = nullptr;      // the field's 40 pictures (a block of their own)
+    Pic4     icon[8 + combat::kMaxGroups];
+    uint8_t* cursor = nullptr;          // COMSPR 0x19 (ready): the box under the one whose turn it is
+    uint8_t* skull = nullptr;           // COMSPR 11 (attack)
+    char     w[profile::kFightWords][40];
+    FSt      st = FSt::Begin;
+    FSt      after = FSt::Turn;         // where the pages go on to
+    int      cur = -1;
+    uint32_t until = 0;
+    Page     page[12];
+    int      pages = 0, at = 0;
+    // Move: where the fighter started (Esc undoes the move)
+    int      move_x = 0, move_y = 0, move_left = 0;
+    // Aim: the candidates by distance, the one shown
+    int      cand[combat::kMaxFighters];
+    int      n_cand = 0, ci = 0;
+    bool     manual = false;
+    int      mx = 0, my = 0;            // Manual's square
+    int      pending = -1;              // an ally to attack (asked)
+    int      flee_dir = 8;
+    combat::Outcome out;
+    int      share = 0;
+    bool     treasure_only = false;
+};
+Fight* fg = nullptr;
+
+const char* fw(int i) { return fg ? fg->w[i] : ""; }
+
+void load_fight_words()
+{
+    fs::File f;
+    if (!open_file(d->prof->overlay, f)) return;
+    library::FileSource src(f);
+    for (int i = 0; i < profile::kFightWords; ++i)
+        if (d->prof->fight.words[i]) text::read_pascal(src, d->prof->fight.words[i], fg->w[i], sizeof fg->w[i]);
+    f.close();
+}
+
+bool load_fight_tables()
+{
+    fs::File f;
+    if (!open_file(d->prof->program, f)) return false;
+    library::FileSource src(f);
+    exepack::Info info;
+    struct Ctx {
+        library::FileSource* src;
+        exepack::Info* info;
+        uint32_t base;
+    } ctx{&src, &info, d->prof->create.ds_image};
+    bool ok = exepack::parse(src, info) == exepack::Status::Ok &&
+              combat::read_tables(
+                  fg->t, d->prof->fight.tables,
+                  [](void* p, uint16_t ds, uint8_t* out, size_t n) {
+                      Ctx* c = static_cast<Ctx*>(p);
+                      return exepack::read(*c->src, *c->info, c->base + ds, out, n) == exepack::Status::Ok;
+                  },
+                  &ctx);
+    f.close();
+    return ok;
+}
+
+// Frames first .. first + n - 1 of a 24 x 24 picture block into the tiles
+void load_frames(const char* file, int at, int n)
+{
+    fs::File f;
+    if (!open_dax(file, f)) return;
+    library::FileSource src(f);
+    const dax::Entry* e = d->idx.find(1);
+    if (e) {
+        dax::RleReader r(src, d->idx, *e);
+        uint8_t hdr[pic::kHeaderSize];
+        pic::Header ph;
+        if (r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_header(hdr, e->raw_size, ph) && ph.width_px() == kSq &&
+            ph.height == kSq)
+            for (int k = 0; k < n && k < ph.frames && at + k < 40; ++k)
+                if (r.read(fg->tile[at + k], sizeof fg->tile[0]) != sizeof fg->tile[0]) break;
+    }
+    f.close();
+}
+
+// The field's pictures: DUNGCOM / WILDCOM (0-33), RANDCOM (34-39)
+void load_tiles(bool indoors)
+{
+    memset(fg->tile, 0, 40 * sizeof fg->tile[0]);
+    load_frames(indoors ? "DUNGCOM.DAX" : "WILDCOM.DAX", 0, indoors ? 25 : 34);
+    load_frames("RANDCOM.DAX", 34, 6);
+}
+
+// A party member's icon: the head over the body's top rows, recoloured
+void compose_icon(int slot, const party::Character& ch)
+{
+    Pic4& ic = fg->icon[slot];
+    free_pic(ic);
+    const int head = ch.rec[0x141], body = ch.rec[0x142];
+    const bool small = ch.rec[0x144] == 1;
+    static const uint8_t kDefault[6] = {1, 2, 3, 4, 6, 7};
+    for (int fr = 0; fr < 2; ++fr) {
+        int bw, bh, hw, hh;
+        uint8_t* b = load_pic4("CBODY.DAX", body + (small ? 0 : 0x40) + fr * 0x80, 0, &bw, &bh);
+        uint8_t* h = load_pic4("CHEAD.DAX", head + (small ? 0 : 0x40) + fr * 0x80, 0, &hw, &hh);
+        if (!b || bw != kSq || bh != kSq) {
+            free(b);
+            free(h);
+            continue;
+        }
+        if (h && hw == kSq)
+            for (int y = 0; y < hh && y < kSq; ++y)
+                for (int x = 0; x < kSq; ++x) {
+                    const int v = nib(h, hw, x, y);
+                    if (v) set_nib(b, kSq, x, y, v);
+                }
+        free(h);
+        // Recolour: default colour d -> the byte's low nibble, d + 8 -> its high
+        for (int y = 0; y < kSq; ++y)
+            for (int x = 0; x < kSq; ++x) {
+                const int v = nib(b, kSq, x, y);
+                for (int i = 0; i < 6; ++i) {
+                    const uint8_t cb = ch.rec[0x145 + i];
+                    if (v == kDefault[i]) set_nib(b, kSq, x, y, cb & 15);
+                    else if (v == kDefault[i] + 8) set_nib(b, kSq, x, y, cb >> 4);
+                    else continue;
+                    break;
+                }
+            }
+        ic.px[fr] = b;
+        ic.w = ic.h = kSq;
+    }
+}
+
+void load_monster_icon(int slot, int block)
+{
+    Pic4& ic = fg->icon[slot];
+    free_pic(ic);
+    char file[16];
+    snprintf(file, sizeof file, "CPIC%d.DAX", d->gs.game_area);
+    for (int fr = 0; fr < 2; ++fr) {
+        int w, h;
+        uint8_t* p = load_pic4(file, block + fr * 0x80, 0, &w, &h);
+        if (!p) continue;
+        ic.px[fr] = p;
+        ic.w = static_cast<uint8_t>(w);
+        ic.h = static_cast<uint8_t>(h);
+    }
+}
+
+void end_fight_art()
+{
+    if (!fg) return;
+    free(fg->tile);
+    fg->tile = nullptr;
+    for (Pic4& p : fg->icon) free_pic(p);
+    free(fg->cursor);
+    free(fg->skull);
+    fg->cursor = fg->skull = nullptr;
+}
+
+// ---- Drawing
+bool fight_palette_on = false;
+
+void palette_fight(bool on)
+{
+    fight_palette_on = on;
+    dirty(0, pic::kScreenH);
+}
+
+uint8_t name_colour(const combat::Fighter& f) { return !f.up() ? 12 : f.team() ? 14 : 11; }
+
+void fighter_name(const combat::Fighter& f, char* out, size_t cap)
+{
+    const int len = f.rec[0] < 15 ? f.rec[0] : 15;
+    snprintf(out, cap, "%.*s", len, reinterpret_cast<const char*>(f.rec + 1));
+}
+
+void draw_icon(pic::Canvas& c, int i, bool attack = false)
+{
+    const combat::Fighter& f = fg->b.f[i];
+    if (!f.size) return;
+    const Pic4& ic = fg->icon[f.icon];
+    const uint8_t* p = ic.px[attack && ic.px[1] ? 1 : 0];
+    if (!p) return;
+    const int x = kViewX + (f.x - fg->b.vx) * kSq, y = kViewY + (f.y - fg->b.vy) * kSq;
+    blit4(c, p, ic.w, ic.h, x, y, f.facing >= 4, true, kViewX, kViewY, kViewX + 7 * kSq, kViewY + 7 * kSq);
+}
+
+void draw_square(pic::Canvas& c, int x, int y)
+{
+    const int sx = kViewX + (x - fg->b.vx) * kSq, sy = kViewY + (y - fg->b.vy) * kSq;
+    const uint8_t* g = combat::tile(fg->b, fg->t, x, y);
+    const int pic_no = x >= 0 && x < combat::kW && y >= 0 && y < combat::kH && fg->b.ground[y][x] ? g[3] : -1;
+    if (pic_no < 0 || pic_no >= 40 || !fg->tile) c.fill(sx, sy, kSq, kSq, 0);
+    else blit4(c, fg->tile[pic_no], kSq, kSq, sx, sy, false, false, 0, 0, pic::kScreenW, pic::kScreenH);
+}
+
+void draw_field(pic::Canvas& c)
+{
+    for (int j = 0; j < 7; ++j)
+        for (int i = 0; i < 7; ++i) draw_square(c, fg->b.vx + i, fg->b.vy + j);
+    for (int k = 0; k < fg->b.n; ++k)
+        if (fg->b.f[k].up()) draw_icon(c, k);
+    dirty(kViewY, kViewY + 7 * kSq);
+}
+
+void clear_panel(pic::Canvas& c, int r0 = 1, int r1 = 21)
+{
+    c.fill(23 * 8, r0 * 8, 16 * 8, (r1 - r0 + 1) * 8, 0);
+    dirty_rows(r0, r1);
+}
+
+// Words wrapped into the panel (columns 23-38) from `row`; the next row
+int panel_text(pic::Canvas& c, const char* s, int row, uint8_t colour, int last = 21)
+{
+    char line[17];
+    while (*s && row <= last) {
+        while (*s == ' ') ++s;
+        int n = static_cast<int>(strlen(s));
+        if (n > 16) {
+            n = 16;
+            while (n > 0 && s[n] != ' ') --n;
+            if (n == 0) n = 16;
+        }
+        memcpy(line, s, n);
+        line[n] = 0;
+        put(c, line, 23, row++, colour);
+        s += n;
+    }
+    return row;
+}
+
+void draw_panel_for(pic::Canvas& c, int i)
+{
+    clear_panel(c);
+    if (i < 0) return;
+    const combat::Fighter& f = fg->b.f[i];
+    char nm[20], t[48];
+    fighter_name(f, nm, sizeof nm);
+    put(c, nm, 23, 1, name_colour(f));
+    put(c, fw(profile::kHitpoints), 23, 3, 10);
+    snprintf(t, sizeof t, "%d", f.hp());
+    put(c, t, 33, 3, f.hp() < f.hp_max() ? 14 : 10);
+    put(c, fw(profile::kAcW), 23, 5, 10);
+    const int ac = f.rec[0x19A];
+    snprintf(t, sizeof t, "%s%d", ac > 60 ? "-" : "", ac > 60 ? ac - 60 : 60 - ac);
+    put(c, t, 26, 5, 10);
+    int row = 7;
+    const int wi = combat::weapon(f, *names);
+    if (wi >= 0) {
+        names->name(items::Item{f.items[wi]}, t, sizeof t);
+        row = panel_text(c, t, 7, 10, 9) + 1;
+    }
+    if (!f.up()) put(c, name_of(d->health[0], 13, 9, f.status()), 23, row, 15);
+}
+
+// The view brought to fighter i (radius r: moved only when further than
+// that from the centre)
+void focus(int i, int r)
+{
+    combat::Battle& b = fg->b;
+    const combat::Fighter& f = b.f[i];
+    int cx = b.vx + 3, cy = b.vy + 3;
+    if (f.x - cx > r || cx - f.x > r || r == 0xFF) cx = f.x;
+    if (f.y - cy > r || cy - f.y > r || r == 0xFF) cy = f.y;
+    if (cx < 3) cx = 3;
+    if (cx > combat::kW - 4) cx = combat::kW - 4;
+    if (cy < 3) cy = 3;
+    if (cy > combat::kH - 4) cy = combat::kH - 4;
+    b.vx = cx - 3;
+    b.vy = cy - 3;
+}
+
+bool on_screen(int i)
+{
+    const combat::Fighter& f = fg->b.f[i];
+    return f.x >= fg->b.vx - 1 && f.x < fg->b.vx + 7 && f.y >= fg->b.vy - 1 && f.y < fg->b.vy + 7;
+}
+
+// The one whose turn it is: the box under them, their icon on it
+void mark(pic::Canvas& c, int i)
+{
+    const combat::Fighter& f = fg->b.f[i];
+    if (!f.size || !fg->cursor) return;
+    int sx[4], sy[4];
+    const int n = combat::squares(f.size, sx, sy);
+    for (int k = 0; k < n; ++k) {
+        const int x = kViewX + (f.x + sx[k] - fg->b.vx) * kSq, y = kViewY + (f.y + sy[k] - fg->b.vy) * kSq;
+        blit4(c, fg->cursor, kSq, kSq, x, y, false, true, kViewX, kViewY, kViewX + 7 * kSq, kViewY + 7 * kSq);
+    }
+    draw_icon(c, i);
+}
+
+void draw_fight(pic::Canvas& c)
+{
+    c.fill(0, 0, pic::kScreenW, 24 * 8, 0);
+    layout::combat(c, d->tables, d->frame_tiles);
+    draw_field(c);
+    if (fg->cur >= 0) {
+        mark(c, fg->cur);
+        draw_panel_for(c, fg->cur);
+    }
+    dirty(0, pic::kScreenH);
+}
+
+void status_line(pic::Canvas& c, const char* t)
+{
+    c.fill(0, 23 * 8, pic::kScreenW, 8, 0);
+    if (t && *t) put(c, t, 0, 23, 10);
+    dirty_rows(23, 23);
+}
+
+// ---- Messages: pages in the panel from row 10, a game delay each
+void add_page(int who, const char* a, const char* b2 = nullptr, int whom = -1, const char* c2 = nullptr)
+{
+    if (fg->pages >= 12) return;
+    Page& p = fg->page[fg->pages++];
+    p.lines = 0;
+    auto line = [&](const char* s, uint8_t col) {
+        if (p.lines < 5 && s) {
+            snprintf(p.line[p.lines], sizeof p.line[0], "%s", s);
+            p.colour[p.lines++] = col;
+        }
+    };
+    char nm[20];
+    if (who >= 0) {
+        fighter_name(fg->b.f[who], nm, sizeof nm);
+        line(nm, name_colour(fg->b.f[who]));
+    }
+    line(a, 10);
+    if (whom >= 0) {
+        fighter_name(fg->b.f[whom], nm, sizeof nm);
+        line(nm, name_colour(fg->b.f[whom]));
+    }
+    line(b2, 10);
+    line(c2, 10);
+}
+
+void show_page(pic::Canvas& c)
+{
+    const Page& p = fg->page[fg->at++];
+    clear_panel(c, 10, 21);
+    int row = 10;
+    for (int k = 0; k < p.lines; ++k) row = panel_text(c, p.line[k], row, p.colour[k]);
+    fg->until = millis() + game_delay_ms() * 2;
+    if (!fg->until) fg->until = 1;
+}
+
+// The pages queued: shown one after another, then on to `next`
+void say(pic::Canvas& c, FSt next)
+{
+    fg->after = next;
+    fg->st = FSt::Pages;
+    fg->at = 0;
+    if (menu_on) clear_menu_line(c);
+    if (fg->pages) show_page(c);
+    else fg->until = 1;
+}
+
+// ---- Turns
+void begin_round(pic::Canvas& c);
+void next_turn(pic::Canvas& c);
+void fight_menu(pic::Canvas& c);
+void end_fight(pic::Canvas& c);
+
+void end_turn(pic::Canvas& c)
+{
+    if (fg->cur >= 0) {
+        combat::Fighter& f = fg->b.f[fg->cur];
+        f.delay = 0;
+        f.moves = 0;
+    }
+    status_line(c, "");
+    next_turn(c);
+}
+
+// An attack and what it did, as pages
+void do_attack(pic::Canvas& c, int a, int t, bool behind)
+{
+    combat::Battle& b = fg->b;
+    if (!on_screen(a) || !on_screen(t)) {
+        focus(t, 3);
+        draw_fight(c);
+    }
+    draw_icon(c, a, true);
+    dirty(kViewY, kViewY + 7 * kSq);
+    const combat::Attack at = combat::attack(b, a, t, names, rng, behind);
+    char line[48];
+    bool first = true;
+    for (int k = 0; k < at.n; ++k) {
+        if (!at.hits[k].hit) continue;
+        const int dmg = at.hits[k].damage;
+        snprintf(line, sizeof line, "%s%s%d%s%s", behind ? fw(profile::kFromBehind) : "", fw(profile::kHittingFor), dmg,
+                 dmg == 1 ? fw(profile::kPointW) : fw(profile::kPointsW), fw(profile::kOfDamage));
+        add_page(a, fw(profile::kAttacksW), line, t);
+        first = false;
+    }
+    if (first) add_page(a, fw(profile::kAttacksW), fw(profile::kMisses), t);
+    if (at.down) {
+        const combat::Down dn = combat::down_state(b.f[t]);
+        if (dn == combat::Down::Dead) add_page(t, fw(profile::kIsKilled));
+        else if (dn == combat::Down::Dying) add_page(t, fw(profile::kGoesDown), fw(profile::kIsDying));
+        else add_page(t, fw(profile::kGoesDown));
+    }
+}
+
+// After an attack's pages: the turn ends unless attacks are left and the
+// target went down (then pick another)
+void after_attack(pic::Canvas& c)
+{
+    draw_fight(c);
+    const combat::Fighter& f = fg->b.f[fg->cur];
+    const bool left = f.attacks[0] > 0 || f.attacks[1] > 0;
+    const bool target_down = f.target >= 0 && !fg->b.f[f.target].up();
+    if (combat::standing(fg->b, 0) == 0 || combat::standing(fg->b, 1) == 0) {
+        end_turn(c);
+        return;
+    }
+    if (left && target_down) {
+        if (f.quick || f.team()) {
+            fg->st = FSt::Ai;
+            fg->until = millis() + 100;
+        } else {
+            fight_menu(c);
+        }
+        return;
+    }
+    end_turn(c);
+}
+
+// Leaving an enemy's side: each enemy next to them now and not after the
+// step gets its attacks (from behind)
+void free_attacks(pic::Canvas& c, int i, int dir)
+{
+    combat::Battle& b = fg->b;
+    combat::Fighter& f = b.f[i];
+    const int my = f.team() ? 1 : 0;
+    for (int e = 0; e < b.n; ++e) {
+        combat::Fighter& en = b.f[e];
+        if (!en.up() || !en.size || (en.team() ? 1 : 0) == my || !combat::adjacent(b, i, e)) continue;
+        // Still next to them after the step?
+        f.x += combat::dx(dir);
+        f.y += combat::dy(dir);
+        const bool still = combat::adjacent(b, i, e);
+        f.x -= combat::dx(dir);
+        f.y -= combat::dy(dir);
+        if (still) continue;
+        if (en.attacks[0] <= 0 && en.attacks[1] <= 0) en.attacks[0] = 1;
+        do_attack(c, e, i, true);
+        if (!f.up()) return;
+    }
+}
+
+// Guards next to the new square attack
+void guard_attacks(pic::Canvas& c, int i)
+{
+    combat::Battle& b = fg->b;
+    const int my = b.f[i].team() ? 1 : 0;
+    for (int e = 0; e < b.n && b.f[i].up(); ++e) {
+        combat::Fighter& en = b.f[e];
+        if (!en.guarding || !en.up() || (en.team() ? 1 : 0) == my || !combat::adjacent(b, i, e)) continue;
+        en.guarding = false;
+        if (en.attacks[0] <= 0 && en.attacks[1] <= 0) en.attacks[0] = 1;
+        do_attack(c, e, i, false);
+    }
+}
+
+void start_turn(pic::Canvas& c)
+{
+    combat::Battle& b = fg->b;
+    combat::Fighter& f = b.f[fg->cur];
+    f.received = f.turns = 0;
+    f.guarding = false;
+    if (!f.team() || on_screen(fg->cur)) focus(fg->cur, 2);
+    draw_fight(c);
+    if (f.quick || f.team() || f.rec[0xF7] >= 0x80) {
+        fg->st = FSt::Ai;
+        fg->until = millis() + game_delay_ms();
+        if (!fg->until) fg->until = 1;
+        clear_menu_line(c);
+        return;
+    }
+    fight_menu(c);
+}
+
+void next_turn(pic::Canvas& c)
+{
+    combat::Battle& b = fg->b;
+    if (combat::standing(b, 0) == 0 || combat::standing(b, 1) == 0) {
+        fg->cur = -1;
+        fg->st = FSt::RoundEnd;
+        fg->until = 1;
+        return;
+    }
+    fg->cur = combat::next(b, rng);
+    if (fg->cur < 0) {
+        fg->st = FSt::RoundEnd;
+        fg->until = 1;
+        return;
+    }
+    start_turn(c);
+}
+
+void begin_round(pic::Canvas& c)
+{
+    combat::start_round(fg->b, rng);
+    next_turn(c);
+}
+
+void round_end(pic::Canvas& c)
+{
+    vm->advance_clock(1, 1);                // a round is a minute
+    const int m = vm->take_minutes();
+    for (int i = 0; i < pt->count; ++i) magic::tick_affects(pt->m[i], m);
+    const bool over = combat::end_round(fg->b);
+    if (over) {
+        end_fight(c);
+        return;
+    }
+    if (combat::anyone_dying(fg->b)) {
+        clear_menu_line(c);
+        put(c, fw(profile::kTeammateDying), 0, text::kMenuRow, 15);
+        fg->st = FSt::Begin;            // a pause, then the next round
+        fg->until = millis() + game_delay_ms() * 3;
+        if (!fg->until) fg->until = 1;
+        return;
+    }
+    begin_round(c);
+}
+
+// ---- The player's menu
+void fight_menu(pic::Canvas& c)
+{
+    const combat::Fighter& f = fg->b.f[fg->cur];
+    char words[64];
+    words[0] = 0;
+    if (f.moves > 1) strcat(words, fw(profile::kFMove));
+    strcat(words, fw(profile::kFViewAim));
+    if (f.n_items) strcat(words, fw(profile::kFUse));
+    bool spells = false;
+    for (int k = 0; k < magic::kListSize; ++k)
+        if (f.rec[magic::kListAt + k] && !(f.rec[magic::kListAt + k] & 0x80)) spells = true;
+    if (spells && f.can_cast) strcat(words, fw(profile::kFCast));
+    if (f.rec[0x109] > 0 && !f.turned_undead) strcat(words, fw(profile::kFTurn));
+    strcat(words, fw(profile::kFQuickDone));
+    fg->st = FSt::Menu;
+    text::build(menu, "", words);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+void move_prompt(pic::Canvas& c)
+{
+    char t[48];
+    snprintf(t, sizeof t, "%s%d ", fw(profile::kMoveLeft), fg->b.f[fg->cur].moves / 2);
+    clear_menu_line(c);
+    put(c, t, 0, text::kMenuRow, 15);
+    menu_on = false;
+}
+
+void start_move(pic::Canvas& c)
+{
+    const combat::Fighter& f = fg->b.f[fg->cur];
+    fg->move_x = f.x;
+    fg->move_y = f.y;
+    fg->move_left = f.moves;
+    fg->st = FSt::Move;
+    move_prompt(c);
+}
+
+// Leaving Move: what's left stays (under 2: none)
+void end_move(pic::Canvas& c)
+{
+    combat::Fighter& f = fg->b.f[fg->cur];
+    if (f.moves < 2) f.moves = 0;
+    if (!f.up()) {
+        end_turn(c);
+        return;
+    }
+    fight_menu(c);
+}
+
+// One step (or an attack that way) by the fighter whose turn it is
+void try_step(pic::Canvas& c, int dir)
+{
+    combat::Battle& b = fg->b;
+    const int i = fg->cur;
+    combat::Fighter& f = b.f[i];
+    bool edge;
+    int blocker;
+    const int cost = combat::step_cost(b, fg->t, i, dir, &edge, &blocker);
+    if (blocker >= 0) {
+        const combat::Fighter& o = b.f[blocker];
+        if (f.attacks[0] <= 0 && f.attacks[1] <= 0) return;
+        if (o.team() == f.team()) {
+            fg->pending = blocker;
+            fg->st = FSt::AllyAsk;
+            text::build(menu, fw(profile::kAttackAlly), rw(Data::kYesNo));
+            menu.selected = 1;
+            show_menu_line(c);
+            return;
+        }
+        f.target = blocker;
+        do_attack(c, i, blocker, false);
+        say(c, FSt::Turn);              // (after_attack)
+        return;
+    }
+    if (edge) {
+        fg->flee_dir = dir;
+        fg->st = FSt::FleeAsk;
+        text::build(menu, fw(profile::kFleeAsk), rw(Data::kYesNo));
+        menu.selected = 1;
+        show_menu_line(c);
+        return;
+    }
+    if (cost == 0xFF || cost > f.moves) {
+        note(c, fw(profile::kCantGo));
+        return;
+    }
+    free_attacks(c, i, dir);
+    if (!f.up()) {
+        say(c, FSt::Turn);
+        return;
+    }
+    combat::step(b, i, dir);
+    f.moves -= cost;
+    guard_attacks(c, i);
+    if (fg->pages) {
+        draw_fight(c);
+        say(c, f.up() ? FSt::Move : FSt::Turn);
+        return;
+    }
+    if (!on_screen(i) || f.x - b.vx < 1 || f.x - b.vx > 5 || f.y - b.vy < 1 || f.y - b.vy > 5) focus(i, 2);
+    draw_fight(c);
+    if (f.moves < 2) {
+        end_move(c);
+        return;
+    }
+    move_prompt(c);
+}
+
+// ---- Aim: the candidates by distance
+void aim_menu(pic::Canvas& c);
+
+bool can_target(int t, int* dist)
+{
+    combat::Battle& b = fg->b;
+    const int i = fg->cur;
+    const combat::Fighter& f = b.f[i];
+    if (t == i || !b.f[t].up() || !b.f[t].size) return false;
+    int sq;
+    const bool seen = combat::range(b, fg->t, i, t, false, &sq);
+    if (dist) *dist = sq;
+    if (!seen) return false;
+    int reach = 1;
+    const int w = combat::weapon(f, *names);
+    if (w >= 0) {
+        const int r = names->type(f.items[w][0x2E]).range;
+        if (r > 1) reach = r - 1;
+    }
+    return sq <= reach && (f.attacks[0] > 0 || f.attacks[1] > 0);
+}
+
+void start_aim(pic::Canvas& c)
+{
+    combat::Battle& b = fg->b;
+    const int i = fg->cur;
+    fg->n_cand = 0;
+    int dist[combat::kMaxFighters];
+    for (int k = 0; k < b.n; ++k) {
+        if (!b.f[k].up() || !b.f[k].size) continue;
+        int sq = 0;
+        combat::range(b, fg->t, i, k, true, &sq);
+        // in order of distance
+        int at = fg->n_cand++;
+        while (at > 0 && dist[at - 1] > sq) {
+            fg->cand[at] = fg->cand[at - 1];
+            dist[at] = dist[at - 1];
+            --at;
+        }
+        fg->cand[at] = k;
+        dist[at] = sq;
+    }
+    fg->ci = fg->n_cand > 1 ? 1 : 0;        // the nearest other than themselves
+    fg->manual = false;
+    fg->st = FSt::Aim;
+    aim_menu(c);
+}
+
+void aim_menu(pic::Canvas& c)
+{
+    combat::Battle& b = fg->b;
+    const int t = fg->manual ? (b.who[fg->my][fg->mx] ? b.who[fg->my][fg->mx] - 1 : -1) : fg->cand[fg->ci];
+    if (t >= 0) {
+        focus(t, 2);
+        draw_fight(c);
+        mark(c, fg->cur);
+        draw_panel_for(c, t);
+    }
+    int sq = 0;
+    const bool ok = t >= 0 && can_target(t, &sq);
+    char line[24];
+    snprintf(line, sizeof line, "%s%d", fw(profile::kRangeIs), sq);
+    status_line(c, t >= 0 ? line : "");
+    char words[64];
+    if (fg->manual) snprintf(words, sizeof words, "%s%s", ok ? fw(profile::kFTarget) : "", fw(profile::kCenterExit));
+    else snprintf(words, sizeof words, "%s%s%s", fw(profile::kNextPrevManual), ok ? fw(profile::kFTarget) : "",
+                  fw(profile::kCenterExit));
+    text::build(menu, fg->manual ? "" : fw(profile::kAimPrompt), words);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+void aim_target(pic::Canvas& c, int t)
+{
+    combat::Fighter& f = fg->b.f[fg->cur];
+    status_line(c, "");
+    if (fg->b.f[t].team() == f.team()) {
+        fg->pending = t;
+        fg->st = FSt::AllyAsk;
+        text::build(menu, fw(profile::kAttackAlly), rw(Data::kYesNo));
+        menu.selected = 1;
+        show_menu_line(c);
+        return;
+    }
+    f.target = t;
+    // Missiles: the readied ammunition (arrows / quarrels) or the thrown weapon goes
+    const int w = combat::weapon(f, *names);
+    if (w >= 0 && !combat::adjacent(fg->b, fg->cur, t) && f.member >= 0) {
+        party::Character& ch = pt->m[f.member];
+        const items::TypeInfo& ti = names->type(ch.items[w][0x2E]);
+        int ammo = -1;
+        for (int k = 0; k < ch.n_items; ++k) {
+            const int ty = ch.items[k][0x2E];
+            if (!ch.items[k][0x34]) continue;
+            if (((ti.flags & 0x01) && ty == d->facts.arrow) || ((ti.flags & 0x80) && ty == d->facts.quarrel)) ammo = k;
+        }
+        if (ammo < 0 && !(ti.flags & 0x81)) ammo = w;           // thrown
+        if (ammo >= 0) {
+            const int left = ch.items[ammo][0x39];
+            if (left > 1) ch.items[ammo][0x39] = static_cast<uint8_t>(left - 1);
+            else {
+                rules::remove_item(ch, ammo);
+                f.n_items = ch.n_items;
+            }
+            rules::recalc(ch, *names, d->facts);
+        }
+    }
+    do_attack(c, fg->cur, t, false);
+    say(c, FSt::Turn);
+}
+
+void aim_tap(int x, int y, pic::Canvas& c)
+{
+    combat::Battle& b = fg->b;
+    if (y < text::kMenuTapTop) {
+        // A tap on the field: that square (Manual) / that fighter
+        if (x < kViewX || x >= kViewX + 7 * kSq || y < kViewY || y >= kViewY + 7 * kSq) return;
+        const int sx = b.vx + (x - kViewX) / kSq, sy = b.vy + (y - kViewY) / kSq;
+        const int w = b.who[sy][sx];
+        if (fg->manual) {
+            fg->mx = sx;
+            fg->my = sy;
+        } else if (w) {
+            for (int k = 0; k < fg->n_cand; ++k)
+                if (fg->cand[k] == w - 1) fg->ci = k;
+        }
+        aim_menu(c);
+        return;
+    }
+    const int t = fg->manual ? (b.who[fg->my][fg->mx] ? b.who[fg->my][fg->mx] - 1 : -1) : fg->cand[fg->ci];
+    switch (text::key(menu, text::hit(menu, x / 8))) {
+    case 'N': fg->ci = (fg->ci + 1) % (fg->n_cand ? fg->n_cand : 1); break;
+    case 'P': fg->ci = (fg->ci + fg->n_cand - 1) % (fg->n_cand ? fg->n_cand : 1); break;
+    case 'M':
+        fg->manual = true;
+        fg->mx = t >= 0 ? b.f[t].x : b.f[fg->cur].x;
+        fg->my = t >= 0 ? b.f[t].y : b.f[fg->cur].y;
+        break;
+    case 'C': break;                    // (the view comes to it)
+    case 'T':
+        if (t >= 0 && can_target(t, nullptr)) {
+            aim_target(c, t);
+            return;
+        }
+        break;
+    case 'E':
+        status_line(c, "");
+        draw_fight(c);
+        fight_menu(c);
+        return;
+    default: return;
+    }
+    aim_menu(c);
+}
+
+// ---- Done: "Guard Delay Quit Bandage Speed Exit"
+void done_menu(pic::Canvas& c)
+{
+    const combat::Fighter& f = fg->b.f[fg->cur];
+    char words[64];
+    words[0] = 0;
+    const int w = combat::weapon(f, *names);
+    if (w < 0 || (names->type(f.items[w][0x2E]).flags & 0x04)) strcat(words, fw(profile::kFGuard));
+    strcat(words, fw(profile::kDelayQuit));
+    if (combat::anyone_dying(fg->b)) strcat(words, fw(profile::kFBandage));
+    strcat(words, fw(profile::kSpeedExitW));
+    fg->st = FSt::DoneMenu;
+    text::build(menu, "", words);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+void speed_menu(pic::Canvas& c)
+{
+    const int speed = vm->get(0x4BFC) & 0xFF;
+    char prompt[24], words[32];
+    snprintf(prompt, sizeof prompt, "%s%d%s", fw(profile::kGameSpeed), speed, fw(profile::kSpeedClose));
+    words[0] = 0;
+    if (speed < 9) strcat(words, fw(profile::kFSlower));
+    if (speed > 0) strcat(words, fw(profile::kFFaster));
+    strcat(words, fw(profile::kFExit));
+    fg->st = FSt::Speed;
+    text::build(menu, prompt, words);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+// ---- The computer's turn
+void ai_step(pic::Canvas& c)
+{
+    combat::Battle& b = fg->b;
+    const int i = fg->cur;
+    combat::Fighter& f = b.f[i];
+    // Quick party members bandage a dying friend first
+    if (!f.team() && combat::anyone_dying(b)) {
+        const int k = combat::bandage(b);
+        if (k >= 0) {
+            add_page(k, fw(profile::kBandaged));
+            f.delay = 0;
+            say(c, FSt::Turn);
+            fg->cur = i;
+            return;
+        }
+    }
+    const combat::Plan p = combat::think(b, fg->t, i, rng);
+    switch (p.act) {
+    case combat::Act::Attack:
+        do_attack(c, i, p.target, false);
+        say(c, FSt::Turn);
+        return;
+    case combat::Act::Step: {
+        const int cost = combat::step_cost(b, fg->t, i, p.dir, nullptr, nullptr);
+        free_attacks(c, i, p.dir);
+        if (f.up()) {
+            combat::step(b, i, p.dir);
+            f.moves -= cost;
+            guard_attacks(c, i);
+        }
+        if (on_screen(i) && !f.team()) focus(i, 2);
+        draw_fight(c);
+        if (fg->pages) {
+            say(c, f.up() ? FSt::Ai : FSt::Turn);
+            return;
+        }
+        if (!f.up()) {
+            end_turn(c);
+            return;
+        }
+        fg->st = FSt::Ai;
+        fg->until = millis() + (on_screen(i) ? 150 : 1);
+        return;
+    }
+    case combat::Act::Guard:
+        f.guarding = true;
+        end_turn(c);
+        return;
+    default:
+        end_turn(c);
+        return;
+    }
+}
+
+// ---- Start and end
+void fight_party_icons()
+{
+    for (int i = 0; i < pt->count; ++i) compose_icon(i, pt->m[i]);
+}
+
+bool solid_side(void*, int dir)
+{
+    const int x = d->gs.x, y = d->gs.y;
+    return geo::wall(d->map, x, y, dir) != 0 && geo::door(d->map, x, y, dir) == 0;
+}
+
+void fight_start(pic::Canvas& c)
+{
+    if (!fg) fg = new (std::nothrow) Fight;
+    if (!fg || !ml || !pt->count) {
+        error(c, "Not enough memory.");
+        delete fg;
+        fg = nullptr;
+        fight_clear_monsters();
+        waiting = false;
+        handle(vm->resume());
+        return;
+    }
+    anim_stop();
+    load_fight_words();
+    fg->tile = static_cast<uint8_t(*)[kSq * kSq / 2]>(malloc(40 * sizeof *fg->tile));
+    if (!fg->tile || !load_fight_tables()) {
+        error(c, "The combat tables can't be read.");
+        end_fight_art();
+        delete fg;
+        fg = nullptr;
+        fight_clear_monsters();
+        waiting = false;
+        handle(vm->resume());
+        return;
+    }
+    combat::Battle& b = fg->b;
+    b.~Battle();
+    new (&b) combat::Battle();         // (in place: a temporary would take 10 KB of stack)
+    b.indoors = vm->get(0x4BE6) != 0;
+    if (b.indoors) combat::build_indoors(b, fg->t, d->map, d->gs.x, d->gs.y, rng);
+    else combat::build_outdoors(b, fg->t, vm->get(0x4CA1) & 0xFF, rng);
+    load_tiles(b.indoors);
+    // The fighters: the party, then the monsters
+    for (int i = 0; i < pt->count; ++i) {
+        party::Character& ch = pt->m[i];
+        combat::Fighter& f = b.f[b.n++];
+        f.rec = ch.rec;
+        f.aff = ch.affects;
+        f.n_aff = &ch.n_affects;
+        f.items = ch.items;
+        f.n_items = ch.n_items;
+        f.member = i;
+        f.icon = i;
+        f.quick = false;
+    }
+    b.party_size = pt->count;
+    for (int k = 0; k < ml->n && b.n < combat::kMaxFighters; ++k) {
+        combat::Monster& m = ml->m[k];
+        combat::Fighter& f = b.f[b.n++];
+        f.rec = m.rec;
+        f.aff = m.aff;
+        f.n_aff = &m.n_aff;
+        f.items = ml->g[m.group].item;
+        f.n_items = ml->g[m.group].n_items;
+        f.monster = k;
+        f.icon = 8 + m.group;
+        f.quick = true;
+    }
+    b.surprise = vm->get(0x7ECB) & 6;
+    b.to_hit_party = static_cast<int8_t>(vm->get(0x7F71));
+    b.to_hit_monsters = static_cast<int8_t>(vm->get(0x7F70));
+    combat::place(b, fg->t, d->gs.dir & 6, vm->fight_distance(), b.indoors ? solid_side : nullptr, nullptr);
+    // Their pictures
+    fight_party_icons();
+    for (int g = 0; g < ml->groups; ++g) load_monster_icon(8 + g, ml->g[g].icon);
+    int w, h;
+    fg->cursor = load_pic4("COMSPR.DAX", 0x19, 0, &w, &h);
+    fg->skull = load_pic4("COMSPR.DAX", 11 + 0x80, 0, &w, &h);
+    focus(0, 0xFF);
+    screen = Screen::Fight;
+    palette_fight(true);
+    fg->cur = -1;
+    draw_fight(c);
+    clear_menu_line(c);
+    put(c, fw(profile::kBattleBegins), 0, text::kMenuRow, 10);
+    fg->st = FSt::Begin;
+    fg->until = millis() + game_delay_ms() * 3;
+    if (!fg->until) fg->until = 1;
+    Serial.printf("[play] a fight: %d against %d (%s)\n", combat::standing(b, 0), combat::standing(b, 1),
+                  b.indoors ? "indoors" : "outdoors");
+}
+
+// Back to exploring after the fight (and its treasure)
+void fight_back_to_game(pic::Canvas& c)
+{
+    screen = Screen::Game;
+    anim_stop();
+    bigpic = -1;
+    pic_shown = false;
+    head_shown = body_shown = -1;
+    if (!vm->get(0x4BE6)) host->picture(0x79, 0xFF);
+    draw_frame(c);
+    draw_view(c);
+    draw_panel(c);
+    text::clear(c, text::kTextArea);
+    dirty(0, pic::kScreenH);
+}
+
+// The effects that end with the fight, the party put back on its feet
+void fight_cleanup_party(combat::Result r)
+{
+    for (int i = 0; i < pt->count; ++i) {
+        party::Character& ch = pt->m[i];
+        for (uint8_t t : d->prof->fight.ends)
+            if (t) rules::remove_affects(ch, t);
+        uint8_t* rec = ch.rec;
+        if (r == combat::Lost) continue;
+        if (rec[0x195] == party::Running) rec[0x195] = party::Okay;
+        if (r == combat::Fled) continue;
+        if (rec[0x195] == party::Dying) rec[0x195] = party::Unconscious;
+        if (rec[0x195] == party::Unconscious && rec[0x1A4] > 0) rec[0x195] = party::Okay;
+        rec[0x196] = rec[0x195] == party::Okay || rec[0x195] == party::Animated;
+    }
+}
+
+void open_treasure(pic::Canvas& c);
+
+// The fight is over: the outcome, experience, treasure
+void end_fight(pic::Canvas& c)
+{
+    combat::Battle& b = fg->b;
+    fg->out = combat::finish(b, ml ? ml->m : nullptr);
+    const combat::Result r = fg->out.result;
+    int out = 0;
+    for (int i = b.party_size; i < b.n; ++i)
+        if (!b.f[i].gone && !b.f[i].up()) ++out;
+    vm->set(0x7EC8, static_cast<uint16_t>(out));
+    vm->set(0x7EC7, static_cast<uint16_t>(r));
+    // The beaten monsters' coins and items go to the treasure
+    if (r == combat::Won) {
+        for (int m = 0; m < 7; ++m) ground->money[m] += fg->out.money[m];
+        if (vm->get(0x7EE3) != 1)
+            for (int i = b.party_size; i < b.n; ++i) {
+                const combat::Fighter& f = b.f[i];
+                if (f.gone || !f.team() || f.status() == party::Okay || f.status() == party::Running) continue;
+                for (int k = 0; k < f.n_items && ground->n < items::kMaxGround; ++k) {
+                    memcpy(ground->item[ground->n], f.items[k], items::kRecordSize);
+                    ground->item[ground->n][0x34] = 0;
+                    ++ground->n;
+                }
+            }
+        int total = fg->out.exp + combat::money_exp(ground->money);
+        for (int k = 0; k < ground->n; ++k) {
+            const int plus = static_cast<int8_t>(ground->item[k][0x32]);
+            if (plus > 0) total += 400 * plus;
+        }
+        fg->share = combat::award(b, total);
+    } else {
+        fg->share = 0;
+        if (r == combat::Fled) ground->clear();
+    }
+    fight_cleanup_party(r);
+    // Left behind (a flight): the fallen stay
+    if (r == combat::Fled)
+        for (int i = pt->count - 1; i >= 0; --i)
+            if (pt->m[i].health() != party::Okay && pt->m[i].health() != party::Animated) leave_party(i);
+    for (int i = 0; i < pt->count; ++i) rules::recalc(pt->m[i], *names, d->facts);
+    end_fight_art();
+    fight_clear_monsters();
+    palette_fight(false);
+    // The result screen
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    if (r == combat::Lost) {
+        put(c, fw(profile::kRejoice), 1, 3, 10);
+        clear_menu_line(c);
+        put(c, fw(profile::kPressAnyKey), 0, text::kMenuRow, 15);
+        fg->st = FSt::Destroyed;
+    } else {
+        put(c, fw(r == combat::Fled ? profile::kHasFled : profile::kHasWon), 1, 3, 10);
+        char t[48];
+        snprintf(t, sizeof t, "%s%d", fw(profile::kEachReceives), fg->share);
+        put(c, t, 1, 5, 10);
+        put(c, fw(profile::kExpPoints), 1, 7, 10);
+        clear_menu_line(c);
+        put(c, fw(profile::kPressEnter), 0, text::kMenuRow, 15);
+        fg->st = FSt::Results;
+    }
+    fg->until = 0;
+    dirty(0, pic::kScreenH);
+}
+
+// After the results: the treasure, or straight back to the script
+void fight_done(pic::Canvas& c)
+{
+    const bool lost = fg->st == FSt::Destroyed;
+    vm->set(0x7F70, 0);
+    vm->set(0x7F71, 0);
+    vm->set(0x7F72, 0);
+    vm->set(0x7EE3, 0);
+    vm->set(0x7EE6, 0);
+    delete fg;
+    fg = nullptr;
+    if (lost) {
+        // The party is gone: back to the party menu
+        while (pt->count) leave_party(pt->count - 1);
+        screen = Screen::PartyMenu;
+        draw_party_menu(c);
+        return;
+    }
+    fight_back_to_game(c);
+    if (ground->any_money() || ground->n) {
+        open_treasure(c);
+        return;
+    }
+    clear_menu_line(c);
+    waiting = false;
+    handle(vm->resume());
+}
+
+// COMBAT with no monsters: the treasure the script set out
+void fight_treasure_only(pic::Canvas& c)
+{
+    if (!ground->any_money() && !ground->n) {
+        waiting = false;
+        handle(vm->resume());
+        return;
+    }
+    if (!fg) fg = new (std::nothrow) Fight;
+    if (!fg) {
+        open_treasure(c);
+        return;
+    }
+    load_fight_words();
+    int total = combat::money_exp(ground->money);
+    for (int k = 0; k < ground->n; ++k) {
+        const int plus = static_cast<int8_t>(ground->item[k][0x32]);
+        if (plus > 0) total += 400 * plus;
+    }
+    // (no fighters: the party shares as the games do - the survivors)
+    combat::Battle& b = fg->b;
+    b.~Battle();
+    new (&b) combat::Battle();         // (in place: a temporary would take 10 KB of stack)
+    for (int i = 0; i < pt->count; ++i) {
+        b.f[i].rec = pt->m[i].rec;
+        b.f[i].member = i;
+    }
+    b.n = b.party_size = pt->count;
+    fg->share = combat::award(b, total);
+    fg->treasure_only = true;
+    screen = Screen::Fight;
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    put(c, fw(profile::kFoundTreasure), 1, 3, 10);
+    char t[48];
+    snprintf(t, sizeof t, "%s%d", fw(profile::kEachReceives), fg->share);
+    put(c, t, 1, 5, 10);
+    put(c, fw(profile::kExpPoints), 1, 7, 10);
+    clear_menu_line(c);
+    put(c, fw(profile::kPressEnter), 0, text::kMenuRow, 15);
+    fg->st = FSt::Results;
+    dirty(0, pic::kScreenH);
+}
+
+// ---- Ticks and taps
+void fight_tick(uint32_t now, pic::Canvas& c)
+{
+    if (!fg || !fg->until || static_cast<int32_t>(now - fg->until) < 0) return;
+    fg->until = 0;
+    switch (fg->st) {
+    case FSt::Begin: begin_round(c); break;
+    case FSt::Ai: ai_step(c); break;
+    case FSt::RoundEnd: round_end(c); break;
+    case FSt::Pages:
+        if (fg->at < fg->pages) {
+            show_page(c);
+            break;
+        }
+        fg->pages = fg->at = 0;
+        clear_panel(c, 10, 21);
+        if (fg->cur >= 0) draw_panel_for(c, fg->cur);
+        switch (fg->after) {
+        case FSt::Ai:
+            fg->st = FSt::Ai;
+            fg->until = 1;
+            break;
+        case FSt::Move:
+            fg->st = FSt::Move;
+            draw_fight(c);
+            move_prompt(c);
+            break;
+        default:
+            after_attack(c);
+            break;
+        }
+        break;
+    default: break;
+    }
+}
+
+void fight_tap(int x, int y, pic::Canvas& c)
+{
+    if (!fg) return;
+    const int col = x / 8;
+    if (note_until) {
+        redraw_menu(c);
+        if (fg->st == FSt::Move) move_prompt(c);
+        return;
+    }
+    switch (fg->st) {
+    case FSt::Pages:
+        if (fg->until) fg->until = 1;   // a tap moves on
+        return;
+    case FSt::Results:
+    case FSt::Destroyed:
+        if (fg->treasure_only) {
+            fg->treasure_only = false;
+            delete fg;
+            fg = nullptr;
+            fight_back_to_game(c);
+            open_treasure(c);
+            return;
+        }
+        fight_done(c);
+        return;
+    case FSt::Menu: {
+        if (y < text::kMenuTapTop) return;
+        combat::Fighter& f = fg->b.f[fg->cur];
+        switch (text::key(menu, text::hit(menu, col))) {
+        case 'M': start_move(c); break;
+        case 'V':
+            if (f.member >= 0) {
+                pt->selected = f.member;
+                palette_fight(false);
+                view_character(c);
+            }
+            break;
+        case 'A': start_aim(c); break;
+        case 'Q':
+            f.quick = true;
+            fg->st = FSt::Ai;
+            fg->until = millis() + 200;
+            clear_menu_line(c);
+            break;
+        case 'D': done_menu(c); break;
+        case 0: break;
+        default: error(c, "Not in the engine yet."); break;     // Use, Cast, Turn
+        }
+        return;
+    }
+    case FSt::Move: {
+        if (y >= text::kMenuTapTop) {
+            end_move(c);
+            return;
+        }
+        if (x < kViewX || x >= kViewX + 7 * kSq || y < kViewY || y >= kViewY + 7 * kSq) return;
+        const combat::Fighter& f = fg->b.f[fg->cur];
+        const int sx = fg->b.vx + (x - kViewX) / kSq, sy = fg->b.vy + (y - kViewY) / kSq;
+        // The direction from the fighter's nearest square to the tapped one
+        int fx = f.x, fy = f.y;
+        if (f.size == 3 || f.size == 4) fx = sx > f.x ? f.x + 1 : f.x;
+        if (f.size == 2 || f.size == 4) fy = sy > f.y ? f.y + 1 : f.y;
+        const int dir = combat::direction(fx, fy, sx, sy);
+        if (dir < 8) try_step(c, dir);
+        return;
+    }
+    case FSt::Aim: aim_tap(x, y, c); return;
+    case FSt::DoneMenu: {
+        if (y < text::kMenuTapTop) return;
+        combat::Fighter& f = fg->b.f[fg->cur];
+        switch (text::key(menu, text::hit(menu, col))) {
+        case 'G':
+            f.guarding = true;
+            add_page(fg->cur, fw(profile::kGuarding));
+            f.delay = 0;
+            say(c, FSt::Turn);
+            break;
+        case 'D':
+            f.delay = 1;
+            status_line(c, "");
+            next_turn(c);
+            break;
+        case 'Q': end_turn(c); break;
+        case 'B': {
+            const int k = combat::bandage(fg->b);
+            if (k >= 0) {
+                add_page(k, fw(profile::kBandaged));
+                f.delay = 0;
+                say(c, FSt::Turn);
+            }
+            break;
+        }
+        case 'S': speed_menu(c); break;
+        case 'E': fight_menu(c); break;
+        default: break;
+        }
+        return;
+    }
+    case FSt::Speed: {
+        if (y < text::kMenuTapTop) return;
+        int speed = vm->get(0x4BFC) & 0xFF;
+        const uint16_t high = static_cast<uint16_t>(vm->get(0x4BFC) & 0xFF00);
+        switch (text::key(menu, text::hit(menu, col))) {
+        case 'S': if (speed < 9) ++speed; break;
+        case 'F': if (speed > 0) --speed; break;
+        case 'E': done_menu(c); return;
+        default: return;
+        }
+        vm->set(0x4BFC, static_cast<uint16_t>(high | speed));
+        speed_menu(c);
+        return;
+    }
+    case FSt::AllyAsk: {
+        if (y < text::kMenuTapTop) return;
+        const char k = text::key(menu, text::hit(menu, col));
+        if (k != 'Y' && k != 'N') return;
+        if (k == 'Y' && fg->pending >= 0) {
+            vm->set(0x7F33, 1);
+            // NPCs on the party's side turn on it
+            for (int i = 0; i < fg->b.n; ++i) {
+                combat::Fighter& o = fg->b.f[i];
+                if (o.rec[0xF7] >= 0x80 && o.status() == party::Okay && !o.team()) {
+                    o.rec[0x197] = 1;
+                    o.target = -1;
+                }
+            }
+            fg->b.f[fg->cur].target = fg->pending;
+            do_attack(c, fg->cur, fg->pending, false);
+            fg->pending = -1;
+            say(c, FSt::Turn);
+            return;
+        }
+        fg->pending = -1;
+        fight_menu(c);
+        return;
+    }
+    case FSt::FleeAsk: {
+        if (y < text::kMenuTapTop) return;
+        const char k = text::key(menu, text::hit(menu, col));
+        if (k == 'N') {
+            fight_menu(c);
+            return;
+        }
+        if (k != 'Y') return;
+        const int i = fg->cur;
+        const bool away = combat::flee(fg->b, fg->t, i, rng);
+        add_page(i, fw(away ? profile::kGotAway : profile::kEscapeBlocked));
+        draw_fight(c);
+        say(c, FSt::Turn);
+        return;
+    }
+    default: return;
+    }
+}
+
+// Esc in a fight: Move undoes the move, menus go back
+bool fight_back(pic::Canvas& c)
+{
+    if (!fg) return false;
+    switch (fg->st) {
+    case FSt::Move: {
+        combat::Battle& b = fg->b;
+        combat::Fighter& f = b.f[fg->cur];
+        const int x = f.x, y = f.y;
+        f.x = fg->move_x;
+        f.y = fg->move_y;
+        combat::occupancy(b);
+        bool clear = true;
+        int sx[4], sy[4];
+        const int n = combat::squares(f.size, sx, sy);
+        for (int k = 0; k < n; ++k)
+            if (b.who[f.y + sy[k]][f.x + sx[k]] != fg->cur + 1) clear = false;
+        if (!clear) {
+            f.x = x;
+            f.y = y;
+            combat::occupancy(b);
+            end_turn(c);
+            return true;
+        }
+        f.moves = fg->move_left;
+        focus(fg->cur, 2);
+        draw_fight(c);
+        fight_menu(c);
+        return true;
+    }
+    case FSt::Aim:
+        status_line(c, "");
+        draw_fight(c);
+        fight_menu(c);
+        return true;
+    case FSt::DoneMenu: fight_menu(c); return true;
+    case FSt::Speed: done_menu(c); return true;
+    case FSt::AllyAsk:
+    case FSt::FleeAsk: fight_menu(c); return true;
+    default: return true;               // (no leaving a fight)
+    }
+}
+
+// The pad in a fight: steps (Move) - 8 north, 7 / 9 north-west / north-east,
+// 4 / 6 west / east, 2 south
+bool fight_act(Act a, pic::Canvas& c)
+{
+    if (!fg || fg->st != FSt::Move) return false;
+    int dir = 8;
+    switch (a) {
+    case Act::Forward: dir = 0; break;
+    case Act::TurnLeft: dir = 7; break;
+    case Act::TurnRight: dir = 1; break;
+    case Act::StepLeft: dir = 6; break;
+    case Act::StepRight: dir = 2; break;
+    case Act::TurnAround: dir = 4; break;
+    default: return false;
+    }
+    try_step(c, dir);
+    return true;
+}
+
+// After View Character in a fight
+void fight_after_view(pic::Canvas& c)
+{
+    if (!fg) return;
+    screen = Screen::Fight;
+    palette_fight(true);
+    combat::Fighter& f = fg->b.f[fg->cur];
+    if (f.member >= 0) {
+        party::Character& ch = pt->m[f.member];
+        rules::recalc(ch, *names, d->facts);
+        f.n_items = ch.n_items;
+        compose_icon(f.member, ch);
+    }
+    draw_fight(c);
+    fight_menu(c);
+}
+
+// ---- The treasure: "View Take Pool Share Exit" over the exploring screen
+// (the shop's screen: Take - "Take: Money Items Exit" when both lie there -,
+// Pool, Share as in a shop; the items: "Items: " and Take, newest first;
+// leaving with treasure left: "There is still treasure left.  Do you want to
+// go back and claim your treasure?" Yes No - what's left is lost)
+bool treasure = false;                  // the shop screen is the treasure's
+bool treasure_on() { return treasure; }
+void treasure_off() { treasure = false; }
+
+// A treasure word (GAME.OVR, read when shown)
+const char* tw(int i)
+{
+    static char buf[4][48];
+    static int k = 0;
+    char* out = buf[k++ & 3];
+    out[0] = 0;
+    const uint32_t at = d->prof->fight.words[i];
+    fs::File f;
+    if (!at || !open_file(d->prof->overlay, f)) return out;
+    library::FileSource src(f);
+    text::read_pascal(src, at, out, 48);
+    f.close();
+    return out;
+}
+
+void treasure_take(pic::Canvas& c)
+{
+    if (ground->any_money() && ground->n) {
+        char prompt[12], words[24];
+        snprintf(prompt, sizeof prompt, "%s", tw(profile::kTakeColon));
+        snprintf(words, sizeof words, "%s", tw(profile::kMoneyItems));
+        text::build(menu, prompt, words);
+        menu.selected = 0;
+        show_menu_line(c);
+        return;
+    }
+    if (ground->any_money()) open_take(c);
+    else if (ground->n) open_loot(c);
+}
+
+void draw_loot(pic::Canvas& c)
+{
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    plist.row0 = 1;
+    plist.row1 = 22;
+    plist.col0 = 1;
+    plist.n = ground->n;
+    char prompt[12], what[8];
+    snprintf(prompt, sizeof prompt, "%s", tw(profile::kItemsColon));
+    snprintf(what, sizeof what, "%s", tw(profile::kTakeW));
+    draw_list(c, prompt, what);
+}
+
+void open_loot(pic::Canvas& c)
+{
+    screen = Screen::Loot;
+    plist = PickList{};
+    draw_loot(c);
+}
+
+void take_loot(int i, pic::Canvas& c)
+{
+    party::Character* ch = pt->sel();
+    if (!ch || i < 0 || i >= ground->n) return;
+    const int at = ground->n - 1 - i;
+    if (rules::too_heavy(*ch, ground->item[at], *names, d->facts)) {
+        note(c, d->w_over);
+        return;
+    }
+    rules::add_item(*ch, ground->item[at]);
+    rules::recalc(*ch, *names, d->facts);
+    for (int k = at; k + 1 < ground->n; ++k) memcpy(ground->item[k], ground->item[k + 1], items::kRecordSize);
+    --ground->n;
+    if (!ground->n) {
+        screen = Screen::Shop;
+        draw_shop(c);
+        return;
+    }
+    draw_loot(c);
+}
+
+void treasure_menu(pic::Canvas& c)
+{
+    char words[48];
+    char a[32], b2[16];
+    if (ground->any_money() || ground->n) {
+        snprintf(a, sizeof a, "%s", tw(ground->any_money() ? profile::kViewTakePoolShare : profile::kViewTakePool));
+        snprintf(b2, sizeof b2, "%s", tw(profile::kExitSp));
+        snprintf(words, sizeof words, "%s%s", a, b2);
+    } else {
+        snprintf(words, sizeof words, "%s", tw(profile::kViewPoolExit));
+    }
+    text::build(menu, "", words);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+void open_treasure(pic::Canvas& c)
+{
+    treasure = true;
+    temple = false;
+    screen = Screen::Shop;
+    text::clear(c, text::kTextArea);
+    dirty_rows(17, 22);
+    if (pt->count) draw_party(c, 17);
+    treasure_menu(c);
+}

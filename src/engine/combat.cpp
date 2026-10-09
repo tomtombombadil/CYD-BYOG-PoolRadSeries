@@ -1,0 +1,882 @@
+#include "combat.h"
+
+#include <cstring>
+
+namespace combat {
+
+namespace {
+
+constexpr int kDx[9] = {0, 1, 1, 1, 0, -1, -1, -1, 0};
+constexpr int kDy[9] = {-1, -1, 0, 1, 1, 1, 0, -1, 0};
+
+constexpr uint8_t kPlainFloor = 22;    // ground value - 1 ("plain floor" picture)
+constexpr uint8_t kTable = 0x1A, kChair = 0x1B, kBody = 0x1F;
+
+// Record fields
+constexpr int kHp = 0x1A4, kHpMax = 0x78, kHealth = 0x195, kInCombat = 0x196, kTeam = 0x197;
+constexpr int kSize = 0xDE, kDexFull = 0x17, kMove = 0x1A5, kHalf1 = 0x11C, kHalf2 = 0x11D;
+constexpr int kHit = 0x199, kAc = 0x19A, kAcBehind = 0x19B;
+constexpr int kDice = 0x19E, kSides = 0x1A0, kBonus = 0x1A2;
+constexpr int kControl = 0xF7;
+
+
+// ---- Indoors: a map square's side codes
+struct Sides {
+    const geo::Map* m;
+    int px, py;
+    // 0 open, 1 wall, 3 door (one square's own side)
+    int code(int x, int y, int dir) const
+    {
+        if (x < 0 || y < 0 || x >= geo::kSize || y >= geo::kSize)
+            return y == py && (dir == 2 || dir == 6) ? 0 : 1;
+        if (geo::wall(*m, x, y, dir) == 0) return 0;
+        return geo::door(*m, x, y, dir) == 0 ? 1 : 3;
+    }
+    // Both sides of the edge
+    int flag(int x, int y, int dir) const
+    {
+        return code(x, y, dir) | code(x + geo::dx(dir), y + geo::dy(dir), (dir + 4) & 7);
+    }
+};
+
+struct Painter {
+    Battle& b;
+    int x0, y0;
+    void set(int c, int r, int t) const
+    {
+        const int x = x0 + c, y = y0 + r;
+        if (x >= 0 && x < kW && y >= 0 && y < kH) b.ground[y][x] = static_cast<uint8_t>(t + 1);
+    }
+    int get(int c, int r) const
+    {
+        const int x = x0 + c, y = y0 + r;
+        return x >= 0 && x < kW && y >= 0 && y < kH ? b.ground[y][x] - 1 : -1;
+    }
+};
+
+void draw_block(Battle& b, const Sides& s, int mx, int my, int ddx, int ddy, create::Dice& d)
+{
+    const Painter p{b, 21 + 6 * ddx + 5 * ddy, 10 + 5 * ddy};
+    const int N = s.flag(mx, my, 0), E = s.flag(mx, my, 2), S = s.flag(mx, my, 4), W = s.flag(mx, my, 6);
+    // 1. The floor and the west edge
+    for (int r = 2; r <= 4; ++r)
+        for (int c = 0; c <= 5; ++c) p.set(c, r, kPlainFloor);
+    if (W == 1) {
+        for (int r = 2; r <= 4; ++r) {
+            p.set(r - 1, r, 4);
+            p.set(r, r, 3);
+            p.set(r + 1, r, 13);
+        }
+    } else if (W == 3) {
+        p.set(1, 2, 8);
+        p.set(5, 4, 0);
+    }
+    // 2. The north edge's middle
+    for (int c = 3; c <= 4; ++c) {
+        p.set(c, 0, N == 1 ? 5 : kPlainFloor);
+        p.set(c, 1, N == 1 ? 10 : kPlainFloor);
+    }
+    // 3. The north-west corner
+    const bool X = s.flag(mx, my - 1, 6) == 0 && s.flag(mx - 1, my, 0) == 0;
+    int t;
+    if (N == 0) t = W == 0 ? kPlainFloor : W == 3 ? 13 : (X ? 0 : 13);
+    else t = W == 0 ? (X ? 15 : 5) : (X ? 18 : 2);
+    p.set(1, 0, t);
+    p.set(2, 0, N == 0 ? kPlainFloor : N == 3 ? 17 : 5);
+    if (W == 0) t = N == 0 ? kPlainFloor : (X ? 16 : 10);
+    else if (W == 3) t = X ? 20 : 7;
+    else t = X ? 1 : 3;
+    p.set(1, 1, t);
+    if (W == 1) t = N == 0 ? 13 : N == 3 ? 21 : 6;
+    else t = N == 0 ? kPlainFloor : N == 3 ? 23 : 10;
+    p.set(2, 1, t);
+    // 4. The north-east corner
+    const int P = s.flag(mx, my - 1, 2), Q = s.flag(mx + 1, my, 0);
+    p.set(5, 0, N == 0 ? (P == 1 ? 4 : kPlainFloor) : N == 3 ? 15 : 5);
+    if (N == 0) {
+        if (P == 0) t = kPlainFloor;
+        else if (P == 3) t = E == 0 && Q != 0 ? 24 : 1;
+        else t = E != 0 ? 3 : (Q != 0 ? 11 : 7);
+    } else {
+        t = E != 0 ? 9 : Q != 0 ? 5 : P == 0 ? 17 : 19;
+    }
+    p.set(6, 0, t);
+    p.set(5, 1, N == 0 ? kPlainFloor : N == 3 ? 16 : 10);
+    if (N == 0) t = P == 0 ? kPlainFloor : E != 0 ? 4 : Q == 0 ? 8 : 12;
+    else t = E != 0 ? 14 : Q == 0 ? 23 : 10;
+    p.set(6, 1, t);
+    // 5. Tables and chairs in rooms
+    if (mx >= 0 && my >= 0 && mx < geo::kSize && my < geo::kSize && (geo::flags(*s.m, mx, my) & 0x40)) {
+        const int walls = (N == 1) + (E == 1) + (S == 1) + (W == 1);
+        bool room = true;
+        if (walls == 0) room = false;
+        if (N == 1 && S == 1 && !(E == 1 && W == 1)) room = false;
+        if (E == 1 && W == 1 && !(N == 1 && S == 1)) room = false;
+        if (N == 3 || E == 3 || S == 3 || W == 3) room = false;
+        if (room)
+            for (int a = 2; a <= 3; ++a)
+                for (int bb = 2; bb <= 4; ++bb) {
+                    const int c = a + bb, r = bb;
+                    if (p.get(c, r) != kPlainFloor || d.roll(10, 1) > 5) continue;
+                    p.set(c, r, kTable - 1);
+                    // Chairs round it (the neighbours that are plain floor)
+                    for (int dir = 0; dir < 8; dir += 2)
+                        if (p.get(c + kDx[dir], r + kDy[dir]) == kPlainFloor && d.roll(10, 1) <= 9)
+                            p.set(c + kDx[dir], r + kDy[dir], kChair - 1);
+                }
+    }
+}
+
+bool on_field(int x, int y) { return x >= 0 && x < kW && y >= 0 && y < kH; }
+
+} // namespace
+
+int dx(int dir) { return dir >= 0 && dir <= 8 ? kDx[dir] : 0; }
+int dy(int dir) { return dir >= 0 && dir <= 8 ? kDy[dir] : 0; }
+
+bool read_tables(Tables& t, const TableAt& at, ReadDs read, void* ctx)
+{
+    return read(ctx, at.ground, &t.ground[0][0], sizeof t.ground) &&
+           read(ctx, at.fallback, &t.fallback[0][0], sizeof t.fallback) &&
+           read(ctx, at.formation, &t.formation[0][0], sizeof t.formation) &&
+           read(ctx, at.facing, t.facing, sizeof t.facing) && read(ctx, at.start_x, t.start_x, sizeof t.start_x) &&
+           read(ctx, at.start_y, t.start_y, sizeof t.start_y) &&
+           read(ctx, at.shapes, &t.shapes[0][0][0], sizeof t.shapes) &&
+           read(ctx, at.terrain, t.terrain, sizeof t.terrain) && read(ctx, at.turn, t.turn, sizeof t.turn);
+}
+
+bool Fighter::has(uint8_t type) const
+{
+    for (int i = 0; n_aff && i < *n_aff; ++i)
+        if (aff[i][0] == type) return true;
+    return false;
+}
+
+int squares(int size, int* sx, int* sy)
+{
+    switch (size) {
+    case 2: sx[0] = 0; sy[0] = 0; sx[1] = 0; sy[1] = 1; return 2;
+    case 3: sx[0] = 0; sy[0] = 0; sx[1] = 1; sy[1] = 0; return 2;
+    case 4:
+        sx[0] = 0; sy[0] = 0; sx[1] = 1; sy[1] = 0; sx[2] = 0; sy[2] = 1; sx[3] = 1; sy[3] = 1;
+        return 4;
+    case 0: return 0;
+    default: sx[0] = 0; sy[0] = 0; return 1;
+    }
+}
+
+void build_indoors(Battle& b, const Tables& t, const geo::Map& m, int px, int py, create::Dice& d)
+{
+    (void)t;
+    memset(b.ground, 0, sizeof b.ground);
+    b.indoors = true;
+    const Sides s{&m, px, py};
+    for (int ddy = -2; ddy <= 2; ++ddy)
+        for (int ddx = -6; ddx <= 6; ++ddx) draw_block(b, s, px + ddx, py + ddy, ddx, ddy, d);
+}
+
+void build_outdoors(Battle& b, const Tables& t, int city, create::Dice& d)
+{
+    b.indoors = false;
+    const uint8_t plain = 0x36 + 1;
+    for (int y = 0; y < kH; ++y)
+        for (int x = 0; x < kW; ++x) b.ground[y][x] = plain;
+    const int f = city >= 0 && city < 33 ? t.terrain[city] : 0;
+    // A stream running down and to the right
+    const int chance = (f & 0x10) ? 75 : (f & 0x20) ? 35 : 0;
+    if (chance && d.roll(100, 1) <= chance) {
+        int col = 34 - 5 * d.roll(4, 1);
+        while ((col + 2) % 7 != 0) --col;
+        for (int y = 0; y < kH; ++y, ++col) {
+            if (col >= 0 && col < kW) b.ground[y][col] = static_cast<uint8_t>(0x3C + d.roll(2, 1) - 1);
+            if (col + 1 >= 0 && col + 1 < kW) {
+                b.ground[y][col + 1] = static_cast<uint8_t>(0x3E + d.roll(2, 1) - 1);
+                if (d.roll(20, 1) == 1) {
+                    b.ground[y][col + 1] = 0x40;
+                    if (y + 1 < kH) b.ground[y + 1][col + 1] = 0x41;
+                }
+            }
+        }
+    }
+    // Trees and logs
+    if (!(f & 0x80)) {
+        int n = 10;
+        if (f & 0x02) n -= 5;
+        if (f & 0x04) n -= 2;
+        if (f & 0x40) n += 5;
+        if (f & 0x08) n += 10;
+        if (n < 0) n = 1;
+        for (int y = 1; y < kH; ++y)
+            for (int x = 0; x < kW; ++x) {
+                if (b.ground[y][x] != plain || b.ground[y - 1][x] != plain || d.roll(100, 1) > n) continue;
+                if (d.roll(100, 1) <= n) {
+                    b.ground[y][x] = static_cast<uint8_t>(0x2A + d.roll(2, 1) - 1);
+                } else {
+                    b.ground[y - 1][x] = static_cast<uint8_t>(0x20 + d.roll(5, 1) - 1);
+                    b.ground[y][x] = static_cast<uint8_t>(0x25 + d.roll(5, 1) - 1);
+                }
+            }
+    }
+    // Scattered ground: ponds, rocks, grass, pebbles
+    int D = 50;
+    if (f & 0x10) D += 10;
+    if (f & 0x20) D += 30;
+    if (f & 0x40) D += 20;
+    if (f & 0x04) D -= 10;
+    if (f & 0x02) D -= 20;
+    if (f & 0x80) D -= 50;
+    static const uint8_t kBand[5][5] = {{0, 0, 0, 30, 15}, {0, 1, 5, 14, 10}, {0, 2, 5, 10, 5}, {10, 2, 10, 10, 1},
+                                        {15, 5, 15, 10, 1}};
+    int band = -1;
+    if (D >= -30 && D <= 9) band = 0;
+    else if (D >= 10 && D <= 29) band = 1;
+    else if (D >= 30 && D <= 69) band = 2;
+    else if (D >= 70 && D <= 89) band = 3;
+    else if (D >= 90 && D <= 110) band = 4;
+    if (band < 0) return;
+    static const uint8_t kFirst[5] = {0x3A, 0x30, 0x2C, 0x37, 0x32}, kKinds[5] = {2, 2, 4, 3, 4};
+    for (int y = 0; y < kH; ++y)
+        for (int x = 0; x < kW; ++x) {
+            if (b.ground[y][x] != plain) continue;
+            const int r = d.roll(100, 1);
+            int sum = 0;
+            for (int k = 0; k < 5; ++k) {
+                sum += kBand[band][k];
+                if (r <= sum) {
+                    b.ground[y][x] = static_cast<uint8_t>(kFirst[k] + d.roll(kKinds[k], 1) - 1);
+                    break;
+                }
+            }
+        }
+}
+
+const uint8_t* tile(const Battle& b, const Tables& t, int x, int y)
+{
+    static const uint8_t kOff[4] = {1, 0, 0xFF, 0};
+    if (!on_field(x, y)) return kOff;
+    const int g = b.ground[y][x];
+    return g > 0 && g < kGroundValues ? t.ground[g] : kOff;
+}
+
+void occupancy(Battle& b)
+{
+    memset(b.who, 0, sizeof b.who);
+    for (int i = 0; i < b.n; ++i) {
+        const Fighter& f = b.f[i];
+        int sx[4], sy[4];
+        const int n = squares(f.size, sx, sy);
+        for (int k = 0; k < n; ++k)
+            if (on_field(f.x + sx[k], f.y + sy[k])) b.who[f.y + sy[k]][f.x + sx[k]] = static_cast<uint8_t>(i + 1);
+    }
+}
+
+namespace {
+
+// Can fighter i stand with its top-left square at (x, y)
+bool fits(const Battle& b, const Tables& t, int i, int size, int x, int y)
+{
+    int sx[4], sy[4];
+    const int n = squares(size, sx, sy);
+    for (int k = 0; k < n; ++k) {
+        const int xx = x + sx[k], yy = y + sy[k];
+        if (!on_field(xx, yy) || b.ground[yy][xx] == 0 || tile(b, t, xx, yy)[0] == 0xFF) return false;
+        if (b.who[yy][xx] && b.who[yy][xx] != i + 1) return false;
+    }
+    return true;
+}
+
+} // namespace
+
+void place(Battle& b, const Tables& t, int facing, int distance, SolidSide solid, void* ctx)
+{
+    const int f0 = (facing / 2) & 3;
+    bool used[2][4][6][11] = {};
+    int width[2] = {};
+    for (int i = 0; i < b.n; ++i)
+        if (b.f[i].up()) ++width[b.f[i].team() ? 1 : 0];
+    for (int k = 0; k < 2; ++k) width[k] = (width[k] + 1) / 2;
+    memset(b.who, 0, sizeof b.who);
+    for (int i = 0; i < b.n; ++i) {
+        Fighter& f = b.f[i];
+        const int team = f.team() ? 1 : 0;
+        const int tf = team ? (f0 + 2) & 3 : f0;           // the team's half facing
+        f.facing = team ? (t.facing[f0] + 4) & 7 : t.facing[f0];
+        int size = f.rec[kSize] & 7;
+        if (size < 1 || size > 4) size = 1;
+        if (f.member >= 0) size = 1;
+        const int tx0 = team ? distance * geo::dx(f0 * 2) : 0, ty0 = team ? distance * geo::dy(f0 * 2) : 0;
+        bool placed = false;
+        for (int at = 0; at < 4 && !placed; ++at) {
+            int tx = tx0, ty = ty0;
+            if (at > 0) {
+                const int dir = t.fallback[tf][at];
+                if (solid && solid(ctx, dir)) continue;
+                tx += geo::dx(dir);
+                ty += geo::dy(dir);
+            }
+            const int ff = (t.formation[tf][at] / 2) & 3;
+            const int back = t.facing[(ff + 2) & 3], right = t.facing[(ff + 1) & 3], left = t.facing[(ff + 3) & 3];
+            const int shape = at == 1 ? 4 : tf;
+            const int si = at == 0 ? ff : 4 + ff;
+            int extra_rank = 0;
+            for (int rank = 0; rank < 12 && !placed; ++rank) {
+                const int cr = rank + extra_rank;
+                const int cx = t.start_x[si] + cr * kDx[back], cy = t.start_y[si] + cr * kDy[back];
+                if (cx < 0 || cx > 10 || cy < 0 || cy > 5) break;          // past the grid: the next attempt
+                for (int count = 1;; ++count) {
+                    const int side = count / 2;
+                    const int dir = count % 2 == 0 ? right : left;
+                    const int gx = count == 1 ? cx : cx + side * kDx[dir];
+                    const int gy = count == 1 ? cy : cy + side * kDy[dir];
+                    if (gx < 0 || gx > 10 || gy < 0 || gy > 5) break;
+                    if (rank == 0 && count > width[team]) break;
+                    if (rank > 0 && count > 11) break;
+                    const uint8_t* row = t.shapes[shape][gy];
+                    if (gx < row[0] || gx > row[1] || used[team][at][gy][gx]) continue;
+                    const int x = gx + 6 * tx + 5 * ty + 22, y = gy + 5 * ty + 10;
+                    if (!fits(b, t, i, f.up() ? size : 1, x, y)) continue;
+                    used[team][at][gy][gx] = true;
+                    f.x = x;
+                    f.y = y;
+                    placed = true;
+                    break;
+                }
+                // The party facing east or west: a second rank stands two back
+                if (!placed && rank == 0 && at == 0 && team == 0 && (tf == 1 || tf == 3)) {
+                    bool open = !solid;
+                    for (int k = 1; k < 4 && !open; ++k)
+                        if (!solid(ctx, t.fallback[tf][k])) open = true;
+                    if (open) extra_rank = 1;
+                }
+            }
+        }
+        if (!placed) {
+            f.size = 0;
+            if (f.member < 0) f.gone = true;          // a monster with no room: out of the fight
+            continue;
+        }
+        if (f.up()) {
+            f.size = size;
+            int sx[4], sy[4];
+            const int n = squares(size, sx, sy);
+            for (int k = 0; k < n; ++k) b.who[f.y + sy[k]][f.x + sx[k]] = static_cast<uint8_t>(i + 1);
+        } else {
+            f.size = 0;
+            if (f.member >= 0) {
+                f.ground = b.ground[f.y][f.x];
+                b.ground[f.y][f.x] = kBody;
+            }
+        }
+    }
+}
+
+int direction(int fx, int fy, int tx, int ty)
+{
+    const int ddx = tx - fx, ddy = ty - fy;
+    if (!ddx && !ddy) return 8;
+    // The 8 directions by angle: compare |dx| and |dy| (2.414 ~ 12/5)
+    const int ax = ddx < 0 ? -ddx : ddx, ay = ddy < 0 ? -ddy : ddy;
+    int hx = ddx > 0 ? 1 : ddx < 0 ? -1 : 0, hy = ddy > 0 ? 1 : ddy < 0 ? -1 : 0;
+    if (ax * 5 > ay * 12) hy = 0;
+    else if (ay * 5 > ax * 12) hx = 0;
+    for (int d = 0; d < 8; ++d)
+        if (kDx[d] == hx && kDy[d] == hy) return d;
+    return 8;
+}
+
+bool path(const Battle& b, const Tables& t, int a, int x, int y, bool ignore_walls, int* length)
+{
+    const Fighter& f = b.f[a];
+    int x0 = f.x, y0 = f.y;
+    const int eye = tile(b, t, x0, y0)[1];
+    const int ddx = x - x0 > 0 ? x - x0 : x0 - x, ddy = y - y0 > 0 ? y - y0 : y0 - y;
+    const int sx = x > x0 ? 1 : -1, sy = y > y0 ? 1 : -1;
+    int err = ddx - ddy, len = 0;
+    bool seen = true;
+    while (x0 != x || y0 != y) {
+        const int e2 = 2 * err;
+        bool mx = false, my = false;
+        if (e2 > -ddy) {
+            err -= ddy;
+            x0 += sx;
+            mx = true;
+        }
+        if (e2 < ddx) {
+            err += ddx;
+            y0 += sy;
+            my = true;
+        }
+        len += mx && my ? 3 : 2;
+        if (!ignore_walls && (x0 != x || y0 != y) && tile(b, t, x0, y0)[2] > eye) seen = false;
+    }
+    if (length) *length = len;
+    return seen;
+}
+
+bool range(const Battle& b, const Tables& t, int a, int c, bool ignore_walls, int* sq)
+{
+    const Fighter& tg = b.f[c];
+    int sx[4], sy[4];
+    int n = squares(tg.size ? tg.size : 1, sx, sy);
+    int best = 9999;
+    bool seen = false;
+    for (int k = 0; k < n; ++k) {
+        int len;
+        const bool s = path(b, t, a, tg.x + sx[k], tg.y + sy[k], ignore_walls, &len);
+        // Also from the attacker's other squares
+        int ax[4], ay[4];
+        const int m = squares(b.f[a].size ? b.f[a].size : 1, ax, ay);
+        for (int j = 1; j < m; ++j) {
+            const int ddx = tg.x + sx[k] - (b.f[a].x + ax[j]), ddy = tg.y + sy[k] - (b.f[a].y + ay[j]);
+            const int adx = ddx < 0 ? -ddx : ddx, ady = ddy < 0 ? -ddy : ddy;
+            const int l2 = 2 * (adx > ady ? adx : ady) + (adx < ady ? adx : ady);
+            if (l2 < len) len = l2;
+        }
+        if (len < best || (len == best && s)) {
+            best = len;
+            seen = s;
+        }
+    }
+    if (sq) *sq = best / 2;
+    return seen;
+}
+
+bool adjacent(const Battle& b, int a, int c)
+{
+    int ax[4], ay[4], cx[4], cy[4];
+    const int na = squares(b.f[a].size ? b.f[a].size : 1, ax, ay);
+    const int nc = squares(b.f[c].size ? b.f[c].size : 1, cx, cy);
+    for (int i = 0; i < na; ++i)
+        for (int j = 0; j < nc; ++j) {
+            const int ddx = b.f[a].x + ax[i] - (b.f[c].x + cx[j]), ddy = b.f[a].y + ay[i] - (b.f[c].y + cy[j]);
+            if (ddx >= -1 && ddx <= 1 && ddy >= -1 && ddy <= 1) return true;
+        }
+    return false;
+}
+
+int step_cost(const Battle& b, const Tables& t, int i, int dir, bool* edge, int* blocker)
+{
+    if (edge) *edge = false;
+    if (blocker) *blocker = -1;
+    if (dir < 0 || dir > 7) return 0xFF;
+    const Fighter& f = b.f[i];
+    int sx[4], sy[4];
+    const int n = squares(f.size ? f.size : 1, sx, sy);
+    int cost = 0;
+    for (int k = 0; k < n; ++k) {
+        const int x = f.x + sx[k] + kDx[dir], y = f.y + sy[k] + kDy[dir];
+        if (!on_field(x, y) || b.ground[y][x] == 0) {
+            if (edge) *edge = true;
+            return 0xFF;
+        }
+        const int w = b.who[y][x];
+        if (w && w != i + 1) {
+            if (blocker) *blocker = w - 1;
+            return 0xFF;
+        }
+        const int c = tile(b, t, x, y)[0];
+        if (c == 0xFF) return 0xFF;
+        if (c > cost) cost = c;
+    }
+    return cost * (dir % 2 ? 3 : 2);
+}
+
+void step(Battle& b, int i, int dir)
+{
+    Fighter& f = b.f[i];
+    f.x += kDx[dir];
+    f.y += kDy[dir];
+    f.facing = dir;
+    f.received = f.turns = 0;
+    occupancy(b);
+}
+
+int dex_reaction(int dex)
+{
+    if (dex <= 2) return -4;
+    if (dex <= 5) return dex - 6;
+    if (dex <= 15) return 0;
+    if (dex <= 18) return dex - 15;
+    if (dex <= 20) return 3;
+    if (dex <= 23) return 4;
+    return 5;
+}
+
+int attacks_this_round(int half, int round) { return (half + (round % 2 ? 1 : 0)) / 2; }
+
+void start_round(Battle& b, create::Dice& d)
+{
+    for (int i = 0; i < b.n; ++i) {
+        Fighter& f = b.f[i];
+        f.attacked = false;
+        f.can_cast = true;
+        f.guarding = false;
+        if (!f.up() || !f.size) {
+            f.delay = f.moves = f.attacks[0] = f.attacks[1] = 0;
+            continue;
+        }
+        int delay = d.roll(6, 1) + dex_reaction(f.rec[kDexFull]);
+        if (delay < 1) delay = 1;
+        if (b.surprise & (f.team() ? 4 : 2)) delay -= 6;
+        if (delay < 0 || delay > 20) delay = 0;
+        f.delay = delay;
+        int mv = f.rec[kMove];
+        if (mv < 1 || mv > 96) mv = 1;
+        f.moves = mv * 2;
+        int half1 = f.rec[kHalf1];
+        if (half1 < 1) half1 = 2;
+        f.attacks[0] = attacks_this_round(half1, b.round);
+        f.attacks[1] = attacks_this_round(f.rec[kHalf2], b.round);
+    }
+    b.surprise = 0;
+}
+
+int next(Battle& b, create::Dice& d)
+{
+    int best = -1, best_delay = 0, best_roll = -1;
+    for (int i = 0; i < b.n; ++i) {
+        const Fighter& f = b.f[i];
+        if (f.delay <= 0 || !f.up() || !f.size) continue;
+        const int r = d.roll(100, 1);
+        if (f.delay > best_delay) {
+            best = i;
+            best_delay = f.delay;
+            best_roll = r;
+        } else if (f.delay == best_delay && r >= best_roll) {
+            best = i;
+            best_roll = r;
+        }
+    }
+    return best;
+}
+
+bool damage(Battle& b, int c, int amount)
+{
+    Fighter& f = b.f[c];
+    f.can_cast = false;
+    if (amount <= 0 || !f.up()) return false;
+    const int hp = f.rec[kHp];
+    if (hp > amount) {
+        f.rec[kHp] = static_cast<uint8_t>(hp - amount);
+        return false;
+    }
+    const int over = amount - hp;
+    f.rec[kHp] = 0;
+    if (f.status() == party::Animated || over > 9) {
+        f.rec[kHealth] = party::Dead;
+    } else if (over == 0) {
+        f.rec[kHealth] = party::Unconscious;
+    } else {
+        f.rec[kHealth] = party::Dying;
+        f.bleeding = over;
+    }
+    f.rec[kInCombat] = 0;
+    f.delay = 0;
+    f.moves = 0;
+    f.attacks[0] = f.attacks[1] = 0;
+    f.guarding = false;
+    // Off the field: a party member leaves a body
+    if (f.size) {
+        f.size = 0;
+        if (f.member >= 0 && on_field(f.x, f.y) && b.ground[f.y][f.x] != 0x1E) {
+            f.ground = b.ground[f.y][f.x];
+            b.ground[f.y][f.x] = kBody;
+        }
+        occupancy(b);
+    }
+    return true;
+}
+
+Down down_state(const Fighter& f)
+{
+    switch (f.status()) {
+    case party::Unconscious: return Down::Unconscious;
+    case party::Dying: return Down::Dying;
+    case party::Dead: case party::Stoned: case party::Gone: return Down::Dead;
+    default: return Down::No;
+    }
+}
+
+Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& d, bool from_behind)
+{
+    Attack out;
+    Fighter& at = b.f[a];
+    Fighter& tg = b.f[c];
+    b.no_action = b.round + 15;
+    at.attacked = true;
+    // The target turns to face the attacker
+    const int dir = direction(at.x, at.y, tg.x, tg.y);
+    if (!from_behind && tg.received < 2 && dir < 8) tg.facing = (dir + 4) & 7;
+    if (dir < 8) at.facing = dir;
+    int turn = dir < 8 ? ((dir - tg.facing) & 7) : 0;
+    if (turn > 4) turn = 8 - turn;
+    tg.turns = (tg.turns + turn) & 7;
+    ++tg.received;
+    const bool behind = from_behind || (tg.received > 1 && dir == tg.facing && tg.turns > 4);
+    out.behind = behind;
+    int ac = tg.rec[behind ? kAcBehind : kAc];
+    // Large targets: the weapon's large dice
+    const bool large = (tg.rec[kSize] & 0x80) || (tg.rec[kSize] & 7) > 1;
+    int dice1 = at.rec[kDice], sides1 = at.rec[kSides], bonus1 = static_cast<int8_t>(at.rec[kBonus]);
+    if (large && names) {
+        const int w = weapon(at, *names);
+        if (w >= 0) {
+            const items::TypeInfo& ti = names->type(at.items[w][0x2E]);
+            dice1 = ti.dice_large;
+            sides1 = ti.sides_large;
+            bonus1 += ti.bonus_large - ti.bonus;
+        }
+    }
+    int side = at.team() ? b.to_hit_monsters : b.to_hit_party;
+    if (at.has(0x01)) ++side;                       // blessed
+    if (at.has(0x02)) --side;                       // cursed
+    for (int slot = 1; slot >= 0; --slot) {
+        while (at.attacks[slot] > 0 && tg.up() && out.n < 8) {
+            --at.attacks[slot];
+            const int roll = d.roll(20, 1);
+            bool hit = roll == 20 || (roll != 1 && roll + static_cast<int8_t>(at.rec[kHit]) + side >= ac);
+            Hit h;
+            h.hit = hit;
+            if (hit) {
+                const int n = slot ? at.rec[kDice + 1] : dice1;
+                const int s = slot ? at.rec[kSides + 1] : sides1;
+                const int bo = slot ? static_cast<int8_t>(at.rec[kBonus + 1]) : bonus1;
+                int dmg = (n && s ? d.roll(s, n) : 0) + bo;
+                if (dmg < 0) dmg = 0;
+                h.damage = dmg;
+                out.any = true;
+                if (damage(b, c, dmg)) out.down = true;
+            }
+            out.hits[out.n++] = h;
+        }
+    }
+    return out;
+}
+
+int weapon(const Fighter& f, const items::Names& names)
+{
+    for (int i = 0; f.items && i < f.n_items; ++i)
+        if (f.items[i][0x34] && names.type(f.items[i][0x2E]).slot == items::kSlotWeapon) return i;
+    return -1;
+}
+
+int money_exp(const int m[7])
+{
+    const long copper = m[0] + 10L * m[1] + 100L * m[2] + 200L * m[3] + 1000L * m[4];
+    return static_cast<int>(copper / 200 + 250L * m[5] + 2200L * m[6]);
+}
+
+int award(Battle& b, int total)
+{
+    int survivors = 0;
+    for (int i = 0; i < b.party_size; ++i)
+        if (b.f[i].up() && b.f[i].status() != party::Animated) ++survivors;
+    if (!survivors) return 0;
+    const int share = total / survivors;
+    for (int i = 0; i < b.party_size; ++i) {
+        Fighter& f = b.f[i];
+        if (!f.up() || f.status() == party::Animated) continue;
+        const uint8_t* r = f.rec;
+        int add = share;
+        const int str = r[0x11], in = r[0x13], wis = r[0x15], dex = r[0x17];
+        int classes = 0;
+        for (int k = 0; k < 8; ++k)
+            if (r[0x109 + k]) ++classes;
+        switch (r[0x75]) {
+        case 0: if (wis > 15) add += share / 10; break;
+        case 2: if (str > 15) add += share / 10; break;
+        case 3: if (str > 15 && wis > 15) add += share / 10; break;
+        case 4: if (str > 15 && in > 15 && wis > 15) add += share / 10; break;
+        case 5: if (in > 15) add += share / 10; break;
+        case 6: if (dex > 15) add += share / 10; break;
+        default:
+            if (r[0x75] >= 8 && classes > 1) add = share / classes;
+            break;
+        }
+        uint32_t e = r[0x127] | r[0x128] << 8 | r[0x129] << 16 | static_cast<uint32_t>(r[0x12A]) << 24;
+        e += static_cast<uint32_t>(add);
+        for (int k = 0; k < 4; ++k) f.rec[0x127 + k] = static_cast<uint8_t>(e >> (8 * k));
+    }
+    return share;
+}
+
+int standing(const Battle& b, int team)
+{
+    int n = 0;
+    for (int i = 0; i < b.n; ++i)
+        if (!b.f[i].gone && b.f[i].up() && b.f[i].size && (b.f[i].team() ? 1 : 0) == team) ++n;
+    return n;
+}
+
+bool anyone_dying(const Battle& b)
+{
+    for (int i = 0; i < b.party_size; ++i)
+        if (b.f[i].status() == party::Dying) return true;
+    return false;
+}
+
+int bandage(Battle& b)
+{
+    for (int i = 0; i < b.party_size; ++i)
+        if (b.f[i].status() == party::Dying) {
+            b.f[i].rec[kHealth] = party::Unconscious;
+            b.f[i].bleeding = 0;
+            return i;
+        }
+    return -1;
+}
+
+bool end_round(Battle& b)
+{
+    ++b.round;
+    // The enemies' health
+    long now = 0, most = 0;
+    for (int i = 0; i < b.n; ++i) {
+        const Fighter& f = b.f[i];
+        if (!f.team() || f.gone) continue;
+        most += f.rec[kHpMax];
+        if (f.up()) now += f.rec[kHp];
+    }
+    b.enemy_health = most ? static_cast<int>(20 * now / most) * 5 : 0;
+    // Bleeding
+    for (int i = 0; i < b.n; ++i) {
+        Fighter& f = b.f[i];
+        if (f.status() != party::Dying) continue;
+        if (++f.bleeding > 9) f.rec[kHealth] = party::Dead;
+    }
+    return standing(b, 0) == 0 || standing(b, 1) == 0 || b.round >= b.no_action;
+}
+
+Plan think(Battle& b, const Tables& t, int i, create::Dice& d)
+{
+    Plan p;
+    Fighter& f = b.f[i];
+    if (!f.up() || !f.size || f.delay <= 0) return p;
+    const int my = f.team() ? 1 : 0;
+    auto enemy = [&](int c) { return c >= 0 && c < b.n && b.f[c].up() && b.f[c].size && (b.f[c].team() ? 1 : 0) != my; };
+    // The target: kept while it's an enemy in sight
+    if (!enemy(f.target) || !range(b, t, i, f.target, false, nullptr)) {
+        f.target = -1;
+        int cand[kMaxFighters], n = 0;
+        for (int c = 0; c < b.n; ++c)
+            if (enemy(c) && range(b, t, i, c, false, nullptr)) cand[n++] = c;
+        if (n) f.target = cand[d.roll(n, 1) - 1];
+        if (f.target < 0) {
+            // None in sight: the nearest, walls or not
+            int best = 9999;
+            for (int c = 0; c < b.n; ++c) {
+                int sq;
+                if (!enemy(c)) continue;
+                range(b, t, i, c, true, &sq);
+                if (sq < best) {
+                    best = sq;
+                    f.target = c;
+                }
+            }
+        }
+    }
+    if (f.target < 0) {
+        p.act = Act::Guard;
+        return p;
+    }
+    // Next to an enemy: attack it (the target first)
+    if ((f.attacks[0] > 0 || f.attacks[1] > 0)) {
+        if (adjacent(b, i, f.target)) {
+            p.act = Act::Attack;
+            p.target = f.target;
+            return p;
+        }
+        for (int c = 0; c < b.n; ++c)
+            if (enemy(c) && adjacent(b, i, c)) {
+                f.target = c;
+                p.act = Act::Attack;
+                p.target = c;
+                return p;
+            }
+    } else {
+        return p;
+    }
+    // A step toward it: straight, else a little to either side
+    if (f.moves < 2) return p;
+    const Fighter& tg = b.f[f.target];
+    const int base = direction(f.x, f.y, tg.x, tg.y);
+    if (base > 7) return p;
+    static const int kTry[5] = {0, 1, -1, 2, -2};
+    int ox[4], oy[4];
+    const int n0 = squares(tg.size ? tg.size : 1, ox, oy);
+    int now_best = 9999;
+    for (int k = 0; k < n0; ++k) {
+        const int ddx = tg.x + ox[k] - f.x, ddy = tg.y + oy[k] - f.y;
+        const int dd = (ddx < 0 ? -ddx : ddx) + (ddy < 0 ? -ddy : ddy);
+        if (dd < now_best) now_best = dd;
+    }
+    for (int k : kTry) {
+        const int dir = (base + k + 8) & 7;
+        const int cost = step_cost(b, t, i, dir, nullptr, nullptr);
+        if (cost == 0xFF || cost > f.moves) continue;
+        // Not further away than now
+        const int nx = f.x + kDx[dir], ny = f.y + kDy[dir];
+        int best = 9999;
+        for (int j = 0; j < n0; ++j) {
+            const int ddx = tg.x + ox[j] - nx, ddy = tg.y + oy[j] - ny;
+            const int dd = (ddx < 0 ? -ddx : ddx) + (ddy < 0 ? -ddy : ddy);
+            if (dd < best) best = dd;
+        }
+        if (best > now_best) continue;
+        p.act = Act::Step;
+        p.dir = dir;
+        return p;
+    }
+    p.act = Act::Guard;
+    return p;
+}
+
+bool flee(Battle& b, const Tables& t, int i, create::Dice& d)
+{
+    Fighter& f = b.f[i];
+    const int my = f.team() ? 1 : 0;
+    int fastest = -1;
+    for (int c = 0; c < b.n; ++c) {
+        const Fighter& e = b.f[c];
+        if (!e.up() || !e.size || (e.team() ? 1 : 0) == my) continue;
+        if (!range(b, t, c, i, true, nullptr) && false) continue;
+        if (e.rec[kMove] > fastest) fastest = e.rec[kMove];
+    }
+    const int mine = f.rec[kMove];
+    const bool away = fastest < 0 || mine > fastest || (mine == fastest && d.roll(2, 1) == 1);
+    f.delay = 0;
+    f.moves = 0;
+    if (!away) return false;
+    f.rec[kHealth] = party::Running;
+    f.rec[kInCombat] = 0;
+    f.size = 0;
+    occupancy(b);
+    return true;
+}
+
+Outcome finish(Battle& b, const Monster* monsters)
+{
+    (void)monsters;
+    Outcome o;
+    bool fled = false, killed = true, won = false;
+    for (int i = 0; i < b.party_size; ++i) {
+        const Fighter& f = b.f[i];
+        const int s = f.status();
+        if (s == party::Running) fled = true;
+        if ((s == party::Running || s == party::Animated || s == party::Okay) && f.rec[kControl] < 0x80) killed = false;
+        if (s == party::Okay || s == party::Animated) won = true;
+    }
+    if (won) fled = false;
+    o.result = killed ? Lost : fled ? Fled : Won;
+    // The beaten enemies: experience and their coins
+    for (int i = b.party_size; i < b.n; ++i) {
+        const Fighter& f = b.f[i];
+        if (f.gone || !f.team() || f.status() == party::Okay || f.status() == party::Running) continue;
+        const int base = static_cast<int16_t>(f.rec[0x13C] | f.rec[0x13D] << 8);
+        o.exp += f.rec[0x13E] * f.rec[0x12C] + base;
+        for (int m = 0; m < 7; ++m) o.money[m] += f.rec[0xFB + m * 2] | f.rec[0xFC + m * 2] << 8;
+    }
+    return o;
+}
+
+} // namespace combat

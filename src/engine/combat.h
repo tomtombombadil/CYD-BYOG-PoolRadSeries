@@ -1,0 +1,232 @@
+// Combat (Curse first): the battlefield, who stands where, and the rules of
+// a fight - initiative, moving, attacking, damage, dying, the monsters'
+// choices, and the experience at the end.
+//
+// Plain C++ (no Arduino), host-tested in tools/host_tests/test_dax.cpp.
+// Rules and layouts learned from coab (the Curse reimplementation; facts
+// only, own code). The tables the rules use (the battlefield's ground
+// pieces, the placement shapes, the outdoor terrain, the turn-undead table)
+// are read from the player's own program through the profile.
+//
+// The battlefield is 50 x 25 squares of 24 x 24 pixels; a square holds a
+// ground value (an index into the ground table: move cost, eye height,
+// obstacle height, picture; 0 = off the field). Indoors it is drawn from
+// the 3D map around the party (a slanted picture of it: a map square
+// (dx, dy) from the party is a block of squares at (21 + 6dx + 5dy,
+// 10 + 5dy)); outdoors it is a random field (streams, trees, rocks) by the
+// place's terrain flags. Directions: 0 N, 1 NE, 2 E ... 7 NW (x right,
+// y down), 8 none.
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+
+#include "create.h"
+#include "geo.h"
+#include "items.h"
+#include "party.h"
+
+namespace combat {
+
+constexpr int kW = 50, kH = 25;
+constexpr int kMaxMonsters = 63;
+constexpr int kMaxFighters = party::kMaxParty + kMaxMonsters;
+constexpr int kGroundValues = 0x43;
+constexpr int kMaxGroups = 8;           // monster kinds a fight (icon slots 8 ...)
+constexpr int kGroupItems = 8;
+constexpr int kMonsterAffects = 8;
+
+int dx(int dir);
+int dy(int dir);
+
+// ---- The program's tables (Curse: START.EXE's data segment)
+struct Tables {
+    uint8_t ground[kGroundValues][4];   // move cost (0xFF: can't), eye height, obstacle height, picture
+    uint8_t fallback[4][4];             // [team facing][attempt 1-3]: dungeon facing to move the start
+    uint8_t formation[4][4];            // [team facing][attempt]: the formation's facing (dungeon facing)
+    uint8_t facing[4];                  // dungeon half-facing -> battlefield direction (N->NW ...)
+    uint8_t start_x[8], start_y[8];     // a rank's centre in the 11 x 6 grid
+    uint8_t shapes[5][6][2];            // allowed columns (min, max) a row; [4] = the fallback shape
+    uint8_t terrain[33];                // outdoors: terrain flags a place (city)
+    uint8_t turn[13 * 10 + 11];         // turn undead: [undead type * 10 + column]
+};
+// Where they are (data segment offsets), from the profile
+struct TableAt {
+    uint16_t ground, fallback, formation, facing, start_x, start_y, shapes, terrain, turn;
+};
+// Reads them: read(ctx, ds offset, out, n) gives the data segment's bytes
+using ReadDs = bool (*)(void* ctx, uint16_t ds, uint8_t* out, size_t n);
+bool read_tables(Tables& t, const TableAt& at, ReadDs read, void* ctx);
+
+// ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a
+// record and effects per monster
+struct Group {
+    uint8_t id = 0, icon = 0;           // MON block, CPIC block
+    uint8_t n_items = 0;
+    uint8_t item[kGroupItems][items::kRecordSize] = {};
+};
+struct Monster {
+    uint8_t rec[party::kRecordSize] = {};
+    uint8_t aff[kMonsterAffects][party::kAffectSize] = {};
+    int     n_aff = 0;
+    uint8_t group = 0;
+};
+
+// ---- A fighter: a party member or a monster
+struct Fighter {
+    uint8_t* rec = nullptr;
+    uint8_t (*aff)[party::kAffectSize] = nullptr;
+    int*    n_aff = nullptr;
+    int     max_aff = 0;
+    uint8_t (*items)[items::kRecordSize] = nullptr;    // its items (a monster: its group's)
+    int     n_items = 0;
+    int     member = -1;                // party index, or -1 (a monster)
+    int     monster = -1;               // index in the monsters, or -1
+    int     icon = 0;                   // icon slot: party 0-7, monsters 8 + group
+    int     x = 0, y = 0, size = 0;     // top-left square, footprint (0: not on the field)
+    int     facing = 0;
+    int     delay = 0;                  // initiative left (0: done this round)
+    int     moves = 0;                  // half squares left
+    int     attacks[2] = {};            // left this round (slot 1, slot 2)
+    int     bleeding = 0;
+    int     received = 0, turns = 0;    // attacks received this round, facing changes
+    int     target = -1;
+    int     ground = 0;                 // the square's ground before a body was left there
+    bool    guarding = false, quick = false, attacked = false, turned_undead = false, can_cast = true;
+    bool    gone = false;               // a monster there was no room for: not in the fight at all
+    int     team() const { return rec[0x197]; }
+    bool    up() const { return rec[0x196] != 0; }          // able to fight
+    int     hp() const { return rec[0x1A4]; }
+    int     hp_max() const { return rec[0x78]; }
+    int     status() const { return rec[0x195]; }
+    bool    has(uint8_t type) const;
+};
+
+enum Result : uint8_t { Won = 0, Lost = 0x80, Fled = 0x81 };
+
+struct Battle {
+    uint8_t ground[kH][kW] = {};
+    uint8_t who[kH][kW] = {};           // fighter + 1 on that square (0: none)
+    Fighter f[kMaxFighters];
+    int     n = 0;
+    int     party_size = 0;
+    int     round = 0, no_action = 15;
+    int     surprise = 0;               // bit 1: our side, bit 2: the enemies
+    int     enemy_health = 100;         // %
+    int     vx = 0, vy = 0;             // the view's top-left square (7 x 7 shown)
+    bool    indoors = true;
+    int     to_hit_party = 0, to_hit_monsters = 0;  // the scripts' bonuses
+};
+
+// The footprint's squares: size 1 one, 2 one wide two tall, 3 two wide
+// one tall, 4 two by two
+int squares(int size, int* sx, int* sy);
+
+// Builds the field
+void build_indoors(Battle& b, const Tables& t, const geo::Map& m, int px, int py, create::Dice& d);
+void build_outdoors(Battle& b, const Tables& t, int city, create::Dice& d);
+// The square's ground entry (0 when off the field)
+const uint8_t* tile(const Battle& b, const Tables& t, int x, int y);
+
+// Adds the fighters (party first, then the monsters) and places them:
+// the party facing `facing` (dungeon 0, 2, 4, 6) at its square, the
+// enemies `distance` map squares ahead facing back. side(dir) = whether
+// the start square's side that way is a solid wall (fallbacks), or null
+// outdoors. Monsters that can't be placed are left off the field (their
+// size 0) and out of the fight; downed party members leave a body.
+using SolidSide = bool (*)(void* ctx, int dir);
+void place(Battle& b, const Tables& t, int facing, int distance, SolidSide solid, void* ctx);
+void occupancy(Battle& b);
+
+// Distance and sight: the path from fighter a to square (x, y) (2 a
+// straight step, 3 a diagonal one); false when something on the way is
+// higher than the line of sight (unless ignore_walls). Range in squares =
+// path / 2.
+bool path(const Battle& b, const Tables& t, int a, int x, int y, bool ignore_walls, int* length);
+// Between two fighters: the nearest pair of their squares
+bool range(const Battle& b, const Tables& t, int a, int c, bool ignore_walls, int* squares);
+int  direction(int fx, int fy, int tx, int ty);     // 0-7 toward, 8 here
+bool adjacent(const Battle& b, int a, int c);
+
+// What a step costs (half squares; diagonal 1.5): the highest move cost of
+// the squares the footprint would cover; 0xFF when it can't go there (a
+// wall, the field's edge: *edge set, someone else there: *blocker set)
+int step_cost(const Battle& b, const Tables& t, int i, int dir, bool* edge, int* blocker);
+void step(Battle& b, int i, int dir);
+
+// ---- A round
+// Dex reaction adjustment (initiative, missiles)
+int dex_reaction(int dex);
+// Initiative for everyone (d6 + Dex reaction, the surprised side -6),
+// moves (movement x 2) and attacks for the round
+void start_round(Battle& b, create::Dice& d);
+// The next to act (highest delay; ties by d100), -1 when the round is over
+int next(Battle& b, create::Dice& d);
+// Attacks this round: half attacks (record 0x11C slot 1, 0x11D slot 2) by
+// round (3 half attacks = 1, 2, 1, 2 ...)
+int attacks_this_round(int half, int round);
+
+// ---- Attacking
+struct Hit {
+    bool hit = false;
+    int  damage = 0;
+};
+struct Attack {
+    Hit  hits[8];
+    int  n = 0;
+    bool any = false;
+    bool behind = false;
+    bool down = false;                  // the target went down
+};
+// Attacks fighter c with fighter a's attacks left (slot 2 then slot 1), as
+// the games do: to-hit d20 (1 misses, 20 hits) + to-hit value + the side's
+// bonus >= the target's AC (the rear AC from behind); damage dice + bonus
+// (the large dice against large targets), applied at once. The target turns
+// to face the attacker (fewer than 2 attacks received).
+Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& d, bool from_behind = false);
+// Damage: HP 0 unconscious, -1..-9 dying (bleeding), -10 dead (HP kept 0
+// when down); true when they went down
+bool damage(Battle& b, int c, int amount);
+enum class Down : uint8_t { No, Unconscious, Dying, Dead };
+Down down_state(const Fighter& f);
+
+// End of a round: the clock (a minute, as the caller does), bleeding
+// (dying +1 a round, dead past 9); the enemy side's health; whether the
+// fight is over (a side gone, or 15 rounds without an attack)
+bool end_round(Battle& b);
+int  standing(const Battle& b, int team);
+bool anyone_dying(const Battle& b);
+// Bandage: the first dying party member becomes unconscious (bleeding
+// stops); their index or -1
+int bandage(Battle& b);
+
+// ---- The computer's turn (monsters, Quick): one decision at a time
+enum class Act : uint8_t { Done, Attack, Step, Guard, Flee };
+struct Plan {
+    Act act = Act::Done;
+    int target = -1;
+    int dir = 8;
+};
+Plan think(Battle& b, const Tables& t, int i, create::Dice& d);
+// Leaving the fight: gets away (faster than every enemy able to reach, or
+// even and d2) - status Running, off the field
+bool flee(Battle& b, const Tables& t, int i, create::Dice& d);
+
+// ---- The end
+struct Outcome {
+    Result result = Won;
+    int    exp = 0;                     // each survivor's share
+    int    money[7] = {};               // the beaten monsters' coins
+};
+Outcome finish(Battle& b, const Monster* monsters);
+// Experience for the pool's money: gold worth + 250 a gem + 2200 a piece of
+// jewellery
+int money_exp(const int money[7]);
+// Shares `total` among the party members still standing (not animated):
+// +10% for a high prime requisite (over 15), multi-classes divided by their
+// classes; the share each got before that
+int award(Battle& b, int total);
+// The readied weapon among the fighter's items (-1: none)
+int weapon(const Fighter& f, const items::Names& names);
+
+} // namespace combat

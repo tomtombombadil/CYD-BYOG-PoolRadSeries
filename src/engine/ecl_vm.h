@@ -68,6 +68,8 @@ enum class Wait : uint8_t {
     Shop,         // COMBAT with the shop flag: the shop's goods are ground(); resume() when the party leaves
     Temple,       // COMBAT with the temple flag: the temple (healing); resume() when the party leaves
     PartyMenu,    // PROGRAM 0: the party menu (training halls); resume() at BEGIN Adventuring
+    Combat,       // COMBAT with monsters loaded: the fight (the result in 0x7EC7); resume() after it
+    Treasure,     // COMBAT with none: the after-fight step (treasure the script set out); resume() after
 };
 
 enum class Stop : uint8_t { Running, Waiting, Stopped, NewScript, Error };
@@ -92,6 +94,10 @@ public:
     // TREASURE: the items of ITEM<area> block `block` (shop goods, a
     // treasure) added to g
     virtual void load_items(int block, items::Ground& g) { (void)block; (void)g; }
+    // LOAD MONSTER: `copies` (0 = 1) of MON<area> block `id` for the next
+    // fight, its CPIC<area> icon block; CLEARMONSTERS: none
+    virtual void load_monster(int id, int copies, int icon) { (void)id; (void)copies; (void)icon; }
+    virtual void clear_monsters() {}
     virtual void log(const char* what) = 0;
 };
 
@@ -109,6 +115,13 @@ public:
     // Treasure and shop goods the scripts set out (TREASURE)
     void set_ground(items::Ground* g) { ground_ = g; }
     bool monsters() const { return monsters_; }
+    // How far apart the two sides start a fight (map squares): the
+    // encounter's distance, no further than the party can see
+    int fight_distance() const
+    {
+        const int s = sight();
+        return enc_.distance < s ? enc_.distance : s;
+    }
 
     Stop run(uint16_t address);
     Stop resume();

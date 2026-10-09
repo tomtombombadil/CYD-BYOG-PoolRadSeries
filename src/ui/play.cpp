@@ -14,6 +14,7 @@
 #include "engine/font.h"
 #include "engine/journal.h"
 #include "engine/classes.h"
+#include "engine/combat.h"
 #include "engine/create.h"
 #include "engine/items.h"
 #include "engine/magic.h"
@@ -132,7 +133,7 @@ pic::Canvas* cv = nullptr;
 // Game" question, or the game itself
 enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich, AddFrom,
                                AddList, YesNo, CreatePick, CreateName, TradeWho, Heal, Take, Appraise, Magic,
-                               SpellList, Rest, Cast, Effects, Alter };
+                               SpellList, Rest, Cast, Effects, Alter, Fight, Loot };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
 Screen save_from = Screen::PartyMenu;   // where Save Which Game goes back to
@@ -159,6 +160,18 @@ bool area_view = false;
 bool pic_shown = false;       // a script picture covers the 3D view
 Then then = Then::Idle;
 bool waiting = false;         // the script waits for the player
+
+// Combat (play_fight.inc)
+void fight_load_monster(int id, int copies, int icon);
+void fight_clear_monsters();
+void fight_start(pic::Canvas& c);
+void fight_treasure_only(pic::Canvas& c);
+void fight_tick(uint32_t now, pic::Canvas& c);
+void fight_tap(int x, int y, pic::Canvas& c);
+bool fight_back(pic::Canvas& c);
+bool fight_act(Act a, pic::Canvas& c);
+void fight_after_view(pic::Canvas& c);
+
 int  idle_cycles = 0;         // script cycles in a row with nothing shown (outdoors)
 int  dirty0 = 0, dirty1 = 0;
 
@@ -851,6 +864,10 @@ void draw_input(pic::Canvas& c);
 // The shop's goods are listed last first (as the games list them)
 const uint8_t* goods(int i) { return ground->item[ground->n - 1 - i]; }
 
+// Combat and the treasure after it (play_fight.inc)
+bool treasure_on();
+const char* tw(int i);
+
 // One line of the list being shown
 void heal_line(int i, char* out, size_t cap);
 void take_line(int i, char* out, size_t cap);
@@ -871,6 +888,10 @@ void list_line(int i, char* out, size_t cap)
     }
     if (screen == Screen::CreatePick) {
         pick_line(i, out, cap);
+        return;
+    }
+    if (screen == Screen::Loot) {
+        names->name(items::Item{goods(i)}, out, cap);
         return;
     }
     if (screen == Screen::ShopBuy) {
@@ -2042,8 +2063,14 @@ void sw(int i, char* out, size_t cap)
     f.close();
 }
 
+void treasure_menu(pic::Canvas& c);
+
 void shop_menu(pic::Canvas& c)
 {
+    if (treasure_on()) {
+        treasure_menu(c);
+        return;
+    }
     char words[48];
     if (temple) sw(ground->any_money() ? profile::kHealMenuMoney : profile::kHealMenu, words, sizeof words);
     else snprintf(words, sizeof words, "%s", ground->any_money() ? d->w_shop_money : d->w_shop);
@@ -2060,7 +2087,7 @@ void draw_shop(pic::Canvas& c)
     pic_shown = false;
     head_shown = body_shown = -1;
     draw_frame(c);
-    if (last_pic_id >= 0) host_picture(last_pic_id, last_pic_head);
+    if (last_pic_id >= 0 && !treasure_on()) host_picture(last_pic_id, last_pic_head);
     else draw_view(c);
     draw_panel(c);
     shop_menu(c);
@@ -2083,8 +2110,13 @@ void leave_shop(pic::Canvas& c, bool asked = false);
 void ask_leave(pic::Canvas& c)
 {
     char says[96], back[64];
-    sw(temple ? profile::kPriestSays : profile::kShopSays, says, sizeof says);
-    sw(temple ? profile::kPriestRetrieve : profile::kShopRetrieve, back, sizeof back);
+    if (treasure_on()) {
+        snprintf(says, sizeof says, "%s", tw(profile::kTreasureLeft));
+        snprintf(back, sizeof back, "%s", tw(profile::kClaimTreasure));
+    } else {
+        sw(temple ? profile::kPriestSays : profile::kShopSays, says, sizeof says);
+        sw(temple ? profile::kPriestRetrieve : profile::kShopRetrieve, back, sizeof back);
+    }
     text::clear(c, text::kTextArea);
     text::begin(w, c, says, text::kTextArea, 10, true);
     text::step(w, c, d->font, -1);
@@ -2094,15 +2126,21 @@ void ask_leave(pic::Canvas& c)
     ask_yes_no(c, Ask::LeaveCoins, "");
 }
 
+void treasure_off();
+
 void leave_shop(pic::Canvas& c, bool asked)
 {
-    if (!asked && ground->any_money()) {
+    if (!asked && (ground->any_money() || (treasure_on() && ground->n))) {
         ask_leave(c);
         return;
     }
     text::clear(c, text::kTextArea);
     dirty_rows(17, 22);
     temple = false;
+    if (treasure_on()) {
+        treasure_off();
+        ground->clear();            // what's left behind is lost
+    }
     screen = Screen::Game;
     clear_menu_line(c);
     waiting = false;
@@ -2516,6 +2554,9 @@ bool shop_yes_no(Ask what, char k, pic::Canvas& c)
     return true;
 }
 
+void treasure_take(pic::Canvas& c);
+void open_loot(pic::Canvas& c);
+
 void shop_tap(int x, int y, pic::Canvas& c)
 {
     const int row = y / 8, col = x / 8;
@@ -2537,8 +2578,15 @@ void shop_tap(int x, int y, pic::Canvas& c)
             rules::pool(*pt, ground->money);
             shop_menu(c);
             break;
-        case 'T':                       // Take: coins from the counter
-            open_take(c);
+        case 'T':                       // Take: coins from the counter (the treasure: coins, items)
+            if (treasure_on()) treasure_take(c);
+            else open_take(c);
+            break;
+        case 'M':                       // the treasure's "Take: Money Items Exit"
+            if (treasure_on()) open_take(c);
+            break;
+        case 'I':
+            if (treasure_on()) open_loot(c);
             break;
         case 'A':                       // Appraise: gems and jewellery
             open_appraise(c);
@@ -2568,6 +2616,9 @@ void shop_tap(int x, int y, pic::Canvas& c)
     }
 }
 
+void take_loot(int i, pic::Canvas& c);
+void draw_loot(pic::Canvas& c);
+
 // Taps on a list: a line chooses it; the menu line acts on it
 void list_tap(int x, int y, pic::Canvas& c)
 {
@@ -2589,6 +2640,7 @@ void list_tap(int x, int y, pic::Canvas& c)
                 return;
             }
             if (screen == Screen::ShopBuy) draw_buy(c);
+            else if (screen == Screen::Loot) draw_loot(c);
             else if (screen == Screen::AddList) draw_add_list(c);
             else if (screen == Screen::Heal) draw_heal(c);
             else if (screen == Screen::Take) draw_take(c);
@@ -2636,6 +2688,13 @@ void list_tap(int x, int y, pic::Canvas& c)
     } else if (k == 'B' && screen == Screen::ShopBuy) {
         buy(l.index, c);
         return;
+    } else if (screen == Screen::Loot && (k == 'T' || k == 'E')) {
+        if (k == 'T') take_loot(l.index, c);
+        else {
+            screen = Screen::Shop;
+            draw_shop(c);
+        }
+        return;
     } else if (screen == Screen::Items && l.index < pt->sel()->n_items &&
                (k == 'R' || k == 'U' || k == 'T' || k == 'D' || k == 'H' || k == 'J' || k == 'S' || k == 'I')) {
         switch (k) {
@@ -2659,6 +2718,7 @@ void list_tap(int x, int y, pic::Canvas& c)
         return;
     }
     if (screen == Screen::ShopBuy) draw_buy(c);
+    else if (screen == Screen::Loot) draw_loot(c);
     else if (screen == Screen::AddList) draw_add_list(c);
     else if (screen == Screen::CreatePick) draw_pick(c);
     else if (screen == Screen::Heal) draw_heal(c);
@@ -4277,6 +4337,14 @@ void pm_tap(int x, int y, pic::Canvas& c)
         alter_tap(x, y, c);
         return;
     }
+    if (screen == Screen::Fight) {
+        fight_tap(x, y, c);
+        return;
+    }
+    if (screen == Screen::Loot) {
+        list_tap(x, y, c);
+        return;
+    }
     if (screen == Screen::Rest) {
         rest_tap(x, y, c);
         return;
@@ -4673,6 +4741,8 @@ struct Host : ecl::Host {
         f.close();
         Serial.printf("[play] %s #%d: %d items\n", name, block, g.n);
     }
+    void load_monster(int id, int copies, int icon) override { fight_load_monster(id, copies, icon); }
+    void clear_monsters() override { fight_clear_monsters(); }
     void log(const char* what) override { Serial.printf("[ecl %d:%04X] %s\n", d->gs.script, vm->pc() + 0x8000, what); }
 };
 
@@ -4759,6 +4829,12 @@ void begin_wait(pic::Canvas& c)
     case ecl::Wait::Temple:
         temple = true;
         open_shop(c);
+        break;
+    case ecl::Wait::Combat:
+        fight_start(c);
+        break;
+    case ecl::Wait::Treasure:
+        fight_treasure_only(c);
         break;
     case ecl::Wait::PartyMenu:          // PROGRAM 0: the party menu, BEGIN goes on
         in_game_menu = true;
@@ -4937,6 +5013,10 @@ void finish_print_wait()
 // again (the 3D view, the party, an empty text window)
 void back_from_view(pic::Canvas& c)
 {
+    if (view_from == Screen::Fight) {
+        fight_after_view(c);
+        return;
+    }
     screen = view_from;
     if (screen == Screen::Shop) {
         draw_shop(c);
@@ -5005,6 +5085,7 @@ void begin_adventuring()
     run_entry(4, Then::Begun);
 }
 
+#include "play_fight.inc"
 
 } // namespace
 
@@ -5174,6 +5255,7 @@ bool act(Act a, pic::Canvas& c)
 {
     if (!d) return false;
     cv = &c;
+    if (screen == Screen::Fight) return fight_act(a, c);
     if (screen != Screen::Game) return false;
     if (waiting) {
         // Any key goes on, like the games' "press a key": the rest of the
@@ -5263,7 +5345,7 @@ bool tap_target(int x, int y, int* row, int* c0, int* c1)
         return true;
     }
     if ((screen == Screen::Items || screen == Screen::ShopBuy || screen == Screen::AddList ||
-         screen == Screen::CreatePick || screen == Screen::Heal || screen == Screen::Take) &&
+         screen == Screen::CreatePick || screen == Screen::Heal || screen == Screen::Take || screen == Screen::Loot) &&
         r >= plist.row0 && r <= plist.row1 && plist.top + r - plist.row0 < plist.n) {
         *row = r;
         *c0 = plist.col0;
@@ -5482,6 +5564,11 @@ void tick(uint32_t now, pic::Canvas& c)
         cast_tick(now, c);
         return;
     }
+    if (screen == Screen::Fight) {
+        cv = &c;
+        fight_tick(now, c);
+        return;
+    }
     if (!waiting || screen != Screen::Game) return;
     cv = &c;
     const ecl::Wait wt = vm->wait();
@@ -5641,6 +5728,12 @@ bool back(pic::Canvas& c)
         return true;
     }
     if (back_from_magic(c)) return true;
+    if (screen == Screen::Fight) return fight_back(c);
+    if (screen == Screen::Loot) {
+        screen = Screen::Shop;
+        draw_shop(c);
+        return true;
+    }
     if (screen == Screen::Items || screen == Screen::ShopBuy) {
         if (screen == Screen::ShopBuy) {
             screen = Screen::Shop;
@@ -5663,6 +5756,8 @@ bool journal_seen(int i, char* kind, int* number)
     *number = seen[i].num;
     return true;
 }
+
+bool fight_colours() { return d && fight_palette_on; }
 
 bool exit_requested()
 {

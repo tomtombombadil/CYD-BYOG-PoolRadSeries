@@ -351,6 +351,7 @@ Stop Vm::run(uint16_t address)
 
 Stop Vm::resume()
 {
+    if (wait_ == Wait::Combat) monsters_ = false;      // the fight's monsters are gone
     wait_ = Wait::None;
     if (enc_.pic_due) {
         // The monster's picture, after its sprite was seen for a moment
@@ -569,9 +570,11 @@ Stop Vm::step()
         else store_string(o[1].word(), string_of(o[0]));
         return Stop::Running;
     case 0x0A: return stub(1, "LOAD CHARACTER");
-    case 0x0B:                                  // LOAD MONSTER (monsters themselves: combat, to come)
+    case 0x0B:                                  // LOAD MONSTER: monster id, copies, icon block
+        if (!need(3)) return Stop::Error;
         monsters_ = true;
-        return stub(3, "LOAD MONSTER");
+        h_.load_monster(value(o[0]) & 0xFF, value(o[1]) & 0xFF, value(o[2]) & 0xFF);
+        return Stop::Running;
     case 0x0C: {                                // SETUP MONSTER: sprite, how far, picture
         if (!need(3)) return Stop::Error;
         enc_.sprite = static_cast<uint8_t>(value(o[0]));
@@ -646,6 +649,7 @@ Stop Vm::step()
     case 0x1C:                                  // CLEARMONSTERS: and the treasure
         ++pc_;
         monsters_ = false;
+        h_.clear_monsters();
         if (ground_) ground_->clear();
         return Stop::Running;
     case 0x1D:                                  // PARTYSTRENGTH
@@ -702,7 +706,23 @@ Stop Vm::step()
         set(o[0].word(), 0);
         set(o[1].word(), 0);
         return Stop::Running;
-    case 0x23: return stub(4, "SURPRISE");
+    case 0x23: {                                // SURPRISE: two d6 against (d + 2 - a) and (b + 2 - c)
+        if (!need(4)) return Stop::Error;
+        const int a = value(o[0]) & 0xFF, b = value(o[1]) & 0xFF, c = value(o[2]) & 0xFF, dd = value(o[3]) & 0xFF;
+        auto d6 = [&]() {
+            rng_ ^= rng_ << 13;
+            rng_ ^= rng_ >> 17;
+            rng_ ^= rng_ << 5;
+            return static_cast<int>(rng_ % 6) + 1;
+        };
+        const int r1 = d6(), r2 = d6();
+        int result = 0;
+        if (r1 <= dd + 2 - a) result = 1;               // the party surprised
+        if (r2 <= b + 2 - c) result = 2;                // the monsters (the games: this wins over both)
+        // The fight's surprise word: bit 1 our side, bit 2 the enemies
+        set(0x7ECB, static_cast<uint16_t>(result == 1 ? 2 : result == 2 ? 4 : 0));
+        return Stop::Running;
+    }
     case 0x24:                                  // COMBAT
         ++pc_;
         if (!monsters_) {
@@ -716,13 +736,9 @@ Stop Vm::step()
                 set(0x7EE2, 0);
                 return wait_for(Wait::Temple);
             }
-            h_.log("treasure after a fight (not in the engine yet)");
-            return Stop::Running;
+            return wait_for(Wait::Treasure);
         }
-        h_.log("COMBAT (not in the engine yet)");
-        text_ = "(Combat isn't in the engine yet.)";
-        clear_ = false;
-        return wait_for(Wait::Print);
+        return wait_for(Wait::Combat);
     case 0x25:                                  // ON GOTO
     case 0x26: {                                // ON GOSUB
         if (!need(2)) return Stop::Error;

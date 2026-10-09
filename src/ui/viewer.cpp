@@ -2153,6 +2153,18 @@ void leave_play()
 // the party moved
 void present_play()
 {
+    // A fight swaps colours 0 and 8 (the field's black shows dark grey)
+    static bool fight_colours = false;
+    if (play::fight_colours() != fight_colours) {
+        fight_colours = !fight_colours;
+        if (fight_colours) {
+            frame::set_palette(0, pic::kEga[8]);
+            frame::set_palette(8, pic::kEga[0]);
+        } else {
+            frame::set_ega_palette();
+        }
+        frame::present();
+    }
     int y0, y1;
     play::take_dirty(y0, y1);
     if (kb_shown && !ui::large() && y0 < text::kTextArea.y0 * 8) y0 = text::kTextArea.y0 * 8;   // under the keys

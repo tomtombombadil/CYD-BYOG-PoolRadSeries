@@ -66,6 +66,9 @@ bool journal_seen(int i, char* kind, int* number);
 
 // Canvas rows changed since the last call (y1 == 0: none).
 void take_dirty(int& y0, int& y1);
+// True while a fight is on screen: colours 0 and 8 swap (the games' combat
+// palette)
+bool fight_colours();
 
 // For the companion panel
 const geo::Map* map();

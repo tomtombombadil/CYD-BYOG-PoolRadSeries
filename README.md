@@ -12,7 +12,8 @@ reads them from there.
 > Bonds from its own scripts: the party menu (load the sample party GOG
 > includes, or make your own characters and add them), walking, events,
 > text, pictures, shops, the temple, training, camp (memorizing, resting
-> and casting spells), saving, the journal. Combat is still to come. Roadmap:
+> and casting spells), fights (first steps: moving and attacking; spells
+> and items in fights to come), saving, the journal. Roadmap:
 > [docs/SPEC.md](docs/SPEC.md).
 
 ## Install

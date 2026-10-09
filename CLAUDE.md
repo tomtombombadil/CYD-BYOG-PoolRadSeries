@@ -160,6 +160,13 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   The game's questions (INPUT NUMBER / STRING) use an on-screen keyboard
   in the viewer (`play::input()` / `play::input_key()`); event pictures
   animate only while a menu waits (as in the games).
+- Combat (v0.32.0): `engine/combat.*` (battlefield, placement, rounds,
+  attacks, the computer's turns, experience; host-tested) and
+  `src/ui/play_fight.inc` (the fight's screen and menus, the treasure step -
+  included by play.cpp inside its anonymous namespace, not compiled on its
+  own). Facts from coab: the Project's claude/combat_setup_facts.md and
+  claude/combat_rules_facts.md (read them before changing combat). The
+  playsim runs a fight with `RUNAT=<addr> FIGHT=1` (Quick for everyone).
 - `tools/playsim/` (Claude's side, Linux): runs the Play Test on the PC
   against the game files in scratch space (shims for Arduino / SD); use it
   to check script behaviour and take canvas snapshots before pushing.

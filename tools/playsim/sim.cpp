@@ -23,7 +23,8 @@ static void shot(const char* tag)
     FILE* f = fopen(name, "wb");
     if (!f) return;                     // no out/ folder: no snapshots
     fprintf(f, "P6 320 200 255\n");
-    for (uint8_t v : px) { const pic::Rgb& c = pic::kEga[v & 15]; fputc(c.r, f); fputc(c.g, f); fputc(c.b, f); }
+    const bool swap = play::fight_colours();     // the fight's colours: 0 and 8 swapped
+    for (uint8_t v : px) { int k = v & 15; if (swap && (k == 0 || k == 8)) k ^= 8; const pic::Rgb& c = pic::kEga[k]; fputc(c.r, f); fputc(c.g, f); fputc(c.b, f); }
     fclose(f);
 }
 // ITEMOPS on the items screen: a digit picks list line n, a letter taps
@@ -259,6 +260,33 @@ int main(int argc, char** argv)
         play::handle(play::vm->run((uint16_t)a));
         settle(0, 5000);
         printf("  screen %d, %d goods, menu [%s]\n", (int)play::screen, play::ground->n, play::menu.s);
+        if (play::screen == play::Screen::Fight && getenv("FIGHT")) {
+            // FIGHT: the fight played out - Quick for each party member on
+            // their menu (FIGHT=m: their menu is left alone and snapshots
+            // taken), the results and treasure tapped through
+            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
+            shot("fight_start");
+            int turns = 0, n = 0;
+            for (int k = 0; k < 200000 && play::screen == play::Screen::Fight; ++k) {
+                g_now += 50;
+                play::tick(g_now, C);
+                if (!play::fg) continue;
+                static int pages_shot = 0;
+                if (play::fg->st == play::FSt::Pages && play::fg->at == 1 && pages_shot < 8 && play::fg->until > g_now + 10) { char t[16]; snprintf(t, 16, "fpage%d", pages_shot++); shot(t); g_now = play::fg->until; }
+                if (play::fg->st == play::FSt::Menu) {
+                    if (n < 6) { char t[16]; snprintf(t, 16, "fmenu%d", n++); shot(t); }
+                    ++turns;
+                    tap_word('Q');
+                } else if (play::fg->st == play::FSt::Results || play::fg->st == play::FSt::Destroyed) {
+                    shot("fight_results");
+                    printf("  fight over: result %d, each %d xp, round %d\n", play::vm->get(0x7EC7), play::fg->share, play::fg->b.round);
+                    for (int i = 0; i < play::pt->count; ++i) { char nm[20]; play::pt->m[i].name(nm, 20); printf("   %s HP %d/%d status %d xp %u\n", nm, play::pt->m[i].hp(), play::pt->m[i].hp_max(), play::pt->m[i].health(), play::pt->m[i].exp()); }
+                    play::tap(2, 2, C);
+                }
+            }
+            printf("  after the fight: screen %d menu [%s%s] ground %d items, gold %d\n", (int)play::screen, play::menu.prompt, play::menu.s, play::ground->n, play::ground->money[3]);
+            shot("after_fight");
+        }
         if ((play::screen == play::Screen::Shop || play::screen == play::Screen::PartyMenu) && getenv("SHOPRUN")) {
             // SHOPRUN: letters tap menu words, digits pick a list line, %n taps
             // party row n (the shop's list at column 17), =n; types a number
