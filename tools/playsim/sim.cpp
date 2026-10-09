@@ -26,6 +26,28 @@ static void shot(const char* tag)
     for (uint8_t v : px) { const pic::Rgb& c = pic::kEga[v & 15]; fputc(c.r, f); fputc(c.g, f); fputc(c.b, f); }
     fclose(f);
 }
+// ITEMOPS on the items screen: a digit picks list line n, a letter taps
+// that menu word, @n taps party row n (Trade), '#' lists the items
+static void item_ops(const char* ops)
+{
+    auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+    auto list = [&]() {
+        const party::Character* ch = play::pt->sel();
+        char n[20]; ch->name(n, 20);
+        printf("  %s: %d items, gold worth %d, menu [%s%s]\n", n, ch->n_items, rules::gold_worth(*ch), play::menu.prompt, play::menu.s);
+        if (play::screen == play::Screen::Items)
+            for (int i = 0; i < ch->n_items; ++i) { char l[64]; play::list_line(i, l, 64); printf("    %d %s\n", i, l); }
+    };
+    list();
+    for (const char* q = ops; *q; ++q) {
+        if (*q == '#') list();
+        else if (*q == '@') { ++q; play::tap(16, (4 + (*q - '0')) * 8 + 2, C); }
+        else if (*q >= '0' && *q <= '9') play::plist.index = *q - '0';
+        else { tap_word(*q); printf("  after %c: screen %d menu [%s%s]\n", *q, (int)play::screen, play::menu.prompt, play::menu.s); }
+        g_now += 5000; play::tick(g_now, C);
+    }
+    shot("item_ops");
+}
 static std::string last_text;
 static std::vector<int> choices; static size_t ci = 0;
 static int next_choice(int dflt) { return ci < choices.size() ? choices[ci++] : dflt; }
@@ -166,6 +188,15 @@ int main(int argc, char** argv)
             shot("not_dropped");
             g_now += 5000; play::tick(g_now, C);
         }
+        if (getenv("ITEMOPS")) {
+            // ITEMOPS: the selected character's items: a digit picks list line n,
+            // a letter taps that menu word, @n taps party row n (Trade), '#' lists
+            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+            play::tap(16, (4 + (getenv("WHO") ? atoi(getenv("WHO")) : 0)) * 8 + 2, C);
+            play::tap(24, (12 + pm_line('V')) * 8 + 2, C);
+            tap_word('I');
+            item_ops(getenv("ITEMOPS"));
+        }
         if (getenv("VIEW")) {
             // Select a character (tap their line), View Character, back
             play::tap(16, (4 + atoi(getenv("VIEW"))) * 8 + 2, C);
@@ -211,6 +242,7 @@ int main(int argc, char** argv)
             if (tap_word('I')) {
                 if (getenv("READY")) for (const char* q = getenv("READY"); *q; ) { play::plist.index = atoi(q); tap_word('R'); g_now += 5000; play::tick(g_now, C); while (*q && *q != ',') ++q; if (*q) ++q; }
                 shot("items");
+                if (getenv("SHOPOPS")) item_ops(getenv("SHOPOPS"));
                 tap_word('E');
                 shot("view2");
             }
@@ -222,6 +254,13 @@ int main(int argc, char** argv)
             const party::Character& ch = play::pt->m[0];
             char n[20]; ch.name(n, 20);
             printf("  %s: AC %d THAC0 %d %dd%d%+d items %d gold worth %d\n", n, ch.ac(), ch.thac0(), ch.dice(), ch.dice_sides(), ch.damage_bonus(), ch.n_items, rules::gold_worth(ch));
+            if (getenv("GAMEOPS")) {
+                // View -> Items from the exploring screen, then item ops
+                play::pt->selected = 0;
+                tap_word('V');
+                tap_word('I');
+                item_ops(getenv("GAMEOPS"));
+            }
         }
     }
     if (getenv("FINDLOCK")) for (int y = 0; y < 16; ++y) for (int x = 0; x < 16; ++x) for (int dd = 0; dd < 8; dd += 2) if (geo::passage(play::d->map, x, y, dd) >= 2) printf("locked %d,%d,%d\n", x, y, dd);

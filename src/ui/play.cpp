@@ -108,6 +108,7 @@ struct Data {
                    w_title[8] = {}, w_heading[16] = {}, w_ready[8] = {}, w_yes[8] = {}, w_no[8] = {},
                    w_cursed[16] = {}, w_wrong[16] = {}, w_already[20] = {}, w_hands[24] = {}, w_s[4] = {},
                    w_weapon[8] = {}, w_armour[8] = {};
+    char           iw[profile::kItemWords][44] = {};   // the items menu's words (profile item_words)
     char           v_npc[8] = {}, v_age[8] = {}, v_stat[6][8] = {}, v_level[8] = {}, v_exp[8] = {}, v_status[8] = {},
                    v_ac[8] = {}, v_hp[8] = {}, v_thac0[12] = {}, v_damage[20] = {}, v_enc[24] = {}, v_move[16] = {},
                    v_exit[8] = {};
@@ -127,7 +128,7 @@ pic::Canvas* cv = nullptr;
 // Which screen: the party menu (the games' first screen), its "Load Which
 // Game" question, or the game itself
 enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich, AddFrom,
-                               AddList, YesNo, CreatePick, CreateName };
+                               AddList, YesNo, CreatePick, CreateName, TradeWho };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
 Screen save_from = Screen::PartyMenu;   // where Save Which Game goes back to
@@ -901,8 +902,54 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
 
 // ---- A character's items --------------------------------------------------------
 // "MATHEW's Items" (row 1), a bar at row 2, "Ready Item" (row 3), the items
-// from row 5 as " Yes  Long Sword" / " No   Plate Mail"; menu: Ready (the
-// rest - Use, Trade, Drop, Halve, Join - to come) Next Prev Exit.
+// from row 5 as " Yes  Long Sword" / " No   Plate Mail"; menu: Ready, Use
+// (exploring / camp), Trade (player characters), Drop, Halve (fewer than
+// 16 items), Join, in a shop Sell (player characters) and Id; Exit.
+
+enum class Ask : uint8_t { None, Overwrite, Drop, DropSure, Reroll, SaveNew, OverwriteNew, DropItem, SellDeal, IdDeal };
+void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt);
+
+const char* iw(int i) { return d->iw[i]; }
+int  item_at = -1;                 // the item an offer / question is about
+int  trade_from = -1;              // Trade: whose item (pt->selected picks who gets it)
+bool in_shop_items() { return view_from == Screen::Shop; }
+
+// The menu for the items screen (as the games build it)
+void items_keys(char* out, size_t cap)
+{
+    const party::Character* ch = pt->sel();
+    const bool exploring = view_from == Screen::Game || view_from == Screen::Camp;
+    snprintf(out, cap, "%s%s%s%s%s%s%s%s", d->w_ready, exploring ? iw(profile::kUse) : "",
+             !ch->npc() && !in_shop_items() ? iw(profile::kTrade) : "", iw(profile::kDrop),
+             ch->n_items < party::kMaxItems ? iw(profile::kHalve) : "", iw(profile::kJoin),
+             in_shop_items() && !ch->npc() ? iw(profile::kSell) : "", in_shop_items() ? iw(profile::kId) : "");
+}
+
+// What the game says about an item, in the text rows under the list
+// (rows 21-22, colour 14), wrapped
+void say_item(pic::Canvas& c, const char* t)
+{
+    c.fill(8, 21 * 8, 38 * 8, 16, 0);
+    int row = 21;
+    const char* s = t;
+    while (*s && row <= 22) {
+        int n = static_cast<int>(strlen(s));
+        if (n > 38) {
+            n = 38;
+            while (n > 0 && s[n] != ' ') --n;
+            if (n == 0) n = 38;
+        }
+        char line[40];
+        memcpy(line, s, n);
+        line[n] = 0;
+        put(c, line, 1, row++, 14);
+        s += n;
+        while (*s == ' ') ++s;
+    }
+    dirty_rows(21, 22);
+}
+
+void item_name(int i, char* out, size_t cap) { names->name(items::Item{pt->sel()->items[i]}, out, cap); }
 
 void draw_items(pic::Canvas& c)
 {
@@ -922,7 +969,9 @@ void draw_items(pic::Canvas& c)
     plist.row1 = 22;
     plist.col0 = 1;
     plist.n = ch->n_items;
-    draw_list(c, "", d->w_ready);
+    char keys[48];
+    items_keys(keys, sizeof keys);
+    draw_list(c, "", keys);
 }
 
 void open_items(pic::Canvas& c)
@@ -983,6 +1032,209 @@ void ready_item(int i, pic::Canvas& c)
     }
     rules::recalc(ch, *names, d->facts);
     draw_items(c);
+}
+
+// Drop / Trade / Sell need the item put away first (and not readied)
+bool can_part_with(int i, pic::Canvas& c)
+{
+    if (items::Item{pt->sel()->items[i]}.readied()) {
+        note(c, iw(profile::kMustUnready));
+        return false;
+    }
+    return true;
+}
+
+void drop_item(int i, pic::Canvas& c)
+{
+    if (!can_part_with(i, c)) return;
+    char nm[48], t[96];
+    item_name(i, nm, sizeof nm);
+    snprintf(t, sizeof t, "%s%s %s", iw(profile::kYour), nm, iw(profile::kGoneForever));
+    say_item(c, t);
+    item_at = i;
+    ask_yes_no(c, Ask::DropItem, iw(profile::kDropIt));
+}
+
+void draw_trade(pic::Canvas& c)
+{
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    draw_party(c, 1);
+    char keys[24];
+    snprintf(keys, sizeof keys, "%s%s", iw(profile::kSelect), d->w_exit);
+    char prompt[44];
+    snprintf(prompt, sizeof prompt, "%s ", iw(profile::kTradeWhom));
+    text::build(menu, prompt, keys);
+    menu.selected = 0;
+    show_menu_line(c);
+    dirty(0, pic::kScreenH);
+}
+
+void trade_item(int i, pic::Canvas& c)
+{
+    if (!can_part_with(i, c)) return;
+    item_at = i;
+    trade_from = pt->selected;
+    screen = Screen::TradeWho;
+    draw_trade(c);
+}
+
+// Back to the items of the one who traded (or their sheet when none are left)
+void back_to_items(pic::Canvas& c)
+{
+    if (trade_from >= 0) pt->selected = trade_from;
+    trade_from = -1;
+    if (pt->sel()->n_items) {
+        screen = Screen::Items;
+        draw_items(c);
+    } else {
+        screen = Screen::View;
+        draw_character(c);
+    }
+}
+
+void trade_tap(int x, int y, pic::Canvas& c)
+{
+    const int row = y / 8, col = x / 8;
+    if (y < text::kMenuTapTop) {
+        if (row >= 4 && row < 4 + pt->count && col >= 1) {
+            pt->selected = row - 4;
+            draw_party(c, 1);
+        }
+        return;
+    }
+    const char k = text::key(menu, text::hit(menu, col));
+    if (k == 'E') {
+        back_to_items(c);
+        return;
+    }
+    if (k != 'S') return;
+    const int to = pt->selected;
+    if (to == trade_from || trade_from < 0) {
+        back_to_items(c);
+        return;
+    }
+    party::Character& from = pt->m[trade_from];
+    party::Character& who = pt->m[to];
+    uint8_t it[items::kRecordSize];
+    memcpy(it, from.items[item_at], sizeof it);
+    if (rules::too_heavy(who, it, *names, d->facts)) {
+        note(c, d->w_over);
+        return;
+    }
+    rules::add_item(who, it);
+    rules::remove_item(from, item_at);
+    rules::recalc(who, *names, d->facts);
+    rules::recalc(from, *names, d->facts);
+    back_to_items(c);
+}
+
+void halve_item(int i, pic::Canvas& c)
+{
+    if (!rules::halve(*pt->sel(), i)) {
+        note(c, iw(profile::kCantHalve));
+        return;
+    }
+    rules::recalc(*pt->sel(), *names, d->facts);
+    draw_items(c);
+}
+
+void join_item(int i, pic::Canvas& c)
+{
+    rules::join(*pt->sel(), i);
+    rules::recalc(*pt->sel(), *names, d->facts);
+    draw_items(c);
+}
+
+// The shop's offer for an item
+void sell_item(int i, pic::Canvas& c)
+{
+    if (!can_part_with(i, c)) return;
+    char nm[48], t[120];
+    item_name(i, nm, sizeof nm);
+    snprintf(t, sizeof t, "%s%d%s%s", iw(profile::kGiveYou), rules::sell_value(pt->sel()->items[i], d->facts),
+             iw(profile::kGoldFor), nm);
+    say_item(c, t);
+    item_at = i;
+    ask_yes_no(c, Ask::SellDeal, iw(profile::kDeal));
+}
+
+void identify_item(int i, pic::Canvas& c)
+{
+    char nm[48], t[120];
+    item_name(i, nm, sizeof nm);
+    snprintf(t, sizeof t, "%s%s", iw(profile::kIdentify), nm);
+    say_item(c, t);
+    item_at = i;
+    ask_yes_no(c, Ask::IdDeal, iw(profile::kDeal));
+}
+
+void add_coins(party::Character& ch, int kind, int n)
+{
+    const int v = ch.money(kind) + n;
+    ch.rec[0xFB + kind * 2] = static_cast<uint8_t>(v);
+    ch.rec[0xFC + kind * 2] = static_cast<uint8_t>(v >> 8);
+}
+
+// The answers to Drop It? / Is It a Deal?
+bool items_yes_no(Ask what, char k, pic::Canvas& c)
+{
+    if (what != Ask::DropItem && what != Ask::SellDeal && what != Ask::IdDeal) return false;
+    party::Character& ch = *pt->sel();
+    screen = Screen::Items;
+    const int i = item_at;
+    item_at = -1;
+    if (k != 'Y' || i < 0 || i >= ch.n_items) {
+        back_to_items(c);
+        return true;
+    }
+    char nm[48], t[120];
+    item_name(i, nm, sizeof nm);
+    if (what == Ask::DropItem) {
+        rules::remove_item(ch, i);
+        rules::recalc(ch, *names, d->facts);
+        back_to_items(c);
+        return true;
+    }
+    if (what == Ask::SellDeal) {
+        const int gold = rules::sell_value(ch.items[i], d->facts);
+        rules::remove_item(ch, i);
+        const int plat = gold / 5;
+        add_coins(ch, 4, plat);
+        add_coins(ch, 3, gold % 5);
+        rules::recalc(ch, *names, d->facts);
+        bool over = false;
+        if (ch.encumbrance() > rules::max_load(ch)) {
+            add_coins(ch, 4, -plat);              // the platinum goes on the counter
+            ground->money[4] += plat;
+            rules::recalc(ch, *names, d->facts);
+            over = true;
+        }
+        back_to_items(c);
+        note(c, over ? iw(profile::kOverloadPool) : iw(profile::kSold));
+        return true;
+    }
+    // Id: 200 gold, from the character or the counter
+    if (rules::gold_worth(ch) >= 200) {
+        rules::pay(ch, 200);
+    } else if (rules::gold_worth(ground->money) >= 200) {
+        rules::pay(ground->money, 200);
+    } else {
+        back_to_items(c);
+        note(c, iw(profile::kNoMoney));
+        return true;
+    }
+    if (ch.items[i][0x35] == 0) {
+        snprintf(t, sizeof t, "%s%s", iw(profile::kNothingNew), nm);
+    } else {
+        ch.items[i][0x35] = 0;
+        item_name(i, nm, sizeof nm);
+        snprintf(t, sizeof t, "%s%s", iw(profile::kSortOf), nm);
+    }
+    rules::recalc(ch, *names, d->facts);
+    back_to_items(c);
+    say_item(c, t);
+    return true;
 }
 
 // ---- Saving, camp ------------------------------------------------------------------
@@ -1183,7 +1435,6 @@ void camp_tap(int x, int y, pic::Canvas& c)
 // NAME.GUY (+ .SWG / .FX; "Overwrite NAME? Yes No" when there is one).
 // Drop Character: "Drop NAME forever? ", "Are you sure? ", their files go.
 
-enum class Ask : uint8_t { None, Overwrite, Drop, DropSure, Reroll, SaveNew, OverwriteNew };
 Ask ask = Ask::None;
 
 // The file name the games give a character: the name without spaces and
@@ -1282,6 +1533,7 @@ void yes_no_tap(int x, int y, pic::Canvas& c)
     const Ask what = ask;
     ask = Ask::None;
     if (create_yes_no(what, k, c)) return;
+    if (items_yes_no(what, k, c)) return;
     party::Character* ch = pt->sel();
     char nm[20] = {}, t[64];
     if (ch) ch->name(nm, sizeof nm);
@@ -1893,8 +2145,21 @@ void list_tap(int x, int y, pic::Canvas& c)
     } else if (k == 'B' && screen == Screen::ShopBuy) {
         buy(l.index, c);
         return;
-    } else if (k == 'R' && screen == Screen::Items) {
-        ready_item(l.index, c);
+    } else if (screen == Screen::Items && l.index < pt->sel()->n_items &&
+               (k == 'R' || k == 'U' || k == 'T' || k == 'D' || k == 'H' || k == 'J' || k == 'S' || k == 'I')) {
+        switch (k) {
+        case 'R': ready_item(l.index, c); break;
+        case 'U':
+            if (!items::Item{pt->sel()->items[l.index]}.readied()) note(c, iw(profile::kMustReady));
+            else error(c, "Not in the engine yet.");          // magic items come with spells
+            break;
+        case 'T': trade_item(l.index, c); break;
+        case 'D': drop_item(l.index, c); break;
+        case 'H': halve_item(l.index, c); break;
+        case 'J': join_item(l.index, c); break;
+        case 'S': sell_item(l.index, c); break;
+        case 'I': identify_item(l.index, c); break;
+        }
         return;
     } else if (k == 'A' && screen == Screen::AddList) {
         add_character(l.index, c);
@@ -1984,6 +2249,10 @@ void pm_tap(int x, int y, pic::Canvas& c)
         return;
     }
     if (screen == Screen::CreateName) return;      // the keyboard types the name
+    if (screen == Screen::TradeWho) {
+        trade_tap(x, y, c);
+        return;
+    }
     if (screen == Screen::Items || screen == Screen::ShopBuy || screen == Screen::AddList) {
         list_tap(x, y, c);
         return;
@@ -2134,6 +2403,8 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         };
         for (auto& wd : words)
             if (wd.at) text::read_pascal(src, wd.at, wd.out, wd.cap);
+        for (int i = 0; i < profile::kItemWords; ++i)
+            if (d->prof->item_words[i]) text::read_pascal(src, d->prof->item_words[i], d->iw[i], sizeof d->iw[i]);
         for (int i = 0; i < 6 && pv.stats; ++i)
             text::read_pascal(src, pv.stats + static_cast<uint32_t>(i) * pv.stats_stride, d->v_stat[i], sizeof d->v_stat[i]);
         text::read_pascal(src, pp.choose, d->choose, sizeof d->choose);

@@ -385,4 +385,77 @@ int price(const uint8_t* item, int factor)
     }
 }
 
+void remove_item(party::Character& c, int i)
+{
+    if (i < 0 || i >= c.n_items) return;
+    for (int k = i; k + 1 < c.n_items; ++k) memcpy(c.items[k], c.items[k + 1], items::kRecordSize);
+    --c.n_items;
+    memset(c.items[c.n_items], 0, items::kRecordSize);
+}
+
+bool halve(party::Character& c, int i)
+{
+    if (i < 0 || i >= c.n_items || c.n_items >= party::kMaxItems) return false;
+    uint8_t* r = c.items[i];
+    const int half = r[0x39] / 2;
+    if (half <= 0) return false;
+    uint8_t* n = c.items[c.n_items++];
+    memcpy(n, r, items::kRecordSize);
+    r[0x39] = static_cast<uint8_t>(r[0x39] - half);
+    n[0x39] = static_cast<uint8_t>(half);
+    n[0x34] = 0;                       // the new pile isn't readied
+    return true;
+}
+
+namespace {
+
+// Items that go together in one pile: the same in every way, counted
+bool same_pile(const uint8_t* a, const uint8_t* b)
+{
+    if (a[0x39] == 0 || b[0x39] == 0) return false;
+    static const int kSame[] = {0x2E, 0x2F, 0x30, 0x31, 0x32, 0x33, 0x36, 0x37, 0x3C, 0x3D, 0x3E};
+    for (int o : kSame)
+        if (a[o] != b[o]) return false;
+    return a[0x3C] < 2;               // (the games' rule)
+}
+
+} // namespace
+
+int join(party::Character& c, int i)
+{
+    if (i < 0 || i >= c.n_items) return 0;
+    int joined = 0;
+    for (int k = 0; k < c.n_items;) {
+        if (k == i || !same_pile(c.items[i], c.items[k])) {
+            ++k;
+            continue;
+        }
+        const int room = 255 - c.items[i][0x39];
+        if (room <= 0) break;
+        const int move = c.items[k][0x39] < room ? c.items[k][0x39] : room;
+        c.items[i][0x39] = static_cast<uint8_t>(c.items[i][0x39] + move);
+        c.items[k][0x39] = static_cast<uint8_t>(c.items[k][0x39] - move);
+        ++joined;
+        if (c.items[k][0x39] == 0) {
+            remove_item(c, k);
+            if (k < i) --i;
+        } else {
+            ++k;
+        }
+    }
+    return joined;
+}
+
+int sell_value(const uint8_t* item, const ItemFacts& f)
+{
+    const items::Item it{item};
+    int v = it.value() > 0 ? it.value() / 2 : 0;
+    if (it.count() > 1) {
+        if (it.type() != f.arrow && it.type() != f.quarrel) v = it.count() * v / 20;
+        else v *= it.count();
+    }
+    return v;
+}
+
 } // namespace rules
+

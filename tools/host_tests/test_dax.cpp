@@ -2176,6 +2176,40 @@ static void test_create()
     CHECK(th.rec[0xEA + 1] == 0);
 }
 
+static void test_item_piles()
+{
+    party::Character c;
+    uint8_t arrows[items::kRecordSize] = {};
+    arrows[0x2E] = 73; arrows[0x31] = 5; arrows[0x39] = 21; arrows[0x3A] = 2;   // 21 arrows, value 2
+    uint8_t sword[items::kRecordSize] = {};
+    sword[0x2E] = 7; sword[0x39] = 0; sword[0x3A] = 0x2C; sword[0x3B] = 1;      // value 300
+    CHECK(rules::add_item(c, sword) && rules::add_item(c, arrows));
+    // Halve: 21 -> 11 + 10, the new pile not readied
+    c.items[1][0x34] = 1;
+    CHECK(rules::halve(c, 1) && c.n_items == 3 && c.items[1][0x39] == 11 && c.items[2][0x39] == 10 && c.items[2][0x34] == 0);
+    CHECK(!rules::halve(c, 0));                                  // a sword: one of it
+    // Join them back (the sword stays as it is)
+    CHECK(rules::join(c, 2) == 1 && c.n_items == 2 && c.items[1][0x39] == 21 && c.items[0][0x2E] == 7);
+    // Join stops at 255 a pile
+    uint8_t big[items::kRecordSize];
+    memcpy(big, arrows, sizeof big);
+    big[0x39] = 250;
+    CHECK(rules::add_item(c, big) && rules::join(c, 2) == 1 && c.items[2][0x39] == 255 && c.items[1][0x39] == 16);
+    // Different things don't join
+    c.items[1][0x32] = 1;                                         // +1 arrows
+    CHECK(rules::join(c, 1) == 0);
+    rules::remove_item(c, 0);
+    CHECK(c.n_items == 2 && c.items[0][0x2E] == 73);
+    // Sell: half the value; arrows each, other piles / 20
+    const rules::ItemFacts f{73, 28, {}};
+    CHECK(rules::sell_value(sword, f) == 150);
+    CHECK(rules::sell_value(arrows, f) == 21);                    // 21 x (2 / 2)
+    uint8_t darts[items::kRecordSize];
+    memcpy(darts, arrows, sizeof darts);
+    darts[0x2E] = 9; darts[0x3A] = 100; darts[0x39] = 10;
+    CHECK(rules::sell_value(darts, f) == 10 * 50 / 20);
+}
+
 int main()
 {
     test_rle_known_bytes();
@@ -2200,6 +2234,7 @@ int main()
     test_geo_view();
     test_party();
     test_items();
+    test_item_piles();
     test_create();
     if (failures) {
         printf("%d check(s) failed\n", failures);

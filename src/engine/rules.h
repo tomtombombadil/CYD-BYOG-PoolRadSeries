@@ -51,6 +51,18 @@ bool too_heavy(party::Character& c, const uint8_t* item, const items::Names& nam
 // Adds an item to a character (false: no room).
 bool add_item(party::Character& c, const uint8_t* item);
 
+// A character's items (Items: Drop, Trade, Halve, Join)
+void remove_item(party::Character& c, int i);
+// Halve: a pile of n becomes n - n/2 and a new pile of n/2 (not readied);
+// false when it can't (one of it, or 16 items already)
+bool halve(party::Character& c, int i);
+// Join: the same items in other piles go onto pile i (255 a pile at most);
+// how many piles were joined in
+int join(party::Character& c, int i);
+// Sell (a shop): what the shop gives, in gold - half the value; piles of
+// arrows / quarrels count each one, other piles count / 20 of each
+int sell_value(const uint8_t* item, const ItemFacts& f);
+
 // A shop's price for an item: its value moved by the shop's price factor
 // (script word 0x7F6D: 1 = 1/16 ... 0x10 normal ... 0x80 = x8)
 int price(const uint8_t* item, int factor);

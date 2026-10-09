@@ -54,6 +54,19 @@ struct NameTable {
     uint8_t  stride, count;
 };
 
+// A character's items menu and what its choices say (GAME.OVR offsets of
+// Pascal strings), in this order
+enum ItemWord {
+    kUse, kTrade, kDrop, kHalve, kJoin, kSell, kId,          // " Use" ... " Id" (after "Ready")
+    kMustUnready, kMustReady, kCantHalve,                    // "Must be unreadied" ...
+    kYour, kGoneForever, kDropIt,                            // "Your " + item + " " + "will be gone forever", "Drop It? "
+    kTradeWhom,                                              // "Trade with Whom?"
+    kGiveYou, kGoldFor, kDeal, kSold, kOverloadPool,         // the shop's Sell
+    kIdentify, kNothingNew, kSortOf, kNoMoney,               // the shop's Id
+    kSelect,                                                 // "Select" (picking a character)
+    kItemWords
+};
+
 struct Profile {
     games::Game  game;
     const char*  release;        // shown to the player, e.g. "GOG"
@@ -172,6 +185,9 @@ struct Profile {
         uint32_t        pick_race, pick_gender, pick_class, pick_alignment, select, reroll, char_name, save_q,
                         qmark;
     } create;
+
+    // Items: Use Trade Drop Halve Join Sell Id and their words (ItemWord order)
+    uint32_t item_words[kItemWords];
 };
 
 // The game's program file name (to look for it), or nullptr if no
