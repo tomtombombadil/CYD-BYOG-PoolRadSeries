@@ -59,6 +59,11 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   v0.13.0), `journal_tables.cpp` from
   `tools/journal/make_table.py` (run on the player's PDF in scratch space;
   check every entry by eye; renders stay in scratch).
+- Engine Menu (Tom, 2026-10-09): the Play Test's Area key became a Menu
+  key (both screen sizes) opening the engine's own tabbed screen: Journal
+  (entries met so far) and Journal PDF (the book) now; further engine
+  features get tabs there. Area stays on the game's menu line, and a tap
+  on the 3D view toggles 3D / Area.
 - Card scan (Tom, 2026-10-09): scan ONCE; boot reads the scan log and
   loads the library from it. Rescan Card is the only rescan - never
   check the card for changes on its own. Everything the board makes from

@@ -50,6 +50,11 @@ void input_key(char k, pic::Canvas& c);
 // waits for the player: true once, with what to show.
 bool journal_request(char* kind, int* number);
 
+// The journal entries ('J') and tavern tales ('T') the game has mentioned
+// so far, in the order heard (the Menu's Journal list)
+int journal_seen_count();
+bool journal_seen(int i, char* kind, int* number);
+
 // Canvas rows changed since the last call (y1 == 0: none).
 void take_dirty(int& y0, int& y1);
 

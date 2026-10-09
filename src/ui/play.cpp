@@ -136,6 +136,20 @@ char         jtext[200];            // the latest printed text
 char         journal_kind = 0;      // mentioned, not yet shown
 int          journal_num = 0;
 bool         journal_due = false;   // the viewer should show it now
+// Every entry mentioned so far, in order (the Menu's Journal list); kept
+// for this session until saving games keeps it with the game
+constexpr int kMaxSeen = 192;
+struct Seen { char kind; uint8_t num; };
+Seen         seen[kMaxSeen];
+int          n_seen = 0;
+
+void note_seen(char k, int num)
+{
+    if (num <= 0 || num > 255) return;
+    for (int i = 0; i < n_seen; ++i)
+        if (seen[i].kind == k && seen[i].num == num) return;
+    if (n_seen < kMaxSeen) seen[n_seen++] = Seen{k, static_cast<uint8_t>(num)};
+}
 
 void heard(const char* t)
 {
@@ -156,6 +170,7 @@ void heard(const char* t)
         journal_kind = k;
         journal_num = num;
         jtext[0] = 0;
+        note_seen(k, num);
     }
 }
 
@@ -1398,6 +1413,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c)
     jtext[0] = 0;
     journal_kind = 0;
     journal_due = false;
+    n_seen = 0;
     cursor_on = false;
     input_mode = Input::None;
     idle_cycles = 0;
@@ -1532,6 +1548,12 @@ void tap(int x, int y, pic::Canvas& c)
         return;
     }
     if (then != Then::Idle) return;
+    // A tap on the 3D view switches between it and the Area view (the
+    // menu line's Area does the same)
+    if (x >= 24 && x < 112 && y >= 24 && y < 112 && vm->get(0x4BE6) && !pic_shown && !bigpic_shown()) {
+        act(Act::Area, c);
+        return;
+    }
     // A tap on a character in the party list selects them
     if (col >= 17 && row >= 4 && row < 4 + pt->count && !bigpic_shown()) {
         pt->selected = row - 4;
@@ -1629,6 +1651,16 @@ bool back(pic::Canvas& c)
         return true;
     }
     return false;
+}
+
+int journal_seen_count() { return d ? n_seen : 0; }
+
+bool journal_seen(int i, char* kind, int* number)
+{
+    if (!d || i < 0 || i >= n_seen) return false;
+    *kind = seen[i].kind;
+    *number = seen[i].num;
+    return true;
 }
 
 bool exit_requested()

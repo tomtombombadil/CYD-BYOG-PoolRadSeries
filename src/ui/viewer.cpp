@@ -30,7 +30,7 @@ namespace viewer {
 
 namespace {
 
-enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Walk, Play, Journal, Pdf, Settings };
+enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Walk, Play, Journal, Pdf, GameMenu, Settings };
 
 Env       env_;
 Settings* cfg = nullptr;
@@ -1214,7 +1214,7 @@ void draw_companion(const MapSource& ms = kWalkMap)
         ui::text(x0 + 8, my + cell * geo::kSize + 40, "Tap a square to go there", style::kTextMuted, ui::Font::Small);
 }
 
-void draw_walk_keys(const char* side_label = "Next Map")
+void draw_walk_keys(const char* side_label = "Next Map", const char* area_label = "Area")
 {
     ui::key_arrow(walk_key(kWTurnL), ui::Arrow::TurnLeft);
     ui::key_arrow(walk_key(kWStepL), ui::Arrow::Left);
@@ -1222,7 +1222,7 @@ void draw_walk_keys(const char* side_label = "Next Map")
     ui::key_arrow(walk_key(kWStepR), ui::Arrow::Right);
     ui::key_arrow(walk_key(kWTurnR), ui::Arrow::TurnRight);
     ui::key_arrow(walk_key(kWAround), ui::Arrow::TurnAround);
-    ui::key(walk_key(kWArea), "Area");
+    ui::key(walk_key(kWArea), area_label);
     if (ui::large()) ui::key(walk_key(kWNext), side_label);
     ui::key(walk_key(kWEsc), "Esc");
 }
@@ -1361,6 +1361,151 @@ bool tap_keyboard(const ui::Tap& t)
     }
     return true;     // the keyboard takes every tap while it is up
 }
+
+// ---- The engine's Menu (Play Test) ----------------------------------------
+// Tom (2026-10-09): the Menu key (where the Walk Test has Area) opens the
+// engine's own screen, tabbed along the top: Journal (the entries and
+// tavern tales the game has mentioned so far - tap one to read it) and
+// Journal PDF (the book). More tabs as the engine grows. Back to Game at
+// the bottom.
+
+enum MenuTab { kTabJournal, kTabPdf, kTabs };
+int  menu_tab = kTabJournal;
+int  menu_page = 0;
+bool from_menu = false;       // the journal / PDF screens go back to the Menu
+char menu_note[160] = {};
+
+ui::Rect tab_rect(int i)
+{
+    const int gp = ui::gap();
+    const int w = (ui::width() - gp * (kTabs + 1)) / kTabs;
+    return {gp + i * (w + gp), 2, w, ui::header_h() - 4};
+}
+
+void draw_tabs(int active)
+{
+    static const char* const kNames[kTabs] = {"Journal", "Journal PDF"};
+    ui::gfx().fillRect(0, 0, ui::width(), ui::header_h(), style::kHeader);
+    for (int i = 0; i < kTabs; ++i) ui::key(tab_rect(i), kNames[i], i == active ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+}
+
+int tab_hit(const ui::Tap& t)
+{
+    for (int i = 0; i < kTabs; ++i)
+        if (tab_rect(i).contains(t.x, t.y)) return i;
+    return -1;
+}
+
+const char* back_label() { return from_menu ? "Back" : "Back to\nGame"; }
+
+ui::Rect journal_area();
+void open_journal(char kind, int number);
+bool open_book();
+
+int menu_row_h() { return ui::line_h(ui::Font::Normal) + ui::gap() * 2; }
+int menu_rows() { return journal_area().h / menu_row_h(); }
+int menu_pages()
+{
+    const int n = play::journal_seen_count(), r = menu_rows();
+    return r > 0 && n > 0 ? (n + r - 1) / r : 1;
+}
+
+void open_menu()
+{
+    from_menu = true;
+    menu_tab = kTabJournal;
+    menu_note[0] = 0;
+    const int r = menu_rows();
+    // Start on the page with the latest entry
+    menu_page = r > 0 && play::journal_seen_count() ? (play::journal_seen_count() - 1) / r : 0;
+    go(Screen::GameMenu);
+}
+
+void leave_menu()
+{
+    from_menu = false;
+    go(Screen::Play);
+}
+
+void draw_game_menu()
+{
+    ui::clear();
+    draw_tabs(menu_tab);
+    const ui::Rect a = journal_area();
+    const int pages = menu_pages();
+    if (pages > 1) {
+        ui::key(ui::bottom_key(0, 3), "Prev Page", menu_page > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+        ui::key(ui::bottom_key(1, 3), "Back to Game");
+        ui::key(ui::bottom_key(2, 3), "Next Page", menu_page < pages - 1 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+    } else {
+        ui::key(ui::bottom_key(0, 1), "Back to Game");
+    }
+    const int x = ui::gap() * 3, wdt = ui::width() - ui::gap() * 6;
+    if (menu_tab == kTabPdf || menu_note[0]) {
+        wrap_text(x, a.y + ui::gap() * 2, wdt, menu_note, ui::Font::Normal, style::kText, true);
+        return;
+    }
+    const int n = play::journal_seen_count();
+    if (n == 0) {
+        wrap_text(x, a.y + ui::gap() * 2, wdt,
+                  "No journal entries yet. When the game tells you to read one, it is listed here.",
+                  ui::Font::Normal, style::kText, true);
+        return;
+    }
+    const int r = menu_rows(), rh = menu_row_h();
+    for (int i = 0; i < r; ++i) {
+        const int k = menu_page * r + i;
+        char kind;
+        int num;
+        if (!play::journal_seen(k, &kind, &num)) break;
+        char line[40];
+        snprintf(line, sizeof line, "%s %d", kind == 'T' ? "Tavern Tale" : "Journal Entry", num);
+        const int y = a.y + i * rh;
+        ui::text(x, y + ui::gap(), line, k == n - 1 ? style::kGold : style::kText);
+        if (i + 1 < r) ui::gfx().drawFastHLine(x, y + rh - 1, wdt, style::kKeyEdge);
+    }
+}
+
+void tap_game_menu(const ui::Tap& t)
+{
+    const int tab = tab_hit(t);
+    if (tab == kTabPdf) {
+        menu_tab = kTabPdf;
+        if (!open_book()) {
+            strlcpy(menu_note,
+                    game_dirs[game_sel].journal[0]
+                        ? "The journal PDF couldn't be read as a book of scanned pages."
+                        : "There is no journal PDF in this game's folder. GOG's install folder has one: copy the "
+                          "whole folder to the card, then Rescan Card.",
+                    sizeof menu_note);
+            dirty = true;
+        }
+        return;
+    }
+    if (tab == kTabJournal) {
+        menu_tab = kTabJournal;
+        menu_note[0] = 0;
+        dirty = true;
+        return;
+    }
+    const int pages = menu_pages();
+    const int nk = pages > 1 ? 3 : 1;
+    const int k = bottom_hit(t, nk);
+    if (k >= 0) {
+        if (nk == 1 || k == 1) leave_menu();
+        else if (k == 0 && menu_page > 0) --menu_page, dirty = true;
+        else if (k == 2 && menu_page < pages - 1) ++menu_page, dirty = true;
+        return;
+    }
+    if (menu_tab != kTabJournal) return;
+    const ui::Rect a = journal_area();
+    if (!a.contains(t.x, t.y)) return;
+    const int i = menu_page * menu_rows() + (t.y - a.y) / menu_row_h();
+    char kind;
+    int num;
+    if (play::journal_seen(i, &kind, &num)) open_journal(kind, num);
+}
+
 
 // ---- Journal ------------------------------------------------------------
 // An entry of the Adventurer's Journal (or a tavern tale): the pictures the
@@ -1576,11 +1721,11 @@ void draw_journal()
         const bool more = jv->top + a.h < jv->total_h;
         ui::key(ui::bottom_key(0, 4), "Prev Page", jv->top > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
         ui::key(ui::bottom_key(1, 4), "Zoom", jv->zoom ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
-        ui::key(ui::bottom_key(2, 4), "Back to\nGame");
+        ui::key(ui::bottom_key(2, 4), back_label());
         ui::key(ui::bottom_key(3, 4), "Next Page", more ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
     } else {
         if (nk == 2) ui::key(ui::bottom_key(0, 2), "Open Journal\nPDF");
-        ui::key(ui::bottom_key(nk - 1, nk), "Back to Game");
+        ui::key(ui::bottom_key(nk - 1, nk), from_menu ? "Back" : "Back to Game");
     }
     if (!jv || !jv->have) {
         wrap_text(ui::gap() * 3, a.y + ui::gap() * 2, ui::width() - ui::gap() * 6, jv ? jv->why : "",
@@ -1614,7 +1759,23 @@ void leave_journal()
     delete jv;
     jv = nullptr;
     pdfview::close();
-    go(Screen::Play);         // the game screen comes back as it was
+    // The Menu (when it opened the entry or the book), or the game screen
+    // as it was
+    go(from_menu ? Screen::GameMenu : Screen::Play);
+}
+
+// The journal PDF as a book (the Menu's Journal PDF tab, or Open Journal
+// PDF on an entry): false if there is none or it can't be read
+bool open_book()
+{
+    if (!game_dirs[game_sel].journal[0]) return false;
+    char path[200];
+    snprintf(path, sizeof path, "%s/%s", games::kRootDir, game_dirs[game_sel].journal);
+    if (!pdfview::open(path)) return false;
+    pdf_page = 1;
+    pdf_zoom = false;
+    go(Screen::Pdf);
+    return true;
 }
 
 void tap_journal(const ui::Tap& t)
@@ -1624,13 +1785,7 @@ void tap_journal(const ui::Tap& t)
     const int k = bottom_hit(t, nk);
     if (k == nk - 1 - (nk == 4 ? 1 : 0)) { leave_journal(); return; }     // Back to Game
     if (nk == 2 && k == 0) {
-        char path[200];
-        snprintf(path, sizeof path, "%s/%s", games::kRootDir, game_dirs[game_sel].journal);
-        if (pdfview::open(path)) {
-            pdf_page = 1;
-            pdf_zoom = false;
-            go(Screen::Pdf);
-        } else {
+        if (!open_book()) {
             strlcpy(jv->why, "The journal PDF couldn't be read as a book of scanned pages.", sizeof jv->why);
             dirty = true;
         }
@@ -1675,10 +1830,11 @@ void draw_pdf()
     ui::clear();
     char title[48];
     snprintf(title, sizeof title, "Journal PDF  Page %d of %d", pdf_page, pdfview::pages());
-    ui::header(title, true);
+    if (from_menu) draw_tabs(kTabPdf);
+    else ui::header(title, true);
     ui::key(ui::bottom_key(0, 4), "Prev Page", pdf_page > 1 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
     ui::key(ui::bottom_key(1, 4), "Zoom", pdf_zoom ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
-    ui::key(ui::bottom_key(2, 4), "Back to\nGame");
+    ui::key(ui::bottom_key(2, 4), from_menu ? "Back to\nGame" : back_label());
     ui::key(ui::bottom_key(3, 4), "Next Page", pdf_page < pdfview::pages() ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
     const ui::Rect a = pdf_area();
     ui::text(ui::gap() * 3, a.y + ui::gap() * 2, "Reading the page...", style::kTextMuted, ui::Font::Small);
@@ -1696,7 +1852,25 @@ void draw_pdf()
 
 void tap_pdf(const ui::Tap& t)
 {
-    if (ui::back_rect().contains(t.x, t.y)) { leave_journal(); return; }
+    if (from_menu) {
+        // The Menu's tabs instead of a title bar; Back to Game leaves the Menu
+        if (tab_hit(t) == kTabJournal) {
+            pdfview::close();
+            menu_tab = kTabJournal;
+            menu_note[0] = 0;
+            go(Screen::GameMenu);
+            return;
+        }
+        if (bottom_hit(t, 4) == 2) {
+            pdfview::close();
+            leave_menu();
+            return;
+        }
+        if (t.y < ui::header_h()) return;
+    } else if (ui::back_rect().contains(t.x, t.y)) {
+        leave_journal();
+        return;
+    }
     const ui::Rect a = pdf_area();
     const int k = bottom_hit(t, 4);
     int pw = 0, ph = 0;
@@ -1802,7 +1976,7 @@ void draw_play()
     int y0, y1;
     play::take_dirty(y0, y1);
     kb_shown = false;
-    draw_walk_keys("Look");
+    draw_walk_keys("Look", "Menu");      // Play Test: the game's own Area is on its menu line
     play_last_map = nullptr;
     play_last_x = -1;
     present_play();
@@ -1828,6 +2002,11 @@ void tap_play(const ui::Tap& t)
         if (k == kWEsc) {
             if (play::back(frame::canvas())) present_play();
             else leave_play();
+            return;
+        }
+        if (k == kWArea) {          // the Menu key
+            kb_shown = false;
+            open_menu();
             return;
         }
         play::act(kActs[k], frame::canvas());
@@ -1949,6 +2128,7 @@ void tick()
         case Screen::Play:     tap_play(t); break;
         case Screen::Journal:  tap_journal(t); break;
         case Screen::Pdf:      tap_pdf(t); break;
+        case Screen::GameMenu: tap_game_menu(t); break;
         case Screen::Settings: tap_settings(t); break;
         }
     }
@@ -1969,6 +2149,7 @@ void tick()
     case Screen::Play:     draw_play(); break;
     case Screen::Journal:  draw_journal(); break;
     case Screen::Pdf:      draw_pdf(); break;
+    case Screen::GameMenu: draw_game_menu(); break;
     case Screen::Settings: draw_settings(); break;
     }
 }

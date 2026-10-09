@@ -91,6 +91,15 @@ The games draw a 320x200 screen. The canvas is presented:
     Right, 4 = Side-step Left, 6 = Side-step Right, 2 = Turn Around; combat:
     all 8 directions. Beside it Enter / Esc / Keys. The companion panel has
     Journal and Map.
+- **The Menu key** (Tom, 2026-10-09; v0.16.0): the Play Test's key where
+  the Walk Test has Area (320x240 row: 7th key; 480x320: the first key
+  beside the pad) opens the engine's own screen, tabbed along the top:
+  **Journal** (the journal entries and tavern tales the game has mentioned
+  so far, oldest first, the latest in gold - tap one to read it; kept for
+  the session until saved games keep it) and **Journal PDF** (the book
+  view). More tabs as the engine grows (party, settings ...). Back to Game
+  at the bottom. Area itself is the first word of the game's exploring
+  menu; a tap on the 3D view also switches between the 3D and Area views.
 - **Side-steps** (Tom remembers them from the games). coab's Curse code only
   has forward, turn left / right and turn around on the arrow keys (numpad
   4 / 6 send the same keys as the arrows), so for Curse at least the engine
@@ -263,8 +272,8 @@ How it works (v0.12.0, Curse):
   the PDF - whole pages (decoded at 1/2-1/8 with TJpgDec's scaling, fitted),
   Zoom or a tap on a spot = the scan's size there, taps on the edges move
   it; only the MCUs in view are decoded, stopping below the view.
-- Next: a list of the entries received so far (where its key goes: asked
-  Tom 2026-10-09).
+- v0.16.0: the Menu key's Journal tab lists the entries received so far
+  (section 4); its Journal PDF tab is the book view.
 
 ## 8. Copy protection (Tom, 2026-10-06)
 
