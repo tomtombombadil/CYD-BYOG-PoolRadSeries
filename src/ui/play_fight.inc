@@ -183,7 +183,7 @@ void blit4(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y, bool mi
 // ---- The fight's state (on the heap while fighting)
 enum class FSt : uint8_t {
     Begin, Turn, Menu, Move, Aim, DoneMenu, Speed, Ai, Pages, RoundEnd, Results, Destroyed, AllyAsk, FleeAsk,
-    ContinueAsk
+    ContinueAsk, Next
 };
 
 struct Page {
@@ -199,6 +199,7 @@ struct Fight {
     Pic4     icon[8 + combat::kMaxGroups];
     uint8_t* cursor = nullptr;          // COMSPR 0x19 (ready): the box under the one whose turn it is
     uint8_t* skull = nullptr;           // COMSPR 11 (attack)
+    uint8_t* outline = nullptr;         // COMSPR 0x19 (attack): the box round a target being aimed at
     char     w[profile::kFightWords][40];
     FSt      st = FSt::Begin;
     FSt      after = FSt::Turn;         // where the pages go on to
@@ -215,6 +216,10 @@ struct Fight {
     int      mx = 0, my = 0;            // Manual's square
     int      pending = -1;              // an ally to attack (asked)
     int      flee_dir = 8;
+    // Casting: the spell, the targets picked, how many more, an area's radius (-1: none)
+    int      spell = 0;
+    int      sp_t[8] = {};
+    int      sp_n = 0, sp_need = 0, sp_area = -1;
     combat::Outcome out;
     int      share = 0;
     bool     treasure_only = false;
@@ -348,7 +353,8 @@ void end_fight_art()
     for (Pic4& p : fg->icon) free_pic(p);
     free(fg->cursor);
     free(fg->skull);
-    fg->cursor = fg->skull = nullptr;
+    free(fg->outline);
+    fg->cursor = fg->skull = fg->outline = nullptr;
 }
 
 // ---- Drawing
@@ -580,7 +586,11 @@ void do_attack(pic::Canvas& c, int a, int t, bool behind)
     const combat::Attack at = combat::attack(b, a, t, names, rng, behind);
     char line[48];
     bool first = true;
-    for (int k = 0; k < at.n; ++k) {
+    if (at.slain) {
+        add_page(a, fw(profile::kSlays), fw(profile::kCruelBlow), t);
+        first = false;
+    }
+    for (int k = 0; k < at.n && !at.slain; ++k) {
         if (!at.hits[k].hit) continue;
         const int dmg = at.hits[k].damage;
         snprintf(line, sizeof line, "%s%s%d%s%s", behind ? fw(profile::kFromBehind) : "", fw(profile::kHittingFor), dmg,
@@ -658,6 +668,9 @@ void guard_attacks(pic::Canvas& c, int i)
     }
 }
 
+void forget_spell(combat::Fighter& f, int sp);
+void begin_targeting(pic::Canvas& c, int sp);
+
 void start_turn(pic::Canvas& c)
 {
     combat::Battle& b = fg->b;
@@ -666,6 +679,19 @@ void start_turn(pic::Canvas& c)
     f.guarding = false;
     if (!f.team() || on_screen(fg->cur)) focus(fg->cur, 2);
     draw_fight(c);
+    if (f.spell) {
+        // A spell begun earlier this round goes off (lost if they were hurt)
+        const int sp = f.spell;
+        f.spell = 0;
+        if (!f.can_cast) {
+            forget_spell(f, sp);
+            add_page(fg->cur, fw(profile::kLostSpell));
+            say(c, FSt::Next);
+            return;
+        }
+        begin_targeting(c, sp);
+        return;
+    }
     if (f.quick || f.team() || f.rec[0xF7] >= 0x80) {
         fg->st = FSt::Ai;
         fg->until = millis() + game_delay_ms();
@@ -703,8 +729,8 @@ void begin_round(pic::Canvas& c)
 void round_end(pic::Canvas& c)
 {
     vm->advance_clock(1, 1);                // a round is a minute
-    const int m = vm->take_minutes();
-    for (int i = 0; i < pt->count; ++i) magic::tick_affects(pt->m[i], m);
+    vm->take_minutes();
+    combat::tick(fg->b);                    // everyone's effects a minute on
     const bool over = combat::end_round(fg->b);
     if (over) {
         end_fight(c);
@@ -834,12 +860,21 @@ void try_step(pic::Canvas& c, int dir)
 
 // ---- Aim: the candidates by distance
 void aim_menu(pic::Canvas& c);
+int spell_power(const combat::Fighter& f);
 
 bool can_target(int t, int* dist)
 {
     combat::Battle& b = fg->b;
     const int i = fg->cur;
     const combat::Fighter& f = b.f[i];
+    if (fg->spell) {
+        // A spell: anyone in its reach and in sight (themselves too)
+        if (t < 0 || !b.f[t].size) return false;
+        int sq = 0;
+        const bool seen = t == i || combat::range(b, fg->t, i, t, false, &sq);
+        if (dist) *dist = sq;
+        return seen && sq <= spells::reach(mrules->tables, fg->spell, spell_power(f));
+    }
     if (t == i || !b.f[t].up() || !b.f[t].size) return false;
     int sq;
     const bool seen = combat::range(b, fg->t, i, t, false, &sq);
@@ -884,14 +919,27 @@ void aim_menu(pic::Canvas& c)
 {
     combat::Battle& b = fg->b;
     const int t = fg->manual ? (b.who[fg->my][fg->mx] ? b.who[fg->my][fg->mx] - 1 : -1) : fg->cand[fg->ci];
-    if (t >= 0) {
-        focus(t, 2);
+    if (t >= 0 || fg->manual) {
+        if (t >= 0) focus(t, 2);
         draw_fight(c);
         mark(c, fg->cur);
-        draw_panel_for(c, t);
+        if (t >= 0) draw_panel_for(c, t);
+        // The box round what's aimed at
+        const int ax = t >= 0 ? b.f[t].x : fg->mx, ay = t >= 0 ? b.f[t].y : fg->my;
+        if (fg->outline)
+            blit4(c, fg->outline, kSq, kSq, kViewX + (ax - b.vx) * kSq, kViewY + (ay - b.vy) * kSq, false, true, kViewX,
+                  kViewY, kViewX + 7 * kSq, kViewY + 7 * kSq);
     }
     int sq = 0;
-    const bool ok = t >= 0 && can_target(t, &sq);
+    bool ok = t >= 0 && can_target(t, &sq);
+    if (fg->spell && fg->manual && t < 0 && fg->sp_area >= 0) {
+        // An area spell may go to an empty square in reach and sight
+        int len;
+        const bool seen = combat::path(b, fg->t, fg->cur, fg->mx, fg->my, false, &len);
+        sq = len / 2;
+        ok = seen && combat::tile(b, fg->t, fg->mx, fg->my)[0] != 0xFF &&
+             sq <= spells::reach(mrules->tables, fg->spell, spell_power(b.f[fg->cur]));
+    }
     char line[24];
     snprintf(line, sizeof line, "%s%d", fw(profile::kRangeIs), sq);
     status_line(c, t >= 0 ? line : "");
@@ -943,6 +991,9 @@ void aim_target(pic::Canvas& c, int t)
     say(c, FSt::Turn);
 }
 
+void spell_target(pic::Canvas& c, int t);
+void cast_now(pic::Canvas& c);
+
 void aim_tap(int x, int y, pic::Canvas& c)
 {
     combat::Battle& b = fg->b;
@@ -972,6 +1023,10 @@ void aim_tap(int x, int y, pic::Canvas& c)
         break;
     case 'C': break;                    // (the view comes to it)
     case 'T':
+        if (fg->spell) {
+            spell_target(c, t);
+            return;
+        }
         if (t >= 0 && can_target(t, nullptr)) {
             aim_target(c, t);
             return;
@@ -979,6 +1034,11 @@ void aim_tap(int x, int y, pic::Canvas& c)
         break;
     case 'E':
         status_line(c, "");
+        if (fg->spell && fg->sp_n > 0) {
+            cast_now(c);
+            return;
+        }
+        fg->spell = 0;
         draw_fight(c);
         fight_menu(c);
         return;
@@ -1068,6 +1128,13 @@ void ai_step(pic::Canvas& c)
         f.guarding = true;
         end_turn(c);
         return;
+    case combat::Act::Flee: {
+        const bool away = combat::flee(b, fg->t, i, rng);
+        add_page(i, fw(away ? profile::kGotAway : profile::kEscapeBlocked));
+        draw_fight(c);
+        say(c, FSt::Next);
+        return;
+    }
     default:
         end_turn(c);
         return;
@@ -1130,6 +1197,7 @@ void fight_start(pic::Canvas& c)
         f.member = i;
         f.icon = i;
         f.quick = false;
+        f.max_aff = party::kMaxAffects;
     }
     b.party_size = pt->count;
     for (int k = 0; k < ml->n && b.n < combat::kMaxFighters; ++k) {
@@ -1143,7 +1211,9 @@ void fight_start(pic::Canvas& c)
         f.monster = k;
         f.icon = 8 + m.group;
         f.quick = true;
+        f.max_aff = combat::kMonsterAffects;
     }
+    b.fx = &d->prof->fight.facts;
     b.surprise = vm->get(0x7ECB) & 6;
     b.to_hit_party = static_cast<int8_t>(vm->get(0x7F71));
     b.to_hit_monsters = static_cast<int8_t>(vm->get(0x7F70));
@@ -1154,6 +1224,7 @@ void fight_start(pic::Canvas& c)
     int w, h;
     fg->cursor = load_pic4("COMSPR.DAX", 0x19, 0, &w, &h);
     fg->skull = load_pic4("COMSPR.DAX", 11 + 0x80, 0, &w, &h);
+    fg->outline = load_pic4("COMSPR.DAX", 0x19 + 0x80, 0, &w, &h);
     focus(0, 0xFF);
     screen = Screen::Fight;
     palette_fight(true);
@@ -1358,6 +1429,13 @@ void fight_tick(uint32_t now, pic::Canvas& c)
         clear_panel(c, 10, 21);
         if (fg->cur >= 0) draw_panel_for(c, fg->cur);
         switch (fg->after) {
+        case FSt::Next:
+            end_turn(c);
+            break;
+        case FSt::Begin:
+            status_line(c, "");
+            next_turn(c);                   // (their delay stays: the spell comes later)
+            break;
         case FSt::Ai:
             fg->st = FSt::Ai;
             fg->until = 1;
@@ -1374,6 +1452,257 @@ void fight_tick(uint32_t now, pic::Canvas& c)
         break;
     default: break;
     }
+}
+
+
+// ---- Casting in a fight
+// Cast: "NAME's Spells in Memory" (the list screen); a camp spell: "Camp
+// Only Spell"; one with a casting time: "Begins Casting" - it goes off when
+// their turn comes round again this round, unless they're hurt first ("lost
+// a spell"). Then the targets as the spell's aim says (themselves; one to
+// four picked with Aim's Target; an area round a fighter or a square:
+// Manual), "Casts a Spell" with "Spell: NAME" on row 23, and what it did:
+// "is Blessed", "takes 7 points of damage from Fire", "falls asleep" ...
+
+int spell_power(const combat::Fighter& f)
+{
+    const uint8_t* r = f.rec;
+    const int cl = r[0x109], pa = r[0x10C], ra = r[0x10D], mu = r[0x10E];
+    if (cl == 0 && mu == 0 && pa < 9 && ra < 8) return 6;
+    if (!fg->spell || !mrules) return cl > mu ? cl : mu;
+    auto most = [](int a, int b2) { return a > b2 ? a : b2; };
+    switch (mrules->tables.spell_class(fg->spell)) {
+    case 0: return most(cl, pa - 8);
+    case 1: return most(ra - 7, 0);
+    case 2: return most(mu, ra - 8);
+    default: return 12;
+    }
+}
+
+void forget_spell(combat::Fighter& f, int sp)
+{
+    for (int k = 0; k < magic::kListSize; ++k)
+        if (f.rec[magic::kListAt + k] == sp) {
+            f.rec[magic::kListAt + k] = 0;
+            return;
+        }
+}
+
+const combat::FightSpell* fight_spell(int sp)
+{
+    const auto& fs = d->prof->fight;
+    for (int i = 0; i < fs.n_spells; ++i)
+        if (fs.spells[i].spell == sp) return &fs.spells[i];
+    return nullptr;
+}
+
+void fight_cast_menu(pic::Canvas& c)
+{
+    combat::Fighter& f = fg->b.f[fg->cur];
+    if (f.member < 0 || !load_magic()) return;
+    uint8_t ids[84];
+    const int n = magic::in_memory(pt->m[f.member], mrules->tables, false, ids, 84);
+    if (!n) return;
+    pt->selected = f.member;
+    sl.learning = sl.scrolls = sl.choosing = false;
+    sl.casting = true;
+    sl.fighting = true;
+    build_lines(ids, n);
+    screen = Screen::SpellList;
+    draw_spells(c);
+}
+
+void begin_targeting(pic::Canvas& c, int sp)
+{
+    if (!load_magic()) {
+        end_turn(c);
+        return;
+    }
+    const spells::Entry e = spells::entry(mrules->tables, sp);
+    fg->spell = sp;
+    fg->sp_n = 0;
+    fg->sp_area = -1;
+    const int aim = e.aim & 0x0F;
+    if (aim == 0) {
+        fg->sp_t[fg->sp_n++] = fg->cur;
+        cast_now(c);
+        return;
+    }
+    if (aim >= 8 && aim <= 14) {
+        fg->sp_need = 1;
+        fg->sp_area = e.aim & 7;
+    } else if (aim == 5) {
+        fg->sp_need = 1;
+        fg->sp_area = 1;
+    } else if (aim == 15) {
+        fg->sp_need = 1;
+    } else {
+        fg->sp_need = (e.aim & 3) + 1;
+    }
+    start_aim(c);
+    fg->ci = 0;
+    for (int k = 0; k < fg->n_cand; ++k)
+        if (fg->cand[k] != fg->cur) {
+            fg->ci = k;
+            break;
+        }
+    aim_menu(c);
+}
+
+void fight_spell_chosen(int sp, pic::Canvas& c)
+{
+    sl.fighting = false;
+    screen = Screen::Fight;
+    draw_fight(c);
+    if (!sp) {
+        fight_menu(c);
+        return;
+    }
+    combat::Fighter& f = fg->b.f[fg->cur];
+    const spells::Entry e = spells::entry(mrules->tables, sp);
+    if (e.when == 0) {
+        fight_menu(c);
+        note(c, fw(profile::kCampOnly));
+        return;
+    }
+    const combat::FightSpell* fs = fight_spell(sp);
+    if (!fs || fs->does == combat::SpellDoes::NotYet) {
+        fight_menu(c);
+        error(c, "Not in the engine yet.");
+        return;
+    }
+    const int delay = e.delay / 3;
+    if (delay > 0) {
+        f.spell = sp;
+        f.delay = f.delay > delay ? delay : 1;
+        add_page(fg->cur, fw(profile::kBeginsCasting));
+        fg->after = FSt::Turn;
+        fg->st = FSt::Pages;
+        fg->at = 0;
+        show_page(c);
+        // (the turn ends without its delay going: next_turn after the page)
+        fg->after = FSt::Begin;
+        return;
+    }
+    begin_targeting(c, sp);
+}
+
+void spell_target(pic::Canvas& c, int t)
+{
+    combat::Battle& b = fg->b;
+    if (t < 0 && !(fg->manual && fg->sp_area >= 0)) return;
+    if (t >= 0 && !can_target(t, nullptr) && !(fg->manual && fg->sp_area >= 0)) return;
+    if (fg->sp_area >= 0) {
+        // The area's centre: the fighter or the square
+        const int x = t >= 0 ? b.f[t].x : fg->mx, y = t >= 0 ? b.f[t].y : fg->my;
+        int in[combat::kMaxFighters];
+        const int n = combat::in_area(b, fg->t, x, y, fg->sp_area, in, combat::kMaxFighters);
+        fg->sp_n = 0;
+        for (int k = 0; k < n && fg->sp_n < 8; ++k) fg->sp_t[fg->sp_n++] = in[k];
+        if (!fg->sp_n) fg->sp_t[fg->sp_n++] = t >= 0 ? t : fg->cur;     // (an empty square: no one)
+        cast_now(c);
+        return;
+    }
+    for (int k = 0; k < fg->sp_n; ++k)
+        if (fg->sp_t[k] == t) {
+            note(c, fw(profile::kAlreadyTargeted));
+            return;
+        }
+    fg->sp_t[fg->sp_n++] = t;
+    if (fg->sp_n >= fg->sp_need || fg->sp_n >= 8) {
+        cast_now(c);
+        return;
+    }
+    aim_menu(c);
+}
+
+void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::FightSpell& fs)
+{
+    char t[48];
+    for (int k = 0; k < n; ++k) {
+        const combat::Fighter& f = fg->b.f[l[k].who];
+        switch (l[k].did) {
+        case combat::Did::Word:
+            ow(fs.word, t, sizeof t);
+            add_page(l[k].who, t);
+            break;
+        case combat::Did::Damage: {
+            const char* from = "";
+            const int kind = fs.kind & 0xF7;
+            if (kind == 0x01) from = fw(profile::kFromFire);
+            else if (kind == 0x02) from = fw(profile::kFromCold);
+            else if (kind == 0x04) from = fw(profile::kFromElec);
+            else if (kind == 0x10) from = fw(profile::kFromAcid);
+            else if (fs.kind == 0x08) from = fw(profile::kFromMagic);
+            if (l[k].amount == 1) snprintf(t, sizeof t, "%s%s", fw(profile::kTakes1), from);
+            else snprintf(t, sizeof t, "%s%d%s%s", fw(profile::kTakes), l[k].amount, fw(profile::kPointsOfDamage), from);
+            add_page(l[k].who, t);
+            break;
+        }
+        case combat::Did::Unaffected: add_page(l[k].who, fw(profile::kIsUnaffectedS)); break;
+        case combat::Did::Misses: add_page(caster, fw(profile::kMisses), nullptr, l[k].who); break;
+        case combat::Did::Healed: {
+            char w2[24];
+            cw(f.hp() >= f.hp_max() ? profile::kFullyHealed : profile::kPartlyHealed, w2, sizeof w2);
+            add_page(l[k].who, w2);
+            break;
+        }
+        case combat::Did::Down: {
+            const combat::Down dn = combat::down_state(f);
+            if (dn == combat::Down::Dead) add_page(l[k].who, fw(profile::kIsKilled));
+            else if (dn == combat::Down::Dying) add_page(l[k].who, fw(profile::kGoesDownS), fw(profile::kIsDying));
+            else add_page(l[k].who, fw(profile::kGoesDownS));
+            break;
+        }
+        }
+    }
+}
+
+void cast_now(pic::Canvas& c)
+{
+    combat::Battle& b = fg->b;
+    const int i = fg->cur;
+    combat::Fighter& f = b.f[i];
+    const int sp = fg->spell;
+    fg->spell = 0;
+    const combat::FightSpell* fs = fight_spell(sp);
+    status_line(c, "");
+    if (!fs) {
+        end_turn(c);
+        return;
+    }
+    // The spell leaves their memory
+    forget_spell(f, sp);
+    // "Casts a Spell", "Spell: NAME"
+    char t[40];
+    snprintf(t, sizeof t, "%s%s", fw(profile::kSpellColon), spell_name(sp));
+    draw_fight(c);
+    status_line(c, t);
+    draw_icon(c, i, true);
+    add_page(i, fw(profile::kCastsASpell));
+    combat::SpellLine lines[24];
+    const int n = combat::cast(b, mrules->tables, i, sp, *fs, fg->sp_t, fg->sp_n, rng, lines, 24);
+    spell_pages(i, lines, n, *fs);
+    f.attacks[0] = f.attacks[1] = 0;
+    say(c, FSt::Next);
+}
+
+// Turn: "NAME turns undead...", then each "is turned" / "Is destroyed", or
+// "Nothing Happens..."
+void fight_turn_undead(pic::Canvas& c)
+{
+    combat::Battle& b = fg->b;
+    const int i = fg->cur;
+    add_page(i, fw(profile::kTurnsUndead));
+    int out[16];
+    const int n = combat::turn_undead(b, fg->t, i, rng, out, 16);
+    for (int k = 0; k < n; ++k) {
+        if (out[k] >= 1000) add_page(out[k] - 1000, fw(profile::kIsDestroyed));
+        else add_page(out[k], fw(profile::kIsTurned));
+    }
+    if (!n) add_page(-1, fw(profile::kNothingHappens));
+    draw_fight(c);
+    say(c, FSt::Next);
 }
 
 void fight_tap(int x, int y, pic::Canvas& c)
@@ -1422,7 +1751,9 @@ void fight_tap(int x, int y, pic::Canvas& c)
             break;
         case 'D': done_menu(c); break;
         case 0: break;
-        default: error(c, "Not in the engine yet."); break;     // Use, Cast, Turn
+        case 'C': fight_cast_menu(c); break;
+        case 'T': fight_turn_undead(c); break;
+        default: error(c, "Not in the engine yet."); break;     // Use
         }
         return;
     }

@@ -384,10 +384,10 @@ int direction(int fx, int fy, int tx, int ty)
     return 8;
 }
 
-bool path(const Battle& b, const Tables& t, int a, int x, int y, bool ignore_walls, int* length)
+namespace {
+
+bool path_xy(const Battle& b, const Tables& t, int x0, int y0, int x, int y, bool ignore_walls, int* length)
 {
-    const Fighter& f = b.f[a];
-    int x0 = f.x, y0 = f.y;
     const int eye = tile(b, t, x0, y0)[1];
     const int ddx = x - x0 > 0 ? x - x0 : x0 - x, ddy = y - y0 > 0 ? y - y0 : y0 - y;
     const int sx = x > x0 ? 1 : -1, sy = y > y0 ? 1 : -1;
@@ -411,6 +411,13 @@ bool path(const Battle& b, const Tables& t, int a, int x, int y, bool ignore_wal
     }
     if (length) *length = len;
     return seen;
+}
+
+} // namespace
+
+bool path(const Battle& b, const Tables& t, int a, int x, int y, bool ignore_walls, int* length)
+{
+    return path_xy(b, t, b.f[a].x, b.f[a].y, x, y, ignore_walls, length);
 }
 
 bool range(const Battle& b, const Tables& t, int a, int c, bool ignore_walls, int* sq)
@@ -491,6 +498,66 @@ void step(Battle& b, int i, int dir)
     occupancy(b);
 }
 
+bool helpless(const Battle& b, const Fighter& f)
+{
+    if (!b.fx) return false;
+    for (uint8_t h : b.fx->held)
+        if (h && f.has(h)) return true;
+    return false;
+}
+
+namespace {
+
+int find_aff(const Fighter& f, uint8_t type)
+{
+    for (int i = 0; f.n_aff && i < *f.n_aff; ++i)
+        if (f.aff[i][0] == type) return i;
+    return -1;
+}
+
+void drop_aff(Fighter& f, int i)
+{
+    for (int k = i; k + 1 < *f.n_aff; ++k) memcpy(f.aff[k], f.aff[k + 1], party::kAffectSize);
+    --*f.n_aff;
+    memset(f.aff[*f.n_aff], 0, party::kAffectSize);
+}
+
+void give_aff(Fighter& f, int type, int minutes, int data, bool call)
+{
+    if (!f.n_aff) return;
+    const int i = find_aff(f, static_cast<uint8_t>(type));
+    if (i >= 0 && (f.aff[i][1] | f.aff[i][2] << 8) > 0) drop_aff(f, i);
+    if (*f.n_aff >= f.max_aff) return;
+    uint8_t* a = f.aff[(*f.n_aff)++];
+    memset(a, 0, party::kAffectSize);
+    a[0] = static_cast<uint8_t>(type);
+    a[1] = static_cast<uint8_t>(minutes);
+    a[2] = static_cast<uint8_t>(minutes >> 8);
+    a[3] = static_cast<uint8_t>(data);
+    a[4] = call ? 1 : 0;
+}
+
+} // namespace
+
+void tick(Battle& b)
+{
+    for (int i = 0; i < b.n; ++i) {
+        Fighter& f = b.f[i];
+        for (int k = 0; f.n_aff && k < *f.n_aff;) {
+            const int m = f.aff[k][1] | f.aff[k][2] << 8;
+            if (m == 0) {
+                ++k;
+            } else if (m <= 1) {
+                drop_aff(f, k);
+            } else {
+                f.aff[k][1] = static_cast<uint8_t>(m - 1);
+                f.aff[k][2] = static_cast<uint8_t>((m - 1) >> 8);
+                ++k;
+            }
+        }
+    }
+}
+
 int dex_reaction(int dex)
 {
     if (dex <= 2) return -4;
@@ -510,7 +577,6 @@ void start_round(Battle& b, create::Dice& d)
         Fighter& f = b.f[i];
         f.attacked = false;
         f.can_cast = true;
-        f.guarding = false;
         if (!f.up() || !f.size) {
             f.delay = f.moves = f.attacks[0] = f.attacks[1] = 0;
             continue;
@@ -520,13 +586,24 @@ void start_round(Battle& b, create::Dice& d)
         if (b.surprise & (f.team() ? 4 : 2)) delay -= 6;
         if (delay < 0 || delay > 20) delay = 0;
         f.delay = delay;
+        if (helpless(b, f)) f.delay = 0;
         int mv = f.rec[kMove];
         if (mv < 1 || mv > 96) mv = 1;
         f.moves = mv * 2;
-        int half1 = f.rec[kHalf1];
+        int half1 = f.rec[kHalf1], half2 = f.rec[kHalf2];
         if (half1 < 1) half1 = 2;
+        if (b.fx && f.has(b.fx->haste)) {
+            f.moves *= 2;
+            half1 *= 2;
+            half2 *= 2;
+        }
+        if (b.fx && f.has(b.fx->slow)) {
+            f.moves /= 2;
+            half1 /= 2;
+            half2 /= 2;
+        }
         f.attacks[0] = attacks_this_round(half1, b.round);
-        f.attacks[1] = attacks_this_round(f.rec[kHalf2], b.round);
+        f.attacks[1] = attacks_this_round(half2, b.round);
     }
     b.surprise = 0;
 }
@@ -628,8 +705,36 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
         }
     }
     int side = at.team() ? b.to_hit_monsters : b.to_hit_party;
-    if (at.has(0x01)) ++side;                       // blessed
-    if (at.has(0x02)) --side;                       // cursed
+    if (b.fx) {
+        const Facts& fx = *b.fx;
+        if (at.has(fx.bless)) ++side;
+        if (at.has(fx.curse)) --side;
+        // A prayer helps its caster's side and hinders the other
+        for (int i = 0; i < b.n; ++i) {
+            const int k = find_aff(b.f[i], fx.prayer);
+            if (k < 0) continue;
+            side += (b.f[i].aff[k][3] >> 4) == at.team() ? 1 : -1;
+            break;
+        }
+        const int al = at.rec[0x11B];
+        if (tg.has(fx.prot_evil) && al >= 6) side -= 2;
+        if (tg.has(fx.prot_good) && al <= 2) side -= 2;
+        // Attacking makes them seen
+        const int inv = find_aff(at, fx.invisible);
+        if (inv >= 0) drop_aff(at, inv);
+        // A helpless target: one cruel blow
+        if (helpless(b, tg)) {
+            out.slain = true;
+            at.attacks[0] = at.attacks[1] = 0;
+            Hit h;
+            h.hit = true;
+            h.damage = tg.hp() + 5;
+            out.hits[out.n++] = h;
+            out.any = true;
+            out.down = damage(b, c, h.damage);
+            return out;
+        }
+    }
     for (int slot = 1; slot >= 0; --slot) {
         while (at.attacks[slot] > 0 && tg.up() && out.n < 8) {
             --at.attacks[slot];
@@ -753,7 +858,41 @@ Plan think(Battle& b, const Tables& t, int i, create::Dice& d)
     Fighter& f = b.f[i];
     if (!f.up() || !f.size || f.delay <= 0) return p;
     const int my = f.team() ? 1 : 0;
-    auto enemy = [&](int c) { return c >= 0 && c < b.n && b.f[c].up() && b.f[c].size && (b.f[c].team() ? 1 : 0) != my; };
+    auto enemy = [&](int c) {
+        return c >= 0 && c < b.n && b.f[c].up() && b.f[c].size && (b.f[c].team() ? 1 : 0) != my &&
+               !(b.fx && b.f[c].has(b.fx->invisible));
+    };
+    if (f.fleeing) {
+        // Away from the nearest enemy, off the field's edge
+        if (f.moves < 2) return p;
+        int near = -1, best = 9999;
+        for (int c = 0; c < b.n; ++c) {
+            int sq;
+            if (!b.f[c].up() || !b.f[c].size || (b.f[c].team() ? 1 : 0) == my) continue;
+            range(b, t, i, c, true, &sq);
+            if (sq < best) {
+                best = sq;
+                near = c;
+            }
+        }
+        int base = near >= 0 ? (direction(f.x, f.y, b.f[near].x, b.f[near].y) + 4) & 7 : 0;
+        if (base > 7) base = 0;
+        static const int kAway[5] = {0, 1, -1, 2, -2};
+        for (int k : kAway) {
+            const int dir = (base + k + 8) & 7;
+            bool edge;
+            const int cost = step_cost(b, t, i, dir, &edge, nullptr);
+            if (edge) {
+                p.act = Act::Flee;
+                return p;
+            }
+            if (cost == 0xFF || cost > f.moves) continue;
+            p.act = Act::Step;
+            p.dir = dir;
+            return p;
+        }
+        return p;
+    }
     // The target: kept while it's an enemy in sight
     if (!enemy(f.target) || !range(b, t, i, f.target, false, nullptr)) {
         f.target = -1;
@@ -852,6 +991,236 @@ bool flee(Battle& b, const Tables& t, int i, create::Dice& d)
     f.size = 0;
     occupancy(b);
     return true;
+}
+
+int in_area(const Battle& b, const Tables& t, int x, int y, int r, int* out, int cap)
+{
+    int n = 0;
+    for (int i = 0; i < b.n && n < cap; ++i) {
+        const Fighter& f = b.f[i];
+        if (!f.size || f.gone) continue;
+        int sx[4], sy[4];
+        const int m = squares(f.size, sx, sy);
+        for (int k = 0; k < m; ++k) {
+            int len;
+            if (path_xy(b, t, x, y, f.x + sx[k], f.y + sy[k], false, &len) && len <= 2 * r + 1) {
+                out[n++] = i;
+                break;
+            }
+        }
+    }
+    return n;
+}
+
+bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
+{
+    const int r = d.roll(20, 1);
+    if (r == 1) return false;
+    if (r == 20) return true;
+    if (type < 0 || type > 4) type = 4;
+    return r + bonus + static_cast<int8_t>(f.rec[0x186]) >= f.rec[0xDF + type];
+}
+
+namespace {
+
+// The caster's level for the spell's kind (as spells::power, from the record)
+int power_of(const uint8_t* r, const classes::Tables& st, int s)
+{
+    const int cl = r[0x109], pa = r[0x10C], ra = r[0x10D], mu = r[0x10E];
+    if (cl == 0 && mu == 0 && pa < 9 && ra < 8) return 6;
+    auto most = [](int a, int b) { return a > b ? a : b; };
+    switch (st.spell_class(s)) {
+    case 0: return most(cl, pa - 8);
+    case 1: return most(ra - 7, 0);
+    case 2: return most(mu, ra - 8);
+    case 3: return 12;
+    default: return 0;
+    }
+}
+
+int sleep_cost(const Fighter& f)
+{
+    switch (f.rec[0xE5]) {
+    case 0: case 1: return 1;
+    case 2: return 2;
+    case 3: return 4;
+    case 4: return 6;
+    case 5: return f.rec[0x74] == 0 ? 10 : 20;
+    default: return 20;
+    }
+}
+
+} // namespace
+
+int cast(Battle& b, const classes::Tables& st, int caster, int spell, const FightSpell& fs, const int* targets,
+         int n, create::Dice& d, SpellLine* out, int cap)
+{
+    int lines = 0;
+    auto say = [&](int who, Did did, int amount) {
+        if (lines < cap) out[lines++] = SpellLine{static_cast<uint8_t>(who), did, amount};
+    };
+    Fighter& me = b.f[caster];
+    const spells::Entry e = spells::entry(st, spell);
+    const int pw = power_of(me.rec, st, spell);
+    const int minutes = e.lasts + e.lasts_level * pw;
+    const int my = me.team() ? 1 : 0;
+    // The targets this kind of spell takes
+    int who[kMaxFighters], m = 0;
+    for (int k = 0; k < n && m < kMaxFighters; ++k) {
+        const int i = targets[k];
+        if (i < 0 || i >= b.n) continue;
+        const int side = b.f[i].team() ? 1 : 0;
+        if (fs.does == SpellDoes::Ours && side != my) continue;
+        if (fs.does == SpellDoes::Theirs && side == my) continue;
+        who[m++] = i;
+    }
+    if (m == 0) return 0;
+    b.no_action = b.round + 15;
+    switch (fs.does) {
+    case SpellDoes::NotYet: return 0;
+    case SpellDoes::Affect:
+    case SpellDoes::Ours:
+    case SpellDoes::Theirs:
+    case SpellDoes::Prayer:
+    case SpellDoes::Mirror:
+    case SpellDoes::Hold: {
+        int bonus = 0;
+        if (fs.does == SpellDoes::Hold) bonus = m == 1 ? (spell == 0x17 ? -2 : -3) : m == 2 ? -1 : 0;
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (e.on_save != 0 && saving_throw(f, e.save, bonus, d) && e.on_save == 1) {
+                say(who[k], Did::Unaffected, 0);
+                continue;
+            }
+            int data = pw;
+            if (fs.does == SpellDoes::Prayer) data = my * 16 + pw;
+            if (fs.does == SpellDoes::Mirror) data = (d.roll(4, 1) << 4) + pw;
+            if (e.affect) give_aff(f, e.affect, minutes, data, false);
+            if (fs.word) say(who[k], Did::Word, 0);
+        }
+        break;
+    }
+    case SpellDoes::Haste: {
+        int left = pw;
+        for (int k = 0; k < m && left > 0; ++k) {
+            Fighter& f = b.f[who[k]];
+            if ((f.team() ? 1 : 0) != my) continue;
+            --left;
+            const int sl = b.fx ? find_aff(f, b.fx->slow) : -1;
+            if (sl >= 0) {
+                drop_aff(f, sl);
+                continue;
+            }
+            if (e.affect) give_aff(f, e.affect, minutes, pw, false);
+            if (fs.word) say(who[k], Did::Word, 0);
+        }
+        break;
+    }
+    case SpellDoes::Heal:
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            const int st2 = f.status();
+            if (st2 != party::Okay && st2 != party::Animated && st2 != party::Unconscious && st2 != party::Dying) continue;
+            const int amount = (fs.n && fs.sides ? d.roll(fs.sides, fs.n) : 0) + fs.plus;
+            int hp = f.hp() + amount;
+            if (hp > f.hp_max()) hp = f.hp_max();
+            f.rec[kHp] = static_cast<uint8_t>(hp);
+            if (st2 == party::Dying) {
+                f.rec[kHealth] = party::Unconscious;
+                f.bleeding = 0;
+            }
+            say(who[k], Did::Healed, amount);
+        }
+        break;
+    case SpellDoes::Damage:
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up()) continue;
+            int count = fs.n, plus = fs.plus;
+            if (fs.per == 1) plus += pw;
+            if (fs.per == 2) {
+                count = (pw + 1) / 2;
+                plus += count;
+            }
+            if (fs.per == 3) count = pw;
+            int dmg = (count && fs.sides ? d.roll(fs.sides, count) : 0) + plus;
+            if (e.range == -1) {
+                // A touch: a blow that has to land
+                const int roll = d.roll(20, 1);
+                if (roll == 1 || (roll != 20 && roll + static_cast<int8_t>(me.rec[kHit]) < f.rec[kAc])) {
+                    say(who[k], Did::Misses, 0);
+                    continue;
+                }
+            }
+            if (e.on_save != 0 && saving_throw(f, e.save, 0, d)) {
+                if (e.on_save == 1) dmg = 0;
+                else if (e.on_save == 2) dmg /= 2;
+            }
+            if (dmg <= 0) {
+                say(who[k], Did::Unaffected, 0);
+                continue;
+            }
+            say(who[k], Did::Damage, dmg);
+            if (damage(b, who[k], dmg)) say(who[k], Did::Down, 0);
+        }
+        break;
+    case SpellDoes::Sleep: {
+        int budget = d.roll(4, 4);
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            const int cost = sleep_cost(f);
+            if (!f.up() || f.status() == party::Animated || (e.affect && f.has(static_cast<uint8_t>(e.affect))) ||
+                cost > budget)
+                continue;
+            budget -= cost;
+            if (e.affect) give_aff(f, e.affect, minutes, pw, false);
+            if (fs.word) say(who[k], Did::Word, 0);
+        }
+        break;
+    }
+    }
+    return lines;
+}
+
+int turn_undead(Battle& b, const Tables& t, int cleric, create::Dice& d, int* out, int cap)
+{
+    Fighter& me = b.f[cleric];
+    me.turned_undead = true;
+    const int lv = me.rec[0x109];
+    const int col = lv >= 1 && lv <= 8 ? lv : lv <= 13 ? 9 : 10;
+    int count = d.roll(12, 1);
+    const int roll = d.roll(20, 1);
+    int extra = 6, n = 0;
+    const int my = me.team() ? 1 : 0;
+    while (count > 0 && n < cap) {
+        // The weakest undead in sight
+        int best = -1, type = 13;
+        for (int i = 0; i < b.n; ++i) {
+            const Fighter& f = b.f[i];
+            const int ut = f.rec[0xE9];
+            if (!f.up() || !f.size || f.fleeing || (f.team() ? 1 : 0) == my || ut == 0 || ut >= type) continue;
+            if (!range(b, t, cleric, i, false, nullptr)) continue;
+            best = i;
+            type = ut;
+        }
+        if (best < 0) break;
+        const int v = static_cast<int8_t>(t.turn[type * 10 + col]);
+        if (roll < (v < 0 ? -v : v)) break;
+        Fighter& f = b.f[best];
+        if (v > 0) {
+            f.fleeing = true;
+            out[n++] = best;
+        } else {
+            f.rec[kHealth] = party::Gone;
+            f.rec[kInCombat] = 0;
+            f.size = 0;
+            occupancy(b);
+            out[n++] = best + 1000;
+        }
+        if (extra > 0) --extra;
+        if (--count == 0 && extra > 0 && v <= 0) ++count;
+    }
+    return n;
 }
 
 Outcome finish(Battle& b, const Monster* monsters)

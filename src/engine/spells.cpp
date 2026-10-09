@@ -59,7 +59,22 @@ Entry entry(const classes::Tables& t, int s)
     e.targets = b(7);
     e.affect = b(10);
     e.when = b(11);
+    e.aim = b(6);
+    e.on_save = b(8);
+    e.save = b(9);
+    e.delay = b(12);
+    e.priority = b(13);
     return e;
+}
+
+int reach(const classes::Tables& t, int s, int pw)
+{
+    const Entry e = entry(t, s);
+    if (e.range == -1) return 1;
+    int r = e.range + e.range_level * pw;
+    if (r == 0 && e.aim != 0) r = 1;
+    if (r < 0) r = 1;
+    return r;
 }
 
 int power(const party::Character& c, const classes::Tables& t, int s)

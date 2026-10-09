@@ -267,12 +267,32 @@ int main(int argc, char** argv)
             auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
             shot("fight_start");
             int turns = 0, n = 0;
-            for (int k = 0; k < 200000 && play::screen == play::Screen::Fight; ++k) {
+            const char* fops = getenv("FIGHTOPS");      // taps while the fight waits: letters, &rr rows; then Quick
+            for (int k = 0; k < 200000 && (play::screen == play::Screen::Fight || play::screen == play::Screen::SpellList); ++k) {
                 g_now += 50;
                 play::tick(g_now, C);
                 if (!play::fg) continue;
+                const bool asks = play::screen == play::Screen::SpellList ||
+                                  (play::fg->st == play::FSt::Menu || play::fg->st == play::FSt::Aim || play::fg->st == play::FSt::DoneMenu);
+                if (asks && fops && *fops) {
+                    if (*fops == '@') {             // @n: Quick the others until member n's menu
+                        if (play::fg->st == play::FSt::Menu && play::fg->cur != fops[1] - '0') { tap_word('Q'); continue; }
+                        fops += 2;
+                        continue;
+                    }
+                    if (*fops == '&') { const int r = (fops[1] - '0') * 10 + (fops[2] - '0'); fops += 3; play::tap(4 * 8 + 2, r * 8 + 2, C); }
+                    else if (*fops == '#') { ++fops; static int fo = 0; char t[16]; snprintf(t, 16, "fops%d", fo++); shot(t); printf("  [fight st %d screen %d menu %s%s]\n", (int)play::fg->st, (int)play::screen, play::menu.prompt, play::menu.s); }
+                    else { tap_word(*fops++); }
+                    continue;
+                }
                 static int pages_shot = 0;
-                if (play::fg->st == play::FSt::Pages && play::fg->at == 1 && pages_shot < 8 && play::fg->until > g_now + 10) { char t[16]; snprintf(t, 16, "fpage%d", pages_shot++); shot(t); g_now = play::fg->until; }
+                if (play::fg->st == play::FSt::Pages && play::fg->at == 1 && pages_shot < 60 && play::fg->until > g_now + 10) { char t[16]; snprintf(t, 16, "fpage%d", pages_shot++); shot(t); g_now = play::fg->until; }
+                if (play::fg->st == play::FSt::Aim) {
+                    static int aims = 0;
+                    if (aims++ < 3) { char t[16]; snprintf(t, 16, "faim%d", aims); shot(t); printf("  [aim: menu %s%s]\n", play::menu.prompt, play::menu.s); }
+                    if (!tap_word('T')) tap_word('E');
+                    continue;
+                }
                 if (play::fg->st == play::FSt::Menu) {
                     if (n < 6) { char t[16]; snprintf(t, 16, "fmenu%d", n++); shot(t); }
                     ++turns;

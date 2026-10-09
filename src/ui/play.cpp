@@ -171,6 +171,7 @@ void fight_tap(int x, int y, pic::Canvas& c);
 bool fight_back(pic::Canvas& c);
 bool fight_act(Act a, pic::Canvas& c);
 void fight_after_view(pic::Canvas& c);
+void fight_spell_chosen(int spell, pic::Canvas& c);
 
 int  idle_cycles = 0;         // script cycles in a row with nothing shown (outdoors)
 int  dirty0 = 0, dirty1 = 0;
@@ -2858,6 +2859,7 @@ struct SpellLines {
     bool    casting = false;        // "in Memory" (Cast)
     bool    scrolls = false;        // scrolls' spells: "on Scrolls" (Scribe) / "to Scribe" (with learning)
     bool    choosing = false;       // training's new spell: "to Choose", Learn (no Exit)
+    bool    fighting = false;       // "in Memory" in a fight: the chosen one is cast there
 } sl;
 
 // The scrolls' facts for the magic rules
@@ -2985,6 +2987,7 @@ void confirm_memorize(pic::Canvas& c, int word)
     sl.casting = false;
     sl.scrolls = false;
     sl.choosing = false;
+    sl.fighting = false;
     build_lines(ids, n);
     screen = Screen::SpellList;
     draw_spells(c);
@@ -3001,6 +3004,7 @@ void show_grimoire(pic::Canvas& c)
     sl.casting = false;
     sl.scrolls = false;
     sl.choosing = false;
+    sl.fighting = false;
     build_lines(ids, n);
     screen = Screen::SpellList;
     draw_spells(c);
@@ -3024,6 +3028,7 @@ void confirm_scribe(pic::Canvas& c, int word, Ask what)
     sl.casting = false;
     sl.scrolls = true;
     sl.choosing = false;
+    sl.fighting = false;
     build_lines(ids, n);
     screen = Screen::SpellList;
     draw_spells(c);
@@ -3048,6 +3053,7 @@ void show_scrolls(pic::Canvas& c)
     sl.casting = false;
     sl.scrolls = true;
     sl.choosing = false;
+    sl.fighting = false;
     build_lines(ids, n);
     for (int i = 0; keep && i < sl.n; ++i)
         if (sl.id[i] == keep) {
@@ -3072,6 +3078,7 @@ void open_scribe(pic::Canvas& c)
     }
     sl.scrolls = false;
     sl.choosing = false;
+    sl.fighting = false;
     if (magic::scribing(ch, scroll_facts())) {
         confirm_scribe(c, profile::kScribeThese, Ask::ScribeThese);
         return;
@@ -3098,6 +3105,7 @@ bool open_learn(pic::Canvas& c)
     }
     sl.learning = sl.casting = sl.scrolls = false;
     sl.choosing = true;
+    sl.fighting = false;
     build_lines(ids, n);
     screen = Screen::SpellList;
     draw_spells(c);
@@ -3109,6 +3117,7 @@ void learn_tap(char k, pic::Canvas& c)
     if (k == 'L' && sl.sel >= 0) {
         magic::learn(*pt->sel(), sl.id[sl.sel]);
         sl.choosing = false;
+    sl.fighting = false;
         end_magic();
         screen = Screen::PartyMenu;
         train_note(profile::kCongrats, c);
@@ -3184,6 +3193,15 @@ void spells_tap(int x, int y, pic::Canvas& c)
         return;
     }
     const char k = text::key(menu, text::hit(menu, x / 8));
+    if (sl.fighting) {
+        if (k == 'C' && sl.sel >= 0) fight_spell_chosen(sl.id[sl.sel], c);
+        else if (k == 'E') fight_spell_chosen(0, c);
+        else if (k == 'N' && sl.top + list_rows() < sl.n) sl.top += list_rows();
+        else if (k == 'P' && sl.top > 0) sl.top = sl.top > list_rows() ? sl.top - list_rows() : 0;
+        else return;
+        if (screen == Screen::SpellList) draw_spells(c);
+        return;
+    }
     if (sl.choosing) {
         learn_tap(k, c);
         return;
@@ -3626,6 +3644,7 @@ void show_memory(pic::Canvas& c)
     sl.casting = true;
     sl.scrolls = false;
     sl.choosing = false;
+    sl.fighting = false;
     build_lines(ids, n);
     for (int i = 0; keep && i < sl.n; ++i)
         if (sl.id[i] == keep) {
@@ -5630,6 +5649,10 @@ bool back_from_magic(pic::Canvas& c)
         draw_camp(c);
         return true;
     case Screen::SpellList:
+        if (sl.fighting) {
+            fight_spell_chosen(0, c);
+            return true;
+        }
         if (sl.choosing) return true;          // a spell must be chosen
         if (sl.casting) cast_done(c);
         else if (sl.scrolls) scribe_tap('E', c);

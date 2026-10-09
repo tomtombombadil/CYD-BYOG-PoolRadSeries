@@ -105,6 +105,49 @@ constexpr profile::EffectName kCurseNamed[] = {
     {0x59, 0x19F89},
 };
 
+// Spells in fights: what each does (coab's notes on the spells' code; the
+// words the code prints). Damage kinds: 1 fire, 2 cold, 4 electricity,
+// 8 magic, 0x10 acid; per: 1 + level, 2 (level + 1) / 2 missiles, 3 level dice.
+using combat::SpellDoes;
+constexpr combat::FightSpell kCurseFight[] = {
+    {0x01, SpellDoes::Ours, 0, 0, 0, 0, 0, 0x2FD0A},        // Bless: "is Blessed"
+    {0x02, SpellDoes::Theirs, 0, 0, 0, 0, 0, 0x2FD3C},      // Curse: "is Cursed"
+    {0x03, SpellDoes::Heal, 1, 8, 0, 0, 0, 0},              // Cure Light Wounds
+    {0x04, SpellDoes::Damage, 1, 8, 0, 0, 8, 0},            // Cause Light Wounds (a touch)
+    {0x05, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FDE3},
+    {0x06, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FE1C},
+    {0x07, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FE1C},
+    {0x08, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FE56},
+    {0x09, SpellDoes::Damage, 0, 0, 0, 1, 9, 0},            // Burning Hands: the caster's level
+    {0x0B, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FDE3},
+    {0x0F, SpellDoes::Damage, 0, 4, 0, 2, 8, 0},            // Magic Missile
+    {0x10, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FE1C},
+    {0x11, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FE1C},
+    {0x13, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x3022D},      // Shield
+    {0x14, SpellDoes::Damage, 1, 8, 0, 1, 0x0C, 0},         // Shocking Grasp: 1d8 + level
+    {0x15, SpellDoes::Sleep, 0, 0, 0, 0, 0, 0x302AE},       // Sleep: "falls asleep"
+    {0x17, SpellDoes::Hold, 0, 0, 0, 0, 0, 0x303F1},        // Hold Person: "is held"
+    {0x18, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x3044A},
+    {0x1D, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FDE3},
+    {0x1E, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x3067C},      // Invisibility
+    {0x20, SpellDoes::Mirror, 0, 0, 0, 0, 0, 0x306EF},
+    {0x2A, SpellDoes::Prayer, 0, 0, 0, 0, 0, 0x31544},
+    {0x2F, SpellDoes::Damage, 0, 6, 0, 3, 9, 0},            // Fireball: level d6
+    {0x30, SpellDoes::Haste, 0, 0, 0, 0, 0, 0x31907},
+    {0x31, SpellDoes::Hold, 0, 0, 0, 0, 0, 0x303F1},
+    {0x32, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x3067C},
+    {0x34, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FE1C},
+    {0x35, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FE1C},
+    {0x36, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FE1C},
+    {0x3A, SpellDoes::Heal, 2, 8, 1, 0, 0, 0},
+    {0x42, SpellDoes::Damage, 2, 8, 1, 0, 8, 0},            // Cause Serious Wounds
+    {0x45, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FE1C},
+    {0x47, SpellDoes::Heal, 3, 8, 3, 0, 0, 0},
+    {0x48, SpellDoes::Damage, 3, 8, 3, 0, 8, 0},            // Cause Critical Wounds
+    {0x4A, SpellDoes::Damage, 6, 8, 0, 0, 9, 0},            // Flame Strike
+    {0x58, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FE1C},
+};
+
 // Title: picture 1 for 5 s; picture 2 with 3 on it at row 11, column 6 for
 // 10 s; picture 4 at row 11 for 10 s; the credits for 10 s.
 constexpr TitleStep kCurseTitle[] = {
@@ -201,9 +244,14 @@ const Profile kProfiles[] = {
        0x3A9F8, 0x1429E, 0x380BA, 0x380C4, 0x380C7,
        0x665F, 0x6673, 0x66A3, 0x66B6, 0x66EA, 0x6703, 0x6716, 0x73CF, 0x7405,
        0x6B93, 0x6B9A, 0x6CA1, 0x6CB0, 0x6CB6, 0x6CC3, 0x6CD8,
-       0x6CF0, 0x6D10, 0x699B, 0x69A3},
+       0x6CF0, 0x6D10, 0x699B, 0x69A3,
+       0x36F1F, 0x36F26, 0x36F39, 0x36F52, 0x36F5C, 0x36F66, 0x36F77, 0x36F81, 0x36F99,
+       0x372F5, 0x3442D, 0x3443B, 0x15AC6, 0x15AB6, 0x14556, 0x14566, 0x14570,
+       0x1457D, 0x15583},
       {0x03, 0x0B, 0x0D, 0x15, 0x17, 0x1B, 0x1F, 0x23, 0x28, 0x33, 0x34, 0x35, 0x3A, 0x4D, 0x5B, 0x88, 0x8E,
-       0x90}}},
+       0x90},
+      {{0x33, 0x34, 0x35, 0x1F}, 0x01, 0x02, 0x31, 0x27, 0x2A, 0x19, 0x08, 0x09, 0x1C},
+      kCurseFight, sizeof kCurseFight / sizeof kCurseFight[0]}},
 };
 
 } // namespace

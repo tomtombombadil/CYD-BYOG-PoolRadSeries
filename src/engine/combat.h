@@ -21,10 +21,12 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "classes.h"
 #include "create.h"
 #include "geo.h"
 #include "items.h"
 #include "party.h"
+#include "spells.h"
 
 namespace combat {
 
@@ -57,6 +59,12 @@ struct TableAt {
 // Reads them: read(ctx, ds offset, out, n) gives the data segment's bytes
 using ReadDs = bool (*)(void* ctx, uint16_t ds, uint8_t* out, size_t n);
 bool read_tables(Tables& t, const TableAt& at, ReadDs read, void* ctx);
+
+// The effects the fights' rules look at (per game, from the profile)
+struct Facts {
+    uint8_t held[4];                    // can't act, slain by any blow: snake charm, paralysed, asleep, helpless
+    uint8_t bless, curse, prayer, haste, slow, invisible, prot_evil, prot_good, mirror;
+};
 
 // ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a
 // record and effects per monster
@@ -94,6 +102,10 @@ struct Fighter {
     int     ground = 0;                 // the square's ground before a body was left there
     bool    guarding = false, quick = false, attacked = false, turned_undead = false, can_cast = true;
     bool    gone = false;               // a monster there was no room for: not in the fight at all
+    bool    fleeing = false;            // turned undead, panic: runs for the field's edge
+    int     spell = 0;                  // a spell being cast (it goes off at its delay)
+    int     spell_n = 0;
+    int     spell_t[8] = {};
     int     team() const { return rec[0x197]; }
     bool    up() const { return rec[0x196] != 0; }          // able to fight
     int     hp() const { return rec[0x1A4]; }
@@ -116,7 +128,13 @@ struct Battle {
     int     vx = 0, vy = 0;             // the view's top-left square (7 x 7 shown)
     bool    indoors = true;
     int     to_hit_party = 0, to_hit_monsters = 0;  // the scripts' bonuses
+    const Facts* fx = nullptr;
 };
+
+// Effects on a fighter
+bool helpless(const Battle& b, const Fighter& f);
+// Timed effects a round on (a minute); those run out go
+void tick(Battle& b);
 
 // The footprint's squares: size 1 one, 2 one wide two tall, 3 two wide
 // one tall, 4 two by two
@@ -177,6 +195,7 @@ struct Attack {
     bool any = false;
     bool behind = false;
     bool down = false;                  // the target went down
+    bool slain = false;                 // a helpless target: "slays helpless ... with one cruel blow"
 };
 // Attacks fighter c with fighter a's attacks left (slot 2 then slot 1), as
 // the games do: to-hit d20 (1 misses, 20 hits) + to-hit value + the side's
@@ -211,6 +230,47 @@ Plan think(Battle& b, const Tables& t, int i, create::Dice& d);
 // Leaving the fight: gets away (faster than every enemy able to reach, or
 // even and d2) - status Running, off the field
 bool flee(Battle& b, const Tables& t, int i, create::Dice& d);
+
+// ---- Spells in fights: what each does (the profile's table, per game)
+enum class SpellDoes : uint8_t {
+    NotYet,                             // its workings aren't in the engine yet (not cast)
+    Affect,                             // the effect on its targets ("is protected")
+    Ours, Theirs,                       // ... only on the caster's side / the other side (Bless, Curse)
+    Heal,                               // dice of hit points
+    Damage,                             // dice of damage (touch spells roll to hit; a save as the table says)
+    Sleep,                              // 4d4 by Hit Dice: 1 a die to 1, 2, 4, 6, then 10 / 20
+    Hold,                               // a save (-2 / -3 one target, -1 two, 0 more) or held
+    Mirror, Haste, Prayer,              // effects with their own data
+};
+struct FightSpell {
+    uint8_t   spell;
+    SpellDoes does;
+    uint8_t   n, sides, plus;           // dice
+    uint8_t   per;                      // 1: + the caster's level, 2: (level + 1) / 2 missiles of 1d4 + 1, 3: level dice
+    uint8_t   kind;                     // damage: 1 fire, 2 cold, 4 electricity, 8 magic, 0x10 acid
+    uint32_t  word;                     // what's said ("is Blessed", "falls asleep"; GAME.OVR, 0: nothing)
+};
+// What happened to each target, in order
+enum class Did : uint8_t { Word, Damage, Unaffected, Misses, Healed, Down };
+struct SpellLine {
+    uint8_t who;
+    Did     did;
+    int     amount;
+};
+// The fighters in an area: within r squares of (x, y)
+int in_area(const Battle& b, const Tables& t, int x, int y, int r, int* out, int cap);
+bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d);
+// Casts the spell by fighter `caster` on `targets` (chosen as the spell's
+// aim says); what it did. The spell left the caster's memory already.
+int cast(Battle& b, const classes::Tables& st, int caster, int spell, const FightSpell& fs, const int* targets,
+         int n, create::Dice& d, SpellLine* out, int cap);
+
+// Turn undead: one d20 for the attempt, d12 undead at most, the weakest
+// in sight first (record 0xE9: undead type 1-12), the table by the
+// cleric's level (1-8, 9-13, 14+): d20 >= |value| turns (positive: it
+// flees) or destroys (0 or below; a few more may go). Out: the fighters
+// turned (+1000 when destroyed); how many.
+int turn_undead(Battle& b, const Tables& t, int cleric, create::Dice& d, int* out, int cap);
 
 // ---- The end
 struct Outcome {

@@ -129,6 +129,9 @@ enum FightWord {
     kHasFled, kLostFight, kHasWon, kFoundTreasure, kEachReceives, kExpPoints, kPressEnter, kRejoice, kPressAnyKey,
     kTakeColon, kMoneyItems, kViewPoolExit, kExitSp, kDetectExit, kViewTakePoolShare, kViewTakePool,
     kTreasureLeft, kClaimTreasure, kItemsColon, kTakeW,
+    kTakes, kPointsOfDamage, kTakes1, kFromFire, kFromCold, kFromElec, kFromAcid, kFromMagic, kGoesDownS,
+    kIsUnaffectedS, kCastsASpell, kSpellColon, kBeginsCasting, kCampOnly, kTurnsUndead, kIsTurned, kIsDestroyed,
+    kNothingHappens, kAlreadyTargeted,
     kFightWords
 };
 
@@ -307,6 +310,9 @@ struct Profile {
         combat::TableAt tables;
         uint32_t        words[kFightWords];
         uint8_t         ends[20];
+        combat::Facts   facts;
+        const combat::FightSpell* spells;
+        uint8_t         n_spells;
     } fight;
 };
 

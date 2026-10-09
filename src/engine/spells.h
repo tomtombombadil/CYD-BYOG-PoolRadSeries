@@ -28,6 +28,12 @@ struct Entry {
     int targets = kCombat;
     int affect = 0;                     // the effect it gives (0: none)
     int when = 0;                       // 0 camp, 1 combat, 2 both
+    int aim = 0;                        // fights (byte 6): low nibble 0 self, 1-4 that many targets,
+                                        // 5 a group by size, 8-14 an area (radius & 7), 15 one or an area
+    int on_save = 0;                    // a save: 0 no effect on it, 1 nothing, 2 half
+    int save = 4;                       // which save (0 poison ... 4 spells)
+    int delay = 0;                      // casting time (fights: / 3 = rounds' delay)
+    int priority = 0;
 };
 Entry entry(const classes::Tables& t, int spell);
 
@@ -36,6 +42,8 @@ Entry entry(const classes::Tables& t, int spell);
 int power(const party::Character& caster, const classes::Tables& t, int spell);
 // How long its effect lasts (minutes)
 int lasts(const classes::Tables& t, int spell, int power);
+// How far it reaches in a fight (squares; touch spells 1)
+int reach(const classes::Tables& t, int spell, int power);
 
 // Effects in a character's list
 void add_affect(party::Character& c, int type, int minutes, int data, bool call);

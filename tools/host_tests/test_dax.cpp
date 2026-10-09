@@ -2644,6 +2644,95 @@ static void test_combat()
     rec[0][0x75] = 2; rec[0][0x11] = 16;
     CHECK(combat::award(b, 1000) == 500);
     CHECK(rec[0][0x127] == (550 & 0xFF) && rec[0][0x128] == (550 >> 8) && rec[1][0x127] == (500 & 0xFF));
+    // ---- Spells in fights (made-up spell lines in the games' layout)
+    static uint8_t sds[0x100];
+    memset(sds, 0, sizeof sds);
+    auto sp = [&](int s2, int cls, int lv, int lasts, int aim, int on_save, int affect) {
+        uint8_t* e = sds + s2 * 16;
+        e[0] = static_cast<uint8_t>(cls); e[1] = static_cast<uint8_t>(lv); e[4] = static_cast<uint8_t>(lasts);
+        e[6] = static_cast<uint8_t>(aim); e[8] = static_cast<uint8_t>(on_save); e[9] = 4;
+        e[10] = static_cast<uint8_t>(affect); e[11] = 2;
+    };
+    sp(1, 2, 1, 0, 0x04, 0, 0);          // missiles: one target, no save
+    sp(2, 2, 1, 5, 0x09, 0, 0x35);       // sleep: an area, the sleep effect
+    sp(3, 0, 1, 0, 0x04, 0, 0);          // wounds cured
+    sp(4, 0, 1, 2, 0x0A, 0, 0x01);       // a blessing for 2 rounds
+    classes::Layout sl{};
+    sl.lo = 0; sl.hi = 0x100; sl.spells = 0; sl.spell_count = 6;
+    static classes::Tables st;
+    CHECK(st.set(sl, sds, sizeof sds));
+    static combat::Facts fx = {{0x33, 0x34, 0x35, 0x1F}, 0x01, 0x02, 0x31, 0x27, 0x2A, 0x19, 0x08, 0x09, 0x1C};
+    static uint8_t mrec[4][party::kRecordSize];
+    static uint8_t maff[4][8][party::kAffectSize];
+    static int mnaff[4];
+    memset(mrec, 0, sizeof mrec);
+    memset(maff, 0, sizeof maff);
+    static combat::Battle sb;
+    sb = combat::Battle{};
+    sb.fx = &fx;
+    for (int y = 0; y < combat::kH; ++y)
+        for (int x = 0; x < combat::kW; ++x) sb.ground[y][x] = 0x37;
+    for (int i = 0; i < 4; ++i) {
+        uint8_t* r = mrec[i];
+        r[0x196] = 1; r[0x197] = i >= 1; r[0xDE] = 1; r[0x78] = r[0x1A4] = 20; r[0xE5] = 1;
+        r[0x1A5] = 12; r[0x11C] = 2; r[0x199] = 100; r[0x19A] = 50; r[0x19E] = 1; r[0x1A0] = 4;
+        for (int k = 0; k < 5; ++k) r[0xDF + k] = 30;              // never saves (but on a 20)
+        mnaff[i] = 0;
+        combat::Fighter& f = sb.f[i];
+        f.rec = r; f.aff = maff[i]; f.n_aff = &mnaff[i]; f.max_aff = 8;
+        f.member = i == 0 ? 0 : -1;
+        f.x = 10 + i; f.y = 10; f.size = 1;
+    }
+    sb.n = 4;
+    sb.party_size = 1;
+    mrec[0][0x10E] = 3;                                              // the caster: a 3rd level magic-user
+    combat::occupancy(sb);
+    combat::SpellLine sline[16];
+    int targets[4] = {1, 2, 3, 0};
+    const combat::FightSpell mm{1, combat::SpellDoes::Damage, 0, 4, 0, 2, 8, 0};
+    int n = combat::cast(sb, st, 0, 1, mm, targets, 1, d, sline, 16);
+    CHECK(n == 1 && sline[0].did == combat::Did::Damage && sline[0].amount >= 4 && sline[0].amount <= 10 &&
+          sb.f[1].hp() == 20 - sline[0].amount);
+    // Sleep: 4d4 Hit Dice' worth (1 each here) - both fall asleep and can't act
+    const combat::FightSpell sleep{2, combat::SpellDoes::Sleep, 0, 0, 0, 0, 0, 0x1234};
+    n = combat::cast(sb, st, 0, 2, sleep, targets + 1, 2, d, sline, 16);
+    CHECK(n == 2 && sline[0].did == combat::Did::Word && combat::helpless(sb, sb.f[2]) && combat::helpless(sb, sb.f[3]));
+    combat::start_round(sb, d);
+    CHECK(sb.f[2].delay == 0 && sb.f[3].delay == 0 && sb.f[0].delay > 0);
+    // A helpless target: one cruel blow (to -5: dying)
+    sb.f[0].attacks[0] = 1;
+    const combat::Attack slay = combat::attack(sb, 0, 2, nullptr, d);
+    CHECK(slay.slain && slay.down && sb.f[2].status() == party::Dying && sb.f[0].attacks[0] == 0);
+    // Healing a dying fighter: unconscious with hit points
+    const combat::FightSpell cure{3, combat::SpellDoes::Heal, 1, 8, 0, 0, 0, 0};
+    n = combat::cast(sb, st, 0, 3, cure, targets + 1, 1, d, sline, 16);   // (fighter 2)
+    (void)n;
+    int two = 2;
+    n = combat::cast(sb, st, 0, 3, cure, &two, 1, d, sline, 16);
+    CHECK(n == 1 && sline[0].did == combat::Did::Healed && sb.f[2].status() == party::Unconscious && sb.f[2].hp() > 0);
+    // Bless on the caster's side only, for 2 rounds
+    const combat::FightSpell bless{4, combat::SpellDoes::Ours, 0, 0, 0, 0, 0, 0x1234};
+    int all[4] = {0, 1, 2, 3};
+    n = combat::cast(sb, st, 0, 4, bless, all, 4, d, sline, 16);
+    CHECK(n == 1 && sline[0].who == 0 && sb.f[0].has(0x01) && !sb.f[1].has(0x01));
+    combat::tick(sb);
+    CHECK(sb.f[0].has(0x01));
+    combat::tick(sb);
+    CHECK(!sb.f[0].has(0x01));
+    // The area: fighters within 1 square of (11, 10)
+    int in[8];
+    CHECK(combat::in_area(sb, t, 11, 10, 1, in, 8) == 2);        // 0 and 1 (2 is down, 3 two squares off)
+    // Turn undead: the weakest undead first; a positive value turns, 0 or less destroys
+    mrec[1][0xE9] = 2; mrec[3][0xE9] = 1;
+    mrec[3][0x196] = 1;
+    memset(maff[3], 0, sizeof maff[3]); mnaff[3] = 0;
+    t.turn[1 * 10 + 3] = 0xFF;                                     // type 1, a 3rd level cleric: destroyed (-1)
+    t.turn[2 * 10 + 3] = 1;                                        // type 2: turned
+    mrec[0][0x109] = 3;
+    int turned[8];
+    n = combat::turn_undead(sb, t, 0, d, turned, 8);
+    CHECK(n >= 1 && turned[0] == 1003 && sb.f[3].status() == party::Gone);
+    if (n > 1) CHECK(turned[1] == 1 && sb.f[1].fleeing);
 }
 
 int main()
