@@ -82,4 +82,18 @@ bool can_cast(const party::Character& caster);
 int cast(party::Party& p, int caster, int target, const CampSpell& cs, const classes::Tables& t,
          const rules::CureFacts& cures, const Facts& f, create::Dice& d, Line* out, int cap);
 
+// ---- Fix (the camp's): the party's healers heal everyone, resting between
+// (the games: the cure spells in memory, then those memorized again over a
+// rest of the time they need)
+struct FixPlan {
+    int minutes = 0;                    // the rest
+    int heal = 0;                       // hit points to share out after it
+};
+int hp_lost(const party::Party& p);
+// The rest and the healing (dice rolled now) for the cure spells (the camp
+// table's Heal spells) held and memorized by the party's healers (okay)
+FixPlan fix_plan(const party::Party& p, const classes::Tables& t, const CampSpell* camp, int n_camp, create::Dice& d);
+// Shares `heal` out in party order, each up to their most; what's left
+int fix_heal(party::Party& p, int heal);
+
 } // namespace spells

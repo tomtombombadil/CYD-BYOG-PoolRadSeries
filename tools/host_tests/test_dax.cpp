@@ -2440,6 +2440,28 @@ static void test_spells()
     CHECK(spells::can_cast(me));
     me.rec[0x196] = 0;
     CHECK(!spells::can_cast(me));
+    me.rec[0x196] = 1;
+
+    // Fix: wounds (spell 2, level 1: 1d8) held by the cleric and her two
+    // first-level slots; 4 hours + 2 x 15 minutes; the healing shared out
+    for (int i = 0; i < 3; ++i) { p.m[i].rec[0x195] = party::Okay; p.m[i].rec[0x1A4] = 20; }
+    const spells::CampSpell camp[2] = {{2, spells::Does::Heal, 1, 8, 0, 0}, {1, spells::Does::Affect, 0, 0, 0, 0}};
+    CHECK(spells::hp_lost(p) == 0 && spells::fix_plan(p, t, camp, 2, d).minutes == 0);
+    for (int k = 0; k < 84; ++k) me.rec[0x1E + k] = 0;
+    me.rec[0x1E] = 2;                  // one held
+    me.rec[0x1F] = 2 | 0x80;           // one being memorized (doesn't count)
+    me.rec[0x12D] = 2;                 // two first-level cleric spells a day
+    p.m[1].rec[0x1A4] = 2;             // 18 lost
+    p.m[2].rec[0x1A4] = 10;            // 10 lost
+    const spells::FixPlan fp = spells::fix_plan(p, t, camp, 2, d);
+    CHECK(spells::hp_lost(p) == 28 && fp.minutes == 240 + 30 && fp.heal >= 3 && fp.heal <= 24);
+    // Less lost than the healers can heal (27 a first-level healer): a shorter rest
+    p.m[1].rec[0x1A4] = 10; p.m[2].rec[0x1A4] = 20;
+    CHECK(spells::fix_plan(p, t, camp, 2, d).minutes == 270 / 2);
+    // Shared in party order: 10 to the first who needs it, then the rest
+    p.m[1].rec[0x1A4] = 2; p.m[2].rec[0x1A4] = 10;
+    CHECK(spells::fix_heal(p, 21) == 0 && p.m[1].hp() == 20 && p.m[2].hp() == 13);
+    CHECK(spells::fix_heal(p, 50) == 43 && p.m[2].hp() == 20);
 }
 
 int main()

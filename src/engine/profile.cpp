@@ -37,6 +37,8 @@ namespace {
 // 41-byte slots), spell names (0xD39F, 41-byte slots, spell 0 empty); the
 // spell list and rest words in GAME.OVR; resting's encounter check: the
 // area words 0x7ED2 (steps) / 0x7ED3 (chance).
+// Alter (camp): its menu, Select Exit / Place Exit (START.EXE image 0xB05C,
+// 0xB086, 0xB0AF) and its words in GAME.OVR.
 // Casting in camp: what each spell does outside combat (coab's notes on
 // the spells' code; the words are the ones the code prints), the effects
 // list's names (spell-named effects, then the named ones).
@@ -177,7 +179,10 @@ const Profile kProfiles[] = {
        0x32173, 0x324C5, 0x31597, 0x315A4, 0x19F93},
       kCurseCamp, sizeof kCurseCamp / sizeof kCurseCamp[0],
       {2, 0x2A, {0x22, 0x2B, 0x32}, {{0, 0}, {0x2C, 0x1F}, {0x39, 0}}},
-      kCurseSpellNamed, sizeof kCurseSpellNamed, kCurseNamed, sizeof kCurseNamed / sizeof kCurseNamed[0]}},
+      kCurseSpellNamed, sizeof kCurseSpellNamed, kCurseNamed, sizeof kCurseNamed / sizeof kCurseNamed[0]},
+     {0xB05C, 0xB086, 0xB0AF,
+      {0x1AC65, 0x1A792, 0x1A7C0, 0x1AA82, 0x1AA90, 0x1AAA7, 0x1AAAF, 0x1AAB7, 0x1AABD, 0x1A8D7, 0x1A8E4, 0x1A8C9,
+       0x1A8F6, 0x1A908, 0x1A91D}}},
 };
 
 } // namespace

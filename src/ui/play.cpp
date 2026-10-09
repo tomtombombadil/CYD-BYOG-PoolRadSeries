@@ -97,6 +97,7 @@ struct Data {
     bool           guy_added[kMaxGuys] = {};
     int            guys = 0;
     char           w_magic[44] = {}, w_level[5][12] = {};    // the magic menu, "1st Level" ...
+    char           w_alter[36] = {}, w_select[14] = {}, w_place[14] = {};   // Alter's menus
     char           w_save_which[24] = {}, w_slots[24] = {}, w_saving[24] = {}, w_camp_menu[40] = {},
                    w_camp[8] = {}, w_makes_camp[28] = {};
 
@@ -131,7 +132,7 @@ pic::Canvas* cv = nullptr;
 // Game" question, or the game itself
 enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich, AddFrom,
                                AddList, YesNo, CreatePick, CreateName, TradeWho, Heal, Take, Appraise, Magic,
-                               SpellList, Rest, Cast, Effects };
+                               SpellList, Rest, Cast, Effects, Alter };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
 Screen save_from = Screen::PartyMenu;   // where Save Which Game goes back to
@@ -923,12 +924,13 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
 // 16 items), Join, in a shop Sell (player characters) and Id; Exit.
 
 enum class Ask : uint8_t { None, Overwrite, Drop, DropSure, Reroll, SaveNew, OverwriteNew, DropItem, SellDeal, IdDeal,
-                          LeaveCoins, CureAnyway, PayCure, Train, MemorizeThese, StopRest, LoseIt };
+                          LeaveCoins, CureAnyway, PayCure, Train, MemorizeThese, StopRest, LoseIt, AlterDrop, QuitDos };
 void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt);
 
 bool shop_yes_no(Ask what, char k, pic::Canvas& c);
 bool train_yes_no(Ask what, char k, pic::Canvas& c);
 bool magic_yes_no(Ask what, char k, pic::Canvas& c);
+bool alter_yes_no(Ask what, char k, pic::Canvas& c);
 void open_magic(pic::Canvas& c);
 void open_rest(pic::Canvas& c, bool from_magic);
 void magic_tap(int x, int y, pic::Canvas& c);
@@ -1422,6 +1424,8 @@ void open_camp(pic::Canvas& c)
 }
 
 void end_magic();
+void open_alter(pic::Canvas& c);
+void fix_party(pic::Canvas& c);
 
 void leave_camp(pic::Canvas& c)
 {
@@ -1448,6 +1452,8 @@ void camp_tap(int x, int y, pic::Canvas& c)
         case 'V': view_character(c); break;
         case 'M': open_magic(c); break;
         case 'R': open_rest(c, false); break;
+        case 'A': open_alter(c); break;
+        case 'F': fix_party(c); break;
         case 'E': leave_camp(c); break;
         case 0: break;
         default: error(c, "Not in the engine yet."); break;
@@ -1572,6 +1578,7 @@ void yes_no_tap(int x, int y, pic::Canvas& c)
     if (shop_yes_no(what, k, c)) return;
     if (train_yes_no(what, k, c)) return;
     if (magic_yes_no(what, k, c)) return;
+    if (alter_yes_no(what, k, c)) return;
     party::Character* ch = pt->sel();
     char nm[20] = {}, t[64];
     if (ch) ch->name(nm, sizeof nm);
@@ -2983,6 +2990,8 @@ struct RestRun {
     int  left = 0;                  // minutes still to rest
     int  unit = 2;                  // being set: 2 minutes, 3 hours, 4 days
     bool running = false, from_magic = false, interrupted = false;
+    bool fix = false;               // Fix's rest: `fix_heal` shared out at its end
+    int  fix_heal = 0;
     int  enc = 0;                   // steps since the last encounter check
     uint32_t pause_until = 0;       // a message stays a moment
     int  shown = 0;                 // steps since the time was shown
@@ -3154,8 +3163,38 @@ void rest_tick(uint32_t now, pic::Canvas& c)
     draw_position(c);
     if (rest.left <= 0) {
         rest.running = false;
+        if (rest.fix) {
+            spells::fix_heal(*pt, rest.fix_heal);
+            draw_party(c, 17);
+        }
         end_rest(c);
     }
+}
+
+// Fix (the camp's): the healers' rest, then their healing shared out (the
+// time as the games work it out; resting as Rest does - an encounter or
+// stopping early: no healing)
+void fix_party(pic::Canvas& c)
+{
+    if (spells::hp_lost(*pt) <= 0) return;
+    if (!load_magic()) {
+        error(c, "Not enough memory.");
+        return;
+    }
+    const auto& m = d->prof->magic;
+    const spells::FixPlan f = spells::fix_plan(*pt, mrules->tables, m.camp, m.n_camp, rng);
+    if (f.minutes <= 0) return;
+    rest = RestRun{};
+    rest.left = f.minutes;
+    rest.fix = true;
+    rest.fix_heal = f.heal;
+    screen = Screen::Rest;
+    text::clear(c, text::kTextArea);
+    dirty_rows(17, 22);
+    rest.running = true;
+    magic::begin(rest.r);
+    clear_menu_line(c);
+    draw_rest_time(c);
 }
 
 void show_memory(pic::Canvas& c);
@@ -3637,6 +3676,193 @@ void effects_tap(int x, int y, pic::Canvas& c)
     draw_effects(c);
 }
 
+// ---- Alter (the camp's) ----------------------------------------------------------
+// "Alter: Order Drop Speed Icon Pics Exit" under the camp screen. Order:
+// "Party Order: Select Exit" (tap a member), Select -> "NAME has been
+// selected" and "Party Order: Place Exit": a tap on another line moves them
+// there (the games: the arrow keys), Place puts them down. Drop: "NAME will
+// be gone", "Drop from party? Yes No" -> "NAME bids you farewell" (or "is
+// dumped in a ditch" when they can't stand), No -> "Breathes A sigh of
+// relief"; the last one: "quit TO DOS: Yes No" (leaves the Play Test).
+// Speed: "Game Speed = 4 (0=fastest 9=slowest)" (row 18), "Game Speed:
+// Faster Slower Exit" (the area word 0x4BFC). Icon, Pics: to come.
+
+enum class AlterMode : uint8_t { Menu, Select, Place, Speed };
+AlterMode alter_mode = AlterMode::Menu;
+
+void aw(int i, char* out, size_t cap) { ow(d->prof->alter.words[i], out, cap); }
+
+void alter_menu(pic::Canvas& c)
+{
+    char prompt[12];
+    aw(profile::kAlterPrompt, prompt, sizeof prompt);
+    alter_mode = AlterMode::Menu;
+    text::build(menu, prompt, d->w_alter);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+void open_alter(pic::Canvas& c)
+{
+    screen = Screen::Alter;
+    alter_menu(c);
+}
+
+void order_menu(pic::Canvas& c, bool place)
+{
+    char prompt[16];
+    aw(profile::kPartyOrder, prompt, sizeof prompt);
+    alter_mode = place ? AlterMode::Place : AlterMode::Select;
+    text::build(menu, prompt, place ? d->w_place : d->w_select);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+void draw_speed(pic::Canvas& c)
+{
+    const int speed = vm->get(0x4BFC) & 0xFF;
+    char a[16], b[26], t[48], words[32], prompt[14], w1[10];
+    aw(profile::kSpeedIs, a, sizeof a);
+    aw(profile::kSpeedRange, b, sizeof b);
+    snprintf(t, sizeof t, "%s%d%s", a, speed, b);
+    c.fill(8, 18 * 8, 38 * 8, 8, 0);
+    put(c, t, 1, 18, 10);
+    dirty_rows(18, 18);
+    words[0] = 0;
+    if (speed > 0) {
+        aw(profile::kFaster, w1, sizeof w1);
+        strcat(words, w1);
+    }
+    if (speed < 9) {
+        aw(profile::kSlower, w1, sizeof w1);
+        strcat(words, w1);
+    }
+    aw(profile::kSpeedExit, w1, sizeof w1);
+    strcat(words, w1);
+    const char* k = words;
+    while (*k == ' ') ++k;
+    aw(profile::kSpeedPrompt, prompt, sizeof prompt);
+    alter_mode = AlterMode::Speed;
+    text::build(menu, prompt, k);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+// Moves party member `from` to place `to` (the others close up)
+void move_member(int from, int to)
+{
+    if (from == to || from < 0 || to < 0 || from >= pt->count || to >= pt->count) return;
+    party::Character* t = new (std::nothrow) party::Character(pt->m[from]);
+    if (!t) return;
+    if (from < to)
+        for (int k = from; k < to; ++k) pt->m[k] = pt->m[k + 1];
+    else
+        for (int k = from; k > to; --k) pt->m[k] = pt->m[k - 1];
+    pt->m[to] = *t;
+    delete t;
+    pt->selected = to;
+}
+
+void alter_drop(pic::Canvas& c)
+{
+    char t[24];
+    if (pt->count <= 1) {
+        aw(profile::kQuitToDos, t, sizeof t);
+        ask_yes_no(c, Ask::QuitDos, t);
+        return;
+    }
+    aw(profile::kWillBeGone, t, sizeof t);
+    say_status(c, t);
+    aw(profile::kDropFromParty, t, sizeof t);
+    ask_yes_no(c, Ask::AlterDrop, t);
+}
+
+bool alter_yes_no(Ask what, char k, pic::Canvas& c)
+{
+    if (what != Ask::AlterDrop && what != Ask::QuitDos) return false;
+    screen = Screen::Alter;
+    if (what == Ask::QuitDos) {
+        if (k == 'Y') exit_wanted = true;
+        alter_menu(c);
+        return true;
+    }
+    char t[32];
+    if (k == 'Y') {
+        aw(pt->sel()->in_combat() ? profile::kBidsFarewell : profile::kDumped, t, sizeof t);
+        say_status(c, t);
+        leave_party(pt->selected);
+        draw_panel(c);
+    } else {
+        aw(profile::kRelief, t, sizeof t);
+        say_status(c, t);
+    }
+    alter_menu(c);
+    return true;
+}
+
+void alter_tap(int x, int y, pic::Canvas& c)
+{
+    const int row = y / 8, col = x / 8;
+    if (note_until) {
+        redraw_menu(c);
+        return;
+    }
+    if (y < text::kMenuTapTop) {
+        if (col < 17 || row < 4 || row >= 4 + pt->count || bigpic >= 0) return;
+        if (alter_mode == AlterMode::Place) move_member(pt->selected, row - 4);
+        else if (alter_mode != AlterMode::Speed) pt->selected = row - 4;
+        draw_party(c, 17);
+        return;
+    }
+    const char k = text::key(menu, text::hit(menu, col));
+    if (!k) return;
+    switch (alter_mode) {
+    case AlterMode::Menu:
+        switch (k) {
+        case 'O': order_menu(c, false); break;
+        case 'D': alter_drop(c); break;
+        case 'S': draw_speed(c); break;
+        case 'E':
+            screen = Screen::Camp;
+            draw_camp(c);
+            break;
+        default: error(c, "Not in the engine yet."); break;    // Icon (combat icons), Pics
+        }
+        return;
+    case AlterMode::Select:
+        if (k == 'S') {
+            char t[24];
+            aw(profile::kHasBeenSelected, t, sizeof t);
+            say_status(c, t);
+            order_menu(c, true);
+        } else if (k == 'E') {
+            alter_menu(c);
+        }
+        return;
+    case AlterMode::Place:
+        text::clear(c, text::kTextArea);
+        dirty_rows(17, 22);
+        if (k == 'P') order_menu(c, false);
+        else if (k == 'E') alter_menu(c);
+        return;
+    case AlterMode::Speed: {
+        int speed = vm->get(0x4BFC) & 0xFF;
+        const uint16_t high = static_cast<uint16_t>(vm->get(0x4BFC) & 0xFF00);
+        if (k == 'F' && speed > 0) --speed;
+        else if (k == 'S' && speed < 9) ++speed;
+        else if (k == 'E') {
+            text::clear(c, text::kTextArea);
+            dirty_rows(17, 22);
+            alter_menu(c);
+            return;
+        }
+        vm->set(0x4BFC, static_cast<uint16_t>(high | speed));
+        draw_speed(c);
+        return;
+    }
+    }
+}
+
 // ---- Train Character (a training hall: a script sets 0x7EA8, the classes it
 // trains) ---------------------------------------------------------------------
 // The games' checks ("we only train conscious people", "Training costs
@@ -3853,6 +4079,10 @@ void pm_tap(int x, int y, pic::Canvas& c)
         effects_tap(x, y, c);
         return;
     }
+    if (screen == Screen::Alter) {
+        alter_tap(x, y, c);
+        return;
+    }
     if (screen == Screen::Rest) {
         rest_tap(x, y, c);
         return;
@@ -4021,6 +4251,10 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
     if (pp.camp_menu) text::read_pascal(exe, info, pp.camp_menu, d->w_camp_menu, sizeof d->w_camp_menu);
     const auto& pm = d->prof->magic;
     if (pm.menu) text::read_pascal(exe, info, pm.menu, d->w_magic, sizeof d->w_magic);
+    const auto& pa = d->prof->alter;
+    if (pa.menu) text::read_pascal(exe, info, pa.menu, d->w_alter, sizeof d->w_alter);
+    if (pa.select) text::read_pascal(exe, info, pa.select, d->w_select, sizeof d->w_select);
+    if (pa.place) text::read_pascal(exe, info, pa.place, d->w_place, sizeof d->w_place);
     for (int i = 0; i < 5 && pm.levels.at; ++i)
         text::read_pascal(exe, info, pm.levels.at + static_cast<uint32_t>(i) * pm.levels.stride, d->w_level[i],
                           sizeof d->w_level[i]);
@@ -4853,7 +5087,8 @@ bool tap_target(int x, int y, int* row, int* c0, int* c1)
     // The party list on the camp screens (and "Cast Spell on whom")
     const bool whom = screen == Screen::Cast && cr.stage == CastRun::Whom;
     const int pc0 = whom && !cr.on_camp ? 1 : 17;
-    if ((screen == Screen::Camp || screen == Screen::Magic || whom) && (bigpic < 0 || (whom && !cr.on_camp)) &&
+    if ((screen == Screen::Camp || screen == Screen::Magic ||
+         (screen == Screen::Alter && alter_mode != AlterMode::Speed) || whom) && (bigpic < 0 || (whom && !cr.on_camp)) &&
         col >= pc0 && r >= 4 && r < 4 + pt->count) {
         *row = r;
         *c0 = pc0;
@@ -5125,6 +5360,16 @@ bool back_from_magic(pic::Canvas& c)
         end_effects();
         back_to_magic(c);
         return true;
+    case Screen::Alter:
+        text::clear(c, text::kTextArea);
+        dirty_rows(17, 22);
+        if (alter_mode == AlterMode::Menu) {
+            screen = Screen::Camp;
+            draw_camp(c);
+        } else {
+            alter_menu(c);
+        }
+        return true;
     case Screen::Rest:
         if (rest.running) {
             char q[20];
@@ -5160,7 +5405,7 @@ bool back(pic::Canvas& c)
         const Ask what = ask;
         ask = Ask::None;
         if (items_yes_no(what, 'N', c) || shop_yes_no(what, 'N', c) || train_yes_no(what, 'N', c) ||
-            magic_yes_no(what, 'N', c))
+            magic_yes_no(what, 'N', c) || alter_yes_no(what, 'N', c))
             return true;
         ask = what;
     }

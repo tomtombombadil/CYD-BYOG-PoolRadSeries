@@ -104,6 +104,14 @@ enum CastWord {
     kCastWords
 };
 
+// The camp's Alter (GAME.OVR offsets of Pascal strings), in this order
+enum AlterWord {
+    kAlterPrompt, kPartyOrder, kHasBeenSelected,                 // "Alter: ", "Party Order: ", "has been selected"
+    kSpeedIs, kSpeedRange, kFaster, kSlower, kSpeedExit, kSpeedPrompt,   // "Game Speed = " ... "Game Speed:"
+    kWillBeGone, kDropFromParty, kQuitToDos, kBidsFarewell, kDumped, kRelief,
+    kAlterWords
+};
+
 // An effect's name in the effects list (Display): a GAME.OVR string
 struct EffectName {
     uint8_t  type;
@@ -262,6 +270,14 @@ struct Profile {
         const EffectName*         named;
         uint8_t                   n_named;
     } magic;
+
+    // The camp's Alter: its menu ("Order Drop Speed Icon Pics Exit"), the
+    // party order's "Select Exit" / "Place Exit" (START.EXE image), the
+    // words above
+    struct {
+        uint32_t menu, select, place;
+        uint32_t words[kAlterWords];
+    } alter;
 };
 
 // The game's program file name (to look for it), or nullptr if no

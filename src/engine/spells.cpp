@@ -244,4 +244,71 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
     return o.n;
 }
 
+int hp_lost(const party::Party& p)
+{
+    int n = 0;
+    for (int i = 0; i < p.count; ++i) n += p.m[i].hp_max() - p.m[i].hp();
+    return n;
+}
+
+FixPlan fix_plan(const party::Party& p, const classes::Tables& t, const CampSpell* camp, int n_camp, create::Dice& d)
+{
+    FixPlan f;
+    const int lost = hp_lost(p);
+    if (lost <= 0) return f;
+    int most = 0, most_heal = 0;
+    for (int i = 0; i < p.count; ++i) {
+        const party::Character& c = p.m[i];
+        if (c.health() != party::Okay) continue;
+        // The cure spells held now
+        for (int k = 0; k < 84; ++k) {
+            const int s = c.rec[0x1E + k];
+            if (!s || (s & 0x80)) continue;
+            for (int j = 0; j < n_camp; ++j)
+                if (camp[j].spell == s && camp[j].does == Does::Heal) f.heal += d.roll(camp[j].sides, camp[j].n) + camp[j].plus;
+        }
+        // Those memorized again: a day's slots of each cure's level, 15
+        // minutes a level each, after 4 hours' start (6 past 2nd level)
+        int time = 0, start = 0;
+        bool low = false, high = false, top = false;
+        for (int j = 0; j < n_camp; ++j) {
+            if (camp[j].does != Does::Heal) continue;
+            const int cls = t.spell_class(camp[j].spell), lv = t.spell_level(camp[j].spell);
+            if (cls < 0 || cls > 2 || lv < 1 || lv > 5) continue;
+            const int slots = c.rec[0x12D + cls * 5 + lv - 1];
+            if (!slots) continue;
+            for (int k = 0; k < slots; ++k) f.heal += d.roll(camp[j].sides, camp[j].n) + camp[j].plus;
+            time += slots * lv * 15;
+            if (lv <= 2) low = true;
+            else high = true;
+            if (lv >= 5) top = true;
+        }
+        if (low) {
+            start = 240;
+            most_heal += 27;
+        }
+        if (high) {
+            start = 360;
+            most_heal += top ? 78 : 34;
+        }
+        if (time + start > most) most = time + start;
+    }
+    // Less to heal than the healers can: a shorter rest
+    if (lost < most_heal) most /= most_heal / lost;
+    f.minutes = most;
+    return f;
+}
+
+int fix_heal(party::Party& p, int heal)
+{
+    for (int i = 0; i < p.count && heal > 0; ++i) {
+        party::Character& c = p.m[i];
+        int need = c.hp_max() - c.hp();
+        if (need <= 0) continue;
+        if (need > heal) need = heal;
+        if (rules::heal(c, need)) heal -= need;
+    }
+    return heal;
+}
+
 } // namespace spells
