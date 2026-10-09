@@ -10,8 +10,9 @@ reads them from there.
 
 > **Early development.** The viewer's Play Test runs Curse of the Azure
 > Bonds from its own scripts: the party menu (load the sample party GOG
-> includes), walking, events, text, pictures, the journal. Combat, magic,
-> shops and making characters are still to come. Roadmap:
+> includes, or make your own characters and add them), walking, events,
+> text, pictures, shops, saving, the journal. Combat, magic and training
+> are still to come. Roadmap:
 > [docs/SPEC.md](docs/SPEC.md).
 
 ## Install
@@ -84,8 +85,10 @@ The games aren't playable yet; this build shows what is inside their files.
    you; when the game asks for a word or a number, a keyboard comes up (the
    typing shows on the menu line; Enter answers). Travel works too: the
    wilderness map, with a blinking square where the party is, and the areas
-   you go into. There's no party yet, so anything that needs one
-   (combat, treasure, checks) is skipped; when the game says "record it in
+   you go into. The game starts at its party menu: **Load Saved Game**
+   (GOG's sample party is saved game A) or **Create New Character**, then
+   **Add Character to Party**, then **BEGIN Adventuring**. Combat isn't in
+   yet, so fights are skipped; when the game says "record it in
    journal entry 31" the entry comes up on screen (from the journal PDF in
    the game's folder - see below); on 480x320 **Look** is also a
    key beside the pad and the map shows beside the game screen.

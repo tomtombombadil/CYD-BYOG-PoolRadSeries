@@ -12,6 +12,8 @@
 #include "engine/exepack.h"
 #include "engine/font.h"
 #include "engine/journal.h"
+#include "engine/classes.h"
+#include "engine/create.h"
 #include "engine/items.h"
 #include "engine/layout.h"
 #include "engine/party.h"
@@ -118,7 +120,7 @@ pic::Canvas* cv = nullptr;
 // Which screen: the party menu (the games' first screen), its "Load Which
 // Game" question, or the game itself
 enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich, AddFrom,
-                               AddList, YesNo };
+                               AddList, YesNo, CreatePick, CreateName };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
 Screen save_from = Screen::PartyMenu;   // where Save Which Game goes back to
@@ -223,6 +225,9 @@ void journal_ready()
 
 // Typing (INPUT NUMBER / STRING) on the menu line
 Input        input_mode = Input::None;
+bool         input_engine = false;   // the engine asks (a new character's name), not a script
+const char*  input_prompt = "";
+int          input_max = ecl::kMaxInput;
 char         input_buf[ecl::kMaxInput + 1];
 int          input_len = 0;
 
@@ -505,10 +510,8 @@ void pm_flags(bool on[Data::kItems])
         case 'L':
             on[i] = pt->count == 0;
             break;
-        case 'B':
-            // The games need a party to begin; until characters can be
-            // made, the Play Test lets a new game begin without one
-            on[i] = true;
+        case 'B':                               // the games need a party to begin
+            on[i] = pt->count > 0;
             break;
         default:
             break;
@@ -644,9 +647,11 @@ const char* name_of(const char* table, int stride, int count, int i)
     return i >= 0 && i < count ? table + i * stride : "";
 }
 
+const party::Character* new_char = nullptr;   // the character being made (Create New Character)
+
 void draw_character(pic::Canvas& c)
 {
-    const party::Character* ch = pt->sel();
+    const party::Character* ch = new_char ? new_char : pt->sel();
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
     dirty(0, pic::kScreenH);
@@ -787,6 +792,9 @@ void note(pic::Canvas& c, const char* t)
     if (!note_until) note_until = 1;
 }
 
+void pick_line(int i, char* out, size_t cap);     // Create New Character's lists
+void draw_input(pic::Canvas& c);
+
 // The shop's goods are listed last first (as the games list them)
 const uint8_t* goods(int i) { return ground->item[ground->n - 1 - i]; }
 
@@ -795,6 +803,10 @@ void list_line(int i, char* out, size_t cap)
 {
     if (screen == Screen::AddList) {
         snprintf(out, cap, "%s%s", d->guy_added[i] ? rw(Data::kAdded) : "", d->guy_name[i]);
+        return;
+    }
+    if (screen == Screen::CreatePick) {
+        pick_line(i, out, cap);
         return;
     }
     if (screen == Screen::ShopBuy) {
@@ -830,7 +842,7 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
             c.fill((l.col0 + lead) * 8, row * 8, static_cast<int>(n - lead) * 8, 8, 15);
             font::draw_text(c, d->font, line + lead, l.col0 + lead, row, 0, -1);
         } else {
-            put(c, line, l.col0, row, 10);
+            put(c, line, l.col0, row, screen == Screen::CreatePick && l.top + r == 0 ? 13 : 10);
         }
     }
     char keys[60];
@@ -1121,7 +1133,7 @@ void camp_tap(int x, int y, pic::Canvas& c)
 // NAME.GUY (+ .SWG / .FX; "Overwrite NAME? Yes No" when there is one).
 // Drop Character: "Drop NAME forever? ", "Are you sure? ", their files go.
 
-enum class Ask : uint8_t { None, Overwrite, Drop, DropSure };
+enum class Ask : uint8_t { None, Overwrite, Drop, DropSure, Reroll, SaveNew, OverwriteNew };
 Ask ask = Ask::None;
 
 // The file name the games give a character: the name without spaces and
@@ -1208,16 +1220,19 @@ void remove_character(pic::Canvas& c, bool overwrite_ok)
     draw_party_menu(c);
 }
 
+bool create_yes_no(Ask what, char k, pic::Canvas& c);
+
 void yes_no_tap(int x, int y, pic::Canvas& c)
 {
     if (y < text::kMenuTapTop) return;
     const char k = text::key(menu, text::hit(menu, x / 8));
     if (k != 'Y' && k != 'N') return;
+    const Ask what = ask;
+    ask = Ask::None;
+    if (create_yes_no(what, k, c)) return;
     party::Character* ch = pt->sel();
     char nm[20] = {}, t[64];
     if (ch) ch->name(nm, sizeof nm);
-    const Ask what = ask;
-    ask = Ask::None;
     screen = Screen::PartyMenu;
     if (what == Ask::Overwrite) {
         if (k == 'Y') remove_character(c, true);
@@ -1396,6 +1411,249 @@ void add_from_tap(int x, int y, pic::Canvas& c)
 }
 
 
+// ---- Create New Character ---------------------------------------------------------
+// As the games make one: "Pick Race", "Pick Gender", "Pick Class", "Pick
+// Alignment" (a list from row 2, the heading in the prompt colour; "Select
+// Next Prev Exit"); the stats rolled and the character shown - "Reroll
+// stats? Yes No"; "Character name: "; "Save NAME? Yes No" - saved as
+// NAME.GUY in the save folder (Add Character to Party then brings them
+// in). The rules and tables: engine/create, engine/classes, from the
+// player's program. (The combat icon editor comes with combat.)
+
+struct Making {
+    classes::Tables tables;
+    create::Facts   facts{};
+    create::Dice    dice;
+    party::Character ch;
+    int  stage = 0;                 // 0 race, 1 gender, 2 class, 3 alignment
+    int  opt[17] = {};
+    int  n_opt = 0;
+    int  race = 0, sex = 0, cls = 0;
+    char words[9][24] = {};         // Pick Race ... "? " (profile create.pick_race ...)
+};
+Making* mk = nullptr;
+
+void end_create(pic::Canvas& c)
+{
+    new_char = nullptr;
+    delete mk;
+    mk = nullptr;
+    input_engine = false;
+    input_mode = Input::None;
+    screen = Screen::PartyMenu;
+    draw_party_menu(c);
+}
+
+// The rule tables and facts, read from the program for the occasion
+bool load_making()
+{
+    const auto& pc = d->prof->create;
+    if (!pc.ds_image) return false;
+    mk = new (std::nothrow) Making;
+    if (!mk) return false;
+    mk->dice = create::Dice(static_cast<uint32_t>(millis()) * 2654435761u + 1);
+    fs::File f;
+    if (!open_file(d->prof->program, f)) return false;
+    bool ok = false;
+    {
+        library::FileSource src(f);
+        exepack::Info info;
+        if (exepack::parse(src, info) == exepack::Status::Ok) {
+            const size_t n = pc.tables.hi - pc.tables.lo;
+            uint8_t* buf = static_cast<uint8_t*>(malloc(n));
+            ok = buf && exepack::read(src, info, pc.ds_image + pc.tables.lo, buf, n) == exepack::Status::Ok &&
+                 mk->tables.set(pc.tables, buf, n);
+            free(buf);
+            uint8_t hp[16];
+            ok = ok && exepack::read(src, info, pc.ds_image + pc.hp_count, hp, 8) == exepack::Status::Ok &&
+                 exepack::read(src, info, pc.ds_image + pc.hp_dice, hp + 8, 8) == exepack::Status::Ok &&
+                 exepack::read(src, info, pc.ds_image + pc.icon_colours, mk->facts.icon_colours, 6) ==
+                     exepack::Status::Ok;
+            memcpy(mk->facts.hp_count, hp, 8);
+            memcpy(mk->facts.hp_dice, hp + 8, 8);
+        }
+    }
+    f.close();
+    create::Facts& fa = mk->facts;
+    fa.con_save = pc.con_save;
+    fa.dwarf_orc = pc.dwarf_orc;
+    fa.giants = pc.giants;
+    fa.gnome_giant = pc.gnome_giant;
+    fa.gnome_extra = pc.gnome_extra;
+    fa.elf_sleep = pc.elf_sleep;
+    fa.halfelf = pc.halfelf;
+    fa.prot_evil = pc.prot_evil;
+    fa.ranger_giant = pc.ranger_giant;
+    memcpy(fa.mu_first, pc.mu_first, 4);
+    fa.mu_level2 = pc.mu_level2;
+    memcpy(fa.mu_level3, pc.mu_level3, 2);
+    fa.mu_level4 = pc.mu_level4;
+    fa.mu_level5 = pc.mu_level5;
+    const uint32_t at[9] = {pc.pick_race, pc.pick_gender, pc.pick_class, pc.pick_alignment, pc.select,
+                            pc.reroll,    pc.char_name,   pc.save_q,     pc.qmark};
+    if (open_file(d->prof->overlay, f)) {
+        library::FileSource src(f);
+        for (int i = 0; i < 9; ++i)
+            if (at[i]) text::read_pascal(src, at[i], mk->words[i], sizeof mk->words[i]);
+        f.close();
+    }
+    return ok;
+}
+
+const char* option_name(int i)
+{
+    const int v = mk->opt[i];
+    switch (mk->stage) {
+    case 0: return name_of(d->race[0], 10, 8, v);
+    case 1: return name_of(d->sex[0], 7, 2, v);
+    case 2: return name_of(d->cls[0], 27, 18, v);
+    default: return name_of(d->alignment[0], 17, 9, v);
+    }
+}
+
+void pick_line(int i, char* out, size_t cap)
+{
+    if (i == 0) snprintf(out, cap, "%s", mk->words[mk->stage]);
+    else snprintf(out, cap, "  %s", option_name(i - 1));
+}
+
+void draw_pick(pic::Canvas& c)
+{
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    plist.row0 = 2;
+    plist.row1 = 22;
+    plist.col0 = 1;
+    plist.n = mk->n_opt + 1;                // the heading, then the choices
+    if (plist.index < 1) plist.index = 1;
+    draw_list(c, "", mk->words[4]);
+}
+
+void pick_stage(int stage, pic::Canvas& c)
+{
+    mk->stage = stage;
+    switch (stage) {
+    case 0: mk->n_opt = create::races(mk->opt, 17); break;
+    case 1:
+        mk->opt[0] = 0;
+        mk->opt[1] = 1;
+        mk->n_opt = 2;
+        break;
+    case 2: mk->n_opt = create::classes_for(mk->tables, mk->race, mk->opt, 17); break;
+    default: mk->n_opt = create::alignments_for(mk->tables, mk->cls, mk->opt, 17); break;
+    }
+    screen = Screen::CreatePick;
+    plist = PickList{};
+    plist.index = stage == 1 ? 1 : 1;
+    draw_pick(c);
+}
+
+void start_create(pic::Canvas& c)
+{
+    if (!load_making()) {
+        delete mk;
+        mk = nullptr;
+        pm_prompt(c, "Not in the engine yet.");
+        return;
+    }
+    pick_stage(0, c);
+}
+
+void show_new_character(pic::Canvas& c)
+{
+    new_char = &mk->ch;
+    view_from = Screen::PartyMenu;
+    draw_character(c);
+    clear_menu_line(c);
+}
+
+void picked(int i, pic::Canvas& c)
+{
+    if (i < 1 || i > mk->n_opt) return;
+    const int v = mk->opt[i - 1];
+    switch (mk->stage) {
+    case 0: mk->race = v; pick_stage(1, c); return;
+    case 1: mk->sex = v; pick_stage(2, c); return;
+    case 2: mk->cls = v; pick_stage(3, c); return;
+    default:
+        create::begin(mk->ch, mk->tables, mk->facts, mk->dice, mk->race, mk->sex, mk->cls, v);
+        create::roll(mk->ch, mk->tables, mk->facts, mk->dice);
+        rules::recalc(mk->ch, *names, d->facts);
+        show_new_character(c);
+        ask_yes_no(c, Ask::Reroll, mk->words[5]);
+        return;
+    }
+}
+
+void create_named(const char* name, pic::Canvas& c)
+{
+    if (!mk) return;
+    create::set_name(mk->ch, name);
+    show_new_character(c);
+    char t[72], nm[20];
+    mk->ch.name(nm, sizeof nm);
+    snprintf(t, sizeof t, "%s%s%s", mk->words[7], nm, mk->words[8]);
+    ask_yes_no(c, Ask::SaveNew, t);
+}
+
+void ask_name(pic::Canvas& c)
+{
+    show_new_character(c);
+    screen = Screen::CreateName;
+    input_engine = true;
+    input_prompt = mk->words[6];
+    input_max = party::kNameMax;
+    input_mode = Input::Text;
+    input_len = 0;
+    input_buf[0] = 0;
+    draw_input(c);
+}
+
+// Saves the new character as NAME.GUY (asking first if there is one)
+void save_new(pic::Canvas& c, bool overwrite_ok)
+{
+    char base[12], fn[24], path[200];
+    guy_base(mk->ch, base, sizeof base);
+    snprintf(fn, sizeof fn, "%s.GUY", base);
+    library::path_of(d->save_dir, fn, path, sizeof path);
+    if (!overwrite_ok && sd_fs().exists(path)) {
+        char t[60];
+        snprintf(t, sizeof t, "%s%s%s", rw(Data::kOverwrite), base, rw(Data::kQmark));
+        ask_yes_no(c, Ask::OverwriteNew, t);
+        return;
+    }
+    const bool ok = write_character(base, mk->ch);
+    end_create(c);
+    if (!ok) note(c, "The card couldn't be written.");
+}
+
+
+bool create_yes_no(Ask what, char k, pic::Canvas& c)
+{
+    if (what == Ask::Reroll) {
+        if (k == 'Y') {
+            create::roll(mk->ch, mk->tables, mk->facts, mk->dice);
+            rules::recalc(mk->ch, *names, d->facts);
+            show_new_character(c);
+            ask_yes_no(c, Ask::Reroll, mk->words[5]);
+        } else {
+            ask_name(c);
+        }
+        return true;
+    }
+    if (what == Ask::SaveNew) {
+        if (k == 'Y') save_new(c, false);
+        else end_create(c);
+        return true;
+    }
+    if (what == Ask::OverwriteNew) {
+        if (k == 'Y') save_new(c, true);
+        else end_create(c);         // (the games ask for another file name)
+        return true;
+    }
+    return false;
+}
+
 // ---- The shop -------------------------------------------------------------------
 // A script sets the shop flag, sets out the goods (TREASURE) and starts a
 // "fight" (COMBAT): the shop's menu "Buy View Pool Appraise Exit" (Take
@@ -1538,6 +1796,13 @@ void list_tap(int x, int y, pic::Canvas& c)
         const int i = l.top + row - l.row0;
         if (row >= l.row0 && row <= l.row1 && i < l.n) {
             l.index = i;
+            if (screen == Screen::CreatePick) {
+                if (i >= 1) {
+                    l.index = i;
+                    draw_pick(c);
+                }
+                return;
+            }
             if (screen == Screen::ShopBuy) draw_buy(c);
             else if (screen == Screen::AddList) draw_add_list(c);
             else draw_items(c);
@@ -1551,6 +1816,12 @@ void list_tap(int x, int y, pic::Canvas& c)
     } else if (k == 'P' && l.top > 0) {
         l.top = l.top > l.rows() ? l.top - l.rows() : 0;
         l.index = l.top;
+    } else if (k == 'E' && screen == Screen::CreatePick) {
+        end_create(c);
+        return;
+    } else if (k == 'S' && screen == Screen::CreatePick) {
+        picked(l.index, c);
+        return;
     } else if (k == 'E') {
         if (screen == Screen::AddList) {
             screen = Screen::PartyMenu;
@@ -1577,6 +1848,7 @@ void list_tap(int x, int y, pic::Canvas& c)
     }
     if (screen == Screen::ShopBuy) draw_buy(c);
     else if (screen == Screen::AddList) draw_add_list(c);
+    else if (screen == Screen::CreatePick) draw_pick(c);
     else draw_items(c);
 }
 
@@ -1615,6 +1887,9 @@ void pm_choose(int i, pic::Canvas& c)
     case 'S':
         ask_save(c);
         return;
+    case 'C':
+        start_create(c);
+        return;
     case 'A':
         screen = Screen::AddFrom;
         text::build(menu, rw(Data::kAddFrom), rw(Data::kAddSources));
@@ -1648,6 +1923,11 @@ void pm_tap(int x, int y, pic::Canvas& c)
         else back_from_view(c);
         return;
     }
+    if (screen == Screen::CreatePick) {
+        list_tap(x, y, c);
+        return;
+    }
+    if (screen == Screen::CreateName) return;      // the keyboard types the name
     if (screen == Screen::Items || screen == Screen::ShopBuy || screen == Screen::AddList) {
         list_tap(x, y, c);
         return;
@@ -2039,8 +2319,10 @@ void host_picture(int id, int head) { host->picture(id, head); }
 void draw_input(pic::Canvas& c)
 {
     clear_menu_line(c);
-    put(c, input_buf, 0, text::kMenuRow, 10);
-    if (input_len < 40) c.fill(input_len * 8, text::kMenuRow * 8, 8, 8, 15);     // the cursor
+    const int x = input_engine ? static_cast<int>(strlen(input_prompt)) : 0;
+    if (input_engine) put(c, input_prompt, 0, text::kMenuRow, 13);
+    put(c, input_buf, x, text::kMenuRow, input_engine ? 13 : 10);
+    if (x + input_len < 40) c.fill((x + input_len) * 8, text::kMenuRow * 8, 8, 8, 15);     // the cursor
 }
 
 void begin_wait(pic::Canvas& c)
@@ -2461,6 +2743,10 @@ void close()
     names = nullptr;
     delete ground;
     ground = nullptr;
+    delete mk;
+    mk = nullptr;
+    new_char = nullptr;
+    input_engine = false;
     delete d;
     d = nullptr;
 }
@@ -2686,6 +2972,11 @@ bool back(pic::Canvas& c)
         back_from_save(c);
         return true;
     }
+    if (mk && (screen == Screen::CreatePick || screen == Screen::CreateName || screen == Screen::YesNo)) {
+        ask = Ask::None;
+        end_create(c);
+        return true;
+    }
     if (screen == Screen::AddFrom || screen == Screen::AddList || screen == Screen::YesNo) {
         ask = Ask::None;
         screen = Screen::PartyMenu;
@@ -2740,6 +3031,14 @@ void input_key(char k, pic::Canvas& c)
 {
     if (!d || input_mode == Input::None) return;
     cv = &c;
+    if (k == '\n' && input_engine) {
+        if (!input_len) return;
+        input_mode = Input::None;
+        input_engine = false;
+        clear_menu_line(c);
+        create_named(input_buf, c);
+        return;
+    }
     if (k == '\n') {
         const bool number = input_mode == Input::Number;
         input_mode = Input::None;
@@ -2759,7 +3058,7 @@ void input_key(char k, pic::Canvas& c)
     } else {
         if (k >= 'a' && k <= 'z') k = static_cast<char>(k - 32);
         const bool ok = input_mode == Input::Number ? (k >= '0' && k <= '9' && input_len < 5)
-                                                    : (k >= ' ' && k <= 'Z' && input_len < ecl::kMaxInput);
+                                                    : (k >= ' ' && k <= 'Z' && input_len < input_max);
         if (!ok) return;
         input_buf[input_len++] = k;
         input_buf[input_len] = 0;

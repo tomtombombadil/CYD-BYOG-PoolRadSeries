@@ -145,8 +145,9 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   and passed over until M5/M6 - never faked. Since v0.14.0 it opens at the
   games' party menu (`engine/party.*`, `engine/savegame.*`): Load Saved
   Game reads the player's saves (GOG ships `SAVE/SAVGAMA.DAT` with a sample
-  party); BEGIN without a party is allowed in the Play Test only until
-  Create New Character exists. While text or a one-choice
+  party); since v0.20.0 Create New Character (`engine/create.*`,
+  `engine/classes.*`: rule tables read from the program) and BEGIN needs a
+  party, as in the games. While text or a one-choice
   menu waits, any key goes on (like "press a key").
   The game's questions (INPUT NUMBER / STRING) use an on-screen keyboard
   in the viewer (`play::input()` / `play::input_key()`); event pictures

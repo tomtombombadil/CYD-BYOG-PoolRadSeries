@@ -10,6 +10,8 @@
 #include <tuple>
 #include <vector>
 
+#include "engine/classes.h"
+#include "engine/create.h"
 #include "engine/dax.h"
 #include "engine/ecl.h"
 #include "engine/ecl_vm.h"
@@ -1998,6 +2000,182 @@ static void test_items()
     CHECK(vm.resume() == ecl::Stop::Stopped);
 }
 
+// Synthetic rule tables (made-up numbers in the games' layout) for the
+// class rules and Create New Character
+static void make_tables(classes::Tables& t)
+{
+    classes::Layout l{};
+    l.lo = 0x1000; l.hi = 0x1C00;
+    l.spells = 0x1000; l.spell_count = 10;
+    l.thac0 = 0x1100; l.class_flags = 0x1170; l.class_masks = 0x1178; l.max_hit_dice = 0x1180;
+    l.thief_base = 0x1190; l.thief_race = 0x1210; l.thief_dex = 0x1260; l.stat_limits = 0x1300;
+    l.race_classes = 0x1380; l.race_ages = 0x13F0; l.age_brackets = 0x14D0; l.class_min = 0x1520;
+    l.class_alignments = 0x1590; l.class_records = 0x1640; l.saves = 0x1960;
+    static uint8_t ds[0xC00];
+    memset(ds, 0, sizeof ds);
+    auto at = [&](int off) -> uint8_t& { return ds[off - 0x1000]; };
+    auto put32 = [&](int off, uint32_t v) { for (int i = 0; i < 4; ++i) at(off + i) = static_cast<uint8_t>(v >> (8 * i)); };
+    // spells 1-3 cleric level 1, 4 cleric level 2, 5-6 magic-user 1, 7 magic-user 2, 8 druid 1
+    const uint8_t sp[9][2] = {{0, 0}, {0, 1}, {0, 1}, {0, 1}, {0, 2}, {2, 1}, {2, 1}, {2, 2}, {1, 1}};
+    for (int s = 1; s < 9; ++s) { at(0x1000 + s * 16) = sp[s][0]; at(0x1000 + s * 16 + 1) = sp[s][1]; }
+    for (int c = 0; c < 8; ++c) {
+        for (int lv = 0; lv <= 12; ++lv) at(0x1100 + c * 13 + lv) = static_cast<uint8_t>(40 + lv);
+        at(0x1170 + c) = static_cast<uint8_t>(1 << c);
+        at(0x1178 + c) = static_cast<uint8_t>(1 << c);
+        at(0x1180 + c) = 10;
+        const uint32_t first = c == classes::MagicUser ? 2500 : c == classes::Cleric ? 1500 : 2000;
+        for (int lv = 1; lv <= 11; ++lv) put32(0x1640 + c * 99 + (lv - 1) * 4, first << (lv - 1));
+        for (int lv = 2; lv <= 12; ++lv) {
+            at(0x1640 + c * 99 + 44 + (lv - 2) * 5) = 1;
+            if (lv >= 3) at(0x1640 + c * 99 + 44 + (lv - 2) * 5 + 1) = 1;
+        }
+        for (int lv = 0; lv <= 12; ++lv)
+            for (int k = 0; k < 5; ++k) at(0x1960 + c * 60 + lv * 5 + k) = static_cast<uint8_t>((c == 2 ? 17 : 16) - lv);
+    }
+    for (int lv = 0; lv <= 12; ++lv)
+        for (int s = 1; s <= 8; ++s) at(0x1190 + lv * 8 + s) = static_cast<uint8_t>(10 + lv * 5 + s);
+    at(0x1210 + 1 * 8 + 2) = static_cast<uint8_t>(-50);   // dwarves: skill 2 far down
+    for (int s = 1; s <= 5; ++s) at(0x1260 + 18 * 5 + s) = 5;
+    for (int r = 0; r < 8; ++r) {
+        const int o = 0x1300 + r * 16;
+        at(o) = 3; at(o + 1) = 3; at(o + 2) = 18; at(o + 3) = 18; at(o + 4) = 100; at(o + 5) = 50;
+        for (int i = 1; i < 6; ++i) { at(o + 4 + i * 2) = 3; at(o + 5 + i * 2) = 18; }
+        for (int e = 0; e < 7; ++e) { at(0x13F0 + r * 28 + e * 4) = 15; at(0x13F0 + r * 28 + e * 4 + 2) = 1; at(0x13F0 + r * 28 + e * 4 + 3) = 4; }
+        const uint16_t br[5] = {200, 300, 400, 500, 600};
+        for (int b = 0; b < 5; ++b) { at(0x14D0 + r * 10 + b * 2) = static_cast<uint8_t>(br[b]); at(0x14D0 + r * 10 + b * 2 + 1) = static_cast<uint8_t>(br[b] >> 8); }
+    }
+    // dwarves: the first age bracket at 10 (every dwarf is past it: Str +1, Wis -1)
+    at(0x14D0 + 1 * 10) = 10; at(0x14D0 + 1 * 10 + 1) = 0;
+    const uint8_t human[4] = {3, 2, 5, 0}, elf[4] = {3, 13, 2, 5};
+    memcpy(&at(0x1380 + 7 * 14), human, 4);
+    memcpy(&at(0x1380 + 2 * 14), elf, 4);
+    for (int c = 0; c < 17; ++c) {
+        at(0x1520 + c * 6 + 0) = c == create::Fighter ? 9 : 3;
+        at(0x1590 + c * 10) = 9;
+        for (int a = 0; a < 9; ++a) at(0x1590 + c * 10 + 1 + a) = static_cast<uint8_t>(a);
+    }
+    at(0x1590 + create::Paladin * 10) = 1;
+    CHECK(t.set(l, ds, sizeof ds));
+}
+
+static create::Facts make_facts()
+{
+    create::Facts f{};
+    for (int i = 0; i < 6; ++i) f.icon_colours[i] = static_cast<uint8_t>(i);
+    for (int c = 0; c < 8; ++c) { f.hp_dice[c] = c == classes::MagicUser ? 4 : 10; f.hp_count[c] = 1; }
+    f.con_save = 0x61; f.dwarf_orc = 0x1A; f.giants = 0x2F; f.gnome_giant = 0x12; f.gnome_extra = 0x30;
+    f.elf_sleep = 0x6B; f.halfelf = 0x7C; f.prot_evil = 0x08; f.ranger_giant = 0x86;
+    f.mu_first[0] = 5; f.mu_first[1] = 6; f.mu_level2 = 7;
+    return f;
+}
+
+static void test_create()
+{
+    static classes::Tables t;
+    make_tables(t);
+    const create::Facts f = make_facts();
+    int list[16];
+
+    CHECK(create::races(list, 16) == 6 && list[0] == 1 && list[5] == 7);
+    CHECK(create::classes_for(t, 7, list, 16) == 3 && list[0] == 2 && list[1] == 5 && list[2] == 0);
+    CHECK(create::classes_for(t, 2, list, 16) == 3 && list[0] == create::FighterMU);
+    CHECK(create::alignments_for(t, create::Paladin, list, 16) == 1 && list[0] == 0);
+    CHECK(create::alignments_for(t, create::Fighter, list, 16) == 9 && list[8] == 8);
+
+    create::Dice d(1234);
+    for (int i = 0; i < 200; ++i) {
+        const int v = d.roll(6, 3);
+        CHECK(v >= 3 && v <= 18);
+    }
+
+    // A human fighter: 25000 xp buys level 5 (2000 doubling)
+    static party::Character a, b;
+    create::Dice d1(77), d2(77);
+    create::begin(a, t, f, d1, 7, 0, create::Fighter, 3);
+    create::roll(a, t, f, d1);
+    create::begin(b, t, f, d2, 7, 0, create::Fighter, 3);
+    create::roll(b, t, f, d2);
+    CHECK(memcmp(a.rec, b.rec, party::kRecordSize) == 0);        // same dice, same character
+    CHECK(a.race() == 7 && a.cls() == create::Fighter && a.alignment() == 3 && a.sex() == 0);
+    CHECK(a.level(classes::Fighter) == 5 && a.exp() == 25000);
+    CHECK(a.rec[0x73] == 45 && a.rec[0xDF] == 12 && a.rec[0xE3] == 12);   // THAC0 / saves for level 5
+    CHECK(a.rec[0x12B] == 1 << classes::Fighter);
+    CHECK(a.age() >= 16 && a.age() <= 19);
+    for (int i = 0; i < 6; ++i) CHECK(a.stat(i) >= 3 && a.stat(i) <= 18 && a.stat_now(i) == a.stat(i));
+    CHECK(a.stat(0) >= 9);                                          // the class minimum
+    CHECK(a.stat(0) != 18 || (a.str00() >= 1 && a.str00() <= 100));
+    CHECK(a.money(4) == 300 && a.hp_max() >= 1 && a.hp() == a.hp_max());
+    CHECK(a.n_affects == 0 && a.rec[0x145] == ((0 + 8) << 4));
+    // A reroll starts again from level 1 and comes back to level 5
+    create::roll(a, t, f, d1);
+    CHECK(a.level(classes::Fighter) == 5 && a.exp() == 25000);
+    // More experience: one more level, then nothing to train
+    a.rec[0x127] = 0x40; a.rec[0x128] = 0x9C; a.rec[0x129] = 0;   // 40000
+    const int hp = a.hp_max();
+    CHECK(create::train(a, t, f, d1, false));
+    CHECK(a.level(classes::Fighter) == 6 && a.rec[0x73] == 46 && a.hp_max() > hp);
+    CHECK(!create::train(a, t, f, d1, false));
+
+    create::set_name(a, "A VERY LONG NAME INDEED");
+    char name[20];
+    a.name(name, sizeof name);
+    CHECK(strlen(name) == 15 && strncmp(name, "A VERY LONG NAM", 15) == 0);
+
+    // Constitution's hit points: fighters get extra at 17+
+    a.rec[0x19] = 18;
+    CHECK(create::con_hp_adj(a, t) == 4);
+    a.rec[0x19] = 3;
+    CHECK(create::con_hp_adj(a, t) == -2);
+
+    // A human magic-user: level 5 (2500 doubling), first spells and silent training's
+    static party::Character m;
+    create::Dice d3(5);
+    create::begin(m, t, f, d3, 7, 1, create::MagicUser, 0);
+    create::roll(m, t, f, d3);
+    CHECK(m.level(classes::MagicUser) == 5 && m.sex() == 1);
+    CHECK(m.rec[0x79 + 4] && m.rec[0x79 + 5] && m.rec[0x79 + 6] && !m.rec[0x79 + 0]);   // spells 5, 6, 7
+    CHECK(m.rec[0x12D + 10] == 5 && m.rec[0x12D + 11] == 3);        // magic-user slots: 1 + 4, 3
+
+    // A cleric: knows every cleric spell of the levels they have slots for
+    static party::Character c;
+    create::Dice d4(9);
+    create::begin(c, t, f, d4, 7, 0, create::Cleric, 0);
+    create::roll(c, t, f, d4);
+    CHECK(c.level(classes::Cleric) == 6);
+    CHECK(c.rec[0x79] && c.rec[0x7A] && c.rec[0x7B] && c.rec[0x7C] && !c.rec[0x7D] && !c.rec[0x80]);
+    CHECK(c.rec[0x12D] >= 6 && c.rec[0x12D + 1] >= 4);
+
+    // An elf fighter / magic-user: 12500 xp each, both classes level 4, the elf's effect
+    static party::Character e;
+    create::Dice d5(3);
+    create::begin(e, t, f, d5, 2, 0, create::FighterMU, 0);
+    create::roll(e, t, f, d5);
+    CHECK(e.exp() == 12500 && e.level(classes::Fighter) == 4 && e.level(classes::MagicUser) == 4);
+    CHECK(e.has_affect(0x6B) && e.n_affects == 1);
+    CHECK(e.age() == 19);                                           // multi-classes: the dice's top
+    CHECK(e.rec[0x12B] == ((1 << classes::Fighter) | (1 << classes::MagicUser)));
+
+    // A dwarf: three effects; past the first age bracket (Str +1 / Wis -1 applied, still in limits)
+    static party::Character w;
+    create::Dice d6(11);
+    create::begin(w, t, f, d6, 1, 0, create::Fighter, 0);
+    CHECK(w.n_affects == 3 && w.has_affect(0x61) && w.has_affect(0x1A) && w.has_affect(0x2F));
+    create::roll(w, t, f, d6);
+    CHECK(w.stat(0) >= 9 && w.stat(0) <= 18);
+
+    // Thief skills: base by level, the race's and dexterity's adjustments, never below 0
+    static party::Character th;
+    create::Dice d7(21);
+    create::begin(th, t, f, d7, 7, 0, create::Thief, 0);
+    th.rec[0x10B] = 0; th.rec[0x10F] = 3;                           // thief level 3
+    th.rec[0x17] = 18;
+    classes::thief_skills(th, t);
+    CHECK(th.rec[0xEA] == 10 + 15 + 1 + 5 && th.rec[0xEA + 5] == 10 + 15 + 6);
+    th.rec[0x74] = 1;
+    classes::thief_skills(th, t);
+    CHECK(th.rec[0xEA + 1] == 0);
+}
+
 int main()
 {
     test_rle_known_bytes();
@@ -2022,6 +2200,7 @@ int main()
     test_geo_view();
     test_party();
     test_items();
+    test_create();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;

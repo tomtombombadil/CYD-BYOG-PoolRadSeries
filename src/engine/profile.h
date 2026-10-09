@@ -14,6 +14,7 @@
 
 #include <cstdint>
 
+#include "classes.h"
 #include "ecl.h"
 #include "games.h"
 
@@ -152,6 +153,25 @@ struct Profile {
         uint32_t    title, heading, ready, yes, no, cursed, wrong_class, already, hands_full, plural_s,
                     weapon, armour;
     } items;
+
+    // Character rules (making and training characters): the rule tables in
+    // the program's data segment (DS:0 at image offset ds_image), a few
+    // facts that are code in the program, and the creation screens' words
+    struct {
+        uint32_t        ds_image;
+        classes::Layout tables;
+        uint16_t        hp_count, hp_dice;    // DS: dice at level 1 / sides, 8 classes
+        uint16_t        icon_colours;         // DS: the 6 default combat icon colours
+        // effect (affect) types given at creation
+        uint8_t         con_save, dwarf_orc, giants, gnome_giant, gnome_extra, elf_sleep, halfelf, prot_evil,
+                        ranger_giant;
+        // spells: a new magic-user's four, silent training's at levels 2-5
+        uint8_t         mu_first[4], mu_level2, mu_level3[2], mu_level4, mu_level5;
+        // GAME.OVR: "Pick Race", "Pick Gender", "Pick Class", "Pick Alignment", "Select",
+        // "Reroll stats? ", "Character name: ", "Save ", "? "
+        uint32_t        pick_race, pick_gender, pick_class, pick_alignment, select, reroll, char_name, save_q,
+                        qmark;
+    } create;
 };
 
 // The game's program file name (to look for it), or nullptr if no

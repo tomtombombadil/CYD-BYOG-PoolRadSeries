@@ -21,6 +21,7 @@ static void shot(const char* tag)
     char name[64];
     snprintf(name, sizeof name, "out/%02d_%s.ppm", shot_n++, tag);
     FILE* f = fopen(name, "wb");
+    if (!f) return;                     // no out/ folder: no snapshots
     fprintf(f, "P6 320 200 255\n");
     for (uint8_t v : px) { const pic::Rgb& c = pic::kEga[v & 15]; fputc(c.r, f); fputc(c.g, f); fputc(c.b, f); }
     fclose(f);
@@ -87,10 +88,41 @@ int main(int argc, char** argv)
     for (int i = 0; i < play::pm_lines; ++i) printf(" [%s]", play::d->item[play::pm_item[i]]);
     printf("\n  prompt [%s] heads [%s] [%s] save dir [%s]\n", play::d->choose, play::d->name_head, play::d->ac_hp_head, play::d->save_dir);
     shot("party_menu");
-    if (getenv("SAVE")) {
+    if (getenv("CREATE")) {
+        // CREATE=race,sex,class,alignment (list positions), NAME=...
+        auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
+        play::tap(24, (12 + pm_line('C')) * 8 + 2, C);
+        const char* q = getenv("CREATE");
+        for (int stage = 0; stage < 4 && play::screen == play::Screen::CreatePick; ++stage) {
+            printf("  pick:"); for (int i = 0; i < play::mk->n_opt; ++i) { char l[40]; play::pick_line(i + 1, l, 40); printf(" [%s]", l); } printf("\n");
+            { char t[16]; snprintf(t, 16, "pick%d", stage); shot(t); }
+            play::plist.index = 1 + atoi(q);
+            while (*q && *q != ',') ++q; if (*q) ++q;
+            tap_word('S');
+        }
+        for (int r = 0; r < 2; ++r) {
+            const party::Character& ch = play::mk->ch;
+            printf("  rolled: %d %d %d %d %d %d (18/%d) hp %d/%d lvls", ch.stat(0), ch.stat(1), ch.stat(2), ch.stat(3), ch.stat(4), ch.stat(5), ch.stat(6), ch.hp(), ch.hp_max());
+            for (int k = 0; k < 8; ++k) printf(" %d", ch.level(k));
+            printf(" age %d thac0 %d ac %d xp %u align %d\n", ch.age(), ch.thac0(), ch.ac(), ch.exp(), ch.alignment());
+            shot("rolled");
+            tap_word(r == 0 ? 'Y' : 'N');
+        }
+        printf("  input %d prompt [%s]\n", (int)play::input(), play::input_prompt);
+        for (const char* n = getenv("NAME") ? getenv("NAME") : "TESTER"; *n; ++n) play::input_key(*n, C);
+        play::input_key('\n', C);
+        printf("  ask [%s]\n", play::menu.prompt);
+        shot("named");
+        tap_word('Y');
+        if (play::screen == play::Screen::YesNo) { printf("  ask [%s]\n", play::menu.prompt); tap_word('Y'); }
+        printf("  screen %d\n", (int)play::screen);
+    }
+    // BEGIN needs a party: saved game A (GOG's sample party) unless SAVE names another
+    const char* save = getenv("SAVE") ? getenv("SAVE") : "A";
+    {
         play::tap(24, (12 + pm_line('L')) * 8 + 2, C);
         printf("  saves [%s] menu [%s%s]\n", play::pm_saves, play::menu.prompt, play::menu.s);
-        const int k = (int)(strchr(play::pm_saves, getenv("SAVE")[0]) - play::pm_saves);
+        const int k = (int)(strchr(play::pm_saves, save[0]) - play::pm_saves);
         play::tap(((int)strlen(play::menu.prompt) + play::menu.start[k]) * 8 + 2, text::kMenuRow * 8 + 2, C);
         for (int i = 0; i < play::pt->count; ++i) { char n[20]; play::pt->m[i].name(n, 20); printf("  %d: %-15s AC %d HP %d/%d race %d class %d\n", i, n, play::pt->m[i].ac(), play::pt->m[i].hp(), play::pt->m[i].hp_max(), play::pt->m[i].race(), play::pt->m[i].cls()); }
         printf("party menu:");
