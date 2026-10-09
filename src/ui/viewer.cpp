@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <esp_heap_caps.h>
+#include <esp_system.h>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -456,6 +457,7 @@ struct SdOutput : journal::Output {
     fs::File f;
     bool write_at(uint32_t pos, const uint8_t* d, size_t n) override
     {
+        yield();            // a long job: let the system's own tasks run
         return f.seek(pos) && f.write(d, n) == n;
     }
 };
@@ -475,7 +477,36 @@ void journal_progress(int done, int total, void* ctx)
 
 // The journal's entries, made once from the player's own PDF (Tom: on the
 // board, during the scan; a PDF it doesn't know is reported, not guessed)
+void prepare_journal_now(const library::GameDir& g);
+
+// A guard round it: if the board restarted while reading this journal last
+// time, this scan leaves it alone (and says so); the next Rescan Card tries
+// again
 void prepare_journal(const library::GameDir& g)
+{
+    char try_path[160];
+    library::cache_path(g, "JOURNAL.TRY", try_path, sizeof try_path);
+    if (sd_fs().exists(try_path)) {
+        sd_fs().remove(try_path);
+        char line[200];
+        snprintf(line, sizeof line,
+                 "The board restarted while reading the %s journal last time: skipped this time (Rescan Card tries "
+                 "again)", games::title(g.game));
+        scan_say(line, false, nullptr);
+        return;
+    }
+    library::make_cache_dirs(g);
+    fs::File tf = sd_fs().open(try_path, "w");
+    if (tf) {
+        tf.print("reading the journal\n");
+        tf.close();
+    }
+    if (scr && scr->log) scr->log.flush();
+    prepare_journal_now(g);
+    sd_fs().remove(try_path);
+}
+
+void prepare_journal_now(const library::GameDir& g)
 {
     char line[160], path[200];
     const char* title = games::title(g.game);
@@ -518,8 +549,12 @@ void prepare_journal(const library::GameDir& g)
             }
         }
     }
-    snprintf(line, sizeof line, "Processing the %s journal...", title);
+    snprintf(line, sizeof line, "Processing the %s journal... (memory: %u free, %u in one piece)", title,
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
+             static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
     scan_say(line, false, nullptr);
+    scan_flush_log();
+    if (scr && scr->log) scr->log.flush();
     SdOutput out;
     bool ok = library::make_cache_dirs(g);
     if (ok) out.f = sd_fs().open(out_path, "w");
@@ -569,13 +604,15 @@ void rescan()
         snprintf(line, sizeof line, ok ? "Prepared the %s icon" : "The %s icon couldn't be read", games::short_title(g.game));
         scan_say(line, true, nullptr);
     }
-    for (int i = 0; i < n_games; ++i)
-        if (game_dirs[i].journal[0]) prepare_journal(game_dirs[i]);
+    // The library first: whatever happens while the journals are made, the
+    // board doesn't scan again on its own
     if (scan_result == library::ScanResult::Ok) {
         scan_say(library::save_library(game_dirs, n_games) ? "Saved the library: the board won't scan again until you tap Rescan Card."
                                                            : "The library couldn't be saved on the card.",
                  false, nullptr);
     }
+    for (int i = 0; i < n_games; ++i)
+        if (game_dirs[i].journal[0]) prepare_journal(game_dirs[i]);
     scan_say("Done.", false, nullptr);
     if (scr) {
         scan_flush_log();
@@ -2108,6 +2145,25 @@ void begin(const Env& env, Settings& settings)
     // The library as the last scan found it; a scan only when there is none
     // (Tom: scan once, then only on Rescan Card)
     close_file();
+    // A restart that wasn't a power-on or reset: noted on the card
+    // (_CYD/RESTART.TXT) so the cause can be found later
+    const esp_reset_reason_t why = esp_reset_reason();
+    const char* why_text = why == ESP_RST_PANIC     ? "a crash (panic)"
+                         : why == ESP_RST_INT_WDT   ? "the interrupt watchdog"
+                         : why == ESP_RST_TASK_WDT  ? "the task watchdog"
+                         : why == ESP_RST_WDT       ? "a watchdog"
+                         : why == ESP_RST_BROWNOUT  ? "a brownout (the power supply dipped)"
+                                                    : nullptr;
+    if (why_text) Serial.printf("[boot] the last restart was %s\n", why_text);
+    if (sd_begin() && why_text && sd_fs().exists(games::kRootDir)) {
+        char path[96];
+        library::cache_path("RESTART.TXT", path, sizeof path);
+        fs::File rf = sd_fs().open(path, "a");
+        if (rf) {
+            rf.printf("%s (%s): the board restarted after %s\n", env.version, env.build, why_text);
+            rf.close();
+        }
+    }
     if (sd_begin() && library::load_library(game_dirs, library::kMaxGames, &n_games)) {
         scan_result = library::ScanResult::Ok;
         Serial.printf("[library] loaded: %d game folder(s)\n", n_games);

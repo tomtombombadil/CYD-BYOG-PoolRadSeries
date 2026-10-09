@@ -169,6 +169,14 @@ stay in the session's scratch space, never in the repo.
   "Done." and the library after a moment.
 - Journal PDFs: a .pdf with "journal" in its name in the game's folder (or
   the folder holding its game files).
+- v0.19.1 (Tom: v0.19.0 restarted as the journals' processing began): the
+  library is saved BEFORE the journals are made, so a restart there can't
+  start a scan on every boot; a journal being read is marked by
+  `_CYD/<folder>/JOURNAL.TRY` - a scan finding one left behind skips that
+  journal (and says so), the next Rescan Card tries again; loop() runs
+  with 16 KB of stack (the PDF / JPEG code runs deep under the viewer);
+  the "Processing" line shows the free memory; a restart by a crash,
+  watchdog or brownout is noted in `_CYD/RESTART.TXT`.
 
 ## 6. Milestones
 

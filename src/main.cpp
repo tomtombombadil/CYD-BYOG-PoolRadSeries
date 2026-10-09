@@ -59,6 +59,10 @@ void recalibrate()
 
 } // namespace
 
+// The card scan makes the journal from the PDF (pdf / JPEG decoding several
+// calls deep under the viewer): 16 KB of stack for loop() instead of 8
+SET_LOOP_TASK_STACK_SIZE(16 * 1024);
+
 void setup()
 {
     Serial.begin(115200);
