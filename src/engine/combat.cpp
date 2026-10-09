@@ -1132,6 +1132,19 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             say(who[k], Did::Healed, amount);
         }
         break;
+    case SpellDoes::Cloud:
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up()) continue;
+            if (saving_throw(f, 0, 0, d)) {
+                say(who[k], Did::Word2, 0);
+                continue;
+            }
+            if (b.fx) give_aff(f, b.fx->held[3], d.roll(4, 1) + 1, pw, false);
+            say(who[k], Did::Word, 0);
+        }
+        break;
+    case SpellDoes::Bolt:
     case SpellDoes::Damage:
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
@@ -1180,6 +1193,137 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
     }
     }
     return lines;
+}
+
+int bolt_line(const Battle& b, const Tables& t, int caster, int tx, int ty, int len, int* out, int cap)
+{
+    const Fighter& me = b.f[caster];
+    int ddx = tx - me.x, ddy = ty - me.y;
+    if (!ddx && !ddy) return 0;
+    const int dir = direction(me.x, me.y, tx, ty);
+    int n = 0;
+    int x = tx, y = ty;
+    for (int k = 0; k < len && n < cap; ++k) {
+        if (x < 0 || y < 0 || x >= kW || y >= kH || b.ground[y][x] == 0 || tile(b, t, x, y)[0] == 0xFF) break;
+        const int w = b.who[y][x];
+        if (w) {
+            bool seen = false;
+            for (int j = 0; j < n; ++j)
+                if (out[j] == w - 1) seen = true;
+            if (!seen) out[n++] = w - 1;
+        }
+        x += kDx[dir];
+        y += kDy[dir];
+    }
+    return n;
+}
+
+const FightSpell* fight_spell(const FightSpell* table, int n, int spell)
+{
+    for (int i = 0; table && i < n; ++i)
+        if (table[i].spell == spell) return &table[i];
+    return nullptr;
+}
+
+int choose_spell(Battle& b, const Tables& t, const classes::Tables& st, int i, const FightSpell* table, int n_table,
+                 create::Dice& d, int* targets, int* n_targets)
+{
+    *n_targets = 0;
+    Fighter& f = b.f[i];
+    uint8_t list[84];
+    int n = 0;
+    for (int k = 0; k < 84; ++k) {
+        const uint8_t v = f.rec[0x1E + k];
+        if (v && !(v & 0x80)) list[n++] = v;
+    }
+    if (!n) return 0;
+    const int my = f.team() ? 1 : 0;
+    const int rounds = d.roll(7, 1);
+    for (int r = 0, level = 7; r < rounds; ++r, --level)
+        for (int pick = 0; pick < 3; ++pick) {
+            const int sp = list[d.roll(n, 1) - 1];
+            const FightSpell* fs = fight_spell(table, n_table, sp);
+            if (!fs || fs->does == SpellDoes::NotYet) continue;
+            const spells::Entry e = spells::entry(st, sp);
+            if (e.when == 0 || e.priority < level) continue;
+            const int pw = power_of(f.rec, st, sp);
+            int reach = e.range == -1 ? 1 : e.range + e.range_level * pw;
+            if (reach < 1) reach = 1;
+            const int aim = e.aim & 0x0F;
+            // For their own good
+            if (fs->does == SpellDoes::Heal) {
+                if (f.hp() * 2 >= f.hp_max()) continue;
+                targets[(*n_targets)++] = i;
+                return sp;
+            }
+            if (aim == 0 || fs->does == SpellDoes::Ours || fs->does == SpellDoes::Prayer ||
+                fs->does == SpellDoes::Mirror || fs->does == SpellDoes::Haste ||
+                (fs->does == SpellDoes::Affect && aim == 0)) {
+                if (e.affect && f.has(static_cast<uint8_t>(e.affect))) continue;
+                if (aim >= 8 && aim <= 14) {
+                    *n_targets = in_area(b, t, f.x, f.y, e.aim & 7, targets, kMaxFighters);
+                } else {
+                    targets[(*n_targets)++] = i;
+                }
+                return sp;
+            }
+            // Against the enemy: one in reach and sight
+            int cand[kMaxFighters], nc = 0;
+            for (int c = 0; c < b.n; ++c) {
+                const Fighter& o = b.f[c];
+                int sq;
+                if (!o.up() || !o.size || (o.team() ? 1 : 0) == my || (b.fx && o.has(b.fx->invisible))) continue;
+                if (!range(b, t, i, c, false, &sq) || sq > reach) continue;
+                cand[nc++] = c;
+            }
+            if (!nc) continue;
+            const int tg = cand[d.roll(nc, 1) - 1];
+            if (fs->does == SpellDoes::Bolt) {
+                *n_targets = bolt_line(b, t, i, b.f[tg].x, b.f[tg].y, 7, targets, kMaxFighters);
+            } else if ((aim >= 8 && aim <= 14) || fs->does == SpellDoes::Cloud) {
+                const int r2 = fs->does == SpellDoes::Cloud ? 1 : e.aim & 7;
+                int in[kMaxFighters];
+                const int ni = in_area(b, t, b.f[tg].x, b.f[tg].y, r2, in, kMaxFighters);
+                bool ok = true;
+                for (int k = 0; k < ni && ok; ++k)
+                    if ((b.f[in[k]].team() ? 1 : 0) == my && !saving_throw(b.f[in[k]], e.save, my ? 8 : -2, d))
+                        ok = false;
+                if (!ok) continue;
+                for (int k = 0; k < ni; ++k) targets[(*n_targets)++] = in[k];
+            } else {
+                const int want = aim >= 1 && aim <= 4 ? (e.aim & 3) + 1 : 1;
+                targets[(*n_targets)++] = tg;
+                for (int k = 0; k < nc && *n_targets < want; ++k)
+                    if (cand[k] != tg) targets[(*n_targets)++] = cand[k];
+            }
+            if (*n_targets) return sp;
+        }
+    return 0;
+}
+
+Morale morale(Battle& b, const Tables& t, int i)
+{
+    Fighter& f = b.f[i];
+    if (f.rec[kControl] < 0x80) return Morale::Fight;
+    int m = (f.rec[kControl] & 0x7F) * 2;
+    if (m > 102) m = 0;
+    int adj = 0;
+    if (b.fx && f.has(b.fx->bless)) adj += 5;
+    if (b.fx && f.has(b.fx->curse)) adj -= 5;
+    m += adj;
+    const int lost = f.hp_max() ? 100 - f.hp() * 100 / f.hp_max() : 0;
+    if (!(m < lost || m == 0)) return Morale::Fight;
+    const int m2 = b.enemy_health + adj;
+    if (!(m2 < 100 - b.morale_base || m2 == 0 || !f.team())) return Morale::Fight;
+    int fastest = 0;
+    for (int c = 0; c < b.n; ++c) {
+        const Fighter& o = b.f[c];
+        if (o.up() && o.size && o.team() != f.team() && o.rec[kMove] > fastest) fastest = o.rec[kMove];
+    }
+    (void)t;
+    if (fastest <= f.rec[kMove]) return Morale::Flee;
+    if (f.rec[0x13] > 5) return Morale::Surrender;
+    return Morale::Fight;
 }
 
 int turn_undead(Battle& b, const Tables& t, int cleric, create::Dice& d, int* out, int cap)

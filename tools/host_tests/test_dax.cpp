@@ -2733,6 +2733,74 @@ static void test_combat()
     n = combat::turn_undead(sb, t, 0, d, turned, 8);
     CHECK(n >= 1 && turned[0] == 1003 && sb.f[3].status() == party::Gone);
     if (n > 1) CHECK(turned[1] == 1 && sb.f[1].fleeing);
+    // ---- A fresh line: the caster (party) at (10, 10), three enemies east
+    memset(mrec, 0, sizeof mrec);
+    memset(maff, 0, sizeof maff);
+    for (int i = 0; i < 4; ++i) {
+        uint8_t* r = mrec[i];
+        r[0x196] = 1; r[0x197] = i >= 1; r[0xDE] = 1; r[0x78] = r[0x1A4] = 20; r[0xE5] = 1;
+        r[0x1A5] = 12; r[0x19A] = 50;
+        for (int k = 0; k < 5; ++k) r[0xDF + k] = 30;
+        mnaff[i] = 0;
+        combat::Fighter& f = sb.f[i];
+        f.fleeing = false;
+        f.x = 10 + (i ? i + 1 : 0); f.y = 10; f.size = 1;
+    }
+    mrec[0][0x10E] = 5;
+    combat::occupancy(sb);
+    // A bolt from the first target on, away from the caster; a wall stops it
+    int line[8];
+    CHECK(combat::bolt_line(sb, t, 0, 12, 10, 7, line, 8) == 3 && line[0] == 1 && line[1] == 2 && line[2] == 3);
+    sb.ground[10][14] = 0x01;
+    sb.f[3].x = 15;
+    combat::occupancy(sb);
+    CHECK(combat::bolt_line(sb, t, 0, 12, 10, 7, line, 8) == 2);
+    sb.ground[10][14] = 0x37;
+    CHECK(combat::bolt_line(sb, t, 0, 10, 10, 7, line, 8) == 0);           // no direction
+    // A bolt's damage: d6 a level (5), no save here
+    sp(5, 2, 3, 0, 0x04, 0, 0);
+    sp(6, 2, 2, 0, 0x04, 0, 0);
+    sl.spell_count = 8;
+    CHECK(st.set(sl, sds, sizeof sds));
+    const combat::FightSpell bolt{5, combat::SpellDoes::Bolt, 0, 6, 0, 3, 4, 0};
+    int three = 3;
+    n = combat::cast(sb, st, 0, 5, bolt, &three, 1, d, sline, 16);
+    CHECK(n >= 1 && sline[0].did == combat::Did::Damage && sline[0].amount >= 5 && sline[0].amount <= 30);
+    mrec[3][0x1A4] = 20; mrec[3][0x195] = 0; sb.f[3].size = 1;
+    combat::occupancy(sb);
+    // A cloud: each in it chokes (helpless) or coughs (saved, Word2)
+    const combat::FightSpell cloud{6, combat::SpellDoes::Cloud, 0, 0, 0, 0, 0, 0x1111, 0x2222};
+    int two3[2] = {2, 3};
+    n = combat::cast(sb, st, 0, 6, cloud, two3, 2, d, sline, 16);
+    CHECK(n == 2);
+    for (int k = 0; k < n; ++k) {
+        const bool held = combat::helpless(sb, sb.f[sline[k].who]);
+        CHECK((sline[k].did == combat::Did::Word && held) || (sline[k].did == combat::Did::Word2 && !held));
+    }
+    // The computer's spells: missiles (priority 7, reach 6) at the party member in reach
+    sds[1 * 16 + 13] = 7; sds[1 * 16 + 2] = 6;
+    CHECK(st.set(sl, sds, sizeof sds));
+    mrec[1][0x1E] = 1; mrec[1][0x10E] = 3;
+    const combat::FightSpell table[2] = {mm, cure};
+    int chosen[8], n_chosen = 0;
+    CHECK(combat::choose_spell(sb, t, st, 1, table, 2, d, chosen, &n_chosen) == 1 && n_chosen == 1 && chosen[0] == 0);
+    // Only a cure memorised and not hurt: nothing
+    mrec[1][0x1E] = 3;
+    CHECK(combat::choose_spell(sb, t, st, 1, table, 2, d, chosen, &n_chosen) == 0);
+    // Morale: a monster (control 0x8A: 20%) badly hurt while its side is beaten flees,
+    // unless the party is faster - then a clever one gives up
+    mrec[2][0xF7] = 0x8A;
+    sb.enemy_health = 10;
+    sb.morale_base = 0;
+    CHECK(combat::morale(sb, t, 2) == combat::Morale::Fight);
+    mrec[2][0x1A4] = 5;
+    CHECK(combat::morale(sb, t, 2) == combat::Morale::Flee);
+    mrec[0][0x1A5] = 15; mrec[2][0x13] = 10;
+    CHECK(combat::morale(sb, t, 2) == combat::Morale::Surrender);
+    mrec[2][0x13] = 3;
+    CHECK(combat::morale(sb, t, 2) == combat::Morale::Fight);
+    mrec[2][0xF7] = 0x0A;                                                // party-controlled: never
+    CHECK(combat::morale(sb, t, 2) == combat::Morale::Fight);
 }
 
 int main()

@@ -286,7 +286,7 @@ int main(int argc, char** argv)
                     continue;
                 }
                 static int pages_shot = 0;
-                if (play::fg->st == play::FSt::Pages && play::fg->at == 1 && pages_shot < 60 && play::fg->until > g_now + 10) { char t[16]; snprintf(t, 16, "fpage%d", pages_shot++); shot(t); g_now = play::fg->until; }
+                if (play::fg->st == play::FSt::Pages && pages_shot < 150 && play::fg->until > g_now + 10) { char t[16]; snprintf(t, 16, "fpage%d", pages_shot++); shot(t); g_now = play::fg->until; }
                 if (play::fg->st == play::FSt::Aim) {
                     static int aims = 0;
                     if (aims++ < 3) { char t[16]; snprintf(t, 16, "faim%d", aims); shot(t); printf("  [aim: menu %s%s]\n", play::menu.prompt, play::menu.s); }

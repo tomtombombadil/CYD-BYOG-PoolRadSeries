@@ -104,8 +104,8 @@ struct Fighter {
     bool    gone = false;               // a monster there was no room for: not in the fight at all
     bool    fleeing = false;            // turned undead, panic: runs for the field's edge
     int     spell = 0;                  // a spell being cast (it goes off at its delay)
-    int     spell_n = 0;
-    int     spell_t[8] = {};
+    int     spell_n = 0;                // the computer's targets for it
+    uint8_t spell_t[24] = {};
     int     team() const { return rec[0x197]; }
     bool    up() const { return rec[0x196] != 0; }          // able to fight
     int     hp() const { return rec[0x1A4]; }
@@ -129,6 +129,7 @@ struct Battle {
     bool    indoors = true;
     int     to_hit_party = 0, to_hit_monsters = 0;  // the scripts' bonuses
     const Facts* fx = nullptr;
+    int     morale_base = 0;            // the script's morale word (0x7EC6)
 };
 
 // Effects on a fighter
@@ -241,6 +242,8 @@ enum class SpellDoes : uint8_t {
     Sleep,                              // 4d4 by Hit Dice: 1 a die to 1, 2, 4, 6, then 10 / 20
     Hold,                               // a save (-2 / -3 one target, -1 two, 0 more) or held
     Mirror, Haste, Prayer,              // effects with their own data
+    Bolt,                               // damage along a line from the target away from the caster
+    Cloud,                              // a save against poison or helpless 1d4 + 1 rounds (word / word2 saved)
 };
 struct FightSpell {
     uint8_t   spell;
@@ -249,9 +252,10 @@ struct FightSpell {
     uint8_t   per;                      // 1: + the caster's level, 2: (level + 1) / 2 missiles of 1d4 + 1, 3: level dice
     uint8_t   kind;                     // damage: 1 fire, 2 cold, 4 electricity, 8 magic, 0x10 acid
     uint32_t  word;                     // what's said ("is Blessed", "falls asleep"; GAME.OVR, 0: nothing)
+    uint32_t  word2 = 0;                // ... when they saved (clouds: "starts to cough")
 };
 // What happened to each target, in order
-enum class Did : uint8_t { Word, Damage, Unaffected, Misses, Healed, Down };
+enum class Did : uint8_t { Word, Damage, Unaffected, Misses, Healed, Down, Word2 };
 struct SpellLine {
     uint8_t who;
     Did     did;
@@ -264,6 +268,27 @@ bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d);
 // aim says); what it did. The spell left the caster's memory already.
 int cast(Battle& b, const classes::Tables& st, int caster, int spell, const FightSpell& fs, const int* targets,
          int n, create::Dice& d, SpellLine* out, int cap);
+
+// A lightning bolt's squares: from (tx, ty) on, away from the caster, up to
+// `len` squares or a wall / the field's edge; the fighters on them
+int bolt_line(const Battle& b, const Tables& t, int caster, int tx, int ty, int len, int* out, int cap);
+
+// The computer's spells (monsters): d7 rounds of 3 random picks from the
+// memorized list, from priority 7 down; a spell is taken when its priority
+// (table byte 13) reaches the round's, and it has a use - an enemy in its
+// reach and sight (an area that would catch a friend failing a test save:
+// not), or for the caster's own good (hurt: healing; an effect they lack).
+// The spell (0: none) and its targets.
+int choose_spell(Battle& b, const Tables& t, const classes::Tables& st, int i, const FightSpell* table, int n_table,
+                 create::Dice& d, int* targets, int* n_targets);
+const FightSpell* fight_spell(const FightSpell* table, int n, int spell);
+
+// Morale (monsters, NPCs): (control & 0x7F) x 2 (over 102: 0), Bless +5,
+// Curse -5; when it's below the share of their hit points lost, their
+// side's health is weighed against 100 - the script's morale (0x7EC6):
+// below, they flee (when no enemy is faster) or surrender (Int over 5)
+enum class Morale : uint8_t { Fight, Flee, Surrender };
+Morale morale(Battle& b, const Tables& t, int i);
 
 // Turn undead: one d20 for the attempt, d12 undead at most, the weakest
 // in sight first (record 0xE9: undead type 1-12), the table by the

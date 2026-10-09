@@ -12,8 +12,9 @@ reads them from there.
 > Bonds from its own scripts: the party menu (load the sample party GOG
 > includes, or make your own characters and add them), walking, events,
 > text, pictures, shops, the temple, training, camp (memorizing, resting
-> and casting spells), fights (first steps: moving and attacking; spells
-> and items in fights to come), saving, the journal. Roadmap:
+> and casting spells), fights (moving, attacking, casting, turning undead;
+> the monsters cast spells and can flee or surrender; items in fights to
+> come), saving, the journal. Roadmap:
 > [docs/SPEC.md](docs/SPEC.md).
 
 ## Install
@@ -88,8 +89,10 @@ The games aren't playable yet; this build shows what is inside their files.
    wilderness map, with a blinking square where the party is, and the areas
    you go into. The game starts at its party menu: **Load Saved Game**
    (GOG's sample party is saved game A) or **Create New Character**, then
-   **Add Character to Party**, then **BEGIN Adventuring**. Combat isn't in
-   yet, so fights are skipped; when the game says "record it in
+   **Add Character to Party**, then **BEGIN Adventuring**. Fights are
+   played on the game's battlefield: tap a menu word (Move, Aim, Cast,
+   Turn, Quick, Done), tap a square next to your fighter to step or attack,
+   or tap a fighter to aim at them. When the game says "record it in
    journal entry 31" the entry comes up on screen (from the journal PDF in
    the game's folder - see below); on 480x320 **Look** is also a
    key beside the pad and the map shows beside the game screen.

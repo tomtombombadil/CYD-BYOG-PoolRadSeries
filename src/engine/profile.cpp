@@ -146,6 +146,13 @@ constexpr combat::FightSpell kCurseFight[] = {
     {0x48, SpellDoes::Damage, 3, 8, 3, 0, 8, 0},            // Cause Critical Wounds
     {0x4A, SpellDoes::Damage, 6, 8, 0, 0, 9, 0},            // Flame Strike
     {0x58, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FE1C},
+    {0x21, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x3074F},      // Ray of Enfeeblement: "is weakened"
+    {0x22, SpellDoes::Cloud, 0, 0, 0, 0, 0, 0x35E37, 0x35E27},  // Stinking Cloud: "chokes and gags from nausea" / "starts to cough"
+    {0x26, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x30FB6},      // Cause Blindness: "is blind"
+    {0x28, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x310A2},      // Cause Disease: "is diseased"
+    {0x33, SpellDoes::Bolt, 0, 6, 0, 3, 4, 0},              // Lightning Bolt: level d6
+    {0x37, SpellDoes::Theirs, 0, 0, 0, 0, 0, 0x31CD9},      // Slow: "is Slowed"
+    {0x5E, SpellDoes::Hold, 0, 0, 0, 0, 0, 0x303F1},        // Hold Monster
 };
 
 // Title: picture 1 for 5 s; picture 2 with 3 on it at row 11, column 6 for
