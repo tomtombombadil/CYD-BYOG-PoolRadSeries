@@ -21,8 +21,10 @@
 //   magic-user, thief, monk), 0x111 levels before a class change (8)
 //   0x119 sex, 0x11B alignment, 0x127 experience (u32), 0x13C, 0x13E,
 //   0x192 flags, 0x195 health (0 okay ... 6 dead, 7 stoned, 8 gone),
-//   0x196 in the party's fights (1), 0x197 side (0 ours), 0x19A AC
-//   (shown as 60 - this), 0x1A4 HP, 0x1A5 movement
+//   0x187 encumbrance (u16), 0x196 in the party's fights (1), 0x197 side
+//   (0 ours), 0x199 to-hit bonus (THAC0 shown as 60 - this), 0x19A AC
+//   (shown as 60 - this), 0x19E / 0x1A0 / 0x1A2 damage dice, sides, bonus
+//   (signed), 0x1A4 HP, 0x1A5 movement
 #pragma once
 
 #include <cstddef>
@@ -60,6 +62,20 @@ struct Character {
     int  alignment() const { return rec[0x11B]; }
     int  age() const { return rec[0x76] | rec[0x77] << 8; }
     int  level(int cls_index) const { return rec[0x109 + cls_index]; }
+    int  old_level(int cls_index) const { return rec[0x111 + cls_index]; }
+    int  str00() const { return rec[0x1C]; }
+    int  thac0() const { return 60 - rec[0x199]; }
+    int  dice() const { return rec[0x19E]; }
+    int  dice_sides() const { return rec[0x1A0]; }
+    int  damage_bonus() const { return static_cast<int8_t>(rec[0x1A2]); }
+    int  encumbrance() const { return rec[0x187] | rec[0x188] << 8; }
+    int  movement() const { return rec[0x1A5]; }
+    bool has_affect(uint8_t type) const
+    {
+        for (int i = 0; i < n_affects; ++i)
+            if (affects[i][0] == type) return true;
+        return false;
+    }
     int  stat(int i) const { return rec[0x10 + i * 2 + 1]; }   // full value: 0 Str ... 5 Cha, 6 Str00
     int  stat_now(int i) const { return rec[0x10 + i * 2]; }
     uint32_t exp() const { return rec[0x127] | rec[0x128] << 8 | rec[0x129] << 16 | static_cast<uint32_t>(rec[0x12A]) << 24; }

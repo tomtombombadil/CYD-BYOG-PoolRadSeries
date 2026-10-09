@@ -11,6 +11,9 @@ namespace {
 // string[40] and an "on" byte (Create New Character, Add Character to
 // Party, Exit to DOS start on; the others follow the party); its prompt
 // and the party list's headings in GAME.OVR's code segments.
+// View Character: the class (27-byte slots, 18 with "unknown"), race,
+// alignment, sex, coin and health names at 0xB898-0xBC37 of the unpacked
+// program; the screen's words in GAME.OVR (as its code prints them).
 // Title: picture 1 for 5 s; picture 2 with 3 on it at row 11, column 6 for
 // 10 s; picture 4 at row 11 for 10 s; the credits for 10 s.
 constexpr TitleStep kCurseTitle[] = {
@@ -52,7 +55,10 @@ const Profile kProfiles[] = {
      2, 6, 203, "SKY.DAX", 252, &kCurseEcl,
      0x6D9A, 2, 1,
      {0x79, 0x4CA1, 0x6D5A, 0x6D7A, 32, 0x50},
-     {0xB133, 12, 42, 0x20111, 0x1EE80, 0x37E31, 0x37E36, "CURSE.CFG"}},
+     {0xB133, 12, 42, 0x20111, 0x1EE80, 0x37E31, 0x37E36, "CURSE.CFG"},
+     {{0xB898, 27, 18}, {0xBA7E, 10, 8}, {0xBACE, 17, 9}, {0xBB67, 7, 2}, {0xBB75, 11, 7}, {0xBBC2, 13, 9},
+      0x27094, 0x2709A, 0x2709F, 0x270BD, 0x270C5, 0x270D7, 0x276AA, 0x276B1, 0x276B8, 0x276C7,
+      0x276D6, 0x276E8, 0x27BA8, 5}},
 };
 
 } // namespace

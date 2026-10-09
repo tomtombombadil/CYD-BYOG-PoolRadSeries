@@ -3,7 +3,8 @@
 // snapshots (out/*.ppm). Build from the repo root:
 //   g++ -std=c++17 -O1 -g -Itools/playsim/shim -Isrc -o playsim tools/playsim/sim.cpp src/engine/*.cpp
 // Run: playsim <game folder> [moves: F L R B A K]; env: SAVE=A (load saved
-// game A at the party menu first; otherwise BEGIN with no party), AREA / BLOCK (start
+// game A at the party menu first; otherwise BEGIN with no party; VIEW=n then
+// views character n), AREA / BLOCK (start
 // script), SETVAR=addr=value, CHOICES=digits, TYPE=text, TELE=x,y,dir,
 // FINDLOCK, PAUSESHOT, ANIMSHOTS, MS (ms to settle). Needs an out/ folder.
 #include "ui/play.cpp"
@@ -95,6 +96,14 @@ int main(int argc, char** argv)
         for (int i = 0; i < play::pm_lines; ++i) printf(" [%s]", play::d->item[play::pm_item[i]]);
         printf("\n");
         shot("party_loaded");
+        if (getenv("VIEW")) {
+            // Select a character (tap their line), View Character, back
+            play::tap(16, (4 + atoi(getenv("VIEW"))) * 8 + 2, C);
+            play::tap(24, (12 + pm_line('V')) * 8 + 2, C);
+            shot("view");
+            play::tap(2, text::kMenuRow * 8 + 2, C);
+            shot("view_back");
+        }
     }
     play::tap(24, (12 + pm_line('B')) * 8 + 2, C);
     if (getenv("AREA")) {

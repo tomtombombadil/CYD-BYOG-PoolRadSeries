@@ -46,6 +46,13 @@ struct TitleStep {
     uint16_t wait_ms;        // 0 = go straight on
 };
 
+// A table of names in the program: Pascal strings, each in a fixed-size
+// slot (class, race, alignment ... names)
+struct NameTable {
+    uint32_t at;                   // program image offset
+    uint8_t  stride, count;
+};
+
 struct Profile {
     games::Game  game;
     const char*  release;        // shown to the player, e.g. "GOG"
@@ -105,6 +112,16 @@ struct Profile {
         uint32_t name, ac_hp;          //   the party list's headings "Name", "AC  HP"
         const char* cfg;               // the configuration file naming the save folder
     } party;
+
+    // View Character: name tables in the program and the screen's words
+    // in GAME.OVR
+    struct {
+        NameTable cls, race, alignment, sex, money, health;
+        // GAME.OVR offsets of Pascal strings
+        uint32_t npc, age, stats, level, exp, status, ac, hp, thac0, damage,
+                 encumbrance, movement, exit;
+        uint8_t  stats_stride;         // "STR ", "INT " ... one after another
+    } view;
 };
 
 // The game's program file name (to look for it), or nullptr if no

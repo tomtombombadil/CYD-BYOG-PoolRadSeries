@@ -71,6 +71,13 @@ struct Data {
     char           save_dir[128] = {};      // the game's save folder (data_dir/SAVE)
     savegame::Header save;                 // the saved game loaded
     bool           loaded = false;
+
+    // View Character's words (from the program and GAME.OVR)
+    char           cls[18][27] = {}, race[8][10] = {}, alignment[9][17] = {}, sex[2][7] = {}, money[7][11] = {},
+                   health[9][13] = {};
+    char           v_npc[8] = {}, v_age[8] = {}, v_stat[6][8] = {}, v_level[8] = {}, v_exp[8] = {}, v_status[8] = {},
+                   v_ac[8] = {}, v_hp[8] = {}, v_thac0[12] = {}, v_damage[20] = {}, v_enc[24] = {}, v_move[16] = {},
+                   v_exit[8] = {};
 };
 
 Data* d = nullptr;
@@ -83,8 +90,9 @@ pic::Canvas* cv = nullptr;
 
 // Which screen: the party menu (the games' first screen), its "Load Which
 // Game" question, or the game itself
-enum class Screen : uint8_t { Game, PartyMenu, LoadWhich };
+enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View };
 Screen screen = Screen::Game;
+Screen view_from = Screen::Game;  // where View Character goes back to
 int  pm_item[Data::kItems];   // the menu item on each list line
 int  pm_lines = 0;
 char pm_saves[12];            // save slots found ("AB")
@@ -558,6 +566,123 @@ bool load_game(char slot)
 
 void begin_adventuring();
 
+// ---- View Character ------------------------------------------------------------
+//
+// The selected character as the games show them: name (row 1), sex, race
+// and age (row 3), alignment, class, the six stats from row 7, coins from
+// row 7 (names right-aligned to column 19), levels and experience (row
+// 15), AC / HP / THAC0 / damage / encumbrance / movement (rows 17-18),
+// health (row 22). Weapon and armour (rows 20-21) need the item names
+// (to come); the menu line offers what the engine can do (Exit).
+
+const char* name_of(const char* table, int stride, int count, int i)
+{
+    return i >= 0 && i < count ? table + i * stride : "";
+}
+
+void draw_character(pic::Canvas& c)
+{
+    const party::Character* ch = pt->sel();
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    dirty(0, pic::kScreenH);
+    if (!ch) return;
+    char t[48];
+    ch->name(t, sizeof t);
+    put(c, t, 1, 1, !ch->in_combat() ? 12 : ch->enemy() ? 14 : 11);
+    if (ch->npc()) put(c, d->v_npc, static_cast<int>(strlen(t)) + 3, 1, 10);
+    int col = 1;
+    const char* sx = name_of(d->sex[0], 7, 2, ch->sex());
+    put(c, sx, col, 3, 15);
+    col += static_cast<int>(strlen(sx)) + 1;
+    const char* rc = name_of(d->race[0], 10, 8, ch->race());
+    put(c, rc, col, 3, 15);
+    col += static_cast<int>(strlen(rc)) + 1;
+    snprintf(t, sizeof t, "%s%d", d->v_age, ch->age());
+    put(c, t, col, 3, 15);
+    put(c, name_of(d->alignment[0], 17, 9, ch->alignment()), 1, 4, 15);
+    put(c, name_of(d->cls[0], 27, 18, ch->cls()), 1, 5, 15);
+    for (int i = 0; i < 6; ++i) {
+        put(c, d->v_stat[i], 1, 7 + i, 10);
+        const int v = ch->stat(i);
+        snprintf(t, sizeof t, "%d", v);
+        put(c, t, v < 10 ? 6 : 5, 7 + i, 10);
+        if (i == 0 && v == 18 && ch->str00() > 0) {
+            const int e = ch->str00();
+            if (e == 100) snprintf(t, sizeof t, "(00)");
+            else snprintf(t, sizeof t, "(%02d)", e);
+            put(c, t, 7, 7, 10);
+        }
+    }
+    int row = 7;
+    for (int coin = 6; coin >= 0; --coin) {
+        const int n = ch->money(coin);
+        if (n <= 0) continue;
+        const char* nm = name_of(d->money[0], 11, 7, coin);
+        put(c, nm, 20 - static_cast<int>(strlen(nm)), row, 10);
+        snprintf(t, sizeof t, "%d", n);
+        put(c, t, 21, row, 10);
+        ++row;
+    }
+    put(c, d->v_level, 1, 15, 15);
+    int top = 0;
+    for (int k = 0; k < 8; ++k)
+        if (ch->level(k) > top) top = ch->level(k);
+    size_t o = 0;
+    t[0] = 0;
+    for (int k = 0; k < 8; ++k) {
+        const int lv = ch->level(k), old = ch->old_level(k);
+        if (lv > 0 || (old > 0 && old < top)) {
+            o += static_cast<size_t>(snprintf(t + o, sizeof t - o, "%s%d", o ? "/" : "", lv + old));
+            if (o >= sizeof t) break;
+        }
+    }
+    put(c, t, 7, 15, 15);
+    snprintf(t, sizeof t, "%s%lu", d->v_exp, static_cast<unsigned long>(ch->exp()));
+    put(c, t, 17, 15, 15);
+    // AC, HP, THAC0, damage, encumbrance, movement
+    put(c, d->v_ac, 1, 17, 15);
+    const int ac = ch->ac_raw();
+    snprintf(t, sizeof t, "%s%d", ac > 60 ? "-" : "", ac > 60 ? ac - 60 : 60 - ac);
+    put(c, t, 4, 17, 10);
+    put(c, d->v_hp, 1, 18, 15);
+    snprintf(t, sizeof t, "%d", ch->hp());
+    put(c, t, 4, 18, ch->hp() < ch->hp_max() ? 14 : 10);
+    put(c, d->v_thac0, 9, 17, 15);
+    snprintf(t, sizeof t, "%d", ch->thac0());
+    put(c, t, 15, 17, 10);
+    put(c, d->v_damage, 8, 18, 15);
+    const int b = ch->damage_bonus();
+    if (b) snprintf(t, sizeof t, "%dd%d%s%d", ch->dice(), ch->dice_sides(), b > 0 ? "+" : "-", b > 0 ? b : -b);
+    else snprintf(t, sizeof t, "%dd%d", ch->dice(), ch->dice_sides());
+    put(c, t, 15, 18, 10);
+    put(c, d->v_enc, 22, 17, 15);
+    snprintf(t, sizeof t, "%d", ch->encumbrance());
+    put(c, t, 34, 17, 10);
+    int mv = ch->movement();
+    if (ch->has_affect(0x2A)) mv *= 2;          // slow
+    if (ch->has_affect(0x27)) mv /= 2;          // haste
+    put(c, d->v_move, 25, 18, 15);
+    snprintf(t, sizeof t, "%d", mv);
+    put(c, t, 34, 18, 10);
+    put(c, d->v_status, 1, 22, 15);
+    put(c, name_of(d->health[0], 13, 9, ch->health()), 8, 22, 10);
+    text::build(menu, "", d->v_exit);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+void view_character(pic::Canvas& c)
+{
+    if (!pt->sel()) return;
+    view_from = screen;
+    screen = Screen::View;
+    draw_character(c);
+}
+
+void draw_party_menu(pic::Canvas& c);
+void back_from_view(pic::Canvas& c);
+
 void pm_choose(int i, pic::Canvas& c)
 {
     switch (pm_key(i)) {
@@ -584,6 +709,9 @@ void pm_choose(int i, pic::Canvas& c)
     case 'E':
         exit_wanted = true;
         return;
+    case 'V':
+        view_character(c);
+        return;
     default:
         pm_prompt(c, "Not in the engine yet.");
         dirty_rows(text::kMenuRow, text::kMenuRow);
@@ -594,6 +722,11 @@ void pm_choose(int i, pic::Canvas& c)
 void pm_tap(int x, int y, pic::Canvas& c)
 {
     const int row = y / 8, col = x / 8;
+    if (screen == Screen::View) {
+        // Exit (the only choice yet): a tap on it, or anywhere
+        back_from_view(c);
+        return;
+    }
     if (screen == Screen::LoadWhich) {
         if (y < text::kMenuTapTop) return;
         const int k = text::hit(menu, col);
@@ -639,9 +772,50 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         }
         free(buf);
     }
+    // View Character's name tables: one read of the range holding them
+    const auto& pv = d->prof->view;
+    const profile::NameTable* tabs[6] = {&pv.cls, &pv.race, &pv.alignment, &pv.sex, &pv.money, &pv.health};
+    char* outs[6] = {d->cls[0], d->race[0], d->alignment[0], d->sex[0], d->money[0], d->health[0]};
+    const int caps[6][2] = {{27, 18}, {10, 8}, {17, 9}, {7, 2}, {11, 7}, {13, 9}};
+    uint32_t lo = 0xFFFFFFFFu, hi = 0;
+    for (const profile::NameTable* nt : tabs) {
+        if (!nt->at) continue;
+        if (nt->at < lo) lo = nt->at;
+        if (nt->at + nt->stride * nt->count > hi) hi = nt->at + nt->stride * nt->count;
+    }
+    if (hi > lo && hi - lo <= 2048) {
+        uint8_t* buf = static_cast<uint8_t*>(malloc(hi - lo));
+        if (buf && exepack::read(exe, info, lo, buf, hi - lo) == exepack::Status::Ok) {
+            for (int t = 0; t < 6; ++t) {
+                const profile::NameTable& nt = *tabs[t];
+                if (!nt.at || nt.stride > caps[t][0] || nt.count > caps[t][1]) continue;
+                for (int i = 0; i < nt.count; ++i) {
+                    const uint8_t* e = buf + (nt.at - lo) + i * nt.stride;
+                    size_t n = e[0];
+                    if (n >= nt.stride) n = nt.stride - 1;
+                    char* out = outs[t] + i * caps[t][0];
+                    memcpy(out, e + 1, n);
+                    out[n] = 0;
+                }
+            }
+        }
+        free(buf);
+    }
     fs::File f;
     if (open_file(d->prof->overlay, f)) {
         library::FileSource src(f);
+        struct { uint32_t at; char* out; size_t cap; } words[] = {
+            {pv.npc, d->v_npc, sizeof d->v_npc}, {pv.age, d->v_age, sizeof d->v_age},
+            {pv.level, d->v_level, sizeof d->v_level}, {pv.exp, d->v_exp, sizeof d->v_exp},
+            {pv.status, d->v_status, sizeof d->v_status}, {pv.ac, d->v_ac, sizeof d->v_ac},
+            {pv.hp, d->v_hp, sizeof d->v_hp}, {pv.thac0, d->v_thac0, sizeof d->v_thac0},
+            {pv.damage, d->v_damage, sizeof d->v_damage}, {pv.encumbrance, d->v_enc, sizeof d->v_enc},
+            {pv.movement, d->v_move, sizeof d->v_move}, {pv.exit, d->v_exit, sizeof d->v_exit},
+        };
+        for (auto& wd : words)
+            if (wd.at) text::read_pascal(src, wd.at, wd.out, wd.cap);
+        for (int i = 0; i < 6 && pv.stats; ++i)
+            text::read_pascal(src, pv.stats + static_cast<uint32_t>(i) * pv.stats_stride, d->v_stat[i], sizeof d->v_stat[i]);
         text::read_pascal(src, pp.choose, d->choose, sizeof d->choose);
         text::read_pascal(src, pp.load_which, d->load_which, sizeof d->load_which);
         text::read_pascal(src, pp.name, d->name_head, sizeof d->name_head);
@@ -652,6 +826,7 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
     if (!d->load_which[0]) strcpy(d->load_which, "Load Which Game: ");
     if (!d->name_head[0]) strcpy(d->name_head, "Name");
     if (!d->ac_hp_head[0]) strcpy(d->ac_hp_head, "AC  HP");
+    if (!d->v_exit[0]) strcpy(d->v_exit, "Exit");
     char sub[64] = "SAVE";
     if (pp.cfg && open_file(pp.cfg, f)) {
         char cfg[256];
@@ -1078,6 +1253,25 @@ void finish_print_wait()
     handle(vm->resume());
 }
 
+// Back from View Character: the party menu, or the exploring screen drawn
+// again (the 3D view, the party, an empty text window)
+void back_from_view(pic::Canvas& c)
+{
+    screen = view_from;
+    if (screen != Screen::Game) {
+        draw_party_menu(c);
+        return;
+    }
+    anim_stop();
+    bigpic = -1;
+    pic_shown = false;
+    head_shown = body_shown = -1;
+    draw_frame(c);
+    draw_view(c);
+    draw_panel(c);
+    idle_menu(c);
+}
+
 // BEGIN Adventuring: the saved game's script again (its first run), or a
 // new game's start script (as the games do when no script ran yet)
 void begin_adventuring()
@@ -1353,10 +1547,12 @@ void tap(int x, int y, pic::Canvas& c)
             vm->set(0x7ECA, static_cast<uint16_t>(vm->get(0x7ECA) ^ 1));
             draw_position(c);
             break;
-        case 'C':
         case 'V':
+            view_character(c);
+            break;
+        case 'C':
         case 'E':
-            text::begin(w, c, "Not in the engine yet: it needs a party.", text::kTextArea, 10, true);
+            text::begin(w, c, "Not in the engine yet.", text::kTextArea, 10, true);
             text::step(w, c, d->font, -1);
             dirty_rows(17, 22);
             break;
@@ -1426,6 +1622,10 @@ bool back(pic::Canvas& c)
     if (screen == Screen::LoadWhich) {
         screen = Screen::PartyMenu;
         draw_party_menu(c);
+        return true;
+    }
+    if (screen == Screen::View) {
+        back_from_view(c);
         return true;
     }
     return false;
@@ -1498,7 +1698,7 @@ void describe(char* line1, char* line2, int cap)
         return;
     }
     if (screen != Screen::Game) {
-        snprintf(line1, cap, "Party menu");
+        snprintf(line1, cap, screen == Screen::View ? "View Character" : "Party menu");
         snprintf(line2, cap, "%d character%s", pt->count, pt->count == 1 ? "" : "s");
         return;
     }
