@@ -28,7 +28,7 @@ or Edge on a computer - pick your board, click Install.
 | 3.5" ESP32-32E, 320x480 | `TTB-CYD-PRS_3.5in_ST7796_Resistive` |
 | 4.0" ESP32-32E, 320x480 | `TTB-CYD-PRS_4.0in_ST7796_Resistive` |
 
-Tested with this firmware so far: the 4.0".
+All five boards are tested with this firmware.
 
 ## Your games on the SD card
 
@@ -105,6 +105,18 @@ Good files to try in Curse: `TITLE.DAX` (title screens, blocks 1-4),
 (portraits), `SKY.DAX`, `COMSPR.DAX` (combat figures). Pools of Darkness's
 256-colour pictures show too (from v0.1.3), except its animations (`PIC1`,
 `SPRIT1`) and wall tiles (`8X8D1`), which are still to be worked out.
+
+## Settings, logs and WiFi
+
+**Settings** (from the library): a brightness slider, colour fixes (Swap
+Red/Blue shows red, green and blue blocks - if they don't match their
+names, tap it), Rotate 180, touch calibration, **WiFi** and **Logs**.
+The card scan ends on its log; read it (tap the top / bottom half of the
+box, or drag), then tap Continue. **Logs** shows the scan log, restarts and
+errors, and **Email Logs** sends them to the engine's log address: the
+board signs in to your own mail account to send (for Gmail, an app
+password - Google Account, Security, 2-Step Verification, App passwords).
+The WiFi network and mail account stay on the board, never on the card.
 
 ## Building
 

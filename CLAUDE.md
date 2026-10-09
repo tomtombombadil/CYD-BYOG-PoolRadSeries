@@ -59,6 +59,14 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   v0.13.0), `journal_tables.cpp` from
   `tools/journal/make_table.py` (run on the player's PDF in scratch space;
   check every entry by eye; renders stay in scratch).
+- Settings / logs / WiFi / email (Tom, 2026-10-09; SPEC 5c): the card
+  scan ends at its scrolling log until Continue; Settings has a brightness
+  slider, Swap Red/Blue with red / green / blue blocks, WiFi and Logs keys,
+  pages with arrows bottom right when keys don't fit. Logs mail to
+  cyd.classic.games.logs@gmail.com, subject tag
+  "CYD-BYOG-GoldBoxGameEngine", from the player's own account (app
+  password) - never put an account or password in the repo. WiFi only on
+  while needed (`app/net.*`, `ui/netui.*`).
 - Engine Menu (Tom, 2026-10-09): the Play Test's Area key became a Menu
   key (both screen sizes) opening the engine's own tabbed screen: Journal
   (entries met so far) and Journal PDF (the book) now; further engine
@@ -109,8 +117,9 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   `custom_firmware_name` (`TTB-CYD-PRS_<size>in_<DRIVER>_<touch>`),
   `custom_board_title`, `custom_board_hint`, `custom_board_tested` drive CI,
   releases and the flasher - platformio.ini is the single source of truth.
-- `custom_board_tested = no` on every board until Tom has run THIS firmware on
-  it. Tested: 4.0" ST7796 (v0.1.1 - finds all four games on SD).
+- `custom_board_tested = no` on a board until Tom has run THIS firmware on
+  it. Tested: all five boards (Tom, 2026-10-09, v0.20.0); a new board starts
+  at `no`.
 - 2.8" ESP32-2432S028: touch is bit-banged (`touch_xpt2046_soft.hpp`, an
   `lgfx::ITouch`) so the SD card can have VSPI. Keep it that way - the engine
   needs the card.
@@ -155,6 +164,9 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
 - `tools/playsim/` (Claude's side, Linux): runs the Play Test on the PC
   against the game files in scratch space (shims for Arduino / SD); use it
   to check script behaviour and take canvas snapshots before pushing.
+  Its card is like the board's: `/GOLDBOX/...` paths map to the game
+  folder's parent, and `library::path_of` adds `/GOLDBOX` as on the board
+  (v0.21.0: a doubled `/GOLDBOX` in the save paths went unseen before).
   Snapshots of real game screens stay in scratch, never in the repo.
 - PortMaster ports are a stretch goal (Tom): keep everything portable.
 - Game screens (Walk Test, Play Test now, the games later): canvas 1:1 at the top left
@@ -172,10 +184,15 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   the certifi bundles under the venv and `~/.platformio/penv` or downloads fail.
 
 ## UI rules (Tom's, from CYD-Classic-Games)
-- Big targets; taps act on release at the PRESS point; never drag/swipe.
+- Big targets; taps act on release at the PRESS point; no drag / swipe
+  except as below.
 - No "are you sure" confirmations. Title Case for keys and headings; status
   and help lines in sentence case.
 - Long-press only with Tom's OK, never the only way to do something.
+- Dragging (Tom, 2026-10-09) only where something scrolls or slides (the
+  logs, the brightness slider) and never the only way: taps do it too.
+- Errors stay on screen until tapped (Tom, 2026-10-09) - never timed. The
+  games' own timed messages ("Not enough Money.") keep the games' timing.
 - Sounds: go easy - no sound on plain key presses.
 
 ## Versions and releases

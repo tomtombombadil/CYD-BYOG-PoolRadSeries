@@ -39,6 +39,15 @@ int gap();             // space between keys
 bool poll_tap(Tap& out);
 // True while the panel is being pressed (after the filter).
 bool pressed();
+// Dragging (Tom, 2026-10-09: scrolling lists, the brightness slider): on a
+// screen that allows it, a press that moves more than a few pixels is a
+// drag - its release is no tap. Off by default (a wobbly tap stays a tap);
+// allow_drag(false) when leaving the screen.
+void allow_drag(bool on);
+// The drag's movement since the last call; true while dragging.
+bool drag(int& dx, int& dy);
+// Where the press is now; false when there's no press.
+bool touch_point(int& x, int& y);
 
 // ---- drawing --------------------------------------------------------------
 void clear();

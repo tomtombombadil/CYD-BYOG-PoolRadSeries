@@ -30,6 +30,7 @@
 #include "engine/party.h"
 #include "engine/rules.h"
 #include "engine/savegame.h"
+#include "engine/smtp.h"
 #include "engine/printcalls.h"
 #include "engine/profile.h"
 #include "engine/text.h"
@@ -2176,6 +2177,67 @@ static void test_create()
     CHECK(th.rec[0xEA + 1] == 0);
 }
 
+// A mail server that answers from a script
+struct FakeMail : smtp::Link {
+    std::vector<std::string> replies;
+    size_t next = 0;
+    std::string sent;
+    bool tls = false;
+    bool write(const char* s, size_t n) override { sent.append(s, n); return true; }
+    bool read_line(char* out, size_t cap) override
+    {
+        if (next >= replies.size()) return false;
+        snprintf(out, cap, "%s", replies[next++].c_str());
+        return true;
+    }
+    bool start_tls() override { tls = true; return true; }
+};
+
+static void test_smtp()
+{
+    char b[64];
+    smtp::base64(reinterpret_cast<const uint8_t*>("foobar"), 6, b);
+    CHECK(strcmp(b, "Zm9vYmFy") == 0);
+    smtp::base64(reinterpret_cast<const uint8_t*>("fo"), 2, b);
+    CHECK(strcmp(b, "Zm8=") == 0);
+    CHECK(smtp::base64(reinterpret_cast<const uint8_t*>("f"), 1, b) == 4 && strcmp(b, "Zg==") == 0);
+    CHECK(smtp::base64(nullptr, 0, b) == 0 && b[0] == 0);
+
+    FakeMail ok;
+    ok.replies = {"220 ready", "250-hello", "250 SIZE 1000", "220 go ahead", "250-again", "250 AUTH PLAIN",
+                  "235 accepted", "250 ok", "250 ok", "354 go", "250 queued", "221 bye"};
+    const uint8_t hello[] = {'h', 'e', 'l', 'l', 'o'};
+    dax::MemorySource att_src(hello, 5);
+    const smtp::Attachment att[1] = {{"SCAN.TXT", &att_src}};
+    const smtp::Account acct{"a", "b", true};
+    const smtp::Message msg{"me@x.org", "logs@y.org\r\nBcc: z", "Logs", ".hidden\nline", att, 1};
+    char reply[80];
+    std::vector<std::string> steps;
+    CHECK(smtp::send(ok, acct, msg, reply, sizeof reply,
+                     [](const char* s, void* c) { static_cast<std::vector<std::string>*>(c)->push_back(s); }, &steps) ==
+          smtp::Status::Ok);
+    CHECK(ok.tls && steps.size() == 2);
+    const std::string& t = ok.sent;
+    CHECK(t.find("EHLO cyd-byog\r\nSTARTTLS\r\nEHLO cyd-byog\r\n") == 0);
+    CHECK(t.find("AUTH PLAIN AGEAYg==\r\n") != std::string::npos);          // "\0a\0b"
+    CHECK(t.find("MAIL FROM:<me@x.org>\r\nRCPT TO:<logs@y.orgBcc: z>\r\nDATA\r\n") != std::string::npos);
+    CHECK(t.find("\r\nBcc") == std::string::npos);                          // no extra header lines
+    CHECK(t.find("Subject: Logs\r\n") != std::string::npos);
+    CHECK(t.find("\r\n\r\n..hidden\r\nline\r\n--") != std::string::npos);     // dot doubled, CR LF
+    CHECK(t.find("filename=\"SCAN.TXT\"") != std::string::npos);
+    CHECK(t.find("base64\r\n\r\naGVsbG8=\r\n--") != std::string::npos);
+    CHECK(t.size() > 12 && t.compare(t.size() - 13, 13, "--\r\n.\r\nQUIT\r\n") == 0);
+
+    FakeMail bad;
+    bad.replies = {"220 ready", "250 hello", "535-5.7.8 Username and Password not accepted", "535 5.7.8 Learn more"};
+    const smtp::Account plain{"a", "wrong", false};
+    CHECK(smtp::send(bad, plain, msg, reply, sizeof reply) == smtp::Status::SignIn);
+    CHECK(strncmp(reply, "535 5.7.8", 9) == 0 && bad.sent.find("STARTTLS") == std::string::npos);
+
+    FakeMail silent;
+    CHECK(smtp::send(silent, plain, msg, reply, sizeof reply) == smtp::Status::NoGreeting);
+}
+
 int main()
 {
     test_rle_known_bytes();
@@ -2201,6 +2263,7 @@ int main()
     test_party();
     test_items();
     test_create();
+    test_smtp();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;

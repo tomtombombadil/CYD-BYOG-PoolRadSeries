@@ -4,7 +4,7 @@
 #include "engine/dax.h"
 #include "engine/games.h"
 namespace library {
-inline void path_of(const char* d, const char* f, char* out, size_t cap) { snprintf(out, cap, "%s/%s", d, f); }
+inline void path_of(const char* d, const char* f, char* out, size_t cap) { snprintf(out, cap, "%s/%s/%s", games::kRootDir, d, f); }   // as on the board
 class FileSource : public dax::ByteSource {
 public:
     explicit FileSource(fs::File f) : f_(f), size_((uint32_t)f.size()) {}

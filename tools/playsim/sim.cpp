@@ -79,7 +79,13 @@ static void settle(int choice = 0, int max_ms = 60000)
 }
 int main(int argc, char** argv)
 {
-    const char* dir = argv[1];
+    // argv[1]: the game folder on the PC; its parent stands for /GOLDBOX
+    std::string host = argv[1];
+    while (host.size() > 1 && host.back() == '/') host.pop_back();
+    const size_t slash = host.rfind('/');
+    fs::sim_root() = slash == std::string::npos ? "." : host.substr(0, slash);
+    const std::string folder = slash == std::string::npos ? host : host.substr(slash + 1);
+    const char* dir = folder.c_str();
     const char* e = play::open(dir, games::Game::CurseOfTheAzureBonds, C, getenv("CACHE"));
     if (e) { printf("open: %s\n", e); return 1; }
     // The party menu: tap its lines by their first letter

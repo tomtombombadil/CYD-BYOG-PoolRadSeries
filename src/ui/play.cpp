@@ -136,6 +136,7 @@ struct PickList {
 
 // A message on the menu line ("Not enough Money."), then the menu again
 uint32_t note_until = 0;
+bool     note_held = false;      // an error: stays until a tap (Tom, 2026-10-09)
 int last_pic_id = -1, last_pic_head = 0xFF;   // the script's picture (shops come back to it)
 int  pm_item[Data::kItems];   // the menu item on each list line
 int  pm_lines = 0;
@@ -545,13 +546,16 @@ void draw_party_menu(pic::Canvas& c)
     dirty(0, pic::kScreenH);
 }
 
+// A file in the save folder (save_dir is the folder's full path on the card)
+void save_path(const char* name, char* out, size_t cap) { snprintf(out, cap, "%s/%s", d->save_dir, name); }
+
 void find_saves()
 {
     int n = 0;
     for (char s = savegame::kFirst; s <= savegame::kLast; ++s) {
         char name[24], path[160];
         savegame::file_name(s, name, sizeof name);
-        library::path_of(d->save_dir, name, path, sizeof path);
+        save_path(name, path, sizeof path);
         fs::File f = sd_fs().open(path, "r");
         if (f) {
             pm_saves[n++] = s;
@@ -564,7 +568,7 @@ void find_saves()
 bool open_save_file(const char* name, fs::File& f)
 {
     char path[160];
-    library::path_of(d->save_dir, name, path, sizeof path);
+    save_path(name, path, sizeof path);
     f = sd_fs().open(path, "r");
     return static_cast<bool>(f);
 }
@@ -778,6 +782,7 @@ void draw_shop(pic::Canvas& c);
 void redraw_menu(pic::Canvas& c)
 {
     note_until = 0;
+    note_held = false;
     show_menu_line(c);
 }
 
@@ -790,6 +795,29 @@ void note(pic::Canvas& c, const char* t)
     if (speed == 0) speed = 4;
     note_until = millis() + static_cast<uint32_t>(speed) * 300;
     if (!note_until) note_until = 1;
+}
+
+// An error (or "not in the engine yet") on the menu line: it stays until
+// the player taps (Tom, 2026-10-09: errors mustn't vanish before they're
+// read). Also noted in /GOLDBOX/_CYD/ERRORS.TXT (Settings - Logs).
+void error(pic::Canvas& c, const char* t)
+{
+    clear_menu_line(c);
+    put(c, t, 0, text::kMenuRow, 12);
+    note_until = 1;
+    note_held = true;
+    Serial.printf("[play] error: %s\n", t);
+    char path[96];
+    snprintf(path, sizeof path, "%s/_CYD/ERRORS.TXT", games::kRootDir);
+    fs::File f = sd_fs().open(path, "a");
+    if (f) {
+        const uint32_t s = millis() / 1000;
+        char line[128];
+        const int n = snprintf(line, sizeof line, "[%u:%02u:%02u] %s\n", (unsigned)(s / 3600), (unsigned)(s / 60 % 60),
+                               (unsigned)(s % 60), t);
+        f.write(reinterpret_cast<const uint8_t*>(line), n > 0 && n < (int)sizeof line ? n : 0);
+        f.close();
+    }
 }
 
 void pick_line(int i, char* out, size_t cap);     // Create New Character's lists
@@ -957,7 +985,7 @@ struct FileSink : savegame::Sink {
 bool write_file(const char* dir, const char* name, const uint8_t* p, size_t n)
 {
     char path[200];
-    library::path_of(dir, name, path, sizeof path);
+    snprintf(path, sizeof path, "%s/%s", dir, name);      // dir: a full card path
     if (!n) {
         if (sd_fs().exists(path)) sd_fs().remove(path);
         return true;
@@ -986,7 +1014,7 @@ bool save_game(char slot)
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
     char name[24], path[200];
     savegame::file_name(slot, name, sizeof name);
-    library::path_of(d->save_dir, name, path, sizeof path);
+    save_path(name, path, sizeof path);
     fs::File f = sd_fs().open(path, "w");
     if (!f) return false;
     bool ok;
@@ -1025,7 +1053,7 @@ void load_journal_list(char slot)
     if (!d->cache_dir[0]) return;
     char name[24], path[200];
     snprintf(name, sizeof name, "SAVGAM%c.JNL", slot);
-    library::path_of(d->cache_dir, name, path, sizeof path);
+    snprintf(path, sizeof path, "%s/%s", d->cache_dir, name);   // cache_dir: a full card path
     fs::File f = sd_fs().open(path, "r");
     if (!f) return;
     uint8_t b[2];
@@ -1061,9 +1089,14 @@ void save_tap(int x, int y, pic::Canvas& c)
     clear_menu_line(c);
     put(c, d->w_saving, 0, text::kMenuRow, 10);
     dirty_rows(text::kMenuRow, text::kMenuRow);
-    const bool ok = save_game(text::key(menu, k));
+    const char slot = text::key(menu, k);
+    const bool ok = save_game(slot);
     back_from_save(c);
-    if (!ok) note(c, "The card couldn't be written.");
+    if (!ok) {
+        char t[48];
+        snprintf(t, sizeof t, "Couldn't save game %c on the card.", slot);
+        error(c, t);
+    }
 }
 
 void draw_camp(pic::Canvas& c)
@@ -1113,7 +1146,7 @@ void camp_tap(int x, int y, pic::Canvas& c)
         case 'V': view_character(c); break;
         case 'E': leave_camp(c); break;
         case 0: break;
-        default: note(c, "Not in the engine yet."); break;
+        default: error(c, "Not in the engine yet."); break;
         }
         return;
     }
@@ -1202,7 +1235,7 @@ void remove_character(pic::Canvas& c, bool overwrite_ok)
     char base[12], fn[24], path[200];
     guy_base(*ch, base, sizeof base);
     snprintf(fn, sizeof fn, "%s.GUY", base);
-    library::path_of(d->save_dir, fn, path, sizeof path);
+    save_path(fn, path, sizeof path);
     if (!overwrite_ok && sd_fs().exists(path)) {
         char t[60];
         snprintf(t, sizeof t, "%s%s%s", rw(Data::kOverwrite), base, rw(Data::kQmark));
@@ -1212,7 +1245,9 @@ void remove_character(pic::Canvas& c, bool overwrite_ok)
     if (!write_character(base, *ch)) {
         screen = Screen::PartyMenu;
         draw_party_menu(c);
-        note(c, "The card couldn't be written.");
+        char t[48];
+        snprintf(t, sizeof t, "Couldn't write %s.GUY to the card.", base);
+        error(c, t);
         return;
     }
     leave_party(pt->selected);
@@ -1403,7 +1438,7 @@ void add_from_tap(int x, int y, pic::Canvas& c)
         return;
     case 'P':
     case 'H':
-        note(c, "Not in the engine yet.");
+        error(c, "Not in the engine yet.");
         return;
     default:
         return;
@@ -1615,7 +1650,7 @@ void save_new(pic::Canvas& c, bool overwrite_ok)
     char base[12], fn[24], path[200];
     guy_base(mk->ch, base, sizeof base);
     snprintf(fn, sizeof fn, "%s.GUY", base);
-    library::path_of(d->save_dir, fn, path, sizeof path);
+    save_path(fn, path, sizeof path);
     if (!overwrite_ok && sd_fs().exists(path)) {
         char t[60];
         snprintf(t, sizeof t, "%s%s%s", rw(Data::kOverwrite), base, rw(Data::kQmark));
@@ -1624,7 +1659,11 @@ void save_new(pic::Canvas& c, bool overwrite_ok)
     }
     const bool ok = write_character(base, mk->ch);
     end_create(c);
-    if (!ok) note(c, "The card couldn't be written.");
+    if (!ok) {
+        char t[48];
+        snprintf(t, sizeof t, "Couldn't write %s.GUY to the card.", base);
+        error(c, t);
+    }
 }
 
 
@@ -1771,7 +1810,7 @@ void shop_tap(int x, int y, pic::Canvas& c)
         case 0:
             break;
         default:
-            note(c, "Not in the engine yet.");
+            error(c, "Not in the engine yet.");
             break;
         }
         return;
@@ -1940,7 +1979,11 @@ void pm_tap(int x, int y, pic::Canvas& c)
         yes_no_tap(x, y, c);
         return;
     }
-    if (note_until && screen == Screen::PartyMenu) redraw_menu(c);
+    if (note_until && screen == Screen::PartyMenu) {
+        const bool held = note_held;
+        redraw_menu(c);
+        if (held) return;                   // the tap only puts the error away
+    }
     if (screen == Screen::Shop) {
         shop_tap(x, y, c);
         return;
@@ -2899,7 +2942,7 @@ void tap(int x, int y, pic::Canvas& c)
 void tick(uint32_t now, pic::Canvas& c)
 {
     if (!d) return;
-    if (note_until && static_cast<int32_t>(now - note_until) >= 0) {
+    if (note_until && !note_held && static_cast<int32_t>(now - note_until) >= 0) {
         cv = &c;
         redraw_menu(c);
     }

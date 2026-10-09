@@ -22,6 +22,7 @@
 #include "hal/panel_prefs.h"
 #include "hal/sdcard.h"
 #include "look.h"
+#include "netui.h"
 #include "pdfview.h"
 #include "play.h"
 #include "walk.h"
@@ -31,7 +32,7 @@ namespace viewer {
 
 namespace {
 
-enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Walk, Play, Journal, Pdf, GameMenu, Settings };
+enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Walk, Play, Journal, Pdf, GameMenu, Settings, Net };
 
 Env       env_;
 Settings* cfg = nullptr;
@@ -92,6 +93,8 @@ struct Pager {
 
 void go(Screen s)
 {
+    // Drags: the Settings slider; the Net screens set their own
+    if (s != Screen::Net) ui::allow_drag(s == Screen::Settings);
     screen = s;
     dirty = true;
 }
@@ -613,14 +616,31 @@ void rescan()
     }
     for (int i = 0; i < n_games; ++i)
         if (game_dirs[i].journal[0]) prepare_journal(game_dirs[i]);
-    scan_say("Done.", false, nullptr);
+    scan_say("Done. Look through the list, then tap Continue.", false, nullptr);
+    // The list stays up to be read (Tom, 2026-10-09): the whole log,
+    // scrolling, until Continue
+    char* fallback = nullptr;
     if (scr) {
         scan_flush_log();
-        if (scr->log) scr->log.close();
-        delay(1500);         // a moment to read the end of the list
+        if (scr->log) {
+            scr->log.close();
+        } else {
+            // No log on the card (no card): the lines kept on screen
+            fallback = static_cast<char*>(malloc(ScanScreen::kLines * 101));
+            if (fallback) {
+                fallback[0] = 0;
+                for (int i = 0; i < scr->n; ++i) {
+                    strcat(fallback, scr->line[i]);
+                    strcat(fallback, "\n");
+                }
+            }
+        }
     }
     delete scr;
     scr = nullptr;
+    netui::open_logs(true, fallback);
+    free(fallback);
+    go(Screen::Net);
 }
 
 void draw_home()
@@ -689,7 +709,7 @@ void tap_home(const ui::Tap& t)
 {
     const bool more = n_games > 1;
     const int k = bottom_hit(t, more ? 4 : 2);
-    if (k == 0) { rescan(); dirty = true; return; }
+    if (k == 0) { rescan(); return; }
     if (k == 1) { go(Screen::Settings); return; }
     if (k == 2 && home_page > 0) { --home_page; dirty = true; return; }
     if (k == 3 && home_page + 1 < n_games) { ++home_page; dirty = true; return; }
@@ -2066,57 +2086,193 @@ void tap_play(const ui::Tap& t)
 
 // ---- Settings --------------------------------------------------------------
 
-enum SetKey { kBrightDown, kBrightUp, kInvert, kSwap, kRotate, kCalibrate, kScale, kSetKeys };
+// The keys (Tom, 2026-10-09): Brightness is a slider in one key's space;
+// Swap Red/Blue shows red, green and blue blocks to check the colours by;
+// WiFi and Logs. More than fit go on further pages (arrows bottom right).
+enum SetItem { kBright, kWifi, kInvert, kSwap, kRotate, kCalibrate, kScale, kLogs };
 
-int set_count() { return ui::large() ? kSetKeys : kSetKeys - 1; }   // 1.5x only on 480x320
+const SetItem kSetLarge[] = {kBright, kWifi, kInvert, kSwap, kRotate, kCalibrate, kScale, kLogs};
+const SetItem kSetSmall[] = {kBright, kWifi, kInvert, kSwap, kRotate, kLogs, kCalibrate};
+int set_page = 0;
 
-ui::Rect set_cell(int i) { return ui::grid_cell(i, 2, ui::large() ? 4 : 3); }
+int set_rows() { return ui::large() ? 4 : 3; }
+int set_per_page() { return set_rows() * 2; }
+int set_total() { return ui::large() ? int(sizeof kSetLarge / sizeof kSetLarge[0]) : int(sizeof kSetSmall / sizeof kSetSmall[0]); }
+SetItem set_item(int i) { return ui::large() ? kSetLarge[i] : kSetSmall[i]; }
+int set_pages() { return (set_total() + set_per_page() - 1) / set_per_page(); }
+ui::Rect set_cell(int slot) { return ui::grid_cell(slot, 2, set_rows()); }
+
+// The page's arrows, bottom right
+ui::Rect set_arrow(int i)
+{
+    const int w = ui::key_h() * 5 / 4, gp = ui::gap();
+    return {ui::width() - gp - (2 - i) * (w + gp) + gp, ui::height() - ui::key_h() - gp, w, ui::key_h()};
+}
+
+// The brightness slider inside its cell
+ui::Rect slider_track(const ui::Rect& r)
+{
+    const int lh = ui::line_h(ui::Font::Small);
+    const int pad = ui::gap() * 3;
+    const int top = r.y + ui::gap() + lh + ui::gap();
+    return {r.x + pad, top, r.w - pad * 2, r.y + r.h - ui::gap() - top};
+}
+
+void draw_slider(const ui::Rect& r)
+{
+    LGFX& g = ui::gfx();
+    ui::key(r, "");
+    char b[32];
+    snprintf(b, sizeof b, "Brightness %d%%", cfg->brightness * 100 / 255);
+    ui::text(r.x + ui::gap() * 2, r.y + ui::gap(), b, style::kText, ui::Font::Small);
+    const ui::Rect t = slider_track(r);
+    const int cy = t.y + t.h / 2, th = ui::large() ? 6 : 4;
+    const int pos = t.x + (cfg->brightness - kMinBrightness) * t.w / (255 - kMinBrightness);
+    g.fillRoundRect(t.x, cy - th / 2, t.w, th, th / 2, style::kKeyEdge);
+    g.fillRoundRect(t.x, cy - th / 2, pos - t.x + 1, th, th / 2, style::kGold);
+    int kr = t.h / 2 - 1;
+    if (kr > (ui::large() ? 11 : 8)) kr = ui::large() ? 11 : 8;
+    g.fillCircle(pos, cy, kr, style::kGold);
+    g.drawCircle(pos, cy, kr, style::kText);
+}
+
+// Brightness from a point on the slider
+bool slider_set(const ui::Rect& r, int x)
+{
+    const ui::Rect t = slider_track(r);
+    int v = kMinBrightness + (x - t.x) * (255 - kMinBrightness) / (t.w > 0 ? t.w : 1);
+    if (v < kMinBrightness) v = kMinBrightness;
+    if (v > 255) v = 255;
+    if (v == cfg->brightness) return false;
+    cfg->brightness = static_cast<uint8_t>(v);
+    ui::gfx().setBrightness(cfg->brightness);
+    return true;
+}
+
+void draw_swap(const ui::Rect& r, bool lit)
+{
+    LGFX& g = ui::gfx();
+    ui::key(r, "", lit ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+    const int lh = ui::line_h(ui::Font::Normal);
+    ui::text_center({r.x, r.y + ui::gap(), r.w, lh}, "Swap Red/Blue");
+    const int gp = ui::gap();
+    const int top = r.y + gp + lh + gp / 2, h = r.y + r.h - gp - top;
+    const int w = (r.w - gp * 4) / 3;
+    static const uint16_t kCol[3] = {0xF800, 0x07E0, 0x001F};      // pure red, green, blue
+    static const char* const kName[3] = {"Red", "Green", "Blue"};
+    for (int i = 0; i < 3; ++i) {
+        const ui::Rect b{r.x + gp + i * (w + gp), top, w, h};
+        g.fillRect(b.x, b.y, b.w, b.h, kCol[i]);
+        ui::text_center(b, kName[i], i == 1 ? 0x0000 : 0xFFFF, ui::Font::Small);
+    }
+}
+
+void draw_set_item(int slot, SetItem it)
+{
+    const ui::Rect r = set_cell(slot);
+    const PanelPrefs& pp = panel_prefs_get();
+    auto lit = [](bool on) { return on ? ui::KeyStyle::Lit : ui::KeyStyle::Normal; };
+    switch (it) {
+    case kBright:    draw_slider(r); break;
+    case kWifi:      ui::key(r, "WiFi"); break;
+    case kInvert:    ui::key(r, "Invert Colors", lit(pp.invert)); break;
+    case kSwap:      draw_swap(r, pp.swap_rb); break;
+    case kRotate:    ui::key(r, "Rotate 180", lit(cfg->flipped)); break;
+    case kCalibrate: ui::key(r, "Recalibrate Touch"); break;
+    case kScale:     ui::key(r, cfg->scale_15x ? "Game Screen: 1.5x" : "Game Screen: 1:1", lit(cfg->scale_15x)); break;
+    case kLogs:      ui::key(r, "Logs"); break;
+    }
+}
 
 void draw_settings()
 {
     ui::clear();
     ui::header("Settings", true);
-    char b[32];
-    snprintf(b, sizeof b, "Brightness - (%d%%)", cfg->brightness * 100 / 255);
-    ui::key(set_cell(kBrightDown), b);
-    ui::key(set_cell(kBrightUp), "Brightness +");
-    const PanelPrefs& pp = panel_prefs_get();
-    ui::key(set_cell(kInvert), "Invert Colors", pp.invert ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
-    ui::key(set_cell(kSwap), "Swap Red/Blue", pp.swap_rb ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
-    ui::key(set_cell(kRotate), "Rotate 180", cfg->flipped ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
-    ui::key(set_cell(kCalibrate), "Recalibrate Touch");
-    if (ui::large())
-        ui::key(set_cell(kScale), cfg->scale_15x ? "Game Screen: 1.5x" : "Game Screen: 1:1",
-                cfg->scale_15x ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+    if (set_page >= set_pages()) set_page = set_pages() - 1;
+    const int first = set_page * set_per_page();
+    for (int i = 0; i < set_per_page() && first + i < set_total(); ++i) draw_set_item(i, set_item(first + i));
+    const bool paged = set_pages() > 1;
+    if (paged) {
+        ui::key_arrow(set_arrow(0), ui::Arrow::Left, set_page > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+        ui::key_arrow(set_arrow(1), ui::Arrow::Right, set_page < set_pages() - 1 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+    }
 
-    // Version, board and memory in the space a key row would take
-    char l1[96], l2[96];
-    snprintf(l1, sizeof l1, "%s (%s)  %s", env_.version, env_.build, BOARD_NAME);
-    snprintf(l2, sizeof l2, "Free memory %u KB, largest block %u KB",
-             (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
-             (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
+    // Version, board and memory in the bottom row (left of the arrows)
+    char l[3][64];
+    const unsigned fr = (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024);
+    const unsigned lb = (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024);
+    int n;
+    if (paged) {
+        snprintf(l[0], sizeof l[0], "%s (%s)", env_.version, env_.build);
+        snprintf(l[1], sizeof l[1], "%s", BOARD_NAME);
+        snprintf(l[2], sizeof l[2], "Free %u KB, largest %u KB", fr, lb);
+        n = 3;
+    } else {
+        snprintf(l[0], sizeof l[0], "%s (%s)  %s", env_.version, env_.build, BOARD_NAME);
+        snprintf(l[1], sizeof l[1], "Free memory %u KB, largest block %u KB", fr, lb);
+        n = 2;
+    }
     const int lh = ui::line_h(ui::Font::Small) + 2;
-    const int y = ui::height() - ui::gap() - ui::key_h() / 2 - lh;
-    ui::text(ui::gap() * 2, y, l1, style::kTextMuted, ui::Font::Small);
-    ui::text(ui::gap() * 2, y + lh, l2, style::kTextMuted, ui::Font::Small);
+    int y = ui::height() - ui::gap() - ui::key_h() / 2 - lh * n / 2;
+    for (int i = 0; i < n; ++i, y += lh) ui::text(ui::gap() * 2, y, l[i], style::kTextMuted, ui::Font::Small);
+}
+
+int bright_slot()          // the slider's place on this page, -1 when not on it
+{
+    const int first = set_page * set_per_page();
+    for (int i = 0; i < set_per_page() && first + i < set_total(); ++i)
+        if (set_item(first + i) == kBright) return i;
+    return -1;
+}
+
+bool slider_dragged = false;
+
+// Dragging the slider: the brightness follows; saved when the stylus lifts
+void settings_tick()
+{
+    int dx, dy, x, y;
+    const bool dragging = ui::drag(dx, dy);
+    const int slot = bright_slot();
+    if (dragging && slot >= 0 && ui::touch_point(x, y)) {
+        const ui::Rect r = set_cell(slot);
+        if (y >= r.y - ui::gap() * 2 && y < r.y + r.h + ui::gap() * 2) {
+            slider_dragged = true;
+            if (slider_set(r, x)) draw_slider(r);
+        }
+    } else if (!dragging && slider_dragged) {
+        slider_dragged = false;
+        settings_save(*cfg);
+    }
 }
 
 void tap_settings(const ui::Tap& t)
 {
     if (ui::back_rect().contains(t.x, t.y)) { go(Screen::Home); return; }
+    if (set_pages() > 1) {
+        if (set_arrow(0).contains(t.x, t.y) && set_page > 0) { --set_page; dirty = true; return; }
+        if (set_arrow(1).contains(t.x, t.y) && set_page < set_pages() - 1) { ++set_page; dirty = true; return; }
+    }
     LGFX& g = ui::gfx();
-    for (int i = 0; i < set_count(); ++i) {
-        if (!set_cell(i).contains(t.x, t.y)) continue;
+    const int first = set_page * set_per_page();
+    for (int i = 0; i < set_per_page() && first + i < set_total(); ++i) {
+        const ui::Rect r = set_cell(i);
+        if (!r.contains(t.x, t.y)) continue;
         PanelPrefs pp = panel_prefs_get();
-        switch (i) {
-        case kBrightDown:
-            cfg->brightness = cfg->brightness > kMinBrightness + 25 ? cfg->brightness - 25 : kMinBrightness;
-            g.setBrightness(cfg->brightness);
-            break;
-        case kBrightUp:
-            cfg->brightness = cfg->brightness < 230 ? cfg->brightness + 25 : 255;
-            g.setBrightness(cfg->brightness);
-            break;
+        switch (set_item(first + i)) {
+        case kBright:
+            if (slider_set(r, t.x)) {
+                draw_slider(r);
+                settings_save(*cfg);
+            }
+            return;
+        case kWifi:
+            netui::open_wifi();
+            go(Screen::Net);
+            return;
+        case kLogs:
+            netui::open_logs(false);
+            go(Screen::Net);
+            return;
         case kInvert: pp.invert = !pp.invert; panel_prefs_set(g, pp); break;
         case kSwap:   pp.swap_rb = !pp.swap_rb; panel_prefs_set(g, pp); break;
         case kRotate:
@@ -2141,6 +2297,7 @@ void begin(const Env& env, Settings& settings)
 {
     env_ = env;
     cfg = &settings;
+    netui::begin(env.version, env.build);
     frame::set_scale(cfg->scale_15x ? frame::Scale::OneAndHalf : frame::Scale::One);
     // The library as the last scan found it; a scan only when there is none
     // (Tom: scan once, then only on Rescan Card)
@@ -2167,10 +2324,10 @@ void begin(const Env& env, Settings& settings)
     if (sd_begin() && library::load_library(game_dirs, library::kMaxGames, &n_games)) {
         scan_result = library::ScanResult::Ok;
         Serial.printf("[library] loaded: %d game folder(s)\n", n_games);
+        go(Screen::Home);
     } else {
-        rescan();
+        rescan();            // ends at its log (Continue -> the library)
     }
-    go(Screen::Home);
 }
 
 void tick()
@@ -2189,8 +2346,13 @@ void tick()
         case Screen::Pdf:      tap_pdf(t); break;
         case Screen::GameMenu: tap_game_menu(t); break;
         case Screen::Settings: tap_settings(t); break;
+        case Screen::Net:
+            if (!netui::tap(t)) go(netui::from_scan() ? Screen::Home : Screen::Settings);
+            break;
         }
     }
+    if (screen == Screen::Net && !dirty) netui::tick();
+    if (screen == Screen::Settings && !dirty) settings_tick();
     if (screen == Screen::Look && !look_error && !dirty) present(look::tick(millis(), frame::canvas()));
     if (screen == Screen::Play && !play_error && !dirty) {
         play::tick(millis(), frame::canvas());
@@ -2210,6 +2372,7 @@ void tick()
     case Screen::Pdf:      draw_pdf(); break;
     case Screen::GameMenu: draw_game_menu(); break;
     case Screen::Settings: draw_settings(); break;
+    case Screen::Net:      netui::draw(); break;
     }
 }
 

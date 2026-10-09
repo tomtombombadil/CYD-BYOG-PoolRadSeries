@@ -19,6 +19,12 @@ int      last_x = 0, last_y = 0;
 int      press_x = 0, press_y = 0;
 uint32_t next_poll = 0;
 
+// Dragging (screens that scroll or have a slider)
+bool     drag_ok = false;       // this screen takes drags
+bool     dragging = false;      // the press moved: a drag, its release no tap
+int      cur_x = 0, cur_y = 0;  // where the press is now (readings that agreed)
+int      moved_x = 0, moved_y = 0;   // drag movement not yet collected
+
 constexpr int kAgreePx = 8;
 constexpr uint32_t kPollMs = 15;
 
@@ -73,8 +79,18 @@ bool poll_tap(Tap& out)
         last_y = y;
         if (!down && agree >= 1) {
             down = true;
-            press_x = x;
-            press_y = y;
+            press_x = cur_x = x;
+            press_y = cur_y = y;
+            dragging = false;
+        } else if (down && agree >= 1) {
+            const int px = large() ? 14 : 10;      // a press that moves this far is a drag
+            if (drag_ok && !dragging && (std::abs(x - press_x) > px || std::abs(y - press_y) > px)) dragging = true;
+            if (dragging) {
+                moved_x += x - cur_x;
+                moved_y += y - cur_y;
+            }
+            cur_x = x;
+            cur_y = y;
         }
         return false;
     }
@@ -83,6 +99,10 @@ bool poll_tap(Tap& out)
     if (down && ++empty >= 2) {
         down = false;
         empty = 0;
+        if (dragging) {
+            dragging = false;
+            return false;
+        }
         out.x = press_x;
         out.y = press_y;
         return true;
@@ -91,6 +111,28 @@ bool poll_tap(Tap& out)
 }
 
 bool pressed() { return down; }
+
+void allow_drag(bool on)
+{
+    drag_ok = on;
+    dragging = false;
+    moved_x = moved_y = 0;
+}
+
+bool drag(int& dx, int& dy)
+{
+    dx = moved_x;
+    dy = moved_y;
+    moved_x = moved_y = 0;
+    return dragging;
+}
+
+bool touch_point(int& x, int& y)
+{
+    x = cur_x;
+    y = cur_y;
+    return down;
+}
 
 void clear() { g->fillScreen(style::kBackground); }
 

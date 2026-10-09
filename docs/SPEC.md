@@ -167,7 +167,8 @@ stay in the session's scratch space, never in the repo.
   it does ("Searching for Gold Box games...", "Looking in CURSE..." ->
   "Found Curse of the Azure Bonds", "Found the Curse game icon", "Found the
   Curse of the Azure Bonds journal", "Prepared the Curse icon", ...), then
-  "Done." and the library after a moment.
+  "Done." - since v0.21.0 (Tom) the whole log then stays up ("Card Scan",
+  scrolling, see 5c) until Continue, then the library.
 - Journal PDFs: a .pdf with "journal" in its name in the game's folder (or
   the folder holding its game files).
 - v0.19.1 (Tom: v0.19.0 restarted as the journals' processing began): the
@@ -178,6 +179,40 @@ stay in the session's scratch space, never in the repo.
   with 16 KB of stack (the PDF / JPEG code runs deep under the viewer);
   the "Processing" line shows the free memory; a restart by a crash,
   watchdog or brownout is noted in `_CYD/RESTART.TXT`.
+
+## 5c. Settings, logs, WiFi, email (Tom, 2026-10-09; v0.21.0)
+
+- Settings keys (2 columns; 3 rows on 320x240, 4 on 480x320; more than fit
+  go on further pages, arrow keys bottom right): Brightness (a slider in
+  one key's space, "Brightness nn%" in small text above it; tap a point or
+  drag), WiFi, Invert Colors, Swap Red/Blue (red, green and blue blocks
+  named in them, to see whether a swap is needed), Rotate 180, Recalibrate
+  Touch, Game Screen 1.5x (480x320), Logs. 320x240 page 1: Brightness,
+  WiFi, Invert, Swap, Rotate, Logs; page 2: Recalibrate Touch.
+- Logs: `_CYD/SCAN.TXT` (Card Scan), `_CYD/RESTART.TXT` (Restarts),
+  `_CYD/ERRORS.TXT` (Errors: every error the Play Test showed, with the
+  time since power-on) in a scrolling box: a tap in its top half goes up a
+  page, bottom half down a page, dragging scrolls; long lines wrap; the
+  last 32 KB of a longer file. Keys: Card Scan, Restarts, Errors, Email
+  Logs.
+- Email Logs: to cyd.classic.games.logs@gmail.com, subject
+  "CYD-BYOG-GoldBoxGameEngine logs - <version> (<commit>) - <board>", a
+  text part (firmware, board, memory, time up) and the three logs
+  attached (`engine/smtp.*`: EHLO, STARTTLS on port 587 / TLS from the
+  start on 465, AUTH PLAIN, MIME with base64 attachments; host-tested).
+  Mail servers don't take mail from a device that doesn't sign in, so the
+  board signs in to the player's own account (Account key: address, app
+  password - Gmail's spaces are dropped - and server "host:port", guessed
+  from the address: Gmail smtp.gmail.com:465 ...). TLS is checked against
+  the framework's built-in certificate authorities.
+- WiFi: the networks found (strongest first, signal bars, a lock for a
+  password), the saved one lit; tap one -> the on-screen keyboard
+  (`ui/keyboard.*`: four rows of ten, Shift, #+=, Space, Delete, Done) for
+  its password -> connect; saved only once it connected. Other Network
+  (a hidden one by name), Forget, Look Again. WiFi is on only while the
+  WiFi screen is open or mail is sent (memory). Network and mail account
+  are kept in NVS ("byog-net"), never on the card. Linking WiFi costs
+  ~23 KB of static RAM even while it's off.
 
 ## 6. Milestones
 
@@ -209,8 +244,9 @@ stay in the session's scratch space, never in the repo.
    that follow them (AC, THAC0, damage, movement), the shop (buy, ready).
    v0.18.0: saving (Save Current Game, Camp -> Save) and loading back.
    v0.19.0: Add / Remove / Drop, Pool / Share in shops. v0.20.0: Create
-   New Character (BEGIN now needs a party). Next: the temple, Rest,
-   training.
+   New Character (BEGIN now needs a party). v0.21.0: the save folder's
+   paths fixed on the board (saves, characters), errors stay until tapped.
+   Next: the temple, Rest, training.
 6. **Combat.**
 7. **All four games**: the per-game differences (PoD's VGA graphics), party
    transfer between games.
@@ -327,7 +363,11 @@ First look at Tom's GOG files with `dax_inspect` (2026-10-07):
 ## 10. Engine UI rules (carried over from CYD-Classic-Games)
 
 - Big targets, stylus taps (Tom uses a DS Lite stylus, firm presses). A tap acts
-  on release, at the point where the stylus came down. No drags or swipes.
+  on release, at the point where the stylus came down. No drags or swipes,
+  except scrolling the logs and the brightness slider (Tom, 2026-10-09) -
+  and those work by taps too.
+- Errors stay on screen until tapped (Tom, 2026-10-09). The games' own
+  timed messages keep the games' timing.
 - No "are you sure" confirmations. Title Case on keys and headings.
 - Layout always from the panel size, never fixed for one board.
 - Colours of the engine's own screens from `src/ui/style.h` (dark: black, navy
