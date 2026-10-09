@@ -1955,6 +1955,22 @@ static void test_items()
     rules::pay(pool, 2);
     CHECK(rules::gold_worth(pool) == 1);
 
+    // Pool and share: 2 player characters and an NPC
+    party::Party pp;
+    pp.m[0] = ch;
+    pp.m[1] = ch;
+    pp.m[2] = ch;
+    pp.m[2].rec[0xF7] = 0x80;
+    pp.count = 3;
+    int pot[7] = {};
+    rules::pool(pp, pot);
+    CHECK(pot[4] == 434 && pp.m[0].money(4) == 0 && pp.m[2].money(4) == 217);
+    CHECK(pp.m[0].encumbrance() == 610);
+    pot[3] = 5;
+    rules::share(pp, pot);
+    CHECK(pp.m[0].money(4) == 217 && pp.m[1].money(4) == 217 && pp.m[0].money(3) == 3 && pp.m[1].money(3) == 2);
+    CHECK(pot[3] == 0 && pot[4] == 0 && pp.m[0].encumbrance() == 610 + 220);
+
     // The VM: TREASURE sets out goods, COMBAT with the shop flag opens the shop
     const profile::Profile* p = profile::find(games::Game::CurseOfTheAzureBonds, 57789, 62432);
     if (!p || !p->ecl_ops) return;

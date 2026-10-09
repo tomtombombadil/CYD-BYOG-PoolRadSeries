@@ -115,6 +115,12 @@ struct Profile {
         uint32_t saving;               //   "Saving...Please Wait"
         uint32_t camp_menu;            // program image: "Save View Magic Rest Alter Fix Exit"
         uint32_t camp, makes_camp;     // GAME.OVR: "Camp:", "The party makes camp..."
+        // Add / Remove / Drop (GAME.OVR): "Add from where? ", "Curse Pool Hillsfar Exit",
+        // "Add a character: ", "Add ", "* ", the party rules' three messages,
+        // "Overwrite ", "? ", "Drop ", " forever? ", "Are you sure? ", "You dump ",
+        // " out back.", " bids you farewell.", " breathes a sigh of relief.", "Yes No"
+        uint32_t add_from, add_sources, add_prompt, add, added, paladin_evil, rangers, no_evil,
+                 overwrite, qmark, drop, forever, sure, dump, out_back, farewell, relief, yes_no;
     } party;
 
     // View Character: name tables in the program and the screen's words

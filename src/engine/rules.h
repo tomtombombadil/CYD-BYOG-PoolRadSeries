@@ -38,6 +38,14 @@ int gold_worth(const party::Character& c);
 void pay(int money[7], int gold);
 void pay(party::Character& c, int gold);
 
+// Coins: the party's player characters put all theirs in the pool; the
+// pool shared out (each coin kind from jewellery down: equal shares, one
+// more of the rest each while it lasts, then what's left to whoever can
+// still carry it; the remainder stays in the pool). Encumbrance follows.
+int max_load(const party::Character& c);       // 1500 + the strength allowance
+void pool(party::Party& p, int money[7]);
+void share(party::Party& p, int money[7]);
+
 // True if the character can't take the item (16 items, or too heavy).
 bool too_heavy(party::Character& c, const uint8_t* item, const items::Names& names, const ItemFacts& f);
 // Adds an item to a character (false: no room).

@@ -289,6 +289,69 @@ void pay(party::Character& c, int gold)
     for (int i = 0; i < 7; ++i) put16(c.rec, 0xFB + i * 2, m[i] < 0 ? 0 : m[i]);
 }
 
+int max_load(const party::Character& c) { return 1500 + max_encumbrance(c); }
+
+namespace {
+void add_coins(party::Character& c, int coin, int n)
+{
+    put16(c.rec, 0xFB + coin * 2, c.money(coin) + n);
+    put16(c.rec, kWeight, u16(c.rec, kWeight) + n);
+}
+} // namespace
+
+void pool(party::Party& p, int money[7])
+{
+    for (int i = 0; i < p.count; ++i) {
+        party::Character& c = p.m[i];
+        if (c.npc()) continue;
+        for (int m = 0; m < 7; ++m) {
+            money[m] += c.money(m);
+            add_coins(c, m, -c.money(m));
+        }
+    }
+}
+
+void share(party::Party& p, int money[7])
+{
+    int pcs = 0;
+    for (int i = 0; i < p.count; ++i)
+        if (!p.m[i].npc()) ++pcs;
+    if (!pcs) return;
+    int each[7], rest[7];
+    for (int m = 0; m < 7; ++m) {
+        each[m] = money[m] > 0 ? money[m] / pcs : 0;
+        rest[m] = money[m] > 0 ? money[m] % pcs : 0;
+    }
+    for (int i = 0; i < p.count; ++i) {
+        party::Character& c = p.m[i];
+        if (c.npc()) continue;
+        for (int m = 6; m >= 0; --m) {
+            const int room = max_load(c) - c.encumbrance();
+            if (c.encumbrance() + each[m] <= max_load(c)) {
+                add_coins(c, m, each[m]);
+                if (rest[m] > 0 && c.encumbrance() + 1 <= max_load(c)) {
+                    add_coins(c, m, 1);
+                    --rest[m];
+                }
+            } else {
+                add_coins(c, m, room);
+                rest[m] += each[m] - room;
+            }
+        }
+    }
+    for (int m = 6; m >= 0; --m) {
+        for (int i = 0; i < p.count && rest[m] > 0; ++i) {
+            party::Character& c = p.m[i];
+            const int room = max_load(c) - c.encumbrance();
+            if (room <= 0) continue;
+            const int n = rest[m] > room ? room : rest[m];
+            add_coins(c, m, n);
+            rest[m] -= n;
+        }
+    }
+    for (int m = 0; m < 7; ++m) money[m] = rest[m];
+}
+
 bool too_heavy(party::Character& c, const uint8_t* item, const items::Names& names, const ItemFacts& f)
 {
     recalc(c, names, f);

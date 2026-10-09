@@ -97,6 +97,28 @@ int main(int argc, char** argv)
         for (int i = 0; i < play::pm_lines; ++i) printf(" [%s]", play::d->item[play::pm_item[i]]);
         printf("\n");
         shot("party_loaded");
+        if (getenv("ROSTER")) {
+            // Remove the selected character (MATHEW.GUY), Add them back, Drop -> No
+            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
+            play::tap(24, (12 + pm_line('R')) * 8 + 2, C);
+            if (play::screen == play::Screen::YesNo) { printf("  ask [%s]\n", play::menu.prompt); tap_word('Y'); }
+            printf("  removed: party %d\n", play::pt->count);
+            shot("removed");
+            play::tap(24, (12 + pm_line('A')) * 8 + 2, C);
+            printf("  add menu [%s%s]\n", play::menu.prompt, play::menu.s);
+            tap_word('C');
+            printf("  %d to add; menu [%s%s]\n", play::d->guys, play::menu.prompt, play::menu.s);
+            shot("add_list");
+            tap_word('A');
+            printf("  added: party %d\n", play::pt->count);
+            shot("added");
+            tap_word('E');
+            play::tap(24, (12 + pm_line('D')) * 8 + 2, C);
+            printf("  ask [%s] [%s]\n", play::menu.prompt, play::menu.s);
+            tap_word('N');
+            shot("not_dropped");
+            g_now += 5000; play::tick(g_now, C);
+        }
         if (getenv("VIEW")) {
             // Select a character (tap their line), View Character, back
             play::tap(16, (4 + atoi(getenv("VIEW"))) * 8 + 2, C);

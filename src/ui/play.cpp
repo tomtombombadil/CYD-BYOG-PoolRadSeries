@@ -76,6 +76,16 @@ struct Data {
     bool           loaded = false;
     char           cache_dir[128] = {};     // _CYD/<folder>: what the engine keeps beside a save
     int16_t        wall_block[3] = {-1, -1, -1}, wall_set[3] = {-1, -1, -1};   // the wall sets loaded (saves)
+    // Add / Remove / Drop words (profile party.add_from ... yes_no, in order)
+    enum Roster { kAddFrom, kAddSources, kAddPrompt, kAdd, kAdded, kPaladinEvil, kRangers, kNoEvil, kOverwrite,
+                  kQmark, kDrop, kForever, kSure, kDump, kOutBack, kFarewell, kRelief, kYesNo, kRosterWords };
+    char           roster[kRosterWords][40] = {};
+    // Characters that can be added (.GUY files in the save folder)
+    static constexpr int kMaxGuys = 24;
+    char           guy_file[kMaxGuys][13] = {};
+    char           guy_name[kMaxGuys][16] = {};
+    bool           guy_added[kMaxGuys] = {};
+    int            guys = 0;
     char           w_save_which[24] = {}, w_slots[24] = {}, w_saving[24] = {}, w_camp_menu[40] = {},
                    w_camp[8] = {}, w_makes_camp[28] = {};
 
@@ -98,6 +108,7 @@ Data* d = nullptr;
 party::Party* pt = nullptr;
 items::Names* names = nullptr;     // item name words and types
 items::Ground* ground = nullptr;   // treasure / a shop's goods (own block: RAM is tight)
+const char* rw(int i) { return d->roster[i]; }
 ecl::Vm* vm = nullptr;
 Host* host = nullptr;
 alignas(ecl::Vm) uint8_t vm_mem[sizeof(ecl::Vm)];
@@ -106,7 +117,8 @@ pic::Canvas* cv = nullptr;
 
 // Which screen: the party menu (the games' first screen), its "Load Which
 // Game" question, or the game itself
-enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich };
+enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich, AddFrom,
+                               AddList, YesNo };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
 Screen save_from = Screen::PartyMenu;   // where Save Which Game goes back to
@@ -781,6 +793,10 @@ const uint8_t* goods(int i) { return ground->item[ground->n - 1 - i]; }
 // One line of the list being shown
 void list_line(int i, char* out, size_t cap)
 {
+    if (screen == Screen::AddList) {
+        snprintf(out, cap, "%s%s", d->guy_added[i] ? rw(Data::kAdded) : "", d->guy_name[i]);
+        return;
+    }
     if (screen == Screen::ShopBuy) {
         char nm[48];
         const uint8_t* it = goods(i);
@@ -1096,13 +1112,298 @@ void camp_tap(int x, int y, pic::Canvas& c)
 }
 
 
+// ---- Add, Remove, Drop -----------------------------------------------------------
+// Add Character to Party: "Add from where? Curse Pool Hillsfar Exit"; Curse
+// lists the characters saved in the save folder (.GUY files: a removed
+// character), "Add a character: Add Next Prev Exit", "* " before those
+// added; the party's rules (6 player characters, 8 in all, rangers,
+// paladins and evil). Remove Character from Party saves them as
+// NAME.GUY (+ .SWG / .FX; "Overwrite NAME? Yes No" when there is one).
+// Drop Character: "Drop NAME forever? ", "Are you sure? ", their files go.
+
+enum class Ask : uint8_t { None, Overwrite, Drop, DropSure };
+Ask ask = Ask::None;
+
+// The file name the games give a character: the name without spaces and
+// punctuation, 8 letters at most
+void guy_base(const party::Character& ch, char* out, size_t cap)
+{
+    char nm[20];
+    ch.name(nm, sizeof nm);
+    size_t o = 0;
+    for (const char* p = nm; *p && o + 1 < cap && o < 8; ++p)
+        if (!strchr(" .*,?/\\:;|", *p)) out[o++] = static_cast<char>(toupper(static_cast<unsigned char>(*p)));
+    out[o] = 0;
+}
+
+bool write_character(const char* base, const party::Character& ch)
+{
+    char fn[24];
+    snprintf(fn, sizeof fn, "%s.GUY", base);
+    bool ok = write_file(d->save_dir, fn, ch.rec, party::kRecordSize);
+    snprintf(fn, sizeof fn, "%s.SWG", base);
+    ok = ok && write_file(d->save_dir, fn, ch.items[0], static_cast<size_t>(ch.n_items) * party::kItemSize);
+    snprintf(fn, sizeof fn, "%s.FX", base);
+    ok = ok && write_file(d->save_dir, fn, ch.affects[0], static_cast<size_t>(ch.n_affects) * party::kAffectSize);
+    return ok;
+}
+
+void delete_character(const char* base)
+{
+    for (const char* ext : {".GUY", ".SWG", ".FX"}) {
+        char fn[24];
+        snprintf(fn, sizeof fn, "%s%s", base, ext);
+        write_file(d->save_dir, fn, nullptr, 0);
+    }
+}
+
+void leave_party(int i)
+{
+    if (i < 0 || i >= pt->count) return;
+    for (int k = i; k + 1 < pt->count; ++k) pt->m[k] = pt->m[k + 1];
+    --pt->count;
+    pt->selected = i > 0 ? i - 1 : 0;
+    vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
+}
+
+void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt)
+{
+    ask = what;
+    screen = Screen::YesNo;
+    text::build(menu, prompt, rw(Data::kYesNo));
+    menu.selected = 1;          // the games start on No
+    show_menu_line(c);
+}
+
+void remove_character(pic::Canvas& c, bool overwrite_ok)
+{
+    party::Character* ch = pt->sel();
+    if (!ch) return;
+    if (ch->npc()) {
+        // An NPC doesn't go home: they leave for good
+        char t[60], nm[20];
+        ch->name(nm, sizeof nm);
+        snprintf(t, sizeof t, "%s%s%s", rw(Data::kDrop), nm, rw(Data::kForever));
+        ask_yes_no(c, Ask::Drop, t);
+        return;
+    }
+    char base[12], fn[24], path[200];
+    guy_base(*ch, base, sizeof base);
+    snprintf(fn, sizeof fn, "%s.GUY", base);
+    library::path_of(d->save_dir, fn, path, sizeof path);
+    if (!overwrite_ok && sd_fs().exists(path)) {
+        char t[60];
+        snprintf(t, sizeof t, "%s%s%s", rw(Data::kOverwrite), base, rw(Data::kQmark));
+        ask_yes_no(c, Ask::Overwrite, t);
+        return;
+    }
+    if (!write_character(base, *ch)) {
+        screen = Screen::PartyMenu;
+        draw_party_menu(c);
+        note(c, "The card couldn't be written.");
+        return;
+    }
+    leave_party(pt->selected);
+    screen = Screen::PartyMenu;
+    draw_party_menu(c);
+}
+
+void yes_no_tap(int x, int y, pic::Canvas& c)
+{
+    if (y < text::kMenuTapTop) return;
+    const char k = text::key(menu, text::hit(menu, x / 8));
+    if (k != 'Y' && k != 'N') return;
+    party::Character* ch = pt->sel();
+    char nm[20] = {}, t[64];
+    if (ch) ch->name(nm, sizeof nm);
+    const Ask what = ask;
+    ask = Ask::None;
+    screen = Screen::PartyMenu;
+    if (what == Ask::Overwrite) {
+        if (k == 'Y') remove_character(c, true);
+        else draw_party_menu(c);       // (the games ask for another file name)
+        return;
+    }
+    if (what == Ask::Drop && k == 'Y') {
+        ask_yes_no(c, Ask::DropSure, rw(Data::kSure));
+        return;
+    }
+    draw_party_menu(c);
+    if (!ch) return;
+    if (what == Ask::DropSure && k == 'Y') {
+        if (!ch->in_combat()) snprintf(t, sizeof t, "%s%s%s", rw(Data::kDump), nm, rw(Data::kOutBack));
+        else snprintf(t, sizeof t, "%s%s", nm, rw(Data::kFarewell));
+        char base[12];
+        guy_base(*ch, base, sizeof base);
+        delete_character(base);
+        leave_party(pt->selected);
+        draw_party_menu(c);
+    } else {
+        snprintf(t, sizeof t, "%s%s", nm, rw(Data::kRelief));
+    }
+    note(c, t);
+}
+
+// The .GUY files in the save folder not already in the party
+void find_guys()
+{
+    d->guys = 0;
+    fs::File dir = sd_fs().open(d->save_dir, "r");
+    if (!dir || !dir.isDirectory()) return;
+    for (fs::File f = dir.openNextFile(); f && d->guys < Data::kMaxGuys; f = dir.openNextFile()) {
+        const char* nm = f.name();
+        const char* slash = strrchr(nm, '/');
+        if (slash) nm = slash + 1;
+        const size_t n = strlen(nm);
+        if (f.isDirectory() || n < 5 || n > 12 || strcasecmp(nm + n - 4, ".GUY") != 0 || f.size() != party::kRecordSize)
+            continue;
+        uint8_t rec[0x100];
+        if (f.read(rec, 0xF8) != 0xF8 || rec[0xF7] > 0x7F) continue;     // NPCs aren't listed
+        char name[16];
+        size_t len = rec[0] > 15 ? 15 : rec[0];
+        memcpy(name, rec + 1, len);
+        name[len] = 0;
+        bool in_party = false;
+        for (int i = 0; i < pt->count; ++i) {
+            char pn[20];
+            pt->m[i].name(pn, sizeof pn);
+            if (strcmp(pn, name) == 0) in_party = true;
+        }
+        if (in_party) continue;
+        strncpy(d->guy_file[d->guys], nm, sizeof d->guy_file[0] - 1);
+        strcpy(d->guy_name[d->guys], name);
+        d->guy_added[d->guys] = false;
+        ++d->guys;
+    }
+    dir.close();
+}
+
+void draw_add_list(pic::Canvas& c)
+{
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    plist.row0 = 2;
+    plist.row1 = 22;
+    plist.col0 = 1;
+    plist.n = d->guys;
+    char what[12];
+    strncpy(what, rw(Data::kAdd), sizeof what - 1);
+    what[sizeof what - 1] = 0;
+    for (size_t n = strlen(what); n && what[n - 1] == ' ';) what[--n] = 0;
+    draw_list(c, rw(Data::kAddPrompt), what);
+}
+
+// Adds the chosen character, with the games' rules
+void add_character(int i, pic::Canvas& c)
+{
+    if (i < 0 || i >= d->guys || d->guy_added[i] || pt->count >= party::kMaxParty) return;
+    party::Character& ch = pt->m[pt->count];
+    char base[16];
+    strncpy(base, d->guy_file[i], sizeof base - 1);
+    base[sizeof base - 1] = 0;
+    char* dot = strrchr(base, '.');
+    if (dot) *dot = 0;
+    fs::File f;
+    if (!open_save_file(d->guy_file[i], f)) return;
+    bool ok;
+    {
+        library::FileSource src(f);
+        ok = party::read_record(src, ch);
+    }
+    f.close();
+    if (!ok) return;
+    char fn[24];
+    snprintf(fn, sizeof fn, "%s.SWG", base);
+    if (open_save_file(fn, f)) {
+        library::FileSource src(f);
+        party::read_items(src, ch);
+        f.close();
+    }
+    snprintf(fn, sizeof fn, "%s.FX", base);
+    if (open_save_file(fn, f)) {
+        library::FileSource src(f);
+        party::read_affects(src, ch);
+        f.close();
+    }
+    // The party's rules
+    int pcs = 0, rangers = 0;
+    bool evil = false, paladin = false;
+    char paladin_name[20] = {};
+    for (int k = 0; k < pt->count; ++k) {
+        const party::Character& m = pt->m[k];
+        if (!m.npc()) ++pcs;
+        if (m.level(4) > 0) ++rangers;
+        if ((m.alignment() + 1) % 3 == 0) evil = true;
+        if (m.level(3) > 0) {
+            paladin = true;
+            m.name(paladin_name, sizeof paladin_name);
+        }
+    }
+    const bool is_evil = (ch.alignment() + 1) % 3 == 0;
+    char t[64];
+    if (ch.level(3) > 0 && evil) {
+        note(c, rw(Data::kPaladinEvil));
+        return;
+    }
+    if (ch.level(4) > 0 && rangers > 2) {
+        note(c, rw(Data::kRangers));
+        return;
+    }
+    if (is_evil && paladin) {
+        snprintf(t, sizeof t, "%s%s", paladin_name, rw(Data::kNoEvil));
+        note(c, t);
+        return;
+    }
+    if ((!ch.npc() && pcs >= 6) || pt->count >= party::kMaxParty) return;
+    rules::recalc(ch, *names, d->facts);
+    ++pt->count;
+    vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
+    d->guy_added[i] = true;
+    if (pcs + 1 >= 6 || pt->count >= party::kMaxParty) {
+        screen = Screen::PartyMenu;
+        draw_party_menu(c);
+        return;
+    }
+    draw_add_list(c);
+}
+
+void add_from_tap(int x, int y, pic::Canvas& c)
+{
+    if (y < text::kMenuTapTop) return;
+    switch (text::key(menu, text::hit(menu, x / 8))) {
+    case 'C':
+        find_guys();
+        if (!d->guys) {
+            screen = Screen::PartyMenu;
+            draw_party_menu(c);
+            return;
+        }
+        screen = Screen::AddList;
+        plist = PickList{};
+        draw_add_list(c);
+        return;
+    case 'E':
+        screen = Screen::PartyMenu;
+        draw_party_menu(c);
+        return;
+    case 'P':
+    case 'H':
+        note(c, "Not in the engine yet.");
+        return;
+    default:
+        return;
+    }
+}
+
+
 // ---- The shop -------------------------------------------------------------------
 // A script sets the shop flag, sets out the goods (TREASURE) and starts a
 // "fight" (COMBAT): the shop's menu "Buy View Pool Appraise Exit" (Take
 // and Share when coins lie on the counter) under the shop's picture and
 // the party list. Buy lists the goods ("Items: ", name and price); the
 // selected character pays (from the pool when they can't), if they can
-// carry it.
+// carry it. Pool puts everyone's coins on the counter, Share shares them
+// out. (The games' shopkeeper reminds the party of coins left behind.)
 
 void shop_menu(pic::Canvas& c)
 {
@@ -1136,6 +1437,9 @@ void open_shop(pic::Canvas& c)
 
 void leave_shop(pic::Canvas& c)
 {
+    // Coins left on the counter: the games' shopkeeper calls the party back;
+    // until that question is in, they're shared out so nothing is lost
+    if (ground->any_money()) rules::share(*pt, ground->money);
     screen = Screen::Game;
     clear_menu_line(c);
     waiting = false;
@@ -1195,6 +1499,14 @@ void shop_tap(int x, int y, pic::Canvas& c)
         case 'V':
             view_character(c);
             break;
+        case 'P':                       // Pool: everyone's coins on the counter
+            rules::pool(*pt, ground->money);
+            shop_menu(c);
+            break;
+        case 'S':                       // Share: the coins on the counter shared out
+            rules::share(*pt, ground->money);
+            shop_menu(c);
+            break;
         case 'E':
             leave_shop(c);
             break;
@@ -1227,6 +1539,7 @@ void list_tap(int x, int y, pic::Canvas& c)
         if (row >= l.row0 && row <= l.row1 && i < l.n) {
             l.index = i;
             if (screen == Screen::ShopBuy) draw_buy(c);
+            else if (screen == Screen::AddList) draw_add_list(c);
             else draw_items(c);
         }
         return;
@@ -1239,7 +1552,10 @@ void list_tap(int x, int y, pic::Canvas& c)
         l.top = l.top > l.rows() ? l.top - l.rows() : 0;
         l.index = l.top;
     } else if (k == 'E') {
-        if (screen == Screen::ShopBuy) {
+        if (screen == Screen::AddList) {
+            screen = Screen::PartyMenu;
+            draw_party_menu(c);
+        } else if (screen == Screen::ShopBuy) {
             screen = Screen::Shop;
             draw_shop(c);
         } else {
@@ -1253,10 +1569,14 @@ void list_tap(int x, int y, pic::Canvas& c)
     } else if (k == 'R' && screen == Screen::Items) {
         ready_item(l.index, c);
         return;
+    } else if (k == 'A' && screen == Screen::AddList) {
+        add_character(l.index, c);
+        return;
     } else {
         return;
     }
     if (screen == Screen::ShopBuy) draw_buy(c);
+    else if (screen == Screen::AddList) draw_add_list(c);
     else draw_items(c);
 }
 
@@ -1295,6 +1615,23 @@ void pm_choose(int i, pic::Canvas& c)
     case 'S':
         ask_save(c);
         return;
+    case 'A':
+        screen = Screen::AddFrom;
+        text::build(menu, rw(Data::kAddFrom), rw(Data::kAddSources));
+        menu.selected = 0;
+        show_menu_line(c);
+        return;
+    case 'R':
+        remove_character(c, false);
+        return;
+    case 'D':
+        if (pt->sel()) {
+            char t[60], nm[20];
+            pt->sel()->name(nm, sizeof nm);
+            snprintf(t, sizeof t, "%s%s%s", rw(Data::kDrop), nm, rw(Data::kForever));
+            ask_yes_no(c, Ask::Drop, t);
+        }
+        return;
     default:
         pm_prompt(c, "Not in the engine yet.");
         dirty_rows(text::kMenuRow, text::kMenuRow);
@@ -1311,10 +1648,19 @@ void pm_tap(int x, int y, pic::Canvas& c)
         else back_from_view(c);
         return;
     }
-    if (screen == Screen::Items || screen == Screen::ShopBuy) {
+    if (screen == Screen::Items || screen == Screen::ShopBuy || screen == Screen::AddList) {
         list_tap(x, y, c);
         return;
     }
+    if (screen == Screen::AddFrom) {
+        add_from_tap(x, y, c);
+        return;
+    }
+    if (screen == Screen::YesNo) {
+        yes_no_tap(x, y, c);
+        return;
+    }
+    if (note_until && screen == Screen::PartyMenu) redraw_menu(c);
     if (screen == Screen::Shop) {
         shop_tap(x, y, c);
         return;
@@ -1462,6 +1808,20 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
     if (!d->ac_hp_head[0]) strcpy(d->ac_hp_head, "AC  HP");
     if (!d->v_exit[0]) strcpy(d->v_exit, "Exit");
     if (pp.camp_menu) text::read_pascal(exe, info, pp.camp_menu, d->w_camp_menu, sizeof d->w_camp_menu);
+    {
+        const uint32_t at[Data::kRosterWords] = {pp.add_from, pp.add_sources, pp.add_prompt, pp.add, pp.added,
+                                                 pp.paladin_evil, pp.rangers, pp.no_evil, pp.overwrite, pp.qmark,
+                                                 pp.drop, pp.forever, pp.sure, pp.dump, pp.out_back, pp.farewell,
+                                                 pp.relief, pp.yes_no};
+        fs::File of;
+        if (open_file(d->prof->overlay, of)) {
+            library::FileSource src(of);
+            for (int i = 0; i < Data::kRosterWords; ++i)
+                if (at[i]) text::read_pascal(src, at[i], d->roster[i], sizeof d->roster[i]);
+            of.close();
+        }
+        if (!d->roster[Data::kYesNo][0]) strcpy(d->roster[Data::kYesNo], "Yes No");
+    }
     if (!d->w_slots[0]) strcpy(d->w_slots, "A B C D E F G H I J");
     char sub[64] = "SAVE";
     if (pp.cfg && open_file(pp.cfg, f)) {
@@ -2324,6 +2684,12 @@ bool back(pic::Canvas& c)
     }
     if (screen == Screen::SaveWhich) {
         back_from_save(c);
+        return true;
+    }
+    if (screen == Screen::AddFrom || screen == Screen::AddList || screen == Screen::YesNo) {
+        ask = Ask::None;
+        screen = Screen::PartyMenu;
+        draw_party_menu(c);
         return true;
     }
     if (screen == Screen::Camp) {
