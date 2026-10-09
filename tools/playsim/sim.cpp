@@ -229,7 +229,26 @@ int main(int argc, char** argv)
         play::handle(play::vm->run((uint16_t)a));
         settle(0, 5000);
         printf("  screen %d, %d goods, menu [%s]\n", (int)play::screen, play::ground->n, play::menu.s);
-        if (play::screen == play::Screen::Shop) {
+        if (play::screen == play::Screen::Shop && getenv("SHOPRUN")) {
+            // SHOPRUN: letters tap menu words, digits pick a list line, %n taps
+            // party row n (the shop's list at column 17), =n; types a number
+            // and Enter, '#' shows the screen and menu
+            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+            int n = 0;
+            for (const char* q = getenv("SHOPRUN"); *q; ++q) {
+                const party::Character& ch = *play::pt->sel();
+                if (*q == '#') {
+                    char nm[20]; ch.name(nm, 20);
+                    printf("  screen %d temple %d menu [%s%s] %s HP %d/%d gold worth %d counter %d %d %d %d %d gems %d jewels %d items %d\n", (int)play::screen, (int)play::temple, play::menu.prompt, play::menu.s, nm, ch.hp(), ch.hp_max(), rules::gold_worth(ch), play::ground->money[0], play::ground->money[1], play::ground->money[2], play::ground->money[3], play::ground->money[4], ch.money(5), ch.money(6), ch.n_items);
+                    char t[16]; snprintf(t, 16, "shoprun%d", n++); shot(t);
+                } else if (*q == '%') { ++q; play::tap(17 * 8 + 2, (4 + (*q - '0')) * 8 + 2, C); }
+                else if (*q == '$') { party::Character& w = *play::pt->sel(); w.rec[0xFB + 10] = 3; w.rec[0xFB + 12] = 2; }   // 3 gems, 2 jewels (a test)
+                else if (*q == '=') { ++q; while (*q && *q != ';') play::input_key(*q++, C); play::input_key('\n', C); }
+                else if (*q >= '0' && *q <= '9') play::plist.index = *q - '0';
+                else tap_word(*q);
+                g_now += 5000; play::tick(g_now, C);
+            }
+        } else if (play::screen == play::Screen::Shop) {
             shot("shop");
             auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
             tap_word('B');

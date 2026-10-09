@@ -15,6 +15,7 @@
 #include <cstdint>
 
 #include "classes.h"
+#include "rules.h"
 #include "ecl.h"
 #include "games.h"
 
@@ -65,6 +66,20 @@ enum ItemWord {
     kIdentify, kNothingNew, kSortOf, kNoMoney,               // the shop's Id
     kSelect,                                                 // "Select" (picking a character)
     kItemWords
+};
+
+// The shop's and temple's other words (GAME.OVR offsets of Pascal strings),
+// in this order
+enum ShopWord {
+    kHealMenuMoney, kHealMenu, kHelpYou, kHealExit,             // the temple's menus, ", how can we help you?"
+    kCureName,                                                  // 10 names in rules::Cure order
+    kCastAnyway = kCureName + 10, kOnlyCost, kGoldPieces, kPayFor, kNotEnough, kCured,
+    kNotBlind, kNotDiseased, kNotDead, kNotPoisoned, kNotCursed, kNotStoned,
+    kPriestSays, kPriestRetrieve, kShopSays, kShopRetrieve,     // leaving coins on the counter
+    kCollection, kGemsKey, kJewelryKey, kExitKey, kAppraisePrompt, kGemValued, kGp, kSellKey, kSellKeep, kYouCan,
+    kJewelValued, kNoGems, kGemWord, kGemsWord, kJewelWord, kJewelsWord,   // Appraise
+    kCoinType, kSelectWord, kHowMuch, kWillTake, kOverPool,     // Take
+    kShopWords
 };
 
 struct Profile {
@@ -188,6 +203,13 @@ struct Profile {
 
     // Items: Use Trade Drop Halve Join Sell Id and their words (ItemWord order)
     uint32_t item_words[kItemWords];
+
+    // The shop's Take / Appraise, the temple (ShopWord order); the temple's
+    // costs and the effects its cures take away; an appraised gem or jewel
+    // kept: item type, name word
+    uint32_t         shop_words[kShopWords];
+    rules::CureFacts cures;
+    uint8_t          gem_type, gem_word, jewel_word;
 };
 
 // The game's program file name (to look for it), or nullptr if no

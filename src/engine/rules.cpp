@@ -457,5 +457,130 @@ int sell_value(const uint8_t* item, const ItemFacts& f)
     return v;
 }
 
+int remove_affects(party::Character& c, uint8_t type)
+{
+    if (!type) return 0;
+    int n = 0;
+    for (int i = 0; i < c.n_affects;) {
+        if (c.affects[i][0] != type) {
+            ++i;
+            continue;
+        }
+        for (int k = i; k + 1 < c.n_affects; ++k) memcpy(c.affects[k], c.affects[k + 1], party::kAffectSize);
+        --c.n_affects;
+        memset(c.affects[c.n_affects], 0, party::kAffectSize);
+        ++n;
+    }
+    return n;
+}
+
+namespace {
+
+constexpr int kHp = 0x1A4, kHpMax = 0x78, kHealth = 0x195, kInCombat = 0x196;
+
+bool any_disease(const party::Character& c, const CureFacts& f)
+{
+    for (uint8_t t : f.disease)
+        if (t && c.has_affect(t)) return true;
+    return false;
+}
+
+bool cursed_item(const party::Character& c)
+{
+    for (int i = 0; i < c.n_items; ++i)
+        if (c.items[i][0x36]) return true;
+    return false;
+}
+
+} // namespace
+
+void heal(party::Character& c, int amount)
+{
+    const int h = c.health();
+    if (amount <= 0 || !(h == party::Okay || h == party::Animated || h == party::Unconscious || h == party::Dying))
+        return;
+    int hp = c.hp() + amount;
+    if (hp > c.hp_max()) hp = c.hp_max();
+    c.rec[kHp] = static_cast<uint8_t>(hp);
+}
+
+bool needs_cure(const party::Character& c, Cure cure, const CureFacts& f)
+{
+    switch (cure) {
+    case kCureBlindness: return c.has_affect(f.blinded);
+    case kCureDisease: return any_disease(c, f);
+    case kNeutralizePoison: return c.has_affect(f.poisoned);
+    case kRaiseDead: return c.health() == party::Dead || c.health() == party::Animated;
+    case kRemoveCurse: return cursed_item(c) || c.has_affect(f.curse);
+    case kStoneToFlesh: return c.health() == party::Stoned;
+    default: return true;
+    }
+}
+
+void apply_cure(party::Character& c, Cure cure, const CureFacts& f, create::Dice& d)
+{
+    switch (cure) {
+    case kCureBlindness: remove_affects(c, f.blinded); break;
+    case kCureDisease:
+        for (uint8_t t : f.disease) remove_affects(c, t);
+        break;
+    case kCureLight: heal(c, d.roll(8, 1)); break;
+    case kCureSerious: heal(c, d.roll(8, 2) + 1); break;
+    case kCureCritical: heal(c, d.roll(8, 3) + 3); break;
+    case kHealCure:
+        heal(c, c.hp_max() - c.hp() - d.roll(4, 1));
+        remove_affects(c, f.blinded);
+        for (uint8_t t : f.disease) remove_affects(c, t);
+        remove_affects(c, f.feeblemind);
+        break;
+    case kNeutralizePoison:
+        remove_affects(c, f.poisoned);
+        remove_affects(c, f.slow_poison);
+        remove_affects(c, f.poison_damage);
+        break;
+    case kRaiseDead:
+        if (!needs_cure(c, cure, f)) break;
+        remove_affects(c, f.animate_dead);
+        remove_affects(c, f.poisoned);
+        c.rec[kHp] = 1;
+        c.rec[kHealth] = party::Okay;
+        c.rec[kInCombat] = 1;
+        break;
+    case kRemoveCurse:
+        if (remove_affects(c, f.curse)) break;
+        for (int i = 0; i < c.n_items; ++i)
+            if (c.items[i][0x36]) {
+                c.items[i][0x34] = 0;          // it comes off (still cursed)
+                break;
+            }
+        break;
+    case kStoneToFlesh:
+        if (c.health() != party::Stoned) break;
+        c.rec[kHealth] = party::Okay;
+        c.rec[kInCombat] = 1;
+        c.rec[kHp] = 1;
+        break;
+    default: break;
+    }
+    (void)kHpMax;
+}
+
+int gem_value(int r)
+{
+    return r <= 25 ? 10 : r <= 50 ? 50 : r <= 70 ? 100 : r <= 90 ? 500 : r <= 99 ? 1000 : r == 100 ? 5000 : 0;
+}
+
+int jewel_value(int r, create::Dice& d)
+{
+    if (r < 1 || r > 100) return 0;
+    if (r <= 10) return d.random(900) + 100;
+    if (r <= 20) return d.random(1000) + 200;
+    if (r <= 40) return d.random(1500) + 300;
+    if (r <= 50) return d.random(2500) + 500;
+    if (r <= 70) return d.random(5000) + 1000;
+    if (r <= 90) return d.random(6000) + 2000;
+    return d.random(10000) + 2000;
+}
+
 } // namespace rules
 

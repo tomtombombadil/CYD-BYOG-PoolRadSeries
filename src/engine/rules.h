@@ -7,6 +7,7 @@
 
 #include <cstdint>
 
+#include "create.h"
 #include "items.h"
 #include "party.h"
 
@@ -62,6 +63,32 @@ int join(party::Character& c, int i);
 // Sell (a shop): what the shop gives, in gold - half the value; piles of
 // arrows / quarrels count each one, other piles count / 20 of each
 int sell_value(const uint8_t* item, const ItemFacts& f);
+
+// ---- The temple (Curse; costs and effect ids from the game's code, via the profile)
+enum Cure : uint8_t {
+    kCureBlindness, kCureDisease, kCureLight, kCureSerious, kCureCritical, kHealCure, kNeutralizePoison, kRaiseDead,
+    kRemoveCurse, kStoneToFlesh, kCures
+};
+struct CureFacts {
+    uint16_t cost[kCures];            // gold
+    uint8_t  blinded, disease[6], feeblemind, poisoned, slow_poison, poison_damage, animate_dead, curse;
+};
+// Removes a character's effects of a type; how many
+int remove_affects(party::Character& c, uint8_t type);
+// Whether the cure does anything for them (else the temple asks "cast cure
+// anyway?"; wounds always do)
+bool needs_cure(const party::Character& c, Cure cure, const CureFacts& f);
+// The cure's work (paid for): wounds healed by the dice (light 1d8,
+// serious 2d8+1, critical 3d8+3, Heal all but 1d4 and the blindness,
+// diseases, feeblemind), effects removed, the dead raised (1 HP), a curse
+// lifted (the effect, else the first cursed item comes off), stone to flesh
+void apply_cure(party::Character& c, Cure cure, const CureFacts& f, create::Dice& d);
+// Hit points back, up to the most (okay, animated, unconscious, dying only)
+void heal(party::Character& c, int amount);
+
+// ---- Appraising gems and jewellery (the games' tables; gold)
+int gem_value(int d100);
+int jewel_value(int d100, create::Dice& d);
 
 // A shop's price for an item: its value moved by the shop's price factor
 // (script word 0x7F6D: 1 = 1/16 ... 0x10 normal ... 0x80 = x8)

@@ -128,7 +128,7 @@ pic::Canvas* cv = nullptr;
 // Which screen: the party menu (the games' first screen), its "Load Which
 // Game" question, or the game itself
 enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich, AddFrom,
-                               AddList, YesNo, CreatePick, CreateName, TradeWho };
+                               AddList, YesNo, CreatePick, CreateName, TradeWho, Heal, Take, Appraise };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
 Screen save_from = Screen::PartyMenu;   // where Save Which Game goes back to
@@ -234,7 +234,9 @@ void journal_ready()
 
 // Typing (INPUT NUMBER / STRING) on the menu line
 Input        input_mode = Input::None;
-bool         input_engine = false;   // the engine asks (a new character's name), not a script
+bool         input_engine = false;   // the engine asks (a new character's name, coins to take), not a script
+enum class EngineAsk : uint8_t { Name, Coins };
+EngineAsk    engine_ask = EngineAsk::Name;
 const char*  input_prompt = "";
 int          input_max = ecl::kMaxInput;
 char         input_buf[ecl::kMaxInput + 1];
@@ -845,8 +847,19 @@ void draw_input(pic::Canvas& c);
 const uint8_t* goods(int i) { return ground->item[ground->n - 1 - i]; }
 
 // One line of the list being shown
+void heal_line(int i, char* out, size_t cap);
+void take_line(int i, char* out, size_t cap);
+
 void list_line(int i, char* out, size_t cap)
 {
+    if (screen == Screen::Heal) {
+        heal_line(i, out, cap);
+        return;
+    }
+    if (screen == Screen::Take) {
+        take_line(i, out, cap);
+        return;
+    }
     if (screen == Screen::AddList) {
         snprintf(out, cap, "%s%s", d->guy_added[i] ? rw(Data::kAdded) : "", d->guy_name[i]);
         return;
@@ -906,8 +919,11 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
 // (exploring / camp), Trade (player characters), Drop, Halve (fewer than
 // 16 items), Join, in a shop Sell (player characters) and Id; Exit.
 
-enum class Ask : uint8_t { None, Overwrite, Drop, DropSure, Reroll, SaveNew, OverwriteNew, DropItem, SellDeal, IdDeal };
+enum class Ask : uint8_t { None, Overwrite, Drop, DropSure, Reroll, SaveNew, OverwriteNew, DropItem, SellDeal, IdDeal,
+                          LeaveCoins, CureAnyway, PayCure };
 void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt);
+
+bool shop_yes_no(Ask what, char k, pic::Canvas& c);
 
 const char* iw(int i) { return d->iw[i]; }
 int  item_at = -1;                 // the item an offer / question is about
@@ -927,7 +943,7 @@ void items_keys(char* out, size_t cap)
 
 // What the game says about an item, in the text rows under the list
 // (rows 21-22, colour 14), wrapped
-void say_item(pic::Canvas& c, const char* t)
+void say_item(pic::Canvas& c, const char* t, uint8_t colour = 14)
 {
     c.fill(8, 21 * 8, 38 * 8, 16, 0);
     int row = 21;
@@ -942,7 +958,7 @@ void say_item(pic::Canvas& c, const char* t)
         char line[40];
         memcpy(line, s, n);
         line[n] = 0;
-        put(c, line, 1, row++, 14);
+        put(c, line, 1, row++, colour);
         s += n;
         while (*s == ' ') ++s;
     }
@@ -1534,6 +1550,7 @@ void yes_no_tap(int x, int y, pic::Canvas& c)
     ask = Ask::None;
     if (create_yes_no(what, k, c)) return;
     if (items_yes_no(what, k, c)) return;
+    if (shop_yes_no(what, k, c)) return;
     party::Character* ch = pt->sel();
     char nm[20] = {}, t[64];
     if (ch) ch->name(nm, sizeof nm);
@@ -1905,6 +1922,7 @@ void ask_name(pic::Canvas& c)
     show_new_character(c);
     screen = Screen::CreateName;
     input_engine = true;
+    engine_ask = EngineAsk::Name;
     input_prompt = mk->words[6];
     input_max = party::kNameMax;
     input_mode = Input::Text;
@@ -1971,9 +1989,28 @@ bool create_yes_no(Ask what, char k, pic::Canvas& c)
 // carry it. Pool puts everyone's coins on the counter, Share shares them
 // out. (The games' shopkeeper reminds the party of coins left behind.)
 
+bool temple = false;               // the shop screen is the temple's (Heal instead of Buy)
+create::Dice rng;                   // the temple's dice, appraising
+
+// One of the shop's / temple's words, read from GAME.OVR when needed (the
+// long ones would take RAM all the time)
+void sw(int i, char* out, size_t cap)
+{
+    out[0] = 0;
+    const uint32_t at = d->prof->shop_words[i];
+    fs::File f;
+    if (!at || !open_file(d->prof->overlay, f)) return;
+    library::FileSource src(f);
+    text::read_pascal(src, at, out, cap);
+    f.close();
+}
+
 void shop_menu(pic::Canvas& c)
 {
-    text::build(menu, "", ground->any_money() ? d->w_shop_money : d->w_shop);
+    char words[48];
+    if (temple) sw(ground->any_money() ? profile::kHealMenuMoney : profile::kHealMenu, words, sizeof words);
+    else snprintf(words, sizeof words, "%s", ground->any_money() ? d->w_shop_money : d->w_shop);
+    text::build(menu, "", words);
     menu.selected = 0;
     show_menu_line(c);
 }
@@ -2001,11 +2038,34 @@ void open_shop(pic::Canvas& c)
     shop_menu(c);
 }
 
-void leave_shop(pic::Canvas& c)
+// Coins left on the counter: the shopkeeper (the priest) calls the party
+// back - "Do you want to go back and get your Money?" Yes stays, No goes
+// (the coins stay behind)
+void leave_shop(pic::Canvas& c, bool asked = false);
+
+void ask_leave(pic::Canvas& c)
 {
-    // Coins left on the counter: the games' shopkeeper calls the party back;
-    // until that question is in, they're shared out so nothing is lost
-    if (ground->any_money()) rules::share(*pt, ground->money);
+    char says[96], back[64];
+    sw(temple ? profile::kPriestSays : profile::kShopSays, says, sizeof says);
+    sw(temple ? profile::kPriestRetrieve : profile::kShopRetrieve, back, sizeof back);
+    text::clear(c, text::kTextArea);
+    text::begin(w, c, says, text::kTextArea, 10, true);
+    text::step(w, c, d->font, -1);
+    text::begin(w, c, back, text::kTextArea, temple ? 10 : 15, false);
+    text::step(w, c, d->font, -1);
+    dirty_rows(17, 22);
+    ask_yes_no(c, Ask::LeaveCoins, "");
+}
+
+void leave_shop(pic::Canvas& c, bool asked)
+{
+    if (!asked && ground->any_money()) {
+        ask_leave(c);
+        return;
+    }
+    text::clear(c, text::kTextArea);
+    dirty_rows(17, 22);
+    temple = false;
     screen = Screen::Game;
     clear_menu_line(c);
     waiting = false;
@@ -2048,6 +2108,377 @@ void buy(int i, pic::Canvas& c)
     draw_buy(c);
 }
 
+// ---- The temple's Heal ----------------------------------------------------------
+// "NAME, how can we help you?" (row 1, colour 15) over the ten cures (from
+// row 4, column 2), "Heal Exit". A cure that does nothing for them asks
+// "cast cure anyway: "; then "<cure> will only cost N gold pieces.", "pay
+// for cure " - the character pays, or the counter; "NAME is cured."
+
+struct HealWords {
+    char name[10][24];
+    char help[28];
+    char heal[8];                   // "Heal" (from "Heal Exit")
+};
+HealWords* hw = nullptr;
+int cure_at = -1;
+
+void heal_line(int i, char* out, size_t cap) { snprintf(out, cap, "%s", hw && i < 10 ? hw->name[i] : ""); }
+
+void draw_heal(pic::Canvas& c)
+{
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    char t[48], nm[20];
+    pt->sel()->name(nm, sizeof nm);
+    snprintf(t, sizeof t, "%s%s", nm, hw->help);
+    put(c, t, 1, 1, 15);
+    plist.row0 = 4;
+    plist.row1 = 13;
+    plist.col0 = 2;
+    plist.n = 10;
+    draw_list(c, "", hw->heal);
+}
+
+void open_heal(pic::Canvas& c)
+{
+    if (!pt->sel()) return;
+    if (!hw) hw = new (std::nothrow) HealWords;
+    if (!hw) {
+        error(c, "Not enough memory.");
+        return;
+    }
+    for (int i = 0; i < 10; ++i) sw(profile::kCureName + i, hw->name[i], sizeof hw->name[i]);
+    sw(profile::kHelpYou, hw->help, sizeof hw->help);
+    char he[16];
+    sw(profile::kHealExit, he, sizeof he);
+    char* sp = strchr(he, ' ');
+    if (sp) *sp = 0;
+    snprintf(hw->heal, sizeof hw->heal, "%s", he);
+    screen = Screen::Heal;
+    plist = PickList{};
+    draw_heal(c);
+}
+
+void leave_heal(pic::Canvas& c)
+{
+    delete hw;
+    hw = nullptr;
+    screen = Screen::Shop;
+    draw_shop(c);
+}
+
+// The price, then "pay for cure"
+void offer_cure(pic::Canvas& c)
+{
+    char t[96], a[24], b[24];
+    sw(profile::kOnlyCost, a, sizeof a);
+    sw(profile::kGoldPieces, b, sizeof b);
+    snprintf(t, sizeof t, "%s%s%d%s", hw->name[cure_at], a, d->prof->cures.cost[cure_at], b);
+    say_item(c, t, 10);
+    sw(profile::kPayFor, a, sizeof a);
+    ask_yes_no(c, Ask::PayCure, a);
+}
+
+void heal_pick(int i, pic::Canvas& c)
+{
+    cure_at = i;
+    const rules::Cure cure = static_cast<rules::Cure>(i);
+    if (!rules::needs_cure(*pt->sel(), cure, d->prof->cures)) {
+        static const int kNot[rules::kCures] = {profile::kNotBlind, profile::kNotDiseased, -1, -1, -1, -1,
+                                                profile::kNotPoisoned, profile::kNotDead, profile::kNotCursed,
+                                                profile::kNotStoned};
+        if (kNot[i] >= 0) {
+            char t[64], nm[20], why[24], q[24];
+            pt->sel()->name(nm, sizeof nm);
+            sw(kNot[i], why, sizeof why);
+            snprintf(t, sizeof t, "%s %s", nm, why);
+            say_item(c, t, 10);
+            sw(profile::kCastAnyway, q, sizeof q);
+            ask_yes_no(c, Ask::CureAnyway, q);
+            return;
+        }
+    }
+    offer_cure(c);
+}
+
+// ---- Take: coins from the counter --------------------------------------------------
+// "Select type of coin " over the kinds on the counter (from row 2, column
+// 2: "Platinum 25"), "Select" (and Exit); "How much X will you take? "
+// typed (on the keyboard); too heavy -> "Overloaded".
+
+int  take_kind[7];
+int  take_n = 0;
+int  take_coin = -1;
+char take_prompt[48];
+
+void list_coins()
+{
+    take_n = 0;
+    for (int k = 6; k >= 0; --k)
+        if (ground->money[k] > 0) take_kind[take_n++] = k;
+}
+
+void take_line(int i, char* out, size_t cap)
+{
+    if (i < 0 || i >= take_n) {
+        out[0] = 0;
+        return;
+    }
+    const int k = take_kind[i];
+    snprintf(out, cap, "%s %d", d->money[k], ground->money[k]);
+}
+
+void draw_take(pic::Canvas& c)
+{
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    plist.row0 = 2;
+    plist.row1 = 9;
+    plist.col0 = 2;
+    plist.n = take_n;
+    char prompt[28], sel[12];
+    sw(profile::kCoinType, prompt, sizeof prompt);
+    sw(profile::kSelectWord, sel, sizeof sel);
+    draw_list(c, prompt, sel);
+}
+
+void open_take(pic::Canvas& c)
+{
+    list_coins();
+    if (!take_n) return;
+    screen = Screen::Take;
+    plist = PickList{};
+    draw_take(c);
+}
+
+void ask_take(int i, pic::Canvas& c)
+{
+    if (i < 0 || i >= take_n) return;
+    take_coin = take_kind[i];
+    char a[16], b[20];
+    sw(profile::kHowMuch, a, sizeof a);
+    sw(profile::kWillTake, b, sizeof b);
+    snprintf(take_prompt, sizeof take_prompt, "%s%s %s", a, d->money[take_coin], b);
+    input_engine = true;
+    engine_ask = EngineAsk::Coins;
+    input_prompt = take_prompt;
+    input_max = 5;
+    input_len = 0;
+    input_buf[0] = 0;
+    input_mode = Input::Number;
+    draw_input(c);
+}
+
+void take_coins(int n, pic::Canvas& c)
+{
+    party::Character& ch = *pt->sel();
+    rules::recalc(ch, *names, d->facts);
+    if (take_coin >= 0 && n > 0) {
+        if (ch.encumbrance() + n > rules::max_load(ch)) {
+            draw_take(c);
+            note(c, d->w_over);
+            return;
+        }
+        if (n > ground->money[take_coin]) n = ground->money[take_coin];
+        ground->money[take_coin] -= n;
+        add_coins(ch, take_coin, n);
+        rules::recalc(ch, *names, d->facts);
+    }
+    list_coins();
+    if (!take_n) {
+        screen = Screen::Shop;
+        draw_shop(c);
+        return;
+    }
+    draw_take(c);
+}
+
+// ---- Appraise: gems and jewellery --------------------------------------------------
+// NAME (1, 1); "You have a fine collection of:" (row 7, colour 15), "3 Gems"
+// (row 9), "1 piece of Jewelry" (row 10); "Appraise :   Gems Jewelry Exit".
+// One appraised: "The Gem is Valued at N gp." (row 12), "You can : Sell
+// Keep" (Sell alone when they can't carry it): Keep makes it an item,
+// Sell gives N / 5 platinum (too heavy: the rest on the counter).
+
+int  appraised = 0;                 // the value just found (0: none)
+bool appraised_jewel = false;
+
+void draw_appraise(pic::Canvas& c)
+{
+    party::Character& ch = *pt->sel();
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    char nm[20], t[48], w1[24];
+    ch.name(nm, sizeof nm);
+    put(c, nm, 1, 1, 15);
+    sw(profile::kCollection, t, sizeof t);
+    put(c, t, 1, 7, 15);
+    const int gems = ch.money(5), jewels = ch.money(6);
+    if (gems) {
+        sw(gems == 1 ? profile::kGemWord : profile::kGemsWord, w1, sizeof w1);
+        snprintf(t, sizeof t, "%d%s", gems, w1);
+        put(c, t, 1, 9, 15);
+    }
+    if (jewels) {
+        sw(jewels == 1 ? profile::kJewelWord : profile::kJewelsWord, w1, sizeof w1);
+        snprintf(t, sizeof t, "%d%s", jewels, w1);
+        put(c, t, 1, 10, 15);
+    }
+    char keys[40], prompt[16], g[12], j[12], e[8];
+    sw(profile::kAppraisePrompt, prompt, sizeof prompt);
+    sw(profile::kGemsKey, g, sizeof g);
+    sw(profile::kJewelryKey, j, sizeof j);
+    sw(profile::kExitKey, e, sizeof e);
+    snprintf(keys, sizeof keys, "%s%s%s", gems ? g : "", jewels ? j : "", e);
+    if (appraised) {
+        sw(appraised_jewel ? profile::kJewelValued : profile::kGemValued, t, sizeof t);
+        char gp[8], line[48];
+        sw(profile::kGp, gp, sizeof gp);
+        snprintf(line, sizeof line, "%s%d%s", t, appraised, gp);
+        put(c, line, 1, 12, 15);
+        const bool must_sell = ch.encumbrance() + 1 > rules::max_load(ch) || ch.n_items >= party::kMaxItems;
+        sw(profile::kYouCan, prompt, sizeof prompt);
+        sw(must_sell ? profile::kSellKey : profile::kSellKeep, keys, sizeof keys);
+    }
+    text::build(menu, prompt, keys);
+    menu.selected = 0;
+    show_menu_line(c);
+    dirty(0, pic::kScreenH);
+}
+
+void open_appraise(pic::Canvas& c)
+{
+    party::Character* ch = pt->sel();
+    if (!ch) return;
+    if (!ch->money(5) && !ch->money(6)) {
+        char t[28];
+        sw(profile::kNoGems, t, sizeof t);
+        note(c, t);
+        return;
+    }
+    appraised = 0;
+    screen = Screen::Appraise;
+    draw_appraise(c);
+}
+
+void appraise_tap(int x, int y, pic::Canvas& c)
+{
+    if (note_until) {
+        redraw_menu(c);
+        return;
+    }
+    if (y < text::kMenuTapTop) return;
+    const char k = text::key(menu, text::hit(menu, x / 8));
+    party::Character& ch = *pt->sel();
+    if (appraised) {
+        const bool must_sell = ch.encumbrance() + 1 > rules::max_load(ch) || ch.n_items >= party::kMaxItems;
+        if (k == 'K' && !must_sell) {
+            uint8_t it[items::kRecordSize] = {};
+            it[0x2E] = d->prof->gem_type;
+            it[0x31] = appraised_jewel ? d->prof->jewel_word : d->prof->gem_word;
+            it[0x37] = 1;                             // weight
+            it[0x3A] = static_cast<uint8_t>(appraised);
+            it[0x3B] = static_cast<uint8_t>(appraised >> 8);
+            rules::add_item(ch, it);
+        } else if (k == 'S' || k == 'K') {
+            const int plat = appraised / 5;
+            const int room = rules::max_load(ch) - ch.encumbrance();
+            if (plat > room) {
+                add_coins(ch, 4, room > 0 ? room : 0);
+                ground->money[4] += plat - (room > 0 ? room : 0);
+                char t[44];
+                sw(profile::kOverPool, t, sizeof t);
+                note(c, t);
+            } else {
+                add_coins(ch, 4, plat);
+            }
+        } else {
+            return;
+        }
+        appraised = 0;
+        rules::recalc(ch, *names, d->facts);
+        if (!ch.money(5) && !ch.money(6)) {
+            screen = Screen::Shop;
+            draw_shop(c);
+            return;
+        }
+        draw_appraise(c);
+        return;
+    }
+    if (k == 'E') {
+        screen = Screen::Shop;
+        draw_shop(c);
+        return;
+    }
+    if ((k == 'G' && ch.money(5) > 0) || (k == 'J' && ch.money(6) > 0)) {
+        appraised_jewel = k == 'J';
+        add_coins(ch, appraised_jewel ? 6 : 5, -1);
+        const int r = rng.roll(100, 1);
+        appraised = appraised_jewel ? rules::jewel_value(r, rng) : rules::gem_value(r);
+        if (appraised <= 0) appraised = 1;
+        rules::recalc(ch, *names, d->facts);
+        draw_appraise(c);
+    }
+}
+
+// The answers to "Do you want to go back...", "cast cure anyway", "pay for cure"
+bool shop_yes_no(Ask what, char k, pic::Canvas& c)
+{
+    if (what == Ask::LeaveCoins) {
+        screen = Screen::Shop;
+        if (k == 'Y') {
+            text::clear(c, text::kTextArea);
+            dirty_rows(17, 22);
+            if (pt->count) draw_party(c, 17);
+            shop_menu(c);
+        } else {
+            leave_shop(c, true);
+        }
+        return true;
+    }
+    if (what != Ask::CureAnyway && what != Ask::PayCure) return false;
+    screen = Screen::Heal;
+    if (!hw || cure_at < 0) {
+        leave_heal(c);
+        return true;
+    }
+    if (k != 'Y') {
+        draw_heal(c);
+        return true;
+    }
+    if (what == Ask::CureAnyway) {
+        draw_heal(c);
+        offer_cure(c);
+        return true;
+    }
+    party::Character& ch = *pt->sel();
+    const int cost = d->prof->cures.cost[cure_at];
+    bool paid = false;
+    if (cost <= rules::gold_worth(ch)) {
+        rules::pay(ch, cost);
+        paid = true;
+    } else if (cost <= rules::gold_worth(ground->money)) {
+        rules::pay(ground->money, cost);
+        paid = true;
+    }
+    draw_heal(c);
+    if (!paid) {
+        char t[24];
+        sw(profile::kNotEnough, t, sizeof t);
+        note(c, t);
+        return true;
+    }
+    rules::apply_cure(ch, static_cast<rules::Cure>(cure_at), d->prof->cures, rng);
+    rules::recalc(ch, *names, d->facts);
+    if (pt->count) {}
+    char t[48], nm[20], cured[16];
+    ch.name(nm, sizeof nm);
+    sw(profile::kCured, cured, sizeof cured);
+    snprintf(t, sizeof t, "%s %s", nm, cured);
+    say_item(c, t, 10);
+    return true;
+}
+
 void shop_tap(int x, int y, pic::Canvas& c)
 {
     const int row = y / 8, col = x / 8;
@@ -2068,6 +2499,15 @@ void shop_tap(int x, int y, pic::Canvas& c)
         case 'P':                       // Pool: everyone's coins on the counter
             rules::pool(*pt, ground->money);
             shop_menu(c);
+            break;
+        case 'T':                       // Take: coins from the counter
+            open_take(c);
+            break;
+        case 'A':                       // Appraise: gems and jewellery
+            open_appraise(c);
+            break;
+        case 'H':                       // the temple's Heal
+            if (temple) open_heal(c);
             break;
         case 'S':                       // Share: the coins on the counter shared out
             rules::share(*pt, ground->money);
@@ -2113,6 +2553,8 @@ void list_tap(int x, int y, pic::Canvas& c)
             }
             if (screen == Screen::ShopBuy) draw_buy(c);
             else if (screen == Screen::AddList) draw_add_list(c);
+            else if (screen == Screen::Heal) draw_heal(c);
+            else if (screen == Screen::Take) draw_take(c);
             else draw_items(c);
         }
         return;
@@ -2126,6 +2568,18 @@ void list_tap(int x, int y, pic::Canvas& c)
         l.index = l.top;
     } else if (k == 'E' && screen == Screen::CreatePick) {
         end_create(c);
+        return;
+    } else if (screen == Screen::Heal && (k == 'H' || k == 'E')) {
+        if (k == 'H') heal_pick(l.index, c);
+        else leave_heal(c);
+        return;
+    } else if (screen == Screen::Take && (k == 'S' || k == 'E')) {
+        if (k == 'S') {
+            ask_take(l.index, c);
+        } else {
+            screen = Screen::Shop;
+            draw_shop(c);
+        }
         return;
     } else if (k == 'S' && screen == Screen::CreatePick) {
         picked(l.index, c);
@@ -2170,6 +2624,8 @@ void list_tap(int x, int y, pic::Canvas& c)
     if (screen == Screen::ShopBuy) draw_buy(c);
     else if (screen == Screen::AddList) draw_add_list(c);
     else if (screen == Screen::CreatePick) draw_pick(c);
+    else if (screen == Screen::Heal) draw_heal(c);
+    else if (screen == Screen::Take) draw_take(c);
     else draw_items(c);
 }
 
@@ -2253,8 +2709,13 @@ void pm_tap(int x, int y, pic::Canvas& c)
         trade_tap(x, y, c);
         return;
     }
-    if (screen == Screen::Items || screen == Screen::ShopBuy || screen == Screen::AddList) {
+    if (screen == Screen::Items || screen == Screen::ShopBuy || screen == Screen::AddList || screen == Screen::Heal ||
+        screen == Screen::Take) {
         list_tap(x, y, c);
+        return;
+    }
+    if (screen == Screen::Appraise) {
+        appraise_tap(x, y, c);
         return;
     }
     if (screen == Screen::AddFrom) {
@@ -2720,6 +3181,11 @@ void begin_wait(pic::Canvas& c)
         pause_until = millis() + vm->pause_ms();
         break;
     case ecl::Wait::Shop:
+        temple = false;
+        open_shop(c);
+        break;
+    case ecl::Wait::Temple:
+        temple = true;
         open_shop(c);
         break;
     case ecl::Wait::None:
@@ -3208,7 +3674,7 @@ bool tap_target(int x, int y, int* row, int* c0, int* c1)
         return true;
     }
     if ((screen == Screen::Items || screen == Screen::ShopBuy || screen == Screen::AddList ||
-         screen == Screen::CreatePick) &&
+         screen == Screen::CreatePick || screen == Screen::Heal || screen == Screen::Take) &&
         r >= plist.row0 && r <= plist.row1 && plist.top + r - plist.row0 < plist.n) {
         *row = r;
         *c0 = plist.col0;
@@ -3466,6 +3932,33 @@ bool back(pic::Canvas& c)
         back_from_save(c);
         return true;
     }
+    // Esc on a game question is its No; on the shop's own screens, back to the shop
+    if (screen == Screen::YesNo && !mk) {
+        const Ask what = ask;
+        ask = Ask::None;
+        if (items_yes_no(what, 'N', c) || shop_yes_no(what, 'N', c)) return true;
+        ask = what;
+    }
+    if (screen == Screen::TradeWho) {
+        back_to_items(c);
+        return true;
+    }
+    if (screen == Screen::Heal) {
+        leave_heal(c);
+        return true;
+    }
+    if (screen == Screen::Take || screen == Screen::Appraise) {
+        if (screen == Screen::Take && input_mode != Input::None) {
+            input_mode = Input::None;
+            input_engine = false;
+            engine_ask = EngineAsk::Name;
+            draw_take(c);
+            return true;
+        }
+        screen = Screen::Shop;
+        draw_shop(c);
+        return true;
+    }
     if (mk && (screen == Screen::CreatePick || screen == Screen::CreateName || screen == Screen::YesNo)) {
         ask = Ask::None;
         end_create(c);
@@ -3530,6 +4023,11 @@ void input_key(char k, pic::Canvas& c)
         input_mode = Input::None;
         input_engine = false;
         clear_menu_line(c);
+        if (engine_ask == EngineAsk::Coins) {
+            engine_ask = EngineAsk::Name;
+            take_coins(atoi(input_buf), c);
+            return;
+        }
         create_named(input_buf, c);
         return;
     }

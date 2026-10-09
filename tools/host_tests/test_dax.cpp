@@ -1998,6 +1998,20 @@ static void test_items()
     CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Shop);
     CHECK(g.n == 0 && g.money[3] == 9 && host.items_block == 5 && vm.get(0x7F6C) == 0);
     CHECK(vm.resume() == ecl::Stop::Stopped);
+    // The temple flag: COMBAT opens the temple
+    Bytes tc;
+    for (int i = 0; i < 5; ++i) { tc.push_back(0); op_addr(tc, kBase + 20); }
+    tc.push_back(0x09); op_imm(tc, 1); op_addr(tc, 0x7EE2);
+    tc.push_back(0x24);
+    tc.push_back(0x00);
+    ecl::GameState gt;
+    memcpy(gt.code, tc.data(), tc.size());
+    gt.code_len = static_cast<uint32_t>(tc.size());
+    ecl::Vm vt(gt, host, *p->ecl_ops);
+    CHECK(vt.init_script());
+    r = vt.run(kBase + 20);
+    CHECK(r == ecl::Stop::Waiting && vt.wait() == ecl::Wait::Temple && vt.get(0x7EE2) == 0);
+    CHECK(vt.resume() == ecl::Stop::Stopped);
 }
 
 // Synthetic rule tables (made-up numbers in the games' layout) for the
@@ -2210,6 +2224,47 @@ static void test_item_piles()
     CHECK(rules::sell_value(darts, f) == 10 * 50 / 20);
 }
 
+static void test_temple()
+{
+    rules::CureFacts f{};
+    f.blinded = 0x21; f.disease[0] = 0x1F; f.disease[1] = 0x22; f.poisoned = 0x37; f.slow_poison = 0x16;
+    f.poison_damage = 0x0F; f.animate_dead = 0x20; f.curse = 0x24; f.feeblemind = 0x44;
+    party::Character c;
+    c.rec[0x78] = 30; c.rec[0x1A4] = 10;                    // HP 10 / 30
+    c.n_affects = 3;
+    c.affects[0][0] = 0x21; c.affects[1][0] = 0x37; c.affects[2][0] = 0x21;
+    CHECK(rules::needs_cure(c, rules::kCureBlindness, f) && !rules::needs_cure(c, rules::kCureDisease, f));
+    CHECK(rules::needs_cure(c, rules::kCureLight, f) && !rules::needs_cure(c, rules::kRaiseDead, f));
+    create::Dice d(7);
+    rules::apply_cure(c, rules::kCureBlindness, f, d);
+    CHECK(c.n_affects == 1 && c.affects[0][0] == 0x37 && !rules::needs_cure(c, rules::kCureBlindness, f));
+    rules::apply_cure(c, rules::kNeutralizePoison, f, d);
+    CHECK(c.n_affects == 0);
+    rules::apply_cure(c, rules::kCureLight, f, d);
+    CHECK(c.hp() >= 11 && c.hp() <= 18);
+    rules::apply_cure(c, rules::kHealCure, f, d);
+    CHECK(c.hp() >= 26 && c.hp() <= 29);
+    rules::heal(c, 100);
+    CHECK(c.hp() == 30);
+    // The dead: no healing; raised with 1 HP
+    c.rec[0x195] = party::Dead; c.rec[0x1A4] = 0;
+    rules::heal(c, 5);
+    CHECK(c.hp() == 0 && rules::needs_cure(c, rules::kRaiseDead, f));
+    rules::apply_cure(c, rules::kRaiseDead, f, d);
+    CHECK(c.health() == party::Okay && c.hp() == 1 && c.in_combat());
+    // A cursed item comes off
+    c.n_items = 1; c.items[0][0x36] = 1; c.items[0][0x34] = 1;
+    CHECK(rules::needs_cure(c, rules::kRemoveCurse, f));
+    rules::apply_cure(c, rules::kRemoveCurse, f, d);
+    CHECK(c.items[0][0x34] == 0);
+    // Appraising
+    CHECK(rules::gem_value(1) == 10 && rules::gem_value(50) == 50 && rules::gem_value(99) == 1000 && rules::gem_value(100) == 5000);
+    for (int r = 1; r <= 100; r += 7) {
+        const int v = rules::jewel_value(r, d);
+        CHECK(v >= 100 && v < 12000);
+    }
+}
+
 int main()
 {
     test_rle_known_bytes();
@@ -2235,6 +2290,7 @@ int main()
     test_party();
     test_items();
     test_item_piles();
+    test_temple();
     test_create();
     if (failures) {
         printf("%d check(s) failed\n", failures);

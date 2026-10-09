@@ -709,8 +709,7 @@ Stop Vm::step()
             }
             if (get(0x7EE2) == 1) {
                 set(0x7EE2, 0);
-                h_.log("TEMPLE (not in the engine yet)");
-                return Stop::Running;
+                return wait_for(Wait::Temple);
             }
             h_.log("treasure after a fight (not in the engine yet)");
             return Stop::Running;
