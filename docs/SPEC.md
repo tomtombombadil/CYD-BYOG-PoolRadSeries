@@ -209,6 +209,31 @@ So the journal is shown as **pictures of the entries**, not text:
   only. Same rule as the DAX files.
 - Each game's journal gets its own table once its GOG PDF has been looked at.
 
+Built (v0.10.0, Curse):
+- `web/journal/` = the converter page (pdf.js 3.11.174 from cdnjs; SHA-256
+  with crypto.subtle, a JS fallback when the page is opened from a file).
+  `web/journal/tables.json` = the rectangle tables: per journal its SHA-256
+  and entries {k: 'J' journal entry / 'T' tavern tale, n, p: [[PDF page,
+  x, y, w, h] ...]} in pixels of the page rendered at 150 dpi.
+  `tools/journal/make_table.py` makes a table from the player's PDF page
+  images (headings found by their hollow blue box; an entry runs to the
+  next heading column by column; pieces trimmed to the rows with ink;
+  per-journal fixes for pictures across both columns and entries out of
+  order), checked by eye. Curse (install-folder PDF): entries 1-59 (1 is on
+  page 1, 2-59 on pages 10-24; 59 comes before 58), Tavern Tales 1-62.
+- Each entry's pieces are stacked, the paper and show-through turned
+  white, scaled to 310 and 470 px wide, reduced to 16 colours (median cut,
+  white = index 0) and run-length coded: `JOURNAL.BIN` (format in
+  `src/engine/journal.h`; Curse: 121 entries, ~7 MB). The page can save
+  straight into a folder (Chrome / Edge) or download the file.
+- The engine (`engine/journal.*`, Play Test) watches the printed text for
+  "JOURNAL ENTRY n" / "JOURNAL AS ENTRY n" / "TAVERN TALE n" (numbers may
+  come in the next PRINT) and, when the game next waits for a key, shows
+  the entry full-screen: header "Journal Entry 31  1/2", Prev Page / Back
+  to Game / Next Page. Without the file it says how to make it.
+- Not yet: a Journal key to look entries up any time; zoom for the maps
+  that span both columns (they are scaled down to the screen width).
+
 ## 8. Copy protection (Tom, 2026-10-06)
 
 Skipped. The player supplies their own game files, so the journal word

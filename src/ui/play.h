@@ -38,6 +38,10 @@ enum class Input : uint8_t { None, Number, Text };
 Input input();
 void input_key(char k, pic::Canvas& c);
 
+// The game mentioned a journal entry ('J') or tavern tale ('T') and now
+// waits for the player: true once, with what to show.
+bool journal_request(char* kind, int* number);
+
 // Canvas rows changed since the last call (y1 == 0: none).
 void take_dirty(int& y0, int& y1);
 

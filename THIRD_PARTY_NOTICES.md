@@ -15,6 +15,12 @@
   `sdcard.*`, `touch_cal.*`, `panel_prefs.*`, `tools/version.py`,
   `tools/make_site.py`, `web/index.html`, `.github/workflows/build.yml` (adapted).
 
+## Loaded by the web pages (not copied into the repo)
+- **pdf.js** 3.11.174 (Mozilla, Apache License 2.0), https://mozilla.github.io/pdf.js/ -
+  the Journal Converter (`web/journal/`) loads it from cdnjs to read the
+  player's own journal PDF in their browser.
+- **ESP Web Tools** (Apache License 2.0) - the installer page loads it from unpkg.
+
 ## Used for reference only (nothing copied)
 - **coab** - Curse of the Azure Bonds reimplementation in C# by Simeon Pilgrim,
   https://github.com/simeonpilgrim/coab. No license file, so all rights
@@ -22,3 +28,5 @@
 
 ## Game data
 None. The player supplies their own original game files on the SD card.
+The journal tables (`web/journal/tables.json`) hold only page numbers and
+positions inside the player's own journal PDF - no text or pictures.

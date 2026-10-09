@@ -234,8 +234,9 @@
     <p>This is an engine only: nothing from the original games is included. You copy the game files from your
        own copy (the GOG releases) to a microSD card, and the board reads them from there.</p>
   </div>
-  <p class="notice"><strong>Early development.</strong> This build is milestone 1: a library and asset viewer that finds
-     your games on the card and shows the pictures inside their files. The games aren't playable yet.</p>
+  <p class="notice"><strong>Early development.</strong> The board finds your games on the card, shows what is inside their
+     files and runs Curse of the Azure Bonds' own scripts in a Play Test (walking, events, text, pictures, the journal).
+     There is no party, combat or saving yet.</p>
 
   <section class="install-card" aria-labelledby="install-h">
     <h2 id="install-h">Install</h2>
@@ -277,6 +278,13 @@
         ("Pool of Radiance" is fine too); the files inside must be the original DOS game files (the .DAX files and the rest).</li>
     <li>Put the card in the board and power it up: the library lists each game it finds.</li>
   </ol>
+
+  <h2 id="journal-h">The Adventurer's Journal</h2>
+  <p>The games tell you to read numbered entries in the printed journal ("you record it in journal entry 31"). The board
+     shows that entry when the game mentions it, from a file you make from your own GOG journal PDF with the
+     <a href="journal/">Journal Converter</a>. It runs in your browser (nothing is uploaded); save its
+     <strong>JOURNAL.BIN</strong> into the game's folder on the card, next to its .DAX files.
+     Curse of the Azure Bonds' journal works now; the other games' follow.</p>
 
   <h2>After installing</h2>
   <ul class="after">

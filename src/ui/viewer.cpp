@@ -13,6 +13,7 @@
 #include "engine/games.h"
 #include "engine/icon.h"
 #include "engine/inflate.h"
+#include "engine/journal.h"
 #include "engine/picture.h"
 #include "engine/text.h"
 #include "frame.h"
@@ -27,7 +28,7 @@ namespace viewer {
 
 namespace {
 
-enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Walk, Play, Settings };
+enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Walk, Play, Journal, Settings };
 
 Env       env_;
 Settings* cfg = nullptr;
@@ -1090,9 +1091,148 @@ bool tap_keyboard(const ui::Tap& t)
     return true;     // the keyboard takes every tap while it is up
 }
 
+// ---- Journal ------------------------------------------------------------
+// An entry of the Adventurer's Journal (or a tavern tale), as a picture
+// from JOURNAL.BIN in the game's folder (made by the Journal Converter on
+// the flasher site from the player's own GOG journal). Pages through it with
+// Prev Page / Next Page; Back returns to the game.
+
+struct JournalView {
+    char     kind = 'J';
+    int      number = 0;
+    int      top = 0;                     // first picture row on screen
+    bool     have = false;                // the file and entry were found
+    const char* why = "";
+    journal::Picture pic;
+    lgfx::rgb888_t pal[16];
+    lgfx::rgb888_t line[journal::kMaxWidth];
+    int      x0 = 0, y0 = 0;
+};
+JournalView* jv = nullptr;
+
+constexpr char kJournalFile[] = "JOURNAL.BIN";
+
+ui::Rect journal_area()
+{
+    const int top = ui::header_h() + 2;
+    return {0, top, ui::width(), ui::height() - top - ui::key_h() - ui::gap() * 2};
+}
+int journal_step() { return journal_area().h - 24; }        // a page, keeping a little for context
+
+bool journal_source(fs::File& f)
+{
+    char path[160];
+    library::path_of(game_dirs[game_sel].data_dir, kJournalFile, path, sizeof path);
+    f = sd_fs().open(path, "r");
+    return static_cast<bool>(f);
+}
+
+void open_journal(char kind, int number)
+{
+    if (!jv) jv = new (std::nothrow) JournalView;
+    if (!jv) return;
+    jv->kind = kind;
+    jv->number = number;
+    jv->top = 0;
+    jv->have = false;
+    jv->why = "The journal file isn't on the card yet. Make JOURNAL.BIN with the Journal Converter on the flasher "
+              "page and copy it into this game's folder, next to its .DAX files.";
+    fs::File f;
+    if (journal_source(f)) {
+        library::FileSource src(f);
+        journal::Info info;
+        if (!journal::read_info(src, info)) {
+            jv->why = "JOURNAL.BIN in this game's folder can't be read. Make it again with the Journal Converter.";
+        } else {
+            const int wi = journal::pick_width(info, ui::width() - 4);
+            if (journal::find(src, info, kind, number, wi, jv->pic)) {
+                jv->have = true;
+                for (int i = 0; i < 16; ++i) {
+                    const uint16_t c = jv->pic.palette[i];
+                    jv->pal[i] = lgfx::rgb888_t(((c >> 11) & 31) * 255 / 31, ((c >> 5) & 63) * 255 / 63, (c & 31) * 255 / 31);
+                }
+            } else {
+                jv->why = "That entry isn't in this game's JOURNAL.BIN.";
+            }
+        }
+        f.close();
+    }
+    go(Screen::Journal);
+}
+
+void journal_row(int y, const uint8_t* row, int w, void* ctx)
+{
+    JournalView& v = *static_cast<JournalView*>(ctx);
+    for (int x = 0; x < w; ++x) v.line[x] = v.pal[row[x] & 15];
+    ui::gfx().pushImage(v.x0, v.y0 + y - v.top, w, 1, v.line);
+}
+
+void draw_journal()
+{
+    ui::clear();
+    char title[48];
+    const char* what = jv && jv->kind == 'T' ? "Tavern Tale" : "Journal Entry";
+    const ui::Rect a = journal_area();
+    if (jv && jv->have && jv->pic.h > a.h) {
+        const int pages = (jv->pic.h - a.h + journal_step() - 1) / journal_step() + 1;
+        const int page = jv->top / journal_step() + 1;
+        snprintf(title, sizeof title, "%s %d  %d/%d", what, jv ? jv->number : 0, page, pages);
+    } else {
+        snprintf(title, sizeof title, "%s %d", what, jv ? jv->number : 0);
+    }
+    ui::header(title, true);
+    const bool more = jv && jv->have && jv->top + a.h < jv->pic.h;
+    ui::key(ui::bottom_key(0, 3), "Prev Page", jv && jv->top > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+    ui::key(ui::bottom_key(1, 3), "Back to Game");
+    ui::key(ui::bottom_key(2, 3), "Next Page", more ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+    if (!jv || !jv->have) {
+        wrap_text(ui::gap() * 3, a.y + ui::gap() * 2, ui::width() - ui::gap() * 6, jv ? jv->why : "",
+                  ui::Font::Normal, style::kText, true);
+        return;
+    }
+    // The page of the picture, on white like the journal's paper
+    LGFX& g = ui::gfx();
+    g.fillRect(0, a.y, a.w, a.h, TFT_WHITE);
+    fs::File f;
+    if (!journal_source(f)) return;
+    library::FileSource src(f);
+    jv->x0 = (ui::width() - jv->pic.w) / 2;
+    jv->y0 = a.y;
+    const int rows = jv->pic.h - jv->top < a.h ? jv->pic.h - jv->top : a.h;
+    g.startWrite();
+    journal::rows(src, jv->pic, jv->top, rows, journal_row, jv);
+    g.endWrite();
+    f.close();
+}
+
+void leave_journal()
+{
+    delete jv;
+    jv = nullptr;
+    go(Screen::Play);         // the game screen comes back as it was
+}
+
+void tap_journal(const ui::Tap& t)
+{
+    if (ui::back_rect().contains(t.x, t.y)) { leave_journal(); return; }
+    const int k = bottom_hit(t, 3);
+    if (k == 1) { leave_journal(); return; }
+    if (!jv || !jv->have) return;
+    const ui::Rect a = journal_area();
+    if (k == 0 && jv->top > 0) {
+        jv->top = jv->top > journal_step() ? jv->top - journal_step() : 0;
+        dirty = true;
+    } else if (k == 2 && jv->top + a.h < jv->pic.h) {
+        jv->top += journal_step();
+        dirty = true;
+    }
+}
+
 void leave_play()
 {
     kb_shown = false;
+    delete jv;
+    jv = nullptr;
     play::close();
     play_error = nullptr;
     frame::set_left(false);
@@ -1118,6 +1258,12 @@ void present_play()
         return;
     }
     if (kb_shown) return;
+    char jk;
+    int jn;
+    if (play::journal_request(&jk, &jn)) {
+        open_journal(jk, jn);
+        return;
+    }
     if (play::pos_x() != play_last_x || play::pos_y() != play_last_y || play::dir() != play_last_dir ||
         play::map() != play_last_map) {
         play_last_x = play::pos_x();
@@ -1273,6 +1419,7 @@ void tick()
         case Screen::Look:     tap_look(t); break;
         case Screen::Walk:     tap_walk(t); break;
         case Screen::Play:     tap_play(t); break;
+        case Screen::Journal:  tap_journal(t); break;
         case Screen::Settings: tap_settings(t); break;
         }
     }
@@ -1291,6 +1438,7 @@ void tick()
     case Screen::Look:     draw_look(); break;
     case Screen::Walk:     draw_walk(); break;
     case Screen::Play:     draw_play(); break;
+    case Screen::Journal:  draw_journal(); break;
     case Screen::Settings: draw_settings(); break;
     }
 }

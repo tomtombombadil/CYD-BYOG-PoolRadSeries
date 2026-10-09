@@ -17,6 +17,7 @@
 #include "engine/geo.h"
 #include "engine/icon.h"
 #include "engine/inflate.h"
+#include "engine/journal.h"
 #include "engine/png.h"
 #include "inflate_vectors.h"
 #include "engine/layout.h"
@@ -1499,6 +1500,96 @@ static void test_ecl_vm()
     CHECK(vm.run(vm.entry(0)) == ecl::Stop::Error);
 }
 
+// A JOURNAL.BIN like the converter writes: entries at two widths
+static Bytes journal_picture(int w, int h, int seed)
+{
+    Bytes data;
+    for (int y = 0; y < h; ++y) {
+        int x = 0;
+        while (x < w) {
+            const int c = (x / 16 + y + seed) & 15;
+            int run = 1 + ((x + y * 3 + seed) % 16);
+            if (run > 16 - x % 16) run = 16 - x % 16;
+            if (x + run > w) run = w - x;
+            data.push_back(static_cast<uint8_t>((run - 1) << 4 | c));
+            x += run;
+        }
+    }
+    Bytes b;
+    put16(b, w); put16(b, h);
+    for (int i = 0; i < 16; ++i) put16(b, i * 0x1111);
+    put32(b, static_cast<uint32_t>(data.size()));
+    b.insert(b.end(), data.begin(), data.end());
+    return b;
+}
+static int journal_expect(int x, int y, int seed) { return (x / 16 + y + seed) & 15; }
+
+struct RowCheck { int seed, w, first, seen; bool ok; };
+static void row_check(int y, const uint8_t* row, int w, void* ctx)
+{
+    RowCheck& r = *static_cast<RowCheck*>(ctx);
+    if (w != r.w || y != r.first + r.seen) r.ok = false;
+    for (int x = 0; x < w; ++x)
+        if (row[x] != journal_expect(x, y, r.seed)) r.ok = false;
+    ++r.seen;
+}
+
+static void test_journal()
+{
+    // Entries J1, T12, J31 at widths 310 and 470
+    const char kinds[3] = {'J', 'T', 'J'};
+    const int nums[3] = {1, 12, 31};
+    const int widths[2] = {310, 470};
+    Bytes f = {'G', 'B', 'J', '1', 1, 2};
+    put16(f, 3);
+    for (int w : widths) put16(f, w);
+    const size_t index_at = f.size();
+    f.resize(f.size() + 3 * (4 + 8));
+    for (int e = 0; e < 3; ++e) {
+        uint8_t* r = f.data() + index_at + e * 12;
+        r[0] = static_cast<uint8_t>(kinds[e]);
+        r[1] = 0;
+        r[2] = static_cast<uint8_t>(nums[e]);
+        r[3] = 0;
+        for (int wi = 0; wi < 2; ++wi) {
+            const uint32_t at = static_cast<uint32_t>(f.size());
+            Bytes pic = journal_picture(widths[wi], 20 + e, e * 5 + wi);
+            f.insert(f.end(), pic.begin(), pic.end());
+            r = f.data() + index_at + e * 12;
+            for (int i = 0; i < 4; ++i) r[4 + 4 * wi + i] = static_cast<uint8_t>(at >> (8 * i));
+        }
+    }
+    dax::MemorySource src(f.data(), f.size());
+    journal::Info info;
+    CHECK(journal::read_info(src, info) && info.widths == 2 && info.entries == 3 && info.width[1] == 470);
+    CHECK(journal::pick_width(info, 320) == 0 && journal::pick_width(info, 480) == 1 && journal::pick_width(info, 200) == 0);
+    journal::Picture p;
+    CHECK(!journal::find(src, info, 'T', 31, 0, p));
+    CHECK(journal::find(src, info, 'J', 31, 1, p) && p.w == 470 && p.h == 22 && p.palette[3] == 0x3333);
+    RowCheck rc{2 * 5 + 1, 470, 5, 0, true};
+    CHECK(journal::rows(src, p, 5, 10, row_check, &rc) && rc.ok && rc.seen == 10);
+    RowCheck all{2 * 5 + 1, 470, 0, 0, true};
+    CHECK(journal::rows(src, p, 0, 1000, row_check, &all) && all.ok && all.seen == 22);
+    // Data that ends early is bad
+    journal::Picture cut = p;
+    cut.data_len = 10;
+    RowCheck rc2{2 * 5 + 1, 470, 0, 0, true};
+    CHECK(!journal::rows(src, cut, 0, 22, row_check, &rc2));
+    Bytes notj = {'G', 'B', 'J', '2', 1, 1, 0, 0, 0, 0};
+    dax::MemorySource nsrc(notj.data(), notj.size());
+    CHECK(!journal::read_info(nsrc, info));
+
+    // Mentions in the games' text
+    int n = 0;
+    CHECK(journal::find_mention("YOU LISTEN, AND YOU RECORD IT IN JOURNAL ENTRY 31. 'PERHAPS", &n) == 'J' && n == 31);
+    CHECK(journal::find_mention("YOU PLACE IT IN YOUR JOURNAL AS ENTRY 59.", &n) == 'J' && n == 59);
+    CHECK(journal::find_mention("LOG IT AS JOURNAL \nENTRY 5.", &n) == 'J' && n == 5);
+    CHECK(journal::find_mention("YOU OVERHEAR TAVERN TALE #12 ", &n) == 'T' && n == 12);
+    CHECK(journal::find_mention("YOU OVERHEAR TAVERN TALE 7", &n) == 'T' && n == 7);
+    CHECK(journal::find_mention("AND YOU RECORD IT IN JOURNAL ENTRY ", &n) == 0);
+    CHECK(journal::find_mention("TAVERN TALES WITH YOU,", &n) == 0);
+}
+
 static Bytes make_geo(const std::vector<std::tuple<int, int, int, int, int>>& walls)
 {
     // walls: x, y, dir, type, door
@@ -1608,6 +1699,7 @@ int main()
     test_icon();
     test_ecl();
     test_ecl_vm();
+    test_journal();
     test_geo_view();
     if (failures) {
         printf("%d check(s) failed\n", failures);

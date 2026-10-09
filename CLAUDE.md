@@ -50,6 +50,12 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   N. The GOG PDFs are scans whose OCR text is garbled, and entries include
   maps - so pictures, not text. No journal text or images ever in the repo,
   firmware or site (SPEC section 7).
+  Built for Curse (v0.10.0): `web/journal/` (converter page +
+  `tables.json` coordinates), `tools/journal/make_table.py` (makes a
+  table from the player's PDF in scratch space - check every entry by
+  eye), `engine/journal.*` (JOURNAL.BIN format + mention finder); the Play
+  Test shows an entry when the game mentions it. Renders of real entries
+  stay in scratch.
 
 ## Bring your own game - hard rules
 - The repo and firmware contain nothing from the games: no DAX files, no

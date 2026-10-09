@@ -11,6 +11,7 @@
 #include "engine/ecl_vm.h"
 #include "engine/exepack.h"
 #include "engine/font.h"
+#include "engine/journal.h"
 #include "engine/layout.h"
 #include "engine/profile.h"
 #include "engine/text.h"
@@ -98,6 +99,40 @@ bool         cursor_on = false;
 int          cursor_px = 0, cursor_py = 0;
 uint8_t      cursor_under[64];
 uint32_t     cursor_at = 0;
+
+// Journal entries the text mentions ("record it in journal entry 31"):
+// shown once the game waits for a key
+char         jtext[200];            // the latest printed text
+char         journal_kind = 0;      // mentioned, not yet shown
+int          journal_num = 0;
+bool         journal_due = false;   // the viewer should show it now
+
+void heard(const char* t)
+{
+    size_t n = strlen(jtext), add = strlen(t);
+    if (add >= sizeof jtext) {
+        t += add - (sizeof jtext - 1);
+        add = sizeof jtext - 1;
+    }
+    if (n + add >= sizeof jtext) {          // keep the end
+        const size_t drop = n + add - (sizeof jtext - 1);
+        memmove(jtext, jtext + drop, n - drop + 1);
+        n -= drop;
+    }
+    memcpy(jtext + n, t, add + 1);
+    int num = 0;
+    const char k = journal::find_mention(jtext, &num);
+    if (k) {
+        journal_kind = k;
+        journal_num = num;
+        jtext[0] = 0;
+    }
+}
+
+void journal_ready()
+{
+    if (journal_kind) journal_due = true;
+}
 
 // Typing (INPUT NUMBER / STRING) on the menu line
 Input        input_mode = Input::None;
@@ -516,6 +551,7 @@ void begin_wait(pic::Canvas& c)
     waiting = true;
     switch (vm->wait()) {
     case ecl::Wait::Print:
+        heard(vm->text());
         if (strcmp(vm->text(), "\n") == 0) {          // PRINT RETURN
             w.col = w.r.x0;
             ++w.row;
@@ -529,6 +565,7 @@ void begin_wait(pic::Canvas& c)
         page_prompt = false;
         break;
     case ecl::Wait::Menu: {
+        journal_ready();
         // "~Yes ~No": each choice's first letter is its key; the rest shows
         // in the normal colour (lower case prints the same in this font)
         size_t o = 0;
@@ -553,6 +590,7 @@ void begin_wait(pic::Canvas& c)
         break;
     }
     case ecl::Wait::ListMenu:
+        heard(vm->prompt());
         text::begin(w, c, vm->prompt(), text::kTextArea, 10, true);
         dirty_rows(17, 22);
         t_started = false;
@@ -697,6 +735,7 @@ void handle(ecl::Stop r)
         }
         Serial.println("[play] outdoor scripts idle; waiting for the player");
     }
+    journal_ready();
     idle_menu(c);
 }
 
@@ -823,6 +862,9 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c)
     pic_shown = false;
     waiting = false;
     anim_block = bigpic = last_pic = -1;
+    jtext[0] = 0;
+    journal_kind = 0;
+    journal_due = false;
     cursor_on = false;
     input_mode = Input::None;
     idle_cycles = 0;
@@ -1025,6 +1067,16 @@ void tick(uint32_t now, pic::Canvas& c)
 }
 
 Input input() { return d ? input_mode : Input::None; }
+
+bool journal_request(char* kind, int* number)
+{
+    if (!d || !journal_due) return false;
+    *kind = journal_kind;
+    *number = journal_num;
+    journal_due = false;
+    journal_kind = 0;
+    return true;
+}
 
 void input_key(char k, pic::Canvas& c)
 {

@@ -31,6 +31,7 @@ static void settle(int choice = 0, int max_ms = 60000)
     for (int t = 0; t < max_ms; t += 20) {
         g_now += 20;
         play::tick(g_now, C);
+        { char jk; int jn; if (play::journal_request(&jk, &jn)) printf("  JOURNAL %c %d\n", jk, jn); }
         using namespace play;
         if (!waiting) return;
         const auto wt = vm->wait();

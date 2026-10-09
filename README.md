@@ -79,7 +79,9 @@ The games aren't playable yet; this build shows what is inside their files.
    typing shows on the menu line; Enter answers). Travel works too: the
    wilderness map, with a blinking square where the party is, and the areas
    you go into. There's no party yet, so anything that needs one
-   (combat, treasure, checks) is skipped; on 480x320 **Look** is also a
+   (combat, treasure, checks) is skipped; when the game says "record it in
+   journal entry 31" the entry comes up on screen (make its file first with
+   the Journal Converter on the flasher page - see below); on 480x320 **Look** is also a
    key beside the pad and the map shows beside the game screen.
 3. **Blocks**: each piece inside the file. **Gold keys are pictures** (size and
    frame count shown); navy keys are other data. Tap one.
@@ -114,3 +116,14 @@ Pools of Darkness are the property of their owners. This project is not
 affiliated with them and includes none of their files.
 
 MIT license.
+
+## The Adventurer's Journal
+
+The games refer to numbered entries in the printed journal. The
+[Journal Converter](https://tomtombombadil.github.io/CYD-BYOG-PoolRadSeries/journal/)
+turns your own GOG journal PDF (the one in the game's folder) into
+`JOURNAL.BIN` in your browser - nothing is uploaded. Copy it into the
+game's folder on the card, next to its .DAX files. Curse of the Azure Bonds
+is supported so far. Neither the repository nor the firmware contains any
+journal text or pictures: the converter only knows where each entry sits on
+the PDF's pages.
