@@ -494,14 +494,21 @@ bool cursed_item(const party::Character& c)
 
 } // namespace
 
-void heal(party::Character& c, int amount)
+bool heal(party::Character& c, int amount)
 {
     const int h = c.health();
-    if (amount <= 0 || !(h == party::Okay || h == party::Animated || h == party::Unconscious || h == party::Dying))
-        return;
-    int hp = c.hp() + amount;
+    if (!(h == party::Okay || h == party::Animated || h == party::Unconscious || h == party::Dying)) return false;
+    int hp = c.hp() + (amount > 0 ? amount : 0);
     if (hp > c.hp_max()) hp = c.hp_max();
     c.rec[kHp] = static_cast<uint8_t>(hp);
+    if (!c.in_combat()) {
+        if (c.rec[kHealth] == party::Dying) c.rec[kHealth] = party::Unconscious;
+        if (c.rec[kHealth] == party::Unconscious && c.hp() > 0) {
+            c.rec[kHealth] = party::Okay;
+            c.rec[kInCombat] = 1;
+        }
+    }
+    return true;
 }
 
 bool needs_cure(const party::Character& c, Cure cure, const CureFacts& f)

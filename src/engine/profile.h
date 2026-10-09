@@ -16,6 +16,7 @@
 
 #include "classes.h"
 #include "rules.h"
+#include "spells.h"
 #include "ecl.h"
 #include "games.h"
 
@@ -92,6 +93,21 @@ enum MagicWord {
     kCannotMemorize, kNoCondition, kMemorizeSpells,             // "cannot memorize any spells", "is in no condition to ", ...
     kRestTime, kRestMenu, kStopResting, kHealedAll, kHasMemorized, kInterrupted,
     kMagicWords
+};
+
+// Casting in camp and the effects list (GAME.OVR offsets of Pascal strings),
+// in this order
+enum CastWord {
+    kCastAny, kNoSpells, kCastKey, kCasts, kCantCastHere, kLoseIt, kCastOnWhom,   // "cast any spells" ... "Cast Spell on whom"
+    kFullyHealed, kPartlyHealed, kIsCured, kIsUnaffected, kCanSee, kUnpoisoned,  // what a spell did
+    kRaised, kUncursed, kItemUncursed, kNoEffects,                               // ... " <No Spell Effects>"
+    kCastWords
+};
+
+// An effect's name in the effects list (Display): a GAME.OVR string
+struct EffectName {
+    uint8_t  type;
+    uint32_t at;
 };
 
 struct Profile {
@@ -232,6 +248,19 @@ struct Profile {
         NameTable levels, names;
         uint32_t  words[kMagicWords];
         uint16_t  rest_period, rest_chance;
+        // Casting: the words, what each spell does outside combat (spells
+        // not listed and meant for fights "can't be cast here"), the
+        // effect numbers the spells need
+        uint32_t                  cast_words[kCastWords];
+        const spells::CampSpell*  camp;
+        uint8_t                   n_camp;
+        spells::Facts             facts;
+        // The effects list: effects named after the first spell (1-56)
+        // that gives them, and those with names of their own
+        const uint8_t*            spell_named;
+        uint8_t                   n_spell_named;
+        const EffectName*         named;
+        uint8_t                   n_named;
     } magic;
 };
 

@@ -38,6 +38,7 @@
 #include "engine/font.h"
 #include "engine/games.h"
 #include "engine/picture.h"
+#include "engine/spells.h"
 
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); ++failures; } } while (0)
@@ -2013,6 +2014,12 @@ static void test_items()
     r = vt.run(kBase + 20);
     CHECK(r == ecl::Stop::Waiting && vt.wait() == ecl::Wait::Temple && vt.get(0x7EE2) == 0);
     CHECK(vt.resume() == ecl::Stop::Stopped);
+    // Game time passing, in minutes (effects run out by it)
+    vt.take_minutes();
+    vt.advance_clock(2, 1);
+    vt.advance_clock(1, 5);
+    vt.advance_clock(3, 1);
+    CHECK(vt.take_minutes() == 75 && vt.take_minutes() == 0);
 }
 
 // Synthetic rule tables (made-up numbers in the games' layout) for the
@@ -2315,6 +2322,126 @@ static void test_magic()
     CHECK(magic::remove(c, 2) && !magic::remove(c, 2) && magic::in_memory(c, t, false, ids, 16) == 2);
 }
 
+// Casting outside combat: synthetic spells (made-up numbers in the games'
+// 16-byte layout) and what each kind does to a made-up party
+static void test_spells()
+{
+    static uint8_t ds[0x100];
+    memset(ds, 0, sizeof ds);
+    // spell: class, level, range, /lvl, lasts, /lvl, -, targets, -, -, affect, when
+    auto sp = [&](int s, int lv, int lasts, int per, int targets, int affect) {
+        uint8_t* e = ds + s * 16;
+        e[0] = 0; e[1] = static_cast<uint8_t>(lv); e[4] = static_cast<uint8_t>(lasts); e[5] = static_cast<uint8_t>(per);
+        e[7] = static_cast<uint8_t>(targets); e[10] = static_cast<uint8_t>(affect); e[11] = 2;
+    };
+    sp(1, 1, 6, 0, spells::kParty, 0x01);       // a party blessing
+    sp(2, 1, 0, 0, spells::kMember, 0);         // wounds
+    sp(3, 1, 0, 0, spells::kCombat, 0);         // for fights
+    sp(4, 2, 0, 60, spells::kMember, 0x16);     // slow poison
+    sp(5, 3, 0, 10, spells::kParty, 0x27);      // haste
+    sp(6, 5, 0, 0, spells::kMember, 0);         // raise
+    sp(7, 3, 0, 0, spells::kMember, 0);         // cure disease
+    sp(8, 4, 0, 0, spells::kMember, 0);         // neutralize
+    sp(9, 3, 0, 0, spells::kMember, 0);         // remove curse
+    sp(10, 2, 2, 1, spells::kSelf, 0x1C);       // mirror images
+    sp(11, 3, 0, 1, spells::kParty, 0x31);      // prayer
+    classes::Layout l{};
+    l.lo = 0; l.hi = 0x100; l.spells = 0; l.spell_count = 12;
+    static classes::Tables t;
+    CHECK(t.set(l, ds, sizeof ds));
+    CHECK(spells::entry(t, 4).lasts_level == 60 && spells::entry(t, 3).targets == spells::kCombat);
+
+    rules::CureFacts cf{};
+    cf.blinded = 0x21; cf.poisoned = 0x37; cf.slow_poison = 0x16; cf.poison_damage = 0x0F; cf.animate_dead = 0x20;
+    cf.curse = 0x24;
+    spells::Facts f{2, 0x2A, {0x22, 0x2B, 0x32}, {{0, 0}, {0x2C, 0x1F}, {0x39, 0}}};
+    static party::Party p;
+    p = party::Party{};
+    p.count = 3;
+    for (int i = 0; i < 3; ++i) {
+        party::Character& c = p.m[i];
+        c.rec[0x109 + classes::Fighter] = 4;
+        c.rec[0x78] = 20; c.rec[0x1A4] = 20; c.rec[0x196] = 1;
+        c.rec[0x74] = 7; c.rec[0x18] = c.rec[0x19] = 10;
+    }
+    party::Character& me = p.m[0];
+    me.rec[0x109 + classes::Fighter] = 0;
+    me.rec[0x109 + classes::Cleric] = 3;            // a level 3 cleric casts
+    CHECK(spells::power(me, t, 1) == 3 && spells::power(p.m[1], t, 1) == 6);
+    CHECK(spells::lasts(t, 4, 3) == 180);
+    create::Dice d(7);
+    spells::Line out[16];
+    auto cast = [&](int s, spells::Does does, int target, uint8_t n = 0, uint8_t sides = 0, uint8_t plus = 0) {
+        const spells::CampSpell cs{static_cast<uint8_t>(s), does, n, sides, plus, 0x1234};
+        return spells::cast(p, 0, target, cs, t, cf, f, d, out, 16);
+    };
+    // The blessing: everyone, the caster's level in its data; again: still one each
+    CHECK(cast(1, spells::Does::Affect, -1) == 3 && out[2].who == 2 && out[2].what == spells::Said::Word);
+    CHECK(cast(1, spells::Does::Affect, -1) == 3);
+    for (int i = 0; i < 3; ++i) {
+        const party::Character& c = p.m[i];
+        CHECK(c.n_affects == 1 && c.affects[0][0] == 0x01 && c.affects[0][1] == 6 && c.affects[0][3] == 3);
+    }
+    // Wounds: the unconscious wake; the dead aren't healed
+    party::Character& b = p.m[1];
+    b.rec[0x1A4] = 0; b.rec[0x195] = party::Unconscious; b.rec[0x196] = 0;
+    CHECK(cast(2, spells::Does::Heal, 1, 1, 8, 0) == 1 && out[0].what == spells::Said::Partly);
+    CHECK(b.hp() >= 1 && b.hp() <= 8 && b.health() == party::Okay && b.in_combat());
+    CHECK(cast(2, spells::Does::Heal, 1, 3, 8, 20) == 1 && out[0].what == spells::Said::Fully && b.hp() == 20);
+    b.rec[0x195] = party::Dead;
+    CHECK(cast(2, spells::Does::Heal, 1, 1, 8, 0) == 0);
+    // Raised: 1 HP, a point of Constitution; an elf can't be
+    CHECK(cast(6, spells::Does::Raise, 1) == 1 && out[0].what == spells::Said::Raised);
+    CHECK(b.health() == party::Okay && b.hp() == 1 && b.rec[0x18] == 9 && b.rec[0x19] == 9 && b.in_combat());
+    p.m[2].rec[0x195] = party::Dead; p.m[2].rec[0x74] = 2;
+    CHECK(cast(6, spells::Does::Raise, 2) == 0 && p.m[2].health() == party::Dead);
+    p.m[2].rec[0x195] = party::Okay; p.m[2].rec[0x74] = 7;
+    // Slow poison: only for the poisoned (1 HP at least, the poison's harm held 10 minutes)
+    CHECK(cast(4, spells::Does::SlowPoison, 1) == 0);
+    spells::add_affect(b, 0x37, 0, 0, false);
+    b.rec[0x1A4] = 0;
+    CHECK(cast(4, spells::Does::SlowPoison, 1) == 1 && b.hp() == 1);
+    int i16 = spells::find_affect(b, 0x16), i0f = spells::find_affect(b, 0x0F);
+    CHECK(i16 >= 0 && (b.affects[i16][1] | b.affects[i16][2] << 8) == 180 && b.affects[i16][3] == 0xFF && b.affects[i16][4] == 1);
+    CHECK(i0f >= 0 && b.affects[i0f][1] == 10);
+    // Neutralize: the poison and its slowing gone
+    CHECK(cast(8, spells::Does::Neutralize, 1) == 1 && out[0].what == spells::Said::Unpoisoned);
+    CHECK(spells::find_affect(b, 0x37) < 0 && spells::find_affect(b, 0x16) < 0 && spells::find_affect(b, 0x0F) < 0);
+    CHECK(cast(8, spells::Does::Neutralize, 1) == 1 && out[0].what == spells::Said::Unaffected);
+    // Haste: the caster's level of members (3; here 2 by making the caster level 2): slowed ones cured instead
+    me.rec[0x109 + classes::Cleric] = 2;
+    spells::add_affect(b, 0x2A, 5, 0, false);
+    CHECK(cast(5, spells::Does::Haste, -1) == 2 && out[0].who == 1 && out[0].what == spells::Said::Cured &&
+          out[1].who == 0 && out[1].what == spells::Said::Word);
+    CHECK(spells::find_affect(me, 0x27) >= 0 && spells::find_affect(b, 0x27) < 0 && spells::find_affect(b, 0x2A) < 0 &&
+          spells::find_affect(p.m[2], 0x27) < 0);
+    me.rec[0x109 + classes::Cleric] = 3;
+    // Cure disease: weakness and what goes with it
+    spells::add_affect(b, 0x2B, 0, 0, false);
+    spells::add_affect(b, 0x2C, 0, 0, false);
+    spells::add_affect(b, 0x1F, 0, 0, false);
+    CHECK(cast(7, spells::Does::CureDisease, 1) == 1 && out[0].what == spells::Said::Cured);
+    CHECK(spells::find_affect(b, 0x2B) < 0 && spells::find_affect(b, 0x2C) < 0 && spells::find_affect(b, 0x1F) < 0);
+    // Remove curse: the curse, else a cursed item comes off
+    spells::add_affect(b, 0x24, 0, 0, false);
+    CHECK(cast(9, spells::Does::RemoveCurse, 1) == 2 && out[1].what == spells::Said::Uncursed);
+    b.n_items = 1; b.items[0][0x36] = 1; b.items[0][0x34] = 1;
+    CHECK(cast(9, spells::Does::RemoveCurse, 1) == 1 && out[0].what == spells::Said::ItemUncursed && b.items[0][0x34] == 0);
+    // Mirror images: 1d4 in the data's top half; prayer: the side and level
+    CHECK(cast(10, spells::Does::Mirror, 2) == 1 && out[0].who == 0);
+    const int im = spells::find_affect(me, 0x1C);
+    CHECK(im >= 0 && (me.affects[im][3] & 15) == 3 && (me.affects[im][3] >> 4) >= 1 && (me.affects[im][3] >> 4) <= 4 &&
+          me.affects[im][1] == 5);
+    CHECK(cast(11, spells::Does::Prayer, -1) == 3 && p.m[2].affects[spells::find_affect(p.m[2], 0x31)][3] == 3);
+    // Not in the engine yet: nothing
+    const int before = me.n_affects;
+    CHECK(cast(1, spells::Does::NotYet, -1) == 0 && me.n_affects == before);
+    // Who can cast
+    CHECK(spells::can_cast(me));
+    me.rec[0x196] = 0;
+    CHECK(!spells::can_cast(me));
+}
+
 int main()
 {
     test_rle_known_bytes();
@@ -2342,6 +2469,7 @@ int main()
     test_item_piles();
     test_temple();
     test_magic();
+    test_spells();
     test_create();
     if (failures) {
         printf("%d check(s) failed\n", failures);

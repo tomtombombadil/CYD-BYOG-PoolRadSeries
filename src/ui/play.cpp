@@ -131,7 +131,7 @@ pic::Canvas* cv = nullptr;
 // Game" question, or the game itself
 enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich, AddFrom,
                                AddList, YesNo, CreatePick, CreateName, TradeWho, Heal, Take, Appraise, Magic,
-                               SpellList, Rest };
+                               SpellList, Rest, Cast, Effects };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
 Screen save_from = Screen::PartyMenu;   // where Save Which Game goes back to
@@ -923,7 +923,7 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
 // 16 items), Join, in a shop Sell (player characters) and Id; Exit.
 
 enum class Ask : uint8_t { None, Overwrite, Drop, DropSure, Reroll, SaveNew, OverwriteNew, DropItem, SellDeal, IdDeal,
-                          LeaveCoins, CureAnyway, PayCure, Train, MemorizeThese, StopRest };
+                          LeaveCoins, CureAnyway, PayCure, Train, MemorizeThese, StopRest, LoseIt };
 void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt);
 
 bool shop_yes_no(Ask what, char k, pic::Canvas& c);
@@ -2656,7 +2656,7 @@ void list_tap(int x, int y, pic::Canvas& c)
 void draw_party_menu(pic::Canvas& c);
 void back_from_view(pic::Canvas& c);
 
-// ---- Magic (the camp's): Memorize, Rest --------------------------------------------
+// ---- Magic (the camp's): Memorize, Rest (Cast and Display below) --------------------
 // The magic menu "Cast Memorize Scribe Display Rest Exit" under the camp
 // screen. Memorize: "NAME's Spells in Grimoire" (row 1), the spells they
 // know by level ("1st Level" headings) from row 5 to 15, "NAME can
@@ -2669,7 +2669,7 @@ void back_from_view(pic::Canvas& c);
 // ("The Whole Party Is Healed"), "NAME has memorized SPELL", an encounter
 // can break in ("Your repose is suddenly interrupted!": the camp ends and
 // the area's camp-interrupted script runs); a tap asks "Stop Resting?".
-// (Cast, Scribe, Display: with the spells' effects.)
+
 
 Making* mrules = nullptr;           // the rule tables while camping
 struct SpellNames {
@@ -2688,8 +2688,11 @@ void mw(int i, char* out, size_t cap)
     f.close();
 }
 
+void end_effects();
+
 void end_magic()
 {
+    end_effects();
     delete mrules;
     mrules = nullptr;
     delete spn;
@@ -2765,6 +2768,13 @@ void say_status(pic::Canvas& c, const char* what, int row = 19, uint8_t colour =
     dirty_rows(row, row);
 }
 
+void cw(int i, char* out, size_t cap);
+void cast_done(pic::Canvas& c);
+void open_cast_exploring(pic::Canvas& c);
+void choose_spell(int spell, pic::Canvas& c);
+void open_cast(pic::Canvas& c);
+void open_effects(pic::Canvas& c);
+
 // ---- the spell list
 struct SpellLines {
     uint8_t id[60];                 // 0: a level heading (level in lvl)
@@ -2772,6 +2782,7 @@ struct SpellLines {
     int     n = 0;
     int     top = 0, sel = -1;
     bool    learning = false;       // "to Memorize" (else the grimoire)
+    bool    casting = false;        // "in Memory" (Cast)
 } sl;
 
 void build_lines(const uint8_t* ids, int n)
@@ -2798,7 +2809,7 @@ void build_lines(const uint8_t* ids, int n)
         }
 }
 
-int list_rows() { return sl.learning ? 22 - 5 + 1 : 15 - 5 + 1; }
+int list_rows() { return sl.learning || sl.casting ? 22 - 5 + 1 : 15 - 5 + 1; }
 
 // "NAME can memorize:" and the counts a kind (cleric, druid, magic-user)
 void draw_counts(pic::Canvas& c)
@@ -2838,7 +2849,7 @@ void draw_spells(pic::Canvas& c)
     snprintf(t, sizeof t, "%s%s", nm, d->w_s);
     put(c, t, 1, 1, pt->sel()->npc() ? 10 : 11);
     mw(profile::kSpellsWord, a, sizeof a);
-    mw(sl.learning ? profile::kToMemorize : profile::kInGrimoire, b, sizeof b);
+    mw(sl.learning ? profile::kToMemorize : sl.casting ? profile::kInMemory : profile::kInGrimoire, b, sizeof b);
     snprintf(t, sizeof t, "%s%s", a, b);
     put(c, t, static_cast<int>(strlen(nm)) + 4, 1, 10);
     const int rows = list_rows();
@@ -2846,7 +2857,7 @@ void draw_spells(pic::Canvas& c)
         const int i = sl.top + r;
         const int row = 5 + r;
         if (!sl.id[i]) {
-            put(c, d->w_level[sl.lvl[i] - 1], 1, row, 15);
+            put(c, d->w_level[sl.lvl[i] - 1], 1, row, 13);       // headings in the prompt colour
             continue;
         }
         char line[32];
@@ -2858,14 +2869,15 @@ void draw_spells(pic::Canvas& c)
             put(c, line, 1, row, 10);
         }
     }
-    if (!sl.learning) draw_counts(c);
+    if (!sl.learning && !sl.casting) draw_counts(c);
     // The menu
     char keys[40], prompt[20], k1[12];
     keys[0] = 0;
     prompt[0] = 0;
     if (!sl.learning) {
         mw(profile::kChooseSpell, prompt, sizeof prompt);
-        mw(profile::kMemorizeKey, k1, sizeof k1);
+        if (sl.casting) cw(profile::kCastKey, k1, sizeof k1);
+        else mw(profile::kMemorizeKey, k1, sizeof k1);
         snprintf(keys, sizeof keys, "%s%s%s%s", k1, sl.top + rows < sl.n ? d->w_next : "", sl.top > 0 ? d->w_prev : "",
                  d->w_exit);
         text::build(menu, prompt, keys);
@@ -2881,6 +2893,7 @@ void confirm_memorize(pic::Canvas& c, int word)
     uint8_t ids[84];
     const int n = magic::in_memory(*pt->sel(), mrules->tables, true, ids, 84);
     sl.learning = true;
+    sl.casting = false;
     build_lines(ids, n);
     screen = Screen::SpellList;
     draw_spells(c);
@@ -2894,6 +2907,7 @@ void show_grimoire(pic::Canvas& c)
     uint8_t ids[100];
     const int n = magic::known(*pt->sel(), mrules->tables, ids, 100);
     sl.learning = false;
+    sl.casting = false;
     build_lines(ids, n);
     screen = Screen::SpellList;
     draw_spells(c);
@@ -2926,6 +2940,10 @@ void memorize(pic::Canvas& c)
 void spells_tap(int x, int y, pic::Canvas& c)
 {
     const int row = y / 8;
+    if (note_until) {
+        redraw_menu(c);
+        return;
+    }
     if (y < text::kMenuTapTop) {
         const int i = sl.top + row - 5;
         if (row >= 5 && row < 5 + list_rows() && i < sl.n && sl.id[i]) {
@@ -2935,6 +2953,15 @@ void spells_tap(int x, int y, pic::Canvas& c)
         return;
     }
     const char k = text::key(menu, text::hit(menu, x / 8));
+    if (sl.casting) {
+        if (k == 'C' && sl.sel >= 0) choose_spell(sl.id[sl.sel], c);
+        else if (k == 'E') cast_done(c);
+        else if (k == 'N' && sl.top + list_rows() < sl.n) sl.top += list_rows();
+        else if (k == 'P' && sl.top > 0) sl.top = sl.top > list_rows() ? sl.top - list_rows() : 0;
+        else return;
+        if (screen == Screen::SpellList && k != 'C') draw_spells(c);
+        return;
+    }
     if (k == 'M' && sl.sel >= 0) {
         magic::add(*pt->sel(), mrules->tables, sl.id[sl.sel]);
         draw_counts(c);
@@ -3083,6 +3110,7 @@ void rest_tick(uint32_t now, pic::Canvas& c)
         rest.left -= 5;
         if (rest.left < 0) rest.left = 0;
         vm->advance_clock(1, 5);
+        vm->take_minutes();                 // (the rest's step runs the effects)
         const magic::Step st = magic::step(rest.r, *pt, mrules->tables);
         bool said = false;
         if (st.healed) {
@@ -3130,8 +3158,16 @@ void rest_tick(uint32_t now, pic::Canvas& c)
     }
 }
 
+void show_memory(pic::Canvas& c);
+struct CastRun;
+void lose_spell(bool yes, pic::Canvas& c);
+
 bool magic_yes_no(Ask what, char k, pic::Canvas& c)
 {
+    if (what == Ask::LoseIt) {
+        lose_spell(k == 'Y', c);
+        return true;
+    }
     if (what == Ask::MemorizeThese) {
         if (k != 'Y') magic::cancel(*pt->sel());
         back_to_magic(c);
@@ -3159,14 +3195,16 @@ void magic_tap(int x, int y, pic::Canvas& c)
     }
     if (y >= text::kMenuTapTop) {
         switch (text::key(menu, text::hit(menu, col))) {
+        case 'C': open_cast(c); break;
         case 'M': memorize(c); break;
+        case 'D': open_effects(c); break;
         case 'R': open_rest(c, true); break;
         case 'E':
             screen = Screen::Camp;
             draw_camp(c);
             break;
         case 0: break;
-        default: error(c, "Not in the engine yet."); break;      // Cast, Scribe, Display: with the spells
+        default: error(c, "Not in the engine yet."); break;      // Scribe: with scrolls
         }
         return;
     }
@@ -3174,6 +3212,429 @@ void magic_tap(int x, int y, pic::Canvas& c)
         pt->selected = row - 4;
         draw_party(c, 17);
     }
+}
+
+// ---- Cast and Display (the camp's) ------------------------------------------------
+// Cast: "NAME's Spells in Memory" (rows 5-22), "Choose Spell: Cast Exit".
+// A spell for fights: its name (row 19), "can't be cast here..." (row 20),
+// "Lose it? Yes No". Else "NAME casts" / the spell's name for a moment; a
+// spell for one member asks "Cast Spell on whom Select Exit" over the camp
+// screen (the party list); the spell leaves the caster's memory and what
+// it did is said a line at a time ("NAME is Blessed", "NAME is fully
+// healed"), then the list again ("has no spells memorized" when it's
+// empty). Display: each member's name and their spell effects ("
+// <No Spell Effects>"), a page of rows 4-22 at a time.
+
+void cw(int i, char* out, size_t cap)
+{
+    out[0] = 0;
+    const uint32_t at = d->prof->magic.cast_words[i];
+    fs::File f;
+    if (!at || !open_file(d->prof->overlay, f)) return;
+    library::FileSource src(f);
+    text::read_pascal(src, at, out, cap);
+    f.close();
+}
+
+// A GAME.OVR word by its offset
+void ow(uint32_t at, char* out, size_t cap)
+{
+    out[0] = 0;
+    fs::File f;
+    if (!at || !open_file(d->prof->overlay, f)) return;
+    library::FileSource src(f);
+    text::read_pascal(src, at, out, cap);
+    f.close();
+}
+
+uint32_t game_delay_ms()
+{
+    int speed = vm->get(0x4BFC) & 0xFF;
+    if (speed == 0) speed = 4;
+    return static_cast<uint32_t>(speed) * 100;      // the games' delay: speed x 100 ms
+}
+
+struct CastRun {
+    enum Stage : uint8_t { None, Casts, Whom, Saying } stage = None;
+    int  spell = 0, caster = 0, target = 0;
+    const spells::CampSpell* cs = nullptr;
+    spells::Line lines[24];
+    int  n = 0, at = 0;
+    uint32_t until = 0;
+    bool on_camp = false;           // the camp screen is shown (Whom)
+    bool exploring = false;         // cast from the exploring menu (not the camp's)
+} cr;
+
+// The list closed: back to the magic menu, or to exploring
+void cast_done(pic::Canvas& c)
+{
+    if (!cr.exploring) {
+        back_to_magic(c);
+        return;
+    }
+    cr.exploring = false;
+    end_magic();
+    screen = Screen::Game;
+    anim_stop();
+    bigpic = -1;
+    pic_shown = false;
+    head_shown = body_shown = -1;
+    draw_frame(c);
+    draw_view(c);
+    draw_panel(c);
+    text::clear(c, text::kTextArea);
+    dirty_rows(17, 22);
+    idle_menu(c);
+}
+
+// The exploring menu's Cast (the same spells, then back to exploring)
+void open_cast_exploring(pic::Canvas& c)
+{
+    if (!pt->sel() || pt->sel()->health() != party::Okay) return;
+    if (!load_magic()) {
+        end_magic();
+        error(c, "Not enough memory.");
+        return;
+    }
+    open_cast(c);
+    if (screen == Screen::SpellList) cr.exploring = true;
+    else end_magic();
+}
+
+const spells::CampSpell* camp_spell(int s)
+{
+    const auto& m = d->prof->magic;
+    for (int i = 0; i < m.n_camp; ++i)
+        if (m.camp[i].spell == s) return &m.camp[i];
+    return nullptr;
+}
+
+// Clears the text rows under the list / camp view and says "NAME text"
+void say_line(pic::Canvas& c, int who, const char* text)
+{
+    char nm[20], t[64];
+    pt->m[who].name(nm, sizeof nm);
+    snprintf(t, sizeof t, "%s %s", nm, text);
+    c.fill(8, 17 * 8, 38 * 8, 6 * 8, 0);
+    put(c, t, 1, 19, 10);
+    dirty_rows(17, 22);
+}
+
+// The spells in memory (again after a spell); none: back to the menu
+void show_memory(pic::Canvas& c)
+{
+    cr.stage = CastRun::None;
+    if (cr.caster >= 0 && cr.caster < pt->count) pt->selected = cr.caster;
+    uint8_t ids[84];
+    const int n = magic::in_memory(*pt->sel(), mrules->tables, false, ids, 84);
+    if (n == 0) {
+        cast_done(c);
+        char t[32];
+        cw(profile::kNoSpells, t, sizeof t);
+        say_status(c, t);
+        return;
+    }
+    const int keep = sl.casting && sl.sel >= 0 ? sl.id[sl.sel] : 0;
+    sl.learning = false;
+    sl.casting = true;
+    build_lines(ids, n);
+    for (int i = 0; keep && i < sl.n; ++i)
+        if (sl.id[i] == keep) {
+            sl.sel = i;
+            while (sl.sel >= sl.top + list_rows()) sl.top += list_rows();
+            break;
+        }
+    screen = Screen::SpellList;
+    draw_spells(c);
+}
+
+void open_cast(pic::Canvas& c)
+{
+    party::Character& ch = *pt->sel();
+    if (!spells::can_cast(ch)) {
+        char a[28], b[20], t[48];
+        mw(profile::kNoCondition, a, sizeof a);
+        cw(profile::kCastAny, b, sizeof b);
+        snprintf(t, sizeof t, "%s%s", a, b);
+        say_status(c, t);
+        return;
+    }
+    cr = CastRun{};
+    cr.caster = pt->selected;
+    sl.casting = false;
+    show_memory(c);
+}
+
+void draw_whom(pic::Canvas& c)
+{
+    // The camp screen with the party list; with a big picture up, the list
+    // on its own
+    if (bigpic < 0) {
+        cr.on_camp = true;
+        draw_frame(c);
+        draw_view(c);
+        draw_panel(c);
+        text::clear(c, text::kTextArea);
+        dirty_rows(17, 22);
+    } else {
+        cr.on_camp = false;
+        c.clear(0);
+        layout::outer(c, d->tables, d->frame_tiles);
+        draw_party(c, 1);
+        dirty(0, pic::kScreenH);
+    }
+    char prompt[28], keys[24];
+    cw(profile::kCastOnWhom, prompt, sizeof prompt - 1);
+    strcat(prompt, " ");
+    snprintf(keys, sizeof keys, "%s%s", iw(profile::kSelect), d->w_exit);
+    text::build(menu, prompt, keys);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+void next_line(pic::Canvas& c);
+
+void do_cast(pic::Canvas& c)
+{
+    party::Character& me = pt->m[cr.caster];
+    magic::remove(me, cr.spell);
+    cr.n = spells::cast(*pt, cr.caster, cr.target, *cr.cs, mrules->tables, d->prof->cures, d->prof->magic.facts, rng,
+                        cr.lines, 24);
+    cr.at = 0;
+    pt->selected = cr.caster;
+    if (cr.on_camp) draw_party(c, 17);
+    cr.stage = CastRun::Saying;
+    next_line(c);
+}
+
+void next_line(pic::Canvas& c)
+{
+    if (cr.at >= cr.n) {
+        show_memory(c);
+        return;
+    }
+    const spells::Line& l = cr.lines[cr.at++];
+    char t[40];
+    switch (l.what) {
+    case spells::Said::Word: ow(cr.cs->word, t, sizeof t); break;
+    case spells::Said::Unaffected: cw(profile::kIsUnaffected, t, sizeof t); break;
+    case spells::Said::Fully: cw(profile::kFullyHealed, t, sizeof t); break;
+    case spells::Said::Partly: cw(profile::kPartlyHealed, t, sizeof t); break;
+    case spells::Said::Cured: cw(profile::kIsCured, t, sizeof t); break;
+    case spells::Said::CanSee: cw(profile::kCanSee, t, sizeof t); break;
+    case spells::Said::Unpoisoned: cw(profile::kUnpoisoned, t, sizeof t); break;
+    case spells::Said::Raised: cw(profile::kRaised, t, sizeof t); break;
+    case spells::Said::Uncursed: cw(profile::kUncursed, t, sizeof t); break;
+    case spells::Said::ItemUncursed: cw(profile::kItemUncursed, t, sizeof t); break;
+    }
+    say_line(c, l.who, t);
+    if (cr.on_camp) draw_party(c, 17);
+    cr.until = millis() + game_delay_ms();
+    if (!cr.until) cr.until = 1;
+}
+
+void choose_spell(int spell, pic::Canvas& c)
+{
+    const spells::Entry e = spells::entry(mrules->tables, spell);
+    cr.spell = spell;
+    cr.cs = camp_spell(spell);
+    cr.on_camp = false;
+    if (e.targets == spells::kCombat) {
+        // A spell for fights: "can't be cast here... Lose it?"
+        char t[32];
+        c.fill(8, 17 * 8, 38 * 8, 6 * 8, 0);
+        put(c, spell_name(spell), 1, 19, 10);
+        cw(profile::kCantCastHere, t, sizeof t);
+        put(c, t, 1, 20, 10);
+        dirty_rows(17, 22);
+        cw(profile::kLoseIt, t, sizeof t);
+        ask_yes_no(c, Ask::LoseIt, t);
+        return;
+    }
+    if (!cr.cs || cr.cs->does == spells::Does::NotYet) {
+        error(c, "Not in the engine yet.");          // the spell stays in memory
+        return;
+    }
+    // "NAME casts" / the spell, for a moment
+    char nm[20], w1[16], t[48];
+    pt->m[cr.caster].name(nm, sizeof nm);
+    cw(profile::kCasts, w1, sizeof w1);
+    snprintf(t, sizeof t, "%s %s", nm, w1);
+    c.fill(8, 17 * 8, 38 * 8, 6 * 8, 0);
+    put(c, t, 1, 19, 10);
+    put(c, spell_name(spell), 1, 20, 10);
+    dirty_rows(17, 22);
+    clear_menu_line(c);
+    screen = Screen::Cast;
+    cr.stage = CastRun::Casts;
+    cr.until = millis() + game_delay_ms();
+    if (!cr.until) cr.until = 1;
+}
+
+// After "casts": who it's for
+void cast_onwards(pic::Canvas& c)
+{
+    const spells::Entry e = spells::entry(mrules->tables, cr.spell);
+    if (e.targets == spells::kMember) {
+        cr.stage = CastRun::Whom;
+        cr.target = cr.caster;
+        pt->selected = cr.target;
+        draw_whom(c);
+        return;
+    }
+    cr.target = cr.caster;
+    do_cast(c);
+}
+
+void cast_tick(uint32_t now, pic::Canvas& c)
+{
+    if (screen != Screen::Cast || !cr.until || static_cast<int32_t>(now - cr.until) < 0) return;
+    cr.until = 0;
+    if (cr.stage == CastRun::Casts) cast_onwards(c);
+    else if (cr.stage == CastRun::Saying) next_line(c);
+}
+
+void cast_tap(int x, int y, pic::Canvas& c)
+{
+    const int row = y / 8, col = x / 8;
+    if (cr.stage != CastRun::Whom) {
+        // A tap moves the message on
+        if (cr.until) {
+            cr.until = 0;
+            if (cr.stage == CastRun::Casts) cast_onwards(c);
+            else if (cr.stage == CastRun::Saying) next_line(c);
+        }
+        return;
+    }
+    if (y >= text::kMenuTapTop) {
+        const char k = text::key(menu, text::hit(menu, col));
+        if (k == 'S') {
+            cr.target = pt->selected;
+            do_cast(c);
+        } else if (k == 'E') {
+            show_memory(c);         // not cast: the spell stays
+        }
+        return;
+    }
+    const int col0 = cr.on_camp ? 17 : 1;
+    if (col >= col0 && row >= 4 && row < 4 + pt->count) {
+        pt->selected = row - 4;
+        draw_party(c, col0);
+    }
+}
+
+// ---- Display: the spell effects
+struct EffectLines {
+    char    text[80][32];
+    uint8_t colour[80];
+    int     n = 0, top = 0;
+};
+EffectLines* el = nullptr;
+
+void end_effects()
+{
+    delete el;
+    el = nullptr;
+}
+
+// An effect's name ("" if the list leaves it out)
+void effect_name(int type, char* out, size_t cap)
+{
+    out[0] = 0;
+    const auto& m = d->prof->magic;
+    for (int i = 0; i < m.n_spell_named; ++i)
+        if (m.spell_named[i] == type) {
+            for (int s = 1; s <= 0x38; ++s)
+                if (spells::entry(mrules->tables, s).affect == type) {
+                    snprintf(out, cap, "%s", spell_name(s));
+                    return;
+                }
+            return;
+        }
+    for (int i = 0; i < m.n_named; ++i)
+        if (m.named[i].type == type) {
+            ow(m.named[i].at, out, cap);
+            return;
+        }
+}
+
+void draw_effects(pic::Canvas& c)
+{
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    const int rows = 22 - 4 + 1;
+    for (int r = 0; r < rows && el->top + r < el->n; ++r)
+        put(c, el->text[el->top + r], 1, 4 + r, el->colour[el->top + r]);
+    char keys[32];
+    snprintf(keys, sizeof keys, "%s%s%s", el->top + rows < el->n ? d->w_next : "", el->top > 0 ? d->w_prev : "",
+             d->w_exit);
+    const char* k = keys;
+    while (*k == ' ') ++k;
+    text::build(menu, "", k);
+    menu.selected = 0;
+    show_menu_line(c);
+    dirty(0, pic::kScreenH);
+}
+
+void open_effects(pic::Canvas& c)
+{
+    if (!el) el = new (std::nothrow) EffectLines;
+    if (!el) {
+        error(c, "Not enough memory.");
+        return;
+    }
+    el->n = el->top = 0;
+    auto add = [&](const char* t, uint8_t colour) {
+        if (el->n >= 80) return;
+        snprintf(el->text[el->n], sizeof el->text[0], "%s", t);
+        el->colour[el->n++] = colour;
+    };
+    add("", 10);
+    char none[24];
+    cw(profile::kNoEffects, none, sizeof none);
+    for (int i = 0; i < pt->count; ++i) {
+        const party::Character& ch = pt->m[i];
+        char nm[20];
+        ch.name(nm, sizeof nm);
+        add(nm, 11);
+        bool any = false;
+        for (int k = 0; k < ch.n_affects; ++k) {
+            char name[30], t[32];
+            effect_name(ch.affects[k][0], name, sizeof name);
+            if (!name[0]) continue;
+            snprintf(t, sizeof t, " %s", name);
+            add(t, 10);
+            any = true;
+        }
+        if (!any) add(none, 10);
+        add(" ", 10);
+    }
+    screen = Screen::Effects;
+    draw_effects(c);
+}
+
+void lose_spell(bool yes, pic::Canvas& c)
+{
+    if (yes) magic::remove(pt->m[cr.caster], cr.spell);
+    show_memory(c);
+}
+
+void effects_tap(int x, int y, pic::Canvas& c)
+{
+    if (y < text::kMenuTapTop) return;
+    const int rows = 22 - 4 + 1;
+    switch (text::key(menu, text::hit(menu, x / 8))) {
+    case 'N':
+        if (el->top + rows < el->n) el->top += rows;
+        break;
+    case 'P': el->top = el->top > rows ? el->top - rows : 0; break;
+    case 'E':
+        end_effects();
+        back_to_magic(c);
+        return;
+    default: return;
+    }
+    draw_effects(c);
 }
 
 // ---- Train Character (a training hall: a script sets 0x7EA8, the classes it
@@ -3382,6 +3843,14 @@ void pm_tap(int x, int y, pic::Canvas& c)
     }
     if (screen == Screen::SpellList) {
         spells_tap(x, y, c);
+        return;
+    }
+    if (screen == Screen::Cast) {
+        cast_tap(x, y, c);
+        return;
+    }
+    if (screen == Screen::Effects) {
+        effects_tap(x, y, c);
         return;
     }
     if (screen == Screen::Rest) {
@@ -4373,6 +4842,24 @@ bool tap_target(int x, int y, int* row, int* c0, int* c1)
         *c1 = 38;
         return true;
     }
+    // The spell lists' spells
+    if (screen == Screen::SpellList && !sl.learning && r >= 5 && r < 5 + list_rows() && sl.top + r - 5 < sl.n &&
+        sl.id[sl.top + r - 5]) {
+        *row = r;
+        *c0 = 3;
+        *c1 = 38;
+        return true;
+    }
+    // The party list on the camp screens (and "Cast Spell on whom")
+    const bool whom = screen == Screen::Cast && cr.stage == CastRun::Whom;
+    const int pc0 = whom && !cr.on_camp ? 1 : 17;
+    if ((screen == Screen::Camp || screen == Screen::Magic || whom) && (bigpic < 0 || (whom && !cr.on_camp)) &&
+        col >= pc0 && r >= 4 && r < 4 + pt->count) {
+        *row = r;
+        *c0 = pc0;
+        *c1 = 38;
+        return true;
+    }
     return false;
 }
 
@@ -4538,11 +5025,7 @@ void tap(int x, int y, pic::Canvas& c)
         case 'E':
             open_camp(c);
             break;
-        case 'C':
-            text::begin(w, c, "Not in the engine yet.", text::kTextArea, 10, true);
-            text::step(w, c, d->font, -1);
-            dirty_rows(17, 22);
-            break;
+        case 'C': open_cast_exploring(c); break;
         default: break;
         }
     }
@@ -4551,6 +5034,11 @@ void tap(int x, int y, pic::Canvas& c)
 void tick(uint32_t now, pic::Canvas& c)
 {
     if (!d) return;
+    // Effects run out as game time passes (walking, searching, scripts)
+    if (vm && pt) {
+        const int m = vm->take_minutes();
+        for (int i = 0; m && i < pt->count; ++i) magic::tick_affects(pt->m[i], m);
+    }
     if (note_until && !note_held && static_cast<int32_t>(now - note_until) >= 0) {
         cv = &c;
         redraw_menu(c);
@@ -4558,6 +5046,11 @@ void tick(uint32_t now, pic::Canvas& c)
     if (screen == Screen::Rest) {
         cv = &c;
         rest_tick(now, c);
+        return;
+    }
+    if (screen == Screen::Cast) {
+        cv = &c;
+        cast_tick(now, c);
         return;
     }
     if (!waiting || screen != Screen::Game) return;
@@ -4611,6 +5104,39 @@ void tick(uint32_t now, pic::Canvas& c)
 }
 
 Input input() { return d ? input_mode : Input::None; }
+
+// Esc on the camp's magic screens: a step back
+bool back_from_magic(pic::Canvas& c)
+{
+    switch (screen) {
+    case Screen::Magic:
+        screen = Screen::Camp;
+        draw_camp(c);
+        return true;
+    case Screen::SpellList:
+        if (sl.casting) cast_done(c);
+        else if (magic::memorizing(*pt->sel())) confirm_memorize(c, profile::kMemorizeThese2);
+        else back_to_magic(c);
+        return true;
+    case Screen::Cast:
+        if (cr.stage == CastRun::Whom) show_memory(c);
+        return true;
+    case Screen::Effects:
+        end_effects();
+        back_to_magic(c);
+        return true;
+    case Screen::Rest:
+        if (rest.running) {
+            char q[20];
+            mw(profile::kStopResting, q, sizeof q);
+            ask_yes_no(c, Ask::StopRest, q);
+        } else {
+            end_rest(c);
+        }
+        return true;
+    default: return false;
+    }
+}
 
 bool back(pic::Canvas& c)
 {
@@ -4673,6 +5199,7 @@ bool back(pic::Canvas& c)
         leave_camp(c);
         return true;
     }
+    if (back_from_magic(c)) return true;
     if (screen == Screen::Items || screen == Screen::ShopBuy) {
         if (screen == Screen::ShopBuy) {
             screen = Screen::Shop;

@@ -11,8 +11,8 @@ reads them from there.
 > **Early development.** The viewer's Play Test runs Curse of the Azure
 > Bonds from its own scripts: the party menu (load the sample party GOG
 > includes, or make your own characters and add them), walking, events,
-> text, pictures, shops, saving, the journal. Combat, magic and training
-> are still to come. Roadmap:
+> text, pictures, shops, the temple, training, camp (memorizing, resting
+> and casting spells), saving, the journal. Combat is still to come. Roadmap:
 > [docs/SPEC.md](docs/SPEC.md).
 
 ## Install

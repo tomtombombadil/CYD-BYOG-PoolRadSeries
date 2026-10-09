@@ -131,6 +131,13 @@ public:
     // Game time: adds `amount` to clock slot `slot` (0x4BC6 + slot) with
     // carries (slot 1 = minutes, 2 = ten minutes, 3 = hours ...)
     void advance_clock(int slot, int amount);
+    // Minutes the clock moved since the last call (effects run out by them)
+    int take_minutes()
+    {
+        const int m = minutes_;
+        minutes_ = 0;
+        return m;
+    }
 
 private:
     struct Op {
@@ -160,6 +167,7 @@ private:
     GameState& s_;
     Host& h_;
     const party::Party* party_ = nullptr;
+    int minutes_ = 0;
     items::Ground* ground_ = nullptr;
     bool monsters_ = false;             // LOAD MONSTER since the last CLEARMONSTERS
     const OpSet& set_;

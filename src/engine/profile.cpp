@@ -37,6 +37,66 @@ namespace {
 // 41-byte slots), spell names (0xD39F, 41-byte slots, spell 0 empty); the
 // spell list and rest words in GAME.OVR; resting's encounter check: the
 // area words 0x7ED2 (steps) / 0x7ED3 (chance).
+// Casting in camp: what each spell does outside combat (coab's notes on
+// the spells' code; the words are the ones the code prints), the effects
+// list's names (spell-named effects, then the named ones).
+using spells::Does;
+constexpr spells::CampSpell kCurseCamp[] = {
+    {0x01, Does::Affect, 0, 0, 0, 0x2FD0A},        // Bless: "is Blessed"
+    {0x03, Does::Heal, 1, 8, 0, 0},                // Cure Light Wounds
+    {0x05, Does::Affect, 0, 0, 0, 0x2FDE3},        // Detect Magic: "is affected"
+    {0x06, Does::Affect, 0, 0, 0, 0x2FE1C},        // Protection from Evil: "is protected"
+    {0x07, Does::Affect, 0, 0, 0, 0x2FE1C},
+    {0x08, Does::Affect, 0, 0, 0, 0x2FE56},        // Resist Cold: "is cold-resistant"
+    {0x0B, Does::Affect, 0, 0, 0, 0x2FDE3},
+    {0x0C, Does::NotYet, 0, 0, 0, 0},              // Enlarge (strength)
+    {0x0E, Does::NotYet, 0, 0, 0, 0},              // Friends (charisma)
+    {0x10, Does::Affect, 0, 0, 0, 0x2FE1C},
+    {0x11, Does::Affect, 0, 0, 0, 0x2FE1C},
+    {0x12, Does::Affect, 0, 0, 0, 0x2FDE3},        // Read Magic
+    {0x13, Does::Affect, 0, 0, 0, 0x3022D},        // Shield: "is shielded"
+    {0x16, Does::Affect, 0, 0, 0, 0x2FDE3},        // Find Traps
+    {0x18, Does::Affect, 0, 0, 0, 0x3044A},        // Resist Fire: "is fire resistant"
+    {0x1A, Does::SlowPoison, 0, 0, 0, 0x2FDE3},
+    {0x1C, Does::NotYet, 0, 0, 0, 0},              // Spiritual Hammer (a weapon)
+    {0x1D, Does::Affect, 0, 0, 0, 0x2FDE3},        // Detect Invisibility
+    {0x1E, Does::Affect, 0, 0, 0, 0x3067C},        // Invisibility: "is invisible"
+    {0x20, Does::Mirror, 0, 0, 0, 0x306EF},        // Mirror Image: "is duplicated"
+    {0x23, Does::NotYet, 0, 0, 0, 0},              // Strength
+    {0x25, Does::CureBlind, 0, 0, 0, 0},
+    {0x27, Does::CureDisease, 0, 0, 0, 0},
+    {0x29, Does::NotYet, 0, 0, 0, 0},              // Dispel Magic
+    {0x2A, Does::Prayer, 0, 0, 0, 0x31544},        // Prayer: "is praying"
+    {0x2B, Does::RemoveCurse, 0, 0, 0, 0},
+    {0x2E, Does::NotYet, 0, 0, 0, 0},              // Dispel Magic
+    {0x30, Does::Haste, 0, 0, 0, 0x31907},         // Haste: "is Hasted"
+    {0x32, Does::Affect, 0, 0, 0, 0x3067C},        // Invisibility 10' Radius
+    {0x34, Does::Affect, 0, 0, 0, 0x2FE1C},
+    {0x35, Does::Affect, 0, 0, 0, 0x2FE1C},
+    {0x36, Does::Affect, 0, 0, 0, 0x2FE1C},        // Protection from Normal Missiles
+    {0x38, Does::NotYet, 0, 0, 0, 0},              // Restoration (lost levels)
+    {0x3A, Does::Heal, 2, 8, 1, 0},                // Cure Serious Wounds
+    {0x43, Does::Neutralize, 0, 0, 0, 0},
+    {0x45, Does::Affect, 0, 0, 0, 0x2FE1C},
+    {0x47, Does::Heal, 3, 8, 3, 0},                // Cure Critical Wounds
+    {0x4B, Does::Raise, 0, 0, 0, 0},
+    {0x4D, Does::Affect, 0, 0, 0, 0x2FDE3},
+    {0x50, Does::Affect, 0, 0, 0, 0x3067C},
+    {0x55, Does::NotYet, 0, 0, 0, 0},              // Fire Shield (hot or cold)
+    {0x58, Does::Affect, 0, 0, 0, 0x2FE1C},        // Minor Globe of Invulnerability
+    {0x59, Does::RemoveCurse, 0, 0, 0, 0},
+};
+constexpr uint8_t kCurseSpellNamed[] = {
+    0x01, 0x02, 0x05, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0E, 0x10, 0x11, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19,
+    0x1C, 0x1D, 0x20, 0x21, 0x22, 0x24, 0x25, 0x26, 0x27, 0x29, 0x2A, 0x2D, 0x2E, 0x31, 0x33, 0x34, 0x35,
+};
+constexpr profile::EffectName kCurseNamed[] = {
+    {0x04, 0x19E88}, {0x07, 0x19E94}, {0x1B, 0x19EA0}, {0x1F, 0x19EA9}, {0x23, 0x19EB2}, {0x2C, 0x19EBB},
+    {0x32, 0x19EC9}, {0x36, 0x19ED9}, {0x37, 0x19EEA}, {0x3B, 0x19EF3}, {0x3D, 0x19F00}, {0x3F, 0x19F10},
+    {0x44, 0x19F2F}, {0x45, 0x19F39}, {0x47, 0x19F4E}, {0x48, 0x19F58}, {0x49, 0x19F64}, {0x4D, 0x19F81},
+    {0x59, 0x19F89},
+};
+
 // Title: picture 1 for 5 s; picture 2 with 3 on it at row 11, column 6 for
 // 10 s; picture 4 at row 11 for 10 s; the credits for 10 s.
 constexpr TitleStep kCurseTitle[] = {
@@ -112,7 +172,12 @@ const Profile kProfiles[] = {
      {0xB033, {0xB480, 41, 5}, {0xD39F, 41, 101},
       {0x27B87, 0x2A486, 0x2A490, 0x2A4BB, 0x2E177, 0x2E141, 0x19878, 0x198AB, 0x194FB, 0x19509, 0x1951C, 0x1952F,
        0x19890, 0x192C4, 0x192EB, 0x2B35E, 0x2B460, 0x2BA11, 0x2B5DD, 0x2B6A8, 0x2BA20},
-      0x7ED2, 0x7ED3}},
+      0x7ED2, 0x7ED3,
+      {0x192DB, 0x1942B, 0x2E13C, 0x2F274, 0x2F21F, 0x2F235, 0x2F0EF, 0x39B78, 0x39B88, 0x36666, 0x2FECA, 0x30F71,
+       0x32173, 0x324C5, 0x31597, 0x315A4, 0x19F93},
+      kCurseCamp, sizeof kCurseCamp / sizeof kCurseCamp[0],
+      {2, 0x2A, {0x22, 0x2B, 0x32}, {{0, 0}, {0x2C, 0x1F}, {0x39, 0}}},
+      kCurseSpellNamed, sizeof kCurseSpellNamed, kCurseNamed, sizeof kCurseNamed / sizeof kCurseNamed[0]}},
 };
 
 } // namespace

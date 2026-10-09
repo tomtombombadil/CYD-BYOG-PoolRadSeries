@@ -50,7 +50,8 @@ static void item_ops(const char* ops)
 }
 // Ops on any screen (CAMPRUN): letters tap menu words, digits pick a list
 // line, %n taps party row n at column 17, &n taps text row n, =n; types a
-// number, '#' prints the screen, '~' runs ticks for a minute of game time
+// number, '#' prints the screen, '~' runs ticks for a minute of game time,
+// '?' the selected one's memorized list, '!' everyone's HP and effects, -n sets member n to 1 HP
 static void run_ops(const char* q)
 {
     auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
@@ -65,6 +66,8 @@ static void run_ops(const char* q)
         else if (*q == '&') { ++q; int r = 0; while (*q >= '0' && *q <= '9') r = r * 10 + (*q++ - '0'); --q; play::tap(4 * 8 + 2, r * 8 + 2, C); }
         else if (*q == '=') { ++q; while (*q && *q != ';') play::input_key(*q++, C); play::input_key('\n', C); }
         else if (*q == '?') { const party::Character& ch = *play::pt->sel(); printf("  list:"); for (int i = 0; i < 84; ++i) if (ch.rec[0x1E + i]) printf(" %s%d", ch.rec[0x1E + i] & 0x80 ? "*" : "", ch.rec[0x1E + i] & 0x7F); printf("  (to learn %d)\n", ch.rec[0x72]); }
+        else if (*q == '-') { ++q; play::pt->m[*q - '0'].rec[0x1A4] = 1; }
+        else if (*q == '!') { for (int i = 0; i < play::pt->count; ++i) { const party::Character& ch = play::pt->m[i]; char nm[20]; ch.name(nm, 20); printf("  %s HP %d/%d st %d fx:", nm, ch.hp(), ch.hp_max(), ch.health()); for (int k = 0; k < ch.n_affects; ++k) printf(" %02X/%d/%d", ch.affects[k][0], ch.affects[k][1] | ch.affects[k][2] << 8, ch.affects[k][3]); printf("\n"); } }
         else if (*q == '~') { for (int k = 0; k < 600; ++k) { g_now += 100; play::tick(g_now, C); } }
         else if (*q >= '0' && *q <= '9') play::plist.index = *q - '0';
         else tap_word(*q);

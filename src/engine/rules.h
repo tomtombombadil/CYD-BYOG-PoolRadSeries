@@ -83,8 +83,10 @@ bool needs_cure(const party::Character& c, Cure cure, const CureFacts& f);
 // diseases, feeblemind), effects removed, the dead raised (1 HP), a curse
 // lifted (the effect, else the first cursed item comes off), stone to flesh
 void apply_cure(party::Character& c, Cure cure, const CureFacts& f, create::Dice& d);
-// Hit points back, up to the most (okay, animated, unconscious, dying only)
-void heal(party::Character& c, int amount);
+// Hit points back (up to the most), for the living, unconscious or dying;
+// outside a fight the dying come round and the unconscious wake (able to
+// fight again). False if they can't be healed (dead, stoned ...).
+bool heal(party::Character& c, int amount);
 
 // ---- Appraising gems and jewellery (the games' tables; gold)
 int gem_value(int d100);

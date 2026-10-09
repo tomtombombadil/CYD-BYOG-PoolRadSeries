@@ -105,6 +105,11 @@ Stop Vm::encounter_step()
 
 void Vm::advance_clock(int slot, int amount)
 {
+    if (amount > 0 && slot >= 0 && slot < 5) {
+        int m = amount;
+        for (int k = 2; k <= slot; ++k) m *= kClockScale[k - 1];
+        if (minutes_ < 100000) minutes_ += m;
+    }
     for (int carry = amount; slot >= 0 && slot < 7 && carry; ++slot) {
         const int scale = kClockScale[slot] ? kClockScale[slot] : 256;
         const int v = get(static_cast<uint16_t>(0x4BC6 + slot)) + carry;
