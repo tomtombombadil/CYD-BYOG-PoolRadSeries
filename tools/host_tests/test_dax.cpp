@@ -1859,7 +1859,16 @@ static void test_party()
         CHECK(vm.get(0x7C72) == 2 && vm.get(0x7D00) == 1 && vm.get(0x7F3E) == 2);
     }
 
+    // Writing gives back the same bytes
+    struct VecSink : savegame::Sink {
+        std::vector<uint8_t> v;
+        bool put(const uint8_t* p, size_t n) override { v.insert(v.end(), p, p + n); return true; }
+    } sink;
+    CHECK(savegame::write(sink, gs, h));
+    CHECK(sink.v.size() == savegame::kSize && sink.v == sv);
     char name2[16];
+    savegame::char_file('B', 3, name2, sizeof name2);
+    CHECK(strcmp(name2, "CHRDATB3") == 0);
     savegame::file_name('C', name2, sizeof name2);
     CHECK(strcmp(name2, "SAVGAMC.DAT") == 0);
     char dir[32];

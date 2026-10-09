@@ -79,7 +79,7 @@ static void settle(int choice = 0, int max_ms = 60000)
 int main(int argc, char** argv)
 {
     const char* dir = argv[1];
-    const char* e = play::open(dir, games::Game::CurseOfTheAzureBonds, C);
+    const char* e = play::open(dir, games::Game::CurseOfTheAzureBonds, C, getenv("CACHE"));
     if (e) { printf("open: %s\n", e); return 1; }
     // The party menu: tap its lines by their first letter
     auto pm_line = [](char k) { for (int i = 0; i < play::pm_lines; ++i) if (play::pm_key(play::pm_item[i]) == k) return i; return -1; };
@@ -149,6 +149,7 @@ int main(int argc, char** argv)
             tap_word('E');
             settle(0, 5000);
             shot("after_shop");
+
             const party::Character& ch = play::pt->m[0];
             char n[20]; ch.name(n, 20);
             printf("  %s: AC %d THAC0 %d %dd%d%+d items %d gold worth %d\n", n, ch.ac(), ch.thac0(), ch.dice(), ch.dice_sides(), ch.damage_bonus(), ch.n_items, rules::gold_worth(ch));
@@ -176,6 +177,18 @@ int main(int argc, char** argv)
         { char t[16]; snprintf(t, sizeof t, "after_%c", *m); shot(t); }
         char l1[48], l2[48]; play::describe(l1, l2, 48);
         printf("   now %d,%d %s | %s | %s\n", play::pos_x(), play::pos_y(), geo::dir_name(play::dir()), l1, l2);
+    }
+    if (getenv("SAVESLOT")) {
+        // Encamp, Save to that slot
+        auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
+        tap_word('E');
+        shot("camp");
+        tap_word('S');
+        printf("  save menu [%s%s]\n", play::menu.prompt, play::menu.s);
+        tap_word(getenv("SAVESLOT")[0]);
+        shot("saved");
+        tap_word('E');
+        printf("  saved at %d,%d %s script %d\n", play::pos_x(), play::pos_y(), geo::dir_name(play::dir()), play::vm->get(0x4BF2));
     }
     shot("end");
     play::close();

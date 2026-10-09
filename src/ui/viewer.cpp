@@ -732,7 +732,10 @@ void tap_files(const ui::Tap& t)
         frame::set_scale(frame::Scale::One);    // the game's screen: 1:1 at the top left
         frame::set_left(true);
         frame::set_ega_palette();
-        play_error = play::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game, frame::canvas());
+        char cdir[160];
+        library::make_cache_dirs(game_dirs[game_sel]);
+        snprintf(cdir, sizeof cdir, "%s/%s/%s", games::kRootDir, library::kCacheDir, game_dirs[game_sel].folder);
+        play_error = play::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game, frame::canvas(), cdir);
         go(Screen::Play);
         return;
     }

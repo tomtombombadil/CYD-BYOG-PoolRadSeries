@@ -111,6 +111,10 @@ struct Profile {
         uint32_t load_which;           //   "Load Which Game: "
         uint32_t name, ac_hp;          //   the party list's headings "Name", "AC  HP"
         const char* cfg;               // the configuration file naming the save folder
+        uint32_t save_which, slots;    // GAME.OVR: "Save Which Game: ", "A B C D E F G H I J"
+        uint32_t saving;               //   "Saving...Please Wait"
+        uint32_t camp_menu;            // program image: "Save View Magic Rest Alter Fix Exit"
+        uint32_t camp, makes_camp;     // GAME.OVR: "Camp:", "The party makes camp..."
     } party;
 
     // View Character: name tables in the program and the screen's words

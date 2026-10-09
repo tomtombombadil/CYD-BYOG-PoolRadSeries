@@ -53,6 +53,45 @@ bool read(dax::ByteSource& src, ecl::GameState& gs, Header& h)
     return true;
 }
 
+bool write(Sink& out, const ecl::GameState& gs, const Header& h)
+{
+    uint8_t b[12];
+    b[0] = h.game_area;
+    if (!out.put(b, 1) || !out.put(gs.area1, sizeof gs.area1) || !out.put(gs.area2, sizeof gs.area2) ||
+        !out.put(gs.table, sizeof gs.table) || !out.put(gs.code, sizeof gs.code))
+        return false;
+    b[0] = static_cast<uint8_t>(gs.x);
+    b[1] = static_cast<uint8_t>(gs.y);
+    b[2] = static_cast<uint8_t>(gs.dir);
+    b[3] = gs.wall_ahead;
+    b[4] = gs.roof;
+    if (!out.put(b, 5)) return false;
+    b[0] = h.last_state;
+    b[1] = h.state;
+    if (!out.put(b, 2)) return false;
+    for (int i = 0; i < 3; ++i) {
+        b[i * 4] = static_cast<uint8_t>(h.wall_block[i]);
+        b[i * 4 + 1] = static_cast<uint8_t>(static_cast<uint16_t>(h.wall_block[i]) >> 8);
+        b[i * 4 + 2] = static_cast<uint8_t>(h.wall_set[i]);
+        b[i * 4 + 3] = static_cast<uint8_t>(static_cast<uint16_t>(h.wall_set[i]) >> 8);
+    }
+    if (!out.put(b, 12)) return false;
+    b[0] = static_cast<uint8_t>(h.count);
+    if (!out.put(b, 1)) return false;
+    uint8_t names[8 * 41] = {};
+    for (int i = 0; i < h.count && i < 8; ++i) {
+        const size_t n = strnlen(h.names[i], 40);
+        names[i * 41] = static_cast<uint8_t>(n);
+        memcpy(names + i * 41 + 1, h.names[i], n);
+    }
+    return out.put(names, sizeof names);
+}
+
+void char_file(char slot, int n, char* out, size_t cap)
+{
+    snprintf(out, cap, "CHRDAT%c%d", slot, n);
+}
+
 void file_name(char slot, char* out, size_t cap)
 {
     snprintf(out, cap, "SAVGAM%c.DAT", slot);

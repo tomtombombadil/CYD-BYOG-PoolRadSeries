@@ -16,9 +16,10 @@ namespace play {
 
 bool available(games::Game g);
 
-// Loads the shared pieces and starts a new game. nullptr = ready, else why
-// not. Draws into c.
-const char* open(const char* data_dir, games::Game g, pic::Canvas& c);
+// Loads the shared pieces and shows the party menu. nullptr = ready, else
+// why not. Draws into c. cache_dir: the engine's own folder for this game
+// (_CYD/<folder>; what it keeps beside saved games), or nullptr.
+const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char* cache_dir = nullptr);
 void close();
 
 enum class Act : uint8_t { TurnLeft, TurnRight, TurnAround, Forward, StepLeft, StepRight, Area, Look };

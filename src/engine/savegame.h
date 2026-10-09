@@ -41,9 +41,22 @@ struct Header {
 // the file isn't one.
 bool read(dax::ByteSource& src, ecl::GameState& gs, Header& h);
 
-// The save file's name for slot 'A'..'J' ("SAVGAMA.DAT"), and a character's
-// ("CHRDATA1" + ".SAV").
+// Where write() puts the bytes (a file on the card, a buffer in tests)
+class Sink {
+public:
+    virtual ~Sink() = default;
+    virtual bool put(const uint8_t* p, size_t n) = 0;
+};
+
+// Writes a saved game: gs (memory, script, position), h (game area,
+// states, wall sets, the party's file names). The characters' own files
+// are written by the caller (their records as kept, items, effects).
+bool write(Sink& out, const ecl::GameState& gs, const Header& h);
+
+// The save file's name for slot 'A'..'J' ("SAVGAMA.DAT"), and the n-th
+// character's (1 ..: "CHRDATA1", + ".SAV" / ".SWG" / ".FX").
 void file_name(char slot, char* out, size_t cap);
+void char_file(char slot, int n, char* out, size_t cap);
 
 // The save folder from the game's configuration file (Curse: CURSE.CFG,
 // lines "E", "P", "C:\SAVE\", "F"): the line naming a folder, without its

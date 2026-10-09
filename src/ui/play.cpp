@@ -35,6 +35,7 @@ enum class Then : uint8_t {
     NewStep,       // ... then its arrival script
     Look,          // the search script ran for Look
     Door,          // a locked door stopped the party: "Locked." waits for a key
+    Begun,         // BEGIN's first run of the script ended: it's the last script run now
 };
 
 struct Host;
@@ -73,6 +74,10 @@ struct Data {
     char           save_dir[128] = {};      // the game's save folder (data_dir/SAVE)
     savegame::Header save;                 // the saved game loaded
     bool           loaded = false;
+    char           cache_dir[128] = {};     // _CYD/<folder>: what the engine keeps beside a save
+    int16_t        wall_block[3] = {-1, -1, -1}, wall_set[3] = {-1, -1, -1};   // the wall sets loaded (saves)
+    char           w_save_which[24] = {}, w_slots[24] = {}, w_saving[24] = {}, w_camp_menu[40] = {},
+                   w_camp[8] = {}, w_makes_camp[28] = {};
 
     // View Character's words (from the program and GAME.OVR)
     char           cls[18][27] = {}, race[8][10] = {}, alignment[9][17] = {}, sex[2][7] = {}, money[7][11] = {},
@@ -101,9 +106,10 @@ pic::Canvas* cv = nullptr;
 
 // Which screen: the party menu (the games' first screen), its "Load Which
 // Game" question, or the game itself
-enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy };
+enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
+Screen save_from = Screen::PartyMenu;   // where Save Which Game goes back to
 
 // A list to pick from, as the games draw them (shop goods, a character's
 // items): lines in a cell area, the chosen one highlighted (colour 15
@@ -548,6 +554,8 @@ bool open_save_file(const char* name, fs::File& f)
     return static_cast<bool>(f);
 }
 
+void load_journal_list(char slot);
+
 // Loads saved game `slot`: the game's memory, position and script, and
 // the party from their files (.SAV, with .SWG items and .FX effects)
 bool load_game(char slot)
@@ -598,6 +606,11 @@ bool load_game(char slot)
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
     vm->set(0x7F12, d->gs.game_area);
     d->loaded = true;
+    for (int i = 0; i < 3; ++i) {
+        d->wall_block[i] = d->save.wall_block[i];
+        d->wall_set[i] = d->save.wall_set[i];
+    }
+    load_journal_list(slot);
     Serial.printf("[play] loaded %s: area %d, %d,%d, script %d, %d characters\n", name, d->gs.game_area, d->gs.x,
                   d->gs.y, vm->get(0x4BF2), pt->count);
     return true;
@@ -899,6 +912,190 @@ void ready_item(int i, pic::Canvas& c)
     draw_items(c);
 }
 
+// ---- Saving, camp ------------------------------------------------------------------
+// Save Current Game (the party menu) and the camp's Save: "Save Which Game:
+// A B C D E F G H I J"; SAVGAMx.DAT and each character's CHRDATxn.SAV /
+// .SWG / .FX in the game's save folder, as the games write them; the
+// journal entries met so far beside it in _CYD/<folder>/SAVGAMx.JNL (the
+// engine's own). Camp (the exploring menu's Encamp): "The party makes
+// camp...", "Camp: Save View Magic Rest Alter Fix Exit".
+
+struct FileSink : savegame::Sink {
+    fs::File& f;
+    explicit FileSink(fs::File& file) : f(file) {}
+    bool put(const uint8_t* p, size_t n) override { return f.write(p, n) == n; }
+};
+
+bool write_file(const char* dir, const char* name, const uint8_t* p, size_t n)
+{
+    char path[200];
+    library::path_of(dir, name, path, sizeof path);
+    if (!n) {
+        if (sd_fs().exists(path)) sd_fs().remove(path);
+        return true;
+    }
+    fs::File f = sd_fs().open(path, "w");
+    if (!f) return false;
+    const bool ok = f.write(p, n) == n;
+    f.close();
+    return ok;
+}
+
+bool save_game(char slot)
+{
+    savegame::Header h;
+    h.game_area = d->gs.game_area;
+    const bool dungeon = vm->get(0x4BE6) != 0;
+    h.last_state = static_cast<uint8_t>(dungeon ? 4 : 3);
+    h.state = static_cast<uint8_t>(save_from == Screen::Camp ? 2 : 0);
+    for (int i = 0; i < 3; ++i) {
+        h.wall_block[i] = d->wall_block[i];
+        h.wall_set[i] = d->wall_set[i];
+    }
+    h.count = pt->count;
+    for (int i = 0; i < pt->count; ++i) savegame::char_file(slot, i + 1, h.names[i], sizeof h.names[i]);
+    vm->set(0x7F12, d->gs.game_area);
+    vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
+    char name[24], path[200];
+    savegame::file_name(slot, name, sizeof name);
+    library::path_of(d->save_dir, name, path, sizeof path);
+    fs::File f = sd_fs().open(path, "w");
+    if (!f) return false;
+    bool ok;
+    {
+        FileSink sink(f);
+        ok = savegame::write(sink, d->gs, h);
+    }
+    f.close();
+    for (int i = 0; ok && i < pt->count; ++i) {
+        const party::Character& ch = pt->m[i];
+        char fn[48];
+        snprintf(fn, sizeof fn, "%s.SAV", h.names[i]);
+        ok = write_file(d->save_dir, fn, ch.rec, party::kRecordSize);
+        snprintf(fn, sizeof fn, "%s.SWG", h.names[i]);
+        ok = ok && write_file(d->save_dir, fn, ch.items[0], static_cast<size_t>(ch.n_items) * party::kItemSize);
+        snprintf(fn, sizeof fn, "%s.FX", h.names[i]);
+        ok = ok && write_file(d->save_dir, fn, ch.affects[0], static_cast<size_t>(ch.n_affects) * party::kAffectSize);
+    }
+    // The journal entries met (the engine's own, beside the save)
+    if (ok && d->cache_dir[0]) {
+        uint8_t buf[kMaxSeen * 2];
+        for (int i = 0; i < n_seen; ++i) {
+            buf[i * 2] = static_cast<uint8_t>(seen[i].kind);
+            buf[i * 2 + 1] = seen[i].num;
+        }
+        snprintf(name, sizeof name, "SAVGAM%c.JNL", slot);
+        write_file(d->cache_dir, name, buf, static_cast<size_t>(n_seen) * 2);
+    }
+    Serial.printf("[play] saved game %c: %s\n", slot, ok ? "ok" : "FAILED");
+    return ok;
+}
+
+void load_journal_list(char slot)
+{
+    n_seen = 0;
+    if (!d->cache_dir[0]) return;
+    char name[24], path[200];
+    snprintf(name, sizeof name, "SAVGAM%c.JNL", slot);
+    library::path_of(d->cache_dir, name, path, sizeof path);
+    fs::File f = sd_fs().open(path, "r");
+    if (!f) return;
+    uint8_t b[2];
+    while (n_seen < kMaxSeen && f.read(b, 2) == 2) note_seen(static_cast<char>(b[0]), b[1]);
+    f.close();
+}
+
+void draw_party_menu(pic::Canvas& c);
+void draw_camp(pic::Canvas& c);
+
+void ask_save(pic::Canvas& c)
+{
+    save_from = screen;
+    screen = Screen::SaveWhich;
+    text::build(menu, d->w_save_which, d->w_slots);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+void back_from_save(pic::Canvas& c)
+{
+    screen = save_from;
+    if (screen == Screen::Camp) draw_camp(c);
+    else draw_party_menu(c);
+}
+
+void save_tap(int x, int y, pic::Canvas& c)
+{
+    if (y < text::kMenuTapTop) return;
+    const int k = text::hit(menu, x / 8);
+    if (k < 0) return;
+    menu.selected = k;
+    clear_menu_line(c);
+    put(c, d->w_saving, 0, text::kMenuRow, 10);
+    dirty_rows(text::kMenuRow, text::kMenuRow);
+    const bool ok = save_game(text::key(menu, k));
+    back_from_save(c);
+    if (!ok) note(c, "The card couldn't be written.");
+}
+
+void draw_camp(pic::Canvas& c)
+{
+    // The exploring screen; the party's camp in the text window
+    anim_stop();
+    pic_shown = false;
+    head_shown = body_shown = -1;
+    if (bigpic < 0) {
+        draw_frame(c);
+        draw_view(c);
+        draw_panel(c);
+    }
+    text::clear(c, text::kTextArea);
+    put(c, d->w_makes_camp, 1, 18, 10);
+    dirty_rows(17, 22);
+    text::build(menu, d->w_camp, d->w_camp_menu);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+void open_camp(pic::Canvas& c)
+{
+    screen = Screen::Camp;
+    draw_camp(c);
+}
+
+void leave_camp(pic::Canvas& c)
+{
+    screen = Screen::Game;
+    text::clear(c, text::kTextArea);
+    dirty_rows(17, 22);
+    draw_position(c);
+    idle_menu(c);
+}
+
+void camp_tap(int x, int y, pic::Canvas& c)
+{
+    const int row = y / 8, col = x / 8;
+    if (note_until) {
+        redraw_menu(c);
+        return;
+    }
+    if (y >= text::kMenuTapTop) {
+        switch (text::key(menu, text::hit(menu, col))) {
+        case 'S': ask_save(c); break;
+        case 'V': view_character(c); break;
+        case 'E': leave_camp(c); break;
+        case 0: break;
+        default: note(c, "Not in the engine yet."); break;
+        }
+        return;
+    }
+    if (col >= 17 && row >= 4 && row < 4 + pt->count && bigpic < 0) {
+        pt->selected = row - 4;
+        draw_party(c, 17);
+    }
+}
+
+
 // ---- The shop -------------------------------------------------------------------
 // A script sets the shop flag, sets out the goods (TREASURE) and starts a
 // "fight" (COMBAT): the shop's menu "Buy View Pool Appraise Exit" (Take
@@ -1095,6 +1292,9 @@ void pm_choose(int i, pic::Canvas& c)
     case 'V':
         view_character(c);
         return;
+    case 'S':
+        ask_save(c);
+        return;
     default:
         pm_prompt(c, "Not in the engine yet.");
         dirty_rows(text::kMenuRow, text::kMenuRow);
@@ -1117,6 +1317,14 @@ void pm_tap(int x, int y, pic::Canvas& c)
     }
     if (screen == Screen::Shop) {
         shop_tap(x, y, c);
+        return;
+    }
+    if (screen == Screen::Camp) {
+        camp_tap(x, y, c);
+        return;
+    }
+    if (screen == Screen::SaveWhich) {
+        save_tap(x, y, c);
         return;
     }
     if (screen == Screen::LoadWhich) {
@@ -1234,6 +1442,9 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
             {pi.wrong_class, d->w_wrong, sizeof d->w_wrong}, {pi.already, d->w_already, sizeof d->w_already},
             {pi.hands_full, d->w_hands, sizeof d->w_hands}, {pi.plural_s, d->w_s, sizeof d->w_s},
             {pi.weapon, d->w_weapon, sizeof d->w_weapon}, {pi.armour, d->w_armour, sizeof d->w_armour},
+            {pp.save_which, d->w_save_which, sizeof d->w_save_which}, {pp.slots, d->w_slots, sizeof d->w_slots},
+            {pp.saving, d->w_saving, sizeof d->w_saving}, {pp.camp, d->w_camp, sizeof d->w_camp},
+            {pp.makes_camp, d->w_makes_camp, sizeof d->w_makes_camp},
         };
         for (auto& wd : words)
             if (wd.at) text::read_pascal(src, wd.at, wd.out, wd.cap);
@@ -1250,6 +1461,8 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
     if (!d->name_head[0]) strcpy(d->name_head, "Name");
     if (!d->ac_hp_head[0]) strcpy(d->ac_hp_head, "AC  HP");
     if (!d->v_exit[0]) strcpy(d->v_exit, "Exit");
+    if (pp.camp_menu) text::read_pascal(exe, info, pp.camp_menu, d->w_camp_menu, sizeof d->w_camp_menu);
+    if (!d->w_slots[0]) strcpy(d->w_slots, "A B C D E F G H I J");
     char sub[64] = "SAVE";
     if (pp.cfg && open_file(pp.cfg, f)) {
         char cfg[256];
@@ -1306,6 +1519,8 @@ struct Host : ecl::Host {
     {
         view3d::World& wd = d->world;
         if (set < 1 || set > 3) return;
+        d->wall_block[set - 1] = static_cast<int16_t>(block < 0 ? -1 : block);
+        d->wall_set[set - 1] = static_cast<int16_t>(block < 0 ? -1 : set);
         if (block < 0) {
             wd.walls[set - 1].loaded = false;
             wd.sets[set - 1].count = 0;
@@ -1324,6 +1539,8 @@ struct Host : ecl::Host {
             Serial.printf("[play] wall set %d: block %d not loaded\n", set, block);
             return;
         }
+        // The later parts of a multi-part block fill the next sets
+        for (int k = 1; k < n && set - 1 + k < 3; ++k) d->wall_block[set - 1 + k] = d->wall_set[set - 1 + k] = -1;
         area_file(name, sizeof name, "8X8D");
         if (open_dax(name, f)) {
             library::FileSource src(f);
@@ -1644,6 +1861,9 @@ void handle(ecl::Stop r)
     case Then::Look:
         vm->set(0x7ECA, vm->get(0x7ECA) & 1);
         break;
+    case Then::Begun:
+        vm->set(0x4BF2, d->gs.script);
+        break;
     case Then::Arrive:
     case Then::Idle:
         break;
@@ -1705,6 +1925,10 @@ void back_from_view(pic::Canvas& c)
         draw_shop(c);
         return;
     }
+    if (screen == Screen::Camp) {
+        draw_camp(c);
+        return;
+    }
     if (screen != Screen::Game) {
         draw_party_menu(c);
         return;
@@ -1750,7 +1974,7 @@ void begin_adventuring()
     d->gs.roof = geo::flags(d->map, gs.x, gs.y);
     draw_view(c);
     draw_panel(c);
-    run_entry(4, Then::Idle);
+    run_entry(4, Then::Begun);
 }
 
 
@@ -1758,7 +1982,7 @@ void begin_adventuring()
 
 bool available(games::Game g) { return profile::program_name(g) != nullptr; }
 
-const char* open(const char* data_dir, games::Game g, pic::Canvas& c)
+const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char* cache_dir)
 {
     close();
     cv = &c;
@@ -1771,6 +1995,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c)
     d = new (std::nothrow) Data;
     if (!d) return "Not enough memory.";
     strncpy(d->data_dir, data_dir, sizeof d->data_dir - 1);
+    if (cache_dir) strncpy(d->cache_dir, cache_dir, sizeof d->cache_dir - 1);
 
     fs::File f;
     if (!open_file(prog, f)) {
@@ -2012,8 +2237,10 @@ void tap(int x, int y, pic::Canvas& c)
         case 'V':
             view_character(c);
             break;
-        case 'C':
         case 'E':
+            open_camp(c);
+            break;
+        case 'C':
             text::begin(w, c, "Not in the engine yet.", text::kTextArea, 10, true);
             text::step(w, c, d->font, -1);
             dirty_rows(17, 22);
@@ -2093,6 +2320,24 @@ bool back(pic::Canvas& c)
     }
     if (screen == Screen::View) {
         back_from_view(c);
+        return true;
+    }
+    if (screen == Screen::SaveWhich) {
+        back_from_save(c);
+        return true;
+    }
+    if (screen == Screen::Camp) {
+        leave_camp(c);
+        return true;
+    }
+    if (screen == Screen::Items || screen == Screen::ShopBuy) {
+        if (screen == Screen::ShopBuy) {
+            screen = Screen::Shop;
+            draw_shop(c);
+        } else {
+            screen = Screen::View;
+            draw_character(c);
+        }
         return true;
     }
     return false;
