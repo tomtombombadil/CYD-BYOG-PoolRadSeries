@@ -13,7 +13,9 @@
 #include "engine/font.h"
 #include "engine/journal.h"
 #include "engine/layout.h"
+#include "engine/party.h"
 #include "engine/profile.h"
+#include "engine/savegame.h"
 #include "engine/text.h"
 #include "engine/view3d.h"
 #include "hal/sdcard.h"
@@ -59,14 +61,34 @@ struct Data {
     // The wilderness map's places (from the program)
     uint8_t        city_x[32] = {}, city_y[32] = {};
     int            cities = 0;
+
+    // The party menu's words (from the program and GAME.OVR)
+    static constexpr int kItems = 12;
+    char           item[kItems][41] = {};
+    bool           item_on[kItems] = {};   // the program's own starting flags
+    int            items = 0;
+    char           choose[41] = {}, load_which[41] = {}, name_head[8] = {}, ac_hp_head[12] = {};
+    char           save_dir[128] = {};      // the game's save folder (data_dir/SAVE)
+    savegame::Header save;                 // the saved game loaded
+    bool           loaded = false;
 };
 
 Data* d = nullptr;
+party::Party* pt = nullptr;
 ecl::Vm* vm = nullptr;
 Host* host = nullptr;
 alignas(ecl::Vm) uint8_t vm_mem[sizeof(ecl::Vm)];
 char msg[160];
 pic::Canvas* cv = nullptr;
+
+// Which screen: the party menu (the games' first screen), its "Load Which
+// Game" question, or the game itself
+enum class Screen : uint8_t { Game, PartyMenu, LoadWhich };
+Screen screen = Screen::Game;
+int  pm_item[Data::kItems];   // the menu item on each list line
+int  pm_lines = 0;
+char pm_saves[12];            // save slots found ("AB")
+bool exit_wanted = false;     // Exit to DOS: back to the viewer
 
 bool area_view = false;
 bool pic_shown = false;       // a script picture covers the 3D view
@@ -193,6 +215,7 @@ uint8_t sky_colour()
 
 void draw_frame(pic::Canvas& c);
 void draw_panel(pic::Canvas& c);
+bool bigpic_shown() { return bigpic >= 0; }
 
 void draw_view(pic::Canvas& c)
 {
@@ -231,10 +254,39 @@ void draw_position(pic::Canvas& c)
     dirty_rows(15, 15);
 }
 
+// The party list: "Name" and "AC  HP" on row 2, a character a row from
+// row 4 - the selected one's name white, the others cyan (red: out of the
+// fights, yellow: on the other side); AC and HP right-aligned at columns
+// 34 and 38, HP yellow when below the most (as the games print it)
+void draw_party(pic::Canvas& c, int col)
+{
+    put(c, d->name_head, col, 2, 15);
+    put(c, d->ac_hp_head, 33, 2, 15);
+    int row = 4;
+    for (int i = 0; i < pt->count; ++i, ++row) {
+        const party::Character& ch = pt->m[i];
+        c.fill(col * 8, row * 8, (39 - col) * 8, 8, 0);
+        char t[24];
+        ch.name(t, sizeof t);
+        const uint8_t fg = i == pt->selected ? 15 : !ch.in_combat() ? 12 : ch.enemy() ? 14 : 11;
+        put(c, t, col, row, fg);
+        const int ac = ch.ac_raw();
+        const int aw = ac <= 0x32 ? 1 : ac <= 0x3C ? 2 : ac <= 0x45 ? 1 : 0;
+        snprintf(t, sizeof t, "%s%d", ac > 60 ? "-" : "", ac > 60 ? ac - 60 : 60 - ac);
+        put(c, t, 0x20 + aw, row, 10);
+        const int hp = ch.hp();
+        snprintf(t, sizeof t, "%d", hp);
+        put(c, t, 0x24 + (hp <= 9 ? 2 : hp <= 99 ? 1 : 0), row, hp < ch.hp_max() ? 14 : 10);
+    }
+    c.fill(col * 8, row * 8, (39 - col) * 8, 8, 0);
+    dirty_rows(2, row);
+}
+
 void draw_panel(pic::Canvas& c)
 {
     c.fill(17 * 8, 8, 22 * 8, 14 * 8, 0);
-    put(c, "NO PARTY YET", 18, 2, 8);
+    if (pt->count) draw_party(c, 17);
+    else put(c, "NO PARTY YET", 18, 2, 8);
     draw_position(c);
 }
 
@@ -359,6 +411,259 @@ void cursor_show()
     cv->fill(cursor_px, cursor_py, 8, 8, 15);
     cursor_on = true;
     dirty(cursor_py, cursor_py + 8);
+}
+
+// ---- the party menu -----------------------------------------------------------
+//
+// The games' first screen: the party list, then the menu (Create New
+// Character ... BEGIN Adventuring, Exit to DOS) a line each from row 12,
+// its first letter white; "Choose a function" on the menu line. Which
+// entries are on follows the party, as in the games. A tap on a line
+// picks it; a tap on a character selects them.
+
+char pm_key(int i) { return static_cast<char>(toupper(static_cast<unsigned char>(d->item[i][0]))); }
+
+void pm_flags(bool on[Data::kItems])
+{
+    for (int i = 0; i < d->items; ++i) {
+        on[i] = d->item_on[i];
+        switch (pm_key(i)) {
+        case 'D': case 'M': case 'V': case 'R': case 'S':
+            on[i] = pt->count > 0;
+            break;
+        case 'T':                               // training: only where the game offers it
+            on[i] = pt->count > 0 && (vm->get(0x7EA8) & 0xFF) != 0;
+            break;
+        case 'H':                               // class changes: with training (rules to come)
+            on[i] = false;
+            break;
+        case 'L':
+            on[i] = pt->count == 0;
+            break;
+        case 'B':
+            // The games need a party to begin; until characters can be
+            // made, the Play Test lets a new game begin without one
+            on[i] = true;
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+void pm_prompt(pic::Canvas& c, const char* note = nullptr)
+{
+    clear_menu_line(c);
+    put(c, note ? note : d->choose, 0, text::kMenuRow, 13);
+}
+
+void draw_party_menu(pic::Canvas& c)
+{
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    if (pt->count) draw_party(c, 1);
+    bool on[Data::kItems];
+    pm_flags(on);
+    pm_lines = 0;
+    for (int i = 0; i < d->items; ++i) {
+        if (!on[i]) continue;
+        const int row = 12 + pm_lines;
+        char first[2] = {d->item[i][0], 0};
+        put(c, first, 2, row, 15);
+        put(c, d->item[i] + 1, 3, row, 10);
+        pm_item[pm_lines++] = i;
+    }
+    pm_prompt(c);
+    dirty(0, pic::kScreenH);
+}
+
+void find_saves()
+{
+    int n = 0;
+    for (char s = savegame::kFirst; s <= savegame::kLast; ++s) {
+        char name[24], path[160];
+        savegame::file_name(s, name, sizeof name);
+        library::path_of(d->save_dir, name, path, sizeof path);
+        fs::File f = sd_fs().open(path, "r");
+        if (f) {
+            pm_saves[n++] = s;
+            f.close();
+        }
+    }
+    pm_saves[n] = 0;
+}
+
+bool open_save_file(const char* name, fs::File& f)
+{
+    char path[160];
+    library::path_of(d->save_dir, name, path, sizeof path);
+    f = sd_fs().open(path, "r");
+    return static_cast<bool>(f);
+}
+
+// Loads saved game `slot`: the game's memory, position and script, and
+// the party from their files (.SAV, with .SWG items and .FX effects)
+bool load_game(char slot)
+{
+    char name[24];
+    savegame::file_name(slot, name, sizeof name);
+    fs::File f;
+    if (!open_save_file(name, f)) return false;
+    bool ok;
+    {
+        library::FileSource src(f);
+        ok = savegame::read(src, d->gs, d->save);
+    }
+    f.close();
+    if (!ok) {
+        Serial.printf("[play] %s isn't a saved game\n", name);
+        return false;
+    }
+    pt->clear();
+    for (int i = 0; i < d->save.count; ++i) {
+        party::Character& ch = pt->m[pt->count];
+        char fn[48];
+        snprintf(fn, sizeof fn, "%s.SAV", d->save.names[i]);
+        if (!open_save_file(fn, f)) {
+            Serial.printf("[play] %s missing\n", fn);
+            continue;
+        }
+        {
+            library::FileSource src(f);
+            ok = party::read_record(src, ch);
+        }
+        f.close();
+        if (!ok) continue;
+        snprintf(fn, sizeof fn, "%s.SWG", d->save.names[i]);
+        if (open_save_file(fn, f)) {
+            library::FileSource src(f);
+            party::read_items(src, ch);
+            f.close();
+        }
+        snprintf(fn, sizeof fn, "%s.FX", d->save.names[i]);
+        if (open_save_file(fn, f)) {
+            library::FileSource src(f);
+            party::read_affects(src, ch);
+            f.close();
+        }
+        ++pt->count;
+    }
+    vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
+    vm->set(0x7F12, d->gs.game_area);
+    d->loaded = true;
+    Serial.printf("[play] loaded %s: area %d, %d,%d, script %d, %d characters\n", name, d->gs.game_area, d->gs.x,
+                  d->gs.y, vm->get(0x4BF2), pt->count);
+    return true;
+}
+
+void begin_adventuring();
+
+void pm_choose(int i, pic::Canvas& c)
+{
+    switch (pm_key(i)) {
+    case 'L':
+        find_saves();
+        if (!pm_saves[0]) break;
+        screen = Screen::LoadWhich;
+        {
+            char keys[24];
+            size_t o = 0;
+            for (int k = 0; pm_saves[k]; ++k) {
+                if (k) keys[o++] = ' ';
+                keys[o++] = pm_saves[k];
+            }
+            keys[o] = 0;
+            text::build(menu, d->load_which, keys);
+            menu.selected = 0;
+            show_menu_line(c);
+        }
+        return;
+    case 'B':
+        begin_adventuring();
+        return;
+    case 'E':
+        exit_wanted = true;
+        return;
+    default:
+        pm_prompt(c, "Not in the engine yet.");
+        dirty_rows(text::kMenuRow, text::kMenuRow);
+        return;
+    }
+}
+
+void pm_tap(int x, int y, pic::Canvas& c)
+{
+    const int row = y / 8, col = x / 8;
+    if (screen == Screen::LoadWhich) {
+        if (y < text::kMenuTapTop) return;
+        const int k = text::hit(menu, col);
+        if (k < 0) return;
+        menu.selected = k;
+        show_menu_line(c);
+        load_game(text::key(menu, k));
+        screen = Screen::PartyMenu;
+        draw_party_menu(c);
+        return;
+    }
+    if (row >= 4 && row < 4 + pt->count && col >= 1) {
+        pt->selected = row - 4;
+        draw_party_menu(c);
+        return;
+    }
+    const int line = row - 12;
+    if (line >= 0 && line < pm_lines && y < text::kMenuTapTop) {
+        pm_prompt(c);
+        pm_choose(pm_item[line], c);
+    }
+}
+
+// Reads the menu's words from the program (and GAME.OVR) and the save
+// folder from the game's configuration file
+void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
+{
+    const auto& pp = d->prof->party;
+    d->items = 0;
+    if (pp.items && pp.count <= Data::kItems && pp.stride >= 41) {
+        uint8_t* buf = static_cast<uint8_t*>(malloc(static_cast<size_t>(pp.count) * pp.stride));
+        if (buf && exepack::read(exe, info, pp.items, buf, static_cast<size_t>(pp.count) * pp.stride) ==
+                       exepack::Status::Ok) {
+            for (int i = 0; i < pp.count; ++i) {
+                const uint8_t* e = buf + i * pp.stride;
+                size_t n = e[0];
+                if (n == 0 || n > 40) continue;
+                memcpy(d->item[d->items], e + 1, n);
+                d->item[d->items][n] = 0;
+                d->item_on[d->items] = e[41] != 0;
+                ++d->items;
+            }
+        }
+        free(buf);
+    }
+    fs::File f;
+    if (open_file(d->prof->overlay, f)) {
+        library::FileSource src(f);
+        text::read_pascal(src, pp.choose, d->choose, sizeof d->choose);
+        text::read_pascal(src, pp.load_which, d->load_which, sizeof d->load_which);
+        text::read_pascal(src, pp.name, d->name_head, sizeof d->name_head);
+        text::read_pascal(src, pp.ac_hp, d->ac_hp_head, sizeof d->ac_hp_head);
+        f.close();
+    }
+    if (!d->choose[0]) strcpy(d->choose, "Choose a function ");
+    if (!d->load_which[0]) strcpy(d->load_which, "Load Which Game: ");
+    if (!d->name_head[0]) strcpy(d->name_head, "Name");
+    if (!d->ac_hp_head[0]) strcpy(d->ac_hp_head, "AC  HP");
+    char sub[64] = "SAVE";
+    if (pp.cfg && open_file(pp.cfg, f)) {
+        char cfg[256];
+        const int n = f.read(reinterpret_cast<uint8_t*>(cfg), sizeof cfg);
+        f.close();
+        if (n > 0) {
+            char got[64];
+            savegame::save_dir(cfg, static_cast<size_t>(n), got, sizeof got);
+            if (got[0]) strcpy(sub, got);
+        }
+    }
+    library::path_of(d->data_dir, sub, d->save_dir, sizeof d->save_dir);
 }
 
 // ---- the script host ------------------------------------------------------------
@@ -773,6 +1078,41 @@ void finish_print_wait()
     handle(vm->resume());
 }
 
+// BEGIN Adventuring: the saved game's script again (its first run), or a
+// new game's start script (as the games do when no script ran yet)
+void begin_adventuring()
+{
+    pic::Canvas& c = *cv;
+    ecl::GameState& gs = d->gs;
+    const int last = vm->get(0x4BF2) & 0xFF;
+    const bool resume = d->loaded && last != 0;
+    const bool dungeon = !d->loaded || vm->get(0x4BE6) != 0;
+    gs.script = static_cast<uint8_t>(resume ? last : d->prof->start_script);
+    screen = Screen::Game;
+    if (!host->load_script(gs.script, gs.code, &gs.code_len) || !vm->init_script(resume)) {
+        snprintf(msg, sizeof msg, "Script %d of ECL%d.DAX didn't load.", gs.script, gs.game_area);
+        screen = Screen::PartyMenu;
+        draw_party_menu(c);
+        pm_prompt(c, msg);
+        return;
+    }
+    draw_frame(c);
+    if (resume) {
+        if (dungeon) {
+            if (d->save.wall_block[0] > 0) host->load_map(vm->get(0x4BC5) & 0xFF);
+            for (int i = 0; i < 3; ++i)
+                if (d->save.wall_block[i] > 0) host->load_walls(d->save.wall_set[i], d->save.wall_block[i]);
+        } else {
+            host->picture(0x79, 0xFF);
+        }
+    }
+    d->gs.roof = geo::flags(d->map, gs.x, gs.y);
+    draw_view(c);
+    draw_panel(c);
+    run_entry(4, Then::Idle);
+}
+
+
 } // namespace
 
 bool available(games::Game g) { return profile::program_name(g) != nullptr; }
@@ -811,6 +1151,8 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c)
                 d->cities = p->wild.count;
             if (!text::read_pascal(src, info, p->press_any_key, d->press_key, sizeof d->press_key))
                 strcpy(d->press_key, "Tap to go on");
+            d->prof = p;
+            load_party_text(src, info);
         }
         f.close();
         if (!p || !p->ecl_ops) {
@@ -839,28 +1181,25 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c)
         f.close();
     }
 
-    // A new game: the start script, as the games begin one
+    // The party menu first, as the games begin
     host = new (std::nothrow) Host;
-    if (!host) {
+    pt = new (std::nothrow) party::Party;
+    if (!host || !pt) {
         close();
         return "Not enough memory.";
     }
     vm = new (vm_mem) ecl::Vm(d->gs, *host, *d->prof->ecl_ops);
+    vm->set_party(pt);
     ecl::GameState& gs = d->gs;
     gs.game_area = d->prof->start_area;
-    gs.script = d->prof->start_script;
     gs.x = 7;
     gs.y = 13;
     gs.dir = 0;
     vm->set(0x7F12, gs.game_area);
-    if (!host->load_script(gs.script, gs.code, &gs.code_len) || !vm->init_script()) {
-        snprintf(msg, sizeof msg, "The start script (ECL%d block %d) didn't load.", gs.game_area, gs.script);
-        close();
-        return msg;
-    }
     area_view = false;
     pic_shown = false;
     waiting = false;
+    then = Then::Idle;
     anim_block = bigpic = last_pic = -1;
     jtext[0] = 0;
     journal_kind = 0;
@@ -868,11 +1207,10 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c)
     cursor_on = false;
     input_mode = Input::None;
     idle_cycles = 0;
+    exit_wanted = false;
     w = text::Writer{};
-    draw_frame(c);
-    draw_view(c);
-    draw_panel(c);
-    run_entry(4, Then::Idle);
+    screen = Screen::PartyMenu;
+    draw_party_menu(c);
     return nullptr;
 }
 
@@ -886,6 +1224,8 @@ void close()
     }
     delete host;
     host = nullptr;
+    delete pt;
+    pt = nullptr;
     delete d;
     d = nullptr;
 }
@@ -903,6 +1243,7 @@ bool act(Act a, pic::Canvas& c)
 {
     if (!d) return false;
     cv = &c;
+    if (screen != Screen::Game) return false;
     if (waiting) {
         // Any key goes on, like the games' "press a key": the rest of the
         // page, the next page, a one-choice menu
@@ -946,6 +1287,10 @@ void tap(int x, int y, pic::Canvas& c)
 {
     if (!d) return;
     cv = &c;
+    if (screen != Screen::Game) {
+        pm_tap(x, y, c);
+        return;
+    }
     const int row = y / 8, col = x / 8;
     if (waiting) {
         switch (vm->wait()) {
@@ -993,6 +1338,12 @@ void tap(int x, int y, pic::Canvas& c)
         return;
     }
     if (then != Then::Idle) return;
+    // A tap on a character in the party list selects them
+    if (col >= 17 && row >= 4 && row < 4 + pt->count && !bigpic_shown()) {
+        pt->selected = row - 4;
+        draw_party(c, 17);
+        return;
+    }
     // The exploring menu: Area Cast View Encamp Search Look
     if (y >= text::kMenuTapTop && vm->get(0x4BE6)) {
         switch (text::key(menu, text::hit(menu, col))) {
@@ -1016,7 +1367,7 @@ void tap(int x, int y, pic::Canvas& c)
 
 void tick(uint32_t now, pic::Canvas& c)
 {
-    if (!d || !waiting) return;
+    if (!d || !waiting || screen != Screen::Game) return;
     cv = &c;
     const ecl::Wait wt = vm->wait();
     // While the game waits for the player: the event picture animates (at
@@ -1067,6 +1418,25 @@ void tick(uint32_t now, pic::Canvas& c)
 }
 
 Input input() { return d ? input_mode : Input::None; }
+
+bool back(pic::Canvas& c)
+{
+    if (!d) return false;
+    cv = &c;
+    if (screen == Screen::LoadWhich) {
+        screen = Screen::PartyMenu;
+        draw_party_menu(c);
+        return true;
+    }
+    return false;
+}
+
+bool exit_requested()
+{
+    const bool e = exit_wanted;
+    exit_wanted = false;
+    return e;
+}
 
 bool journal_request(char* kind, int* number)
 {
@@ -1125,6 +1495,11 @@ void describe(char* line1, char* line2, int cap)
 {
     if (!d) {
         line1[0] = line2[0] = 0;
+        return;
+    }
+    if (screen != Screen::Game) {
+        snprintf(line1, cap, "Party menu");
+        snprintf(line2, cap, "%d character%s", pt->count, pt->count == 1 ? "" : "s");
         return;
     }
     snprintf(line1, cap, "Area %d, script %d", d->gs.game_area, d->gs.script);

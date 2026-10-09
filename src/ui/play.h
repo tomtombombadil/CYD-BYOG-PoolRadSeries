@@ -1,7 +1,9 @@
-// Play Test (milestone 4): a new game of Curse run by its own area scripts
-// from the player's files - the opening, events, text, menus and pictures
-// as the party walks. No party yet: anything that needs characters
-// (combat, treasure, checks) is passed over and logged.
+// Play Test (milestones 4-5): Curse run by its own area scripts from the
+// player's files. It starts at the games' party menu (Load Saved Game -
+// the GOG release comes with a sample party - BEGIN Adventuring); then
+// the opening, events, text, menus and pictures as the party walks.
+// What needs more of the party than its list (combat, treasure, checks)
+// is passed over and logged.
 #pragma once
 
 #include <cstdint>
@@ -30,6 +32,12 @@ bool act(Act a, pic::Canvas& c);
 void tap(int x, int y, pic::Canvas& c);
 // Moves printing text and pauses on. Call often.
 void tick(uint32_t now_ms, pic::Canvas& c);
+
+// Esc: back out of a question the Play Test asked (Load Which Game);
+// false if there is none (the viewer leaves the Play Test).
+bool back(pic::Canvas& c);
+// Exit to DOS was chosen on the party menu: true once.
+bool exit_requested();
 
 // Typing: the game asks for a number or a line of text (INPUT NUMBER /
 // STRING). The front end shows a keyboard while input() != None and sends

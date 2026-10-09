@@ -24,6 +24,8 @@
 #include "engine/png.h"
 #include "inflate_vectors.h"
 #include "engine/layout.h"
+#include "engine/party.h"
+#include "engine/savegame.h"
 #include "engine/printcalls.h"
 #include "engine/profile.h"
 #include "engine/text.h"
@@ -1746,6 +1748,128 @@ static void test_geo_view()
     CHECK(at(24 + 2 * 8 + 3, 24 + 2 * 8 + 3) == 0);                // nothing there: piece 4 -> colour 0
 }
 
+// A made-up character record, items, effects, a saved game and the
+// scripts reading the selected character
+static void test_party()
+{
+    party::Character ch;
+    uint8_t rec[party::kRecordSize] = {};
+    rec[0] = 5;
+    memcpy(rec + 1, "ALICE", 5);
+    rec[0x10] = 17; rec[0x11] = 18;        // Str 17 / 18
+    rec[0x13] = 15;                         // Int full
+    rec[0x74] = 7; rec[0x75] = 2;           // human fighter
+    rec[0x76] = 0x2C; rec[0x77] = 0x01;     // age 300
+    rec[0x78] = 40; rec[0x1A4] = 31;        // HP 31 / 40
+    rec[0x19A] = 55;                        // AC 5
+    rec[0x10B] = 6;                         // fighter level 6
+    rec[0xEC] = 33;                         // thief skill 3
+    rec[0x103] = 0x2C; rec[0x104] = 0x01;   // 300 platinum
+    rec[0x127] = 0x10; rec[0x128] = 0x27;   // 10000 xp
+    rec[0x196] = 1;
+    rec[0x1B] = 16;                         // Cha 16
+    {
+        dax::MemorySource src(rec, sizeof rec);
+        CHECK(party::read_record(src, ch));
+        dax::MemorySource shorter(rec, 100);
+        party::Character bad;
+        CHECK(!party::read_record(shorter, bad));
+    }
+    char name[20];
+    ch.name(name, sizeof name);
+    CHECK(strcmp(name, "ALICE") == 0);
+    ch.name(name, 3);
+    CHECK(strcmp(name, "AL") == 0);
+    CHECK(ch.hp() == 31 && ch.hp_max() == 40 && ch.ac() == 5 && ch.race() == 7 && ch.cls() == 2);
+    CHECK(ch.age() == 300 && ch.level(2) == 6 && ch.stat(0) == 18 && ch.stat_now(0) == 17);
+    CHECK(ch.money(4) == 300 && ch.exp() == 10000 && ch.in_combat() && !ch.npc());
+
+    uint8_t items[party::kItemSize * 2 + 5] = {};
+    items[0] = 0xAA;
+    items[party::kItemSize] = 0xBB;
+    dax::MemorySource isrc(items, sizeof items);
+    party::read_items(isrc, ch);
+    CHECK(ch.n_items == 2 && ch.items[1][0] == 0xBB);
+    uint8_t fx[party::kAffectSize * 3] = {};
+    fx[party::kAffectSize * 2] = 0x7E;
+    dax::MemorySource fsrc(fx, sizeof fx);
+    party::read_affects(fsrc, ch);
+    CHECK(ch.n_affects == 3 && ch.affects[2][0] == 0x7E);
+
+    party::Party pt;
+    uint16_t v = 0;
+    CHECK(!party::script_value(pt, 0x72, &v));        // no party
+    pt.m[0] = ch;
+    pt.m[1] = ch;
+    pt.m[1].rec[0x74] = 2;                             // an elf
+    pt.count = 2;
+    pt.selected = 1;
+    CHECK(party::script_value(pt, 0x72, &v) && v == 2);
+    CHECK(party::script_value(pt, 0x73, &v) && v == 2);
+    CHECK(party::script_value(pt, 0xA7, &v) && v == 33);
+    CHECK(party::script_value(pt, 0xC3, &v) && v == 300);
+    CHECK(party::script_value(pt, 0x15, &v) && v == 15);
+    CHECK(party::script_value(pt, 0x100, &v) && v == 1);
+    CHECK(party::script_value(pt, 0x2B1, &v) && v == 1);
+    CHECK(party::script_value(pt, 0x2CF, &v) && v == 50);
+    CHECK(!party::script_value(pt, 0x2C9, &v));
+
+    // A saved game
+    std::vector<uint8_t> sv(savegame::kSize, 0);
+    CHECK(savegame::kSize == 13149);
+    sv[0] = 2;
+    sv[1 + (0x4BE6 - 0x4B00) * 2] = 1;                // in a 3D area
+    sv[1 + 0x800 + (0x7F3E - 0x7C00) * 2] = 2;         // party size
+    sv[1 + 0x800 + 0x800 + 0x400] = 0x42;              // first script byte
+    size_t o = 1 + 0x800 + 0x800 + 0x400 + 0x1E00;
+    sv[o] = 7; sv[o + 1] = 13; sv[o + 2] = 4; sv[o + 3] = 1; sv[o + 4] = 0x80;
+    o += 5;
+    sv[o] = 0; sv[o + 1] = 1;
+    o += 2;
+    sv[o] = 3; sv[o + 2] = 1;                          // walls block 3, set 1
+    sv[o + 4] = 0xFF; sv[o + 5] = 0xFF;                // none
+    o += 12;
+    sv[o++] = 2;
+    sv[o] = 8; memcpy(&sv[o + 1], "CHRDATA1", 8);
+    sv[o + 41] = 8; memcpy(&sv[o + 42], "CHRDATA2", 8);
+    ecl::GameState gs;
+    savegame::Header h;
+    {
+        dax::MemorySource src(sv.data(), static_cast<uint32_t>(sv.size()));
+        CHECK(savegame::read(src, gs, h));
+        dax::MemorySource shorter(sv.data(), 1000);
+        ecl::GameState g2;
+        CHECK(!savegame::read(shorter, g2, h));
+        dax::MemorySource again(sv.data(), static_cast<uint32_t>(sv.size()));
+        CHECK(savegame::read(again, gs, h));
+    }
+    CHECK(h.game_area == 2 && gs.game_area == 2 && gs.x == 7 && gs.y == 13 && gs.dir == 4);
+    CHECK(gs.wall_ahead == 1 && gs.roof == 0x80 && h.state == 1 && gs.code[0] == 0x42);
+    CHECK(h.wall_block[0] == 3 && h.wall_set[0] == 1 && h.wall_block[1] == -1);
+    CHECK(h.count == 2 && strcmp(h.names[1], "CHRDATA2") == 0);
+    const profile::Profile* p = profile::find(games::Game::CurseOfTheAzureBonds, 57789, 62432);
+    if (p && p->ecl_ops) {
+        TestHost host;
+        ecl::Vm vm(gs, host, *p->ecl_ops);
+        CHECK(vm.get(0x4BE6) == 1 && vm.get(0x7F3E) == 2 && vm.get(0x7D00) == 0);
+        vm.set_party(&pt);
+        CHECK(vm.get(0x7C72) == 2 && vm.get(0x7D00) == 1 && vm.get(0x7F3E) == 2);
+    }
+
+    char name2[16];
+    savegame::file_name('C', name2, sizeof name2);
+    CHECK(strcmp(name2, "SAVGAMC.DAT") == 0);
+    char dir[32];
+    const char cfg[] = "E\r\nP\r\nC:\\SAVE\\\r\nF\r\n";
+    savegame::save_dir(cfg, sizeof cfg - 1, dir, sizeof dir);
+    CHECK(strcmp(dir, "SAVE") == 0);
+    const char cfg2[] = "E\nC:\\GAMES\\CURSE\\SAVES\n";
+    savegame::save_dir(cfg2, sizeof cfg2 - 1, dir, sizeof dir);
+    CHECK(strcmp(dir, "GAMES/CURSE/SAVES") == 0);
+    savegame::save_dir("E\nP\n", 4, dir, sizeof dir);
+    CHECK(dir[0] == 0);
+}
+
 int main()
 {
     test_rle_known_bytes();
@@ -1768,6 +1892,7 @@ int main()
     test_ecl_vm();
     test_journal();
     test_geo_view();
+    test_party();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;

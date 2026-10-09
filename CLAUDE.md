@@ -137,7 +137,11 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   `engine/ecl_vm.*` (plain C++, host-tested with synthetic scripts); the
   front end only shows what it asks for (Wait: Print, Menu, ListMenu,
   Number, String, Pause) and answers. Things that need a party are logged
-  and passed over until M5/M6 - never faked. While text or a one-choice
+  and passed over until M5/M6 - never faked. Since v0.14.0 it opens at the
+  games' party menu (`engine/party.*`, `engine/savegame.*`): Load Saved
+  Game reads the player's saves (GOG ships `SAVE/SAVGAMA.DAT` with a sample
+  party); BEGIN without a party is allowed in the Play Test only until
+  Create New Character exists. While text or a one-choice
   menu waits, any key goes on (like "press a key").
   The game's questions (INPUT NUMBER / STRING) use an on-screen keyboard
   in the viewer (`play::input()` / `play::input_key()`); event pictures

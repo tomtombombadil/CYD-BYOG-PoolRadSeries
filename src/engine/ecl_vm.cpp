@@ -145,10 +145,11 @@ uint16_t Vm::get(uint16_t a) const
     if (a >= 0x4B00 && a <= 0x4EFF) return word_at(s_.area1, (a - 0x4B00u) * 2);
     if (a >= 0x7A00 && a <= 0x7BFF) return word_at(s_.table, (a - 0x7A00u) * 2);
     if (a >= 0x7C00 && a <= 0x7FFF) {
-        // Character fields: no party yet
+        // The selected character's fields
+        uint16_t v;
+        if (party_ && party::script_value(*party_, static_cast<uint16_t>(a - 0x7C00), &v)) return v;
         if (a == 0x7D00) return 0;                         // "no character loaded"
         if (a == 0x7F12) return s_.game_area;
-        if (a == 0x7F3E) return 0;                         // party size
         return word_at(s_.area2, (a - 0x7C00u) * 2);
     }
     if (a >= kBase && a < kBase + kCodeSize) return s_.code[a - kBase];

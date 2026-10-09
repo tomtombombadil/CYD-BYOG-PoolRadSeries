@@ -2,7 +2,8 @@
 // (the player's own files, outside the repo), answers menus, takes canvas
 // snapshots (out/*.ppm). Build from the repo root:
 //   g++ -std=c++17 -O1 -g -Itools/playsim/shim -Isrc -o playsim tools/playsim/sim.cpp src/engine/*.cpp
-// Run: playsim <game folder> [moves: F L R B A K]; env: AREA / BLOCK (start
+// Run: playsim <game folder> [moves: F L R B A K]; env: SAVE=A (load saved
+// game A at the party menu first; otherwise BEGIN with no party), AREA / BLOCK (start
 // script), SETVAR=addr=value, CHOICES=digits, TYPE=text, TELE=x,y,dir,
 // FINDLOCK, PAUSESHOT, ANIMSHOTS, MS (ms to settle). Needs an out/ folder.
 #include "ui/play.cpp"
@@ -78,6 +79,24 @@ int main(int argc, char** argv)
     const char* dir = argv[1];
     const char* e = play::open(dir, games::Game::CurseOfTheAzureBonds, C);
     if (e) { printf("open: %s\n", e); return 1; }
+    // The party menu: tap its lines by their first letter
+    auto pm_line = [](char k) { for (int i = 0; i < play::pm_lines; ++i) if (play::pm_key(play::pm_item[i]) == k) return i; return -1; };
+    printf("party menu:");
+    for (int i = 0; i < play::pm_lines; ++i) printf(" [%s]", play::d->item[play::pm_item[i]]);
+    printf("\n  prompt [%s] heads [%s] [%s] save dir [%s]\n", play::d->choose, play::d->name_head, play::d->ac_hp_head, play::d->save_dir);
+    shot("party_menu");
+    if (getenv("SAVE")) {
+        play::tap(24, (12 + pm_line('L')) * 8 + 2, C);
+        printf("  saves [%s] menu [%s%s]\n", play::pm_saves, play::menu.prompt, play::menu.s);
+        const int k = (int)(strchr(play::pm_saves, getenv("SAVE")[0]) - play::pm_saves);
+        play::tap(((int)strlen(play::menu.prompt) + play::menu.start[k]) * 8 + 2, text::kMenuRow * 8 + 2, C);
+        for (int i = 0; i < play::pt->count; ++i) { char n[20]; play::pt->m[i].name(n, 20); printf("  %d: %-15s AC %d HP %d/%d race %d class %d\n", i, n, play::pt->m[i].ac(), play::pt->m[i].hp(), play::pt->m[i].hp_max(), play::pt->m[i].race(), play::pt->m[i].cls()); }
+        printf("party menu:");
+        for (int i = 0; i < play::pm_lines; ++i) printf(" [%s]", play::d->item[play::pm_item[i]]);
+        printf("\n");
+        shot("party_loaded");
+    }
+    play::tap(24, (12 + pm_line('B')) * 8 + 2, C);
     if (getenv("AREA")) {
         // Start somewhere else: as a script would (SAVE area; NEWECL block)
         play::d->gs.game_area = (uint8_t)atoi(getenv("AREA"));

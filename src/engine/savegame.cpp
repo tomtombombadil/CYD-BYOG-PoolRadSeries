@@ -1,0 +1,87 @@
+#include "savegame.h"
+
+#include <cstdio>
+#include <cstring>
+
+namespace savegame {
+
+bool read(dax::ByteSource& src, ecl::GameState& gs, Header& h)
+{
+    if (src.size() < kSize) return false;
+    h = Header{};
+    uint32_t p = 0;
+    auto take = [&](uint8_t* out, size_t n) {
+        const bool ok = src.read_at(p, out, n) == n;
+        p += static_cast<uint32_t>(n);
+        return ok;
+    };
+    uint8_t b[12];
+    if (!take(b, 1)) return false;
+    h.game_area = b[0];
+    if (!take(gs.area1, sizeof gs.area1) || !take(gs.area2, sizeof gs.area2) || !take(gs.table, sizeof gs.table) ||
+        !take(gs.code, sizeof gs.code))
+        return false;
+    gs.code_len = ecl::kCodeSize;
+    if (!take(b, 5)) return false;
+    gs.x = b[0] & 15;
+    gs.y = b[1] & 15;
+    gs.dir = b[2] & 6;
+    gs.wall_ahead = b[3];
+    gs.roof = b[4];
+    if (!take(b, 2)) return false;
+    h.last_state = b[0];
+    h.state = b[1];
+    if (!take(b, 12)) return false;
+    for (int i = 0; i < 3; ++i) {
+        h.wall_block[i] = static_cast<int16_t>(b[i * 4] | b[i * 4 + 1] << 8);
+        h.wall_set[i] = static_cast<int16_t>(b[i * 4 + 2] | b[i * 4 + 3] << 8);
+    }
+    if (!take(b, 1)) return false;
+    int n = b[0];
+    if (n > party::kMaxParty) n = party::kMaxParty;
+    for (int i = 0; i < n; ++i) {
+        uint8_t s[41];
+        if (src.read_at(p + i * 41u, s, sizeof s) != sizeof s) return false;
+        size_t len = s[0];
+        if (len > 40) len = 40;
+        memcpy(h.names[i], s + 1, len);
+        h.names[i][len] = 0;
+    }
+    h.count = n;
+    gs.game_area = h.game_area;
+    gs.moved = false;
+    return true;
+}
+
+void file_name(char slot, char* out, size_t cap)
+{
+    snprintf(out, cap, "SAVGAM%c.DAT", slot);
+}
+
+void save_dir(const char* cfg, size_t len, char* out, size_t cap)
+{
+    if (!cap) return;
+    out[0] = 0;
+    size_t i = 0;
+    while (i < len) {
+        size_t e = i;
+        while (e < len && cfg[e] != '\r' && cfg[e] != '\n') ++e;
+        // A line naming a folder: has a backslash
+        const char* line = cfg + i;
+        const size_t n = e - i;
+        if (memchr(line, '\\', n)) {
+            size_t s = 0;
+            if (n >= 2 && line[1] == ':') s = 2;
+            while (s < n && (line[s] == '\\' || line[s] == '/')) ++s;
+            size_t o = 0;
+            for (size_t k = s; k < n && o + 1 < cap; ++k) out[o++] = line[k] == '\\' ? '/' : line[k];
+            while (o > 0 && out[o - 1] == '/') --o;
+            out[o] = 0;
+            return;
+        }
+        i = e;
+        while (i < len && (cfg[i] == '\r' || cfg[i] == '\n')) ++i;
+    }
+}
+
+} // namespace savegame

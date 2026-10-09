@@ -10,8 +10,9 @@
 //                  blocked, 0x4BFC game speed, 0x4BFD / 0x4BFE outdoor /
 //                  indoor sky colour, 0x4C00-0x4C20 per-script variables)
 //   0x7A00-0x7BFF  a table, a word each
-//   0x7C00-0x7FFF  more game data, a word each; character fields when a
-//                  party exists (none yet: 0x7D00 = "no character")
+//   0x7C00-0x7FFF  more game data, a word each; some addresses read the
+//                  selected character instead (party::script_value; no
+//                  party: 0x7D00 = 0, "no character"), 0x7F3E party size
 //                  0x7EC9 >= 0xFF: the party doesn't move this step
 //                  0x7ECA search flags, 0x7EE1 head picture, 0x7F12 area,
 //                  0x7F22 / 24 / 26 > 0x80: load wall set 1 / 2 / 3
@@ -33,6 +34,7 @@
 #include <cstdint>
 
 #include "ecl.h"
+#include "party.h"
 
 namespace ecl {
 
@@ -95,6 +97,9 @@ public:
     bool init_script(bool reload = false);
     uint16_t entry(int i) const { return entry_[i]; }   // 0 step, 1 search, 2 pre-camp, 3 camp, 4 first
 
+    // The party the scripts see (nullptr: none)
+    void set_party(const party::Party* p) { party_ = p; }
+
     Stop run(uint16_t address);
     Stop resume();
     Stop answer(int value);
@@ -144,6 +149,7 @@ private:
 
     GameState& s_;
     Host& h_;
+    const party::Party* party_ = nullptr;
     const OpSet& set_;
     uint16_t entry_[5] = {};
     uint32_t pc_ = 0;               // offset in the code

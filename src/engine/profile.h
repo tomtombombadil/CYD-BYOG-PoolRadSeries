@@ -94,6 +94,17 @@ struct Profile {
         uint8_t  count;                // places in those tables
         uint8_t  hide_pic;             // no square after this event picture was shown
     } wild;
+
+    // The party menu (the games' first screen: Create New Character ...
+    // Load Saved Game ... BEGIN Adventuring) and the party list
+    struct {
+        uint32_t items;                // program image offset of the menu table: `count`
+        uint8_t  count, stride;        //   entries of a Pascal string[40] + an "on" byte
+        uint32_t choose;               // GAME.OVR offsets of Pascal strings: "Choose a function "
+        uint32_t load_which;           //   "Load Which Game: "
+        uint32_t name, ac_hp;          //   the party list's headings "Name", "AC  HP"
+        const char* cfg;               // the configuration file naming the save folder
+    } party;
 };
 
 // The game's program file name (to look for it), or nullptr if no

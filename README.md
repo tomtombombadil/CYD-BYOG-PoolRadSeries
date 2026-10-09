@@ -8,10 +8,11 @@ Yellow Display", from your own copy of the games.
 is included; you copy the original DOS game files to a microSD card and the board
 reads them from there.
 
-> **Early development.** A library and asset viewer that finds your games on
-> the card and shows the pictures inside their files, the games' own font and
-> (Curse of the Azure Bonds) its title sequence, screen frame and text windows. The games aren't
-> playable yet. Roadmap: [docs/SPEC.md](docs/SPEC.md).
+> **Early development.** The viewer's Play Test runs Curse of the Azure
+> Bonds from its own scripts: the party menu (load the sample party GOG
+> includes), walking, events, text, pictures, the journal. Combat, magic,
+> shops and making characters are still to come. Roadmap:
+> [docs/SPEC.md](docs/SPEC.md).
 
 ## Install
 

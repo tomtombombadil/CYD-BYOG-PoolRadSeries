@@ -7,6 +7,10 @@ namespace {
 // Curse of the Azure Bonds, GOG release: START.EXE (EXEPACK, 18-byte
 // header). Data segment at 0x48D0 of the unpacked program; table addresses
 // as named in the coab reimplementation's notes (facts only, no code).
+// Party menu: its 12 entries at 0xB133 of the unpacked program, each a
+// string[40] and an "on" byte (Create New Character, Add Character to
+// Party, Exit to DOS start on; the others follow the party); its prompt
+// and the party list's headings in GAME.OVR's code segments.
 // Title: picture 1 for 5 s; picture 2 with 3 on it at row 11, column 6 for
 // 10 s; picture 4 at row 11 for 10 s; the credits for 10 s.
 constexpr TitleStep kCurseTitle[] = {
@@ -47,7 +51,8 @@ const Profile kProfiles[] = {
      "GAME.OVR", 272137, 706, 218, {3, 8},
      2, 6, 203, "SKY.DAX", 252, &kCurseEcl,
      0x6D9A, 2, 1,
-     {0x79, 0x4CA1, 0x6D5A, 0x6D7A, 32, 0x50}},
+     {0x79, 0x4CA1, 0x6D5A, 0x6D7A, 32, 0x50},
+     {0xB133, 12, 42, 0x20111, 0x1EE80, 0x37E31, 0x37E36, "CURSE.CFG"}},
 };
 
 } // namespace

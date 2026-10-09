@@ -1825,7 +1825,11 @@ void tap_play(const ui::Tap& t)
     for (int k = 0; k < kWKeys; ++k) {
         const ui::Rect r = walk_key(k);
         if (r.w == 0 || !r.contains(t.x, t.y)) continue;
-        if (k == kWEsc) { leave_play(); return; }
+        if (k == kWEsc) {
+            if (play::back(frame::canvas())) present_play();
+            else leave_play();
+            return;
+        }
         play::act(kActs[k], frame::canvas());
         present_play();
         return;
@@ -1833,6 +1837,10 @@ void tap_play(const ui::Tap& t)
     int cx, cy;
     if (frame::to_canvas(t.x, t.y, cx, cy)) {
         play::tap(cx, cy, frame::canvas());
+        if (play::exit_requested()) {
+            leave_play();
+            return;
+        }
         present_play();
     }
 }
