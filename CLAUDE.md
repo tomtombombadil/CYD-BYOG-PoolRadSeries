@@ -44,18 +44,26 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   Companion panel (auto-map, party HP, spells) to its right; controls below.
 - Build order: Curse of the Azure Bonds first, then Pool of Radiance, Silver
   Blades, Pools of Darkness.
-- Journal: a converter (browser page, pdf.js, local only) cuts each entry
-  out of the player's own GOG journal PDF as a picture, using per-PDF
-  rectangle tables, and writes them to their SD card; the engine shows entry
-  N. The GOG PDFs are scans whose OCR text is garbled, and entries include
-  maps - so pictures, not text. No journal text or images ever in the repo,
-  firmware or site (SPEC section 7).
-  Built for Curse (v0.10.0): `web/journal/` (converter page +
-  `tables.json` coordinates), `tools/journal/make_table.py` (makes a
-  table from the player's PDF in scratch space - check every entry by
-  eye), `engine/journal.*` (JOURNAL.BIN format + mention finder); the Play
-  Test shows an entry when the game mentions it. Renders of real entries
-  stay in scratch.
+- Journal (Tom, 2026-10-09; replaces the browser converter of v0.10.0,
+  which is removed): the BOARD makes the entry pictures from the player's
+  own GOG journal PDF during the card scan, using per-PDF rectangle tables
+  in the firmware (page numbers and positions only). Entries are kept at
+  the scan's resolution and scaled as they are shown (both screen sizes,
+  zoom later). The game shows entry N when it mentions it. Fallback (later):
+  a PDF viewer to page through / zoom the book, for other editions or an
+  unknown PDF. Copyright rule: nothing from the journal (text, pictures) is
+  ever distributed - files made on the player's device from their copy are
+  fine (SPEC section 7).
+- Card scan (Tom, 2026-10-09): scan ONCE; boot reads the scan log and
+  loads the library from it. Rescan Card is the only rescan - never
+  check the card for changes on its own. Everything the board makes from
+  the player's files goes in `/GOLDBOX/_CYD/` (per game a sub-folder):
+  the scan log (also readable text: games, PDFs, icons found, problems),
+  icons decoded once at the screen's size (a card in a board of another
+  size gets its own icon files when first shown), the journal entries.
+  The scan shows a scrolling list of what it does ("Searching for Gold Box
+  games...", "Found Curse of the Azure Bonds", "Processing Pools of
+  Darkness Adventurer's Journal...") - it can take minutes.
 
 ## Bring your own game - hard rules
 - The repo and firmware contain nothing from the games: no DAX files, no
@@ -114,8 +122,8 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   between header and bottom keys - its GOG icon as big as fits (scaled from
   the 256 px PNG: ~154 px on 320x240, ~194 px on 480x320), the title and
   info lines wrapped inside the space beside it; < > page through games;
-  "Rescan / Card" on two lines; while scanning: "Scanning your microSD card
-  for game files. This will take a minute." (Tom). Icons come from the
+  "Rescan / Card" on two lines; the scan shows its scrolling list (Card
+  scan above). Icons come from the
   player's goggame-<id>.ico / .dll on the card (`engine/icon.*`), never from
   the repo.
 - Play Test (`src/ui/play.*`, v0.8.0): the script machine is

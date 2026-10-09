@@ -130,6 +130,28 @@ stay in the session's scratch space, never in the repo.
 | ECL script machine: 65 opcodes 0x00-0x40, packed text (3 bytes = four 6-bit characters). Memory: 0x4B00-0x4EFF area words (0x4BC5 map block, 0x4BC6-0x4BCC clock slots counting 10 / 10 / 6 / 24 / 30 / 12 / 256 - slot 1 minutes, 2 ten minutes, 3 hours; 0x4BE6 in a 3D area, 0x4BF0 / 1 last square, 0x4BF2 last script, 0x4BFB area view blocked, 0x4BFC game speed, 0x4BFD / E outdoor / indoor sky colour (index into the program's sky table, DS 0x6D9A), 0x4C00-0x4C20 the script's own variables), 0x7A00-0x7BFF a table, 0x7C00-0x7FFF game / character fields (0x7EC9 >= 0xFF: no move this step, 0x7ECA search flags, 0x7EE1 head picture, 0x7F12 area, 0x7F22 / 24 / 26 > 0x80 load wall set 1 / 2 / 3), 0x8000+ the script's bytes, 0xC04B-0xC04F party x, y, facing, wall ahead, roof flags. Compare flags in the order ==, !=, <, >, <=, >= (op1 vs op2). A step: the area script's entry 0 runs on the square the party is on, then the party moves (unless 0x7EC9 says not; a minute, ten when searching), then entry 1; NEWECL = the new script's entry 4 (first), then 0, then 1; a new game = ECL<start area> block <start script> (Curse: ECL2 #1) | `src/engine/ecl_vm.*`, `src/ui/play.*` | **v0.8.0** (Curse): the viewer's **Play Test** runs a new game from the opening on Tom's files: text (word wrap, pages), menus on the menu line (tap a word), vertical list menus (tap a line), pictures (PIC / BIGPIC / HEAD + BODY), map + wall loading, the clock, NEWECL. Everything that needs a party (combat, treasure, checks, NPCs) is logged and passed over; v0.9.0: INPUT NUMBER / STRING typed on the menu line with an on-screen keyboard (320x240: letters over the top of the game screen, Del / Space / Enter under it; 480x320: letters under the game screen, Del / Space / Enter in the Companion strip); event pictures (PIC<area>) animate while the game waits at a menu (frame delay x 0.1 s) and step a frame on CALL 6803 (+ the game's delay); the wilderness map (BIGPIC 0x79) gets the blinking square at the party's place (columns / rows read from the program: Curse DS 0x6D5A / 0x6D7A, 32 places, place number = script word 0x4CA1; not after event picture 0x50 was shown); area changes (SAVE area -> 0x7F12, NEWECL) load the new area's files, and leaving a big picture for a 3D area brings the exploring screen back. CALL addresses: 2E10 redraw, C01E step forward, 6803 picture frame. v0.9.2 (Tom's v0.8.0 report): CALL 2E10 draws the 3D view again (the event picture goes; CLEAR BOX keeps it); locked / barred doors stop the party with "Locked." on the menu line (Bash / Pick / Knock need a party); encounters: SETUP MONSTER (sprite, max distance, picture) / APPROACH / ENCOUNTER MENU show the monsters' SPRIT<area> sprite in the 3D view (frame = distance 0-2 = open squares ahead up to the max; frame x / y + 3 cells; colour 0 see-through, 13 drawn black), then at distance 0 their picture (PIC, or HEAD + BODY when 0x7EE1 names a head) after the game's delay - not while the encounter menu is up; the encounter menu's texts by distance, Combat / Wait / Flee / Advance (Parlay when close or outdoors) and the script's result table (0 monsters flee, 1 combat, 2 party flees, 3 parlay; the party's speed is taken as 12 until there is a party). An instruction budget (50,000 a run) stops a script that never ends. |
 | Monsters (MONnCHA: 285 B PoolRad, 422 B Curse, 439 B Secret, 510 B Darkness), items, characters, saves | - | M5-M6. Record sizes differ per game - per-game profiles. |
 
+## 5b. The card scan (Tom, 2026-10-09)
+
+- The card is scanned once: at the first boot with a card that has no
+  saved library, and when the player taps Rescan Card. Boot otherwise loads
+  `/GOLDBOX/_CYD/LIBRARY.BIN` (the list of games; its record size is
+  checked, so a firmware with another layout scans again). The board never
+  looks for changes on its own.
+- Everything made from the player's files goes in `/GOLDBOX/_CYD/`:
+  `SCAN.TXT` (the scan's list, readable on a PC: games, icons and journals
+  found, what was made, problems), `LIBRARY.BIN`, and per game
+  `_CYD/<folder>/`: `ICON<px>.BIN` (the GOG icon decoded once at the
+  library's icon size: "ICN1", u16 w, u16 h, RGBA rows; a board with
+  another screen size makes its own size when first shown), the journal
+  entries (v0.12.0).
+- The scan screen: header "Scanning Your Card", a scrolling list of what
+  it does ("Searching for Gold Box games...", "Looking in CURSE..." ->
+  "Found Curse of the Azure Bonds", "Found the Curse game icon", "Found the
+  Curse of the Azure Bonds journal", "Prepared the Curse icon", ...), then
+  "Done." and the library after a moment.
+- Journal PDFs: a .pdf with "journal" in its name in the game's folder (or
+  the folder holding its game files).
+
 ## 6. Milestones
 
 1. **Library and asset viewer** (v0.1.0, this build). Finds the games on the

@@ -54,7 +54,11 @@ The games aren't playable yet; this build shows what is inside their files.
 
 1. **Library** (the firmware version is in its title bar): one game a page,
    with its icon if you copied it; `<` / `>` go through the games. Tap the
-   game to open it.
+   game to open it. The card is scanned once - the first time the board
+   starts with it - and a list shows what is found. What the board makes
+   from your files (icons at the screen's size, the scan log `SCAN.TXT`
+   you can read on a PC) goes in `GOLDBOX/_CYD`. After you add or change
+   games, tap **Rescan Card**.
 2. **Files**: the game's DAX archives. Tap one. For Curse of the Azure Bonds
    the middle key, **Screen Test**, shows the game's own look, drawn from your
    files (`START.EXE`, `GAME.OVR`, `TITLE.DAX`, `8X8D1.DAX`): the title

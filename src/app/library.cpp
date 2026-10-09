@@ -1,6 +1,8 @@
 #include "library.h"
 
 #include <Arduino.h>
+#include <cstdarg>
+#include <cstdio>
 #include <cstring>
 #include <strings.h>
 
@@ -70,6 +72,44 @@ void find_icon(fs::FS& fs, const char* rel_dir, char* out, size_t cap, int& best
     dir.close();
 }
 
+bool contains_nocase(const char* s, const char* word)
+{
+    const size_t n = strlen(word);
+    for (; *s; ++s)
+        if (strncasecmp(s, word, n) == 0) return true;
+    return false;
+}
+
+// The journal PDF in /GOLDBOX/<rel_dir>: a .pdf with "journal" in its name
+void find_journal(fs::FS& fs, const char* rel_dir, GameDir& g)
+{
+    char path[160];
+    snprintf(path, sizeof path, "%s/%s", games::kRootDir, rel_dir);
+    fs::File dir = fs.open(path);
+    if (!dir || !dir.isDirectory()) return;
+    for (fs::File f = dir.openNextFile(); f; f = dir.openNextFile()) {
+        const char* nm = base_name(f.name());
+        if (!g.journal[0] && !f.isDirectory() && ends_with(nm, ".PDF") && contains_nocase(nm, "journal")) {
+            snprintf(g.journal, sizeof g.journal, "%s/%s", rel_dir, nm);
+            g.journal_size = static_cast<uint32_t>(f.size());
+        }
+        f.close();
+    }
+    dir.close();
+}
+
+void say(Progress p, void* ctx, bool replace, const char* fmt, ...) __attribute__((format(printf, 4, 5)));
+void say(Progress p, void* ctx, bool replace, const char* fmt, ...)
+{
+    char line[120];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(line, sizeof line, fmt, ap);
+    va_end(ap);
+    Serial.printf("[scan] %s\n", line);
+    if (p) p(line, replace, ctx);
+}
+
 // .TLB / .GLB files in dir and up to `depth` folders below it
 int count_hlib(fs::File& dir, int depth)
 {
@@ -87,16 +127,24 @@ int count_hlib(fs::File& dir, int depth)
 
 } // namespace
 
-ScanResult scan(GameDir* out, int max, int* n)
+ScanResult scan(GameDir* out, int max, int* n, Progress progress, void* ctx)
 {
     *n = 0;
-    if (!sd_begin()) return ScanResult::NoCard;
+    say(progress, ctx, false, "Searching for Gold Box games...");
+    if (!sd_begin()) {
+        say(progress, ctx, false, "No SD card found.");
+        return ScanResult::NoCard;
+    }
     fs::FS& fs = sd_fs();
     fs::File root = fs.open(games::kRootDir);
-    if (!root || !root.isDirectory()) return ScanResult::NoRootFolder;
+    if (!root || !root.isDirectory()) {
+        say(progress, ctx, false, "No GOLDBOX folder on the card.");
+        return ScanResult::NoRootFolder;
+    }
 
     for (fs::File d = root.openNextFile(); d && *n < max; d = root.openNextFile()) {
-        if (d.isDirectory()) {
+        if (d.isDirectory() && strcasecmp(base_name(d.name()), kCacheDir) != 0) {
+            say(progress, ctx, false, "Looking in %s...", base_name(d.name()));
             GameDir& g = out[*n];
             strlcpy(g.folder, base_name(d.name()), sizeof g.folder);
             strlcpy(g.data_dir, g.folder, sizeof g.data_dir);
@@ -134,15 +182,29 @@ ScanResult scan(GameDir* out, int max, int* n)
                 g.game = games::from_folder_name(g.folder);
                 g.dax_files = dax;
                 g.icon[0] = 0;
+                g.journal[0] = 0;
+                g.journal_size = 0;
                 int best = 0;
                 find_icon(fs, g.folder, g.icon, sizeof g.icon, best);
                 if (strcmp(g.data_dir, g.folder) != 0) find_icon(fs, g.data_dir, g.icon, sizeof g.icon, best);
+                find_journal(fs, g.folder, g);
+                if (strcmp(g.data_dir, g.folder) != 0) find_journal(fs, g.data_dir, g);
+                if (g.game == games::Game::Unknown)
+                    say(progress, ctx, true, "Found game files in %s (a game this engine doesn't know)", g.folder);
+                else
+                    say(progress, ctx, true, "Found %s", games::title(g.game));
+                if (g.format == Format::Hlib) say(progress, ctx, false, "  (newer format - not readable yet)");
+                if (g.icon[0]) say(progress, ctx, false, "Found the %s game icon", games::short_title(g.game));
+                if (g.journal[0]) say(progress, ctx, false, "Found the %s journal", games::title(g.game));
                 ++*n;
+            } else {
+                say(progress, ctx, true, "No game files in %s", g.folder);
             }
         }
         d.close();
     }
     root.close();
+    say(progress, ctx, false, "Found %d game%s.", *n, *n == 1 ? "" : "s");
 
     // Insertion sort: list order (Unknown last), then folder name
     auto key = [](const GameDir& g) { return games::list_order(g.game); };
@@ -156,6 +218,69 @@ ScanResult scan(GameDir* out, int max, int* n)
         out[j + 1] = t;
     }
     return ScanResult::Ok;
+}
+
+void cache_path(const char* file, char* out, size_t cap)
+{
+    snprintf(out, cap, "%s/%s/%s", games::kRootDir, kCacheDir, file);
+}
+
+void cache_path(const GameDir& g, const char* file, char* out, size_t cap)
+{
+    snprintf(out, cap, "%s/%s/%s/%s", games::kRootDir, kCacheDir, g.folder, file);
+}
+
+bool make_cache_dirs(const GameDir& g)
+{
+    fs::FS& fs = sd_fs();
+    char path[160];
+    snprintf(path, sizeof path, "%s/%s", games::kRootDir, kCacheDir);
+    if (!fs.exists(path) && !fs.mkdir(path)) return false;
+    snprintf(path, sizeof path, "%s/%s/%s", games::kRootDir, kCacheDir, g.folder);
+    return fs.exists(path) || fs.mkdir(path);
+}
+
+// LIBRARY.BIN: "GBL" + format version, the struct size, the count, then the
+// GameDir records as they are in memory (only this firmware reads them; a
+// new layout changes the version or size, and the board scans again)
+namespace {
+constexpr char kLibMagic[4] = {'G', 'B', 'L', '1'};
+}
+
+bool save_library(const GameDir* games, int n)
+{
+    if (!sd_begin()) return false;
+    char path[160];
+    snprintf(path, sizeof path, "%s/%s", games::kRootDir, kCacheDir);
+    if (!sd_fs().exists(path) && !sd_fs().mkdir(path)) return false;
+    cache_path("LIBRARY.BIN", path, sizeof path);
+    fs::File f = sd_fs().open(path, "w");
+    if (!f) return false;
+    const uint32_t hdr[2] = {static_cast<uint32_t>(sizeof(GameDir)), static_cast<uint32_t>(n)};
+    bool ok = f.write(reinterpret_cast<const uint8_t*>(kLibMagic), 4) == 4 &&
+              f.write(reinterpret_cast<const uint8_t*>(hdr), sizeof hdr) == sizeof hdr &&
+              f.write(reinterpret_cast<const uint8_t*>(games), sizeof(GameDir) * n) == sizeof(GameDir) * n;
+    f.close();
+    return ok;
+}
+
+bool load_library(GameDir* out, int max, int* n)
+{
+    *n = 0;
+    if (!sd_begin()) return false;
+    char path[160];
+    cache_path("LIBRARY.BIN", path, sizeof path);
+    fs::File f = sd_fs().open(path, "r");
+    if (!f) return false;
+    char magic[4];
+    uint32_t hdr[2];
+    bool ok = f.read(reinterpret_cast<uint8_t*>(magic), 4) == 4 && memcmp(magic, kLibMagic, 4) == 0 &&
+              f.read(reinterpret_cast<uint8_t*>(hdr), sizeof hdr) == sizeof hdr && hdr[0] == sizeof(GameDir) &&
+              hdr[1] <= static_cast<uint32_t>(max) &&
+              f.read(reinterpret_cast<uint8_t*>(out), sizeof(GameDir) * hdr[1]) == sizeof(GameDir) * hdr[1];
+    f.close();
+    if (ok) *n = static_cast<int>(hdr[1]);
+    return ok;
 }
 
 int list_dax(const char* data_dir, char (*names)[kNameLen], int max)

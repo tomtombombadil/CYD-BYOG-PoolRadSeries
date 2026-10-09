@@ -104,25 +104,7 @@ void close_file()
 
 int wrap_text(int x, int y, int w, const char* s, ui::Font font, uint16_t col, bool draw, int max_lines = 0);
 
-void rescan()
-{
-    // Scanning takes a while (a big card, the first boot): say so (Tom)
-    ui::clear();
-    char title[48];
-    snprintf(title, sizeof title, "Gold Box Library  %s", env_.version);
-    ui::header(title, false);
-    wrap_text(ui::gap() * 4, ui::header_h() + ui::gap() * 6, ui::width() - ui::gap() * 8,
-              "Scanning your microSD card for game files. This will take a minute.", ui::Font::Large, style::kText,
-              true);
-    close_file();
-    sd_lost();               // forget a card that was pulled; sd_begin retries
-    scan_result = library::scan(game_dirs, library::kMaxGames, &n_games);
-    home_page = 0;
-    Serial.printf("[library] scan: %d game folder(s), result %d\n", n_games, (int)scan_result);
-    for (int i = 0; i < n_games; ++i)
-        Serial.printf("[library]   %s: %s, icon %s\n", game_dirs[i].folder, games::short_title(game_dirs[i].game),
-                      game_dirs[i].icon[0] ? game_dirs[i].icon : "(none)");
-}
+void rescan();
 
 bool open_file(int i)
 {
@@ -228,16 +210,22 @@ int icon_size(const ui::Rect& card)
     return sz < 16 ? 0 : sz;
 }
 
-// The icon, a row at a time, blended onto the card's colour
+// The icon, a row at a time, blended onto the card's colour; and / or
+// written to the icon file in /GOLDBOX/_CYD/<folder>/ (made once, at the
+// screen's size - Tom: decoding GOG's .dll every time was slow)
 struct IconDraw {
     int x, y;
     uint8_t br, bg, bb, dim;
+    bool draw;
+    fs::File out;
     lgfx::rgb888_t line[icon::kMaxOut];
 };
 
 void icon_row(int y, const uint8_t* rgba, int w, void* ctx)
 {
     IconDraw& d = *static_cast<IconDraw*>(ctx);
+    if (d.out) d.out.write(rgba, static_cast<size_t>(w) * 4);
+    if (!d.draw) return;
     for (int x = 0; x < w; ++x) {
         const uint8_t* p = rgba + x * 4;
         const int a = d.dim ? p[3] / 2 : p[3];
@@ -247,9 +235,26 @@ void icon_row(int y, const uint8_t* rgba, int w, void* ctx)
     ui::gfx().pushImage(d.x, d.y + y, w, 1, d.line);
 }
 
-// Draws the game's icon (from the player's own GOG files) at (x, y), size
-// px square. False if there's none or it can't be read.
-bool draw_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle st)
+void icon_file(const library::GameDir& g, int px, char* out, size_t cap)
+{
+    char name[24];
+    snprintf(name, sizeof name, "ICON%d.BIN", px);
+    library::cache_path(g, name, out, cap);
+}
+
+void icon_colours(IconDraw& d, ui::KeyStyle st)
+{
+    const uint16_t c = style::kBackground;
+    d.br = ((c >> 11) & 31) * 255 / 31;
+    d.bg = ((c >> 5) & 63) * 255 / 63;
+    d.bb = (c & 31) * 255 / 31;
+    d.dim = st == ui::KeyStyle::Dim;
+}
+
+// Decodes the game's icon from the player's own GOG file at px square:
+// drawn at (x, y) when draw, saved as the icon file when save. False if
+// there's none or it can't be read.
+bool render_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle st, bool draw, bool save)
 {
     if (!g.icon[0]) return false;
     char path[160];
@@ -262,27 +267,73 @@ bool draw_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle st)
     if (ok) {
         const uint32_t t0 = millis();
         uint8_t* window = fo.png ? static_cast<uint8_t*>(malloc(inflate::kWindow)) : nullptr;
-        IconDraw* d = static_cast<IconDraw*>(malloc(sizeof(IconDraw)));
+        IconDraw* d = new (std::nothrow) IconDraw;
         ok = d && (!fo.png || window);
+        char cache[160];
+        icon_file(g, px, cache, sizeof cache);
         if (ok) {
-            const uint16_t c = style::kBackground;
             d->x = x;
             d->y = y;
-            d->br = ((c >> 11) & 31) * 255 / 31;
-            d->bg = ((c >> 5) & 63) * 255 / 63;
-            d->bb = (c & 31) * 255 / 31;
-            d->dim = st == ui::KeyStyle::Dim;
-            ui::gfx().startWrite();
+            d->draw = draw;
+            icon_colours(*d, st);
+            if (save && library::make_cache_dirs(g)) {
+                d->out = sd_fs().open(cache, "w");
+                const uint8_t hdr[8] = {'I', 'C', 'N', '1', static_cast<uint8_t>(px), static_cast<uint8_t>(px >> 8),
+                                        static_cast<uint8_t>(px), static_cast<uint8_t>(px >> 8)};
+                if (d->out) d->out.write(hdr, sizeof hdr);
+            }
+            if (draw) ui::gfx().startWrite();
             ok = icon::render(src, fo, px, px, window, icon_row, d);
-            ui::gfx().endWrite();
+            if (draw) ui::gfx().endWrite();
+            if (d->out) {
+                d->out.close();
+                if (!ok) sd_fs().remove(cache);
+            }
         }
-        free(d);
+        delete d;
         free(window);
         Serial.printf("[library] icon %s: %dx%d%s -> %d px, %s, %lu ms\n", path, fo.w, fo.h, fo.png ? " png" : "", px,
                       ok ? "ok" : "failed", (unsigned long)(millis() - t0));
     }
     f.close();
     return ok;
+}
+
+// Draws the game's icon at (x, y), px square: from its icon file when there
+// is one for this size, else decoded from the GOG file (and the icon file
+// made, for next time - a card moved to a board with another screen size)
+bool draw_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle st)
+{
+    if (!g.icon[0]) return false;
+    char cache[160];
+    icon_file(g, px, cache, sizeof cache);
+    fs::File f = sd_fs().open(cache, "r");
+    if (f) {
+        uint8_t hdr[8];
+        bool ok = f.read(hdr, 8) == 8 && memcmp(hdr, "ICN1", 4) == 0 && (hdr[4] | hdr[5] << 8) == px &&
+                  (hdr[6] | hdr[7] << 8) == px && f.size() == 8u + static_cast<size_t>(px) * px * 4;
+        IconDraw* d = ok ? new (std::nothrow) IconDraw : nullptr;
+        uint8_t* row = ok ? static_cast<uint8_t*>(malloc(static_cast<size_t>(px) * 4)) : nullptr;
+        if (d && row) {
+            d->x = x;
+            d->y = y;
+            d->draw = true;
+            icon_colours(*d, st);
+            ui::gfx().startWrite();
+            for (int r = 0; r < px && ok; ++r) {
+                ok = f.read(row, static_cast<size_t>(px) * 4) == static_cast<size_t>(px) * 4;
+                if (ok) icon_row(r, row, px, d);
+            }
+            ui::gfx().endWrite();
+        } else {
+            ok = false;
+        }
+        free(row);
+        delete d;
+        f.close();
+        if (ok) return true;
+    }
+    return render_icon(g, x, y, px, st, true, true);
 }
 
 // Prints text word-wrapped into width w from (x, y); returns the y after it.
@@ -311,6 +362,137 @@ int wrap_text(int x, int y, int w, const char* s, ui::Font font, uint16_t col, b
         while (*s == ' ') ++s;
     }
     return y;
+}
+
+// ---- Card scan ---------------------------------------------------------------
+// Only at the first boot with a card (no saved library) and on Rescan Card
+// (Tom, 2026-10-09). A scrolling list says what it finds and makes; the
+// same lines go to /GOLDBOX/_CYD/SCAN.TXT.
+
+struct ScanScreen {
+    static constexpr int kLines = 32;
+    char     line[kLines][100];
+    int      n = 0;
+    fs::File log;
+    char     pending[100] = {};      // the last line, written to the log once it's final
+    int      last_parts = 0;         // screen lines the last one took (wrapped)
+};
+ScanScreen* scr = nullptr;
+
+int scan_lh() { return ui::line_h(ui::Font::Small) + 3; }
+int scan_top() { return ui::header_h() + ui::gap() * 2; }
+int scan_rows() { return (ui::height() - scan_top() - ui::gap()) / scan_lh(); }
+
+void scan_draw_row(int i)       // line i (of those kept) in its place on screen
+{
+    const int first = scr->n > scan_rows() ? scr->n - scan_rows() : 0;
+    const int y = scan_top() + (i - first) * scan_lh();
+    ui::gfx().fillRect(0, y, ui::width(), scan_lh(), style::kBackground);
+    const bool last = i == scr->n - 1;
+    ui::text(ui::gap() * 3, y, scr->line[i], last ? style::kText : style::kTextMuted, ui::Font::Small);
+}
+
+void scan_draw_all()
+{
+    ui::gfx().fillRect(0, scan_top(), ui::width(), ui::height() - scan_top(), style::kBackground);
+    const int first = scr->n > scan_rows() ? scr->n - scan_rows() : 0;
+    for (int i = first; i < scr->n; ++i) scan_draw_row(i);
+}
+
+void scan_flush_log()
+{
+    if (scr->log && scr->pending[0]) scr->log.printf("%s\n", scr->pending);
+    scr->pending[0] = 0;
+}
+
+// One line of the list (wrapped if it's too wide); replace = it takes the
+// place of the last one ("Looking in CURSE..." -> "Found Curse of ...")
+void scan_say(const char* text, bool replace, void*)
+{
+    if (!scr) return;
+    if (replace && scr->n > 0) {
+        scr->n -= scr->last_parts < scr->n ? scr->last_parts : scr->n;
+    } else {
+        scan_flush_log();
+    }
+    strlcpy(scr->pending, text, sizeof scr->pending);
+    const int w = ui::width() - ui::gap() * 6;
+    const char* s = text;
+    bool cont = false;
+    scr->last_parts = 0;
+    while (*s) {
+        char part[100];
+        int n = 0, cut = 0;
+        if (cont) part[n++] = ' ', part[n++] = ' ';
+        const int start = n;
+        while (s[n - start] && n < (int)sizeof part - 1) {
+            part[n] = s[n - start];
+            part[n + 1] = 0;
+            if (ui::text_width(part, ui::Font::Small) > w) break;
+            if (part[n] == ' ') cut = n;
+            ++n;
+        }
+        if (s[n - start] && cut > start) n = cut;
+        part[n] = 0;
+        s += n - start;
+        while (*s == ' ') ++s;
+        if (scr->n == ScanScreen::kLines) {
+            memmove(scr->line[0], scr->line[1], sizeof scr->line[0] * (ScanScreen::kLines - 1));
+            --scr->n;
+        }
+        strlcpy(scr->line[scr->n++], part, sizeof scr->line[0]);
+        ++scr->last_parts;
+        cont = true;
+    }
+    // Redraw: the whole list when it scrolled, else the newest lines
+    if (scr->n > scan_rows() || replace) scan_draw_all();
+    else for (int i = 0; i < scr->n; ++i) scan_draw_row(i);
+}
+
+void rescan()
+{
+    scr = new (std::nothrow) ScanScreen;
+    ui::clear();
+    ui::header("Scanning Your Card", false);
+    close_file();
+    sd_lost();               // forget a card that was pulled; sd_begin retries
+    if (scr && sd_begin()) {
+        char path[160];
+        snprintf(path, sizeof path, "%s/%s", games::kRootDir, library::kCacheDir);
+        if (sd_fs().exists(games::kRootDir) && (sd_fs().exists(path) || sd_fs().mkdir(path))) {
+            library::cache_path("SCAN.TXT", path, sizeof path);
+            scr->log = sd_fs().open(path, "w");
+            if (scr->log) scr->log.printf("CYD BYOG Gold Box Engine %s (%s), %s - card scan\n\n", env_.version, env_.build, BOARD_NAME);
+        }
+    }
+    scan_result = library::scan(game_dirs, library::kMaxGames, &n_games, scan_say, nullptr);
+    home_page = 0;
+
+    // What the board makes from the player's files, once: the icons at
+    // this screen's size
+    const int px = icon_size(home_card());
+    for (int i = 0; i < n_games; ++i) {
+        const library::GameDir& g = game_dirs[i];
+        if (!g.icon[0] || !px) continue;
+        scan_say("Preparing the game icon...", false, nullptr);
+        char line[100];
+        const bool ok = render_icon(g, 0, 0, px, ui::KeyStyle::Normal, false, true);
+        snprintf(line, sizeof line, ok ? "Prepared the %s icon" : "The %s icon couldn't be read", games::short_title(g.game));
+        scan_say(line, true, nullptr);
+    }
+    if (scan_result == library::ScanResult::Ok) {
+        scan_say(library::save_library(game_dirs, n_games) ? "Saved the library: the board won't scan again until you tap Rescan Card."
+                                                           : "The library couldn't be saved on the card.",
+                 false, nullptr);
+    }
+    scan_say("Done.", false, nullptr);
+    if (scr) {
+        scan_flush_log();
+        if (scr->log) scr->log.close();
+        delay(1500);         // a moment to read the end of the list
+    }
+    delete scr;
+    scr = nullptr;
 }
 
 void draw_home()
@@ -1403,7 +1585,15 @@ void begin(const Env& env, Settings& settings)
     env_ = env;
     cfg = &settings;
     frame::set_scale(cfg->scale_15x ? frame::Scale::OneAndHalf : frame::Scale::One);
-    rescan();
+    // The library as the last scan found it; a scan only when there is none
+    // (Tom: scan once, then only on Rescan Card)
+    close_file();
+    if (sd_begin() && library::load_library(game_dirs, library::kMaxGames, &n_games)) {
+        scan_result = library::ScanResult::Ok;
+        Serial.printf("[library] loaded: %d game folder(s)\n", n_games);
+    } else {
+        rescan();
+    }
     go(Screen::Home);
 }
 

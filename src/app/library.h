@@ -29,6 +29,8 @@ struct GameDir {
     char         icon[128];       // the game's icon file, relative to /GOLDBOX ("" = none):
                                   // GOG's goggame-<id>.ico / .dll, or another .ico
                                   // (not GOG's generic Support.ico)
+    char         journal[128];    // the journal PDF, relative to /GOLDBOX ("" = none)
+    uint32_t     journal_size;
 };
 
 constexpr int kMaxGames = 16;
@@ -41,7 +43,25 @@ enum class ScanResult : uint8_t { Ok, NoCard, NoRootFolder };
 // holding .DAX files (in the folder or one folder down), and those holding
 // .TLB / .GLB files (in the folder or up to two folders down - Dark Queen
 // keeps them in DISK1-3). *n = how many.
-ScanResult scan(GameDir* out, int max, int* n);
+// Finds the games on the card. progress(line, replace_last, ctx), if
+// given, hears what it finds as it goes ("Found Curse of the Azure Bonds").
+using Progress = void (*)(const char* line, bool replace_last, void* ctx);
+ScanResult scan(GameDir* out, int max, int* n, Progress progress = nullptr, void* ctx = nullptr);
+
+// Everything the board makes from the player's files lives in
+// /GOLDBOX/_CYD/ (Tom, 2026-10-09): the scan log (SCAN.TXT, readable on a
+// PC), the library (LIBRARY.BIN, so boot needn't scan again - only Rescan
+// Card scans), and per game a folder named like the game's own (icons at
+// the screen's size, journal entries).
+constexpr const char* kCacheDir = "_CYD";
+void cache_path(const char* file, char* out, size_t cap);                     // /GOLDBOX/_CYD/<file>
+void cache_path(const GameDir& g, const char* file, char* out, size_t cap);   // /GOLDBOX/_CYD/<folder>/<file>
+bool make_cache_dirs(const GameDir& g);
+
+bool save_library(const GameDir* games, int n);
+// False when there is no saved library (or it is from an older firmware's
+// format): scan then.
+bool load_library(GameDir* out, int max, int* n);
 
 // The .DAX files in a game's data_dir, sorted by name.
 int list_dax(const char* data_dir, char (*names)[kNameLen], int max);
