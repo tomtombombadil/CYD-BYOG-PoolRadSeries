@@ -46,8 +46,24 @@ library::ScanResult scan_result = library::ScanResult::NoCard;
 int                home_page = 0;
 int                game_sel = 0;
 
-// Files of the chosen game
-char  files[library::kMaxFiles][library::kNameLen];
+// The asset viewer's tables (Files / Blocks / View): on the heap only
+// while those screens are open - the Play Test needs the memory
+// (v0.21.1: linking WiFi took ~23 KB of static RAM)
+struct Assets {
+    char        files[library::kMaxFiles][library::kNameLen];
+    dax::Index  index_;
+    pic::Header pic_hdr[dax::kMaxEntries];   // picture, or an animation's first frame
+    bool        is_pic[dax::kMaxEntries];    // something to draw (picture or animation)
+    bool        is_anim[dax::kMaxEntries];   // an animation (PIC, SPRIT...); pic_hdr.frames = its frames
+    bool        is_vga[dax::kMaxEntries];    // a 256-colour picture (Pools of Darkness)
+    bool        is_font[dax::kMaxEntries];   // the game's 8x8 font (block 201 of an 8X8D file)
+    font::Font  cur_font;
+    pic::Anim   cur_anim;                    // the animation being viewed
+    pic::Rgb    pal[256];                    // a 256-colour picture's palette
+};
+Assets* A = nullptr;
+
+// Files of the chosen game (A->files)
 int   n_files = 0;
 int   file_page = 0;
 int   file_sel = 0;
@@ -56,15 +72,7 @@ int   file_sel = 0;
 fs::File           cur_file;
 library::FileSource* src = nullptr;
 alignas(library::FileSource) uint8_t src_mem[sizeof(library::FileSource)];
-dax::Index         index_;
 dax::Status        index_status = dax::Status::Ok;
-pic::Header        pic_hdr[dax::kMaxEntries];   // picture, or an animation's first frame
-bool               is_pic[dax::kMaxEntries];    // something to draw (picture or animation)
-bool               is_anim[dax::kMaxEntries];   // an animation (PIC, SPRIT...); pic_hdr.frames = its frames
-bool               is_vga[dax::kMaxEntries];    // a 256-colour picture (Pools of Darkness)
-bool               is_font[dax::kMaxEntries];   // the game's 8x8 font (block 201 of an 8X8D file)
-font::Font         cur_font;
-pic::Anim          cur_anim;                    // the animation being viewed
 int                cur_anim_block = -1;
 int                block_page = 0;
 int                block_sel = 0;    // entry number in index_
@@ -91,8 +99,23 @@ struct Pager {
     int first() const { return page * per_page; }
 };
 
+void close_file();
+void list_files();
+
+// The asset viewer's tables: made for Files / Blocks / View, gone anywhere
+// else (the game screens need the memory)
 void go(Screen s)
 {
+    const bool assets = s == Screen::Files || s == Screen::Blocks || s == Screen::View;
+    if (assets && !A) {
+        A = new (std::nothrow) Assets;
+        if (A) list_files();
+        else s = Screen::Home;            // (not enough memory: stays at the library)
+    } else if (!assets && A) {
+        close_file();
+        delete A;
+        A = nullptr;
+    }
     // Drags: the Settings slider; the Net screens set their own
     if (s != Screen::Net) ui::allow_drag(s == Screen::Settings);
     screen = s;
@@ -116,52 +139,52 @@ bool open_file(int i)
 {
     close_file();
     char path[160];
-    library::path_of(game_dirs[game_sel].data_dir, files[i], path, sizeof path);
+    library::path_of(game_dirs[game_sel].data_dir, A->files[i], path, sizeof path);
     cur_file = sd_fs().open(path, "r");
     if (!cur_file) {
         index_status = dax::Status::ReadError;
-        index_.count = 0;
+        A->index_.count = 0;
         return false;
     }
     src = new (src_mem) library::FileSource(cur_file);
-    index_status = dax::read_index(*src, index_);
-    for (int e = 0; e < index_.count; ++e) {
-        is_pic[e] = is_anim[e] = is_vga[e] = is_font[e] = false;
-        const dax::Entry& en = index_.entries[e];
+    index_status = dax::read_index(*src, A->index_);
+    for (int e = 0; e < A->index_.count; ++e) {
+        A->is_pic[e] = A->is_anim[e] = A->is_vga[e] = A->is_font[e] = false;
+        const dax::Entry& en = A->index_.entries[e];
         if (en.id == font::kBlockId && en.raw_size == font::kBlockBytes) {
             // Shown as a sheet of its glyphs plus a line of text
-            is_pic[e] = is_font[e] = true;
-            pic_hdr[e] = pic::Header{};
-            pic_hdr[e].height = pic::kScreenH;
-            pic_hdr[e].width_cols = pic::kScreenW / 8;
-            pic_hdr[e].frames = 1;
+            A->is_pic[e] = A->is_font[e] = true;
+            A->pic_hdr[e] = pic::Header{};
+            A->pic_hdr[e].height = pic::kScreenH;
+            A->pic_hdr[e].width_cols = pic::kScreenW / 8;
+            A->pic_hdr[e].frames = 1;
             continue;
         }
         {
-            dax::RleReader r(*src, index_, en);
+            dax::RleReader r(*src, A->index_, en);
             uint8_t hdr[pic::kHeaderSize];
             const size_t got = r.read(hdr, sizeof hdr);
-            if (got == sizeof hdr) is_pic[e] = pic::parse_header(hdr, en.raw_size, pic_hdr[e]);
+            if (got == sizeof hdr) A->is_pic[e] = pic::parse_header(hdr, en.raw_size, A->pic_hdr[e]);
             pic::VgaHeader vh;
-            if (!is_pic[e] && got >= pic::kVgaHeaderSize && pic::parse_vga_header(hdr, en.raw_size, vh)) {
-                is_pic[e] = is_vga[e] = true;
-                pic_hdr[e] = pic::Header{};
-                pic_hdr[e].height = vh.height;
-                pic_hdr[e].width_cols = vh.width_cols;
-                pic_hdr[e].frames = vh.frames;
+            if (!A->is_pic[e] && got >= pic::kVgaHeaderSize && pic::parse_vga_header(hdr, en.raw_size, vh)) {
+                A->is_pic[e] = A->is_vga[e] = true;
+                A->pic_hdr[e] = pic::Header{};
+                A->pic_hdr[e].height = vh.height;
+                A->pic_hdr[e].width_cols = vh.width_cols;
+                A->pic_hdr[e].frames = vh.frames;
             }
         }
-        if (!is_pic[e]) {
-            dax::RleReader r(*src, index_, en);
-            if (pic::parse_anim(r, en.raw_size, cur_anim)) {
-                is_pic[e] = is_anim[e] = true;
-                pic_hdr[e] = cur_anim.frame[0];
-                pic_hdr[e].frames = static_cast<uint8_t>(cur_anim.frames);
+        if (!A->is_pic[e]) {
+            dax::RleReader r(*src, A->index_, en);
+            if (pic::parse_anim(r, en.raw_size, A->cur_anim)) {
+                A->is_pic[e] = A->is_anim[e] = true;
+                A->pic_hdr[e] = A->cur_anim.frame[0];
+                A->pic_hdr[e].frames = static_cast<uint8_t>(A->cur_anim.frames);
             }
         }
     }
     cur_anim_block = -1;
-    Serial.printf("[viewer] %s: %s, %d blocks\n", path, dax::status_text(index_status), index_.count);
+    Serial.printf("[viewer] %s: %s, %d blocks\n", path, dax::status_text(index_status), A->index_.count);
     return index_status == dax::Status::Ok;
 }
 
@@ -260,21 +283,30 @@ void icon_colours(IconDraw& d, ui::KeyStyle st)
 // Decodes the game's icon from the player's own GOG file at px square:
 // drawn at (x, y) when draw, saved as the icon file when save. False if
 // there's none or it can't be read.
-bool render_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle st, bool draw, bool save)
+bool render_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle st, bool draw, bool save,
+                 const char** why = nullptr)
 {
+    const char* dummy;
+    if (!why) why = &dummy;
+    *why = "";
     if (!g.icon[0]) return false;
     char path[160];
     snprintf(path, sizeof path, "%s/%s", games::kRootDir, g.icon);
     fs::File f = sd_fs().open(path, "r");
-    if (!f) return false;
+    if (!f) {
+        *why = "its file couldn't be opened";
+        return false;
+    }
     library::FileSource src(f);
     icon::Found fo;
     bool ok = icon::find(src, fo);
+    if (!ok) *why = "no picture found in its file";
     if (ok) {
         const uint32_t t0 = millis();
         uint8_t* window = fo.png ? static_cast<uint8_t*>(malloc(inflate::kWindow)) : nullptr;
         IconDraw* d = new (std::nothrow) IconDraw;
         ok = d && (!fo.png || window);
+        if (!ok) *why = "not enough memory just now";
         char cache[160];
         icon_file(g, px, cache, sizeof cache);
         if (ok) {
@@ -291,6 +323,7 @@ bool render_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle s
             if (draw) ui::gfx().startWrite();
             ok = icon::render(src, fo, px, px, window, icon_row, d);
             if (draw) ui::gfx().endWrite();
+            if (!ok) *why = "it couldn't be decoded (or memory ran short)";
             if (d->out) {
                 d->out.close();
                 if (!ok) sd_fs().remove(cache);
@@ -380,7 +413,7 @@ struct ScanScreen {
     char     line[kLines][100];
     int      n = 0;
     fs::File log;
-    char     pending[100] = {};      // the last line, written to the log once it's final
+    char     pending[200] = {};      // the last line, written to the log once it's final
     int      last_parts = 0;         // screen lines the last one took (wrapped)
 };
 ScanScreen* scr = nullptr;
@@ -602,9 +635,15 @@ void rescan()
         const library::GameDir& g = game_dirs[i];
         if (!g.icon[0] || !px) continue;
         scan_say("Preparing the game icon...", false, nullptr);
-        char line[100];
-        const bool ok = render_icon(g, 0, 0, px, ui::KeyStyle::Normal, false, true);
-        snprintf(line, sizeof line, ok ? "Prepared the %s icon" : "The %s icon couldn't be read", games::short_title(g.game));
+        char line[160];
+        const char* why = "";
+        const bool ok = render_icon(g, 0, 0, px, ui::KeyStyle::Normal, false, true, &why);
+        if (ok)
+            snprintf(line, sizeof line, "Prepared the %s icon", games::short_title(g.game));
+        else
+            snprintf(line, sizeof line, "The %s icon wasn't prepared: %s (free %u KB, largest block %u KB). The library tries again when it shows it.",
+                     games::short_title(g.game), why, (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
+                     (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
         scan_say(line, true, nullptr);
     }
     // The library first: whatever happens while the journals are made, the
@@ -716,14 +755,18 @@ void tap_home(const ui::Tap& t)
     if (scan_result != library::ScanResult::Ok || n_games == 0) return;
     if (home_card().contains(t.x, t.y)) {
         game_sel = home_page;
-        n_files = game_dirs[game_sel].format == library::Format::Dax
-                ? library::list_dax(game_dirs[game_sel].data_dir, files, library::kMaxFiles) : 0;
         file_page = 0;
-        go(Screen::Files);
+        go(Screen::Files);                 // lists the game's files
     }
 }
 
 // ---- Files -----------------------------------------------------------------
+
+void list_files()
+{
+    n_files = A && game_dirs[game_sel].format == library::Format::Dax
+            ? library::list_dax(game_dirs[game_sel].data_dir, A->files, library::kMaxFiles) : 0;
+}
 
 int file_cols() { return ui::large() ? 4 : 3; }
 constexpr int kFileRows = 4;
@@ -751,7 +794,7 @@ void draw_files()
     for (int i = 0; i < p.per_page && p.first() + i < n_files; ++i) {
         // Every file here is a .DAX: show the name without it, so it fits
         char label[library::kNameLen];
-        strlcpy(label, files[p.first() + i], sizeof label);
+        strlcpy(label, A->files[p.first() + i], sizeof label);
         const size_t n = strlen(label);
         if (n > 4 && strcasecmp(label + n - 4, ".DAX") == 0) label[n - 4] = 0;
         ui::key(ui::grid_cell(i, file_cols(), kFileRows), label);
@@ -829,27 +872,27 @@ constexpr int kBlockRows = 4;
 void draw_blocks()
 {
     ui::clear();
-    Pager p{index_.count, block_cols() * kBlockRows, block_page};
+    Pager p{A->index_.count, block_cols() * kBlockRows, block_page};
     char title[80];
-    snprintf(title, sizeof title, "%s  %d blocks  %d/%d", files[file_sel], index_.count, p.page + 1, p.pages());
+    snprintf(title, sizeof title, "%s  %d blocks  %d/%d", A->files[file_sel], A->index_.count, p.page + 1, p.pages());
     ui::header(title, true);
     if (index_status != dax::Status::Ok) {
         ui::text(ui::gap() * 3, ui::header_h() + ui::gap() * 3, dax::status_text(index_status), style::kWarn);
     }
-    for (int i = 0; i < p.per_page && p.first() + i < index_.count; ++i) {
+    for (int i = 0; i < p.per_page && p.first() + i < A->index_.count; ++i) {
         const int e = p.first() + i;
-        const dax::Entry& en = index_.entries[e];
+        const dax::Entry& en = A->index_.entries[e];
         char label[16], sub[24];
         snprintf(label, sizeof label, "#%u", en.id);
-        if (is_font[e]) {
+        if (A->is_font[e]) {
             snprintf(sub, sizeof sub, "Font");
-        } else if (is_pic[e]) {
-            snprintf(sub, sizeof sub, "%dx%d x%d", pic_hdr[e].width_px(), pic_hdr[e].height, pic_hdr[e].frames);
+        } else if (A->is_pic[e]) {
+            snprintf(sub, sizeof sub, "%dx%d x%d", A->pic_hdr[e].width_px(), A->pic_hdr[e].height, A->pic_hdr[e].frames);
         } else {
             snprintf(sub, sizeof sub, "%u B", en.raw_size);
         }
         ui::key2(ui::grid_cell(i, block_cols(), kBlockRows), label, sub,
-                 is_pic[e] ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+                 A->is_pic[e] ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
     }
     draw_pager_keys(p);
 }
@@ -861,9 +904,9 @@ void tap_blocks(const ui::Tap& t)
         go(Screen::Files);
         return;
     }
-    Pager p{index_.count, block_cols() * kBlockRows, block_page};
+    Pager p{A->index_.count, block_cols() * kBlockRows, block_page};
     if (pager_tap(t, p, &block_page)) { dirty = true; return; }
-    for (int i = 0; i < p.per_page && p.first() + i < index_.count; ++i) {
+    for (int i = 0; i < p.per_page && p.first() + i < A->index_.count; ++i) {
         if (ui::grid_cell(i, block_cols(), kBlockRows).contains(t.x, t.y)) {
             block_sel = p.first() + i;
             frame_no = 0;
@@ -894,19 +937,19 @@ ui::Rect view_key(int i)
 
 void view_info(char* out, size_t cap)
 {
-    const dax::Entry& en = index_.entries[block_sel];
-    if (is_font[block_sel]) {
-        snprintf(out, cap, "%s #%u  the game's font: %d glyphs of 8x8", files[file_sel], en.id, font::kGlyphs);
-    } else if (is_anim[block_sel] && cur_anim_block == block_sel) {
-        const pic::Header& h = cur_anim.frame[frame_no];
-        snprintf(out, cap, "%s #%u  %dx%d  frame %d/%d  at %u,%u  delay %lu", files[file_sel], en.id, h.width_px(),
-                 h.height, frame_no + 1, cur_anim.frames, h.x_cell, h.y_cell, (unsigned long)cur_anim.delay[frame_no]);
-    } else if (is_pic[block_sel]) {
-        const pic::Header& h = pic_hdr[block_sel];
-        snprintf(out, cap, "%s #%u  %dx%d  frame %d/%d  at %u,%u", files[file_sel], en.id, h.width_px(), h.height,
+    const dax::Entry& en = A->index_.entries[block_sel];
+    if (A->is_font[block_sel]) {
+        snprintf(out, cap, "%s #%u  the game's font: %d glyphs of 8x8", A->files[file_sel], en.id, font::kGlyphs);
+    } else if (A->is_anim[block_sel] && cur_anim_block == block_sel) {
+        const pic::Header& h = A->cur_anim.frame[frame_no];
+        snprintf(out, cap, "%s #%u  %dx%d  frame %d/%d  at %u,%u  delay %lu", A->files[file_sel], en.id, h.width_px(),
+                 h.height, frame_no + 1, A->cur_anim.frames, h.x_cell, h.y_cell, (unsigned long)A->cur_anim.delay[frame_no]);
+    } else if (A->is_pic[block_sel]) {
+        const pic::Header& h = A->pic_hdr[block_sel];
+        snprintf(out, cap, "%s #%u  %dx%d  frame %d/%d  at %u,%u", A->files[file_sel], en.id, h.width_px(), h.height,
                  frame_no + 1, h.frames, h.x_cell, h.y_cell);
     } else {
-        snprintf(out, cap, "%s #%u  %u bytes (%u packed)", files[file_sel], en.id, en.raw_size, en.comp_size);
+        snprintf(out, cap, "%s #%u  %u bytes (%u packed)", A->files[file_sel], en.id, en.raw_size, en.comp_size);
     }
 }
 
@@ -924,12 +967,12 @@ void draw_hex()
     char title[128];
     view_info(title, sizeof title);
     ui::header(title, true);
-    const dax::Entry& en = index_.entries[block_sel];
+    const dax::Entry& en = A->index_.entries[block_sel];
     const int per_line = hex_bytes_per_line(), lines = hex_lines();
     const int per_page = per_line * lines;
     const int pages = en.raw_size == 0 ? 1 : (en.raw_size + per_page - 1) / per_page;
     if (hex_page >= pages) hex_page = 0;
-    dax::RleReader r(*src, index_, en);
+    dax::RleReader r(*src, A->index_, en);
     r.skip(static_cast<size_t>(hex_page) * per_page);
     const int top = ui::header_h() + ui::gap();
     for (int l = 0; l < lines; ++l) {
@@ -959,57 +1002,57 @@ void draw_font_sheet(pic::Canvas& c)
     for (int g = 0; g < font::kGlyphs; ++g) {
         const int x = 2 + (g % 20) * 16, y = 2 + (g / 20) * 16;
         c.fill(x - 1, y - 1, 10, 10, 1);
-        font::draw_glyph(c, cur_font, g, x, y, 15, 1);
+        font::draw_glyph(c, A->cur_font, g, x, y, 15, 1);
     }
-    font::draw_text(c, cur_font, "THE QUICK BROWN FOX JUMPS OVER", 1, 20, 14, 0);
-    font::draw_text(c, cur_font, "THE LAZY DOG. 0123456789 !?:,'\"-", 1, 21, 14, 0);
-    font::draw_text(c, cur_font, "Mixed Case Prints In Capitals", 1, 23, 11, 0);
+    font::draw_text(c, A->cur_font, "THE QUICK BROWN FOX JUMPS OVER", 1, 20, 14, 0);
+    font::draw_text(c, A->cur_font, "THE LAZY DOG. 0123456789 !?:,'\"-", 1, 21, 14, 0);
+    font::draw_text(c, A->cur_font, "Mixed Case Prints In Capitals", 1, 23, 11, 0);
 }
 
 // PIC and FINAL files store animation frames as changes from the first one
 bool xor_frames()
 {
-    return strncasecmp(files[file_sel], "PIC", 3) == 0 || strncasecmp(files[file_sel], "FINAL", 5) == 0;
+    return strncasecmp(A->files[file_sel], "PIC", 3) == 0 || strncasecmp(A->files[file_sel], "FINAL", 5) == 0;
 }
 
 void draw_picture()
 {
     pic::Canvas& c = frame::canvas();
     c.clear(0);
-    const pic::Header& h = pic_hdr[block_sel];
+    const pic::Header& h = A->pic_hdr[block_sel];
     const int x = (pic::kScreenW - h.width_px()) / 2, y = (pic::kScreenH - h.height) / 2;
     bool ok;
     frame::set_ega_palette();
-    if (is_font[block_sel]) {
-        ok = font::load(*src, index_, cur_font);
+    if (A->is_font[block_sel]) {
+        ok = font::load(*src, A->index_, A->cur_font);
         if (ok) draw_font_sheet(c);
-    } else if (is_vga[block_sel]) {
+    } else if (A->is_vga[block_sel]) {
         // Its own palette: entries it doesn't set stay black
-        static pic::Rgb pal[256];
-        for (auto& p : pal) p = pic::Rgb{0, 0, 0};
-        dax::RleReader r(*src, index_, index_.entries[block_sel]);
+        pic::Rgb* pal = A->pal;
+        for (int i = 0; i < 256; ++i) pal[i] = pic::Rgb{0, 0, 0};
+        dax::RleReader r(*src, A->index_, A->index_.entries[block_sel]);
         uint8_t hdr[pic::kVgaHeaderSize];
         pic::VgaHeader vh;
-        ok = r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_vga_header(hdr, index_.entries[block_sel].raw_size, vh) &&
+        ok = r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_vga_header(hdr, A->index_.entries[block_sel].raw_size, vh) &&
              pic::read_vga_palette(r, vh, pal);
         for (int i = 0; i < 256; ++i) frame::set_palette(i, pal[i]);
         if (ok) {
-            dax::RleReader r2(*src, index_, index_.entries[block_sel]);
+            dax::RleReader r2(*src, A->index_, A->index_.entries[block_sel]);
             ok = pic::draw_vga(r2, vh, frame_no, c, x, y);
         }
-    } else if (is_anim[block_sel]) {
+    } else if (A->is_anim[block_sel]) {
         if (cur_anim_block != block_sel) {
-            dax::RleReader r(*src, index_, index_.entries[block_sel]);
-            pic::parse_anim(r, index_.entries[block_sel].raw_size, cur_anim);
+            dax::RleReader r(*src, A->index_, A->index_.entries[block_sel]);
+            pic::parse_anim(r, A->index_.entries[block_sel].raw_size, A->cur_anim);
             cur_anim_block = block_sel;
         }
         // Frames keep their positions relative to the first frame
-        const pic::Header& f0 = cur_anim.frame[0];
-        const pic::Header& fh = cur_anim.frame[frame_no];
+        const pic::Header& f0 = A->cur_anim.frame[0];
+        const pic::Header& fh = A->cur_anim.frame[frame_no];
         const int fx = x + (fh.x_cell - f0.x_cell) * 8, fy = y + (fh.y_cell - f0.y_cell) * 8;
-        ok = pic::draw_anim(*src, index_, index_.entries[block_sel], cur_anim, frame_no, xor_frames(), c, fx, fy);
+        ok = pic::draw_anim(*src, A->index_, A->index_.entries[block_sel], A->cur_anim, frame_no, xor_frames(), c, fx, fy);
     } else {
-        dax::RleReader r(*src, index_, index_.entries[block_sel]);
+        dax::RleReader r(*src, A->index_, A->index_.entries[block_sel]);
         r.skip(pic::kHeaderSize);
         ok = pic::draw(r, h, frame_no, c, x, y);
     }
@@ -1040,22 +1083,22 @@ void draw_picture()
 
 void draw_view()
 {
-    if (!src || block_sel >= index_.count) { go(Screen::Blocks); return; }
-    if (is_pic[block_sel]) draw_picture(); else draw_hex();
+    if (!src || block_sel >= A->index_.count) { go(Screen::Blocks); return; }
+    if (A->is_pic[block_sel]) draw_picture(); else draw_hex();
 }
 
 // Step to the previous / next frame, then block
 void step(int dir)
 {
-    if (is_pic[block_sel]) {
+    if (A->is_pic[block_sel]) {
         const int nf = frame_no + dir;
-        if (nf >= 0 && nf < pic_hdr[block_sel].frames) { frame_no = nf; dirty = true; return; }
+        if (nf >= 0 && nf < A->pic_hdr[block_sel].frames) { frame_no = nf; dirty = true; return; }
     }
     const int nb = block_sel + dir;
-    if (nb < 0 || nb >= index_.count) return;
+    if (nb < 0 || nb >= A->index_.count) return;
     block_sel = nb;
     hex_page = 0;
-    frame_no = dir < 0 && is_pic[nb] ? pic_hdr[nb].frames - 1 : 0;
+    frame_no = dir < 0 && A->is_pic[nb] ? A->pic_hdr[nb].frames - 1 : 0;
     dirty = true;
 }
 
@@ -1067,7 +1110,7 @@ void back_to_blocks()
 
 void tap_view(const ui::Tap& t)
 {
-    if (!is_pic[block_sel]) {
+    if (!A->is_pic[block_sel]) {
         if (ui::back_rect().contains(t.x, t.y)) { back_to_blocks(); return; }
         const int k = bottom_hit(t, 3);
         if (k == 0) step(-1);

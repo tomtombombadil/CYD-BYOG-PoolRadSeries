@@ -177,7 +177,13 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   original (letters, arrows / keypad, Enter, Esc); the CYD front end turns
   taps into keys. Nothing platform-specific in `src/engine/`.
 - Stream DAX blocks (`dax::RleReader`) instead of loading whole blocks where
-  possible; RAM is tight (largest free block ~75-110 KB).
+  possible; RAM is tight (largest free block ~75-110 KB). Static RAM counts
+  too: the heap block right after .bss shrinks with every static byte
+  (v0.21.0's WiFi link took ~23 KB static and the 4.0" Play Test ran out).
+  So: big tables only on the heap while their screen is open (the asset
+  viewer's `Assets`), the Play Test's state in pieces (Data, World,
+  GameState, Party each a block of its own), and check `pio run` RAM
+  (DRAM .bss) before / after any change that links a new library.
 - Toolchain: pioarduino platform 55.03.312-1 (Arduino-ESP32 3.3.x), LovyanGFX
   1.2.x, huge_app.csv (no OTA - the web flasher is the update path).
 - Claude's local builds: PlatformIO in a venv; the proxy CA must be appended to

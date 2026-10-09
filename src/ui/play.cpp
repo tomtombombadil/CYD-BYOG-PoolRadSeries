@@ -1,6 +1,7 @@
 #include "play.h"
 
 #include <Arduino.h>
+#include <esp_heap_caps.h>
 #include <cctype>
 #include <cstdio>
 #include <cstring>
@@ -42,13 +43,19 @@ enum class Then : uint8_t {
 
 struct Host;
 
+// The Play Test's state. The two biggest parts (the 3D view's tiles,
+// ~13 KB, and the script memory, ~13 KB) are blocks of their own: the
+// heap is in pieces and no one piece has room for all of it (v0.21.1)
 struct Data {
+    Data(view3d::World& w, ecl::GameState& g) : world(w), gs(g) {}
+    Data(const Data&) = delete;
+    Data& operator=(const Data&) = delete;
     layout::Tiles  frame_tiles;
     layout::Tables tables;
     font::Font     font;
-    view3d::World  world;
+    view3d::World& world;
     geo::Map       map;
-    ecl::GameState gs;
+    ecl::GameState& gs;
     dax::Index     idx;
     uint8_t        sky[16] = {};
     char           press_key[text::kMaxString] = {};
@@ -2667,6 +2674,16 @@ void begin_adventuring()
 
 bool available(games::Game g) { return profile::program_name(g) != nullptr; }
 
+// "Not enough memory" with the numbers (for Tom's reports)
+const char* no_memory(const char* what)
+{
+    snprintf(msg, sizeof msg, "Not enough memory for %s (free %u KB, largest block %u KB).", what,
+             (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
+             (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
+    Serial.printf("[play] %s\n", msg);
+    return msg;
+}
+
 const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char* cache_dir)
 {
     close();
@@ -2677,8 +2694,16 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
         return msg;
     }
     if (!sd_begin()) return "No SD card found.";
-    d = new (std::nothrow) Data;
-    if (!d) return "Not enough memory.";
+    {
+        view3d::World* w = new (std::nothrow) view3d::World;
+        ecl::GameState* g = new (std::nothrow) ecl::GameState;
+        d = w && g ? new (std::nothrow) Data(*w, *g) : nullptr;
+        if (!d) {
+            delete w;
+            delete g;
+            return no_memory("the game state");
+        }
+    }
     strncpy(d->data_dir, data_dir, sizeof d->data_dir - 1);
     if (cache_dir) strncpy(d->cache_dir, cache_dir, sizeof d->cache_dir - 1);
 
@@ -2738,7 +2763,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     ground = new (std::nothrow) items::Ground;
     if (!host || !pt || !names || !ground) {
         close();
-        return "Not enough memory.";
+        return no_memory("the party");
     }
     vm = new (vm_mem) ecl::Vm(d->gs, *host, *d->prof->ecl_ops);
     vm->set_party(pt);
@@ -2790,7 +2815,13 @@ void close()
     mk = nullptr;
     new_char = nullptr;
     input_engine = false;
-    delete d;
+    if (d) {
+        view3d::World* w = &d->world;
+        ecl::GameState* g = &d->gs;
+        delete d;
+        delete w;
+        delete g;
+    }
     d = nullptr;
 }
 

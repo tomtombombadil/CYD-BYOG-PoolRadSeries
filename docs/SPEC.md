@@ -246,6 +246,9 @@ stay in the session's scratch space, never in the repo.
    v0.19.0: Add / Remove / Drop, Pool / Share in shops. v0.20.0: Create
    New Character (BEGIN now needs a party). v0.21.0: the save folder's
    paths fixed on the board (saves, characters), errors stay until tapped.
+   v0.21.1: memory for the Play Test again (WiFi's static RAM had taken
+   the room; the asset viewer's tables now live on the heap only on its
+   screens, the Play Test's state is in smaller blocks).
    Next: the temple, Rest, training.
 6. **Combat.**
 7. **All four games**: the per-game differences (PoD's VGA graphics), party
