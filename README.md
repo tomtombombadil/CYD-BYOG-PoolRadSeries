@@ -32,9 +32,10 @@ Tested with this firmware so far: the 4.0".
 
 1. Format a microSD card as FAT32.
 2. Make a folder `GOLDBOX` at the top of the card.
-3. Copy each game's folder from your own install into it, e.g.
-   `GOLDBOX/POOLRAD`, `GOLDBOX/CURSE`, `GOLDBOX/SECRET`, `GOLDBOX/DARKNESS`.
-   Any folder name containing the game's name works.
+3. Copy each game's whole GOG install folder into it, as it is:
+   `GOLDBOX/Pool of Radiance`, `GOLDBOX/Curse of the Azure Bonds`,
+   `GOLDBOX/Secret of the Silver Blades`, `GOLDBOX/Pools of Darkness`.
+   (Any folder name containing the game's name works.)
 
 **Game icons (optional):** the DOS games have no icons of their own; GOG's
 install folder holds each game's icon in a `goggame-<number>.ico` or
@@ -126,7 +127,7 @@ MIT license.
 The games refer to numbered entries in the printed journal. Copy the
 journal PDF from your GOG game (e.g. `Adventurers Journal.pdf`) into the
 game's folder on the card. The card scan cuts every entry out of your PDF
-(Curse of the Azure Bonds: about 15 MB in `GOLDBOX/_CYD/CURSE/JOURNAL.DAT`,
+(Curse of the Azure Bonds: about 15 MB in `GOLDBOX/_CYD/Curse of the Azure Bonds/JOURNAL.DAT`,
 a few minutes, once) and the board shows an entry when the game mentions it.
 The firmware knows only where each entry sits on the pages of the GOG PDF -
 no journal text or pictures are in the firmware or this repository. A PDF it

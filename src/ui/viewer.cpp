@@ -600,14 +600,12 @@ void draw_home()
                           : "No game files in GOLDBOX.";
         ui::text(x, y, first, style::kGold);
         y += lh * 3 / 2;
-        ui::text(x, y, "Copy each game's folder from your GOG", style::kText);
-        y += lh;
-        ui::text(x, y, "install to a FAT32 microSD card:", style::kText);
-        y += lh;
-        ui::text(x, y, "/GOLDBOX/POOLRAD   /GOLDBOX/CURSE", style::kGold);
-        y += lh;
-        ui::text(x, y, "/GOLDBOX/SECRET    /GOLDBOX/DARKNESS", style::kGold);
-        y += lh;
+        y = wrap_text(x, y, ui::width() - x * 2,
+                      "Copy each game's whole install folder from your GOG games into a GOLDBOX folder on a FAT32 "
+                      "microSD card, for example:", ui::Font::Normal, style::kText, true);
+        y += lh / 2;
+        ui::text(x, y, "/GOLDBOX/Curse of the Azure Bonds", style::kGold);
+        y += lh * 3 / 2;
         ui::text(x, y, "then tap Rescan Card.", style::kText);
     } else {
         if (home_page >= n_games) home_page = n_games - 1;

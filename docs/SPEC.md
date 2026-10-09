@@ -15,11 +15,11 @@ Names used throughout (Tom, 2026-10-06): **PoolRad**, **Curse**, **Secret**,
 inside the GOG install, and the PDFs that come with them).
 
 - The firmware contains **no** game data, pictures, text or code from SSI.
-- The player copies the original **DOS** files of each game from their own copy
-  (the GOG release) into a folder under `/GOLDBOX/` on a FAT32 microSD card -
-  suggested names `POOLRAD`, `CURSE`, `SECRET`, `DARKNESS`. A whole GOG
-  install folder copied as it is also works: if the folder has no DAX files,
-  the engine looks one folder down.
+- The player copies each game's whole GOG install folder, as it is, into
+  `/GOLDBOX/` on a FAT32 microSD card: `/GOLDBOX/Curse of the Azure Bonds`
+  and so on (Tom, 2026-10-09: what nearly everyone will do - the docs use
+  the GOG names, not short DOS names). If the folder has no DAX files, the
+  engine looks one folder down.
 - Folder names are free; the game is recognised from words in the name
   (`POOLRAD`, `Pool of Radiance`, `CURSE`, `AZURE`, `SILVER`, `BLADES`, `DARK...`) -
   `src/engine/games.*`. A folder with DAX files and no known name still shows up.

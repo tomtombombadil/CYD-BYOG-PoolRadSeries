@@ -118,9 +118,11 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   run time (`engine/exepack.*` unpacks just the bytes asked for), found via a
   per-release entry in `engine/profile.*` (file size + unpacked size, data
   segment base, table addresses). Never copy those tables into the repo.
-- SD folders Tom uses (2026-10-07): POOLRAD, CURSE, SECRET, DARKNESS,
-  CHAMPIONS, DEATH, QUEEN, GATEWAY, TREASURE, UNLIMIT (`engine/games.*`;
-  QUEEN / UNLIMIT are .TLB/.GLB "newer format" games, listed, not readable).
+- Game folders (Tom, 2026-10-09): the GOG install folders copied as they
+  are - `/GOLDBOX/Curse of the Azure Bonds` etc. Docs, screens and examples
+  use those names, not short DOS names (the scanner still recognises short
+  names like CURSE: `engine/games.*`). Dark Queen / Unlimited Adventures are
+  .TLB/.GLB "newer format" games, listed, not readable.
 - Library (Tom, 2026-10-07): title bar shows the firmware version (to see
   which build is flashed); ONE game a page, no key look, the whole space
   between header and bottom keys - its GOG icon as big as fits (scaled from

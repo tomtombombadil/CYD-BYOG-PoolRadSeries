@@ -3,12 +3,12 @@
 //
 // Plain C++ (no Arduino), host-tested in tools/host_tests/test_dax.cpp.
 //
-// The player copies each game's folder (the original DOS files, from their
-// own copy) into /GOLDBOX/ on the card. Any folder name works; the game is
-// recognised from words in the name: Tom's short names (POOLRAD, CURSE,
-// SECRET, DARKNESS, CHAMPIONS, DEATH, QUEEN, GATEWAY, TREASURE, UNLIMIT),
-// the full titles (as GOG names its install folders), or words like AZURE,
-// SILVER, KRYNN, SAVAGE... A folder with game files but no matching name
+// The player copies each game's whole GOG install folder ("Curse of the
+// Azure Bonds", ... - Tom, 2026-10-09: that's what nearly everyone will do)
+// into /GOLDBOX/ on the card. Any folder name works; the game is recognised
+// from words in the name: the full titles, short names (POOLRAD, CURSE,
+// SECRET, DARKNESS, CHAMPIONS, DEATH, QUEEN, GATEWAY, TREASURE, UNLIMIT), or
+// words like AZURE, SILVER, KRYNN, SAVAGE... A folder with game files but no matching name
 // still shows up, as "Unknown Gold Box game".
 //
 // The engine is for the four Pool of Radiance games first; the others
@@ -42,7 +42,7 @@ constexpr const char* kRootDir = "/GOLDBOX";
 
 const char* title(Game g);
 const char* short_title(Game g);      // fits a narrow key
-// The folder name the README suggests (POOLRAD, CURSE, ...); "" for Unknown.
+// The GOG install folder's name ("Curse of the Azure Bonds"); "" for Unknown.
 const char* folder_hint(Game g);
 Series series(Game g);
 // One of the four games this engine is being built for.
