@@ -149,6 +149,9 @@ enum FightWord {
     kRayDisint, kIsDisint, kRayStone, kIsStonedR, kRayDeath, kWoundsYou,
     kGazes, kReflects, kIsStonedG, kSpitsAcid, kSpitsMisses, kBreathesAcid, kBreathesFire, kBreathesFireH,
     kThrowsLightning, kStandsUp, kGetsBackUp,
+    // Confusion's turns, Dispel Evil's blow, the fire shield ("flame type: ", "Hot Cold", "Abort spell? ", "Yes No")
+    kIsConfusedT, kRunsAway, kGoesBerserk, kIsEnraged, kIsDispelled, kResistsDispel, kGetsZapped,
+    kFlameType, kHotCold, kAbortSpellQ, kYesNoF,
     kFightWords
 };
 

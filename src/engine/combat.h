@@ -105,6 +105,14 @@ struct MonFx {
     uint8_t ray_spells[3];
 };
 
+// More spells' effects (spell_facts.md 2): Enlarge, Confusion (and going
+// berserk in it), Dispel Evil (attacks on the caster by the evil -7; its
+// hits dispel them), the fire shields (hot, cold; zap: those hitting it
+// from next to it take twice the damage)
+struct SpellFx {
+    uint8_t enlarge, confuse, berserk, evil_ward, evil_bane, hot, cold, zap;
+};
+
 // The effects the fights' rules look at (per game, from the profile)
 struct Facts {
     uint8_t held[4];                    // can't act, slain by any blow: snake charm, paralysed, asleep, helpless
@@ -127,6 +135,7 @@ struct Facts {
     // attacks -4), Feeblemind
     uint8_t bestow, blink, fumbling, silence, entangle, sticks, faerie, blinded, animals_blind, feeble;
     MonFx   mon;
+    SpellFx sp;
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a
@@ -204,10 +213,15 @@ struct Battle {
     struct Cloud {
         uint8_t  x = 0, y = 0, rounds = 0;
         bool     poison = false;        // Cloudkill (3 x 3, ground 0x1C), else Stinking Cloud (2 x 2, 0x1E)
+        uint8_t  level = 0;             // its caster's (Dispel Magic)
+        bool     resisted = false;      // a Dispel Magic failed on it
         uint16_t present = 0;           // bit k = square k is cloud
         uint8_t  ground[9] = {};        // what was there
     };
     static constexpr int kMaxClouds = 8;
+    // Set by the caller before a cast: the square aimed at (Dispel Magic's
+    // clouds), the fire shield's flame (1 hot, 2 cold, 0 the computer's pick)
+    int     aim_x = -1, aim_y = -1, flame = 0;
     Cloud   clouds[kMaxClouds];
     int     n_clouds = 0;
 };
@@ -221,7 +235,9 @@ bool hidden(const Battle& b, int viewer, int target);
 // to it. Silenced: no spells or items this turn (it may still fight);
 // Snakes / Fumbling: its turn is lost
 // Suffocates: engulfed too long - killed
-enum class TurnFx : uint8_t { None, Silenced, Snakes, Fumbling, Suffocates };
+// Confusion: Confused (the turn lost), RunsAway (it flees), Berserk (it
+// attacks the nearest, friend or foe), Enraged (it acts as ever)
+enum class TurnFx : uint8_t { None, Silenced, Snakes, Fumbling, Suffocates, Confused, RunsAway, Berserk, Enraged };
 TurnFx turn_effects(Battle& b, int i);
 // A charm's end: back to their own side (the effect's data, bit 6)
 void uncharm(uint8_t* rec, const uint8_t* affect);
@@ -237,6 +253,8 @@ enum class Ev : uint8_t {
     // said of `who`
     Avoids, Poisoned, Paralyzed, ParalyzedLow, Reflects, Stoned, GazeStoned, Disintegrated, Killed, Damage,
     Unaffected, Down, Suffocates, StandsUp, GetsUp,
+    // Dispel Evil's hit: "is dispelled" / "resists dispel evil"; a fire shield: "gets zapped"
+    Dispelled, ResistsDispel, Zapped,
     // the beholder casts spell `amount` (the caller casts it, as the computer does)
     Cast,
 };
@@ -456,6 +474,15 @@ enum class SpellDoes : uint8_t {
     Snakes,                             // Sticks to Snakes: 6+ Hit Dice smash them (word2), else snakes (word)
     SnakeCharm,                         // snakes whose hit points the caster's cover, charmed for the fight (word)
     CureBlind,                          // blinded: "is Cured" (word2), "can see" (word)
+    Enlarge,                            // Strength by the caster's level when more than theirs (word; else unaffected)
+    Reduce,                             // a failed save takes Enlarge away (word); else nothing
+    RemoveCurse,                        // Bestow Curse cured ("is Cured" word2, word), else the first cursed item comes
+                                        // off (word3)
+    Confuse,                            // the first 2d8 in the area: a save or confused (word)
+    DispelEvil,                         // the caster: attacks by the evil -7, its hits dispel them (word)
+    FireShield,                         // the caster: hot ("is protected", word) or cold (nothing said)
+    Teleport,                           // Dimension Door: the caller moves the caster (teleport(); word)
+    Dispel,                             // Dispel Magic: effects and clouds by level against level (word)
 };
 struct FightSpell {
     uint8_t   spell;
@@ -467,9 +494,10 @@ struct FightSpell {
     uint32_t  word;                     // what's said ("is Blessed", "falls asleep"; GAME.OVR, 0: nothing;
                                         // Heal: "is Healed" instead of fully / partly healed)
     uint32_t  word2 = 0;                // ... when they saved (clouds: "starts to cough")
+    uint32_t  word3 = 0;                // a third ("has an item un-cursed")
 };
 // What happened to each target, in order
-enum class Did : uint8_t { Word, Damage, Unaffected, Misses, Healed, Down, Word2, Fallen };    // Fallen: the skull, no words
+enum class Did : uint8_t { Word, Damage, Unaffected, Misses, Healed, Down, Word2, Fallen, Word3 };    // Fallen: the skull, no words
 struct SpellLine {
     uint8_t who;
     Did     did;
@@ -487,6 +515,9 @@ struct SpellLine {
 constexpr uint8_t kCloudGround = 0x1E, kPoisonGround = 0x1C;
 // The fighters a cloud at (x, y) would take in (each once)
 int cloud_fighters(const Battle& b, int x, int y, int* out, int cap, bool poison = false);
+// Dispel Magic on the clouds round (x, y): each a chance by level against
+// its caster's (once: a failed one resists); how many end as the round does
+int dispel_clouds(Battle& b, int x, int y, int level, create::Dice& d);
 // Lays a cloud there (false: no room for another)
 bool lay_cloud(Battle& b, const Tables& t, int x, int y, int rounds, bool poison = false);
 bool in_cloud(const Battle& b, int x, int y);
@@ -500,6 +531,10 @@ Did breathe_cloud(Battle& b, int i, create::Dice& d);
 // A round over: clouds run out, their ground comes back (a fallen party
 // member's body where one lies); how many went
 int clouds_round(Battle& b);
+
+// Dimension Door: fighter i to the square (x, y) when it can stand there
+// (a hug or an engulfing holding it lets go); false: not moved
+bool teleport(Battle& b, const Tables& t, int i, int x, int y);
 
 // The fighters in an area: within r squares of (x, y)
 int in_area(const Battle& b, const Tables& t, int x, int y, int r, int* out, int cap);

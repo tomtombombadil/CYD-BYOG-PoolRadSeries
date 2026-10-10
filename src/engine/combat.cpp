@@ -622,6 +622,34 @@ void fall(Battle& b, int c)
 
 void uncharm(uint8_t* rec, const uint8_t* a) { rec[0x197] = static_cast<uint8_t>((a[3] & 0x40) >> 6); }
 
+namespace {
+
+// An effect taken away (run out, dispelled): what its going undoes - a
+// charm's side, fear's flight, going berserk
+void end_effect(Battle& b, Fighter& f, int k)
+{
+    const uint8_t type = f.aff[k][0], data = f.aff[k][3];
+    if (b.fx) {
+        const Facts& fx = *b.fx;
+        if (fx.charm && type == fx.charm) {
+            uncharm(f.rec, f.aff[k]);           // back to their own side
+            f.target = -1;
+        }
+        if (fx.fear && type == fx.fear) {
+            f.fleeing = false;                  // the fear is over
+            if (data & 1) f.quick = false;
+        }
+        if (fx.sp.berserk && type == fx.sp.berserk) {
+            f.rec[0x197] = static_cast<uint8_t>(data & 1);     // its own side again
+            if (data & 0x10) f.quick = false;
+            f.target = -1;
+        }
+    }
+    drop_aff(f, k);
+}
+
+} // namespace
+
 TurnFx turn_effects(Battle& b, int i)
 {
     Fighter& f = b.f[i];
@@ -641,6 +669,55 @@ TurnFx turn_effects(Battle& b, int i)
     if (fx.fumbling && f.has(fx.fumbling)) {
         f.moves = f.attacks[0] = f.attacks[1] = 0;
         return TurnFx::Fumbling;
+    }
+    // Confused (no spell on the way): d100 - it runs, its turn is lost, it
+    // goes berserk, or it's only enraged; then a save at -2 ends it
+    const int cf = fx.sp.confuse && g_dice && !f.spell ? find_aff(f, fx.sp.confuse) : -1;
+    if (cf >= 0) {
+        create::Dice& d = *g_dice;
+        const int r = d.roll(100, 1);
+        const bool made_quick = f.member >= 0 && f.rec[kControl] < 0x80 && !f.quick;
+        TurnFx out;
+        if (r <= 10) {
+            drop_aff(f, cf);
+            if (fx.fear) give_aff(f, fx.fear, 10, made_quick ? 1 : 0, true);
+            f.fleeing = true;
+            f.quick = true;
+            f.target = -1;
+            return TurnFx::RunsAway;
+        }
+        if (r <= 60) {
+            f.moves = f.attacks[0] = f.attacks[1] = 0;
+            out = TurnFx::Confused;
+        } else if (r <= 80) {
+            // At the nearest creature, friend or foe: on the other side from it for a round
+            int near = -1, best = 9999;
+            for (int c = 0; c < b.n; ++c) {
+                const Fighter& o = b.f[c];
+                if (c == i || !o.up() || !o.size) continue;
+                const int ddx = o.x > f.x ? o.x - f.x : f.x - o.x, ddy = o.y > f.y ? o.y - f.y : f.y - o.y;
+                const int dist = ddx > ddy ? ddx : ddy;
+                if (dist < best) {
+                    best = dist;
+                    near = c;
+                }
+            }
+            if (fx.sp.berserk)
+                give_aff(f, fx.sp.berserk, 1, (f.team() ? 1 : 0) | (made_quick ? 0x10 : 0), true);
+            f.quick = true;
+            if (near >= 0) {
+                f.rec[0x197] = static_cast<uint8_t>(b.f[near].team() ? 0 : 1);
+                f.target = near;
+            }
+            out = TurnFx::Berserk;
+        } else {
+            out = TurnFx::Enraged;
+        }
+        if (saving_throw(f, 4, -2, d)) {
+            const int k = find_aff(f, fx.sp.confuse);
+            if (k >= 0) drop_aff(f, k);
+        }
+        return out;
     }
     const int s = fx.sticks ? find_aff(f, fx.sticks) : -1;
     if (s >= 0) {
@@ -684,17 +761,9 @@ int tick(Battle& b, Event* out, int cap)
             if (m == 0) {
                 ++k;
             } else if (m <= 1) {
-                if (b.fx && b.fx->charm && f.aff[k][0] == b.fx->charm) {
-                    uncharm(f.rec, f.aff[k]);           // back to their own side
-                    f.target = -1;
-                }
-                if (b.fx && b.fx->fear && f.aff[k][0] == b.fx->fear) {
-                    f.fleeing = false;                  // the fear is over
-                    if (f.aff[k][3] & 1) f.quick = false;
-                }
                 if (b.fx && b.fx->mon.regen_wait && f.aff[k][0] == b.fx->mon.regen_wait) regen = true;
                 if (b.fx && b.fx->mon.troll_up && f.aff[k][0] == b.fx->mon.troll_up) rise = true;
-                drop_aff(f, k);
+                end_effect(b, f, k);
             } else {
                 f.aff[k][1] = static_cast<uint8_t>(m - 1);
                 f.aff[k][2] = static_cast<uint8_t>((m - 1) >> 8);
@@ -957,6 +1026,24 @@ void after_hit(Battle& b, int a, int c, int slot, int roll, int hits1, create::D
             add_event(out, c, Ev::ParalyzedLow);
         }
         if (hasx(at, m.chill)) touch(d.roll(8, 2), 0x0A);
+        // Dispel Evil's blow: the evil dispelled (the caster's Dispel Evil goes with it)
+        const SpellFx& sx = b.fx->sp;
+        if (hasx(at, sx.evil_bane) && tg.up()) {
+            if ((tg.rec[0x14B] & 1) && !saving_throw(tg, 4, 0, d)) {
+                add_event(out, c, Ev::Dispelled);
+                tg.rec[kHp] = 0;
+                tg.rec[kHealth] = party::Gone;
+                fall(b, c);
+                out.down = true;
+                const uint8_t both[2] = {sx.evil_ward, sx.evil_bane};
+                for (uint8_t t : both) {
+                    const int k = t ? find_aff(at, t) : -1;
+                    if (k >= 0) drop_aff(at, k);
+                }
+            } else {
+                add_event(out, c, Ev::ResistsDispel);
+            }
+        }
     } else {
         if (hasx(at, m.poison)) poison(0);
         if (hasx(at, m.poison_m2)) poison(-2);
@@ -1024,6 +1111,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
         if (fx.blinded && at.has(fx.blinded)) side -= 4;
         if (fx.animals_blind && at.rec[0x11A] == 19 && tg.has(fx.animals_blind) && !sees) side -= 4;
         if (hasx(tg, fx.invisible) && !sees) side -= 4;              // an invisible target
+        if (hasx(tg, fx.sp.evil_ward) && (at.rec[0x14B] & 1)) side -= 7;   // Dispel Evil against the evil
         if (fx.blinded && tg.has(fx.blinded)) ac -= 4;         // a blind target: easier
         // Faerie Fire: the stored AC + 2 (to AC 0 at most) - the original's
         // own rule, which makes the target harder to hit
@@ -1112,6 +1200,22 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                 out.down = true;
             }
             out.hits[out.n++] = h;
+            // A fire shield: one hitting it from next to it takes twice the blow (magic)
+            if (b.fx && dmg > 0 && hasx(tg, b.fx->sp.zap) && at.up() && adjacent(b, a, c)) {
+                add_event(out, a, Ev::Zapped);
+                Harm zh;
+                zh.kind = 8;
+                bool dn = false;
+                const int done = harm(b, a, (2 * dmg) & 0xFF, zh, d, &dn);
+                g_kind = 0;
+                Event* e = done > 0 ? add_event(out, a, Ev::Damage) : nullptr;
+                if (e) {
+                    e->amount = static_cast<int16_t>(done);
+                    e->kind = 8;
+                }
+                if (dn) add_event(out, a, Ev::Down);
+                if (!at.up()) break;
+            }
             if (b.fx && tg.up()) after_hit(b, a, c, slot, roll, hits1, d, out);
         }
     }
@@ -1194,9 +1298,16 @@ int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* dow
             if (resisted) *resisted = true;
         }
     }
+    bool saved = false;
     if (dmg > 0 && h.save >= 0 && h.on_save && saving_throw(f, h.save, h.bonus, d)) {
+        saved = true;
         if (h.on_save == 1) dmg = 0;
         else if (h.on_save == 2) dmg /= 2;
+    }
+    // Not saved: the fire shields double fire (hot) / cold (cold)
+    if (!saved && dmg > 0 && b.fx) {
+        if ((h.kind & 1) && hasx(f, b.fx->sp.hot)) dmg *= 2;
+        else if ((h.kind & 2) && hasx(f, b.fx->sp.cold)) dmg *= 2;
     }
     if (dmg > 0) {
         const bool dn = damage(b, c, dmg);
@@ -1583,6 +1694,26 @@ int in_area(const Battle& b, const Tables& t, int x, int y, int r, int* out, int
     return n;
 }
 
+bool teleport(Battle& b, const Tables& t, int i, int x, int y)
+{
+    Fighter& f = b.f[i];
+    if (!f.up() || !f.size || !fits(b, t, i, f.size, x, y)) return false;
+    // Held fast: the one holding it lets go
+    if (b.fx && hasx(f, b.fx->mon.held_fast))
+        for (int c = 0; c < b.n; ++c) {
+            Fighter& o = b.f[c];
+            const uint8_t holds[2] = {b.fx->mon.engulfing, b.fx->mon.hugging};
+            for (uint8_t h : holds) {
+                const int k = h ? find_aff(o, h) : -1;
+                if (k >= 0 && o.aff[k][3] == i) let_go(b, o, h);
+            }
+        }
+    f.x = x;
+    f.y = y;
+    occupancy(b);
+    return true;
+}
+
 bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
 {
     if (type < 0 || type > 4) type = 4;
@@ -1597,6 +1728,8 @@ bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
         if (fx.blinded && f.has(fx.blinded)) bonus -= 4;
         if ((g_kind & 2) && hasx(f, fx.mon.resist_cold)) bonus += 3;
         if ((g_kind & 1) && hasx(f, fx.mon.resist_fire)) bonus += 3;
+        if ((g_kind & 2) && hasx(f, fx.sp.hot)) bonus += 2;           // the fire shields
+        if ((g_kind & 1) && hasx(f, fx.sp.cold)) bonus += 2;
         // Protection from evil / good: +2 when the one acting is evil / good
         if (g_b && g_actor >= 0 && g_actor < g_b->n) {
             const int al = g_b->f[g_actor].rec[0x11B];
@@ -1633,6 +1766,8 @@ int power_of(const uint8_t* r, const classes::Tables& st, int s, bool item)
 }
 
 namespace {
+
+int dispel_chance(int L, int lvl);
 
 int sleep_cost(const Fighter& f)
 {
@@ -2009,6 +2144,107 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             say(who[k], Did::Word, 0);
         }
         break;
+    case SpellDoes::Enlarge: {
+        // Strength by the caster's level (18 ... 22), only when more than theirs
+        const int data = spells::enlarge_data(pw);
+        int str = 18, str00 = 0;
+        if (data > 101) str = data - 100;
+        else str00 = data - 1;
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up()) continue;
+            const int now = f.rec[0x11], now00 = f.rec[0x1C];
+            if (!data || !(str > now || (str == 18 && now == 18 && str00 > now00))) {
+                say(who[k], Did::Unaffected, 0);
+                continue;
+            }
+            if (b.fx && b.fx->sp.enlarge) give_aff(f, b.fx->sp.enlarge, minutes, data, false);
+            say(who[k], Did::Word, 0);
+        }
+        break;
+    }
+    case SpellDoes::Reduce:
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            const int at = b.fx && b.fx->sp.enlarge ? find_aff(f, b.fx->sp.enlarge) : -1;
+            if (at < 0 || saving_throw(f, 4, 0, d)) continue;       // (nothing said)
+            drop_aff(f, at);
+            say(who[k], Did::Word, 0);
+        }
+        break;
+    case SpellDoes::RemoveCurse:
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            const int at = b.fx && b.fx->bestow ? find_aff(f, b.fx->bestow) : -1;
+            if (at >= 0) {
+                drop_aff(f, at);
+                say(who[k], Did::Word2, 0);         // "is Cured"
+                say(who[k], Did::Word, 0);          // "is un-cursed"
+                continue;
+            }
+            // Else the first cursed item comes off (still cursed); a monster's are its group's: not
+            for (int j = 0; f.member >= 0 && f.items && j < f.n_items; ++j)
+                if (f.items[j][0x36]) {
+                    f.items[j][0x34] = 0;
+                    say(who[k], Did::Word3, 0);
+                    break;
+                }
+        }
+        break;
+    case SpellDoes::Confuse: {
+        // The first 2d8 of those in the area
+        const int most = d.roll(8, 2);
+        for (int k = 0; k < m && k < most; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up() || !b.fx || !b.fx->sp.confuse) continue;
+            if (resisted(k, b.fx->sp.confuse)) continue;
+            if (saving_throw(f, e.save, 0, d)) {
+                say(who[k], Did::Unaffected, 0);
+                continue;
+            }
+            give_aff(f, b.fx->sp.confuse, minutes, 0, false);
+            say(who[k], Did::Word, 0);
+        }
+        break;
+    }
+    case SpellDoes::DispelEvil:
+        if (!b.fx) break;
+        if (b.fx->sp.evil_ward) give_aff(me, b.fx->sp.evil_ward, pw, pw, false);
+        if (b.fx->sp.evil_bane) give_aff(me, b.fx->sp.evil_bane, pw, pw, false);
+        say(caster, Did::Word, 0);
+        break;
+    case SpellDoes::FireShield: {
+        if (!b.fx) break;
+        const int flame = b.flame ? b.flame : d.roll(10, 1) > 5 ? 1 : 2;
+        b.flame = 0;
+        const uint8_t shield = flame == 1 ? b.fx->sp.hot : b.fx->sp.cold;
+        if (shield) give_aff(me, shield, minutes, 0, false);
+        if (b.fx->sp.zap) give_aff(me, b.fx->sp.zap, minutes, 0, false);
+        if (flame == 1) say(caster, Did::Word, 0);   // (the cold one: nothing said)
+        break;
+    }
+    case SpellDoes::Teleport: break;                // (the caller moves the caster: teleport())
+    case SpellDoes::Dispel: {
+        // Every effect of the first one (but those with data 0xFF) a chance,
+        // as many passes as there are in the area (the original's); then
+        // the clouds round the square aimed at
+        Fighter& f = b.f[who[0]];
+        for (int pass = 0; pass < m; ++pass) {
+            bool any = false;
+            for (int k = 0; f.n_aff && k < *f.n_aff;) {
+                const int data = f.aff[k][3];
+                if (data == 0xFF || d.roll(100, 1) > dispel_chance(pw, data & 0x0F)) {
+                    ++k;
+                    continue;
+                }
+                end_effect(b, f, k);
+                any = true;
+            }
+            if (any) say(who[0], Did::Word, 0);
+        }
+        if (b.aim_x >= 0) dispel_clouds(b, b.aim_x, b.aim_y, pw, d);
+        break;
+    }
     case SpellDoes::Sleep: {
         int budget = d.roll(4, 4);
         for (int k = 0; k < m; ++k) {
@@ -2085,6 +2321,8 @@ bool spell_targets(Battle& b, const Tables& t, const classes::Tables& st, int i,
     if (aim == 0 || fs.does == SpellDoes::Ours || fs.does == SpellDoes::Prayer || fs.does == SpellDoes::Mirror ||
         fs.does == SpellDoes::Haste) {
         if (e.affect && f.has(static_cast<uint8_t>(e.affect))) return false;
+        if (fs.does == SpellDoes::FireShield && b.fx && hasx(f, b.fx->sp.zap)) return false;     // shielded already
+        if (fs.does == SpellDoes::Teleport) return false;
         if (aim >= 8 && aim <= 14) {
             *n_targets = in_area(b, t, f.x, f.y, e.aim & 7, targets, kMaxFighters);
         } else {
@@ -2506,6 +2744,7 @@ bool lay_cloud(Battle& b, const Tables& t, int x, int y, int rounds, bool poison
     cl.y = static_cast<uint8_t>(y);
     cl.poison = poison;
     cl.rounds = static_cast<uint8_t>(rounds < 1 ? 1 : rounds > 255 ? 255 : rounds);
+    cl.level = cl.rounds;                   // (the caster's level is its rounds)
     for (int k = 0; k < cloud_squares(poison); ++k) {
         const int xx = x + sq_dx(poison, k), yy = y + sq_dy(poison, k);
         if (!on_field(xx, yy) || !b.ground[yy][xx] || tile(b, t, xx, yy)[0] == 0xFF) continue;
@@ -2579,6 +2818,42 @@ int clouds_round(Battle& b)
                 b.ground[cl.y + sq_dy(cl.poison, k)][cl.x + sq_dx(cl.poison, k)] = cl.poison ? kPoisonGround : kCloudGround;
     }
     return gone;
+}
+
+namespace {
+
+// Dispel Magic's chance against an effect (or cloud) of level `lvl` by a
+// dispeller of level L (spell_facts.md 0x29)
+int dispel_chance(int L, int lvl)
+{
+    if (L > lvl) return 50 + 5 * (L - lvl);
+    if (L < lvl) return 50 - 2 * (lvl - L);
+    return 50;
+}
+
+} // namespace
+
+int dispel_clouds(Battle& b, int x, int y, int level, create::Dice& d)
+{
+    int ended = 0;
+    for (int c = 0; c < b.n_clouds; ++c) {
+        Battle::Cloud& cl = b.clouds[c];
+        if (cl.resisted || cl.rounds <= 1) continue;
+        bool near = false;
+        for (int k = 0; k < cloud_squares(cl.poison) && !near; ++k) {
+            if (!(cl.present >> k & 1)) continue;
+            const int ddx = cl.x + sq_dx(cl.poison, k) - x, ddy = cl.y + sq_dy(cl.poison, k) - y;
+            near = ddx >= -1 && ddx <= 1 && ddy >= -1 && ddy <= 1;
+        }
+        if (!near) continue;
+        if (d.roll(100, 1) <= dispel_chance(level, cl.level)) {
+            cl.rounds = 1;                  // it clears as the round ends
+            ++ended;
+        } else {
+            cl.resisted = true;
+        }
+    }
+    return ended;
 }
 
 // ---- Cones

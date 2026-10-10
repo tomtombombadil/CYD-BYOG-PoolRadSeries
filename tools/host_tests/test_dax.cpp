@@ -3858,6 +3858,172 @@ static void test_monster_fx()
     CHECK(casts <= 3);
 }
 
+// The second batch of fight spells (spell_facts.md 2), on made-up fighters
+static void test_spells_batch2()
+{
+    static combat::Tables t;
+    memset(&t, 0, sizeof t);
+    t.ground[0x37][0] = 1; t.ground[0x37][1] = 1;
+    static combat::Facts fx;
+    fx = combat::Facts{};
+    const uint8_t held[4] = {0x33, 0x34, 0x35, 0x1F};
+    memcpy(fx.held, held, 4);
+    fx.fear = 0x8E; fx.bestow = 0x24; fx.charm = 0x0B; fx.bless = 0x01;
+    fx.sp = combat::SpellFx{0x0C, 0x23, 0x89, 0x04, 0x91, 0x32, 0x36, 0x8F};
+    fx.mon.held_fast = 0x3A; fx.mon.hugging = 0x90;
+    static uint8_t rec[4][party::kRecordSize];
+    static uint8_t aff[4][combat::kMonsterAffects][party::kAffectSize];
+    static uint8_t its[4][1][items::kRecordSize];
+    static int naff[4];
+    static combat::Battle b;
+    create::Dice d(5);
+    auto setup = [&]() {
+        b = combat::Battle{};
+        b.fx = &fx;
+        for (int y = 0; y < combat::kH; ++y)
+            for (int x = 0; x < combat::kW; ++x) b.ground[y][x] = 0x37;
+        memset(rec, 0, sizeof rec);
+        memset(aff, 0, sizeof aff);
+        memset(its, 0, sizeof its);
+        for (int i = 0; i < 4; ++i) {
+            uint8_t* r = rec[i];
+            r[0x196] = 1; r[0x197] = i >= 2; r[0xDE] = 1; r[0x78] = r[0x1A4] = 100; r[0xE5] = 1;
+            r[0x1A5] = 12; r[0x11C] = 2; r[0x199] = 100; r[0x19A] = 50; r[0x19B] = 50;
+            r[0x19E] = 1; r[0x1A0] = 1; r[0x1A2] = 9;
+            r[0x11] = 12;
+            for (int k = 0; k < 5; ++k) r[0xDF + k] = 30;
+            naff[i] = 0;
+            combat::Fighter& f = b.f[i];
+            f = combat::Fighter{};
+            f.rec = r; f.aff = aff[i]; f.n_aff = &naff[i]; f.max_aff = combat::kMonsterAffects;
+            f.items = its[i]; f.n_items = 1;
+            f.member = i < 2 ? i : -1;
+            f.monster = i < 2 ? -1 : i - 2;
+            f.x = 10 + i; f.y = 10; f.size = 1;
+        }
+        b.n = 4;
+        b.party_size = 2;
+        combat::occupancy(b);
+    };
+    static uint8_t sds[0x60 * 16];
+    memset(sds, 0, sizeof sds);
+    auto sp = [&](int s2, int lasts, int per, int aim, int on_save) {
+        uint8_t* e = sds + s2 * 16;
+        e[0] = 2; e[1] = 3; e[4] = static_cast<uint8_t>(lasts); e[5] = static_cast<uint8_t>(per);
+        e[6] = static_cast<uint8_t>(aim); e[8] = static_cast<uint8_t>(on_save); e[9] = 4; e[11] = 2;
+    };
+    sp(0x0C, 0, 10, 4, 0);
+    sp(0x0D, 0, 10, 4, 1);
+    sp(0x2B, 0, 0, 4, 0);
+    sp(0x52, 2, 1, 11, 1);
+    sp(0x49, 0, 1, 0, 0);
+    sp(0x55, 2, 1, 0, 0);
+    sp(0x29, 0, 0, 9, 0);
+    classes::Layout sl{};
+    sl.lo = 0; sl.hi = sizeof sds; sl.spells = 0; sl.spell_count = 0x60;
+    static classes::Tables st;
+    CHECK(st.set(sl, sds, sizeof sds));
+    combat::SpellLine out[16];
+    int who[4] = {0, 1, 2, 3};
+    // Enlarge (level 6: 18/00) on Strength 12; Reduce takes it (a failed save)
+    setup();
+    rec[0][0x10E] = 6;
+    const combat::FightSpell enl{0x0C, combat::SpellDoes::Enlarge, 0, 0, 0, 0, 0, 1};
+    int n = combat::cast(b, st, 0, 0x0C, enl, who + 1, 1, d, out, 16);
+    CHECK(n == 1 && out[0].did == combat::Did::Word && b.f[1].has(0x0C) && aff[1][0][3] == 101 && aff[1][0][1] == 60);
+    rec[1][0x11] = 18; rec[1][0x1C] = 100;
+    n = combat::cast(b, st, 0, 0x0C, enl, who + 1, 1, d, out, 16);
+    CHECK(n == 1 && out[0].did == combat::Did::Unaffected);
+    const combat::FightSpell red{0x0D, combat::SpellDoes::Reduce, 0, 0, 0, 0, 0, 1};
+    n = combat::cast(b, st, 0, 0x0D, red, who + 1, 1, d, out, 16);
+    CHECK(n == 1 && !b.f[1].has(0x0C));
+    // Remove Curse: the curse cured, else the cursed item off
+    setup();
+    aff[1][0][0] = 0x24; naff[1] = 1;
+    its[1][0][0x36] = 1; its[1][0][0x34] = 1;
+    const combat::FightSpell rc{0x2B, combat::SpellDoes::RemoveCurse, 0, 0, 0, 0, 0, 1, 2, 3};
+    n = combat::cast(b, st, 0, 0x2B, rc, who + 1, 1, d, out, 16);
+    CHECK(n == 2 && out[0].did == combat::Did::Word2 && out[1].did == combat::Did::Word && !b.f[1].has(0x24) &&
+          its[1][0][0x34] == 1);
+    n = combat::cast(b, st, 0, 0x2B, rc, who + 1, 1, d, out, 16);
+    CHECK(n == 1 && out[0].did == combat::Did::Word3 && its[1][0][0x34] == 0 && its[1][0][0x36] == 1);
+    // Confusion: confused for 2 + level rounds; its turns by d100
+    setup();
+    rec[0][0x10E] = 5;
+    const combat::FightSpell cf{0x52, combat::SpellDoes::Confuse, 0, 0, 0, 0, 0, 1};
+    n = combat::cast(b, st, 0, 0x52, cf, who + 2, 2, d, out, 16);
+    CHECK(n >= 1 && b.f[2].has(0x23) == (out[0].did == combat::Did::Word));
+    combat::start_round(b, d);
+    int seen[9] = {};
+    for (int r = 0; r < 60; ++r) {
+        if (!b.f[2].has(0x23)) { aff[2][naff[2]][0] = 0x23; aff[2][naff[2]][1] = 9; ++naff[2]; }
+        b.f[2].fleeing = false;
+        rec[2][0x197] = 1;
+        ++seen[static_cast<int>(combat::turn_effects(b, 2))];
+        while (naff[2]) aff[2][--naff[2]][0] = 0;
+    }
+    CHECK(seen[static_cast<int>(combat::TurnFx::Confused)] > 0 && seen[static_cast<int>(combat::TurnFx::Berserk)] > 0 &&
+          seen[static_cast<int>(combat::TurnFx::Enraged)] > 0 && seen[static_cast<int>(combat::TurnFx::RunsAway)] > 0);
+    // Berserk: at the nearest (its own side's fighter 3? no - fighter 1 at 11), a round; then its side again
+    setup();
+    combat::start_round(b, d);
+    aff[2][0][0] = 0x23; aff[2][0][1] = 9; naff[2] = 1;
+    combat::TurnFx tf = combat::TurnFx::None;
+    for (int r = 0; r < 200 && tf != combat::TurnFx::Berserk; ++r) {
+        if (!b.f[2].has(0x23)) { aff[2][0][0] = 0x23; aff[2][0][1] = 9; naff[2] = 1; }
+        b.f[2].fleeing = false;
+        tf = combat::turn_effects(b, 2);
+        if (tf != combat::TurnFx::Berserk) { naff[2] = 0; memset(aff[2], 0, sizeof aff[2]); }
+    }
+    CHECK(tf == combat::TurnFx::Berserk && b.f[2].has(0x89));
+    combat::tick(b);
+    CHECK(!b.f[2].has(0x89) && b.f[2].team() == 1);
+    // Dispel Evil: the evil's attacks on the caster -7; its blow dispels them (they never save)
+    setup();
+    const combat::FightSpell de{0x49, combat::SpellDoes::DispelEvil, 0, 0, 0, 0, 0, 1};
+    rec[0][0x10E] = 0; rec[0][0x109] = 9;
+    n = combat::cast(b, st, 0, 0x49, de, who, 1, d, out, 16);
+    CHECK(n == 1 && b.f[0].has(0x04) && b.f[0].has(0x91));
+    rec[2][0x14B] = 1;
+    b.f[0].x = 11; b.f[2].x = 12; b.f[1].x = 30;
+    combat::occupancy(b);
+    b.f[0].attacks[0] = 1;
+    combat::Attack at = combat::attack(b, 0, 2, nullptr, d);
+    CHECK(!at.hits[0].hit || (b.f[2].status() == party::Gone && at.down && !b.f[0].has(0x04)));
+    // Fire shield: hot (said), the zap: one hitting it from next to it takes twice its blow
+    setup();
+    b.flame = 1;
+    const combat::FightSpell fsh{0x55, combat::SpellDoes::FireShield, 0, 0, 0, 0, 0, 1};
+    n = combat::cast(b, st, 0, 0x55, fsh, who, 1, d, out, 16);
+    CHECK(n == 1 && b.f[0].has(0x32) && b.f[0].has(0x8F) && b.flame == 0);
+    b.f[2].x = 11; b.f[1].x = 30;
+    combat::occupancy(b);
+    b.f[2].attacks[0] = 1;
+    at = combat::attack(b, 2, 0, nullptr, d);
+    CHECK(!at.hits[0].hit || (b.f[2].hp() == 80 && b.f[0].hp() == 90 && at.n_ev >= 2 && at.ev[0].ev == combat::Ev::Zapped));
+    // Dispel Magic: a level 12 dispeller against level 1 effects (95%); the 0xFF ones stay
+    setup();
+    rec[0][0x10E] = 12;
+    aff[3][0][0] = 0x01; aff[3][0][3] = 1;
+    aff[3][1][0] = 0x40; aff[3][1][3] = 0xFF;
+    naff[3] = 2;
+    const combat::FightSpell dm{0x29, combat::SpellDoes::Dispel, 0, 0, 0, 0, 0, 1};
+    n = combat::cast(b, st, 0, 0x29, dm, who + 3, 1, d, out, 16);
+    CHECK(b.f[3].has(0x40) && (b.f[3].has(0x01) == (n == 0)));
+    // Its clouds: the one next to the square aimed at ends as the round does
+    CHECK(combat::lay_cloud(b, t, 20, 5, 1) && b.clouds[0].level == 1);
+    b.clouds[0].rounds = 5;
+    int cleared = 0;
+    for (int r = 0; r < 5 && !cleared; ++r) { b.clouds[0].resisted = false; cleared = combat::dispel_clouds(b, 21, 5, 12, d); }
+    CHECK(cleared == 1 && b.clouds[0].rounds == 1);
+    // Dimension Door: to an empty square; a hug lets go
+    setup();
+    aff[0][0][0] = 0x3A; aff[0][0][3] = 0; naff[0] = 1;
+    aff[3][0][0] = 0x90; aff[3][0][3] = 0; naff[3] = 1;
+    CHECK(!combat::teleport(b, t, 0, 11, 10) && combat::teleport(b, t, 0, 20, 12));
+    CHECK(b.f[0].x == 20 && b.who[12][20] == 1 && !b.f[0].has(0x3A) && !b.f[3].has(0x90));
+}
+
 int main()
 {
     test_rle_known_bytes();
@@ -3891,6 +4057,7 @@ int main()
     test_spells();
     test_combat();
     test_monster_fx();
+    test_spells_batch2();
     test_create();
     if (failures) {
         printf("%d check(s) failed\n", failures);

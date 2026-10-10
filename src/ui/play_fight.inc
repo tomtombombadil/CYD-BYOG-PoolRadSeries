@@ -220,7 +220,7 @@ void blit4(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y, bool mi
 // ---- The fight's state (on the heap while fighting)
 enum class FSt : uint8_t {
     Begin, Turn, Menu, Move, Aim, DoneMenu, Speed, Ai, Pages, RoundEnd, Results, Destroyed, AllyAsk, FleeAsk,
-    ContinueAsk, Next, UseAim, AbortAsk, RoundRest, Clouds, Resume
+    ContinueAsk, Next, UseAim, AbortAsk, RoundRest, Clouds, Resume, FlameAsk, FlameAbort
 };
 
 // A page's pictures: a missile or spell flying, a burst / sparkles on a
@@ -1069,6 +1069,9 @@ void event_page(const combat::Event& e)
         break;
     }
     case combat::Ev::Cast: special_cast(who, e.amount); break;
+    case combat::Ev::Dispelled: fallen(profile::kIsDispelled); break;
+    case combat::Ev::ResistsDispel: said(profile::kResistsDispel); break;
+    case combat::Ev::Zapped: said(profile::kGetsZapped); break;
     }
 }
 
@@ -1366,6 +1369,20 @@ void start_turn(pic::Canvas& c)
         }
         if (tf == combat::TurnFx::Fumbling) {
             end_turn(c);
+            return;
+        }
+        if (tf == combat::TurnFx::Confused) {
+            add_page(fg->cur, fw(profile::kIsConfusedT));
+            say(c, FSt::Next);
+            return;
+        }
+        if (tf == combat::TurnFx::RunsAway || tf == combat::TurnFx::Berserk || tf == combat::TurnFx::Enraged) {
+            // (the turn goes on: fleeing, at the nearest one, or as ever)
+            f.coughed = true;
+            add_page(fg->cur, fw(tf == combat::TurnFx::RunsAway ? profile::kRunsAway
+                                 : tf == combat::TurnFx::Berserk ? profile::kGoesBerserk
+                                                                 : profile::kIsEnraged));
+            say(c, FSt::Resume);
             return;
         }
         if (tf == combat::TurnFx::Suffocates) {
@@ -2449,6 +2466,15 @@ void fight_cast_menu(pic::Canvas& c)
     draw_spells(c);
 }
 
+// The fire shield's flame: "flame type: Hot Cold"; leaving it: "Abort spell? Yes No"
+void flame_menu(pic::Canvas& c)
+{
+    fg->st = FSt::FlameAsk;
+    text::build(menu, fw(profile::kFlameType), fw(profile::kHotCold));
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
 void begin_targeting(pic::Canvas& c, int sp)
 {
     if (!load_magic()) {
@@ -2461,6 +2487,13 @@ void begin_targeting(pic::Canvas& c, int sp)
     fg->sp_area = -1;
     fg->aim_x = fg->aim_y = -1;
     const int aim = e.aim & 0x0F;
+    const combat::FightSpell* bfs = fight_spell(sp);
+    if (bfs && bfs->does == combat::SpellDoes::FireShield && !fg->b.f[fg->cur].quick && !fg->b.f[fg->cur].team()) {
+        // "flame type: Hot Cold"
+        fg->sp_t[fg->sp_n++] = fg->cur;
+        flame_menu(c);
+        return;
+    }
     if (aim == 0) {
         fg->sp_t[fg->sp_n++] = fg->cur;
         cast_now(c);
@@ -2610,6 +2643,11 @@ void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::Fi
             add_page(l[k].who, t);
             page_fx_set(1, hit_fx(l[k].who, true));
             break;
+        case combat::Did::Word3:
+            ow(fs.word3, t, sizeof t);
+            add_page(l[k].who, t);
+            page_fx_set(1, hit_fx(l[k].who, true));
+            break;
         case combat::Did::Misses: add_page(caster, fw(profile::kMisses), nullptr, l[k].who); break;
         case combat::Did::Fallen:
             if (fg->pages > 0) fg->page[fg->pages - 1].fx[1] = skull_fx(l[k].who);
@@ -2702,9 +2740,36 @@ void cast_now(pic::Canvas& c, bool forgotten)
         }
         fg->sp_n = combat::cloud_fighters(b, ax, ay, fg->sp_t, combat::kMaxFighters, poison);
     }
+    if (fs->does == combat::SpellDoes::Teleport) {
+        // Dimension Door: to the square aimed at, within 3 squares a level, when it can stand there
+        const int lv = from_item ? pw : combat::power_of(f.rec, mrules->tables, sp, false);
+        int len = 0;
+        combat::path(b, fg->t, i, ax, ay, true, &len);
+        if (ax >= 0 && len / 2 <= 3 * lv && combat::teleport(b, fg->t, i, ax, ay)) {
+            char said[48];
+            ow(fs->word, said, sizeof said);
+            add_page(i, said);
+            Fx r;
+            r.kind = Fx::Redraw;
+            page_fx_set(1, r);
+            focus(i, 2);
+        }
+        if (from_item) spend_item(i, sp);
+        f.attacks[0] = f.attacks[1] = 0;
+        f.moves = 0;
+        say(c, FSt::Next);
+        return;
+    }
     combat::SpellLine lines[24];
+    b.aim_x = ax;
+    b.aim_y = ay;
     const int n = combat::cast(b, mrules->tables, i, sp, *fs, fg->sp_t, fg->sp_n, rng, lines, 24, pw);
+    b.aim_x = b.aim_y = -1;
     spell_pages(i, lines, n, *fs, each);
+    // Strength, items and effects changed: the party's values again
+    if (fs->does == combat::SpellDoes::Enlarge || fs->does == combat::SpellDoes::Reduce ||
+        fs->does == combat::SpellDoes::RemoveCurse || fs->does == combat::SpellDoes::Dispel)
+        for (int k = 0; k < pt->count; ++k) rules::recalc(pt->m[k], *names, d->facts);
     // The spell flies with its first page, with its sound: the fireball's
     // roar, the bolt's crackle (its own picture), else the spell's
     if (fg->pages > first_page) {
@@ -2901,6 +2966,30 @@ void fight_tap(int x, int y, pic::Canvas& c)
         fight_menu(c);
         return;
     }
+    case FSt::FlameAsk: {
+        if (y < text::kMenuTapTop) return;
+        const char k = text::key(menu, text::hit(menu, col));
+        if (k != 'H' && k != 'C') return;
+        fg->b.flame = k == 'H' ? 1 : 2;
+        cast_now(c);
+        return;
+    }
+    case FSt::FlameAbort: {
+        if (y < text::kMenuTapTop) return;
+        const char k = text::key(menu, text::hit(menu, col));
+        if (k == 'N') {
+            flame_menu(c);
+            return;
+        }
+        if (k != 'Y') return;
+        // The spell is gone and the turn over
+        forget_spell(fg->b.f[fg->cur], fg->spell);
+        fg->spell = 0;
+        add_page(fg->cur, fw(profile::kSpellAborted));
+        draw_fight(c);
+        say(c, FSt::Next);
+        return;
+    }
     case FSt::AbortAsk: {
         if (y < text::kMenuTapTop) return;
         const char k = text::key(menu, text::hit(menu, col));
@@ -2975,6 +3064,13 @@ bool fight_back(pic::Canvas& c)
     case FSt::AllyAsk:
     case FSt::FleeAsk: fight_menu(c); return true;
     case FSt::AbortAsk: aim_menu(c); return true;
+    case FSt::FlameAsk:
+        fg->st = FSt::FlameAbort;
+        text::build(menu, fw(profile::kAbortSpellQ), fw(profile::kYesNoF));
+        menu.selected = 1;
+        show_menu_line(c);
+        return true;
+    case FSt::FlameAbort: flame_menu(c); return true;
     default: return true;               // (no leaving a fight)
     }
 }

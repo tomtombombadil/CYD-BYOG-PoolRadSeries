@@ -367,9 +367,7 @@ stay in the session's scratch space, never in the repo.
    -4, easier to hit, saves -4); Cone of Cold is cold + magic (coab: acid);
    the hold spells take persons only (but Hold Monsters); Charm Monsters
    as the original (the last picked, non-persons and large ones
-   unaffected). Still to come: Enlarge / Reduce in fights, Spiritual Hammer, Animate Dead, Dispel Magic,
-   Restoration, Dispel Evil, Confusion, Dimension Door, Fire Shield, Slow
-   Poison in fights; the group-by-size aim (Faerie Fire, Charm Monsters)
+   unaffected). The group-by-size aim (Faerie Fire, Charm Monsters)
    is a radius of 1 for now.
    v0.61.0 (facts: the Project's claude/monster_fx_facts.md, checked
    against the original code; `combat::MonFx` in the profile): **the
@@ -410,6 +408,29 @@ stay in the session's scratch space, never in the repo.
    original's quirks kept: the dracolich's paralysing gaze never fires,
    the owl bear never squeezes, Mogion's cloak does nothing. To come: the
    lightning's bounces off walls.
+   v0.62.0 (spell_facts.md 2): **Enlarge** in fights (Strength by level,
+   only when more: "is stronger"), **Reduce** (a failed save takes Enlarge
+   away; nothing said otherwise), **Remove Curse** in fights (Bestow Curse
+   "is Cured" / "is un-cursed", else the first cursed item comes off: "has
+   an item un-cursed"), **Confusion** (the first 2d8 in 3 squares, a save
+   or "is confused" for 2 + level rounds; each turn d100: 1-10 "runs away"
+   (afraid 10 rounds), 11-60 "is confused" (the turn lost), 61-80 "goes
+   berserk" (a round on the side against the nearest creature), 81-100 "is
+   enraged"; then a save at -2 ends it), **Dispel Evil** (the evil's
+   attacks on the caster -7; its first slot's hits: "is dispelled" (gone)
+   or "resists dispel evil"), **Fire Shield** ("flame type: Hot Cold",
+   Esc: "Abort spell? Yes No"; the computer: d10 over 5 hot; hot "is
+   protected", +2 on saves against cold, fire doubled when not saved; cold
+   the other way round; both zap: one hitting it from next to it "gets
+   zapped" for twice the blow, magic), **Dimension Door** (an empty
+   square within 3 x level; a hug or engulfing lets go: "teleports"),
+   **Dispel Magic** (the first one in the area: each effect but data 0xFF
+   50% +5 a level the caster is above / -2 a level below it, a pass for
+   each one in the area - the original's; "is affected"; the clouds next
+   to the square aimed at likewise against their caster's level, a failed
+   one resists from then on), the magic-users' Bestow Curse (no effect, as
+   in the original). Still to come: Spiritual Hammer, Animate Dead,
+   Restoration, Slow Poison in fights.
 7. **All four games**: the per-game differences (PoD's VGA graphics), party
    transfer between games.
 
