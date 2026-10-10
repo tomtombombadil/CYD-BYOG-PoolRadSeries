@@ -28,6 +28,7 @@ struct Image {
     int      width = 0, height = 0;
     bool     jpeg = false;                 // /DCTDecode
     uint32_t data_at = 0, data_len = 0;
+    bool     no_memory = false;            // page_image failed for want of memory
 };
 
 // Reads the cross-reference table and trailer. False if it isn't a PDF this
@@ -37,7 +38,8 @@ bool open(dax::ByteSource& src, Doc& doc);
 // The page objects in reading order; returns how many (at most max).
 int pages(dax::ByteSource& src, const Doc& doc, int* page_obj, int max);
 
-// The first image the page uses (its /Resources /XObject).
+// The first image the page uses (its /Resources /XObject). Needs two
+// ~8 KB blocks while it runs (out.no_memory when they weren't there).
 bool page_image(dax::ByteSource& src, const Doc& doc, int page_obj, Image& out);
 
 } // namespace pdf

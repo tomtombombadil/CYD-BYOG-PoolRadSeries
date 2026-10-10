@@ -2,6 +2,9 @@
 
 #include <Arduino.h>
 #include <esp_heap_caps.h>
+#include <cstring>
+
+#include "hal/sdcard.h"
 
 namespace frame {
 
@@ -46,6 +49,50 @@ bool begin()
 }
 
 pic::Canvas& canvas() { return cv; }
+
+namespace {
+bool is_parked = false;
+constexpr size_t kCanvasBytes = static_cast<size_t>(pic::kScreenW) * pic::kScreenH;
+}
+
+bool park(const char* path)
+{
+    if (!pixels || is_parked || !sd_begin()) return false;
+    fs::File f = sd_fs().open(path, "w");
+    if (!f) return false;
+    const bool ok = f.write(pixels, kCanvasBytes) == kCanvasBytes;
+    f.close();
+    if (!ok) return false;
+    heap_caps_free(pixels);
+    pixels = nullptr;
+    cv.px = nullptr;
+    is_parked = true;
+    return true;
+}
+
+bool unpark(const char* path)
+{
+    if (!is_parked) return true;
+    uint8_t* p = static_cast<uint8_t*>(heap_caps_malloc(kCanvasBytes, MALLOC_CAP_8BIT));
+    if (!p) {
+        Serial.printf("[frame] no memory to bring the canvas back (largest block %u)\n",
+                      (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        return false;
+    }
+    bool ok = sd_begin();
+    if (ok) {
+        fs::File f = sd_fs().open(path, "r");
+        ok = f && f.read(p, kCanvasBytes) == kCanvasBytes;
+        if (f) f.close();
+    }
+    if (!ok) memset(p, 0, kCanvasBytes);       // a blank screen rather than none; the game redraws
+    pixels = p;
+    cv.px = p;
+    is_parked = false;
+    return true;
+}
+
+bool parked() { return is_parked; }
 
 void set_palette(int index, const pic::Rgb& c)
 {

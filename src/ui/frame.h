@@ -40,6 +40,15 @@ ui::Rect area();
 void present();
 void present_rows(int y0, int y1);
 
+// While the journal book is open the game screen waits on the card
+// (v0.52.0): park() writes the canvas to path and frees its 64,000 bytes
+// (false: nothing written, the canvas stays); unpark() reads it back
+// (false: no memory - the canvas has no pixels then; unreadable: blank).
+// Nothing may draw on the canvas while it is parked.
+bool park(const char* path);
+bool unpark(const char* path);
+bool parked();
+
 // Panel point -> canvas point. False if outside the canvas.
 bool to_canvas(int px, int py, int& cx, int& cy);
 

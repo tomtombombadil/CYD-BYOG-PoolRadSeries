@@ -1253,12 +1253,13 @@ void tap_look(const ui::Tap& t)
 // engine's Menu) / Look / Esc stacked. 320x240: one row - the Walk Test's
 // 8 keys; the Play Test's 9 slots showing either the movement keys (Side-
 // step Left, Turn Left, Forward, Turn Right, Side-step Right, Turn Around,
-// Cursor, Game, Esc) or the cursor keys (Left, Up, Select - two slots wide
-// -, Down, Right, Move, Game, Esc): the movement keys while the party can
-// walk (play::walking), the cursor keys otherwise; Cursor / Move swap them
-// by hand until the game's state changes.
+// Menu Keys, Game, Map) or the cursor keys (Up, Down, Select - two slots
+// wide -, Left, Right, Move Keys, Game, Map; Tom, v0.52.0 - Esc moved to
+// the Game menu): the movement keys while the party can walk
+// (play::walking), the cursor keys otherwise; Menu Keys / Move Keys swap
+// them by hand until the game's state changes.
 enum WalkKey { kWTurnL, kWStepL, kWFwd, kWStepR, kWTurnR, kWAround, kWArea, kWNext, kWEsc,
-               kWUp, kWLeft, kWSel, kWRight, kWDown, kWCursor, kWMove, kWKeys };
+               kWUp, kWLeft, kWSel, kWRight, kWDown, kWCursor, kWMove, kWMap, kWKeys };
 constexpr int kWMoveKeys = kWUp;        // the Walk Test has no cursor keys
 
 enum class Row : uint8_t { Walk, Move, Cursor };
@@ -1272,22 +1273,22 @@ ui::Rect walk_key(int k)
     if (!ui::large()) {
         if (row == Row::Walk) {
             // Row of 8: StepL TurnL Fwd TurnR StepR Around Area Esc (Next Map: menu / panel tap)
-            static const int kOrder[kWKeys] = {1, 0, 2, 4, 3, 5, 6, -1, 7, -1, -1, -1, -1, -1, -1, -1};
+            static const int kOrder[kWKeys] = {1, 0, 2, 4, 3, 5, 6, -1, 7, -1, -1, -1, -1, -1, -1, -1, -1};
             const int i = kOrder[k];
             if (i < 0) return ui::Rect{};
             const int w = (pic::kScreenW - gp * 9) / 8;
             return {gp + i * (w + gp), top, w, h_all};
         }
         // 9 slots
-        static const int kMove[kWKeys] = {1, 0, 2, 4, 3, 5, 7, -1, 8, -1, -1, -1, -1, -1, 6, -1};
-        static const int kCur[kWKeys] = {-1, -1, -1, -1, -1, -1, 7, -1, 8, 1, 0, 2, 5, 4, -1, 6};
+        static const int kMove[kWKeys] = {1, 0, 2, 4, 3, 5, 7, -1, -1, -1, -1, -1, -1, -1, 6, -1, 8};
+        static const int kCur[kWKeys] = {-1, -1, -1, -1, -1, -1, 7, -1, -1, 0, 4, 2, 5, 1, -1, 6, 8};
         const int i = (row == Row::Move ? kMove : kCur)[k];
         if (i < 0) return ui::Rect{};
         const int w = (pic::kScreenW - gp * 10) / 9;
         const int span = k == kWSel ? 2 : 1;            // Select: two slots
         return {gp + i * (w + gp), top, w * span + gp * (span - 1), h_all};
     }
-    if (k == kWCursor || k == kWMove) return ui::Rect{};
+    if (k == kWCursor || k == kWMove || k == kWMap) return ui::Rect{};
     const int pad_w = (pic::kScreenW - gp * 3) / 2;
     const int kw = (pad_w - gp * 2) / 3;
     const int mh = (h_all - gp) / 2;                    // the movement pad: 2 rows
@@ -1337,6 +1338,10 @@ const MapSource kPlayMap{play::map, play::pos_x, play::pos_y, play::dir, play::d
 // (until play::walking() changes)
 bool row_flip = false, row_walking = false;
 
+// 320x240's Map key (v0.52.0): the Companion's map over the game screen
+// until the next tap; the game waits meanwhile
+bool map_shown = false;
+
 // The keys beside the map (480x320) / at the row's end: Area or Game,
 // Next Map or Look, Esc (the strip is redrawn with the map)
 const char* side_keys[2] = {"Area", "Next Map"};
@@ -1344,8 +1349,11 @@ void redraw_side_keys()
 {
     ui::key(walk_key(kWArea), side_keys[0]);
     if (ui::large()) ui::key(walk_key(kWNext), side_keys[1]);
-    ui::key(walk_key(kWEsc), "Esc");
+    if (walk_key(kWEsc).w > 0) ui::key(walk_key(kWEsc), "Esc");
+    if (walk_key(kWMap).w > 0) ui::key(walk_key(kWMap), "Map", map_shown ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
 }
+
+void draw_map_grid(const geo::Map& map, const MapSource& ms, int mx, int my, int cell);
 
 // The Gold Box Companion strip (480x320): the whole map, the party arrow
 void draw_companion(const MapSource& ms = kWalkMap)
@@ -1365,7 +1373,18 @@ void draw_companion(const MapSource& ms = kWalkMap)
         redraw_side_keys();
         return;
     }
-    const int cell = kCompCell, mx = comp_map_x(), my = kCompMapY;
+    const int cell = kCompCell, my = kCompMapY;
+    draw_map_grid(*m, ms, comp_map_x(), my, cell);
+    ui::text(x0 + 6, my + cell * geo::kSize + 3, ms.teleport ? "Tap a square to go there" : "Gold: door, red: locked",
+             style::kTextMuted, ui::Font::Small);
+    redraw_side_keys();
+}
+
+// The map's walls and doors, the party a triangle pointing the way it faces
+void draw_map_grid(const geo::Map& map, const MapSource& ms, int mx, int my, int cell)
+{
+    LGFX& g = ui::gfx();
+    const geo::Map* m = &map;
     g.fillRect(mx, my, cell * geo::kSize + 1, cell * geo::kSize + 1, style::kKey);
     for (int y = 0; y < geo::kSize; ++y)
         for (int x = 0; x < geo::kSize; ++x) {
@@ -1388,9 +1407,29 @@ void draw_companion(const MapSource& ms = kWalkMap)
     const int lx = cx + geo::dx((dir + 6) & 7) * r - geo::dx(dir) * r, ly = cy + geo::dy((dir + 6) & 7) * r - geo::dy(dir) * r;
     const int rx = cx + geo::dx((dir + 2) & 7) * r - geo::dx(dir) * r, ry = cy + geo::dy((dir + 2) & 7) * r - geo::dy(dir) * r;
     g.fillTriangle(fx, fy, lx, ly, rx, ry, style::kGold);
-    ui::text(x0 + 6, my + cell * geo::kSize + 3, ms.teleport ? "Tap a square to go there" : "Gold: door, red: locked",
-             style::kTextMuted, ui::Font::Small);
-    redraw_side_keys();
+}
+
+// 320x240's Map key: the map over the game screen, what the 480x320
+// Companion strip shows beside it
+void draw_map_page()
+{
+    LGFX& g = ui::gfx();
+    g.fillRect(0, 0, pic::kScreenW, pic::kScreenH, style::kBackground);
+    const int cell = 12, mx = 4, my = (pic::kScreenH - cell * geo::kSize - 1) / 2;
+    const int tx = mx + cell * geo::kSize + 8, tw = pic::kScreenW - tx - 4;
+    char l1[48], l2[48];
+    kPlayMap.describe(l1, l2, sizeof l1);
+    const geo::Map* m = kPlayMap.map();
+    if (m) draw_map_grid(*m, kPlayMap, mx, my, cell);
+    else wrap_text(mx, my, tx - mx - 8, "No map here.", ui::Font::Normal, style::kText, true);
+    int y = my;
+    y = wrap_text(tx, y, tw, l1, ui::Font::Small, style::kTextMuted, true) + 2;
+    y = wrap_text(tx, y, tw, l2, ui::Font::Small, style::kTextMuted, true) + 8;
+    if (m) {
+        y = wrap_text(tx, y, tw, "Gold: door", ui::Font::Small, style::kGold, true);
+        y = wrap_text(tx, y, tw, "Red: locked", ui::Font::Small, style::kWarn, true) + 8;
+    }
+    wrap_text(tx, y, tw, "Tap to go back to the game.", ui::Font::Small, style::kText, true);
 }
 
 void draw_walk_keys(const char* side_label, const char* area_label, bool cursor)
@@ -1570,10 +1609,20 @@ int  menu_page = 0;
 bool from_menu = false;       // the journal / PDF screens go back to the Menu
 char menu_note[160] = {};
 
+// 320x240: Esc lives in the Game menu, at the tab bar's right (Tom,
+// v0.52.0 - its place in the row went to Map): back to the game, Esc
+ui::Rect menu_esc_rect()
+{
+    if (ui::large()) return ui::Rect{};
+    const int gp = ui::gap(), w = 44;
+    return {ui::width() - gp - w, 2, w, ui::header_h() - 4};
+}
+
 ui::Rect tab_rect(int i)
 {
     const int gp = ui::gap();
-    const int w = (ui::width() - gp * (kTabs + 1)) / kTabs;
+    const int right = ui::large() ? ui::width() : menu_esc_rect().x;
+    const int w = (right - gp * (kTabs + 1)) / kTabs;
     return {gp + i * (w + gp), 2, w, ui::header_h() - 4};
 }
 
@@ -1582,6 +1631,13 @@ void draw_tabs(int active)
     static const char* const kNames[kTabs] = {"Journal", "Journal PDF", "Sounds"};
     ui::gfx().fillRect(0, 0, ui::width(), ui::header_h(), style::kHeader);
     for (int i = 0; i < kTabs; ++i) ui::key(tab_rect(i), kNames[i], i == active ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+    if (menu_esc_rect().w > 0) ui::key(menu_esc_rect(), "Esc");
+}
+
+bool menu_esc_hit(const ui::Tap& t)
+{
+    const ui::Rect r = menu_esc_rect();
+    return r.w > 0 && r.contains(t.x, t.y);
 }
 
 int tab_hit(const ui::Tap& t)
@@ -1620,6 +1676,19 @@ void leave_menu()
 {
     from_menu = false;
     go(Screen::Play);
+}
+
+void close_book();
+void leave_play();
+
+// The Game menu's Esc (320x240): back to the game, then Esc as the row's
+// key did (out of what the game shows; at the top, out of the Play Test)
+void menu_esc()
+{
+    close_book();
+    leave_menu();
+    if (play_error) return;
+    if (!play::back(frame::canvas())) leave_play();
 }
 
 // The Sounds tab: the game's sound effects to hear, Tandy or PC speaker
@@ -1734,6 +1803,10 @@ void draw_game_menu()
 
 void tap_game_menu(const ui::Tap& t)
 {
+    if (menu_esc_hit(t)) {
+        menu_esc();
+        return;
+    }
     const int tab = tab_hit(t);
     if (tab == kTabPdf) {
         menu_tab = kTabPdf;
@@ -2067,11 +2140,28 @@ void draw_journal()
     f.close();
 }
 
+// The journal book needs ~50 KB while it draws a page; beside the Play
+// Test that wasn't there any more (Tom, v0.51.0: "This page has no scanned
+// picture." again - a memory failure reported as no picture). So while the
+// book is open the game screen waits on the card (v0.52.0).
+void canvas_park_path(char* out, size_t cap) { library::cache_path("CANVAS.TMP", out, cap); }
+
+void close_book()
+{
+    pdfview::close();
+    if (!frame::parked()) return;
+    char path[96];
+    canvas_park_path(path, sizeof path);
+    if (!frame::unpark(path))
+        play_error = "Not enough memory to bring the game screen back after the journal book. Tap Back, then start "
+                     "the Play Test again.";
+}
+
 void leave_journal()
 {
     delete jv;
     jv = nullptr;
-    pdfview::close();
+    close_book();
     // The Menu (when it opened the entry or the book), or the game screen
     // as it was
     go(from_menu ? Screen::GameMenu : Screen::Play);
@@ -2088,10 +2178,15 @@ bool open_book()
         const char* path;
         bool        ok;
     } job{path, false};
+    char cpath[96];
+    canvas_park_path(cpath, sizeof cpath);
+    frame::park(cpath);                  // false: the canvas stays (the card wouldn't take it)
     // PDF parsing on a stack of its own (deep)
     if (!run_on_big_stack([](void* p) { auto* j = static_cast<Job*>(p); j->ok = pdfview::open(j->path); }, &job) ||
-        !job.ok)
+        !job.ok) {
+        close_book();
         return false;
+    }
     pdf_page = 1;
     pdf_level = kFitWhole;
     pdf_vx = pdf_vy = 0;
@@ -2221,15 +2316,19 @@ void tap_pdf(const ui::Tap& t)
 {
     if (from_menu) {
         // The Menu's tabs instead of a title bar; Back to Game leaves the Menu
+        if (menu_esc_hit(t)) {
+            menu_esc();
+            return;
+        }
         if (tab_hit(t) == kTabJournal) {
-            pdfview::close();
+            close_book();
             menu_tab = kTabJournal;
             menu_note[0] = 0;
             go(Screen::GameMenu);
             return;
         }
         if (bottom_hit(t, 4) == 0) {
-            pdfview::close();
+            close_book();
             leave_menu();
             return;
         }
@@ -2289,6 +2388,13 @@ void leave_play()
     jv = nullptr;
     play::close();
     play_error = nullptr;
+    if (frame::parked()) {
+        // Left on the card after the journal book (no memory then): the
+        // Play Test's memory is free now
+        char path[96];
+        canvas_park_path(path, sizeof path);
+        frame::unpark(path);
+    }
     frame::set_left(false);
     frame::set_scale(cfg->scale_15x ? frame::Scale::OneAndHalf : frame::Scale::One);
     go(Screen::Files);
@@ -2353,6 +2459,7 @@ void draw_play()
         wrap_text(ui::gap() * 3, y, ui::width() - ui::gap() * 6, play_error, ui::Font::Normal, style::kText, true);
         return;
     }
+    map_shown = false;
     frame::set_ega_palette();
     play::draw(frame::canvas());
     ui::clear();
@@ -2408,6 +2515,13 @@ void tap_play(const ui::Tap& t)
         present_play();
         return;
     }
+    if (map_shown) {
+        // The next tap closes the map; one on it or on the Map key does only that
+        map_shown = false;
+        frame::present();
+        redraw_side_keys();
+        if (t.y < pic::kScreenH || walk_key(kWMap).contains(t.x, t.y)) return;
+    }
     static const play::Act kActs[kWMoveKeys] = {play::Act::TurnLeft, play::Act::StepLeft, play::Act::Forward,
                                                 play::Act::StepRight, play::Act::TurnRight, play::Act::TurnAround,
                                                 play::Act::Area, play::Act::Look, play::Act::Forward};
@@ -2422,6 +2536,12 @@ void tap_play(const ui::Tap& t)
         if (k == kWArea) {          // the Game key: the engine's Menu
             kb_shown = false;
             open_menu();
+            return;
+        }
+        if (k == kWMap) {                       // 320x240: the map over the game screen
+            map_shown = true;
+            draw_map_page();
+            redraw_side_keys();
             return;
         }
         if (k == kWCursor || k == kWMove) {     // 320x240: the other set of keys, by hand
@@ -2760,7 +2880,7 @@ void tick()
     if (screen == Screen::Journal && !dirty) tick_journal();
     if (screen == Screen::Pdf && !dirty) tick_pdf();
     if (screen == Screen::Look && !look_error && !dirty) present(look::tick(millis(), frame::canvas()));
-    if (screen == Screen::Play && !play_error && !dirty) {
+    if (screen == Screen::Play && !play_error && !dirty && !map_shown) {
         play::tick(millis(), frame::canvas());
         present_play();
     }

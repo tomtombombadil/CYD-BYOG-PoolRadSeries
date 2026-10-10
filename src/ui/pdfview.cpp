@@ -200,7 +200,8 @@ Result draw(int page, const ui::Rect& r, Fit fit, int* vx, int* vy, ui::Rect* fi
 {
     if (!st || page < 1 || page > st->n) return Result::NoPicture;
     pdf::Image img;
-    if (!pdf::page_image(*st->src, st->doc, st->page_obj[page - 1], img) || !img.jpeg) return Result::NoPicture;
+    if (!pdf::page_image(*st->src, st->doc, st->page_obj[page - 1], img) || !img.jpeg)
+        return img.no_memory ? Result::NoMemory : Result::NoPicture;
     uint8_t* pool = static_cast<uint8_t*>(malloc(jpeg::kPoolSize));
     Draw* d = new (std::nothrow) Draw;
     Result res = pool && d ? Result::Ok : Result::NoMemory;

@@ -80,7 +80,8 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   down) beside a 3 x 2 movement pad (Turn Around between the side-steps),
   and Game / Look / Esc under the Companion map (no big "Map" heading; the
   area / script / map lines small). Up / Down: a list's highlight (Left /
-  Right on the menu line; Up / Down too when there's no list); Select = a
+  Right on the menu line; Up / Down too when there's no list; the party
+  list beside a menu line is a list - `play::party_nav`, Tom); Select = a
   tap on the highlighted thing (`play::nav`, `play::nav_point`). New screens
   with lists or menus must take part. 320x240 (Tom, v0.51.0): automatic
   plus a switch - one row of 9: movement arrows + Menu Keys / Game / Esc
@@ -88,6 +89,13 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   Down / Right + Move Keys / Game / Esc; the switch lasts until walking
   changes. Cursor keys are small text (`ui::key_small`) on both sizes;
   movement keys keep their drawn arrows (never "<<" / "^" characters).
+  v0.52.0 (Tom): cursor row order Up, Down, Select (2 wide), Left, Right,
+  Move Keys, Game, then Map; Esc went into the Game menu (tab bar's right,
+  320x240 only); Map (map over the game screen until the next tap) is
+  Claude's pick for the freed slot, Tom to confirm.
+- Journal book memory (v0.52.0): while the book is open the game canvas
+  waits on the card (`frame::park` / `unpark`, `_CYD/CANVAS.TMP`); a
+  memory failure must never be reported as "no scanned picture".
 - Card scan (Tom, 2026-10-09): scan ONCE; boot reads the scan log and
   loads the library from it. Rescan Card is the only rescan - never
   check the card for changes on its own. Everything the board makes from

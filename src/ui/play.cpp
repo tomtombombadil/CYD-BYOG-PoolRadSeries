@@ -5987,6 +5987,35 @@ bool nav_list(int step, pic::Canvas& c)
     return false;
 }
 
+// Screens with the party list beside a menu line (exploring, camp, shop,
+// magic, a spell's target, Alter): Up / Down move the party's highlight,
+// as a tap on the next line would; Left / Right stay on the menu line
+// (Tom, v0.52.0)
+bool party_nav(int step, pic::Canvas& c)
+{
+    if (!pt || pt->count < 2) return false;
+    int col = -1;
+    switch (screen) {
+    case Screen::Game:
+        if (!waiting && then == Then::Idle && !bigpic_shown()) col = 17;
+        break;
+    case Screen::Camp:
+    case Screen::Magic:
+        if (bigpic < 0) col = 17;
+        break;
+    case Screen::Shop: col = 17; break;
+    case Screen::Cast: col = cr.on_camp ? 17 : 1; break;
+    case Screen::Alter:
+        if (alter_mode != AlterMode::Speed && bigpic < 0) col = 17;   // Place: moves them a line
+        break;
+    default: break;
+    }
+    if (col < 0) return false;
+    const int to = (pt->selected + step + pt->count) % pt->count;
+    tap(col * 8 + 4, (4 + to) * 8 + 2, c);
+    return true;
+}
+
 bool nav(Nav n, pic::Canvas& c)
 {
     if (!d || input_mode != Input::None) return false;
@@ -6004,7 +6033,7 @@ bool nav(Nav n, pic::Canvas& c)
         modify_step(step, c);
         return true;
     }
-    if ((n == Nav::Up || n == Nav::Down) && nav_list(step, c)) return true;
+    if ((n == Nav::Up || n == Nav::Down) && (nav_list(step, c) || party_nav(step, c))) return true;
     // The party menu has no menu line: left / right pick the character
     if (screen == Screen::PartyMenu && (n == Nav::Left || n == Nav::Right)) {
         if (pt->count < 2) return false;

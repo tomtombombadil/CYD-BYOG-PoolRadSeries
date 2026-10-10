@@ -434,6 +434,7 @@ bool page_image(dax::ByteSource& src, const Doc& doc, int page_obj, Image& out)
     Obj* a = new (std::nothrow) Obj;
     Obj* b = new (std::nothrow) Obj;
     bool ok = false;
+    out.no_memory = !a || !b;
     if (a && b && load(src, doc, page_obj, *a)) {
         // /Resources here or inherited from a parent
         int res = get(*a, a->root, "Resources");

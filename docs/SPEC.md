@@ -98,7 +98,9 @@ The games draw a 320x200 screen. The canvas is presented:
     many of the games' menus are small to hit with a stylus. Up / Down move
     a list's highlight (the party menu's lines - highlighted once a cursor
     key is used -, the game's list menus, items, goods, spells, the party
-    for a WHO pick or a trade, Modify's items); Left / Right move the menu
+    for a WHO pick or a trade, Modify's items; v0.52.0, Tom: the party
+    list beside a menu line - exploring, camp, shop, magic, a spell's
+    target, Alter -, as a tap on the line would); Left / Right move the menu
     line's (Up / Down too when there's no list; on the party menu, with no
     menu line, they pick the character; in Modify Character they change the
     value). Select = a tap on the highlighted thing (it lights up first, as
@@ -114,11 +116,18 @@ The games draw a 320x200 screen. The canvas is presented:
     the party can move (exploring a 3D area, or a fighter's Move / manual
     Aim in combat) it shows the **movement row**: the six movement arrows
     (Side-step Left, Turn Left, Forward, Turn Right, Side-step Right, Turn
-    Around), **Menu Keys**, **Game**, **Esc**. Otherwise (menus, lists,
-    text, the party menu) the **cursor row**: Left, Up, Select (two keys
-    wide), Down, Right in small text, **Move Keys**, Game, Esc. Menu Keys /
-    Move Keys swap the rows by hand; the swap lasts until the game changes
-    between moving and not. Look is on the game's menu line there. The Walk
+    Around), **Menu Keys**, **Game**, **Map**. Otherwise (menus, lists,
+    text, the party menu) the **cursor row** (order: Tom, v0.52.0): Up,
+    Down, Select (two keys wide), Left, Right in small text, **Move Keys**,
+    Game, Map. Menu Keys / Move Keys swap the rows by hand; the swap lasts
+    until the game changes between moving and not. **Esc** moved into the
+    Game menu (v0.52.0, Tom): a key at the right of its tab bar - back to
+    the game, then Esc (at the game's top level that leaves the Play Test,
+    as the key did). Its slot went to **Map** (Claude's pick, Tom to
+    confirm; SPEC's old plan of a Companion key): the Companion's map
+    (walls, gold doors, red locked doors, the party's arrow, the area /
+    script / map lines) drawn over the game screen until the next tap; the
+    game waits meanwhile. Look is on the game's menu line there. The Walk
     Test keeps its row of 8 (no cursor keys).
 - **The Game key** (Tom, 2026-10-09; v0.16.0; called Menu until v0.50.0):
   the Play Test's key where the Walk Test has Area (320x240 row: 8th key;
@@ -398,7 +407,14 @@ How it works (v0.12.0, Curse):
   down) - the old 23 KB decode band didn't fit beside the Play Test, which
   made Zoom say "This page has no scanned picture." Errors now say what
   went wrong (no picture / not readable / not enough memory, with the
-  numbers).
+  numbers). v0.52.0 (Tom: "no scanned picture" again, opened from the
+  Game menu): the Play Test had grown, the two ~8 KB blocks reading a
+  page's objects weren't there, and that failure was still reported as
+  "no picture" (now it says not enough memory). While the book is open
+  the game screen's canvas (64,000 bytes) waits on the card
+  (`/GOLDBOX/_CYD/CANVAS.TMP`, `frame::park` / `unpark`) and comes back
+  when the book closes; the journal PDFs of all four games read on the
+  PC page by page (17 / 21 / 33 / 33 pages, all with a picture).
 
 ## 8. Copy protection (Tom, 2026-10-06)
 

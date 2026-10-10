@@ -383,7 +383,7 @@ int main(int argc, char** argv)
             case '#': shot("navgame"); continue;
             }
             settle(0, 3000);
-            printf("  %c: screen %d waiting %d wait %d list_sel %d menu [%s%s] sel %d\n", *q, (int)play::screen, (int)play::waiting, (int)play::vm->wait(), play::list_sel, play::menu.prompt, play::menu.s, play::menu.selected);
+            printf("  %c: screen %d waiting %d wait %d list_sel %d menu [%s%s] sel %d member %d\n", *q, (int)play::screen, (int)play::waiting, (int)play::vm->wait(), play::list_sel, play::menu.prompt, play::menu.s, play::menu.selected, play::pt ? play::pt->selected : -1);
         }
     }
     if (getenv("FINDMON")) {
