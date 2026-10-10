@@ -58,6 +58,10 @@ enum class Does : uint8_t {
     Haste,          // ... slowed members cured instead; at most `power` members
     Heal,           // n dice of `sides` + plus hit points
     CureBlind, CureDisease, Neutralize, SlowPoison, RemoveCurse, Raise,
+    Enlarge,        // Strength by the caster's level, if more than theirs (word; else "is unaffected")
+    Reduce,         // a failed save takes Enlarge away (word); else nothing at all
+    Friends,        // the caster's Charisma + 2d4 (word)
+    Strength,       // + d4 / d6 / d8 by class (no word); fighters over 18: 18/xx
 };
 struct CampSpell {
     uint8_t  spell;
@@ -80,7 +84,11 @@ struct Line {
 struct Facts {
     uint8_t elf_race, slow;
     uint8_t disease[3], disease_with[3][2];
+    uint8_t enlarge;                    // Enlarge's effect (Reduce takes it away)
 };
+// The Strength Enlarge gives at the caster's level, as an effect's data
+// (18/xx: xx + 1; 19 and up: + 100); 0 at 12th level and above (18)
+int enlarge_data(int level);
 
 // Can the caster cast now ("is in no condition to cast any spells")
 bool can_cast(const party::Character& caster);

@@ -257,6 +257,9 @@ struct Profile {
         // "'s"; View Character's "Weapon", "Armor"
         uint32_t    title, heading, ready, yes, no, cursed, wrong_class, already, hands_full, plural_s,
                     weapon, armour;
+        // The effects the stats are worked out with: Strength, the giant
+        // strength potion's, Enlarge, Friends, Feeblemind
+        uint8_t     stat_fx[5];
     } items;
 
     // Character rules (making and training characters): the rule tables in

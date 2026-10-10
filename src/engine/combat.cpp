@@ -1498,7 +1498,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                 continue;
             }
             if (b.fx && b.fx->feeble) give_aff(f, b.fx->feeble, 0, pw, false);
-            f.rec[0x12] = f.rec[0x14] = 7;          // Intelligence, Wisdom
+            f.rec[0x13] = f.rec[0x15] = 7;          // Intelligence, Wisdom in use (a recalculation makes them 3)
             f.can_cast = false;
             f.spell = 0;
             say(who[k], Did::Word, 0);

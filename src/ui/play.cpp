@@ -4000,8 +4000,9 @@ void do_cast(pic::Canvas& c)
         // A use of the item (a scroll: the spell goes off it)
         if (cr.scroll) magic::scroll_used(me, scroll_facts(), cr.item, cr.spell);
         else magic::used(me, cr.item);
-        rules::recalc(me, *names, d->facts);
     }
+    // (Strength, Enlarge, Friends: the stats as they stand now)
+    for (int k = 0; k < pt->count; ++k) rules::recalc(pt->m[k], *names, d->facts);
     cr.at = 0;
     pt->selected = cr.caster;
     if (cr.on_camp) draw_party(c, 17);
@@ -5093,6 +5094,11 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         d->facts.arrow = pi.arrow;
         d->facts.quarrel = pi.quarrel;
         memcpy(d->facts.elf_bonus, pi.elf_bonus, sizeof d->facts.elf_bonus);
+        d->facts.strength_fx = pi.stat_fx[0];
+        d->facts.giant_fx = pi.stat_fx[1];
+        d->facts.enlarge_fx = pi.stat_fx[2];
+        d->facts.friends_fx = pi.stat_fx[3];
+        d->facts.feeble_fx = pi.stat_fx[4];
         fs::File tf;
         if (pi.types_file && open_file(pi.types_file, tf)) {
             library::FileSource src(tf);
@@ -7098,7 +7104,11 @@ void tick(uint32_t now, pic::Canvas& c)
     // Effects run out as game time passes (walking, searching, scripts)
     if (vm && pt) {
         const int m = vm->take_minutes();
-        for (int i = 0; m && i < pt->count; ++i) magic::tick_affects(pt->m[i], m);
+        for (int i = 0; m && i < pt->count; ++i) {
+            const int before = pt->m[i].n_affects;
+            magic::tick_affects(pt->m[i], m);
+            if (pt->m[i].n_affects != before) rules::recalc(pt->m[i], *names, d->facts);   // one ran out
+        }
     }
     if (note_until && !note_held && static_cast<int32_t>(now - note_until) >= 0) {
         cv = &c;

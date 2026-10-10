@@ -60,8 +60,9 @@ constexpr spells::CampSpell kCurseCamp[] = {
     {0x07, Does::Affect, 0, 0, 0, 0x2FE1C},
     {0x08, Does::Affect, 0, 0, 0, 0x2FE56},        // Resist Cold: "is cold-resistant"
     {0x0B, Does::Affect, 0, 0, 0, 0x2FDE3},
-    {0x0C, Does::NotYet, 0, 0, 0, 0},              // Enlarge (strength)
-    {0x0E, Does::NotYet, 0, 0, 0, 0},              // Friends (charisma)
+    {0x0C, Does::Enlarge, 0, 0, 0, 0x2FFA0},       // Enlarge: "is stronger" (spell_facts.md)
+    {0x0D, Does::Reduce, 0, 0, 0, 0x300DE},        // Reduce: "has been reduced"
+    {0x0E, Does::Friends, 0, 0, 0, 0x30183},       // Friends: "is friendly"
     {0x10, Does::Affect, 0, 0, 0, 0x2FE1C},
     {0x11, Does::Affect, 0, 0, 0, 0x2FE1C},
     {0x12, Does::Affect, 0, 0, 0, 0x2FDE3},        // Read Magic
@@ -73,7 +74,7 @@ constexpr spells::CampSpell kCurseCamp[] = {
     {0x1D, Does::Affect, 0, 0, 0, 0x2FDE3},        // Detect Invisibility
     {0x1E, Does::Affect, 0, 0, 0, 0x3067C},        // Invisibility: "is invisible"
     {0x20, Does::Mirror, 0, 0, 0, 0x306EF},        // Mirror Image: "is duplicated"
-    {0x23, Does::NotYet, 0, 0, 0, 0},              // Strength
+    {0x23, Does::Strength, 0, 0, 0, 0},            // Strength (no word)
     {0x25, Does::CureBlind, 0, 0, 0, 0},
     {0x27, Does::CureDisease, 0, 0, 0, 0},
     {0x29, Does::NotYet, 0, 0, 0, 0},              // Dispel Magic
@@ -278,7 +279,7 @@ const Profile kProfiles[] = {
      {{0xBC37, 21, 255}, "ITEMS", 73, 28, 9, 86, 0x87, 0xB1, {41, 42, 43, 44, 37, 36},
       0x773D, 0x7745, 0x3CF1A, 0x3CF20, 0x3CF26, 0x7D3F, 0x7D18, 0x7B5D, 0x2916E,
       0x2859A, 0x285A0, 0x2856B, 0x37AF6, 0x37AFD, 0x28EF7, 0x28F03, 0x28F0F, 0x28F1E, 0x38F44,
-      0x270CA, 0x270D1},
+      0x270CA, 0x270D1, {0x26, 0x92, 0x0C, 0x0E, 0x44}},
      {0xABE0,
       {0x37DC, 0x47B0, 0x37DC, 0x65, 0x3E3A, 0x3EA2, 0x3EAA, 0x3EBB, 0x3EC0, 0x3F20, 0x3F33, 0x3F88, 0x3FFA,
        0x404E, 0x4124, 0x4174, 0x41DA, 0x429B, 0x45BE},
@@ -310,7 +311,7 @@ const Profile kProfiles[] = {
        0x19A77, 0x19B03, 0x192FB, 0x2B76C, 0x2A4B1, 0x2E151,
        0x2F23F, 0x2F249, 0x2F262, 0x294BC, 0x294C9, 0x294CF, 0x2A49C},
       kCurseCamp, sizeof kCurseCamp / sizeof kCurseCamp[0],
-      {2, 0x2A, {0x22, 0x2B, 0x32}, {{0, 0}, {0x2C, 0x1F}, {0x39, 0}}},
+      {2, 0x2A, {0x22, 0x2B, 0x32}, {{0, 0}, {0x2C, 0x1F}, {0x39, 0}}, 0x0C},
       kCurseSpellNamed, sizeof kCurseSpellNamed, kCurseNamed, sizeof kCurseNamed / sizeof kCurseNamed[0], 0xD2, 0x10},
      {0xB05C, 0xB086, 0xB0AF,
       {0x1AC65, 0x1A792, 0x1A7C0, 0x1AA82, 0x1AA90, 0x1AAA7, 0x1AAAF, 0x1AAB7, 0x1AABD, 0x1A8D7, 0x1A8E4, 0x1A8C9,

@@ -99,6 +99,23 @@ int item_power(const party::Character& c, const classes::Tables& t, int s)
     return t.spell_class(s) == 3 ? power(c, t, s) : 6;
 }
 
+int enlarge_data(int level)
+{
+    switch (level) {
+    case 1: return 1;          // 18
+    case 2: return 2;          // 18/01
+    case 3: return 52;         // 18/51
+    case 4: return 77;         // 18/76
+    case 5: return 92;         // 18/91
+    case 6: return 101;        // 18/00
+    case 7: return 119;
+    case 8: return 120;
+    case 9: return 121;
+    case 10: case 11: return 122;
+    default: return level <= 0 ? 0 : 1;
+    }
+}
+
 int lasts(const classes::Tables& t, int s, int pw)
 {
     const Entry e = entry(t, s);
@@ -242,6 +259,61 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
                     o.say(who[k], Said::ItemUncursed);
                     break;
                 }
+        }
+        break;
+    case Does::Enlarge: {
+        const int data = enlarge_data(pw);
+        int str = 18, str00 = 0;
+        if (data > 101) str = data - 100;
+        else str00 = data - 1;
+        for (int k = 0; k < n; ++k) {
+            party::Character& c = p.m[who[k]];
+            const bool more = data && (str > c.stat(0) || (str == 18 && c.stat(0) == 18 && str00 > c.str00()));
+            if (!more) {
+                o.say(who[k], Said::Unaffected);
+                continue;
+            }
+            give(c, e.affect, minutes, data, false);
+            if (cs.word) o.say(who[k], Said::Word);
+        }
+        break;
+    }
+    case Does::Reduce:
+        for (int k = 0; k < n; ++k) {
+            party::Character& c = p.m[who[k]];
+            if (find_affect(c, f.enlarge) < 0) continue;
+            // a failed save against spells (the record's own number)
+            const int r = d.roll(20, 1);
+            const bool saved = r == 20 || (r != 1 && r + static_cast<int8_t>(c.rec[0x186]) >= c.rec[0xE3]);
+            if (saved) continue;
+            cure(c, f.enlarge);
+            if (cs.word) o.say(who[k], Said::Word);
+        }
+        break;
+    case Does::Friends:
+        give(me, e.affect, minutes, d.roll(4, 2), false);
+        if (cs.word) o.say(caster, Said::Word);
+        break;
+    case Does::Strength:
+        for (int k = 0; k < n; ++k) {
+            party::Character& c = p.m[who[k]];
+            auto had = [&](int cl) { return c.level(cl) > 0 || c.old_level(cl) > 0; };
+            int die = 0;
+            if (had(classes::MagicUser)) die = 4;
+            if (had(classes::Cleric) || had(classes::Thief)) die = 6;
+            if (had(classes::Fighter)) die = 8;
+            if (!die) continue;
+            const int bonus = d.roll(die, 1);
+            int str = c.stat(0) + bonus, str00 = 0;
+            if (str > 18) {
+                if (had(classes::Fighter) || had(classes::Paladin) || had(classes::Ranger)) {
+                    str00 = c.str00() + (str - 18) * 10;
+                    if (str00 > 100) str00 = 100;
+                }
+                str = 18;
+            }
+            if (!(str > c.stat(0) || (str == 18 && str00 > c.str00()))) continue;
+            give(c, e.affect, minutes, 100 + bonus, false);
         }
         break;
     case Does::Raise:

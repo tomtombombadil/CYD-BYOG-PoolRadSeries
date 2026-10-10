@@ -17,7 +17,19 @@ namespace rules {
 struct ItemFacts {
     uint8_t arrow, quarrel;
     uint8_t elf_bonus[6];
+    // Effects in the stats: Strength, the giant strength potion's, Enlarge,
+    // Friends, Feeblemind (0: none)
+    uint8_t strength_fx = 0, giant_fx = 0, enlarge_fx = 0, friends_fx = 0, feeble_fx = 0;
 };
+
+// The stats as they stand (the games' recalculation; spell_facts.md and
+// coab's facts): from each stat's own value, readied items that work on
+// stats (third effect byte 0x80 + code: 5 giant strength, 8 a +1 to one
+// stat under 18, 2 dexterity, 6 / 10 / 12 / 13 others) and the effects
+// (Strength, Enlarge, the potion's, Friends, Feeblemind). Bytes 0x10 +
+// 2 i hold each stat's own value and 0x11 + 2 i the one in use; for the
+// 18/xx percentage the other way round (0x1D own, 0x1C in use).
+void stats(party::Character& c, const ItemFacts& f);
 
 // Strength as one number: 3-17, 18 = 18, 19-23 = 18/01-50, /51-75,
 // /76-90, /91-99, /00; 19-25 = 24-30

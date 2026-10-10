@@ -124,9 +124,136 @@ int dex_ac_bonus(const party::Character& c)
     return 0;
 }
 
+namespace {
+
+int find_effect(const party::Character& c, uint8_t type)
+{
+    if (!type) return -1;
+    for (int i = 0; i < c.n_affects; ++i)
+        if (c.affects[i][0] == type) return i;
+    return -1;
+}
+
+// An effect's strength: data 101 or less = 18/(data - 1), else data - 100
+void decode_strength(int data, int* str, int* str00)
+{
+    data &= 0x7F;
+    if (data <= 101) {
+        *str00 = data - 1;
+        *str = 18;
+    } else {
+        *str = data - 100;
+        *str00 = 0;
+    }
+}
+
+void max_strength(int* a, int* a00, int b, int b00)
+{
+    if (b > *a || (b == 18 && b00 > *a00)) {
+        *a = b;
+        *a00 = b00;
+    }
+}
+
+} // namespace
+
+void stats(party::Character& c, const ItemFacts& f)
+{
+    uint8_t* r = c.rec;
+    for (int s = 0; s < 6; ++s) {
+        const int own = r[0x10 + s * 2];
+        int v = own, set = 0xFF;
+        int str00 = r[0x1D];
+        for (int i = 0; i < c.n_items; ++i) {
+            const uint8_t* it = c.items[i];
+            if (it[0x3E] <= 0x80 || !it[0x34]) continue;
+            const int code = it[0x3E] & 0x7F, a2 = it[0x3D];
+            switch (s) {
+            case 0: {
+                int b = 0, b00 = 0;
+                if (code == 5 && a2 <= 6) {
+                    b = a2 == 0 ? 18 : 18 + a2;
+                    b00 = a2 == 0 ? 100 : 0;
+                } else if (code == 8 && own < 18 && a2 == 0) {
+                    b = own + 1;
+                } else if (code == 13) {
+                    set = 3;
+                }
+                max_strength(&v, &str00, b, b00);
+                break;
+            }
+            case 1:
+                if (code == 8 && own < 18 && a2 == 1) ++v;
+                else if (code == 12) set = 7;
+                else if (code == 13) set = 3;
+                break;
+            case 2:
+                if (code == 8 && own < 18 && a2 == 2) ++v;
+                break;
+            case 3:
+                if (code == 2) v += own <= 6 ? 4 : own <= 13 ? 2 : 1;
+                else if (code == 8 && own < 18 && a2 == 3) ++v;
+                else if (code == 10) v -= 2;
+                break;
+            case 4:
+                if (code == 6) ++v;
+                else if (code == 8 && own < 18 && a2 == 4) ++v;
+                break;
+            case 5:
+                if (code == 6) --v;
+                else if (code == 8 && own < 18 && a2 == 5) ++v;
+                break;
+            }
+        }
+        if (s == 0) {
+            int k = find_effect(c, f.strength_fx);
+            if (k >= 0) {
+                int b, b00;
+                decode_strength(c.affects[k][3], &b, &b00);
+                if (v <= 18 && str00 < 100) {
+                    b += v;
+                    if (b > 18) {
+                        const bool fighter = r[0x10B] || r[0x113] || r[0x10C] || r[0x114] || r[0x10D] || r[0x115];
+                        if (fighter) {
+                            b00 = r[0x1C] + (b - 18) * 10;
+                            if (b00 > 100) b00 = 100;
+                        }
+                        b = 18;
+                    }
+                }
+                max_strength(&v, &str00, b, b00);
+            }
+            const uint8_t more[2] = {f.giant_fx, f.enlarge_fx};
+            for (uint8_t t : more) {
+                k = find_effect(c, t);
+                if (k < 0) continue;
+                int b, b00;
+                decode_strength(c.affects[k][3], &b, &b00);
+                max_strength(&v, &str00, b, b00);
+            }
+            if (set != 0xFF) {
+                r[0x11] = static_cast<uint8_t>(set);
+                r[0x1C] = 0;
+            } else {
+                r[0x11] = static_cast<uint8_t>(v < 0 ? 0 : v);
+                r[0x1C] = static_cast<uint8_t>(str00);
+            }
+            continue;
+        }
+        if ((s == 1 || s == 2) && find_effect(c, f.feeble_fx) >= 0) set = 3;
+        if (s == 5) {
+            const int k = find_effect(c, f.friends_fx);
+            if (k >= 0) v += c.affects[k][3];        // (the original adds; coab sets it)
+        }
+        if (v < 0) v = 0;
+        r[0x11 + s * 2] = static_cast<uint8_t>(set != 0xFF ? set : v);
+    }
+}
+
 void recalc(party::Character& c, const items::Names& names, const ItemFacts& f)
 {
     uint8_t* r = c.rec;
+    stats(c, f);
     // Readied items by slot (0-8; slot 9 holds two), missiles
     const uint8_t* slot[9] = {};
     const uint8_t* rings[2] = {};

@@ -2181,7 +2181,7 @@ static void test_items()
 
     // A fighter: Str 18/00, Dex 17, base AC 10 (50), THAC0 20 (40), move 12
     party::Character ch;
-    ch.rec[0x11] = 18; ch.rec[0x1C] = 100; ch.rec[0x17] = 17;
+    ch.rec[0x10] = ch.rec[0x11] = 18; ch.rec[0x1C] = ch.rec[0x1D] = 100; ch.rec[0x16] = ch.rec[0x17] = 17;
     ch.rec[0x73] = 40; ch.rec[0x74] = 7; ch.rec[0x10B] = 5; ch.rec[0xE4] = 12;
     ch.rec[0x11E] = 1; ch.rec[0x120] = 2; ch.rec[0x124] = 50; ch.rec[0x125] = 1; ch.rec[0x12B] = 0xFF;
     ch.rec[0x103] = 0x2C; ch.rec[0x104] = 0x01;          // 300 platinum
@@ -2927,6 +2927,56 @@ static void test_spells()
     p.m[1].rec[0x1A4] = 2; p.m[2].rec[0x1A4] = 10;
     CHECK(spells::fix_heal(p, 21) == 0 && p.m[1].hp() == 20 && p.m[2].hp() == 13);
     CHECK(spells::fix_heal(p, 50) == 43 && p.m[2].hp() == 20);
+
+    // Enlarge (spell 4's row here: one member, effect 0x16): a level 3
+    // caster gives 18/51 - more than Str 10, so "is stronger" and the
+    // effect; the stats then read 18/51. Reduce takes it away (unless saved)
+    party::Character& e = p.m[1];
+    e.n_affects = 0;
+    e.rec[0x10] = e.rec[0x11] = 10; e.rec[0x1C] = e.rec[0x1D] = 0;
+    e.rec[0x195] = party::Okay; e.rec[0x196] = 1;
+    CHECK(spells::enlarge_data(3) == 52 && spells::enlarge_data(7) == 119 && spells::enlarge_data(12) == 1);
+    CHECK(cast(4, spells::Does::Enlarge, 1) == 1 && out[0].what == spells::Said::Word && e.n_affects == 1 &&
+          e.affects[0][3] == 52);
+    rules::ItemFacts rf{};
+    rf.enlarge_fx = 0x16;
+    rules::stats(e, rf);
+    CHECK(e.stat(0) == 18 && e.str00() == 51 && e.rec[0x10] == 10);
+    CHECK(cast(4, spells::Does::Enlarge, 1) == 1 && out[0].what == spells::Said::Unaffected);   // no more than now
+    f.enlarge = 0x16;
+    e.rec[0xE3] = 30;                                 // no save but a 20
+    const int red = cast(4, spells::Does::Reduce, 1);
+    CHECK(red == 0 || (red == 1 && out[0].what == spells::Said::Word && e.n_affects == 0));
+    // Friends: the caster's Charisma + 2d4 for the effect's time
+    me.n_affects = 0;
+    me.rec[0x1A] = me.rec[0x1B] = 12;
+    CHECK(cast(4, spells::Does::Friends, -1) == 1 && out[0].who == 0 && me.n_affects == 1);
+    rules::ItemFacts ff{};
+    ff.friends_fx = 0x16;
+    rules::stats(me, ff);
+    CHECK(me.stat(5) >= 14 && me.stat(5) <= 20 && me.rec[0x1A] == 12);
+    // Strength on a fighter: d8 on Str 10 (no word)
+    e.n_affects = 0;
+    e.rec[0x10] = e.rec[0x11] = 10;
+    CHECK(cast(4, spells::Does::Strength, 1) == 0 && e.n_affects == 1 && e.affects[0][3] >= 101 &&
+          e.affects[0][3] <= 108);
+    rules::ItemFacts sf{};
+    sf.strength_fx = 0x16;
+    rules::stats(e, sf);
+    CHECK(e.stat(0) == 10 + e.affects[0][3] - 100);
+    // A girdle (readied, effect 0x80 + 5, strength 19) and a cursed stone (0x80 + 13: Str 3)
+    e.n_affects = 0;
+    e.n_items = 1;
+    memset(e.items[0], 0, sizeof e.items[0]);
+    e.items[0][0x34] = 1; e.items[0][0x3E] = 0x85; e.items[0][0x3D] = 1;
+    rules::stats(e, sf);
+    CHECK(e.stat(0) == 19);
+    e.items[0][0x3E] = 0x8D;
+    rules::stats(e, sf);
+    CHECK(e.stat(0) == 3 && e.str00() == 0);
+    e.n_items = 0;
+    rules::stats(e, sf);
+    CHECK(e.stat(0) == 10);
 }
 
 // Combat: a made-up open field, made-up placement tables (the games'

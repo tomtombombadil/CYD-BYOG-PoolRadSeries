@@ -323,7 +323,15 @@ stay in the session's scratch space, never in the repo.
    game's are lost, as in the original), class values recomputed; levels
    and experience kept. The party's rules as for Curse characters, and the
    original's duplicate rule (same name and "mod id" 0x126). Hillsfar:
-   still to come.
+   still to come. v0.57.0: **the stats as they stand** (`rules::stats`, run
+   with every recalculation): from each stat's own value (0x10 + 2i; for
+   18/xx 0x1D) to the one in use (0x11 + 2i; 0x1C) by readied items that
+   work on stats (0x80 + code in the third effect byte: 5 giant strength
+   18/00-24, 8 a stat + 1 under 18, 2 dexterity, 6 / 10 / 12 / 13 others) and
+   effects (Strength, the giant strength potion, Enlarge, Friends - the
+   original adds 2d4 to Charisma -, Feeblemind 3); camp spells **Enlarge**
+   (18 to 22 by level), **Reduce**, **Friends**, **Strength** (d4 / d6 / d8 by
+   class; fighters past 18 get 18/xx).
 6. **Combat.** v0.32.0: monsters, the battlefield (indoors from the 3D map,
    outdoors random), placement, the combat screen and icons, rounds and
    initiative, the player's Move / View / Aim / Quick / Done, attacks and
@@ -350,8 +358,7 @@ stay in the session's scratch space, never in the repo.
    -4, easier to hit, saves -4); Cone of Cold is cold + magic (coab: acid);
    the hold spells take persons only (but Hold Monsters); Charm Monsters
    as the original (the last picked, non-persons and large ones
-   unaffected). Still to come: Enlarge, Reduce, Friends, Strength (the
-   stat effects), Spiritual Hammer, Animate Dead, Dispel Magic,
+   unaffected). Still to come: Enlarge / Reduce in fights, Spiritual Hammer, Animate Dead, Dispel Magic,
    Restoration, Dispel Evil, Confusion, Dimension Door, Fire Shield, Slow
    Poison in fights; the group-by-size aim (Faerie Fire, Charm Monsters)
    is a radius of 1 for now.
