@@ -1915,6 +1915,9 @@ void fight_cleanup_party(combat::Result r)
 {
     for (int i = 0; i < pt->count; ++i) {
         party::Character& ch = pt->m[i];
+        const uint8_t charm = d->prof->fight.facts.charm;
+        for (int k = 0; charm && k < ch.n_affects; ++k)
+            if (ch.affects[k][0] == charm) combat::uncharm(ch.rec, ch.affects[k]);     // back on the party's side
         for (uint8_t t : d->prof->fight.ends)
             if (t) rules::remove_affects(ch, t);
         uint8_t* rec = ch.rec;

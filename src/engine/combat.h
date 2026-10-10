@@ -65,6 +65,8 @@ struct Facts {
     uint8_t held[4];                    // can't act, slain by any blow: snake charm, paralysed, asleep, helpless
     uint8_t bless, curse, prayer, haste, slow, invisible, prot_evil, prot_good, mirror;
     uint8_t backstab_weapons[6];        // the weapons a thief backstabs with (or none)
+    uint8_t charm;                      // Charm Person's effect (its data: the caster's side << 7, the
+                                        // charmed one's own << 6, 0x20, the caster's level)
     // How a shot looks in flight, by the item type that flies: pointed (an
     // arrow's picture by direction), spinning, a flask, a sling's stone; the
     // rest a rock
@@ -151,6 +153,8 @@ struct Battle {
 
 // Effects on a fighter
 bool helpless(const Battle& b, const Fighter& f);
+// A charm's end: back to their own side (the effect's data, bit 6)
+void uncharm(uint8_t* rec, const uint8_t* affect);
 // Timed effects a round on (a minute); those run out go
 void tick(Battle& b);
 
@@ -313,6 +317,7 @@ enum class SpellDoes : uint8_t {
     Mirror, Haste, Prayer,              // effects with their own data
     Bolt,                               // damage along a line from the target away from the caster
     Cloud,                              // a save against poison or helpless 1d4 + 1 rounds (word / word2 saved)
+    Charm,                              // a person (humanoid, man-sized) joins the caster's side (word; word2 not a person)
 };
 struct FightSpell {
     uint8_t   spell;

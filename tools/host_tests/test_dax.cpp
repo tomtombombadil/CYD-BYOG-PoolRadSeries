@@ -3128,6 +3128,24 @@ static void test_combat()
         const bool held = combat::helpless(sb, sb.f[sline[k].who]);
         CHECK((sline[k].did == combat::Did::Word && held) || (sline[k].did == combat::Did::Word2 && !held));
     }
+    // Charm Person (spell 4's table entry: 2 rounds, no save): a person joins
+    // the caster's side until it runs out; a large one is no person
+    {
+        fx.charm = 0x0B;
+        const combat::FightSpell charm{4, combat::SpellDoes::Charm, 0, 0, 0, 0, 0, 0x3333, 0x4444};
+        mrec[1][0x196] = 1; mrec[1][0x195] = 0; mrec[1][0x11A] = 0; mrec[1][0xDE] = 1; mnaff[1] = 0;
+        mrec[2][0x196] = 1; mrec[2][0x195] = 0; mrec[2][0xDE] = 0x81; mnaff[2] = 0;
+        int ch2[2] = {1, 2};
+        n = combat::cast(sb, st, 0, 4, charm, ch2, 2, d, sline, 16);
+        CHECK(n == 2 && sline[0].did == combat::Did::Word && sline[1].did == combat::Did::Word2);
+        CHECK(sb.f[1].team() == 0 && sb.f[1].has(0x0B) && sb.f[2].team() == 1);
+        combat::tick(sb);
+        CHECK(sb.f[1].team() == 0);
+        combat::tick(sb);
+        CHECK(sb.f[1].team() == 1 && !sb.f[1].has(0x0B));
+        mrec[2][0xDE] = 1;
+        fx.charm = 0;
+    }
     // The computer's spells: missiles (priority 7, reach 6) at the party member in reach
     sds[1 * 16 + 13] = 7; sds[1 * 16 + 2] = 6;
     CHECK(st.set(sl, sds, sizeof sds));

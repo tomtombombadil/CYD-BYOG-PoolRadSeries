@@ -540,6 +540,8 @@ void give_aff(Fighter& f, int type, int minutes, int data, bool call)
 
 } // namespace
 
+void uncharm(uint8_t* rec, const uint8_t* a) { rec[0x197] = static_cast<uint8_t>((a[3] & 0x40) >> 6); }
+
 void tick(Battle& b)
 {
     for (int i = 0; i < b.n; ++i) {
@@ -549,6 +551,10 @@ void tick(Battle& b)
             if (m == 0) {
                 ++k;
             } else if (m <= 1) {
+                if (b.fx && b.fx->charm && f.aff[k][0] == b.fx->charm) {
+                    uncharm(f.rec, f.aff[k]);           // back to their own side
+                    f.target = -1;
+                }
                 drop_aff(f, k);
             } else {
                 f.aff[k][1] = static_cast<uint8_t>(m - 1);
@@ -1237,6 +1243,28 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                 f.bleeding = 0;
             }
             say(who[k], fs.word ? Did::Word : Did::Healed, amount);
+        }
+        break;
+    case SpellDoes::Charm:
+        // A person only (humanoid, not large); a save as the table says; the
+        // caster's side from now on, run by the computer
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up()) continue;
+            if (f.rec[0x11A] > 1 || f.rec[0xDE] > 1) {
+                say(who[k], Did::Word2, 0);
+                continue;
+            }
+            if (e.on_save != 0 && saving_throw(f, e.save, 0, d) && e.on_save == 1) {
+                say(who[k], Did::Unaffected, 0);
+                continue;
+            }
+            if (!b.fx || !b.fx->charm) continue;
+            const int caster_side = b.f[caster].team() ? 1 : 0, own = f.team() ? 1 : 0;
+            give_aff(f, b.fx->charm, minutes, (caster_side << 7) | (own << 6) | 0x20 | (pw & 0x1F), false);
+            f.rec[0x197] = static_cast<uint8_t>(caster_side);
+            f.target = -1;
+            say(who[k], Did::Word, 0);
         }
         break;
     case SpellDoes::Cloud:
