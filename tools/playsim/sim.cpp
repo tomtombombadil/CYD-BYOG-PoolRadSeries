@@ -267,6 +267,30 @@ int main(int argc, char** argv)
         if (play::screen == play::Screen::YesNo) { printf("  ask [%s]\n", play::menu.prompt); tap_word('Y'); }
         printf("  screen %d\n", (int)play::screen);
     }
+    if (getenv("ADDPOOL")) {
+        // ADDPOOL=i,j...: Add Character -> Pool (POOLDIR: Pool's folder as /GOLDBOX/...), add those lines
+        if (getenv("POOLDIR")) play::set_pool_dir(getenv("POOLDIR"));
+        auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+        play::tap(24, (12 + pm_line('A')) * 8 + 2, C);
+        printf("  add menu [%s%s]\n", play::menu.prompt, play::menu.s);
+        tap_word('P');
+        printf("  screen %d, %d to add\n", (int)play::screen, play::d->guys);
+        for (int i = 0; i < play::d->guys; ++i) { char t[48]; play::list_line(i, t, sizeof t); printf("    %d [%s] src %d\n", i, t, play::d->guy_src[i]); }
+        shot("pool_list");
+        for (const char* q = getenv("ADDPOOL"); *q; ) {
+            const int i = atoi(q);
+            play::add_character(i, C);
+            while (*q && *q != ',') ++q;
+            if (*q) ++q;
+        }
+        for (int i = 0; i < play::pt->count; ++i) {
+            const party::Character& m = play::pt->m[i];
+            char n[20]; m.name(n, 20);
+            printf("  %d: %-15s race %d class %d lv C%d F%d MU%d T%d xp %u HP %d/%d AC %d Str %d/%d Int %d Wis %d Dex %d Con %d Cha %d pp %d fx %d\n", i, n, m.race(), m.cls(), m.level(0), m.level(2), m.level(5), m.level(6), (unsigned)(m.rec[0x127] | m.rec[0x128] << 8 | m.rec[0x129] << 16), m.hp(), m.hp_max(), m.ac(), m.stat(0), m.str00(), m.stat(1), m.stat(2), m.stat(3), m.stat(4), m.stat(5), m.rec[0x103] | m.rec[0x104] << 8, m.n_affects);
+        }
+        play::screen = play::Screen::PartyMenu; play::draw_party_menu(C); shot("pool_party");
+        return 0;
+    }
     // BEGIN needs a party: saved game A (GOG's sample party) unless SAVE names another
     const char* save = getenv("SAVE") ? getenv("SAVE") : "A";
     {

@@ -2524,6 +2524,40 @@ static void test_create()
     th.rec[0x74] = 1;
     classes::thief_skills(th, t);
     CHECK(th.rec[0xEA + 1] == 0);
+
+    // A Pool of Radiance record (285 bytes): the fields go where Curse keeps
+    // them; stats held to the race's and sex's limits; no Animate Dead;
+    // 300 platinum whatever they had; levels and experience as they were
+    static uint8_t pool[create::kPoolRecordSize];
+    memset(pool, 0, sizeof pool);
+    pool[0] = 6; memcpy(pool + 1, "TESTER", 6);
+    pool[0x10] = 20; pool[0x11] = 2; pool[0x12] = 12; pool[0x13] = 15; pool[0x14] = 16; pool[0x15] = 9;
+    pool[0x16] = 99;
+    pool[0x2E] = 7; pool[0x2F] = 2; pool[0x30] = 30; pool[0x32] = 33;
+    pool[0x33 + 0x23] = 0x24; pool[0x33] = 1;
+    pool[0x84] = 0x10; pool[0x88] = 0xFF;
+    pool[0x96 + 2] = 4; pool[0x9E] = 1; pool[0xA0] = 1;
+    pool[0xAC] = 0x28; pool[0xAD] = 0x23;                          // 9000 experience
+    pool[0xBD] = 3; pool[0xBE] = 7; pool[0xC0] = 2; pool[0xC1] = 0x91;
+    pool[0x11B] = 30;
+    char pn[16];
+    create::pool_name(pool, pn, sizeof pn);
+    CHECK(strcmp(pn, "TESTER") == 0 && create::pool_is_pc(pool));
+    static party::Character pc;
+    pc.n_items = 3;
+    create::from_pool(pool, pc, t);
+    char cn[20];
+    pc.name(cn, sizeof cn);
+    CHECK(strcmp(cn, "TESTER") == 0 && pc.n_items == 0);
+    CHECK(pc.stat(0) == 18 && pc.str00() == 50 && pc.stat(1) == 3 && pc.stat(2) == 12 && pc.stat(5) == 9);
+    CHECK(pc.race() == 7 && pc.cls() == 2 && pc.level(2) == 4 && pc.sex() == 1 && pc.alignment() == 1);
+    CHECK((pc.rec[0x127] | pc.rec[0x128] << 8) == 9000 && pc.hp() == 30 && pc.hp_max() == 33);
+    CHECK(pc.rec[0x79] == 1 && pc.rec[0x79 + 0x23] == 0);
+    CHECK((pc.rec[0x103] | pc.rec[0x104] << 8) == 300 && pc.rec[0xFB] == 0);
+    CHECK(pc.rec[0x141] == 3 && pc.rec[0x142] == 7 && pc.rec[0x144] == 2 && pc.rec[0x145] == 0x91 && pc.rec[0xF7] == 0x10);
+    CHECK(create::pool_effect_kept(0x61) && !create::pool_effect_kept(0x01));
+    pool[0x84] = 0x80;
+    CHECK(!create::pool_is_pc(pool));
 }
 
 static void test_item_piles()

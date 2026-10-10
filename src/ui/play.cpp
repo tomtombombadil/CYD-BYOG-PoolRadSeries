@@ -95,13 +95,19 @@ struct Data {
     // Add / Remove / Drop words (profile party.add_from ... yes_no, in order)
     enum Roster { kAddFrom, kAddSources, kAddPrompt, kAdd, kAdded, kPaladinEvil, kRangers, kNoEvil, kOverwrite,
                   kQmark, kDrop, kForever, kSure, kDump, kOutBack, kFarewell, kRelief, kYesNo,
-                  kCantModify, kModify, kKeepExit, kRosterWords };
+                  kCantModify, kModify, kKeepExit, kFromSaved, kRosterWords };
     char           roster[kRosterWords][40] = {};
     // Characters that can be added (.GUY files in the save folder)
     static constexpr int kMaxGuys = 24;
     char           guy_file[kMaxGuys][13] = {};
     char           guy_name[kMaxGuys][16] = {};
     bool           guy_added[kMaxGuys] = {};
+    // Add from Pool (import_facts.md): a Pool of Radiance record (285
+    // bytes) - in the save folder (as the original) or in the player's
+    // Pool of Radiance folder on the card (the engine's convenience)
+    uint8_t        guy_src[kMaxGuys] = {};      // 0 the save folder's .GUY, 1 a Pool file there, 2 one in Pool's folder
+    char           guy_letter[kMaxGuys] = {};   // a Pool saved game's letter (CHRDAT<letter>n.SAV)
+    char           guy_from = 'C';              // the list's source: C(urse) / P(ool)
     int            guys = 0;
     char           w_magic[44] = {}, w_level[5][12] = {};    // the magic menu, "1st Level" ...
     char           w_alter[36] = {}, w_select[14] = {}, w_place[14] = {};   // Alter's menus
@@ -931,7 +937,11 @@ void list_line(int i, char* out, size_t cap)
         return;
     }
     if (screen == Screen::AddList) {
-        snprintf(out, cap, "%s%s", d->guy_added[i] ? rw(Data::kAdded) : "", d->guy_name[i]);
+        if (d->guy_letter[i])                   // a Pool saved game's: "NAME           from saved game A"
+            snprintf(out, cap, "%s%-15s%s%c", d->guy_added[i] ? rw(Data::kAdded) : "", d->guy_name[i], rw(Data::kFromSaved),
+                     d->guy_letter[i]);
+        else
+            snprintf(out, cap, "%s%s", d->guy_added[i] ? rw(Data::kAdded) : "", d->guy_name[i]);
         return;
     }
     if (screen == Screen::CreatePick) {
@@ -1695,9 +1705,60 @@ void yes_no_tap(int x, int y, pic::Canvas& c)
 }
 
 // The .GUY files in the save folder not already in the party
-void find_guys()
+char pool_dir[128] = {};        // the player's Pool of Radiance folder on the card ("" if none)
+
+bool in_party(const char* name)
+{
+    for (int i = 0; i < pt->count; ++i) {
+        char pn[20];
+        pt->m[i].name(pn, sizeof pn);
+        if (strcmp(pn, name) == 0) return true;
+    }
+    return false;
+}
+
+// Pool of Radiance characters (import_facts.md 2): *.CHA, then *.SAV, of
+// exactly a Pool record's size, player characters, not in the party - in
+// the save folder (src 1) or Pool's own folder (src 2)
+void find_pool_guys(const char* where, uint8_t src)
+{
+    if (!where[0]) return;
+    for (int pass = 0; pass < 2; ++pass) {
+        fs::File dir = sd_fs().open(where, "r");
+        if (!dir || !dir.isDirectory()) return;
+        for (fs::File f = dir.openNextFile(); f && d->guys < Data::kMaxGuys; f = dir.openNextFile()) {
+            const char* nm = f.name();
+            const char* slash = strrchr(nm, '/');
+            if (slash) nm = slash + 1;
+            const size_t n = strlen(nm);
+            if (f.isDirectory() || n < 5 || n > 12 || strcasecmp(nm + n - 4, pass ? ".SAV" : ".CHA") != 0 ||
+                f.size() != create::kPoolRecordSize)
+                continue;
+            uint8_t rec[create::kPoolRecordSize];
+            if (f.read(rec, sizeof rec) != sizeof rec || !create::pool_is_pc(rec)) continue;
+            char name[16];
+            create::pool_name(rec, name, sizeof name);
+            if (in_party(name)) continue;
+            strncpy(d->guy_file[d->guys], nm, sizeof d->guy_file[0] - 1);
+            strcpy(d->guy_name[d->guys], name);
+            d->guy_added[d->guys] = false;
+            d->guy_src[d->guys] = src;
+            d->guy_letter[d->guys] = pass && n == 12 ? static_cast<char>(toupper(nm[6])) : 0;
+            ++d->guys;
+        }
+        dir.close();
+    }
+}
+
+void find_guys(char from = 'C')
 {
     d->guys = 0;
+    d->guy_from = from;
+    if (from == 'P') {
+        find_pool_guys(d->save_dir, 1);
+        if (pool_dir[0] && strcasecmp(pool_dir, d->save_dir) != 0) find_pool_guys(pool_dir, 2);
+        return;
+    }
     fs::File dir = sd_fs().open(d->save_dir, "r");
     if (!dir || !dir.isDirectory()) return;
     for (fs::File f = dir.openNextFile(); f && d->guys < Data::kMaxGuys; f = dir.openNextFile()) {
@@ -1723,10 +1784,14 @@ void find_guys()
         strncpy(d->guy_file[d->guys], nm, sizeof d->guy_file[0] - 1);
         strcpy(d->guy_name[d->guys], name);
         d->guy_added[d->guys] = false;
+        d->guy_src[d->guys] = 0;
+        d->guy_letter[d->guys] = 0;
         ++d->guys;
     }
     dir.close();
 }
+
+bool load_pool_guy(int i, party::Character& ch);
 
 void draw_add_list(pic::Canvas& c)
 {
@@ -1744,10 +1809,17 @@ void draw_add_list(pic::Canvas& c)
 }
 
 // Adds the chosen character, with the games' rules
+void add_checked(int i, party::Character& ch, pic::Canvas& c);
+
 void add_character(int i, pic::Canvas& c)
 {
     if (i < 0 || i >= d->guys || d->guy_added[i] || pt->count >= party::kMaxParty) return;
     party::Character& ch = pt->m[pt->count];
+    if (d->guy_src[i] != 0) {
+        if (!load_pool_guy(i, ch)) return;
+        add_checked(i, ch, c);
+        return;
+    }
     char base[16];
     strncpy(base, d->guy_file[i], sizeof base - 1);
     base[sizeof base - 1] = 0;
@@ -1774,6 +1846,20 @@ void add_character(int i, pic::Canvas& c)
         library::FileSource src(f);
         party::read_affects(src, ch);
         f.close();
+    }
+    add_checked(i, ch, c);
+}
+
+// The party's rules for a character read into the next party slot
+void add_checked(int i, party::Character& ch, pic::Canvas& c)
+{
+    // Already in the party (the same name and the same "mod id", 0x126): no
+    char nm[20];
+    ch.name(nm, sizeof nm);
+    for (int k = 0; k < pt->count; ++k) {
+        char pn[20];
+        pt->m[k].name(pn, sizeof pn);
+        if (strcmp(pn, nm) == 0 && pt->m[k].rec[0x126] == ch.rec[0x126]) return;
     }
     // The party's rules
     int pcs = 0, rangers = 0;
@@ -1837,6 +1923,16 @@ void add_from_tap(int x, int y, pic::Canvas& c)
         draw_party_menu(c);
         return;
     case 'P':
+        find_guys('P');
+        if (!d->guys) {
+            screen = Screen::PartyMenu;
+            draw_party_menu(c);
+            return;
+        }
+        screen = Screen::AddList;
+        plist = PickList{};
+        draw_add_list(c);
+        return;
     case 'H':
         error(c, "Not in the engine yet.");
         return;
@@ -1942,6 +2038,45 @@ bool load_rules(Making*& m)
 }
 
 bool load_making() { return load_rules(mk); }
+
+// A Pool character into ch (false: unreadable, or no rule tables)
+bool load_pool_guy(int i, party::Character& ch)
+{
+    char path[200];
+    const char* where = d->guy_src[i] == 2 ? pool_dir : d->save_dir;
+    snprintf(path, sizeof path, "%s/%s", where, d->guy_file[i]);
+    fs::File f = sd_fs().open(path, "r");
+    if (!f) return false;
+    uint8_t rec[create::kPoolRecordSize];
+    const bool ok = f.read(rec, sizeof rec) == sizeof rec;
+    f.close();
+    if (!ok) return false;
+    Making* tb = nullptr;
+    if (!load_rules(tb)) {
+        delete tb;
+        return false;
+    }
+    create::from_pool(rec, ch, tb->tables);
+    delete tb;
+    // A NAME.CHA's NAME.SPC: the racial effects only (a saved game's
+    // CHRDAT??.SPC isn't found by the name - as the original)
+    char base[16];
+    strncpy(base, d->guy_file[i], sizeof base - 1);
+    base[sizeof base - 1] = 0;
+    char* dot = strrchr(base, '.');
+    if (dot && strcasecmp(dot, ".CHA") == 0) {
+        *dot = 0;
+        snprintf(path, sizeof path, "%s/%s.SPC", where, base);
+        fs::File s = sd_fs().open(path, "r");
+        if (s) {
+            uint8_t a[party::kAffectSize];
+            while (ch.n_affects < party::kMaxAffects && s.read(a, sizeof a) == sizeof a)
+                if (create::pool_effect_kept(a[0])) memcpy(ch.affects[ch.n_affects++], a, sizeof a);
+            s.close();
+        }
+    }
+    return true;
+}
 
 const char* option_name(int i)
 {
@@ -5067,7 +5202,8 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         const uint32_t at[Data::kRosterWords] = {pp.add_from, pp.add_sources, pp.add_prompt, pp.add, pp.added,
                                                  pp.paladin_evil, pp.rangers, pp.no_evil, pp.overwrite, pp.qmark,
                                                  pp.drop, pp.forever, pp.sure, pp.dump, pp.out_back, pp.farewell,
-                                                 pp.relief, pp.yes_no, pp.cant_modify, pp.modify, pp.keep_exit};
+                                                 pp.relief, pp.yes_no, pp.cant_modify, pp.modify, pp.keep_exit,
+                                                 pp.from_saved};
         fs::File of;
         if (open_file(d->prof->overlay, of)) {
             library::FileSource src(of);
@@ -6219,6 +6355,12 @@ bool start_title(pic::Canvas& c, uint32_t timeout_ms)
 } // namespace
 
 bool available(games::Game g) { return profile::program_name(g) != nullptr; }
+
+void set_pool_dir(const char* dir)
+{
+    strncpy(pool_dir, dir ? dir : "", sizeof pool_dir - 1);
+    pool_dir[sizeof pool_dir - 1] = 0;
+}
 
 // "Not enough memory" with the numbers (for Tom's reports)
 const char* no_memory(const char* what)

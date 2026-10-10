@@ -455,6 +455,71 @@ int change_classes(const party::Character& c, const classes::Tables& t, int* out
     return n;
 }
 
+void pool_name(const uint8_t* pool, char* out, size_t cap)
+{
+    if (!cap) return;
+    size_t n = pool[0] > 15 ? 15 : pool[0];
+    if (n > cap - 1) n = cap - 1;
+    memcpy(out, pool + 1, n);
+    out[n] = 0;
+}
+
+bool pool_is_pc(const uint8_t* pool) { return pool[0x84] <= 0x7F; }
+
+bool pool_effect_kept(uint8_t type)
+{
+    static const uint8_t kKept[] = {0x12, 0x1A, 0x2F, 0x30, 0x61, 0x6B, 0x7C};
+    for (uint8_t k : kKept)
+        if (k == type) return true;
+    return false;
+}
+
+void from_pool(const uint8_t* p, party::Character& c, const classes::Tables& t)
+{
+    c = party::Character{};
+    uint8_t* r = c.rec;
+    // Byte runs copied as they are: Pool offset, Curse offset, length
+    static const uint16_t kRuns[][3] = {
+        {0x00, 0x00, 16},   {0x2D, 0x73, 1},   {0x2E, 0x74, 1},   {0x2F, 0x75, 1},   {0x30, 0x76, 2},
+        {0x32, 0x78, 1},    {0x33, 0x79, 56},  {0x6B, 0xDD, 1},   {0x6C, 0xDE, 1},   {0x6D, 0xDF, 5},
+        {0x72, 0xE4, 1},    {0x73, 0xE5, 1},   {0x73, 0xE6, 1},   {0x74, 0xE7, 1},   {0x75, 0xE8, 1},
+        {0x76, 0xE9, 1},    {0x77, 0xEA, 8},   {0x83, 0xF6, 1},   {0x84, 0xF7, 1},   {0x85, 0xF8, 1},
+        {0x86, 0xF9, 2},    {0x96, 0x109, 8},  {0x9E, 0x119, 1},  {0x9F, 0x11A, 1},  {0xA0, 0x11B, 1},
+        {0xA1, 0x11C, 8},   {0xA9, 0x124, 1},  {0xAA, 0x125, 1},  {0xAB, 0x126, 1},  {0xAC, 0x127, 4},
+        {0xB0, 0x12B, 1},   {0xB1, 0x12C, 1},  {0xB2, 0x12D, 3},  {0xB5, 0x137, 3},  {0xB8, 0x13C, 2},
+        {0xBA, 0x13E, 3},   {0xBD, 0x141, 2},  {0xC0, 0x144, 7},  {0x100, 0x185, 1}, {0x101, 0x186, 1},
+        {0x102, 0x187, 2},  {0x10C, 0x195, 1}, {0x10D, 0x196, 1}, {0x10E, 0x197, 1}, {0x110, 0x199, 1},
+        {0x111, 0x19A, 2},  {0x113, 0x19C, 8}, {0x11B, 0x1A4, 1}, {0x11C, 0x1A5, 1},
+    };
+    for (const auto& run : kRuns) memcpy(r + run[1], p + run[0], run[2]);
+    if (r[0] > 15) r[0] = 15;
+    // The stats, held to the race's and sex's limits
+    const int race = r[kRace], sex = r[kSex] ? 1 : 0;
+    const uint16_t lim = static_cast<uint16_t>(t.lay.stat_limits + race * 16);
+    for (int i = 0; i < 6; ++i) {
+        int v = p[0x10 + i], lo, hi;
+        if (i == 0) {
+            lo = t.u8(static_cast<uint16_t>(lim + sex));
+            hi = t.u8(static_cast<uint16_t>(lim + 2 + sex));
+        } else {
+            lo = t.u8(static_cast<uint16_t>(lim + 4 + i * 2));
+            hi = t.u8(static_cast<uint16_t>(lim + 5 + i * 2));
+        }
+        if (hi > 0 && v > hi) v = hi;
+        if (v < lo) v = lo;
+        set_stat(c, i, v);
+    }
+    int e = p[0x16];
+    const int emax = t.u8(static_cast<uint16_t>(lim + 4 + sex));
+    if (e > emax) e = emax;
+    set_stat(c, 6, e);
+    r[kSpellBook + 0x23] = 0;                   // no Animate Dead (spell 0x24) in Curse's book
+    memset(r + kMoney, 0, 14);
+    put16(r, kMoney + 4 * 2, 300);              // 300 platinum, whatever they had
+    r[kIconId] = 0x0A;                          // (a slot when they join)
+    classes::class_bonuses(c, t);
+}
+
 void change_class(party::Character& c, const classes::Tables& t, const Facts& f, int cls)
 {
     const int now = present_class(c);

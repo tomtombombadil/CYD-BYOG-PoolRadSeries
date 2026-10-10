@@ -76,6 +76,9 @@ bool nav_point(int* x, int* y);
 // moving / aiming by hand); otherwise the cursor keys (320x240's row
 // shows one set or the other - Tom, 2026-10-10)
 bool walking();
+// The player's Pool of Radiance folder on the card (Add Character -> Pool
+// lists its characters too); "" or nullptr: none
+void set_pool_dir(const char* dir);
 
 // The journal entries ('J') and tavern tales ('T') the game has mentioned
 // so far, in the order heard (the Menu's Journal list)

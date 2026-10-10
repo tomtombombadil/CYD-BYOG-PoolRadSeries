@@ -225,6 +225,8 @@ struct Profile {
                  overwrite, qmark, drop, forever, sure, dump, out_back, farewell, relief, yes_no;
         // Modify Character (GAME.OVR): " can't be modified.", "Modify: ", "Keep Exit"
         uint32_t cant_modify, modify, keep_exit;
+        // Pool characters from a saved game: "from saved game " (GAME.OVR)
+        uint32_t from_saved;
     } party;
 
     // View Character: name tables in the program and the screen's words

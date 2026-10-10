@@ -85,6 +85,22 @@ int trainable(const party::Character& c, const classes::Tables& t);
 // (silent: a magic-user's spells, as at creation)
 void train_classes(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, int mask, bool silent);
 
+// ---- Pool of Radiance characters (Add Character -> Pool; facts: the
+// Project's claude/import_facts.md 3). A Pool record is 285 bytes; its
+// control byte (0x84) under 0x80 is a player character.
+constexpr int kPoolRecordSize = 0x11D;
+// The name in a Pool record (a Pascal string, 15 at most)
+void pool_name(const uint8_t* pool, char* out, size_t cap);
+bool pool_is_pc(const uint8_t* pool);
+// A Curse character from a Pool record, as the original converts it: the
+// fields it reads, the stats held to the race's and sex's limits, Animate
+// Dead taken out of the spell book, exactly 300 platinum (Pool's money
+// dropped), no items, the class values recomputed. Levels and experience
+// are kept as they are.
+void from_pool(const uint8_t* pool, party::Character& c, const classes::Tables& t);
+// The racial effects a Pool character's .SPC keeps (the rest are dropped)
+bool pool_effect_kept(uint8_t type);
+
 // ---- Human Change (the party menu, where training is offered; coab's
 // facts): a human with no former class may take up another
 bool can_change(const party::Character& c);

@@ -845,6 +845,15 @@ void tap_files(const ui::Tap& t)
         library::make_cache_dirs(game_dirs[game_sel]);
         snprintf(cdir, sizeof cdir, "%s/%s/%s", games::kRootDir, library::kCacheDir, game_dirs[game_sel].folder);
         play::set_sound(cfg->sound, cfg->volume);
+        // Pool of Radiance's folder on the card: its characters can be added
+        play::set_pool_dir("");
+        for (int g = 0; g < n_games; ++g)
+            if (game_dirs[g].game == games::Game::PoolOfRadiance && game_dirs[g].format == library::Format::Dax) {
+                char pd[160];
+                snprintf(pd, sizeof pd, "%s/%s", games::kRootDir, game_dirs[g].data_dir);
+                play::set_pool_dir(pd);
+                break;
+            }
         play_error = play::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game, frame::canvas(), cdir);
         go(Screen::Play);
         return;

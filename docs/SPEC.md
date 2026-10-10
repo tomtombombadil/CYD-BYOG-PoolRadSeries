@@ -311,7 +311,19 @@ stay in the session's scratch space, never in the repo.
    computer-run, key waits pass at once, no experience / treasure; an
    all-NPC party wins while one stands; PROGRAM 3 ends it, the title
    again. As in the original, a tap doesn't stop it (Esc leaves the Play
-   Test).
+   Test). v0.56.0 (facts: claude/import_facts.md): Add Character ->
+   **Pool** - Pool of Radiance characters (*.CHA, then *.SAV of exactly 285
+   bytes, player characters) from Curse's save folder (as the original)
+   AND from the player's own Pool of Radiance folder on the card (the
+   engine's convenience: nothing to copy; Tom to confirm); a saved game's
+   shows "NAME from saved game A". Converted as the original does: the
+   fields Curse reads, stats held to the race / sex limits, Animate Dead
+   out of the spell book, exactly 300 platinum, no items (Curse never
+   reads Pool's .ITM), a NAME.CHA's racial effects from NAME.SPC (a saved
+   game's are lost, as in the original), class values recomputed; levels
+   and experience kept. The party's rules as for Curse characters, and the
+   original's duplicate rule (same name and "mod id" 0x126). Hillsfar:
+   still to come.
 6. **Combat.** v0.32.0: monsters, the battlefield (indoors from the 3D map,
    outdoors random), placement, the combat screen and icons, rounds and
    initiative, the player's Move / View / Aim / Quick / Done, attacks and
