@@ -240,7 +240,7 @@ struct Fx {
 constexpr int kPages = 24;            // a turn's messages at most (a fireball on a crowd: the rest dropped)
 
 struct Page {
-    char    line[5][40];
+    char    line[5][48];                // (the longest: "takes 100 points of damage from Electricity")
     uint8_t colour[5];
     int     lines = 0;
     uint8_t sound = 0;                  // the game's sound effect as it shows (0: none)
@@ -1801,6 +1801,7 @@ void start_aim(pic::Canvas& c)
 
 void aim_menu(pic::Canvas& c)
 {
+    fg->st = FSt::Aim;                  // (also back from "Abort Spell?" - No / Esc)
     combat::Battle& b = fg->b;
     const int t = fg->manual ? (b.who[fg->my][fg->mx] ? b.who[fg->my][fg->mx] - 1 : -1) : fg->cand[fg->ci];
     if (t >= 0 || fg->manual) {

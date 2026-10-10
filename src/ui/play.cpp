@@ -3053,7 +3053,7 @@ void list_tap(int x, int y, pic::Canvas& c)
     } else if (k == 'S' && screen == Screen::CreatePick) {
         picked(l.index, c);
         return;
-    } else if (k == 'E') {
+    } else if (k == 'E' && screen != Screen::Loot) {     // (the treasure's Exit: below)
         if (screen == Screen::AddList) {
             screen = Screen::PartyMenu;
             draw_party_menu(c);
@@ -6070,10 +6070,11 @@ void finish_print_wait()
 // again (the 3D view, the party, an empty text window)
 void back_from_view(pic::Canvas& c)
 {
-    if (view_from == Screen::Fight) {
+    if (view_from == Screen::Fight && in_fight()) {
         fight_after_view(c);
         return;
     }
+    if (view_from == Screen::Fight) view_from = Screen::Game;  // (the fight is over: never stuck here)
     screen = view_from;
     if (screen == Screen::Shop) {
         draw_shop(c);

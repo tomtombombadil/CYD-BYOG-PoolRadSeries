@@ -243,6 +243,12 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   folder's parent, and `library::path_of` adds `/GOLDBOX` as on the board
   (v0.21.0: a doubled `/GOLDBOX` in the save paths went unseen before).
   Snapshots of real game screens stay in scratch, never in the repo.
+  `tools/playsim/sweep.cpp` (v0.68.1) is the game test: modes spells,
+  campspells, monsters, items, classes, events (every script block,
+  every square), saveload (round trip) and monkey (random taps / keys /
+  moves with invariant checks; MAREA / MBLOCK start it in a block). Build
+  it with -fsanitize=address,undefined; give each run its own copy of the
+  game folder (runs save over the slots).
 - PortMaster ports are a stretch goal (Tom): keep everything portable.
 - Game screens (Walk Test, Play Test now, the games later): canvas 1:1 at the top left
   (`frame::set_left`), controls below it, on 480x320 the Companion strip on

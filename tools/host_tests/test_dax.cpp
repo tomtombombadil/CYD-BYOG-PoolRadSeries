@@ -1641,6 +1641,40 @@ static void test_vm_and()
     CHECK(vm.init_script());
     vm.run(vm.entry(0));
     CHECK(vm.get(0x4C00) == 1 && !vm.flag(0) && vm.flag(1) && vm.flag(2) && !vm.flag(3) && vm.flag(4) && !vm.flag(5));
+
+    // ON GOTO with a long table (more than an instruction's operands): the
+    // 26th place; past the table when out of range
+    for (int sel : {25, 40}) {
+        Bytes g;
+        for (int i = 0; i < 5; ++i) { g.push_back(0); op_addr(g, 0); }
+        const size_t at = g.size();
+        g.push_back(0x25); op_imm(g, sel); op_imm(g, 30);
+        std::vector<size_t> slots;
+        for (int i = 0; i < 30; ++i) { slots.push_back(g.size()); op_addr(g, 0); }
+        const size_t after = g.size();
+        g.push_back(0x09); op_imm(g, 7); op_addr(g, 0x4C01);          // (out of range: on to here)
+        g.push_back(0x00);
+        const size_t hit = g.size();
+        g.push_back(0x09); op_imm(g, 9); op_addr(g, 0x4C01);
+        g.push_back(0x00);
+        for (int i = 0; i < 30; ++i) {
+            const size_t t = i == 25 ? hit : after;
+            g[slots[i] + 1] = static_cast<uint8_t>((kBase + t) & 0xFF);
+            g[slots[i] + 2] = static_cast<uint8_t>((kBase + t) >> 8);
+        }
+        for (int i = 0; i < 5; ++i) {
+            g[1 + i * 4] = 1;
+            g[2 + i * 4] = static_cast<uint8_t>((kBase + at) & 0xFF);
+            g[3 + i * 4] = static_cast<uint8_t>((kBase + at) >> 8);
+        }
+        gs = ecl::GameState{};
+        memcpy(gs.code, g.data(), g.size());
+        gs.code_len = static_cast<uint32_t>(g.size());
+        ecl::Vm v2(gs, host, *p->ecl_ops);
+        CHECK(v2.init_script());
+        CHECK(v2.run(v2.entry(0)) == ecl::Stop::Stopped);
+        CHECK(v2.get(0x4C01) == (sel == 25 ? 9 : 7));
+    }
 }
 
 static void test_ecl_vm()

@@ -605,10 +605,21 @@ Stop Vm::step()
         }
         return true;
     };
-    auto more = [&](int first, int n) {       // a list of n more after `first` operands
+    // A list of n more after `first` operands: as many as o holds, the rest
+    // read past (so the next instruction is where it should be); `keep`:
+    // that one of the list also into *kept, wherever it is
+    auto more = [&](int first, int n, int keep = -1, Op* kept = nullptr) {
+        const int fit = n > kMaxOps - first ? kMaxOps - first : n;
         --pc_;
-        if (n > kMaxOps - first) n = kMaxOps - first;
-        return operands(n, o + first);
+        if (!operands(fit, o + first)) return false;
+        if (kept && keep >= 0 && keep < fit) *kept = o[first + keep];
+        for (int k = fit; k < n; ++k) {
+            Op t{};
+            --pc_;
+            if (!operands(1, &t)) return false;
+            if (kept && k == keep) *kept = t;
+        }
+        return true;
     };
     auto stub = [&](int n, const char* what) {
         if (!need(n)) return Stop::Error;
@@ -913,10 +924,11 @@ Stop Vm::step()
     case 0x26: {                                // ON GOSUB
         if (!need(2)) return Stop::Error;
         const int i = value(o[0]) & 0xFF, n = value(o[1]) & 0xFF;
-        if (!more(2, n)) return Stop::Error;
-        if (i < n && 2 + i < kMaxOps) {
+        Op to{};
+        if (!more(2, n, i, &to)) return Stop::Error;
+        if (i < n) {
             if (op_ == 0x26 && sp_ < 32) stack_[sp_++] = pc_;
-            pc_ = o[2 + i].word() - kBase;
+            pc_ = to.word() - kBase;
         }
         return Stop::Running;
     }
