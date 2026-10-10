@@ -98,7 +98,7 @@ struct Data {
                   kCantModify, kModify, kKeepExit, kFromSaved, kRosterWords };
     char           roster[kRosterWords][40] = {};
     // Characters that can be added (.GUY files in the save folder)
-    static constexpr int kMaxGuys = 24;
+    static constexpr int kMaxGuys = 48;
     char           guy_file[kMaxGuys][13] = {};
     char           guy_name[kMaxGuys][16] = {};
     bool           guy_added[kMaxGuys] = {};
@@ -1766,8 +1766,11 @@ void find_guys(char from = 'C')
         const char* slash = strrchr(nm, '/');
         if (slash) nm = slash + 1;
         const size_t n = strlen(nm);
-        if (f.isDirectory() || n < 5 || n > 12 || strcasecmp(nm + n - 4, ".GUY") != 0 || f.size() != party::kRecordSize)
-            continue;
+        // .GUY files, and (Tom, v0.58.0 - the original lists only those)
+        // the members of saved games, CHRDAT<letter><n>.SAV
+        const bool guy = n >= 5 && n <= 12 && strcasecmp(nm + n - 4, ".GUY") == 0;
+        const bool member = n == 12 && strncasecmp(nm, "CHRDAT", 6) == 0 && strcasecmp(nm + 8, ".SAV") == 0;
+        if (f.isDirectory() || (!guy && !member) || f.size() != party::kRecordSize) continue;
         uint8_t rec[0x100];
         if (f.read(rec, 0xF8) != 0xF8 || rec[0xF7] > 0x7F) continue;     // NPCs aren't listed
         char name[16];
@@ -1785,10 +1788,24 @@ void find_guys(char from = 'C')
         strcpy(d->guy_name[d->guys], name);
         d->guy_added[d->guys] = false;
         d->guy_src[d->guys] = 0;
-        d->guy_letter[d->guys] = 0;
+        d->guy_letter[d->guys] = member ? static_cast<char>(toupper(nm[6])) : 0;
         ++d->guys;
     }
     dir.close();
+    // In order: the .GUY characters by name, then each saved game's members
+    // (game A first, in party order)
+    auto before = [](int a, int b) {
+        if ((d->guy_letter[a] != 0) != (d->guy_letter[b] != 0)) return d->guy_letter[a] == 0;
+        return d->guy_letter[a] ? strcasecmp(d->guy_file[a], d->guy_file[b]) < 0
+                                : strcmp(d->guy_name[a], d->guy_name[b]) < 0;
+    };
+    for (int i = 1; i < d->guys; ++i)
+        for (int j = i; j > 0 && before(j, j - 1); --j) {
+            char f[13], nm2[16];
+            memcpy(f, d->guy_file[j], 13); memcpy(d->guy_file[j], d->guy_file[j - 1], 13); memcpy(d->guy_file[j - 1], f, 13);
+            memcpy(nm2, d->guy_name[j], 16); memcpy(d->guy_name[j], d->guy_name[j - 1], 16); memcpy(d->guy_name[j - 1], nm2, 16);
+            const char l = d->guy_letter[j]; d->guy_letter[j] = d->guy_letter[j - 1]; d->guy_letter[j - 1] = l;
+        }
 }
 
 bool load_pool_guy(int i, party::Character& ch);

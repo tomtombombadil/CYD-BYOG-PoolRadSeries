@@ -323,7 +323,12 @@ stay in the session's scratch space, never in the repo.
    game's are lost, as in the original), class values recomputed; levels
    and experience kept. The party's rules as for Curse characters, and the
    original's duplicate rule (same name and "mod id" 0x126). Hillsfar:
-   still to come. v0.57.0: **the stats as they stand** (`rules::stats`, run
+   still to come. v0.58.0 (Tom - beyond the original, which lists only
+   .GUY files): Add Character -> Curse also lists the members of saved
+   games (CHRDAT<letter><n>.SAV, their .SWG items and .FX effects), shown
+   as "NAME from saved game A" - so GOG's sample party can be added one by
+   one; .GUY characters first by name, then game A, B ... in party order
+   (48 lines at most). v0.57.0: **the stats as they stand** (`rules::stats`, run
    with every recalculation): from each stat's own value (0x10 + 2i; for
    18/xx 0x1D) to the one in use (0x11 + 2i; 0x1C) by readied items that
    work on stats (0x80 + code in the third effect byte: 5 giant strength
