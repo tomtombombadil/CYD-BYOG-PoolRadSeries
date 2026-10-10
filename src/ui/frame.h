@@ -49,6 +49,9 @@ bool park(const char* path);
 bool unpark(const char* path);
 bool parked();
 
+// A palette entry as the panel shows it (RGB565, the usual byte order)
+uint16_t colour(int index);
+
 // Panel point -> canvas point. False if outside the canvas.
 bool to_canvas(int px, int py, int& cx, int& cy);
 

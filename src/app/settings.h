@@ -13,6 +13,8 @@ struct Settings {
     uint8_t flipped    = 0;       // screen turned 180 degrees
     uint8_t sound      = kSoundTandy;     // Tandy (the default; 0 in older files = Tandy too), PC speaker, Off
     uint8_t volume     = kDefaultVolume;  // game sound 0-255 (0 in older files: kDefaultVolume)
+    uint8_t large_icons = 0;      // 320x240: the icon editor's big preview (Tom, v0.59.0; 480x320 always;
+                                  // CYD_BIG_ICON_PREVIEW in app/features.h)
 };
 
 

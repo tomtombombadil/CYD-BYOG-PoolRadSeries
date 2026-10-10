@@ -13,7 +13,7 @@ constexpr uint32_t    kMagic = 0x53455431;   // "SET1"
 struct File1 {
     uint32_t magic;
     Settings s;
-    uint8_t  reserved[11];        // (the file stays 20 bytes: new fields come out of here as 0)
+    uint8_t  reserved[10];        // (the file stays 20 bytes: new fields come out of here as 0)
 };
 
 } // namespace

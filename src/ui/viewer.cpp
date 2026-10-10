@@ -8,6 +8,7 @@
 #include <new>
 #include <strings.h>
 
+#include "app/features.h"
 #include "app/library.h"
 #include "engine/dax.h"
 #include "engine/font.h"
@@ -1625,7 +1626,7 @@ bool tap_keyboard(const ui::Tap& t)
 // Journal PDF (the book). More tabs as the engine grows. Back to Game at
 // the bottom.
 
-enum MenuTab { kTabJournal, kTabPdf, kTabSounds, kTabs };
+enum MenuTab { kTabJournal, kTabPdf, kTabSounds, kTabOptions, kTabs };
 int  menu_tab = kTabJournal;
 int  menu_page = 0;
 bool from_menu = false;       // the journal / PDF screens go back to the Menu
@@ -1650,9 +1651,12 @@ ui::Rect tab_rect(int i)
 
 void draw_tabs(int active)
 {
-    static const char* const kNames[kTabs] = {"Journal", "Journal PDF", "Sounds"};
+    // (320x240: four tabs and Esc - the book's tab is "PDF")
+    static const char* const kNames[kTabs] = {"Journal", "Journal PDF", "Sounds", "Options"};
+    static const char* const kShort[kTabs] = {"Journal", "PDF", "Sounds", "Options"};
     ui::gfx().fillRect(0, 0, ui::width(), ui::header_h(), style::kHeader);
-    for (int i = 0; i < kTabs; ++i) ui::key(tab_rect(i), kNames[i], i == active ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+    for (int i = 0; i < kTabs; ++i)
+        ui::key(tab_rect(i), ui::large() ? kNames[i] : kShort[i], i == active ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
     if (menu_esc_rect().w > 0) ui::key(menu_esc_rect(), "Esc");
 }
 
@@ -1779,6 +1783,12 @@ void tap_sounds(const ui::Tap& t)
         }
 }
 
+ui::Rect options_key()
+{
+    const ui::Rect a = journal_area();
+    return {ui::gap() * 3, a.y + ui::gap() * 2, ui::width() - ui::gap() * 6, ui::key_h()};
+}
+
 void draw_game_menu()
 {
     ui::clear();
@@ -1787,6 +1797,29 @@ void draw_game_menu()
     if (menu_tab == kTabSounds) {
         ui::key(ui::bottom_key(0, 1), "Back to Game");
         draw_sounds();
+        return;
+    }
+    if (menu_tab == kTabOptions) {
+        ui::key(ui::bottom_key(0, 1), "Back to Game");
+        const int x = ui::gap() * 3, wdt = ui::width() - ui::gap() * 6;
+        int y = a.y + ui::gap() * 2;
+        if (!CYD_BIG_ICON_PREVIEW) {
+            wrap_text(x, y, wdt, "Nothing to set here yet.", ui::Font::Normal, style::kText, true);
+            return;
+        }
+        if (ui::large()) {
+            wrap_text(x, y, wdt,
+                      "Large icons: on this screen the icon editor (Alter, Icon) always shows the new icon large "
+                      "beside it. Tap it to see the other pose.",
+                      ui::Font::Normal, style::kText, true);
+            return;
+        }
+        ui::key(options_key(), cfg->large_icons ? "Large Icons: On" : "Large Icons: Off",
+                cfg->large_icons ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+        wrap_text(x, options_key().y + options_key().h + ui::gap() * 2, wdt,
+                  "The icon editor (Alter, Icon) shows the new icon large in its empty space. Tap it to see the "
+                  "other pose.",
+                  ui::Font::Small, style::kTextMuted, true);
         return;
     }
     const int pages = menu_pages();
@@ -1843,7 +1876,7 @@ void tap_game_menu(const ui::Tap& t)
         }
         return;
     }
-    if (tab == kTabJournal || tab == kTabSounds) {
+    if (tab == kTabJournal || tab == kTabSounds || tab == kTabOptions) {
         menu_tab = tab;
         menu_note[0] = 0;
         dirty = true;
@@ -1852,6 +1885,16 @@ void tap_game_menu(const ui::Tap& t)
     if (menu_tab == kTabSounds) {
         if (bottom_hit(t, 1) == 0) leave_menu();
         else tap_sounds(t);
+        return;
+    }
+    if (menu_tab == kTabOptions) {
+        if (bottom_hit(t, 1) == 0) {
+            leave_menu();
+        } else if (CYD_BIG_ICON_PREVIEW && !ui::large() && options_key().contains(t.x, t.y)) {
+            cfg->large_icons = !cfg->large_icons;
+            settings_save(*cfg);
+            dirty = true;
+        }
         return;
     }
     const int pages = menu_pages();
@@ -2342,9 +2385,10 @@ void tap_pdf(const ui::Tap& t)
             menu_esc();
             return;
         }
-        if (tab_hit(t) == kTabJournal) {
+        const int other = tab_hit(t);
+        if (other >= 0 && other != kTabPdf) {
             close_book();
-            menu_tab = kTabJournal;
+            menu_tab = other;
             menu_note[0] = 0;
             go(Screen::GameMenu);
             return;
@@ -2424,6 +2468,43 @@ void leave_play()
 
 // Shows what the scripts changed: the canvas rows, and the Companion when
 // the party moved
+// ---- The icon editor's big preview (Tom, 2026-10-10, v0.59.0): the NEW
+// icon as large as fits - on 480x320 always, in the Companion strip; on
+// 320x240 with Large Icons on (Game menu -> Options), in the empty right
+// part of the editor's screen. A tap on it flips ready / action.
+// An engine comfort, not the original's: CYD_BIG_ICON_PREVIEW (app/features.h)
+// turns it off for ports to bigger screens.
+bool big_action = false, big_was = false, big_force = false;
+
+bool big_icon_on()
+{
+    return CYD_BIG_ICON_PREVIEW && play::icon_editing() && (ui::large() || cfg->large_icons);
+}
+
+ui::Rect big_icon_area()
+{
+    if (ui::large()) return {pic::kScreenW + 4, 4, ui::width() - pic::kScreenW - 8, pic::kScreenH - 8};
+    return {140, 12, 168, 176};              // inside the editor's frame, right of the four icons
+}
+
+void draw_big_icon()
+{
+    uint8_t px[24 * 24];
+    if (!play::icon_preview(big_action, px)) return;
+    const ui::Rect a = big_icon_area();
+    const int lh = ui::line_h(ui::Font::Small) + 4;
+    int s = (a.w < a.h - lh ? a.w : a.h - lh) / 24;
+    if (s < 1) s = 1;
+    const int bx = a.x + (a.w - 24 * s) / 2, by = a.y + (a.h - lh - 24 * s) / 2;
+    LGFX& g = ui::gfx();
+    g.startWrite();
+    g.fillRect(a.x, a.y, a.w, a.h, ui::large() ? style::kBackground : frame::colour(0));
+    for (int y = 0; y < 24; ++y)
+        for (int x = 0; x < 24; ++x) g.fillRect(bx + x * s, by + y * s, s, s, frame::colour(px[y * 24 + x]));
+    g.endWrite();
+    ui::text_center({a.x, by + 24 * s + 2, a.w, lh}, big_action ? "Action" : "Ready", style::kText, ui::Font::Small);
+}
+
 void present_play()
 {
     // A fight swaps colours 0 and 8 (the field's black shows dark grey)
@@ -2437,11 +2518,22 @@ void present_play()
             frame::set_ega_palette();
         }
         frame::present();
+        big_force = true;
     }
     int y0, y1;
     play::take_dirty(y0, y1);
     if (kb_shown && !ui::large() && y0 < text::kTextArea.y0 * 8) y0 = text::kTextArea.y0 * 8;   // under the keys
     if (y1 > y0) frame::present_rows(y0, y1);
+    // The icon editor's big preview (after the canvas: on 320x240 it sits over it)
+    const bool big = big_icon_on();
+    if (big != big_was) {
+        big_was = big;
+        big_action = false;
+        big_force = true;
+        if (!big && ui::large()) play_last_map = nullptr;      // the map back in the strip
+    }
+    if (big && (y1 > y0 || big_force)) draw_big_icon();
+    big_force = false;
     const bool want_kb = play::input() != play::Input::None;
     if (want_kb && !kb_shown) {
         kb_shown = true;
@@ -2462,8 +2554,8 @@ void present_play()
         const Row want = w == row_flip ? Row::Cursor : Row::Move;
         if (row != want) draw_walk_keys("Look", "Game", true);
     }
-    if (play::pos_x() != play_last_x || play::pos_y() != play_last_y || play::dir() != play_last_dir ||
-        play::map() != play_last_map) {
+    if (!big && (play::pos_x() != play_last_x || play::pos_y() != play_last_y || play::dir() != play_last_dir ||
+                 play::map() != play_last_map)) {
         play_last_x = play::pos_x();
         play_last_y = play::pos_y();
         play_last_dir = play::dir();
@@ -2482,6 +2574,7 @@ void draw_play()
         return;
     }
     map_shown = false;
+    big_force = true;
     frame::set_ega_palette();
     play::draw(frame::canvas());
     ui::clear();
@@ -2535,6 +2628,11 @@ void tap_play(const ui::Tap& t)
     if (kb_shown) {
         tap_keyboard(t);
         present_play();
+        return;
+    }
+    if (big_icon_on() && big_icon_area().contains(t.x, t.y)) {
+        big_action = !big_action;              // the big preview: ready <-> action
+        draw_big_icon();
         return;
     }
     if (map_shown) {

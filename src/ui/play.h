@@ -79,6 +79,12 @@ bool walking();
 // The player's Pool of Radiance folder on the card (Add Character -> Pool
 // lists its characters too); "" or nullptr: none
 void set_pool_dir(const char* dir);
+// The icon editor's NEW icon (Alter -> Icon, Create New Character) for the
+// big preview (Tom, v0.59.0): its 24 x 24 colour indexes (0: see-through)
+// in the ready or action pose; false when the editor isn't up. (An engine
+// comfort: CYD_BIG_ICON_PREVIEW in app/features.h switches the preview off.)
+bool icon_editing();
+bool icon_preview(bool action, uint8_t* out);
 
 // The journal entries ('J') and tavern tales ('T') the game has mentioned
 // so far, in the order heard (the Menu's Journal list)

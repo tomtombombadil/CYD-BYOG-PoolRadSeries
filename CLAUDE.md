@@ -103,6 +103,12 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   one in use (18/xx the other way round: 0x1D own, 0x1C in use);
   `rules::stats` works the in-use ones out on every recalculation - never
   write the in-use bytes as if they were the character's own.
+- Engine comforts (Tom, 2026-10-10): anything the original games didn't do,
+  added for the small screens, goes behind a switch in
+  `src/app/features.h` (documented there and in SPEC section 11) so forks
+  for bigger screens can turn it off. First: `CYD_BIG_ICON_PREVIEW`, the
+  icon editor's big preview (480x320 always; 320x240 via Game menu ->
+  Options -> Large Icons).
 - Journal book memory (v0.52.0): while the book is open the game canvas
   waits on the card (`frame::park` / `unpark`, `_CYD/CANVAS.TMP`); a
   memory failure must never be reported as "no scanned picture".

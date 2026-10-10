@@ -328,7 +328,10 @@ stay in the session's scratch space, never in the repo.
    games (CHRDAT<letter><n>.SAV, their .SWG items and .FX effects), shown
    as "NAME from saved game A" - so GOG's sample party can be added one by
    one; .GUY characters first by name, then game A, B ... in party order
-   (48 lines at most). v0.57.0: **the stats as they stand** (`rules::stats`, run
+   (48 lines at most). v0.59.0 (Tom): the icon editor's **big preview**
+   (section 11's CYD_BIG_ICON_PREVIEW) and the Game menu's **Options** tab
+   (320x240: Large Icons On / Off; its tabs read Journal, PDF, Sounds,
+   Options). v0.57.0: **the stats as they stand** (`rules::stats`, run
    with every recalculation): from each stat's own value (0x10 + 2i; for
    18/xx 0x1D) to the one in use (0x11 + 2i; 0x1C) by readied items that
    work on stats (0x80 + code in the third effect byte: 5 giant strength
@@ -550,3 +553,10 @@ a PC, PortMaster handhelds):
   Tom (2026-10-07): PortMaster versions are a **stretch goal** - keep the
   engine easy to port; an SDL2 front end is held in reserve (a PC test build
   isn't wanted for its own sake).
+- **Engine comforts** (things the originals didn't do, added for the small
+  CYD screens) each have a switch in `src/app/features.h`, so a fork for
+  bigger screens can drop them with a build flag (Tom, 2026-10-10):
+  - `CYD_BIG_ICON_PREVIEW` (v0.59.0): the icon editor's big preview of the
+    new combat icon - 480x320 always, in the Companion strip; 320x240 with
+    Game menu -> Options -> Large Icons, in the editor's empty right side;
+    a tap flips ready / action.

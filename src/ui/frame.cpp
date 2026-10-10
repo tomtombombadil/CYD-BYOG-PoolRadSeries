@@ -50,6 +50,12 @@ bool begin()
 
 pic::Canvas& canvas() { return cv; }
 
+uint16_t colour(int index)
+{
+    const uint16_t v = lut[index & 0xFF];
+    return static_cast<uint16_t>((v >> 8) | (v << 8));
+}
+
 namespace {
 bool is_parked = false;
 constexpr size_t kCanvasBytes = static_cast<size_t>(pic::kScreenW) * pic::kScreenH;

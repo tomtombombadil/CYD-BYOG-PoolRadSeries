@@ -6379,6 +6379,19 @@ bool start_title(pic::Canvas& c, uint32_t timeout_ms)
 
 bool available(games::Game g) { return profile::program_name(g) != nullptr; }
 
+bool icon_editing() { return d && screen == Screen::Icon && ie; }
+
+bool icon_preview(bool action, uint8_t* out)
+{
+    if (!icon_editing()) return false;
+    const Pic4& ic = ie->new_ic;
+    const uint8_t* p = ic.px[action ? 1 : 0];
+    if (!p || ic.w != kSq || ic.h != kSq) return false;
+    for (int y = 0; y < kSq; ++y)
+        for (int x = 0; x < kSq; ++x) out[y * kSq + x] = static_cast<uint8_t>(nib(p, kSq, x, y));
+    return true;
+}
+
 void set_pool_dir(const char* dir)
 {
     strncpy(pool_dir, dir ? dir : "", sizeof pool_dir - 1);
