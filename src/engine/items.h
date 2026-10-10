@@ -55,6 +55,7 @@ struct TypeInfo {
     uint8_t dice = 0, sides = 0;
     int8_t  bonus = 0;
     uint8_t range = 0, classes = 0, flags = 0;
+    uint8_t blow = 0;                   // byte 7: 1 piercing, 0x80 blunt
 };
 constexpr uint8_t kSlotWeapon = 0, kSlotArmour = 2;
 

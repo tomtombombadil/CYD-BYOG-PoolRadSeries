@@ -36,7 +36,7 @@ constexpr int kMaxFighters = party::kMaxParty + kMaxMonsters;
 constexpr int kGroundValues = 0x43;
 constexpr int kMaxGroups = 8;           // monster kinds a fight (icon slots 8 ...)
 constexpr int kGroupItems = 8;
-constexpr int kMonsterAffects = 8;
+constexpr int kMonsterAffects = 12;    // the most in a monster file (9) and those a fight adds
 
 int dx(int dir);
 int dy(int dir);
@@ -60,6 +60,51 @@ struct TableAt {
 using ReadDs = bool (*)(void* ctx, uint16_t ds, uint8_t* out, size_t n);
 bool read_tables(Tables& t, const TableAt& at, ReadDs read, void* ctx);
 
+// The monsters' special abilities (monster_fx_facts.md): their effect types
+struct MonFx {
+    // After a hit: poison (+0 / -2: a save or killed), the thri-kreen's
+    // paralysing bite, the dracolich's paralysing touch and chill (2d8 cold),
+    // a fire touch (2d10), the ankheg's acid bite (1d4), engulfing, the owl
+    // bear's hug; while a hit's damage is worked out: the salamander's heat
+    // (+1d6, not against heat_proof)
+    uint8_t poison, poison_m2, kreen_bite, draco_touch, chill, fire_touch, acid_bite, engulf, hug, heat;
+    uint8_t heat_proof[3];
+    // A weapon's hit: only magic weapons count (none / +0: nothing, +1-2
+    // half), +0 weapons do nothing to it unless the attacker is a monster of
+    // 4+ Hit Dice, half damage, piercing weapons do 1, a blessed quarrel
+    // slays it, missiles from a +0 weapon are dodged, 60% of missiles dodged
+    uint8_t stop_normal, need_magic, half, pierce_one, blessed_bane, missile_proof, missile_dodge;
+    // Damage (spells, breath, specials): fire, cold, electricity none;
+    // electricity heals 8; fire / cold a save for none (else half); fire
+    // -1 a die; cold / fire half (+3 on its saves against them); death
+    // magic none
+    uint8_t no_fire, no_cold, no_elec, absorb_elec, fire_cold, efreet, resist_cold, resist_fire, death_ward;
+    // Magic resistance: 50% / 15% (by the caster's level), no magic at all,
+    // the minor globe (spells below level 4), the elves' 90% against sleep
+    // and charm, no charm or sleep, no paralysis, no charm, sleep, paralysis
+    // or poison (and every save against poison / paralysis made)
+    uint8_t mr50, mr15, no_magic, globe, elf_sleep, charm_sleep, no_paralyze, mind;
+    // The troll: hurt, it starts to regenerate (regen_wait 3 rounds, then
+    // regen: 3 hit points a round); fallen to anything but fire or acid it
+    // gets up again (troll_up: 3d6 rounds)
+    uint8_t regen_hit, regen_wait, regen, troll_death, troll_up;
+    // Invisible at the start; seeing the invisible; protection from evil
+    // for those next to it
+    uint8_t start_invisible, detect, prot_evil_near;
+    // The computer's special actions: acid breath, the dracolich's fire
+    // breath, the hell hound's fire, thrown lightning, the slug's and the
+    // ankheg's acid, the stone gaze (reflected by a mirror when mirror_gaze),
+    // the beholder's eye rays
+    uint8_t acid_breath, fire_breath, hound_fire, lightning, slug_spit, ankheg_spit, stone_gaze, mirror_gaze, rays;
+    // Effects they give: suffocating (engulfed), no moving, engulfing,
+    // hugging, paralysed, poisoned, asleep
+    uint8_t suffocate, held_fast, engulfing, hugging, paralyzed, poisoned, sleep;
+    // The mirror's and the blessed quarrel's name words; the spells the
+    // beholder casts when no ray fits (Fear, Slow, Sleep)
+    uint8_t mirror_word, blessed_word;
+    uint8_t ray_spells[3];
+};
+
 // The effects the fights' rules look at (per game, from the profile)
 struct Facts {
     uint8_t held[4];                    // can't act, slain by any blow: snake charm, paralysed, asleep, helpless
@@ -81,6 +126,7 @@ struct Facts {
     // (attacks -4, AC 4 worse, saves -4), invisible to animals (an animal's
     // attacks -4), Feeblemind
     uint8_t bestow, blink, fumbling, silence, entangle, sticks, faerie, blinded, animals_blind, feeble;
+    MonFx   mon;
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a
@@ -123,6 +169,7 @@ struct Fighter {
     bool    swept = false;              // swept this round
     bool    gone = false;               // a monster there was no room for: not in the fight at all
     bool    fleeing = false;            // turned undead, panic: runs for the field's edge
+    int     down_size = 0;              // its footprint before it fell (a troll gets up again)
     int     spell = 0;                  // a spell being cast (it goes off at its delay)
     int     spell_n = 0;                // the computer's targets for it
     uint8_t spell_t[24] = {};
@@ -167,15 +214,46 @@ struct Battle {
 
 // Effects on a fighter
 bool helpless(const Battle& b, const Fighter& f);
+// Whether `viewer` can't see `target`: invisible (unless it sees the
+// invisible), or blinking once it has acted this round
+bool hidden(const Battle& b, int viewer, int target);
 // The start of a fighter's turn (spell_facts.md 1.8): what an effect does
 // to it. Silenced: no spells or items this turn (it may still fight);
 // Snakes / Fumbling: its turn is lost
-enum class TurnFx : uint8_t { None, Silenced, Snakes, Fumbling };
+// Suffocates: engulfed too long - killed
+enum class TurnFx : uint8_t { None, Silenced, Snakes, Fumbling, Suffocates };
 TurnFx turn_effects(Battle& b, int i);
 // A charm's end: back to their own side (the effect's data, bit 6)
 void uncharm(uint8_t* rec, const uint8_t* affect);
-// Timed effects a round on (a minute); those run out go
-void tick(Battle& b);
+// What happened besides the plain blows: an attack's extras, the
+// computer's special actions, the round's end. `who` says it (its name
+// first), `to` the second name (or -1); `hit`: the attack's hit it follows.
+enum class Ev : uint8_t {
+    // said by `who` (of `to` when set)
+    Engulfs, Hugs, BreathesAcid, BreathesFire, HoundFire, ThrowsLightning, SpitsAcid, SpitsMisses, Gazes,
+    RayDisintegrate, RayStone, RayDeath, RayWounds,
+    // a picture flying from `who` to (x, y): COMSPR `pic`, `frames` of it, `delay` ms a step
+    Fly,
+    // said of `who`
+    Avoids, Poisoned, Paralyzed, ParalyzedLow, Reflects, Stoned, GazeStoned, Disintegrated, Killed, Damage,
+    Unaffected, Down, Suffocates, StandsUp, GetsUp,
+    // the beholder casts spell `amount` (the caller casts it, as the computer does)
+    Cast,
+};
+struct Event {
+    uint8_t who = 0;
+    Ev      ev = Ev::Down;
+    int8_t  to = -1;
+    int8_t  hit = -1;
+    int16_t amount = 0;                 // Damage: the points; Cast: the spell
+    uint8_t kind = 0;                   // Damage: its kind (1 fire, 2 cold, 4 electricity, 8 magic, 0x10 acid)
+    uint8_t x = 0, y = 0, pic = 0, frames = 0, delay = 0;
+};
+// Timed effects a round on (a minute); those run out go. Then the round's
+// end: regeneration (3 hit points), a troll's getting up (events)
+int tick(Battle& b, Event* out = nullptr, int cap = 0);
+// The fight's start: those invisible from the start become so
+void battle_start(Battle& b);
 
 // The footprint's squares: size 1 one, 2 one wide two tall, 3 two wide
 // one tall, 4 two by two
@@ -238,6 +316,9 @@ struct Attack {
     bool down = false;                  // the target went down
     bool slain = false;                 // a helpless target: "slays helpless ... with one cruel blow"
     bool backstab = false;              // "-Backstabs-"
+    bool avoided[8] = {};               // a hit dodged ("Avoids it"; counted a miss)
+    Event ev[8];                        // the extras after hits (poison, paralysis, a touch's damage, engulfing ...)
+    int  n_ev = 0;
 };
 // A backstab: a thief (backstabbing weapon or none) straight behind a man-
 // sized target that has had an attack this round already: the rear AC 4
@@ -261,6 +342,21 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
 // Damage: HP 0 unconscious, -1..-9 dying (bleeding), -10 dead (HP kept 0
 // when down); true when they went down
 bool damage(Battle& b, int c, int amount);
+// The general damage routine (spells, breath, specials, a monster's touch):
+// the target's resistances, then its save if `save` >= 0 (`on_save` 1:
+// none, 2: half). The damage done (0: none; *resisted when its defences
+// took it all); *down when it went down.
+struct Harm {
+    int kind = 0;                       // 1 fire, 2 cold, 4 electricity, 8 magic, 0x10 acid, 0x20 breath, 0x40 death
+    int level = 0;                      // the caster's level (magic resistance; 0: no spell)
+    int dice = 0;                       // dice rolled (the efreet's -1 a die)
+    int spell = 0, spell_level = 0;     // the spell (the minor globe)
+    int save = -1, on_save = 0, bonus = 0;
+};
+int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* down, bool* resisted = nullptr);
+// Magic resistance against a spell's effect on fighter c (`effect`: the
+// effect type it gives, 0 none); true: it's unaffected
+bool resists(Battle& b, int c, int effect, const Harm& h, create::Dice& d);
 enum class Down : uint8_t { No, Unconscious, Dying, Dead };
 Down down_state(const Fighter& f);
 
@@ -283,6 +379,14 @@ struct Plan {
     bool missile = false;               // Attack: a shot / a throw (`ammo` goes)
     int ammo = -1;
 };
+// The start of the computer's action step: holds it had (engulfing,
+// hugging, held fast, suffocating) let go
+void release_holds(Battle& b, int i);
+// The computer's special actions (breath, spit, gazes, rays, thrown
+// lightning) at the start of its step: the events (none: nothing done);
+// *ends_turn when it may do nothing more this turn
+int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int cap, bool* ends_turn);
+
 // The readied missile weapon's reach (its range - 1, at least 1) when it can
 // be used now: a bow / crossbow (type flags 1 / 0x80) with its arrows /
 // quarrels readied, a thrown weapon (flag 0x10), another with a range (a
@@ -400,6 +504,9 @@ int clouds_round(Battle& b);
 // The fighters in an area: within r squares of (x, y)
 int in_area(const Battle& b, const Tables& t, int x, int y, int r, int* out, int cap);
 bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d);
+// The fighter whose turn it is and the damage's kind (saving throws look at
+// them: protection from evil / good, resist fire / cold)
+void set_actor(const Battle& b, int i);
 // Casts the spell by fighter `caster` on `targets` (chosen as the spell's
 // aim says); what it did. The spell left the caster's memory already.
 // `pw`: the caster's level for it (0: their own; an item's: item_power).

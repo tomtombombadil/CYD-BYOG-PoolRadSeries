@@ -10,7 +10,8 @@
 // the script's LOAD MONSTERs (RUNAT=that address FIGHT=1 runs the fight),
 // FIGHTOPS, FORCESPELL=m:id,id (fighter m has those spells), FORCEWEAPON=m:type
 // (fighter m's weapon becomes that type), FXSHOTS=n (snapshots of the pages'
-// pictures in flight), PAGELOG (each fight page's lines). Needs an out/ folder.
+// pictures in flight), PAGELOG (each fight page's lines), MONSWAP=area:id[:copies[:icon]]
+// (the LOAD MONSTER at RUNAT loads that monster; its picture: CPIC block icon, else id). Needs an out/ folder.
 #include "ui/play.cpp"
 #include "engine/rules.h"
 #include <vector>
@@ -181,6 +182,8 @@ static void settle(int choice = 0, int max_ms = 60000)
 }
 int main(int argc, char** argv)
 {
+    // SIZES: the fight's blocks' sizes
+    if (getenv("SIZES")) { printf("Fight %zu Battle %zu Page %zu Monster %zu\n", sizeof(play::Fight), sizeof(combat::Battle), sizeof(play::Page), sizeof(combat::Monster)); return 0; }
     // argv[1]: the game folder on the PC; its parent stands for /GOLDBOX
     std::string host = argv[1];
     while (host.size() > 1 && host.back() == '/') host.pop_back();
@@ -470,6 +473,16 @@ int main(int argc, char** argv)
         // Run the script from an address (e.g. a shop), then BUY=n,n,...
         // buys those goods for character 0, READY=i readies their item i
         unsigned a; sscanf(getenv("RUNAT"), "%x", &a);
+        if (getenv("MONSWAP")) {
+            // MONSWAP=area:id[:copies[:icon]]: the LOAD MONSTER there loads that monster (MON<area>) instead
+            unsigned area = 0, id = 0, copies = 0, icon = 0;
+            sscanf(getenv("MONSWAP"), "%u:%u:%u:%u", &area, &id, &copies, &icon);
+            play::d->gs.game_area = (uint8_t)area;
+            play::vm->set((uint16_t)(a + 2), (uint16_t)id);
+            if (copies) play::vm->set((uint16_t)(a + 4), (uint16_t)copies);
+            play::vm->set((uint16_t)(a + 6), (uint16_t)(icon ? icon : id));
+            printf("  monster swapped: MON%u #%u\n", area, id);
+        }
         play::then = play::Then::Idle;
         play::handle(play::vm->run((uint16_t)a));
         settle(0, 5000);

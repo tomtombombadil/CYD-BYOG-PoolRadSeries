@@ -499,6 +499,32 @@ void step(Battle& b, int i, int dir)
     occupancy(b);
 }
 
+namespace {
+const Facts* g_fx = nullptr;         // the fight's effects, for saving throws (set as rounds start)
+const Battle* g_b = nullptr;         // the fight (saving throws: protection from evil next to them)
+create::Dice* g_dice = nullptr;      // (a troll's fall: its rounds before it gets up)
+int g_kind = 0;                      // the damage's kind now (saving throws: resist fire / cold)
+int g_actor = -1;                    // whose turn it is (saving throws: protection from evil / good)
+
+bool hasx(const Fighter& f, uint8_t type) { return type && f.has(type); }
+} // namespace
+
+void set_actor(const Battle& b, int i)
+{
+    g_b = &b;
+    g_fx = b.fx;
+    g_actor = i;
+}
+
+bool hidden(const Battle& b, int viewer, int target)
+{
+    if (!b.fx || target < 0 || target >= b.n) return false;
+    const Fighter& t = b.f[target];
+    if (hasx(t, b.fx->blink) && t.delay == 0) return true;
+    if (!hasx(t, b.fx->invisible)) return false;
+    return !(viewer >= 0 && viewer < b.n && hasx(b.f[viewer], b.fx->mon.detect));
+}
+
 bool helpless(const Battle& b, const Fighter& f)
 {
     if (!b.fx) return false;
@@ -540,17 +566,78 @@ void give_aff(Fighter& f, int type, int minutes, int data, bool call)
 
 } // namespace
 
-void uncharm(uint8_t* rec, const uint8_t* a) { rec[0x197] = static_cast<uint8_t>((a[3] & 0x40) >> 6); }
-
 namespace {
-const Facts* g_fx = nullptr;         // the fight's effects, for saving throws (set as rounds start)
+
+// A hold let go: the holder's effect goes, and its victim (the effect's
+// data) may move again (and breathe: engulfed)
+void let_go(Battle& b, Fighter& holder, uint8_t type)
+{
+    const int k = type ? find_aff(holder, type) : -1;
+    if (k < 0) return;
+    const int v = holder.aff[k][3];
+    drop_aff(holder, k);
+    if (!b.fx || v >= b.n) return;
+    Fighter& vf = b.f[v];
+    int j = find_aff(vf, b.fx->mon.held_fast);
+    if (b.fx->mon.held_fast && j >= 0) drop_aff(vf, j);
+    j = find_aff(vf, b.fx->mon.suffocate);
+    if (type == b.fx->mon.engulfing && b.fx->mon.suffocate && j >= 0) drop_aff(vf, j);
 }
+
+// Out of the fight (down, stoned, gone): off the field (a party member
+// leaves a body), the holds it had let go, a troll's regeneration stops -
+// and fallen to anything but fire or acid, it gets up again later
+void fall(Battle& b, int c)
+{
+    Fighter& f = b.f[c];
+    f.rec[kInCombat] = 0;
+    f.delay = 0;
+    f.moves = 0;
+    f.attacks[0] = f.attacks[1] = 0;
+    f.guarding = false;
+    if (f.size) {
+        f.down_size = f.size;
+        f.size = 0;
+        if (f.member >= 0 && on_field(f.x, f.y) && b.ground[f.y][f.x] != 0x1E && b.ground[f.y][f.x] != 0x1C) {
+            f.ground = b.ground[f.y][f.x];
+            b.ground[f.y][f.x] = kBody;
+        }
+        occupancy(b);
+    }
+    if (!b.fx) return;
+    const MonFx& m = b.fx->mon;
+    let_go(b, f, m.engulfing);
+    let_go(b, f, m.hugging);
+    const uint8_t regen[2] = {m.regen_wait, m.regen};
+    for (uint8_t t : regen) {
+        const int k = t ? find_aff(f, t) : -1;
+        if (k >= 0) drop_aff(f, k);
+    }
+    if (hasx(f, m.troll_death) && m.troll_up && !(g_kind & 0x11) && f.status() != party::Stoned &&
+        f.status() != party::Gone)
+        give_aff(f, m.troll_up, g_dice ? g_dice->roll(6, 3) : 10, 0xFF, true);
+}
+
+} // namespace
+
+void uncharm(uint8_t* rec, const uint8_t* a) { rec[0x197] = static_cast<uint8_t>((a[3] & 0x40) >> 6); }
 
 TurnFx turn_effects(Battle& b, int i)
 {
     Fighter& f = b.f[i];
     if (!b.fx || !f.up()) return TurnFx::None;
     const Facts& fx = *b.fx;
+    // Engulfed: a turn's breath less; none left - suffocated
+    const int sf = fx.mon.suffocate ? find_aff(f, fx.mon.suffocate) : -1;
+    if (sf >= 0) {
+        if (f.aff[sf][3] == 0) {
+            f.rec[kHp] = 0;
+            f.rec[kHealth] = party::Dead;
+            fall(b, i);
+            return TurnFx::Suffocates;
+        }
+        --f.aff[sf][3];
+    }
     if (fx.fumbling && f.has(fx.fumbling)) {
         f.moves = f.attacks[0] = f.attacks[1] = 0;
         return TurnFx::Fumbling;
@@ -586,10 +673,12 @@ TurnFx turn_effects(Battle& b, int i)
     return TurnFx::None;
 }
 
-void tick(Battle& b)
+int tick(Battle& b, Event* out, int cap)
 {
+    int n = 0;
     for (int i = 0; i < b.n; ++i) {
         Fighter& f = b.f[i];
+        bool regen = false, rise = false;
         for (int k = 0; f.n_aff && k < *f.n_aff;) {
             const int m = f.aff[k][1] | f.aff[k][2] << 8;
             if (m == 0) {
@@ -603,6 +692,8 @@ void tick(Battle& b)
                     f.fleeing = false;                  // the fear is over
                     if (f.aff[k][3] & 1) f.quick = false;
                 }
+                if (b.fx && b.fx->mon.regen_wait && f.aff[k][0] == b.fx->mon.regen_wait) regen = true;
+                if (b.fx && b.fx->mon.troll_up && f.aff[k][0] == b.fx->mon.troll_up) rise = true;
                 drop_aff(f, k);
             } else {
                 f.aff[k][1] = static_cast<uint8_t>(m - 1);
@@ -610,6 +701,53 @@ void tick(Battle& b)
                 ++k;
             }
         }
+        if (!b.fx) continue;
+        const MonFx& mf = b.fx->mon;
+        // A troll: its wait over, it regenerates; fallen, it gets up again
+        // with all its hit points when its square is free (else a round later)
+        if (regen && mf.regen) give_aff(f, mf.regen, 0, 0xFF, false);
+        if (rise) {
+            int sx[4], sy[4];
+            const int sq = squares(f.down_size ? f.down_size : 1, sx, sy);
+            bool room = f.status() != party::Stoned && f.status() != party::Gone && !f.gone;
+            for (int q = 0; q < sq && room; ++q) {
+                const int x = f.x + sx[q], y = f.y + sy[q];
+                room = on_field(x, y) && b.ground[y][x] != 0 && b.who[y][x] == 0;
+            }
+            if (room) {
+                f.size = f.down_size ? f.down_size : 1;
+                f.rec[kHp] = f.rec[kHpMax];
+                f.rec[kHealth] = party::Okay;
+                f.rec[kInCombat] = 1;
+                f.bleeding = 0;
+                occupancy(b);
+                if (n < cap) {
+                    out[n].who = static_cast<uint8_t>(i);
+                    out[n++].ev = f.team() ? Ev::StandsUp : Ev::GetsUp;
+                }
+            } else if (f.status() != party::Stoned && f.status() != party::Gone) {
+                give_aff(f, mf.troll_up, 1, 0xFF, true);
+            }
+        }
+    }
+    // The round's end: regeneration, 3 hit points a round
+    for (int i = 0; b.fx && b.fx->mon.regen && i < b.n; ++i) {
+        Fighter& f = b.f[i];
+        if (!f.up() || !f.has(b.fx->mon.regen)) continue;
+        const int hp = f.hp() + 3;
+        f.rec[kHp] = static_cast<uint8_t>(hp > f.hp_max() ? f.hp_max() : hp);
+    }
+    return n;
+}
+
+void battle_start(Battle& b)
+{
+    g_b = &b;
+    g_fx = b.fx;
+    if (!b.fx || !b.fx->invisible) return;
+    for (int i = 0; i < b.n; ++i) {
+        Fighter& f = b.f[i];
+        if (f.size && f.up() && hasx(f, b.fx->mon.start_invisible)) give_aff(f, b.fx->invisible, 255, 0xFF, false);
     }
 }
 
@@ -629,6 +767,8 @@ int attacks_this_round(int half, int round) { return (half + (round % 2 ? 1 : 0)
 void start_round(Battle& b, create::Dice& d)
 {
     g_fx = b.fx;
+    g_b = &b;
+    g_dice = &d;
     for (int i = 0; i < b.n; ++i) {
         Fighter& f = b.f[i];
         f.attacked = false;
@@ -664,6 +804,7 @@ void start_round(Battle& b, create::Dice& d)
         f.attacks[0] = attacks_this_round(half1, b.round);
         f.attacks[1] = attacks_this_round(half2, b.round);
         if (b.fx && b.fx->entangle && f.has(b.fx->entangle)) f.moves = 0;      // entangled: no moving
+        if (b.fx && hasx(f, b.fx->mon.held_fast)) f.moves = 0;                 // engulfed, hugged
     }
     b.surprise = 0;
 }
@@ -673,7 +814,7 @@ int next(Battle& b, create::Dice& d)
     int best = -1, best_delay = 0, best_roll = -1;
     for (int i = 0; i < b.n; ++i) {
         const Fighter& f = b.f[i];
-        if (f.delay <= 0 || !f.up() || !f.size) continue;
+        if (f.delay <= 0 || !f.up() || !f.size || helpless(b, f)) continue;      // the held lose their turns
         const int r = d.roll(100, 1);
         if (f.delay > best_delay) {
             best = i;
@@ -686,6 +827,7 @@ int next(Battle& b, create::Dice& d)
     }
     return best;
 }
+
 
 bool damage(Battle& b, int c, int amount)
 {
@@ -707,20 +849,7 @@ bool damage(Battle& b, int c, int amount)
         f.rec[kHealth] = party::Dying;
         f.bleeding = over;
     }
-    f.rec[kInCombat] = 0;
-    f.delay = 0;
-    f.moves = 0;
-    f.attacks[0] = f.attacks[1] = 0;
-    f.guarding = false;
-    // Off the field: a party member leaves a body
-    if (f.size) {
-        f.size = 0;
-        if (f.member >= 0 && on_field(f.x, f.y) && b.ground[f.y][f.x] != 0x1E && b.ground[f.y][f.x] != 0x1C) {
-            f.ground = b.ground[f.y][f.x];
-            b.ground[f.y][f.x] = kBody;
-        }
-        occupancy(b);
-    }
+    fall(b, c);
     return true;
 }
 
@@ -734,11 +863,121 @@ Down down_state(const Fighter& f)
     }
 }
 
+namespace {
+
+// The item a fighter's blows count with (monster_fx_facts 2.3): the readied
+// weapon - a bow's / crossbow's readied arrows / quarrels; none: natural
+const uint8_t* blow_item(const Battle& b, const Fighter& f, const items::Names* names)
+{
+    if (!names) return nullptr;
+    const int w = weapon(f, *names);
+    if (w < 0) return nullptr;
+    const items::TypeInfo& ti = names->type(f.items[w][0x2E]);
+    if (ti.flags & 0x81)
+        for (int k = 0; k < f.n_items; ++k) {
+            const int ty = f.items[k][0x2E];
+            if (f.items[k][0x34] && (((ti.flags & 0x01) && ty == b.arrow) || ((ti.flags & 0x80) && ty == b.quarrel)))
+                return f.items[k];
+        }
+    return f.items[w];
+}
+
+// A troll hurt: it starts to regenerate (3 rounds on)
+void troll_hurt(Fighter& f, const MonFx& m)
+{
+    if (hasx(f, m.regen_hit) && m.regen_wait && !hasx(f, m.regen) && !f.has(m.regen_wait))
+        give_aff(f, m.regen_wait, 3, 0xFF, true);
+}
+
+Event* add_event(Attack& out, int who, Ev ev, int to = -1)
+{
+    if (out.n_ev >= 8) return nullptr;
+    Event& e = out.ev[out.n_ev++];
+    e = Event{};
+    e.who = static_cast<uint8_t>(who);
+    e.ev = ev;
+    e.to = static_cast<int8_t>(to);
+    e.hit = static_cast<int8_t>(out.n - 1);
+    return &e;
+}
+
+// After a hit (monster_fx_facts 3): the attacker's on-hit specials - attack
+// 1's (slot 0) or attack 2's (slot 1) - while the target is in the fight
+void after_hit(Battle& b, int a, int c, int slot, int roll, int hits1, create::Dice& d, Attack& out)
+{
+    Fighter& at = b.f[a];
+    Fighter& tg = b.f[c];
+    const MonFx& m = b.fx->mon;
+    // A touch's damage (the general damage routine: resistances, no save)
+    auto touch = [&](int amount, int kind) {
+        if (!tg.up()) return;
+        Harm h;
+        h.kind = kind;
+        bool dn = false;
+        const int done = harm(b, c, amount, h, d, &dn);
+        g_kind = 0;
+        Event* e = done > 0 ? add_event(out, c, Ev::Damage) : nullptr;
+        if (e) {
+            e->amount = static_cast<int16_t>(done);
+            e->kind = static_cast<uint8_t>(kind);
+        }
+        if (dn) out.down = true;
+    };
+    // Poison: a save or poisoned and killed
+    auto poison = [&](int bonus) {
+        if (!tg.up() || saving_throw(tg, 0, bonus, d)) return;
+        add_event(out, c, Ev::Poisoned);
+        if (m.poisoned) give_aff(tg, m.poisoned, 0, 0xFF, false);
+        tg.rec[kHp] = 0;
+        tg.rec[kHealth] = party::Dead;
+        fall(b, c);
+        out.down = true;
+    };
+    // Held fast (engulfed, hugged): no more moving this turn
+    auto hold = [&](uint8_t holding) {
+        give_aff(tg, m.held_fast, 0, c, false);
+        tg.moves = 0;
+        give_aff(at, holding, 0, c, true);
+    };
+    if (slot == 0) {
+        if (hasx(at, m.fire_touch)) touch(d.roll(10, 2), 9);
+        if (hasx(at, m.acid_bite)) touch(d.roll(4, 1), 0x10);
+        if (hasx(at, m.engulf) && hits1 == 2 && tg.up() && m.held_fast && m.suffocate && m.engulfing &&
+            !tg.has(m.held_fast) && !tg.has(m.suffocate)) {
+            add_event(out, a, Ev::Engulfs, c);
+            hold(m.engulfing);
+            give_aff(tg, m.suffocate, 0, d.roll(4, 2), false);
+        }
+        if (hasx(at, m.hug) && roll >= 18 && tg.up() && m.held_fast && m.hugging && !at.has(m.hugging)) {
+            add_event(out, a, Ev::Hugs, c);
+            hold(m.hugging);
+        }
+        if (hasx(at, m.draco_touch) && m.paralyzed && tg.up() && !saving_throw(tg, 0, 0, d)) {
+            give_aff(tg, m.paralyzed, 0, 0xFF, false);
+            add_event(out, c, Ev::ParalyzedLow);
+        }
+        if (hasx(at, m.chill)) touch(d.roll(8, 2), 0x0A);
+    } else {
+        if (hasx(at, m.poison)) poison(0);
+        if (hasx(at, m.poison_m2)) poison(-2);
+        if (hasx(at, m.kreen_bite) && m.paralyzed && tg.up() && !saving_throw(tg, 0, 0, d)) {
+            give_aff(tg, m.paralyzed, d.roll(8, 2), 12, false);
+            add_event(out, c, Ev::Paralyzed);
+        }
+        if (hasx(at, m.fire_touch)) touch(d.roll(10, 2), 9);
+    }
+}
+
+} // namespace
+
 Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& d, bool from_behind)
 {
     Attack out;
     Fighter& at = b.f[a];
     Fighter& tg = b.f[c];
+    set_actor(b, a);
+    g_dice = &d;
+    g_kind = 0;
     b.no_action = b.round + 15;
     at.attacked = true;
     // The target turns to face the attacker
@@ -780,16 +1019,17 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             side += (b.f[i].aff[k][3] >> 4) == at.team() ? 1 : -1;
             break;
         }
+        const bool sees = hasx(at, fx.mon.detect);
         if (fx.bestow && at.has(fx.bestow)) side -= 4;
         if (fx.blinded && at.has(fx.blinded)) side -= 4;
-        if (fx.animals_blind && at.rec[0x11A] == 19 && tg.has(fx.animals_blind)) side -= 4;
+        if (fx.animals_blind && at.rec[0x11A] == 19 && tg.has(fx.animals_blind) && !sees) side -= 4;
+        if (hasx(tg, fx.invisible) && !sees) side -= 4;              // an invisible target
         if (fx.blinded && tg.has(fx.blinded)) ac -= 4;         // a blind target: easier
         // Faerie Fire: the stored AC + 2 (to AC 0 at most) - the original's
         // own rule, which makes the target harder to hit
         if (fx.faerie && tg.has(fx.faerie)) ac = ac < 58 ? ac + 2 : 60;
-        const int al = at.rec[0x11B];
-        if (tg.has(fx.prot_evil) && al >= 6) side -= 2;
-        if (tg.has(fx.prot_good) && al <= 2) side -= 2;
+        // (protection from evil / good: the original's -2 to hit comes before
+        // the roll and is lost; only the saves count)
         // Attacking makes them seen
         const int inv = find_aff(at, fx.invisible);
         if (inv >= 0) drop_aff(at, inv);
@@ -806,6 +1046,10 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             return out;
         }
     }
+    const uint8_t* item = blow_item(b, at, names);
+    const int plus = item ? static_cast<int8_t>(item[0x32]) : 0;
+    const bool armed = names && weapon(at, *names) >= 0;
+    int hits1 = 0;                              // attack 1's hits (engulfing takes both)
     for (int slot = 1; slot >= 0; --slot) {
         while (at.attacks[slot] > 0 && tg.up() && out.n < 8) {
             --at.attacks[slot];
@@ -815,21 +1059,150 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             if (b.fx && b.fx->blink && tg.has(b.fx->blink) && tg.delay == 0) hit = false;
             Hit h;
             h.hit = hit;
-            if (hit) {
-                const int n = slot ? at.rec[kDice + 1] : dice1;
-                const int s = slot ? at.rec[kSides + 1] : sides1;
-                const int bo = slot ? static_cast<int8_t>(at.rec[kBonus + 1]) : bonus1;
-                int dmg = (n && s ? d.roll(s, n) : 0) + bo;
-                if (dmg < 0) dmg = 0;
-                dmg *= times;
-                h.damage = dmg;
-                out.any = true;
-                if (damage(b, c, dmg)) out.down = true;
+            if (!hit) {
+                out.hits[out.n++] = h;
+                continue;
+            }
+            const int n = slot ? at.rec[kDice + 1] : dice1;
+            const int s = slot ? at.rec[kSides + 1] : sides1;
+            const int bo = slot ? static_cast<int8_t>(at.rec[kBonus + 1]) : bonus1;
+            int dmg = (n && s ? d.roll(s, n) : 0) + bo;
+            if (dmg < 0) dmg = 0;
+            dmg *= times;
+            bool bane = false;
+            if (b.fx) {
+                const MonFx& m = b.fx->mon;
+                // The salamander's heat
+                if (hasx(at, m.heat) && !hasx(tg, m.heat_proof[0]) && !hasx(tg, m.heat_proof[1]) &&
+                    !hasx(tg, m.heat_proof[2]))
+                    dmg += d.roll(6, 1);
+                // The target's defences against a blow: missiles dodged
+                const bool far = !adjacent(b, a, c);
+                bool dodged = false;
+                if (armed && far && hasx(tg, m.missile_proof) && item && plus == 0) dodged = true;
+                if (!dodged && armed && far && hasx(tg, m.missile_dodge) && d.roll(100, 1) <= 60) dodged = true;
+                if (dodged) {
+                    out.avoided[out.n] = true;
+                    h.hit = false;
+                    out.hits[out.n++] = h;
+                    continue;
+                }
+                troll_hurt(tg, m);
+                if (hasx(tg, m.need_magic) && (!item || plus == 0) && (at.rec[0x74] > 0 || at.rec[kHd] < 4)) dmg = 0;
+                if (hasx(tg, m.stop_normal)) {
+                    if (!item || plus <= 0) dmg = 0;
+                    else if (plus <= 2) dmg /= 2;
+                }
+                if (hasx(tg, m.half)) dmg /= 2;
+                if (hasx(tg, m.pierce_one) && item && names && names->type(item[0x2E]).blow == 1) dmg = 1;
+                // A blessed quarrel slays it outright
+                if (hasx(tg, m.blessed_bane) && item && item[0x2E] == b.quarrel && m.blessed_word &&
+                    item[0x31] == m.blessed_word)
+                    bane = true;
+            }
+            h.damage = dmg;
+            out.any = true;
+            if (slot == 0) ++hits1;
+            if (bane) {
+                tg.rec[kHp] = 0;
+                tg.rec[kHealth] = party::Gone;
+                fall(b, c);
+                out.down = true;
+            } else if (damage(b, c, dmg)) {
+                out.down = true;
             }
             out.hits[out.n++] = h;
+            if (b.fx && tg.up()) after_hit(b, a, c, slot, roll, hits1, d, out);
         }
     }
     return out;
+}
+
+bool resists(Battle& b, int c, int effect, const Harm& h, create::Dice& d)
+{
+    if (!b.fx || c < 0 || c >= b.n) return false;
+    const Fighter& f = b.f[c];
+    const Facts& fx = *b.fx;
+    const MonFx& m = fx.mon;
+    const bool magic = effect != 0 || (h.kind & 8);
+    // Magic resistance by the caster's level (byte sums: a high level wraps
+    // round to always resisted, as in the original)
+    auto chance = [&](uint8_t type, int base) {
+        if (!magic || !hasx(f, type)) return false;
+        const int v = (base + (11 - h.level) * 5) & 0xFF;
+        return d.roll(100, 1) <= v;
+    };
+    if (chance(m.mr50, 50) || chance(m.mr15, 15)) return true;
+    const bool sleep_charm = effect > 0 && ((m.sleep && effect == m.sleep) || (fx.charm && effect == fx.charm));
+    const bool paralysis = effect > 0 && m.paralyzed && effect == m.paralyzed;
+    if (hasx(f, m.elf_sleep) && sleep_charm && d.roll(100, 1) <= 90) return true;
+    if (hasx(f, m.charm_sleep) && sleep_charm) return true;
+    if (hasx(f, m.no_paralyze) && paralysis) return true;
+    if (hasx(f, m.no_cold) && (h.kind & 2)) return true;
+    if (hasx(f, m.no_fire) && (h.kind & 1)) return true;
+    if (hasx(f, m.mind) && (sleep_charm || paralysis || (effect > 0 && m.poisoned && effect == m.poisoned))) return true;
+    if (hasx(f, m.globe) && h.spell > 0 && h.spell_level < 4) return true;
+    if (hasx(f, m.no_magic) && magic) return true;
+    return false;
+}
+
+int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* down, bool* resisted)
+{
+    if (down) *down = false;
+    if (resisted) *resisted = false;
+    if (c < 0 || c >= b.n) return 0;
+    Fighter& f = b.f[c];
+    g_b = &b;
+    g_fx = b.fx;
+    g_dice = &d;
+    g_kind = h.kind;
+    int dmg = amount;
+    if (b.fx && f.up() && dmg > 0) {
+        const MonFx& m = b.fx->mon;
+        bool safe = false;
+        // The target's resistances, in the original's order
+        if (hasx(f, m.efreet) && (h.kind & 1)) {
+            dmg -= h.dice;
+            if (dmg < h.dice) dmg = h.dice;
+        }
+        if (hasx(f, m.resist_cold) && (h.kind & 2)) dmg /= 2;
+        if (hasx(f, m.resist_fire) && (h.kind & 1)) dmg /= 2;
+        auto chance = [&](uint8_t type, int base) {
+            if (!(h.kind & 8) || !hasx(f, type)) return false;
+            return d.roll(100, 1) <= ((base + (11 - h.level) * 5) & 0xFF);
+        };
+        if (chance(m.mr50, 50) || chance(m.mr15, 15)) safe = true;
+        if (hasx(f, m.no_fire) && (h.kind & 1)) safe = true;
+        troll_hurt(f, m);
+        if (hasx(f, m.no_cold) && (h.kind & 2)) safe = true;
+        if (!safe && hasx(f, m.fire_cold) && (h.kind & 3)) {
+            const bool saved = saving_throw(f, 4, 0, d);
+            if (saved && h.on_save != 0) safe = true;
+            else dmg /= 2;
+        }
+        if (hasx(f, m.absorb_elec) && (h.kind & 4)) {
+            safe = true;
+            d.roll(8, 1);                       // (rolled, not used)
+            f.rec[kHp] = static_cast<uint8_t>(f.rec[kHp] + 8);
+        }
+        if (hasx(f, m.no_magic) && (h.kind & 8)) safe = true;
+        if (hasx(f, m.death_ward) && (h.kind & 0x40)) safe = true;
+        if (hasx(f, m.no_elec) && (h.kind & 4)) safe = true;
+        if (hasx(f, m.globe) && h.spell > 0 && h.spell_level < 4) safe = true;
+        if (safe) {
+            dmg = 0;
+            if (resisted) *resisted = true;
+        }
+    }
+    if (dmg > 0 && h.save >= 0 && h.on_save && saving_throw(f, h.save, h.bonus, d)) {
+        if (h.on_save == 1) dmg = 0;
+        else if (h.on_save == 2) dmg /= 2;
+    }
+    if (dmg > 0) {
+        const bool dn = damage(b, c, dmg);
+        if (down) *down = dn;
+    }
+    return dmg;
 }
 
 bool can_backstab(const Battle& b, int a, int c, const items::Names* names)
@@ -998,16 +1371,49 @@ bool end_round(Battle& b)
     return standing(b, 0) == 0 || standing(b, 1) == 0 || b.round >= b.no_action;
 }
 
+namespace {
+
+bool seen_enemy(const Battle& b, int i, int c)
+{
+    const int my = b.f[i].team() ? 1 : 0;
+    return c >= 0 && c < b.n && b.f[c].up() && b.f[c].size && (b.f[c].team() ? 1 : 0) != my && !hidden(b, i, c);
+}
+
+// The computer's target: kept while it's an enemy in sight, else one in
+// sight at random, else the nearest (walls or not); -1 none
+int pick_target(Battle& b, const Tables& t, int i, create::Dice& d)
+{
+    Fighter& f = b.f[i];
+    if (seen_enemy(b, i, f.target) && range(b, t, i, f.target, false, nullptr)) return f.target;
+    f.target = -1;
+    int cand[kMaxFighters], n = 0;
+    for (int c = 0; c < b.n; ++c)
+        if (seen_enemy(b, i, c) && range(b, t, i, c, false, nullptr)) cand[n++] = c;
+    if (n) f.target = cand[d.roll(n, 1) - 1];
+    if (f.target < 0) {
+        int best = 9999;
+        for (int c = 0; c < b.n; ++c) {
+            int sq;
+            if (!seen_enemy(b, i, c)) continue;
+            range(b, t, i, c, true, &sq);
+            if (sq < best) {
+                best = sq;
+                f.target = c;
+            }
+        }
+    }
+    return f.target;
+}
+
+} // namespace
+
 Plan think(Battle& b, const Tables& t, int i, create::Dice& d)
 {
     Plan p;
     Fighter& f = b.f[i];
     if (!f.up() || !f.size || f.delay <= 0) return p;
     const int my = f.team() ? 1 : 0;
-    auto enemy = [&](int c) {
-        return c >= 0 && c < b.n && b.f[c].up() && b.f[c].size && (b.f[c].team() ? 1 : 0) != my &&
-               !(b.fx && b.f[c].has(b.fx->invisible));
-    };
+    auto enemy = [&](int c) { return seen_enemy(b, i, c); };
     if (f.fleeing) {
         // Away from the nearest enemy, off the field's edge
         if (f.moves < 2) return p;
@@ -1040,26 +1446,7 @@ Plan think(Battle& b, const Tables& t, int i, create::Dice& d)
         return p;
     }
     // The target: kept while it's an enemy in sight
-    if (!enemy(f.target) || !range(b, t, i, f.target, false, nullptr)) {
-        f.target = -1;
-        int cand[kMaxFighters], n = 0;
-        for (int c = 0; c < b.n; ++c)
-            if (enemy(c) && range(b, t, i, c, false, nullptr)) cand[n++] = c;
-        if (n) f.target = cand[d.roll(n, 1) - 1];
-        if (f.target < 0) {
-            // None in sight: the nearest, walls or not
-            int best = 9999;
-            for (int c = 0; c < b.n; ++c) {
-                int sq;
-                if (!enemy(c)) continue;
-                range(b, t, i, c, true, &sq);
-                if (sq < best) {
-                    best = sq;
-                    f.target = c;
-                }
-            }
-        }
-    }
+    pick_target(b, t, i, d);
     if (f.target < 0) {
         p.act = Act::Guard;
         return p;
@@ -1198,13 +1585,33 @@ int in_area(const Battle& b, const Tables& t, int x, int y, int r, int* out, int
 
 bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
 {
+    if (type < 0 || type > 4) type = 4;
+    // Immune to poison, paralysis and death magic: every such save made
+    if (g_fx && type == 0 && hasx(f, g_fx->mon.mind)) return true;
     const int r = d.roll(20, 1);
     if (r == 1) return false;
     if (r == 20) return true;
-    if (type < 0 || type > 4) type = 4;
     if (g_fx) {
-        if (g_fx->bestow && f.has(g_fx->bestow)) bonus -= 4;
-        if (g_fx->blinded && f.has(g_fx->blinded)) bonus -= 4;
+        const Facts& fx = *g_fx;
+        if (fx.bestow && f.has(fx.bestow)) bonus -= 4;
+        if (fx.blinded && f.has(fx.blinded)) bonus -= 4;
+        if ((g_kind & 2) && hasx(f, fx.mon.resist_cold)) bonus += 3;
+        if ((g_kind & 1) && hasx(f, fx.mon.resist_fire)) bonus += 3;
+        // Protection from evil / good: +2 when the one acting is evil / good
+        if (g_b && g_actor >= 0 && g_actor < g_b->n) {
+            const int al = g_b->f[g_actor].rec[0x11B];
+            if ((al == 0 || al == 3 || al == 6) && hasx(f, fx.prot_good)) bonus += 2;
+            if (al == 2 || al == 5 || al == 8) {
+                bool warded = hasx(f, fx.prot_evil) || hasx(f, fx.mon.prot_evil_near);
+                for (int c = 0; !warded && fx.mon.prot_evil_near && c < g_b->n; ++c) {
+                    const Fighter& o = g_b->f[c];
+                    if (&o == &f || !o.size || !f.size || !o.has(fx.mon.prot_evil_near)) continue;
+                    const int ddx = o.x - f.x, ddy = o.y - f.y;
+                    warded = ddx >= -1 && ddx <= 1 && ddy >= -1 && ddy <= 1;
+                }
+                if (warded) bonus += 2;
+            }
+        }
     }
     return r + bonus + static_cast<int8_t>(f.rec[0x186]) >= f.rec[0xDF + type];
 }
@@ -1268,6 +1675,24 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
     }
     if (m == 0) return 0;
     b.no_action = b.round + 15;
+    set_actor(b, caster);
+    g_dice = &d;
+    g_kind = 0;
+    // Casting makes them seen
+    const int inv = b.fx && b.fx->invisible ? find_aff(me, b.fx->invisible) : -1;
+    if (inv >= 0) drop_aff(me, inv);
+    // Magic resistance and the damage routine: the spell's kind, the caster's level
+    Harm hs;
+    hs.kind = fs.kind;
+    hs.level = pw;
+    hs.spell = spell;
+    hs.spell_level = e.level;
+    // A spell's effect on fighter k: magic resistance first ("is Unaffected")
+    auto resisted = [&](int k, int effect) {
+        if (!resists(b, who[k], effect ? effect : -1, hs, d)) return false;
+        say(who[k], Did::Unaffected, 0);
+        return true;
+    };
     switch (fs.does) {
     case SpellDoes::NotYet: return 0;
     case SpellDoes::Affect:
@@ -1285,6 +1710,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                 say(who[k], Did::Unaffected, 0);
                 continue;
             }
+            if (resisted(k, e.affect)) continue;
             // A touch (Bestow Curse): the blow has to land
             if (e.range == -1 && e.on_save == 1) {
                 const int roll = d.roll(20, 1);
@@ -1311,6 +1737,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             Fighter& f = b.f[who[k]];
             if ((f.team() ? 1 : 0) != my) continue;
             --left;
+            if (resisted(k, e.affect)) continue;
             const int sl = b.fx ? find_aff(f, b.fx->slow) : -1;
             if (sl >= 0) {
                 drop_aff(f, sl);
@@ -1353,6 +1780,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                 say(who[k], Did::Word2, 0);
                 continue;
             }
+            if (resisted(k, b.fx ? b.fx->charm : 0)) continue;
             if (e.on_save != 0 && saving_throw(f, e.save, 0, d) && e.on_save == 1) {
                 say(who[k], Did::Unaffected, 0);
                 continue;
@@ -1385,6 +1813,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
             if (!f.up() || who[k] == caster) continue;
+            if (resisted(k, b.fx ? b.fx->fear : 0)) continue;
             if (saving_throw(f, e.save, 0, d)) {
                 say(who[k], Did::Unaffected, 0);
                 continue;
@@ -1424,22 +1853,26 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                     continue;
                 }
             }
-            if (e.on_save != 0 && saving_throw(f, e.save, 0, d)) {
-                if (e.on_save == 1) dmg = 0;
-                else if (e.on_save == 2) dmg /= 2;
-            }
-            if (dmg <= 0) {
+            // The damage routine: its resistances, then the save
+            Harm h = hs;
+            h.dice = count;
+            h.save = e.on_save ? e.save : -1;
+            h.on_save = e.on_save;
+            bool dn = false;
+            const int done = harm(b, who[k], dmg, h, d, &dn);
+            if (done <= 0) {
                 say(who[k], Did::Unaffected, 0);
                 continue;
             }
-            say(who[k], Did::Damage, dmg);
-            if (damage(b, who[k], dmg)) say(who[k], Did::Down, 0);
+            say(who[k], Did::Damage, done);
+            if (dn) say(who[k], Did::Down, 0);
         }
         break;
     case SpellDoes::Slay:
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
             if (!f.up()) continue;
+            if (resisted(k, 0)) continue;
             if (!saving_throw(f, e.save, 0, d)) {
                 say(who[k], Did::Word, 0);
                 damage(b, who[k], f.hp() + 10);
@@ -1447,15 +1880,22 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                 say(who[k], Did::Fallen, 0);
                 continue;
             }
-            const int dmg = d.roll(fs.sides, fs.n) + fs.plus;
-            say(who[k], Did::Damage, dmg);
-            if (damage(b, who[k], dmg)) say(who[k], Did::Down, 0);
+            Harm h = hs;
+            h.dice = fs.n;
+            bool dn = false;
+            const int done = harm(b, who[k], d.roll(fs.sides, fs.n) + fs.plus, h, d, &dn);
+            if (done <= 0) {
+                say(who[k], Did::Unaffected, 0);
+                continue;
+            }
+            say(who[k], Did::Damage, done);
+            if (dn) say(who[k], Did::Down, 0);
         }
         break;
     case SpellDoes::Kill:
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
-            if (!f.up() || saving_throw(f, 0, 0, d)) continue;
+            if (!f.up() || (b.fx && resisted(k, b.fx->mon.poisoned)) || saving_throw(f, 0, 0, d)) continue;
             say(who[k], Did::Word, 0);
             damage(b, who[k], f.hp() + 10);
             f.rec[kHealth] = party::Dead;
@@ -1465,7 +1905,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
     case SpellDoes::Fumble:
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
-            if (!f.up() || !b.fx) continue;
+            if (!f.up() || !b.fx || resisted(k, b.fx->fumbling)) continue;
             if (!saving_throw(f, e.save, 0, d)) {
                 give_aff(f, b.fx->fumbling, pw, 0, false);
                 f.moves = f.attacks[0] = f.attacks[1] = 0;
@@ -1486,7 +1926,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
     case SpellDoes::Feeble:
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
-            if (!f.up()) continue;
+            if (!f.up() || resisted(k, b.fx ? b.fx->feeble : 0)) continue;
             // This save only: a cleric -1, a magic-user +4, others +2 on the number needed
             const int adj = f.rec[0x75] == 0 ? -1 : f.rec[0x75] == 5 ? 4 : 2;
             const uint8_t was = f.rec[0xE3];
@@ -1508,7 +1948,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         if (b.indoors) break;                       // outdoors only
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
-            if (!f.up() || !b.fx) continue;
+            if (!f.up() || !b.fx || resisted(k, b.fx->entangle)) continue;
             if (saving_throw(f, e.save, 0, d)) {
                 say(who[k], Did::Unaffected, 0);
                 continue;
@@ -1528,6 +1968,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                 say(who[k], Did::Unaffected, 0);
                 continue;
             }
+            if (resisted(k, e.affect)) continue;
             if (e.affect) give_aff(f, e.affect, minutes, pw, false);
             say(who[k], Did::Word, 0);
         }
@@ -1540,6 +1981,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                 say(who[k], Did::Word2, 0);
                 continue;
             }
+            if (resisted(k, b.fx->sticks)) continue;
             give_aff(f, b.fx->sticks, minutes, pw, false);
             f.moves = f.attacks[0] = f.attacks[1] = 0;
             say(who[k], Did::Word, 0);
@@ -1576,6 +2018,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                 cost > budget)
                 continue;
             budget -= cost;
+            if (resisted(k, e.affect)) continue;
             if (e.affect) give_aff(f, e.affect, minutes, pw, false);
             if (fs.word) say(who[k], Did::Word, 0);
         }
@@ -1654,7 +2097,7 @@ bool spell_targets(Battle& b, const Tables& t, const classes::Tables& st, int i,
     for (int c = 0; c < b.n; ++c) {
         const Fighter& o = b.f[c];
         int sq;
-        if (!o.up() || !o.size || (o.team() ? 1 : 0) == my || (b.fx && o.has(b.fx->invisible))) continue;
+        if (!o.up() || !o.size || (o.team() ? 1 : 0) == my || hidden(b, i, c)) continue;
         if (!range(b, t, i, c, false, &sq) || sq > reach) continue;
         cand[nc++] = c;
     }
@@ -2231,6 +2674,305 @@ int cone(const Battle& b, const Tables& t, int caster, int tx, int ty, int reach
         const int right = ((last_dir & ~1) + 2) & 7, left = (((last_dir + 1) & ~1) + 6) & 7;
         if (rays >= 2) ray(lx + kDx[right], ly + kDy[right]);
         if (rays >= 3) ray(lx + kDx[left], ly + kDy[left]);
+    }
+    return n;
+}
+
+// ---- The computer's special actions (monster_fx_facts.md 4)
+void release_holds(Battle& b, int i)
+{
+    if (!b.fx || i < 0 || i >= b.n) return;
+    Fighter& f = b.f[i];
+    const MonFx& m = b.fx->mon;
+    let_go(b, f, m.engulfing);
+    let_go(b, f, m.hugging);
+    const uint8_t mine[2] = {m.suffocate, m.held_fast};
+    for (uint8_t t : mine) {
+        const int k = t ? find_aff(f, t) : -1;
+        if (k >= 0) drop_aff(f, k);
+    }
+}
+
+namespace {
+
+// The spell rows' targeting, the computer choosing: an enemy it sees
+// within `reach` squares (not one held, when skip_held), at random
+int special_target(Battle& b, const Tables& t, int i, int reach, bool skip_held, create::Dice& d)
+{
+    int cand[kMaxFighters], n = 0;
+    for (int c = 0; c < b.n; ++c) {
+        int sq;
+        if (!seen_enemy(b, i, c) || (skip_held && helpless(b, b.f[c]))) continue;
+        if (!range(b, t, i, c, false, &sq) || sq > reach) continue;
+        cand[n++] = c;
+    }
+    return n ? cand[d.roll(n, 1) - 1] : -1;
+}
+
+// The nearest enemy it sees (the beholder's)
+int nearest_enemy(const Battle& b, const Tables& t, int i)
+{
+    int best = 9999, who = -1;
+    for (int c = 0; c < b.n; ++c) {
+        int sq;
+        if (!seen_enemy(b, i, c) || !range(b, t, i, c, false, &sq)) continue;
+        if (sq < best) {
+            best = sq;
+            who = c;
+        }
+    }
+    return who;
+}
+
+int squares_to(const Battle& b, const Tables& t, int i, int c)
+{
+    int sq = 9999;
+    range(b, t, i, c, true, &sq);
+    return sq;
+}
+
+// A readied item with that name word (the medusa's mirror)
+bool readied_word(const Fighter& f, uint8_t word)
+{
+    for (int k = 0; f.items && k < f.n_items; ++k)
+        if (f.items[k][0x34] && (f.items[k][0x2F] == word || f.items[k][0x30] == word || f.items[k][0x31] == word))
+            return true;
+    return false;
+}
+
+} // namespace
+
+int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int cap, bool* ends_turn)
+{
+    *ends_turn = false;
+    if (!b.fx || i < 0 || i >= b.n) return 0;
+    Fighter& f = b.f[i];
+    if (!f.up() || !f.size) return 0;
+    const MonFx& m = b.fx->mon;
+    set_actor(b, i);
+    g_dice = &d;
+    int n = 0;
+    auto ev = [&](int who, Ev e, int to = -1) -> Event* {
+        if (n >= cap) return nullptr;
+        Event& x = out[n++];
+        x = Event{};
+        x.who = static_cast<uint8_t>(who);
+        x.ev = e;
+        x.to = static_cast<int8_t>(to);
+        return &x;
+    };
+    // A picture flying from `from` to the square (COMSPR pic, frames, ms a step)
+    auto fly = [&](int from, int x, int y, int pic, int frames, int delay) {
+        Event* e = ev(from, Ev::Fly);
+        if (!e) return;
+        e->x = static_cast<uint8_t>(x);
+        e->y = static_cast<uint8_t>(y);
+        e->pic = static_cast<uint8_t>(pic);
+        e->frames = static_cast<uint8_t>(frames);
+        e->delay = static_cast<uint8_t>(delay);
+    };
+    auto hurt = [&](int c, int amount, const Harm& h) {
+        if (!b.f[c].up()) return;
+        bool dn = false;
+        const int done = harm(b, c, amount, h, d, &dn);
+        Event* e = ev(c, done > 0 ? Ev::Damage : Ev::Unaffected);
+        if (e) {
+            e->amount = static_cast<int16_t>(done);
+            e->kind = static_cast<uint8_t>(h.kind);
+        }
+        if (dn) ev(c, Ev::Down);
+        g_kind = 0;
+    };
+    // Out of the fight (stoned, disintegrated, killed)
+    auto remove = [&](int c, int status, Ev said) {
+        Fighter& v = b.f[c];
+        v.rec[kHp] = 0;
+        v.rec[kHealth] = static_cast<uint8_t>(status);
+        fall(b, c);
+        ev(c, said);
+    };
+    // A breath's count: 3 a fight (set on every turn of the first round)
+    auto breaths = [&](uint8_t type) -> uint8_t* {
+        const int k = find_aff(f, type);
+        if (k < 0) return nullptr;
+        if (b.round == 0) f.aff[k][3] = 3;
+        return &f.aff[k][3];
+    };
+    Harm breath;
+    breath.save = 3;
+    breath.on_save = 2;
+
+    // The stone gaze (the hooded medusa): a save against petrification or
+    // stoned; a readied mirror sends it back at the medusa
+    if (hasx(f, m.stone_gaze)) {
+        int tg = special_target(b, t, i, 12, false, d);
+        if (tg >= 0) {
+            ev(i, Ev::Gazes);
+            fly(i, b.f[tg].x, b.f[tg].y, 5, 4, 45);
+            if (hasx(f, m.mirror_gaze) && m.mirror_word && readied_word(b.f[tg], m.mirror_word)) {
+                ev(tg, Ev::Reflects);
+                fly(tg, f.x, f.y, 5, 4, 45);
+                tg = i;
+            }
+            if (!saving_throw(b.f[tg], 1, 0, d)) remove(tg, party::Stoned, Ev::GazeStoned);
+            if (!f.up()) return n;
+        }
+    }
+    // The ankheg's acid: once a fight (its acid bite goes with it); the turn is over
+    if (hasx(f, m.ankheg_spit)) {
+        const int tg = pick_target(b, t, i, d);
+        const int roll = d.roll(100, 1);
+        if (roll <= 25 && tg >= 0 && squares_to(b, t, i, tg) < 4) {
+            *ends_turn = true;
+            ev(i, Ev::SpitsAcid);
+            fly(i, b.f[tg].x, b.f[tg].y, 10, 1, 30);
+            hurt(tg, d.roll(4, 8), breath);
+            const uint8_t gone[2] = {m.ankheg_spit, m.acid_bite};
+            for (uint8_t ty : gone) {
+                const int k = ty ? find_aff(f, ty) : -1;
+                if (k >= 0) drop_aff(f, k);
+            }
+            return n;
+        }
+    }
+    // The giant slug's acid: 30% of its turns at one within 6 squares
+    // (its maximum hit points, a save for half); it fights on
+    if (hasx(f, m.slug_spit)) {
+        const int tg = special_target(b, t, i, 12, false, d);
+        const int roll = d.roll(100, 1);
+        if (tg >= 0 && squares_to(b, t, i, tg) < 7) {
+            if (roll <= 30) {
+                ev(i, Ev::SpitsAcid);
+                fly(i, b.f[tg].x, b.f[tg].y, 10, 1, 30);
+                hurt(tg, f.hp_max(), breath);
+            } else {
+                ev(i, Ev::SpitsMisses);
+            }
+        }
+    }
+    // The beholder's eyes: up to 4, the nearest enemy; by its range the
+    // first unused ray (disintegrate 2, stone 3, death 4, wounds 5 squares),
+    // else the first unused spell (Fear, Slow, Sleep - the caller casts it)
+    if (hasx(f, m.rays)) {
+        bool used[7] = {};
+        int tg = nearest_enemy(b, t, i);
+        for (int pass = 0; pass < 4 && tg >= 0; ++pass) {
+            const int r = squares_to(b, t, i, tg);
+            Fighter& v = b.f[tg];
+            if (!used[0] && r <= 2) {
+                used[0] = true;
+                ev(i, Ev::RayDisintegrate);
+                fly(i, v.x, v.y, 5, 1, 30);
+                if (!saving_throw(v, 3, 0, d)) remove(tg, party::Gone, Ev::Disintegrated);
+            } else if (!used[1] && r <= 3) {
+                used[1] = true;
+                ev(i, Ev::RayStone);
+                fly(i, v.x, v.y, 10, 1, 30);
+                if (!saving_throw(v, 1, 0, d)) remove(tg, party::Stoned, Ev::Stoned);
+            } else if (!used[2] && r <= 4) {
+                used[2] = true;
+                ev(i, Ev::RayDeath);
+                fly(i, v.x, v.y, 5, 1, 30);
+                if (!saving_throw(v, 0, 0, d)) remove(tg, party::Dead, Ev::Killed);
+            } else if (!used[3] && r <= 5) {
+                used[3] = true;
+                ev(i, Ev::RayWounds);
+                fly(i, v.x, v.y, 5, 1, 30);
+                Harm h;
+                hurt(tg, d.roll(8, 2) + 1, h);
+            } else {
+                int k = 0;
+                while (k < 3 && (used[4 + k] || !m.ray_spells[k])) ++k;
+                if (k == 3) break;
+                used[4 + k] = true;
+                Event* e = ev(i, Ev::Cast);
+                if (e) e->amount = m.ray_spells[k];
+                continue;
+            }
+            tg = nearest_enemy(b, t, i);
+        }
+    }
+    // Acid breath (the black dragon): 3 a fight, a line of 6 squares - not
+    // when one of its own side is on it; its maximum hit points, a save for half
+    if (hasx(f, m.acid_breath)) {
+        uint8_t* left = breaths(m.acid_breath);
+        const int tg = left && *left ? special_target(b, t, i, 6, true, d) : -1;
+        if (tg >= 0) {
+            int on[kMaxFighters];
+            const int k = cone(b, t, i, b.f[tg].x, b.f[tg].y, 6, 1, on, kMaxFighters);
+            bool friend_on = false;
+            for (int j = 0; j < k; ++j) friend_on = friend_on || b.f[on[j]].team() == f.team();
+            if (k && !friend_on) {
+                ev(i, Ev::BreathesAcid);
+                fly(i, b.f[tg].x, b.f[tg].y, 5, 1, 30);
+                Harm h = breath;
+                h.kind = 0x30;
+                const int amount = f.hp_max();
+                for (int j = 0; j < k; ++j) hurt(on[j], amount, h);
+                --*left;
+                *ends_turn = true;
+                return n;
+            }
+        }
+    }
+    // Fire breath (the dracolich): 3 a fight, 3 lines of 9 squares, friends
+    // or not; its maximum hit points, a save for half
+    if (hasx(f, m.fire_breath)) {
+        uint8_t* left = breaths(m.fire_breath);
+        const int tg = left && *left ? special_target(b, t, i, 6, true, d) : -1;
+        if (tg >= 0) {
+            int on[kMaxFighters];
+            const int k = cone(b, t, i, b.f[tg].x, b.f[tg].y, 9, 3, on, kMaxFighters);
+            ev(i, Ev::BreathesFire);
+            fly(i, b.f[tg].x, b.f[tg].y, 5, 1, 30);
+            Harm h = breath;
+            h.kind = 0x21;
+            const int amount = f.hp_max();
+            for (int j = 0; j < k; ++j) hurt(on[j], amount, h);
+            --*left;
+            *ends_turn = true;
+            return n;
+        }
+    }
+    // The hell hound: half its turns, next to its pick: 7 fire (a save for half)
+    if (hasx(f, m.hound_fire)) {
+        const int tg = special_target(b, t, i, 12, false, d);
+        const int roll = d.roll(100, 1);
+        if (roll <= 50 && tg >= 0 && squares_to(b, t, i, tg) < 2) {
+            *ends_turn = true;
+            ev(i, Ev::HoundFire);
+            fly(i, b.f[tg].x, b.f[tg].y, 10, 1, 30);
+            Harm h = breath;
+            h.kind = 1;
+            hurt(tg, 7, h);
+            return n;
+        }
+    }
+    // Thrown lightning (Tyranthraxus): the first 4 rounds, 16d6 to the one
+    // aimed at, a second 16d6 to those on the bolt on from it (10 squares);
+    // a save against spells for half
+    if (hasx(f, m.lightning) && b.round < 4) {
+        *ends_turn = true;
+        ev(i, Ev::ThrowsLightning);
+        const int inv = b.fx->invisible ? find_aff(f, b.fx->invisible) : -1;
+        if (inv >= 0) drop_aff(f, inv);
+        const int tg = special_target(b, t, i, 10, false, d);
+        if (tg >= 0) {
+            fly(i, b.f[tg].x, b.f[tg].y, 6, 4, 50);
+            Harm h;
+            h.kind = 0x0C;
+            h.level = 6;
+            h.dice = 16;
+            h.save = 4;
+            h.on_save = 2;
+            int on[kMaxFighters];
+            const int k = bolt_line(b, t, i, b.f[tg].x, b.f[tg].y, 10, on, kMaxFighters);
+            hurt(tg, d.roll(6, 16), h);
+            const int second = d.roll(6, 16);
+            for (int j = 0; j < k; ++j)
+                if (on[j] != tg) hurt(on[j], second, h);
+        }
+        return n;
     }
     return n;
 }

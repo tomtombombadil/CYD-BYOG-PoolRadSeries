@@ -143,6 +143,12 @@ enum FightWord {
     kNothingHappens, kAlreadyTargeted, kAbortSpell, kSpellAborted,               // ... "Abort Spell? ", "Spell Aborted"
     kNoxiousCloud, kAirClears, kPoisonCloud, kIsPoisoned, kIsCoughing,            // "Creates a noxious cloud" ...
     kIsSilenced, kFightingSnakes,                                                // a turn's start: "is silenced" ...
+    // The monsters' specials: "engulfs ", "hugs ", "Avoids it", "is Paralyzed", "is paralyzed", "Suffocates",
+    // the beholder's rays and their results, the gaze, spit, breath, thrown lightning, a troll getting up
+    kEngulfs, kHugs, kAvoidsIt, kIsParalyzedC, kIsParalyzedL, kSuffocates,
+    kRayDisint, kIsDisint, kRayStone, kIsStonedR, kRayDeath, kWoundsYou,
+    kGazes, kReflects, kIsStonedG, kSpitsAcid, kSpitsMisses, kBreathesAcid, kBreathesFire, kBreathesFireH,
+    kThrowsLightning, kStandsUp, kGetsBackUp,
     kFightWords
 };
 

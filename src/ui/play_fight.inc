@@ -235,6 +235,8 @@ struct Fx {
     uint8_t x0 = 0, y0 = 0, x1 = 0, y1 = 0;     // Fly: from, to (field squares)
 };
 
+constexpr int kPages = 16;            // a turn's messages at most
+
 struct Page {
     char    line[5][40];
     uint8_t colour[5];
@@ -256,7 +258,7 @@ struct Fight {
     FSt      after = FSt::Turn;         // where the pages go on to
     int      cur = -1;
     uint32_t until = 0;
-    Page     page[12];
+    Page     page[kPages];
     int      pages = 0, at = 0;
     // Move: where the fighter started (Esc undoes the move)
     int      move_x = 0, move_y = 0, move_left = 0;
@@ -597,7 +599,7 @@ void status_line(pic::Canvas& c, const char* t)
 // ---- Messages: pages in the panel from row 10, a game delay each
 void add_page(int who, const char* a, const char* b2 = nullptr, int whom = -1, const char* c2 = nullptr)
 {
-    if (fg->pages >= 12) return;
+    if (fg->pages >= kPages) return;
     Page& p = fg->page[fg->pages++];
     p.lines = 0;
     p.sound = 0;
@@ -942,6 +944,134 @@ void cloud_step(int i)
         }
 }
 
+// "takes N points of damage from Fire" ... (spell_facts.md 1.7)
+void damage_text(int amount, int kind, char* t, size_t cap)
+{
+    const char* from = "";
+    const int k = kind & 0xF7;
+    if (k == 0x01) from = fw(profile::kFromFire);
+    else if (k == 0x02) from = fw(profile::kFromCold);
+    else if (k == 0x04) from = fw(profile::kFromElec);
+    else if (k == 0x10) from = fw(profile::kFromAcid);
+    else if (kind == 0x08) from = fw(profile::kFromMagic);
+    if (amount == 1) snprintf(t, cap, "%s%s", fw(profile::kTakes1), from);
+    else snprintf(t, cap, "%s%d%s%s", fw(profile::kTakes), amount, fw(profile::kPointsOfDamage), from);
+}
+
+void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::FightSpell& fs, bool each);
+
+// The beholder's spells (Fear, Slow, Sleep): cast as the computer casts,
+// each picking its own targets
+void special_cast(int i, int sp)
+{
+    combat::Battle& b = fg->b;
+    if (!load_magic()) return;
+    const combat::FightSpell* fs = fight_spell(sp);
+    if (!fs) return;
+    const int pw = combat::power_of(b.f[i].rec, mrules->tables, sp, false);
+    int tg[combat::kMaxFighters], nt = 0;
+    if (!combat::spell_targets(b, fg->t, mrules->tables, i, *fs, sp, pw, rng, tg, &nt) || nt <= 0) return;
+    const int ax = b.f[tg[0]].x, ay = b.f[tg[0]].y;
+    if (fs->does == combat::SpellDoes::Fear || fs->does == combat::SpellDoes::Cone)
+        nt = combat::cone(b, fg->t, i, ax, ay, 6, fs->does == combat::SpellDoes::Fear ? 3 : 2, tg, combat::kMaxFighters);
+    add_page(i, fw(profile::kCastsASpell));
+    Fx e;
+    e.kind = Fx::Fly;
+    e.fl = combat::spell_flight(5, 30);
+    e.x0 = static_cast<uint8_t>(b.f[i].x);
+    e.y0 = static_cast<uint8_t>(b.f[i].y);
+    e.x1 = static_cast<uint8_t>(ax);
+    e.y1 = static_cast<uint8_t>(ay);
+    e.sound = sound::kSpell;
+    page_fx_set(0, e);
+    combat::SpellLine lines[24];
+    const int n = combat::cast(b, mrules->tables, i, sp, *fs, tg, nt, rng, lines, 24, pw);
+    spell_pages(i, lines, n, *fs, false);
+}
+
+// What the engine says happened besides the plain blows (monster_fx_facts.md),
+// as pages: the special's words, its picture flying, the results
+void event_page(const combat::Event& e)
+{
+    char t[48];
+    const int who = e.who;
+    auto said = [&](int word) { add_page(who, fw(word)); };
+    auto fallen = [&](int word) {
+        add_page(who, fw(word));
+        page_fx_set(1, skull_fx(who));
+    };
+    switch (e.ev) {
+    case combat::Ev::Engulfs:
+    case combat::Ev::Hugs: {
+        char nm[20];
+        fighter_name(fg->b.f[e.to >= 0 ? e.to : who], nm, sizeof nm);
+        snprintf(t, sizeof t, "%s%s", fw(e.ev == combat::Ev::Engulfs ? profile::kEngulfs : profile::kHugs), nm);
+        add_page(who, t);
+        break;
+    }
+    case combat::Ev::BreathesAcid: said(profile::kBreathesAcid); break;
+    case combat::Ev::BreathesFire: said(profile::kBreathesFire); break;
+    case combat::Ev::HoundFire: said(profile::kBreathesFireH); break;
+    case combat::Ev::ThrowsLightning: said(profile::kThrowsLightning); break;
+    case combat::Ev::SpitsAcid: said(profile::kSpitsAcid); break;
+    case combat::Ev::SpitsMisses: said(profile::kSpitsMisses); break;
+    case combat::Ev::Gazes: said(profile::kGazes); break;
+    case combat::Ev::RayDisintegrate: said(profile::kRayDisint); break;
+    case combat::Ev::RayStone: said(profile::kRayStone); break;
+    case combat::Ev::RayDeath: said(profile::kRayDeath); break;
+    case combat::Ev::RayWounds: said(profile::kWoundsYou); break;
+    case combat::Ev::Fly: {
+        // On the last page: its first free picture
+        if (!fg->pages) break;
+        Fx f;
+        f.kind = Fx::Fly;
+        f.fl = combat::spell_flight(e.pic, e.delay);
+        if (e.frames == 1) f.fl.frames = 1;
+        f.x0 = static_cast<uint8_t>(fg->b.f[who].x);
+        f.y0 = static_cast<uint8_t>(fg->b.f[who].y);
+        f.x1 = e.x;
+        f.y1 = e.y;
+        if (e.pic == 6) f.sound = sound::kLightning;
+        Page& p = fg->page[fg->pages - 1];
+        p.fx[p.fx[0].kind == Fx::None ? 0 : 1] = f;
+        break;
+    }
+    case combat::Ev::Avoids: said(profile::kAvoidsIt); break;
+    case combat::Ev::Poisoned: said(profile::kIsPoisoned); break;
+    case combat::Ev::Paralyzed: said(profile::kIsParalyzedC); break;
+    case combat::Ev::ParalyzedLow: said(profile::kIsParalyzedL); break;
+    case combat::Ev::Reflects: said(profile::kReflects); break;
+    case combat::Ev::Stoned: fallen(profile::kIsStonedR); break;
+    case combat::Ev::GazeStoned: fallen(profile::kIsStonedG); break;
+    case combat::Ev::Disintegrated: fallen(profile::kIsDisint); break;
+    case combat::Ev::Killed: fallen(profile::kIsKilled); break;
+    case combat::Ev::Suffocates: fallen(profile::kSuffocates); break;
+    case combat::Ev::Damage:
+        damage_text(e.amount, e.kind, t, sizeof t);
+        add_page(who, t);
+        page_fx_set(1, hit_fx(who, false));
+        break;
+    case combat::Ev::Unaffected: said(profile::kIsUnaffectedS); break;
+    case combat::Ev::Down: {
+        const combat::Down dn = combat::down_state(fg->b.f[who]);
+        if (dn == combat::Down::Dead) add_page(who, fw(profile::kIsKilled));
+        else if (dn == combat::Down::Dying) add_page(who, fw(profile::kGoesDownS), fw(profile::kIsDying));
+        else add_page(who, fw(profile::kGoesDownS));
+        page_fx_set(1, skull_fx(who));
+        break;
+    }
+    case combat::Ev::StandsUp:
+    case combat::Ev::GetsUp: {
+        add_page(who, fw(e.ev == combat::Ev::StandsUp ? profile::kStandsUp : profile::kGetsBackUp));
+        Fx r;
+        r.kind = Fx::Redraw;
+        page_fx_set(1, r);
+        break;
+    }
+    case combat::Ev::Cast: special_cast(who, e.amount); break;
+    }
+}
+
 // An attack and what it did, as pages. A shot (`ammo`: the item that flies,
 // -1 none) flies first: its picture and sound on the first page.
 void do_attack(pic::Canvas& c, int a, int t, bool behind, bool shot = false, int ammo = -1)
@@ -979,12 +1109,22 @@ void do_attack(pic::Canvas& c, int a, int t, bool behind, bool shot = false, int
         hit_page();
     }
     for (int k = 0; k < at.n && !at.slain; ++k) {
+        if (at.avoided[k]) {
+            // A missile dodged: "Avoids it"
+            add_page(t, fw(profile::kAvoidsIt));
+            if (first && shot) page_fx_set(0, fly);
+            first = false;
+            continue;
+        }
         if (!at.hits[k].hit) continue;
         const int dmg = at.hits[k].damage;
         snprintf(line, sizeof line, "%s%s%d%s%s", behind ? fw(profile::kFromBehind) : "", fw(profile::kHittingFor), dmg,
                  dmg == 1 ? fw(profile::kPointW) : fw(profile::kPointsW), fw(profile::kOfDamage));
         add_page(a, fw(at.backstab ? profile::kBackstabs : profile::kAttacksW), line, t);
         hit_page();
+        // What the hit did besides (poison, paralysis, a touch's damage, engulfing ...)
+        for (int j = 0; j < at.n_ev; ++j)
+            if (at.ev[j].hit == k) event_page(at.ev[j]);
     }
     if (first) {
         add_page(a, fw(at.backstab ? profile::kBackstabs : profile::kAttacksW), fw(profile::kMisses), t);
@@ -1228,6 +1368,14 @@ void start_turn(pic::Canvas& c)
             end_turn(c);
             return;
         }
+        if (tf == combat::TurnFx::Suffocates) {
+            // Engulfed too long
+            add_page(fg->cur, fw(profile::kSuffocates));
+            page_fx_set(1, skull_fx(fg->cur));
+            draw_fight(c);
+            say(c, FSt::Next);
+            return;
+        }
     }
     if (f.spell) {
         // A spell begun earlier this round goes off (lost if they were hurt)
@@ -1302,7 +1450,10 @@ void round_end(pic::Canvas& c)
 {
     vm->advance_clock(1, 1);                // a round is a minute
     vm->take_minutes();
-    combat::tick(fg->b);                    // everyone's effects a minute on
+    // Everyone's effects a minute on; regeneration; a troll getting up
+    combat::Event ev[8];
+    const int nev = combat::tick(fg->b, ev, 8);
+    for (int k = 0; k < nev; ++k) event_page(ev[k]);
     // Those standing in a poisonous cloud breathe it again
     for (int k = 0; k < fg->b.n; ++k) {
         const combat::Fighter& f = fg->b.f[k];
@@ -1745,6 +1896,8 @@ void ai_step(pic::Canvas& c)
     // Morale (monsters, NPCs), once a turn
     if (!fg->ai_checked) {
         fg->ai_checked = true;
+        // The holds it had (engulfing, hugging) let go, as the original does
+        combat::release_holds(b, i);
         b.morale_base = vm->get(0x7EC6) & 0xFF;
         const combat::Morale mo = combat::morale(b, fg->t, i);
         if (mo == combat::Morale::Surrender) {
@@ -1805,6 +1958,22 @@ void ai_step(pic::Canvas& c)
         }
         // The best weapon for now (the panel shows it)
         if (ai_ready_weapon(i)) draw_panel_for(c, i);
+        // Its special actions (breath, spit, gazes, rays, thrown lightning)
+        if (!f.fleeing) {
+            combat::Event ev[24];
+            bool ends = false;
+            const int nev = combat::special(b, fg->t, i, rng, ev, 24, &ends);
+            if (nev > 0) {
+                if (!on_screen(i)) focus(i, 3);    // the one doing it in view
+                draw_fight(c);
+                draw_icon(c, i, true);
+                for (int k = 0; k < nev; ++k) event_page(ev[k]);
+                draw_fight(c);
+                if (ends || !f.up()) f.attacks[0] = f.attacks[1] = 0;
+                say(c, ends || !f.up() ? FSt::Next : FSt::Ai);
+                return;
+            }
+        }
     } else if (f.member >= 0 && combat::missile_in_melee(b, i)) {
         // A bow with an enemy next to them: another weapon, and the turn is over
         if (ai_ready_weapon(i)) draw_panel_for(c, i);
@@ -1940,6 +2109,7 @@ void fight_start(pic::Canvas& c)
     b.to_hit_party = static_cast<int8_t>(vm->get(0x7F71));
     b.to_hit_monsters = static_cast<int8_t>(vm->get(0x7F70));
     combat::place(b, fg->t, d->gs.dir & 6, vm->fight_distance(), b.indoors ? solid_side : nullptr, nullptr);
+    combat::battle_start(b);                 // those invisible from the start
     // Their pictures
     fight_party_icons();
     for (int g = 0; g < ml->groups; ++g) load_monster_icon(8 + g, ml->g[g].icon);
@@ -2429,15 +2599,7 @@ void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::Fi
             if (fs.does != combat::SpellDoes::Poison) page_fx_set(1, hit_fx(l[k].who, true));
             break;
         case combat::Did::Damage: {
-            const char* from = "";
-            const int kind = fs.kind & 0xF7;
-            if (kind == 0x01) from = fw(profile::kFromFire);
-            else if (kind == 0x02) from = fw(profile::kFromCold);
-            else if (kind == 0x04) from = fw(profile::kFromElec);
-            else if (kind == 0x10) from = fw(profile::kFromAcid);
-            else if (fs.kind == 0x08) from = fw(profile::kFromMagic);
-            if (l[k].amount == 1) snprintf(t, sizeof t, "%s%s", fw(profile::kTakes1), from);
-            else snprintf(t, sizeof t, "%s%d%s%s", fw(profile::kTakes), l[k].amount, fw(profile::kPointsOfDamage), from);
+            damage_text(l[k].amount, fs.kind, t, sizeof t);
             add_page(l[k].who, t);
             page_fx_set(1, hit_fx(l[k].who, false));
             break;

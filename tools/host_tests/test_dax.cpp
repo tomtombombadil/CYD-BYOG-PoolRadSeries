@@ -3657,6 +3657,207 @@ static void test_combat()
     CHECK(combat::free_attack_ok(sb, t, 1, 0));
 }
 
+// Monster special abilities (monster_fx_facts.md), on made-up fighters
+static void test_monster_fx()
+{
+    static combat::Tables t;
+    memset(&t, 0, sizeof t);
+    t.ground[0x37][0] = 1; t.ground[0x37][1] = 1;
+    static combat::Facts fx;
+    fx = combat::Facts{};
+    const uint8_t held[4] = {0x33, 0x34, 0x35, 0x1F};
+    memcpy(fx.held, held, 4);
+    fx.invisible = 0x19; fx.charm = 0x0B; fx.prot_evil = 0x08; fx.prot_good = 0x09;
+    combat::MonFx& m = fx.mon;
+    m.poison = 0x40; m.engulf = 0x39; m.chill = 0x7B; m.stop_normal = 0x3C; m.half = 0x51;
+    m.no_fire = 0x70; m.absorb_elec = 0x54; m.resist_cold = 0x0A; m.efreet = 0x71; m.mr50 = 0x69;
+    m.charm_sleep = 0x6C; m.mind = 0x7D; m.regen_hit = 0x65; m.regen_wait = 0x3B; m.regen = 0x62;
+    m.troll_death = 0x64; m.troll_up = 0x66; m.start_invisible = 0x8A; m.detect = 0x18;
+    m.acid_breath = 0x5A; m.rays = 0x57; m.suffocate = 0x0D; m.held_fast = 0x3A; m.engulfing = 0x8B;
+    m.paralyzed = 0x34; m.poisoned = 0x37; m.sleep = 0x35;
+    static uint8_t rec[6][party::kRecordSize];
+    static uint8_t aff[6][combat::kMonsterAffects][party::kAffectSize];
+    static int naff[6];
+    static combat::Battle b;
+    create::Dice d(11);
+    // Fighters 0-2 the party (west), 3-5 monsters; all hit but on a 1, never save but on a 20
+    auto setup = [&]() {
+        b = combat::Battle{};
+        b.fx = &fx;
+        for (int y = 0; y < combat::kH; ++y)
+            for (int x = 0; x < combat::kW; ++x) b.ground[y][x] = 0x37;
+        memset(rec, 0, sizeof rec);
+        memset(aff, 0, sizeof aff);
+        for (int i = 0; i < 6; ++i) {
+            uint8_t* r = rec[i];
+            r[0x196] = 1; r[0x197] = i >= 3; r[0xDE] = 1; r[0x78] = r[0x1A4] = 100; r[0xE5] = 1;
+            r[0x1A5] = 12; r[0x11C] = 2; r[0x199] = 100; r[0x19A] = 50; r[0x19B] = 50;
+            r[0x19E] = 1; r[0x1A0] = 1; r[0x1A2] = 9;              // 1d1 + 9 = 10
+            for (int k = 0; k < 5; ++k) r[0xDF + k] = 30;
+            naff[i] = 0;
+            combat::Fighter& f = b.f[i];
+            f = combat::Fighter{};
+            f.rec = r; f.aff = aff[i]; f.n_aff = &naff[i]; f.max_aff = combat::kMonsterAffects;
+            f.member = i < 3 ? i : -1;
+            f.monster = i < 3 ? -1 : i - 3;
+            f.x = i < 3 ? 10 : 11 + (i - 3) * 4; f.y = 10 + (i < 3 ? i * 3 : 0); f.size = 1;
+        }
+        b.n = 6;
+        b.party_size = 3;
+        combat::occupancy(b);
+    };
+    auto give = [&](int i, uint8_t type, int data = 0xFF) {
+        uint8_t* a = aff[i][naff[i]++];
+        a[0] = type; a[3] = static_cast<uint8_t>(data);
+    };
+    auto has_ev = [](const combat::Attack& a, combat::Ev e) {
+        for (int k = 0; k < a.n_ev; ++k)
+            if (a.ev[k].ev == e) return true;
+        return false;
+    };
+    // Only magic weapons hurt it: bare hands do nothing; half damage halves
+    setup();
+    give(3, m.stop_normal);
+    b.f[0].attacks[0] = 1;
+    combat::Attack at = combat::attack(b, 0, 3, nullptr, d);
+    CHECK(b.f[3].hp() == 100);
+    setup();
+    give(3, m.half);
+    b.f[0].attacks[0] = 1;
+    at = combat::attack(b, 0, 3, nullptr, d);
+    CHECK(!at.hits[0].hit || (at.hits[0].damage == 5 && b.f[3].hp() == 95));
+    // A poisonous bite (attack 2): a save or killed; immune to poison: always saved
+    setup();
+    give(3, m.poison);
+    rec[3][0x19F] = 1; rec[3][0x1A1] = 1;
+    b.f[3].attacks[1] = 1;
+    at = combat::attack(b, 3, 0, nullptr, d);
+    CHECK(!at.hits[0].hit || (has_ev(at, combat::Ev::Poisoned) && at.down && b.f[0].status() == party::Dead));
+    setup();
+    give(3, m.poison);
+    give(0, m.mind);
+    b.f[3].attacks[1] = 1;
+    at = combat::attack(b, 3, 0, nullptr, d);
+    CHECK(!has_ev(at, combat::Ev::Poisoned) && b.f[0].up());
+    // The chill touch: 2d8 more, cold; resist cold halves it
+    setup();
+    give(3, m.chill);
+    b.f[3].attacks[0] = 1;
+    at = combat::attack(b, 3, 0, nullptr, d);
+    if (at.hits[0].hit) {
+        CHECK(has_ev(at, combat::Ev::Damage) && at.ev[0].kind == 0x0A && at.ev[0].amount >= 2 && at.ev[0].amount <= 16);
+        CHECK(b.f[0].hp() == 100 - 10 - at.ev[0].amount);
+    }
+    // Engulfing: both swings of attack 1 hit - held fast, suffocating; let go
+    // when the mound's next turn begins; suffocated at 0 breaths
+    setup();
+    give(3, m.engulf);
+    b.f[3].x = 11;
+    b.f[3].attacks[0] = 2;
+    combat::occupancy(b);
+    at = combat::attack(b, 3, 0, nullptr, d);
+    if (at.hits[0].hit && at.hits[1].hit) {
+        CHECK(has_ev(at, combat::Ev::Engulfs) && b.f[0].has(m.held_fast) && b.f[0].has(m.suffocate) &&
+              b.f[3].has(m.engulfing));
+        combat::release_holds(b, 3);
+        CHECK(!b.f[0].has(m.held_fast) && !b.f[0].has(m.suffocate) && !b.f[3].has(m.engulfing));
+    }
+    setup();
+    give(0, m.suffocate, 1);
+    CHECK(combat::turn_effects(b, 0) == combat::TurnFx::None && aff[0][0][3] == 0);
+    CHECK(combat::turn_effects(b, 0) == combat::TurnFx::Suffocates && b.f[0].status() == party::Dead);
+    // The damage routine: immune to fire, lightning heals 8, resist cold
+    // halves, the efreet's -1 a die (at least the dice)
+    setup();
+    give(3, m.no_fire);
+    give(4, m.absorb_elec);
+    give(5, m.resist_cold);
+    combat::Harm h;
+    h.kind = 1;
+    bool down = false, res = false;
+    CHECK(combat::harm(b, 3, 30, h, d, &down, &res) == 0 && res && b.f[3].hp() == 100);
+    h.kind = 4;
+    CHECK(combat::harm(b, 4, 30, h, d, &down, &res) == 0 && b.f[4].hp() == 108);
+    h.kind = 2;
+    CHECK(combat::harm(b, 5, 30, h, d, &down) == 15 && b.f[5].hp() == 85);
+    aff[3][0][0] = m.efreet;
+    h.kind = 1;
+    h.dice = 6;
+    CHECK(combat::harm(b, 3, 20, h, d, &down) == 14 && combat::harm(b, 3, 7, h, d, &down) == 6);
+    // Magic resistance: 50% by the caster's level (0: always), charm / sleep immunity
+    setup();
+    give(3, m.mr50);
+    give(4, m.charm_sleep);
+    combat::Harm sp;
+    sp.level = 0;
+    CHECK(combat::resists(b, 3, 0x01, sp, d) && !combat::resists(b, 3, 0, sp, d));
+    CHECK(combat::resists(b, 4, m.sleep, sp, d) && !combat::resists(b, 4, 0x01, sp, d));
+    // The troll: hurt, it regenerates 3 rounds later (3 a round); fallen to
+    // a blow it gets up again with all its hit points; to fire it stays down
+    setup();
+    give(3, m.regen_hit);
+    give(3, m.troll_death);
+    b.f[0].attacks[0] = 1;
+    b.f[3].x = 11;
+    combat::occupancy(b);
+    at = combat::attack(b, 0, 3, nullptr, d);
+    if (at.hits[0].hit) {
+        CHECK(b.f[3].has(m.regen_wait) && b.f[3].hp() == 90);
+        combat::tick(b);
+        combat::tick(b);
+        CHECK(!b.f[3].has(m.regen));
+        combat::tick(b);
+        CHECK(b.f[3].has(m.regen) && b.f[3].hp() == 93);
+    }
+    combat::start_round(b, d);
+    CHECK(combat::damage(b, 3, 200) && !b.f[3].up() && b.f[3].has(m.troll_up) && !b.f[3].has(m.regen));
+    combat::Event ev[4];
+    int rose = 0;
+    for (int r = 0; r < 20 && !rose; ++r) rose = combat::tick(b, ev, 4);
+    CHECK(rose == 1 && ev[0].ev == combat::Ev::StandsUp && b.f[3].up() && b.f[3].hp() == 100 && b.f[3].size == 1);
+    h = combat::Harm{};
+    h.kind = 1;
+    CHECK(combat::harm(b, 3, 200, h, d, &down) == 200 && down && !b.f[3].has(m.troll_up));
+    // Invisible from the start: hidden but from those who see the invisible
+    setup();
+    give(3, m.start_invisible);
+    give(1, m.detect);
+    combat::battle_start(b);
+    CHECK(b.f[3].has(fx.invisible) && combat::hidden(b, 0, 3) && !combat::hidden(b, 1, 3));
+    // Acid breath: down the line at one within 6 (the dragon's maximum hit
+    // points, a save for half), 3 a fight - not with a friend on the line
+    setup();
+    give(3, m.acid_breath);
+    rec[3][0x78] = 48;
+    b.f[3].x = 14; b.f[3].y = 10;
+    b.f[4].x = 30; b.f[5].x = 34;
+    combat::occupancy(b);
+    combat::Event out[16];
+    bool ends = false;
+    int n = combat::special(b, t, 3, d, out, 16, &ends);
+    CHECK(n >= 3 && ends && out[0].ev == combat::Ev::BreathesAcid && out[1].ev == combat::Ev::Fly);
+    CHECK(out[2].who == 0 && out[2].ev == combat::Ev::Damage && out[2].amount == 48 && b.f[0].hp() == 52);
+    CHECK(aff[3][0][3] == 2);
+    b.f[4].x = 12;                                              // a friend on the line: no breath
+    combat::occupancy(b);
+    b.round = 1;
+    n = combat::special(b, t, 3, d, out, 16, &ends);
+    CHECK(n == 0 && !ends && aff[3][0][3] == 2);
+    // The beholder's eyes: next to it, disintegrated (never saving), then the
+    // next nearest; past 5 squares the spells (Fear, Slow, Sleep)
+    setup();
+    m.ray_spells[0] = 0x54; m.ray_spells[1] = 0x37; m.ray_spells[2] = 0x15;
+    give(3, m.rays);
+    b.f[3].x = 11;
+    combat::occupancy(b);
+    n = combat::special(b, t, 3, d, out, 16, &ends);
+    CHECK(n >= 3 && out[0].ev == combat::Ev::RayDisintegrate && !ends);
+    CHECK(b.f[0].status() == party::Gone && !b.f[0].up());
+    int casts = 0;
+    for (int k = 0; k < n; ++k) casts += out[k].ev == combat::Ev::Cast;
+    CHECK(casts <= 3);
+}
+
 int main()
 {
     test_rle_known_bytes();
@@ -3689,6 +3890,7 @@ int main()
     test_magic();
     test_spells();
     test_combat();
+    test_monster_fx();
     test_create();
     if (failures) {
         printf("%d check(s) failed\n", failures);

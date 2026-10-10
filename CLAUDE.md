@@ -211,12 +211,14 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   included by play.cpp inside its anonymous namespace, not compiled on its
   own). Facts from coab: the Project's claude/combat_setup_facts.md and
   claude/combat_rules_facts.md, claude/combat_fx_facts.md (pictures in
-  flight, magic hits, the computer's weapon; v0.41.0) - read them before
-  changing combat. The
+  flight, magic hits, the computer's weapon; v0.41.0),
+  claude/monster_fx_facts.md (monster special abilities, `combat::MonFx`;
+  v0.61.0) - read them before changing combat. The
   playsim runs a fight with `RUNAT=<addr> FIGHT=1` (Quick for everyone;
   `FINDMON=1` lists the loaded script's LOAD MONSTER addresses - the GOG
-  save A: 8AC2, 947B; `FORCESPELL` / `FORCEWEAPON` / `FXSHOTS` to try
-  spells, shots and their pictures).
+  save A: 8AC2, 947B; `MONSWAP=area:id[:copies]` fights another monster
+  there, e.g. 1:53 the black dragon, 4:40 the beholder; `FORCESPELL` /
+  `FORCEWEAPON` / `FXSHOTS` to try spells, shots and their pictures).
 - `tools/playsim/` (Claude's side, Linux): runs the Play Test on the PC
   against the game files in scratch space (shims for Arduino / SD); use it
   to check script behaviour and take canvas snapshots before pushing.

@@ -35,6 +35,7 @@ bool Names::read_types(dax::ByteSource& src)
         ti.bonus_large = static_cast<int8_t>(rec[4]);
         ti.attacks = rec[5];
         ti.ac = rec[6];
+        ti.blow = rec[7];
         ti.dice = rec[9];
         ti.sides = rec[10];
         ti.bonus = static_cast<int8_t>(rec[11]);
