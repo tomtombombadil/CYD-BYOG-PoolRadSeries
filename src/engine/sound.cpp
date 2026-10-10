@@ -16,10 +16,24 @@ enum Field {
 constexpr uint32_t kTickMilliHz = 236694;           // 1193182 / 5041 Hz, x 1000
 constexpr uint32_t kPit = 1193182, kChip = 3579545;
 
-// 2 dB a step: 72 x 10^(-step / 10), 15 = off (loud: the boards' 8-bit DAC and
-// small amplifier make little of a quieter signal; voices together may clip)
-constexpr uint8_t kAmp[16] = {72, 57, 45, 36, 29, 23, 18, 14, 11, 9, 7, 6, 5, 4, 3, 0};
-constexpr int kSpeakerAmp = 120;
+// The chip's volume steps are 2 dB; here 1.2 dB (127 x 0.871^step, 15 = off):
+// fades keep their shape but stay audible - the boards' 8-bit DAC and small
+// amplifier make little of a quiet signal (Tom: Tandy was barely audible)
+constexpr uint8_t kAmp[16] = {127, 111, 96, 84, 73, 64, 55, 48, 42, 37, 32, 28, 24, 21, 18, 0};
+constexpr int kSpeakerAmp = 127;
+
+// The voices together, as loud as the 8-bit DAC goes: straight up to 104,
+// then a soft knee towards 127 (several loud voices round off instead of
+// clipping hard). Tom's boards: their DAC and small amplifier need the
+// whole range to be heard at all.
+int soft_limit(int x)
+{
+    const int a = x < 0 ? -x : x;
+    if (a <= 104) return x;
+    const int t = a - 104;
+    const int y = 104 + 23 * t / (t + 23);
+    return x < 0 ? -y : y;
+}
 
 // The noise shift register as PC emulators of the Tandy chip run it (it
 // restarts from the preset each time the noise control is written)
@@ -268,7 +282,10 @@ bool Player::render(uint8_t* out, int n, int hz, int volume)
             }
         }
         if (s) any = true;
-        s = s * volume * (dev_ == Device::Tandy ? 2 : 1) / 255;     // (Tandy: its voices are quieter than the speaker's one)
+        // (the speaker's one square wave as it is; the chip's voices with 2x
+        // gain into the limiter: about as loud as the speaker, Tom 2026-10-10)
+        if (dev_ == Device::Tandy) s = soft_limit(s * 2);
+        s = s * volume / 255;
         out[i] = static_cast<uint8_t>(128 + (s > 127 ? 127 : s < -128 ? -128 : s));
     }
     return any || busy() || pending_.load() >= 0 || quiet_ < 8;

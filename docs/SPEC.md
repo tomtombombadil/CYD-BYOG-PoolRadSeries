@@ -273,7 +273,12 @@ Darkness. Milestones 2-6 are built against Azure Bonds' files.
    games' sound effects (Curse), Tandy 1000 (default) or PC speaker; the
    Engine Menu's Sounds tab plays each to compare (with Tandy / PC
    Speaker keys and a Volume slider). v0.40.1: no first-start speaker
-   question (Tandy from the start), about 2.5x louder (Tandy 5x). Later games' AdLib /
+   question (Tandy from the start), about 2.5x louder (Tandy 5x). v0.40.2 (Tom: Tandy barely
+   audible at 100%): the speaker's square wave at the DAC's full swing; the
+   chip's voices at full scale with 1.2 dB volume steps (not 2 dB: fades stay
+   audible), 2x gain into a soft limiter - Tandy now about as loud as the
+   speaker (rms ~85-120 of 127; v0.40.1 ~40-60). Louder than this needs a
+   bigger speaker or amplifier. Later games' AdLib /
    Sound Blaster: when we get there.
 
 ## 7. The journal (Tom, 2026-10-06)
