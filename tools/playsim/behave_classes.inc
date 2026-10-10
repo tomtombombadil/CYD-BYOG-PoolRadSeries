@@ -1178,6 +1178,73 @@ void racial()
     }
 }
 
+// ---- 11. Turning undead: the table's column by cleric level (1-8 their own,
+// 9-13 the ninth, past that the tenth - ovr014 turns_undead), a d20 at or
+// over the entry turns (destroys when the entry is 0 or less)
+void turning()
+{
+    if (!boot() || !start_fight()) {
+        expect(P, "a fight for turning undead", false);
+        return;
+    }
+    combat::Battle& b = fg->b;
+    int mon = -1;
+    for (int i = b.party_size; i < b.n; ++i)
+        if (b.f[i].up() && b.f[i].size) {
+            mon = i;
+            break;
+        }
+    if (mon < 0) return;
+    for (int i = b.party_size; i < b.n; ++i)
+        if (i != mon) b.f[i].rec[0xE9] = 0;
+    combat::Fighter& me = b.f[0];
+    combat::Fighter& un = b.f[mon];
+    const uint8_t keep[4] = {un.rec[0xE9], un.rec[0x195], un.rec[0x196], static_cast<uint8_t>(un.size)};
+    int bad = 0, done = 0;
+    std::string first;
+    for (int L = 1; L <= 12; ++L)
+        for (int type = 1; type <= 10; ++type) {
+            const int col = L <= 8 ? L : L <= 13 ? 9 : 10;
+            const int v = static_cast<int8_t>(fg->t.turn[type * 10 + col]);
+            const int need = v < 0 ? -v : v;
+            for (int face : {need, need - 1}) {
+                if (face < 1 || face > 20) continue;
+                memset(me.rec + 0x109, 0, 8);
+                me.rec[0x109] = static_cast<uint8_t>(L);
+                me.turned_undead = false;
+                un.rec[0xE9] = static_cast<uint8_t>(type);
+                un.rec[0x195] = keep[1];
+                un.rec[0x196] = keep[2];
+                un.size = keep[3];
+                un.fleeing = false;
+                combat::occupancy(b);
+                int out[16];
+                dice_faces({1, face});
+                const int n = combat::turn_undead(b, fg->t, 0, rng, out, 16);
+                dice_usual();
+                const bool want = face >= need;
+                const bool got = n == 1 && (out[0] == mon || out[0] == mon + 1000);
+                const bool kind_ok = !got || (v > 0 ? out[0] == mon : out[0] == mon + 1000);
+                ++done;
+                if (got != want || !kind_ok) {
+                    if (!bad++) {
+                        char t[96];
+                        snprintf(t, sizeof t, "level %d type %d entry %d d20 %d: %s", L, type, v, face, got ? "turned" : "not");
+                        first = t;
+                    }
+                }
+            }
+        }
+    un.rec[0xE9] = keep[0];
+    un.rec[0x195] = keep[1];
+    un.rec[0x196] = keep[2];
+    un.size = keep[3];
+    combat::occupancy(b);
+    char w[96];
+    snprintf(w, sizeof w, "turn undead: the column by cleric level, the d20 against it (%d tries)", done);
+    expect(P, w, bad == 0, "%d wrong, first %s", bad, first.c_str());
+}
+
 } // namespace bcls
 
 static void behave_classes()
@@ -1207,4 +1274,5 @@ static void behave_classes()
     if (want("hall")) training_hall();
     if (want("exp")) experience();
     if (want("racial")) racial();
+    if (want("turn")) turning();
 }
