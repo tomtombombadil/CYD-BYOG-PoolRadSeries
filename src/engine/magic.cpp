@@ -227,6 +227,73 @@ void scribed(party::Character& c, const Scrolls& sc, int i, int k)
     }
 }
 
+namespace {
+void remove_at(party::Character& c, int i)
+{
+    for (int j = i; j + 1 < c.n_items; ++j) memcpy(c.items[j], c.items[j + 1], party::kItemSize);
+    --c.n_items;
+    memset(c.items[c.n_items], 0, party::kItemSize);
+}
+} // namespace
+
+bool usable(const Scrolls& sc, const uint8_t* it)
+{
+    return !is_scroll(sc, it) && it[0x3D] != 0 && it[0x3E] < 0x80;
+}
+
+bool use_charge(uint8_t* it)
+{
+    if (it[0x3C] == 0) return false;            // never runs out
+    if (it[0x39] > 1) {
+        --it[0x39];
+        return false;
+    }
+    --it[0x3C];
+    return it[0x3C] == 0;
+}
+
+void used(party::Character& c, int i)
+{
+    if (i < 0 || i >= c.n_items) return;
+    if (use_charge(c.items[i])) remove_at(c, i);
+}
+
+int scroll_list(party::Character& c, const classes::Tables& t, const Scrolls& sc, int i, uint8_t* ids, int cap)
+{
+    if (i < 0 || i >= c.n_items || !is_scroll(sc, c.items[i])) return 0;
+    uint8_t* it = c.items[i];
+    const bool cleric = classes::skill_level(c, classes::Cleric) > 0;
+    if ((sc.read_magic && c.has_affect(sc.read_magic)) || (cleric && sc.names->type(it[0x2E]).slot == 12))
+        it[0x35] = 0;
+    if (it[0x35]) return 0;
+    int n = 0;
+    for (int k = 0; k < 3 && n < cap; ++k)
+        if (it[kScrollAt + k] & 0x7F) ids[n++] = it[kScrollAt + k] & 0x7F;
+    sort_by_level(t, ids, n);
+    return n;
+}
+
+bool reads_scroll(const party::Character& c, int d100)
+{
+    if (c.level(classes::Cleric) > 0 || c.level(classes::MagicUser) > 0 || c.old_level(classes::Cleric) > 0 ||
+        c.old_level(classes::MagicUser) > 0)
+        return true;
+    return c.level(classes::Thief) >= 10 && d100 <= 75;
+}
+
+void scroll_used(party::Character& c, const Scrolls& sc, int i, int spell)
+{
+    if (i < 0 || i >= c.n_items) return;
+    uint8_t* it = c.items[i];
+    int line = -1;
+    for (int k = 0; k < 3; ++k)
+        if ((it[kScrollAt + k] & 0x7F) == spell) line = k;
+    if (line < 0) return;
+    it[kScrollAt + line] = 0;
+    it[0x30] = static_cast<uint8_t>(it[0x30] - 1);
+    if (it[0x30] < sc.one_spell) remove_at(c, i);
+}
+
 // The next spell to scribe (item, slot) in the games' order, or false
 static bool next_scribe(const party::Character& c, const Scrolls& sc, int* item, int* slot)
 {

@@ -94,6 +94,11 @@ int power(const party::Character& c, const classes::Tables& t, int s)
     }
 }
 
+int item_power(const party::Character& c, const classes::Tables& t, int s)
+{
+    return t.spell_class(s) == 3 ? power(c, t, s) : 6;
+}
+
 int lasts(const classes::Tables& t, int s, int pw)
 {
     const Entry e = entry(t, s);
@@ -122,13 +127,13 @@ int find_affect(const party::Character& c, int type)
 bool can_cast(const party::Character& c) { return c.health() != party::Animated && c.in_combat(); }
 
 int cast(party::Party& p, int caster, int target, const CampSpell& cs, const classes::Tables& t,
-         const rules::CureFacts& cures, const Facts& f, create::Dice& d, Line* out, int cap)
+         const rules::CureFacts& cures, const Facts& f, create::Dice& d, Line* out, int cap, int pw)
 {
     Out o{out, cap};
     if (caster < 0 || caster >= p.count) return 0;
     party::Character& me = p.m[caster];
     const Entry e = entry(t, cs.spell);
-    const int pw = power(me, t, cs.spell);
+    if (pw <= 0) pw = power(me, t, cs.spell);
     const int minutes = lasts(t, cs.spell, pw);
 
     // Who it's cast on
@@ -175,7 +180,7 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
         for (int k = 0; k < n; ++k) {
             party::Character& c = p.m[who[k]];
             if (rules::heal(c, d.roll(cs.sides, cs.n) + cs.plus))
-                o.say(who[k], c.hp() >= c.hp_max() ? Said::Fully : Said::Partly);
+                o.say(who[k], cs.word ? Said::Word : c.hp() >= c.hp_max() ? Said::Fully : Said::Partly);
         }
         break;
     case Does::CureBlind:

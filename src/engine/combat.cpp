@@ -1021,11 +1021,10 @@ bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
     return r + bonus + static_cast<int8_t>(f.rec[0x186]) >= f.rec[0xDF + type];
 }
 
-namespace {
-
 // The caster's level for the spell's kind (as spells::power, from the record)
-int power_of(const uint8_t* r, const classes::Tables& st, int s)
+int power_of(const uint8_t* r, const classes::Tables& st, int s, bool item)
 {
+    if (item && st.spell_class(s) != 3) return 6;
     const int cl = r[0x109], pa = r[0x10C], ra = r[0x10D], mu = r[0x10E];
     if (cl == 0 && mu == 0 && pa < 9 && ra < 8) return 6;
     auto most = [](int a, int b) { return a > b ? a : b; };
@@ -1037,6 +1036,8 @@ int power_of(const uint8_t* r, const classes::Tables& st, int s)
     default: return 0;
     }
 }
+
+namespace {
 
 int sleep_cost(const Fighter& f)
 {
@@ -1053,7 +1054,7 @@ int sleep_cost(const Fighter& f)
 } // namespace
 
 int cast(Battle& b, const classes::Tables& st, int caster, int spell, const FightSpell& fs, const int* targets,
-         int n, create::Dice& d, SpellLine* out, int cap)
+         int n, create::Dice& d, SpellLine* out, int cap, int pw)
 {
     int lines = 0;
     auto say = [&](int who, Did did, int amount) {
@@ -1061,8 +1062,11 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
     };
     Fighter& me = b.f[caster];
     const spells::Entry e = spells::entry(st, spell);
-    const int pw = power_of(me.rec, st, spell);
-    const int minutes = e.lasts + e.lasts_level * pw;
+    if (pw <= 0) pw = power_of(me.rec, st, spell);
+    int minutes = e.lasts + e.lasts_level * pw;
+    const bool rolled = fs.does != SpellDoes::Heal && fs.does != SpellDoes::Damage && fs.does != SpellDoes::Bolt &&
+                        fs.n && fs.sides;
+    if (rolled) minutes = (d.roll(fs.sides, fs.n) + fs.plus) * (fs.per == 4 ? 10 : 1);
     const int my = me.team() ? 1 : 0;
     // The targets this kind of spell takes
     int who[kMaxFighters], m = 0;
@@ -1129,7 +1133,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                 f.rec[kHealth] = party::Unconscious;
                 f.bleeding = 0;
             }
-            say(who[k], Did::Healed, amount);
+            say(who[k], fs.word ? Did::Word : Did::Healed, amount);
         }
         break;
     case SpellDoes::Cloud:
@@ -1156,6 +1160,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                 plus += count;
             }
             if (fs.per == 3) count = pw;
+            if (fs.per == 5) count = d.roll(3, 1) * 2 + 1;
             int dmg = (count && fs.sides ? d.roll(fs.sides, count) : 0) + plus;
             if (e.range == -1) {
                 // A touch: a blow that has to land
@@ -1225,6 +1230,69 @@ const FightSpell* fight_spell(const FightSpell* table, int n, int spell)
     return nullptr;
 }
 
+bool spell_targets(Battle& b, const Tables& t, const classes::Tables& st, int i, const FightSpell& fs, int sp, int pw,
+                   create::Dice& d, int* targets, int* n_targets)
+{
+    *n_targets = 0;
+    Fighter& f = b.f[i];
+    if (fs.does == SpellDoes::NotYet) return false;
+    const spells::Entry e = spells::entry(st, sp);
+    const int my = f.team() ? 1 : 0;
+    int reach = e.range == -1 ? 1 : e.range + e.range_level * pw;
+    if (reach < 1) reach = 1;
+    const int aim = e.aim & 0x0F;
+    // For their own good
+    if (fs.does == SpellDoes::Heal) {
+        if (f.hp() * 2 >= f.hp_max()) return false;
+        targets[(*n_targets)++] = i;
+        return true;
+    }
+    if (e.targets == spells::kParty && fs.does != SpellDoes::Theirs) {
+        // Their whole side
+        if (e.affect && f.has(static_cast<uint8_t>(e.affect))) return false;
+        for (int c = 0; c < b.n && *n_targets < kMaxFighters; ++c)
+            if (b.f[c].up() && b.f[c].size && (b.f[c].team() ? 1 : 0) == my) targets[(*n_targets)++] = c;
+        return *n_targets > 0;
+    }
+    if (aim == 0 || fs.does == SpellDoes::Ours || fs.does == SpellDoes::Prayer || fs.does == SpellDoes::Mirror ||
+        fs.does == SpellDoes::Haste) {
+        if (e.affect && f.has(static_cast<uint8_t>(e.affect))) return false;
+        if (aim >= 8 && aim <= 14) {
+            *n_targets = in_area(b, t, f.x, f.y, e.aim & 7, targets, kMaxFighters);
+        } else {
+            targets[(*n_targets)++] = i;
+        }
+        return true;
+    }
+    // Against the enemy: one in reach and sight
+    int cand[kMaxFighters], nc = 0;
+    for (int c = 0; c < b.n; ++c) {
+        const Fighter& o = b.f[c];
+        int sq;
+        if (!o.up() || !o.size || (o.team() ? 1 : 0) == my || (b.fx && o.has(b.fx->invisible))) continue;
+        if (!range(b, t, i, c, false, &sq) || sq > reach) continue;
+        cand[nc++] = c;
+    }
+    if (!nc) return false;
+    const int tg = cand[d.roll(nc, 1) - 1];
+    if (fs.does == SpellDoes::Bolt) {
+        *n_targets = bolt_line(b, t, i, b.f[tg].x, b.f[tg].y, 7, targets, kMaxFighters);
+    } else if ((aim >= 8 && aim <= 14) || fs.does == SpellDoes::Cloud) {
+        const int r2 = fs.does == SpellDoes::Cloud ? 1 : e.aim & 7;
+        int in[kMaxFighters];
+        const int ni = in_area(b, t, b.f[tg].x, b.f[tg].y, r2, in, kMaxFighters);
+        for (int k = 0; k < ni; ++k)
+            if ((b.f[in[k]].team() ? 1 : 0) == my && !saving_throw(b.f[in[k]], e.save, my ? 8 : -2, d)) return false;
+        for (int k = 0; k < ni; ++k) targets[(*n_targets)++] = in[k];
+    } else {
+        const int want = aim >= 1 && aim <= 4 ? (e.aim & 3) + 1 : 1;
+        targets[(*n_targets)++] = tg;
+        for (int k = 0; k < nc && *n_targets < want; ++k)
+            if (cand[k] != tg) targets[(*n_targets)++] = cand[k];
+    }
+    return *n_targets > 0;
+}
+
 int choose_spell(Battle& b, const Tables& t, const classes::Tables& st, int i, const FightSpell* table, int n_table,
                  create::Dice& d, int* targets, int* n_targets)
 {
@@ -1237,7 +1305,6 @@ int choose_spell(Battle& b, const Tables& t, const classes::Tables& st, int i, c
         if (v && !(v & 0x80)) list[n++] = v;
     }
     if (!n) return 0;
-    const int my = f.team() ? 1 : 0;
     const int rounds = d.roll(7, 1);
     for (int r = 0, level = 7; r < rounds; ++r, --level)
         for (int pick = 0; pick < 3; ++pick) {
@@ -1246,59 +1313,34 @@ int choose_spell(Battle& b, const Tables& t, const classes::Tables& st, int i, c
             if (!fs || fs->does == SpellDoes::NotYet) continue;
             const spells::Entry e = spells::entry(st, sp);
             if (e.when == 0 || e.priority < level) continue;
-            const int pw = power_of(f.rec, st, sp);
-            int reach = e.range == -1 ? 1 : e.range + e.range_level * pw;
-            if (reach < 1) reach = 1;
-            const int aim = e.aim & 0x0F;
-            // For their own good
-            if (fs->does == SpellDoes::Heal) {
-                if (f.hp() * 2 >= f.hp_max()) continue;
-                targets[(*n_targets)++] = i;
-                return sp;
-            }
-            if (aim == 0 || fs->does == SpellDoes::Ours || fs->does == SpellDoes::Prayer ||
-                fs->does == SpellDoes::Mirror || fs->does == SpellDoes::Haste ||
-                (fs->does == SpellDoes::Affect && aim == 0)) {
-                if (e.affect && f.has(static_cast<uint8_t>(e.affect))) continue;
-                if (aim >= 8 && aim <= 14) {
-                    *n_targets = in_area(b, t, f.x, f.y, e.aim & 7, targets, kMaxFighters);
-                } else {
-                    targets[(*n_targets)++] = i;
-                }
-                return sp;
-            }
-            // Against the enemy: one in reach and sight
-            int cand[kMaxFighters], nc = 0;
-            for (int c = 0; c < b.n; ++c) {
-                const Fighter& o = b.f[c];
-                int sq;
-                if (!o.up() || !o.size || (o.team() ? 1 : 0) == my || (b.fx && o.has(b.fx->invisible))) continue;
-                if (!range(b, t, i, c, false, &sq) || sq > reach) continue;
-                cand[nc++] = c;
-            }
-            if (!nc) continue;
-            const int tg = cand[d.roll(nc, 1) - 1];
-            if (fs->does == SpellDoes::Bolt) {
-                *n_targets = bolt_line(b, t, i, b.f[tg].x, b.f[tg].y, 7, targets, kMaxFighters);
-            } else if ((aim >= 8 && aim <= 14) || fs->does == SpellDoes::Cloud) {
-                const int r2 = fs->does == SpellDoes::Cloud ? 1 : e.aim & 7;
-                int in[kMaxFighters];
-                const int ni = in_area(b, t, b.f[tg].x, b.f[tg].y, r2, in, kMaxFighters);
-                bool ok = true;
-                for (int k = 0; k < ni && ok; ++k)
-                    if ((b.f[in[k]].team() ? 1 : 0) == my && !saving_throw(b.f[in[k]], e.save, my ? 8 : -2, d))
-                        ok = false;
-                if (!ok) continue;
-                for (int k = 0; k < ni; ++k) targets[(*n_targets)++] = in[k];
-            } else {
-                const int want = aim >= 1 && aim <= 4 ? (e.aim & 3) + 1 : 1;
-                targets[(*n_targets)++] = tg;
-                for (int k = 0; k < nc && *n_targets < want; ++k)
-                    if (cand[k] != tg) targets[(*n_targets)++] = cand[k];
-            }
-            if (*n_targets) return sp;
+            if (spell_targets(b, t, st, i, *fs, sp, power_of(f.rec, st, sp), d, targets, n_targets)) return sp;
         }
+    *n_targets = 0;
     return 0;
+}
+
+int choose_item(Battle& b, const Tables& t, const classes::Tables& st, int i, const items::Names& names,
+                const FightSpell* table, int n_table, create::Dice& d, int* targets, int* n_targets)
+{
+    *n_targets = 0;
+    Fighter& f = b.f[i];
+    if (!f.items || !f.n_items) return -1;
+    const int rounds = d.roll(7, 1);
+    for (int r = 0, level = 7; r < rounds; ++r, --level)
+        for (int k = 0; k < f.n_items; ++k) {
+            const uint8_t* it = f.items[k];
+            const int slot = names.type(it[0x2E]).slot;
+            if (!it[0x34] || (slot >= 11 && slot <= 13) || it[0x3E] >= 0x80 || !it[0x3D]) continue;
+            const int sp = it[0x3D] & 0x7F;
+            const FightSpell* fs = fight_spell(table, n_table, sp);
+            if (!fs || fs->does == SpellDoes::NotYet) continue;
+            const int judge = sp > 0x38 ? sp - 0x17 : sp;
+            const spells::Entry e = spells::entry(st, judge);
+            if (spells::entry(st, sp).when == 0 || e.priority < level) continue;
+            if (spell_targets(b, t, st, i, *fs, sp, power_of(f.rec, st, sp, true), d, targets, n_targets)) return k;
+        }
+    *n_targets = 0;
+    return -1;
 }
 
 Morale morale(Battle& b, const Tables& t, int i)

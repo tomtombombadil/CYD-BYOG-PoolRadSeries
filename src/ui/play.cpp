@@ -172,6 +172,9 @@ bool fight_back(pic::Canvas& c);
 bool fight_act(Act a, pic::Canvas& c);
 void fight_after_view(pic::Canvas& c);
 void fight_spell_chosen(int spell, pic::Canvas& c);
+void fight_use(int item, int spell, bool scroll, pic::Canvas& c);
+bool in_fight();
+bool items_direct = false;    // the items screen opened by a fight's Use (Exit: back to the fight)
 
 int  idle_cycles = 0;         // script cycles in a row with nothing shown (outdoors)
 int  dirty0 = 0, dirty1 = 0;
@@ -948,7 +951,7 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
 
 enum class Ask : uint8_t { None, Overwrite, Drop, DropSure, Reroll, SaveNew, OverwriteNew, DropItem, SellDeal, IdDeal,
                           LeaveCoins, CureAnyway, PayCure, Train, MemorizeThese, StopRest, LoseIt, AlterDrop, QuitDos,
-                          ScribeThese, ScribeThese2 };
+                          ScribeThese, ScribeThese2, UseIt };
 void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt);
 
 bool shop_yes_no(Ask what, char k, pic::Canvas& c);
@@ -959,6 +962,8 @@ void open_magic(pic::Canvas& c);
 void open_rest(pic::Canvas& c, bool from_magic);
 void magic_tap(int x, int y, pic::Canvas& c);
 void spells_tap(int x, int y, pic::Canvas& c);
+void use_item(int i, pic::Canvas& c);
+void reading_tap(char k, pic::Canvas& c);
 void rest_tap(int x, int y, pic::Canvas& c);
 void rest_tick(uint32_t now, pic::Canvas& c);
 void run_entry(int i, Then next);
@@ -972,9 +977,9 @@ bool in_shop_items() { return view_from == Screen::Shop; }
 void items_keys(char* out, size_t cap)
 {
     const party::Character* ch = pt->sel();
-    const bool exploring = view_from == Screen::Game || view_from == Screen::Camp;
+    const bool exploring = view_from == Screen::Game || view_from == Screen::Camp || view_from == Screen::Fight;
     snprintf(out, cap, "%s%s%s%s%s%s%s%s", d->w_ready, exploring ? iw(profile::kUse) : "",
-             !ch->npc() && !in_shop_items() ? iw(profile::kTrade) : "", iw(profile::kDrop),
+             !ch->npc() && !in_shop_items() && view_from != Screen::Fight ? iw(profile::kTrade) : "", iw(profile::kDrop),
              ch->n_items < party::kMaxItems ? iw(profile::kHalve) : "", iw(profile::kJoin),
              in_shop_items() && !ch->npc() ? iw(profile::kSell) : "", in_shop_items() ? iw(profile::kId) : "");
 }
@@ -2681,6 +2686,9 @@ void list_tap(int x, int y, pic::Canvas& c)
         } else if (screen == Screen::ShopBuy) {
             screen = Screen::Shop;
             draw_shop(c);
+        } else if (items_direct) {
+            items_direct = false;
+            fight_after_view(c);
         } else {
             screen = Screen::View;
             draw_character(c);
@@ -2700,10 +2708,7 @@ void list_tap(int x, int y, pic::Canvas& c)
                (k == 'R' || k == 'U' || k == 'T' || k == 'D' || k == 'H' || k == 'J' || k == 'S' || k == 'I')) {
         switch (k) {
         case 'R': ready_item(l.index, c); break;
-        case 'U':
-            if (!items::Item{pt->sel()->items[l.index]}.readied()) note(c, iw(profile::kMustReady));
-            else error(c, "Not in the engine yet.");          // magic items come with spells
-            break;
+        case 'U': use_item(l.index, c); break;
         case 'T': trade_item(l.index, c); break;
         case 'D': drop_item(l.index, c); break;
         case 'H': halve_item(l.index, c); break;
@@ -2860,6 +2865,7 @@ struct SpellLines {
     bool    scrolls = false;        // scrolls' spells: "on Scrolls" (Scribe) / "to Scribe" (with learning)
     bool    choosing = false;       // training's new spell: "to Choose", Learn (no Exit)
     bool    fighting = false;       // "in Memory" in a fight: the chosen one is cast there
+    int     reading = -1;           // a scroll's spells (the item): "on Scroll", Cast reads one (Use)
 } sl;
 
 // The scrolls' facts for the magic rules
@@ -2889,6 +2895,7 @@ void build_lines(const uint8_t* ids, int n)
     }
     sl.top = 0;
     sl.sel = -1;
+    sl.reading = -1;
     for (int i = 0; i < sl.n; ++i)
         if (sl.id[i]) {
             sl.sel = i;
@@ -2896,7 +2903,10 @@ void build_lines(const uint8_t* ids, int n)
         }
 }
 
-int list_rows() { return sl.learning || sl.casting || sl.scrolls || sl.choosing ? 22 - 5 + 1 : 15 - 5 + 1; }
+int list_rows()
+{
+    return sl.learning || sl.casting || sl.scrolls || sl.choosing || sl.reading >= 0 ? 22 - 5 + 1 : 15 - 5 + 1;
+}
 
 // "NAME can memorize:" and the counts a kind (cleric, druid, magic-user)
 void draw_counts(pic::Canvas& c)
@@ -2937,6 +2947,7 @@ void draw_spells(pic::Canvas& c)
     put(c, t, 1, 1, pt->sel()->npc() ? 10 : 11);
     mw(profile::kSpellsWord, a, sizeof a);
     if (sl.choosing) cw(profile::kToChoose, b, sizeof b);
+    else if (sl.reading >= 0) cw(profile::kOnScroll, b, sizeof b);
     else if (sl.scrolls) cw(sl.learning ? profile::kToScribe : profile::kOnScrolls, b, sizeof b);
     else mw(sl.learning ? profile::kToMemorize : sl.casting ? profile::kInMemory : profile::kInGrimoire, b, sizeof b);
     snprintf(t, sizeof t, "%s%s", a, b);
@@ -2958,14 +2969,14 @@ void draw_spells(pic::Canvas& c)
             put(c, line, 1, row, 10);
         }
     }
-    if (!sl.learning && !sl.casting && !sl.scrolls && !sl.choosing) draw_counts(c);
+    if (!sl.learning && !sl.casting && !sl.scrolls && !sl.choosing && sl.reading < 0) draw_counts(c);
     // The menu
     char keys[40], prompt[20], k1[12];
     keys[0] = 0;
     prompt[0] = 0;
     if (!sl.learning) {
         mw(profile::kChooseSpell, prompt, sizeof prompt);
-        if (sl.casting) cw(profile::kCastKey, k1, sizeof k1);
+        if (sl.casting || sl.reading >= 0) cw(profile::kCastKey, k1, sizeof k1);
         else if (sl.scrolls) cw(profile::kScribeKey, k1, sizeof k1);
         else if (sl.choosing) cw(profile::kLearnKey, k1, sizeof k1);
         else mw(profile::kMemorizeKey, k1, sizeof k1);
@@ -3193,6 +3204,10 @@ void spells_tap(int x, int y, pic::Canvas& c)
         return;
     }
     const char k = text::key(menu, text::hit(menu, x / 8));
+    if (sl.reading >= 0) {
+        reading_tap(k, c);
+        return;
+    }
     if (sl.fighting) {
         if (k == 'C' && sl.sel >= 0) fight_spell_chosen(sl.id[sl.sel], c);
         else if (k == 'E') fight_spell_chosen(0, c);
@@ -3459,6 +3474,7 @@ void fix_party(pic::Canvas& c)
 void show_memory(pic::Canvas& c);
 struct CastRun;
 void lose_spell(bool yes, pic::Canvas& c);
+bool use_it_answer(char k, pic::Canvas& c);
 
 bool magic_yes_no(Ask what, char k, pic::Canvas& c)
 {
@@ -3466,6 +3482,7 @@ bool magic_yes_no(Ask what, char k, pic::Canvas& c)
         lose_spell(k == 'Y', c);
         return true;
     }
+    if (what == Ask::UseIt) return use_it_answer(k, c);
     if (what == Ask::ScribeThese || what == Ask::ScribeThese2) {
         if (k != 'Y') magic::cancel_scribes(*pt->sel(), scroll_facts());
         if (k != 'Y' && what == Ask::ScribeThese) show_scrolls(c);
@@ -3568,7 +3585,10 @@ struct CastRun {
     uint32_t until = 0;
     bool on_camp = false;           // the camp screen is shown (Whom)
     bool exploring = false;         // cast from the exploring menu (not the camp's)
+    int  item = -1;                 // Use: the item it comes from (its charge goes, not the memory)
+    bool scroll = false;            // ... a scroll (the spell goes off it)
 } cr;
+void item_cast_done(pic::Canvas& c);
 
 // The list closed: back to the magic menu, or to exploring
 void cast_done(pic::Canvas& c)
@@ -3628,6 +3648,10 @@ void say_line(pic::Canvas& c, int who, const char* text)
 // The spells in memory (again after a spell); none: back to the menu
 void show_memory(pic::Canvas& c)
 {
+    if (cr.item >= 0) {
+        item_cast_done(c);
+        return;
+    }
     cr.stage = CastRun::None;
     if (cr.caster >= 0 && cr.caster < pt->count) pt->selected = cr.caster;
     uint8_t ids[84];
@@ -3705,9 +3729,17 @@ void next_line(pic::Canvas& c);
 void do_cast(pic::Canvas& c)
 {
     party::Character& me = pt->m[cr.caster];
-    magic::remove(me, cr.spell);
+    int pw = 0;
+    if (cr.item < 0) magic::remove(me, cr.spell);
+    else pw = spells::item_power(me, mrules->tables, cr.spell);
     cr.n = spells::cast(*pt, cr.caster, cr.target, *cr.cs, mrules->tables, d->prof->cures, d->prof->magic.facts, rng,
-                        cr.lines, 24);
+                        cr.lines, 24, pw);
+    if (cr.item >= 0) {
+        // A use of the item (a scroll: the spell goes off it)
+        if (cr.scroll) magic::scroll_used(me, scroll_facts(), cr.item, cr.spell);
+        else magic::used(me, cr.item);
+        rules::recalc(me, *names, d->facts);
+    }
     cr.at = 0;
     pt->selected = cr.caster;
     if (cr.on_camp) draw_party(c, 17);
@@ -3829,6 +3861,153 @@ void cast_tap(int x, int y, pic::Canvas& c)
         pt->selected = row - 4;
         draw_party(c, col0);
     }
+}
+
+// ---- Use (the items screen; exploring and in camp; fights: fight_use)
+// A readied item that casts a spell: "NAME uses an item" and its name
+// (rows 21-22) for the game's delay, then as a spell is cast ("Cast Spell
+// on whom", what it did), at the item's own level (6); a use goes off the
+// item. A scroll: "NAME's Spells on Scroll" (only one they can read),
+// "Choose Spell: Cast Exit"; clerics and magic-users read either kind,
+// thieves of 10th level 3 times in 4 ("oops!"). A spell for fights: "That
+// Item" / "is a combat-only item...", "Use it? Yes No" (Yes: the use goes
+// for nothing). Not readied: "Must be Readied"; anything else: nothing.
+
+void item_cast_done(pic::Canvas& c)
+{
+    if (cr.caster >= 0 && cr.caster < pt->count) pt->selected = cr.caster;
+    cr = CastRun{};
+    if (view_from == Screen::Game) end_magic();     // (exploring: loaded for this)
+    screen = Screen::Items;
+    back_to_items(c);
+}
+
+void use_spell(int i, int sp, bool scroll, pic::Canvas& c)
+{
+    if (in_fight()) {
+        fight_use(i, sp, scroll, c);
+        return;
+    }
+    party::Character& ch = *pt->sel();
+    char nm[20], t[64];
+    ch.name(nm, sizeof nm);
+    cr = CastRun{};
+    cr.caster = pt->selected;
+    cr.item = i;
+    cr.scroll = scroll;
+    cr.spell = sp;
+    cr.cs = camp_spell(sp);
+    if (screen != Screen::Items) {
+        screen = Screen::Items;
+        draw_items(c);
+    }
+    if (scroll && !magic::reads_scroll(ch, rng.roll(100, 1))) {
+        char w1[12];
+        cw(profile::kOops, w1, sizeof w1);
+        snprintf(t, sizeof t, "%s %s", nm, w1);
+        say_item(c, t);
+        cr = CastRun{};
+        return;
+    }
+    const spells::Entry e = spells::entry(mrules->tables, sp);
+    if (e.targets == spells::kCombat) {
+        char a[16], b[32], q[16];
+        cw(profile::kThatItem, a, sizeof a);
+        cw(profile::kCombatOnly, b, sizeof b);
+        snprintf(t, sizeof t, "%s %s", a, b);
+        say_item(c, t);
+        cw(profile::kUseIt, q, sizeof q);
+        ask_yes_no(c, Ask::UseIt, q);
+        return;
+    }
+    if (!cr.cs || cr.cs->does == spells::Does::NotYet) {
+        cr = CastRun{};
+        error(c, "Not in the engine yet.");          // nothing used
+        return;
+    }
+    screen = Screen::Cast;
+    clear_menu_line(c);
+    if (scroll) {
+        cast_onwards(c);
+        return;
+    }
+    // "NAME uses an item" and the item's name, for a moment
+    char w1[16], it[48];
+    cw(profile::kUsesItem, w1, sizeof w1);
+    snprintf(t, sizeof t, "%s %s", nm, w1);
+    names->name(items::Item{ch.items[i]}, it, sizeof it);
+    c.fill(8, 21 * 8, 38 * 8, 16, 0);
+    put(c, t, 1, 21, 10);
+    put(c, it, 1, 22, 10);
+    dirty_rows(21, 22);
+    cr.stage = CastRun::Casts;
+    cr.until = millis() + game_delay_ms();
+    if (!cr.until) cr.until = 1;
+}
+
+// Use it? (a spell for fights from an item, outside one)
+bool use_it_answer(char k, pic::Canvas& c)
+{
+    if (k == 'Y' && cr.item >= 0) {
+        party::Character& me = pt->m[cr.caster];
+        if (cr.scroll) magic::scroll_used(me, scroll_facts(), cr.item, cr.spell);
+        else magic::used(me, cr.item);
+        rules::recalc(me, *names, d->facts);
+    }
+    item_cast_done(c);
+    return true;
+}
+
+void use_item(int i, pic::Canvas& c)
+{
+    party::Character& ch = *pt->sel();
+    if (i < 0 || i >= ch.n_items) return;
+    const uint8_t* it = ch.items[i];
+    if (!items::Item{it}.readied()) {
+        note(c, iw(profile::kMustReady));
+        return;
+    }
+    const magic::Scrolls sc = scroll_facts();
+    const bool scroll = magic::is_scroll(sc, it);
+    if (!scroll && !magic::usable(sc, it)) return;
+    if (!load_magic()) {
+        end_magic();
+        error(c, "Not enough memory.");
+        return;
+    }
+    if (!scroll) {
+        use_spell(i, magic::item_spell(it), false, c);
+        return;
+    }
+    uint8_t ids[3];
+    const int n = magic::scroll_list(ch, mrules->tables, sc, i, ids, 3);
+    if (!n) return;                                 // (can't read it: nothing)
+    sl.learning = sl.casting = sl.scrolls = sl.choosing = sl.fighting = false;
+    build_lines(ids, n);
+    sl.reading = i;
+    screen = Screen::SpellList;
+    draw_spells(c);
+}
+
+void reading_tap(char k, pic::Canvas& c)
+{
+    if (k == 'C' && sl.sel >= 0) {
+        const int item = sl.reading, sp = sl.id[sl.sel];
+        sl.reading = -1;
+        use_spell(item, sp, true, c);
+        return;
+    }
+    if (k == 'E') {
+        sl.reading = -1;
+        if (!in_fight() && view_from == Screen::Game) end_magic();
+        screen = Screen::Items;
+        back_to_items(c);
+        return;
+    }
+    if (k == 'N' && sl.top + list_rows() < sl.n) sl.top += list_rows();
+    else if (k == 'P' && sl.top > 0) sl.top = sl.top > list_rows() ? sl.top - list_rows() : 0;
+    else return;
+    draw_spells(c);
 }
 
 // ---- Display: the spell effects

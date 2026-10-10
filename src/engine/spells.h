@@ -63,7 +63,8 @@ struct CampSpell {
     uint8_t  spell;
     Does     does;
     uint8_t  n, sides, plus;            // Heal's dice
-    uint32_t word;                      // what's said ("is Blessed"; GAME.OVR offset, 0: nothing)
+    uint32_t word;                      // what's said ("is Blessed"; GAME.OVR offset, 0: nothing;
+                                        // Heal: "is Healed" instead of fully / partly healed)
 };
 
 // What is said about a target, in order ("NAME is Blessed")
@@ -86,9 +87,14 @@ bool can_cast(const party::Character& caster);
 
 // Casts `cs` (the spell taken out of the caster's memory) by party member
 // `caster` on `target` (a member; for self / party spells it isn't used).
-// Fills `out` with what's said; how many lines.
+// Fills `out` with what's said; how many lines. `pw`: the caster's level
+// for it (0: their own - an item's spell has its own, item_power).
 int cast(party::Party& p, int caster, int target, const CampSpell& cs, const classes::Tables& t,
-         const rules::CureFacts& cures, const Facts& f, create::Dice& d, Line* out, int cap);
+         const rules::CureFacts& cures, const Facts& f, create::Dice& d, Line* out, int cap, int pw = 0);
+
+// The caster's level for a spell from an item: 6 (the monsters' spells -
+// the items' own - as the caster's: 12 for those with spell levels)
+int item_power(const party::Character& user, const classes::Tables& t, int spell);
 
 // ---- Fix (the camp's): the party's healers heal everyone, resting between
 // (the games: the cure spells in memory, then those memorized again over a

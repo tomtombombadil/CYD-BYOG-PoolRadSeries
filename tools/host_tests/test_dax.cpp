@@ -2380,6 +2380,37 @@ static void test_magic()
     m.items[0][0x3C] = 5 | 0x80;
     magic::cancel_scribes(m, sc);
     CHECK(!magic::scribing(m, sc) && m.items[0][0x3C] == 5);
+    // Use: reading a scroll's spell takes it off; the last one takes the scroll
+    CHECK(magic::scroll_list(m, t, sc, 0, ids, 3) == 2 && ids[0] == 5 && ids[1] == 7);
+    CHECK(magic::scroll_list(m, t, sc, 1, ids, 3) == 0);                  // not a scroll
+    CHECK(magic::reads_scroll(m, 100));                                   // a magic-user
+    party::Character th{};
+    CHECK(!magic::reads_scroll(th, 1));
+    th.rec[0x109 + classes::Thief] = 10;
+    CHECK(magic::reads_scroll(th, 75) && !magic::reads_scroll(th, 76));   // 3 times in 4
+    magic::scroll_used(m, sc, 0, 7);
+    CHECK(m.n_items == 2 && m.items[0][0x3E] == 0 && m.items[0][0x30] == 0xD2);
+    magic::scroll_used(m, sc, 0, 5);
+    CHECK(m.n_items == 1 && m.items[0][0x2E] == 36);
+    // Magic items: a spell in the second effect byte, charges in the first
+    uint8_t* wand = m.items[1];
+    m.n_items = 2;
+    memset(wand, 0, party::kItemSize);
+    wand[0x2E] = 36; wand[0x3C] = 2; wand[0x3D] = 0x0F;
+    CHECK(magic::usable(sc, wand) && magic::item_spell(wand) == 0x0F && !magic::usable(sc, m.items[0]));
+    wand[0x3E] = 0x80;
+    CHECK(!magic::usable(sc, wand));                                      // works while readied instead
+    wand[0x3E] = 0;
+    magic::used(m, 1);
+    CHECK(m.n_items == 2 && wand[0x3C] == 1);
+    wand[0x39] = 2;                                                       // a stack of two: one goes
+    magic::used(m, 1);
+    CHECK(m.n_items == 2 && wand[0x39] == 1 && wand[0x3C] == 1);
+    magic::used(m, 1);
+    CHECK(m.n_items == 1);                                                // the last charge
+    uint8_t ever[party::kItemSize] = {};
+    ever[0x3D] = 3;
+    CHECK(!magic::use_charge(ever) && !magic::use_charge(ever));          // 0 charges: never runs out
 }
 
 // Casting outside combat: synthetic spells (made-up numbers in the games'
@@ -2432,7 +2463,7 @@ static void test_spells()
     create::Dice d(7);
     spells::Line out[16];
     auto cast = [&](int s, spells::Does does, int target, uint8_t n = 0, uint8_t sides = 0, uint8_t plus = 0) {
-        const spells::CampSpell cs{static_cast<uint8_t>(s), does, n, sides, plus, 0x1234};
+        const spells::CampSpell cs{static_cast<uint8_t>(s), does, n, sides, plus, does == spells::Does::Heal ? 0u : 0x1234u};
         return spells::cast(p, 0, target, cs, t, cf, f, d, out, 16);
     };
     // The blessing: everyone, the caster's level in its data; again: still one each
@@ -2801,6 +2832,22 @@ static void test_combat()
     CHECK(combat::morale(sb, t, 2) == combat::Morale::Fight);
     mrec[2][0xF7] = 0x0A;                                                // party-controlled: never
     CHECK(combat::morale(sb, t, 2) == combat::Morale::Fight);
+    // The computer's magic items: a readied wand of the missiles
+    static items::Names inames;
+    std::vector<uint8_t> itypes(2 + items::kTypes * 16, 0);
+    dax::MemorySource isrc(itypes.data(), static_cast<uint32_t>(itypes.size()));
+    CHECK(inames.read_types(isrc));
+    static uint8_t mitems[2][items::kRecordSize];
+    memset(mitems, 0, sizeof mitems);
+    mitems[1][0x34] = 1; mitems[1][0x3C] = 5; mitems[1][0x3D] = 1;
+    sb.f[1].items = mitems;
+    sb.f[1].n_items = 2;
+    CHECK(combat::choose_item(sb, t, st, 1, inames, table, 2, d, chosen, &n_chosen) == 1 && n_chosen == 1 &&
+          chosen[0] == 0);
+    mitems[1][0x34] = 0;                                                 // not readied: no
+    CHECK(combat::choose_item(sb, t, st, 1, inames, table, 2, d, chosen, &n_chosen) == -1);
+    // An item's spell at the item's level: 6 (a monster spell: the user's)
+    CHECK(combat::power_of(mrec[1], st, 1, true) == 6 && combat::power_of(mrec[1], st, 1, false) == 3);
 }
 
 int main()

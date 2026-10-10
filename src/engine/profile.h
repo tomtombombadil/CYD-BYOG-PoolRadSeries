@@ -105,6 +105,8 @@ enum CastWord {
     kScribeKey, kOnScrolls, kToScribe, kNoCopyable, kAlreadyKnow, kAlreadyScribing,   // Scribe: "Scribe" ...
     kCannotScribe, kScribeThese, kScribeThese2, kScribeAny, kHasScribed,           // ... "has scribed"
     kToChoose, kLearnKey,                                                         // training's "to Choose", "Learn"
+    kThatItem, kCombatOnly, kUseIt,                                               // "That Item", "is a combat-only item...", "Use it? "
+    kUsesItem, kItemColon, kOops, kOnScroll,                                      // "uses an item", "Item:", "oops!", "on Scroll"
     kCastWords
 };
 
@@ -131,7 +133,7 @@ enum FightWord {
     kTreasureLeft, kClaimTreasure, kItemsColon, kTakeW,
     kTakes, kPointsOfDamage, kTakes1, kFromFire, kFromCold, kFromElec, kFromAcid, kFromMagic, kGoesDownS,
     kIsUnaffectedS, kCastsASpell, kSpellColon, kBeginsCasting, kCampOnly, kTurnsUndead, kIsTurned, kIsDestroyed,
-    kNothingHappens, kAlreadyTargeted,
+    kNothingHappens, kAlreadyTargeted, kAbortSpell, kSpellAborted,               // ... "Abort Spell? ", "Spell Aborted"
     kFightWords
 };
 

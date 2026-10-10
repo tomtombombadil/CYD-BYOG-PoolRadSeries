@@ -84,6 +84,8 @@ constexpr spells::CampSpell kCurseCamp[] = {
     {0x36, Does::Affect, 0, 0, 0, 0x2FE1C},        // Protection from Normal Missiles
     {0x38, Does::NotYet, 0, 0, 0, 0},              // Restoration (lost levels)
     {0x3A, Does::Heal, 2, 8, 1, 0},                // Cure Serious Wounds
+    {0x3E, Does::Heal, 2, 4, 2, 0x3206D},          // the items' healing: "is Healed"
+    {0x63, Does::Heal, 2, 4, 2, 0x3379C},
     {0x43, Does::Neutralize, 0, 0, 0, 0},
     {0x45, Does::Affect, 0, 0, 0, 0x2FE1C},
     {0x47, Does::Heal, 3, 8, 3, 0},                // Cure Critical Wounds
@@ -153,6 +155,15 @@ constexpr combat::FightSpell kCurseFight[] = {
     {0x33, SpellDoes::Bolt, 0, 6, 0, 3, 4, 0},              // Lightning Bolt: level d6
     {0x37, SpellDoes::Theirs, 0, 0, 0, 0, 0, 0x31CD9},      // Slow: "is Slowed"
     {0x5E, SpellDoes::Hold, 0, 0, 0, 0, 0, 0x303F1},        // Hold Monster
+    // The items' own spells (the spell table's monster spells)
+    {0x39, SpellDoes::Haste, 5, 4, 0, 0, 0, 0x31ED7},       // speed: "is Speedy", 5d4 rounds
+    {0x3C, SpellDoes::Bolt, 1, 6, 20, 0, 4, 0},             // a lightning stroke: 1d6 + 20
+    {0x3D, SpellDoes::Theirs, 5, 4, 0, 0, 0, 0x32033},      // paralysis: "is paralyzed", 5d4 rounds
+    {0x3E, SpellDoes::Heal, 2, 4, 2, 0, 0, 0x3206D},        // healing: "is Healed"
+    {0x3F, SpellDoes::Ours, 2, 10, 0, 4, 0, 0x320C4},       // the party invisible: "is invisible", 2d10 x 10
+    {0x40, SpellDoes::Damage, 0, 6, 0, 5, 9, 0},            // a fireball of 3, 5 or 7 dice
+    {0x41, SpellDoes::Damage, 2, 4, 2, 0, 8, 0},            // the wand's missile: 2d4 + 2
+    {0x63, SpellDoes::Heal, 2, 4, 2, 0, 0, 0x3379C},        // extra healing: "is Healed"
 };
 
 // Title: picture 1 for 5 s; picture 2 with 3 on it at row 11, column 6 for
@@ -233,7 +244,8 @@ const Profile kProfiles[] = {
       0x7ED2, 0x7ED3,
       {0x192DB, 0x1942B, 0x2E13C, 0x2F274, 0x2F21F, 0x2F235, 0x2F0EF, 0x39B78, 0x39B88, 0x36666, 0x2FECA, 0x30F71,
        0x32173, 0x324C5, 0x31597, 0x315A4, 0x19F93, 0x2E14A, 0x2A4A6, 0x2A4C7, 0x19A8D, 0x19AA5, 0x19AC1, 0x19AE4,
-       0x19A77, 0x19B03, 0x192FB, 0x2B76C, 0x2A4B1, 0x2E151},
+       0x19A77, 0x19B03, 0x192FB, 0x2B76C, 0x2A4B1, 0x2E151,
+       0x2F23F, 0x2F249, 0x2F262, 0x294BC, 0x294C9, 0x294CF, 0x2A49C},
       kCurseCamp, sizeof kCurseCamp / sizeof kCurseCamp[0],
       {2, 0x2A, {0x22, 0x2B, 0x32}, {{0, 0}, {0x2C, 0x1F}, {0x39, 0}}},
       kCurseSpellNamed, sizeof kCurseSpellNamed, kCurseNamed, sizeof kCurseNamed / sizeof kCurseNamed[0], 0xD2, 0x10},
@@ -254,7 +266,7 @@ const Profile kProfiles[] = {
        0x6CF0, 0x6D10, 0x699B, 0x69A3,
        0x36F1F, 0x36F26, 0x36F39, 0x36F52, 0x36F5C, 0x36F66, 0x36F77, 0x36F81, 0x36F99,
        0x372F5, 0x3442D, 0x3443B, 0x15AC6, 0x15AB6, 0x14556, 0x14566, 0x14570,
-       0x1457D, 0x15583},
+       0x1457D, 0x15583, 0x2F27A, 0x2F288},
       {0x03, 0x0B, 0x0D, 0x15, 0x17, 0x1B, 0x1F, 0x23, 0x28, 0x33, 0x34, 0x35, 0x3A, 0x4D, 0x5B, 0x88, 0x8E,
        0x90},
       {{0x33, 0x34, 0x35, 0x1F}, 0x01, 0x02, 0x31, 0x27, 0x2A, 0x19, 0x08, 0x09, 0x1C},

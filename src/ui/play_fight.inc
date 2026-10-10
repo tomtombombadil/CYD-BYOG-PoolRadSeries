@@ -183,7 +183,7 @@ void blit4(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y, bool mi
 // ---- The fight's state (on the heap while fighting)
 enum class FSt : uint8_t {
     Begin, Turn, Menu, Move, Aim, DoneMenu, Speed, Ai, Pages, RoundEnd, Results, Destroyed, AllyAsk, FleeAsk,
-    ContinueAsk, Next
+    ContinueAsk, Next, UseAim, AbortAsk
 };
 
 struct Page {
@@ -221,6 +221,8 @@ struct Fight {
     int      sp_t[combat::kMaxFighters] = {};
     int      sp_n = 0, sp_need = 0, sp_area = -1;
     bool     ai_checked = false;        // this turn's morale and spell choice done
+    int      use_item = -1;             // Use: the item the spell comes from (its charge goes)
+    bool     use_scroll = false;        // ... a scroll
     combat::Outcome out;
     int      share = 0;
     bool     treasure_only = false;
@@ -228,6 +230,7 @@ struct Fight {
 Fight* fg = nullptr;
 
 const char* fw(int i) { return fg ? fg->w[i] : ""; }
+bool in_fight() { return fg != nullptr; }
 
 void load_fight_words()
 {
@@ -672,6 +675,87 @@ void guard_attacks(pic::Canvas& c, int i)
 void forget_spell(combat::Fighter& f, int sp);
 void begin_targeting(pic::Canvas& c, int sp);
 void cast_now(pic::Canvas& c, bool forgotten = false);
+const combat::FightSpell* fight_spell(int sp);
+
+// ---- Use in a fight: the item's spell goes off at once (no casting time),
+// at the item's level; using it ends the turn (even when aborted)
+void spend_item(int i, int sp)
+{
+    const int k = fg->use_item;
+    fg->use_item = -1;
+    combat::Fighter& f = fg->b.f[i];
+    if (k < 0 || k >= f.n_items) return;
+    if (f.member >= 0) {
+        party::Character& ch = pt->m[f.member];
+        if (fg->use_scroll) magic::scroll_used(ch, scroll_facts(), k, sp);
+        else magic::used(ch, k);
+        rules::recalc(ch, *names, d->facts);
+        f.n_items = ch.n_items;
+        return;
+    }
+    // A monster's: its group's items (shared by the copies)
+    if (!magic::use_charge(f.items[k])) return;
+    uint8_t (*list)[items::kRecordSize] = f.items;
+    const int n = f.n_items;
+    for (int j = k; j + 1 < n; ++j) memcpy(list[j], list[j + 1], items::kRecordSize);
+    memset(list[n - 1], 0, items::kRecordSize);
+    for (int j = 0; j < fg->b.n; ++j)
+        if (fg->b.f[j].items == list) fg->b.f[j].n_items = n - 1;
+    for (int g = 0; ml && g < combat::kMaxGroups; ++g)
+        if (ml->g[g].item == list) ml->g[g].n_items = static_cast<uint8_t>(n - 1);
+}
+
+// "NAME uses an item", "Item: NAME" on row 23
+void announce_item(pic::Canvas& c, int i, int k)
+{
+    const combat::Fighter& f = fg->b.f[i];
+    char w1[16], nm[40], t[48];
+    cw(profile::kUsesItem, w1, sizeof w1);
+    add_page(i, w1);
+    cw(profile::kItemColon, t, sizeof t);
+    names->name(items::Item{f.items[k]}, nm, sizeof nm);
+    strncat(t, nm, sizeof t - strlen(t) - 1);
+    status_line(c, t);
+}
+
+void fight_use(int k, int sp, bool scroll, pic::Canvas& c)
+{
+    items_direct = false;
+    screen = Screen::Fight;
+    palette_fight(true);
+    const int i = fg->cur;
+    combat::Fighter& f = fg->b.f[i];
+    if (f.member >= 0) f.n_items = pt->m[f.member].n_items;
+    draw_fight(c);
+    fg->use_item = k;
+    fg->use_scroll = scroll;
+    fg->spell = sp;
+    fg->sp_n = 0;
+    fg->sp_area = -1;
+    if (scroll && f.member >= 0 && !magic::reads_scroll(pt->m[f.member], rng.roll(100, 1))) {
+        char w1[12];
+        cw(profile::kOops, w1, sizeof w1);
+        add_page(i, w1);
+        spend_item(i, sp);
+        fg->spell = 0;
+        say(c, FSt::Next);
+        return;
+    }
+    const combat::FightSpell* fs = fight_spell(sp);
+    if (!fs || fs->does == combat::SpellDoes::NotYet || spells::entry(mrules->tables, sp).when == 0) {
+        fg->use_item = -1;
+        fg->spell = 0;
+        fight_menu(c);
+        error(c, "Not in the engine yet.");
+        return;
+    }
+    if (scroll) {
+        begin_targeting(c, sp);
+        return;
+    }
+    announce_item(c, i, k);
+    say(c, FSt::UseAim);
+}
 
 void start_turn(pic::Canvas& c)
 {
@@ -680,6 +764,7 @@ void start_turn(pic::Canvas& c)
     f.received = f.turns = 0;
     f.guarding = false;
     fg->ai_checked = false;
+    fg->use_item = -1;
     if (!f.team() || on_screen(fg->cur)) focus(fg->cur, 2);
     draw_fight(c);
     if (f.spell) {
@@ -1059,6 +1144,14 @@ void aim_tap(int x, int y, pic::Canvas& c)
             cast_now(c);
             return;
         }
+        if (fg->use_item >= 0 && fg->spell) {
+            // An item's spell: "Abort Spell? Yes No" (Yes: the use is gone, the turn over)
+            fg->st = FSt::AbortAsk;
+            text::build(menu, fw(profile::kAbortSpell), rw(Data::kYesNo));
+            menu.selected = 1;
+            show_menu_line(c);
+            return;
+        }
         fg->spell = 0;
         draw_fight(c);
         fight_menu(c);
@@ -1138,7 +1231,23 @@ void ai_step(pic::Canvas& c)
             say(c, FSt::Ai);
             return;
         }
-        // The computer's spells (monsters and NPCs)
+        // The computer's magic items (monsters, NPCs and Quick members), then spells
+        if (!f.fleeing && f.n_items && combat::standing(b, f.team() ? 0 : 1) && load_magic()) {
+            int tg[combat::kMaxFighters], nt = 0;
+            const int k = combat::choose_item(b, fg->t, mrules->tables, i, *names, d->prof->fight.spells,
+                                              d->prof->fight.n_spells, rng, tg, &nt);
+            if (k >= 0) {
+                fg->use_item = k;
+                fg->use_scroll = false;
+                fg->spell = magic::item_spell(f.items[k]);
+                fg->sp_n = nt;
+                for (int j = 0; j < nt; ++j) fg->sp_t[j] = tg[j];
+                draw_fight(c);
+                announce_item(c, i, k);
+                cast_now(c);
+                return;
+            }
+        }
         if ((f.team() || f.rec[0xF7] >= 0x80) && !f.fleeing && f.can_cast && load_magic()) {
             int tg[combat::kMaxFighters], nt = 0;
             const int sp = combat::choose_spell(b, fg->t, mrules->tables, i, d->prof->fight.spells,
@@ -1512,6 +1621,9 @@ void fight_tick(uint32_t now, pic::Canvas& c)
             draw_fight(c);
             move_prompt(c);
             break;
+        case FSt::UseAim:
+            begin_targeting(c, fg->spell);
+            break;
         default:
             after_attack(c);
             break;
@@ -1592,6 +1704,14 @@ void begin_targeting(pic::Canvas& c, int sp)
         cast_now(c);
         return;
     }
+    if (e.targets == spells::kParty) {
+        // Their whole side
+        const bool mine = fg->b.f[fg->cur].team();
+        for (int k = 0; k < fg->b.n; ++k)
+            if (fg->b.f[k].up() && fg->b.f[k].size && fg->b.f[k].team() == mine) fg->sp_t[fg->sp_n++] = k;
+        cast_now(c);
+        return;
+    }
     if (aim >= 8 && aim <= 14) {
         fg->sp_need = 1;
         fg->sp_area = e.aim & 7;
@@ -1604,12 +1724,17 @@ void begin_targeting(pic::Canvas& c, int sp)
         fg->sp_need = (e.aim & 3) + 1;
     }
     start_aim(c);
-    fg->ci = 0;
-    for (int k = 0; k < fg->n_cand; ++k)
-        if (fg->cand[k] != fg->cur) {
-            fg->ci = k;
-            break;
-        }
+    // The first shown: the nearest enemy for a spell against them, else the nearest other
+    const combat::FightSpell* fs = fight_spell(sp);
+    const bool hostile = fs && fs->does != combat::SpellDoes::Ours && fs->does != combat::SpellDoes::Heal &&
+                         fs->does != combat::SpellDoes::Haste && fs->does != combat::SpellDoes::Prayer &&
+                         fs->does != combat::SpellDoes::Mirror && fs->does != combat::SpellDoes::Affect;
+    fg->ci = -1;
+    for (int k = 0; k < fg->n_cand && fg->ci < 0; ++k)
+        if (fg->cand[k] != fg->cur && (!hostile || fg->b.f[fg->cand[k]].team() != fg->b.f[fg->cur].team())) fg->ci = k;
+    for (int k = 0; k < fg->n_cand && fg->ci < 0; ++k)
+        if (fg->cand[k] != fg->cur) fg->ci = k;
+    if (fg->ci < 0) fg->ci = 0;
     aim_menu(c);
 }
 
@@ -1743,23 +1868,29 @@ void cast_now(pic::Canvas& c, bool forgotten)
     const int sp = fg->spell;
     fg->spell = 0;
     const combat::FightSpell* fs = fight_spell(sp);
-    status_line(c, "");
+    const bool from_item = fg->use_item >= 0;
+    if (!from_item) status_line(c, "");
     if (!fs) {
         end_turn(c);
         return;
     }
-    // The spell leaves their memory
-    if (!forgotten) forget_spell(f, sp);
-    // "Casts a Spell", "Spell: NAME"
-    char t[40];
-    snprintf(t, sizeof t, "%s%s", fw(profile::kSpellColon), spell_name(sp));
+    int pw = 0;
     draw_fight(c);
-    status_line(c, t);
+    if (from_item) {
+        pw = combat::power_of(f.rec, mrules->tables, sp, true);
+    } else {
+        // The spell leaves their memory; "Casts a Spell", "Spell: NAME"
+        if (!forgotten) forget_spell(f, sp);
+        char t[40];
+        snprintf(t, sizeof t, "%s%s", fw(profile::kSpellColon), spell_name(sp));
+        status_line(c, t);
+        add_page(i, fw(profile::kCastsASpell));
+    }
     draw_icon(c, i, true);
-    add_page(i, fw(profile::kCastsASpell));
     combat::SpellLine lines[24];
-    const int n = combat::cast(b, mrules->tables, i, sp, *fs, fg->sp_t, fg->sp_n, rng, lines, 24);
+    const int n = combat::cast(b, mrules->tables, i, sp, *fs, fg->sp_t, fg->sp_n, rng, lines, 24, pw);
     spell_pages(i, lines, n, *fs);
+    if (from_item) spend_item(i, sp);
     f.attacks[0] = f.attacks[1] = 0;
     say(c, FSt::Next);
 }
@@ -1830,7 +1961,17 @@ void fight_tap(int x, int y, pic::Canvas& c)
         case 0: break;
         case 'C': fight_cast_menu(c); break;
         case 'T': fight_turn_undead(c); break;
-        default: error(c, "Not in the engine yet."); break;     // Use
+        case 'U':
+            // The items screen (Use there; Exit comes back here)
+            if (f.member >= 0 && pt->m[f.member].n_items) {
+                pt->selected = f.member;
+                palette_fight(false);
+                view_from = Screen::Fight;
+                items_direct = true;
+                open_items(c);
+            }
+            break;
+        default: break;
         }
         return;
     }
@@ -1920,6 +2061,21 @@ void fight_tap(int x, int y, pic::Canvas& c)
         fight_menu(c);
         return;
     }
+    case FSt::AbortAsk: {
+        if (y < text::kMenuTapTop) return;
+        const char k = text::key(menu, text::hit(menu, col));
+        if (k == 'N') {
+            aim_menu(c);
+            return;
+        }
+        if (k != 'Y') return;
+        spend_item(fg->cur, fg->spell);
+        fg->spell = 0;
+        add_page(fg->cur, fw(profile::kSpellAborted));
+        draw_fight(c);
+        say(c, FSt::Next);
+        return;
+    }
     case FSt::FleeAsk: {
         if (y < text::kMenuTapTop) return;
         const char k = text::key(menu, text::hit(menu, col));
@@ -1978,6 +2134,7 @@ bool fight_back(pic::Canvas& c)
     case FSt::Speed: done_menu(c); return true;
     case FSt::AllyAsk:
     case FSt::FleeAsk: fight_menu(c); return true;
+    case FSt::AbortAsk: aim_menu(c); return true;
     default: return true;               // (no leaving a fight)
     }
 }

@@ -74,6 +74,26 @@ void cancel_scribes(party::Character& c, const Scrolls& sc);
 // The spell scribed: into the spell book, off the scroll (used up: gone)
 void scribed(party::Character& c, const Scrolls& sc, int item, int slot);
 
+// ---- Using items (Use on the items screen; fights too)
+// A magic item that casts a spell: not a scroll, its spell in the second
+// effect byte (0x3D, & 0x7F), the third under 0x80 (0x80 and up: it works
+// while readied instead); the first (0x3C) its charges, 0: it never runs out
+bool usable(const Scrolls& sc, const uint8_t* item);
+inline int item_spell(const uint8_t* item) { return item[0x3D] & 0x7F; }
+// A use taken off the item: one of the stack (count 0x39 over 1), else a
+// charge; true when it's used up
+bool use_charge(uint8_t* item);
+// ... and off a character's item (used up: gone)
+void used(party::Character& c, int item);
+// The spells they can read on one scroll (as scroll_spells), by level
+int scroll_list(party::Character& c, const classes::Tables& t, const Scrolls& sc, int item, uint8_t* ids, int cap);
+// Can they read a scroll's spell: clerics and magic-users (either kind of
+// scroll), thieves of 10th level and up 3 times in 4 (else "oops!")
+bool reads_scroll(const party::Character& c, int d100);
+// A spell read off a scroll: gone from it (the last line holding it); the
+// scroll is used up below "With 1 Spell"
+void scroll_used(party::Character& c, const Scrolls& sc, int item, int spell);
+
 // The rest needed for what's being memorized and scribed (minutes): an
 // hour's start (4 hours, 6 for spells past 2nd level) and 15 minutes a
 // spell level; sets the record's hours-before-the-first-spell

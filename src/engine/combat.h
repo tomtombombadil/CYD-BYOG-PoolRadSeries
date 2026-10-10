@@ -249,9 +249,11 @@ struct FightSpell {
     uint8_t   spell;
     SpellDoes does;
     uint8_t   n, sides, plus;           // dice
-    uint8_t   per;                      // 1: + the caster's level, 2: (level + 1) / 2 missiles of 1d4 + 1, 3: level dice
+    uint8_t   per;                      // 1: + the caster's level, 2: (level + 1) / 2 missiles of 1d4 + 1, 3: level dice,
+                                        // 5: 3, 5 or 7 dice; effects: the dice are rounds (4: x 10)
     uint8_t   kind;                     // damage: 1 fire, 2 cold, 4 electricity, 8 magic, 0x10 acid
-    uint32_t  word;                     // what's said ("is Blessed", "falls asleep"; GAME.OVR, 0: nothing)
+    uint32_t  word;                     // what's said ("is Blessed", "falls asleep"; GAME.OVR, 0: nothing;
+                                        // Heal: "is Healed" instead of fully / partly healed)
     uint32_t  word2 = 0;                // ... when they saved (clouds: "starts to cough")
 };
 // What happened to each target, in order
@@ -266,8 +268,12 @@ int in_area(const Battle& b, const Tables& t, int x, int y, int r, int* out, int
 bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d);
 // Casts the spell by fighter `caster` on `targets` (chosen as the spell's
 // aim says); what it did. The spell left the caster's memory already.
+// `pw`: the caster's level for it (0: their own; an item's: item_power).
 int cast(Battle& b, const classes::Tables& st, int caster, int spell, const FightSpell& fs, const int* targets,
-         int n, create::Dice& d, SpellLine* out, int cap);
+         int n, create::Dice& d, SpellLine* out, int cap, int pw = 0);
+// The caster's level for a spell: by its kind; from an item 6 (the
+// monsters' spells - the items' own - as the caster's)
+int power_of(const uint8_t* rec, const classes::Tables& st, int spell, bool item = false);
 
 // A lightning bolt's squares: from (tx, ty) on, away from the caster, up to
 // `len` squares or a wall / the field's edge; the fighters on them
@@ -282,6 +288,16 @@ int bolt_line(const Battle& b, const Tables& t, int caster, int tx, int ty, int 
 int choose_spell(Battle& b, const Tables& t, const classes::Tables& st, int i, const FightSpell* table, int n_table,
                  create::Dice& d, int* targets, int* n_targets);
 const FightSpell* fight_spell(const FightSpell* table, int n, int spell);
+// The targets for a spell the computer thinks of casting (as choose_spell):
+// false when it has no use now
+bool spell_targets(Battle& b, const Tables& t, const classes::Tables& st, int i, const FightSpell& fs, int spell,
+                   int pw, create::Dice& d, int* targets, int* n_targets);
+// The computer's magic items (before its spells): d7 rounds from priority
+// 7 down, the readied items that cast a spell (not scrolls) in order, each
+// judged by the spell table's line 0x17 back for spells past 0x38 (the
+// games' way); the first with a use. The item (-1: none), its targets.
+int choose_item(Battle& b, const Tables& t, const classes::Tables& st, int i, const items::Names& names,
+                const FightSpell* table, int n_table, create::Dice& d, int* targets, int* n_targets);
 
 // Morale (monsters, NPCs): (control & 0x7F) x 2 (over 102: 0), Bless +5,
 // Curse -5; when it's below the share of their hit points lost, their

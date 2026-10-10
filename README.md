@@ -13,8 +13,8 @@ reads them from there.
 > includes, or make your own characters and add them), walking, events,
 > text, pictures, shops, the temple, training, camp (memorizing, resting
 > and casting spells), fights (moving, attacking, casting, turning undead;
-> the monsters cast spells and can flee or surrender; items in fights to
-> come), saving, the journal. Roadmap:
+> using potions, wands and scrolls; the monsters cast spells and can flee
+> or surrender), saving, the journal. Roadmap:
 > [docs/SPEC.md](docs/SPEC.md).
 
 ## Install
