@@ -33,7 +33,7 @@ namespace viewer {
 
 namespace {
 
-enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Walk, Play, Journal, Pdf, GameMenu, Settings, Logs, Speaker };
+enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Walk, Play, Journal, Pdf, GameMenu, Settings, Logs };
 
 Env       env_;
 Settings* cfg = nullptr;
@@ -107,8 +107,6 @@ void list_files();
 // else (the game screens need the memory)
 void go(Screen s)
 {
-    // The first start: is a speaker connected? (CYD boards come without one)
-    if (s == Screen::Home && cfg && cfg->sound == kSoundAsk) s = Screen::Speaker;
     const bool assets = s == Screen::Files || s == Screen::Blocks || s == Screen::View;
     if (assets && !A) {
         A = new (std::nothrow) Assets;
@@ -1569,13 +1567,16 @@ constexpr SoundKey kSoundKeys[] = {
 };
 constexpr int kSoundKeyCount = sizeof kSoundKeys / sizeof kSoundKeys[0];
 
-ui::Rect sound_key(int i)          // i < 0: the device keys (-1 Tandy, -2 PC Speaker)
+void draw_slider(const ui::Rect& r, bool volume);
+bool slider_set(const ui::Rect& r, int x, bool volume);
+
+ui::Rect sound_key(int i)          // i < 0: the top row (-1 Tandy, -2 PC Speaker, -3 the volume slider)
 {
     const ui::Rect a = journal_area();
     const int gp = ui::gap(), cols = 4, rows = kSoundKeyCount / cols + 1;
     const int w = (a.w - gp * (cols + 1)) / cols, h = (a.h - gp * (rows + 1)) / rows;
     if (i < 0) {
-        const int dw = (a.w - gp * 3) / 2;
+        const int dw = (a.w - gp * 4) / 3;
         return {a.x + gp + (-i - 1) * (dw + gp), a.y + gp, dw, h};
     }
     return {a.x + gp + (i % cols) * (w + gp), a.y + gp + (i / cols + 1) * (h + gp), w, h};
@@ -1585,11 +1586,19 @@ void draw_sounds()
 {
     ui::key(sound_key(-1), "Tandy", cfg->sound == kSoundTandy ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
     ui::key(sound_key(-2), "PC Speaker", cfg->sound == kSoundPc ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+    draw_slider(sound_key(-3), true);
     for (int i = 0; i < kSoundKeyCount; ++i) ui::key(sound_key(i), kSoundKeys[i].name);
 }
 
 void tap_sounds(const ui::Tap& t)
 {
+    if (sound_key(-3).contains(t.x, t.y)) {
+        if (slider_set(sound_key(-3), t.x, true)) {
+            draw_slider(sound_key(-3), true);
+            settings_save(*cfg);
+        }
+        return;
+    }
     for (int d2 = 1; d2 <= 2; ++d2)
         if (sound_key(-d2).contains(t.x, t.y)) {
             cfg->sound = d2 == 1 ? kSoundTandy : kSoundPc;
@@ -2373,7 +2382,7 @@ ui::Rect slider_track(const ui::Rect& r)
     return {r.x + pad, top, r.w - pad * 2, r.y + r.h - ui::gap() - top};
 }
 
-void draw_slider(const ui::Rect& r, bool volume = false)
+void draw_slider(const ui::Rect& r, bool volume)
 {
     LGFX& g = ui::gfx();
     ui::key(r, "");
@@ -2393,7 +2402,7 @@ void draw_slider(const ui::Rect& r, bool volume = false)
 }
 
 // Brightness (or the volume) from a point on the slider
-bool slider_set(const ui::Rect& r, int x, bool volume = false)
+bool slider_set(const ui::Rect& r, int x, bool volume)
 {
     const ui::Rect t = slider_track(r);
     const int lo = volume ? kMinVolume : kMinBrightness;
@@ -2441,7 +2450,7 @@ void draw_set_item(int slot, SetItem it)
     const PanelPrefs& pp = panel_prefs_get();
     auto lit = [](bool on) { return on ? ui::KeyStyle::Lit : ui::KeyStyle::Normal; };
     switch (it) {
-    case kBright:    draw_slider(r); break;
+    case kBright:    draw_slider(r, false); break;
     case kInvert:    ui::key(r, "Invert Colors", lit(pp.invert)); break;
     case kSwap:      draw_swap(r, pp.swap_rb); break;
     case kRotate:    ui::key(r, "Rotate 180", lit(cfg->flipped)); break;
@@ -2451,33 +2460,6 @@ void draw_set_item(int slot, SetItem it)
     case kSound:     ui::key(r, sound_label(), lit(cfg->sound != kSoundOff)); break;
     case kVolume:    draw_slider(r, true); break;
     }
-}
-
-// ---- The first start: a speaker? (Tom, 2026-10-09: CYDs come without one)
-void draw_speaker()
-{
-    ui::clear();
-    ui::header("Sound", false);
-    const int x = ui::gap() * 3;
-    int y = ui::header_h() + ui::gap() * 3;
-    y = wrap_text(x, y, ui::width() - x * 2, "Is a speaker plugged into the board's speaker socket?", ui::Font::Normal,
-                  style::kText, true);
-    wrap_text(x, y + ui::gap() * 2, ui::width() - x * 2,
-              "The games' sound effects play through it, as on a Tandy 1000 (or a PC speaker: Settings). "
-              "The boards don't come with one.",
-              ui::Font::Small, style::kTextMuted, true);
-    ui::key(ui::bottom_key(0, 2), "Yes");
-    ui::key(ui::bottom_key(1, 2), "No");
-}
-
-void tap_speaker(const ui::Tap& t)
-{
-    const int k = bottom_hit(t, 2);
-    if (k < 0) return;
-    cfg->sound = k == 0 ? kSoundTandy : kSoundOff;
-    if (cfg->volume < kMinVolume) cfg->volume = kDefaultVolume;
-    settings_save(*cfg);
-    go(Screen::Home);
 }
 
 void draw_settings()
@@ -2566,8 +2548,8 @@ void tap_settings(const ui::Tap& t)
         PanelPrefs pp = panel_prefs_get();
         switch (set_item(first + i)) {
         case kBright:
-            if (slider_set(r, t.x)) {
-                draw_slider(r);
+            if (slider_set(r, t.x, false)) {
+                draw_slider(r, false);
                 settings_save(*cfg);
             }
             return;
@@ -2658,7 +2640,6 @@ void tick()
         case Screen::Pdf:      tap_pdf(t); break;
         case Screen::GameMenu: tap_game_menu(t); break;
         case Screen::Settings: tap_settings(t); break;
-        case Screen::Speaker:  tap_speaker(t); break;
         case Screen::Logs:
             if (!logui::tap(t)) go(logui::from_scan() ? Screen::Home : Screen::Settings);
             break;
@@ -2677,15 +2658,7 @@ void tick()
     if (!dirty) return;
     dirty = false;
     switch (screen) {
-    case Screen::Home:
-        if (cfg && cfg->sound == kSoundAsk) {
-            screen = Screen::Speaker;
-            draw_speaker();
-        } else {
-            draw_home();
-        }
-        break;
-    case Screen::Speaker:  draw_speaker(); break;
+    case Screen::Home:     draw_home(); break;
     case Screen::Files:    draw_files(); break;
     case Screen::Blocks:   draw_blocks(); break;
     case Screen::View:     draw_view(); break;

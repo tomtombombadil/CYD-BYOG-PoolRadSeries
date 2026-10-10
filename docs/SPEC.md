@@ -191,9 +191,9 @@ stay in the session's scratch space, never in the repo.
   Speaker", "Sound: Off", a tap goes round them), Volume (a slider like
   Brightness), Invert Colors, Swap Red/Blue (red, green and blue blocks
   named in them, to see whether a swap is needed), Rotate 180, Recalibrate
-  Touch, Game Screen 1.5x (480x320). The first start (Tom, 2026-10-09:
-  CYDs come without a speaker) asks "Is a speaker plugged into the board's
-  speaker socket?" Yes (Tandy) / No (Off). The bottom line: version, board,
+  Touch, Game Screen 1.5x (480x320). Sound is Tandy from the start,
+  speaker or not (Tom, v0.40.1: v0.40.0's first-start question "Is a
+  speaker plugged in?" hung the 3.2" board and is gone). The bottom line: version, board,
   free memory, largest block, PSRAM ("no PSRAM" on all five boards).
 - Logs: `_CYD/SCAN.TXT` (Card Scan), `_CYD/RESTART.TXT` (Restarts),
   `_CYD/ERRORS.TXT` (Errors: every error the Play Test showed, with the
@@ -271,7 +271,9 @@ Darkness. Milestones 2-6 are built against Azure Bonds' files.
 8. **Sound and companion features** (auto-map panel, journal entry lookup,
    rest-until-healed, re-memorise spells - as options). v0.40.0: the
    games' sound effects (Curse), Tandy 1000 (default) or PC speaker; the
-   Engine Menu's Sounds tab plays each to compare. Later games' AdLib /
+   Engine Menu's Sounds tab plays each to compare (with Tandy / PC
+   Speaker keys and a Volume slider). v0.40.1: no first-start speaker
+   question (Tandy from the start), about 2.5x louder (Tandy 5x). Later games' AdLib /
    Sound Blaster: when we get there.
 
 ## 7. The journal (Tom, 2026-10-06)

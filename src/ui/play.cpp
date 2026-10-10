@@ -168,7 +168,7 @@ bool waiting = false;         // the script waits for the player
 // Combat (play_fight.inc)
 // ---- Sound: the game's own effects (engine/sound), Tandy or PC speaker
 sound::Player* snd = nullptr;
-uint8_t snd_mode = 1, snd_volume = 180;     // (Settings: 1 Tandy, 2 PC speaker, 3 Off)
+uint8_t snd_mode = 1, snd_volume = 230;     // (Settings: 1 Tandy, 2 PC speaker, 3 Off)
 
 bool snd_fill(uint8_t* buf, int n, void* ctx)
 {

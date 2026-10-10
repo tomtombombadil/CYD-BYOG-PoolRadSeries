@@ -226,8 +226,9 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
 - Game sound (Tom, 2026-10-09): the games' own sound effects, both ways
   the originals offered - **Tandy 1000** (the 3-voice + noise chip; the
   DEFAULT, era fans agree it's far better) and the **PC speaker** - plus
-  Off, in Settings with a volume slider. CYDs don't come with a speaker:
-  the first start asks whether one is connected (No = Off). Later games'
+  Off, in Settings with a volume slider. Tandy whether or not a speaker is
+  connected (Tom, v0.40.1: no first-start question - it hung the 3.2"; the
+  player changes it in Settings). Later games'
   AdLib / Sound Blaster: when we get to them. Curse's sound driver and its
   data live in START.EXE (facts: the Project's claude/sound_facts.md); our
   own sequencer + synth (`engine/sound.*`) plays the player's byte code, read

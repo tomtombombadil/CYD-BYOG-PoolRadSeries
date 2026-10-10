@@ -27,7 +27,7 @@ Settings settings_load()
     if (f && f.read(reinterpret_cast<uint8_t*>(&d), sizeof d) == sizeof d && d.magic == kMagic) s = d.s;
     f.close();
     if (s.brightness < kMinBrightness) s.brightness = kMinBrightness;
-    if (s.sound > kSoundOff) s.sound = kSoundAsk;
+    if (s.sound == kSoundUnset || s.sound > kSoundOff) s.sound = kSoundTandy;     // (Tom: Tandy unless chosen otherwise)
     if (s.volume < kMinVolume) s.volume = kDefaultVolume;
     return s;
 }
