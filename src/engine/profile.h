@@ -355,6 +355,13 @@ struct Profile {
 
     // The sound driver's tables and byte code (its segment in the program)
     sound::Layout sound;
+
+    // Locked doors (door_facts.md): "Bash", " Pick", " Knock", " Exit",
+    // "Locked. " (GAME.OVR) and the Knock spell's number
+    struct {
+        uint32_t bash, pick, knock, exit, locked;
+        uint8_t  knock_spell;
+    } door;
 };
 
 // The game's program file name (to look for it), or nullptr if no

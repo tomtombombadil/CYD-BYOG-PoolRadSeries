@@ -250,6 +250,70 @@ void stats(party::Character& c, const ItemFacts& f)
     }
 }
 
+bool bash_door(const party::Party& p, int state, create::Dice& d, bool* bash_gone)
+{
+    for (int i = 0; i < p.count; ++i) {
+        const party::Character& c = p.m[i];
+        const int s = c.rec[0x11], e = c.rec[0x1C];
+        bool ok = false;
+        if (state == 3) {
+            if (s == 18 && e >= 91 && e <= 99) ok = d.roll(6, 1) == 1;
+            else if (s == 18 && e == 100) ok = d.roll(6, 1) <= 2;
+            else if (s == 19 || s == 20) ok = d.roll(6, 1) <= 3;
+            else if (s == 21 || s == 22) ok = d.roll(6, 1) <= 4;
+            else if (s == 23) ok = d.roll(6, 1) <= 5;
+            else if (s == 24) ok = d.roll(8, 1) <= 7;
+            else if (s == 25) ok = true;
+            else if (bash_gone) *bash_gone = true;      // too weak for this door
+        } else {
+            if (s >= 3 && s <= 7) ok = d.roll(6, 1) == 1;
+            else if (s >= 8 && s <= 15) ok = d.roll(6, 1) <= 2;
+            else if (s == 16 || s == 17) ok = d.roll(6, 1) <= 3;
+            else if (s == 18 && e <= 50) ok = d.roll(6, 1) <= 3;
+            else if (s == 18 && e <= 99) ok = d.roll(6, 1) <= 4;
+            else if (s == 18) ok = d.roll(6, 1) <= 5;
+            else if (s == 19 || s == 20) ok = d.roll(8, 1) <= 7;
+            else if (s == 21) ok = d.roll(10, 1) <= 9;
+            else if (s == 22 || s == 23) ok = d.roll(12, 1) <= 11;
+            else if (s == 24) ok = d.roll(20, 1) <= 19;
+            else if (s == 25) ok = true;
+        }
+        if (ok) return true;
+    }
+    return false;
+}
+
+bool pick_lock(const party::Party& p, create::Dice& d)
+{
+    for (int i = 0; i < p.count; ++i) {
+        const party::Character& c = p.m[i];
+        const int roll = d.roll(100, 1);
+        if (roll <= c.rec[0xEB] && c.rec[0x195] == party::Okay) return true;
+    }
+    return false;
+}
+
+bool has_thief(const party::Party& p)
+{
+    for (int i = 0; i < p.count; ++i) {
+        const party::Character& c = p.m[i];
+        if (c.level(classes::Thief) > 0) return true;
+        const int old = c.old_level(classes::Thief);
+        if (old <= 0) continue;
+        for (int k = 0; k < 8; ++k)
+            if (k != classes::Thief && c.level(k) > old) return true;
+    }
+    return false;
+}
+
+int knock_member(const party::Party& p, int knock_spell)
+{
+    for (int i = 0; i < p.count; ++i)
+        for (int k = 0; k < 84; ++k)
+            if (p.m[i].rec[0x1E + k] == knock_spell) return i;
+    return -1;
+}
+
 void recalc(party::Character& c, const items::Names& names, const ItemFacts& f)
 {
     uint8_t* r = c.rec;

@@ -35,7 +35,7 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   2 turn around (Tom). 320x240 row (Tom, 2026-10-07): Side-step Left,
   Turn Left, Forward, Turn Right, Side-step Right, Turn Around, Area, Esc.
 - Play Test follows the real games, not test shortcuts: locked doors stop
-  the party ("Locked." - Bash / Pick / Knock come with the party), the 3D
+  the party ("Locked." - Bash / Pick / Knock since v0.60.0, door_facts.md), the 3D
   view comes back when a script redraws it (CALL 2E10) or the party moves.
 - Copy protection: skipped - never asked, treated as answered.
 - Later: Krynn, Savage Frontier and FRUA in this repo, after the four games.

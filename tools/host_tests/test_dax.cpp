@@ -1954,6 +1954,39 @@ static void test_geo_view()
     CHECK(geo::door(m, 5, 9, geo::East) == 2 && geo::flags(m, 3, 4) == 0x90);
     CHECK(geo::wall(m, 16, 16, geo::North) == 3 && geo::wall(m, -16, 0, geo::North) == 3);      // wraps
     CHECK(geo::dx(geo::East) == 1 && geo::dy(geo::North) == -1 && strcmp(geo::dir_name(5), "SW") == 0);
+    // A locked door opened (Bash / Pick): this side and the next square's west side
+    {
+        static geo::Map u;
+        u = m;
+        geo::unlock(u, 5, 9, geo::East);
+        CHECK(geo::door(u, 5, 9, geo::East) == 1 && geo::door(u, 6, 9, geo::West) == 1);
+        CHECK(geo::door(u, 5, 9, geo::West) == geo::door(m, 5, 9, geo::West));     // the rest kept
+        geo::unlock(u, 15, 3, geo::East);                                        // off the map: this side only
+        CHECK(geo::door(u, 15, 3, geo::East) == 1);
+        // Bash by Strength: 25 always, nothing below 3 never; a not-pickable
+        // door is too strong for Str 17 (Bash goes); Pick needs a thief
+        static party::Party bp;
+        bp = party::Party{};
+        bp.count = 1;
+        bp.m[0].rec[0x11] = 25;
+        create::Dice dd(5);
+        bool gone = false;
+        CHECK(rules::bash_door(bp, 2, dd, &gone) && rules::bash_door(bp, 3, dd, &gone) && !gone);
+        bp.m[0].rec[0x11] = 2;
+        CHECK(!rules::bash_door(bp, 2, dd, &gone) && !gone);
+        bp.m[0].rec[0x11] = 17;
+        CHECK(!rules::bash_door(bp, 3, dd, &gone) && gone);
+        CHECK(!rules::has_thief(bp));
+        bp.m[0].rec[0x109 + 6] = 1;
+        CHECK(rules::has_thief(bp));
+        bp.m[0].rec[0xEB] = 100;
+        CHECK(rules::pick_lock(bp, dd));
+        bp.m[0].rec[0x195] = party::Dead;
+        CHECK(!rules::pick_lock(bp, dd));
+        CHECK(rules::knock_member(bp, 0x1F) == -1);
+        bp.m[0].rec[0x1E + 3] = 0x1F;
+        CHECK(rules::knock_member(bp, 0x1F) == 0);
+    }
 
     // A world: common tile n is solid colour n % 16 (colour 13 -> 12); wall
     // set 1, piece 2 (type 2) uses tile 9 everywhere, set 2 its own tile 46

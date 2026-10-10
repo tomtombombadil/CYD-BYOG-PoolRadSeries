@@ -634,7 +634,17 @@ int main(int argc, char** argv)
         const bool ok = play::act(a, C);
         printf("%c -> %s at %d,%d %s  then=%d waiting=%d\n", *m, ok ? "ok" : "refused", play::pos_x(), play::pos_y(),
                geo::dir_name(play::dir()), (int)play::then, (int)play::waiting);
-        if (play::then == play::Then::Door) { printf("  LOCKED\n"); play::act(play::Act::Forward, C); }
+        if (play::then == play::Then::Door) {
+            // DOOR=letters: the "Locked." menu's choices to tap in turn (B, P, K, E); else a key (Exit)
+            printf("  LOCKED [%s%s]\n", play::menu.prompt, play::menu.s);
+            const char* dk = getenv("DOOR");
+            static int dn = 0;
+            const char k = dk && dk[dn] ? dk[dn++] : 0;
+            int hit = -1;
+            for (int i = 0; k && i < play::menu.count; ++i) if (text::key(play::menu, i) == k) hit = i;
+            if (hit >= 0) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[hit]) * 8 + 2, text::kMenuRow * 8 + 2, C); printf("  door %c -> at %d,%d\n", k, play::pos_x(), play::pos_y()); }
+            else play::act(play::Act::Forward, C);
+        }
         settle();
         { char t[16]; snprintf(t, sizeof t, "after_%c", *m); shot(t); }
         char l1[48], l2[48]; play::describe(l1, l2, 48);

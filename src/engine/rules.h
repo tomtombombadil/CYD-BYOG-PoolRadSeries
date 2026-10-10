@@ -43,6 +43,20 @@ int dex_ac_bonus(const party::Character& c);
 // attack level (into the record, as the games store them).
 void recalc(party::Character& c, const items::Names& names, const ItemFacts& f);
 
+// ---- Locked doors (door_facts.md): door state 2 locked, 3 not pickable
+// Bash: each member in party order (everyone, as the original) tries by
+// the Strength in use until one breaks it. A not-pickable door: those too
+// weak for it make *bash_gone true (Bash is offered no more until a step).
+bool bash_door(const party::Party& p, int state, create::Dice& d, bool* bash_gone);
+// Pick (locked doors only): each okay member rolls d100 against Open Locks
+// (record 0xEB) until one opens it
+bool pick_lock(const party::Party& p, create::Dice& d);
+// Pick is offered: someone has a thief level that counts (the thief level,
+// or a former one their new class has passed)
+bool has_thief(const party::Party& p);
+// Knock is offered: the first member with Knock (0x1F) memorized; -1 none
+int knock_member(const party::Party& p, int knock_spell);
+
 // Money: worth in gold (copper 1, silver 10, electrum 100, gold 200,
 // platinum 1000 copper; gems and jewellery not counted), and paying
 // `gold` from the coins, making change as the games do

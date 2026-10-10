@@ -51,4 +51,10 @@ uint8_t flags(const Map& m, int x, int y);
 // dir meets (1 where there is no wall).
 int passage(const Map& m, int x, int y, int dir);
 
+// Opens a locked door (door_facts.md): the side on (x, y) and the same wall
+// seen from the next square (its opposite side) become 1 - each only when
+// its square is on the map (no wrapping, as the original). The map in
+// memory only: reloading the area locks it again.
+void unlock(Map& m, int x, int y, int dir);
+
 } // namespace geo

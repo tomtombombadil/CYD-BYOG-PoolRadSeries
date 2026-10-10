@@ -5628,6 +5628,9 @@ void after_move_redraw()
 
 // The step the player asked for (dir = the way the party goes)
 int step_dir = 0;
+// Locked doors (door_facts.md): what the "Locked." menu may offer, all
+// back on with each step the party takes
+bool can_bash = true, can_pick = true, can_knock = true;
 
 // Moves the party (after the step script). False when a locked door
 // stopped it (the caller asks for a key first)
@@ -5643,6 +5646,7 @@ bool do_move()
         if (p == 1) {
             g.x = (g.x + geo::dx(step_dir)) & 15;
             g.y = (g.y + geo::dy(step_dir)) & 15;
+            can_bash = can_pick = can_knock = true;
             // A minute a step, ten when searching (clock slot 1 / 2)
             vm->advance_clock((vm->get(0x7ECA) & 1) ? 2 : 1, 1);
         }
@@ -5653,20 +5657,83 @@ bool do_move()
     return true;
 }
 
-// "Locked." on the menu line. Bash / Pick / Knock need characters, so for
-// now the only answer is Exit
-void door_prompt(pic::Canvas& c)
-{
-    text::build(menu, "Locked. ", "Exit");
-    menu.selected = 0;
-    show_menu_line(c);
-}
-
 void door_done()
 {
     clear_menu_line(*cv);
     after_move_redraw();
     run_entry(1, Then::Arrive);
+}
+
+// "Locked. Bash Pick Knock Exit" on the menu line (door_facts.md): Bash
+// while it's allowed, Pick with a thief, Knock with the spell memorized;
+// nothing to offer but Exit: the party just stays
+void door_prompt(pic::Canvas& c)
+{
+    const auto& dw = d->prof->door;
+    char words[48] = {}, w[12];
+    if (can_bash) {
+        ow(dw.bash, w, sizeof w);
+        strlcat(words, w, sizeof words);
+    }
+    if (can_pick && rules::has_thief(*pt)) {
+        ow(dw.pick, w, sizeof w);
+        strlcat(words, w, sizeof words);
+    }
+    if (can_knock && dw.knock_spell && rules::knock_member(*pt, dw.knock_spell) >= 0) {
+        ow(dw.knock, w, sizeof w);
+        strlcat(words, w, sizeof words);
+    }
+    if (!words[0]) {
+        door_done();
+        return;
+    }
+    ow(dw.exit, w, sizeof w);
+    strlcat(words, w, sizeof words);
+    char prompt[12];
+    ow(dw.locked, prompt, sizeof prompt);
+    text::build(menu, prompt, words);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+// The choice: Bash / Pick open the door (both sides) and the party steps
+// through; Knock (a member's spell used up) lets them through without
+// opening it; failing or Exit, they stay. Either way the view is drawn
+// again and the arrival script runs.
+void door_choice(char k)
+{
+    ecl::GameState& g = d->gs;
+    const int state = geo::passage(d->map, g.x, g.y, step_dir);
+    bool through = false;
+    if (k == 'B') {
+        bool gone = false;
+        through = rules::bash_door(*pt, state, rng, &gone);
+        if (gone) can_bash = false;
+        if (through) geo::unlock(d->map, g.x, g.y, step_dir);
+    } else if (k == 'P') {
+        if (state == 2) through = rules::pick_lock(*pt, rng);
+        can_pick = false;
+        if (through) geo::unlock(d->map, g.x, g.y, step_dir);
+    } else if (k == 'K') {
+        const int m = rules::knock_member(*pt, d->prof->door.knock_spell);
+        if (m >= 0) {
+            for (int i = 0; i < 84; ++i)
+                if (pt->m[m].rec[0x1E + i] == d->prof->door.knock_spell) {
+                    pt->m[m].rec[0x1E + i] = 0;
+                    break;
+                }
+            through = true;
+        }
+    }
+    if (through) {
+        sfx(sound::kStep);
+        g.x = (g.x + geo::dx(step_dir)) & 15;
+        g.y = (g.y + geo::dy(step_dir)) & 15;
+        can_bash = can_pick = can_knock = true;
+        vm->advance_clock((vm->get(0x7ECA) & 1) ? 2 : 1, 1);
+        if (vm->get(0x4BE6)) sfx(sound::kStep);
+    }
+    door_done();
 }
 
 void handle(ecl::Stop r)
@@ -6609,7 +6676,7 @@ bool act(Act a, pic::Canvas& c)
         return true;
     }
     if (then == Then::Door) {
-        door_done();
+        door_choice('E');                   // a key at the door: as Exit
         return true;
     }
     if (then != Then::Idle) return false;
@@ -7091,7 +7158,14 @@ void tap(int x, int y, pic::Canvas& c)
         return;
     }
     if (then == Then::Door) {
-        door_done();
+        if (y >= text::kMenuTapTop) {
+            const int k = text::hit(menu, x / 8);
+            if (k >= 0) {
+                menu.selected = k;
+                show_menu_line(c);
+                door_choice(text::key(menu, k));
+            }
+        }
         return;
     }
     if (then != Then::Idle) return;

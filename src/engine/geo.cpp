@@ -63,4 +63,20 @@ int passage(const Map& m, int x, int y, int dir)
     return door(m, x, y, dir);
 }
 
+namespace {
+void set_open(Map& m, int x, int y, int dir)
+{
+    if (x < 0 || x > 15 || y < 0 || y > 15) return;
+    const int shift = (dir & 7) / 2 * 2;
+    uint8_t& b = m.plane[3][x + y * 16];
+    b = static_cast<uint8_t>((b & ~(3 << shift)) | (1 << shift));
+}
+} // namespace
+
+void unlock(Map& m, int x, int y, int dir)
+{
+    set_open(m, x, y, dir);
+    set_open(m, x + dx(dir), y + dy(dir), (dir + 4) & 7);
+}
+
 } // namespace geo
