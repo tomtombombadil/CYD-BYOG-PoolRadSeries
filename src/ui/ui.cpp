@@ -215,6 +215,29 @@ void key(const Rect& r, const char* label, KeyStyle s)
     g->drawString(nl + 1, r.x + r.w / 2, top + lh);
 }
 
+void key_small(const Rect& r, const char* label, KeyStyle s)
+{
+    key(r, "", s);
+    const uint16_t col = s == KeyStyle::Dim ? style::kTextMuted : style::kText;
+    const char* nl = strchr(label, '\n');
+    if (!nl) {
+        text_center(r, label, col, Font::Small);
+        return;
+    }
+    // Two small lines (a narrow key)
+    char first[24];
+    const size_t n = static_cast<size_t>(nl - label) < sizeof first - 1 ? static_cast<size_t>(nl - label) : sizeof first - 1;
+    memcpy(first, label, n);
+    first[n] = 0;
+    use_font(Font::Small);
+    const int lh = g->fontHeight() + 2;
+    const int top = r.y + (r.h - lh * 2 + 2) / 2;
+    g->setTextColor(col);
+    g->setTextDatum(textdatum_t::top_center);
+    g->drawString(first, r.x + r.w / 2, top);
+    g->drawString(nl + 1, r.x + r.w / 2, top + lh);
+}
+
 void key_arrow(const Rect& r, Arrow a, KeyStyle s)
 {
     key(r, "", s);
@@ -249,18 +272,6 @@ void key_arrow(const Rect& r, Arrow a, KeyStyle s)
         g->fillTriangle(cx + dir * sz, ty, ex, ty - hh, ex, ty + hh, col);
         break;
     }
-    case Arrow::CursorUp:
-        g->fillTriangle(cx, cy - sz * 2 / 3, cx - sz, cy + sz / 2, cx + sz, cy + sz / 2, col);
-        break;
-    case Arrow::CursorDown:
-        g->fillTriangle(cx, cy + sz * 2 / 3, cx - sz, cy - sz / 2, cx + sz, cy - sz / 2, col);
-        break;
-    case Arrow::CursorLeft:
-        g->fillTriangle(cx - sz * 2 / 3, cy, cx + sz / 2, cy - sz, cx + sz / 2, cy + sz, col);
-        break;
-    case Arrow::CursorRight:
-        g->fillTriangle(cx + sz * 2 / 3, cy, cx - sz / 2, cy - sz, cx - sz / 2, cy + sz, col);
-        break;
     case Arrow::TurnAround: {
         // Up the right, across the top, down the left with the head
         const int rx = cx + sz / 2, lx = cx - sz / 2, top = cy - sz * 2 / 3;

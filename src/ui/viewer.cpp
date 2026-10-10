@@ -1244,15 +1244,25 @@ void tap_look(const ui::Tap& t)
 
 // ---- Walk test --------------------------------------------------------------
 
-// Controls under the game screen (SPEC section 4). 320x240: one row of 8
-// keys. 480x320 (Tom, 2026-10-10): under the game screen a movement pad of
-// 3 x 2 (turn left, forward, turn right / side-step left, turn around,
-// side-step right) and a cursor pad (up, left, Select, right, down: the
-// highlighted thing on the game screen - menus, lists); beside them, under
-// the Companion map, Game (the engine's Menu) / Look / Esc stacked.
+// Controls under the game screen (SPEC section 4). 480x320 (Tom,
+// 2026-10-10): under the game screen a movement pad of 3 x 2 (turn left,
+// forward, turn right / side-step left, turn around, side-step right) and
+// a cursor pad (Up, Left, Select, Right, Down - small words, so they don't
+// look like the movement arrows: the highlighted thing on the game screen,
+// menus and lists); beside them, under the Companion map, Game (the
+// engine's Menu) / Look / Esc stacked. 320x240: one row - the Walk Test's
+// 8 keys; the Play Test's 9 slots showing either the movement keys (Side-
+// step Left, Turn Left, Forward, Turn Right, Side-step Right, Turn Around,
+// Cursor, Game, Esc) or the cursor keys (Left, Up, Select - two slots wide
+// -, Down, Right, Move, Game, Esc): the movement keys while the party can
+// walk (play::walking), the cursor keys otherwise; Cursor / Move swap them
+// by hand until the game's state changes.
 enum WalkKey { kWTurnL, kWStepL, kWFwd, kWStepR, kWTurnR, kWAround, kWArea, kWNext, kWEsc,
-               kWUp, kWLeft, kWSel, kWRight, kWDown, kWKeys };
-constexpr int kWMoveKeys = kWUp;        // the Walk Test has no cursor pad
+               kWUp, kWLeft, kWSel, kWRight, kWDown, kWCursor, kWMove, kWKeys };
+constexpr int kWMoveKeys = kWUp;        // the Walk Test has no cursor keys
+
+enum class Row : uint8_t { Walk, Move, Cursor };
+Row row = Row::Walk;                    // what 320x240's row shows
 
 ui::Rect walk_key(int k)
 {
@@ -1260,22 +1270,33 @@ ui::Rect walk_key(int k)
     const int top = pic::kScreenH + gp;
     const int h_all = ui::height() - top - gp;
     if (!ui::large()) {
-        // Row of 8: StepL TurnL Fwd TurnR StepR Around Area Esc (Next Map: menu / panel tap)
-        static const int kOrder[kWKeys] = {1, 0, 2, 4, 3, 5, 6, -1, 7, -1, -1, -1, -1, -1};
-        const int i = kOrder[k];
+        if (row == Row::Walk) {
+            // Row of 8: StepL TurnL Fwd TurnR StepR Around Area Esc (Next Map: menu / panel tap)
+            static const int kOrder[kWKeys] = {1, 0, 2, 4, 3, 5, 6, -1, 7, -1, -1, -1, -1, -1, -1, -1};
+            const int i = kOrder[k];
+            if (i < 0) return ui::Rect{};
+            const int w = (pic::kScreenW - gp * 9) / 8;
+            return {gp + i * (w + gp), top, w, h_all};
+        }
+        // 9 slots
+        static const int kMove[kWKeys] = {1, 0, 2, 4, 3, 5, 7, -1, 8, -1, -1, -1, -1, -1, 6, -1};
+        static const int kCur[kWKeys] = {-1, -1, -1, -1, -1, -1, 7, -1, 8, 1, 0, 2, 5, 4, -1, 6};
+        const int i = (row == Row::Move ? kMove : kCur)[k];
         if (i < 0) return ui::Rect{};
-        const int w = (pic::kScreenW - gp * 9) / 8;
-        return {gp + i * (w + gp), top, w, h_all};
+        const int w = (pic::kScreenW - gp * 10) / 9;
+        const int span = k == kWSel ? 2 : 1;            // Select: two slots
+        return {gp + i * (w + gp), top, w * span + gp * (span - 1), h_all};
     }
+    if (k == kWCursor || k == kWMove) return ui::Rect{};
     const int pad_w = (pic::kScreenW - gp * 3) / 2;
     const int kw = (pad_w - gp * 2) / 3;
     const int mh = (h_all - gp) / 2;                    // the movement pad: 2 rows
     const int ch = (h_all - gp * 2) / 3;                // the cursor pad: 3 rows
-    auto move = [&](int col, int row) { return ui::Rect{gp + col * (kw + gp), top + row * (mh + gp), kw, mh}; };
+    auto move = [&](int col, int r) { return ui::Rect{gp + col * (kw + gp), top + r * (mh + gp), kw, mh}; };
     const int cx0 = gp * 2 + pad_w;
-    auto cur = [&](int col, int row) { return ui::Rect{cx0 + col * (kw + gp), top + row * (ch + gp), kw, ch}; };
+    auto cur = [&](int col, int r) { return ui::Rect{cx0 + col * (kw + gp), top + r * (ch + gp), kw, ch}; };
     const int sx = pic::kScreenW + gp, sw = ui::width() - sx - gp;
-    auto side = [&](int row) { return ui::Rect{sx, top + row * (ch + gp), sw, ch}; };
+    auto side = [&](int r) { return ui::Rect{sx, top + r * (ch + gp), sw, ch}; };
     switch (k) {
     case kWTurnL:  return move(0, 0);
     case kWFwd:    return move(1, 0);
@@ -1310,6 +1331,11 @@ struct MapSource {
 };
 const MapSource kWalkMap{walk::map, walk::pos_x, walk::pos_y, walk::dir, walk::describe, true};
 const MapSource kPlayMap{play::map, play::pos_x, play::pos_y, play::dir, play::describe, false};
+
+// 320x240's Play Test row: the movement keys while the party can walk, the
+// cursor keys otherwise; row_flip: Cursor / Move swapped them by hand
+// (until play::walking() changes)
+bool row_flip = false, row_walking = false;
 
 // The keys beside the map (480x320) / at the row's end: Area or Game,
 // Next Map or Look, Esc (the strip is redrawn with the map)
@@ -1371,19 +1397,28 @@ void draw_walk_keys(const char* side_label, const char* area_label, bool cursor)
 {
     side_keys[0] = area_label;
     side_keys[1] = side_label;
-    ui::key_arrow(walk_key(kWTurnL), ui::Arrow::TurnLeft);
-    ui::key_arrow(walk_key(kWStepL), ui::Arrow::Left);
-    ui::key_arrow(walk_key(kWFwd), ui::Arrow::Forward);
-    ui::key_arrow(walk_key(kWStepR), ui::Arrow::Right);
-    ui::key_arrow(walk_key(kWTurnR), ui::Arrow::TurnRight);
-    ui::key_arrow(walk_key(kWAround), ui::Arrow::TurnAround);
-    if (cursor && ui::large()) {
-        ui::key_arrow(walk_key(kWUp), ui::Arrow::CursorUp);
-        ui::key_arrow(walk_key(kWLeft), ui::Arrow::CursorLeft);
-        ui::key(walk_key(kWSel), "Select");
-        ui::key_arrow(walk_key(kWRight), ui::Arrow::CursorRight);
-        ui::key_arrow(walk_key(kWDown), ui::Arrow::CursorDown);
+    if (!ui::large()) {
+        // The row: cleared first (it changes between the movement and cursor keys)
+        row = !cursor ? Row::Walk : play::walking() == row_flip ? Row::Cursor : Row::Move;
+        ui::gfx().fillRect(0, pic::kScreenH, pic::kScreenW, ui::height() - pic::kScreenH, style::kBackground);
     }
+    if (row != Row::Cursor || ui::large()) {
+        ui::key_arrow(walk_key(kWTurnL), ui::Arrow::TurnLeft);
+        ui::key_arrow(walk_key(kWStepL), ui::Arrow::Left);
+        ui::key_arrow(walk_key(kWFwd), ui::Arrow::Forward);
+        ui::key_arrow(walk_key(kWStepR), ui::Arrow::Right);
+        ui::key_arrow(walk_key(kWTurnR), ui::Arrow::TurnRight);
+        ui::key_arrow(walk_key(kWAround), ui::Arrow::TurnAround);
+    }
+    if (cursor && (ui::large() || row == Row::Cursor)) {
+        ui::key_small(walk_key(kWUp), "Up");
+        ui::key_small(walk_key(kWLeft), "Left");
+        ui::key_small(walk_key(kWSel), "Select");
+        ui::key_small(walk_key(kWRight), "Right");
+        ui::key_small(walk_key(kWDown), "Down");
+    }
+    if (!ui::large() && row == Row::Move) ui::key_small(walk_key(kWCursor), "Menu\nKeys");
+    if (!ui::large() && row == Row::Cursor) ui::key_small(walk_key(kWMove), "Move\nKeys");
     redraw_side_keys();
 }
 
@@ -2289,6 +2324,16 @@ void present_play()
         return;
     }
     if (kb_shown) return;
+    // 320x240: the movement keys while the party can walk, the cursor keys otherwise
+    if (!ui::large()) {
+        const bool w = play::walking();
+        if (w != row_walking) {
+            row_walking = w;
+            row_flip = false;               // the game moved on: back to what it needs
+        }
+        const Row want = w == row_flip ? Row::Cursor : Row::Move;
+        if (row != want) draw_walk_keys("Look", "Game", true);
+    }
     if (play::pos_x() != play_last_x || play::pos_y() != play_last_y || play::dir() != play_last_dir ||
         play::map() != play_last_map) {
         play_last_x = play::pos_x();
@@ -2377,6 +2422,11 @@ void tap_play(const ui::Tap& t)
         if (k == kWArea) {          // the Game key: the engine's Menu
             kb_shown = false;
             open_menu();
+            return;
+        }
+        if (k == kWCursor || k == kWMove) {     // 320x240: the other set of keys, by hand
+            row_flip = !row_flip;
+            draw_walk_keys("Look", "Game", true);
             return;
         }
         // A journal entry the game mentioned: this tap shows it (the game still waits)

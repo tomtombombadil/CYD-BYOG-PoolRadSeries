@@ -62,11 +62,11 @@ void key(const Rect& r, const char* label, KeyStyle s = KeyStyle::Normal);
 // left_inset: room kept free at the key's left (for a picture); the text
 // is centred in the rest.
 void key2(const Rect& r, const char* label, const char* sub, KeyStyle s = KeyStyle::Normal, int left_inset = 0);
+// A key labelled in the small font (the cursor keys: words, so they don't
+// look like the party's movement arrows)
+void key_small(const Rect& r, const char* label, KeyStyle s = KeyStyle::Normal);
 // A key showing a movement arrow instead of words.
-// Forward ... TurnAround: the party's moves (arrows with stems); Cursor*:
-// the cursor pad (plain triangles, so the two pads don't look alike)
-enum class Arrow : uint8_t { Forward, Left, Right, TurnLeft, TurnRight, TurnAround,
-                             CursorUp, CursorDown, CursorLeft, CursorRight };
+enum class Arrow : uint8_t { Forward, Left, Right, TurnLeft, TurnRight, TurnAround };
 void key_arrow(const Rect& r, Arrow a, KeyStyle s = KeyStyle::Normal);
 
 // The fill colour of a key in style s (to draw pictures on it)

@@ -83,7 +83,7 @@ The games draw a 320x200 screen. The canvas is presented:
   Enter); a square on the combat map = stepping / aiming toward it; "press
   any key" prompts = tap the game screen.
 - **Keys only for what isn't on screen**, changing with what the game does:
-  - 320x240: one row of 8 square keys (~37x34) in the 40 rows under the game.
+  - 320x240 (Walk Test): one row of 8 square keys (~37x34) under the game.
     Exploring: Side-step Left, Turn Left, Forward, Turn Right, Side-step
     Right, Turn Around (Tom, 2026-10-07: side-steps outside the turns), Esc,
     and a Companion key (auto-map, journal, party on a full-screen page).
@@ -92,8 +92,9 @@ The games draw a 320x200 screen. The canvas is presented:
     holds two pads. The **movement pad**, 3 x 2 like a numeric keypad's top
     rows: Turn Left, Forward, Turn Right / Side-step Left, Turn Around,
     Side-step Right (Turn Around moved up between the side-steps). The
-    **cursor pad**: up, left, Select, right, down (plain triangles, unlike
-    the movement arrows) for the highlighted thing on the game screen -
+    **cursor pad**: Up, Left, Select, Right, Down (small words - v0.51.0,
+    Tom: the movement keys keep their arrows, the cursor keys are told
+    apart by small text) for the highlighted thing on the game screen -
     many of the games' menus are small to hit with a stylus. Up / Down move
     a list's highlight (the party menu's lines - highlighted once a cursor
     key is used -, the game's list menus, items, goods, spells, the party
@@ -108,9 +109,19 @@ The games draw a 320x200 screen. The canvas is presented:
     area / script / map and position lines small at the top (for
     troubleshooting), one legend line under it. The Walk Test has the
     movement pad and Area / Next Map / Esc, no cursor pad.
-    320x240: the same cursor functions are still to be worked out (Tom).
+  - 320x240 Play Test (Tom, 2026-10-10, v0.51.0: "automatic plus a
+    switch"): one row of 9 keys (~31 px) that changes with the game. While
+    the party can move (exploring a 3D area, or a fighter's Move / manual
+    Aim in combat) it shows the **movement row**: the six movement arrows
+    (Side-step Left, Turn Left, Forward, Turn Right, Side-step Right, Turn
+    Around), **Menu Keys**, **Game**, **Esc**. Otherwise (menus, lists,
+    text, the party menu) the **cursor row**: Left, Up, Select (two keys
+    wide), Down, Right in small text, **Move Keys**, Game, Esc. Menu Keys /
+    Move Keys swap the rows by hand; the swap lasts until the game changes
+    between moving and not. Look is on the game's menu line there. The Walk
+    Test keeps its row of 8 (no cursor keys).
 - **The Game key** (Tom, 2026-10-09; v0.16.0; called Menu until v0.50.0):
-  the Play Test's key where the Walk Test has Area (320x240 row: 7th key;
+  the Play Test's key where the Walk Test has Area (320x240 row: 8th key;
   480x320: the first key under the map) opens the engine's own screen,
   tabbed along the top:
   **Journal** (the journal entries and tavern tales the game has mentioned

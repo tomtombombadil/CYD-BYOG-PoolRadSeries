@@ -72,6 +72,10 @@ bool journal_request(char* kind, int* number);
 enum class Nav : uint8_t { Up, Down, Left, Right };
 bool nav(Nav n, pic::Canvas& c);
 bool nav_point(int* x, int* y);
+// The party's movement keys are what's wanted now (exploring, or a fighter
+// moving / aiming by hand); otherwise the cursor keys (320x240's row
+// shows one set or the other - Tom, 2026-10-10)
+bool walking();
 
 // The journal entries ('J') and tavern tales ('T') the game has mentioned
 // so far, in the order heard (the Menu's Journal list)

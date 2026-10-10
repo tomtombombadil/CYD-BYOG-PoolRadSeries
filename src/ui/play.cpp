@@ -6020,6 +6020,13 @@ bool nav(Nav n, pic::Canvas& c)
     return false;
 }
 
+bool walking()
+{
+    if (!d || input_mode != Input::None) return false;
+    if (screen == Screen::Fight) return fg && (fg->st == FSt::Move || (fg->st == FSt::Aim && fg->manual));
+    return screen == Screen::Game && !waiting && then == Then::Idle && vm->get(0x4BE6) != 0;
+}
+
 bool nav_point(int* x, int* y)
 {
     if (!d || input_mode != Input::None) return false;

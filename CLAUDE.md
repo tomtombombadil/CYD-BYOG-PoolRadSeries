@@ -82,8 +82,12 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   area / script / map lines small). Up / Down: a list's highlight (Left /
   Right on the menu line; Up / Down too when there's no list); Select = a
   tap on the highlighted thing (`play::nav`, `play::nav_point`). New screens
-  with lists or menus must take part. 320x240: still to be worked out
-  with Tom.
+  with lists or menus must take part. 320x240 (Tom, v0.51.0): automatic
+  plus a switch - one row of 9: movement arrows + Menu Keys / Game / Esc
+  while the party can move (`play::walking()`), else Left / Up / Select /
+  Down / Right + Move Keys / Game / Esc; the switch lasts until walking
+  changes. Cursor keys are small text (`ui::key_small`) on both sizes;
+  movement keys keep their drawn arrows (never "<<" / "^" characters).
 - Card scan (Tom, 2026-10-09): scan ONCE; boot reads the scan log and
   loads the library from it. Rescan Card is the only rescan - never
   check the card for changes on its own. Everything the board makes from
