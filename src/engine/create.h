@@ -84,4 +84,26 @@ int trainable(const party::Character& c, const classes::Tables& t);
 // (silent: a magic-user's spells, as at creation)
 void train_classes(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, int mask, bool silent);
 
+// ---- Modify Character (the games' rules, facts from coab): a character
+// who hasn't adventured (experience as made: 0, 8333, 12500 or 25000) and
+// has no former class
+bool can_modify(const party::Character& c);
+// A stat (0 Str ... 5 Cha) a step up (dir > 0) or down: within the race's
+// and sex's limits, down no lower than the class's minimums; a fighter,
+// ranger or paladin at Strength 18 goes on into 18/01 ... 18/00 (and back
+// down through it first). Constitution keeps the hit points within their
+// bounds (hp_least / hp_most).
+void modify_stat(party::Character& c, const classes::Tables& t, const Facts& f, int stat, int dir);
+// The hit points a step up or down, within their bounds
+void modify_hp(party::Character& c, const classes::Tables& t, const Facts& f, int dir);
+// The bounds for the levels held: the least (a point a hit die, with the
+// Constitution adjustment) and the most (every die at its highest, with
+// each class's Constitution bonus), averaged over the classes
+int hp_least(const party::Character& c, const classes::Tables& t, const Facts& f);
+int hp_most(const party::Character& c, const classes::Tables& t, const Facts& f);
+// Keep: the class values follow the stats (spell slots, thief skills ...),
+// and the "rolled" hit points (record 0x12C) are what's left after the
+// Constitution bonus
+void modify_done(party::Character& c, const classes::Tables& t, const Facts& f);
+
 } // namespace create

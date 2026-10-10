@@ -412,4 +412,135 @@ bool train(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
     return true;
 }
 
+// ---- Modify Character
+namespace {
+// A class's Constitution bonus to each hit die (the fighters' extra for 17 and up)
+int class_con_bonus(int con, int cls)
+{
+    int b = con >= 0 && con < 26 ? kConHp[con] : 0;
+    if (cls == Fighter || cls == Paladin || cls == Ranger) {
+        if (con == 17) b += 1;
+        else if (con == 18) b += 2;
+        else if (con == 19 || con == 20) b += 3;
+        else if (con >= 21 && con <= 23) b += 4;
+        else if (con >= 24) b += 5;
+    }
+    return b;
+}
+} // namespace
+
+bool can_modify(const party::Character& c)
+{
+    const uint32_t e = c.exp();
+    return (e == 0 || e == 8333 || e == 12500 || e == 25000) && c.rec[kMultiLevel] == 0;
+}
+
+int hp_least(const party::Character& c, const classes::Tables& t, const Facts& f)
+{
+    int total = 0, n = 0;
+    for (int k = 0; k <= classes::Monk; ++k) {
+        const int lv = c.level(k);
+        if (lv <= 0) continue;
+        total += lv + f.hp_count[k] - 1;
+        ++n;
+    }
+    if (!n) return 1;
+    const int adj = con_hp_adj(c, t);
+    int v;
+    if (adj < 0) v = total > -adj + n ? (total + adj) / n : 1;
+    else v = (total + adj) / n;
+    return v < 1 ? 1 : v;
+}
+
+int hp_most(const party::Character& c, const classes::Tables& t, const Facts& f)
+{
+    int total = 0, n = 0;
+    const int con = stat_full(c, 4);
+    for (int k = 0; k <= classes::Monk; ++k) {
+        int lv = c.level(k);
+        if (lv <= 0) continue;
+        ++n;
+        if (lv >= t.max_hit_dice(k)) lv = t.max_hit_dice(k) - 1;     // (no newly made character gets there)
+        total += (class_con_bonus(con, k) + f.hp_dice[k]) * (lv + f.hp_count[k] - 1);
+    }
+    if (!n) return 1;
+    const int v = total / n;
+    return v < 1 ? 1 : v > 255 ? 255 : v;
+}
+
+void modify_hp(party::Character& c, const classes::Tables& t, const Facts& f, int dir)
+{
+    uint8_t* r = c.rec;
+    int hp = r[kHpMax] + (dir > 0 ? 1 : dir < 0 ? -1 : 0);
+    const int lo = hp_least(c, t, f), hi = hp_most(c, t, f);
+    if (hp > hi) hp = hi;
+    if (hp < lo) hp = lo;
+    r[kHpMax] = static_cast<uint8_t>(hp);
+    r[kHp] = r[kHpMax];
+}
+
+void modify_stat(party::Character& c, const classes::Tables& t, const Facts& f, int i, int dir)
+{
+    if (i < 0 || i > 5 || !dir) return;
+    const int race = c.race(), sex = c.sex() ? 1 : 0, cls = c.cls();
+    const uint16_t lim = static_cast<uint16_t>(t.lay.stat_limits + race * 16);
+    int lo, hi;
+    if (i == 0) {
+        lo = t.u8(static_cast<uint16_t>(lim + sex));
+        hi = t.u8(static_cast<uint16_t>(lim + 2 + sex));
+    } else {
+        lo = t.u8(static_cast<uint16_t>(lim + 4 + i * 2));
+        hi = t.u8(static_cast<uint16_t>(lim + 5 + i * 2));
+    }
+    const bool strong = c.level(classes::Fighter) || c.level(classes::Ranger) || c.level(classes::Paladin);
+    int v = stat_full(c, i);
+    if (dir > 0) {
+        ++v;
+        if (v > hi) v = hi;
+        if (v < lo) v = lo;
+        set_stat(c, i, v);
+        if (i == 0) {
+            if (v == 18 && strong) {
+                int e = stat_full(c, 6) + 1;
+                const int emax = t.u8(static_cast<uint16_t>(lim + 4 + sex));
+                if (e > emax) e = emax;
+                set_stat(c, 6, e);
+            } else {
+                set_stat(c, 6, 0);
+            }
+        }
+    } else if (i == 0 && stat_full(c, 6) > 0) {
+        set_stat(c, 6, stat_full(c, 6) - 1);         // through the exceptional strength first
+    } else {
+        --v;
+        if (v < lo) v = lo;
+        const int mn = t.u8(static_cast<uint16_t>(t.lay.class_min + cls * 6 + i));
+        if (v < mn) v = mn;
+        if (i == 2 && v < 13 && cls >= ClericFighter && cls <= ClericThief) v = 13;
+        if (v > hi) v = hi;
+        set_stat(c, i, v);
+    }
+    if (i == 4) modify_hp(c, t, f, 0);              // the hit points' bounds follow Constitution
+}
+
+void modify_done(party::Character& c, const classes::Tables& t, const Facts& f)
+{
+    (void)f;
+    classes::class_bonuses(c, t);
+    uint8_t* r = c.rec;
+    const int con = stat_full(c, 4);
+    int base = 0, n = 0;
+    for (int k = 0; k <= classes::Monk; ++k) {
+        const int lv = c.level(k);
+        if (lv <= 0) continue;
+        ++n;
+        const int cb = class_con_bonus(con, k);
+        if (lv < t.max_hit_dice(k)) base += (k == classes::Ranger ? lv + 1 : lv) * cb;
+        else base += (t.max_hit_dice(k) - 1) * cb;
+    }
+    if (n) base /= n;
+    const int rolled = r[kHpMax] - base;
+    r[kHpRolled] = static_cast<uint8_t>(rolled < 0 ? 0 : rolled);
+}
+
 } // namespace create

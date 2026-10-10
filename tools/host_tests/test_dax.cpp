@@ -2405,6 +2405,58 @@ static void test_create()
     a.rec[0x19] = 3;
     CHECK(create::con_hp_adj(a, t) == -2);
 
+    // Modify Character: only as made (25000 xp); stats within limits, the
+    // fighter's 18 going on into 18/01 .. 18/00, hit points within bounds
+    {
+        party::Character& m = b;
+        auto set = [&](int i, int v) { m.rec[0x10 + i * 2] = m.rec[0x11 + i * 2] = static_cast<uint8_t>(v); };
+        CHECK(create::can_modify(m));
+        m.rec[0x127] = 0xA9;                                        // 25001
+        CHECK(!create::can_modify(m));
+        m.rec[0x127] = 0xA8;
+        CHECK(create::can_modify(m) && m.exp() == 25000);
+        set(0, 17); set(6, 0);
+        create::modify_stat(m, t, f, 0, 1);
+        CHECK(m.stat(0) == 18 && m.str00() == 1);
+        create::modify_stat(m, t, f, 0, 1);
+        CHECK(m.stat(0) == 18 && m.str00() == 2);
+        set(6, 100);
+        create::modify_stat(m, t, f, 0, 1);
+        CHECK(m.str00() == 100);
+        create::modify_stat(m, t, f, 0, -1);
+        CHECK(m.stat(0) == 18 && m.str00() == 99);
+        set(6, 1);
+        create::modify_stat(m, t, f, 0, -1);
+        CHECK(m.stat(0) == 18 && m.str00() == 0);
+        create::modify_stat(m, t, f, 0, -1);
+        CHECK(m.stat(0) == 17 && m.str00() == 0);
+        set(0, 9);
+        create::modify_stat(m, t, f, 0, -1);
+        CHECK(m.stat(0) == 9);                                      // the fighter's minimum
+        set(1, 18);
+        create::modify_stat(m, t, f, 1, 1);
+        CHECK(m.stat(1) == 18);
+        set(1, 3);
+        create::modify_stat(m, t, f, 1, -1);
+        CHECK(m.stat(1) == 3);
+        // Hit points: level 5 fighter, d10; Con 10: 5 .. 50; Con 18: 9 .. 70
+        set(4, 10);
+        CHECK(create::hp_least(m, t, f) == 5 && create::hp_most(m, t, f) == 50);
+        m.rec[0x78] = 50;
+        create::modify_hp(m, t, f, 1);
+        CHECK(m.hp_max() == 50 && m.hp() == 50);
+        m.rec[0x78] = 5;
+        create::modify_hp(m, t, f, -1);
+        CHECK(m.hp_max() == 5);
+        set(4, 18);
+        CHECK(create::hp_least(m, t, f) == 9 && create::hp_most(m, t, f) == 70);
+        m.rec[0x78] = 70;
+        create::modify_stat(m, t, f, 4, -1);                        // Con 17: at most 65
+        CHECK(m.stat(4) == 17 && m.hp_max() == 65 && m.hp() == 65);
+        create::modify_done(m, t, f);
+        CHECK(m.rec[0x12C] == 65 - 5 * 3);
+    }
+
     // A human magic-user: level 5 (2500 doubling), first spells and silent training's
     static party::Character m;
     create::Dice d3(5);

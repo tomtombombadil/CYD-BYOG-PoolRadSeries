@@ -93,7 +93,8 @@ struct Data {
     int16_t        wall_block[3] = {-1, -1, -1}, wall_set[3] = {-1, -1, -1};   // the wall sets loaded (saves)
     // Add / Remove / Drop words (profile party.add_from ... yes_no, in order)
     enum Roster { kAddFrom, kAddSources, kAddPrompt, kAdd, kAdded, kPaladinEvil, kRangers, kNoEvil, kOverwrite,
-                  kQmark, kDrop, kForever, kSure, kDump, kOutBack, kFarewell, kRelief, kYesNo, kRosterWords };
+                  kQmark, kDrop, kForever, kSure, kDump, kOutBack, kFarewell, kRelief, kYesNo,
+                  kCantModify, kModify, kKeepExit, kRosterWords };
     char           roster[kRosterWords][40] = {};
     // Characters that can be added (.GUY files in the save folder)
     static constexpr int kMaxGuys = 24;
@@ -137,7 +138,7 @@ pic::Canvas* cv = nullptr;
 // Game" question, or the game itself
 enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich, AddFrom,
                                AddList, YesNo, CreatePick, CreateName, TradeWho, Heal, Take, Appraise, Magic,
-                               SpellList, Rest, Cast, Effects, Alter, Fight, Loot };
+                               SpellList, Rest, Cast, Effects, Alter, Fight, Loot, Modify };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
 Screen save_from = Screen::PartyMenu;   // where Save Which Game goes back to
@@ -278,7 +279,7 @@ void journal_ready()
 // Typing (INPUT NUMBER / STRING) on the menu line
 Input        input_mode = Input::None;
 bool         input_engine = false;   // the engine asks (a new character's name, coins to take), not a script
-enum class EngineAsk : uint8_t { Name, Coins };
+enum class EngineAsk : uint8_t { Name, Coins, ModName };
 EngineAsk    engine_ask = EngineAsk::Name;
 const char*  input_prompt = "";
 int          input_max = ecl::kMaxInput;
@@ -4457,6 +4458,160 @@ bool train_yes_no(Ask what, char k, pic::Canvas& c)
     return true;
 }
 
+// ---- Modify Character (the party menu) --------------------------------------------
+// A character as made (no adventures yet) can have their stats, hit points
+// and name changed within the rules (engine/create: modify_*): View
+// Character's screen, the item being changed in colour 13 - a stat's
+// value, the hit points, the name -, "Modify: Keep Exit". A tap on a stat,
+// the hit points or the name picks it (the name again: the keyboard); the
+// keys' left / right arrows (and turns) take it down / up, forward / back
+// move to the item above / below (the games' arrow keys); Exit (or Esc)
+// puts everything back, Keep keeps it. Others: "NAME can't be modified."
+
+Making* modder = nullptr;               // the rule tables, and the character as it was (ch)
+int mod_item = 0;                       // 0-5 the stats, 6 the hit points, 7 the name
+
+void draw_modify(pic::Canvas& c)
+{
+    party::Character* ch = pt->sel();
+    if (!ch) return;
+    draw_character(c);
+    char t[24];
+    if (mod_item < 6) {
+        const int v = ch->stat(mod_item);
+        c.fill(5 * 8, (7 + mod_item) * 8, 6 * 8, 8, 0);
+        snprintf(t, sizeof t, "%d", v);
+        put(c, t, v < 10 ? 6 : 5, 7 + mod_item, 13);
+        if (mod_item == 0 && v == 18 && ch->str00() > 0) {
+            const int e = ch->str00();
+            if (e == 100) snprintf(t, sizeof t, "(00)");
+            else snprintf(t, sizeof t, "(%02d)", e);
+            put(c, t, 7, 7, 13);
+        }
+    } else if (mod_item == 6) {
+        c.fill(4 * 8, 18 * 8, 3 * 8, 8, 0);
+        snprintf(t, sizeof t, "%d", ch->hp());
+        put(c, t, 4, 18, 13);
+    } else {
+        ch->name(t, sizeof t);
+        put(c, t, 1, 1, 13);
+    }
+    text::build(menu, rw(Data::kModify), rw(Data::kKeepExit));
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+void end_modify(pic::Canvas& c, bool keep)
+{
+    party::Character* ch = pt->sel();
+    if (ch && modder) {
+        if (keep) create::modify_done(*ch, modder->tables, modder->facts);
+        else *ch = modder->ch;
+        rules::recalc(*ch, *names, d->facts);
+    }
+    delete modder;
+    modder = nullptr;
+    input_mode = Input::None;
+    input_engine = false;
+    engine_ask = EngineAsk::Name;
+    screen = Screen::PartyMenu;
+    draw_party_menu(c);
+}
+
+void start_modify(pic::Canvas& c)
+{
+    party::Character* ch = pt->sel();
+    if (!ch) return;
+    if (!create::can_modify(*ch)) {
+        char t[60], nm[20];
+        ch->name(nm, sizeof nm);
+        snprintf(t, sizeof t, "%s%s", nm, rw(Data::kCantModify));
+        pm_prompt(c, t);
+        dirty_rows(text::kMenuRow, text::kMenuRow);
+        return;
+    }
+    if (!load_rules(modder)) {
+        delete modder;
+        modder = nullptr;
+        pm_prompt(c, "Not in the engine yet.");
+        return;
+    }
+    modder->ch = *ch;
+    mod_item = 0;
+    screen = Screen::Modify;
+    draw_modify(c);
+}
+
+// A step down (dir < 0) or up of the item being changed
+void modify_step(int dir, pic::Canvas& c)
+{
+    party::Character* ch = pt->sel();
+    if (!ch || !modder || input_mode != Input::None) return;
+    if (mod_item < 6) create::modify_stat(*ch, modder->tables, modder->facts, mod_item, dir);
+    else if (mod_item == 6) create::modify_hp(*ch, modder->tables, modder->facts, dir);
+    rules::recalc(*ch, *names, d->facts);
+    draw_modify(c);
+}
+
+void modify_name(pic::Canvas& c)
+{
+    input_engine = true;
+    engine_ask = EngineAsk::ModName;
+    input_prompt = modder->words[6];
+    input_max = party::kNameMax;
+    input_mode = Input::Text;
+    input_len = 0;
+    input_buf[0] = 0;
+    draw_input(c);
+}
+
+// The item a tap at (row, col) picks (-1: none)
+int modify_item_at(int row, int col)
+{
+    if (row >= 7 && row <= 12 && col >= 1 && col <= 10) return row - 7;
+    if (row == 18 && col >= 1 && col <= 6) return 6;
+    if (row == 1 && col >= 1 && col <= 16) return 7;
+    return -1;
+}
+
+void modify_tap(int x, int y, pic::Canvas& c)
+{
+    if (!modder || input_mode != Input::None) return;
+    const int row = y / 8, col = x / 8;
+    if (y >= text::kMenuTapTop) {
+        switch (text::key(menu, text::hit(menu, col))) {
+        case 'K': end_modify(c, true); break;
+        case 'E': end_modify(c, false); break;
+        default: break;
+        }
+        return;
+    }
+    const int i = modify_item_at(row, col);
+    if (i < 0) return;
+    if (i == 7 && mod_item == 7) {
+        modify_name(c);
+        return;
+    }
+    mod_item = i;
+    draw_modify(c);
+}
+
+bool modify_act(Act a, pic::Canvas& c)
+{
+    if (!modder || input_mode != Input::None) return false;
+    switch (a) {
+    case Act::StepLeft:
+    case Act::TurnLeft:   modify_step(-1, c); return true;
+    case Act::StepRight:
+    case Act::TurnRight:  modify_step(1, c); return true;
+    case Act::Forward:    mod_item = (mod_item + 7) % 8; break;
+    case Act::TurnAround: mod_item = (mod_item + 1) % 8; break;
+    default: return false;
+    }
+    draw_modify(c);
+    return true;
+}
+
 void pm_choose(int i, pic::Canvas& c)
 {
     switch (pm_key(i)) {
@@ -4512,6 +4667,9 @@ void pm_choose(int i, pic::Canvas& c)
     case 'T':
         train_character(c);
         return;
+    case 'M':
+        start_modify(c);
+        return;
     default:
         pm_prompt(c, "Not in the engine yet.");
         dirty_rows(text::kMenuRow, text::kMenuRow);
@@ -4522,6 +4680,10 @@ void pm_choose(int i, pic::Canvas& c)
 void pm_tap(int x, int y, pic::Canvas& c)
 {
     const int row = y / 8, col = x / 8;
+    if (screen == Screen::Modify) {
+        modify_tap(x, y, c);
+        return;
+    }
     if (screen == Screen::View) {
         // Items on the menu line opens the list; anything else is Exit
         if (y >= text::kMenuTapTop && text::key(menu, text::hit(menu, col)) == 'I') open_items(c);
@@ -4753,7 +4915,7 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         const uint32_t at[Data::kRosterWords] = {pp.add_from, pp.add_sources, pp.add_prompt, pp.add, pp.added,
                                                  pp.paladin_evil, pp.rangers, pp.no_evil, pp.overwrite, pp.qmark,
                                                  pp.drop, pp.forever, pp.sure, pp.dump, pp.out_back, pp.farewell,
-                                                 pp.relief, pp.yes_no};
+                                                 pp.relief, pp.yes_no, pp.cant_modify, pp.modify, pp.keep_exit};
         fs::File of;
         if (open_file(d->prof->overlay, of)) {
             library::FileSource src(of);
@@ -4762,6 +4924,9 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
             of.close();
         }
         if (!d->roster[Data::kYesNo][0]) strcpy(d->roster[Data::kYesNo], "Yes No");
+        if (!d->roster[Data::kModify][0]) strcpy(d->roster[Data::kModify], "Modify: ");
+        if (!d->roster[Data::kKeepExit][0]) strcpy(d->roster[Data::kKeepExit], "Keep Exit");
+        if (!d->roster[Data::kCantModify][0]) strcpy(d->roster[Data::kCantModify], " can't be modified.");
     }
     if (!d->w_slots[0]) strcpy(d->w_slots, "A B C D E F G H I J");
     char sub[64] = "SAVE";
@@ -5600,6 +5765,7 @@ bool act(Act a, pic::Canvas& c)
     if (!d) return false;
     cv = &c;
     if (screen == Screen::Fight) return fight_act(a, c);
+    if (screen == Screen::Modify) return modify_act(a, c);
     if (screen != Screen::Game) return false;
     if (waiting) {
         // Any key goes on, like the games' "press a key": the rest of the
@@ -5671,6 +5837,14 @@ bool tap_target(int x, int y, int* row, int* c0, int* c1)
     if (menu_on && screen == Screen::Game && waiting && vm->wait() == ecl::Wait::Menu && vm->items() == 1)
         return menu_word(0);
     if (menu_on && y >= text::kMenuTapTop) return menu_word(text::hit(menu, col));
+    if (screen == Screen::Modify) {
+        const int i = modify_item_at(r, col);
+        if (i < 0 || input_mode != Input::None) return false;
+        *row = r;
+        *c0 = 1;
+        *c1 = i < 6 ? 10 : i == 6 ? 6 : 16;
+        return true;
+    }
     if (screen == Screen::Game) {
         if (waiting && vm->wait() == ecl::Wait::ListMenu && list_wait) {
             const int i = r - list_row0;
@@ -6038,6 +6212,17 @@ bool back(pic::Canvas& c)
         draw_party_menu(c);
         return true;
     }
+    if (screen == Screen::Modify) {
+        if (input_mode != Input::None) {            // the name's keyboard: the name as it was
+            input_mode = Input::None;
+            input_engine = false;
+            engine_ask = EngineAsk::Name;
+            draw_modify(c);
+        } else {
+            end_modify(c, false);
+        }
+        return true;
+    }
     if (screen == Screen::View) {
         back_from_view(c);
         return true;
@@ -6151,6 +6336,12 @@ void input_key(char k, pic::Canvas& c)
         if (engine_ask == EngineAsk::Coins) {
             engine_ask = EngineAsk::Name;
             take_coins(atoi(input_buf), c);
+            return;
+        }
+        if (engine_ask == EngineAsk::ModName) {
+            engine_ask = EngineAsk::Name;
+            if (pt->sel()) create::set_name(*pt->sel(), input_buf);
+            draw_modify(c);
             return;
         }
         create_named(input_buf, c);

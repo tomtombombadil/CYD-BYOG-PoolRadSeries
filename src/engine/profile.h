@@ -213,6 +213,8 @@ struct Profile {
         // " out back.", " bids you farewell.", " breathes a sigh of relief.", "Yes No"
         uint32_t add_from, add_sources, add_prompt, add, added, paladin_evil, rangers, no_evil,
                  overwrite, qmark, drop, forever, sure, dump, out_back, farewell, relief, yes_no;
+        // Modify Character (GAME.OVR): " can't be modified.", "Modify: ", "Keep Exit"
+        uint32_t cant_modify, modify, keep_exit;
     } party;
 
     // View Character: name tables in the program and the screen's words
