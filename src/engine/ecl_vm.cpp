@@ -352,15 +352,25 @@ void Vm::party_size()
     if (party_) set(0x7F3E, static_cast<uint16_t>(party_->count));
 }
 
+// 0 .. n - 1 (n > 0): every random number the scripts use
+uint32_t Vm::rnd(uint32_t n)
+{
+    rng_ ^= rng_ << 13;
+    rng_ ^= rng_ >> 17;
+    rng_ ^= rng_ << 5;
+#ifdef CYD_TEST_HOOKS
+    if (create::g_die_hook && n > 0) {
+        const int v = create::g_die_hook(static_cast<int>(n));
+        if (v >= 0) return static_cast<uint32_t>(v) < n ? static_cast<uint32_t>(v) : n - 1;
+    }
+#endif
+    return n ? rng_ % n : 0;
+}
+
 uint8_t Vm::roll(int sides, int n)
 {
     int t = 0;
-    for (int k = 0; k < n; ++k) {
-        rng_ ^= rng_ << 13;
-        rng_ ^= rng_ >> 17;
-        rng_ ^= rng_ << 5;
-        t += sides > 0 ? static_cast<int>(rng_ % static_cast<uint32_t>(sides)) + 1 : 0;
-    }
+    for (int k = 0; k < n; ++k) t += sides > 0 ? static_cast<int>(rnd(static_cast<uint32_t>(sides))) + 1 : 0;
     return static_cast<uint8_t>(t);             // (the games' dice: a byte)
 }
 
@@ -479,19 +489,21 @@ Stop Vm::answer(int v)
         int sel = v;
         if (near && sel == 3) sel = 4;
         if (sel < 0 || sel > 4) sel = 1;
-        // The party's slowest and fastest movement (no party: 12, a person on foot)
+        // The party's slowest and fastest movement (no party: 12, a person on
+        // foot): every member, out of action too, doubled when hasted, halved
+        // when slowed (coab's facts: calc_group_inituative, a byte each)
         int party_min = 12, party_max = 12;
         if (party_ && party_->count) {
             party_min = 255;
             party_max = 0;
             for (int i = 0; i < party_->count; ++i) {
                 const party::Character& c = party_->m[i];
-                if (!c.in_combat()) continue;
-                const int mv = c.movement();
+                int mv = c.movement();
+                if (haste_ && c.has_affect(haste_)) mv = (mv * 2) & 0xFF;
+                else if (slow_ && c.has_affect(slow_)) mv >>= 1;
                 if (mv < party_min) party_min = mv;
                 if (mv > party_max) party_max = mv;
             }
-            if (party_max == 0) party_min = party_max = 12;
         }
         auto result = [&](int r) {
             set(enc_dest_, static_cast<uint16_t>(r));
@@ -678,10 +690,7 @@ Stop Vm::step()
         if (!need(2)) return Stop::Error;
         int max = value(o[0]) & 0xFF;
         if (max < 0xFF) ++max;
-        rng_ ^= rng_ << 13;
-        rng_ ^= rng_ >> 17;
-        rng_ ^= rng_ << 5;
-        set(o[1].word(), static_cast<uint16_t>(max ? rng_ % static_cast<uint32_t>(max) : 0));
+        set(o[1].word(), static_cast<uint16_t>(max ? rnd(static_cast<uint32_t>(max)) : 0));
         return Stop::Running;
     }
     case 0x09:                                  // SAVE
@@ -765,7 +774,10 @@ Stop Vm::step()
     case 0x13:                                  // RETURN
         ++pc_;
         if (sp_ > 0) pc_ = stack_[--sp_];
-        else stop_script();
+        else {
+            restore_selected();                 // nothing to return to: an EXIT (coab's facts)
+            stop_script();
+        }
         return Stop::Running;
     case 0x14:                                  // COMPARE AND
         if (!need(4)) return Stop::Error;
@@ -890,18 +902,14 @@ Stop Vm::step()
     case 0x23: {                                // SURPRISE: two d6 against (d + 2 - a) and (b + 2 - c)
         if (!need(4)) return Stop::Error;
         const int a = value(o[0]) & 0xFF, b = value(o[1]) & 0xFF, c = value(o[2]) & 0xFF, dd = value(o[3]) & 0xFF;
-        auto d6 = [&]() {
-            rng_ ^= rng_ << 13;
-            rng_ ^= rng_ >> 17;
-            rng_ ^= rng_ << 5;
-            return static_cast<int>(rng_ % 6) + 1;
-        };
-        const int r1 = d6(), r2 = d6();
+        const int r1 = roll(6, 1), r2 = roll(6, 1);
         int result = 0;
-        if (r1 <= dd + 2 - a) result = 1;               // the party surprised
-        if (r2 <= b + 2 - c) result = 2;                // the monsters (the games: this wins over both)
-        // The fight's surprise word: bit 1 our side, bit 2 the enemies
-        set(0x7ECB, static_cast<uint16_t>(result == 1 ? 2 : result == 2 ? 4 : 0));
+        if (r1 <= static_cast<int8_t>(dd + 2 - a)) result = r2 <= static_cast<int8_t>(b + 2 - c) ? 3 : 1;
+        if (r2 <= static_cast<int8_t>(b + 2 - c)) result = 2;
+        // The original writes it to 0x02CB - not script memory, so it is
+        // lost (coab's facts: the fight's surprise word 0x7ECB is only
+        // what the scripts SAVE there themselves; Curse's never use this)
+        set(0x02CB, static_cast<uint16_t>(result));
         return Stop::Running;
     }
     case 0x24:                                  // COMBAT

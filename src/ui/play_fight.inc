@@ -2251,7 +2251,11 @@ void fight_start(pic::Canvas& c)
     b.names = names;
     b.arrow = d->facts.arrow;
     b.quarrel = d->facts.quarrel;
-    b.surprise = vm->get(0x7ECB) & 6;
+    // The scripts' surprise word (coab's facts: area2 0x596): (team + 1) &
+    // it - 1 the party, 2 the monsters; the original clears it with the
+    // first round's initiative, so it counts for this fight only
+    b.surprise = vm->get(0x7ECB) & 3;
+    vm->set(0x7ECB, 0);
     b.to_hit_party = static_cast<int8_t>(vm->get(0x7F71));
     b.to_hit_monsters = static_cast<int8_t>(vm->get(0x7F70));
     combat::place(b, fg->t, d->gs.dir & 6, vm->fight_distance(), b.indoors ? solid_side : nullptr, nullptr);

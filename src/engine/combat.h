@@ -210,7 +210,7 @@ struct Battle {
     int     n = 0;
     int     party_size = 0;
     int     round = 0, no_action = 15;
-    int     surprise = 0;               // bit 1: our side, bit 2: the enemies
+    int     surprise = 0;               // 1: our side surprised, 2: the enemies (team + 1)
     int     enemy_health = 100;         // %
     int     vx = 0, vy = 0;             // the view's top-left square (7 x 7 shown)
     bool    indoors = true;

@@ -938,7 +938,8 @@ void start_round(Battle& b, create::Dice& d)
         }
         int delay = d.roll(6, 1) + dex_reaction(f.rec[kDexFull]);
         if (delay < 1) delay = 1;
-        if (b.surprise & (f.team() ? 4 : 2)) delay -= 6;
+        if (b.surprise & (f.team() + 1)) delay -= 6;       // (team + 1) & the surprise word
+
         if (delay < 0 || delay > 20) delay = 0;
         f.delay = delay;
         if (helpless(b, f)) f.delay = 0;

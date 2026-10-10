@@ -131,6 +131,13 @@ public:
 
     // The party the scripts see (nullptr: none)
     void set_party(party::Party* p) { party_ = p; }
+    // The effects that double / halve a member's speed (the encounter menu's
+    // fleeing: the party's slowest); 0: none
+    void set_move_affects(uint8_t haste, uint8_t slow)
+    {
+        haste_ = haste;
+        slow_ = slow;
+    }
     // Its own words (ScriptWord order; nullptr / missing: said empty)
     void set_words(const char* const* w) { words_ = w; }
     // Treasure and shop goods the scripts set out (TREASURE)
@@ -201,7 +208,8 @@ private:
     GameState& s_;
     Host& h_;
     party::Party* party_ = nullptr;
-    uint16_t sound_kind_ = 0;           // what the scripts wrote to 0x03DE (CALL B200's sound)
+    uint8_t haste_ = 0, slow_ = 0;
+    uint16_t sound_kind_ = 0;          // what the scripts wrote to 0x03DE (CALL B200's sound)
     const char* const* words_ = nullptr;
     const char* word(int i) const { return words_ && words_[i] ? words_[i] : ""; }
     // The selected character: LOAD CHARACTER's (put back at EXIT / PROGRAM),
@@ -214,6 +222,7 @@ private:
     void restore_selected();
     void party_size();
     uint8_t roll(int sides, int n);
+    uint32_t rnd(uint32_t n);
     // DAMAGE's lines, said one by one (then "press <enter>"); the party killed
     struct DmgLine {
         uint8_t who;
