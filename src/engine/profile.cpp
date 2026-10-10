@@ -96,8 +96,15 @@ constexpr spells::CampSpell kCurseCamp[] = {
     {0x4B, Does::Raise, 0, 0, 0, 0},
     {0x4D, Does::Affect, 0, 0, 0, 0x2FDE3},
     {0x50, Does::Affect, 0, 0, 0, 0x3274C},        // Invisibility to Animals: "is invisible" (spell_facts.md)
-    {0x55, Does::NotYet, 0, 0, 0, 0},              // Fire Shield (hot or cold)
+    {0x55, Does::FireShield, 0, 0, 0, 0x32BD4},    // Fire Shield: "flame type: Hot Cold"; hot "is protected"
     {0x58, Does::Affect, 0, 0, 0, 0x2FE1C},        // Minor Globe of Invulnerability
+    // The items' own spells (curse_finish_facts.md 10)
+    {0x39, Does::Haste, 0, 0, 0, 0x31ED7},         // speed: a slowed one cured, else "is Speedy"
+    {0x3B, Does::GiantStrength, 0, 0, 0, 0x31F60}, // giant strength: "is stronger"
+    {0x3F, Does::Affect, 0, 0, 0, 0x320C4},        // the party invisible: "is invisible"
+    {0x5F, Does::Affect, 0, 0, 0, 0},              // protection from dragon breath (nothing said)
+    {0x60, Does::Affect, 0, 0, 0, 0},              // ... from paralysis
+    {0x61, Does::Affect, 0, 0, 0, 0},              // invisibility
     {0x59, Does::RemoveCurse, 0, 0, 0, 0},
 };
 constexpr uint8_t kCurseSpellNamed[] = {
@@ -210,6 +217,12 @@ constexpr combat::FightSpell kCurseFight[] = {
     {0x40, SpellDoes::Damage, 0, 6, 0, 5, 9, 0},            // a fireball of 3, 5 or 7 dice
     {0x41, SpellDoes::Damage, 2, 4, 2, 0, 8, 0},            // the wand's missile: 2d4 + 2
     {0x63, SpellDoes::Heal, 2, 4, 2, 0, 0, 0x3379C},        // extra healing: "is Healed"
+    // (curse_finish_facts.md 10)
+    {0x3B, SpellDoes::GiantStrength, 1, 4, 4, 4, 0, 0x31F60},   // giant strength: "is stronger", (d4 + 4) x 10
+    {0x5F, SpellDoes::Affect, 0, 0, 0, 0, 0, 0},            // protection from dragon breath (nothing said)
+    {0x60, SpellDoes::Affect, 0, 0, 0, 0, 0, 0},            // ... from paralysis
+    {0x61, SpellDoes::Affect, 0, 0, 0, 0, 0, 0},            // invisibility
+    {0x62, SpellDoes::Defoliate, 6, 6, 0, 0, 0, 0},         // defoliation: 6d6, a cone of 3
 };
 
 // Random treasure (Curse): item types, name words, weights, values per
@@ -298,7 +311,7 @@ const Profile kProfiles[] = {
      {{0xBC37, 21, 255}, "ITEMS", 73, 28, 9, 86, 0x87, 0xB1, {41, 42, 43, 44, 37, 36},
       0x773D, 0x7745, 0x3CF1A, 0x3CF20, 0x3CF26, 0x7D3F, 0x7D18, 0x7B5D, 0x2916E,
       0x2859A, 0x285A0, 0x2856B, 0x37AF6, 0x37AFD, 0x28EF7, 0x28F03, 0x28F0F, 0x28F1E, 0x38F44,
-      0x270CA, 0x270D1, {0x26, 0x92, 0x0C, 0x0E, 0x44},
+      0x270CA, 0x270D1, {0x26, 0x92, 0x0C, 0x0E, 0x44, 0x3E},
       {0x17, 20, 20, 243}, {0x05, 0x05, 0x0B, 0x4D}},   // Spiritual Hammer: its effect, the Hammer's type, words "Hammer", "Spiritual"
      {0xABE0,
       {0x37DC, 0x47B0, 0x37DC, 0x65, 0x3E3A, 0x3EA2, 0x3EAA, 0x3EBB, 0x3EC0, 0x3F20, 0x3F33, 0x3F88, 0x3FFA,
@@ -331,7 +344,11 @@ const Profile kProfiles[] = {
        0x19A77, 0x19B03, 0x192FB, 0x2B76C, 0x2A4B1, 0x2E151,
        0x2F23F, 0x2F249, 0x2F262, 0x294BC, 0x294C9, 0x294CF, 0x2A49C},
       kCurseCamp, sizeof kCurseCamp / sizeof kCurseCamp[0],
-      {2, 0x2A, {0x22, 0x2B, 0x32}, {{0, 0}, {0x2C, 0x1F}, {0x39, 0}}, 0x0C, 0x17},
+      {2, 0x2A, {0x22, 0x2B, 0x32}, {{0, 0}, {0x2C, 0x1F}, {0x39, 0}}, 0x0C, 0x17, 0x32, 0x36, 0x8F, 0x92,
+       // rolled times (curse_finish_facts.md 10): cause disease d6 x 10, speed / paralysis 5d4,
+       // giant strength (d4 + 4) x 10, the party invisible (d10 + 10) x 10, Neutralize Poison 1440
+       {{0x28, 1, 6, 0, 10}, {0x39, 5, 4, 0, 1}, {0x3D, 5, 4, 0, 1}, {0x3B, 1, 4, 4, 10}, {0x3F, 1, 10, 10, 10},
+        {0x43, 0, 0, 1440, 1}}},
       kCurseSpellNamed, sizeof kCurseSpellNamed, kCurseNamed, sizeof kCurseNamed / sizeof kCurseNamed[0], 0xD2, 0x10},
      {0xB05C, 0xB086, 0xB0AF,
       {0x1AC65, 0x1A792, 0x1A7C0, 0x1AA82, 0x1AA90, 0x1AAA7, 0x1AAAF, 0x1AAB7, 0x1AABD, 0x1A8D7, 0x1A8E4, 0x1A8C9,
@@ -377,7 +394,7 @@ const Profile kProfiles[] = {
         0x76, 0x87, {0x54, 0x37, 0x15}},
        // More spells' effects (spell_facts.md 2): enlarge, confuse, berserk, dispel evil (0x04, 0x91),
        // the fire shields (hot 0x32, cold 0x36, the zap 0x8F)
-       {0x0C, 0x23, 0x89, 0x04, 0x91, 0x32, 0x36, 0x8F, 0x16, 0x0F, 0x17, 0x20}},
+       {0x0C, 0x23, 0x89, 0x04, 0x91, 0x32, 0x36, 0x8F, 0x16, 0x0F, 0x17, 0x20, 0x3E, 0x92}},
       kCurseFight, sizeof kCurseFight / sizeof kCurseFight[0]},
      {0x29A2, 0x29B3, 0xA28D, 0xA295, 0xA2A2, 0x3222},
      &kCurseRandom, 0x0830,

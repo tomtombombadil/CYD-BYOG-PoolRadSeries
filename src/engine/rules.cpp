@@ -11,6 +11,7 @@ constexpr int kStrFull = 0x11, kDexFull = 0x17, kStr00 = 0x1C;
 constexpr int kThac0 = 0x73, kAttackLevel = 0xDD, kBaseMove = 0xE4, kMultiLevel = 0xE6;
 constexpr int kDiceBase = 0x11E, kSidesBase = 0x120, kBonusBase = 0x122;
 constexpr int kBaseAc = 0x124, kUsesStrength = 0x125;
+constexpr int kHp = 0x1A4, kHpMax = 0x78, kHealth = 0x195, kInCombat = 0x196;
 constexpr int kHands = 0x185, kSaveBonus = 0x186, kWeight = 0x187;
 constexpr int kHitBonus = 0x199, kAc = 0x19A, kAcBehind = 0x19B;
 constexpr int kDice = 0x19E, kSides = 0x1A0, kBonus = 0x1A2, kMove = 0x1A5;
@@ -155,6 +156,51 @@ void max_strength(int* a, int* a00, int b, int b00)
     }
 }
 
+// Constitution's hit points for `lvl` levels of class `cls` (the original's
+// rebuild, curse_finish_facts.md 5.4): fighters, paladins and rangers 15-19
+// (Con - 14) a level, 20 five, 21-23 six, 24-25 seven; the rest 15 one, 16+
+// two (nothing below 15); the levels stop one under the class's last hit
+// die; a ranger who hasn't changed class (or whose old ranger level is the
+// changing level) gets one more level's worth
+int con_hp(const uint8_t* r, int cls, int lvl, int con, const ItemFacts& f)
+{
+    if (f.max_hd[cls] <= lvl) lvl = f.max_hd[cls] - 1;
+    if (cls == 4 && (r[kMultiLevel] == 0 || r[0x115] == r[kMultiLevel])) ++lvl;
+    if (cls == 2 || cls == 3 || cls == 4) {
+        if (con >= 15 && con <= 19) return lvl * (con - 14);
+        if (con == 20) return lvl * 5;
+        if (con >= 21 && con <= 23) return lvl * 6;
+        if (con == 24 || con == 25) return lvl * 7;
+        return 0;
+    }
+    return con > 15 ? lvl * 2 : con == 15 ? lvl : 0;
+}
+
+// A new Constitution in use: the maximum hit points from the rolled ones
+// (record 0x12C) plus Constitution's for every class (old levels too, the
+// levels above the changing level), shared by the classes; the current hit
+// points move by as much (not below 0)
+void con_rebuild(party::Character& c, int con, const ItemFacts& f)
+{
+    uint8_t* r = c.rec;
+    int sum = 0, n = 0;
+    for (int k = 0; k < 8; ++k) {
+        int lv = r[0x111 + k];
+        if (lv > 0) sum += con_hp(r, k, lv, con, f);
+        lv = r[0x109 + k];
+        if (lv > 0) ++n;
+        if (f.max_hd[k] < lv) lv = f.max_hd[k];
+        if (lv > r[kMultiLevel]) sum += con_hp(r, k, lv - r[kMultiLevel], con, f);
+    }
+    if (!n) return;
+    sum = (sum & 0xFF) / n;                                 // (a byte, as the original's)
+    const int was = r[kHpMax];
+    const int now = (r[0x12C] + sum) & 0xFF;
+    r[kHpMax] = static_cast<uint8_t>(now);
+    if (now > was) r[kHp] = static_cast<uint8_t>(r[kHp] + now - was);
+    else if (now < was) r[kHp] = static_cast<uint8_t>(r[kHp] > was - now ? r[kHp] - (was - now) : 0);
+}
+
 } // namespace
 
 void stats(party::Character& c, const ItemFacts& f)
@@ -246,7 +292,28 @@ void stats(party::Character& c, const ItemFacts& f)
             if (k >= 0) v += c.affects[k][3];        // (the original adds; coab sets it)
         }
         if (v < 0) v = 0;
+        const int was = r[0x11 + s * 2];
         r[0x11 + s * 2] = static_cast<uint8_t>(set != 0xFF ? set : v);
+        if (s == 4) {
+            // Constitution (the Girdle of the Dwarves, an ioun stone): its hit
+            // points follow a change (0 in use: a record not worked out yet);
+            // 20 and up heals (an effect, 60 at a time), below it doesn't
+            if (was && was != r[0x19] && f.max_hd[0]) con_rebuild(c, r[0x19], f);
+            if (f.con_regen_fx) {
+                if (r[0x19] >= 20) {
+                    if (find_effect(c, f.con_regen_fx) < 0 && c.n_affects < party::kMaxAffects) {
+                        uint8_t* a = c.affects[c.n_affects++];
+                        memset(a, 0, party::kAffectSize);
+                        a[0] = f.con_regen_fx;
+                        a[1] = 60;
+                        a[3] = 0xFF;
+                        a[4] = 1;
+                    }
+                } else {
+                    remove_affects(c, f.con_regen_fx);
+                }
+            }
+        }
     }
 }
 
@@ -731,7 +798,6 @@ int remove_affects(party::Character& c, uint8_t type)
 
 namespace {
 
-constexpr int kHp = 0x1A4, kHpMax = 0x78, kHealth = 0x195, kInCombat = 0x196;
 
 bool any_disease(const party::Character& c, const CureFacts& f)
 {
@@ -779,6 +845,38 @@ bool needs_cure(const party::Character& c, Cure cure, const CureFacts& f)
     }
 }
 
+namespace {
+// A repeating effect's clock (it fires each time its time runs out and
+// starts again at `period`): how often it fires in `minutes`. Its time is
+// left `minutes` longer than what remains, as magic::tick_affects takes
+// them afterwards.
+int repeat_clock(uint8_t* a, int minutes, int period)
+{
+    int m = a[1] | a[2] << 8, t = minutes, n = 0;
+    if (m == 0 || minutes <= 0) return 0;
+    while (t >= m) {
+        t -= m;
+        ++n;
+        m = period;
+    }
+    m = m - t + minutes;
+    a[1] = static_cast<uint8_t>(m);
+    a[2] = static_cast<uint8_t>(m >> 8);
+    return n;
+}
+} // namespace
+
+int con_regen(party::Character& c, int minutes, const ItemFacts& f)
+{
+    if (!f.con_regen_fx) return 0;
+    const int k = find_effect(c, f.con_regen_fx);
+    if (k < 0) return 0;
+    int healed = 0;
+    for (int n = repeat_clock(c.affects[k], minutes, 60); n > 0; --n)
+        if (c.hp() < c.hp_max() && heal(c, 1)) ++healed;
+    return healed;
+}
+
 bool poison_clock(party::Character& c, int minutes, const CureFacts& f)
 {
     if (minutes <= 0 || !f.slow_poison) return false;
@@ -788,16 +886,9 @@ bool poison_clock(party::Character& c, int minutes, const CureFacts& f)
     const bool over = left > 0 && minutes >= left;
     const int pd = f.poison_damage ? find_effect(c, f.poison_damage) : -1;
     if (pd >= 0) {
-        int m = c.affects[pd][1] | c.affects[pd][2] << 8, t = over ? left - 1 : minutes;
-        while (m > 0 && t >= m) {
-            t -= m;
+        // (when Slow Poison runs out, only the minutes before it count)
+        for (int n = repeat_clock(c.affects[pd], over ? left - 1 : minutes, 10); n > 0; --n)
             if (c.rec[0x1A4] > 1) --c.rec[0x1A4];
-            m = 10;
-        }
-        m -= t;
-        if (m < 1) m = 1;
-        c.affects[pd][1] = static_cast<uint8_t>(m);
-        c.affects[pd][2] = static_cast<uint8_t>(m >> 8);
     }
     if (!over || find_effect(c, f.poisoned) < 0) return false;
     remove_affects(c, f.slow_poison);

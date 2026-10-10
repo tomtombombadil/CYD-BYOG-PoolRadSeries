@@ -3033,6 +3033,42 @@ static void test_spells()
     e.n_items = 0;
     rules::stats(e, sf);
     CHECK(e.stat(0) == 10);
+    // The giant strength potion (the caster): Str 21 when more than their own - "is stronger"
+    f.giant = 0x52;
+    f.timed[0] = spells::Facts::Timed{4, 1, 4, 4, 10};
+    me.n_affects = 0;
+    me.rec[0x10] = me.rec[0x11] = 12;
+    CHECK(cast(4, spells::Does::GiantStrength, -1) == 1 && out[0].who == 0 && out[0].what == spells::Said::Word &&
+          me.n_affects == 1 && me.affects[0][0] == 0x52 && me.affects[0][3] == 121 && me.affects[0][1] >= 50 &&
+          me.affects[0][1] <= 80);
+    rules::ItemFacts gf{};
+    gf.giant_fx = 0x52;
+    rules::stats(me, gf);
+    CHECK(me.stat(0) == 21);
+    me.n_affects = 0;
+    me.rec[0x10] = me.rec[0x11] = 22;                // stronger already: the effect, nothing said, no change
+    CHECK(cast(4, spells::Does::GiantStrength, -1) == 0 && me.n_affects == 1 && me.affects[0][3] == 122);
+    rules::stats(me, gf);
+    CHECK(me.stat(0) == 22);
+    me.rec[0x10] = me.rec[0x11] = 10;
+    me.n_affects = 0;
+    f.timed[0] = spells::Facts::Timed{};
+    // Fire Shield: hot - the shield and the zap, "is protected"; cold - nothing said
+    f.hot = 0x32; f.cold = 0x36; f.zap = 0x0F;
+    const spells::CampSpell fsh{10, spells::Does::FireShield, 0, 0, 0, 0x99};
+    CHECK(spells::cast(p, 0, -1, fsh, t, cf, f, d, out, 16, 0, 1) == 1 && out[0].what == spells::Said::Word &&
+          me.n_affects == 2 && me.affects[0][0] == 0x32 && me.affects[1][0] == 0x0F && me.affects[0][1] == 2 + 3);
+    me.n_affects = 0;
+    CHECK(spells::cast(p, 0, -1, fsh, t, cf, f, d, out, 16, 0, 2) == 0 && me.n_affects == 2 && me.affects[0][0] == 0x36);
+    me.n_affects = 0;
+    // Rolled times: the listed spells; the rest the table's
+    f.timed[1] = spells::Facts::Timed{5, 5, 4, 0, 1};
+    f.timed[2] = spells::Facts::Timed{6, 0, 0, 1440, 1};
+    for (int i = 0; i < 20; ++i) {
+        const int r = spells::lasts_rolled(t, 5, 3, f, d);
+        CHECK(r >= 5 && r <= 20);
+    }
+    CHECK(spells::lasts_rolled(t, 6, 3, f, d) == 1440 && spells::lasts_rolled(t, 4, 3, f, d) == 180);
 }
 
 // Combat: a made-up open field, made-up placement tables (the games'
@@ -4170,8 +4206,67 @@ static void test_spells_batch3()
     ch.affects[1][0] = 0x16; ch.affects[1][1] = 120; ch.affects[1][3] = 0xFF;
     ch.affects[2][0] = 0x0F; ch.affects[2][1] = 10; ch.affects[2][3] = 0xFF;
     ch.n_affects = 3;
-    CHECK(!rules::poison_clock(ch, 35, cf) && ch.rec[0x1A4] == 7 && ch.affects[2][1] == 5);
+    CHECK(!rules::poison_clock(ch, 35, cf) && ch.rec[0x1A4] == 7);
+    magic::tick_affects(ch, 35);
+    CHECK(ch.n_affects == 3 && ch.affects[2][1] == 5 && ch.affects[1][1] == 85);
+    CHECK(!rules::poison_clock(ch, 1, cf) && ch.rec[0x1A4] == 7);
+    magic::tick_affects(ch, 1);
+    CHECK(ch.affects[2][1] == 4);
+    CHECK(!rules::poison_clock(ch, 4, cf) && ch.rec[0x1A4] == 6);
+    magic::tick_affects(ch, 4);
+    CHECK(ch.n_affects == 3 && ch.affects[2][1] == 10);
     CHECK(rules::poison_clock(ch, 200, cf) && ch.rec[0x195] == party::Dead && ch.n_affects == 1);
+    // Constitution: the Girdle of the Dwarves rebuilds the hit points; 20+ heals
+    {
+        static party::Character gc;
+        gc = party::Character{};
+        rules::ItemFacts gf{};
+        gf.con_regen_fx = 0x3E;
+        for (int k = 0; k < 8; ++k) gf.max_hd[k] = 9;
+        gc.rec[0x109 + 2] = 5;                               // a 5th level fighter
+        gc.rec[0x195] = party::Okay;
+        gc.rec[0x18] = gc.rec[0x19] = 18;
+        gc.rec[0x12C] = 40;
+        gc.rec[0x78] = 60;                                   // 40 + 5 x 4
+        gc.rec[0x1A4] = 50;
+        gc.items[0][0x3E] = 0x86;                            // code 6: Con +1, Cha -1
+        gc.items[0][0x34] = 1;
+        gc.n_items = 1;
+        rules::stats(gc, gf);
+        CHECK(gc.rec[0x19] == 19 && gc.rec[0x78] == 65 && gc.rec[0x1A4] == 55 && gc.n_affects == 0);
+        gc.items[0][0x34] = 0;
+        rules::stats(gc, gf);
+        CHECK(gc.rec[0x19] == 18 && gc.rec[0x78] == 60 && gc.rec[0x1A4] == 50);
+        gc.rec[0x1A4] = 3;
+        gc.rec[0x18] = gc.rec[0x19] = 19;
+        gc.rec[0x78] = 65;
+        gc.items[0][0x34] = 1;
+        rules::stats(gc, gf);                                // 20: the healing effect, 60 at a time
+        CHECK(gc.rec[0x19] == 20 && gc.rec[0x78] == 65 && gc.rec[0x1A4] == 3 && gc.n_affects == 1 &&
+              gc.affects[0][0] == 0x3E && gc.affects[0][1] == 60);
+        CHECK(rules::con_regen(gc, 130, gf) == 2 && gc.rec[0x1A4] == 5);
+        magic::tick_affects(gc, 130);
+        CHECK(gc.n_affects == 1 && gc.affects[0][1] == 50);
+        CHECK(rules::con_regen(gc, 49, gf) == 0);
+        magic::tick_affects(gc, 49);
+        CHECK(gc.affects[0][1] == 1);
+        gc.items[0][0x34] = 0;
+        rules::stats(gc, gf);
+        CHECK(gc.rec[0x19] == 19 && gc.n_affects == 0);
+        // a ranger who hasn't changed class: a level more; a magic-user 16+: 2 a level
+        gc = party::Character{};
+        gc.rec[0x109 + 4] = 3;
+        gc.rec[0x109 + 5] = 3;
+        gc.rec[0x18] = gc.rec[0x19] = 16;
+        gc.rec[0x12C] = 20;
+        gc.rec[0x78] = 20;
+        gc.rec[0x1A4] = 20;
+        gc.items[0][0x3E] = 0x86;
+        gc.items[0][0x34] = 1;
+        gc.n_items = 1;
+        rules::stats(gc, gf);                                // Con 17: ranger 4 x 3 = 12, magic-user 3 x 2 = 6 -> 18 / 2
+        CHECK(gc.rec[0x19] == 17 && gc.rec[0x78] == 29 && gc.rec[0x1A4] == 29);
+    }
     // Spiritual Hammer: in hand while the effect lasts
     static party::Character hc;
     hc = party::Character{};

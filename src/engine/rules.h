@@ -22,6 +22,11 @@ struct ItemFacts {
     uint8_t strength_fx = 0, giant_fx = 0, enlarge_fx = 0, friends_fx = 0, feeble_fx = 0;
     // Spiritual Hammer: its effect, the item's type and name words
     uint8_t hammer_fx = 0, hammer_type = 0, hammer_word = 0, hammer_word2 = 0;
+    // Constitution: the healing effect at 20 and up (0: none), and each
+    // class's last level with a hit die (the program's table) - a change of
+    // Constitution in use rebuilds the hit points with them
+    uint8_t con_regen_fx = 0;
+    uint8_t max_hd[8] = {};
 };
 
 // The stats as they stand (the games' recalculation; spell_facts.md and
@@ -119,6 +124,11 @@ int remove_affects(party::Character& c, uint8_t type);
 // out while they're still poisoned, they die ("dies from poison": true).
 // Call before the effects' minutes are taken (magic::tick_affects).
 bool poison_clock(party::Character& c, int minutes, const CureFacts& f);
+// Constitution 20 and up (its effect, given by stats()): a hit point back
+// each time 60 minutes run out (curse_finish_facts.md 5.4). How many came
+// back ("is fully healed" / "is partially healed"). Call before
+// magic::tick_affects, as poison_clock.
+int con_regen(party::Character& c, int minutes, const ItemFacts& f);
 // Whether the cure does anything for them (else the temple asks "cast cure
 // anyway?"; wounds always do)
 bool needs_cure(const party::Character& c, Cure cure, const CureFacts& f);

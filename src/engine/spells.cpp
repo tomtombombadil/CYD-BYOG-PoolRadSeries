@@ -122,6 +122,16 @@ int lasts(const classes::Tables& t, int s, int pw)
     return e.lasts + e.lasts_level * pw;
 }
 
+int lasts_rolled(const classes::Tables& t, int s, int pw, const Facts& f, create::Dice& d)
+{
+    for (const Facts::Timed& r : f.timed) {
+        if (!r.spell || r.spell != s) continue;
+        const int roll = r.n && r.sides ? d.roll(r.sides, r.n) : 0;
+        return (roll + r.plus) * (r.mult ? r.mult : 1);
+    }
+    return lasts(t, s, pw);
+}
+
 void add_affect(party::Character& c, int type, int minutes, int data, bool call)
 {
     if (c.n_affects >= party::kMaxAffects) return;
@@ -144,14 +154,14 @@ int find_affect(const party::Character& c, int type)
 bool can_cast(const party::Character& c) { return c.health() != party::Animated && c.in_combat(); }
 
 int cast(party::Party& p, int caster, int target, const CampSpell& cs, const classes::Tables& t,
-         const rules::CureFacts& cures, const Facts& f, create::Dice& d, Line* out, int cap, int pw)
+         const rules::CureFacts& cures, const Facts& f, create::Dice& d, Line* out, int cap, int pw, int flame)
 {
     Out o{out, cap};
     if (caster < 0 || caster >= p.count) return 0;
     party::Character& me = p.m[caster];
     const Entry e = entry(t, cs.spell);
     if (pw <= 0) pw = power(me, t, cs.spell);
-    const int minutes = lasts(t, cs.spell, pw);
+    const int minutes = lasts_rolled(t, cs.spell, pw, f, d);
 
     // Who it's cast on
     int who[party::kMaxParty], n = 0;
@@ -174,6 +184,25 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
 
     switch (cs.does) {
     case Does::NotYet: break;
+    case Does::GiantStrength: {
+        // Strength 21 when that's more than their own ("is stronger"); the
+        // effect goes on either way (then with their own Strength - the
+        // original leaves its data unset there)
+        const int own = me.rec[0x10], own00 = me.rec[0x1D];
+        const bool more = 21 > own;
+        const int data = more ? 121 : own == 18 ? own00 + 1 : own + 100;
+        if (f.giant) give(me, f.giant, minutes, data, true);
+        if (more && cs.word) o.say(caster, Said::Word);
+        break;
+    }
+    case Does::FireShield: {
+        // Hot: "is protected"; cold: nothing said (both: data 0, the zap too)
+        const uint8_t shield = flame == 2 ? f.cold : f.hot;
+        if (shield) give(me, shield, minutes, 0, false);
+        if (f.zap) give(me, f.zap, minutes, 0, false);
+        if (flame != 2 && cs.word) o.say(caster, Said::Word);
+        break;
+    }
     case Does::Affect: affect_all(pw, false); break;
     case Does::Prayer: affect_all(me.rec[kSide] * 16 + pw, false); break;
     case Does::Mirror: affect_all((d.roll(4, 1) << 4) + pw, false); break;

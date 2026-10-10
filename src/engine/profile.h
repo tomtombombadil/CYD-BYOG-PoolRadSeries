@@ -271,8 +271,8 @@ struct Profile {
         uint32_t    title, heading, ready, yes, no, cursed, wrong_class, already, hands_full, plural_s,
                     weapon, armour;
         // The effects the stats are worked out with: Strength, the giant
-        // strength potion's, Enlarge, Friends, Feeblemind
-        uint8_t     stat_fx[5];
+        // strength potion's, Enlarge, Friends, Feeblemind, Constitution 20+'s healing
+        uint8_t     stat_fx[6];
         uint8_t     hammer[4];                     // Spiritual Hammer: its effect, the item type, its two words
         uint8_t     detect[4];                     // Detect Magic: its effect, the spells that give it (treasure's Detect)
     } items;

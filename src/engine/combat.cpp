@@ -778,7 +778,7 @@ int tick(Battle& b, Event* out, int cap)
     int n = 0;
     for (int i = 0; i < b.n; ++i) {
         Fighter& f = b.f[i];
-        bool regen = false, rise = false, sting = false, slow_over = false;
+        bool regen = false, rise = false, sting = false, slow_over = false, con_up = false;
         for (int k = 0; f.n_aff && k < *f.n_aff;) {
             const int m = f.aff[k][1] | f.aff[k][2] << 8;
             if (m == 0) {
@@ -788,6 +788,7 @@ int tick(Battle& b, Event* out, int cap)
                 if (b.fx && b.fx->mon.troll_up && f.aff[k][0] == b.fx->mon.troll_up) rise = true;
                 if (b.fx && b.fx->sp.poison_damage && f.aff[k][0] == b.fx->sp.poison_damage) sting = true;
                 if (b.fx && b.fx->sp.slow_poison && f.aff[k][0] == b.fx->sp.slow_poison) slow_over = true;
+                if (b.fx && b.fx->sp.con_regen && f.aff[k][0] == b.fx->sp.con_regen) con_up = true;
                 end_effect(b, f, k);
             } else {
                 f.aff[k][1] = static_cast<uint8_t>(m - 1);
@@ -814,6 +815,21 @@ int tick(Battle& b, Event* out, int cap)
                     out[n] = Event{};
                     out[n].who = static_cast<uint8_t>(i);
                     out[n++].ev = Ev::DiesPoison;
+                }
+            }
+        }
+        // Constitution 20+: its 60 run out - a hit point back, and 60 more
+        // (for the living, unconscious or dying who aren't at their most)
+        if (con_up) {
+            give_aff(f, b.fx->sp.con_regen, 60, 0xFF, true);
+            const int st = f.status();
+            if (f.hp() < f.hp_max() && (st == party::Okay || st == party::Animated || st == party::Unconscious ||
+                                         st == party::Dying)) {
+                f.rec[kHp] = static_cast<uint8_t>(f.hp() + 1);
+                if (n < cap) {
+                    out[n] = Event{};
+                    out[n].who = static_cast<uint8_t>(i);
+                    out[n++].ev = Ev::Regen;
                 }
             }
         }
@@ -2208,6 +2224,38 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             drop_aff(f, at);
             say(who[k], Did::Word2, 0);
             say(who[k], Did::Word, 0);
+        }
+        break;
+    case SpellDoes::GiantStrength: {
+        // Strength 21 when more than their own ("is stronger"); the effect
+        // either way (then their own Strength: the original leaves it unset)
+        const int own = me.rec[0x10], own00 = me.rec[0x1D];
+        const bool more = 21 > own;
+        const int data = more ? 121 : own == 18 ? own00 + 1 : own + 100;
+        if (b.fx && b.fx->sp.giant) give_aff(me, b.fx->sp.giant, minutes, data, true);
+        if (more) say(caster, Did::Word, 0);
+        break;
+    }
+    case SpellDoes::Defoliate:
+        // Plants (monster type 18) take it all, not saving; the rest as
+        // when saved (the table's: nothing / half / all) - nothing said for none
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up()) continue;
+            int dmg = d.roll(fs.sides, fs.n) + fs.plus;
+            if (f.rec[0x11A] != 18) {
+                if (e.on_save == 1) dmg = 0;
+                else if (e.on_save == 2) dmg /= 2;
+            }
+            if (dmg <= 0) continue;
+            Harm h = hs;
+            h.dice = fs.n;
+            h.save = -1;
+            bool dn = false;
+            const int done = harm(b, who[k], dmg, h, d, &dn);
+            if (done <= 0) continue;
+            say(who[k], Did::Damage, done);
+            if (dn) say(who[k], Did::Down, 0);
         }
         break;
     case SpellDoes::Enlarge: {

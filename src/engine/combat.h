@@ -113,10 +113,13 @@ struct MonFx {
 // hits dispel them), the fire shields (hot, cold; zap: those hitting it
 // from next to it take twice the damage)
 // Slow Poison (slow_poison, its hourly poison_damage), Spiritual Hammer,
-// Animate Dead (the animated)
+// Animate Dead (the animated), Constitution 20+'s healing (con_regen: a
+// hit point each time its 60 runs out)
 struct SpellFx {
     uint8_t enlarge, confuse, berserk, evil_ward, evil_bane, hot, cold, zap;
     uint8_t slow_poison, poison_damage, hammer, animated;
+    uint8_t con_regen;
+    uint8_t giant;                      // the giant strength potion's (its data: the Strength)
 };
 
 // The effects the fights' rules look at (per game, from the profile)
@@ -270,6 +273,8 @@ enum class Ev : uint8_t {
     Dispelled, ResistsDispel, Zapped,
     // Slow Poison run out, still poisoned: "dies from poison"
     DiesPoison,
+    // Constitution 20+: a hit point back - "is fully healed" / "is partially healed"
+    Regen,
     // the beholder casts spell `amount` (the caller casts it, as the computer does)
     Cast,
 };
@@ -502,6 +507,10 @@ enum class SpellDoes : uint8_t {
     Hammer,                             // Spiritual Hammer: its effect on the caster (the caller hands over the hammer)
     Animate,                            // Animate Dead: the dead (not monsters) up on the caster's side (word)
     Restore,                            // Restoration: those with lost levels (word; the caller restores them)
+    GiantStrength,                      // the potion: Strength 21 when more than their own (word); the effect
+                                        // either way
+    Defoliate,                          // the wand: a cone of 3 squares (1 ray), dice of damage - plants all of it,
+                                        // the rest as when saved (the spell table's)
 };
 struct FightSpell {
     uint8_t   spell;

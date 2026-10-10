@@ -66,6 +66,8 @@ enum class Does : uint8_t {
                     // rules::keep_hammer)
     Dispel,         // Dispel Magic: each of the target's effects (but data 0xFF) by level against level (word)
     Restore,        // Restoration: a lost level back (word; else nothing)
+    FireShield,     // the caster's flame (`flame` 1 hot: word; 2 cold: nothing said) and the zap
+    GiantStrength,  // the potion: Strength 21 (word) when more than their own; the effect either way
 };
 struct CampSpell {
     uint8_t  spell;
@@ -90,7 +92,21 @@ struct Facts {
     uint8_t disease[3], disease_with[3][2];
     uint8_t enlarge;                    // Enlarge's effect (Reduce takes it away)
     uint8_t hammer;                     // Spiritual Hammer's effect
+    uint8_t hot, cold, zap;             // Fire Shield's effects (spell_facts.md 0x55)
+    uint8_t giant;                      // the giant strength potion's effect (its data: the Strength)
+    // Spells whose time is rolled (the original's, not the spell table's):
+    // (sides-sided dice x n + plus) x mult minutes; `fights`: in a fight
+    // instead (0: the same)
+    struct Timed {
+        uint8_t  spell, n, sides;
+        uint16_t plus;
+        uint8_t  mult;
+    };
+    Timed timed[6];
 };
+// A spell's time in minutes outside fights: the rolled ones as `f.timed`
+// says, else the spell table's (fixed + per level)
+int lasts_rolled(const classes::Tables& t, int s, int pw, const Facts& f, create::Dice& d);
 // The Strength Enlarge gives at the caster's level, as an effect's data
 // (18/xx: xx + 1; 19 and up: + 100); 0 at 12th level and above (18)
 int enlarge_data(int level);
@@ -102,8 +118,10 @@ bool can_cast(const party::Character& caster);
 // `caster` on `target` (a member; for self / party spells it isn't used).
 // Fills `out` with what's said; how many lines. `pw`: the caster's level
 // for it (0: their own - an item's spell has its own, item_power).
+// `flame`: Fire Shield's, as the player picked it (1 hot, 2 cold).
 int cast(party::Party& p, int caster, int target, const CampSpell& cs, const classes::Tables& t,
-         const rules::CureFacts& cures, const Facts& f, create::Dice& d, Line* out, int cap, int pw = 0);
+         const rules::CureFacts& cures, const Facts& f, create::Dice& d, Line* out, int cap, int pw = 0,
+         int flame = 0);
 
 // The caster's level for a spell from an item: 6 (the monsters' spells -
 // the items' own - as the caster's: 12 for those with spell levels)

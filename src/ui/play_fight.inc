@@ -1105,6 +1105,12 @@ void event_page(const combat::Event& e)
         break;
     }
     case combat::Ev::DiesPoison: fallen(profile::kDiesFromPoison); break;
+    case combat::Ev::Regen: {
+        char w[24];
+        cw(fg->b.f[who].hp() >= fg->b.f[who].hp_max() ? profile::kFullyHealed : profile::kPartlyHealed, w, sizeof w);
+        add_page(who, w);
+        break;
+    }
     }
 }
 
@@ -2802,6 +2808,8 @@ void cast_now(pic::Canvas& c, bool forgotten)
     const spells::Entry se = spells::entry(mrules->tables, sp);
     const int aim = se.aim & 0x0F;
     const bool each = aim >= 1 && aim <= 4 && se.targets != spells::kParty;
+    if (fs->does == combat::SpellDoes::Defoliate && ax >= 0)
+        fg->sp_n = combat::cone(b, fg->t, i, ax, ay, 3, 1, fg->sp_t, combat::kMaxFighters);   // 3 squares, 1 ray
     if ((fs->does == combat::SpellDoes::Cone || fs->does == combat::SpellDoes::Fear) && ax >= 0) {
         // A cone from the caster through the square aimed at: Fear 3 rays of 6 squares, Cone of Cold 2 of (level + 1) / 2
         const int lv = from_item ? pw : combat::power_of(f.rec, mrules->tables, sp, false);
@@ -2858,6 +2866,7 @@ void cast_now(pic::Canvas& c, bool forgotten)
     if (fs->does == combat::SpellDoes::Hammer) fight_hammer(i);
     // Strength, items and effects changed: the party's values again
     if (fs->does == combat::SpellDoes::Enlarge || fs->does == combat::SpellDoes::Reduce ||
+        fs->does == combat::SpellDoes::GiantStrength ||
         fs->does == combat::SpellDoes::RemoveCurse || fs->does == combat::SpellDoes::Dispel ||
         fs->does == combat::SpellDoes::Restore)
         for (int k = 0; k < pt->count; ++k) rules::recalc(pt->m[k], *names, d->facts);

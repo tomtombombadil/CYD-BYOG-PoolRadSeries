@@ -3899,8 +3899,9 @@ uint32_t game_delay_ms()
 }
 
 struct CastRun {
-    enum Stage : uint8_t { None, Casts, Whom, Saying } stage = None;
+    enum Stage : uint8_t { None, Casts, Whom, Saying, Flame, FlameAbort } stage = None;
     int  spell = 0, caster = 0, target = 0;
+    int  flame = 0;                 // Fire Shield: 1 hot, 2 cold
     const spells::CampSpell* cs = nullptr;
     spells::Line lines[24];
     int  n = 0, at = 0;
@@ -4055,7 +4056,7 @@ void do_cast(pic::Canvas& c)
     if (cr.item < 0) magic::remove(me, cr.spell);
     else pw = spells::item_power(me, mrules->tables, cr.spell);
     cr.n = spells::cast(*pt, cr.caster, cr.target, *cr.cs, mrules->tables, d->prof->cures, d->prof->magic.facts, rng,
-                        cr.lines, 24, pw);
+                        cr.lines, 24, pw, cr.flame);
     if (cr.item >= 0) {
         // A use of the item (a scroll: the spell goes off it)
         if (cr.scroll) magic::scroll_used(me, scroll_facts(), cr.item, cr.spell);
@@ -4137,9 +4138,27 @@ void choose_spell(int spell, pic::Canvas& c)
     if (!cr.until) cr.until = 1;
 }
 
+// Fire Shield's flame: "flame type: Hot Cold"; leaving it: "Abort spell? Yes No"
+// (as in fights)
+void flame_ask(pic::Canvas& c, bool abort)
+{
+    char a[24], b[24];
+    const auto& w = d->prof->fight.words;
+    ow(w[abort ? profile::kAbortSpellQ : profile::kFlameType], a, sizeof a);
+    ow(w[abort ? profile::kYesNoF : profile::kHotCold], b, sizeof b);
+    cr.stage = abort ? CastRun::FlameAbort : CastRun::Flame;
+    text::build(menu, a, b);
+    menu.selected = abort ? 1 : 0;
+    show_menu_line(c);
+}
+
 // After "casts": who it's for
 void cast_onwards(pic::Canvas& c)
 {
+    if (cr.cs && cr.cs->does == spells::Does::FireShield && !cr.flame) {
+        flame_ask(c, false);
+        return;
+    }
     const spells::Entry e = spells::entry(mrules->tables, cr.spell);
     if (e.targets == spells::kMember) {
         cr.stage = CastRun::Whom;
@@ -4163,6 +4182,26 @@ void cast_tick(uint32_t now, pic::Canvas& c)
 void cast_tap(int x, int y, pic::Canvas& c)
 {
     const int row = y / 8, col = x / 8;
+    if (cr.stage == CastRun::Flame || cr.stage == CastRun::FlameAbort) {
+        if (y < text::kMenuTapTop) return;
+        const char k = text::key(menu, text::hit(menu, col));
+        if (cr.stage == CastRun::Flame && (k == 'H' || k == 'C')) {
+            cr.flame = k == 'H' ? 1 : 2;
+            clear_menu_line(c);
+            cast_onwards(c);
+        } else if (cr.stage == CastRun::FlameAbort && k == 'N') {
+            flame_ask(c, false);
+        } else if (cr.stage == CastRun::FlameAbort && k == 'Y') {
+            // The spell is gone (an item's use too), nothing else
+            party::Character& me = pt->m[cr.caster];
+            if (cr.item < 0) magic::remove(me, cr.spell);
+            else if (cr.scroll) magic::scroll_used(me, scroll_facts(), cr.item, cr.spell);
+            else magic::used(me, cr.item);
+            clear_menu_line(c);
+            show_memory(c);
+        }
+        return;
+    }
     if (cr.stage != CastRun::Whom) {
         // A tap moves the message on
         if (cr.until) {
@@ -5166,6 +5205,14 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         d->facts.enlarge_fx = pi.stat_fx[2];
         d->facts.friends_fx = pi.stat_fx[3];
         d->facts.feeble_fx = pi.stat_fx[4];
+        d->facts.con_regen_fx = pi.stat_fx[5];
+        {
+            const auto& pc = d->prof->create;
+            if (pc.ds_image && pc.tables.max_hit_dice &&
+                exepack::read(exe, info, pc.ds_image + pc.tables.max_hit_dice, d->facts.max_hd, 8) !=
+                    exepack::Status::Ok)
+                memset(d->facts.max_hd, 0, sizeof d->facts.max_hd);
+        }
         d->facts.hammer_fx = pi.hammer[0];
         d->facts.hammer_type = pi.hammer[1];
         d->facts.hammer_word = pi.hammer[2];
@@ -7639,6 +7686,15 @@ void tick(uint32_t now, pic::Canvas& c)
                 cv = &c;
                 note(c, t);
             }
+            if (rules::con_regen(pt->m[i], m, d->facts)) {
+                // Constitution 20+: "NAME is fully healed" / "is partially healed"
+                char nm[20], w[24], t[48];
+                pt->m[i].name(nm, sizeof nm);
+                cw(pt->m[i].hp() >= pt->m[i].hp_max() ? profile::kFullyHealed : profile::kPartlyHealed, w, sizeof w);
+                snprintf(t, sizeof t, "%s %s", nm, w);
+                cv = &c;
+                note(c, t);
+            }
             magic::tick_affects(pt->m[i], m);
             if (pt->m[i].n_affects != before) {         // one ran out
                 rules::keep_hammer(pt->m[i], *names, d->facts);
@@ -7757,6 +7813,8 @@ bool back_from_magic(pic::Canvas& c)
         return true;
     case Screen::Cast:
         if (cr.stage == CastRun::Whom) show_memory(c);
+        else if (cr.stage == CastRun::Flame) flame_ask(c, true);
+        else if (cr.stage == CastRun::FlameAbort) flame_ask(c, false);
         return true;
     case Screen::Effects:
         end_effects();
