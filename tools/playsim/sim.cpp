@@ -277,6 +277,26 @@ int main(int argc, char** argv)
             tap_word('I');
             item_ops(getenv("ITEMOPS"));
         }
+        if (getenv("CHANGE")) {
+            // CHANGE=n: Human Change for character WHO where training is offered: list line n
+            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+            const int who = getenv("WHO") ? atoi(getenv("WHO")) : 0;
+            play::tap(16, (4 + who) * 8 + 2, C);
+            play::vm->set(0x7EA8, 0xFF);
+            play::draw_party_menu(C);
+            party::Character& ch = play::pt->m[who];
+            char nm[20]; ch.name(nm, 20);
+            printf("  %s: class %d levels F%d MU%d C%d, Str %d Int %d Wis %d\n", nm, ch.cls(), ch.level(2), ch.level(5), ch.level(0), ch.stat(0), ch.stat(1), ch.stat(2));
+            if (pm_line('H') < 0) printf("  no Human Change on the menu\n");
+            else {
+                play::tap(24, (12 + pm_line('H')) * 8 + 2, C);
+                printf("  screen %d, %d choices, menu [%s%s]\n", (int)play::screen, play::mk ? play::mk->n_opt : -1, play::menu.prompt, play::menu.s);
+                shot("change_list");
+                if (play::mk) { play::plist.index = atoi(getenv("CHANGE")); tap_word('S'); }
+                printf("  now: class %d levels F%d MU%d C%d old F%d exp %u; menu [%s%s]\n", ch.cls(), ch.level(2), ch.level(5), ch.level(0), ch.old_level(2), ch.exp(), play::menu.prompt, play::menu.s);
+                shot("changed");
+            }
+        }
         if (getenv("MODIFYOPS")) {
             // MODIFYOPS on character WHO (MODFRESH=1 first makes them "as made":
             // 25000 xp): < > down / up, u d the item above / below, digits tap

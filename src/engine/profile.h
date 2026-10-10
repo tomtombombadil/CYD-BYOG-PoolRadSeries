@@ -265,6 +265,10 @@ struct Profile {
         // "Reroll stats? ", "Character name: ", "Save ", "? "
         uint32_t        pick_race, pick_gender, pick_class, pick_alignment, select, reroll, char_name, save_q,
                         qmark;
+        // Human Change: a new magic-user's spells; GAME.OVR "Pick New Class", " doesn't qualify.",
+        // "Select", " is now a 1st level ", "."
+        uint8_t         mu_change[3];
+        uint32_t        pick_new, no_qualify, change_select, now_first, dot;
     } create;
 
     // Items: Use Trade Drop Halve Join Sell Id and their words (ItemWord order)

@@ -569,8 +569,8 @@ void pm_flags(bool on[Data::kItems])
         case 'T':                               // training: only where the game offers it
             on[i] = pt->count > 0 && (vm->get(0x7EA8) & 0xFF) != 0;
             break;
-        case 'H':                               // class changes: with training (rules to come)
-            on[i] = false;
+        case 'H':                               // Human Change: with training, a human with no former class
+            on[i] = pt->sel() && (vm->get(0x7EA8) & 0xFF) != 0 && create::can_change(*pt->sel());
             break;
         case 'L':
             on[i] = pt->count == 0;
@@ -1844,6 +1844,8 @@ struct Making {
     int  n_opt = 0;
     int  race = 0, sex = 0, cls = 0;
     char words[9][24] = {};         // Pick Race ... "? " (profile create.pick_race ...)
+    // Human Change (stage 4): "Pick New Class", " doesn't qualify.", "Select", " is now a 1st level ", "."
+    char change[5][24] = {};
 };
 Making* mk = nullptr;
 
@@ -1903,12 +1905,16 @@ bool load_rules(Making*& m)
     memcpy(fa.mu_level3, pc.mu_level3, 2);
     fa.mu_level4 = pc.mu_level4;
     fa.mu_level5 = pc.mu_level5;
+    memcpy(fa.mu_change, pc.mu_change, 3);
     const uint32_t at[9] = {pc.pick_race, pc.pick_gender, pc.pick_class, pc.pick_alignment, pc.select,
                             pc.reroll,    pc.char_name,   pc.save_q,     pc.qmark};
+    const uint32_t ch_at[5] = {pc.pick_new, pc.no_qualify, pc.change_select, pc.now_first, pc.dot};
     if (open_file(d->prof->overlay, f)) {
         library::FileSource src(f);
         for (int i = 0; i < 9; ++i)
             if (at[i]) text::read_pascal(src, at[i], m->words[i], sizeof m->words[i]);
+        for (int i = 0; i < 5; ++i)
+            if (ch_at[i]) text::read_pascal(src, ch_at[i], m->change[i], sizeof m->change[i]);
         f.close();
     }
     return ok;
@@ -1922,14 +1928,15 @@ const char* option_name(int i)
     switch (mk->stage) {
     case 0: return name_of(d->race[0], 10, 8, v);
     case 1: return name_of(d->sex[0], 7, 2, v);
-    case 2: return name_of(d->cls[0], 27, 18, v);
+    case 2:
+    case 4: return name_of(d->cls[0], 27, 18, v);
     default: return name_of(d->alignment[0], 17, 9, v);
     }
 }
 
 void pick_line(int i, char* out, size_t cap)
 {
-    if (i == 0) snprintf(out, cap, "%s", mk->words[mk->stage]);
+    if (i == 0) snprintf(out, cap, "%s", mk->stage == 4 ? mk->change[0] : mk->words[mk->stage]);
     else snprintf(out, cap, "  %s", option_name(i - 1));
 }
 
@@ -1942,7 +1949,61 @@ void draw_pick(pic::Canvas& c)
     plist.col0 = 1;
     plist.n = mk->n_opt + 1;                // the heading, then the choices
     if (plist.index < 1) plist.index = 1;
-    draw_list(c, "", mk->words[4]);
+    draw_list(c, "", mk->stage == 4 ? mk->change[2] : mk->words[4]);
+}
+
+// ---- Human Change (the party menu, where training is offered): a human
+// with no former class takes up another (engine/create: change_classes,
+// change_class): "Pick New Class" and the classes they qualify for
+// ("Select ... Exit"), else "NAME doesn't qualify."; then "NAME is now a
+// 1st level CLASS." and items the new class can't use are put away.
+void start_change(pic::Canvas& c)
+{
+    party::Character* ch = pt->sel();
+    if (!ch) return;
+    if (!load_making()) {
+        delete mk;
+        mk = nullptr;
+        pm_prompt(c, "Not in the engine yet.");
+        return;
+    }
+    mk->stage = 4;
+    mk->n_opt = create::change_classes(*ch, mk->tables, mk->opt, 17);
+    if (!mk->n_opt) {
+        char t[60], nm[20];
+        ch->name(nm, sizeof nm);
+        snprintf(t, sizeof t, "%s%s", nm, mk->change[1]);
+        delete mk;
+        mk = nullptr;
+        pm_prompt(c, t);
+        dirty_rows(text::kMenuRow, text::kMenuRow);
+        return;
+    }
+    screen = Screen::CreatePick;
+    plist = PickList{};
+    plist.index = 1;
+    draw_pick(c);
+}
+
+void change_picked(int cls, pic::Canvas& c)
+{
+    party::Character* ch = pt->sel();
+    if (!ch || !mk) return;
+    create::change_class(*ch, mk->tables, mk->facts, cls);
+    for (int k = 0; k < ch->n_items; ++k) {
+        uint8_t* it = ch->items[k];
+        if (it[0x34] && !it[0x36] && !(ch->rec[0x12B] & names->type(it[0x2E]).classes)) {
+            it[0x34] = 0;
+            rules::worn(*ch, k, false);
+        }
+    }
+    rules::recalc(*ch, *names, d->facts);
+    char t[80], nm[20];
+    ch->name(nm, sizeof nm);
+    snprintf(t, sizeof t, "%s%s%s%s", nm, mk->change[3], name_of(d->cls[0], 27, 18, cls), mk->change[4]);
+    end_create(c);
+    pm_prompt(c, t);
+    dirty_rows(text::kMenuRow, text::kMenuRow);
 }
 
 void pick_stage(int stage, pic::Canvas& c)
@@ -1991,6 +2052,7 @@ void picked(int i, pic::Canvas& c)
     case 0: mk->race = v; pick_stage(1, c); return;
     case 1: mk->sex = v; pick_stage(2, c); return;
     case 2: mk->cls = v; pick_stage(3, c); return;
+    case 4: change_picked(v, c); return;
     default:
         create::begin(mk->ch, mk->tables, mk->facts, mk->dice, mk->race, mk->sex, mk->cls, v);
         create::roll(mk->ch, mk->tables, mk->facts, mk->dice);
@@ -4669,6 +4731,9 @@ void pm_choose(int i, pic::Canvas& c)
         return;
     case 'M':
         start_modify(c);
+        return;
+    case 'H':
+        start_change(c);
         return;
     default:
         pm_prompt(c, "Not in the engine yet.");

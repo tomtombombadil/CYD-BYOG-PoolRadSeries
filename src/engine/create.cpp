@@ -13,6 +13,7 @@ constexpr int kMoney = 0xFB, kLevels = 0x109, kSex = 0x119, kAlign = 0x11B, kAtt
 constexpr int kDiceBase = 0x11E, kSidesBase = 0x120, kBaseAc = 0x124, kUsesStr = 0x125, kModId = 0x126;
 constexpr int kExp = 0x127, kHpRolled = 0x12C, kCastCount = 0x12D, kIconId = 0x143, kIconSize = 0x144;
 constexpr int kIconColours = 0x145, kCures = 0x191, kInCombat = 0x196, kHp = 0x1A4;
+constexpr int kOldLevels = 0x111, kListAt = 0x1E, kListSize = 84;   // former levels, the memorized spells
 
 // Constitution's hit point adjustment by Con (coab's table)
 constexpr int8_t kConHp[26] = {0, 0, 0, -2, -1, -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2};
@@ -410,6 +411,71 @@ bool train(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
     if (!mask) return false;
     train_classes(c, t, f, d, mask, silent);
     return true;
+}
+
+// ---- Human Change
+namespace {
+int present_class(const party::Character& c)
+{
+    for (int k = 0; k <= classes::Monk; ++k)
+        if (c.level(k) > 0) return k;
+    return -1;
+}
+} // namespace
+
+bool can_change(const party::Character& c)
+{
+    if (c.race() != 7) return false;                       // humans only
+    for (int k = 0; k <= classes::Monk; ++k)
+        if (c.old_level(k) > 0) return false;
+    return present_class(c) >= 0;
+}
+
+int change_classes(const party::Character& c, const classes::Tables& t, int* out, int cap)
+{
+    if (!can_change(c)) return 0;
+    const int now = present_class(c);
+    for (int i = 0; i < 6; ++i)
+        if (t.u8(static_cast<uint16_t>(t.lay.class_min + now * 6 + i)) >= 9 && c.rec[kStats + i * 2] < 15) return 0;
+    int list[17];
+    const int nl = classes_for(t, c.race(), list, 17);
+    int n = 0;
+    for (int j = 0; j < nl && n < cap; ++j) {
+        const int k = list[j];
+        if (k == now || k > classes::Monk) continue;
+        bool ok = true;
+        for (int i = 0; i < 6 && ok; ++i)
+            if (t.u8(static_cast<uint16_t>(t.lay.class_min + k * 6 + i)) >= 9 && c.rec[kStats + i * 2] < 17) ok = false;
+        int al[9];
+        const int na = alignments_for(t, k, al, 9);
+        bool align = false;
+        for (int a = 0; a < na; ++a) align = align || al[a] == c.alignment();
+        if (ok && align) out[n++] = k;
+    }
+    return n;
+}
+
+void change_class(party::Character& c, const classes::Tables& t, const Facts& f, int cls)
+{
+    const int now = present_class(c);
+    if (now < 0 || cls < 0 || cls > classes::Monk) return;
+    uint8_t* r = c.rec;
+    put32(r, kExp, 0);
+    r[kAttacks] = 2;
+    r[kOldLevels + now] = r[kLevels + now];
+    r[kMultiLevel] = r[kHitDice];
+    r[kHitDice] = 1;
+    r[kLevels + now] = 0;
+    r[kLevels + cls] = 1;
+    r[kClass] = static_cast<uint8_t>(cls);
+    memset(r + kCastCount, 0, 15);
+    if (cls == classes::Cleric) r[kCastCount] = 1;
+    if (cls == classes::MagicUser) {
+        r[kCastCount + 10] = 1;
+        for (uint8_t s : f.mu_change) learn(c, s);
+    }
+    memset(r + kListAt, 0, kListSize);
+    classes::class_bonuses(c, t);
 }
 
 // ---- Modify Character

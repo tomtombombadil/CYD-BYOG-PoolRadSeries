@@ -2457,6 +2457,26 @@ static void test_create()
         CHECK(m.rec[0x12C] == 65 - 5 * 3);
     }
 
+    // Human Change: a human fighter with Str 15+ may become a cleric or a
+    // magic-user (the fixture's classes for humans; no 9+ minimums there)
+    {
+        static party::Character h;
+        h = b;
+        create::Facts fc = f;
+        fc.mu_change[0] = 5; fc.mu_change[1] = 6; fc.mu_change[2] = 7;
+        h.rec[0x10] = h.rec[0x11] = 14;
+        int cl[8];
+        CHECK(create::can_change(h) && create::change_classes(h, t, cl, 8) == 0);   // Str 14: no
+        h.rec[0x10] = h.rec[0x11] = 15;
+        CHECK(create::change_classes(h, t, cl, 8) == 2 && cl[0] == create::MagicUser && cl[1] == create::Cleric);
+        const int hd = h.rec[0xE5];
+        create::change_class(h, t, fc, create::MagicUser);
+        CHECK(h.exp() == 0 && h.level(classes::Fighter) == 0 && h.old_level(classes::Fighter) == 5 &&
+              h.level(classes::MagicUser) == 1 && h.rec[0xE5] == 1 && h.rec[0xE6] == hd && h.cls() == create::MagicUser);
+        CHECK(h.rec[0x79 + 4] && h.rec[0x79 + 5] && h.rec[0x79 + 6]);              // spells 5, 6, 7 known
+        CHECK(!create::can_change(h) && !create::can_modify(h));
+    }
+
     // A human magic-user: level 5 (2500 doubling), first spells and silent training's
     static party::Character m;
     create::Dice d3(5);

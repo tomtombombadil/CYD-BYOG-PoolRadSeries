@@ -50,6 +50,7 @@ struct Facts {
     uint8_t  con_save, dwarf_orc, giants, gnome_giant, gnome_extra, elf_sleep, halfelf, prot_evil, ranger_giant;
     // spells: a new magic-user's four, and those silent training teaches at levels 2-5
     uint8_t  mu_first[4], mu_level2, mu_level3[2], mu_level4, mu_level5;
+    uint8_t  mu_change[3];              // a human turned magic-user learns these
 };
 
 // Starts a character: race, sex, class, alignment chosen. Sets the
@@ -83,6 +84,21 @@ int trainable(const party::Character& c, const classes::Tables& t);
 // Trains the classes in mask one level up: class bonuses, hit points
 // (silent: a magic-user's spells, as at creation)
 void train_classes(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, int mask, bool silent);
+
+// ---- Human Change (the party menu, where training is offered; coab's
+// facts): a human with no former class may take up another
+bool can_change(const party::Character& c);
+// The classes they may change to: the race's, not the present one; every
+// stat the present class needs (a minimum of 9 or more) at 15 or more,
+// every one the new class needs at 17 or more; the new class allows their
+// alignment
+int change_classes(const party::Character& c, const classes::Tables& t, int* out, int cap);
+// Changes to class `cls` at level 1: experience 0, the present class's
+// level kept as the former one, the hit dice count kept (record 0xE6),
+// spell counts and the memorized list cleared (a cleric: one first-level
+// spell; a magic-user: the profile's three spells), the class values
+// recomputed. (Items the new class can't use: the caller unreadies them.)
+void change_class(party::Character& c, const classes::Tables& t, const Facts& f, int cls);
 
 // ---- Modify Character (the games' rules, facts from coab): a character
 // who hasn't adventured (experience as made: 0, 8333, 12500 or 25000) and
