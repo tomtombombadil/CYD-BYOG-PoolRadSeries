@@ -2870,6 +2870,43 @@ static void test_create()
     th.rec[0x74] = 1;
     classes::thief_skills(th, t);
     CHECK(th.rec[0xEA + 1] == 0);
+    // The thief items (listing ovr026:0AEA): Gloves of Thievery (0x8B) - skill
+    // 1 at 5th level below it, else +5; skill 2 at 7th below it, else +5; that
+    // bonus on for skills 3-8 (0 when skill 2 was raised to 7th); Gauntlets of
+    // Dexterity (0x82) - below 4th level the skills of 4th, else +10 on each,
+    // added even to a skill the race made 0; the race's floor counts the bonus
+    th.rec[0x74] = 7;
+    th.n_items = 1;
+    memset(th.items[0], 0, sizeof th.items[0]);
+    th.items[0][0x34] = 1;
+    th.items[0][0x3E] = 0x8B;
+    auto base = [](int lv, int s) { return 10 + 5 * lv + s; };
+    classes::thief_skills(th, t);                                   // level 3
+    CHECK(th.rec[0xEA] == base(5, 1) + 5 && th.rec[0xEB] == base(7, 2) + 5 && th.rec[0xEC] == base(3, 3) + 5 &&
+          th.rec[0xEF] == base(3, 6));
+    th.rec[0x10F] = 6;
+    classes::thief_skills(th, t);
+    CHECK(th.rec[0xEA] == base(6, 1) + 5 + 5 && th.rec[0xEB] == base(7, 2) + 5 && th.rec[0xEC] == base(6, 3) + 5);
+    th.rec[0x10F] = 8;
+    classes::thief_skills(th, t);
+    CHECK(th.rec[0xEA] == base(8, 1) + 10 && th.rec[0xEB] == base(8, 2) + 10 && th.rec[0xEC] == base(8, 3) + 10 &&
+          th.rec[0xEF] == base(8, 6) + 5);
+    th.rec[0x74] = 1;                                               // a dwarf: skill 2 -50, 52 < 50 + 5: 0
+    classes::thief_skills(th, t);
+    CHECK(th.rec[0xEB] == 0);
+    th.items[0][0x3E] = 0x82;                                       // gauntlets
+    th.rec[0x74] = 7;
+    th.rec[0x10F] = 3;
+    classes::thief_skills(th, t);
+    CHECK(th.rec[0xEA] == base(4, 1) + 5 && th.rec[0xEF] == base(4, 6));
+    th.rec[0x10F] = 5;
+    classes::thief_skills(th, t);
+    CHECK(th.rec[0xEA] == base(5, 1) + 5 + 10 && th.rec[0xEF] == base(5, 6) + 10);
+    th.rec[0x74] = 1;
+    th.rec[0x10F] = 7;                                              // 47 < 50: 0, then the +10
+    classes::thief_skills(th, t);
+    CHECK(th.rec[0xEB] == 10);
+    th.n_items = 0;
 
     // A Pool of Radiance record (285 bytes): the fields go where Curse keeps
     // them; stats held to the race's and sex's limits; no Animate Dead;

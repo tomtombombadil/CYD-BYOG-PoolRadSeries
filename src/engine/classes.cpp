@@ -172,26 +172,38 @@ void thief_skills(party::Character& c, const Tables& t)
     int code = 0;
     for (int i = 0; i < c.n_items && !code; ++i)
         if (c.items[i][0x34] && (c.items[i][0x3E] == 0x82 || c.items[i][0x3E] == 0x8B)) code = c.items[i][0x3E] & 0x7F;
-    int bonus = 0;                             // (the gloves' +5 goes on to the skills after; from 0, as coab)
+    // The gauntlets: below 4th level the skills of 4th, else +10 on each
+    // (added last, even to a skill the race made 0); the gloves: skill 1 at
+    // 5th level when below it (no bonus), else +5, skill 2 the same at 7th;
+    // that bonus (from 0, as coab) goes on to skills 3-8 - listing
+    // ovr026:0AEA, behaviour_facts.md items
+    bool plus10 = code == 2;
+    if (code == 2 && lv < 4) {
+        lv = 4;
+        plus10 = false;
+    }
+    int bonus = 0;
     for (int skill = 1; skill <= 8; ++skill) {
         int use = lv;
-        if (code == 2) {
-            if (lv < 4) use = 4;
-            else bonus = 10;
-        } else if (code == 11 && (skill == 1 || skill == 2)) {
+        if (code == 11 && (skill == 1 || skill == 2)) {
             const int need = skill == 1 ? 5 : 7;
-            if (lv < need) use = need;
-            else bonus = 5;
+            if (lv < need) {
+                use = need;
+                bonus = 0;
+            } else {
+                bonus = 5;
+            }
         }
         const int race_adj = t.s8(static_cast<uint16_t>(t.lay.thief_race + c.race() * 8 + skill));
-        const int base = t.u8(static_cast<uint16_t>(t.lay.thief_base + use * 8 + skill)) + bonus;
+        const int base = t.u8(static_cast<uint16_t>(t.lay.thief_base + use * 8 + skill));
         int v;
-        if (race_adj < 0 && base < -race_adj) {
+        if (race_adj < 0 && base < -race_adj + bonus) {      // (the original's test: the bonus on the race's side)
             v = 0;
         } else {
-            v = base + race_adj;
+            v = bonus + base + race_adj;
             if (skill < 6) v += t.s8(static_cast<uint16_t>(t.lay.thief_dex + dex * 5 + skill));
         }
+        if (plus10) v += 10;
         c.rec[kThief + skill - 1] = static_cast<uint8_t>(v);
     }
 }

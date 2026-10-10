@@ -1292,6 +1292,276 @@ static void b_fight_effects()
     }
 }
 
+// ---- 6. Items that work while readied (0x3E 0x80 + code, 0x3D its
+// parameter; curse_finish_facts 5, coab CalcStatBonuses / calc_items_effects):
+// the stats each gives from the OWN stats, the effect while readied, the
+// Ring of Wizardry's spell slots, the thief-skill items, cursed items and
+// Remove Curse
+struct BStats {
+    int s[6];
+    int str00;
+};
+
+// What the original makes of the own stats and the readied items (no spells)
+static BStats b_stats_expect(const party::Character& c)
+{
+    const uint8_t* r = c.rec;
+    BStats e{};
+    int str = r[0x10], s00 = r[0x1D], forced_str = -1;
+    int own[6];
+    for (int i = 0; i < 6; ++i) own[i] = r[0x10 + 2 * i];
+    int v[6] = {own[0], own[1], own[2], own[3], own[4], own[5]};
+    int forced_int = -1;
+    for (int i = 0; i < c.n_items; ++i) {
+        const uint8_t* it = c.items[i];
+        if (it[0x3E] <= 0x80 || !it[0x34]) continue;
+        const int code = it[0x3E] & 0x7F, p = it[0x3D];
+        int b = 0, b00 = 0;
+        if (code == 5 && p <= 6) {
+            b = p == 0 ? 18 : 18 + p;
+            b00 = p == 0 ? 100 : 0;
+        }
+        if (code == 8 && p == 0 && own[0] < 18) b = own[0] + 1;
+        if (b > str || (b == 18 && b00 > s00)) {
+            str = b;
+            s00 = b00;
+        }
+        if (code == 13) {
+            forced_str = 3;
+            forced_int = 3;
+        }
+        if (code == 12) forced_int = 7;             // (the last such item's counts)
+        if (code == 8 && p >= 1 && p <= 5 && own[p] < 18) ++v[p];
+        if (code == 2) v[3] += own[3] <= 6 ? 4 : own[3] <= 13 ? 2 : 1;
+        if (code == 10) v[3] -= 2;
+        if (code == 6) {
+            ++v[4];
+            --v[5];
+        }
+    }
+    e.s[0] = forced_str >= 0 ? 3 : str;
+    e.str00 = forced_str >= 0 ? 0 : s00;
+    for (int i = 1; i < 6; ++i) e.s[i] = v[i] < 0 ? 0 : v[i];
+    if (forced_int >= 0) e.s[1] = forced_int;
+    return e;
+}
+
+static void b_worn_items()
+{
+    using namespace play;
+    // The stat items, readied by characters of different own stats
+    struct Own {
+        int str, s00, in, wis, dex, con, cha;
+    };
+    const Own owns[] = {{12, 0, 12, 12, 12, 12, 12}, {17, 0, 17, 17, 17, 17, 17}, {18, 50, 18, 18, 18, 18, 18},
+                        {5, 0, 5, 5, 5, 15, 5}, {18, 100, 14, 14, 14, 16, 14}};
+    for (int k = 0; k < b_n_items; ++k) {
+        const uint8_t* r = b_rec(k);
+        if (r[0x3E] <= 0x80) continue;
+        const int code = r[0x3E] & 0x7F;
+        if (code == 0 || code == 1 || code == 11) continue;
+        for (const Own& o : owns) {
+            party::Character& ch = b_fresh(kA);
+            uint8_t* q = ch.rec;
+            q[0x10] = q[0x11] = static_cast<uint8_t>(o.str);
+            q[0x1D] = q[0x1C] = static_cast<uint8_t>(o.s00);
+            const int ov6[6] = {o.str, o.in, o.wis, o.dex, o.con, o.cha};
+            for (int s = 1; s < 6; ++s) q[0x10 + 2 * s] = q[0x11 + 2 * s] = static_cast<uint8_t>(ov6[s]);
+            q[0x19] = static_cast<uint8_t>(o.con + 1);     // (a Constitution change: the HP rebuilt for this one)
+            ch.rec[0x12B] = 0xFF;
+            const int i = b_give(ch, r, false, true);
+            rules::recalc(ch, *names, d->facts);
+            const int hp0 = ch.hp_max();
+            const bool on = b_ready(i);
+            const BStats e = b_stats_expect(ch);
+            char what[128];
+            snprintf(what, sizeof what, "record %d %s (code %d %d) on own %d/%d %d %d %d %d %d", k, b_nm(r), code, r[0x3D], o.str,
+                     o.s00, o.in, o.wis, o.dex, o.con, o.cha);
+            const bool ok = on && ch.rec[0x11] == e.s[0] && ch.rec[0x1C] == e.str00 && ch.rec[0x13] == e.s[1] &&
+                            ch.rec[0x15] == e.s[2] && ch.rec[0x17] == e.s[3] && ch.rec[0x19] == e.s[4] && ch.rec[0x1B] == e.s[5];
+            expect("items", what, ok, "in use %d/%d %d %d %d %d %d, expected %d/%d %d %d %d %d %d", ch.rec[0x11], ch.rec[0x1C],
+                   ch.rec[0x13], ch.rec[0x15], ch.rec[0x17], ch.rec[0x19], ch.rec[0x1B], e.s[0], e.str00, e.s[1], e.s[2], e.s[3],
+                   e.s[4], e.s[5]);
+            // Constitution's hit points follow (a paladin of 5th level: 15-19 x (Con - 14) a level)
+            if (ch.rec[0x19] != o.con && o.con >= 15 && ch.rec[0x19] <= 19) {
+                const int want = hp0 + 5 * (ch.rec[0x19] - o.con);
+                snprintf(what, sizeof what, "record %d %s: Con %d -> %d, HP max %d -> %d", k, b_nm(r), o.con, ch.rec[0x19], hp0,
+                         want);
+                expect("items", what, ch.hp_max() == want, "%d", ch.hp_max());
+            }
+            // Put away (not cursed): all as before
+            if (!r[0x36]) {
+                b_ready(i);
+                snprintf(what, sizeof what, "record %d %s put away: own stats again", k, b_nm(r));
+                expect("items", what,
+                       ch.rec[0x11] == o.str && ch.rec[0x1C] == o.s00 && ch.rec[0x17] == o.dex && ch.rec[0x19] == o.con &&
+                           ch.hp_max() == hp0,
+                       "Str %d/%d Dex %d Con %d HP %d", ch.rec[0x11], ch.rec[0x1C], ch.rec[0x17], ch.rec[0x19], ch.hp_max());
+            }
+        }
+    }
+    // Two stat items together (an ioun stone +1 Dex and gauntlets of dexterity: both count)
+    {
+        const uint8_t* ioun = nullptr;
+        const uint8_t* gaunt = nullptr;
+        for (int k = 0; k < b_n_items; ++k) {
+            if (b_rec(k)[0x3E] == 0x88 && b_rec(k)[0x3D] == 3) ioun = b_rec(k);
+            if (b_rec(k)[0x3E] == 0x82) gaunt = b_rec(k);
+        }
+        if (ioun && gaunt) {
+            party::Character& ch = b_fresh(kA);
+            ch.rec[0x16] = ch.rec[0x17] = 12;
+            const int a = b_give(ch, ioun, false), b2 = b_give(ch, gaunt, false);
+            rules::recalc(ch, *names, d->facts);
+            b_ready(a);
+            b_ready(b2);
+            expect("items", "Ioun Stone (Dex) + Gauntlets of Dexterity on Dex 12: 15", ch.rec[0x17] == 15, "%d", ch.rec[0x17]);
+            expect("items", "... and its AC: Dex 15 = 1 better", ch.rec[0x19A] == 51, "AC %d", ch.ac());
+        }
+    }
+    // Effect items (code 0): the effect 0x3D while readied (data 0xFF, no time), gone when put away
+    for (int k = 0; k < b_n_items; ++k) {
+        const uint8_t* r = b_rec(k);
+        if (r[0x3E] != 0x80) continue;
+        party::Character& ch = b_fresh(kA);
+        ch.rec[0x12B] = 0xFF;
+        const int i = b_give(ch, r, false, true);
+        rules::recalc(ch, *names, d->facts);
+        b_ready(i);
+        const int fx = r[0x3D];
+        int at = -1;
+        for (int j = 0; j < ch.n_affects; ++j)
+            if (ch.affects[j][0] == fx) at = j;
+        char what[96];
+        snprintf(what, sizeof what, "record %d %s readied: effect %02X, data 0xFF, no time", k, b_nm(r), fx);
+        expect("items", what, at >= 0 && ch.affects[at][3] == 0xFF && ch.affects[at][1] == 0 && ch.affects[at][2] == 0,
+               "found %d", at);
+        const bool still = b_ready(i);
+        bool gone = true;
+        for (int j = 0; j < ch.n_affects; ++j)
+            if (ch.affects[j][0] == fx) gone = false;
+        if (r[0x36]) {
+            snprintf(what, sizeof what, "record %d %s (cursed): stays readied, the effect stays", k, b_nm(r));
+            expect("items", what, still && !gone);
+        } else {
+            snprintf(what, sizeof what, "record %d %s put away: the effect goes", k, b_nm(r));
+            expect("items", what, !still && gone);
+        }
+    }
+    // Remove Curse (the temple): the first cursed item comes off (still cursed), its effect / stats with it
+    for (int k = 0; k < b_n_items; ++k) {
+        const uint8_t* r = b_rec(k);
+        if (!r[0x36]) continue;
+        party::Character& ch = b_fresh(kA);
+        ch.rec[0x12B] = 0xFF;
+        const uint8_t s0[6] = {ch.rec[0x11], ch.rec[0x13], ch.rec[0x15], ch.rec[0x17], ch.rec[0x19], ch.rec[0x1B]};
+        const int i = b_give(ch, r, false, true);
+        rules::recalc(ch, *names, d->facts);
+        b_ready(i);
+        rules::CureFacts cf{};
+        rules::apply_cure(ch, rules::kRemoveCurse, cf, rng);
+        rules::recalc(ch, *names, d->facts);
+        bool fx_gone = true;
+        if (r[0x3E] == 0x80)
+            for (int j = 0; j < ch.n_affects; ++j)
+                if (ch.affects[j][0] == r[0x3D]) fx_gone = false;
+        const bool stats = ch.rec[0x11] == s0[0] && ch.rec[0x13] == s0[1] && ch.rec[0x17] == s0[3];
+        char what[96];
+        snprintf(what, sizeof what, "record %d %s: Remove Curse puts it away (still cursed), its workings gone", k, b_nm(r));
+        expect("items", what, ch.items[i][0x34] == 0 && ch.items[i][0x36] && fx_gone && stats, "readied %d cursed %d fx gone %d stats %d",
+               ch.items[i][0x34], ch.items[i][0x36], fx_gone, stats);
+    }
+    // Ring of Wizardry (code 1): magic-user slots of levels 1-3 doubled; put
+    // away, rebuilt from the table, and the spells past them forgotten (later first)
+    for (int k = 0; k < b_n_items; ++k) {
+        const uint8_t* r = b_rec(k);
+        if (r[0x3E] != 0x81) continue;
+        party::Character& ch = b_fresh(5);                          // the magic-user
+        uint8_t slots[5];
+        memcpy(slots, &ch.rec[0x137], 5);
+        const int i = b_give(ch, r, false);
+        rules::recalc(ch, *names, d->facts);
+        b_ready(i);
+        bool ok = true;
+        for (int l = 0; l < 5; ++l) ok &= ch.rec[0x137 + l] == (l < 3 ? slots[l] * 2 : slots[l]);
+        char what[96];
+        snprintf(what, sizeof what, "record %d %s readied: magic-user slots 1-3 doubled (%d %d %d %d %d)", k, b_nm(r), slots[0],
+                 slots[1], slots[2], slots[3], slots[4]);
+        expect("items", what, ok, "%d %d %d %d %d", ch.rec[0x137], ch.rec[0x138], ch.rec[0x139], ch.rec[0x13A], ch.rec[0x13B]);
+        b_ready(i);
+        ok = true;
+        for (int l = 0; l < 5; ++l) ok &= ch.rec[0x137 + l] == slots[l];
+        snprintf(what, sizeof what, "record %d %s put away: the slots as before", k, b_nm(r));
+        expect("items", what, ok, "%d %d %d %d %d", ch.rec[0x137], ch.rec[0x138], ch.rec[0x139], ch.rec[0x13A], ch.rec[0x13B]);
+        // Memorized past the slots: the extra ones forgotten when it comes off
+        b_ready(i);
+        if (!load_magic()) continue;
+        int first = -1;
+        for (int s = 1; s <= 0x38 && first < 0; ++s)
+            if (mrules->tables.spell_class(s) == 2 && spells::entry(mrules->tables, s).level == 1) first = s;
+        int n1 = 0;
+        for (int m = 0; m < magic::kListSize; ++m) ch.rec[magic::kListAt + m] = 0;
+        for (int m = 0; m < slots[0] * 2; ++m) ch.rec[magic::kListAt + m] = static_cast<uint8_t>(first), ++n1;
+        b_ready(i);
+        int left = 0;
+        for (int m = 0; m < magic::kListSize; ++m) left += ch.rec[magic::kListAt + m] == first;
+        snprintf(what, sizeof what, "record %d %s put away with %d 1st level spells memorized: %d kept (the first ones)", k,
+                 b_nm(r), n1, slots[0]);
+        bool first_kept = true;
+        for (int m = 0; m < slots[0]; ++m) first_kept &= ch.rec[magic::kListAt + m] == first;
+        expect("items", what, left == slots[0] && first_kept, "%d kept", left);
+    }
+    // The thief-skill items (code 2 Gauntlets of Dexterity, 11 Gloves of
+    // Thievery; the first readied one counts): gauntlets - below 4th level the
+    // skills of 4th, else +10 each; gloves - skill 1 at 5th level (or +5),
+    // skill 2 at 7th (or +5), the +5 carried on to skills 3-8
+    if (load_magic()) {
+        for (int k = 0; k < b_n_items; ++k) {
+            const uint8_t* r = b_rec(k);
+            const int code = r[0x3E] & 0x7F;
+            if (r[0x3E] < 0x80 || (code != 2 && code != 11)) continue;
+            for (int lvl : {1, 3, 4, 5, 6, 7, 9}) {
+                party::Character& ch = b_fresh(2);                  // the dwarf fighter / thief
+                ch.rec[0x109 + 6] = static_cast<uint8_t>(lvl);
+                ch.rec[0x16] = ch.rec[0x17] = 12;                  // (Dex 12: gauntlets make it 14)
+                const int i = b_give(ch, r, false);
+                rules::recalc(ch, *names, d->facts);
+                b_ready(i);
+                uint8_t got[8];
+                memcpy(got, &ch.rec[0xEA], 8);
+                // The skills without the item at a given level (Dex as the item leaves it)
+                auto base = [&](int at_level, uint8_t* out) {
+                    party::Character t = ch;
+                    t.items[i][0x34] = 0;
+                    t.rec[0x109 + 6] = static_cast<uint8_t>(at_level);
+                    classes::thief_skills(t, mrules->tables);
+                    memcpy(out, &t.rec[0xEA], 8);
+                };
+                uint8_t want[8];
+                if (code == 2) {
+                    base(lvl < 4 ? 4 : lvl, want);
+                    if (lvl >= 4)
+                        for (int s = 0; s < 8; ++s) want[s] = static_cast<uint8_t>(want[s] + 10);
+                } else {
+                    uint8_t b0[8], b5[8], b7[8];
+                    base(lvl, b0);
+                    base(lvl < 5 ? 5 : lvl, b5);
+                    base(lvl < 7 ? 7 : lvl, b7);
+                    const int carry1 = lvl >= 5 ? 5 : 0, carry2 = lvl >= 7 ? 5 : 0;
+                    want[0] = static_cast<uint8_t>(b5[0] + carry1);
+                    want[1] = static_cast<uint8_t>(b7[1] + carry2);
+                    for (int s = 2; s < 8; ++s) want[s] = static_cast<uint8_t>(b0[s] + carry2);
+                }
+                char what[112];
+                snprintf(what, sizeof what, "record %d %s on a %d-level thief: skills %d %d %d %d %d %d %d %d", k, b_nm(r), lvl,
+                         want[0], want[1], want[2], want[3], want[4], want[5], want[6], want[7]);
+                expect("items", what, memcmp(got, want, 8) == 0, "%d %d %d %d %d %d %d %d", got[0], got[1], got[2], got[3], got[4],
+                       got[5], got[6], got[7]);
+            }
+        }
+    }
+}
+
 static void behave_items()
 {
     using namespace play;
@@ -1335,6 +1605,7 @@ static void behave_items()
     if (part("ready")) b_ready_rules();
     if (part("names")) b_names_detect();
     if (part("money")) b_money();
+    if (part("worn")) b_worn_items();
     if (part("fight")) b_fight_weapons();
     if (part("effects")) b_fight_effects();
     for (int m = 0; pt && m < pt->count; ++m) pt->m[m] = b_saved[m];
