@@ -93,6 +93,10 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   Move Keys, Game, then Map; Esc went into the Game menu (tab bar's right,
   320x240 only); Map (map over the game screen until the next tap) is
   Claude's pick for the freed slot, confirmed by Tom (2026-10-10).
+  v0.66.1 (Tom): every key in the 320x240 row uses the small text (Game,
+  Map, Esc too); Select gives 8 px so Up / Down / Left / Right are each
+  2 px wider ("Right" fits) - widths change in multiples of 4, and
+  Select's text must still fit.
 - Add Character -> Pool (v0.56.0): lists Pool of Radiance characters from
   Curse's save folder (the original) AND the player's Pool of Radiance
   folder on the card (confirmed by Tom, 2026-10-10). The demo stops on
@@ -108,7 +112,8 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   goes in SPEC section 12 (keep it up to date).
 - Journal viewers (Tom, 2026-10-10, v0.64.0): no title bar; one slim key
   row (about 57% of a normal key) Back | Zoom | Prev | page numbers |
-  Next.
+  Next. The page numbers are just "2 of 3" (Tom, v0.66.1: no "Entry N" -
+  it's in the picture - and no "Page").
 - Stats (v0.57.0): bytes 0x10 + 2i = a stat's own value, 0x11 + 2i = the
   one in use (18/xx the other way round: 0x1D own, 0x1C in use);
   `rules::stats` works the in-use ones out on every recalculation - never

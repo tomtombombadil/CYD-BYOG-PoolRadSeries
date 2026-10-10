@@ -119,7 +119,9 @@ The games draw a 320x200 screen. The canvas is presented:
     Around), **Menu Keys**, **Game**, **Map**. Otherwise (menus, lists,
     text, the party menu) the **cursor row** (order: Tom, v0.52.0): Up,
     Down, Select (two keys wide), Left, Right in small text, **Move Keys**,
-    Game, Map. Menu Keys / Move Keys swap the rows by hand; the swap lasts
+    Game, Map (v0.66.1, Tom: every key's text small, Game and Map too;
+    Select gives 8 px so the four direction keys are each 2 px wider and
+    "Right" fits). Menu Keys / Move Keys swap the rows by hand; the swap lasts
     until the game changes between moving and not. **Esc** moved into the
     Game menu (v0.52.0, Tom): a key at the right of its tab bar - back to
     the game, then Esc (at the game's top level that leaves the Play Test,
@@ -574,6 +576,9 @@ How it works (v0.12.0, Curse):
   (`/GOLDBOX/_CYD/CANVAS.TMP`, `frame::park` / `unpark`) and comes back
   when the book closes; the journal PDFs of all four games read on the
   PC page by page (17 / 21 / 33 / 33 pages, all with a picture).
+- v0.64.0 (Tom): no title bar; one slim key row, Back | Zoom | Prev |
+  page numbers | Next. v0.66.1 (Tom): the page numbers are just "2 of 3"
+  (the entry's number is in its picture; no "Page").
 
 ## 8. Copy protection (Tom, 2026-10-06)
 

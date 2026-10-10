@@ -1308,6 +1308,17 @@ ui::Rect walk_key(int k)
         const int i = (row == Row::Move ? kMove : kCur)[k];
         if (i < 0) return ui::Rect{};
         const int w = (pic::kScreenW - gp * 10) / 9;
+        if (row == Row::Cursor && i < 6) {
+            // Up Down Select Left Right in slots 0-5 (Tom, v0.66.1): Select
+            // gives 8 px so each direction key is 2 wider ("Right" fits);
+            // Select's text still fits the rest
+            constexpr int kGive = 8, kEach = kGive / 4;
+            const int dw = w + kEach, sw = w * 2 + gp - kGive;
+            static const int kSlotOf[6] = {0, 1, 2, 2, 3, 4};   // slot -> place in the row
+            const int p = kSlotOf[i];
+            const int x = gp + p * (dw + gp) + (p > 2 ? sw - dw : 0);
+            return {x, top, p == 2 ? sw : dw, h_all};
+        }
         const int span = k == kWSel ? 2 : 1;            // Select: two slots
         return {gp + i * (w + gp), top, w * span + gp * (span - 1), h_all};
     }
@@ -1370,10 +1381,15 @@ bool map_shown = false;
 const char* side_keys[2] = {"Area", "Next Map"};
 void redraw_side_keys()
 {
-    ui::key(walk_key(kWArea), side_keys[0]);
+    // 320x240's row: the small text of the other keys (Tom, v0.66.1)
+    auto side = [](const ui::Rect& r, const char* s, ui::KeyStyle st = ui::KeyStyle::Normal) {
+        if (ui::large()) ui::key(r, s, st);
+        else ui::key_small(r, s, st);
+    };
+    side(walk_key(kWArea), side_keys[0]);
     if (ui::large()) ui::key(walk_key(kWNext), side_keys[1]);
-    if (walk_key(kWEsc).w > 0) ui::key(walk_key(kWEsc), "Esc");
-    if (walk_key(kWMap).w > 0) ui::key(walk_key(kWMap), "Map", map_shown ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+    if (walk_key(kWEsc).w > 0) side(walk_key(kWEsc), "Esc");
+    if (walk_key(kWMap).w > 0) side(walk_key(kWMap), "Map", map_shown ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
 }
 
 void draw_map_grid(const geo::Map& map, const MapSource& ms, int mx, int my, int cell);
@@ -2187,22 +2203,20 @@ int journal_keys() { return jv && jv->have ? 5 : (jv && jv->has_pdf ? 2 : 1); }
 void draw_journal()
 {
     ui::clear();
-    const char* what = jv && jv->kind == 'T' ? "Tale" : "Entry";
     const ui::Rect a = view_area();
-    char name[24], page[24];
-    snprintf(name, sizeof name, "%s %d", what, jv ? jv->number : 0);
-    page[0] = 0;
-    if (jv && jv->have && jv->total_h > a.h) {
-        const int pages = (jv->total_h - a.h + journal_step() - 1) / journal_step() + 1;
-        snprintf(page, sizeof page, "%d of %d", jv->top / journal_step() + 1, pages);
-    }
+    // Just "2 of 3" (Tom, v0.66.1): the entry's number is in its picture
+    char page[24];
+    int pages = 1;
+    if (jv && jv->have && jv->total_h > a.h)
+        pages = (jv->total_h - a.h + journal_step() - 1) / journal_step() + 1;
+    snprintf(page, sizeof page, "%d of %d", jv ? jv->top / journal_step() + 1 : 1, pages);
     const int nk = journal_keys();
     if (nk == 5) {
         const bool more = jv->top + a.h < jv->total_h;
         ui::key(slim_key(0, 5), "Back");
         ui::key(slim_key(1, 5), kFitSlim[jv->fit], jv->fit != kFitWidth ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
         ui::key(slim_key(2, 5), "Prev", jv->top > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
-        slim_label(slim_key(3, 5), name, page[0] ? page : nullptr);
+        slim_label(slim_key(3, 5), page, nullptr);
         ui::key(slim_key(4, 5), "Next", more ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
     } else {
         ui::key(slim_key(0, nk), "Back");
@@ -2356,13 +2370,12 @@ void draw_pdf()
 {
     ui::clear();
     // Keys (Tom, 2026-10-09 / 10): Back | Zoom | Prev | the page | Next, slim, no title bar
-    char page[16], of[16];
-    snprintf(page, sizeof page, "Page %d", pdf_page);
-    snprintf(of, sizeof of, "of %d", pdfview::pages());
+    char page[24];
+    snprintf(page, sizeof page, "%d of %d", pdf_page, pdfview::pages());     // just "3 of 48" (Tom, v0.66.1)
     ui::key(slim_key(0, 5), "Back");
     ui::key(slim_key(1, 5), kFitSlim[pdf_level], pdf_level != kFitWhole ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
     ui::key(slim_key(2, 5), "Prev", pdf_page > 1 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
-    slim_label(slim_key(3, 5), page, of);
+    slim_label(slim_key(3, 5), page, nullptr);
     ui::key(slim_key(4, 5), "Next", pdf_page < pdfview::pages() ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
     const ui::Rect a = pdf_area();
     ui::text(ui::gap() * 3, a.y + ui::gap() * 2, "Reading the page...", style::kTextMuted, ui::Font::Small);
