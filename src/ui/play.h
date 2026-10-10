@@ -70,6 +70,13 @@ void take_dirty(int& y0, int& y1);
 // palette)
 bool fight_colours();
 
+// The game's sound (Settings: 1 Tandy, 2 PC speaker, 3 Off) and its volume
+// 0-255; the Menu's sound test plays one of the game's sound effects (the
+// games' numbers, engine/sound.h)
+void set_sound(uint8_t mode, uint8_t volume);
+uint8_t sound_mode();
+void sound_test(int id);
+
 // For the companion panel
 const geo::Map* map();
 int pos_x();

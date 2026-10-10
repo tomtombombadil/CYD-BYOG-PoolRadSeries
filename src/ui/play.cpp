@@ -23,8 +23,10 @@
 #include "engine/profile.h"
 #include "engine/rules.h"
 #include "engine/savegame.h"
+#include "engine/sound.h"
 #include "engine/text.h"
 #include "engine/view3d.h"
+#include "hal/audio.h"
 #include "hal/sdcard.h"
 
 namespace play {
@@ -164,6 +166,22 @@ Then then = Then::Idle;
 bool waiting = false;         // the script waits for the player
 
 // Combat (play_fight.inc)
+// ---- Sound: the game's own effects (engine/sound), Tandy or PC speaker
+sound::Player* snd = nullptr;
+uint8_t snd_mode = 1, snd_volume = 180;     // (Settings: 1 Tandy, 2 PC speaker, 3 Off)
+
+bool snd_fill(uint8_t* buf, int n, void* ctx)
+{
+    return static_cast<sound::Player*>(ctx)->render(buf, n, kAudioHz, snd_volume);
+}
+
+void sfx(int id)
+{
+    if (!snd || !snd->ready() || (snd_mode != 1 && snd_mode != 2)) return;
+    snd->start(id, snd_mode == 2 ? sound::Device::PcSpeaker : sound::Device::Tandy);
+    audio_play(snd_fill, snd);
+}
+
 void fight_load_monster(int id, int copies, int icon);
 bool npc_join(int id);
 bool party_dead = false;      // DAMAGE killed everyone: the party menu after the script
@@ -4987,6 +5005,7 @@ struct Host : ecl::Host {
         if (cv && screen == Screen::Game && !bigpic_shown()) draw_party(*cv, 17);
     }
     void party_killed() override { party_dead = true; }
+    void sound(int id) override { sfx(id); }
     void log(const char* what) override { Serial.printf("[ecl %d:%04X] %s\n", d->gs.script, vm->pc() + 0x8000, what); }
 };
 
@@ -5212,6 +5231,7 @@ void handle(ecl::Stop r)
             door_prompt(c);
             return;
         }
+        if (vm->get(0x4BE6)) sfx(sound::kStep);         // a step in the 3D view
         run_entry(1, Then::Arrive);
         return;
     case Then::Door:
@@ -5360,6 +5380,31 @@ void begin_adventuring()
 
 #include "play_fight.inc"
 
+// The sound driver's tables and byte code, from the player's program
+void load_sound()
+{
+    const sound::Layout& l = d->prof->sound;
+    if (!l.hi || l.hi <= l.lo) return;
+    const size_t n = l.hi - l.lo;
+    uint8_t* buf = static_cast<uint8_t*>(malloc(n));
+    snd = new (std::nothrow) sound::Player;
+    fs::File f;
+    bool ok = false;
+    if (buf && snd && open_file(d->prof->program, f)) {
+        library::FileSource src(f);
+        exepack::Info info;
+        ok = exepack::parse(src, info) == exepack::Status::Ok &&
+             exepack::read(src, info, l.segment_image + l.lo, buf, n) == exepack::Status::Ok && snd->set_data(l, buf, n);
+        f.close();
+    }
+    free(buf);
+    if (!ok) {
+        Serial.println("[play] the sound driver's data didn't read: no sound");
+        delete snd;
+        snd = nullptr;
+    }
+}
+
 } // namespace
 
 bool available(games::Game g) { return profile::program_name(g) != nullptr; }
@@ -5373,6 +5418,17 @@ const char* no_memory(const char* what)
     Serial.printf("[play] %s\n", msg);
     return msg;
 }
+
+void set_sound(uint8_t mode, uint8_t volume)
+{
+    snd_mode = mode;
+    snd_volume = volume;
+    if (mode != 1 && mode != 2) audio_stop();
+}
+
+uint8_t sound_mode() { return snd_mode; }
+
+void sound_test(int id) { sfx(id); }
 
 const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char* cache_dir)
 {
@@ -5469,6 +5525,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
         f.close();
     }
     vm->set_words(d->script_words);
+    load_sound();
     note_until = 0;
     last_pic_id = -1;
     ecl::GameState& gs = d->gs;
@@ -5498,6 +5555,9 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
 
 void close()
 {
+    audio_stop();
+    delete snd;
+    snd = nullptr;
     if (d) anim_stop();
     input_mode = Input::None;
     if (vm) {
@@ -5554,8 +5614,8 @@ bool act(Act a, pic::Canvas& c)
     if (then != Then::Idle) return false;
     ecl::GameState& g = d->gs;
     switch (a) {
-    case Act::TurnLeft:   g.dir = (g.dir + 6) & 7; break;
-    case Act::TurnRight:  g.dir = (g.dir + 2) & 7; break;
+    case Act::TurnLeft:   g.dir = (g.dir + 6) & 7; sfx(sound::kStep); break;
+    case Act::TurnRight:  g.dir = (g.dir + 2) & 7; sfx(sound::kStep); break;
     case Act::TurnAround: g.dir = (g.dir + 4) & 7; break;
     case Act::Forward:    step(g.dir); return true;
     case Act::StepLeft:   step((g.dir + 6) & 7); return true;     // Tom: the same checks as a step that way

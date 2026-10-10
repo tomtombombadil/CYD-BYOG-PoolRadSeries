@@ -14,7 +14,9 @@ reads them from there.
 > text, pictures, shops, the temple, training, camp (memorizing, resting
 > and casting spells), fights (moving, attacking, casting, turning undead;
 > using potions, wands and scrolls; the monsters cast spells and can flee
-> or surrender), saving, the journal. Roadmap:
+> or surrender), saving, the journal, and the games' sound effects
+> (Tandy 1000 or PC speaker - plug a small speaker into the board's
+> speaker socket; the boards don't come with one). Roadmap:
 > [docs/SPEC.md](docs/SPEC.md).
 
 ## Install

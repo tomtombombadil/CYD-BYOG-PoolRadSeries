@@ -1346,6 +1346,63 @@ struct TestHost : ecl::Host {
     void log(const char*) override {}
 };
 
+// The sound driver: made-up byte code in the games' layout - a PC-speaker
+// tone and a Tandy tone with a loop and a noise voice
+static void test_sound()
+{
+    std::vector<uint8_t> seg(0x100, 0);              // offsets 0x100-0x1FF
+    auto w16 = [&](int off, int v) { seg[off - 0x100] = static_cast<uint8_t>(v); seg[off - 0x100 + 1] = static_cast<uint8_t>(v >> 8); };
+    auto ops = [&](int off, std::initializer_list<int> b) { for (int v : b) seg[off++ - 0x100] = static_cast<uint8_t>(v); };
+    w16(0x100 + 8, 0x140);                           // PC table, sound 1, voice 0
+    w16(0x110 + 8, 0x160);                           // Tandy table, sound 1, voice 0
+    w16(0x110 + 8 + 6, 0x180);                       // ... voice 3 (noise)
+    ops(0x140, {0xFF, 0x0A, 3, 0, 0xFF, 0x04, 0xE8, 0x03, 0xFF, 0x00, 5, 0, 0xFF, 0x0A, 0, 0, 0xFF, 0x00, 0, 0});
+    ops(0x160, {0xFF, 0x0A, 0xFF, 0xFF, 0xFF, 0x04, 0x00, 0x10, 0xFF, 0x26, 3, 0,
+                0xFF, 0x00, 2, 0, 0xFE, 0x26, 0x6C, 0x01, 0xFF, 0x0A, 0, 0, 0xFF, 0x00, 0, 0});
+    ops(0x180, {0xFF, 0x04, 0x00, 0x01, 0xFF, 0x0A, 0x00, 0x80, 0xFF, 0x00, 4, 0, 0xFF, 0x0A, 0, 0, 0xFF, 0x00, 0, 0});
+    const sound::Layout lay{0, 0x100, 0x200, 0x100, 0x110, 2, 0x2F, 0x33};
+    sound::Player p;
+    CHECK(p.set_data(lay, seg.data(), seg.size()));
+    // The PC speaker: the first tick quiet (the games' divisor is still 0), then 1193182 / 1000 Hz for 4 ticks
+    p.start(2, sound::Device::PcSpeaker);
+    p.tick();
+    CHECK(!p.out().speaker_on && p.busy());
+    for (int k = 0; k < 4; ++k) {
+        p.tick();
+        CHECK(p.out().speaker_on && p.out().divisor == 1000);
+    }
+    p.tick();
+    CHECK(!p.out().speaker_on && !p.busy());
+    // Tandy: tone N 64 at full volume for 3 loops of 2 ticks; the noise white, the fastest, 14 dB down
+    p.start(2, sound::Device::Tandy);
+    p.tick();
+    int on = 0;
+    for (int k = 0; k < 10; ++k) {
+        p.tick();
+        if (p.out().atten[0] == 0) {
+            ++on;
+            CHECK(p.out().tone[0] == 64);
+        }
+        if (k == 0) CHECK(p.out().noise == 4 && p.out().atten[3] == 7);
+    }
+    CHECK(on == 5 && !p.busy());                     // (6 ticks of the loop; the first heard from the second)
+    // Rendering: sound, then silence and done
+    std::vector<uint8_t> buf(4096);
+    p.start(2, sound::Device::Tandy);
+    CHECK(p.render(buf.data(), 512, 22050, 255));
+    bool moved = false;
+    for (int i = 0; i < 512; ++i)
+        if (buf[i] != 128) moved = true;
+    CHECK(moved);
+    bool more = true;
+    for (int k = 0; k < 20 && more; ++k) more = p.render(buf.data(), 512, 22050, 255);
+    CHECK(!more && buf[511] == 128);
+    // A bad pointer in a table: refused
+    w16(0x100 + 8, 0x300);
+    sound::Player bad;
+    CHECK(!bad.set_data(lay, seg.data(), seg.size()) && !bad.ready());
+}
+
 // Random treasure: a thousand items made with the Curse facts and made-up
 // ready-made rows; each is one of the kinds, with its words, plus and weight
 static void test_treasure()
@@ -3151,6 +3208,7 @@ int main()
     test_ecl_vm();
     test_ecl_party();
     test_treasure();
+    test_sound();
     test_journal();
     test_geo_view();
     test_party();

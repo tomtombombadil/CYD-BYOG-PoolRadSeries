@@ -223,6 +223,15 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
 - Errors stay on screen until tapped (Tom, 2026-10-09) - never timed. The
   games' own timed messages ("Not enough Money.") keep the games' timing.
 - Sounds: go easy - no sound on plain key presses.
+- Game sound (Tom, 2026-10-09): the games' own sound effects, both ways
+  the originals offered - **Tandy 1000** (the 3-voice + noise chip; the
+  DEFAULT, era fans agree it's far better) and the **PC speaker** - plus
+  Off, in Settings with a volume slider. CYDs don't come with a speaker:
+  the first start asks whether one is connected (No = Off). Later games'
+  AdLib / Sound Blaster: when we get to them. Curse's sound driver and its
+  data live in START.EXE (facts: the Project's claude/sound_facts.md); our
+  own sequencer + synth (`engine/sound.*`) plays the player's byte code, read
+  at run time; output on the DAC (GPIO 26, `hal/audio.*`).
 
 ## Versions and releases
 - Semantic versioning from `VERSION` (started 0.1.0, 2026-10-06). Bump it in

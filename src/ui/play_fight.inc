@@ -227,6 +227,7 @@ struct Page {
     char    line[5][40];
     uint8_t colour[5];
     int     lines = 0;
+    uint8_t sound = 0;                  // the game's sound effect as it shows (0: none)
 };
 
 struct Fight {
@@ -562,6 +563,7 @@ void add_page(int who, const char* a, const char* b2 = nullptr, int whom = -1, c
     if (fg->pages >= 12) return;
     Page& p = fg->page[fg->pages++];
     p.lines = 0;
+    p.sound = 0;
     auto line = [&](const char* s, uint8_t col) {
         if (p.lines < 5 && s) {
             snprintf(p.line[p.lines], sizeof p.line[0], "%s", s);
@@ -582,9 +584,16 @@ void add_page(int who, const char* a, const char* b2 = nullptr, int whom = -1, c
     line(c2, 10);
 }
 
+// The sound the last page queued makes as it shows
+void page_sound(int id)
+{
+    if (fg->pages > 0) fg->page[fg->pages - 1].sound = static_cast<uint8_t>(id);
+}
+
 void show_page(pic::Canvas& c)
 {
     const Page& p = fg->page[fg->at++];
+    if (p.sound) sfx(p.sound);
     clear_panel(c, 10, 21);
     int row = 10;
     for (int k = 0; k < p.lines; ++k) row = panel_text(c, p.line[k], row, p.colour[k]);
@@ -621,7 +630,7 @@ void end_turn(pic::Canvas& c)
 }
 
 // An attack and what it did, as pages
-void do_attack(pic::Canvas& c, int a, int t, bool behind)
+void do_attack(pic::Canvas& c, int a, int t, bool behind, bool shot = false)
 {
     combat::Battle& b = fg->b;
     if (!on_screen(a) || !on_screen(t)) {
@@ -633,8 +642,10 @@ void do_attack(pic::Canvas& c, int a, int t, bool behind)
     const combat::Attack at = combat::attack(b, a, t, names, rng, behind);
     char line[48];
     bool first = true;
+    // The sounds: a shot's whistle, then a blow each hit, a swish for no hit at all
     if (at.slain) {
         add_page(a, fw(profile::kSlays), fw(profile::kCruelBlow), t);
+        page_sound(sound::kHit);
         first = false;
     }
     for (int k = 0; k < at.n && !at.slain; ++k) {
@@ -643,12 +654,19 @@ void do_attack(pic::Canvas& c, int a, int t, bool behind)
         snprintf(line, sizeof line, "%s%s%d%s%s", behind ? fw(profile::kFromBehind) : "", fw(profile::kHittingFor), dmg,
                  dmg == 1 ? fw(profile::kPointW) : fw(profile::kPointsW), fw(profile::kOfDamage));
         add_page(a, fw(at.backstab ? profile::kBackstabs : profile::kAttacksW), line, t);
+        page_sound(first && shot ? sound::kMissile : sound::kHit);
         first = false;
     }
-    if (first) add_page(a, fw(at.backstab ? profile::kBackstabs : profile::kAttacksW), fw(profile::kMisses), t);
+    if (first) {
+        add_page(a, fw(at.backstab ? profile::kBackstabs : profile::kAttacksW), fw(profile::kMisses), t);
+        page_sound(shot ? sound::kMissile : sound::kMiss);
+    }
     if (at.down) {
         const combat::Down dn = combat::down_state(b.f[t]);
-        if (dn == combat::Down::Dead) add_page(t, fw(profile::kIsKilled));
+        if (dn == combat::Down::Dead) {
+            add_page(t, fw(profile::kIsKilled));
+            page_sound(sound::kDeath);
+        }
         else if (dn == combat::Down::Dying) add_page(t, fw(profile::kGoesDown), fw(profile::kIsDying));
         else add_page(t, fw(profile::kGoesDown));
     }
@@ -1041,6 +1059,7 @@ void try_step(pic::Canvas& c, int dir)
         return;
     }
     combat::step(b, i, dir);
+    sfx(sound::kStep);
     f.moves -= cost;
     guard_attacks(c, i);
     if (fg->pages) {
@@ -1164,7 +1183,7 @@ void aim_target(pic::Canvas& c, int t)
     // Missiles: the readied ammunition (arrows / quarrels) or the thrown weapon goes
     int ammo = -1;
     const bool shot = !combat::adjacent(fg->b, fg->cur, t) && combat::missile(fg->b, f, &ammo) > 0;
-    if (shot) do_attack(c, fg->cur, t, false);
+    if (shot) do_attack(c, fg->cur, t, false, true);
     else melee(c, fg->cur, t);
     if (shot) spend_ammo(fg->cur, ammo);
     say(c, FSt::Turn);
@@ -1347,7 +1366,7 @@ void ai_step(pic::Canvas& c)
     const combat::Plan p = combat::think(b, fg->t, i, rng);
     switch (p.act) {
     case combat::Act::Attack:
-        if (p.missile) do_attack(c, i, p.target, false);
+        if (p.missile) do_attack(c, i, p.target, false, true);
         else melee(c, i, p.target);
         if (p.missile) spend_ammo(i, p.ammo);
         say(c, FSt::Turn);
@@ -1357,6 +1376,7 @@ void ai_step(pic::Canvas& c)
         free_attacks(c, i, p.dir);
         if (f.up()) {
             combat::step(b, i, p.dir);
+            sfx(sound::kStep);
             f.moves -= cost;
             guard_attacks(c, i);
         }
@@ -1953,6 +1973,7 @@ void cast_now(pic::Canvas& c, bool forgotten)
     }
     int pw = 0;
     draw_fight(c);
+    const int first_page = fg->pages;
     if (from_item) {
         pw = combat::power_of(f.rec, mrules->tables, sp, true);
     } else {
@@ -1967,6 +1988,11 @@ void cast_now(pic::Canvas& c, bool forgotten)
     combat::SpellLine lines[24];
     const int n = combat::cast(b, mrules->tables, i, sp, *fs, fg->sp_t, fg->sp_n, rng, lines, 24, pw);
     spell_pages(i, lines, n, *fs);
+    // The spell's sound with its first page: the fireball's roar, the bolt's crackle, else the spell's flight
+    if (fg->pages > first_page)
+        fg->page[first_page].sound = static_cast<uint8_t>(sp == d->prof->sound.fireball_spell    ? sound::kFireball
+                                                          : sp == d->prof->sound.lightning_spell ? sound::kLightning
+                                                                                                 : sound::kSpell);
     if (from_item) spend_item(i, sp);
     f.attacks[0] = f.attacks[1] = 0;
     say(c, FSt::Next);

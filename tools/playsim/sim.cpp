@@ -11,6 +11,34 @@
 #include "engine/rules.h"
 #include <vector>
 #include <string>
+
+// The board's sound output, here: each sound rendered at once (SOUNDWAV=file
+// keeps them all in one WAV to listen to; SOUNDLOG prints them)
+static std::vector<uint8_t> g_wav;
+static int g_sounds = 0;
+void audio_play(AudioFill fill, void* ctx)
+{
+    ++g_sounds;
+    uint8_t b[512];
+    for (int k = 0; k < 400 && fill(b, 512, ctx); ++k)
+        if (getenv("SOUNDWAV")) g_wav.insert(g_wav.end(), b, b + 512);
+}
+void audio_stop() {}
+bool audio_running() { return false; }
+static void save_wav()
+{
+    const char* fn = getenv("SOUNDWAV");
+    if (!fn || g_wav.empty()) return;
+    FILE* o = fopen(fn, "wb");
+    if (!o) return;
+    const uint32_t len = (uint32_t)g_wav.size(), hz = kAudioHz;
+    auto w32 = [&](uint32_t v) { fwrite(&v, 4, 1, o); };
+    auto w16 = [&](uint16_t v) { fwrite(&v, 2, 1, o); };
+    fwrite("RIFF", 1, 4, o); w32(36 + len); fwrite("WAVEfmt ", 1, 8, o); w32(16); w16(1); w16(1); w32(hz); w32(hz); w16(1); w16(8);
+    fwrite("data", 1, 4, o); w32(len); fwrite(g_wav.data(), 1, len, o);
+    fclose(o);
+    printf("  %d sounds, %.1f s in %s\n", g_sounds, len / (double)hz, fn);
+}
 uint32_t g_now = 1000;
 SerialT Serial;
 static std::vector<uint8_t> px(320 * 200);
@@ -419,5 +447,6 @@ int main(int argc, char** argv)
         printf("  saved at %d,%d %s script %d\n", play::pos_x(), play::pos_y(), geo::dir_name(play::dir()), play::vm->get(0x4BF2));
     }
     shot("end");
+    save_wav();
     play::close();
 }

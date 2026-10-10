@@ -165,6 +165,7 @@ uint16_t Vm::get(uint16_t a) const
     if (a >= kBase && a < kBase + kCodeSize) return s_.code[a - kBase];
     switch (a) {
     case 0x033D: return static_cast<uint16_t>(s_.dir);
+    case 0x03DE: return sound_kind_;
     case 0xC04B: return static_cast<uint16_t>(s_.x);
     case 0xC04C: return static_cast<uint16_t>(s_.y);
     case 0xC04D: return static_cast<uint16_t>(s_.dir / 2);
@@ -198,6 +199,7 @@ void Vm::set(uint16_t a, uint16_t v)
         return;
     }
     switch (a) {
+    case 0x03DE: sound_kind_ = v; break;
     case 0xC04B: s_.x = static_cast<int8_t>(v) & 15; s_.moved = true; break;
     case 0xC04C: s_.y = static_cast<int8_t>(v) & 15; s_.moved = true; break;
     case 0xC04D: s_.dir = (v % 4) * 2; s_.moved = true; break;
@@ -374,7 +376,10 @@ Stop Vm::damage_step()
             const DmgLine& l = dmg_[k / 2];
             char nm[20] = {};
             if (party_ && l.who < party_->count) party_->m[l.who].name(nm, sizeof nm);
-            if (l.dies) snprintf(dmg_text_, sizeof dmg_text_, "  %s%s", nm, word(kWDies));
+            if (l.dies) {
+                snprintf(dmg_text_, sizeof dmg_text_, "  %s%s", nm, word(kWDies));
+                h_.sound(5);                                // (the death sound)
+            }
             else snprintf(dmg_text_, sizeof dmg_text_, "  %s%s%d%s", nm, word(kWIsHitFor), l.amount, word(kWPointsOfDamage));
             text_ = dmg_text_;
         }
@@ -1010,8 +1015,10 @@ Stop Vm::step()
             if (speed == 0) speed = 4;
             pause_ms_ = static_cast<uint32_t>(speed) * 100;
             return wait_for(Wait::Pause);
-        } else if (w == 0xB200 || w == 0xC018) {
-            // A sound (the engine has none yet); the wall type ahead (worked out anyway)
+        } else if (w == 0xB200) {
+            h_.sound(sound_kind_ == 10 ? 0x0B : 0x0A);         // a step; 10: the fireball's roar
+        } else if (w == 0xC018) {
+            // The wall type ahead (worked out anyway)
         } else if (w == 0xC01E) {
             s_.x = (s_.x + (s_.dir == 2 ? 1 : s_.dir == 6 ? -1 : 0)) & 15;
             s_.y = (s_.y + (s_.dir == 4 ? 1 : s_.dir == 0 ? -1 : 0)) & 15;

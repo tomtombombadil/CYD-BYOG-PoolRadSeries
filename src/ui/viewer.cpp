@@ -33,7 +33,7 @@ namespace viewer {
 
 namespace {
 
-enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Walk, Play, Journal, Pdf, GameMenu, Settings, Logs };
+enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Walk, Play, Journal, Pdf, GameMenu, Settings, Logs, Speaker };
 
 Env       env_;
 Settings* cfg = nullptr;
@@ -107,6 +107,8 @@ void list_files();
 // else (the game screens need the memory)
 void go(Screen s)
 {
+    // The first start: is a speaker connected? (CYD boards come without one)
+    if (s == Screen::Home && cfg && cfg->sound == kSoundAsk) s = Screen::Speaker;
     const bool assets = s == Screen::Files || s == Screen::Blocks || s == Screen::View;
     if (assets && !A) {
         A = new (std::nothrow) Assets;
@@ -858,6 +860,7 @@ void tap_files(const ui::Tap& t)
         char cdir[160];
         library::make_cache_dirs(game_dirs[game_sel]);
         snprintf(cdir, sizeof cdir, "%s/%s/%s", games::kRootDir, library::kCacheDir, game_dirs[game_sel].folder);
+        play::set_sound(cfg->sound, cfg->volume);
         play_error = play::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game, frame::canvas(), cdir);
         go(Screen::Play);
         return;
@@ -1495,7 +1498,7 @@ bool tap_keyboard(const ui::Tap& t)
 // Journal PDF (the book). More tabs as the engine grows. Back to Game at
 // the bottom.
 
-enum MenuTab { kTabJournal, kTabPdf, kTabs };
+enum MenuTab { kTabJournal, kTabPdf, kTabSounds, kTabs };
 int  menu_tab = kTabJournal;
 int  menu_page = 0;
 bool from_menu = false;       // the journal / PDF screens go back to the Menu
@@ -1510,7 +1513,7 @@ ui::Rect tab_rect(int i)
 
 void draw_tabs(int active)
 {
-    static const char* const kNames[kTabs] = {"Journal", "Journal PDF"};
+    static const char* const kNames[kTabs] = {"Journal", "Journal PDF", "Sounds"};
     ui::gfx().fillRect(0, 0, ui::width(), ui::header_h(), style::kHeader);
     for (int i = 0; i < kTabs; ++i) ui::key(tab_rect(i), kNames[i], i == active ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
 }
@@ -1553,11 +1556,71 @@ void leave_menu()
     go(Screen::Play);
 }
 
+// The Sounds tab: the game's sound effects to hear, Tandy or PC speaker
+// (the Settings choice; Tom: to compare them)
+struct SoundKey {
+    uint8_t     id;
+    const char* name;
+};
+constexpr SoundKey kSoundKeys[] = {
+    {0x0A, "Step"},  {0x07, "Hit"},       {0x09, "Miss"},      {0x0C, "Missile"},
+    {0x06, "Sling"}, {0x02, "Spell"},     {0x03, "Magic Hit"}, {0x04, "Magic Stars"},
+    {0x0B, "Fireball"}, {0x08, "Lightning"}, {0x05, "Death"}, {0x0D, "Title"},
+};
+constexpr int kSoundKeyCount = sizeof kSoundKeys / sizeof kSoundKeys[0];
+
+ui::Rect sound_key(int i)          // i < 0: the device keys (-1 Tandy, -2 PC Speaker)
+{
+    const ui::Rect a = journal_area();
+    const int gp = ui::gap(), cols = 4, rows = kSoundKeyCount / cols + 1;
+    const int w = (a.w - gp * (cols + 1)) / cols, h = (a.h - gp * (rows + 1)) / rows;
+    if (i < 0) {
+        const int dw = (a.w - gp * 3) / 2;
+        return {a.x + gp + (-i - 1) * (dw + gp), a.y + gp, dw, h};
+    }
+    return {a.x + gp + (i % cols) * (w + gp), a.y + gp + (i / cols + 1) * (h + gp), w, h};
+}
+
+void draw_sounds()
+{
+    ui::key(sound_key(-1), "Tandy", cfg->sound == kSoundTandy ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+    ui::key(sound_key(-2), "PC Speaker", cfg->sound == kSoundPc ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+    for (int i = 0; i < kSoundKeyCount; ++i) ui::key(sound_key(i), kSoundKeys[i].name);
+}
+
+void tap_sounds(const ui::Tap& t)
+{
+    for (int d2 = 1; d2 <= 2; ++d2)
+        if (sound_key(-d2).contains(t.x, t.y)) {
+            cfg->sound = d2 == 1 ? kSoundTandy : kSoundPc;
+            settings_save(*cfg);
+            play::set_sound(cfg->sound, cfg->volume);
+            dirty = true;
+            return;
+        }
+    for (int i = 0; i < kSoundKeyCount; ++i)
+        if (sound_key(i).contains(t.x, t.y)) {
+            if (cfg->sound != kSoundTandy && cfg->sound != kSoundPc) {
+                cfg->sound = kSoundTandy;           // (it was off: the keys above say which)
+                settings_save(*cfg);
+                play::set_sound(cfg->sound, cfg->volume);
+                dirty = true;
+            }
+            play::sound_test(kSoundKeys[i].id);
+            return;
+        }
+}
+
 void draw_game_menu()
 {
     ui::clear();
     draw_tabs(menu_tab);
     const ui::Rect a = journal_area();
+    if (menu_tab == kTabSounds) {
+        ui::key(ui::bottom_key(0, 1), "Back to Game");
+        draw_sounds();
+        return;
+    }
     const int pages = menu_pages();
     if (pages > 1) {
         ui::key(ui::bottom_key(0, 3), "Prev Page", menu_page > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
@@ -1608,10 +1671,15 @@ void tap_game_menu(const ui::Tap& t)
         }
         return;
     }
-    if (tab == kTabJournal) {
-        menu_tab = kTabJournal;
+    if (tab == kTabJournal || tab == kTabSounds) {
+        menu_tab = tab;
         menu_note[0] = 0;
         dirty = true;
+        return;
+    }
+    if (menu_tab == kTabSounds) {
+        if (bottom_hit(t, 1) == 0) leave_menu();
+        else tap_sounds(t);
         return;
     }
     const int pages = menu_pages();
@@ -2274,10 +2342,12 @@ void tap_play(const ui::Tap& t)
 // The keys (Tom, 2026-10-09): Brightness is a slider in one key's space;
 // Swap Red/Blue shows red, green and blue blocks to check the colours by;
 // Logs. More than fit go on further pages (arrows bottom right).
-enum SetItem { kBright, kInvert, kSwap, kRotate, kCalibrate, kScale, kLogs };
+// Sound (Tom, 2026-10-09): the games' effects as on a Tandy 1000 (the
+// default) or a PC speaker, or Off; Volume a slider like Brightness.
+enum SetItem { kBright, kInvert, kSwap, kRotate, kCalibrate, kScale, kLogs, kSound, kVolume };
 
-const SetItem kSetLarge[] = {kBright, kLogs, kInvert, kSwap, kRotate, kCalibrate, kScale};
-const SetItem kSetSmall[] = {kBright, kLogs, kInvert, kSwap, kRotate, kCalibrate};
+const SetItem kSetLarge[] = {kBright, kLogs, kSound, kVolume, kInvert, kSwap, kRotate, kCalibrate, kScale};
+const SetItem kSetSmall[] = {kBright, kLogs, kSound, kVolume, kInvert, kSwap, kRotate, kCalibrate};
 int set_page = 0;
 
 int set_rows() { return ui::large() ? 4 : 3; }
@@ -2303,16 +2373,17 @@ ui::Rect slider_track(const ui::Rect& r)
     return {r.x + pad, top, r.w - pad * 2, r.y + r.h - ui::gap() - top};
 }
 
-void draw_slider(const ui::Rect& r)
+void draw_slider(const ui::Rect& r, bool volume = false)
 {
     LGFX& g = ui::gfx();
     ui::key(r, "");
     char b[32];
-    snprintf(b, sizeof b, "Brightness %d%%", cfg->brightness * 100 / 255);
+    const int v = volume ? cfg->volume : cfg->brightness, lo = volume ? kMinVolume : kMinBrightness;
+    snprintf(b, sizeof b, "%s %d%%", volume ? "Volume" : "Brightness", v * 100 / 255);
     ui::text(r.x + ui::gap() * 2, r.y + ui::gap(), b, style::kText, ui::Font::Small);
     const ui::Rect t = slider_track(r);
     const int cy = t.y + t.h / 2, th = ui::large() ? 6 : 4;
-    const int pos = t.x + (cfg->brightness - kMinBrightness) * t.w / (255 - kMinBrightness);
+    const int pos = t.x + (v - lo) * t.w / (255 - lo);
     g.fillRoundRect(t.x, cy - th / 2, t.w, th, th / 2, style::kKeyEdge);
     g.fillRoundRect(t.x, cy - th / 2, pos - t.x + 1, th, th / 2, style::kGold);
     int kr = t.h / 2 - 1;
@@ -2321,17 +2392,29 @@ void draw_slider(const ui::Rect& r)
     g.drawCircle(pos, cy, kr, style::kText);
 }
 
-// Brightness from a point on the slider
-bool slider_set(const ui::Rect& r, int x)
+// Brightness (or the volume) from a point on the slider
+bool slider_set(const ui::Rect& r, int x, bool volume = false)
 {
     const ui::Rect t = slider_track(r);
-    int v = kMinBrightness + (x - t.x) * (255 - kMinBrightness) / (t.w > 0 ? t.w : 1);
-    if (v < kMinBrightness) v = kMinBrightness;
+    const int lo = volume ? kMinVolume : kMinBrightness;
+    int v = lo + (x - t.x) * (255 - lo) / (t.w > 0 ? t.w : 1);
+    if (v < lo) v = lo;
     if (v > 255) v = 255;
-    if (v == cfg->brightness) return false;
-    cfg->brightness = static_cast<uint8_t>(v);
-    ui::gfx().setBrightness(cfg->brightness);
+    uint8_t& cur = volume ? cfg->volume : cfg->brightness;
+    if (v == cur) return false;
+    cur = static_cast<uint8_t>(v);
+    if (volume) play::set_sound(cfg->sound, cfg->volume);
+    else ui::gfx().setBrightness(cfg->brightness);
     return true;
+}
+
+const char* sound_label()
+{
+    switch (cfg->sound) {
+    case kSoundPc: return "Sound: PC Speaker";
+    case kSoundOff: return "Sound: Off";
+    default: return "Sound: Tandy";
+    }
 }
 
 void draw_swap(const ui::Rect& r, bool lit)
@@ -2365,7 +2448,36 @@ void draw_set_item(int slot, SetItem it)
     case kCalibrate: ui::key(r, "Recalibrate Touch"); break;
     case kScale:     ui::key(r, cfg->scale_15x ? "Game Screen: 1.5x" : "Game Screen: 1:1", lit(cfg->scale_15x)); break;
     case kLogs:      ui::key(r, "Logs"); break;
+    case kSound:     ui::key(r, sound_label(), lit(cfg->sound != kSoundOff)); break;
+    case kVolume:    draw_slider(r, true); break;
     }
+}
+
+// ---- The first start: a speaker? (Tom, 2026-10-09: CYDs come without one)
+void draw_speaker()
+{
+    ui::clear();
+    ui::header("Sound", false);
+    const int x = ui::gap() * 3;
+    int y = ui::header_h() + ui::gap() * 3;
+    y = wrap_text(x, y, ui::width() - x * 2, "Is a speaker plugged into the board's speaker socket?", ui::Font::Normal,
+                  style::kText, true);
+    wrap_text(x, y + ui::gap() * 2, ui::width() - x * 2,
+              "The games' sound effects play through it, as on a Tandy 1000 (or a PC speaker: Settings). "
+              "The boards don't come with one.",
+              ui::Font::Small, style::kTextMuted, true);
+    ui::key(ui::bottom_key(0, 2), "Yes");
+    ui::key(ui::bottom_key(1, 2), "No");
+}
+
+void tap_speaker(const ui::Tap& t)
+{
+    const int k = bottom_hit(t, 2);
+    if (k < 0) return;
+    cfg->sound = k == 0 ? kSoundTandy : kSoundOff;
+    if (cfg->volume < kMinVolume) cfg->volume = kDefaultVolume;
+    settings_save(*cfg);
+    go(Screen::Home);
 }
 
 void draw_settings()
@@ -2406,30 +2518,35 @@ void draw_settings()
     for (int i = 0; i < n; ++i, y += lh) ui::text(ui::gap() * 2, y, l[i], style::kTextMuted, ui::Font::Small);
 }
 
-int bright_slot()          // the slider's place on this page, -1 when not on it
+int item_slot(SetItem it)  // the item's place on this page, -1 when not on it
 {
     const int first = set_page * set_per_page();
     for (int i = 0; i < set_per_page() && first + i < set_total(); ++i)
-        if (set_item(first + i) == kBright) return i;
+        if (set_item(first + i) == it) return i;
     return -1;
 }
 
 bool slider_dragged = false;
+int  slider_grabbed = -1;               // 0 brightness, 1 volume: the one the drag began on
 
-// Dragging the slider: the brightness follows; saved when the stylus lifts
+// Dragging a slider: the brightness / volume follows; saved when the stylus lifts
 void settings_tick()
 {
     int dx, dy, x, y;
     const bool dragging = ui::drag(dx, dy);
-    const int slot = bright_slot();
-    if (dragging && slot >= 0 && ui::touch_point(x, y)) {
-        const ui::Rect r = set_cell(slot);
-        if (y >= r.y - ui::gap() * 2 && y < r.y + r.h + ui::gap() * 2) {
+    if (dragging && ui::touch_point(x, y)) {
+        for (int k = 0; k < 2; ++k) {
+            const int slot = item_slot(k ? kVolume : kBright);
+            if (slot < 0 || (slider_grabbed >= 0 && slider_grabbed != k)) continue;
+            const ui::Rect r = set_cell(slot);
+            if (slider_grabbed < 0 && (x < r.x || x >= r.x + r.w || y < r.y || y >= r.y + r.h)) continue;
+            slider_grabbed = k;
             slider_dragged = true;
-            if (slider_set(r, x)) draw_slider(r);
+            if (slider_set(r, x, k == 1)) draw_slider(r, k == 1);
         }
     } else if (!dragging && slider_dragged) {
         slider_dragged = false;
+        slider_grabbed = -1;
         settings_save(*cfg);
     }
 }
@@ -2458,6 +2575,16 @@ void tap_settings(const ui::Tap& t)
             logui::open(false);
             go(Screen::Logs);
             return;
+        case kVolume:
+            if (slider_set(r, t.x, true)) {
+                draw_slider(r, true);
+                settings_save(*cfg);
+            }
+            return;
+        case kSound:
+            cfg->sound = cfg->sound == kSoundTandy ? kSoundPc : cfg->sound == kSoundPc ? kSoundOff : kSoundTandy;
+            play::set_sound(cfg->sound, cfg->volume);
+            break;
         case kInvert: pp.invert = !pp.invert; panel_prefs_set(g, pp); break;
         case kSwap:   pp.swap_rb = !pp.swap_rb; panel_prefs_set(g, pp); break;
         case kRotate:
@@ -2531,6 +2658,7 @@ void tick()
         case Screen::Pdf:      tap_pdf(t); break;
         case Screen::GameMenu: tap_game_menu(t); break;
         case Screen::Settings: tap_settings(t); break;
+        case Screen::Speaker:  tap_speaker(t); break;
         case Screen::Logs:
             if (!logui::tap(t)) go(logui::from_scan() ? Screen::Home : Screen::Settings);
             break;
@@ -2549,7 +2677,15 @@ void tick()
     if (!dirty) return;
     dirty = false;
     switch (screen) {
-    case Screen::Home:     draw_home(); break;
+    case Screen::Home:
+        if (cfg && cfg->sound == kSoundAsk) {
+            screen = Screen::Speaker;
+            draw_speaker();
+        } else {
+            draw_home();
+        }
+        break;
+    case Screen::Speaker:  draw_speaker(); break;
     case Screen::Files:    draw_files(); break;
     case Screen::Blocks:   draw_blocks(); break;
     case Screen::View:     draw_view(); break;

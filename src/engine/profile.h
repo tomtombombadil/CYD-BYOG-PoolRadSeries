@@ -21,6 +21,7 @@
 #include "ecl.h"
 #include "games.h"
 #include "treasure.h"
+#include "sound.h"
 
 namespace profile {
 
@@ -325,6 +326,9 @@ struct Profile {
     // program keeps its rows of ready-made items (DS offset, 7 x 16 bytes)
     const treasure::Facts* random_items;
     uint16_t               random_rows;
+
+    // The sound driver's tables and byte code (its segment in the program)
+    sound::Layout sound;
 };
 
 // The game's program file name (to look for it), or nullptr if no

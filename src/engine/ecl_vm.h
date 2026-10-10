@@ -113,6 +113,9 @@ public:
     virtual void party_changed() {}
     // DAMAGE killed the whole party ("The entire party is killed!" shown)
     virtual void party_killed() {}
+    // A sound effect (the games' sound numbers; CALL B200 - a step, or the
+    // fireball's roar when the script set 0x03DE to 10)
+    virtual void sound(int id) { (void)id; }
     virtual void log(const char* what) = 0;
 };
 
@@ -197,6 +200,7 @@ private:
     GameState& s_;
     Host& h_;
     party::Party* party_ = nullptr;
+    uint16_t sound_kind_ = 0;           // what the scripts wrote to 0x03DE (CALL B200's sound)
     const char* const* words_ = nullptr;
     const char* word(int i) const { return words_ && words_[i] ? words_[i] : ""; }
     // The selected character: LOAD CHARACTER's (put back at EXIT / PROGRAM),
