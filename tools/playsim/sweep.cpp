@@ -24,6 +24,7 @@
 // its own copy of the game folder.
 #include "ui/play.cpp"
 #include "engine/rules.h"
+#include <cstdarg>
 #include <random>
 #include <string>
 #include <vector>
@@ -943,6 +944,69 @@ static void sweep_monkey(int rounds)
     printf("  %d boots\n", boots);
 }
 
+// ---- behaviour checks (CLAUDE.md "Game testing"): what each thing DOES,
+// against what the original does (the rules, the program's tables, the
+// coab facts - claude/behaviour_facts.md), never against our own code.
+// Build with -DCYD_TEST_HOOKS (the die hook) and -DBEHAVE_<PART> for the
+// parts wanted: CLASSES, ITEMS, SPELLS, MONSTERS, EVENTS, SAVES.
+#ifdef CYD_TEST_HOOKS
+static int b_pass = 0, b_fail = 0;
+// One check: "PASS part: what - detail" / "FAIL ..."; a failure counts as a problem
+static bool expect(const char* part, const char* what, bool ok, const char* fmt = "", ...)
+{
+    char detail[400];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(detail, sizeof detail, fmt, ap);
+    va_end(ap);
+    printf("%s %s: %s%s%s\n", ok ? "PASS" : "FAIL", part, what, detail[0] ? " - " : "", detail);
+    if (ok) ++b_pass;
+    else {
+        ++b_fail;
+        ++problems;
+    }
+    return ok;
+}
+// The dice: as usual, all highest, all lowest, or these faces in turn (1-based;
+// when they run out: as usual)
+static int b_dice_mode = 0;                 // 0 usual, 1 highest, 2 lowest
+static std::vector<int> b_faces;
+static size_t b_face_at = 0;
+static int b_die(int n)
+{
+    if (b_face_at < b_faces.size()) {
+        const int f = b_faces[b_face_at++];
+        return f - 1 < n ? f - 1 : n - 1;
+    }
+    if (b_dice_mode == 1) return n - 1;
+    if (b_dice_mode == 2) return 0;
+    return -1;
+}
+static void dice_usual() { b_dice_mode = 0; b_faces.clear(); b_face_at = 0; create::g_die_hook = b_die; }
+static void dice_high() { dice_usual(); b_dice_mode = 1; }
+static void dice_low() { dice_usual(); b_dice_mode = 2; }
+static void dice_faces(std::initializer_list<int> f) { dice_usual(); b_faces.assign(f); }
+#endif
+
+#ifdef BEHAVE_CLASSES
+#include "behave_classes.inc"
+#endif
+#ifdef BEHAVE_ITEMS
+#include "behave_items.inc"
+#endif
+#ifdef BEHAVE_SPELLS
+#include "behave_spells.inc"
+#endif
+#ifdef BEHAVE_MONSTERS
+#include "behave_monsters.inc"
+#endif
+#ifdef BEHAVE_EVENTS
+#include "behave_events.inc"
+#endif
+#ifdef BEHAVE_SAVES
+#include "behave_saves.inc"
+#endif
+
 int main(int argc, char** argv)
 {
     if (argc < 3) {
@@ -965,6 +1029,34 @@ int main(int argc, char** argv)
         rnd.seed(static_cast<unsigned>(arg ? arg : 1));
         sweep_monkey(argc > 4 ? atoi(argv[4]) : 20000);
     }
+#ifdef CYD_TEST_HOOKS
+    else if (mode == "behave") {
+        // (each part: a function of its own .inc; argv[3] = one part's name, or all)
+        const std::string only = argc > 3 ? argv[3] : "";
+        auto want = [&](const char* p) { return only.empty() || only == p; };
+        (void)want;
+#ifdef BEHAVE_CLASSES
+        if (want("classes")) behave_classes();
+#endif
+#ifdef BEHAVE_ITEMS
+        if (want("items")) behave_items();
+#endif
+#ifdef BEHAVE_SPELLS
+        if (want("spells")) behave_spells();
+#endif
+#ifdef BEHAVE_MONSTERS
+        if (want("monsters")) behave_monsters();
+#endif
+#ifdef BEHAVE_EVENTS
+        if (want("events")) behave_events();
+#endif
+#ifdef BEHAVE_SAVES
+        if (want("saves")) behave_saves();
+#endif
+        create::g_die_hook = nullptr;
+        printf("== behaviour: %d passed, %d failed\n", b_pass, b_fail);
+    }
+#endif
     else printf("no mode %s\n", mode.c_str());
     play::close();
     printf("== %d problems\n", problems);
