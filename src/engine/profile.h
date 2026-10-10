@@ -136,6 +136,7 @@ enum FightWord {
     kTakes, kPointsOfDamage, kTakes1, kFromFire, kFromCold, kFromElec, kFromAcid, kFromMagic, kGoesDownS,
     kIsUnaffectedS, kCastsASpell, kSpellColon, kBeginsCasting, kCampOnly, kTurnsUndead, kIsTurned, kIsDestroyed,
     kNothingHappens, kAlreadyTargeted, kAbortSpell, kSpellAborted,               // ... "Abort Spell? ", "Spell Aborted"
+    kNoxiousCloud, kAirClears,                                                    // "Creates a noxious cloud" ...
     kFightWords
 };
 

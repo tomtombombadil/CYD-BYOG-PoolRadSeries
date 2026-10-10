@@ -220,14 +220,14 @@ void blit4(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y, bool mi
 // ---- The fight's state (on the heap while fighting)
 enum class FSt : uint8_t {
     Begin, Turn, Menu, Move, Aim, DoneMenu, Speed, Ai, Pages, RoundEnd, Results, Destroyed, AllyAsk, FleeAsk,
-    ContinueAsk, Next, UseAim, AbortAsk
+    ContinueAsk, Next, UseAim, AbortAsk, RoundRest
 };
 
 // A page's pictures: a missile or spell flying, a burst / sparkles on a
 // fighter (the games' magic hits), a fallen one's skull blinking; each with
 // the sound it starts with (a sound alone: kind None)
 struct Fx {
-    enum Kind : uint8_t { None, Fly, Burst, Skull } kind = None;
+    enum Kind : uint8_t { None, Fly, Burst, Skull, Redraw } kind = None;     // Redraw: the field again (a cloud laid)
     uint8_t sound = 0;
     combat::Flight fl;                  // Fly / Burst: the pictures, their cycle, ms a step
     uint8_t loops = 1;                  // Burst: times round the cycle
@@ -741,6 +741,11 @@ bool fx_begin(pic::Canvas& c, const Fx& e)
 {
     if (e.sound) sfx(e.sound);
     if (e.kind == Fx::None) return false;
+    if (e.kind == Fx::Redraw) {
+        draw_field(c);
+        if (fg->cur >= 0 && fg->b.f[fg->cur].up()) mark(c, fg->cur);
+        return false;
+    }
     fg->fx = e;
     fg->fx_step = 0;
     fg->has_under = false;
@@ -896,6 +901,25 @@ void down_page(int t)
     else if (dn == combat::Down::Dying) add_page(t, fw(profile::kGoesDown), fw(profile::kIsDying));
     else add_page(t, fw(profile::kGoesDown));
     page_fx_set(1, skull_fx(t));
+}
+
+// Stepping into a cloud: its save or nausea, as a page (the cloud spell's words)
+const combat::FightSpell* fight_spell(int sp);
+void cloud_step(int i)
+{
+    combat::Battle& b = fg->b;
+    const combat::Fighter& f = b.f[i];
+    if (!f.up() || !combat::in_cloud(b, f.x, f.y)) return;
+    const combat::Did r = combat::breathe_cloud(b, i, rng);
+    if (r == combat::Did::Unaffected) return;
+    const auto& fs = d->prof->fight;
+    for (int k = 0; k < fs.n_spells; ++k)
+        if (fs.spells[k].does == combat::SpellDoes::Cloud) {
+            char t[48];
+            ow(r == combat::Did::Word ? fs.spells[k].word : fs.spells[k].word2, t, sizeof t);
+            add_page(i, t);
+            return;
+        }
 }
 
 // An attack and what it did, as pages. A shot (`ammo`: the item that flies,
@@ -1221,11 +1245,28 @@ void begin_round(pic::Canvas& c)
     next_turn(c);
 }
 
+void round_rest(pic::Canvas& c);
+
 void round_end(pic::Canvas& c)
 {
     vm->advance_clock(1, 1);                // a round is a minute
     vm->take_minutes();
     combat::tick(fg->b);                    // everyone's effects a minute on
+    if (combat::clouds_round(fg->b)) {
+        // "The air clears a little..." on the menu line for the game's delay
+        draw_field(c);
+        clear_menu_line(c);
+        put(c, fw(profile::kAirClears), 0, text::kMenuRow, 10);
+        fg->st = FSt::RoundRest;
+        fg->until = millis() + game_delay_ms();
+        if (!fg->until) fg->until = 1;
+        return;
+    }
+    round_rest(c);
+}
+
+void round_rest(pic::Canvas& c)
+{
     const bool over = combat::end_round(fg->b);
     if (over) {
         end_fight(c);
@@ -1340,9 +1381,10 @@ void try_step(pic::Canvas& c, int dir)
     sfx(sound::kStep);
     f.moves -= cost;
     guard_attacks(c, i);
+    cloud_step(i);
     if (fg->pages) {
         draw_fight(c);
-        say(c, f.up() ? FSt::Move : FSt::Turn);
+        say(c, !f.up() ? FSt::Turn : combat::helpless(b, f) ? FSt::Next : FSt::Move);
         return;
     }
     if (!on_screen(i) || f.x - b.vx < 1 || f.x - b.vx > 5 || f.y - b.vy < 1 || f.y - b.vy > 5) focus(i, 2);
@@ -1718,11 +1760,12 @@ void ai_step(pic::Canvas& c)
             sfx(sound::kStep);
             f.moves -= cost;
             guard_attacks(c, i);
+            cloud_step(i);
         }
         if (on_screen(i) && !f.team()) focus(i, 2);
         draw_fight(c);
         if (fg->pages) {
-            say(c, f.up() ? FSt::Ai : FSt::Turn);
+            say(c, !f.up() ? FSt::Turn : combat::helpless(b, f) ? FSt::Next : FSt::Ai);
             return;
         }
         if (!f.up()) {
@@ -2032,6 +2075,10 @@ void fight_tick(uint32_t now, pic::Canvas& c)
     case FSt::Begin: begin_round(c); break;
     case FSt::Ai: ai_step(c); break;
     case FSt::RoundEnd: round_end(c); break;
+    case FSt::RoundRest:
+        clear_menu_line(c);
+        round_rest(c);
+        break;
     case FSt::Pages:
         if (fg->fx_on) {
             if (!fx_step(c)) {
@@ -2369,6 +2416,17 @@ void cast_now(pic::Canvas& c, bool forgotten)
     const spells::Entry se = spells::entry(mrules->tables, sp);
     const int aim = se.aim & 0x0F;
     const bool each = aim >= 1 && aim <= 4 && se.targets != spells::kParty;
+    if (fs->does == combat::SpellDoes::Cloud && ax >= 0) {
+        // A cloud on the field (2 x 2 from the square aimed at) for the caster's level in rounds; those in it breathe it
+        const int rounds = from_item ? pw : combat::power_of(f.rec, mrules->tables, sp, false);
+        if (combat::lay_cloud(b, fg->t, ax, ay, rounds)) {
+            add_page(i, fw(profile::kNoxiousCloud));
+            Fx e;
+            e.kind = Fx::Redraw;
+            page_fx_set(1, e);
+        }
+        fg->sp_n = combat::cloud_fighters(b, ax, ay, fg->sp_t, combat::kMaxFighters);
+    }
     combat::SpellLine lines[24];
     const int n = combat::cast(b, mrules->tables, i, sp, *fs, fg->sp_t, fg->sp_n, rng, lines, 24, pw);
     spell_pages(i, lines, n, *fs, each);

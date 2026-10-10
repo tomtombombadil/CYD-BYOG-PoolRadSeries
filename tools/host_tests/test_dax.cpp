@@ -3274,6 +3274,39 @@ static void test_combat()
         CHECK(combat::choose_weapon(sb, 1) == combat::kKeep);
         mitems[1][0x34] = 1;                                             // arrows again: the bow
         CHECK(combat::choose_weapon(sb, 1) == 0);
+        // Clouds: 2 x 2 from the square (a wall square stays as it is), the
+        // fighters inside, gone after their rounds with the ground back
+        t.ground[0x1E][0] = 1; t.ground[0x1E][1] = 1;
+        sb.f[0].x = 10; sb.f[0].y = 10; sb.f[1].x = 11; sb.f[1].y = 11;
+        combat::occupancy(sb);
+        sb.ground[11][10] = 0x01;
+        int inside[8];
+        CHECK(combat::cloud_fighters(sb, 10, 10, inside, 8) == 2);
+        CHECK(combat::lay_cloud(sb, t, 10, 10, 2) && sb.n_clouds == 1);
+        CHECK(sb.ground[10][10] == 0x1E && sb.ground[10][11] == 0x1E && sb.ground[11][11] == 0x1E &&
+              sb.ground[11][10] == 0x01);
+        CHECK(combat::in_cloud(sb, 11, 10) && !combat::in_cloud(sb, 10, 11));
+        // a second one over it remembers the floor, not the cloud
+        CHECK(combat::lay_cloud(sb, t, 11, 10, 1) && sb.n_clouds == 2);
+        CHECK(sb.clouds[1].ground[0] == 0x37);
+        CHECK(combat::clouds_round(sb) == 1 && sb.n_clouds == 1);       // the second goes; the first stays cloud
+        CHECK(sb.ground[10][11] == 0x1E && sb.ground[10][12] == 0x37 && sb.ground[11][12] == 0x37);
+        CHECK(combat::clouds_round(sb) == 1 && sb.n_clouds == 0);
+        CHECK(sb.ground[10][10] == 0x37 && sb.ground[10][11] == 0x37 && sb.ground[11][10] == 0x01);
+        sb.ground[11][10] = 0x37;
+        // breathing it: a save or helpless
+        {
+            create::Dice dd(3);
+            int word = 0, word2 = 0;
+            for (int k = 0; k < 40; ++k) {
+                mrec[1][0x196] = 1; mrec[1][0x195] = 0;
+                if (sb.f[1].n_aff) *sb.f[1].n_aff = 0;
+                const combat::Did r = combat::breathe_cloud(sb, 1, dd);
+                if (r == combat::Did::Word) ++word;
+                if (r == combat::Did::Word2) ++word2;
+            }
+            CHECK(word + word2 == 40);
+        }
         memcpy(mitems, keep_items, sizeof mitems);
         memcpy(mrec, keep_rec, sizeof keep_rec);
         sb.f[1].n_items = keep_n;

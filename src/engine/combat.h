@@ -139,6 +139,14 @@ struct Battle {
     // Missiles: the item types (ITEMS) and the ammunition's types
     const items::Names* names = nullptr;
     uint8_t arrow = 0, quarrel = 0;
+    // Clouds on the field (Stinking Cloud)
+    struct Cloud {
+        uint8_t x = 0, y = 0, rounds = 0, present = 0;  // present: bit k = square k is cloud
+        uint8_t ground[4] = {};         // what was there
+    };
+    static constexpr int kMaxClouds = 8;
+    Cloud   clouds[kMaxClouds];
+    int     n_clouds = 0;
 };
 
 // Effects on a fighter
@@ -324,6 +332,25 @@ struct SpellLine {
     Did     did;
     int     amount;
 };
+// ---- Clouds that stay on the field (Stinking Cloud; facts: the Project's
+// combat_fx_facts.md / combat_rules_facts.md 4.4): the square aimed at and
+// those east, south-east and south of it - each that can be entered -
+// become cloud (ground 0x1E, its picture) for `rounds` rounds (the
+// caster's level); "The air clears a little..." when it goes.
+constexpr uint8_t kCloudGround = 0x1E;
+// The fighters a cloud at (x, y) would take in (each once)
+int cloud_fighters(const Battle& b, int x, int y, int* out, int cap);
+// Lays a cloud there (false: no room for another)
+bool lay_cloud(Battle& b, const Tables& t, int x, int y, int rounds);
+bool in_cloud(const Battle& b, int x, int y);
+// Breathing it (laid on them, or stepping in): a save against poison or
+// helpless d4 + 1 rounds (Word), saved (Word2: "starts to cough");
+// Unaffected: already helpless or out
+Did breathe_cloud(Battle& b, int i, create::Dice& d);
+// A round over: clouds run out, their ground comes back (a fallen party
+// member's body where one lies); how many went
+int clouds_round(Battle& b);
+
 // The fighters in an area: within r squares of (x, y)
 int in_area(const Battle& b, const Tables& t, int x, int y, int r, int* out, int cap);
 bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d);

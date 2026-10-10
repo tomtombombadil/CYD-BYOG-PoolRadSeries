@@ -1057,6 +1057,7 @@ Plan think(Battle& b, const Tables& t, int i, create::Dice& d)
         if (cost == 0xFF || cost > f.moves) continue;
         // Not further away than now
         const int nx = f.x + kDx[dir], ny = f.y + kDy[dir];
+        if (b.ground[ny][nx] == kCloudGround && !saving_throw(f, 0, 0, d)) continue;   // a cloud: only after a test save
         int best = 9999;
         for (int j = 0; j < n0; ++j) {
             const int ddx = tg.x + ox[j] - nx, ddy = tg.y + oy[j] - ny;
@@ -1239,15 +1240,10 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         }
         break;
     case SpellDoes::Cloud:
+        // (the cloud itself is laid by the caller: lay_cloud; these are those inside)
         for (int k = 0; k < m; ++k) {
-            Fighter& f = b.f[who[k]];
-            if (!f.up()) continue;
-            if (saving_throw(f, 0, 0, d)) {
-                say(who[k], Did::Word2, 0);
-                continue;
-            }
-            if (b.fx) give_aff(f, b.fx->held[3], d.roll(4, 1) + 1, pw, false);
-            say(who[k], Did::Word, 0);
+            const Did r = breathe_cloud(b, who[k], d);
+            if (r != Did::Unaffected) say(who[k], r, 0);
         }
         break;
     case SpellDoes::Bolt:
@@ -1380,9 +1376,9 @@ bool spell_targets(Battle& b, const Tables& t, const classes::Tables& st, int i,
     if (fs.does == SpellDoes::Bolt) {
         *n_targets = bolt_line(b, t, i, b.f[tg].x, b.f[tg].y, 7, targets, kMaxFighters);
     } else if ((aim >= 8 && aim <= 14) || fs.does == SpellDoes::Cloud) {
-        const int r2 = fs.does == SpellDoes::Cloud ? 1 : e.aim & 7;
         int in[kMaxFighters];
-        const int ni = in_area(b, t, b.f[tg].x, b.f[tg].y, r2, in, kMaxFighters);
+        const int ni = fs.does == SpellDoes::Cloud ? cloud_fighters(b, b.f[tg].x, b.f[tg].y, in, kMaxFighters)
+                                                   : in_area(b, t, b.f[tg].x, b.f[tg].y, e.aim & 7, in, kMaxFighters);
         for (int k = 0; k < ni; ++k)
             if ((b.f[in[k]].team() ? 1 : 0) == my && !saving_throw(b.f[in[k]], e.save, my ? 8 : -2, d)) return false;
         for (int k = 0; k < ni; ++k) targets[(*n_targets)++] = in[k];
@@ -1730,6 +1726,101 @@ int choose_weapon(const Battle& b, int i)
     const int held = weapon(f, n);
     if (held == want || (held >= 0 && f.items[held][0x36])) return kKeep;
     return want;
+}
+
+// ---- Clouds that stay on the field
+namespace {
+constexpr int kCloudDx[4] = {0, 1, 1, 0}, kCloudDy[4] = {0, 0, 1, 1};
+// What the ground under a cloud square really is (another cloud's memory)
+int ground_under(const Battle& b, int x, int y)
+{
+    const int g = b.ground[y][x];
+    if (g != kCloudGround) return g;
+    for (int c = 0; c < b.n_clouds; ++c)
+        for (int k = 0; k < 4; ++k)
+            if ((b.clouds[c].present >> k & 1) && b.clouds[c].x + kCloudDx[k] == x && b.clouds[c].y + kCloudDy[k] == y)
+                return b.clouds[c].ground[k];
+    return g;
+}
+} // namespace
+
+bool in_cloud(const Battle& b, int x, int y) { return on_field(x, y) && b.ground[y][x] == kCloudGround; }
+
+int cloud_fighters(const Battle& b, int x, int y, int* out, int cap)
+{
+    int n = 0;
+    for (int k = 0; k < 4; ++k) {
+        const int xx = x + kCloudDx[k], yy = y + kCloudDy[k];
+        if (!on_field(xx, yy) || !b.who[yy][xx]) continue;
+        const int f = b.who[yy][xx] - 1;
+        bool seen = false;
+        for (int j = 0; j < n; ++j) seen = seen || out[j] == f;
+        if (!seen && n < cap) out[n++] = f;
+    }
+    return n;
+}
+
+bool lay_cloud(Battle& b, const Tables& t, int x, int y, int rounds)
+{
+    if (b.n_clouds >= Battle::kMaxClouds) return false;
+    Battle::Cloud& cl = b.clouds[b.n_clouds];
+    cl = Battle::Cloud{};
+    cl.x = static_cast<uint8_t>(x);
+    cl.y = static_cast<uint8_t>(y);
+    cl.rounds = static_cast<uint8_t>(rounds < 1 ? 1 : rounds > 255 ? 255 : rounds);
+    for (int k = 0; k < 4; ++k) {
+        const int xx = x + kCloudDx[k], yy = y + kCloudDy[k];
+        if (!on_field(xx, yy) || !b.ground[yy][xx] || tile(b, t, xx, yy)[0] == 0xFF) continue;
+        cl.ground[k] = static_cast<uint8_t>(ground_under(b, xx, yy));
+        cl.present |= static_cast<uint8_t>(1 << k);
+    }
+    for (int k = 0; k < 4; ++k)
+        if (cl.present >> k & 1) b.ground[y + kCloudDy[k]][x + kCloudDx[k]] = kCloudGround;
+    ++b.n_clouds;
+    return true;
+}
+
+Did breathe_cloud(Battle& b, int i, create::Dice& d)
+{
+    Fighter& f = b.f[i];
+    if (!f.up() || helpless(b, f)) return Did::Unaffected;
+    if (saving_throw(f, 0, 0, d)) return Did::Word2;
+    if (b.fx) give_aff(f, b.fx->held[3], d.roll(4, 1) + 1, 0, false);
+    return Did::Word;
+}
+
+int clouds_round(Battle& b)
+{
+    int gone = 0;
+    for (int c = 0; c < b.n_clouds;) {
+        Battle::Cloud& cl = b.clouds[c];
+        if (cl.rounds > 1) {
+            --cl.rounds;
+            ++c;
+            continue;
+        }
+        // It clears: the ground back (a body where a fallen party member lies)
+        for (int k = 0; k < 4; ++k) {
+            if (!(cl.present >> k & 1)) continue;
+            const int xx = cl.x + kCloudDx[k], yy = cl.y + kCloudDy[k];
+            b.ground[yy][xx] = cl.ground[k];
+            for (int j = 0; j < b.n; ++j) {
+                Fighter& o = b.f[j];
+                if (o.member >= 0 && !o.size && !o.up() && o.x == xx && o.y == yy) {
+                    o.ground = cl.ground[k];
+                    b.ground[yy][xx] = 0x1F;
+                }
+            }
+        }
+        for (int j = c; j + 1 < b.n_clouds; ++j) b.clouds[j] = b.clouds[j + 1];
+        --b.n_clouds;
+        ++gone;
+    }
+    // The clouds still there stay cloud where they overlapped the one gone
+    for (int c = 0; gone && c < b.n_clouds; ++c)
+        for (int k = 0; k < 4; ++k)
+            if (b.clouds[c].present >> k & 1) b.ground[b.clouds[c].y + kCloudDy[k]][b.clouds[c].x + kCloudDx[k]] = kCloudGround;
+    return gone;
 }
 
 } // namespace combat
