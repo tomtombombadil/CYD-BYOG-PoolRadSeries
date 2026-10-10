@@ -17,6 +17,12 @@
 namespace create {
 
 // A dice roller (the games' "roll n dice of s sides"); tests pass their own
+#ifdef CYD_TEST_HOOKS
+// Tests only (never in the firmware): when set, every die asks it first -
+// n sides; a value 0 .. n-1 is the die's result, -1 rolls as usual
+extern int (*g_die_hook)(int n);
+#endif
+
 class Dice {
 public:
     explicit Dice(uint32_t seed = 0x2545F491u) : s_(seed ? seed : 1) {}
