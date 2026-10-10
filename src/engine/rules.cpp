@@ -386,8 +386,13 @@ int knock_member(const party::Party& p, int knock_spell)
 
 void recalc(party::Character& c, const items::Names& names, const ItemFacts& f)
 {
-    uint8_t* r = c.rec;
     stats(c, f);
+    recalc_values(c, names, f);
+}
+
+void recalc_values(party::Character& c, const items::Names& names, const ItemFacts& f)
+{
+    uint8_t* r = c.rec;
     // Readied items by slot (0-8; slot 9 holds two), missiles
     const uint8_t* slot[9] = {};
     const uint8_t* rings[2] = {};

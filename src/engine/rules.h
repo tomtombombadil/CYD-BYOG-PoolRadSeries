@@ -49,6 +49,10 @@ int dex_ac_bonus(const party::Character& c);
 // encumbrance, movement, AC, to-hit, damage dice / bonus, hands in use,
 // attack level (into the record, as the games store them).
 void recalc(party::Character& c, const items::Names& names, const ItemFacts& f);
+// The same without the stats (the original's routine itself, which every
+// combatant - monsters too - goes through at a battle's setup: coab's facts,
+// the listing's sub_380E0 / sub_66C20)
+void recalc_values(party::Character& c, const items::Names& names, const ItemFacts& f);
 
 // ---- Locked doors (door_facts.md): door state 2 locked, 3 not pickable
 // Bash: each member in party order (everyone, as the original) tries by

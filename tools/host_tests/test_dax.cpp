@@ -3959,6 +3959,7 @@ static void test_monster_fx()
     CHECK(out[2].who == 0 && out[2].ev == combat::Ev::Damage && out[2].amount == 48 && b.f[0].hp() == 52);
     CHECK(aff[3][0][3] == 2);
     b.f[4].x = 12;                                              // a friend on the line: no breath
+    b.f[1].x = b.f[2].x = 45;                                   // (the only one in reach: the one behind the friend)
     combat::occupancy(b);
     b.round = 1;
     n = combat::special(b, t, 3, d, out, 16, &ends);
