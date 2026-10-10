@@ -220,7 +220,7 @@ void blit4(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y, bool mi
 // ---- The fight's state (on the heap while fighting)
 enum class FSt : uint8_t {
     Begin, Turn, Menu, Move, Aim, DoneMenu, Speed, Ai, Pages, RoundEnd, Results, Destroyed, AllyAsk, FleeAsk,
-    ContinueAsk, Next, UseAim, AbortAsk, RoundRest
+    ContinueAsk, Next, UseAim, AbortAsk, RoundRest, Clouds
 };
 
 // A page's pictures: a missile or spell flying, a burst / sparkles on a
@@ -909,10 +909,20 @@ void down_page(int t)
 
 // Stepping into a cloud: its save or nausea, as a page (the cloud spell's words)
 const combat::FightSpell* fight_spell(int sp);
+void poison_page(int i)
+{
+    add_page(i, fw(profile::kIsPoisoned));
+    down_page(i);
+}
+
 void cloud_step(int i)
 {
     combat::Battle& b = fg->b;
     const combat::Fighter& f = b.f[i];
+    if (f.up() && combat::in_poison(b, f.x, f.y)) {
+        if (combat::breathe_poison(b, i, rng)) poison_page(i);
+        return;
+    }
     if (!f.up() || !combat::in_cloud(b, f.x, f.y)) return;
     const combat::Did r = combat::breathe_cloud(b, i, rng);
     if (r == combat::Did::Unaffected) return;
@@ -1250,12 +1260,29 @@ void begin_round(pic::Canvas& c)
 }
 
 void round_rest(pic::Canvas& c);
+void round_clouds(pic::Canvas& c);
 
 void round_end(pic::Canvas& c)
 {
     vm->advance_clock(1, 1);                // a round is a minute
     vm->take_minutes();
     combat::tick(fg->b);                    // everyone's effects a minute on
+    // Those standing in a poisonous cloud breathe it again
+    for (int k = 0; k < fg->b.n; ++k) {
+        const combat::Fighter& f = fg->b.f[k];
+        if (f.up() && f.size && combat::in_poison(fg->b, f.x, f.y) && combat::breathe_poison(fg->b, k, rng)) poison_page(k);
+    }
+    if (fg->pages) {
+        draw_fight(c);
+        say(c, FSt::Clouds);                // (then on with the round's end)
+        return;
+    }
+    round_clouds(c);
+}
+
+// The clouds a round older: those that go clear ("The air clears a little...")
+void round_clouds(pic::Canvas& c)
+{
     if (combat::clouds_round(fg->b)) {
         // "The air clears a little..." on the menu line for the game's delay
         draw_field(c);
@@ -2122,6 +2149,9 @@ void fight_tick(uint32_t now, pic::Canvas& c)
         case FSt::UseAim:
             begin_targeting(c, fg->spell);
             break;
+        case FSt::Clouds:
+            round_clouds(c);
+            break;
         default:
             after_attack(c);
             break;
@@ -2332,7 +2362,7 @@ void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::Fi
         case combat::Did::Word:
             ow(fs.word, t, sizeof t);
             add_page(l[k].who, t);
-            page_fx_set(1, hit_fx(l[k].who, true));
+            if (fs.does != combat::SpellDoes::Poison) page_fx_set(1, hit_fx(l[k].who, true));
             break;
         case combat::Did::Damage: {
             const char* from = "";
@@ -2430,16 +2460,18 @@ void cast_now(pic::Canvas& c, bool forgotten)
         const int reach = fear ? 6 : ((lv + 1) / 2 > 1 ? (lv + 1) / 2 : 1);
         fg->sp_n = combat::cone(b, fg->t, i, ax, ay, reach, fear ? 3 : 2, fg->sp_t, combat::kMaxFighters);
     }
-    if (fs->does == combat::SpellDoes::Cloud && ax >= 0) {
-        // A cloud on the field (2 x 2 from the square aimed at) for the caster's level in rounds; those in it breathe it
+    if ((fs->does == combat::SpellDoes::Cloud || fs->does == combat::SpellDoes::Poison) && ax >= 0) {
+        // A cloud on the field (Stinking Cloud 2 x 2 from the square aimed at, Cloudkill 3 x 3 round it) for
+        // the caster's level in rounds; those in it breathe it
+        const bool poison = fs->does == combat::SpellDoes::Poison;
         const int rounds = from_item ? pw : combat::power_of(f.rec, mrules->tables, sp, false);
-        if (combat::lay_cloud(b, fg->t, ax, ay, rounds)) {
-            add_page(i, fw(profile::kNoxiousCloud));
+        if (combat::lay_cloud(b, fg->t, ax, ay, rounds, poison)) {
+            add_page(i, fw(poison ? profile::kPoisonCloud : profile::kNoxiousCloud));
             Fx e;
             e.kind = Fx::Redraw;
             page_fx_set(1, e);
         }
-        fg->sp_n = combat::cloud_fighters(b, ax, ay, fg->sp_t, combat::kMaxFighters);
+        fg->sp_n = combat::cloud_fighters(b, ax, ay, fg->sp_t, combat::kMaxFighters, poison);
     }
     combat::SpellLine lines[24];
     const int n = combat::cast(b, mrules->tables, i, sp, *fs, fg->sp_t, fg->sp_n, rng, lines, 24, pw);

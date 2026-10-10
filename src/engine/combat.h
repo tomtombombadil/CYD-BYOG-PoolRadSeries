@@ -142,10 +142,12 @@ struct Battle {
     // Missiles: the item types (ITEMS) and the ammunition's types
     const items::Names* names = nullptr;
     uint8_t arrow = 0, quarrel = 0;
-    // Clouds on the field (Stinking Cloud)
+    // Clouds on the field (Stinking Cloud, Cloudkill)
     struct Cloud {
-        uint8_t x = 0, y = 0, rounds = 0, present = 0;  // present: bit k = square k is cloud
-        uint8_t ground[4] = {};         // what was there
+        uint8_t  x = 0, y = 0, rounds = 0;
+        bool     poison = false;        // Cloudkill (3 x 3, ground 0x1C), else Stinking Cloud (2 x 2, 0x1E)
+        uint16_t present = 0;           // bit k = square k is cloud
+        uint8_t  ground[9] = {};        // what was there
     };
     static constexpr int kMaxClouds = 8;
     Cloud   clouds[kMaxClouds];
@@ -318,6 +320,7 @@ enum class SpellDoes : uint8_t {
     Mirror, Haste, Prayer,              // effects with their own data
     Bolt,                               // damage along a line from the target away from the caster
     Cloud,                              // a save against poison or helpless 1d4 + 1 rounds (word / word2 saved)
+    Poison,                             // Cloudkill: those in it die by their Hit Dice (word: "is Poisoned")
     Charm,                              // a person (humanoid, man-sized) joins the caster's side (word; word2 not a person)
     Cone,                               // damage to those in a cone (cone(): 2 rays, the caster's (level + 1) / 2 squares)
     Fear,                               // those in a cone (3 rays, 6 squares) that fail a save flee (word)
@@ -345,12 +348,19 @@ struct SpellLine {
 // those east, south-east and south of it - each that can be entered -
 // become cloud (ground 0x1E, its picture) for `rounds` rounds (the
 // caster's level); "The air clears a little..." when it goes.
-constexpr uint8_t kCloudGround = 0x1E;
+// Cloudkill's poisonous cloud: the square aimed at and the 8 round it
+// (ground 0x1C); those in it when it's laid, stepping in, and at each
+// round's end: Hit Dice 0-4 die, 5 unless they save at -4, 6 unless they
+// save, 7 and up are unaffected ("is Poisoned", "is killed").
+constexpr uint8_t kCloudGround = 0x1E, kPoisonGround = 0x1C;
 // The fighters a cloud at (x, y) would take in (each once)
-int cloud_fighters(const Battle& b, int x, int y, int* out, int cap);
+int cloud_fighters(const Battle& b, int x, int y, int* out, int cap, bool poison = false);
 // Lays a cloud there (false: no room for another)
-bool lay_cloud(Battle& b, const Tables& t, int x, int y, int rounds);
+bool lay_cloud(Battle& b, const Tables& t, int x, int y, int rounds, bool poison = false);
 bool in_cloud(const Battle& b, int x, int y);
+bool in_poison(const Battle& b, int x, int y);
+// Breathing the poison: true when it kills them (dead already, out of the fight)
+bool breathe_poison(Battle& b, int i, create::Dice& d);
 // Breathing it (laid on them, or stepping in): a save against poison or
 // helpless d4 + 1 rounds (Word), saved (Word2: "starts to cough");
 // Unaffected: already helpless or out

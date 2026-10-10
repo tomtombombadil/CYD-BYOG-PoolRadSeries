@@ -3363,6 +3363,22 @@ static void test_combat()
         CHECK(combat::clouds_round(sb) == 1 && sb.n_clouds == 0);
         CHECK(sb.ground[10][10] == 0x37 && sb.ground[10][11] == 0x37 && sb.ground[11][10] == 0x01);
         sb.ground[11][10] = 0x37;
+        // Cloudkill: 3 x 3 round the square; Hit Dice 4 dies, 7 is unaffected
+        t.ground[0x1C][0] = 1; t.ground[0x1C][1] = 1;
+        CHECK(combat::cloud_fighters(sb, 11, 11, inside, 8, true) == 2);
+        CHECK(combat::lay_cloud(sb, t, 11, 11, 1, true));
+        CHECK(sb.ground[10][10] == 0x1C && sb.ground[12][12] == 0x1C && combat::in_poison(sb, 11, 11) &&
+              !combat::in_cloud(sb, 11, 11));
+        {
+            create::Dice dd(5);
+            mrec[1][0xE5] = 7;
+            CHECK(!combat::breathe_poison(sb, 1, dd) && sb.f[1].up());
+            mrec[1][0xE5] = 4;
+            CHECK(combat::breathe_poison(sb, 1, dd) && sb.f[1].status() == party::Dead);
+            mrec[1][0x195] = 0; mrec[1][0x196] = 1; mrec[1][0x1A4] = 20; sb.f[1].size = 1;
+        }
+        CHECK(combat::clouds_round(sb) == 1 && sb.ground[10][10] == 0x37 && sb.ground[12][12] == 0x37);
+        combat::occupancy(sb);
         // breathing it: a save or helpless
         {
             create::Dice dd(3);

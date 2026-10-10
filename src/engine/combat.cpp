@@ -667,7 +667,7 @@ bool damage(Battle& b, int c, int amount)
     // Off the field: a party member leaves a body
     if (f.size) {
         f.size = 0;
-        if (f.member >= 0 && on_field(f.x, f.y) && b.ground[f.y][f.x] != 0x1E) {
+        if (f.member >= 0 && on_field(f.x, f.y) && b.ground[f.y][f.x] != 0x1E && b.ground[f.y][f.x] != 0x1C) {
             f.ground = b.ground[f.y][f.x];
             b.ground[f.y][f.x] = kBody;
         }
@@ -1068,6 +1068,7 @@ Plan think(Battle& b, const Tables& t, int i, create::Dice& d)
         // Not further away than now
         const int nx = f.x + kDx[dir], ny = f.y + kDy[dir];
         if (b.ground[ny][nx] == kCloudGround && !saving_throw(f, 0, 0, d)) continue;   // a cloud: only after a test save
+        if (b.ground[ny][nx] == kPoisonGround && f.rec[0xE5] < 7) continue;            // poison: never (below 7 Hit Dice)
         int best = 9999;
         for (int j = 0; j < n0; ++j) {
             const int ddx = tg.x + ox[j] - nx, ddy = tg.y + oy[j] - ny;
@@ -1270,6 +1271,14 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             f.target = -1;
             say(who[k], Did::Word, 0);
         }
+        break;
+    case SpellDoes::Poison:
+        // (the cloud is laid by the caller: lay_cloud(poison); these are those inside)
+        for (int k = 0; k < m; ++k)
+            if (breathe_poison(b, who[k], d)) {
+                say(who[k], Did::Word, 0);
+                say(who[k], Did::Down, 0);
+            }
         break;
     case SpellDoes::Cloud:
         // (the cloud itself is laid by the caller: lay_cloud; these are those inside)
@@ -1784,27 +1793,34 @@ int choose_weapon(const Battle& b, int i)
 
 // ---- Clouds that stay on the field
 namespace {
+// A cloud's squares: Stinking Cloud 2 x 2 from its square, Cloudkill it and the 8 round it
 constexpr int kCloudDx[4] = {0, 1, 1, 0}, kCloudDy[4] = {0, 0, 1, 1};
+int cloud_squares(bool poison) { return poison ? 9 : 4; }
+int sq_dx(bool poison, int k) { return poison ? kDx[(k + 8) % 9] : kCloudDx[k]; }
+int sq_dy(bool poison, int k) { return poison ? kDy[(k + 8) % 9] : kCloudDy[k]; }
 // What the ground under a cloud square really is (another cloud's memory)
 int ground_under(const Battle& b, int x, int y)
 {
     const int g = b.ground[y][x];
-    if (g != kCloudGround) return g;
-    for (int c = 0; c < b.n_clouds; ++c)
-        for (int k = 0; k < 4; ++k)
-            if ((b.clouds[c].present >> k & 1) && b.clouds[c].x + kCloudDx[k] == x && b.clouds[c].y + kCloudDy[k] == y)
-                return b.clouds[c].ground[k];
+    if (g != kCloudGround && g != kPoisonGround) return g;
+    for (int c = 0; c < b.n_clouds; ++c) {
+        const Battle::Cloud& cl = b.clouds[c];
+        for (int k = 0; k < cloud_squares(cl.poison); ++k)
+            if ((cl.present >> k & 1) && cl.x + sq_dx(cl.poison, k) == x && cl.y + sq_dy(cl.poison, k) == y)
+                return cl.ground[k];
+    }
     return g;
 }
 } // namespace
 
 bool in_cloud(const Battle& b, int x, int y) { return on_field(x, y) && b.ground[y][x] == kCloudGround; }
+bool in_poison(const Battle& b, int x, int y) { return on_field(x, y) && b.ground[y][x] == kPoisonGround; }
 
-int cloud_fighters(const Battle& b, int x, int y, int* out, int cap)
+int cloud_fighters(const Battle& b, int x, int y, int* out, int cap, bool poison)
 {
     int n = 0;
-    for (int k = 0; k < 4; ++k) {
-        const int xx = x + kCloudDx[k], yy = y + kCloudDy[k];
+    for (int k = 0; k < cloud_squares(poison); ++k) {
+        const int xx = x + sq_dx(poison, k), yy = y + sq_dy(poison, k);
         if (!on_field(xx, yy) || !b.who[yy][xx]) continue;
         const int f = b.who[yy][xx] - 1;
         bool seen = false;
@@ -1814,22 +1830,23 @@ int cloud_fighters(const Battle& b, int x, int y, int* out, int cap)
     return n;
 }
 
-bool lay_cloud(Battle& b, const Tables& t, int x, int y, int rounds)
+bool lay_cloud(Battle& b, const Tables& t, int x, int y, int rounds, bool poison)
 {
     if (b.n_clouds >= Battle::kMaxClouds) return false;
     Battle::Cloud& cl = b.clouds[b.n_clouds];
     cl = Battle::Cloud{};
     cl.x = static_cast<uint8_t>(x);
     cl.y = static_cast<uint8_t>(y);
+    cl.poison = poison;
     cl.rounds = static_cast<uint8_t>(rounds < 1 ? 1 : rounds > 255 ? 255 : rounds);
-    for (int k = 0; k < 4; ++k) {
-        const int xx = x + kCloudDx[k], yy = y + kCloudDy[k];
+    for (int k = 0; k < cloud_squares(poison); ++k) {
+        const int xx = x + sq_dx(poison, k), yy = y + sq_dy(poison, k);
         if (!on_field(xx, yy) || !b.ground[yy][xx] || tile(b, t, xx, yy)[0] == 0xFF) continue;
         cl.ground[k] = static_cast<uint8_t>(ground_under(b, xx, yy));
-        cl.present |= static_cast<uint8_t>(1 << k);
+        cl.present = static_cast<uint16_t>(cl.present | 1 << k);
     }
-    for (int k = 0; k < 4; ++k)
-        if (cl.present >> k & 1) b.ground[y + kCloudDy[k]][x + kCloudDx[k]] = kCloudGround;
+    for (int k = 0; k < cloud_squares(poison); ++k)
+        if (cl.present >> k & 1) b.ground[y + sq_dy(poison, k)][x + sq_dx(poison, k)] = poison ? kPoisonGround : kCloudGround;
     ++b.n_clouds;
     return true;
 }
@@ -1843,6 +1860,20 @@ Did breathe_cloud(Battle& b, int i, create::Dice& d)
     return Did::Word;
 }
 
+bool breathe_poison(Battle& b, int i, create::Dice& d)
+{
+    Fighter& f = b.f[i];
+    if (!f.up()) return false;
+    const int hd = f.rec[0xE5];
+    bool dies = false;
+    if (hd <= 4) dies = true;
+    else if (hd == 5) dies = !saving_throw(f, 0, -4, d);
+    else if (hd == 6) dies = !saving_throw(f, 0, 0, d);
+    if (!dies) return false;
+    damage(b, i, f.hp() + 10);                       // dead
+    return true;
+}
+
 int clouds_round(Battle& b)
 {
     int gone = 0;
@@ -1854,9 +1885,9 @@ int clouds_round(Battle& b)
             continue;
         }
         // It clears: the ground back (a body where a fallen party member lies)
-        for (int k = 0; k < 4; ++k) {
+        for (int k = 0; k < cloud_squares(cl.poison); ++k) {
             if (!(cl.present >> k & 1)) continue;
-            const int xx = cl.x + kCloudDx[k], yy = cl.y + kCloudDy[k];
+            const int xx = cl.x + sq_dx(cl.poison, k), yy = cl.y + sq_dy(cl.poison, k);
             b.ground[yy][xx] = cl.ground[k];
             for (int j = 0; j < b.n; ++j) {
                 Fighter& o = b.f[j];
@@ -1871,9 +1902,12 @@ int clouds_round(Battle& b)
         ++gone;
     }
     // The clouds still there stay cloud where they overlapped the one gone
-    for (int c = 0; gone && c < b.n_clouds; ++c)
-        for (int k = 0; k < 4; ++k)
-            if (b.clouds[c].present >> k & 1) b.ground[b.clouds[c].y + kCloudDy[k]][b.clouds[c].x + kCloudDx[k]] = kCloudGround;
+    for (int c = 0; gone && c < b.n_clouds; ++c) {
+        const Battle::Cloud& cl = b.clouds[c];
+        for (int k = 0; k < cloud_squares(cl.poison); ++k)
+            if (cl.present >> k & 1)
+                b.ground[cl.y + sq_dy(cl.poison, k)][cl.x + sq_dx(cl.poison, k)] = cl.poison ? kPoisonGround : kCloudGround;
+    }
     return gone;
 }
 
