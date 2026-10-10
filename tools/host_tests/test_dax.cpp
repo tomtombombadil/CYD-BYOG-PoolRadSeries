@@ -2848,6 +2848,35 @@ static void test_combat()
     CHECK(combat::choose_item(sb, t, st, 1, inames, table, 2, d, chosen, &n_chosen) == -1);
     // An item's spell at the item's level: 6 (a monster spell: the user's)
     CHECK(combat::power_of(mrec[1], st, 1, true) == 6 && combat::power_of(mrec[1], st, 1, false) == 3);
+    // Missiles: a bow (type 41: range 10, arrows) with its arrows (73) readied;
+    // a thrown axe (type 2: range 4, flag 0x10); a sling (type 47: range 8)
+    itypes[2 + 41 * 16 + 12] = 10; itypes[2 + 41 * 16 + 14] = 0x0B;
+    itypes[2 + 2 * 16 + 12] = 4; itypes[2 + 2 * 16 + 14] = 0x14;
+    itypes[2 + 47 * 16 + 12] = 8; itypes[2 + 47 * 16 + 14] = 0x0A;
+    dax::MemorySource isrc2(itypes.data(), static_cast<uint32_t>(itypes.size()));
+    CHECK(inames.read_types(isrc2));
+    sb.names = &inames;
+    sb.arrow = 73;
+    memset(mitems, 0, sizeof mitems);
+    mitems[0][0x2E] = 41; mitems[0][0x34] = 1;
+    mitems[1][0x2E] = 73; mitems[1][0x39] = 12;
+    int ammo;
+    CHECK(combat::missile(sb, sb.f[1], &ammo) == 0);                 // the arrows not readied
+    mitems[1][0x34] = 1;
+    CHECK(combat::missile(sb, sb.f[1], &ammo) == 9 && ammo == 1);
+    mitems[0][0x2E] = 2;
+    CHECK(combat::missile(sb, sb.f[1], &ammo) == 3 && ammo == 0);   // thrown: the axe goes
+    mitems[0][0x2E] = 47;
+    CHECK(combat::missile(sb, sb.f[1], &ammo) == 7 && ammo == -1);  // a sling: nothing goes
+    // The computer shoots at the party member 2 squares off (not next to it)
+    sb.f[1].attacks[0] = 1;
+    sb.f[1].delay = 1;
+    sb.f[1].target = -1;
+    mrec[1][0x195] = 0; mrec[0][0x195] = 0;
+    sb.f[0].x = 10; sb.f[1].x = 12;
+    combat::occupancy(sb);
+    const combat::Plan shot = combat::think(sb, t, 1, d);
+    CHECK(shot.act == combat::Act::Attack && shot.missile && shot.target == 0);
 }
 
 int main()

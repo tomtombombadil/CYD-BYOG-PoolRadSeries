@@ -677,6 +677,39 @@ void begin_targeting(pic::Canvas& c, int sp);
 void cast_now(pic::Canvas& c, bool forgotten = false);
 const combat::FightSpell* fight_spell(int sp);
 
+// A monster's item gone: off its group's list (the copies share it)
+void remove_group_item(const combat::Fighter& f, int k)
+{
+    uint8_t (*list)[items::kRecordSize] = f.items;
+    const int n = f.n_items;
+    if (!list || k < 0 || k >= n) return;
+    for (int j = k; j + 1 < n; ++j) memcpy(list[j], list[j + 1], items::kRecordSize);
+    memset(list[n - 1], 0, items::kRecordSize);
+    for (int j = 0; j < fg->b.n; ++j)
+        if (fg->b.f[j].items == list) fg->b.f[j].n_items = n - 1;
+    for (int g = 0; ml && g < combat::kMaxGroups; ++g)
+        if (ml->g[g].item == list) ml->g[g].n_items = static_cast<uint8_t>(n - 1);
+}
+
+// A shot: one arrow / quarrel of the pile, or the thrown weapon, goes
+void spend_ammo(int i, int k)
+{
+    combat::Fighter& f = fg->b.f[i];
+    if (k < 0 || k >= f.n_items) return;
+    if (f.member >= 0) {
+        party::Character& ch = pt->m[f.member];
+        const int left = ch.items[k][0x39];
+        if (left > 1) ch.items[k][0x39] = static_cast<uint8_t>(left - 1);
+        else rules::remove_item(ch, k);
+        f.n_items = ch.n_items;
+        rules::recalc(ch, *names, d->facts);
+        return;
+    }
+    const int left = f.items[k][0x39];
+    if (left > 1) f.items[k][0x39] = static_cast<uint8_t>(left - 1);
+    else remove_group_item(f, k);
+}
+
 // ---- Use in a fight: the item's spell goes off at once (no casting time),
 // at the item's level; using it ends the turn (even when aborted)
 void spend_item(int i, int sp)
@@ -694,15 +727,7 @@ void spend_item(int i, int sp)
         return;
     }
     // A monster's: its group's items (shared by the copies)
-    if (!magic::use_charge(f.items[k])) return;
-    uint8_t (*list)[items::kRecordSize] = f.items;
-    const int n = f.n_items;
-    for (int j = k; j + 1 < n; ++j) memcpy(list[j], list[j + 1], items::kRecordSize);
-    memset(list[n - 1], 0, items::kRecordSize);
-    for (int j = 0; j < fg->b.n; ++j)
-        if (fg->b.f[j].items == list) fg->b.f[j].n_items = n - 1;
-    for (int g = 0; ml && g < combat::kMaxGroups; ++g)
-        if (ml->g[g].item == list) ml->g[g].n_items = static_cast<uint8_t>(n - 1);
+    if (magic::use_charge(f.items[k])) remove_group_item(f, k);
 }
 
 // "NAME uses an item", "Item: NAME" on row 23
@@ -980,19 +1005,16 @@ bool can_target(int t, int* dist)
         int sq = 0;
         const bool seen = t == i || combat::range(b, fg->t, i, t, false, &sq);
         if (dist) *dist = sq;
-        return seen && sq <= spells::reach(mrules->tables, fg->spell, spell_power(f));
+        const int pw = fg->use_item >= 0 ? combat::power_of(f.rec, mrules->tables, fg->spell, true) : spell_power(f);
+        return seen && sq <= spells::reach(mrules->tables, fg->spell, pw);
     }
     if (t == i || !b.f[t].up() || !b.f[t].size) return false;
     int sq;
     const bool seen = combat::range(b, fg->t, i, t, false, &sq);
     if (dist) *dist = sq;
     if (!seen) return false;
-    int reach = 1;
-    const int w = combat::weapon(f, *names);
-    if (w >= 0) {
-        const int r = names->type(f.items[w][0x2E]).range;
-        if (r > 1) reach = r - 1;
-    }
+    int ammo, reach = combat::missile(b, f, &ammo);
+    if (reach < 1) reach = 1;
     return sq <= reach && (f.attacks[0] > 0 || f.attacks[1] > 0);
 }
 
@@ -1073,28 +1095,10 @@ void aim_target(pic::Canvas& c, int t)
     }
     f.target = t;
     // Missiles: the readied ammunition (arrows / quarrels) or the thrown weapon goes
-    const int w = combat::weapon(f, *names);
-    if (w >= 0 && !combat::adjacent(fg->b, fg->cur, t) && f.member >= 0) {
-        party::Character& ch = pt->m[f.member];
-        const items::TypeInfo& ti = names->type(ch.items[w][0x2E]);
-        int ammo = -1;
-        for (int k = 0; k < ch.n_items; ++k) {
-            const int ty = ch.items[k][0x2E];
-            if (!ch.items[k][0x34]) continue;
-            if (((ti.flags & 0x01) && ty == d->facts.arrow) || ((ti.flags & 0x80) && ty == d->facts.quarrel)) ammo = k;
-        }
-        if (ammo < 0 && !(ti.flags & 0x81)) ammo = w;           // thrown
-        if (ammo >= 0) {
-            const int left = ch.items[ammo][0x39];
-            if (left > 1) ch.items[ammo][0x39] = static_cast<uint8_t>(left - 1);
-            else {
-                rules::remove_item(ch, ammo);
-                f.n_items = ch.n_items;
-            }
-            rules::recalc(ch, *names, d->facts);
-        }
-    }
+    int ammo = -1;
+    const bool shot = !combat::adjacent(fg->b, fg->cur, t) && combat::missile(fg->b, f, &ammo) > 0;
     do_attack(c, fg->cur, t, false);
+    if (shot) spend_ammo(fg->cur, ammo);
     say(c, FSt::Turn);
 }
 
@@ -1276,6 +1280,7 @@ void ai_step(pic::Canvas& c)
     switch (p.act) {
     case combat::Act::Attack:
         do_attack(c, i, p.target, false);
+        if (p.missile) spend_ammo(i, p.ammo);
         say(c, FSt::Turn);
         return;
     case combat::Act::Step: {
@@ -1390,6 +1395,9 @@ void fight_start(pic::Canvas& c)
         f.max_aff = combat::kMonsterAffects;
     }
     b.fx = &d->prof->fight.facts;
+    b.names = names;
+    b.arrow = d->facts.arrow;
+    b.quarrel = d->facts.quarrel;
     b.surprise = vm->get(0x7ECB) & 6;
     b.to_hit_party = static_cast<int8_t>(vm->get(0x7F71));
     b.to_hit_monsters = static_cast<int8_t>(vm->get(0x7F70));

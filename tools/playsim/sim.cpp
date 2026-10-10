@@ -54,7 +54,7 @@ static void item_ops(const char* ops)
 // number, '#' prints the screen, '~' runs ticks for a minute of game time,
 // '?' the selected one's memorized list, '!' everyone's HP and effects, -n sets member n to 1 HP,
 // '[' gives the selected one a magic-user's scroll of 3 spells, ']' lists their items and spell book,
-// '{' a readied potion of healing, '}' a readied wand of magic missiles
+// '{' a readied potion of healing, '}' a readied wand of magic missiles, '(' a readied bow and 20 arrows
 static void run_ops(const char* q)
 {
     auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
@@ -75,6 +75,10 @@ static void run_ops(const char* q)
             it[0x2E] = 0x47; it[0x37] = 1; it[0x34] = 1;
             if (*q == '{') { it[0x2F] = 0xB9; it[0x30] = 0xA7; it[0x31] = 0x40; it[0x3C] = 1; it[0x3D] = 0x03; }
             else { it[0x2F] = 0xCE; it[0x30] = 0xA7; it[0x31] = 0x45; it[0x3C] = 30; it[0x3D] = 0x0F; } }
+        else if (*q == '(') {                   // a readied long bow and 20 arrows
+            party::Character& ch = *play::pt->sel();
+            uint8_t* it = ch.items[ch.n_items++]; memset(it, 0, 63); it[0x2E] = 41; it[0x34] = 1; it[0x37] = 10; it[0x2F] = 0x29;
+            it = ch.items[ch.n_items++]; memset(it, 0, 63); it[0x2E] = 73; it[0x34] = 1; it[0x39] = 20; it[0x37] = 1; it[0x2F] = 0x49; }
         else if (*q == ']') { const party::Character& ch = *play::pt->sel(); printf("  items %d:", ch.n_items); for (int i = 0; i < ch.n_items; ++i) printf(" %02X(%02X %02X %02X w%02X)", ch.items[i][0x2E], ch.items[i][0x3C], ch.items[i][0x3D], ch.items[i][0x3E], ch.items[i][0x30]); printf("  book:"); for (int s2 = 1; s2 <= 100; ++s2) if (ch.rec[0x79 + s2 - 1]) printf(" %d", s2); printf("\n"); }
         else if (*q == '-') { ++q; play::pt->m[*q - '0'].rec[0x1A4] = 1; }
         else if (*q == '!') { for (int i = 0; i < play::pt->count; ++i) { const party::Character& ch = play::pt->m[i]; char nm[20]; ch.name(nm, 20); printf("  %s HP %d/%d st %d fx:", nm, ch.hp(), ch.hp_max(), ch.health()); for (int k = 0; k < ch.n_affects; ++k) printf(" %02X/%d/%d", ch.affects[k][0], ch.affects[k][1] | ch.affects[k][2] << 8, ch.affects[k][3]); printf("\n"); } }
@@ -306,7 +310,7 @@ int main(int argc, char** argv)
                 } else if (play::fg->st == play::FSt::Results || play::fg->st == play::FSt::Destroyed) {
                     shot("fight_results");
                     printf("  fight over: result %d, each %d xp, round %d\n", play::vm->get(0x7EC7), play::fg->share, play::fg->b.round);
-                    for (int i = 0; i < play::pt->count; ++i) { char nm[20]; play::pt->m[i].name(nm, 20); printf("   %s HP %d/%d status %d xp %u", nm, play::pt->m[i].hp(), play::pt->m[i].hp_max(), play::pt->m[i].health(), play::pt->m[i].exp()); for (int k = 0; k < play::pt->m[i].n_items; ++k) if (play::pt->m[i].items[k][0x3D]) printf(" [item %d: %d x spell %02X]", k, play::pt->m[i].items[k][0x3C], play::pt->m[i].items[k][0x3D]); printf("\n"); }
+                    for (int i = 0; i < play::pt->count; ++i) { char nm[20]; play::pt->m[i].name(nm, 20); printf("   %s HP %d/%d status %d xp %u", nm, play::pt->m[i].hp(), play::pt->m[i].hp_max(), play::pt->m[i].health(), play::pt->m[i].exp()); for (int k = 0; k < play::pt->m[i].n_items; ++k) if (play::pt->m[i].items[k][0x3D]) printf(" [item %d: %d x spell %02X]", k, play::pt->m[i].items[k][0x3C], play::pt->m[i].items[k][0x3D]); else printf(" [type %d x%d]", play::pt->m[i].items[k][0x2E], play::pt->m[i].items[k][0x39]); printf("\n"); }
                     play::tap(2, 2, C);
                 }
             }

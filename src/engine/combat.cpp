@@ -765,6 +765,28 @@ int weapon(const Fighter& f, const items::Names& names)
     return -1;
 }
 
+int missile(const Battle& b, const Fighter& f, int* ammo)
+{
+    *ammo = -1;
+    if (!b.names) return 0;
+    const int w = weapon(f, *b.names);
+    if (w < 0) return 0;
+    const items::TypeInfo& ti = b.names->type(f.items[w][0x2E]);
+    if (ti.range <= 1) return 0;
+    if (ti.flags & 0x81) {
+        // A launcher: its readied arrows / quarrels
+        for (int k = 0; k < f.n_items; ++k) {
+            const int ty = f.items[k][0x2E];
+            if (!f.items[k][0x34]) continue;
+            if (((ti.flags & 0x01) && ty == b.arrow) || ((ti.flags & 0x80) && ty == b.quarrel)) *ammo = k;
+        }
+        if (*ammo < 0) return 0;
+    } else if (ti.flags & 0x10) {
+        *ammo = w;                                   // thrown: the weapon goes
+    }                                                // (else it shoots without ammunition: a sling)
+    return ti.range - 1 > 1 ? ti.range - 1 : 1;
+}
+
 int money_exp(const int m[7])
 {
     const long copper = m[0] + 10L * m[1] + 100L * m[2] + 200L * m[3] + 1000L * m[4];
@@ -932,6 +954,29 @@ Plan think(Battle& b, const Tables& t, int i, create::Dice& d)
                 p.target = c;
                 return p;
             }
+        // A missile weapon: the target in reach and sight, else one there
+        int ammo = -1;
+        const int reach = missile(b, f, &ammo);
+        if (reach > 0) {
+            int sq;
+            int shot = -1;
+            if (range(b, t, i, f.target, false, &sq) && sq <= reach) {
+                shot = f.target;
+            } else {
+                int cand[kMaxFighters], n = 0;
+                for (int c = 0; c < b.n; ++c)
+                    if (enemy(c) && range(b, t, i, c, false, &sq) && sq <= reach) cand[n++] = c;
+                if (n) shot = cand[d.roll(n, 1) - 1];
+            }
+            if (shot >= 0) {
+                f.target = shot;
+                p.act = Act::Attack;
+                p.target = shot;
+                p.missile = true;
+                p.ammo = ammo;
+                return p;
+            }
+        }
     } else {
         return p;
     }

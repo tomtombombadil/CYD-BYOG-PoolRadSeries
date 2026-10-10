@@ -17,8 +17,8 @@
 // second hand, 2 armour ...), 1 hands, 2-4 damage vs large (dice, sides,
 // bonus), 5 attacks, 6 armour value (0x80 + AC points), 9-11 damage vs
 // man-sized, 12 range, 13 classes, 14 flags (1 uses arrows, 2 missile:
-// dexterity to hit, 4 melee: strength to hit and damage, 0x80 uses
-// quarrels).
+// dexterity to hit, 4 melee: strength to hit and damage, 0x10 thrown,
+// 0x80 uses quarrels).
 #pragma once
 
 #include <cstddef>

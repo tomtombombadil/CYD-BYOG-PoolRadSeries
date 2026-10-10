@@ -130,6 +130,9 @@ struct Battle {
     int     to_hit_party = 0, to_hit_monsters = 0;  // the scripts' bonuses
     const Facts* fx = nullptr;
     int     morale_base = 0;            // the script's morale word (0x7EC6)
+    // Missiles: the item types (ITEMS) and the ammunition's types
+    const items::Names* names = nullptr;
+    uint8_t arrow = 0, quarrel = 0;
 };
 
 // Effects on a fighter
@@ -226,7 +229,17 @@ struct Plan {
     Act act = Act::Done;
     int target = -1;
     int dir = 8;
+    bool missile = false;               // Attack: a shot / a throw (`ammo` goes)
+    int ammo = -1;
 };
+// The readied missile weapon's reach (its range - 1, at least 1) when it can
+// be used now: a bow / crossbow (type flags 1 / 0x80) with its arrows /
+// quarrels readied, a thrown weapon (flag 0x10), another with a range (a
+// sling); 0: none. `ammo`: the item a shot uses up (one of the pile; -1 none).
+int missile(const Battle& b, const Fighter& f, int* ammo);
+// The computer's move: next to an enemy it attacks (its target first); else
+// with a missile weapon it shoots at its target in reach and sight (or a
+// random one there); else it steps toward its target; else it guards.
 Plan think(Battle& b, const Tables& t, int i, create::Dice& d);
 // Leaving the fight: gets away (faster than every enemy able to reach, or
 // even and d2) - status Running, off the field
