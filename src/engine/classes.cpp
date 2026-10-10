@@ -145,7 +145,10 @@ void saving_throws(party::Character& c, const Tables& t)
     // the poison number, as the games do); everyone with Con 19+
     const int con = c.rec[kConFull];
     int add = 0;
-    if (c.race() == 1 || c.race() == 5) {
+    bool girdle = false;                        // (a readied Girdle of the Dwarves, item effect 0x86: as a dwarf)
+    for (int i = 0; i < c.n_items; ++i)
+        if (c.items[i][0x34] && c.items[i][0x3E] == 0x86) girdle = true;
+    if (c.race() == 1 || c.race() == 5 || girdle) {
         if (con >= 4 && con <= 6) add = 1;
         else if (con >= 7 && con <= 10) add = 2;
         else if (con >= 11 && con <= 13) add = 3;
@@ -213,6 +216,22 @@ void class_bonuses(party::Character& c, const Tables& t)
         if (c.level(cls) > 0 || (c.old_level(cls) > 0 && c.old_level(cls) < hd))
             flags += t.u8(static_cast<uint16_t>(t.lay.class_flags + cls));
     c.rec[kClassFlags] = static_cast<uint8_t>(flags);
+    // A human whose new class has passed the old one: the old classes count
+    // too - their THAC0, 3 attacks for an old fighter / paladin past 6th or
+    // ranger past 7th level, a former thief's skills (the original's)
+    if (c.race() == 7) {
+        int k = 0;
+        while (k < 7 && c.level(k) == 0) ++k;
+        if (c.level(k) > c.rec[kMultiLevel]) {
+            for (int cls = 0; cls < kClasses; ++cls) {
+                const int old = c.old_level(cls);
+                const int v = t.thac0(cls, old > 12 ? 12 : old);
+                if (v > c.rec[kThac0]) c.rec[kThac0] = static_cast<uint8_t>(v);
+            }
+            if (c.old_level(Fighter) > 6 || c.old_level(Paladin) > 6 || c.old_level(Ranger) > 7) c.rec[kAttacks] = 3;
+            if (c.old_level(Thief) > 0) thief_skills(c, t);
+        }
+    }
     (void)kStrFull;
     (void)kLevels;
     (void)kOldLevels;

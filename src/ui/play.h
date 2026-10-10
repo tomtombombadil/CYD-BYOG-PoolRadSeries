@@ -62,6 +62,9 @@ void input_key(char k, pic::Canvas& c);
 // journal_request() takes it (true once, with what to show).
 bool journal_waiting();
 bool journal_request(char* kind, int* number);
+// The viewer couldn't show it (memory): the request back, and an error on
+// the menu line (it stays until tapped)
+void journal_failed(char kind, int number, const char* why, pic::Canvas& c);
 
 // The cursor keys (Tom, 2026-10-10): the games' arrow keys and Enter for
 // the highlighted thing on screen - Up / Down move a list's highlight (the

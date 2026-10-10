@@ -521,8 +521,13 @@ bool hidden(const Battle& b, int viewer, int target)
     if (!b.fx || target < 0 || target >= b.n) return false;
     const Fighter& t = b.f[target];
     if (hasx(t, b.fx->blink) && t.delay == 0) return true;
+    const bool sees = viewer >= 0 && viewer < b.n && hasx(b.f[viewer], b.fx->mon.detect);
+    // Invisibility to Animals: an animal (monster type 19) doesn't see it
+    if (b.fx->animals_blind && viewer >= 0 && viewer < b.n && b.f[viewer].rec[0x11A] == 19 &&
+        t.has(b.fx->animals_blind) && !sees)
+        return true;
     if (!hasx(t, b.fx->invisible)) return false;
-    return !(viewer >= 0 && viewer < b.n && hasx(b.f[viewer], b.fx->mon.detect));
+    return !sees;
 }
 
 bool helpless(const Battle& b, const Fighter& f)
@@ -644,6 +649,30 @@ void end_effect(Battle& b, Fighter& f, int k)
             if (data & 0x10) f.quick = false;
             f.target = -1;
         }
+        // A hold taken away (dispelled): its victim (the data) goes free
+        if ((fx.mon.engulfing && type == fx.mon.engulfing) || (fx.mon.hugging && type == fx.mon.hugging)) {
+            if (data < b.n) {
+                Fighter& vf = b.f[data];
+                int j = fx.mon.held_fast ? find_aff(vf, fx.mon.held_fast) : -1;
+                if (j >= 0) drop_aff(vf, j);
+                j = fx.mon.suffocate && type == fx.mon.engulfing ? find_aff(vf, fx.mon.suffocate) : -1;
+                if (j >= 0) drop_aff(vf, j);
+            }
+        }
+        // Animate Dead taken away: they collapse, dead, on their own side
+        if (fx.sp.animated && type == fx.sp.animated && f.status() == party::Animated) {
+            drop_aff(f, k);
+            f.rec[kHealth] = party::Dead;
+            f.rec[kHp] = 0;
+            f.rec[kTeam] = static_cast<uint8_t>(data >> 4);
+            f.rec[0xE9] = 0;
+            f.rec[0x11A] = 0;
+            f.rec[kMove] = 12;
+            f.rec[kControl] = f.was_control;
+            f.target = -1;
+            fall(b, static_cast<int>(&f - b.f));
+            return;
+        }
     }
     drop_aff(f, k);
 }
@@ -677,6 +706,8 @@ TurnFx turn_effects(Battle& b, int i)
 {
     Fighter& f = b.f[i];
     if (!b.fx || !f.up()) return TurnFx::None;
+    set_actor(b, i);
+    g_kind = 0;
     const Facts& fx = *b.fx;
     // Engulfed: a turn's breath less; none left - suffocated
     const int sf = fx.mon.suffocate ? find_aff(f, fx.mon.suffocate) : -1;
@@ -692,6 +723,36 @@ TurnFx turn_effects(Battle& b, int i)
     if (fx.fumbling && f.has(fx.fumbling)) {
         f.moves = f.attacks[0] = f.attacks[1] = 0;
         return TurnFx::Fumbling;
+    }
+    // (the original's order: the restrained - snakes -, silence, then confusion)
+    const int s = fx.sticks ? find_aff(f, fx.sticks) : -1;
+    if (s >= 0) {
+        // The snakes go down by its attacks this round; when they're no more
+        // than its attacks, they're gone
+        const int att = f.attacks[0] + f.attacks[1];
+        int snakes = f.aff[s][3] - att;
+        if (snakes <= att) {
+            drop_aff(f, s);
+        } else {
+            f.aff[s][3] = static_cast<uint8_t>(snakes);
+            f.moves = f.attacks[0] = f.attacks[1] = 0;
+            return TurnFx::Snakes;
+        }
+    }
+    bool silenced = false;
+    if (fx.silence && f.can_use) {
+        bool hushed = f.has(fx.silence);
+        for (int c = 0; !hushed && c < b.n; ++c) {
+            const Fighter& o = b.f[c];
+            if (c == i || !o.size || !o.has(fx.silence)) continue;
+            const int ddx = o.x - f.x, ddy = o.y - f.y;
+            hushed = ddx >= -1 && ddx <= 1 && ddy >= -1 && ddy <= 1;
+        }
+        if (hushed) {
+            f.can_use = false;
+            f.can_cast = false;
+            silenced = true;
+        }
     }
     // Confused (no spell on the way): d100 - it runs, its turn is lost, it
     // goes berserk, or it's only enraged; then a save at -2 ends it
@@ -742,34 +803,7 @@ TurnFx turn_effects(Battle& b, int i)
         }
         return out;
     }
-    const int s = fx.sticks ? find_aff(f, fx.sticks) : -1;
-    if (s >= 0) {
-        // The snakes go down by its attacks this round; when they're no more
-        // than its attacks, they're gone
-        const int att = f.attacks[0] + f.attacks[1];
-        int snakes = f.aff[s][3] - att;
-        if (snakes <= att) {
-            drop_aff(f, s);
-        } else {
-            f.aff[s][3] = static_cast<uint8_t>(snakes);
-            f.moves = f.attacks[0] = f.attacks[1] = 0;
-            return TurnFx::Snakes;
-        }
-    }
-    if (fx.silence && f.can_use) {
-        bool hushed = f.has(fx.silence);
-        for (int c = 0; !hushed && c < b.n; ++c) {
-            const Fighter& o = b.f[c];
-            if (c == i || !o.size || !o.has(fx.silence)) continue;
-            const int ddx = o.x - f.x, ddy = o.y - f.y;
-            hushed = ddx >= -1 && ddx <= 1 && ddy >= -1 && ddy <= 1;
-        }
-        if (hushed) {
-            f.can_use = false;
-            f.can_cast = false;
-            return TurnFx::Silenced;
-        }
-    }
+    if (silenced) return TurnFx::Silenced;
     return TurnFx::None;
 }
 
@@ -888,8 +922,11 @@ void start_round(Battle& b, create::Dice& d)
     g_fx = b.fx;
     g_b = &b;
     g_dice = &d;
+    g_actor = -1;
+    g_kind = 0;
     for (int i = 0; i < b.n; ++i) {
         Fighter& f = b.f[i];
+        f.spell = f.spell_n = 0;                // a spell begun last round is gone (the original's)
         f.attacked = false;
         f.swept = false;
         f.can_cast = true;
@@ -1167,6 +1204,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
         if (hasx(tg, fx.invisible) && !sees) side -= 4;              // an invisible target
         if (hasx(tg, fx.sp.evil_ward) && (at.rec[0x14B] & 1)) side -= 7;   // Dispel Evil against the evil
         if (fx.blinded && tg.has(fx.blinded) && !coughing) ac -= 4;     // a blind target: easier (coughing: lost)
+        if (fx.sp.shield && tg.has(fx.sp.shield) && ac < 0x39) ac = 0x39;   // Shield: AC 3 at worst
         // Faerie Fire: the stored AC + 2 (to AC 0 at most) - the original's
         // own rule, which makes the target harder to hit
         if (fx.faerie && tg.has(fx.faerie)) ac = ac < 58 ? ac + 2 : 60;
@@ -1315,9 +1353,21 @@ int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* dow
     g_dice = &d;
     g_kind = h.kind;
     int dmg = amount;
+    b.lost_image = -1;
     if (b.fx && f.up() && dmg > 0) {
         const MonFx& m = b.fx->mon;
         bool safe = false;
+        // Mirror Image: a spell at picked creatures may take an image instead
+        // (d(images + 1) over 1) - the effect's whole data byte counts down,
+        // gone at 0 (the original's; weapons never meet the images)
+        const int mi = b.fx->mirror && h.spell > 0 && h.single ? find_aff(f, b.fx->mirror) : -1;
+        if (mi >= 0 && d.roll((f.aff[mi][3] >> 4) + 1, 1) > 1) {
+            b.lost_image = c;
+            if (--f.aff[mi][3] == 0) drop_aff(f, mi);
+            return 0;
+        }
+        // Shield: Magic Missile stopped
+        if (b.fx->sp.shield && h.spell == 0x0F && f.has(b.fx->sp.shield)) safe = true;
         // The target's resistances, in the original's order
         if (hasx(f, m.efreet) && (h.kind & 1)) {
             dmg -= h.dice;
@@ -1367,6 +1417,7 @@ int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* dow
         const bool dn = damage(b, c, dmg);
         if (down) *down = dn;
     }
+    g_kind = 0;                         // (the kind is this harm's only: later saves don't see it)
     return dmg;
 }
 
@@ -1710,15 +1761,18 @@ bool flee(Battle& b, const Tables& t, int i, create::Dice& d)
 {
     Fighter& f = b.f[i];
     const int my = f.team() ? 1 : 0;
+    // No enemy that can reach it: away; else its movement against the
+    // fastest enemy in the fight (facts 4.6)
     int fastest = -1;
+    bool reached = false;
     for (int c = 0; c < b.n; ++c) {
         const Fighter& e = b.f[c];
         if (!e.up() || !e.size || (e.team() ? 1 : 0) == my) continue;
-        if (!range(b, t, c, i, true, nullptr) && false) continue;
+        if (range(b, t, c, i, true, nullptr)) reached = true;
         if (e.rec[kMove] > fastest) fastest = e.rec[kMove];
     }
     const int mine = f.rec[kMove];
-    const bool away = fastest < 0 || mine > fastest || (mine == fastest && d.roll(2, 1) == 1);
+    const bool away = !reached || fastest < 0 || mine > fastest || (mine == fastest && d.roll(2, 1) == 1);
     f.delay = 0;
     f.moves = 0;
     if (!away) return false;
@@ -1780,6 +1834,14 @@ bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
         const Facts& fx = *g_fx;
         if (fx.bestow && f.has(fx.bestow)) bonus -= 4;
         if (fx.blinded && f.has(fx.blinded)) bonus -= 4;
+        if (fx.sp.shield && f.has(fx.sp.shield)) ++bonus;
+        // A prayer: +1 on its caster's side, -1 on the other
+        for (int c = 0; fx.prayer && g_b && c < g_b->n; ++c) {
+            const int k = find_aff(g_b->f[c], fx.prayer);
+            if (k < 0) continue;
+            bonus += (g_b->f[c].aff[k][3] >> 4) == f.team() ? 1 : -1;
+            break;
+        }
         if ((g_kind & 2) && hasx(f, fx.mon.resist_cold)) bonus += 3;
         if ((g_kind & 1) && hasx(f, fx.mon.resist_fire)) bonus += 3;
         if ((g_kind & 2) && hasx(f, fx.sp.hot)) bonus += 2;           // the fire shields
@@ -1877,6 +1939,11 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
     hs.level = pw;
     hs.spell = spell;
     hs.spell_level = e.level;
+    {
+        // At picked creatures (aim 1-5, 15), not an area (the original's flag)
+        const int aim = e.aim & 0x0F;
+        hs.single = (aim >= 1 && aim <= 5) || aim == 0x0F;
+    }
     // A spell's effect on fighter k: magic resistance first ("is Unaffected")
     auto resisted = [&](int k, int effect) {
         if (!resists(b, who[k], effect ? effect : -1, hs, d)) return false;
@@ -1976,7 +2043,10 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                 continue;
             }
             if (!b.fx || !b.fx->charm) continue;
-            const int caster_side = b.f[caster].team() ? 1 : 0, own = f.team() ? 1 : 0;
+            const int caster_side = b.f[caster].team() ? 1 : 0;
+            int own = f.team() ? 1 : 0;
+            const int was = find_aff(f, b.fx->charm);
+            if (was >= 0) own = (f.aff[was][3] & 0x40) >> 6;      // charmed again: still their own side underneath
             give_aff(f, b.fx->charm, minutes, (caster_side << 7) | (own << 6) | 0x20 | (pw & 0x1F), false);
             f.rec[0x197] = static_cast<uint8_t>(caster_side);
             f.target = -1;
@@ -2008,7 +2078,9 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                 say(who[k], Did::Unaffected, 0);
                 continue;
             }
-            const bool made_quick = f.member >= 0 && f.rec[0xF7] < 0x80 && !f.quick;
+            const int was = b.fx && b.fx->fear ? find_aff(f, b.fx->fear) : -1;
+            const bool made_quick =
+                (f.member >= 0 && f.rec[0xF7] < 0x80 && !f.quick) || (was >= 0 && (f.aff[was][3] & 1));
             if (b.fx && b.fx->fear) give_aff(f, b.fx->fear, minutes, made_quick ? 1 : 0, false);
             f.fleeing = true;
             if (made_quick) f.quick = true;
@@ -2077,6 +2149,10 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             h.on_save = e.on_save;
             bool dn = false;
             const int done = harm(b, who[k], dmg, h, d, &dn);
+            if (b.lost_image == who[k]) {
+                say(who[k], Did::LostImage, 0);
+                continue;
+            }
             if (done <= 0) {
                 say(who[k], Did::Unaffected, 0);
                 continue;
@@ -2199,9 +2275,12 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                 continue;
             }
             if (resisted(k, b.fx->sticks)) continue;
-            give_aff(f, b.fx->sticks, minutes, pw, false);
-            f.moves = f.attacks[0] = f.attacks[1] = 0;
+            // The handler at once: the snakes less its attacks left this round
+            const int att = f.attacks[0] + f.attacks[1];
             say(who[k], Did::Word, 0);
+            if (pw - att <= att) continue;              // (as many as its attacks, or fewer: gone already)
+            give_aff(f, b.fx->sticks, minutes, pw - att, false);
+            f.moves = f.attacks[0] = f.attacks[1] = 0;
         }
         break;
     case SpellDoes::SnakeCharm: {
@@ -2299,6 +2378,10 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             // Else the first cursed item comes off (still cursed); a monster's are its group's: not
             for (int j = 0; f.member >= 0 && f.items && j < f.n_items; ++j)
                 if (f.items[j][0x36]) {
+                    if (f.items[j][0x34] && f.items[j][0x3E] == 0x80 && f.items[j][0x3D]) {
+                        const int fx = find_aff(f, f.items[j][0x3D]);     // its effect comes off too
+                        if (fx >= 0) drop_aff(f, fx);
+                    }
                     f.items[j][0x34] = 0;
                     say(who[k], Did::Word3, 0);
                     break;
@@ -2393,6 +2476,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             f.target = -1;
             f.rec[0xE9] = 2;                                // undead
             f.rec[kMove] = 6;
+            f.rec[0xDD] = 0;                                // attack level 0
             memset(f.rec + 0x1E, 0, 84);                    // no spells
             f.was_control = f.rec[kControl];
             f.rec[kControl] = f.rec[kControl] > 0x7F ? 0xB2 : 0xB3;
@@ -3105,7 +3189,10 @@ int clouds_round(Battle& b)
             b.ground[yy][xx] = cl.ground[k];
             for (int j = 0; j < b.n; ++j) {
                 Fighter& o = b.f[j];
-                if (o.member >= 0 && !o.size && !o.up() && o.x == xx && o.y == yy) {
+                const int st = o.status();
+                const bool body = st == party::Unconscious || st == party::Dying || st == party::Dead ||
+                                  st == party::Stoned;     // (not one who fled)
+                if (o.member >= 0 && !o.size && body && o.x == xx && o.y == yy) {
                     o.ground = cl.ground[k];
                     b.ground[yy][xx] = 0x1F;
                 }
@@ -3331,6 +3418,7 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
     const MonFx& m = b.fx->mon;
     set_actor(b, i);
     g_dice = &d;
+    g_kind = 0;
     int n = 0;
     auto ev = [&](int who, Ev e, int to = -1) -> Event* {
         if (n >= cap) return nullptr;

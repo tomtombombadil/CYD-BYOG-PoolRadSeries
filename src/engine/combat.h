@@ -120,6 +120,7 @@ struct SpellFx {
     uint8_t slow_poison, poison_damage, hammer, animated;
     uint8_t con_regen;
     uint8_t giant;                      // the giant strength potion's (its data: the Strength)
+    uint8_t shield;                     // Shield: AC 3 at worst, saves +1, Magic Missile stopped
 };
 
 // The effects the fights' rules look at (per game, from the profile)
@@ -232,6 +233,7 @@ struct Battle {
     // Set by the caller before a cast: the square aimed at (Dispel Magic's
     // clouds), the fire shield's flame (1 hot, 2 cold, 0 the computer's pick)
     int     aim_x = -1, aim_y = -1, flame = 0;
+    int     lost_image = -1;            // harm(): the one whose mirror image took it ("lost an image")
     // The fight's tables (set by the caller: a bolt's path), the last bolt's segments (its picture)
     const Tables* tables = nullptr;
     BoltSeg bolt[16];
@@ -390,6 +392,7 @@ struct Harm {
     int dice = 0;                       // dice rolled (the efreet's -1 a die)
     int spell = 0, spell_level = 0;     // the spell (the minor globe)
     int save = -1, on_save = 0, bonus = 0;
+    bool single = false;                // a spell at picked creatures (not an area): Mirror Image can take it
 };
 int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* down, bool* resisted = nullptr);
 // Magic resistance against a spell's effect on fighter c (`effect`: the
@@ -527,7 +530,7 @@ struct FightSpell {
 };
 // What happened to each target, in order
 // Fallen: the skull, no words; Risen: "gets back up" / "stands up and grins"
-enum class Did : uint8_t { Word, Damage, Unaffected, Misses, Healed, Down, Word2, Fallen, Word3, Risen };
+enum class Did : uint8_t { Word, Damage, Unaffected, Misses, Healed, Down, Word2, Fallen, Word3, Risen, LostImage };
 struct SpellLine {
     uint8_t who;
     Did     did;

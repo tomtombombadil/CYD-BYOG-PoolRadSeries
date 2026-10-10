@@ -164,6 +164,7 @@ struct PickList {
 // A message on the menu line ("Not enough Money."), then the menu again
 uint32_t note_until = 0;
 bool     note_held = false;      // an error: stays until a tap (Tom, 2026-10-09)
+bool     resume_after_note = false;  // the script goes on once that error is tapped away
 int last_pic_id = -1, last_pic_head = 0xFF;   // the script's picture (shops come back to it)
 int  pm_item[Data::kItems];   // the menu item on each list line
 int  pm_lines = 0;
@@ -176,6 +177,7 @@ bool area_view = false;
 bool pic_shown = false;       // a script picture covers the 3D view
 Then then = Then::Idle;
 bool waiting = false;         // the script waits for the player
+bool in_game_menu = false;          // the party menu a script opened (PROGRAM 0)
 
 // Combat (play_fight.inc)
 // ---- Sound: the game's own effects (engine/sound), Tandy or PC speaker
@@ -302,6 +304,7 @@ Input        input_mode = Input::None;
 bool         input_engine = false;   // the engine asks (a new character's name, coins to take), not a script
 enum class EngineAsk : uint8_t { Name, Coins, ModName, FileName };
 char new_base[12] = {};             // Remove: the file name typed instead (Overwrite -> No)
+bool name_for_new = false;          // ... for a new character (Create's save), not Remove
 EngineAsk    engine_ask = EngineAsk::Name;
 const char*  input_prompt = "";
 int          input_max = ecl::kMaxInput;
@@ -674,20 +677,34 @@ void load_journal_list(char slot);
 
 // Loads saved game `slot`: the game's memory, position and script, and
 // the party from their files (.SAV, with .SWG items and .FX effects)
+const char* load_problem = nullptr;     // what went wrong with the last load (shown, stays until tapped)
+
 bool load_game(char slot)
 {
+    load_problem = nullptr;
     char name[24];
     savegame::file_name(slot, name, sizeof name);
     fs::File f;
-    if (!open_save_file(name, f)) return false;
+    if (!open_save_file(name, f)) {
+        load_problem = "That saved game couldn't be opened.";
+        return false;
+    }
     bool ok;
     {
         library::FileSource src(f);
         ok = savegame::read(src, d->gs, d->save);
     }
     f.close();
+    // Whatever was going on is over now (a script's party menu, a wait)
+    in_game_menu = false;
+    waiting = false;
+    then = Then::Idle;
     if (!ok) {
+        // (read part-way: what was in memory isn't a game any more)
         Serial.printf("[play] %s isn't a saved game\n", name);
+        load_problem = "That saved game couldn't be read (damaged or short).";
+        d->loaded = false;
+        pt->clear();
         return false;
     }
     pt->clear();
@@ -697,6 +714,7 @@ bool load_game(char slot)
         snprintf(fn, sizeof fn, "%s.SAV", d->save.names[i]);
         if (!open_save_file(fn, f)) {
             Serial.printf("[play] %s missing\n", fn);
+            load_problem = "A character of that saved game is missing from the save folder.";
             continue;
         }
         {
@@ -704,7 +722,10 @@ bool load_game(char slot)
             ok = party::read_record(src, ch);
         }
         f.close();
-        if (!ok) continue;
+        if (!ok) {
+            load_problem = "A character of that saved game couldn't be read.";
+            continue;
+        }
         snprintf(fn, sizeof fn, "%s.SWG", d->save.names[i]);
         if (open_save_file(fn, f)) {
             library::FileSource src(f);
@@ -876,12 +897,21 @@ void draw_buy(pic::Canvas& c);
 void draw_shop(pic::Canvas& c);
 
 // The menu line again after a message
+bool fight_moving();
+void fight_move_prompt(pic::Canvas& c);
+
 void redraw_menu(pic::Canvas& c)
 {
     note_until = 0;
     note_held = false;
     if (screen == Screen::PartyMenu) pm_prompt(c);      // the party menu's own prompt
+    else if (fight_moving()) fight_move_prompt(c);      // a fight's Move: its own prompt
     else show_menu_line(c);
+    if (resume_after_note) {
+        resume_after_note = false;
+        waiting = false;
+        handle(vm->resume());
+    }
 }
 
 // A message on the menu line for the game's delay (as the games do)
@@ -1026,6 +1056,8 @@ void use_item(int i, pic::Canvas& c);
 void reading_tap(char k, pic::Canvas& c);
 void rest_tap(int x, int y, pic::Canvas& c);
 void rest_tick(uint32_t now, pic::Canvas& c);
+void effects_clock(int m, pic::Canvas& c);
+void tick_screens(uint32_t now, pic::Canvas& c);
 void run_entry(int i, Then next);
 
 const char* iw(int i) { return d->iw[i]; }
@@ -1034,11 +1066,15 @@ int  trade_from = -1;              // Trade: whose item (pt->selected picks who 
 bool in_shop_items() { return view_from == Screen::Shop; }
 
 // The menu for the items screen (as the games build it)
+// Use is offered to one who's up and about where the area allows it
+// (item_use_facts.md 2: record 0x196, the area word 0x4BE5)
+bool can_use_items(const party::Character& ch) { return ch.in_combat() && (vm->get(0x4BE5) & 0xFF) == 0; }
+
 void items_keys(char* out, size_t cap)
 {
     const party::Character* ch = pt->sel();
     const bool exploring = view_from == Screen::Game || view_from == Screen::Camp || view_from == Screen::Fight;
-    snprintf(out, cap, "%s%s%s%s%s%s%s%s", d->w_ready, exploring ? iw(profile::kUse) : "",
+    snprintf(out, cap, "%s%s%s%s%s%s%s%s", d->w_ready, exploring && can_use_items(*ch) ? iw(profile::kUse) : "",
              !ch->npc() && !in_shop_items() && view_from != Screen::Fight ? iw(profile::kTrade) : "", iw(profile::kDrop),
              ch->n_items < party::kMaxItems ? iw(profile::kHalve) : "", iw(profile::kJoin),
              in_shop_items() && !ch->npc() ? iw(profile::kSell) : "", in_shop_items() ? iw(profile::kId) : "");
@@ -1673,10 +1709,16 @@ void remove_character(pic::Canvas& c, bool overwrite_ok)
 
 bool create_yes_no(Ask what, char k, pic::Canvas& c);
 
+void yes_no_key(char k, pic::Canvas& c);
+
 void yes_no_tap(int x, int y, pic::Canvas& c)
 {
     if (y < text::kMenuTapTop) return;
-    const char k = text::key(menu, text::hit(menu, x / 8));
+    yes_no_key(text::key(menu, text::hit(menu, x / 8)), c);
+}
+
+void yes_no_key(char k, pic::Canvas& c)
+{
     if (k != 'Y' && k != 'N') return;
     const Ask what = ask;
     ask = Ask::None;
@@ -1696,6 +1738,7 @@ void yes_no_tap(int x, int y, pic::Canvas& c)
         } else {
             // "New file name: " - up to 8, upper case; asked again while empty (no way back, as the original)
             draw_party_menu(c);
+            name_for_new = false;
             input_engine = true;
             engine_ask = EngineAsk::FileName;
             input_prompt = rw(Data::kNewFile);
@@ -1945,6 +1988,10 @@ void add_checked(int i, party::Character& ch, pic::Canvas& c)
 
 void add_from_tap(int x, int y, pic::Canvas& c)
 {
+    if (note_until) {                   // (an error: the tap puts it away first)
+        redraw_menu(c);
+        return;
+    }
     if (y < text::kMenuTapTop) return;
     switch (text::key(menu, text::hit(menu, x / 8))) {
     case 'C':
@@ -2302,6 +2349,7 @@ void save_new(pic::Canvas& c, bool overwrite_ok)
 {
     char base[12], fn[24], path[200];
     guy_base(mk->ch, base, sizeof base);
+    if (new_base[0]) snprintf(base, sizeof base, "%s", new_base);       // the name typed (Overwrite -> No)
     snprintf(fn, sizeof fn, "%s.GUY", base);
     save_path(fn, path, sizeof path);
     if (!overwrite_ok && sd_fs().exists(path)) {
@@ -2310,6 +2358,7 @@ void save_new(pic::Canvas& c, bool overwrite_ok)
         ask_yes_no(c, Ask::OverwriteNew, t);
         return;
     }
+    new_base[0] = 0;
     const bool ok = write_character(base, mk->ch);
     end_create(c);
     if (!ok) {
@@ -2339,8 +2388,20 @@ bool create_yes_no(Ask what, char k, pic::Canvas& c)
         return true;
     }
     if (what == Ask::OverwriteNew) {
-        if (k == 'Y') save_new(c, true);
-        else end_create(c);         // (the games ask for another file name)
+        if (k == 'Y') {
+            save_new(c, true);
+        } else {
+            // "New file name: " as for Remove (the same routine in the original)
+            name_for_new = true;
+            input_engine = true;
+            engine_ask = EngineAsk::FileName;
+            input_prompt = rw(Data::kNewFile);
+            input_max = 8;
+            input_mode = Input::Text;
+            input_len = 0;
+            input_buf[0] = 0;
+            draw_input(c);
+        }
         return true;
     }
     return false;
@@ -2356,7 +2417,6 @@ bool create_yes_no(Ask what, char k, pic::Canvas& c)
 // out. (The games' shopkeeper reminds the party of coins left behind.)
 
 bool temple = false;               // the shop screen is the temple's (Heal instead of Buy)
-bool in_game_menu = false;          // the party menu a script opened (PROGRAM 0)
 create::Dice rng;                   // the temple's dice, appraising
 
 // One of the shop's / temple's words, read from GAME.OVR when needed (the
@@ -2658,6 +2718,7 @@ void take_coins(int n, pic::Canvas& c)
     party::Character& ch = *pt->sel();
     rules::recalc(ch, *names, d->facts);
     if (take_coin >= 0 && n > 0) {
+        if (n > ground->money[take_coin]) n = ground->money[take_coin];     // (no more than lies there)
         if (ch.encumbrance() + n > rules::max_load(ch)) {
             draw_take(c);
             note(c, d->w_over);
@@ -2745,6 +2806,8 @@ void open_appraise(pic::Canvas& c)
     draw_appraise(c);
 }
 
+void appraise_key(char k, pic::Canvas& c);
+
 void appraise_tap(int x, int y, pic::Canvas& c)
 {
     if (note_until) {
@@ -2752,7 +2815,11 @@ void appraise_tap(int x, int y, pic::Canvas& c)
         return;
     }
     if (y < text::kMenuTapTop) return;
-    const char k = text::key(menu, text::hit(menu, x / 8));
+    appraise_key(text::key(menu, text::hit(menu, x / 8)), c);
+}
+
+void appraise_key(char k, pic::Canvas& c)
+{
     party::Character& ch = *pt->sel();
     if (appraised) {
         const bool must_sell = ch.encumbrance() + 1 > rules::max_load(ch) || ch.n_items >= party::kMaxItems;
@@ -2944,7 +3011,7 @@ void list_tap(int x, int y, pic::Canvas& c)
     if (y < text::kMenuTapTop) {
         const int i = l.top + row - l.row0;
         if (row >= l.row0 && row <= l.row1 && i < l.n) {
-            l.index = i;
+            if (screen != Screen::CreatePick) l.index = i;     // (Create's line 0 is its heading)
             if (screen == Screen::CreatePick) {
                 if (i >= 1) {
                     l.index = i;
@@ -3095,9 +3162,11 @@ void item_class_values(party::Character& ch, int i)
     if (i < 0 || i >= ch.n_items || ch.items[i][0x3E] < 0x80) return;
     const int code = ch.items[i][0x3E] & 0x7F;
     if (code != 1 && code != 2 && code != 11) return;
+    const bool had = mrules != nullptr;
     if (!load_magic()) return;
     if (code == 1) classes::wizardry(ch, mrules->tables, ch.items[i][0x34] != 0);
     else if (ch.level(classes::Thief) > 0) classes::thief_skills(ch, mrules->tables);
+    if (!had) end_magic();              // (loaded for this: the tables don't stay)
 }
 
 // The rule tables and spell names (from the program), for the camp
@@ -3173,7 +3242,7 @@ void cw(int i, char* out, size_t cap);
 void cast_done(pic::Canvas& c);
 void open_cast_exploring(pic::Canvas& c);
 void choose_spell(int spell, pic::Canvas& c);
-void open_cast(pic::Canvas& c);
+void open_cast(pic::Canvas& c, bool exploring = false);
 void open_effects(pic::Canvas& c);
 
 // ---- the spell list
@@ -3640,6 +3709,7 @@ void end_rest(pic::Canvas& c)
     if (rest.interrupted) {
         // The camp breaks up; the area's camp-interrupted script runs
         rest.interrupted = false;
+        camp_from_script = false;       // (the camp-interrupted script takes over: the camp's script isn't resumed too)
         leave_camp(c);
         run_entry(3, Then::Idle);
         return;
@@ -3706,8 +3776,9 @@ void rest_tick(uint32_t now, pic::Canvas& c)
         rest.left -= 5;
         if (rest.left < 0) rest.left = 0;
         vm->advance_clock(1, 5);
-        vm->take_minutes();                 // (the rest's step runs the effects)
-        const magic::Step st = magic::step(rest.r, *pt, mrules->tables, scroll_facts());
+        vm->take_minutes();                 // (the rest's own clock runs the effects)
+        const magic::Step st = magic::step(rest.r, *pt, mrules->tables, scroll_facts(), false);
+        effects_clock(5, c);
         bool said = false;
         if (st.healed) {
             char t[32];
@@ -3944,9 +4015,8 @@ void open_cast_exploring(pic::Canvas& c)
         error(c, "Not enough memory.");
         return;
     }
-    open_cast(c);
-    if (screen == Screen::SpellList) cr.exploring = true;
-    else end_magic();
+    open_cast(c, true);
+    if (screen != Screen::SpellList) end_magic();       // (no list: nothing left open)
 }
 
 const spells::CampSpell* camp_spell(int s)
@@ -4003,7 +4073,7 @@ void show_memory(pic::Canvas& c)
     draw_spells(c);
 }
 
-void open_cast(pic::Canvas& c)
+void open_cast(pic::Canvas& c, bool exploring)
 {
     party::Character& ch = *pt->sel();
     if (!spells::can_cast(ch)) {
@@ -4016,6 +4086,7 @@ void open_cast(pic::Canvas& c)
     }
     cr = CastRun{};
     cr.caster = pt->selected;
+    cr.exploring = exploring;           // (none in memory: back to exploring, not the camp)
     sl.casting = false;
     show_memory(c);
 }
@@ -4197,6 +4268,7 @@ void cast_tap(int x, int y, pic::Canvas& c)
             if (cr.item < 0) magic::remove(me, cr.spell);
             else if (cr.scroll) magic::scroll_used(me, scroll_facts(), cr.item, cr.spell);
             else magic::used(me, cr.item);
+            rules::recalc(me, *names, d->facts);
             clear_menu_line(c);
             show_memory(c);
         }
@@ -4272,6 +4344,7 @@ void use_spell(int i, int sp, bool scroll, pic::Canvas& c)
         snprintf(t, sizeof t, "%s %s", nm, w1);
         say_item(c, t);
         cr = CastRun{};
+        if (view_from == Screen::Game) end_magic();     // (loaded for the use)
         return;
     }
     const spells::Entry e = spells::entry(mrules->tables, sp);
@@ -4287,6 +4360,7 @@ void use_spell(int i, int sp, bool scroll, pic::Canvas& c)
     }
     if (!cr.cs || cr.cs->does == spells::Does::NotYet) {
         cr = CastRun{};
+        if (view_from == Screen::Game) end_magic();     // (loaded for the use)
         error(c, "Not in the engine yet.");          // nothing used
         return;
     }
@@ -4328,6 +4402,7 @@ void use_item(int i, pic::Canvas& c)
     party::Character& ch = *pt->sel();
     if (i < 0 || i >= ch.n_items) return;
     const uint8_t* it = ch.items[i];
+    if (!can_use_items(ch)) return;
     if (!items::Item{it}.readied()) {
         note(c, iw(profile::kMustReady));
         return;
@@ -4346,7 +4421,10 @@ void use_item(int i, pic::Canvas& c)
     }
     uint8_t ids[3];
     const int n = magic::scroll_list(ch, mrules->tables, sc, i, ids, 3);
-    if (!n) return;                                 // (can't read it: nothing)
+    if (!n) {                                       // (can't read it: nothing)
+        if (!in_fight() && view_from == Screen::Game) end_magic();
+        return;
+    }
     sl.learning = sl.casting = sl.scrolls = sl.choosing = sl.fighting = false;
     build_lines(ids, n);
     sl.reading = i;
@@ -4819,12 +4897,14 @@ bool train_yes_no(Ask what, char k, pic::Canvas& c)
     party::Character* ch = pt->sel();
     if (k == 'Y' && ch && trainer && train_mask) {
         if (!game_won) rules::pay(*ch, 1000);
-        const int mu = ch->level(classes::MagicUser);
+        const int mu = ch->level(classes::MagicUser), ra = ch->level(classes::Ranger);
         create::train_classes(*ch, trainer->tables, trainer->facts, trainer->dice, train_mask, false);
         rules::recalc(*ch, *names, d->facts);
         end_training();
         // A magic-user's new level (or a ranger's past 8th): a new spell
-        if ((ch->level(classes::MagicUser) > mu || ch->level(classes::Ranger) > 8) && open_learn(c)) return true;
+        if ((ch->level(classes::MagicUser) > mu || (ch->level(classes::Ranger) > ra && ch->level(classes::Ranger) > 8)) &&
+            open_learn(c))
+            return true;
         train_note(profile::kCongrats, c);
         return true;
     }
@@ -5168,6 +5248,7 @@ void pm_tap(int x, int y, pic::Canvas& c)
         load_game(text::key(menu, k));
         screen = Screen::PartyMenu;
         draw_party_menu(c);
+        if (load_problem) error(c, load_problem);
         return;
     }
     if (row >= 4 && row < 4 + pt->count && col >= 1) {
@@ -5624,21 +5705,31 @@ void begin_wait(pic::Canvas& c)
         // "~Yes ~No": each choice's first letter is its key; the rest shows
         // in the normal colour (lower case prints the same in this font)
         size_t o = 0;
+        int at[text::kMaxItems + 1] = {}, until[text::kMaxItems + 1] = {};
         for (int i = 0; i < vm->items() && o + 2 < sizeof menu_text; ++i) {
             const char* it = vm->item(i);
             if (i) menu_text[o++] = ' ';
+            if (i <= text::kMaxItems) at[i] = static_cast<int>(o);
             for (int k = 0; it[k] && o + 1 < sizeof menu_text; ++k) {
                 char ch = it[k];
                 if (k == 0) ch = static_cast<char>(toupper(static_cast<unsigned char>(ch)));
                 else if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch + 32);
                 menu_text[o++] = ch;
             }
+            if (i <= text::kMaxItems) until[i] = static_cast<int>(o) - 1;
         }
         menu_text[o] = 0;
         text::build(menu, vm->prompt(), menu_text);
         if (menu.count != vm->items()) {
-            // Words that don't start with a letter: fall back to one target a word
+            // Words that don't split by their capitals (a digit inside, too
+            // long a line): one target a choice, as far as the line shows
+            const int shown = static_cast<int>(sizeof menu.s) - 1;
             menu.count = 0;
+            for (int i = 0; i < vm->items() && i < text::kMaxItems && at[i] < shown; ++i) {
+                menu.start[i] = static_cast<int8_t>(at[i]);
+                menu.end[i] = static_cast<int8_t>(until[i] < shown ? until[i] : shown - 1);
+                menu.count = i + 1;
+            }
         }
         menu.selected = 0;
         show_menu_line(c);
@@ -5657,6 +5748,9 @@ void begin_wait(pic::Canvas& c)
         // Typed on the menu line, as in the games (the front end shows a
         // keyboard)
         input_mode = vm->wait() == ecl::Wait::Number ? Input::Number : Input::Text;
+        input_max = ecl::kMaxInput;         // (the engine's own questions set it shorter)
+        input_engine = false;
+        input_prompt = "";
         input_len = 0;
         input_buf[0] = 0;
         draw_input(c);
@@ -6375,12 +6469,16 @@ bool title_picture(pic::Canvas& c, int block, int row, int col)
 }
 
 // Draws steps from `from` on until one that waits; that one is current
+void title_prompt(pic::Canvas& c);
+
 void title_show(int from, pic::Canvas& c)
 {
     const profile::Profile& p = *d->prof;
+    bool shown = false;
     for (int s = from; s < p.title_steps; ++s) {
         const profile::TitleStep& st = p.title[s];
         if (st.block == 0 && title_run->n_credits == 0) continue;      // no GAME.OVR: no credits
+        shown = true;
         if (st.clear) c.clear(0);
         if (st.block == 0) {
             layout::outer(c, d->tables, d->frame_tiles);
@@ -6398,6 +6496,7 @@ void title_show(int from, pic::Canvas& c)
     }
     title_run->since = millis();
     dirty_rows(0, 24);
+    if (!shown) title_prompt(c);        // (nothing left to show: the version line's Play / Demo)
 }
 
 void end_title(pic::Canvas& c)
@@ -7087,6 +7186,28 @@ void close()
     end_icon_art();
     new_char = nullptr;
     input_engine = false;
+    // Whatever was open goes (the heap is the viewer's again), and the
+    // next Play Test starts clean
+    if (fg) {
+        end_fight_art();
+        delete fg;
+        fg = nullptr;
+    }
+    fight_clear_monsters();
+    end_magic();
+    delete hw;
+    hw = nullptr;
+    delete trainer;
+    trainer = nullptr;
+    delete modder;
+    modder = nullptr;
+    delete won;
+    won = nullptr;
+    in_game_menu = camp_from_script = game_won = items_direct = false;
+    waiting = resume_after_note = note_held = false;
+    note_until = 0;
+    then = Then::Idle;
+    new_base[0] = 0;
     if (d) {
         view3d::World* w = &d->world;
         ecl::GameState* g = &d->gs;
@@ -7432,9 +7553,24 @@ bool tap_target(int x, int y, int* row, int* c0, int* c1)
             *c1 = text::kTextArea.x1;
             return true;
         }
+        // The party beside the view (exploring, or WHO): a tap picks one
+        if ((!waiting || vm->wait() == ecl::Wait::Who) && col >= 17 && r >= 4 && r < 4 + pt->count &&
+            !bigpic_shown()) {
+            *row = r;
+            *c0 = 17;
+            *c1 = 38;
+            return true;
+        }
         return false;
     }
     if (screen == Screen::PartyMenu && r >= 12 && r < 12 + pm_lines) {
+        *row = r;
+        *c0 = 1;
+        *c1 = 38;
+        return true;
+    }
+    // The party menu's characters, Trade's party (a tap picks one)
+    if ((screen == Screen::PartyMenu || screen == Screen::TradeWho) && col >= 1 && r >= 4 && r < 4 + pt->count) {
         *row = r;
         *c0 = 1;
         *c1 = 38;
@@ -7559,6 +7695,10 @@ void tap(int x, int y, pic::Canvas& c)
         pm_tap(x, y, c);
         return;
     }
+    if (note_until && note_held) {      // an error: the tap puts it away first
+        redraw_menu(c);
+        return;
+    }
     const int row = y / 8, col = x / 8;
     if (waiting) {
         switch (vm->wait()) {
@@ -7674,7 +7814,24 @@ void tick(uint32_t now, pic::Canvas& c)
             for (int i = 0; i < pt->count && !on; ++i) on = pt->m[i].has_affect(d->prof->items.detect[0]);
             names->detect = on;
         }
-        const int m = vm->take_minutes();
+        effects_clock(vm->take_minutes(), c);
+    }
+    if (note_until && !note_held && static_cast<int32_t>(now - note_until) >= 0) {
+        cv = &c;
+        redraw_menu(c);
+    }
+    tick_screens(now, c);
+}
+
+namespace {
+
+// Effects run out as `m` minutes pass (exploring, resting): the repeating
+// ones first (poison, Constitution's healing), then the rest; the stats
+// follow when one ends
+void effects_clock(int m, pic::Canvas& c)
+{
+    if (!vm || !pt || m <= 0) return;
+    {
         for (int i = 0; m && i < pt->count; ++i) {
             const int before = pt->m[i].n_affects;
             if (rules::poison_clock(pt->m[i], m, d->prof->cures)) {
@@ -7696,16 +7853,17 @@ void tick(uint32_t now, pic::Canvas& c)
                 note(c, t);
             }
             magic::tick_affects(pt->m[i], m);
-            if (pt->m[i].n_affects != before) {         // one ran out
+            if (pt->m[i].n_affects != before && names) {    // one ran out
                 rules::keep_hammer(pt->m[i], *names, d->facts);
                 rules::recalc(pt->m[i], *names, d->facts);
             }
         }
     }
-    if (note_until && !note_held && static_cast<int32_t>(now - note_until) >= 0) {
-        cv = &c;
-        redraw_menu(c);
-    }
+}
+
+// What each screen does as time passes
+void tick_screens(uint32_t now, pic::Canvas& c)
+{
     if (screen == Screen::Rest) {
         cv = &c;
         rest_tick(now, c);
@@ -7790,6 +7948,8 @@ void tick(uint32_t now, pic::Canvas& c)
     }
 }
 
+} // namespace
+
 Input input() { return d ? input_mode : Input::None; }
 
 // Esc on the camp's magic screens: a step back
@@ -7801,6 +7961,10 @@ bool back_from_magic(pic::Canvas& c)
         draw_camp(c);
         return true;
     case Screen::SpellList:
+        if (sl.reading >= 0) {
+            reading_tap('E', c);                // a scroll's spells (Use): as Exit
+            return true;
+        }
         if (sl.fighting) {
             fight_spell_chosen(0, c);
             return true;
@@ -7856,6 +8020,14 @@ bool back(pic::Canvas& c)
         icon_back(c);
         return true;
     }
+    if (screen == Screen::Shop) {           // a shop, a temple, the treasure: leaving it (its questions)
+        leave_shop(c);
+        return true;
+    }
+    if (screen == Screen::Game && then == Then::Door) {
+        door_choice('E');                   // "Locked.": Exit
+        return true;
+    }
     if (screen == Screen::LoadWhich) {
         screen = Screen::PartyMenu;
         draw_party_menu(c);
@@ -7901,6 +8073,10 @@ bool back(pic::Canvas& c)
         leave_heal(c);
         return true;
     }
+    if (screen == Screen::Appraise && appraised) {
+        appraise_key('K', c);           // (Esc with one appraised: kept - sold when it can't be carried)
+        return true;
+    }
     if (screen == Screen::Take || screen == Screen::Appraise) {
         if (screen == Screen::Take && input_mode != Input::None) {
             input_mode = Input::None;
@@ -7911,6 +8087,10 @@ bool back(pic::Canvas& c)
         }
         screen = Screen::Shop;
         draw_shop(c);
+        return true;
+    }
+    if (screen == Screen::YesNo && (ask == Ask::Overwrite || ask == Ask::OverwriteNew)) {
+        yes_no_key('N', c);                 // (Esc: No - a new file name; no way back, as the original)
         return true;
     }
     if (mk && (screen == Screen::CreatePick || screen == Screen::CreateName || screen == Screen::YesNo)) {
@@ -7939,6 +8119,9 @@ bool back(pic::Canvas& c)
         if (screen == Screen::ShopBuy) {
             screen = Screen::Shop;
             draw_shop(c);
+        } else if (items_direct) {
+            items_direct = false;           // (a fight's Use: back to the fight, as Exit)
+            fight_after_view(c);
         } else {
             screen = Screen::View;
             draw_character(c);
@@ -7979,6 +8162,16 @@ bool journal_request(char* kind, int* number)
     return true;
 }
 
+void journal_failed(char kind, int number, const char* why, pic::Canvas& c)
+{
+    if (!d) return;
+    journal_kind = kind;
+    journal_num = number;
+    journal_due = true;
+    cv = &c;
+    error(c, why);
+}
+
 void input_key(char k, pic::Canvas& c)
 {
     if (!d || input_mode == Input::None) return;
@@ -8005,7 +8198,8 @@ void input_key(char k, pic::Canvas& c)
             for (; input_buf[n] && n + 1 < sizeof new_base; ++n)
                 new_base[n] = static_cast<char>(toupper(static_cast<unsigned char>(input_buf[n])));
             new_base[n] = 0;
-            remove_character(c, false);            // (that one there too: "Overwrite" again)
+            if (name_for_new && mk) save_new(c, false);     // (that one there too: "Overwrite" again)
+            else remove_character(c, false);
             return;
         }
         create_named(input_buf, c);

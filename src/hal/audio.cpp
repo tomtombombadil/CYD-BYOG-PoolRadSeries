@@ -52,13 +52,21 @@ void audio_task(void*)
     dac_continuous_write(h, buf, kBuf, &done, -1);
     amp(true);
     int quiet = 0;
-    while (!stop_wanted && quiet < 4) {
-        const bool more = fill_fn(buf, kBuf, fill_ctx);
-        quiet = more ? 0 : quiet + 1;
+    for (;;) {
+        while (!stop_wanted && quiet < 4) {
+            const bool more = fill_fn(buf, kBuf, fill_ctx);
+            quiet = more ? 0 : quiet + 1;
+            dac_continuous_write(h, buf, kBuf, &done, -1);
+        }
+        // A sound started while the last quiet buffer played (audio_play
+        // saw this task still going): keep going with it
+        ending = true;
+        if (stop_wanted || !fill_fn(buf, kBuf, fill_ctx)) break;
+        ending = false;
+        quiet = 0;
         dac_continuous_write(h, buf, kBuf, &done, -1);
     }
     // Down to 0 V again, amplifier off
-    ending = true;
     amp(false);
     for (int i = 0; i < kBuf; ++i) buf[i] = static_cast<uint8_t>(i < kRamp ? 128 - i * 128 / kRamp : 0);
     dac_continuous_write(h, buf, kBuf, &done, -1);

@@ -371,9 +371,10 @@ bool open(dax::ByteSource& src, Doc& doc)
     uint8_t head[8];
     if (src.read_at(0, head, 5) != 5 || memcmp(head, "%PDF-", 5) != 0) return false;
     // "startxref <n>" near the end
-    char tail[1024];
-    const uint32_t from = size > sizeof tail ? size - static_cast<uint32_t>(sizeof tail) : 0;
+    char tail[1025];
+    const uint32_t from = size > sizeof tail - 1 ? size - static_cast<uint32_t>(sizeof tail - 1) : 0;
     const size_t n = src.read_at(from, reinterpret_cast<uint8_t*>(tail), size - from);
+    tail[n < sizeof tail ? n : sizeof tail - 1] = 0;                // (strtol stops at the end)
     long xref = -1;
     for (size_t i = n >= 9 ? n - 9 : 0; i-- > 0;) {
         if (memcmp(tail + i, "startxref", 9) == 0) {
@@ -397,9 +398,13 @@ bool open(dax::ByteSource& src, Doc& doc)
 
 namespace {
 
-void visit(dax::ByteSource& src, const Doc& doc, int num, Obj& o, int* out, int max, int* n, int depth)
+// (`budget`: objects that may still be loaded - a damaged tree that refers
+// back to itself stops)
+void visit(dax::ByteSource& src, const Doc& doc, int num, Obj& o, int* out, int max, int* n, int depth, int* budget)
 {
-    if (depth > 12 || *n >= max || !load(src, doc, num, o)) return;
+    if (depth > 12 || *n >= max || *budget <= 0) return;
+    --*budget;
+    if (!load(src, doc, num, o)) return;
     const int type = get(o, o.root, "Type");
     if (name_is(o, type, "Page")) {
         out[(*n)++] = num;
@@ -411,7 +416,7 @@ void visit(dax::ByteSource& src, const Doc& doc, int num, Obj& o, int* out, int 
     int count = 0;
     for (int k = o.node[kids].first; k >= 0 && count < 64; k = o.node[k].next)
         if (o.node[k].t == T::Ref) list[count++] = o.node[k].v;
-    for (int i = 0; i < count; ++i) visit(src, doc, list[i], o, out, max, n, depth + 1);
+    for (int i = 0; i < count; ++i) visit(src, doc, list[i], o, out, max, n, depth + 1, budget);
 }
 
 } // namespace
@@ -420,10 +425,10 @@ int pages(dax::ByteSource& src, const Doc& doc, int* page_obj, int max)
 {
     Obj* o = new (std::nothrow) Obj;
     if (!o) return 0;
-    int n = 0;
+    int n = 0, budget = max * 2 + 64;
     if (load(src, doc, doc.root, *o)) {
         const int p = get(*o, o->root, "Pages");
-        if (p >= 0 && o->node[p].t == T::Ref) visit(src, doc, o->node[p].v, *o, page_obj, max, &n, 0);
+        if (p >= 0 && o->node[p].t == T::Ref) visit(src, doc, o->node[p].v, *o, page_obj, max, &n, 0, &budget);
     }
     delete o;
     return n;

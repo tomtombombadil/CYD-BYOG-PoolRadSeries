@@ -56,7 +56,7 @@ private:
             done_ = true;              // IDATs are consecutive
             return false;
         }
-        if (next_ + 12 + len > end_) return false;
+        if (len > end_ - next_ - 12) return false;        // (no wrap on a damaged length)
         pos_ = next_ + 8;
         left_ = len;
         buf_pos_ = buf_len_ = 0;
@@ -205,7 +205,7 @@ bool decode(dax::ByteSource& src, uint32_t at, uint32_t size, uint8_t* window, R
         uint8_t h[8];
         if (src.read_at(p, h, 8) != 8) return false;
         const uint32_t len = be32(h);
-        if (p + 12 + len > end) return false;
+        if (len > end - p - 12) return false;             // (no wrap on a damaged length)
         if (memcmp(h + 4, "IDAT", 4) == 0) {
             first_idat = p;
             break;

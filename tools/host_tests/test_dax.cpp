@@ -1616,6 +1616,33 @@ static void test_ecl_party()
     CHECK(r == ecl::Stop::Stopped && vm.get(0x4C07) != 9);
 }
 
+// AND / OR: the flags as the original sets them - 0 against the result
+static void test_vm_and()
+{
+    const profile::Profile* p = profile::find(games::Game::CurseOfTheAzureBonds, 57789, 62432);
+    if (!p || !p->ecl_ops) return;
+    Bytes c;
+    const uint16_t kBase = 0x8000;
+    for (int i = 0; i < 5; ++i) { c.push_back(0); op_addr(c, 0); }
+    const size_t first = c.size();
+    c.push_back(0x2F); op_imm(c, 3); op_imm(c, 1); op_addr(c, 0x4C00);
+    c.push_back(0x00);
+    for (int i = 0; i < 5; ++i) {
+        c[1 + i * 4] = 1;
+        c[2 + i * 4] = static_cast<uint8_t>((kBase + first) & 0xFF);
+        c[3 + i * 4] = static_cast<uint8_t>((kBase + first) >> 8);
+    }
+    static ecl::GameState gs;
+    gs = ecl::GameState{};
+    TestHost host;
+    memcpy(gs.code, c.data(), c.size());
+    gs.code_len = static_cast<uint32_t>(c.size());
+    ecl::Vm vm(gs, host, *p->ecl_ops);
+    CHECK(vm.init_script());
+    vm.run(vm.entry(0));
+    CHECK(vm.get(0x4C00) == 1 && !vm.flag(0) && vm.flag(1) && vm.flag(2) && !vm.flag(3) && vm.flag(4) && !vm.flag(5));
+}
+
 static void test_ecl_vm()
 {
     {
@@ -4328,6 +4355,7 @@ int main()
     test_icon();
     test_ecl();
     test_ecl_vm();
+    test_vm_and();
     test_ecl_party();
     test_treasure();
     test_sound();

@@ -284,6 +284,7 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
             }
             for (int i = 0; i < c.n_items; ++i)
                 if (c.items[i][kCursed]) {
+                    if (c.items[i][kReadied]) rules::worn(c, i, false);   // its effect comes off too
                     c.items[i][kReadied] = 0;      // it comes off (still cursed)
                     o.say(who[k], Said::ItemUncursed);
                     break;

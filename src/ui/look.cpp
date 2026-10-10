@@ -115,6 +115,7 @@ void title_show(int from, pic::Canvas& c)
 {
     const profile::Profile& p = *d->prof;
     t_done = false;
+    bool shown = false;
     for (int s = from; s < p.title_steps; ++s) {
         const profile::TitleStep& st = p.title[s];
         if (st.block == 0 && d->n_credits == 0) continue;     // no GAME.OVR: no credits
@@ -122,8 +123,10 @@ void title_show(int from, pic::Canvas& c)
         if (st.block == 0) draw_credits(c);
         else draw_title_picture(c, st.block, st.row, st.col);
         t_step = s;
+        shown = true;
         if (st.wait_ms > 0) break;
     }
+    if (!shown) t_done = true;          // (nothing left to show: the last picture stays)
     t_timed = false;
 }
 

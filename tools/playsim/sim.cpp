@@ -584,6 +584,11 @@ int main(int argc, char** argv)
                     if (!tap_word('T')) tap_word('E');
                     continue;
                 }
+                if (play::fg->st == play::FSt::ContinueAsk) {
+                    printf("  [Continue Battle: No]\n");
+                    tap_word('N');
+                    continue;
+                }
                 if (play::fg->st == play::FSt::Menu) {
                     if (n < 6) { char t[16]; snprintf(t, 16, "fmenu%d", n++); shot(t); }
                     ++turns;

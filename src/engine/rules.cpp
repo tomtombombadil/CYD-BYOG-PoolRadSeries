@@ -261,7 +261,10 @@ void stats(party::Character& c, const ItemFacts& f)
                     if (b > 18) {
                         const bool fighter = r[0x10B] || r[0x113] || r[0x10C] || r[0x114] || r[0x10D] || r[0x115];
                         if (fighter) {
-                            b00 = r[0x1C] + (b - 18) * 10;
+                            // (the original adds to the 18/xx in use, so it grows with each
+                            // recalculation; the engine recalculates far more often: from what
+                            // the items left - SPEC section 12)
+                            b00 = str00 + (b - 18) * 10;
                             if (b00 > 100) b00 = 100;
                         }
                         b = 18;
@@ -502,6 +505,11 @@ void recalc(party::Character& c, const items::Names& names, const ItemFacts& f)
     r[kBonus] = static_cast<uint8_t>(dmg);
     const int fl = fighter_level(c);
     r[kAttackLevel] = static_cast<uint8_t>(fl > 0 && c.race() > 0 ? fl : 1);
+    if (c.health() == party::Animated) {
+        // Animated dead keep what Animate Dead gave them: movement 6, attack level 0
+        r[kMove] = 6;
+        r[kAttackLevel] = 0;
+    }
 }
 
 int gold_worth(const int money[7])
@@ -584,7 +592,8 @@ void share(party::Party& p, int money[7])
         party::Character& c = p.m[i];
         if (c.npc()) continue;
         for (int m = 6; m >= 0; --m) {
-            const int room = max_load(c) - c.encumbrance();
+            int room = max_load(c) - c.encumbrance();
+            if (room < 0) room = 0;                         // (already over: takes nothing)
             if (c.encumbrance() + each[m] <= max_load(c)) {
                 add_coins(c, m, each[m]);
                 if (rest[m] > 0 && c.encumbrance() + 1 <= max_load(c)) {
@@ -687,6 +696,8 @@ bool worn(party::Character& c, int i, bool on)
             uint8_t* a = c.affects[c.n_affects++];
             memset(a, 0, party::kAffectSize);
             a[0] = static_cast<uint8_t>(v);
+            a[3] = 0xFF;                    // (data 0xFF: Dispel Magic leaves it; the handler on)
+            a[4] = 1;
         } else if (!on && k >= 0) {
             for (int j = k; j + 1 < c.n_affects; ++j) memcpy(c.affects[j], c.affects[j + 1], party::kAffectSize);
             --c.n_affects;
@@ -932,6 +943,7 @@ void apply_cure(party::Character& c, Cure cure, const CureFacts& f, create::Dice
         if (remove_affects(c, f.curse)) break;
         for (int i = 0; i < c.n_items; ++i)
             if (c.items[i][0x36]) {
+                if (c.items[i][0x34]) worn(c, i, false);    // its effect comes off too
                 c.items[i][0x34] = 0;          // it comes off (still cursed)
                 break;
             }

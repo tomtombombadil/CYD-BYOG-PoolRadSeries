@@ -371,7 +371,7 @@ static int next_level(const party::Character& c, const classes::Tables& t, const
     return next >= 0 ? t.spell_level(c.rec[kListAt + next] & 0x7F) : 0;
 }
 
-Step step(Rest& r, party::Party& p, const classes::Tables& t, const Scrolls& sc)
+Step step(Rest& r, party::Party& p, const classes::Tables& t, const Scrolls& sc, bool tick)
 {
     Step st;
     for (int& l : st.learnt) l = 0;
@@ -410,7 +410,7 @@ Step step(Rest& r, party::Party& p, const classes::Tables& t, const Scrolls& sc)
             if (c.rec[kToLearnAt] > 0 && --c.rec[kToLearnAt] == 0) r.wait[i] = next_level(c, t, sc) * 2;
         }
     }
-    for (int i = 0; i < p.count; ++i) tick_affects(p.m[i], 5);
+    for (int i = 0; tick && i < p.count; ++i) tick_affects(p.m[i], 5);
     return st;
 }
 

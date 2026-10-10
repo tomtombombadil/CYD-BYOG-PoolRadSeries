@@ -442,6 +442,7 @@ Stop Vm::resume()
 {
     if (wait_ == Wait::Combat) monsters_ = false;      // the fight's monsters are gone
     wait_ = Wait::None;
+    budget_ = kBudget;                                  // (each stretch between waits has its own)
     if (enc_.pic_due) {
         // The monster's picture, after its sprite was seen for a moment
         enc_.pic_due = false;
@@ -689,8 +690,10 @@ Stop Vm::step()
         }
         if ((v & 0x80) && cleared_name_ && cleared_status_ && party_ && party_->count) {
             // The selected member leaves the party
-            if (party_->selected == start_sel_) restore_ = false;
-            party::remove(*party_, party_->selected);
+            const int gone = party_->selected;
+            if (gone == start_sel_) restore_ = false;
+            else if (gone < start_sel_) --start_sel_;       // (the step's member moves up a place)
+            party::remove(*party_, gone);
             party_size();
             h_.party_changed();
             cleared_name_ = cleared_status_ = false;
@@ -1105,7 +1108,7 @@ Stop Vm::step()
     case 0x30: {                                // OR
         if (!need(3)) return Stop::Error;
         const uint16_t r = static_cast<uint8_t>(op_ == 0x2F ? (value(o[0]) & value(o[1])) : (value(o[0]) | value(o[1])));
-        compare(r, 0);
+        compare(0, r);                          // (the original: 0 against the result)
         set(o[2].word(), r);
         return Stop::Running;
     }

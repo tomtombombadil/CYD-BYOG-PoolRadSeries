@@ -20,6 +20,7 @@ struct State {
     pdf::Doc  doc;
     int       page_obj[pdf::kMaxPages];
     int       n = 0;
+    int       size_page = 0, size_w = 0, size_h = 0;  // the last page drawn's size (no PDF work on loop()'s stack)
 };
 State* st = nullptr;
 
@@ -179,6 +180,11 @@ int pages() { return st ? st->n : 0; }
 bool page_size(int page, int* w, int* h)
 {
     if (!st || page < 1 || page > st->n) return false;
+    if (page == st->size_page) {
+        *w = st->size_w;
+        *h = st->size_h;
+        return true;
+    }
     pdf::Image img;
     if (!pdf::page_image(*st->src, st->doc, st->page_obj[page - 1], img) || !img.jpeg) return false;
     *w = img.width;
@@ -208,6 +214,9 @@ Result draw(int page, const ui::Rect& r, Fit fit, int* vx, int* vy, ui::Rect* fi
     jpeg::Info info;
     if (res == Result::Ok && !jpeg::probe(*st->src, img.data_at, img.data_len, pool, info)) res = Result::BadData;
     if (res == Result::Ok) {
+        st->size_page = page;
+        st->size_w = info.width;
+        st->size_h = info.height;
         d->c = fit_scale(info.width, info.height, r, fit);
         // The view on the page; a page smaller than the view is centred
         const int maxx = d->c.sw > r.w ? d->c.sw - r.w : 0, maxy = d->c.sh > r.h ? d->c.sh - r.h : 0;

@@ -154,6 +154,7 @@ enum FightWord {
     kFlameType, kHotCold, kAbortSpellQ, kYesNoF,
     kGainsItem, kCollapses, kDiesFromPoison,                                     // "Gains an item" ...
     kIsAffectedW,                                                                // Detect's "is affected"
+    kLostImage,                                                                  // Mirror Image: "lost an image"
     kFightWords
 };
 

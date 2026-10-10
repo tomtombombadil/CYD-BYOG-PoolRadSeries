@@ -826,6 +826,8 @@ void draw_files()
     for (int i = 0; i < chooser_keys(); ++i) ui::key_big(chooser_key(i), kKeys[i][0], kKeys[i][1]);
 }
 
+void canvas_park_path(char* out, size_t cap);
+
 void tap_files(const ui::Tap& t)
 {
     if (ui::back_rect().contains(t.x, t.y)) { go(Screen::Home); return; }
@@ -837,6 +839,17 @@ void tap_files(const ui::Tap& t)
         file_page = 0;
         go(Screen::Resources);
         return;
+    }
+    if (frame::parked()) {
+        // The game screen still on the card (after the journal book, short
+        // of memory then): it has to come back before any game screen
+        char path[96];
+        canvas_park_path(path, sizeof path);
+        if (!frame::unpark(path)) {
+            play_error = "Not enough memory for the game screen just now. Tap Back; restarting the board frees it.";
+            go(Screen::Play);
+            return;
+        }
     }
     if (k == 3) {
         frame::set_scale(frame::Scale::One);    // the game's screen: 1:1 at the top left
@@ -1694,7 +1707,7 @@ int tab_hit(const ui::Tap& t)
 
 
 ui::Rect journal_area();
-void open_journal(char kind, int number);
+bool open_journal(char kind, int number);
 bool open_book();
 
 int menu_row_h() { return ui::line_h(ui::Font::Normal) + ui::gap() * 2; }
@@ -1840,7 +1853,7 @@ void draw_game_menu()
                   ui::Font::Small, style::kTextMuted, true);
         return;
     }
-    const int pages = menu_pages();
+    const int pages = menu_tab == kTabPdf || menu_note[0] ? 1 : menu_pages();   // (a note: no list pages)
     if (pages > 1) {
         ui::key(ui::bottom_key(0, 3), "Prev Page", menu_page > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
         ui::key(ui::bottom_key(1, 3), "Back to Game");
@@ -1915,7 +1928,7 @@ void tap_game_menu(const ui::Tap& t)
         }
         return;
     }
-    const int pages = menu_pages();
+    const int pages = menu_tab == kTabPdf || menu_note[0] ? 1 : menu_pages();
     const int nk = pages > 1 ? 3 : 1;
     const int k = bottom_hit(t, nk);
     if (k >= 0) {
@@ -1930,7 +1943,10 @@ void tap_game_menu(const ui::Tap& t)
     const int i = menu_page * menu_rows() + (t.y - a.y) / menu_row_h();
     char kind;
     int num;
-    if (play::journal_seen(i, &kind, &num)) open_journal(kind, num);
+    if (play::journal_seen(i, &kind, &num) && !open_journal(kind, num)) {
+        strlcpy(menu_note, "Not enough memory to show the journal entry just now.", sizeof menu_note);
+        dirty = true;
+    }
 }
 
 
@@ -2079,10 +2095,10 @@ void journal_layout()
     v.row_piece = -1;
 }
 
-void open_journal(char kind, int number)
+bool open_journal(char kind, int number)
 {
     if (!jv) jv = new (std::nothrow) JournalView;
-    if (!jv) return;
+    if (!jv) return false;
     jv->kind = kind;
     jv->number = number;
     jv->top = jv->left = 0;
@@ -2121,6 +2137,7 @@ void open_journal(char kind, int number)
         f.close();
     }
     go(Screen::Journal);
+    return true;
 }
 
 // Panel row y of piece i, sampled (bilinear) from the two scan rows round it
@@ -2479,6 +2496,8 @@ void tap_pdf(const ui::Tap& t)
 void leave_play()
 {
     kb_shown = false;
+    row_flip = row_walking = false;     // (the next Play Test starts with what it needs)
+    map_shown = false;
     delete jv;
     jv = nullptr;
     play::close();
@@ -2623,7 +2642,10 @@ bool play_journal()
     char jk;
     int jn;
     if (!play::journal_request(&jk, &jn)) return false;
-    open_journal(jk, jn);
+    if (!open_journal(jk, jn)) {
+        play::journal_failed(jk, jn, "Not enough memory to show the journal entry.", frame::canvas());
+        present_play();
+    }
     return true;
 }
 

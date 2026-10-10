@@ -35,5 +35,6 @@ bool run_on_big_stack(void (*fn)(void*), void* ctx, size_t stack)
     }
     xSemaphoreTake(j.done, portMAX_DELAY);
     vSemaphoreDelete(j.done);
+    vTaskDelay(1);          // the idle task frees the finished task's stack (a second big stack right after fits)
     return true;
 }

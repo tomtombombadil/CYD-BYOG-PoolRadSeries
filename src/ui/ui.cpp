@@ -32,7 +32,7 @@ struct KeyRec {
     uint8_t  style;
     uint32_t gen;               // key_gen when it was last drawn
 };
-constexpr int kMaxKeys = 40;
+constexpr int kMaxKeys = 56;              // (the keyboard: 40 letters + Del, Space, Enter, and the row)
 KeyRec   keys[kMaxKeys];
 int      n_keys = 0;
 uint32_t key_gen = 0;           // counts key drawing (a key redrawn since a flash?)

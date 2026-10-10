@@ -116,7 +116,9 @@ struct Step {
 // Starts a rest (the waits cleared)
 void begin(Rest& r);
 // Five minutes of rest for the party
-Step step(Rest& r, party::Party& p, const classes::Tables& t, const Scrolls& sc = Scrolls{});
+// (`tick`: the effects' 5 minutes taken here - false: the caller's own clock
+// takes them, with the repeating effects: poison, Constitution's healing)
+Step step(Rest& r, party::Party& p, const classes::Tables& t, const Scrolls& sc = Scrolls{}, bool tick = true);
 
 // Effects running out: `minutes` off each timed one (those at 0 last);
 // how many ended
