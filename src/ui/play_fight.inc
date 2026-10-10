@@ -55,6 +55,43 @@ int read_block(const char* file, int block, uint8_t* out, int cap)
     return n;
 }
 
+// ADD NPC: MON<area> block `id` (its record, effects, items) joins the party
+// at its end and is selected; its fight icon is CPIC<area> block `id`
+bool npc_join(int id)
+{
+    if (pt->count >= party::kMaxParty) return false;
+    party::Character& ch = pt->m[pt->count];
+    ch = party::Character{};
+    char file[24];
+    snprintf(file, sizeof file, "MON%dCHA.DAX", d->gs.game_area);
+    if (read_block(file, id, ch.rec, sizeof ch.rec) != static_cast<int>(sizeof ch.rec)) {
+        Serial.printf("[play] ADD NPC: %s #%d not there\n", file, id);
+        return false;
+    }
+    snprintf(file, sizeof file, "MON%dITM.DAX", d->gs.game_area);
+    const int ni = read_block(file, id, &ch.items[0][0], sizeof ch.items);
+    ch.n_items = ni > 0 ? ni / static_cast<int>(party::kItemSize) : 0;
+    snprintf(file, sizeof file, "MON%dSPC.DAX", d->gs.game_area);
+    const int na = read_block(file, id, &ch.affects[0][0], sizeof ch.affects);
+    ch.n_affects = na > 0 ? na / static_cast<int>(party::kAffectSize) : 0;
+    ch.rec[0x126] = static_cast<uint8_t>(id);
+    // The lowest icon slot no one else has
+    for (int slot = 0; slot < 8; ++slot) {
+        bool used = false;
+        for (int i = 0; i < pt->count; ++i)
+            if (pt->m[i].rec[0x143] == slot) used = true;
+        if (!used) {
+            ch.rec[0x143] = static_cast<uint8_t>(slot);
+            break;
+        }
+    }
+    pt->selected = pt->count++;
+    char nm[20];
+    ch.name(nm, sizeof nm);
+    Serial.printf("[play] ADD NPC %d: %s joins\n", id, nm);
+    return true;
+}
+
 void fight_load_monster(int id, int copies, int icon)
 {
     if (!ml) ml = new (std::nothrow) MonsterLoad;
@@ -293,8 +330,14 @@ void load_tiles(bool indoors)
 }
 
 // A party member's icon: the head over the body's top rows, recoloured
+void load_monster_icon(int slot, int block);
+
 void compose_icon(int slot, const party::Character& ch)
 {
+    if (ch.rec[0x126] && !ch.rec[0x141] && !ch.rec[0x142]) {
+        load_monster_icon(slot, ch.rec[0x126]);     // an NPC from the monsters' files: its own picture
+        return;
+    }
     Pic4& ic = fg->icon[slot];
     free_pic(ic);
     const int head = ch.rec[0x141], body = ch.rec[0x142];

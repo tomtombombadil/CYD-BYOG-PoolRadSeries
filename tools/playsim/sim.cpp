@@ -128,6 +128,14 @@ static void settle(int choice = 0, int max_ms = 60000)
             play::tap(col * 8 + 2, text::kMenuRow * 8 + 2, C);
             continue;
         }
+        if (wt == ecl::Wait::Who) {
+            printf("  WHO [%s%s] -> %d\n", menu.prompt, menu.s, choice);
+            shot("who");
+            play::tap(17 * 8 + 2, (4 + choice) * 8 + 2, C);
+            for (int i = 0; i < menu.count; ++i) if (text::key(menu, i) == 'S') play::tap(((int)strlen(menu.prompt) + menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C);
+            continue;
+        }
+        if (wt == ecl::Wait::Key) { printf("  KEY (press enter)\n"); shot("key"); play::tap(10, 10, C); continue; }
         if (wt == ecl::Wait::ListMenu && list_wait) {
             printf("  LIST prompt=%s:", vm->prompt());
             for (int i = 0; i < vm->items(); ++i) printf(" [%s]", vm->item(i));

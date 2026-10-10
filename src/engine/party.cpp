@@ -56,17 +56,23 @@ bool script_value(const Party& p, uint16_t off, uint16_t* out)
     case 0xA0:  *out = r[0xE5]; return true;    // hit dice
     case 0xB8:  *out = r[0xF7]; return true;    // control
     case 0xBB:  *out = u16(0xFB); return true;  // copper
-    case 0xBD:  *out = u16(0xFF); return true;  // electrum
-    case 0xBF:  *out = u16(0xFD); return true;  // silver
+    case 0xBD:  *out = u16(0xFD); return true;  // silver (the record: copper, silver, electrum ...)
+    case 0xBF:  *out = u16(0xFF); return true;  // electrum
     case 0xC1:  *out = u16(0x101); return true; // gold
     case 0xC3:  *out = u16(0x103); return true; // platinum
-    case 0xC9:  *out = r[0x10E]; return true;   // magic-user level
+    case 0xC9: {                                // magic-user level (+ the old one: a human past it)
+        int cur = 0;
+        for (int k = 0; k < 7 && !cur; ++k) cur = r[0x109 + k];
+        *out = static_cast<uint16_t>(r[0x10E] + (r[0x74] == 7 && cur > r[0xE6] ? r[0x116] : 0));
+        return true;
+    }
     case 0xD6:  *out = r[0x119]; return true;   // sex
     case 0xD8:  *out = r[0x11B]; return true;   // alignment
     case 0xE4:  *out = r[0x192] & 1; return true;
     case 0xF7:  *out = u16(0x13C); return true;
     case 0xF9:  *out = r[0x13E]; return true;
     case 0x100: *out = c->in_combat() ? 1 : 0x80; return true;
+    case 0x10C: *out = r[0x197] == 1 ? 0x81 : r[0x197] == 0 && r[0x198] ? 0x80 : 0; return true;   // side
     case 0x11B: *out = r[0x1A5]; return true;   // movement
     case 0x2B1:
     case 0x2B4: *out = static_cast<uint16_t>(p.selected); return true;
@@ -83,6 +89,59 @@ bool script_value(const Party& p, uint16_t off, uint16_t* out)
     default:
         return false;
     }
+}
+
+void script_set(Party& p, uint16_t off, uint16_t v)
+{
+    Character* c = p.sel();
+    if (!c) return;
+    uint8_t* r = c->rec;
+    auto w16 = [r, v](int o) {
+        r[o] = static_cast<uint8_t>(v);
+        r[o + 1] = static_cast<uint8_t>(v >> 8);
+    };
+    if (off >= 0x20 && off <= 0x70) {           // a spell slot
+        r[off - 1] = static_cast<uint8_t>(v);
+        return;
+    }
+    switch (off) {
+    case 0xB8: r[0xF7] = static_cast<uint8_t>(v > 0xB2 ? v - 0x32 : v); break;   // control
+    case 0xBB: w16(0xFB); break;
+    case 0xBD: w16(0xFD); break;
+    case 0xBF: w16(0xFF); break;
+    case 0xC1: w16(0x101); break;
+    case 0xC3: w16(0x103); break;
+    case 0xF7: w16(0x13C); break;
+    case 0xF9: r[0x13E] = static_cast<uint8_t>(v); break;
+    case 0x100:                                 // out of action (0x87: stoned)
+        if (v >= 0x80) {
+            r[0x196] = 0;
+            if (v == 0x87) r[0x195] = 7;
+        }
+        break;
+    case 0x10C:                                 // side: ours / ours, the computer's / the enemy's
+        if (v == 0) {
+            r[0x197] = 0;
+            r[0x198] = 0;
+        } else if (v == 0x80) {
+            r[0x197] = 0;
+            r[0x198] = 1;
+        } else if (v == 0x81) {
+            r[0x197] = 1;
+            r[0x198] = 1;
+        }
+        break;
+    default: break;
+    }
+}
+
+void remove(Party& p, int i)
+{
+    if (i < 0 || i >= p.count) return;
+    for (int k = i; k + 1 < p.count; ++k) p.m[k] = p.m[k + 1];
+    p.m[p.count - 1] = Character{};
+    --p.count;
+    p.selected = i > 0 ? i - 1 : 0;
 }
 
 } // namespace party

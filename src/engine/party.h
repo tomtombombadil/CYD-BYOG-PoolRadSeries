@@ -106,5 +106,12 @@ void read_affects(dax::ByteSource& src, Character& out);
 // (race, class, thief skills, money ...). False if off isn't a character
 // field (the scripts' memory holds it).
 bool script_value(const Party& p, uint16_t off, uint16_t* out);
+// What a script's write at 0x7C00 + off does to the selected character:
+// money, the control byte (over 0xB2: - 0x32), 0x7CF7 / 0x7CF9, spell slots
+// (0x7C20-0x7C70: record off - 1), 0x7D00 >= 0x80 out of action (0x87
+// stoned), 0x7D0C the side (0, 0x80 the computer's, 0x81 the enemy's).
+void script_set(Party& p, uint16_t off, uint16_t v);
+// A member leaves (NPCs, DUMP, a script's removal): the one before is selected
+void remove(Party& p, int i);
 
 } // namespace party

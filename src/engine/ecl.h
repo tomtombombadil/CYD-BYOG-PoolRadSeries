@@ -26,6 +26,15 @@
 
 namespace ecl {
 
+// Words the script machine says itself (GAME.OVR strings; the profile has
+// their offsets, the front end reads them): the encounter menu's notes,
+// DAMAGE's lines ("  NAME is hit FOR 7 points of Damage.", "  NAME dies. ")
+enum ScriptWord {
+    kWBothWait, kWMonstersFlee, kWDies, kWIsHitFor, kWPointsOfDamage, kWPartyKilled,
+    kScriptWords
+};
+
+
 constexpr int kMaxOps = 24;
 
 // Operand counts: >= 0 fixed; kCount3 = 3, then as many as the 3rd says;

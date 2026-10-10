@@ -61,6 +61,8 @@ struct Data {
     dax::Index     idx;
     uint8_t        sky[16] = {};
     char           press_key[text::kMaxString] = {};
+    char           script_word[ecl::kScriptWords][32] = {};
+    const char*    script_words[ecl::kScriptWords] = {};
     char           data_dir[96] = {};
     const profile::Profile* prof = nullptr;
 
@@ -163,6 +165,8 @@ bool waiting = false;         // the script waits for the player
 
 // Combat (play_fight.inc)
 void fight_load_monster(int id, int copies, int icon);
+bool npc_join(int id);
+bool party_dead = false;      // DAMAGE killed everyone: the party menu after the script
 void fight_clear_monsters();
 void fight_start(pic::Canvas& c);
 void fight_treasure_only(pic::Canvas& c);
@@ -4941,6 +4945,13 @@ struct Host : ecl::Host {
     }
     void load_monster(int id, int copies, int icon) override { fight_load_monster(id, copies, icon); }
     void clear_monsters() override { fight_clear_monsters(); }
+    bool add_npc(int id) override { return npc_join(id); }
+    void party_changed() override
+    {
+        for (int i = 0; i < pt->count; ++i) rules::recalc(pt->m[i], *names, d->facts);
+        if (cv && screen == Screen::Game && !bigpic_shown()) draw_party(*cv, 17);
+    }
+    void party_killed() override { party_dead = true; }
     void log(const char* what) override { Serial.printf("[ecl %d:%04X] %s\n", d->gs.script, vm->pc() + 0x8000, what); }
 };
 
@@ -5019,6 +5030,22 @@ void begin_wait(pic::Canvas& c)
         break;
     case ecl::Wait::Pause:
         pause_until = millis() + vm->pause_ms();
+        break;
+    case ecl::Wait::Who: {
+        // "<prompt> Select" over the party list (a tap on a line picks them)
+        text::clear(c, text::kTextArea);
+        dirty_rows(17, 22);
+        char prompt[48];
+        snprintf(prompt, sizeof prompt, "%s ", vm->prompt());
+        text::build(menu, prompt, iw(profile::kSelect));
+        menu.selected = 0;
+        show_menu_line(c);
+        if (!bigpic_shown()) draw_party(c, 17);
+        break;
+    }
+    case ecl::Wait::Key:                // "press <enter>/<return> to continue"
+        clear_menu_line(c);
+        put(c, d->press_key, 0, text::kMenuRow, 15);
         break;
     case ecl::Wait::Shop:
         temple = false;
@@ -5120,6 +5147,15 @@ void handle(ecl::Stop r)
     waiting = false;
     w.col = w.r.x0;                      // EXIT puts the text cursor back
     w.row = w.r.y0;
+    if (party_dead) {
+        // DAMAGE killed everyone: the party menu
+        party_dead = false;
+        while (pt->count) leave_party(pt->count - 1);
+        anim_stop();
+        screen = Screen::PartyMenu;
+        draw_party_menu(c);
+        return;
+    }
     if (r == ecl::Stop::NewScript) {
         // A new script block: its first run, then its step and arrival runs
         d->gs.moved = false;
@@ -5383,6 +5419,17 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     vm = new (vm_mem) ecl::Vm(d->gs, *host, *d->prof->ecl_ops);
     vm->set_party(pt);
     vm->set_ground(ground);
+    if (open_file(d->prof->overlay, f)) {
+        // The script machine's own words
+        library::FileSource src(f);
+        for (int i = 0; i < ecl::kScriptWords; ++i) {
+            if (d->prof->script_words[i])
+                text::read_pascal(src, d->prof->script_words[i], d->script_word[i], sizeof d->script_word[i]);
+            d->script_words[i] = d->script_word[i];
+        }
+        f.close();
+    }
+    vm->set_words(d->script_words);
     note_until = 0;
     last_pic_id = -1;
     ecl::GameState& gs = d->gs;
@@ -5697,6 +5744,21 @@ void tap(int x, int y, pic::Canvas& c)
             handle(vm->answer(item));
             break;
         }
+        case ecl::Wait::Who:
+            if (col >= 17 && row >= 4 && row < 4 + pt->count && !bigpic_shown()) {
+                pt->selected = row - 4;
+                draw_party(c, 17);
+            } else if (y >= text::kMenuTapTop && text::key(menu, text::hit(menu, col)) == 'S') {
+                clear_menu_line(c);
+                waiting = false;
+                handle(vm->answer(pt->selected));
+            }
+            break;
+        case ecl::Wait::Key:
+            clear_menu_line(c);
+            waiting = false;
+            handle(vm->resume());
+            break;
         default:
             break;
         }

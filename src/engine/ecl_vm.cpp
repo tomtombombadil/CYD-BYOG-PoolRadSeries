@@ -152,6 +152,10 @@ uint16_t Vm::get(uint16_t a) const
     if (a >= 0x7C00 && a <= 0x7FFF) {
         // The selected character's fields
         uint16_t v;
+        if (a == 0x7D00 && not_found_) {
+            not_found_ = false;                            // LOAD CHARACTER found no one
+            return 0;
+        }
         if (party_ && party::script_value(*party_, static_cast<uint16_t>(a - 0x7C00), &v)) return v;
         if (a == 0x7D00) return 0;                         // "no character loaded"
         if (a == 0x7F12) return s_.game_area;
@@ -181,6 +185,9 @@ void Vm::set(uint16_t a, uint16_t v)
     }
     if (a >= 0x7C00 && a <= 0x7FFF) {
         word_to(s_.area2, (a - 0x7C00u) * 2, v);
+        if (a == 0x7C00 && v == 0) cleared_name_ = true;
+        if (a == 0x7D00 && v == 0) cleared_status_ = true;
+        if (party_ && a < 0x7EB0) party::script_set(*party_, static_cast<uint16_t>(a - 0x7C00), v);
         if (a == 0x7F12) s_.game_area = static_cast<uint8_t>(v);
         if ((a == 0x7F22 || a == 0x7F24 || a == 0x7F26) && v > 0x80) h_.load_walls(1 + (a - 0x7F22) / 2, v & 0x7F);
         return;
@@ -200,6 +207,15 @@ void Vm::set(uint16_t a, uint16_t v)
 // Strings in memory: a character a word (a byte in the script), 0 ends
 void Vm::store_string(uint16_t a, const char* t)
 {
+    if (a == 0x7C00 && party_ && party_->sel()) {
+        // The selected character's name
+        uint8_t* r = party_->sel()->rec;
+        size_t n = strlen(t);
+        if (n > party::kNameMax) n = party::kNameMax;
+        r[0] = static_cast<uint8_t>(n);
+        memcpy(r + 1, t, n);
+        return;
+    }
     for (;; ++t) {
         set(a, static_cast<uint8_t>(*t));
         a = static_cast<uint16_t>(a + 1);
@@ -209,6 +225,10 @@ void Vm::store_string(uint16_t a, const char* t)
 
 void Vm::read_string(uint16_t a, char* out, size_t cap) const
 {
+    if (a == 0x7C00 && party_ && party_->sel()) {
+        party_->sel()->name(out, cap);          // the selected character's name
+        return;
+    }
     size_t o = 0;
     for (; o + 1 < cap; ++o, a = static_cast<uint16_t>(a + 1)) {
         const uint16_t c = get(a) & 0xFF;
@@ -295,6 +315,7 @@ bool Vm::init_script(bool reload)
     for (int i = 0; i < 5; ++i) entry_[i] = static_cast<uint16_t>(e[i] == 0xFFFFFFFFu ? 0 : kBase + e[i]);
     sp_ = 0;
     for (bool& f : flags_) f = false;
+    cleared_name_ = cleared_status_ = false;
     reset_encounter();
     enc_phase_ = EncPhase::None;
     enc_.in_menu = false;
@@ -314,6 +335,67 @@ void Vm::stop_script()
     stop_ = true;
     sp_ = 0;
     reset_encounter();
+}
+
+void Vm::restore_selected()
+{
+    if (!restore_) return;
+    restore_ = false;
+    if (party_ && start_sel_ >= 0 && start_sel_ < party_->count) party_->selected = start_sel_;
+}
+
+void Vm::party_size()
+{
+    if (party_) set(0x7F3E, static_cast<uint16_t>(party_->count));
+}
+
+uint8_t Vm::roll(int sides, int n)
+{
+    int t = 0;
+    for (int k = 0; k < n; ++k) {
+        rng_ ^= rng_ << 13;
+        rng_ ^= rng_ >> 17;
+        rng_ ^= rng_ << 5;
+        t += sides > 0 ? static_cast<int>(rng_ % static_cast<uint32_t>(sides)) + 1 : 0;
+    }
+    return static_cast<uint8_t>(t);             // (the games' dice: a byte)
+}
+
+// DAMAGE's lines one at a time (each on a line of its own), then "press
+// <enter>"; the whole party killed: "The entire party is killed!"
+Stop Vm::damage_step()
+{
+    if (dmg_at_ < 0) return Stop::Running;
+    if (dmg_at_ < 2 * n_dmg_) {
+        const int k = dmg_at_++;
+        text_ = "\n";
+        if (k & 1) {
+            const DmgLine& l = dmg_[k / 2];
+            char nm[20] = {};
+            if (party_ && l.who < party_->count) party_->m[l.who].name(nm, sizeof nm);
+            if (l.dies) snprintf(dmg_text_, sizeof dmg_text_, "  %s%s", nm, word(kWDies));
+            else snprintf(dmg_text_, sizeof dmg_text_, "  %s%s%d%s", nm, word(kWIsHitFor), l.amount, word(kWPointsOfDamage));
+            text_ = dmg_text_;
+        }
+        clear_ = false;
+        return wait_for(Wait::Print);
+    }
+    if (dmg_killed_ && dmg_at_ == 2 * n_dmg_) {
+        ++dmg_at_;
+        text_ = word(kWPartyKilled);
+        clear_ = true;
+        return wait_for(Wait::Print);
+    }
+    if (dmg_at_ == 2 * n_dmg_ + (dmg_killed_ ? 1 : 0)) {
+        ++dmg_at_;
+        return wait_for(Wait::Key);
+    }
+    dmg_at_ = -1;
+    if (dmg_killed_) {
+        dmg_killed_ = false;
+        h_.party_killed();
+    }
+    return Stop::Running;
 }
 
 void Vm::compare(uint16_t a, uint16_t b)
@@ -346,6 +428,7 @@ Stop Vm::run(uint16_t address)
     stop_ = new_script_ = false;
     wait_ = Wait::None;
     budget_ = kBudget;
+    if (party_) start_sel_ = party_->selected;
     return resume();
 }
 
@@ -360,6 +443,10 @@ Stop Vm::resume()
     }
     if (enc_phase_ != EncPhase::None) {
         const Stop r = encounter_step();
+        if (r != Stop::Running) return r;
+    }
+    if (dmg_at_ >= 0) {
+        const Stop r = damage_step();
         if (r != Stop::Running) return r;
     }
     while (!stop_) {
@@ -385,9 +472,20 @@ Stop Vm::answer(int v)
         int sel = v;
         if (near && sel == 3) sel = 4;
         if (sel < 0 || sel > 4) sel = 1;
-        // No party yet: its slowest and fastest movement taken as 12
-        // (a person on foot) until characters exist
-        const int party_min = 12, party_max = 12;
+        // The party's slowest and fastest movement (no party: 12, a person on foot)
+        int party_min = 12, party_max = 12;
+        if (party_ && party_->count) {
+            party_min = 255;
+            party_max = 0;
+            for (int i = 0; i < party_->count; ++i) {
+                const party::Character& c = party_->m[i];
+                if (!c.in_combat()) continue;
+                const int mv = c.movement();
+                if (mv < party_min) party_min = mv;
+                if (mv > party_max) party_max = mv;
+            }
+            if (party_max == 0) party_min = party_max = 12;
+        }
         auto result = [&](int r) {
             set(enc_dest_, static_cast<uint16_t>(r));
             enc_again_ = false;
@@ -416,10 +514,10 @@ Stop Vm::answer(int v)
             break;
         case 1:
             if (sel == 0) result(1);
-            else if (sel == 1) return note("Both sides wait.", true);
+            else if (sel == 1) return note(word(kWBothWait), true);
             else if (sel == 2) result(2);
             else if (sel == 3) {
-                if (!approach()) return note("Both sides wait.", true);
+                if (!approach()) return note(word(kWBothWait), true);
             } else if (!approach()) result(3);
             break;
         case 2:
@@ -428,11 +526,11 @@ Stop Vm::answer(int v)
                 break;
             }
             result(0);
-            return note("The monsters flee.", false);
+            return note(word(kWMonstersFlee), false);
         case 3:
             if (sel == 0) result(1);
             else if (sel == 1 || sel == 3) {
-                if (!approach()) return note("Both sides wait.", true);
+                if (!approach()) return note(word(kWBothWait), true);
             } else if (sel == 2) result(2);
             else if (!approach()) result(3);
             break;
@@ -465,6 +563,9 @@ Stop Vm::answer(int v)
         break;
     case 0x0F:
         set(dest_, static_cast<uint16_t>(v));
+        break;
+    case 0x39:                          // WHO: that member is selected
+        if (party_ && v >= 0 && v < party_->count) party_->selected = v;
         break;
     default: break;
     }
@@ -512,6 +613,7 @@ Stop Vm::step()
     switch (op_) {
     case 0x00:                                  // EXIT
         ++pc_;
+        restore_selected();
         stop_script();
         return Stop::Running;
     case 0x01:                                  // GOTO
@@ -569,7 +671,26 @@ Stop Vm::step()
         if (o[0].code < 0x80) set(o[1].word(), value(o[0]));
         else store_string(o[1].word(), string_of(o[0]));
         return Stop::Running;
-    case 0x0A: return stub(1, "LOAD CHARACTER");
+    case 0x0A: {                                // LOAD CHARACTER
+        if (!need(1)) return Stop::Error;
+        const int v = value(o[0]) & 0xFF, i = v & 0x7F;
+        restore_ = true;
+        if (party_ && i < party_->count) {
+            party_->selected = i;
+            not_found_ = false;
+        } else {
+            not_found_ = true;
+        }
+        if ((v & 0x80) && cleared_name_ && cleared_status_ && party_ && party_->count) {
+            // The selected member leaves the party
+            if (party_->selected == start_sel_) restore_ = false;
+            party::remove(*party_, party_->selected);
+            party_size();
+            h_.party_changed();
+            cleared_name_ = cleared_status_ = false;
+        }
+        return Stop::Running;
+    }
     case 0x0B:                                  // LOAD MONSTER: monster id, copies, icon block
         if (!need(3)) return Stop::Error;
         monsters_ = true;
@@ -652,14 +773,50 @@ Stop Vm::step()
         h_.clear_monsters();
         if (ground_) ground_->clear();
         return Stop::Running;
-    case 0x1D:                                  // PARTYSTRENGTH
+    case 0x1D: {                                // PARTYSTRENGTH: a byte sum over everyone
         if (!need(1)) return Stop::Error;
-        set(o[0].word(), 0);
+        uint8_t sum = 0;
+        for (int i = 0; party_ && i < party_->count; ++i) {
+            const uint8_t* r = party_->m[i].rec;
+            int cur = 0;
+            for (int k = 0; k < 7 && !cur; ++k) cur = r[0x109 + k];
+            const bool dual = r[0x74] == 7 && cur > r[0xE6];
+            const int hp = r[0x1A4], a = r[0x19A] > 60 ? r[0x19A] - 60 : 0, h = r[0x199] > 39 ? r[0x199] - 39 : 0;
+            const int mu = r[0x10E] + (dual ? r[0x116] : 0), cl = r[0x109] + (dual ? r[0x111] : 0);
+            sum = static_cast<uint8_t>(sum + (hp + 5 * a + 5 * h + 8 * mu + 4 * cl) / 10);
+        }
+        set(o[0].word(), sum);
         return Stop::Running;
-    case 0x1E: {                                // CHECKPARTY
+    }
+    case 0x1E: {                                // CHECKPARTY: what (0: an effect; a thief skill; movement)
         if (!need(6)) return Stop::Error;
-        for (int i = 2; i < 6; ++i) set(o[i].word(), 0);
-        h_.log("CHECKPARTY (no party yet)");
+        const uint16_t what = o[0].code == 1 ? o[0].word() : value(o[0]);
+        const int w = static_cast<int16_t>(static_cast<uint16_t>(what - 0x7FFF));
+        const int fx = value(o[1]) & 0xFF;
+        const uint16_t A = o[2].word(), B = o[3].word(), C = o[4].word(), D = o[5].word();
+        const int n = party_ ? party_->count : 0;
+        if (what == 0) {
+            bool found = false;
+            for (int i = 0; i < n; ++i)
+                if (party_->m[i].has_affect(static_cast<uint8_t>(fx))) found = true;
+            set(A, 0);
+            set(B, 0);
+            set(C, 0);
+            set(D, found ? 1 : 0);
+        } else if ((w >= 0xA5 && w <= 0xAC) || w == 0x9F) {
+            // (as the games compare: signed, so other values write nothing)
+            int lo = 0xFF, hi = 0, total = 0;
+            for (int i = 0; i < n; ++i) {
+                const int v = w == 0x9F ? party_->m[i].rec[0x1A5] : party_->m[i].rec[0xE9 + (w - 0xA4)];
+                if (v < lo) lo = v;
+                if (v > hi) hi = v;
+                total += v;
+            }
+            set(A, static_cast<uint16_t>(lo));
+            set(B, static_cast<uint16_t>(hi));
+            set(C, static_cast<uint16_t>(n ? total / n : 0));
+            set(D, 0);
+        }
         return Stop::Running;
     }
     case 0x20: {                                // NEWECL
@@ -701,11 +858,15 @@ Stop Vm::step()
         }
         return Stop::Running;
     }
-    case 0x22:                                  // PARTY SURPRISE
+    case 0x22: {                                // PARTY SURPRISE: a ranger (or cleric / ranger) in the party
         if (!need(2)) return Stop::Error;
-        set(o[0].word(), 0);
+        bool ranger = false;
+        for (int i = 0; party_ && i < party_->count; ++i)
+            if (party_->m[i].rec[0x75] == 4 || party_->m[i].rec[0x75] == 10) ranger = true;
+        set(o[0].word(), ranger ? 1 : 0);
         set(o[1].word(), 0);
         return Stop::Running;
+    }
     case 0x23: {                                // SURPRISE: two d6 against (d + 2 - a) and (b + 2 - c)
         if (!need(4)) return Stop::Error;
         const int a = value(o[0]) & 0xFF, b = value(o[1]) & 0xFF, c = value(o[2]) & 0xFF, dd = value(o[3]) & 0xFF;
@@ -760,7 +921,38 @@ Stop Vm::step()
         }
         return Stop::Running;
     }
-    case 0x28: return stub(3, "ROB");
+    case 0x28: {                                // ROB: who (0 the selected, else all), % of money, item chance
+        if (!need(3)) return Stop::Error;
+        const int who = value(o[0]) & 0xFF, pct = value(o[1]) & 0xFF, chance0 = value(o[2]) & 0xFF;
+        if (!party_ || !party_->count) return Stop::Running;
+        for (int i = 0; i < party_->count; ++i) {
+            if (who == 0 && i != party_->selected) continue;
+            party::Character& c = party_->m[i];
+            for (int m = 0; m < 7; ++m) {
+                const int at = 0xFB + m * 2;
+                const long have = c.rec[at] | c.rec[at + 1] << 8;
+                const long left = pct >= 100 ? 0 : have * (100 - pct) / 100;
+                c.rec[at] = static_cast<uint8_t>(left);
+                c.rec[at + 1] = static_cast<uint8_t>(left >> 8);
+            }
+            // Each item at the chance (cut for heavy items, and from then on)
+            int ch = chance0;
+            for (int k = 0; k < c.n_items;) {
+                const int wt = c.items[k][0x37] | c.items[k][0x38] << 8;
+                if (wt > 255) ch = ch > 90 ? ch - 90 : 0;
+                else if (wt > 24) ch = ch > 50 ? ch - 50 : 0;
+                if (roll(100, 1) <= ch) {
+                    for (int j = k; j + 1 < c.n_items; ++j) memcpy(c.items[j], c.items[j + 1], party::kItemSize);
+                    --c.n_items;
+                    memset(c.items[c.n_items], 0, party::kItemSize);
+                } else {
+                    ++k;
+                }
+            }
+        }
+        h_.party_changed();
+        return Stop::Running;
+    }
     case 0x29: {                                // ENCOUNTER MENU
         // sprite, how far, picture, result word, 5 results, 3 texts (near,
         // middle, far), the speed the party needs to flee, the monsters' speed
@@ -816,6 +1008,8 @@ Stop Vm::step()
             if (speed == 0) speed = 4;
             pause_ms_ = static_cast<uint32_t>(speed) * 100;
             return wait_for(Wait::Pause);
+        } else if (w == 0xB200 || w == 0xC018) {
+            // A sound (the engine has none yet); the wall type ahead (worked out anyway)
         } else if (w == 0xC01E) {
             s_.x = (s_.x + (s_.dir == 2 ? 1 : s_.dir == 6 ? -1 : 0)) & 15;
             s_.y = (s_.y + (s_.dir == 4 ? 1 : s_.dir == 0 ? -1 : 0)) & 15;
@@ -826,7 +1020,78 @@ Stop Vm::step()
         }
         return Stop::Running;
     }
-    case 0x2E: return stub(5, "DAMAGE");
+    case 0x2E: {                                // DAMAGE: flags / attacks, dice, sides, bonus, save type / to-hit
+        if (!need(5)) return Stop::Error;
+        const int f = value(o[0]) & 0xFF, n = value(o[1]) & 0xFF, sd = value(o[2]) & 0xFF;
+        const int p = value(o[3]) & 0xFF, t = value(o[4]) & 0xFF;
+        if (!party_ || !party_->count) return Stop::Running;
+        const int before = party_->selected;
+        n_dmg_ = 0;
+        auto hurt = [&](int i, int dmg) {
+            party::Character& c = party_->m[i];
+            if (c.health() == party::Dead) return;
+            if (n_dmg_ < kMaxDamageLines)
+                dmg_[n_dmg_++] = DmgLine{static_cast<uint8_t>(i), static_cast<uint8_t>(dmg), dmg > c.hp() + 10};
+            const int hp = c.hp();
+            int over = 0, now = hp - dmg;
+            if (now < 0) {
+                over = -now;
+                now = 0;
+            }
+            int st = c.health();
+            if (over > 9 || (now == 0 && st == party::Animated)) st = party::Dead;
+            else if (over > 0) st = party::Dying;
+            else if (now == 0) st = party::Unconscious;
+            c.rec[0x195] = static_cast<uint8_t>(st);
+            if (st == party::Okay || st == party::Animated) {
+                c.rec[0x1A4] = static_cast<uint8_t>(now);
+            } else {
+                c.rec[0x1A4] = 0;
+                c.rec[0x196] = 0;
+            }
+        };
+        auto saves = [&](int i, int type, int bonus) {
+            const party::Character& c = party_->m[i];
+            const int r = roll(20, 1);
+            if (r == 1) return false;
+            if (r == 20) return true;
+            return r + bonus + static_cast<int8_t>(c.rec[0x186]) >= c.rec[0xDF + (type > 4 ? 4 : type)];
+        };
+        int dmg = roll(sd, n) + p;
+        const int count = party_->count;
+        const int random = (f & 0x40) ? 0 : roll(count, 1) - 1;
+        if (f & 0x80) {
+            const int bonus = f & 0x1F, type = t & 7;
+            auto one = [&](int i, bool save, int ty) {
+                if (!save || !saves(i, ty, bonus) || (f & 0x10)) hurt(i, dmg & 0xFF);
+            };
+            if (f & 0x40) {
+                for (int i = 0; i < count; ++i) one(i, !(f & 0x20), type);
+            } else if (t & 0x80) {
+                one(party_->selected, type != 0, type - 1);
+            } else {
+                one(random, true, type);
+            }
+        } else {
+            for (int k = 0; k < f; ++k) {
+                const int i = roll(count, 1) - 1;
+                const party::Character& c = party_->m[i];
+                int r = roll(20, 1);
+                if (r == 20) r = 100;
+                if (r > 1 && r + t > c.rec[0x19A]) hurt(i, dmg & 0xFF);
+                dmg = roll(sd, n) + p;
+            }
+        }
+        bool any = false;
+        for (int i = 0; i < count; ++i)
+            if (party_->m[i].in_combat()) any = true;
+        party_->selected = before;
+        h_.party_changed();
+        dmg_killed_ = !any;
+        dmg_at_ = 0;
+        if (!any) stop_script();
+        return damage_step();
+    }
     case 0x2F:                                  // AND
     case 0x30: {                                // OR
         if (!need(3)) return Stop::Error;
@@ -839,12 +1104,25 @@ Stop Vm::step()
         ++pc_;
         h_.picture(0xFF, 0xFF);
         return Stop::Running;
-    case 0x32:                                  // FIND ITEM
-    case 0x3F:                                  // FIND SPECIAL
+    case 0x32:                                  // FIND ITEM: anyone carries one of that type
+    case 0x3F: {                                // FIND SPECIAL: the selected character has that effect
         if (!need(1)) return Stop::Error;
+        const int v = value(o[0]) & 0xFF;
+        bool found = false;
+        if (party_ && party_->count) {
+            if (op_ == 0x32) {
+                for (int i = 0; i < party_->count && !found; ++i)
+                    for (int k = 0; k < party_->m[i].n_items; ++k)
+                        if (party_->m[i].items[k][0x2E] == v) found = true;
+            } else {
+                found = party_->sel()->has_affect(static_cast<uint8_t>(v));
+            }
+        }
         for (bool& f : flags_) f = false;
-        flags_[1] = true;                       // no party: never found
+        flags_[0] = found;
+        flags_[1] = !found;
         return Stop::Running;
+    }
     case 0x33:                                  // PRINT RETURN
         ++pc_;
         text_ = "\n";
@@ -858,17 +1136,31 @@ Stop Vm::step()
         if (!need(3)) return Stop::Error;
         set(static_cast<uint16_t>(o[1].word() + value(o[2])), value(o[0]));
         return Stop::Running;
-    case 0x36: return stub(2, "ADD NPC");
+    case 0x36: {                                // ADD NPC: MON<area> block, morale
+        if (!need(2)) return Stop::Error;
+        const int id = value(o[0]) & 0xFF, morale = value(o[1]) & 0xFF;
+        if (party_ && party_->count < party::kMaxParty && h_.add_npc(id) && party_->sel()) {
+            party_->sel()->rec[0xF7] = static_cast<uint8_t>(0x80 | (morale >> 1));
+            party_size();
+            h_.party_changed();
+        }
+        return Stop::Running;
+    }
     case 0x38: {                                // PROGRAM
         if (!need(1)) return Stop::Error;
         const int v = value(o[0]) & 0xFF;
+        restore_selected();
         if (v == 0) return wait_for(Wait::PartyMenu);      // the party menu, then on
         snprintf(line, sizeof line, "PROGRAM %d (not in the engine yet)", v);
         h_.log(line);
         if (v == 3 || v == 8 || v == 9) stop_script();
         return Stop::Running;
     }
-    case 0x39: return stub(1, "WHO");
+    case 0x39:                                  // WHO: "<prompt> Select" over the party list
+        if (!need(1)) return Stop::Error;
+        if (!party_ || !party_->count) return Stop::Running;
+        prompt_ = string_of(o[0]);
+        return wait_for(Wait::Who);
     case 0x3A: {                                // DELAY: the game's delay (speed x 0.1 s)
         ++pc_;
         int speed = get(0x4BFC) & 0xFF;
@@ -876,20 +1168,58 @@ Stop Vm::step()
         pause_ms_ = static_cast<uint32_t>(speed) * 100;
         return wait_for(Wait::Pause);
     }
-    case 0x3B:                                  // SPELL
+    case 0x3B: {                                // SPELL: who has it memorized (place, member)
         if (!need(3)) return Stop::Error;
-        set(o[1].word(), 0xFF);
-        set(o[2].word(), 0);
+        const int sp = value(o[0]) & 0xFF;
+        int place = 0xFF, who = 0;
+        if (party_ && party_->count) {
+            who = party_->count - 1;
+            for (int i = 0; i < party_->count && place == 0xFF; ++i)
+                for (int k = 0; k < 0x65; ++k)
+                    if (party_->m[i].rec[0x1F + k] == sp) {
+                        place = k + 1 <= 100 ? k + 1 : 0xFF;
+                        who = i;
+                        break;
+                    }
+        } else {
+            place = 1;
+        }
+        set(o[1].word(), static_cast<uint16_t>(place));
+        set(o[2].word(), static_cast<uint16_t>(who));
         return Stop::Running;
+    }
     case 0x3C: return stub(1, "PROTECTION");    // copy protection: skipped (Tom)
     case 0x3D:                                  // CLEAR BOX
         ++pc_;
         h_.clear_box();
         return Stop::Running;
-    case 0x3E:                                  // DUMP
+    case 0x3E:                                  // DUMP: the selected member leaves the party
         ++pc_;
+        if (party_ && party_->count) {
+            party::remove(*party_, party_->selected);
+            start_sel_ = party_->selected;
+            party_size();
+            h_.party_changed();
+        }
         return Stop::Running;
-    case 0x40: return stub(1, "DESTROY ITEMS");
+    case 0x40: {                                // DESTROY ITEMS: every item of that type, everyone's
+        if (!need(1)) return Stop::Error;
+        const int type = value(o[0]) & 0xFF;
+        for (int i = 0; party_ && i < party_->count; ++i) {
+            party::Character& c = party_->m[i];
+            for (int k = 0; k < c.n_items;) {
+                if (c.items[k][0x2E] != type) {
+                    ++k;
+                    continue;
+                }
+                for (int j = k; j + 1 < c.n_items; ++j) memcpy(c.items[j], c.items[j + 1], party::kItemSize);
+                --c.n_items;
+                memset(c.items[c.n_items], 0, party::kItemSize);
+            }
+        }
+        h_.party_changed();
+        return Stop::Running;
+    }
     default: {
         Insn in;
         if (decode(s_.code, s_.code_len, pc_, set_, in)) {

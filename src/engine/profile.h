@@ -316,6 +316,9 @@ struct Profile {
         const combat::FightSpell* spells;
         uint8_t         n_spells;
     } fight;
+
+    // The script machine's own words (GAME.OVR), in ecl::ScriptWord's order
+    uint32_t script_words[ecl::kScriptWords];
 };
 
 // The game's program file name (to look for it), or nullptr if no

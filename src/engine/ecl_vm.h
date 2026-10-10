@@ -70,9 +70,13 @@ enum class Wait : uint8_t {
     PartyMenu,    // PROGRAM 0: the party menu (training halls); resume() at BEGIN Adventuring
     Combat,       // COMBAT with monsters loaded: the fight (the result in 0x7EC7); resume() after it
     Treasure,     // COMBAT with none: the after-fight step (treasure the script set out); resume() after
+    Who,          // WHO: prompt() + "Select" over the party list; answer(member) - it's selected
+    Key,          // "press <enter>/<return> to continue" on the menu line; resume() on any key
 };
 
 enum class Stop : uint8_t { Running, Waiting, Stopped, NewScript, Error };
+
+constexpr int kMaxDamageLines = 16;  // DAMAGE: lines at most
 
 class Host {
 public:
@@ -98,6 +102,14 @@ public:
     // fight, its CPIC<area> icon block; CLEARMONSTERS: none
     virtual void load_monster(int id, int copies, int icon) { (void)id; (void)copies; (void)icon; }
     virtual void clear_monsters() {}
+    // ADD NPC: MON<area> block `id` (record, effects, items; CPIC icon) joins
+    // the party at its end and is selected; false when it can't (full)
+    virtual bool add_npc(int id) { (void)id; return false; }
+    // The party changed (items gone, a member gone, damage): their values
+    // worked out again, the party list drawn again
+    virtual void party_changed() {}
+    // DAMAGE killed the whole party ("The entire party is killed!" shown)
+    virtual void party_killed() {}
     virtual void log(const char* what) = 0;
 };
 
@@ -111,7 +123,9 @@ public:
     uint16_t entry(int i) const { return entry_[i]; }   // 0 step, 1 search, 2 pre-camp, 3 camp, 4 first
 
     // The party the scripts see (nullptr: none)
-    void set_party(const party::Party* p) { party_ = p; }
+    void set_party(party::Party* p) { party_ = p; }
+    // Its own words (ScriptWord order; nullptr / missing: said empty)
+    void set_words(const char* const* w) { words_ = w; }
     // Treasure and shop goods the scripts set out (TREASURE)
     void set_ground(items::Ground* g) { ground_ = g; }
     bool monsters() const { return monsters_; }
@@ -179,7 +193,29 @@ private:
 
     GameState& s_;
     Host& h_;
-    const party::Party* party_ = nullptr;
+    party::Party* party_ = nullptr;
+    const char* const* words_ = nullptr;
+    const char* word(int i) const { return words_ && words_[i] ? words_[i] : ""; }
+    // The selected character: LOAD CHARACTER's (put back at EXIT / PROGRAM),
+    // one it didn't find (0x7D00 reads 0 once), the writes of 0 to 0x7C00 /
+    // 0x7D00 that let LOAD CHARACTER + 0x80 remove a member
+    int  start_sel_ = 0;
+    bool restore_ = false;
+    mutable bool not_found_ = false;
+    bool cleared_name_ = false, cleared_status_ = false;
+    void restore_selected();
+    void party_size();
+    uint8_t roll(int sides, int n);
+    // DAMAGE's lines, said one by one (then "press <enter>"); the party killed
+    struct DmgLine {
+        uint8_t who;
+        uint8_t amount;
+        bool    dies;
+    } dmg_[kMaxDamageLines] = {};
+    char dmg_text_[64] = {};
+    int  n_dmg_ = 0, dmg_at_ = -1;
+    bool dmg_killed_ = false;
+    Stop damage_step();
     int minutes_ = 0;
     items::Ground* ground_ = nullptr;
     bool monsters_ = false;             // LOAD MONSTER since the last CLEARMONSTERS

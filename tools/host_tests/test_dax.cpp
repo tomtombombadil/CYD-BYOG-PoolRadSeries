@@ -1346,6 +1346,154 @@ struct TestHost : ecl::Host {
     void log(const char*) override {}
 };
 
+// The scripts and the party: LOAD CHARACTER, the selected character's fields
+// written, ROB, DAMAGE, FIND ITEM, DESTROY ITEMS, SPELL, WHO, ADD NPC, DUMP
+struct PartyHost : TestHost {
+    party::Party* p = nullptr;
+    int changed = 0, killed = 0;
+    bool add_npc(int id) override
+    {
+        if (p->count >= party::kMaxParty) return false;
+        party::Character& c = p->m[p->count] = party::Character{};
+        c.rec[0] = 3; c.rec[1] = 'N'; c.rec[2] = 'P'; c.rec[3] = 'C';
+        c.rec[0x126] = static_cast<uint8_t>(id);
+        p->selected = p->count++;
+        return true;
+    }
+    void party_changed() override { ++changed; }
+    void party_killed() override { ++killed; }
+};
+
+static void test_ecl_party()
+{
+    const profile::Profile* pr = profile::find(games::Game::CurseOfTheAzureBonds, 57789, 62432);
+    CHECK(pr && pr->ecl_ops);
+    if (!pr || !pr->ecl_ops) return;
+    static party::Party pa;
+    pa = party::Party{};
+    pa.count = 3;
+    for (int i = 0; i < 3; ++i) {
+        party::Character& c = pa.m[i];
+        c.rec[0] = 1; c.rec[1] = static_cast<uint8_t>('A' + i);
+        c.rec[0x196] = 1; c.rec[0x1A4] = c.rec[0x78] = 20;
+        c.rec[0x101] = 100;                                   // 100 gold
+        for (int k = 0; k < 5; ++k) c.rec[0xDF + k] = 30;     // never saves (but on a 20)
+    }
+    pa.m[1].n_items = 2;
+    pa.m[1].items[0][0x2E] = 40; pa.m[1].items[1][0x2E] = 41;
+    pa.m[2].rec[0x1E + 4] = 7;                                // member 2 has spell 7 in place 4 (record 0x1E + 4)
+    // The script:
+    //   LOAD CHARACTER 1; COMPARE [0x7D00] 1; SAVE 250 -> 0x7CC1 (gold); LOAD CHARACTER 9;
+    //   SAVE [0x7D00] -> 0x4C00 (0: not found); SAVE [0x7D00] -> 0x4C01 (again: 1);
+    //   FIND ITEM 41; IF= SAVE 1 -> 0x4C02; DESTROY ITEMS 41; FIND ITEM 41; IF= SAVE 1 -> 0x4C03;
+    //   SPELL 7 0x4C04 0x4C05; ROB 1 50 0; DAMAGE 0xE0 1 1 4 0 (everyone, 5 points, no save);
+    //   WHO "WHO"; ADD NPC 22 100; EXIT
+    Bytes c;
+    const uint16_t kBase = 0x8000;
+    for (int i = 0; i < 5; ++i) { c.push_back(0); op_addr(c, 0); }
+    const size_t first = c.size();
+    c.push_back(0x0A); op_imm(c, 1);
+    c.push_back(0x09); op_imm(c, 250); op_addr(c, 0x7CC1);
+    c.push_back(0x0A); op_imm(c, 9);
+    c.push_back(0x09); op_addr(c, 0x7D00); op_addr(c, 0x4C00);
+    c.push_back(0x09); op_addr(c, 0x7D00); op_addr(c, 0x4C01);
+    c.push_back(0x32); op_imm(c, 41);
+    c.push_back(0x16); c.push_back(0x09); op_imm(c, 1); op_addr(c, 0x4C02);
+    c.push_back(0x40); op_imm(c, 41);
+    c.push_back(0x32); op_imm(c, 41);
+    c.push_back(0x16); c.push_back(0x09); op_imm(c, 1); op_addr(c, 0x4C03);
+    c.push_back(0x3B); op_imm(c, 7); op_addr(c, 0x4C04); op_addr(c, 0x4C05);
+    c.push_back(0x28); op_imm(c, 1); op_imm(c, 50); op_imm(c, 0);
+    c.push_back(0x2E); op_imm(c, 0xE0); op_imm(c, 1); op_imm(c, 1); op_imm(c, 4); op_imm(c, 0);
+    c.push_back(0x39); op_str(c, "WHO");
+    c.push_back(0x36); op_imm(c, 22); op_imm(c, 100);
+    c.push_back(0x00);
+    for (int i = 0; i < 5; ++i) {
+        c[1 + i * 4] = 1;
+        c[2 + i * 4] = static_cast<uint8_t>((kBase + first) & 0xFF);
+        c[3 + i * 4] = static_cast<uint8_t>((kBase + first) >> 8);
+    }
+    ecl::GameState gs;
+    PartyHost host;
+    host.p = &pa;
+    memcpy(gs.code, c.data(), c.size());
+    gs.code_len = static_cast<uint32_t>(c.size());
+    static const char* const kWords[ecl::kScriptWords] = {"", "", " dies. ", " is hit FOR ", " points of Damage.",
+                                                         "killed"};
+    static ecl::Vm vm(gs, host, *pr->ecl_ops);
+    vm.set_party(&pa);
+    vm.set_words(kWords);
+    CHECK(vm.init_script());
+    ecl::Stop r = vm.run(vm.entry(4));
+    // DAMAGE: a line each ("\n" before it), then "press <enter>"
+    int lines = 0;
+    while (r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Print) {
+        if (strcmp(vm.text(), "\n") != 0) {
+            CHECK(strstr(vm.text(), " is hit FOR 5 points of Damage.") != nullptr);
+            ++lines;
+        }
+        r = vm.resume();
+    }
+    CHECK(lines == 3 && r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Key);
+    CHECK(pa.m[1].rec[0x101] == 250 / 2 && pa.m[0].rec[0x101] == 50);   // gold set, then half robbed
+    CHECK(vm.get(0x4C00) == 0 && vm.get(0x4C01) == 1);                  // not found once
+    CHECK(vm.get(0x4C02) == 1 && vm.get(0x4C03) == 0 && pa.m[1].n_items == 1 && pa.m[1].items[0][0x2E] == 40);
+    CHECK(vm.get(0x4C04) == 4 && vm.get(0x4C05) == 2);
+    CHECK(pa.m[0].hp() == 15 && pa.m[2].hp() == 15);
+    r = vm.resume();
+    CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Who && strcmp(vm.prompt(), "WHO") == 0);
+    r = vm.answer(2);
+    // ADD NPC: the new member, selected, an NPC with morale 100 / 2; EXIT puts back LOAD CHARACTER's choice
+    CHECK(r == ecl::Stop::Stopped && pa.count == 4 && pa.m[3].rec[0xF7] == (0x80 | 50) && vm.get(0x7F3E) == 4);
+    CHECK(pa.selected == 0);                                             // restored to the start's
+    CHECK(host.changed >= 3 && host.killed == 0);
+    // Removal: LOAD CHARACTER i, SAVE 0 -> 0x7C00, SAVE 0 -> 0x7D00, LOAD CHARACTER i + 0x80; DUMP
+    Bytes c2;
+    for (int i = 0; i < 5; ++i) { c2.push_back(0); op_addr(c2, 0); }
+    const size_t f2 = c2.size();
+    c2.push_back(0x0A); op_imm(c2, 3);
+    c2.push_back(0x09); op_imm(c2, 0); op_addr(c2, 0x7C00);
+    c2.push_back(0x09); op_imm(c2, 0); op_addr(c2, 0x7D00);
+    c2.push_back(0x0A); op_imm(c2, 0x83);
+    c2.push_back(0x3E);
+    c2.push_back(0x00);
+    for (int i = 0; i < 5; ++i) {
+        c2[1 + i * 4] = 1;
+        c2[2 + i * 4] = static_cast<uint8_t>((kBase + f2) & 0xFF);
+        c2[3 + i * 4] = static_cast<uint8_t>((kBase + f2) >> 8);
+    }
+    memcpy(gs.code, c2.data(), c2.size());
+    gs.code_len = static_cast<uint32_t>(c2.size());
+    CHECK(vm.init_script());
+    pa.m[3].rec[0x196] = 1;
+    r = vm.run(vm.entry(4));
+    // The NPC (member 3) gone; the one before it (member 2) selected, then dumped too
+    CHECK(r == ecl::Stop::Stopped && pa.count == 2 && vm.get(0x7F3E) == 2);
+    // Everyone killed: "killed", press <enter>, the host told
+    for (int i = 0; i < pa.count; ++i) pa.m[i].rec[0x1A4] = 3;
+    Bytes c3;
+    for (int i = 0; i < 5; ++i) { c3.push_back(0); op_addr(c3, 0); }
+    const size_t f3 = c3.size();
+    c3.push_back(0x2E); op_imm(c3, 0xE0); op_imm(c3, 1); op_imm(c3, 1); op_imm(c3, 19); op_imm(c3, 0);
+    c3.push_back(0x00);
+    for (int i = 0; i < 5; ++i) {
+        c3[1 + i * 4] = 1;
+        c3[2 + i * 4] = static_cast<uint8_t>((kBase + f3) & 0xFF);
+        c3[3 + i * 4] = static_cast<uint8_t>((kBase + f3) >> 8);
+    }
+    memcpy(gs.code, c3.data(), c3.size());
+    gs.code_len = static_cast<uint32_t>(c3.size());
+    CHECK(vm.init_script());
+    r = vm.run(vm.entry(4));
+    bool said_killed = false, said_dies = false;
+    while (r == ecl::Stop::Waiting) {
+        if (vm.wait() == ecl::Wait::Print && strcmp(vm.text(), "killed") == 0) said_killed = true;
+        if (vm.wait() == ecl::Wait::Print && strstr(vm.text(), " dies. ")) said_dies = true;
+        r = vm.resume();
+    }
+    CHECK(said_killed && said_dies && host.killed == 1 && pa.m[0].health() == party::Dead);
+}
+
 static void test_ecl_vm()
 {
     {
@@ -1403,6 +1551,9 @@ static void test_ecl_vm()
     memcpy(gs.code, c.data(), c.size());
     gs.code_len = static_cast<uint32_t>(c.size());
     ecl::Vm vm(gs, host, *p->ecl_ops);
+    static const char* const kWords[ecl::kScriptWords] = {"Both sides wait.", "The monsters flee.", " dies. ",
+                                                         " is hit FOR ", " points of Damage.", "killed"};
+    vm.set_words(kWords);
     CHECK(vm.init_script());
     CHECK(vm.entry(4) == kBase + first && vm.entry(0) == kBase + quiet);
     CHECK(vm.run(vm.entry(0)) == ecl::Stop::Stopped);
@@ -2899,6 +3050,7 @@ int main()
     test_icon();
     test_ecl();
     test_ecl_vm();
+    test_ecl_party();
     test_journal();
     test_geo_view();
     test_party();
