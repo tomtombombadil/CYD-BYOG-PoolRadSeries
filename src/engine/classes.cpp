@@ -104,6 +104,29 @@ void spell_slots(party::Character& c, const Tables& t)
             break;
         }
     }
+    // Rings of Wizardry readied (item effect 0x81): magic-user levels 1-3 doubled, each
+    for (int i = 0; i < c.n_items; ++i)
+        if (c.items[i][0x34] && c.items[i][0x3E] == 0x81)
+            for (int k = 0; k < 3; ++k) cast(c, 2, k) = static_cast<uint8_t>(cast(c, 2, k) * 2);
+}
+
+void wizardry(party::Character& c, const Tables& t, bool on)
+{
+    if (on) {
+        for (int k = 0; k < 3; ++k) cast(c, 2, k) = static_cast<uint8_t>(cast(c, 2, k) * 2);
+        return;
+    }
+    // Off: the slots as they are without it; magic-user spells past them forgotten (the later first)
+    spell_slots(c, t);
+    int held[5] = {};
+    for (int k = 0; k < 84; ++k) {
+        uint8_t& e = c.rec[0x1E + k];
+        const int s = e & 0x7F;
+        if (!s || t.spell_class(s) != 2) continue;
+        const int lvl = t.spell_level(s);
+        if (lvl < 1 || lvl > 5) continue;
+        if (++held[lvl - 1] > cast(c, 2, lvl - 1)) e = 0;
+    }
 }
 
 void saving_throws(party::Character& c, const Tables& t)
@@ -141,9 +164,24 @@ void thief_skills(party::Character& c, const Tables& t)
     int lv = skill_level(c, Thief);
     if (lv > 12) lv = 12;
     const int dex = c.rec[kDexFull];
+    // The first readied Gauntlets of Dexterity (item effect 0x82) or Gloves
+    // of Thievery (0x8B; curse_finish_facts.md 5.4)
+    int code = 0;
+    for (int i = 0; i < c.n_items && !code; ++i)
+        if (c.items[i][0x34] && (c.items[i][0x3E] == 0x82 || c.items[i][0x3E] == 0x8B)) code = c.items[i][0x3E] & 0x7F;
+    int bonus = 0;                             // (the gloves' +5 goes on to the skills after; from 0, as coab)
     for (int skill = 1; skill <= 8; ++skill) {
+        int use = lv;
+        if (code == 2) {
+            if (lv < 4) use = 4;
+            else bonus = 10;
+        } else if (code == 11 && (skill == 1 || skill == 2)) {
+            const int need = skill == 1 ? 5 : 7;
+            if (lv < need) use = need;
+            else bonus = 5;
+        }
         const int race_adj = t.s8(static_cast<uint16_t>(t.lay.thief_race + c.race() * 8 + skill));
-        const int base = t.u8(static_cast<uint16_t>(t.lay.thief_base + lv * 8 + skill));
+        const int base = t.u8(static_cast<uint16_t>(t.lay.thief_base + use * 8 + skill)) + bonus;
         int v;
         if (race_adj < 0 && base < -race_adj) {
             v = 0;

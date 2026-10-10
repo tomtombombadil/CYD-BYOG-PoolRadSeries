@@ -55,6 +55,8 @@ void Names::name(const Item& it, char* out, size_t cap, bool all_words) const
         out[o] = 0;
     };
     out[0] = 0;
+    if (detect && (static_cast<int8_t>(it.r[0x32]) > 0 || static_cast<int8_t>(it.r[0x33]) > 0 || it.r[0x36]))
+        add("* ");
     if (it.count() > 0) {
         char n[8];
         snprintf(n, sizeof n, "%d ", it.count());

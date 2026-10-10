@@ -84,6 +84,10 @@ void class_bonuses(party::Character& c, const Tables& t);
 
 // Parts of it, for training and creation
 void spell_slots(party::Character& c, const Tables& t);
+// A Ring of Wizardry readied (on: magic-user levels 1-3 doubled) or put
+// away (the slots without it; magic-user spells past them forgotten, the
+// later ones first) - curse_finish_facts.md 5.3
+void wizardry(party::Character& c, const Tables& t, bool on);
 void saving_throws(party::Character& c, const Tables& t);
 void thief_skills(party::Character& c, const Tables& t);
 

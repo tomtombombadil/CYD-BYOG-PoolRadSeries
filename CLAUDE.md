@@ -223,7 +223,9 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   claude/combat_rules_facts.md, claude/combat_fx_facts.md (pictures in
   flight, magic hits, the computer's weapon; v0.41.0),
   claude/monster_fx_facts.md (monster special abilities, `combat::MonFx`;
-  v0.61.0) - read them before changing combat. The
+  v0.61.0), claude/curse_finish_facts.md (the game won, the bolt's path,
+  coughing, Detect, stat items, file names, aim-5 picking; v0.65.0) - read
+  them before changing combat. The
   playsim runs a fight with `RUNAT=<addr> FIGHT=1` (Quick for everyone;
   `FINDMON=1` lists the loaded script's LOAD MONSTER addresses - the GOG
   save A: 8AC2, 947B; `MONSWAP=area:id[:copies]` fights another monster

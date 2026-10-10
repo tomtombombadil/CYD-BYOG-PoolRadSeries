@@ -153,6 +153,7 @@ enum FightWord {
     kIsConfusedT, kRunsAway, kGoesBerserk, kIsEnraged, kIsDispelled, kResistsDispel, kGetsZapped,
     kFlameType, kHotCold, kAbortSpellQ, kYesNoF,
     kGainsItem, kCollapses, kDiesFromPoison,                                     // "Gains an item" ...
+    kIsAffectedW,                                                                // Detect's "is affected"
     kFightWords
 };
 
@@ -237,6 +238,8 @@ struct Profile {
         uint32_t cant_modify, modify, keep_exit;
         // Pool characters from a saved game: "from saved game " (GAME.OVR)
         uint32_t from_saved;
+        // Remove -> "Overwrite NAME? " -> No: "New file name: " (GAME.OVR; curse_finish_facts.md 6)
+        uint32_t new_file;
     } party;
 
     // View Character: name tables in the program and the screen's words
@@ -271,6 +274,7 @@ struct Profile {
         // strength potion's, Enlarge, Friends, Feeblemind
         uint8_t     stat_fx[5];
         uint8_t     hammer[4];                     // Spiritual Hammer: its effect, the item type, its two words
+        uint8_t     detect[4];                     // Detect Magic: its effect, the spells that give it (treasure's Detect)
     } items;
 
     // Character rules (making and training characters): the rule tables in

@@ -3231,6 +3231,33 @@ const char* tw(int i)
     return out;
 }
 
+int detect_spell();
+void treasure_menu(pic::Canvas& c);
+
+// Detect: the spell cast as in camp - out of memory, its effect on the caster
+void treasure_detect(pic::Canvas& c)
+{
+    party::Character* ch = pt->sel();
+    const int sp = detect_spell();
+    if (!ch || !sp || !load_magic()) return;
+    magic::remove(*ch, sp);
+    const int pw = spells::power(*ch, mrules->tables, sp);
+    spells::add_affect(*ch, d->prof->items.detect[0], spells::lasts(mrules->tables, sp, pw), pw, false);
+    // "NAME casts" / the spell, "NAME is affected"
+    char nm[20], w1[16], t[48];
+    ch->name(nm, sizeof nm);
+    cw(profile::kCasts, w1, sizeof w1);
+    text::clear(c, text::kTextArea);
+    snprintf(t, sizeof t, "%s %s", nm, w1);
+    put(c, t, 1, 18, 10);
+    put(c, spell_name(sp), 1, 19, 10);
+    snprintf(t, sizeof t, "%s %s", nm, tw(profile::kIsAffectedW));
+    put(c, t, 1, 21, 10);
+    dirty_rows(17, 22);
+    names->detect = true;
+    treasure_menu(c);
+}
+
 void treasure_take(pic::Canvas& c)
 {
     if (ground->any_money() && ground->n) {
@@ -3288,13 +3315,28 @@ void take_loot(int i, pic::Canvas& c)
     draw_loot(c);
 }
 
+// Detect on the treasure screen (curse_finish_facts.md 4): the selected
+// member's first memorized Detect Magic (in the list's order); 0 none
+int detect_spell()
+{
+    const party::Character* ch = pt->sel();
+    const uint8_t* ds = d->prof->items.detect;
+    if (!ch || !ch->rec[0x196] || !ds[0]) return 0;
+    for (int k = 0; k < magic::kListSize; ++k) {
+        const int s = ch->rec[magic::kListAt + k];
+        if (s && !(s & 0x80) && (s == ds[1] || s == ds[2] || s == ds[3])) return s;
+    }
+    return 0;
+}
+
 void treasure_menu(pic::Canvas& c)
 {
     char words[48];
     char a[32], b2[16];
     if (ground->any_money() || ground->n) {
         snprintf(a, sizeof a, "%s", tw(ground->any_money() ? profile::kViewTakePoolShare : profile::kViewTakePool));
-        snprintf(b2, sizeof b2, "%s", tw(profile::kExitSp));
+        // " Detect Exit" with items there and a Detect Magic memorized by the one selected
+        snprintf(b2, sizeof b2, "%s", tw(ground->n && detect_spell() ? profile::kDetectExit : profile::kExitSp));
         snprintf(words, sizeof words, "%s%s", a, b2);
     } else {
         snprintf(words, sizeof words, "%s", tw(profile::kViewPoolExit));

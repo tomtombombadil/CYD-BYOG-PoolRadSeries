@@ -80,6 +80,9 @@ public:
     // The item's name as the games print it ("Long Sword", "3 Arrows",
     // "Long Sword +1"), with the count in front when there is one.
     void name(const Item& it, char* out, size_t cap, bool all_words = false) const;
+    // Detect Magic on someone in the party (curse_finish_facts.md 4): names
+    // get "* " first for magic (plus or save plus above 0) and cursed items
+    bool detect = false;
 
 private:
     char     text_[3072] = {};          // the words, each 0-terminated

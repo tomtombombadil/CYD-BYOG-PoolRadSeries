@@ -97,7 +97,7 @@ struct Data {
     // Add / Remove / Drop words (profile party.add_from ... yes_no, in order)
     enum Roster { kAddFrom, kAddSources, kAddPrompt, kAdd, kAdded, kPaladinEvil, kRangers, kNoEvil, kOverwrite,
                   kQmark, kDrop, kForever, kSure, kDump, kOutBack, kFarewell, kRelief, kYesNo,
-                  kCantModify, kModify, kKeepExit, kFromSaved, kRosterWords };
+                  kCantModify, kModify, kKeepExit, kFromSaved, kNewFile, kRosterWords };
     char           roster[kRosterWords][40] = {};
     // Characters that can be added (.GUY files in the save folder)
     static constexpr int kMaxGuys = 48;
@@ -300,7 +300,8 @@ void journal_ready()
 // Typing (INPUT NUMBER / STRING) on the menu line
 Input        input_mode = Input::None;
 bool         input_engine = false;   // the engine asks (a new character's name, coins to take), not a script
-enum class EngineAsk : uint8_t { Name, Coins, ModName };
+enum class EngineAsk : uint8_t { Name, Coins, ModName, FileName };
+char new_base[12] = {};             // Remove: the file name typed instead (Overwrite -> No)
 EngineAsk    engine_ask = EngineAsk::Name;
 const char*  input_prompt = "";
 int          input_max = ecl::kMaxInput;
@@ -1101,6 +1102,8 @@ void open_items(pic::Canvas& c)
 }
 
 // Ready / unready an item, with the games' checks
+void item_class_values(party::Character& ch, int i);
+
 void ready_item(int i, pic::Canvas& c)
 {
     party::Character& ch = *pt->sel();
@@ -1150,6 +1153,7 @@ void ready_item(int i, pic::Canvas& c)
         rules::worn(ch, i, true);                   // (an item keyed to another alignment hurts and won't stay)
     }
     rules::recalc(ch, *names, d->facts);
+    item_class_values(ch, i);
     draw_items(c);
 }
 
@@ -1644,6 +1648,7 @@ void remove_character(pic::Canvas& c, bool overwrite_ok)
     }
     char base[12], fn[24], path[200];
     guy_base(*ch, base, sizeof base);
+    if (new_base[0]) snprintf(base, sizeof base, "%s", new_base);       // the name typed (not cleaned, as the original)
     snprintf(fn, sizeof fn, "%s.GUY", base);
     save_path(fn, path, sizeof path);
     if (!overwrite_ok && sd_fs().exists(path)) {
@@ -1652,6 +1657,7 @@ void remove_character(pic::Canvas& c, bool overwrite_ok)
         ask_yes_no(c, Ask::Overwrite, t);
         return;
     }
+    new_base[0] = 0;
     if (!write_character(base, *ch)) {
         screen = Screen::PartyMenu;
         draw_party_menu(c);
@@ -1685,8 +1691,20 @@ void yes_no_tap(int x, int y, pic::Canvas& c)
     if (ch) ch->name(nm, sizeof nm);
     screen = Screen::PartyMenu;
     if (what == Ask::Overwrite) {
-        if (k == 'Y') remove_character(c, true);
-        else draw_party_menu(c);       // (the games ask for another file name)
+        if (k == 'Y') {
+            remove_character(c, true);
+        } else {
+            // "New file name: " - up to 8, upper case; asked again while empty (no way back, as the original)
+            draw_party_menu(c);
+            input_engine = true;
+            engine_ask = EngineAsk::FileName;
+            input_prompt = rw(Data::kNewFile);
+            input_max = 8;
+            input_mode = Input::Text;
+            input_len = 0;
+            input_buf[0] = 0;
+            draw_input(c);
+        }
         return;
     }
     if (what == Ask::Drop && k == 'Y') {
@@ -2846,6 +2864,7 @@ bool shop_yes_no(Ask what, char k, pic::Canvas& c)
 }
 
 void treasure_take(pic::Canvas& c);
+void treasure_detect(pic::Canvas& c);
 void open_loot(pic::Canvas& c);
 
 void shop_tap(int x, int y, pic::Canvas& c)
@@ -2878,6 +2897,9 @@ void shop_tap(int x, int y, pic::Canvas& c)
             break;
         case 'I':
             if (treasure_on()) open_loot(c);
+            break;
+        case 'D':                       // the treasure's Detect (Detect Magic memorized)
+            if (treasure_on()) treasure_detect(c);
             break;
         case 'A':                       // Appraise: gems and jewellery
             open_appraise(c);
@@ -3061,6 +3083,21 @@ void end_magic()
     mrules = nullptr;
     delete spn;
     spn = nullptr;
+}
+
+bool load_magic();
+
+// Items that change class values as they're readied / put away
+// (curse_finish_facts.md 5): the Ring of Wizardry's spell slots, the
+// thief-skill items
+void item_class_values(party::Character& ch, int i)
+{
+    if (i < 0 || i >= ch.n_items || ch.items[i][0x3E] < 0x80) return;
+    const int code = ch.items[i][0x3E] & 0x7F;
+    if (code != 1 && code != 2 && code != 11) return;
+    if (!load_magic()) return;
+    if (code == 1) classes::wizardry(ch, mrules->tables, ch.items[i][0x34] != 0);
+    else if (ch.level(classes::Thief) > 0) classes::thief_skills(ch, mrules->tables);
 }
 
 // The rule tables and spell names (from the program), for the camp
@@ -5243,7 +5280,7 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
                                                  pp.paladin_evil, pp.rangers, pp.no_evil, pp.overwrite, pp.qmark,
                                                  pp.drop, pp.forever, pp.sure, pp.dump, pp.out_back, pp.farewell,
                                                  pp.relief, pp.yes_no, pp.cant_modify, pp.modify, pp.keep_exit,
-                                                 pp.from_saved};
+                                                 pp.from_saved, pp.new_file};
         fs::File of;
         if (open_file(d->prof->overlay, of)) {
             library::FileSource src(of);
@@ -7584,6 +7621,12 @@ void tick(uint32_t now, pic::Canvas& c)
     if (!d) return;
     // Effects run out as game time passes (walking, searching, scripts)
     if (vm && pt) {
+        // Detect Magic on anyone: magic and cursed items' names get "* "
+        if (names && d->prof->items.detect[0]) {
+            bool on = false;
+            for (int i = 0; i < pt->count && !on; ++i) on = pt->m[i].has_affect(d->prof->items.detect[0]);
+            names->detect = on;
+        }
         const int m = vm->take_minutes();
         for (int i = 0; m && i < pt->count; ++i) {
             const int before = pt->m[i].n_affects;
@@ -7760,6 +7803,10 @@ bool back(pic::Canvas& c)
         draw_party_menu(c);
         return true;
     }
+    if (input_mode != Input::None && input_engine && engine_ask == EngineAsk::FileName) {
+        input_key('\n', c);                      // Esc ends the file name as Enter does (the original)
+        return true;
+    }
     if (screen == Screen::Modify) {
         if (input_mode != Input::None) {            // the name's keyboard: the name as it was
             input_mode = Input::None;
@@ -7892,6 +7939,15 @@ void input_key(char k, pic::Canvas& c)
             engine_ask = EngineAsk::Name;
             if (pt->sel()) create::set_name(*pt->sel(), input_buf);
             draw_modify(c);
+            return;
+        }
+        if (engine_ask == EngineAsk::FileName) {
+            engine_ask = EngineAsk::Name;
+            size_t n = 0;
+            for (; input_buf[n] && n + 1 < sizeof new_base; ++n)
+                new_base[n] = static_cast<char>(toupper(static_cast<unsigned char>(input_buf[n])));
+            new_base[n] = 0;
+            remove_character(c, false);            // (that one there too: "Overwrite" again)
             return;
         }
         create_named(input_buf, c);

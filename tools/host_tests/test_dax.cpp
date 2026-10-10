@@ -4192,6 +4192,25 @@ static void test_spells_batch3()
     CHECK(create::restore(rc, st) && rc.rec[0xE7] == 1 && rc.rec[0xE8] == 5 && rc.rec[0x78] == 25 && rc.rec[0x1A4] == 20);
     rc.rec[0xE7] = 0;
     CHECK(!create::restore(rc, st));
+    // Detect Magic: "* " before magic and cursed items' names
+    uint8_t it[items::kRecordSize] = {};
+    char nmout[48];
+    nm.detect = true;
+    it[0x32] = 1;
+    nm.name(items::Item{it}, nmout, sizeof nmout);
+    CHECK(nmout[0] == '*');                                      // (no words here: the space trimmed)
+    it[0x32] = 0;
+    it[0x33] = 0xFF;                                            // (-1: no star - the original tests it signed)
+    nm.name(items::Item{it}, nmout, sizeof nmout);
+    CHECK(nmout[0] != '*');
+    it[0x36] = 1;
+    nm.name(items::Item{it}, nmout, sizeof nmout);
+    CHECK(nmout[0] == '*');                                      // (no words here: the space trimmed)
+    nm.detect = false;
+    // A Ring of Wizardry readied: magic-user levels 1-3 doubled
+    rc.rec[0x137] = 2; rc.rec[0x138] = 1; rc.rec[0x139] = 0; rc.rec[0x13A] = 1;
+    classes::wizardry(rc, st, true);
+    CHECK(rc.rec[0x137] == 4 && rc.rec[0x138] == 2 && rc.rec[0x139] == 0 && rc.rec[0x13A] == 1);
 }
 
 int main()
