@@ -249,6 +249,16 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   moves with invariant checks; MAREA / MBLOCK start it in a block). Build
   it with -fsanitize=address,undefined; give each run its own copy of the
   game folder (runs save over the slots).
+- Game testing (Tom, 2026-10-10): "test the game" means BEHAVIOUR, not
+  just crashes - every spell, item, monster ability, class / level,
+  encounter and save field must do what the original does (a +1 long
+  sword is +1 to hit AND +1 damage; Fireball does its dice, area and
+  save; encounters fire where and when the script says; levels give the
+  right HP, THAC0, saves, spells). Expected values come from the rules
+  (AD&D tables the games use), the original program's own tables and the
+  coab facts - never from our own code. The expectations live in the
+  Project (claude/behaviour_facts.md), the checks in `sweep.cpp`'s
+  `behave` mode; results reports stay out of the repo.
 - PortMaster ports are a stretch goal (Tom): keep everything portable.
 - Game screens (Walk Test, Play Test now, the games later): canvas 1:1 at the top left
   (`frame::set_left`), controls below it, on 480x320 the Companion strip on
