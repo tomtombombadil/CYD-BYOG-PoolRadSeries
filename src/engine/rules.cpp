@@ -38,10 +38,28 @@ int str_hit(const party::Character& c)
     return 0;
 }
 
-int str_damage(const party::Character& c)
+// Strength as one number (strength_group) from a record
+int group_of(const uint8_t* r)
 {
-    if (!c.rec[kUsesStrength]) return 0;
-    const int s = strength_group(c);
+    const int s = r[kStrFull];
+    if (s <= 17) return s;
+    if (s == 18) {
+        const int e = r[kStr00];
+        if (e == 0) return 18;
+        if (e <= 50) return 19;
+        if (e <= 75) return 20;
+        if (e <= 90) return 21;
+        if (e <= 99) return 22;
+        return 23;
+    }
+    if (s <= 25) return s + 5;
+    return 0;
+}
+
+int str_damage(const uint8_t* r)
+{
+    if (!r[kUsesStrength]) return 0;
+    const int s = group_of(r);
     if (s == 1 || s == 2) return -2;
     if (s >= 3 && s <= 5) return -1;
     if (s == 16) return 1;
@@ -80,22 +98,9 @@ constexpr int kPerCopper[5] = {1, 10, 100, 200, 1000};
 
 } // namespace
 
-int strength_group(const party::Character& c)
-{
-    const int s = c.rec[kStrFull];
-    if (s <= 17) return s;
-    if (s == 18) {
-        const int e = c.rec[kStr00];
-        if (e == 0) return 18;
-        if (e <= 50) return 19;
-        if (e <= 75) return 20;
-        if (e <= 90) return 21;
-        if (e <= 99) return 22;
-        return 23;
-    }
-    if (s <= 25) return s + 5;
-    return 0;
-}
+int strength_group(const party::Character& c) { return group_of(c.rec); }
+
+int strength_damage(const uint8_t* rec) { return str_damage(rec); }
 
 int max_encumbrance(const party::Character& c)
 {
@@ -432,7 +437,7 @@ void recalc(party::Character& c, const items::Names& names, const ItemFacts& f)
     const uint8_t* weapon = slot[items::kSlotWeapon];
     if (!weapon) {
         hit += str_hit(c);
-        dmg += str_damage(c);
+        dmg += str_damage(c.rec);
     } else {
         // The weapon's to-hit and damage
         const items::Item it{weapon};
@@ -442,7 +447,7 @@ void recalc(party::Character& c, const items::Names& names, const ItemFacts& f)
         dmg = t.bonus;
         if (t.flags & 0x04) {
             hit += str_hit(c);
-            dmg += str_damage(c);
+            dmg += str_damage(c.rec);
         }
         int plus = it.plus();
         if ((t.flags & 0x80) && quarrels) plus += items::Item{quarrels}.plus();

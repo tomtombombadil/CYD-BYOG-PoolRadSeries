@@ -832,6 +832,10 @@ int tick(Battle& b, Event* out, int cap)
         }
         if (!b.fx) continue;
         const MonFx& mf = b.fx->mon;
+        // The Ring of Invisibility: invisible again for the next round
+        if (b.fx->items.ring_invisible && b.fx->invisible && hasx(f, b.fx->items.ring_invisible) &&
+            !f.has(b.fx->invisible))
+            give_aff(f, b.fx->invisible, 1, 12, false);
         // Slowed poison: a hit point every 10 minutes (down to 1); run out
         // while still poisoned - "dies from poison"
         if (sting && !slow_over && hasx(f, b.fx->sp.slow_poison)) {
@@ -897,10 +901,17 @@ void battle_start(Battle& b)
 {
     g_b = &b;
     g_fx = b.fx;
-    if (!b.fx || !b.fx->invisible) return;
+    if (!b.fx) return;
     for (int i = 0; i < b.n; ++i) {
         Fighter& f = b.f[i];
+        // Displacement: the first attack on them misses again this fight
+        const int k = b.fx->items.displace ? find_aff(f, b.fx->items.displace) : -1;
+        if (k >= 0) f.aff[k][3] &= 0x0F;
+        if (!b.fx->invisible) continue;
         if (f.size && f.up() && hasx(f, b.fx->mon.start_invisible)) give_aff(f, b.fx->invisible, 255, 0xFF, false);
+        // The Ring of Invisibility: invisible (for the round; again at each round's end - tick)
+        if (b.fx->items.ring_invisible && hasx(f, b.fx->items.ring_invisible) && !f.has(b.fx->invisible))
+            give_aff(f, b.fx->invisible, 1, 12, false);
     }
 }
 
@@ -916,6 +927,53 @@ int dex_reaction(int dex)
 }
 
 int attacks_this_round(int half, int round) { return (half + (round % 2 ? 1 : 0)) / 2; }
+
+int shot_item(const Battle& b, const Fighter& f, bool* can)
+{
+    *can = false;
+    if (!b.names) return -1;
+    const int w = weapon(f, *b.names);
+    if (w < 0) return -1;
+    const items::TypeInfo& ti = b.names->type(f.items[w][0x2E]);
+    if (ti.range <= 1) return -1;
+    // (the original's: a thrown weapon itself; a launcher (8) its arrows (1)
+    // or quarrels (0x80), even when none are readied; a sling (just 2 | 8) nothing)
+    int item = (ti.flags & 0x10) ? w : -1;
+    if (ti.flags & 0x08) {
+        int arrows = -1, quarrels = -1;
+        for (int k = 0; k < f.n_items; ++k) {
+            if (!f.items[k][0x34]) continue;
+            if (f.items[k][0x2E] == b.arrow) arrows = k;
+            if (f.items[k][0x2E] == b.quarrel) quarrels = k;
+        }
+        if (ti.flags & 0x01) item = arrows;
+        if (ti.flags & 0x80) item = quarrels;
+    }
+    *can = item >= 0 || ti.flags == 0x0A;
+    return item;
+}
+
+void recount_attacks(Battle& b, int i)
+{
+    Fighter& f = b.f[i];
+    const int before = f.attacks[0];
+    bool shoots = false;
+    const int item = shot_item(b, f, &shoots);
+    int half = f.rec[kHalf1];
+    if (half < 1) half = 2;
+    if (shoots) {
+        half = b.names->type(f.items[weapon(f, *b.names)][0x2E]).attacks;
+        if (half < 2) half = 2;
+    }
+    if (b.fx && f.has(b.fx->haste)) half *= 2;
+    if (b.fx && f.has(b.fx->slow)) half /= 2;
+    int n = attacks_this_round(half, b.round);
+    if (shoots && item >= 0) {
+        const int pile = f.items[item][0x39];
+        if (pile > 0 && pile < n) n = pile;
+    }
+    if (!f.attacked || n < before || (n < before * 2 && !shoots)) f.attacks[0] = n;
+}
 
 void start_round(Battle& b, create::Dice& d)
 {
@@ -945,19 +1003,17 @@ void start_round(Battle& b, create::Dice& d)
         int mv = f.rec[kMove];
         if (mv < 1 || mv > 96) mv = 1;
         f.moves = mv * 2;
-        int half1 = f.rec[kHalf1], half2 = f.rec[kHalf2];
-        if (half1 < 1) half1 = 2;
+        int half2 = f.rec[kHalf2];
         if (b.fx && f.has(b.fx->haste)) {
             f.moves *= 2;
-            half1 *= 2;
             half2 *= 2;
         }
         if (b.fx && f.has(b.fx->slow)) {
             f.moves /= 2;
-            half1 /= 2;
             half2 /= 2;
         }
-        f.attacks[0] = attacks_this_round(half1, b.round);
+        f.attacks[0] = 0;
+        recount_attacks(b, i);
         f.attacks[1] = attacks_this_round(half2, b.round);
         if (b.fx && b.fx->entangle && f.has(b.fx->entangle)) f.moves = 0;      // entangled: no moving
         if (b.fx && hasx(f, b.fx->mon.held_fast)) f.moves = 0;                 // engulfed, hugged
@@ -1172,9 +1228,26 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
     const bool coughing = b.fx && hasx(tg, b.fx->cough);
     if (coughing) ac = tg.rec[kAcBehind] > 0x34 ? tg.rec[kAcBehind] - 2 : 0x32;
     if (stab) ac -= 4;
+    // A missile weapon readied (its range over 1): beyond a third of its
+    // range the target's AC is 2 better, beyond two thirds 5 better (the
+    // distance through walls; coab's facts, combat_rules_facts 3.4)
+    if (names && b.tables) {
+        const int w = weapon(at, *names);
+        const int reach = w >= 0 ? names->type(at.items[w][0x2E]).range : 0;
+        if (reach > 1) {
+            int dist = 0;
+            range(b, *b.tables, a, c, true, &dist);
+            const int third = (reach - 1) / 3;
+            if (dist > third) {
+                dist -= third;
+                ac += 2;
+            }
+            if (dist > third) ac += 3;
+        }
+    }
     const int times = stab ? (at.rec[kThiefLevel] - 1) / 4 + 2 : 1;
     // Large targets: the weapon's large dice
-    const bool large = (tg.rec[kSize] & 0x80) || (tg.rec[kSize] & 7) > 1;
+    const bool large = tg.rec[kSize] > 0x80 || (tg.rec[kSize] & 7) > 1;    // (0x80 itself isn't: the original's)
     int dice1 = at.rec[kDice], sides1 = at.rec[kSides], bonus1 = static_cast<int8_t>(at.rec[kBonus]);
     if (large && names) {
         const int w = weapon(at, *names);
@@ -1216,6 +1289,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
         // A helpless target: one cruel blow
         if (helpless(b, tg)) {
             out.slain = true;
+            if (at.attacks[1] <= 0 && at.attacks[0] > 0) out.shots = 1;     // (the blow counts slot 1's)
             at.attacks[0] = at.attacks[1] = 0;
             Hit h;
             h.hit = true;
@@ -1230,13 +1304,38 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
     const int plus = item ? static_cast<int8_t>(item[0x32]) : 0;
     const bool armed = names && weapon(at, *names) >= 0;
     int hits1 = 0;                              // attack 1's hits (engulfing takes both)
+    // The attacker's magic weapon against this kind of creature (its effect
+    // while readied; the target's monster type 0x11A): Flame Tongue - trolls
+    // +1, types 9 / 12 +2, the animated dead +3; Frost Brand - fire creatures
+    // +3; Dragon Slayer - dragons +2 to hit, its own damage (coab's facts,
+    // behaviour_facts.md items). To the roll (not a 1) and the damage.
+    int wbonus = 0;
+    bool slayer = false;
+    if (b.fx) {
+        const ItemFx& ix = b.fx->items;
+        const int kind = tg.rec[0x11A];
+        if (ix.flame_tongue && at.has(ix.flame_tongue))
+            wbonus += kind == 10 ? 1 : (kind == 9 || kind == 12) ? 2 : kind == 4 ? 3 : 0;
+        if (ix.frost_brand && at.has(ix.frost_brand) && kind == 8) wbonus += 3;
+        if (ix.dragon_slayer && at.has(ix.dragon_slayer) && kind == 3) slayer = true;
+    }
     for (int slot = 1; slot >= 0; --slot) {
         while (at.attacks[slot] > 0 && tg.up() && out.n < 8) {
             --at.attacks[slot];
+            if (slot == 0) ++out.shots;
             const int roll = d.roll(20, 1);
-            bool hit = roll == 20 || (roll != 1 && roll + static_cast<int8_t>(at.rec[kHit]) + side >= ac);
+            const int extra = roll > 1 ? wbonus + (slayer ? 2 : 0) : 0;
+            bool hit = roll == 20 || (roll != 1 && roll + static_cast<int8_t>(at.rec[kHit]) + side + extra >= ac);
             // Blinking, once it has acted this round: not there to be hit
             if (b.fx && b.fx->blink && tg.has(b.fx->blink) && tg.delay == 0) hit = false;
+            // Displacement: the first attack (past a 1) on it this fight misses, even a 20
+            if (b.fx && b.fx->items.displace && roll > 1) {
+                const int k = find_aff(tg, b.fx->items.displace);
+                if (k >= 0 && !(tg.aff[k][3] & 0x10)) {
+                    tg.aff[k][3] |= 0x10;
+                    hit = false;
+                }
+            }
             Hit h;
             h.hit = hit;
             if (!hit) {
@@ -1249,6 +1348,9 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             int dmg = (n && s ? d.roll(s, n) : 0) + bo;
             if (dmg < 0) dmg = 0;
             dmg *= times;
+            // The magic weapon's own damage (a dragon slayer's: 3 x d12 + 4 + Strength's)
+            dmg += wbonus;
+            if (slayer) dmg = d.roll(12, 1) * 3 + 4 + rules::strength_damage(at.rec);
             bool bane = false;
             if (b.fx) {
                 const MonFx& m = b.fx->mon;
@@ -1425,7 +1527,8 @@ bool can_backstab(const Battle& b, int a, int c, const items::Names* names)
 {
     const Fighter& at = b.f[a];
     const Fighter& tg = b.f[c];
-    if (!at.rec[kThiefLevel] || tg.received < 2 || (tg.rec[kSize] & 0x80) || (tg.rec[kSize] & 7) > 1) return false;
+    // (man-sized or smaller: the size byte without its top bit 1 or less - the original's test)
+    if (!at.rec[kThiefLevel] || tg.received < 2 || (tg.rec[kSize] & 0x7F) > 1) return false;
     if (direction(at.x, at.y, tg.x, tg.y) != tg.facing) return false;
     if (names && b.fx) {
         const int w = weapon(at, *names);

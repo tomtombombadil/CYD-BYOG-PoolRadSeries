@@ -123,6 +123,17 @@ struct SpellFx {
     uint8_t shield;                     // Shield: AC 3 at worst, saves +1, Magic Missile stopped
 };
 
+// The effects magic items give while readied (item 0x3E = 0x80: the effect
+// in 0x3D; claude/behaviour_facts.md items, coab's facts): the Flame Tongue's
+// bonus by the target's monster type (troll +1, types 9 / 12 +2, the
+// animated dead +3), the Dragon Slayer's (dragons: +2 to hit, damage 3 x
+// d12 + 4 + Strength's), the Frost Brand's (fire creatures +3), the Cloak of
+// Displacement (the first attack on its wearer each fight misses), the Ring
+// of Invisibility (invisible at a fight's start and at each round's end)
+struct ItemFx {
+    uint8_t flame_tongue, dragon_slayer, frost_brand, displace, ring_invisible;
+};
+
 // The effects the fights' rules look at (per game, from the profile)
 struct Facts {
     uint8_t held[4];                    // can't act, slain by any blow: snake charm, paralysed, asleep, helpless
@@ -146,6 +157,7 @@ struct Facts {
     uint8_t bestow, blink, fumbling, silence, entangle, sticks, faerie, blinded, animals_blind, feeble;
     MonFx   mon;
     SpellFx sp;
+    ItemFx  items;
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a
@@ -342,6 +354,17 @@ int next(Battle& b, create::Dice& d);
 // Attacks this round: half attacks (record 0x11C slot 1, 0x11D slot 2) by
 // round (3 half attacks = 1, 2, 1, 2 ...)
 int attacks_this_round(int half, int round);
+// Slot 1's attacks worked out again (the round's start; after View / Use
+// in a fight - the weapon may have changed): a missile weapon readied with
+// what it shoots gives its own half attacks (at least 2) instead of the
+// fighter's, then Haste / Slow, never more than the pile it shoots holds;
+// once it has attacked this round only fewer count (a blow up to twice as
+// many) - coab's facts, combat_rules_facts 3.1
+void recount_attacks(Battle& b, int i);
+// What fighter f's readied missile weapon shoots (its range over 1): the
+// item that flies (the thrown weapon itself, the readied arrows / quarrels;
+// -1 none); *can: it can shoot (a sling needs nothing)
+int shot_item(const Battle& b, const Fighter& f, bool* can);
 
 // ---- Attacking
 struct Hit {
@@ -359,6 +382,7 @@ struct Attack {
     bool avoided[8] = {};               // a hit dodged ("Avoids it"; counted a miss)
     Event ev[8];                        // the extras after hits (poison, paralysis, a touch's damage, engulfing ...)
     int  n_ev = 0;
+    int  shots = 0;                     // the weapon's (slot 1) attacks made: a shot uses one missile each
 };
 // A backstab: a thief (backstabbing weapon or none) straight behind a man-
 // sized target that has had an attack this round already: the rear AC 4
