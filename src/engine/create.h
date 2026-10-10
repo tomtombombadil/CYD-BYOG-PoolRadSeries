@@ -77,6 +77,13 @@ int con_hp_adj(const party::Character& c, const classes::Tables& t);
 // could be trained.
 bool train(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, bool silent);
 
+// Restoration (spell_facts.md 0x38): a lost level back - the hit points
+// lost with the levels (record 0xE8) shared by them (0xE7) back to the
+// maximum, current and rolled hit points; the class with the lowest level
+// (then the least experience to its next level) that may go up rises one,
+// its experience raised to that level's when below it. False: no level lost.
+bool restore(party::Character& c, const classes::Tables& t);
+
 // The classes a character has the experience for (and no race limit), as
 // class mask bits (the tables' class masks; a training hall's 0x7EA8 uses
 // the same bits)

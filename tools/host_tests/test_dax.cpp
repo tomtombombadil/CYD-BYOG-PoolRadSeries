@@ -2045,7 +2045,8 @@ static void test_geo_view()
 // scripts reading the selected character
 static void test_party()
 {
-    party::Character ch;
+    static party::Character ch;
+    ch = party::Character{};
     uint8_t rec[party::kRecordSize] = {};
     rec[0] = 5;
     memcpy(rec + 1, "ALICE", 5);
@@ -2213,7 +2214,8 @@ static void test_items()
     CHECK(strcmp(t, "10 Arrows") == 0);
 
     // A fighter: Str 18/00, Dex 17, base AC 10 (50), THAC0 20 (40), move 12
-    party::Character ch;
+    static party::Character ch;
+    ch = party::Character{};
     ch.rec[0x10] = ch.rec[0x11] = 18; ch.rec[0x1C] = ch.rec[0x1D] = 100; ch.rec[0x16] = ch.rec[0x17] = 17;
     ch.rec[0x73] = 40; ch.rec[0x74] = 7; ch.rec[0x10B] = 5; ch.rec[0xE4] = 12;
     ch.rec[0x11E] = 1; ch.rec[0x120] = 2; ch.rec[0x124] = 50; ch.rec[0x125] = 1; ch.rec[0x12B] = 0xFF;
@@ -4024,6 +4026,113 @@ static void test_spells_batch2()
     CHECK(b.f[0].x == 20 && b.who[12][20] == 1 && !b.f[0].has(0x3A) && !b.f[3].has(0x90));
 }
 
+// Slow Poison, Spiritual Hammer, Animate Dead, Restoration
+static void test_spells_batch3()
+{
+    static combat::Facts fx;
+    fx = combat::Facts{};
+    fx.mon.poisoned = 0x37; fx.mon.troll_up = 0x66;
+    fx.sp.slow_poison = 0x16; fx.sp.poison_damage = 0x0F; fx.sp.hammer = 0x17; fx.sp.animated = 0x20;
+    static uint8_t rec[3][party::kRecordSize];
+    static uint8_t aff[3][combat::kMonsterAffects][party::kAffectSize];
+    static int naff[3];
+    static combat::Battle b;
+    create::Dice d(9);
+    b = combat::Battle{};
+    b.fx = &fx;
+    for (int y = 0; y < combat::kH; ++y)
+        for (int x = 0; x < combat::kW; ++x) b.ground[y][x] = 0x37;
+    memset(rec, 0, sizeof rec);
+    memset(aff, 0, sizeof aff);
+    for (int i = 0; i < 3; ++i) {
+        uint8_t* r = rec[i];
+        r[0x196] = 1; r[0x197] = i == 2; r[0xDE] = 1; r[0x78] = r[0x1A4] = 20;
+        naff[i] = 0;
+        combat::Fighter& f = b.f[i];
+        f = combat::Fighter{};
+        f.rec = r; f.aff = aff[i]; f.n_aff = &naff[i]; f.max_aff = combat::kMonsterAffects;
+        f.member = i < 2 ? i : -1;
+        f.monster = i < 2 ? -1 : 0;
+        f.x = 10 + i * 3; f.y = 10; f.size = 1;
+    }
+    b.n = 3;
+    b.party_size = 2;
+    combat::occupancy(b);
+    static uint8_t sds[0x40 * 16];
+    memset(sds, 0, sizeof sds);
+    uint8_t* e = sds + 0x1A * 16;
+    e[0] = 0; e[1] = 2; e[5] = 60; e[6] = 4; e[11] = 2;
+    e = sds + 0x24 * 16;
+    e[0] = 3; e[1] = 7; e[6] = 8; e[11] = 2;
+    classes::Layout sl{};
+    sl.lo = 0; sl.hi = sizeof sds; sl.spells = 0; sl.spell_count = 0x40;
+    static classes::Tables st;
+    CHECK(st.set(sl, sds, sizeof sds));
+    combat::SpellLine out[16];
+    // Slow Poison: the poisoned (dead) member gets back up with 1 hit point
+    aff[1][0][0] = 0x37; aff[1][0][3] = 0xFF; naff[1] = 1;
+    combat::damage(b, 1, 50);                                   // (off the field)
+    rec[1][0x195] = party::Dead;
+    CHECK(!b.f[1].up() && b.f[1].size == 0);
+    rec[0][0x109] = 3;                                          // a 3rd level cleric
+    int one = 1;
+    const combat::FightSpell slow{0x1A, combat::SpellDoes::SlowPoison, 0, 0, 0, 0, 0, 1};
+    int n = combat::cast(b, st, 0, 0x1A, slow, &one, 1, d, out, 16);
+    CHECK(n == 2 && out[0].did == combat::Did::Word && out[1].did == combat::Did::Risen);
+    CHECK(b.f[1].up() && b.f[1].hp() == 1 && b.f[1].size == 1 && b.f[1].has(0x16) && b.f[1].has(0x0F));
+    // ... a hit point every 10 rounds (down to 1); run out while still poisoned: dies
+    rec[1][0x1A4] = 5;
+    combat::Event ev[4];
+    for (int r = 0; r < 10; ++r) combat::tick(b, ev, 4);
+    CHECK(b.f[1].hp() == 4 && b.f[1].has(0x0F));
+    for (int k = 0; k < naff[1]; ++k)
+        if (aff[1][k][0] == 0x16) { aff[1][k][1] = 2; aff[1][k][2] = 0; }
+    combat::tick(b, ev, 4);
+    n = combat::tick(b, ev, 4);
+    CHECK(n == 1 && ev[0].ev == combat::Ev::DiesPoison && b.f[1].status() == party::Dead && !b.f[1].has(0x0F));
+    // Animate Dead (by the monster): the dead member up on its side, animated
+    rec[2][0x10E] = 0;
+    int two = 2;
+    const combat::FightSpell anim{0x24, combat::SpellDoes::Animate, 0, 0, 0, 0, 0, 1};
+    rec[1][0xF7] = 0x00;
+    n = combat::cast(b, st, 2, 0x24, anim, &two, 1, d, out, 16);
+    CHECK(n == 2 && out[0].who == 1 && out[0].did == combat::Did::Risen && out[1].did == combat::Did::Word);
+    CHECK(b.f[1].up() && b.f[1].team() == 1 && b.f[1].status() == party::Animated && b.f[1].hp() == 20 &&
+          rec[1][0xF7] == 0xB3 && b.f[1].was_control == 0 && b.f[1].has(0x20) && aff[1][naff[1] - 1][3] >> 4 == 0);
+    // Outside fights: the poison clock
+    static party::Character ch;
+    ch = party::Character{};
+    rules::CureFacts cf{};
+    cf.poisoned = 0x37; cf.slow_poison = 0x16; cf.poison_damage = 0x0F;
+    ch.rec[0x1A4] = 10; ch.rec[0x195] = party::Okay;
+    ch.affects[0][0] = 0x37; ch.affects[0][3] = 0xFF;
+    ch.affects[1][0] = 0x16; ch.affects[1][1] = 120; ch.affects[1][3] = 0xFF;
+    ch.affects[2][0] = 0x0F; ch.affects[2][1] = 10; ch.affects[2][3] = 0xFF;
+    ch.n_affects = 3;
+    CHECK(!rules::poison_clock(ch, 35, cf) && ch.rec[0x1A4] == 7 && ch.affects[2][1] == 5);
+    CHECK(rules::poison_clock(ch, 200, cf) && ch.rec[0x195] == party::Dead && ch.n_affects == 1);
+    // Spiritual Hammer: in hand while the effect lasts
+    static party::Character hc;
+    hc = party::Character{};
+    static items::Names nm;
+    rules::ItemFacts itf{};
+    itf.hammer_fx = 0x17; itf.hammer_type = 20; itf.hammer_word = 20; itf.hammer_word2 = 243;
+    CHECK(!rules::keep_hammer(hc, nm, itf) && hc.n_items == 0);
+    hc.affects[0][0] = 0x17; hc.n_affects = 1;
+    CHECK(rules::keep_hammer(hc, nm, itf) && hc.n_items == 1 && hc.items[0][0x2E] == 20 && hc.items[0][0x34] == 1 &&
+          hc.items[0][0x31] == 243 && hc.items[0][0x32] == 1);
+    CHECK(!rules::keep_hammer(hc, nm, itf) && hc.n_items == 1);
+    hc.n_affects = 0;
+    CHECK(!rules::keep_hammer(hc, nm, itf) && hc.n_items == 0);
+    // Restoration: the lost hit points shared by the lost levels back
+    static party::Character rc;
+    rc = party::Character{};
+    rc.rec[0xE7] = 2; rc.rec[0xE8] = 10; rc.rec[0x78] = 20; rc.rec[0x1A4] = 15; rc.rec[0x12C] = 20;
+    CHECK(create::restore(rc, st) && rc.rec[0xE7] == 1 && rc.rec[0xE8] == 5 && rc.rec[0x78] == 25 && rc.rec[0x1A4] == 20);
+    rc.rec[0xE7] = 0;
+    CHECK(!create::restore(rc, st));
+}
+
 int main()
 {
     test_rle_known_bytes();
@@ -4058,6 +4167,7 @@ int main()
     test_combat();
     test_monster_fx();
     test_spells_batch2();
+    test_spells_batch3();
     test_create();
     if (failures) {
         printf("%d check(s) failed\n", failures);

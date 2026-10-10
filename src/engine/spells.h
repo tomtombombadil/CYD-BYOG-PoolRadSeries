@@ -62,6 +62,10 @@ enum class Does : uint8_t {
     Reduce,         // a failed save takes Enlarge away (word); else nothing at all
     Friends,        // the caster's Charisma + 2d4 (word)
     Strength,       // + d4 / d6 / d8 by class (no word); fighters over 18: 18/xx
+    Hammer,         // Spiritual Hammer: its effect on the caster (word; the caller hands over the hammer:
+                    // rules::keep_hammer)
+    Dispel,         // Dispel Magic: each of the target's effects (but data 0xFF) by level against level (word)
+    Restore,        // Restoration: a lost level back (word; else nothing)
 };
 struct CampSpell {
     uint8_t  spell;
@@ -85,6 +89,7 @@ struct Facts {
     uint8_t elf_race, slow;
     uint8_t disease[3], disease_with[3][2];
     uint8_t enlarge;                    // Enlarge's effect (Reduce takes it away)
+    uint8_t hammer;                     // Spiritual Hammer's effect
 };
 // The Strength Enlarge gives at the caster's level, as an effect's data
 // (18/xx: xx + 1; 19 and up: + 100); 0 at 12th level and above (18)

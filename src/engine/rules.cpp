@@ -576,6 +576,36 @@ int price(const uint8_t* item, int factor)
     }
 }
 
+bool keep_hammer(party::Character& c, const items::Names& names, const ItemFacts& f)
+{
+    if (!f.hammer_type) return false;
+    int at = -1;
+    for (int i = 0; i < c.n_items; ++i)
+        if (c.items[i][0x2E] == f.hammer_type && c.items[i][0x31] == f.hammer_word2) at = i;
+    const bool wanted = f.hammer_fx && find_effect(c, f.hammer_fx) >= 0;
+    if (!wanted) {
+        if (at >= 0) remove_item(c, at);
+        return false;
+    }
+    if (at >= 0 || c.n_items >= party::kMaxItems) return false;
+    // The weapon in hand goes back in the pack
+    for (int i = 0; i < c.n_items; ++i)
+        if (c.items[i][0x34] && names.type(c.items[i][0x2E]).slot == items::kSlotWeapon && !c.items[i][0x36]) {
+            c.items[i][0x34] = 0;
+            worn(c, i, false);
+        }
+    uint8_t* it = c.items[c.n_items++];
+    memset(it, 0, items::kRecordSize);
+    it[0x2E] = f.hammer_type;
+    it[0x30] = f.hammer_word;
+    it[0x31] = f.hammer_word2;
+    it[0x32] = 1;                           // +1
+    it[0x34] = 1;                           // readied
+    it[0x3D] = f.hammer_fx;
+    it[0x3E] = 0xA0;
+    return true;
+}
+
 bool worn(party::Character& c, int i, bool on)
 {
     if (i < 0 || i >= c.n_items) return true;
@@ -747,6 +777,35 @@ bool needs_cure(const party::Character& c, Cure cure, const CureFacts& f)
     case kStoneToFlesh: return c.health() == party::Stoned;
     default: return true;
     }
+}
+
+bool poison_clock(party::Character& c, int minutes, const CureFacts& f)
+{
+    if (minutes <= 0 || !f.slow_poison) return false;
+    const int sp = find_effect(c, f.slow_poison);
+    if (sp < 0) return false;
+    const int left = c.affects[sp][1] | c.affects[sp][2] << 8;
+    const bool over = left > 0 && minutes >= left;
+    const int pd = f.poison_damage ? find_effect(c, f.poison_damage) : -1;
+    if (pd >= 0) {
+        int m = c.affects[pd][1] | c.affects[pd][2] << 8, t = over ? left - 1 : minutes;
+        while (m > 0 && t >= m) {
+            t -= m;
+            if (c.rec[0x1A4] > 1) --c.rec[0x1A4];
+            m = 10;
+        }
+        m -= t;
+        if (m < 1) m = 1;
+        c.affects[pd][1] = static_cast<uint8_t>(m);
+        c.affects[pd][2] = static_cast<uint8_t>(m >> 8);
+    }
+    if (!over || find_effect(c, f.poisoned) < 0) return false;
+    remove_affects(c, f.slow_poison);
+    remove_affects(c, f.poison_damage);
+    c.rec[0x1A4] = 0;
+    c.rec[0x195] = party::Dead;
+    c.rec[0x196] = 0;
+    return true;
 }
 
 void apply_cure(party::Character& c, Cure cure, const CureFacts& f, create::Dice& d)

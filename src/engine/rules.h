@@ -20,6 +20,8 @@ struct ItemFacts {
     // Effects in the stats: Strength, the giant strength potion's, Enlarge,
     // Friends, Feeblemind (0: none)
     uint8_t strength_fx = 0, giant_fx = 0, enlarge_fx = 0, friends_fx = 0, feeble_fx = 0;
+    // Spiritual Hammer: its effect, the item's type and name words
+    uint8_t hammer_fx = 0, hammer_type = 0, hammer_word = 0, hammer_word2 = 0;
 };
 
 // The stats as they stand (the games' recalculation; spell_facts.md and
@@ -87,6 +89,10 @@ void remove_item(party::Character& c, int i);
 // damage. False when the item didn't stay readied. (The others - stats,
 // a ring of wizardry ... - are to come.)
 bool worn(party::Character& c, int i, bool on);
+// Spiritual Hammer (spell_facts.md 0x1C): while they have its effect, the
+// hammer is in their items, readied (a new one when it's gone and there's
+// room: +1, "Gains an item" - true); without it, the hammer goes
+bool keep_hammer(party::Character& c, const items::Names& names, const ItemFacts& f);
 // Halve: a pile of n becomes n - n/2 and a new pile of n/2 (not readied);
 // false when it can't (one of it, or 16 items already)
 bool halve(party::Character& c, int i);
@@ -108,6 +114,11 @@ struct CureFacts {
 };
 // Removes a character's effects of a type; how many
 int remove_affects(party::Character& c, uint8_t type);
+// Slow Poison's clock as `minutes` pass outside fights (spell_facts.md
+// 0x1A): a hit point every 10 minutes (down to 1); when Slow Poison runs
+// out while they're still poisoned, they die ("dies from poison": true).
+// Call before the effects' minutes are taken (magic::tick_affects).
+bool poison_clock(party::Character& c, int minutes, const CureFacts& f);
 // Whether the cure does anything for them (else the temple asks "cast cure
 // anyway?"; wounds always do)
 bool needs_cure(const party::Character& c, Cure cure, const CureFacts& f);

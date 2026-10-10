@@ -4019,8 +4019,11 @@ void do_cast(pic::Canvas& c)
         if (cr.scroll) magic::scroll_used(me, scroll_facts(), cr.item, cr.spell);
         else magic::used(me, cr.item);
     }
-    // (Strength, Enlarge, Friends: the stats as they stand now)
-    for (int k = 0; k < pt->count; ++k) rules::recalc(pt->m[k], *names, d->facts);
+    // (Strength, Enlarge, Friends: the stats as they stand now; Spiritual Hammer's hammer)
+    for (int k = 0; k < pt->count; ++k) {
+        rules::keep_hammer(pt->m[k], *names, d->facts);
+        rules::recalc(pt->m[k], *names, d->facts);
+    }
     cr.at = 0;
     pt->selected = cr.caster;
     if (cr.on_camp) draw_party(c, 17);
@@ -5117,6 +5120,10 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         d->facts.enlarge_fx = pi.stat_fx[2];
         d->facts.friends_fx = pi.stat_fx[3];
         d->facts.feeble_fx = pi.stat_fx[4];
+        d->facts.hammer_fx = pi.hammer[0];
+        d->facts.hammer_type = pi.hammer[1];
+        d->facts.hammer_word = pi.hammer[2];
+        d->facts.hammer_word2 = pi.hammer[3];
         fs::File tf;
         if (pi.types_file && open_file(pi.types_file, tf)) {
             library::FileSource src(tf);
@@ -7217,8 +7224,20 @@ void tick(uint32_t now, pic::Canvas& c)
         const int m = vm->take_minutes();
         for (int i = 0; m && i < pt->count; ++i) {
             const int before = pt->m[i].n_affects;
+            if (rules::poison_clock(pt->m[i], m, d->prof->cures)) {
+                // "NAME dies from poison" on the menu line
+                char nm[20], w[24], t[48];
+                pt->m[i].name(nm, sizeof nm);
+                ow(d->prof->fight.words[profile::kDiesFromPoison], w, sizeof w);
+                snprintf(t, sizeof t, "%s %s", nm, w);
+                cv = &c;
+                note(c, t);
+            }
             magic::tick_affects(pt->m[i], m);
-            if (pt->m[i].n_affects != before) rules::recalc(pt->m[i], *names, d->facts);   // one ran out
+            if (pt->m[i].n_affects != before) {         // one ran out
+                rules::keep_hammer(pt->m[i], *names, d->facts);
+                rules::recalc(pt->m[i], *names, d->facts);
+            }
         }
     }
     if (note_until && !note_held && static_cast<int32_t>(now - note_until) >= 0) {

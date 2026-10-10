@@ -405,6 +405,39 @@ void train_classes(party::Character& c, const classes::Tables& t, const Facts& f
     r[kHp] = static_cast<uint8_t>(r[kHpMax] - lost);
 }
 
+bool restore(party::Character& c, const classes::Tables& t)
+{
+    uint8_t* r = c.rec;
+    const int lost = r[0xE7];
+    if (lost <= 0) return false;
+    const int hp = r[0xE8] / lost;
+    r[kHpMax] = static_cast<uint8_t>(r[kHpMax] + hp);
+    r[kHp] = static_cast<uint8_t>(r[kHp] + hp);
+    r[kHpRolled] = static_cast<uint8_t>(r[kHpRolled] + hp);
+    r[0xE8] = static_cast<uint8_t>(r[0xE8] - hp);
+    --r[0xE7];
+    int pick = -1, lim_level = 13;
+    int32_t lim_exp = 10000000, need_pick = 0;
+    for (int k = 0; k <= classes::Monk; ++k) {
+        const int lv = c.level(k);
+        if (lv <= 0) continue;
+        const int32_t need = t.exp_needed(k, lv);
+        if (lv <= lim_level && need > 0 && need < lim_exp && !race_limited(c, k, lv)) {
+            pick = k;
+            lim_level = lv;
+            lim_exp = need;
+            need_pick = need;
+        }
+    }
+    if (pick >= 0) {
+        ++r[kLevels + pick];
+        if (c.exp() < static_cast<uint32_t>(need_pick))
+            for (int i = 0; i < 4; ++i) r[kExp + i] = static_cast<uint8_t>(need_pick >> (8 * i));
+        classes::class_bonuses(c, t);
+    }
+    return true;
+}
+
 bool train(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, bool silent)
 {
     const int mask = trainable(c, t);

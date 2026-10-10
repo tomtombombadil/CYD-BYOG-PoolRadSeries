@@ -648,6 +648,29 @@ void end_effect(Battle& b, Fighter& f, int k)
     drop_aff(f, k);
 }
 
+// Back on its feet on its own square (a troll, the slow-poisoned, the
+// animated): all its hit points when `full`; false when the square isn't free
+bool stand_up(Battle& b, int i, bool full)
+{
+    Fighter& f = b.f[i];
+    if (f.status() == party::Stoned || f.status() == party::Gone || f.gone) return false;
+    int sx[4], sy[4];
+    const int sq = squares(f.down_size ? f.down_size : 1, sx, sy);
+    for (int q = 0; q < sq; ++q) {
+        const int x = f.x + sx[q], y = f.y + sy[q];
+        if (!on_field(x, y) || b.ground[y][x] == 0 || (b.who[y][x] && b.who[y][x] != i + 1)) return false;
+    }
+    f.size = f.down_size ? f.down_size : 1;
+    if (full) f.rec[kHp] = f.rec[kHpMax];
+    f.rec[kHealth] = party::Okay;
+    f.rec[kInCombat] = 1;
+    f.bleeding = 0;
+    // A party member's body goes from the ground
+    if (f.member >= 0 && on_field(f.x, f.y) && b.ground[f.y][f.x] == kBody && f.ground) b.ground[f.y][f.x] = static_cast<uint8_t>(f.ground);
+    occupancy(b);
+    return true;
+}
+
 } // namespace
 
 TurnFx turn_effects(Battle& b, int i)
@@ -755,7 +778,7 @@ int tick(Battle& b, Event* out, int cap)
     int n = 0;
     for (int i = 0; i < b.n; ++i) {
         Fighter& f = b.f[i];
-        bool regen = false, rise = false;
+        bool regen = false, rise = false, sting = false, slow_over = false;
         for (int k = 0; f.n_aff && k < *f.n_aff;) {
             const int m = f.aff[k][1] | f.aff[k][2] << 8;
             if (m == 0) {
@@ -763,6 +786,8 @@ int tick(Battle& b, Event* out, int cap)
             } else if (m <= 1) {
                 if (b.fx && b.fx->mon.regen_wait && f.aff[k][0] == b.fx->mon.regen_wait) regen = true;
                 if (b.fx && b.fx->mon.troll_up && f.aff[k][0] == b.fx->mon.troll_up) rise = true;
+                if (b.fx && b.fx->sp.poison_damage && f.aff[k][0] == b.fx->sp.poison_damage) sting = true;
+                if (b.fx && b.fx->sp.slow_poison && f.aff[k][0] == b.fx->sp.slow_poison) slow_over = true;
                 end_effect(b, f, k);
             } else {
                 f.aff[k][1] = static_cast<uint8_t>(m - 1);
@@ -772,29 +797,38 @@ int tick(Battle& b, Event* out, int cap)
         }
         if (!b.fx) continue;
         const MonFx& mf = b.fx->mon;
+        // Slowed poison: a hit point every 10 minutes (down to 1); run out
+        // while still poisoned - "dies from poison"
+        if (sting && !slow_over && hasx(f, b.fx->sp.slow_poison)) {
+            give_aff(f, b.fx->sp.poison_damage, 10, 0xFF, true);
+            if (f.hp() > 1) f.rec[kHp] = static_cast<uint8_t>(f.hp() - 1);
+        }
+        if (slow_over && hasx(f, mf.poisoned)) {
+            const int pd = find_aff(f, b.fx->sp.poison_damage);
+            if (pd >= 0) drop_aff(f, pd);
+            if (f.up()) {
+                f.rec[kHp] = 0;
+                f.rec[kHealth] = party::Dead;
+                fall(b, i);
+                if (n < cap) {
+                    out[n] = Event{};
+                    out[n].who = static_cast<uint8_t>(i);
+                    out[n++].ev = Ev::DiesPoison;
+                }
+            }
+        }
         // A troll: its wait over, it regenerates; fallen, it gets up again
         // with all its hit points when its square is free (else a round later)
         if (regen && mf.regen) give_aff(f, mf.regen, 0, 0xFF, false);
         if (rise) {
-            int sx[4], sy[4];
-            const int sq = squares(f.down_size ? f.down_size : 1, sx, sy);
-            bool room = f.status() != party::Stoned && f.status() != party::Gone && !f.gone;
-            for (int q = 0; q < sq && room; ++q) {
-                const int x = f.x + sx[q], y = f.y + sy[q];
-                room = on_field(x, y) && b.ground[y][x] != 0 && b.who[y][x] == 0;
-            }
-            if (room) {
-                f.size = f.down_size ? f.down_size : 1;
-                f.rec[kHp] = f.rec[kHpMax];
-                f.rec[kHealth] = party::Okay;
-                f.rec[kInCombat] = 1;
-                f.bleeding = 0;
-                occupancy(b);
+            // (a troll: all its hit points; the slow-poisoned: those they have)
+            const bool full = !hasx(f, b.fx->sp.slow_poison);
+            if (!f.up() && stand_up(b, i, full)) {
                 if (n < cap) {
                     out[n].who = static_cast<uint8_t>(i);
                     out[n++].ev = f.team() ? Ev::StandsUp : Ev::GetsUp;
                 }
-            } else if (f.status() != party::Stoned && f.status() != party::Gone) {
+            } else if (!f.up() && f.status() != party::Stoned && f.status() != party::Gone) {
                 give_aff(f, mf.troll_up, 1, 0xFF, true);
             }
         }
@@ -2245,6 +2279,56 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         if (b.aim_x >= 0) dispel_clouds(b, b.aim_x, b.aim_y, pw, d);
         break;
     }
+    case SpellDoes::SlowPoison:
+        // The poisoned (dead by it) get back up with 1 hit point while it lasts
+        for (int k = 0; k < m && b.fx; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (f.status() == party::Animated || !hasx(f, b.fx->mon.poisoned)) continue;
+            if (f.hp() == 0) f.rec[kHp] = 1;
+            if (b.fx->sp.slow_poison) give_aff(f, b.fx->sp.slow_poison, minutes, 0xFF, true);
+            say(who[k], Did::Word, 0);
+            if (!f.up()) {
+                if (stand_up(b, who[k], false)) say(who[k], Did::Risen, 0);
+                else if (b.fx->mon.troll_up) give_aff(f, b.fx->mon.troll_up, 1, 0xFF, true);    // (a round later)
+            }
+            if (b.fx->sp.poison_damage) give_aff(f, b.fx->sp.poison_damage, 10, 0xFF, true);
+        }
+        break;
+    case SpellDoes::Hammer:
+        // (the hammer itself: the caller, rules::keep_hammer)
+        if (b.fx && b.fx->sp.hammer) give_aff(me, b.fx->sp.hammer, pw, pw, true);
+        break;
+    case SpellDoes::Animate: {
+        // Up to the caster's level: the dead (characters, not monsters) back
+        // up on the caster's side, run by the computer, until the fight ends
+        int left = pw;
+        for (int c = 0; c < b.n && left > 0 && b.fx; ++c) {
+            Fighter& f = b.f[c];
+            if (f.status() != party::Dead || f.rec[0x11A] != 0 || f.gone) continue;
+            const int old_team = f.team() ? 1 : 0;
+            if (!stand_up(b, c, true)) continue;
+            --left;
+            f.rec[kTeam] = me.rec[kTeam];
+            f.quick = true;
+            f.target = -1;
+            f.rec[0xE9] = 2;                                // undead
+            f.rec[kMove] = 6;
+            memset(f.rec + 0x1E, 0, 84);                    // no spells
+            f.was_control = f.rec[kControl];
+            f.rec[kControl] = f.rec[kControl] > 0x7F ? 0xB2 : 0xB3;
+            f.rec[0x11A] = 4;                               // animated dead
+            f.rec[kHealth] = party::Animated;
+            if (b.fx->sp.animated) give_aff(f, b.fx->sp.animated, 0, old_team << 4 | (pw & 0x0F), true);
+            say(c, Did::Risen, 0);
+            say(c, Did::Word, 0);
+        }
+        break;
+    }
+    case SpellDoes::Restore:
+        // (the level itself: the caller, create::restore)
+        for (int k = 0; k < m; ++k)
+            if (b.f[who[k]].rec[0xE7] > 0) say(who[k], Did::Word, 0);
+        break;
     case SpellDoes::Sleep: {
         int budget = d.roll(4, 4);
         for (int k = 0; k < m; ++k) {

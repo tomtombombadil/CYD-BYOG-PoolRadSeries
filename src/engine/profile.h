@@ -152,6 +152,7 @@ enum FightWord {
     // Confusion's turns, Dispel Evil's blow, the fire shield ("flame type: ", "Hot Cold", "Abort spell? ", "Yes No")
     kIsConfusedT, kRunsAway, kGoesBerserk, kIsEnraged, kIsDispelled, kResistsDispel, kGetsZapped,
     kFlameType, kHotCold, kAbortSpellQ, kYesNoF,
+    kGainsItem, kCollapses, kDiesFromPoison,                                     // "Gains an item" ...
     kFightWords
 };
 
@@ -269,6 +270,7 @@ struct Profile {
         // The effects the stats are worked out with: Strength, the giant
         // strength potion's, Enlarge, Friends, Feeblemind
         uint8_t     stat_fx[5];
+        uint8_t     hammer[4];                     // Spiritual Hammer: its effect, the item type, its two words
     } items;
 
     // Character rules (making and training characters): the rule tables in

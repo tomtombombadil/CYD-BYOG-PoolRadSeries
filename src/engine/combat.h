@@ -109,8 +109,11 @@ struct MonFx {
 // berserk in it), Dispel Evil (attacks on the caster by the evil -7; its
 // hits dispel them), the fire shields (hot, cold; zap: those hitting it
 // from next to it take twice the damage)
+// Slow Poison (slow_poison, its hourly poison_damage), Spiritual Hammer,
+// Animate Dead (the animated)
 struct SpellFx {
     uint8_t enlarge, confuse, berserk, evil_ward, evil_bane, hot, cold, zap;
+    uint8_t slow_poison, poison_damage, hammer, animated;
 };
 
 // The effects the fights' rules look at (per game, from the profile)
@@ -179,6 +182,7 @@ struct Fighter {
     bool    gone = false;               // a monster there was no room for: not in the fight at all
     bool    fleeing = false;            // turned undead, panic: runs for the field's edge
     int     down_size = 0;              // its footprint before it fell (a troll gets up again)
+    uint8_t was_control = 0;            // its control byte before Animate Dead (back after the fight)
     int     spell = 0;                  // a spell being cast (it goes off at its delay)
     int     spell_n = 0;                // the computer's targets for it
     uint8_t spell_t[24] = {};
@@ -255,6 +259,8 @@ enum class Ev : uint8_t {
     Unaffected, Down, Suffocates, StandsUp, GetsUp,
     // Dispel Evil's hit: "is dispelled" / "resists dispel evil"; a fire shield: "gets zapped"
     Dispelled, ResistsDispel, Zapped,
+    // Slow Poison run out, still poisoned: "dies from poison"
+    DiesPoison,
     // the beholder casts spell `amount` (the caller casts it, as the computer does)
     Cast,
 };
@@ -483,6 +489,10 @@ enum class SpellDoes : uint8_t {
     FireShield,                         // the caster: hot ("is protected", word) or cold (nothing said)
     Teleport,                           // Dimension Door: the caller moves the caster (teleport(); word)
     Dispel,                             // Dispel Magic: effects and clouds by level against level (word)
+    SlowPoison,                         // the poisoned get back up (word), poisoned again when it runs out
+    Hammer,                             // Spiritual Hammer: its effect on the caster (the caller hands over the hammer)
+    Animate,                            // Animate Dead: the dead (not monsters) up on the caster's side (word)
+    Restore,                            // Restoration: those with lost levels (word; the caller restores them)
 };
 struct FightSpell {
     uint8_t   spell;
@@ -497,7 +507,8 @@ struct FightSpell {
     uint32_t  word3 = 0;                // a third ("has an item un-cursed")
 };
 // What happened to each target, in order
-enum class Did : uint8_t { Word, Damage, Unaffected, Misses, Healed, Down, Word2, Fallen, Word3 };    // Fallen: the skull, no words
+// Fallen: the skull, no words; Risen: "gets back up" / "stands up and grins"
+enum class Did : uint8_t { Word, Damage, Unaffected, Misses, Healed, Down, Word2, Fallen, Word3, Risen };
 struct SpellLine {
     uint8_t who;
     Did     did;

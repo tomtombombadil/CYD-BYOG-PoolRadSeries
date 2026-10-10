@@ -290,6 +290,34 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
             if (cs.word) o.say(who[k], Said::Word);
         }
         break;
+    case Does::Hammer:
+        // (the hammer itself: rules::keep_hammer, by the caller)
+        give(me, f.hammer, pw, pw, true);
+        if (cs.word) o.say(caster, Said::Word);
+        break;
+    case Does::Dispel:
+        for (int k = 0; k < n; ++k) {
+            party::Character& c = p.m[who[k]];
+            bool any = false;
+            for (int i = 0; i < c.n_affects;) {
+                const int data = c.affects[i][3], lvl = data & 0x0F;
+                const int chance = pw > lvl ? 50 + 5 * (pw - lvl) : pw < lvl ? 50 - 2 * (lvl - pw) : 50;
+                if (data == 0xFF || d.roll(100, 1) > chance) {
+                    ++i;
+                    continue;
+                }
+                for (int j = i; j + 1 < c.n_affects; ++j) memcpy(c.affects[j], c.affects[j + 1], party::kAffectSize);
+                --c.n_affects;
+                memset(c.affects[c.n_affects], 0, party::kAffectSize);
+                any = true;
+            }
+            if (any && cs.word) o.say(who[k], Said::Word);
+        }
+        break;
+    case Does::Restore:
+        for (int k = 0; k < n; ++k)
+            if (create::restore(p.m[who[k]], t) && cs.word) o.say(who[k], Said::Word);
+        break;
     case Does::Friends:
         give(me, e.affect, minutes, d.roll(4, 2), false);
         if (cs.word) o.say(caster, Said::Word);

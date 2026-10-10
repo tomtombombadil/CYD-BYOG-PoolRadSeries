@@ -429,8 +429,20 @@ stay in the session's scratch space, never in the repo.
    each one in the area - the original's; "is affected"; the clouds next
    to the square aimed at likewise against their caster's level, a failed
    one resists from then on), the magic-users' Bestow Curse (no effect, as
-   in the original). Still to come: Spiritual Hammer, Animate Dead,
-   Restoration, Slow Poison in fights.
+   in the original).
+   v0.63.0: **Slow Poison** in fights (the poisoned get back up with 1 HP:
+   "is affected", "gets back up"; a hit point every 10 minutes, down to 1;
+   when it runs out still poisoned: "dies from poison" - in fights and out
+   of them, `rules::poison_clock`), **Spiritual Hammer** (fights and camp:
+   the hammer - type 20, words "Hammer" "Spiritual", +1 - in hand while
+   the effect lasts, back each round if dropped, "Gains an item"; gone when
+   it ends), **Animate Dead** (the computer's, from items / monsters: up to
+   its level of the dead - characters, not monsters - back up on its side,
+   undead, no spells, movement 6: "gets back up" / "stands up and grins",
+   "is animated"; after the fight they collapse, dead, on their own side
+   again), **Restoration** (fights and camp: a lost level back - the hit
+   points lost with the levels shared by them, the lowest class that may
+   rise up one: "is restored"), **Dispel Magic** in camp.
 7. **All four games**: the per-game differences (PoD's VGA graphics), party
    transfer between games.
 

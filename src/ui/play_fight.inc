@@ -1072,6 +1072,7 @@ void event_page(const combat::Event& e)
     case combat::Ev::Dispelled: fallen(profile::kIsDispelled); break;
     case combat::Ev::ResistsDispel: said(profile::kResistsDispel); break;
     case combat::Ev::Zapped: said(profile::kGetsZapped); break;
+    case combat::Ev::DiesPoison: fallen(profile::kDiesFromPoison); break;
     }
 }
 
@@ -1462,6 +1463,7 @@ void begin_round(pic::Canvas& c)
 
 void round_rest(pic::Canvas& c);
 void round_clouds(pic::Canvas& c);
+void fight_hammer(int i);
 
 void round_end(pic::Canvas& c)
 {
@@ -1471,6 +1473,8 @@ void round_end(pic::Canvas& c)
     combat::Event ev[8];
     const int nev = combat::tick(fg->b, ev, 8);
     for (int k = 0; k < nev; ++k) event_page(ev[k]);
+    // Spiritual Hammer: back in hand each round while it lasts, gone after
+    for (int k = 0; k < fg->b.party_size; ++k) fight_hammer(k);
     // Those standing in a poisonous cloud breathe it again
     for (int k = 0; k < fg->b.n; ++k) {
         const combat::Fighter& f = fg->b.f[k];
@@ -2174,6 +2178,22 @@ void fight_cleanup_party(combat::Result r)
             if (ch.affects[k][0] == charm) combat::uncharm(ch.rec, ch.affects[k]);     // back on the party's side
         for (uint8_t t : d->prof->fight.ends)
             if (t) rules::remove_affects(ch, t);
+        rules::keep_hammer(ch, *names, d->facts);       // (its effect ended: the hammer goes)
+        // Animated dead: they collapse - dead, on their own side again
+        const uint8_t anim = d->prof->fight.facts.sp.animated;
+        for (int k = 0; anim && k < ch.n_affects; ++k)
+            if (ch.affects[k][0] == anim) {
+                ch.rec[0x197] = static_cast<uint8_t>(ch.affects[k][3] >> 4);
+                rules::remove_affects(ch, anim);
+                ch.rec[0x195] = party::Dead;
+                ch.rec[0x196] = 0;
+                ch.rec[0x1A4] = 0;
+                ch.rec[0xE9] = 0;
+                ch.rec[0x11A] = 0;
+                ch.rec[0x1A5] = 12;
+                if (fg && i < fg->b.n) ch.rec[0xF7] = fg->b.f[i].was_control;
+                break;
+            }
         uint8_t* rec = ch.rec;
         if (r == combat::Lost) continue;
         if (rec[0x195] == party::Running) rec[0x195] = party::Okay;
@@ -2648,6 +2668,14 @@ void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::Fi
             add_page(l[k].who, t);
             page_fx_set(1, hit_fx(l[k].who, true));
             break;
+        case combat::Did::Risen: {
+            // Back on its feet: "gets back up" (the party's side) / "stands up and grins"
+            add_page(l[k].who, fw(f.team() ? profile::kStandsUp : profile::kGetsBackUp));
+            Fx r;
+            r.kind = Fx::Redraw;
+            page_fx_set(1, r);
+            break;
+        }
         case combat::Did::Misses: add_page(caster, fw(profile::kMisses), nullptr, l[k].who); break;
         case combat::Did::Fallen:
             if (fg->pages > 0) fg->page[fg->pages - 1].fx[1] = skull_fx(l[k].who);
@@ -2680,6 +2708,21 @@ void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::Fi
             }
         }
     }
+}
+
+// Spiritual Hammer: a party fighter with its effect holds the hammer ("Gains
+// an item" when it's new); without it the hammer goes
+void fight_hammer(int i)
+{
+    combat::Fighter& f = fg->b.f[i];
+    if (f.member < 0 || f.member >= pt->count) return;
+    party::Character& ch = pt->m[f.member];
+    const int before = ch.n_items;
+    const bool gained = rules::keep_hammer(ch, *names, d->facts);
+    if (gained) add_page(i, fw(profile::kGainsItem));
+    if (gained || ch.n_items != before) rules::recalc(ch, *names, d->facts);
+    f.items = ch.items;
+    f.n_items = ch.n_items;
 }
 
 void cast_now(pic::Canvas& c, bool forgotten)
@@ -2766,9 +2809,18 @@ void cast_now(pic::Canvas& c, bool forgotten)
     const int n = combat::cast(b, mrules->tables, i, sp, *fs, fg->sp_t, fg->sp_n, rng, lines, 24, pw);
     b.aim_x = b.aim_y = -1;
     spell_pages(i, lines, n, *fs, each);
+    // Restoration: the levels themselves; Spiritual Hammer: the hammer
+    if (fs->does == combat::SpellDoes::Restore)
+        for (int k = 0; k < n; ++k) {
+            const combat::Fighter& rf = b.f[lines[k].who];
+            if (lines[k].did == combat::Did::Word && rf.member >= 0 && rf.member < pt->count)
+                create::restore(pt->m[rf.member], mrules->tables);
+        }
+    if (fs->does == combat::SpellDoes::Hammer) fight_hammer(i);
     // Strength, items and effects changed: the party's values again
     if (fs->does == combat::SpellDoes::Enlarge || fs->does == combat::SpellDoes::Reduce ||
-        fs->does == combat::SpellDoes::RemoveCurse || fs->does == combat::SpellDoes::Dispel)
+        fs->does == combat::SpellDoes::RemoveCurse || fs->does == combat::SpellDoes::Dispel ||
+        fs->does == combat::SpellDoes::Restore)
         for (int k = 0; k < pt->count; ++k) rules::recalc(pt->m[k], *names, d->facts);
     // The spell flies with its first page, with its sound: the fireball's
     // roar, the bolt's crackle (its own picture), else the spell's
