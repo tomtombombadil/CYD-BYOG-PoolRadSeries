@@ -68,6 +68,7 @@ struct Facts {
     uint8_t charm;                      // Charm Person's effect (its data: the caster's side << 7, the
                                         // charmed one's own << 6, 0x20, the caster's level)
     uint8_t fear;                       // Fear's effect (they flee; data 1: a party member made Quick by it)
+    uint8_t cough;                      // coughing in a stinking cloud (a round: no items, no spells)
     // How a shot looks in flight, by the item type that flies: pointed (an
     // arrow's picture by direction), spinning, a flask, a sling's stone; the
     // rest a rock
@@ -109,6 +110,8 @@ struct Fighter {
     int     target = -1;
     int     ground = 0;                 // the square's ground before a body was left there
     bool    guarding = false, quick = false, attacked = false, turned_undead = false, can_cast = true;
+    bool    can_use = true;             // items this round (coughing: not)
+    bool    coughed = false;            // "is coughing" said this round
     bool    swept = false;              // swept this round
     bool    gone = false;               // a monster there was no room for: not in the fight at all
     bool    fleeing = false;            // turned undead, panic: runs for the field's edge

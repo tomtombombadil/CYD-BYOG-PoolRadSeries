@@ -589,6 +589,8 @@ void start_round(Battle& b, create::Dice& d)
         f.attacked = false;
         f.swept = false;
         f.can_cast = true;
+        f.can_use = true;
+        f.coughed = false;
         if (!f.up() || !f.size) {
             f.delay = f.moves = f.attacks[0] = f.attacks[1] = 0;
             continue;
@@ -1868,7 +1870,10 @@ Did breathe_cloud(Battle& b, int i, create::Dice& d)
 {
     Fighter& f = b.f[i];
     if (!f.up() || helpless(b, f)) return Did::Unaffected;
-    if (saving_throw(f, 0, 0, d)) return Did::Word2;
+    if (saving_throw(f, 0, 0, d)) {
+        if (b.fx && b.fx->cough) give_aff(f, b.fx->cough, 1, 0, false);      // coughing for a round
+        return Did::Word2;
+    }
     if (b.fx) give_aff(f, b.fx->held[3], d.roll(4, 1) + 1, 0, false);
     return Did::Word;
 }

@@ -220,7 +220,7 @@ void blit4(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y, bool mi
 // ---- The fight's state (on the heap while fighting)
 enum class FSt : uint8_t {
     Begin, Turn, Menu, Move, Aim, DoneMenu, Speed, Ai, Pages, RoundEnd, Results, Destroyed, AllyAsk, FleeAsk,
-    ContinueAsk, Next, UseAim, AbortAsk, RoundRest, Clouds
+    ContinueAsk, Next, UseAim, AbortAsk, RoundRest, Clouds, Resume
 };
 
 // A page's pictures: a missile or spell flying, a burst / sparkles on a
@@ -1193,6 +1193,16 @@ void start_turn(pic::Canvas& c)
     fg->use_item = -1;
     if (!f.team() || on_screen(fg->cur)) focus(fg->cur, 2);
     draw_fight(c);
+    // Coughing (a stinking cloud's): no items and no spells this round
+    const uint8_t cough = d->prof->fight.facts.cough;
+    if (cough && f.has(cough) && !f.coughed) {
+        f.coughed = true;
+        f.can_use = false;
+        f.can_cast = false;
+        add_page(fg->cur, fw(profile::kIsCoughing));
+        say(c, FSt::Resume);
+        return;
+    }
     if (f.spell) {
         // A spell begun earlier this round goes off (lost if they were hurt)
         const int sp = f.spell;
@@ -1322,7 +1332,7 @@ void fight_menu(pic::Canvas& c)
     words[0] = 0;
     if (f.moves > 1) strcat(words, fw(profile::kFMove));
     strcat(words, fw(profile::kFViewAim));
-    if (f.n_items) strcat(words, fw(profile::kFUse));
+    if (f.n_items && f.can_use) strcat(words, fw(profile::kFUse));
     bool spells = false;
     for (int k = 0; k < magic::kListSize; ++k)
         if (f.rec[magic::kListAt + k] && !(f.rec[magic::kListAt + k] & 0x80)) spells = true;
@@ -1728,7 +1738,7 @@ void ai_step(pic::Canvas& c)
             return;
         }
         // The computer's magic items (monsters, NPCs and Quick members), then spells
-        if (!f.fleeing && f.n_items && combat::standing(b, f.team() ? 0 : 1) && load_magic()) {
+        if (!f.fleeing && f.n_items && f.can_use && combat::standing(b, f.team() ? 0 : 1) && load_magic()) {
             int tg[combat::kMaxFighters], nt = 0;
             const int k = combat::choose_item(b, fg->t, mrules->tables, i, *names, d->prof->fight.spells,
                                               d->prof->fight.n_spells, rng, tg, &nt);
@@ -2151,6 +2161,9 @@ void fight_tick(uint32_t now, pic::Canvas& c)
             break;
         case FSt::Clouds:
             round_clouds(c);
+            break;
+        case FSt::Resume:
+            start_turn(c);                  // (the turn goes on after its message)
             break;
         default:
             after_attack(c);
