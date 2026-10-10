@@ -42,7 +42,10 @@ namespace {
 // (fallbacks), 0x02EC (formation facings), 0x02FC (facing to battlefield
 // direction), 0x0300 / 0x0308 (rank centres), 0x0310 (shapes), outdoor
 // terrain flags DS 0x0354, the turn-undead table DS 0x0369; combat's
-// words in GAME.OVR; the effects a fight's end takes away.
+// words in GAME.OVR; the effects a fight's end takes away. Shots in flight
+// by the flying item's type (coab's notes): pointed - darts 9, javelins 21,
+// hornet's-nest darts 100, quarrels 28, spears 31, arrows 73; spinning -
+// hand axes 2, clubs 7, glaives 14; flasks 85, 86; slings 47, 98, 101.
 // Alter (camp): its menu, Select Exit / Place Exit (START.EXE image 0xB05C,
 // 0xB086, 0xB0AF) and its words in GAME.OVR.
 // Casting in camp: what each spell does outside combat (coab's notes on
@@ -304,7 +307,8 @@ const Profile kProfiles[] = {
       {0x03, 0x0B, 0x0D, 0x15, 0x17, 0x1B, 0x1F, 0x23, 0x28, 0x33, 0x34, 0x35, 0x3A, 0x4D, 0x5B, 0x88, 0x8E,
        0x90},
       {{0x33, 0x34, 0x35, 0x1F}, 0x01, 0x02, 0x31, 0x27, 0x2A, 0x19, 0x08, 0x09, 0x1C,
-       {0x07, 0x08, 0x23, 0x24, 0x25, 0x61}},
+       {0x07, 0x08, 0x23, 0x24, 0x25, 0x61},
+       {9, 21, 100, 28, 31, 73}, {2, 7, 14}, {85, 86}, {47, 98, 101}},
       kCurseFight, sizeof kCurseFight / sizeof kCurseFight[0]},
      {0x29A2, 0x29B3, 0xA28D, 0xA295, 0xA2A2, 0x3222},
      &kCurseRandom, 0x0830,

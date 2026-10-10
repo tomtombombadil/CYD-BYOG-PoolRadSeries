@@ -65,6 +65,10 @@ struct Facts {
     uint8_t held[4];                    // can't act, slain by any blow: snake charm, paralysed, asleep, helpless
     uint8_t bless, curse, prayer, haste, slow, invisible, prot_evil, prot_good, mirror;
     uint8_t backstab_weapons[6];        // the weapons a thief backstabs with (or none)
+    // How a shot looks in flight, by the item type that flies: pointed (an
+    // arrow's picture by direction), spinning, a flask, a sling's stone; the
+    // rest a rock
+    uint8_t shot_pointed[6], shot_spinning[3], shot_flask[2], shot_sling[3];
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a
@@ -253,6 +257,34 @@ struct Plan {
 // quarrels readied, a thrown weapon (flag 0x10), another with a range (a
 // sling); 0: none. `ammo`: the item a shot uses up (one of the pile; -1 none).
 int missile(const Battle& b, const Fighter& f, int* ammo);
+
+// ---- Pictures in flight (the combat sprites, COMSPR: 0-2 an arrow up /
+// slanted / across, 3 an axe, 4 a flask, 5 a spell, 6 lightning, 7 a rock,
+// 8 a sling stone, 9 sparkles, 10 a burst). A flight steps 8 pixels at a
+// time (a third of a square), `delay` ms a step, cycling `frames` pictures.
+struct Flight {
+    uint8_t pic = 0, frames = 0, delay = 0, sound = 0;
+    uint8_t slot[4] = {};               // the cycle: bit 0 the attack picture, bit 1 mirrored
+};
+enum class Shot : uint8_t { Pointed, Spinning, Flask, Sling, Rock };
+Shot shot_kind(const Facts& fx, int item_type);
+// What a shot by fighter f looks like (the readied sling's stone, else the
+// item that flies - `ammo`, or the weapon) flying in direction `dir`, and
+// its sound (the games' numbers: 0x0C a whistle, 6 a sling / flask, 9 a whoosh)
+Flight shot_flight(const Battle& b, const Fighter& f, int ammo, int dir);
+// A spell's flight (picture 5; lightning 6): the 4-picture cycle
+Flight spell_flight(int pic, int delay);
+// A flight's positions: from square (x0, y0) toward (x1, y1) in 8-pixel
+// steps; the n-th position (1 = the first step) in 8-pixel cells, false past
+// the last one drawn (a step short of the target; none when they're next to
+// each other at most 2 cells apart)
+struct FlightPath {
+    int x = 0, y = 0;                   // the current cell
+    int tx = 0, ty = 0, sx = 0, sy = 0, ax = 0, ay = 0, err = 0;
+    int left = 0;                       // positions still to draw
+};
+void flight_begin(FlightPath& p, int x0, int y0, int x1, int y1);
+bool flight_step(FlightPath& p);
 // The computer's move: next to an enemy it attacks (its target first); else
 // with a missile weapon it shoots at its target in reach and sight (or a
 // random one there); else it steps toward its target; else it guards.
@@ -358,5 +390,23 @@ int money_exp(const int money[7]);
 int award(Battle& b, int total);
 // The readied weapon among the fighter's items (-1: none)
 int weapon(const Fighter& f, const items::Names& names);
+
+// ---- The computer's weapon (Quick members, NPCs; the facts' 5.3)
+// A weapon's worth: dice x sides + 8 x its plus + 2 x the type's damage
+// bonus (when above 0) + 2 x (attacks - 1) for a launcher + 3 one-handed;
+// 0 when cursed or when the hands (`hands_used` besides the weapon and
+// shield) would pass 3
+int weapon_rating(const items::Names& names, const uint8_t* item, int hands_used);
+// The weapon fighter i should hold: each weapon its classes can use rated;
+// the best missile weapon (a launcher with its arrows / quarrels readied, a
+// sling, a thrown weapon) when it rates over half the best melee weapon
+// (which must beat the bare hands' dice) and it can be used now (thrown, or
+// no enemy next to them); else the best melee weapon (-1: bare hands).
+// kKeep: as it is (already held, or the held one is cursed).
+constexpr int kKeep = -2;
+int choose_weapon(const Battle& b, int i);
+// A pure missile weapon (a bow, crossbow, sling: not thrown) held with an
+// enemy next to them
+bool missile_in_melee(const Battle& b, int i);
 
 } // namespace combat

@@ -3105,7 +3105,7 @@ static void test_combat()
     std::vector<uint8_t> itypes(2 + items::kTypes * 16, 0);
     dax::MemorySource isrc(itypes.data(), static_cast<uint32_t>(itypes.size()));
     CHECK(inames.read_types(isrc));
-    static uint8_t mitems[2][items::kRecordSize];
+    static uint8_t mitems[3][items::kRecordSize];
     memset(mitems, 0, sizeof mitems);
     mitems[1][0x34] = 1; mitems[1][0x3C] = 5; mitems[1][0x3D] = 1;
     sb.f[1].items = mitems;
@@ -3136,6 +3136,98 @@ static void test_combat()
     CHECK(combat::missile(sb, sb.f[1], &ammo) == 3 && ammo == 0);   // thrown: the axe goes
     mitems[0][0x2E] = 47;
     CHECK(combat::missile(sb, sb.f[1], &ammo) == 7 && ammo == -1);  // a sling: nothing goes
+    // How shots look in flight: the sling's stone (2 pictures, sound 6)
+    static const uint8_t pointed[6] = {9, 21, 100, 28, 31, 73}, spinning[3] = {2, 7, 14}, flask[2] = {85, 86},
+                         sling[3] = {47, 98, 101};
+    memcpy(fx.shot_pointed, pointed, 6); memcpy(fx.shot_spinning, spinning, 3);
+    memcpy(fx.shot_flask, flask, 2); memcpy(fx.shot_sling, sling, 3);
+    combat::Flight fl = combat::shot_flight(sb, sb.f[1], -1, 2);
+    CHECK(fl.pic == 8 && fl.frames == 2 && fl.slot[0] == 0 && fl.slot[1] == 1 && fl.delay == 10 && fl.sound == 6);
+    // a bow's arrow: one picture by direction (east: across; west: its attack
+    // picture; south-west: the slant's attack picture mirrored), the whistle
+    mitems[0][0x2E] = 41;
+    fl = combat::shot_flight(sb, sb.f[1], 1, 2);
+    CHECK(fl.pic == 2 && fl.frames == 1 && fl.slot[0] == 0 && fl.sound == 0x0C && fl.delay == 10);
+    fl = combat::shot_flight(sb, sb.f[1], 1, 6);
+    CHECK(fl.pic == 2 && fl.slot[0] == 1);
+    fl = combat::shot_flight(sb, sb.f[1], 1, 4);
+    CHECK(fl.pic == 0 && fl.slot[0] == 1);
+    fl = combat::shot_flight(sb, sb.f[1], 1, 5);
+    CHECK(fl.pic == 1 && fl.slot[0] == 3);
+    fl = combat::shot_flight(sb, sb.f[1], 1, 7);
+    CHECK(fl.pic == 1 && fl.slot[0] == 2);
+    // a thrown axe spins (4 pictures); anything else flies as a rock
+    mitems[0][0x2E] = 2;
+    fl = combat::shot_flight(sb, sb.f[1], 0, 3);
+    CHECK(fl.pic == 3 && fl.frames == 4 && fl.slot[1] == 2 && fl.slot[2] == 3 && fl.slot[3] == 1 && fl.sound == 9 &&
+          fl.delay == 50);
+    mitems[0][0x2E] = 5;
+    fl = combat::shot_flight(sb, sb.f[1], 0, 3);
+    CHECK(fl.pic == 7 && fl.frames == 2 && fl.delay == 20 && fl.sound == 9);
+    mitems[0][0x2E] = 47;
+    // The path: 8-pixel cells, a step short of the target; next door: 2 drawn
+    combat::FlightPath fp;
+    combat::flight_begin(fp, 2, 2, 5, 3);
+    int nfp = 0, lx = 0, ly = 0;
+    while (combat::flight_step(fp)) { ++nfp; lx = fp.x; ly = fp.y; }
+    CHECK(nfp == 8 && lx == 14 && ly == 9);
+    combat::flight_begin(fp, 2, 2, 3, 3);
+    nfp = 0;
+    while (combat::flight_step(fp)) ++nfp;
+    CHECK(nfp == 2 && fp.x == 8 && fp.y == 8);
+    combat::flight_begin(fp, 2, 2, 2, 2);
+    CHECK(!combat::flight_step(fp));
+    // The computer's weapon: a bow (2 hands, 1d6, 2 attacks) with readied
+    // arrows rates 8, a long sword (1 hand, 1d8) 11 - the bow while no enemy
+    // is next to them (over half the sword), the sword when one is
+    {
+        static uint8_t keep_items[3][items::kRecordSize], keep_rec[2][party::kRecordSize];
+        memcpy(keep_items, mitems, sizeof mitems);
+        memcpy(keep_rec, mrec, sizeof keep_rec);
+        const int keep_n = sb.f[1].n_items, keep_x0 = sb.f[0].x, keep_x1 = sb.f[1].x, keep_y0 = sb.f[0].y,
+                  keep_y1 = sb.f[1].y;
+        auto ty = [&](int t, int slot, int hands, int dice, int sides, int attacks, int range, int flags) {
+            uint8_t* q = &itypes[2 + t * 16];
+            q[0] = (uint8_t)slot; q[1] = (uint8_t)hands; q[5] = (uint8_t)attacks; q[9] = (uint8_t)dice;
+            q[10] = (uint8_t)sides; q[12] = (uint8_t)range; q[13] = 0xFF; q[14] = (uint8_t)flags;
+        };
+        ty(41, 0, 2, 1, 6, 2, 10, 0x0B);
+        ty(36, 0, 1, 1, 8, 1, 0, 0x04);
+        ty(73, 9, 0, 0, 0, 0, 0, 0);
+        dax::MemorySource isrc3(itypes.data(), static_cast<uint32_t>(itypes.size()));
+        CHECK(inames.read_types(isrc3));
+        memset(mitems, 0, sizeof mitems);
+        mitems[0][0x2E] = 41; mitems[0][0x34] = 1;
+        mitems[1][0x2E] = 73; mitems[1][0x34] = 1; mitems[1][0x39] = 10;
+        mitems[2][0x2E] = 36;
+        sb.f[1].items = mitems;
+        sb.f[1].n_items = 3;
+        mrec[1][0x12B] = 0xFF; mrec[1][0x11E] = 1; mrec[1][0x120] = 2; mrec[1][0x185] = 2;
+        mrec[1][0x195] = 0; mrec[1][0x196] = 1; mrec[0][0x196] = 1;
+        CHECK(combat::weapon_rating(inames, mitems[0], 0) == 8 && combat::weapon_rating(inames, mitems[2], 0) == 11);
+        sb.f[0].x = 10; sb.f[1].x = 12; sb.f[0].y = sb.f[1].y = 10;
+        combat::occupancy(sb);
+        CHECK(combat::choose_weapon(sb, 1) == combat::kKeep && !combat::missile_in_melee(sb, 1));
+        sb.f[0].x = 11;
+        combat::occupancy(sb);
+        CHECK(combat::missile_in_melee(sb, 1) && combat::choose_weapon(sb, 1) == 2);
+        mitems[0][0x36] = 1;                                             // a cursed bow stays
+        CHECK(combat::choose_weapon(sb, 1) == combat::kKeep);
+        mitems[0][0x36] = 0;
+        sb.f[0].x = 10;
+        combat::occupancy(sb);
+        mitems[1][0x34] = 0;                                             // no arrows readied: the sword
+        CHECK(combat::choose_weapon(sb, 1) == 2);
+        mitems[0][0x34] = 0; mitems[2][0x34] = 1;                        // holding it: as it is
+        CHECK(combat::choose_weapon(sb, 1) == combat::kKeep);
+        mitems[1][0x34] = 1;                                             // arrows again: the bow
+        CHECK(combat::choose_weapon(sb, 1) == 0);
+        memcpy(mitems, keep_items, sizeof mitems);
+        memcpy(mrec, keep_rec, sizeof keep_rec);
+        sb.f[1].n_items = keep_n;
+        sb.f[0].x = keep_x0; sb.f[1].x = keep_x1; sb.f[0].y = keep_y0; sb.f[1].y = keep_y1;
+        combat::occupancy(sb);
+    }
     // The computer shoots at the party member 2 squares off (not next to it)
     sb.f[1].attacks[0] = 1;
     sb.f[1].delay = 1;

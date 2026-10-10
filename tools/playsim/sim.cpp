@@ -6,7 +6,11 @@
 // game A at the party menu first; otherwise BEGIN with no party; VIEW=n then
 // views character n), AREA / BLOCK (start
 // script), SETVAR=addr=value, CHOICES=digits, TYPE=text, TELE=x,y,dir,
-// FINDLOCK, PAUSESHOT, ANIMSHOTS, MS (ms to settle). Needs an out/ folder.
+// FINDLOCK, PAUSESHOT, ANIMSHOTS, MS (ms to settle). Fights: FINDMON lists
+// the script's LOAD MONSTERs (RUNAT=that address FIGHT=1 runs the fight),
+// FIGHTOPS, FORCESPELL=m:id,id (fighter m has those spells), FORCEWEAPON=m:type
+// (fighter m's weapon becomes that type), FXSHOTS=n (snapshots of the pages'
+// pictures in flight). Needs an out/ folder.
 #include "ui/play.cpp"
 #include "engine/rules.h"
 #include <vector>
@@ -298,6 +302,13 @@ int main(int argc, char** argv)
     settle(0, getenv("MS") ? atoi(getenv("MS")) : 60000);
     if (getenv("CAMPRUN")) run_ops(getenv("CAMPRUN"));
     shot("start");
+    if (getenv("FINDMON")) {
+        // LOAD MONSTER (0x0B) with three plain numbers in the script: where (for RUNAT)
+        auto b = [](unsigned a) { return play::vm->get((uint16_t)a) & 0xFF; };
+        for (unsigned a = 0x8000; a < 0x8000 + 0x1F00; ++a)
+            if (b(a) == 0x0B && b(a + 1) == 0 && b(a + 3) == 0 && b(a + 5) == 0 && b(a + 4) >= 1 && b(a + 4) <= 12)
+                printf("  LOAD MONSTER at %04X: id %u, %u copies, icon %u\n", a, b(a + 2), b(a + 4), b(a + 6));
+    }
     if (getenv("RUNAT")) {
         // Run the script from an address (e.g. a shop), then BUY=n,n,...
         // buys those goods for character 0, READY=i readies their item i
@@ -312,12 +323,44 @@ int main(int argc, char** argv)
             // taken), the results and treasure tapped through
             auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
             shot("fight_start");
+            if (play::fg) for (int i = 0; i < play::fg->b.n; ++i) { const auto& f = play::fg->b.f[i]; printf("  fighter %d at %d,%d size %d icon %d px %p up %d rec141 %d 142 %d 144 %d\n", i, f.x, f.y, f.size, f.icon, (void*)play::fg->icon[f.icon].px[0], f.up(), f.rec[0x141], f.rec[0x142], f.rec[0x144]); }
             int turns = 0, n = 0;
             const char* fops = getenv("FIGHTOPS");      // taps while the fight waits: letters, &rr rows; then Quick
             for (int k = 0; k < 200000 && (play::screen == play::Screen::Fight || play::screen == play::Screen::SpellList || play::screen == play::Screen::Items); ++k) {
                 g_now += 50;
                 play::tick(g_now, C);
                 if (!play::fg) continue;
+                static bool forced_item = false;
+                if (!forced_item && getenv("FORCEWEAPON")) {
+                    // FORCEWEAPON=m:type: fighter m's readied weapon becomes that type (to try shots)
+                    forced_item = true;
+                    const int m = atoi(getenv("FORCEWEAPON")), ty = atoi(strchr(getenv("FORCEWEAPON"), ':') + 1);
+                    combat::Fighter& f = play::fg->b.f[m];
+                    int w = combat::weapon(f, *play::names);
+                    if (w < 0 && f.member >= 0) {           // none: one is given
+                        party::Character& ch = play::pt->m[f.member];
+                        w = ch.n_items++;
+                        memset(ch.items[w], 0, sizeof ch.items[w]);
+                        ch.items[w][0x34] = 1;
+                        f.items = ch.items;
+                        f.n_items = ch.n_items;
+                    }
+                    if (w >= 0) { f.items[w][0x2E] = (uint8_t)ty; f.items[w][0x39] = 5; }
+                    printf("  fighter %d: weapon %d now type %d\n", m, w, ty);
+                    if (play::fg->st == play::FSt::Menu) play::fight_menu(C);
+                }
+                static bool forced = false;
+                if (!forced && getenv("FORCESPELL")) {
+                    // FORCESPELL=m:id,id...: fighter m has those spells in memory (to try them)
+                    forced = true;
+                    const char* q = getenv("FORCESPELL");
+                    const int m = atoi(q);
+                    q = strchr(q, ':');
+                    for (int k = 0; q && *q; ++k) { ++q; play::fg->b.f[m].rec[magic::kListAt + k] = (uint8_t)strtol(q, nullptr, 16); q = strchr(q, ','); }
+                    play::fg->b.f[m].can_cast = true;
+                    if (play::fg->st == play::FSt::Menu) play::fight_menu(C);
+                    printf("  forced spells: fighter %d (of %d), list %02X %02X\n", m, play::fg->b.n, play::fg->b.f[m].rec[magic::kListAt], play::fg->b.f[m].rec[magic::kListAt + 1]);
+                }
                 const bool asks = play::screen == play::Screen::SpellList || play::screen == play::Screen::Items ||
                                   (play::fg->st == play::FSt::Menu || play::fg->st == play::FSt::Aim || play::fg->st == play::FSt::DoneMenu);
                 if (asks && fops && *fops) {
@@ -327,8 +370,13 @@ int main(int argc, char** argv)
                         continue;
                     }
                     if (*fops == '&') { const int r = (fops[1] - '0') * 10 + (fops[2] - '0'); fops += 3; play::tap(4 * 8 + 2, r * 8 + 2, C); }
-                    else if (*fops == '#') { ++fops; static int fo = 0; char t[16]; snprintf(t, 16, "fops%d", fo++); shot(t); printf("  [fight st %d screen %d menu %s%s]\n", (int)play::fg->st, (int)play::screen, play::menu.prompt, play::menu.s); }
+                    else if (*fops == '#') { ++fops; static int fo = 0; char t[16]; snprintf(t, 16, "fops%d", fo++); shot(t); printf("  [fight st %d screen %d cur %d items %d cast %d list %02X menu %s%s]\n", (int)play::fg->st, (int)play::screen, play::fg->cur, play::fg->cur >= 0 ? play::fg->b.f[play::fg->cur].n_items : -1, play::fg->cur >= 0 ? (int)play::fg->b.f[play::fg->cur].can_cast : -1, play::fg->cur >= 0 ? play::fg->b.f[play::fg->cur].rec[magic::kListAt] : 0, play::menu.prompt, play::menu.s); }
                     else { tap_word(*fops++); }
+                    continue;
+                }
+                if (getenv("FXSHOTS") && play::fg->fx_on) {
+                    static int fx_shots = 0;
+                    if (fx_shots < atoi(getenv("FXSHOTS"))) { char t[16]; snprintf(t, 16, "fx%d", fx_shots++); shot(t); }
                     continue;
                 }
                 static int pages_shot = 0;

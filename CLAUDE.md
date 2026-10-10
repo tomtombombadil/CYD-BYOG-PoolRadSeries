@@ -165,8 +165,13 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   `src/ui/play_fight.inc` (the fight's screen and menus, the treasure step -
   included by play.cpp inside its anonymous namespace, not compiled on its
   own). Facts from coab: the Project's claude/combat_setup_facts.md and
-  claude/combat_rules_facts.md (read them before changing combat). The
-  playsim runs a fight with `RUNAT=<addr> FIGHT=1` (Quick for everyone).
+  claude/combat_rules_facts.md, claude/combat_fx_facts.md (pictures in
+  flight, magic hits, the computer's weapon; v0.41.0) - read them before
+  changing combat. The
+  playsim runs a fight with `RUNAT=<addr> FIGHT=1` (Quick for everyone;
+  `FINDMON=1` lists the loaded script's LOAD MONSTER addresses - the GOG
+  save A: 8AC2, 947B; `FORCESPELL` / `FORCEWEAPON` / `FXSHOTS` to try
+  spells, shots and their pictures).
 - `tools/playsim/` (Claude's side, Linux): runs the Play Test on the PC
   against the game files in scratch space (shims for Arduino / SD); use it
   to check script behaviour and take canvas snapshots before pushing.

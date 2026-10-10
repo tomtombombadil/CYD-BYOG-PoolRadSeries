@@ -1536,4 +1536,200 @@ Outcome finish(Battle& b, const Monster* monsters)
     return o;
 }
 
+// ---- Pictures in flight
+namespace {
+template <size_t N> bool listed(const uint8_t (&l)[N], int v)
+{
+    for (uint8_t x : l)
+        if (x == v) return true;
+    return false;
+}
+} // namespace
+
+Shot shot_kind(const Facts& fx, int t)
+{
+    if (listed(fx.shot_pointed, t)) return Shot::Pointed;
+    if (listed(fx.shot_spinning, t)) return Shot::Spinning;
+    if (listed(fx.shot_flask, t)) return Shot::Flask;
+    if (listed(fx.shot_sling, t)) return Shot::Sling;
+    return Shot::Rock;
+}
+
+Flight spell_flight(int pic, int delay)
+{
+    Flight fl;
+    fl.pic = static_cast<uint8_t>(pic);
+    fl.frames = 4;
+    fl.delay = static_cast<uint8_t>(delay);
+    // ready, ready mirrored, attack mirrored, attack
+    fl.slot[0] = 0;
+    fl.slot[1] = 2;
+    fl.slot[2] = 3;
+    fl.slot[3] = 1;
+    return fl;
+}
+
+Flight shot_flight(const Battle& b, const Fighter& f, int ammo, int dir)
+{
+    Shot kind = Shot::Rock;
+    if (b.fx && b.names && f.items) {
+        const int w = weapon(f, *b.names);
+        if (w >= 0 && shot_kind(*b.fx, f.items[w][0x2E]) == Shot::Sling) kind = Shot::Sling;
+        else if (ammo >= 0 && ammo < f.n_items) kind = shot_kind(*b.fx, f.items[ammo][0x2E]);
+        else if (w >= 0) kind = shot_kind(*b.fx, f.items[w][0x2E]);
+    }
+    Flight fl;
+    switch (kind) {
+    case Shot::Pointed:
+        // One picture by direction: up / slanted / across, the attack picture
+        // for the other way, mirrored for the slants to the west
+        fl.frames = 1;
+        fl.delay = 10;
+        fl.sound = 0x0C;
+        if (dir & 1) {
+            fl.pic = 1;
+            fl.slot[0] = static_cast<uint8_t>((dir == 3 || dir == 5 ? 1 : 0) | (dir == 5 || dir == 7 ? 2 : 0));
+        } else {
+            fl.pic = static_cast<uint8_t>(dir & 3);
+            fl.slot[0] = dir >= 4 ? 1 : 0;
+        }
+        break;
+    case Shot::Spinning:
+        fl = spell_flight(3, 50);
+        fl.sound = 9;
+        break;
+    case Shot::Flask:
+        fl = spell_flight(4, 50);
+        fl.sound = 6;
+        break;
+    case Shot::Sling:
+    case Shot::Rock:
+        fl.pic = kind == Shot::Sling ? 8 : 7;
+        fl.frames = 2;
+        fl.slot[1] = 1;
+        fl.delay = kind == Shot::Sling ? 10 : 20;
+        fl.sound = kind == Shot::Sling ? 6 : 9;
+        break;
+    }
+    return fl;
+}
+
+void flight_begin(FlightPath& p, int x0, int y0, int x1, int y1)
+{
+    p.x = x0 * 3;
+    p.y = y0 * 3;
+    p.tx = x1 * 3;
+    p.ty = y1 * 3;
+    p.ax = p.tx > p.x ? p.tx - p.x : p.x - p.tx;
+    p.ay = p.ty > p.y ? p.ty - p.y : p.y - p.ty;
+    p.sx = p.tx > p.x ? 1 : p.tx < p.x ? -1 : 0;
+    p.sy = p.ty > p.y ? 1 : p.ty < p.y ? -1 : 0;
+    p.err = 0;
+    const int steps = p.ax > p.ay ? p.ax : p.ay;
+    p.left = steps - 1 >= 2 ? steps - 1 : 0;
+}
+
+bool flight_step(FlightPath& p)
+{
+    if (p.left <= 0) return false;
+    --p.left;
+    // One cell along the longer axis, the shorter one when its share adds up
+    if (p.ax >= p.ay) {
+        p.x += p.sx;
+        p.err += 2 * p.ay;
+        if (p.err >= p.ax) {
+            p.y += p.sy;
+            p.err -= 2 * p.ax;
+        }
+    } else {
+        p.y += p.sy;
+        p.err += 2 * p.ax;
+        if (p.err >= p.ay) {
+            p.x += p.sx;
+            p.err -= 2 * p.ay;
+        }
+    }
+    return true;
+}
+
+// ---- The computer's weapon
+int weapon_rating(const items::Names& names, const uint8_t* it, int hands_used)
+{
+    const items::TypeInfo& ti = names.type(it[0x2E]);
+    int r = ti.dice * ti.sides;
+    const int plus = static_cast<int8_t>(it[0x32]);
+    if (plus > 0) r += 8 * plus;
+    if (ti.bonus > 0) r += 2 * ti.bonus;
+    if (ti.flags & 0x08) r += (ti.attacks - 1) * 2;
+    if (ti.hands <= 1) r += 3;
+    if (ti.hands + hands_used > 3 || it[0x36]) r = 0;
+    return r;
+}
+
+namespace {
+bool enemy_next_to(const Battle& b, int i)
+{
+    for (int k = 0; k < b.n; ++k)
+        if (k != i && b.f[k].up() && b.f[k].size && b.f[k].team() != b.f[i].team() && adjacent(b, i, k)) return true;
+    return false;
+}
+bool thrown_melee(const items::TypeInfo& ti) { return ti.range > 1 && (ti.flags & 0x14) == 0x14; }
+} // namespace
+
+bool missile_in_melee(const Battle& b, int i)
+{
+    const Fighter& f = b.f[i];
+    if (!b.names || !f.items) return false;
+    const int w = weapon(f, *b.names);
+    if (w < 0) return false;
+    const items::TypeInfo& ti = b.names->type(f.items[w][0x2E]);
+    return ti.range > 1 && (ti.flags & 0x08) && !thrown_melee(ti) && enemy_next_to(b, i);
+}
+
+int choose_weapon(const Battle& b, int i)
+{
+    const Fighter& f = b.f[i];
+    if (!b.names || !f.items) return kKeep;
+    const items::Names& n = *b.names;
+    const uint8_t* r = f.rec;
+    // The hands besides the weapon and shield held now
+    int hands = r[0x185];
+    for (int k = 0; k < f.n_items; ++k) {
+        if (!f.items[k][0x34]) continue;
+        const items::TypeInfo& ti = n.type(f.items[k][0x2E]);
+        if (ti.slot == items::kSlotWeapon || ti.slot == 1) hands -= ti.hands;
+    }
+    if (hands < 0) hands = 0;
+    int best_missile = -1, missile_r = 1, best_melee = -1;
+    int melee_r = r[0x11E] * r[0x120] + (static_cast<int8_t>(r[0x122]) > 0 ? 2 * static_cast<int8_t>(r[0x122]) : 0);
+    for (int k = 0; k < f.n_items; ++k) {
+        const items::TypeInfo& ti = n.type(f.items[k][0x2E]);
+        if (ti.slot != items::kSlotWeapon || !(ti.classes & r[0x12B])) continue;
+        const int rating = weapon_rating(n, f.items[k], hands);
+        if ((ti.flags & 0x18) && rating > missile_r) {
+            best_missile = k;
+            missile_r = rating;
+        }
+        if (!(ti.flags & 0x08) && rating > melee_r) {
+            best_melee = k;
+            melee_r = rating;
+        }
+    }
+    int want = best_melee;
+    if (best_missile >= 0 && missile_r > melee_r / 2) {
+        const items::TypeInfo& ti = n.type(f.items[best_missile][0x2E]);
+        // What it shoots: itself (thrown), its readied arrows / quarrels, or nothing (a sling)
+        bool loaded = (ti.flags & 0x10) != 0 || (ti.flags & 0xFF) == 0x0A;
+        for (int k = 0; !loaded && k < f.n_items; ++k) {
+            if (!f.items[k][0x34]) continue;
+            const int t = f.items[k][0x2E];
+            if (((ti.flags & 0x01) && t == b.arrow) || ((ti.flags & 0x80) && t == b.quarrel)) loaded = true;
+        }
+        if (loaded && (thrown_melee(ti) || !enemy_next_to(b, i))) want = best_missile;
+    }
+    const int held = weapon(f, n);
+    if (held == want || (held >= 0 && f.items[held][0x36])) return kKeep;
+    return want;
+}
+
 } // namespace combat

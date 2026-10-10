@@ -2455,7 +2455,7 @@ void draw_set_item(int slot, SetItem it)
     case kSwap:      draw_swap(r, pp.swap_rb); break;
     case kRotate:    ui::key(r, "Rotate 180", lit(cfg->flipped)); break;
     case kCalibrate: ui::key(r, "Recalibrate Touch"); break;
-    case kScale:     ui::key(r, cfg->scale_15x ? "Game Screen: 1.5x" : "Game Screen: 1:1", lit(cfg->scale_15x)); break;
+    case kScale:     ui::key(r, cfg->scale_15x ? "Asset Viewer: 1.5x" : "Asset Viewer: 1:1", lit(cfg->scale_15x)); break;
     case kLogs:      ui::key(r, "Logs"); break;
     case kSound:     ui::key(r, sound_label(), lit(cfg->sound != kSoundOff)); break;
     case kVolume:    draw_slider(r, true); break;

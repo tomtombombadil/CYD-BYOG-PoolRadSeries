@@ -223,11 +223,24 @@ enum class FSt : uint8_t {
     ContinueAsk, Next, UseAim, AbortAsk
 };
 
+// A page's pictures: a missile or spell flying, a burst / sparkles on a
+// fighter (the games' magic hits), a fallen one's skull blinking; each with
+// the sound it starts with (a sound alone: kind None)
+struct Fx {
+    enum Kind : uint8_t { None, Fly, Burst, Skull } kind = None;
+    uint8_t sound = 0;
+    combat::Flight fl;                  // Fly / Burst: the pictures, their cycle, ms a step
+    uint8_t loops = 1;                  // Burst: times round the cycle
+    int8_t  who = -1;                   // Burst / Skull: the fighter
+    uint8_t x0 = 0, y0 = 0, x1 = 0, y1 = 0;     // Fly: from, to (field squares)
+};
+
 struct Page {
     char    line[5][40];
     uint8_t colour[5];
     int     lines = 0;
     uint8_t sound = 0;                  // the game's sound effect as it shows (0: none)
+    Fx      fx[2];                      // then these, one after the other; then the page's wait
 };
 
 struct Fight {
@@ -264,6 +277,17 @@ struct Fight {
     combat::Outcome out;
     int      share = 0;
     bool     treasure_only = false;
+    // The page's pictures playing (fx_at: the one; 2 = done, the page waits)
+    int      fx_at = 2;
+    bool     fx_on = false, fx_redraw = false;  // one is running; a skull to clear at the page's end
+    Fx       fx;
+    combat::FlightPath path;
+    uint8_t* fx_pic[2] = {};            // its ready / attack pictures (COMSPR)
+    int      fx_step = 0;
+    uint8_t  under[kSq * kSq];          // what the flying picture covers
+    int      under_x = 0, under_y = 0;
+    bool     has_under = false;
+    int      aim_x = -1, aim_y = -1;    // where a spell was aimed (an area's centre)
 };
 Fight* fg = nullptr;
 
@@ -335,9 +359,13 @@ void load_monster_icon(int slot, int block);
 
 void compose_icon(int slot, const party::Character& ch)
 {
-    if (ch.rec[0x126] && !ch.rec[0x141] && !ch.rec[0x142]) {
-        load_monster_icon(slot, ch.rec[0x126]);     // an NPC from the monsters' files: its own picture
-        return;
+    // An NPC from the monsters' files (ADD NPC: computer-run, its MON block
+    // at 0x126): its own picture. (A player character's 0x126 is a random
+    // number and head / body 0 are ordinary choices - v0.40.3: the GOG
+    // sample party fought without icons.)
+    if (ch.rec[0xF7] >= 0x80 && ch.rec[0x126] && !ch.rec[0x141] && !ch.rec[0x142]) {
+        load_monster_icon(slot, ch.rec[0x126]);
+        if (fg->icon[slot].px[0]) return;
     }
     Pic4& ic = fg->icon[slot];
     free_pic(ic);
@@ -403,6 +431,9 @@ void end_fight_art()
     free(fg->skull);
     free(fg->outline);
     fg->cursor = fg->skull = fg->outline = nullptr;
+    free(fg->fx_pic[0]);
+    free(fg->fx_pic[1]);
+    fg->fx_pic[0] = fg->fx_pic[1] = nullptr;
 }
 
 // ---- Drawing
@@ -564,6 +595,7 @@ void add_page(int who, const char* a, const char* b2 = nullptr, int whom = -1, c
     Page& p = fg->page[fg->pages++];
     p.lines = 0;
     p.sound = 0;
+    p.fx[0] = p.fx[1] = Fx{};
     auto line = [&](const char* s, uint8_t col) {
         if (p.lines < 5 && s) {
             snprintf(p.line[p.lines], sizeof p.line[0], "%s", s);
@@ -590,15 +622,242 @@ void page_sound(int id)
     if (fg->pages > 0) fg->page[fg->pages - 1].sound = static_cast<uint8_t>(id);
 }
 
+// ---- The pages' pictures (facts: the Project's combat_setup_facts.md 6.5 /
+// 6.6 and sound_facts.md). A flight: the picture steps 8 pixels at a time
+// toward the target, stopping a step short, `delay` ms a step, drawn over
+// the field and the field put back after each step; a burst: the 4
+// pictures on the fighter's square 70 ms each (sparkles: as many rounds as
+// the game speed + 1); the fallen: their squares blink skull / box 9 times,
+// 10 ms each, and the skull stays until the page ends.
+constexpr int kViewW = 7 * kSq;
+
+void fx_free()
+{
+    free(fg->fx_pic[0]);
+    free(fg->fx_pic[1]);
+    fg->fx_pic[0] = fg->fx_pic[1] = nullptr;
+}
+
+bool fx_load(int pic)
+{
+    fx_free();
+    int w = 0, h = 0, w2 = 0, h2 = 0;
+    fg->fx_pic[0] = load_pic4("COMSPR.DAX", pic, 0, &w, &h);
+    fg->fx_pic[1] = load_pic4("COMSPR.DAX", pic + 0x80, 0, &w2, &h2);
+    if (!fg->fx_pic[0] || w != kSq || h != kSq || (fg->fx_pic[1] && (w2 != kSq || h2 != kSq))) {
+        Serial.printf("[fight] COMSPR %d: no 24 x 24 picture (%d x %d)\n", pic, w, h);
+        fx_free();
+        return false;
+    }
+    return true;
+}
+
+// The field under a picture at (x, y): kept / put back
+void under_put(pic::Canvas& c)
+{
+    if (!fg->has_under) return;
+    fg->has_under = false;
+    for (int j = 0; j < kSq; ++j) {
+        const int y = fg->under_y + j;
+        if (y < kViewY || y >= kViewY + kViewW) continue;
+        for (int i = 0; i < kSq; ++i) {
+            const int x = fg->under_x + i;
+            if (x >= kViewX && x < kViewX + kViewW) c.px[y * c.w + x] = fg->under[j * kSq + i];
+        }
+    }
+    dirty(fg->under_y, fg->under_y + kSq);
+}
+
+void under_save(pic::Canvas& c, int x, int y)
+{
+    fg->under_x = x;
+    fg->under_y = y;
+    fg->has_under = true;
+    for (int j = 0; j < kSq; ++j)
+        for (int i = 0; i < kSq; ++i) {
+            const int xx = x + i, yy = y + j;
+            if (xx >= kViewX && xx < kViewX + kViewW && yy >= kViewY && yy < kViewY + kViewW)
+                fg->under[j * kSq + i] = c.px[yy * c.w + xx];
+        }
+}
+
+// One of the cycle's pictures (bit 0: the attack picture, bit 1 mirrored)
+void fx_draw(pic::Canvas& c, int x, int y, uint8_t slot)
+{
+    const uint8_t* p = (slot & 1) && fg->fx_pic[1] ? fg->fx_pic[1] : fg->fx_pic[0];
+    blit4(c, p, kSq, kSq, x, y, (slot & 2) != 0, true, kViewX, kViewY, kViewX + kViewW, kViewY + kViewW);
+    dirty(y, y + kSq);
+}
+
+int sq_x(int fx) { return kViewX + (fx - fg->b.vx) * kSq; }
+int sq_y(int fy) { return kViewY + (fy - fg->b.vy) * kSq; }
+
+// One step of the running picture; false when it's over
+bool fx_step(pic::Canvas& c)
+{
+    Fx& e = fg->fx;
+    const int k = fg->fx_step++;
+    switch (e.kind) {
+    case Fx::Fly: {
+        under_put(c);
+        if (!combat::flight_step(fg->path)) return false;
+        const int x = kViewX + (fg->path.x - fg->b.vx * 3) * 8, y = kViewY + (fg->path.y - fg->b.vy * 3) * 8;
+        under_save(c, x, y);
+        fx_draw(c, x, y, e.fl.slot[e.fl.frames ? k % e.fl.frames : 0]);
+        fg->until = millis() + (e.fl.delay ? e.fl.delay : 1);
+        return true;
+    }
+    case Fx::Burst: {
+        under_put(c);
+        if (k >= e.loops * 4) return false;
+        const combat::Fighter& f = fg->b.f[e.who];
+        const int x = sq_x(f.x), y = sq_y(f.y);
+        under_save(c, x, y);
+        fx_draw(c, x, y, e.fl.slot[k & 3]);
+        fg->until = millis() + 70;
+        return true;
+    }
+    case Fx::Skull: {
+        if (k >= 9) return false;
+        const combat::Fighter& f = fg->b.f[e.who];
+        const uint8_t* p = k & 1 ? fg->cursor : fg->skull;
+        int sx[4], sy[4];
+        const int n = combat::squares(f.size ? f.size : 1, sx, sy);
+        for (int q = 0; q < n && p; ++q) {
+            const int x = sq_x(f.x + sx[q]), y = sq_y(f.y + sy[q]);
+            blit4(c, p, kSq, kSq, x, y, false, true, kViewX, kViewY, kViewX + kViewW, kViewY + kViewW);
+            dirty(y, y + kSq);
+        }
+        fg->fx_redraw = true;
+        fg->until = millis() + 10;
+        return true;
+    }
+    default: return false;
+    }
+}
+
+// Starts a page's picture (its sound first); false: nothing to show
+bool fx_begin(pic::Canvas& c, const Fx& e)
+{
+    if (e.sound) sfx(e.sound);
+    if (e.kind == Fx::None) return false;
+    fg->fx = e;
+    fg->fx_step = 0;
+    fg->has_under = false;
+    switch (e.kind) {
+    case Fx::Fly:
+        if (!fx_load(e.fl.pic)) return false;
+        combat::flight_begin(fg->path, e.x0, e.y0, e.x1, e.y1);
+        break;
+    case Fx::Burst:
+        if (e.who < 0 || !fx_load(e.fl.pic)) return false;
+        if (!on_screen(e.who)) {
+            focus(e.who, 3);
+            draw_field(c);
+            if (fg->cur >= 0) mark(c, fg->cur);
+        }
+        break;
+    case Fx::Skull:
+        if (e.who < 0 || !fg->skull) return false;
+        if (!on_screen(e.who)) {
+            focus(e.who, 3);
+            draw_field(c);
+            if (fg->cur >= 0) mark(c, fg->cur);
+        }
+        break;
+    default: return false;
+    }
+    if (!fx_step(c)) {
+        fx_free();
+        return false;
+    }
+    fg->fx_on = true;
+    return true;
+}
+
+// The page's next picture, or its wait when they're all done
+void page_fx(pic::Canvas& c)
+{
+    const Page& p = fg->page[fg->at - 1];
+    while (fg->fx_at < 2) {
+        if (fx_begin(c, p.fx[fg->fx_at])) return;
+        ++fg->fx_at;
+    }
+    fg->until = millis() + game_delay_ms() * 2;
+    if (!fg->until) fg->until = 1;
+}
+
+// The running picture done (or cut short by a tap): the field put back
+void fx_end(pic::Canvas& c)
+{
+    under_put(c);
+    fx_free();
+    fg->fx_on = false;
+    ++fg->fx_at;
+}
+
+// A page over: a skull left on the field goes
+void page_over(pic::Canvas& c)
+{
+    if (!fg->fx_redraw) return;
+    fg->fx_redraw = false;
+    draw_field(c);
+    if (fg->cur >= 0 && fg->b.f[fg->cur].up()) mark(c, fg->cur);
+}
+
 void show_page(pic::Canvas& c)
 {
+    page_over(c);
     const Page& p = fg->page[fg->at++];
     if (p.sound) sfx(p.sound);
     clear_panel(c, 10, 21);
     int row = 10;
     for (int k = 0; k < p.lines; ++k) row = panel_text(c, p.line[k], row, p.colour[k]);
-    fg->until = millis() + game_delay_ms() * 2;
-    if (!fg->until) fg->until = 1;
+    fg->fx_at = 0;
+    page_fx(c);
+}
+
+// A page's pictures, as the games show them
+Fx fly_fx(int from, int to, const combat::Flight& fl)
+{
+    Fx e;
+    e.kind = Fx::Fly;
+    e.fl = fl;
+    e.x0 = static_cast<uint8_t>(fg->b.f[from].x);
+    e.y0 = static_cast<uint8_t>(fg->b.f[from].y);
+    e.x1 = static_cast<uint8_t>(fg->b.f[to].x);
+    e.y1 = static_cast<uint8_t>(fg->b.f[to].y);
+    return e;
+}
+
+// A magic hit on fighter `who`: damage - the burst (sound 3), once; an
+// effect - sparkles (sound 4), the game speed + 1 times round
+Fx hit_fx(int who, bool sparkles)
+{
+    Fx e;
+    e.kind = Fx::Burst;
+    e.who = static_cast<int8_t>(who);
+    e.fl = combat::spell_flight(sparkles ? 9 : 10, 70);
+    e.sound = sparkles ? sound::kMagicStars : sound::kMagicHit;
+    int speed = vm ? vm->get(0x4BFC) & 0xFF : 0;
+    if (speed > 9) speed = 9;
+    e.loops = static_cast<uint8_t>(sparkles ? speed + 1 : 1);
+    return e;
+}
+
+Fx skull_fx(int who)
+{
+    Fx e;
+    e.kind = Fx::Skull;
+    e.who = static_cast<int8_t>(who);
+    e.sound = sound::kDeath;
+    return e;
+}
+
+// The last page queued gets picture n (0, 1)
+void page_fx_set(int n, const Fx& e)
+{
+    if (fg->pages > 0) fg->page[fg->pages - 1].fx[n] = e;
 }
 
 // The pages queued: shown one after another, then on to `next`
@@ -629,8 +888,19 @@ void end_turn(pic::Canvas& c)
     next_turn(c);
 }
 
-// An attack and what it did, as pages
-void do_attack(pic::Canvas& c, int a, int t, bool behind, bool shot = false)
+// Someone down: "goes down" / "and is Dying" / "is killed", the skull blinking on them
+void down_page(int t)
+{
+    const combat::Down dn = combat::down_state(fg->b.f[t]);
+    if (dn == combat::Down::Dead) add_page(t, fw(profile::kIsKilled));
+    else if (dn == combat::Down::Dying) add_page(t, fw(profile::kGoesDown), fw(profile::kIsDying));
+    else add_page(t, fw(profile::kGoesDown));
+    page_fx_set(1, skull_fx(t));
+}
+
+// An attack and what it did, as pages. A shot (`ammo`: the item that flies,
+// -1 none) flies first: its picture and sound on the first page.
+void do_attack(pic::Canvas& c, int a, int t, bool behind, bool shot = false, int ammo = -1)
 {
     combat::Battle& b = fg->b;
     if (!on_screen(a) || !on_screen(t)) {
@@ -639,14 +909,30 @@ void do_attack(pic::Canvas& c, int a, int t, bool behind, bool shot = false)
     }
     draw_icon(c, a, true);
     dirty(kViewY, kViewY + 7 * kSq);
+    Fx fly;
+    if (shot) {
+        const combat::Fighter& f = b.f[a];
+        fly = fly_fx(a, t, combat::shot_flight(b, f, ammo, combat::direction(f.x, f.y, b.f[t].x, b.f[t].y)));
+        fly.sound = fly.fl.sound;
+    }
     const combat::Attack at = combat::attack(b, a, t, names, rng, behind);
     char line[48];
     bool first = true;
-    // The sounds: a shot's whistle, then a blow each hit, a swish for no hit at all
+    // The sounds: a shot's flight, then a blow each hit, a swish for no hit at all
+    auto hit_page = [&]() {
+        if (first && shot) {
+            page_fx_set(0, fly);
+            Fx blow;
+            blow.sound = sound::kHit;
+            page_fx_set(1, blow);
+        } else {
+            page_sound(sound::kHit);
+        }
+        first = false;
+    };
     if (at.slain) {
         add_page(a, fw(profile::kSlays), fw(profile::kCruelBlow), t);
-        page_sound(sound::kHit);
-        first = false;
+        hit_page();
     }
     for (int k = 0; k < at.n && !at.slain; ++k) {
         if (!at.hits[k].hit) continue;
@@ -654,22 +940,14 @@ void do_attack(pic::Canvas& c, int a, int t, bool behind, bool shot = false)
         snprintf(line, sizeof line, "%s%s%d%s%s", behind ? fw(profile::kFromBehind) : "", fw(profile::kHittingFor), dmg,
                  dmg == 1 ? fw(profile::kPointW) : fw(profile::kPointsW), fw(profile::kOfDamage));
         add_page(a, fw(at.backstab ? profile::kBackstabs : profile::kAttacksW), line, t);
-        page_sound(first && shot ? sound::kMissile : sound::kHit);
-        first = false;
+        hit_page();
     }
     if (first) {
         add_page(a, fw(at.backstab ? profile::kBackstabs : profile::kAttacksW), fw(profile::kMisses), t);
-        page_sound(shot ? sound::kMissile : sound::kMiss);
+        if (shot) page_fx_set(0, fly);
+        else page_sound(sound::kMiss);
     }
-    if (at.down) {
-        const combat::Down dn = combat::down_state(b.f[t]);
-        if (dn == combat::Down::Dead) {
-            add_page(t, fw(profile::kIsKilled));
-            page_sound(sound::kDeath);
-        }
-        else if (dn == combat::Down::Dying) add_page(t, fw(profile::kGoesDown), fw(profile::kIsDying));
-        else add_page(t, fw(profile::kGoesDown));
-    }
+    if (at.down) down_page(t);
 }
 
 // After an attack's pages: the turn ends unless attacks are left and the
@@ -1183,7 +1461,7 @@ void aim_target(pic::Canvas& c, int t)
     // Missiles: the readied ammunition (arrows / quarrels) or the thrown weapon goes
     int ammo = -1;
     const bool shot = !combat::adjacent(fg->b, fg->cur, t) && combat::missile(fg->b, f, &ammo) > 0;
-    if (shot) do_attack(c, fg->cur, t, false, true);
+    if (shot) do_attack(c, fg->cur, t, false, true, ammo);
     else melee(c, fg->cur, t);
     if (shot) spend_ammo(fg->cur, ammo);
     say(c, FSt::Turn);
@@ -1285,6 +1563,60 @@ void speed_menu(pic::Canvas& c)
 }
 
 // ---- The computer's turn
+// Quick members and NPCs in the party ready the weapon the games' rating
+// picks (monsters keep theirs: their attacks are in their records); a
+// two-handed one puts the shield away (a cursed shield: the weapon goes
+// back), free hands take the best shield (its plus + 1). True: it changed.
+bool ai_ready_weapon(int i)
+{
+    combat::Fighter& f = fg->b.f[i];
+    if (f.member < 0 || f.member >= pt->count) return false;
+    const int want = combat::choose_weapon(fg->b, i);
+    if (want == combat::kKeep) return false;
+    party::Character& ch = pt->m[f.member];
+    const int held = combat::weapon(f, *names);
+    if (held >= 0) {
+        ch.items[held][0x34] = 0;
+        rules::worn(ch, held, false);
+    }
+    if (want >= 0) {
+        ch.items[want][0x34] = 1;
+        rules::worn(ch, want, true);
+    }
+    rules::recalc(ch, *names, d->facts);
+    // The shield
+    int shield = -1, best = -1, best_plus = 0;
+    for (int k = 0; k < ch.n_items; ++k) {
+        const items::TypeInfo& ti = names->type(ch.items[k][0x2E]);
+        if (ti.slot != 1) continue;
+        if (ch.items[k][0x34]) shield = k;
+        const int plus = static_cast<int8_t>(ch.items[k][0x32]);
+        if ((ch.rec[0x12B] & ti.classes) && plus + 1 > best_plus) {
+            best = k;
+            best_plus = plus + 1;
+        }
+    }
+    if (ch.rec[0x185] > 2) {
+        const int k = shield >= 0 && !ch.items[shield][0x36] ? shield : want;
+        if (k >= 0) {
+            ch.items[k][0x34] = 0;
+            rules::worn(ch, k, false);
+        }
+    } else if (ch.rec[0x185] < 2 && best >= 0 && best != shield && !(shield >= 0 && ch.items[shield][0x36]) &&
+               ch.rec[0x185] + names->type(ch.items[best][0x2E]).hands - (shield >= 0 ? names->type(ch.items[shield][0x2E]).hands : 0) <= 2) {
+        if (shield >= 0) {
+            ch.items[shield][0x34] = 0;
+            rules::worn(ch, shield, false);
+        }
+        ch.items[best][0x34] = 1;
+        rules::worn(ch, best, true);
+    }
+    rules::recalc(ch, *names, d->facts);
+    f.n_items = ch.n_items;
+    f.items = ch.items;
+    return true;
+}
+
 void ai_step(pic::Canvas& c)
 {
     combat::Battle& b = fg->b;
@@ -1362,11 +1694,18 @@ void ai_step(pic::Canvas& c)
                 return;
             }
         }
+        // The best weapon for now (the panel shows it)
+        if (ai_ready_weapon(i)) draw_panel_for(c, i);
+    } else if (f.member >= 0 && combat::missile_in_melee(b, i)) {
+        // A bow with an enemy next to them: another weapon, and the turn is over
+        if (ai_ready_weapon(i)) draw_panel_for(c, i);
+        end_turn(c);
+        return;
     }
     const combat::Plan p = combat::think(b, fg->t, i, rng);
     switch (p.act) {
     case combat::Act::Attack:
-        if (p.missile) do_attack(c, i, p.target, false, true);
+        if (p.missile) do_attack(c, i, p.target, false, true, p.ammo);
         else melee(c, i, p.target);
         if (p.missile) spend_ammo(i, p.ammo);
         say(c, FSt::Turn);
@@ -1694,10 +2033,18 @@ void fight_tick(uint32_t now, pic::Canvas& c)
     case FSt::Ai: ai_step(c); break;
     case FSt::RoundEnd: round_end(c); break;
     case FSt::Pages:
+        if (fg->fx_on) {
+            if (!fx_step(c)) {
+                fx_end(c);
+                page_fx(c);
+            }
+            break;
+        }
         if (fg->at < fg->pages) {
             show_page(c);
             break;
         }
+        page_over(c);
         fg->pages = fg->at = 0;
         clear_panel(c, 10, 21);
         if (fg->cur >= 0) draw_panel_for(c, fg->cur);
@@ -1795,6 +2142,7 @@ void begin_targeting(pic::Canvas& c, int sp)
     fg->spell = sp;
     fg->sp_n = 0;
     fg->sp_area = -1;
+    fg->aim_x = fg->aim_y = -1;
     const int aim = e.aim & 0x0F;
     if (aim == 0) {
         fg->sp_t[fg->sp_n++] = fg->cur;
@@ -1882,6 +2230,8 @@ void spell_target(pic::Canvas& c, int t)
     if (bfs && bfs->does == combat::SpellDoes::Bolt) {
         // A bolt: from the target on, away from the caster
         const int x = t >= 0 ? b.f[t].x : fg->mx, y = t >= 0 ? b.f[t].y : fg->my;
+        fg->aim_x = x;
+        fg->aim_y = y;
         fg->sp_n = combat::bolt_line(b, fg->t, fg->cur, x, y, 7, fg->sp_t, combat::kMaxFighters);
         if (!fg->sp_n) fg->sp_t[fg->sp_n++] = t >= 0 ? t : fg->cur;
         cast_now(c);
@@ -1890,6 +2240,8 @@ void spell_target(pic::Canvas& c, int t)
     if (fg->sp_area >= 0) {
         // The area's centre: the fighter or the square
         const int x = t >= 0 ? b.f[t].x : fg->mx, y = t >= 0 ? b.f[t].y : fg->my;
+        fg->aim_x = x;
+        fg->aim_y = y;
         int in[combat::kMaxFighters];
         const int n = combat::in_area(b, fg->t, x, y, fg->sp_area, in, combat::kMaxFighters);
         fg->sp_n = 0;
@@ -1911,15 +2263,22 @@ void spell_target(pic::Canvas& c, int t)
     aim_menu(c);
 }
 
-void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::FightSpell& fs)
+// What a spell did, as pages: a burst on each one hurt, sparkles on each
+// one it works on, the skull on the fallen. `each`: a spell aimed at
+// several picked one by one flies to each (with its sound) after the first.
+void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::FightSpell& fs, bool each)
 {
     char t[48];
+    int flown[combat::kMaxFighters], n_flown = 0;
+    if (fg->sp_n > 0) flown[n_flown++] = fg->sp_t[0];
     for (int k = 0; k < n; ++k) {
         const combat::Fighter& f = fg->b.f[l[k].who];
+        const int before = fg->pages;
         switch (l[k].did) {
         case combat::Did::Word:
             ow(fs.word, t, sizeof t);
             add_page(l[k].who, t);
+            page_fx_set(1, hit_fx(l[k].who, true));
             break;
         case combat::Did::Damage: {
             const char* from = "";
@@ -1932,18 +2291,21 @@ void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::Fi
             if (l[k].amount == 1) snprintf(t, sizeof t, "%s%s", fw(profile::kTakes1), from);
             else snprintf(t, sizeof t, "%s%d%s%s", fw(profile::kTakes), l[k].amount, fw(profile::kPointsOfDamage), from);
             add_page(l[k].who, t);
+            page_fx_set(1, hit_fx(l[k].who, false));
             break;
         }
         case combat::Did::Unaffected: add_page(l[k].who, fw(profile::kIsUnaffectedS)); break;
         case combat::Did::Word2:
             ow(fs.word2, t, sizeof t);
             add_page(l[k].who, t);
+            page_fx_set(1, hit_fx(l[k].who, true));
             break;
         case combat::Did::Misses: add_page(caster, fw(profile::kMisses), nullptr, l[k].who); break;
         case combat::Did::Healed: {
             char w2[24];
             cw(f.hp() >= f.hp_max() ? profile::kFullyHealed : profile::kPartlyHealed, w2, sizeof w2);
             add_page(l[k].who, w2);
+            page_fx_set(1, hit_fx(l[k].who, true));
             break;
         }
         case combat::Did::Down: {
@@ -1951,8 +2313,20 @@ void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::Fi
             if (dn == combat::Down::Dead) add_page(l[k].who, fw(profile::kIsKilled));
             else if (dn == combat::Down::Dying) add_page(l[k].who, fw(profile::kGoesDownS), fw(profile::kIsDying));
             else add_page(l[k].who, fw(profile::kGoesDownS));
+            page_fx_set(1, skull_fx(l[k].who));
             break;
         }
+        }
+        // The spell flies on to the next one picked
+        if (each && fg->pages > before && l[k].who != caster) {
+            bool seen = false;
+            for (int j = 0; j < n_flown; ++j) seen = seen || flown[j] == l[k].who;
+            if (!seen && n_flown < combat::kMaxFighters) {
+                flown[n_flown++] = l[k].who;
+                Fx e = fly_fx(caster, l[k].who, combat::spell_flight(5, 30));
+                e.sound = sound::kSpell;
+                fg->page[before].fx[0] = e;
+            }
         }
     }
 }
@@ -1985,14 +2359,35 @@ void cast_now(pic::Canvas& c, bool forgotten)
         add_page(i, fw(profile::kCastsASpell));
     }
     draw_icon(c, i, true);
+    // Where it flies: the square aimed at, else the first one it's for
+    int ax = fg->aim_x, ay = fg->aim_y;
+    if (ax < 0 && fg->sp_n > 0) {
+        ax = b.f[fg->sp_t[0]].x;
+        ay = b.f[fg->sp_t[0]].y;
+    }
+    fg->aim_x = fg->aim_y = -1;
+    const spells::Entry se = spells::entry(mrules->tables, sp);
+    const int aim = se.aim & 0x0F;
+    const bool each = aim >= 1 && aim <= 4 && se.targets != spells::kParty;
     combat::SpellLine lines[24];
     const int n = combat::cast(b, mrules->tables, i, sp, *fs, fg->sp_t, fg->sp_n, rng, lines, 24, pw);
-    spell_pages(i, lines, n, *fs);
-    // The spell's sound with its first page: the fireball's roar, the bolt's crackle, else the spell's flight
-    if (fg->pages > first_page)
-        fg->page[first_page].sound = static_cast<uint8_t>(sp == d->prof->sound.fireball_spell    ? sound::kFireball
-                                                          : sp == d->prof->sound.lightning_spell ? sound::kLightning
-                                                                                                 : sound::kSpell);
+    spell_pages(i, lines, n, *fs, each);
+    // The spell flies with its first page, with its sound: the fireball's
+    // roar, the bolt's crackle (its own picture), else the spell's
+    if (fg->pages > first_page) {
+        const bool bolt = sp == d->prof->sound.lightning_spell;
+        Fx e;
+        e.kind = ax >= 0 ? Fx::Fly : Fx::None;
+        e.fl = combat::spell_flight(bolt ? 6 : 5, bolt ? 50 : 30);
+        e.x0 = static_cast<uint8_t>(f.x);
+        e.y0 = static_cast<uint8_t>(f.y);
+        e.x1 = static_cast<uint8_t>(ax < 0 ? f.x : ax);
+        e.y1 = static_cast<uint8_t>(ay < 0 ? f.y : ay);
+        e.sound = static_cast<uint8_t>(sp == d->prof->sound.fireball_spell ? sound::kFireball
+                                       : bolt                              ? sound::kLightning
+                                                                           : sound::kSpell);
+        fg->page[first_page].fx[0] = e;
+    }
     if (from_item) spend_item(i, sp);
     f.attacks[0] = f.attacks[1] = 0;
     say(c, FSt::Next);
@@ -2008,8 +2403,13 @@ void fight_turn_undead(pic::Canvas& c)
     int out[16];
     const int n = combat::turn_undead(b, fg->t, i, rng, out, 16);
     for (int k = 0; k < n; ++k) {
-        if (out[k] >= 1000) add_page(out[k] - 1000, fw(profile::kIsDestroyed));
-        else add_page(out[k], fw(profile::kIsTurned));
+        if (out[k] >= 1000) {
+            add_page(out[k] - 1000, fw(profile::kIsDestroyed));
+            page_fx_set(1, skull_fx(out[k] - 1000));
+        } else {
+            add_page(out[k], fw(profile::kIsTurned));
+            page_fx_set(1, hit_fx(out[k], true));
+        }
     }
     if (!n) add_page(-1, fw(profile::kNothingHappens));
     draw_fight(c);
@@ -2027,6 +2427,10 @@ void fight_tap(int x, int y, pic::Canvas& c)
     }
     switch (fg->st) {
     case FSt::Pages:
+        if (fg->fx_on) {                // a tap cuts the pictures short and moves on
+            fx_end(c);
+            fg->fx_at = 2;
+        }
         if (fg->until) fg->until = 1;   // a tap moves on
         return;
     case FSt::Results:
