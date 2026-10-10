@@ -296,7 +296,22 @@ stay in the session's scratch space, never in the repo.
    ITEM / SPECIAL, SPELL, PARTYSTRENGTH, CHECKPARTY; character fields
    written). v0.38.0: random treasure items, PROGRAM 9 (camp) / 3.
    v0.39.0: items that work while readied (effects, alignment-keyed).
-   v0.42.0: Modify Character. v0.45.0: Human Change. Next: magic items.
+   v0.42.0: Modify Character. v0.45.0: Human Change. v0.54.0 (facts: the
+   Project's claude/alter_icon_facts.md): Alter's **Icon** - the combat icon
+   editor (also after the name in Create New Character): old / new icons
+   ready and action on COMSPR 25, Parts (Head / Weapon) / 1st-color /
+   2nd-color (Weapon Body Hair-or-Face Shield Arm Leg) / Size, Next Prev
+   Keep Exit, "Is this icon ok?"; icons now merge head and body as the
+   program does (where both have a colour, the two OR'd); **Pics** - Pics on
+   / off and Animation on / off (area word 0x4BFF; Animation off: event
+   pictures show their first frame only; Pics itself changes nothing in
+   Curse). The **demo** (claude/demo_facts.md): Demo on the version line
+   (or 30 s untouched; 10 s after a demo) runs ECL1 block 0x52 - area 1,
+   speed 9, no party menu, the three NPCs it adds fight the dragons
+   computer-run, key waits pass at once, no experience / treasure; an
+   all-NPC party wins while one stands; PROGRAM 3 ends it, the title
+   again. As in the original, a tap doesn't stop it (Esc leaves the Play
+   Test).
 6. **Combat.** v0.32.0: monsters, the battlefield (indoors from the 3D map,
    outdoors random), placement, the combat screen and icons, rounds and
    initiative, the player's Move / View / Aim / Quick / Done, attacks and

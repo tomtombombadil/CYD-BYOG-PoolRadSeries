@@ -197,6 +197,23 @@ int main(int argc, char** argv)
             printf("title prompt [%s%s]\n", play::menu.prompt, play::menu.s);
             if (getenv("TITLESHOTS")) shot("title_prompt");
             int x = 0, y = 0;
+            if (getenv("DEMO")) {
+                // DEMO: the version line's Demo, then the demo runs by itself
+                // until the title comes back (DEMOSHOTS: a snapshot every 3 s)
+                for (int k = 0; k < play::menu.count; ++k)
+                    if (text::key(play::menu, k) == 'D') play::tap(((int)strlen(play::menu.prompt) + play::menu.start[k]) * 8 + 2, text::kMenuRow * 8 + 2, C);
+                int last_screen = -1, last_pc = -1;
+                for (int t = 0; t < 600000 && play::screen != play::Screen::Title; t += 20) {
+                    g_now += 20;
+                    play::tick(g_now, C);
+                    if ((int)play::screen != last_screen) { last_screen = (int)play::screen; printf("  demo t=%d screen %d party %d\n", t, last_screen, play::pt->count); }
+                    if (play::vm && (int)play::vm->pc() != last_pc && play::screen == play::Screen::Game) { last_pc = (int)play::vm->pc(); }
+                    if (getenv("DEMOSHOTS") && t % 3000 == 0) shot("demo");
+                }
+                printf("  demo over: screen %d party %d title %d\n", (int)play::screen, play::pt->count, play::title_run ? 1 : 0);
+                if (play::title_run) shot("after_demo");
+                return 0;
+            }
             for (int k = 0; k < play::menu.count; ++k)
                 if (text::key(play::menu, k) == 'P') { x = (int)(strlen(play::menu.prompt) + play::menu.start[k]) * 8 + 2; y = text::kMenuRow * 8 + 2; }
             play::tap(x, y, C);
@@ -307,6 +324,21 @@ int main(int argc, char** argv)
                 case '#': shot("nav"); continue;
                 }
                 printf("  %c: screen %d pm_sel %d plist %d sel char %d menu [%s%s] sel %d\n", *q, (int)play::screen, play::pm_sel, play::plist.index, play::pt->selected, play::menu.prompt, play::menu.s, play::menu.selected);
+            }
+        }
+        if (getenv("ICONKEYS")) {
+            // ICONKEYS: the icon editor (Alter -> Icon) for character WHO, then
+            // these keys as the menu's letters (# a snapshot, x Esc)
+            const int who = getenv("WHO") ? atoi(getenv("WHO")) : 0;
+            play::pt->selected = who;
+            play::start_icon(C, play::Screen::Alter);
+            shot("icon");
+            for (const char* q = getenv("ICONKEYS"); *q; ++q) {
+                if (*q == '#') { shot("icon"); continue; }
+                if (*q == 'x') play::back(C);
+                else play::icon_key(*q, C);
+                const uint8_t* r = play::pt->m[who].rec;
+                printf("  %c: screen %d level %d menu [%s%s] head %d body %d size %d col %02X %02X %02X %02X %02X %02X\n", *q, (int)play::screen, play::ie ? play::ie->level : -1, play::menu.prompt, play::menu.s, r[0x141], r[0x142], r[0x144], r[0x145], r[0x146], r[0x147], r[0x148], r[0x149], r[0x14A]);
             }
         }
         if (getenv("CHANGE")) {

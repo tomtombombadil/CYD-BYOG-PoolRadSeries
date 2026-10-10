@@ -118,8 +118,12 @@ enum AlterWord {
     kAlterPrompt, kPartyOrder, kHasBeenSelected,                 // "Alter: ", "Party Order: ", "has been selected"
     kSpeedIs, kSpeedRange, kFaster, kSlower, kSpeedExit, kSpeedPrompt,   // "Game Speed = " ... "Game Speed:"
     kWillBeGone, kDropFromParty, kQuitToDos, kBidsFarewell, kDumped, kRelief,
+    kPicsOn, kAnimOn, kAnimOff, kPicsOff, kPicsExit,             // Pics: "Pics on  " ... "Exit"
     kAlterWords
 };
+
+// The icon editor's words (GAME.OVR), in this order
+enum IconWord { kIconOld, kIconReadyAction, kIconNew, kIconSmall, kIconLarge, kIconHair, kIconFace, kIconOk, kIconWords };
 
 // Combat's words (GAME.OVR offsets of Pascal strings), in this order
 enum FightWord {
@@ -317,6 +321,11 @@ struct Profile {
     struct {
         uint32_t menu, select, place;
         uint32_t words[kAlterWords];
+        // The icon editor (alter_icon_facts.md 1): its five menus (program
+        // image: Parts.., Head Weapon Exit, Weapon Body xxxx.., " Keep
+        // Exit", Next Prev Keep Exit) and its words (GAME.OVR)
+        uint32_t icon_menu[5];
+        uint32_t icon_words[kIconWords];
     } alter;
 
     // Combat: the program's tables, the words, the effects that end with

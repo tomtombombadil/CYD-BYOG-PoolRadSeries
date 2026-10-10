@@ -139,7 +139,7 @@ pic::Canvas* cv = nullptr;
 // Game" question, or the game itself
 enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich, AddFrom,
                                AddList, YesNo, CreatePick, CreateName, TradeWho, Heal, Take, Appraise, Magic,
-                               SpellList, Rest, Cast, Effects, Alter, Fight, Loot, Modify, Title };
+                               SpellList, Rest, Cast, Effects, Alter, Fight, Loot, Modify, Title, Icon };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
 Screen save_from = Screen::PartyMenu;   // where Save Which Game goes back to
@@ -189,6 +189,12 @@ void sfx(int id)
 void fight_load_monster(int id, int copies, int icon);
 bool npc_join(int id);
 bool party_dead = false;      // DAMAGE killed everyone: the party menu after the script
+// The demo (demo_facts.md): area 1, ECL1 block 0x52's first run, speed 9,
+// the party three NPCs the script adds; key waits pass at once; no
+// experience or treasure after its fight; PROGRAM 3 ends it - the title
+// again, then the version line with a 10 s timeout
+bool in_demo = false;
+void end_demo(pic::Canvas& c);
 void fight_clear_monsters();
 void fight_start(pic::Canvas& c);
 void fight_treasure_only(pic::Canvas& c);
@@ -395,6 +401,7 @@ void draw_position(pic::Canvas& c)
 // 34 and 38, HP yellow when below the most (as the games print it)
 void draw_party(pic::Canvas& c, int col)
 {
+    c.fill(col * 8, 2 * 8, (39 - col) * 8, 8, 0);      // (a "no party yet" line goes)
     put(c, d->name_head, col, 2, 15);
     put(c, d->ac_hp_head, 33, 2, 15);
     int row = 4;
@@ -497,6 +504,8 @@ void anim_draw(int frame)
     dirty_rows(3, 13);
 }
 
+bool animation_on();
+
 // An event picture: PIC<area> block id, drawn in the view; it animates
 // while the game waits at a menu
 bool anim_start(int id)
@@ -516,6 +525,7 @@ bool anim_start(int id)
             anim_at = millis();
             last_pic = id;
             anim_draw(0);
+            if (!animation_on()) anim_stop();       // Alter Pics: Animation off - the first frame only
             return true;
         }
     }
@@ -2074,10 +2084,22 @@ void picked(int i, pic::Canvas& c)
     }
 }
 
+void start_icon(pic::Canvas& c, Screen from);
+void create_after_icon(pic::Canvas& c);
+
+// The name, then the icon editor (as the games do), then "save NAME?"
 void create_named(const char* name, pic::Canvas& c)
 {
     if (!mk) return;
     create::set_name(mk->ch, name);
+    start_icon(c, Screen::CreateName);
+    if (screen != Screen::Icon) create_after_icon(c);      // (no memory for the editor)
+}
+
+void create_after_icon(pic::Canvas& c)
+{
+    if (!mk) return;
+    screen = Screen::CreateName;
     show_new_character(c);
     char t[72], nm[20];
     mk->ch.name(nm, sizeof nm);
@@ -4238,9 +4260,10 @@ void effects_tap(int x, int y, pic::Canvas& c)
 // dumped in a ditch" when they can't stand), No -> "Breathes A sigh of
 // relief"; the last one: "quit TO DOS: Yes No" (leaves the Play Test).
 // Speed: "Game Speed = 4 (0=fastest 9=slowest)" (row 18), "Game Speed:
-// Faster Slower Exit" (the area word 0x4BFC). Icon, Pics: to come.
+// Faster Slower Exit" (the area word 0x4BFC). Pics: on / off, Animation on
+// / off. Icon: the combat icon editor (with Create New Character too).
 
-enum class AlterMode : uint8_t { Menu, Select, Place, Speed };
+enum class AlterMode : uint8_t { Menu, Select, Place, Speed, Pics };
 AlterMode alter_mode = AlterMode::Menu;
 
 void aw(int i, char* out, size_t cap) { ow(d->prof->alter.words[i], out, cap); }
@@ -4259,6 +4282,34 @@ void open_alter(pic::Canvas& c)
 {
     screen = Screen::Alter;
     alter_menu(c);
+}
+
+void start_icon(pic::Canvas& c, Screen from);
+
+// Pics (alter_icon_facts.md 2): the area word 0x4BFF = Pics x 2 +
+// Animation, both on at the start; the menu names the current state ("Pics
+// on  Animation on  Exit"; Animation isn't offered while Pics is off).
+// Animation off: event pictures show their first frame only. Pics itself
+// changes nothing else in Curse.
+bool pics_on() { return !vm || (vm->get(0x4BFF) & 2); }
+bool animation_on() { return !vm || (vm->get(0x4BFF) & 1); }
+
+void pics_menu(pic::Canvas& c)
+{
+    alter_mode = AlterMode::Pics;
+    char words[48], a[20];
+    words[0] = 0;
+    aw(pics_on() ? profile::kPicsOn : profile::kPicsOff, a, sizeof a);
+    strlcat(words, a, sizeof words);
+    if (pics_on()) {
+        aw(animation_on() ? profile::kAnimOn : profile::kAnimOff, a, sizeof a);
+        strlcat(words, a, sizeof words);
+    }
+    aw(profile::kPicsExit, a, sizeof a);
+    strlcat(words, a, sizeof words);
+    text::build(menu, "", words);
+    menu.selected = 0;
+    show_menu_line(c);
 }
 
 void order_menu(pic::Canvas& c, bool place)
@@ -4375,13 +4426,26 @@ void alter_tap(int x, int y, pic::Canvas& c)
         case 'O': order_menu(c, false); break;
         case 'D': alter_drop(c); break;
         case 'S': draw_speed(c); break;
+        case 'P': pics_menu(c); break;
+        case 'I': start_icon(c, Screen::Alter); break;
         case 'E':
             screen = Screen::Camp;
             draw_camp(c);
             break;
-        default: error(c, "Not in the engine yet."); break;    // Icon (combat icons), Pics
+        default: break;
         }
         return;
+    case AlterMode::Pics: {
+        const uint16_t v = vm->get(0x4BFF);
+        if (k == 'P') vm->set(0x4BFF, static_cast<uint16_t>(v ^ 2));
+        else if (k == 'A') vm->set(0x4BFF, static_cast<uint16_t>(v ^ 1));
+        else if (k == 'E') {
+            alter_menu(c);
+            return;
+        }
+        pics_menu(c);
+        return;
+    }
     case AlterMode::Select:
         if (k == 'S') {
             char t[24];
@@ -4754,12 +4818,18 @@ void pm_choose(int i, pic::Canvas& c)
 }
 
 void title_tap(int x, int y, pic::Canvas& c);
+void icon_tap(int x, int y, pic::Canvas& c);
+void icon_back(pic::Canvas& c);
 
 void pm_tap(int x, int y, pic::Canvas& c)
 {
     const int row = y / 8, col = x / 8;
     if (screen == Screen::Title) {
         title_tap(x, y, c);
+        return;
+    }
+    if (screen == Screen::Icon) {
+        icon_tap(x, y, c);
         return;
     }
     if (screen == Screen::Modify) {
@@ -5452,6 +5522,11 @@ void handle(ecl::Stop r)
     waiting = false;
     w.col = w.r.x0;                      // EXIT puts the text cursor back
     w.row = w.r.y0;
+    if (party_dead && in_demo) {
+        party_dead = false;
+        end_demo(c);
+        return;
+    }
     if (party_dead) {
         // DAMAGE killed everyone: the party menu
         party_dead = false;
@@ -5495,6 +5570,10 @@ void handle(ecl::Stop r)
         vm->set(0x7ECA, vm->get(0x7ECA) & 1);
         break;
     case Then::Begun:
+        if (in_demo) {                      // the demo is its first run only
+            end_demo(c);
+            return;
+        }
         vm->set(0x4BF2, d->gs.script);
         break;
     case Then::Arrive:
@@ -5635,6 +5714,267 @@ void begin_adventuring()
 
 #include "play_fight.inc"
 
+// ---- the icon editor (alter_icon_facts.md 1): Alter -> Icon, and Create
+// New Character after the name. The outer frame, the combat colours (0 / 8
+// swapped), the icon as it was ("old") and as it is now ("new"), each ready
+// and action on COMSPR block 25's grey squares; the menus Parts / 1st-color
+// / 2nd-color / Size / Exit -> Head Weapon / the colour's part / the other
+// size -> Next Prev Keep Exit. Keep makes a value the kept one, Exit (Esc)
+// puts the kept one back; Exit at the top keeps only what was kept and asks
+// "Is this icon ok?" - No: another pass.
+struct IconEdit {
+    party::Character* ch = nullptr;
+    Screen   from = Screen::Alter;
+    uint8_t  keep[9] = {};              // head, body, size, the six colour bytes
+    int      level = 1;                 // 1 Parts, 2 Head / Weapon, 3 colour part, 4 size, 5 cycle, 6 ok?
+    int      part = 0;                  // level 5: 0 head, 1 body, 2 a colour
+    int      slot = 0;                  // the colour slot (0-5)
+    bool     second = false;            // 2nd-color
+    Pic4     old_ic, new_ic, base[2];
+    char     menus[5][42] = {};
+    char     words[profile::kIconWords][20] = {};
+};
+IconEdit* ie = nullptr;
+
+void end_icon_art();
+
+void icon_take(uint8_t* to, const uint8_t* rec)
+{
+    to[0] = rec[0x141];
+    to[1] = rec[0x142];
+    to[2] = rec[0x144];
+    memcpy(to + 3, rec + 0x145, 6);
+}
+void icon_put(uint8_t* rec, const uint8_t* from)
+{
+    rec[0x141] = from[0];
+    rec[0x142] = from[1];
+    rec[0x144] = from[2];
+    memcpy(rec + 0x145, from + 3, 6);
+}
+
+void icon_pair(pic::Canvas& c, const Pic4& ic, int y)
+{
+    c.fill(32, y, 96, kSq, 0);
+    blit4(c, ie->base[0].px[0], ie->base[0].w, ie->base[0].h, 32, y, false, true, 0, 0, pic::kScreenW, pic::kScreenH);
+    blit4(c, ie->base[1].px[0], ie->base[1].w, ie->base[1].h, 104, y, false, true, 0, 0, pic::kScreenW, pic::kScreenH);
+    blit4(c, ic.px[0], ic.w, ic.h, 32, y, false, true, 0, 0, pic::kScreenW, pic::kScreenH);
+    blit4(c, ic.px[1], ic.w, ic.h, 104, y, false, true, 0, 0, pic::kScreenW, pic::kScreenH);
+    dirty(y, y + kSq);
+}
+
+void icon_new(pic::Canvas& c)
+{
+    build_icon(ie->ch->rec, ie->new_ic);
+    icon_pair(c, ie->new_ic, 104);
+}
+
+void icon_menu(pic::Canvas& c)
+{
+    char t[48];
+    switch (ie->level) {
+    case 1: text::build(menu, "", ie->menus[0]); break;
+    case 2: text::build(menu, "", ie->menus[1]); break;
+    case 3: {
+        strlcpy(t, ie->menus[2], sizeof t);
+        const char* hf = ie->words[ie->second ? profile::kIconFace : profile::kIconHair];
+        char* x = strstr(t, "xxxx");
+        if (x && strlen(hf) == 4) memcpy(x, hf, 4);
+        text::build(menu, "", t);
+        break;
+    }
+    case 4:
+        snprintf(t, sizeof t, "%s%s", ie->words[ie->ch->rec[0x144] == 2 ? profile::kIconSmall : profile::kIconLarge],
+                 ie->menus[3]);
+        text::build(menu, "", t);
+        break;
+    case 5: text::build(menu, "", ie->menus[4]); break;
+    default: text::build(menu, ie->words[profile::kIconOk], rw(Data::kYesNo)); break;
+    }
+    menu.selected = ie->level == 6 ? 1 : 0;          // the question starts on No, as the games do
+    show_menu_line(c);
+}
+
+// A pass: the kept values from the record, the old pair, the new pair
+void icon_pass(pic::Canvas& c)
+{
+    icon_take(ie->keep, ie->ch->rec);
+    build_icon(ie->ch->rec, ie->old_ic);
+    icon_pair(c, ie->old_ic, 56);
+    icon_new(c);
+    ie->level = 1;
+    icon_menu(c);
+}
+
+void start_icon(pic::Canvas& c, Screen from)
+{
+    party::Character* ch = from == Screen::CreateName ? (mk ? &mk->ch : nullptr) : pt->sel();
+    if (!ch) return;
+    end_icon_art();
+    ie = new (std::nothrow) IconEdit;
+    if (!ie) {
+        error(c, "Not enough memory for the icon editor.");
+        return;
+    }
+    ie->ch = ch;
+    ie->from = from;
+    const auto& pa = d->prof->alter;
+    fs::File f;
+    if (open_file(d->prof->program, f)) {
+        library::FileSource src(f);
+        exepack::Info info;
+        if (exepack::parse(src, info) == exepack::Status::Ok)
+            for (int i = 0; i < 5; ++i)
+                if (pa.icon_menu[i]) text::read_pascal(src, info, pa.icon_menu[i], ie->menus[i], sizeof ie->menus[i]);
+        f.close();
+    }
+    for (int i = 0; i < profile::kIconWords; ++i) ow(pa.icon_words[i], ie->words[i], sizeof ie->words[i]);
+    for (int fr = 0; fr < 2; ++fr) {
+        int w = 0, h = 0;
+        ie->base[fr].px[0] = load_pic4("COMSPR.DAX", 25 + fr * 0x80, 0, &w, &h);
+        ie->base[fr].w = static_cast<uint8_t>(w);
+        ie->base[fr].h = static_cast<uint8_t>(h);
+    }
+    screen = Screen::Icon;
+    anim_stop();
+    pic_shown = false;
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    put(c, ie->words[profile::kIconOld], 8, 6, 15);
+    put(c, ie->words[profile::kIconReadyAction], 3, 10, 15);
+    put(c, ie->words[profile::kIconNew], 8, 12, 15);
+    put(c, ie->words[profile::kIconReadyAction], 3, 16, 15);
+    dirty(0, pic::kScreenH);
+    palette_fight(true);
+    icon_pass(c);
+}
+
+void end_icon_art()
+{
+    if (!ie) return;
+    free_pic(ie->old_ic);
+    free_pic(ie->new_ic);
+    free_pic(ie->base[0]);
+    free_pic(ie->base[1]);
+    delete ie;
+    ie = nullptr;
+}
+
+void create_after_icon(pic::Canvas& c);
+
+void end_icon(pic::Canvas& c)
+{
+    const Screen from = ie->from;
+    end_icon_art();
+    palette_fight(false);
+    if (from == Screen::CreateName) {
+        create_after_icon(c);
+        return;
+    }
+    draw_camp(c);
+    screen = Screen::Alter;
+    alter_menu(c);
+}
+
+void icon_key(char k, pic::Canvas& c)
+{
+    uint8_t* rec = ie->ch->rec;
+    switch (ie->level) {
+    case 1:
+        if (k == 'P') ie->level = 2;
+        else if (k == '1' || k == '2') {
+            ie->second = k == '2';
+            ie->level = 3;
+        } else if (k == 'S') ie->level = 4;
+        else if (k == 'E') {
+            icon_put(rec, ie->keep);            // only what was kept
+            icon_new(c);
+            ie->level = 6;
+        } else return;
+        icon_menu(c);
+        return;
+    case 2:
+        if (k == 'H' || k == 'W') {
+            ie->part = k == 'H' ? 0 : 1;
+            ie->level = 5;
+        } else if (k == 'E') ie->level = 1;
+        else return;
+        icon_menu(c);
+        return;
+    case 3: {
+        // Weapon Body Hair / Face Shield Arm Leg: colour slots 5 0 3 4 1 2
+        const int slot = k == 'W' ? 5 : k == 'B' ? 0 : (k == 'H' || k == 'F') ? 3 : k == 'S' ? 4 : k == 'A' ? 1 : k == 'L' ? 2 : -1;
+        if (slot >= 0) {
+            ie->part = 2;
+            ie->slot = slot;
+            ie->level = 5;
+        } else if (k == 'E') ie->level = 1;
+        else return;
+        icon_menu(c);
+        return;
+    }
+    case 4:
+        if (k == 'L' || k == 'S') {
+            rec[0x144] = k == 'L' ? 2 : 1;
+            icon_new(c);
+        } else if (k == 'K') {
+            ie->keep[2] = rec[0x144];
+            ie->level = 1;
+        } else if (k == 'E') {
+            rec[0x144] = ie->keep[2];
+            icon_new(c);
+            ie->level = 1;
+        } else return;
+        icon_menu(c);
+        return;
+    case 5: {
+        const int back = ie->part == 2 ? 3 : 2;
+        if (k == 'N' || k == 'P') {
+            const int step = k == 'N' ? 1 : -1;
+            if (ie->part == 0) rec[0x141] = static_cast<uint8_t>((rec[0x141] + 14 + step) % 14);
+            else if (ie->part == 1) rec[0x142] = static_cast<uint8_t>((rec[0x142] + 32 + step) % 32);
+            else {
+                uint8_t& b = rec[0x145 + ie->slot];
+                if (ie->second) b = static_cast<uint8_t>((b & 0x0F) | ((((b >> 4) + 16 + step) & 15) << 4));
+                else b = static_cast<uint8_t>((b & 0xF0) | (((b & 15) + 16 + step) & 15));
+            }
+            icon_new(c);
+            return;
+        }
+        if (k == 'K') {
+            if (ie->part == 0) ie->keep[0] = rec[0x141];
+            else if (ie->part == 1) ie->keep[1] = rec[0x142];
+            else memcpy(ie->keep + 3, rec + 0x145, 6);
+        } else if (k == 'E') {
+            if (ie->part == 0) rec[0x141] = ie->keep[0];
+            else if (ie->part == 1) rec[0x142] = ie->keep[1];
+            else memcpy(rec + 0x145, ie->keep + 3, 6);
+            icon_new(c);
+        } else return;
+        ie->level = back;
+        icon_menu(c);
+        return;
+    }
+    default:
+        if (k == 'Y') end_icon(c);
+        else if (k == 'N') icon_pass(c);
+        return;
+    }
+}
+
+void icon_tap(int x, int y, pic::Canvas& c)
+{
+    if (!ie || y < text::kMenuTapTop) return;
+    const int k = text::hit(menu, x / 8);
+    if (k < 0) return;
+    menu.selected = k;
+    show_menu_line(c);
+    icon_key(text::key(menu, k), c);
+}
+
+// Esc: as Exit at the level shown (No at the question)
+void icon_back(pic::Canvas& c) { icon_key(ie->level == 6 ? 'N' : 'E', c); }
+
 // The sound driver's tables and byte code, from the player's program
 void load_sound()
 {
@@ -5672,6 +6012,7 @@ struct TitleRun {
     int      step = 0;
     uint32_t since = 0;
     bool     prompt = false;
+    uint32_t timeout_ms = 30000;        // the version line picks Demo after this (10 s after a demo)
     char     version[48] = {};
     char     words[24] = {};
 };
@@ -5744,7 +6085,10 @@ void title_prompt(pic::Canvas& c)
     text::build(menu, title_run->version, title_run->words);
     menu.selected = 0;
     show_menu_line(c);
+    title_run->since = millis();
 }
+
+void start_demo(pic::Canvas& c);
 
 void title_next(pic::Canvas& c)
 {
@@ -5754,7 +6098,11 @@ void title_next(pic::Canvas& c)
 
 void title_tick(uint32_t now, pic::Canvas& c)
 {
-    if (!title_run || title_run->prompt) return;
+    if (!title_run) return;
+    if (title_run->prompt) {
+        if (title_run->words[0] && now - title_run->since >= title_run->timeout_ms) start_demo(c);
+        return;
+    }
     if (now - title_run->since >= d->prof->title[title_run->step].wait_ms) title_next(c);
 }
 
@@ -5773,19 +6121,79 @@ void title_tap(int x, int y, pic::Canvas& c)
     if (k < 0) return;
     menu.selected = k;
     show_menu_line(c);
-    // The demo plays itself in area 1 (ECL1 block 0x52 with no party, a
-    // key ends it): still to come; Play goes on to the party menu
-    if (text::key(menu, k) == 'D') error(c, "The demo isn't in the engine yet: choose Play.");
+    if (text::key(menu, k) == 'D') start_demo(c);
     else end_title(c);
 }
 
+// The demo: the party menu skipped, area 1, speed 9, ECL1 block 0x52's
+// first-run entry
+void start_demo(pic::Canvas& c)
+{
+    delete title_run;
+    title_run = nullptr;
+    menu_on = false;
+    in_demo = true;
+    while (pt->count) leave_party(pt->count - 1);
+    ecl::GameState& gs = d->gs;
+    gs.game_area = 1;
+    vm->set(0x7F12, 1);
+    vm->set(0x4BFC, 9);
+    vm->set(0x4BE6, 1);
+    gs.x = 7;
+    gs.y = 13;
+    gs.dir = 2;
+    gs.script = 0x52;
+    d->loaded = false;
+    c.clear(0);
+    screen = Screen::Game;
+    if (!host->load_script(gs.script, gs.code, &gs.code_len) || !vm->init_script(false)) {
+        Serial.println("[play] the demo's script didn't load");
+        end_demo(c);
+        return;
+    }
+    draw_frame(c);
+    draw_panel(c);
+    run_entry(4, Then::Begun);
+}
+
+bool start_title(pic::Canvas& c, uint32_t timeout_ms);
+
+// After the demo: the party goes, the game's state as at the start, the
+// title again with a 10 s version line
+void end_demo(pic::Canvas& c)
+{
+    in_demo = false;
+    while (pt->count) leave_party(pt->count - 1);
+    anim_stop();
+    waiting = false;
+    then = Then::Idle;
+    ecl::GameState& gs = d->gs;
+    gs.game_area = d->prof->start_area;
+    vm->set(0x7F12, gs.game_area);
+    vm->set(0x4BFC, 4);
+    vm->set(0x7F70, 0);
+    vm->set(0x7F71, 0);
+    vm->set(0x7ECB, 0);
+    gs.x = 7;
+    gs.y = 13;
+    gs.dir = 0;
+    area_view = false;
+    pic_shown = false;
+    anim_block = bigpic = last_pic = -1;
+    if (!start_title(c, 10000)) {
+        screen = Screen::PartyMenu;
+        draw_party_menu(c);
+    }
+}
+
 // Starts the title (false: this game has none - straight to the party menu)
-bool start_title(pic::Canvas& c)
+bool start_title(pic::Canvas& c, uint32_t timeout_ms)
 {
     const profile::Profile& p = *d->prof;
     if (!p.title_file || p.title_steps <= 0) return false;
     title_run = new (std::nothrow) TitleRun;
     if (!title_run) return false;
+    title_run->timeout_ms = timeout_ms;
     fs::File f;
     if ((p.title_version || p.title_menu) && open_file(p.program, f)) {
         library::FileSource src(f);
@@ -5928,6 +6336,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
         f.close();
     }
     vm->set_words(d->script_words);
+    vm->set(0x4BFF, 3);                     // Pics and Animation on, as the game starts (a save says its own)
     load_sound();
     note_until = 0;
     last_pic_id = -1;
@@ -5952,7 +6361,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     exit_wanted = false;
     w = text::Writer{};
     // The title sequence first, as the games begin; then the party menu
-    if (!start_title(c)) {
+    if (!start_title(c, 30000)) {
         screen = Screen::PartyMenu;
         draw_party_menu(c);
     }
@@ -5982,6 +6391,7 @@ void close()
     mk = nullptr;
     delete title_run;
     title_run = nullptr;
+    end_icon_art();
     new_char = nullptr;
     input_engine = false;
     if (d) {
@@ -6592,6 +7002,13 @@ void tick(uint32_t now, pic::Canvas& c)
         else cursor_show();
         cursor_at = now;
     }
+    // The demo: a key read doesn't wait (a full page, "press a key", a
+    // one-word menu go straight on)
+    if (in_demo && (wt == ecl::Wait::Key || (wt == ecl::Wait::Print && page_prompt) ||
+                    (wt == ecl::Wait::Menu && vm->items() == 1))) {
+        tap(0, 0, c);
+        return;
+    }
     if (wt == ecl::Wait::Pause) {
         if (static_cast<int32_t>(now - pause_until) >= 0) {
             waiting = false;
@@ -6677,6 +7094,10 @@ bool back(pic::Canvas& c)
 {
     if (!d) return false;
     cv = &c;
+    if (screen == Screen::Icon) {
+        icon_back(c);
+        return true;
+    }
     if (screen == Screen::LoadWhich) {
         screen = Screen::PartyMenu;
         draw_party_menu(c);

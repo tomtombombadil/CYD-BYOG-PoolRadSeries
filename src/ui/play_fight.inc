@@ -354,24 +354,24 @@ void load_tiles(bool indoors)
     load_frames("RANDCOM.DAX", 34, 6);
 }
 
-// A party member's icon: the head over the body's top rows, recoloured
-void load_monster_icon(int slot, int block);
-
-void compose_icon(int slot, const party::Character& ch)
+// A party member's icon from its record (head 0x141, body 0x142, size
+// 0x144, colours 0x145-0x14A; alter_icon_facts.md 1.6): CBODY / CHEAD
+// blocks (+ 0x40 large, + 0x80 the attack frame), the head over the
+// body's top rows - where both have a colour the two colour numbers OR'd,
+// as the program does -, then each pixel recoloured once from its own
+// colour: default d -> the byte's low nibble, d + 8 -> its high
+void build_icon(const uint8_t* rec, Pic4& ic)
 {
-    // An NPC from the monsters' files (ADD NPC: computer-run, its MON block
-    // at 0x126): its own picture. (A player character's 0x126 is a random
-    // number and head / body 0 are ordinary choices - v0.40.3: the GOG
-    // sample party fought without icons.)
-    if (ch.rec[0xF7] >= 0x80 && ch.rec[0x126] && !ch.rec[0x141] && !ch.rec[0x142]) {
-        load_monster_icon(slot, ch.rec[0x126]);
-        if (fg->icon[slot].px[0]) return;
-    }
-    Pic4& ic = fg->icon[slot];
     free_pic(ic);
-    const int head = ch.rec[0x141], body = ch.rec[0x142];
-    const bool small = ch.rec[0x144] == 1;
+    const int head = rec[0x141], body = rec[0x142];
+    const bool small = rec[0x144] == 1;
     static const uint8_t kDefault[6] = {1, 2, 3, 4, 6, 7};
+    uint8_t map[16];
+    for (int i = 0; i < 16; ++i) map[i] = static_cast<uint8_t>(i);
+    for (int i = 0; i < 6; ++i) {
+        map[kDefault[i]] = rec[0x145 + i] & 15;
+        map[kDefault[i] + 8] = rec[0x145 + i] >> 4;
+    }
     for (int fr = 0; fr < 2; ++fr) {
         int bw, bh, hw, hh;
         uint8_t* b = load_pic4("CBODY.DAX", body + (small ? 0 : 0x40) + fr * 0x80, 0, &bw, &bh);
@@ -385,24 +385,30 @@ void compose_icon(int slot, const party::Character& ch)
             for (int y = 0; y < hh && y < kSq; ++y)
                 for (int x = 0; x < kSq; ++x) {
                     const int v = nib(h, hw, x, y);
-                    if (v) set_nib(b, kSq, x, y, v);
+                    if (v) set_nib(b, kSq, x, y, v | nib(b, kSq, x, y));
                 }
         free(h);
-        // Recolour: default colour d -> the byte's low nibble, d + 8 -> its high
         for (int y = 0; y < kSq; ++y)
-            for (int x = 0; x < kSq; ++x) {
-                const int v = nib(b, kSq, x, y);
-                for (int i = 0; i < 6; ++i) {
-                    const uint8_t cb = ch.rec[0x145 + i];
-                    if (v == kDefault[i]) set_nib(b, kSq, x, y, cb & 15);
-                    else if (v == kDefault[i] + 8) set_nib(b, kSq, x, y, cb >> 4);
-                    else continue;
-                    break;
-                }
-            }
+            for (int x = 0; x < kSq; ++x) set_nib(b, kSq, x, y, map[nib(b, kSq, x, y)]);
         ic.px[fr] = b;
         ic.w = ic.h = kSq;
     }
+}
+
+// A party member's icon: the head over the body's top rows, recoloured
+void load_monster_icon(int slot, int block);
+
+void compose_icon(int slot, const party::Character& ch)
+{
+    // An NPC from the monsters' files (ADD NPC: computer-run, its MON block
+    // at 0x126): its own picture. (A player character's 0x126 is a random
+    // number and head / body 0 are ordinary choices - v0.40.3: the GOG
+    // sample party fought without icons.)
+    if (ch.rec[0xF7] >= 0x80 && ch.rec[0x126] && !ch.rec[0x141] && !ch.rec[0x142]) {
+        load_monster_icon(slot, ch.rec[0x126]);
+        if (fg->icon[slot].px[0]) return;
+    }
+    build_icon(ch.rec, fg->icon[slot]);
 }
 
 void load_monster_icon(int slot, int block)
@@ -1978,12 +1984,36 @@ void end_fight(pic::Canvas& c)
 {
     combat::Battle& b = fg->b;
     fg->out = combat::finish(b, ml ? ml->m : nullptr);
-    const combat::Result r = fg->out.result;
+    combat::Result r = fg->out.result;
+    if (in_demo && r == combat::Lost)
+        // The demo's party is all NPCs (who don't count as the party's
+        // survivors in a real game): it wins while one of them stands
+        for (int i = 0; i < b.party_size; ++i)
+            if (b.f[i].status() == party::Okay || b.f[i].status() == party::Animated) r = combat::Won;
     int out = 0;
     for (int i = b.party_size; i < b.n; ++i)
         if (!b.f[i].gone && !b.f[i].up()) ++out;
     vm->set(0x7EC8, static_cast<uint16_t>(out));
     vm->set(0x7EC7, static_cast<uint16_t>(r));
+    if (in_demo) {
+        // The demo (demo_facts.md 5): no clean-up, experience, treasure or
+        // results; the script goes on (all down: the demo ends)
+        end_fight_art();
+        fight_clear_monsters();
+        palette_fight(false);
+        ground->clear();
+        delete fg;
+        fg = nullptr;
+        if (r == combat::Lost) {
+            end_demo(c);
+            return;
+        }
+        fight_back_to_game(c);
+        clear_menu_line(c);
+        waiting = false;
+        handle(vm->resume());
+        return;
+    }
     // The beaten monsters' coins and items go to the treasure
     if (r == combat::Won) {
         for (int m = 0; m < 7; ++m) ground->money[m] += fg->out.money[m];
