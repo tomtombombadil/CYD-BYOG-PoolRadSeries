@@ -123,7 +123,23 @@ uint32_t Dice::next()
     return s_;
 }
 
-int Dice::random(int n) { return n > 0 ? static_cast<int>(next() % static_cast<uint32_t>(n)) : 0; }
+#ifdef CYD_TEST_HOOKS
+int (*g_die_hook)(int n) = nullptr;
+#endif
+
+int Dice::random(int n)
+{
+#ifdef CYD_TEST_HOOKS
+    if (g_die_hook && n > 0) {
+        const int v = g_die_hook(n);
+        if (v >= 0) {
+            next();                     // (the sequence moves on as usual)
+            return v < n ? v : n - 1;
+        }
+    }
+#endif
+    return n > 0 ? static_cast<int>(next() % static_cast<uint32_t>(n)) : 0;
+}
 
 int Dice::roll(int sides, int count)
 {
