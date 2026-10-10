@@ -642,10 +642,10 @@ void do_attack(pic::Canvas& c, int a, int t, bool behind)
         const int dmg = at.hits[k].damage;
         snprintf(line, sizeof line, "%s%s%d%s%s", behind ? fw(profile::kFromBehind) : "", fw(profile::kHittingFor), dmg,
                  dmg == 1 ? fw(profile::kPointW) : fw(profile::kPointsW), fw(profile::kOfDamage));
-        add_page(a, fw(profile::kAttacksW), line, t);
+        add_page(a, fw(at.backstab ? profile::kBackstabs : profile::kAttacksW), line, t);
         first = false;
     }
-    if (first) add_page(a, fw(profile::kAttacksW), fw(profile::kMisses), t);
+    if (first) add_page(a, fw(at.backstab ? profile::kBackstabs : profile::kAttacksW), fw(profile::kMisses), t);
     if (at.down) {
         const combat::Down dn = combat::down_state(b.f[t]);
         if (dn == combat::Down::Dead) add_page(t, fw(profile::kIsKilled));
@@ -694,7 +694,7 @@ void free_attacks(pic::Canvas& c, int i, int dir)
         const bool still = combat::adjacent(b, i, e);
         f.x -= combat::dx(dir);
         f.y -= combat::dy(dir);
-        if (still) continue;
+        if (still || !combat::free_attack_ok(b, fg->t, e, i)) continue;
         if (en.attacks[0] <= 0 && en.attacks[1] <= 0) en.attacks[0] = 1;
         do_attack(c, e, i, true);
         if (!f.up()) return;
@@ -713,6 +713,30 @@ void guard_attacks(pic::Canvas& c, int i)
         if (en.attacks[0] <= 0 && en.attacks[1] <= 0) en.attacks[0] = 1;
         do_attack(c, e, i, false);
     }
+}
+
+// A blow in melee: a fighter's sweep of the weak ones next to them ("sweeps":
+// one attack on each, and the turn is over), else the attack
+void melee(pic::Canvas& c, int a, int t)
+{
+    combat::Battle& b = fg->b;
+    combat::Fighter& f = b.f[a];
+    int sw[8];
+    const int n = combat::adjacent(b, a, t) ? combat::sweep(b, a, t, sw, 8) : 0;
+    if (!n) {
+        do_attack(c, a, t, false);
+        return;
+    }
+    f.swept = true;
+    Serial.printf("[play] fighter %d sweeps %d\n", a, n);
+    add_page(a, fw(profile::kSweeps));
+    for (int k = 0; k < n && f.up(); ++k) {
+        if (!b.f[sw[k]].up()) continue;
+        f.attacks[0] = 1;
+        f.attacks[1] = 0;
+        do_attack(c, a, sw[k], false);
+    }
+    f.attacks[0] = f.attacks[1] = 0;
 }
 
 void forget_spell(combat::Fighter& f, int sp);
@@ -995,7 +1019,7 @@ void try_step(pic::Canvas& c, int dir)
             return;
         }
         f.target = blocker;
-        do_attack(c, i, blocker, false);
+        melee(c, i, blocker);
         say(c, FSt::Turn);              // (after_attack)
         return;
     }
@@ -1140,7 +1164,8 @@ void aim_target(pic::Canvas& c, int t)
     // Missiles: the readied ammunition (arrows / quarrels) or the thrown weapon goes
     int ammo = -1;
     const bool shot = !combat::adjacent(fg->b, fg->cur, t) && combat::missile(fg->b, f, &ammo) > 0;
-    do_attack(c, fg->cur, t, false);
+    if (shot) do_attack(c, fg->cur, t, false);
+    else melee(c, fg->cur, t);
     if (shot) spend_ammo(fg->cur, ammo);
     say(c, FSt::Turn);
 }
@@ -1322,7 +1347,8 @@ void ai_step(pic::Canvas& c)
     const combat::Plan p = combat::think(b, fg->t, i, rng);
     switch (p.act) {
     case combat::Act::Attack:
-        do_attack(c, i, p.target, false);
+        if (p.missile) do_attack(c, i, p.target, false);
+        else melee(c, i, p.target);
         if (p.missile) spend_ammo(i, p.ammo);
         say(c, FSt::Turn);
         return;

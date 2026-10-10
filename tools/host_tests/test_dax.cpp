@@ -2603,6 +2603,22 @@ static void test_magic()
     CHECK(m.n_items == 2 && wand[0x39] == 1 && wand[0x3C] == 1);
     magic::used(m, 1);
     CHECK(m.n_items == 1);                                                // the last charge
+    // Worn while readied: 0x80 gives the effect in 0x3D, gone when put away
+    {
+        party::Character wc{};
+        wc.n_items = 2;
+        wc.items[0][0x3D] = 0x2A; wc.items[0][0x3E] = 0x80;
+        CHECK(rules::worn(wc, 0, true) && wc.has_affect(0x2A) && wc.affects[0][1] == 0 && wc.affects[0][2] == 0);
+        CHECK(rules::worn(wc, 0, true) && wc.n_affects == 1);           // not twice
+        CHECK(rules::worn(wc, 0, false) && !wc.has_affect(0x2A));
+        // 0x84: keyed to alignment 3, 2 points (0x23); the wrong alignment: put away, hurt
+        wc.rec[0x11B] = 1; wc.rec[0x1A4] = 10; wc.rec[0x196] = 1;
+        wc.items[1][0x3D] = 0x23; wc.items[1][0x3E] = 0x84; wc.items[1][0x34] = 1;
+        CHECK(!rules::worn(wc, 1, true) && wc.items[1][0x34] == 0 && wc.hp() == 8);
+        wc.rec[0x11B] = 3;
+        wc.items[1][0x34] = 1;
+        CHECK(rules::worn(wc, 1, true) && wc.hp() == 8);
+    }
     uint8_t ever[party::kItemSize] = {};
     ever[0x3D] = 3;
     CHECK(!magic::use_charge(ever) && !magic::use_charge(ever));          // 0 charges: never runs out
@@ -3072,6 +3088,45 @@ static void test_combat()
     combat::occupancy(sb);
     const combat::Plan shot = combat::think(sb, t, 1, d);
     CHECK(shot.act == combat::Act::Attack && shot.missile && shot.target == 0);
+    // Sweeps, backstabs, free attacks: the party member at (10, 10), three
+    // weak enemies (under 1 Hit Die) round them
+    sb.ground[10][14] = 0x37;
+    const int sx4[4] = {10, 11, 11, 10}, sy4[4] = {10, 10, 11, 11};
+    for (int i = 0; i < 4; ++i) {
+        mrec[i][0x195] = 0; mrec[i][0x196] = 1; mrec[i][0x1A4] = 20; mrec[i][0xE5] = 0;
+        memset(maff[i], 0, sizeof maff[i]); mnaff[i] = 0;
+        sb.f[i].x = sx4[i]; sb.f[i].y = sy4[i]; sb.f[i].size = 1;
+        sb.f[i].received = sb.f[i].turns = 0; sb.f[i].delay = 0;
+        sb.f[i].items = nullptr; sb.f[i].n_items = 0;
+    }
+    combat::occupancy(sb);
+    int swept[8];
+    sb.f[0].attacks[0] = 1;
+    CHECK(combat::sweep(sb, 0, 1, swept, 8) == 0);                 // not a fighter
+    mrec[0][0x10B] = 3;                                            // a 3rd level fighter
+    CHECK(combat::sweep(sb, 0, 1, swept, 8) == 3 && swept[0] == 1);
+    sb.f[0].attacks[0] = 3;
+    CHECK(combat::sweep(sb, 0, 1, swept, 8) == 0);                 // as many attacks as the level
+    sb.f[0].attacks[0] = 1;
+    mrec[2][0xE5] = 2;                                             // one of them stronger
+    CHECK(combat::sweep(sb, 0, 1, swept, 8) == 2);
+    // A thief straight behind one that's had an attack already
+    sb.f[1].facing = 2;                                            // facing east, away from the thief
+    sb.f[1].received = 2;
+    CHECK(!combat::can_backstab(sb, 0, 1, nullptr));
+    mrec[0][0x10F] = 5;
+    CHECK(combat::can_backstab(sb, 0, 1, nullptr));
+    sb.f[1].facing = 6;
+    CHECK(!combat::can_backstab(sb, 0, 1, nullptr));
+    // The free attack: an enemy that has acted and been attacked hits only with them in its front
+    sb.f[1].received = 1;
+    sb.f[1].facing = 2;
+    CHECK(!combat::free_attack_ok(sb, t, 1, 0));
+    sb.f[1].facing = 7;                                            // north-west: the thief (west) is in front
+    CHECK(combat::free_attack_ok(sb, t, 1, 0));
+    sb.f[1].facing = 2;
+    sb.f[1].delay = 3;                                             // not acted yet
+    CHECK(combat::free_attack_ok(sb, t, 1, 0));
 }
 
 int main()

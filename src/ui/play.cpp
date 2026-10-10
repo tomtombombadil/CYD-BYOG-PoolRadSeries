@@ -1058,6 +1058,7 @@ void ready_item(int i, pic::Canvas& c)
             return;
         }
         r[0x34] = 0;
+        rules::worn(ch, i, false);
     } else {
         const items::TypeInfo& ti = names->type(it.type());
         int other = -1;
@@ -1091,7 +1092,7 @@ void ready_item(int i, pic::Canvas& c)
             return;
         }
         r[0x34] = 1;
-        if (r[0x3E] > 0x7F) Serial.println("[play] magic item effects (not in the engine yet)");
+        rules::worn(ch, i, true);                   // (an item keyed to another alignment hurts and won't stay)
     }
     rules::recalc(ch, *names, d->facts);
     draw_items(c);

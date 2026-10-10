@@ -385,6 +385,40 @@ int price(const uint8_t* item, int factor)
     }
 }
 
+bool worn(party::Character& c, int i, bool on)
+{
+    if (i < 0 || i >= c.n_items) return true;
+    uint8_t* it = c.items[i];
+    if (it[0x3E] < 0x80) return true;
+    const int code = it[0x3E] & 0x7F, v = it[0x3D];
+    if (code == 0 && v) {
+        int k = -1;
+        for (int j = 0; j < c.n_affects; ++j)
+            if (c.affects[j][0] == v) k = j;
+        if (on && k < 0 && c.n_affects < party::kMaxAffects) {
+            uint8_t* a = c.affects[c.n_affects++];
+            memset(a, 0, party::kAffectSize);
+            a[0] = static_cast<uint8_t>(v);
+        } else if (!on && k >= 0) {
+            for (int j = k; j + 1 < c.n_affects; ++j) memcpy(c.affects[j], c.affects[j + 1], party::kAffectSize);
+            --c.n_affects;
+            memset(c.affects[c.n_affects], 0, party::kAffectSize);
+        }
+        return true;
+    }
+    if (code == 4 && on && (v & 0x0F) != c.alignment()) {
+        it[0x34] = 0;
+        const int hp = c.hp() - (v >> 4);
+        c.rec[0x1A4] = static_cast<uint8_t>(hp > 0 ? hp : 0);
+        if (hp <= 0) {
+            c.rec[0x195] = hp <= -10 ? party::Dead : hp < 0 ? party::Dying : party::Unconscious;
+            c.rec[0x196] = 0;
+        }
+        return false;
+    }
+    return true;
+}
+
 void remove_item(party::Character& c, int i)
 {
     if (i < 0 || i >= c.n_items) return;

@@ -1,4 +1,5 @@
 #include "ecl_vm.h"
+#include "rules.h"
 
 #include <cstdio>
 #include <cstring>
@@ -942,6 +943,7 @@ Stop Vm::step()
                 if (wt > 255) ch = ch > 90 ? ch - 90 : 0;
                 else if (wt > 24) ch = ch > 50 ? ch - 50 : 0;
                 if (roll(100, 1) <= ch) {
+                    if (c.items[k][0x34]) rules::worn(c, k, false);
                     for (int j = k; j + 1 < c.n_items; ++j) memcpy(c.items[j], c.items[j + 1], party::kItemSize);
                     --c.n_items;
                     memset(c.items[c.n_items], 0, party::kItemSize);
@@ -1221,6 +1223,7 @@ Stop Vm::step()
                     ++k;
                     continue;
                 }
+                if (c.items[k][0x34]) rules::worn(c, k, false);
                 for (int j = k; j + 1 < c.n_items; ++j) memcpy(c.items[j], c.items[j + 1], party::kItemSize);
                 --c.n_items;
                 memset(c.items[c.n_items], 0, party::kItemSize);

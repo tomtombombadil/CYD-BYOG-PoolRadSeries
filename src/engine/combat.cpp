@@ -18,6 +18,7 @@ constexpr int kSize = 0xDE, kDexFull = 0x17, kMove = 0x1A5, kHalf1 = 0x11C, kHal
 constexpr int kHit = 0x199, kAc = 0x19A, kAcBehind = 0x19B;
 constexpr int kDice = 0x19E, kSides = 0x1A0, kBonus = 0x1A2;
 constexpr int kControl = 0xF7;
+constexpr int kHd = 0xE5, kFighterLevel = 0x10B, kThiefLevel = 0x10F;
 
 
 // ---- Indoors: a map square's side codes
@@ -576,6 +577,7 @@ void start_round(Battle& b, create::Dice& d)
     for (int i = 0; i < b.n; ++i) {
         Fighter& f = b.f[i];
         f.attacked = false;
+        f.swept = false;
         f.can_cast = true;
         if (!f.up() || !f.size) {
             f.delay = f.moves = f.attacks[0] = f.attacks[1] = 0;
@@ -689,9 +691,13 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
     if (turn > 4) turn = 8 - turn;
     tg.turns = (tg.turns + turn) & 7;
     ++tg.received;
-    const bool behind = from_behind || (tg.received > 1 && dir == tg.facing && tg.turns > 4);
-    out.behind = behind;
+    const bool stab = !from_behind && can_backstab(b, a, c, names);
+    const bool behind = from_behind || stab || (tg.received > 1 && dir == tg.facing && tg.turns > 4);
+    out.behind = behind && !stab;
+    out.backstab = stab;
     int ac = tg.rec[behind ? kAcBehind : kAc];
+    if (stab) ac -= 4;
+    const int times = stab ? (at.rec[kThiefLevel] - 1) / 4 + 2 : 1;
     // Large targets: the weapon's large dice
     const bool large = (tg.rec[kSize] & 0x80) || (tg.rec[kSize] & 7) > 1;
     int dice1 = at.rec[kDice], sides1 = at.rec[kSides], bonus1 = static_cast<int8_t>(at.rec[kBonus]);
@@ -748,6 +754,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                 const int bo = slot ? static_cast<int8_t>(at.rec[kBonus + 1]) : bonus1;
                 int dmg = (n && s ? d.roll(s, n) : 0) + bo;
                 if (dmg < 0) dmg = 0;
+                dmg *= times;
                 h.damage = dmg;
                 out.any = true;
                 if (damage(b, c, dmg)) out.down = true;
@@ -756,6 +763,56 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
         }
     }
     return out;
+}
+
+bool can_backstab(const Battle& b, int a, int c, const items::Names* names)
+{
+    const Fighter& at = b.f[a];
+    const Fighter& tg = b.f[c];
+    if (!at.rec[kThiefLevel] || tg.received < 2 || (tg.rec[kSize] & 0x80) || (tg.rec[kSize] & 7) > 1) return false;
+    if (direction(at.x, at.y, tg.x, tg.y) != tg.facing) return false;
+    if (names && b.fx) {
+        const int w = weapon(at, *names);
+        if (w >= 0) {
+            bool ok = false;
+            for (uint8_t t : b.fx->backstab_weapons)
+                if (t && at.items[w][0x2E] == t) ok = true;
+            if (!ok) return false;
+        }
+    }
+    return true;
+}
+
+bool free_attack_ok(const Battle& b, const Tables& t, int e, int mover)
+{
+    const Fighter& en = b.f[e];
+    const Fighter& m = b.f[mover];
+    if (helpless(b, en) || !range(b, t, e, mover, false, nullptr)) return false;
+    if (en.delay > 0 || en.received == 0) return true;
+    const int dir = direction(en.x, en.y, m.x, m.y);
+    if (dir > 7) return true;
+    int off = (dir - en.facing) & 7;
+    if (off > 4) off = 8 - off;
+    return off <= 2;
+}
+
+int sweep(const Battle& b, int a, int target, int* out, int cap)
+{
+    const Fighter& at = b.f[a];
+    const int level = at.member >= 0 ? at.rec[kFighterLevel] : 0;
+    if (level <= 0 || at.swept || at.attacks[0] >= level) return 0;
+    const Fighter& tg = b.f[target];
+    if (tg.rec[kHd] != 0 || !adjacent(b, a, target)) return 0;
+    int n = 0;
+    out[n++] = target;
+    int all = 1;
+    for (int i = 0; i < b.n; ++i) {
+        const Fighter& o = b.f[i];
+        if (i == target || !o.up() || !o.size || o.team() == at.team() || o.rec[kHd] != 0 || !adjacent(b, a, i)) continue;
+        ++all;
+        if (n < level && n < cap) out[n++] = i;
+    }
+    return all > at.attacks[0] ? n : 0;
 }
 
 int weapon(const Fighter& f, const items::Names& names)

@@ -54,6 +54,13 @@ bool add_item(party::Character& c, const uint8_t* item);
 
 // A character's items (Items: Drop, Trade, Halve, Join)
 void remove_item(party::Character& c, int i);
+// An item that works while readied (its effect byte 0x3E 0x80 and up),
+// readied (`on`) or put away: 0x80 - the effect in 0x3D is theirs while
+// readied (for good: no time); 0x84 - keyed to an alignment (0x3D & 0x0F):
+// the wrong one can't ready it (put away again) and takes 0x3D >> 4
+// damage. False when the item didn't stay readied. (The others - stats,
+// a ring of wizardry ... - are to come.)
+bool worn(party::Character& c, int i, bool on);
 // Halve: a pile of n becomes n - n/2 and a new pile of n/2 (not readied);
 // false when it can't (one of it, or 16 items already)
 bool halve(party::Character& c, int i);

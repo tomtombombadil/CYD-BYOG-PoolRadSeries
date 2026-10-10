@@ -64,6 +64,7 @@ bool read_tables(Tables& t, const TableAt& at, ReadDs read, void* ctx);
 struct Facts {
     uint8_t held[4];                    // can't act, slain by any blow: snake charm, paralysed, asleep, helpless
     uint8_t bless, curse, prayer, haste, slow, invisible, prot_evil, prot_good, mirror;
+    uint8_t backstab_weapons[6];        // the weapons a thief backstabs with (or none)
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a
@@ -101,6 +102,7 @@ struct Fighter {
     int     target = -1;
     int     ground = 0;                 // the square's ground before a body was left there
     bool    guarding = false, quick = false, attacked = false, turned_undead = false, can_cast = true;
+    bool    swept = false;              // swept this round
     bool    gone = false;               // a monster there was no room for: not in the fight at all
     bool    fleeing = false;            // turned undead, panic: runs for the field's edge
     int     spell = 0;                  // a spell being cast (it goes off at its delay)
@@ -200,7 +202,21 @@ struct Attack {
     bool behind = false;
     bool down = false;                  // the target went down
     bool slain = false;                 // a helpless target: "slays helpless ... with one cruel blow"
+    bool backstab = false;              // "-Backstabs-"
 };
+// A backstab: a thief (backstabbing weapon or none) straight behind a man-
+// sized target that has had an attack this round already: the rear AC 4
+// worse, damage x ((thief level - 1) / 4 + 2)
+bool can_backstab(const Battle& b, int a, int c, const items::Names* names);
+// A free attack on one stepping away (leaving enemy e's side): e isn't held,
+// sees them, and either hasn't acted this round, hasn't been attacked this
+// round, or has them in its front (its facing +- 2)
+bool free_attack_ok(const Battle& b, const Tables& t, int e, int mover);
+// A fighter's sweep (fighters: their level, once a round): fewer attacks
+// left than the level, the target under 1 Hit Die and next to them, more
+// such enemies next to them than attacks left. The ones swept (the target
+// first, up to the level); 0: no sweep.
+int sweep(const Battle& b, int a, int target, int* out, int cap);
 // Attacks fighter c with fighter a's attacks left (slot 2 then slot 1), as
 // the games do: to-hit d20 (1 misses, 20 hits) + to-hit value + the side's
 // bonus >= the target's AC (the rear AC from behind); damage dice + bonus
