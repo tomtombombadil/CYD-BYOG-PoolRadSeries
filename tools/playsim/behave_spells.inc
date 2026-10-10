@@ -1520,6 +1520,19 @@ static void sp_check_effects()
         snprintf(what, sizeof what, "to hit: %s", h.what);
         expect(SP, what, got == h.hits, "%s", got ? "hit" : "missed");
     }
+    // Prayer reaches those within 6 squares of the one praying (coab calc_affect_effect: prayer's range 6)
+    for (int far = 0; far < 2; ++far) {
+        reset();
+        sp_put(sp_t[3], 0, far ? 40 : 15, 12);          // the one praying (the attacker's side)
+        sp_give(sp_t[3], 0x31, 10, 0x05, false);
+        const bool got = sp_blow(A, T, 10, 11);
+        char what[120];
+        snprintf(what, sizeof what, "to hit: Prayer %s squares from the one praying: %s", far ? "30" : "5", far ? "no +1" : "+1");
+        expect(SP, what, got == !far, "%s", got ? "hit" : "missed");
+        *F(sp_t[3]).n_aff = 0;
+        F(sp_t[3]).size = 0;
+        combat::occupancy(fg->b);
+    }
     // Invisible to animals: an animal's attack -4
     reset();
     F(A).rec[0x11A] = 19;
@@ -1715,6 +1728,254 @@ static void sp_check_effects()
     combat::tick(fg->b);
     expect(SP, "fight clock: a 3-round effect lasts 3 rounds", on2 && sp_aff(T, 0x01) < 0);
 }
+// ---- 6b. Spells with workings of their own (fights; coab ovr023 / ovr013 / ovr024)
+static void sp_check_special()
+{
+    using namespace play;
+    char what[140];
+    // Poison (cleric 4) and Cloudkill kill by poison: the dead carry the poisoned effect (0x37, data 0xFF;
+    // listing ovr013:1407 / ovr024 in_poison_cloud) - so Slow Poison / Neutralize Poison bring them back
+    if (sp_new_fight() && sp_pick()) {
+        sp_caster(sp_c, classes::Cleric, 9);
+        sp_put(sp_c, 0, 10, 12);
+        sp_put(sp_t[0], 1, 11, 12);
+        sp_dice(1, 2, 100);
+        sp_cast(sp_c, 0x44, {sp_t[0]});
+        expect(SP, "Poison: the slain is poisoned (effect 0x37, data 0xFF)",
+               F(sp_t[0]).status() == party::Dead && sp_aff_data(sp_t[0], 0x37) == 0xFF, "status %d poisoned data %d",
+               F(sp_t[0]).status(), sp_aff_data(sp_t[0], 0x37));
+    }
+    for (int hd = 4; hd <= 7; ++hd) {
+        if (!sp_new_fight() || !sp_pick()) return;
+        sp_put(sp_t[0], 1, 11, 12);
+        F(sp_t[0]).rec[0xE5] = static_cast<uint8_t>(hd);
+        F(sp_t[0]).rec[0xDF] = 14;                       // save vs poison: 14
+        sp_dice(1, 16, 100);                             // 16 - 4 = 12 fails at -4, 16 makes it at 0
+        const bool died = combat::breathe_poison(fg->b, sp_t[0], rng);
+        const bool want = hd <= 4 || hd == 5;
+        snprintf(what, sizeof what, "Cloudkill on %d Hit Dice (d20 16, save 14): %s", hd,
+                 hd <= 4 ? "dies" : hd == 5 ? "dies (save at -4)" : hd == 6 ? "saved" : "unaffected");
+        expect(SP, what, died == want && (!died || sp_aff_data(sp_t[0], 0x37) == 0xFF), "died %d poisoned data %d", (int)died,
+               sp_aff_data(sp_t[0], 0x37));
+    }
+    // ... and Slow Poison in a fight brings the poisoned dead back up (1 HP), poisoned still
+    if (sp_new_fight() && sp_pick()) {
+        sp_caster(sp_c, classes::Cleric, 9);
+        sp_put(sp_c, 0, 10, 12);
+        sp_put(sp_t[0], 0, 12, 12);
+        sp_give(sp_t[0], 0x37, 0, 0xFF, false);
+        combat::damage(fg->b, sp_t[0], 250);
+        sp_dice(1, 10, 100);
+        sp_cast(sp_c, 0x1A, {sp_t[0]});
+        expect(SP, "Slow Poison in a fight: the poisoned dead gets back up with 1 HP",
+               F(sp_t[0]).up() && F(sp_t[0]).hp() == 1 && sp_aff_time(sp_t[0], 0x16) == 540, "up %d HP %d time %d",
+               (int)F(sp_t[0]).up(), F(sp_t[0]).hp(), sp_aff_time(sp_t[0], 0x16));
+    }
+    // Stinking Cloud: a save vs poison or helpless d4 + 1 rounds; saved: coughing
+    for (int pass = 0; pass < 2; ++pass) {
+        if (!sp_new_fight() || !sp_pick()) return;
+        sp_put(sp_t[0], 1, 11, 12);
+        sp_dice(pass ? 1 : 2, pass ? 20 : 2, 100);
+        const combat::Did r = combat::breathe_cloud(fg->b, sp_t[0], rng);
+        if (!pass)
+            expect(SP, "Stinking Cloud, the save failed: helpless d4 + 1 (2 low)",
+                   r == combat::Did::Word && sp_aff_time(sp_t[0], 0x1F) == 2, "time %d", sp_aff_time(sp_t[0], 0x1F));
+        else
+            expect(SP, "Stinking Cloud, saved: coughing", r == combat::Did::Word2 && sp_aff(sp_t[0], 0x1E) >= 0);
+    }
+    // Fire Shield: one hitting the shielded from next to it takes twice the blow (magic)
+    if (sp_new_fight() && sp_pick()) {
+        sp_put(sp_t[0], 0, 10, 12);
+        sp_put(sp_t[1], 1, 11, 12);
+        sp_give(sp_t[0], 0x8F, 10, 0, false);
+        combat::Fighter& at = F(sp_t[1]);
+        at.rec[0x199] = 100;
+        at.attacks[0] = 1;
+        at.attacks[1] = 0;
+        at.rec[0x19E] = 1;
+        at.rec[0x1A0] = 6;
+        at.rec[0x1A2] = 0;
+        sp_dice(1, 15, 100);
+        combat::attack(fg->b, sp_t[1], sp_t[0], nullptr, rng);
+        expect(SP, "Fire Shield: a 6-point blow - the shielded takes 6, the attacker 12",
+               200 - F(sp_t[0]).hp() == 6 && 200 - F(sp_t[1]).hp() == 12, "%d / %d", 200 - F(sp_t[0]).hp(), 200 - F(sp_t[1]).hp());
+    }
+    // Feeblemind: this save's number moved by class (cleric -1, magic-user +4, others +2; save 12 here)
+    struct Fb {
+        int cls, roll;
+        bool saved;
+    };
+    for (const Fb& f : {Fb{0, 11, true}, Fb{0, 10, false}, Fb{5, 15, false}, Fb{5, 16, true}, Fb{2, 13, false}, Fb{2, 14, true}}) {
+        if (!sp_new_fight() || !sp_pick()) return;
+        sp_caster(sp_c, classes::MagicUser, 9);
+        sp_put(sp_c, 0, 10, 12);
+        sp_put(sp_t[0], 1, 11, 12);
+        F(sp_t[0]).rec[0x75] = static_cast<uint8_t>(f.cls);
+        F(sp_t[0]).rec[0xDF + 4] = 12;
+        sp_dice(1, f.roll, 100);
+        sp_cast(sp_c, 0x5D, {sp_t[0]});
+        const bool feeble = sp_aff(sp_t[0], 0x44) >= 0;
+        snprintf(what, sizeof what, "Feeblemind on class %d, d20 %d against 12: %s", f.cls, f.roll, f.saved ? "saved" : "feebleminded");
+        expect(SP, what, feeble == !f.saved && (!feeble || (F(sp_t[0]).rec[0x13] == 7 && F(sp_t[0]).rec[0x15] == 7)), "effect %d Int %d Wis %d",
+               (int)feeble, F(sp_t[0]).rec[0x13], F(sp_t[0]).rec[0x15]);
+    }
+    // Mirror Image: a spell at picked creatures takes an image (d(images + 1) over 1); an area spell doesn't
+    for (int pass = 0; pass < 3; ++pass) {
+        if (!sp_new_fight() || !sp_pick()) return;
+        sp_caster(sp_c, classes::MagicUser, 5);
+        sp_put(sp_c, 0, 10, 12);
+        sp_put(sp_t[0], 1, 12, 12);
+        sp_give(sp_t[0], 0x1C, 10, (2 << 4) + 5, false);
+        sp_dice(pass == 1 ? 2 : 1, 2, 100);
+        if (pass < 2) sp_cast(sp_c, 0x0F, {sp_t[0]});
+        else {
+            fg->b.aim_x = 12, fg->b.aim_y = 12;
+            sp_cast(sp_c, 0x2F, {sp_t[0]});
+        }
+        const int hurt = 200 - F(sp_t[0]).hp(), data = sp_aff_data(sp_t[0], 0x1C);
+        if (pass == 0)
+            expect(SP, "Mirror Image: Magic Missile with d3 over 1 - an image lost, no damage",
+                   hurt == 0 && data == (2 << 4) + 4 && sp_said(sp_t[0], combat::Did::LostImage) == 1, "damage %d data %02X", hurt, data);
+        else if (pass == 1)
+            expect(SP, "Mirror Image: Magic Missile with d3 = 1 - the caster is hit", hurt > 0 && data == (2 << 4) + 5, "damage %d data %02X",
+                   hurt, data);
+        else
+            expect(SP, "Mirror Image: a Fireball (an area) never meets the images", hurt > 0 && data == (2 << 4) + 5, "damage %d data %02X",
+                   hurt, data);
+    }
+    // Dispel Magic in a fight: the first target's effects by level, 0xFF ones kept
+    for (int roll : {70, 71}) {
+        if (!sp_new_fight() || !sp_pick()) return;
+        sp_caster(sp_c, classes::Cleric, 9);
+        sp_put(sp_c, 0, 10, 12);
+        sp_put(sp_t[0], 1, 12, 12);
+        sp_give(sp_t[0], 0x01, 10, 5, false);
+        sp_give(sp_t[0], 0x3B, 0, 0xFF, false);
+        sp_dice(1, 10, roll);
+        sp_cast(sp_c, 0x29, {sp_t[0]});
+        snprintf(what, sizeof what, "Dispel Magic (level 9) in a fight on a level 5 effect, d100 %d (70%%)", roll);
+        expect(SP, what, (sp_aff(sp_t[0], 0x01) < 0) == (roll <= 70) && sp_aff(sp_t[0], 0x3B) >= 0);
+    }
+    // Animate Dead: up to `level` dead characters (monster type 0) rise on the caster's side; not monsters
+    if (sp_new_fight() && sp_pick()) {
+        sp_caster(sp_c, classes::Cleric, 9);                 // (a monster spell: level 12)
+        sp_put(sp_c, 0, 10, 12);
+        sp_put(sp_t[0], 1, 14, 12);
+        F(sp_t[0]).rec[0x11A] = 0;
+        sp_put(sp_t[1], 1, 16, 12);
+        F(sp_t[1]).rec[0x11A] = 5;
+        combat::damage(fg->b, sp_t[0], 250);
+        combat::damage(fg->b, sp_t[1], 250);
+        sp_dice(1, 10, 100);
+        sp_cast(sp_c, 0x24, {sp_c});
+        expect(SP, "Animate Dead: a dead character rises on the caster's side, animated",
+               F(sp_t[0]).up() && F(sp_t[0]).team() == 0 && F(sp_t[0]).status() == party::Animated && F(sp_t[0]).hp() == 200,
+               "up %d team %d status %d HP %d", (int)F(sp_t[0]).up(), F(sp_t[0]).team(), F(sp_t[0]).status(), F(sp_t[0]).hp());
+        expect(SP, "Animate Dead: not a dead monster", !F(sp_t[1]).up());
+    }
+    // Entangle: outdoors only; a save or no moving (24 rounds - spell_facts.md's choice for the original's
+    // past-the-table time)
+    for (int outdoors = 0; outdoors < 2; ++outdoors) {
+        if (!sp_new_fight() || !sp_pick()) return;
+        fg->b.indoors = !outdoors;
+        sp_caster(sp_c, classes::Ranger, 10);
+        sp_put(sp_c, 0, 10, 12);
+        sp_put(sp_t[0], 1, 12, 12);
+        sp_dice(1, 2, 100);
+        sp_cast(sp_c, 0x4E, {sp_t[0]});
+        snprintf(what, sizeof what, "Entangle %s", outdoors ? "outdoors: entangled" : "indoors: nothing");
+        expect(SP, what, outdoors ? sp_aff_time(sp_t[0], 0x88) == 24 : sp_aff(sp_t[0], 0x88) < 0, "time %d", sp_aff_time(sp_t[0], 0x88));
+    }
+    // Picking by budget (Faerie Fire by size, Charm Monsters by Hit Dice)
+    if (sp_new_fight() && sp_pick()) {
+        sp_put(sp_t[0], 1, 12, 12);
+        int bad = 0;
+        const int by_size[5] = {0, 1, 2, 2, 4}, by_hd[6] = {1, 1, 2, 4, 8, 8};
+        for (int s = 1; s <= 4; ++s) {
+            F(sp_t[0]).rec[0xDE] = static_cast<uint8_t>(s);
+            bad += combat::pick_cost(F(sp_t[0]), true) != by_size[s];
+        }
+        for (int h = 0; h <= 5; ++h) {
+            F(sp_t[0]).rec[0xE5] = static_cast<uint8_t>(h);
+            bad += combat::pick_cost(F(sp_t[0]), false) != by_hd[h];
+        }
+        expect(SP, "picking costs: by size 1 / 2 / 2 / 4, by Hit Dice 1 1 2 4 8", !bad, "%d wrong", bad);
+    }
+    // Snake Charm: snakes (monster type 14) on either side as far as the caster's HP go
+    if (sp_new_fight() && sp_pick()) {
+        sp_caster(sp_c, classes::Cleric, 5);
+        sp_put(sp_c, 0, 10, 12, 30);
+        for (int k = 0; k < 3; ++k) {
+            sp_put(sp_t[k], k == 2 ? 0 : 1, 12 + 2 * k, 12, 12);
+            F(sp_t[k]).rec[0x11A] = 14;
+        }
+        sp_dice(1, 10, 100);
+        sp_cast(sp_c, 0x1B, {sp_t[0]});
+        expect(SP, "Snake Charm (30 HP): two snakes of 12 HP charmed, not the third",
+               sp_aff(sp_t[0], 0x33) >= 0 && sp_aff(sp_t[1], 0x33) >= 0 && sp_aff(sp_t[2], 0x33) < 0);
+    }
+    // Dispel Evil: its holder's first hit on an evil extra-planar one that fails a save: dispelled
+    if (sp_new_fight() && sp_pick()) {
+        sp_caster(sp_t[0], classes::Cleric, 9);
+        sp_put(sp_t[0], 0, 10, 12);
+        sp_put(sp_t[1], 1, 11, 12);
+        F(sp_t[1]).rec[0x14B] = 1;
+        sp_dice(1, 10, 100);
+        sp_cast(sp_t[0], 0x49, {sp_t[0]});
+        F(sp_t[1]).rec[0xDF + 4] = 15;
+        sp_dice(1, 14, 100);
+        combat::Fighter& at = F(sp_t[0]);
+        at.rec[0x199] = 100;
+        at.attacks[0] = 1;
+        at.attacks[1] = 0;
+        combat::attack(fg->b, sp_t[0], sp_t[1], nullptr, rng);
+        expect(SP, "Dispel Evil: a hit on an evil extra-planar one (save failed) dispels it", !F(sp_t[1]).up() &&
+               sp_aff(sp_t[0], 0x91) < 0, "status %d", F(sp_t[1]).status());
+    }
+    // Remove Curse in a fight: the first cursed item comes off
+    if (sp_new_fight() && sp_pick()) {
+        int m = -1;
+        for (int k = 0; k < 6 && m < 0; ++k)
+            if (F(sp_t[k]).member >= 0) m = sp_t[k];
+        if (m >= 0) {
+            party::Character& ch = pt->m[F(m).member];
+            uint8_t ring[63] = {};
+            ring[0x2E] = 1;
+            if (ch.n_items == 0) rules::add_item(ch, ring);
+            F(m).items = ch.items;
+            F(m).n_items = ch.n_items;
+            for (int j = 0; j < ch.n_items; ++j) ch.items[j][0x36] = 0;
+            sp_caster(sp_c, classes::Cleric, 9);
+            sp_put(sp_c, 0, 10, 12);
+            sp_put(m, 0, 11, 12);
+            F(m).items[0][0x36] = 1;
+            F(m).items[0][0x34] = 1;
+            F(m).items[0][0x3E] = 0;
+            sp_dice(1, 10, 100);
+            sp_cast(sp_c, 0x2B, {m});
+            expect(SP, "Remove Curse in a fight: the cursed item comes off (still cursed)",
+                   F(m).items[0][0x34] == 0 && F(m).items[0][0x36] == 1 && sp_said(m, combat::Did::Word3) == 1);
+        }
+    }
+    // Restoration: a lost level back with its share of the lost HP (camp)
+    if (boot() && load_magic()) {
+        party::Character& c = pt->m[1];
+        const int lv = c.level(classes::Fighter) ? classes::Fighter : -1;
+        int cls = lv;
+        for (int k = 0; cls < 0 && k < 8; ++k)
+            if (c.level(k)) cls = k;
+        const int before = c.level(cls), hp = c.hp_max();
+        c.rec[0xE7] = 2;
+        c.rec[0xE8] = 12;
+        const spells::CampSpell* cs = sp_camp(0x38);
+        pt->m[4].rec[0x109] = 13;
+        sp_cn = cs ? spells::cast(*pt, 4, 1, *cs, mrules->tables, d->prof->cures, d->prof->magic.facts, rng, sp_cl, 24) : 0;
+        expect(SP, "Restoration: 2 levels lost (12 HP): a level back, 6 HP back, 1 still lost",
+               c.level(cls) == before + 1 && c.hp_max() == hp + 6 && c.rec[0xE7] == 1 && c.rec[0xE8] == 6, "level %d -> %d HP %d -> %d",
+               before, c.level(cls), hp, c.hp_max());
+    }
+}
+
 // ---- 7. Spells the engine doesn't do yet (fights): every spell that can be
 // cast in a fight (when: combat / both) must be in the fight table
 static void sp_check_notyet()
@@ -1762,6 +2023,7 @@ static void behave_spells()
     if (want("fight")) sp_check_fights();
     if (want("camp")) sp_check_camp();
     if (want("effects")) sp_check_effects();
+    if (want("special")) sp_check_special();
     if (want("notyet")) sp_check_notyet();
     sp_dice(0);
     create::g_die_hook = nullptr;

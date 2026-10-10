@@ -4103,6 +4103,40 @@ static void test_spell_rules()
     b.f[0].attacks[0] = 1;
     const combat::Attack a = combat::attack(b, 0, 3, nullptr, d);
     CHECK(a.n == 1 && (!a.hits[0].hit || b.f[3].hp() == 200 - 9));
+    // Poison (the spell) and a poisonous cloud: the dead carry the poisoned effect (data 0xFF)
+    fx.mon.poisoned = 0x37;
+    setup();
+    sp(0x44, 0, 0, 0, 4, 1, 0);
+    CHECK(st.set(sl, sds, sizeof sds));
+    const combat::FightSpell poison{0x44, combat::SpellDoes::Kill, 0, 0, 0, 0, 0, 0xAAAA};
+    int killed = 0;
+    for (int i = 3; i <= 4; ++i) {                     // (each saves only on a 20)
+        combat::cast(b, st, 0, 0x44, poison, &i, 1, d, out, 16);
+        if (b.f[i].status() == party::Dead) {
+            ++killed;
+            CHECK(b.f[i].has(0x37));
+        }
+    }
+    CHECK(killed > 0);
+    rec[5][0xE5] = 3;
+    CHECK(combat::breathe_poison(b, 5, d) && b.f[5].status() == party::Dead && b.f[5].has(0x37));
+    // Prayer: its holder's +1 / -1 reach 6 squares (not one 30 away)
+    fx.prayer = 0x31;
+    setup();
+    b.f[1].x = 40;
+    combat::occupancy(b);
+    aff[1][0][0] = 0x31; aff[1][0][1] = 5; aff[1][0][3] = 0x05; naff[1] = 1;     // the party's prayer, far away
+    for (int k = 0; k < 5; ++k) rec[3][0xDF + k] = 12;
+    combat::set_actor(b, 0);
+    create::Dice d1(11), d2(11);                      // the same rolls both times
+    int saved_far = 0, saved_near = 0;
+    for (int k = 0; k < 200; ++k) saved_far += combat::saving_throw(b.f[3], 4, 0, d1);
+    b.f[1].x = 14;                                    // 4 squares from the enemy 3 (at 19)
+    combat::occupancy(b);
+    for (int k = 0; k < 200; ++k) saved_near += combat::saving_throw(b.f[3], 4, 0, d2);
+    CHECK(saved_near < saved_far);                    // (near: -1 on every save)
+    fx.prayer = 0;
+    fx.mon.poisoned = 0;
 }
 
 // The second batch of fight spells (spell_facts.md 2), on made-up fighters

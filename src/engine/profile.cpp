@@ -169,7 +169,9 @@ constexpr combat::FightSpell kCurseFight[] = {
     {0x5C, SpellDoes::Cone, 0, 4, 0, 6, 0x0A, 0},           // Cone of Cold: level d4 + level (a cone, 2 rays; cold
                                                             // and magic - spell_facts.md: coab says acid)
     {0x26, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x30FB6},      // Cause Blindness: "is blind"
-    {0x28, SpellDoes::Affect, 1, 6, 0, 4, 0, 0x310A2},      // Cause Disease: "is diseased", d6 x 10 minutes
+    {0x28, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x310A2},      // Cause Disease: "is diseased" (till cured: the
+                                                            // original's d6 x 10 minutes start the disease's
+                                                            // course, not in the engine yet)
     {0x33, SpellDoes::Bolt, 0, 6, 0, 3, 0x0C, 0, 0, 0, 7},  // Lightning Bolt: level d6, 7 squares (electricity and
                                                             // magic; curse_finish_facts.md 2)
     {0x37, SpellDoes::Slow, 0, 0, 0, 0, 0, 0x31CD9, 0x36666},       // Slow: "is Slowed"; a hasted one "is Cured"

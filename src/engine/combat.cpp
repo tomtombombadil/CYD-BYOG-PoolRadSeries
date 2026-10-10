@@ -414,6 +414,19 @@ bool path_xy(const Battle& b, const Tables& t, int x0, int y0, int x, int y, boo
     return seen;
 }
 
+// A prayer's reach: its holder's effect counts for those within 6 squares
+// of it (coab's facts: calc_affect_effect - the prayer's range 6, in sight);
+// the holder itself always (no field's tables: everyone, as before)
+bool prayer_reaches(const Battle& b, int holder, int c)
+{
+    if (holder == c || !b.tables) return true;
+    const Fighter& h = b.f[holder];
+    const Fighter& f = b.f[c];
+    if (!h.size || !f.size) return false;
+    int len = 0;
+    return path_xy(b, *b.tables, h.x, h.y, f.x, f.y, false, &len) && len <= 2 * 6 + 1;
+}
+
 } // namespace
 
 bool path(const Battle& b, const Tables& t, int a, int x, int y, bool ignore_walls, int* length)
@@ -1191,7 +1204,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
         // A prayer helps its caster's side and hinders the other
         for (int i = 0; i < b.n; ++i) {
             const int k = find_aff(b.f[i], fx.prayer);
-            if (k < 0) continue;
+            if (k < 0 || !prayer_reaches(b, i, a)) continue;
             side += (b.f[i].aff[k][3] >> 4) == at.team() ? 1 : -1;
             break;
         }
@@ -1839,7 +1852,10 @@ bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
         // A prayer: +1 on its caster's side, -1 on the other
         for (int c = 0; fx.prayer && g_b && c < g_b->n; ++c) {
             const int k = find_aff(g_b->f[c], fx.prayer);
-            if (k < 0) continue;
+            int me = -1;
+            for (int j = 0; k >= 0 && j < g_b->n && me < 0; ++j)
+                if (&g_b->f[j] == &f) me = j;
+            if (k < 0 || (me >= 0 && !prayer_reaches(*g_b, c, me))) continue;
             bonus += (g_b->f[c].aff[k][3] >> 4) == f.team() ? 1 : -1;
             break;
         }
@@ -2217,6 +2233,9 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             Fighter& f = b.f[who[k]];
             if (!f.up() || (b.fx && resisted(k, b.fx->mon.poisoned)) || saving_throw(f, 0, 0, d)) continue;
             say(who[k], Did::Word, 0);
+            // poisoned (data 0xFF), then killed: Slow / Neutralize Poison can
+            // bring them back (listing ovr013:1407, the poison attack)
+            if (b.fx && b.fx->mon.poisoned) give_aff(f, b.fx->mon.poisoned, 0, 0xFF, false);
             damage(b, who[k], f.hp() + 10);
             f.rec[kHealth] = party::Dead;
             say(who[k], Did::Down, 0);
@@ -3196,6 +3215,9 @@ bool breathe_poison(Battle& b, int i, create::Dice& d)
     else if (hd == 5) dies = !saving_throw(f, 0, -4, d);
     else if (hd == 6) dies = !saving_throw(f, 0, 0, d);
     if (!dies) return false;
+    // poisoned (data 0xFF) and dead: Slow / Neutralize Poison can bring them
+    // back (listing ovr024 in_poison_cloud: effect 0x37 in every branch)
+    if (b.fx && b.fx->mon.poisoned) give_aff(f, b.fx->mon.poisoned, 0, 0xFF, false);
     damage(b, i, f.hp() + 10);                       // dead
     return true;
 }
