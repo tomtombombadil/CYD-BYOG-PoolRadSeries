@@ -51,6 +51,10 @@ bool touch_point(int& x, int& y);
 
 // ---- drawing --------------------------------------------------------------
 void clear();
+// Clears part of the screen, and the keys that were in it (the tap
+// highlight forgets them - a key drawn there before must never get the
+// ring instead of the one drawn there now)
+void clear_area(const Rect& r);
 // Title bar across the top. back = draw the "<" back key at its left.
 void header(const char* title, bool back);
 Rect back_rect();      // the header's "<" key (valid when drawn with back)

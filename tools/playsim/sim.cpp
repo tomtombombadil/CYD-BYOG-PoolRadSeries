@@ -202,7 +202,7 @@ int main(int argc, char** argv)
             int x = 0, y = 0;
             if (getenv("DEMO")) {
                 // DEMO: the version line's Demo, then the demo runs by itself
-                // until the title comes back (DEMOSHOTS: a snapshot every 3 s)
+                // until the title comes back (DEMOSHOTS: a snapshot every 3 s; DEMOSTOP=ms a tap then)
                 for (int k = 0; k < play::menu.count; ++k)
                     if (text::key(play::menu, k) == 'D') play::tap(((int)strlen(play::menu.prompt) + play::menu.start[k]) * 8 + 2, text::kMenuRow * 8 + 2, C);
                 int last_screen = -1, last_pc = -1;
@@ -212,6 +212,8 @@ int main(int argc, char** argv)
                     if ((int)play::screen != last_screen) { last_screen = (int)play::screen; printf("  demo t=%d screen %d party %d\n", t, last_screen, play::pt->count); }
                     if (play::vm && (int)play::vm->pc() != last_pc && play::screen == play::Screen::Game) { last_pc = (int)play::vm->pc(); }
                     if (getenv("DEMOSHOTS") && t % 3000 == 0) shot("demo");
+                    // DEMOSTOP=ms: the player taps then (the demo stops: features.h CYD_DEMO_TAP_STOPS)
+                    if (getenv("DEMOSTOP") && t == atoi(getenv("DEMOSTOP"))) { printf("  tap at t=%d (screen %d)\n", t, (int)play::screen); play::tap(100, 100, C); }
                 }
                 printf("  demo over: screen %d party %d title %d\n", (int)play::screen, play::pt->count, play::title_run ? 1 : 0);
                 if (play::title_run) shot("after_demo");

@@ -1384,7 +1384,7 @@ void draw_companion(const MapSource& ms = kWalkMap)
     if (!ui::large()) return;
     LGFX& g = ui::gfx();
     const int x0 = pic::kScreenW, w = ui::width() - x0;
-    g.fillRect(x0, 0, w, ui::height(), style::kBackground);
+    ui::clear_area({x0, 0, w, ui::height()});
     g.drawFastVLine(x0, 0, ui::height(), style::kKeyEdge);
     char l1[48], l2[48];
     ms.describe(l1, l2, sizeof l1);
@@ -1462,7 +1462,9 @@ void draw_walk_keys(const char* side_label, const char* area_label, bool cursor)
     if (!ui::large()) {
         // The row: cleared first (it changes between the movement and cursor keys)
         row = !cursor ? Row::Walk : play::walking() == row_flip ? Row::Cursor : Row::Move;
-        ui::gfx().fillRect(0, pic::kScreenH, pic::kScreenW, ui::height() - pic::kScreenH, style::kBackground);
+        // (v0.64.0: the keys forgotten too - the movement row's Forward key, under the cursor row's
+        // Select, took Select's tap ring: a small key's ghost on it)
+        ui::clear_area({0, pic::kScreenH, pic::kScreenW, ui::height() - pic::kScreenH});
     }
     if (row != Row::Cursor || ui::large()) {
         ui::key_arrow(walk_key(kWTurnL), ui::Arrow::TurnLeft);
@@ -1591,12 +1593,13 @@ void draw_keyboard()
 {
     LGFX& g = ui::gfx();
     const play::Input in = play::input();
+    // (the keys that were there forgotten: the tap ring goes on the keyboard's keys only)
     if (ui::large()) {
-        g.fillRect(0, pic::kScreenH, ui::width(), ui::height() - pic::kScreenH, style::kBackground);
-        g.fillRect(pic::kScreenW, 0, ui::width() - pic::kScreenW, pic::kScreenH, style::kBackground);
+        ui::clear_area({0, pic::kScreenH, ui::width(), ui::height() - pic::kScreenH});
+        ui::clear_area({pic::kScreenW, 0, ui::width() - pic::kScreenW, pic::kScreenH});
     } else {
-        g.fillRect(0, 0, pic::kScreenW, text::kTextArea.y0 * 8, style::kBackground);
-        g.fillRect(0, pic::kScreenH, ui::width(), ui::height() - pic::kScreenH, style::kBackground);
+        ui::clear_area({0, 0, pic::kScreenW, text::kTextArea.y0 * 8});
+        ui::clear_area({0, pic::kScreenH, ui::width(), ui::height() - pic::kScreenH});
     }
     for (int k = 0; k < kKbAll; ++k) {
         char label[2] = {k < kKbKeys ? kKbChars[k] : '\0', '\0'};
@@ -1673,7 +1676,6 @@ int tab_hit(const ui::Tap& t)
     return -1;
 }
 
-const char* back_label() { return from_menu ? "Back" : "Back to\nGame"; }
 
 ui::Rect journal_area();
 void open_journal(char kind, int number);
@@ -1954,8 +1956,6 @@ JournalView* jv = nullptr;
 // Zoom levels (Tom, 2026-10-09: the Zoom key cycles them): the whole
 // entry / page, its width across the screen, the scan's own pixels
 enum { kFitWhole = 0, kFitWidth = 1, kFitFull = 2, kFits = 3 };
-const char* const kFitKey[2][kFits] = {{"Zoom\nWhole", "Zoom\nWidth", "Zoom\nFull Size"},
-                                       {"Zoom\nWhole Page", "Zoom\nPage Width", "Zoom\nFull Size"}};
 
 // Dragging the picture (Tom, 2026-10-09): it moves when the stylus lifts
 // (redrawing a scan as it moves would be too slow); taps on its edges too
@@ -1990,7 +1990,36 @@ ui::Rect journal_area()
     const int top = ui::header_h() + 2;
     return {0, top, ui::width(), ui::height() - top - ui::key_h() - ui::gap() * 2};
 }
-int journal_step() { return journal_area().h - 24; }        // a page, keeping a little for context
+// The viewers - a journal entry, the book (Tom, 2026-10-10): no title bar
+// (Back is in the bottom row) and a slim row of keys about 57% of the usual
+// height; the page numbers sit in the row between Prev and Next
+int slim_h() { return ui::large() ? 32 : 22; }
+int slim_gap() { return ui::large() ? 4 : 3; }
+ui::Rect slim_key(int i, int n)
+{
+    const int gp = slim_gap();
+    const int w = (ui::width() - gp * (n + 1)) / n;
+    return {gp + i * (w + gp), ui::height() - slim_h() - gp, w, slim_h()};
+}
+int slim_hit(const ui::Tap& t, int n)
+{
+    for (int i = 0; i < n; ++i)
+        if (slim_key(i, n).contains(t.x, t.y)) return i;
+    return -1;
+}
+ui::Rect view_area() { return {0, 0, ui::width(), ui::height() - slim_h() - slim_gap() * 2}; }
+// The page numbers' cell (two small lines, not a key)
+void slim_label(const ui::Rect& r, const char* a, const char* b)
+{
+    const int lh = ui::line_h(ui::Font::Small);
+    const int y = r.y + (r.h - lh * (b ? 2 : 1)) / 2;
+    ui::text_center({r.x, y, r.w, lh}, a, style::kTextMuted, ui::Font::Small);
+    if (b) ui::text_center({r.x, y + lh, r.w, lh}, b, style::kTextMuted, ui::Font::Small);
+}
+// The zoom key names the level shown
+const char* const kFitSlim[kFits] = {"Whole", "Width", "Full Size"};
+
+int journal_step() { return view_area().h - 24; }        // a page, keeping a little for context
 
 bool journal_source(fs::File& f)
 {
@@ -2012,7 +2041,7 @@ void journal_layout()
     } else {
         v.scale256 = room * 256 / v.maxw;
         if (v.fit == kFitWhole && full_h > 0) {
-            const int fh = journal_area().h * 256 / full_h;
+            const int fh = view_area().h * 256 / full_h;
             if (fh < v.scale256) v.scale256 = fh;
         }
         if (v.scale256 < 1) v.scale256 = 1;
@@ -2026,7 +2055,7 @@ void journal_layout()
         v.total_h += v.out_h[i];
     }
     const int max_left = v.fit == kFitFull && v.maxw > v.shown_w ? v.maxw - v.shown_w : 0;
-    const int max_top = v.total_h > journal_area().h ? v.total_h - journal_area().h : 0;
+    const int max_top = v.total_h > view_area().h ? v.total_h - view_area().h : 0;
     if (v.top > max_top) v.top = max_top;
     if (v.top < 0) v.top = 0;
     if (v.left > max_left) v.left = max_left;
@@ -2150,33 +2179,34 @@ void journal_draw_row(library::FileSource& src, int i, int y, int sy_screen)
     ui::gfx().pushImage((ui::width() - v.shown_w) / 2, sy_screen, v.shown_w, 1, v.line);
 }
 
-// Keys (Tom, 2026-10-09): with the entry, Back | Zoom | Prev Page | Next
-// Page; without it, Back | Open Journal PDF (when there is one)
-int journal_keys() { return jv && jv->have ? 4 : (jv && jv->has_pdf ? 2 : 1); }
+// Keys (Tom, 2026-10-09 / 10): with the entry, Back | Zoom | Prev | the
+// entry and its page | Next (5 cells); without it, Back | Journal PDF (when
+// there is one)
+int journal_keys() { return jv && jv->have ? 5 : (jv && jv->has_pdf ? 2 : 1); }
 
 void draw_journal()
 {
     ui::clear();
-    char title[48];
-    const char* what = jv && jv->kind == 'T' ? "Tavern Tale" : "Journal Entry";
-    const ui::Rect a = journal_area();
+    const char* what = jv && jv->kind == 'T' ? "Tale" : "Entry";
+    const ui::Rect a = view_area();
+    char name[24], page[24];
+    snprintf(name, sizeof name, "%s %d", what, jv ? jv->number : 0);
+    page[0] = 0;
     if (jv && jv->have && jv->total_h > a.h) {
         const int pages = (jv->total_h - a.h + journal_step() - 1) / journal_step() + 1;
-        snprintf(title, sizeof title, "%s %d  %d/%d", what, jv->number, jv->top / journal_step() + 1, pages);
-    } else {
-        snprintf(title, sizeof title, "%s %d", what, jv ? jv->number : 0);
+        snprintf(page, sizeof page, "%d of %d", jv->top / journal_step() + 1, pages);
     }
-    ui::header(title, true);
     const int nk = journal_keys();
-    if (nk == 4) {
+    if (nk == 5) {
         const bool more = jv->top + a.h < jv->total_h;
-        ui::key(ui::bottom_key(0, 4), back_label());
-        ui::key(ui::bottom_key(1, 4), kFitKey[0][jv->fit], jv->fit != kFitWidth ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
-        ui::key(ui::bottom_key(2, 4), "Prev Page", jv->top > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
-        ui::key(ui::bottom_key(3, 4), "Next Page", more ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+        ui::key(slim_key(0, 5), "Back");
+        ui::key(slim_key(1, 5), kFitSlim[jv->fit], jv->fit != kFitWidth ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+        ui::key(slim_key(2, 5), "Prev", jv->top > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+        slim_label(slim_key(3, 5), name, page[0] ? page : nullptr);
+        ui::key(slim_key(4, 5), "Next", more ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
     } else {
-        ui::key(ui::bottom_key(0, nk), from_menu ? "Back" : "Back to Game");
-        if (nk == 2) ui::key(ui::bottom_key(1, 2), "Open Journal\nPDF");
+        ui::key(slim_key(0, nk), "Back");
+        if (nk == 2) ui::key(slim_key(1, 2), "Journal PDF");
     }
     if (!jv || !jv->have) {
         wrap_text(ui::gap() * 3, a.y + ui::gap() * 2, ui::width() - ui::gap() * 6, jv ? jv->why : "",
@@ -2261,9 +2291,9 @@ bool open_book()
 
 void tap_journal(const ui::Tap& t)
 {
-    if (ui::back_rect().contains(t.x, t.y)) { leave_journal(); return; }
     const int nk = journal_keys();
-    const int k = bottom_hit(t, nk);
+    int k = slim_hit(t, nk);
+    if (nk == 5) k = k == 3 ? -2 : k == 4 ? 3 : k;            // (the page cell isn't a key)
     if (k == 0) { leave_journal(); return; }                  // Back
     if (nk == 2 && k == 1) {
         if (!open_book()) {
@@ -2272,8 +2302,8 @@ void tap_journal(const ui::Tap& t)
         }
         return;
     }
-    if (!jv || !jv->have) return;
-    const ui::Rect a = journal_area();
+    if (!jv || !jv->have || k == -2) return;
+    const ui::Rect a = view_area();
     if (k == 2 && jv->top > 0) {
         jv->top = jv->top > journal_step() ? jv->top - journal_step() : 0;
         dirty = true;
@@ -2316,7 +2346,7 @@ void tick_journal()
 // Whole pages; Zoom cycles whole page -> page width -> full size (the
 // scan's pixels); drag the page, or tap its edges, to move round it.
 
-ui::Rect pdf_area() { return journal_area(); }
+ui::Rect pdf_area() { return view_area(); }
 pdfview::Fit pdf_fit_of(int level)
 {
     return level == kFitFull ? pdfview::Fit::Full : level == kFitWidth ? pdfview::Fit::Width : pdfview::Fit::Page;
@@ -2325,15 +2355,15 @@ pdfview::Fit pdf_fit_of(int level)
 void draw_pdf()
 {
     ui::clear();
-    char title[48];
-    snprintf(title, sizeof title, "Journal PDF  Page %d of %d", pdf_page, pdfview::pages());
-    if (from_menu) draw_tabs(kTabPdf);
-    else ui::header(title, true);
-    // Keys (Tom, 2026-10-09): Back | Zoom | Prev Page | Next Page
-    ui::key(ui::bottom_key(0, 4), from_menu ? "Back to\nGame" : back_label());
-    ui::key(ui::bottom_key(1, 4), kFitKey[1][pdf_level], pdf_level != kFitWhole ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
-    ui::key(ui::bottom_key(2, 4), "Prev Page", pdf_page > 1 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
-    ui::key(ui::bottom_key(3, 4), "Next Page", pdf_page < pdfview::pages() ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+    // Keys (Tom, 2026-10-09 / 10): Back | Zoom | Prev | the page | Next, slim, no title bar
+    char page[16], of[16];
+    snprintf(page, sizeof page, "Page %d", pdf_page);
+    snprintf(of, sizeof of, "of %d", pdfview::pages());
+    ui::key(slim_key(0, 5), "Back");
+    ui::key(slim_key(1, 5), kFitSlim[pdf_level], pdf_level != kFitWhole ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+    ui::key(slim_key(2, 5), "Prev", pdf_page > 1 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+    slim_label(slim_key(3, 5), page, of);
+    ui::key(slim_key(4, 5), "Next", pdf_page < pdfview::pages() ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
     const ui::Rect a = pdf_area();
     ui::text(ui::gap() * 3, a.y + ui::gap() * 2, "Reading the page...", style::kTextMuted, ui::Font::Small);
     // JPEG decoding on a stack of its own (deep)
@@ -2379,33 +2409,19 @@ void tick_pdf()
 
 void tap_pdf(const ui::Tap& t)
 {
-    if (from_menu) {
-        // The Menu's tabs instead of a title bar; Back to Game leaves the Menu
-        if (menu_esc_hit(t)) {
-            menu_esc();
-            return;
-        }
-        const int other = tab_hit(t);
-        if (other >= 0 && other != kTabPdf) {
+    const ui::Rect a = pdf_area();
+    int k = slim_hit(t, 5);
+    if (k == 3) return;                                       // (the page cell isn't a key)
+    if (k == 4) k = 3;
+    if (k == 0) {
+        if (from_menu && !jv) {
+            // The Menu's book tab: back to the Menu (its journal list)
             close_book();
-            menu_tab = other;
+            menu_tab = kTabJournal;
             menu_note[0] = 0;
             go(Screen::GameMenu);
             return;
         }
-        if (bottom_hit(t, 4) == 0) {
-            close_book();
-            leave_menu();
-            return;
-        }
-        if (t.y < ui::header_h()) return;
-    } else if (ui::back_rect().contains(t.x, t.y)) {
-        leave_journal();
-        return;
-    }
-    const ui::Rect a = pdf_area();
-    const int k = bottom_hit(t, 4);
-    if (k == 0) {
         leave_journal();
         return;
     } else if (k == 2 && pdf_page > 1) {

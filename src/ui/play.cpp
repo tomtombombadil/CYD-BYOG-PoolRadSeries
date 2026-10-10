@@ -7,6 +7,7 @@
 #include <cstring>
 #include <new>
 
+#include "app/features.h"
 #include "app/library.h"
 #include "engine/ecl.h"
 #include "engine/ecl_vm.h"
@@ -201,6 +202,7 @@ bool party_dead = false;      // DAMAGE killed everyone: the party menu after th
 // experience or treasure after its fight; PROGRAM 3 ends it - the title
 // again, then the version line with a 10 s timeout
 bool in_demo = false;
+bool auto_tap = false;                  // (the demo's own "key presses", not the player's)
 void end_demo(pic::Canvas& c);
 void fight_clear_monsters();
 void fight_start(pic::Canvas& c);
@@ -6396,6 +6398,29 @@ void start_demo(pic::Canvas& c)
 }
 
 bool start_title(pic::Canvas& c, uint32_t timeout_ms);
+void end_demo(pic::Canvas& c);
+
+// The player's tap or key while the demo runs: it stops the demo (an engine
+// comfort, features.h CYD_DEMO_TAP_STOPS; the original ignores it). True: taken.
+bool demo_input(pic::Canvas& c)
+{
+    if (!in_demo || auto_tap) return false;
+#if CYD_DEMO_TAP_STOPS
+    if (fg) {
+        // A fight in the demo: gone, as at the demo's own end
+        end_fight_art();
+        fight_clear_monsters();
+        palette_fight(false);
+        ground->clear();
+        delete fg;
+        fg = nullptr;
+    }
+    end_demo(c);
+#else
+    (void)c;
+#endif
+    return true;
+}
 
 // After the demo: the party goes, the game's state as at the start, the
 // title again with a 10 s version line
@@ -6675,6 +6700,7 @@ bool act(Act a, pic::Canvas& c)
 {
     if (!d) return false;
     cv = &c;
+    if (demo_input(c)) return true;
     if (screen == Screen::Fight) return fight_act(a, c);
     if (screen == Screen::Modify) return modify_act(a, c);
     if (screen == Screen::Title && title_run && !title_run->prompt) {
@@ -6852,6 +6878,7 @@ bool nav(Nav n, pic::Canvas& c)
 {
     if (!d || input_mode != Input::None) return false;
     cv = &c;
+    if (demo_input(c)) return true;
     const bool first = !keys_used;
     keys_used = true;
     if (first && screen == Screen::PartyMenu) {
@@ -7109,6 +7136,7 @@ void tap(int x, int y, pic::Canvas& c)
 {
     if (!d) return;
     cv = &c;
+    if (demo_input(c)) return;
     if (screen != Screen::Game) {
         pm_tap(x, y, c);
         return;
@@ -7289,7 +7317,9 @@ void tick(uint32_t now, pic::Canvas& c)
     // one-word menu go straight on)
     if (in_demo && (wt == ecl::Wait::Key || (wt == ecl::Wait::Print && page_prompt) ||
                     (wt == ecl::Wait::Menu && vm->items() == 1))) {
+        auto_tap = true;
         tap(0, 0, c);
+        auto_tap = false;
         return;
     }
     if (wt == ecl::Wait::Pause) {
@@ -7377,6 +7407,7 @@ bool back(pic::Canvas& c)
 {
     if (!d) return false;
     cv = &c;
+    if (demo_input(c)) return true;
     if (screen == Screen::Icon) {
         icon_back(c);
         return true;

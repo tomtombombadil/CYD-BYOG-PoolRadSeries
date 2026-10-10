@@ -167,7 +167,7 @@ stay in the session's scratch space, never in the repo.
 | Screen frame: tiles = 8X8D1 block 202 (a picture block 8 high, 1 column, 40 frames; colour 13 not drawn); frame tile = 30 + table value, 3D-view frame tile = 20 + value. Tables (one byte a cell) in the program's data segment: top, bar, bottom (40), left, right (24), the explore screen's split column (17) and 3D-view frame (4 x 15), combat's three columns (23) | `src/engine/layout.*` | **v0.3.0** (Curse). Screens: outer border (rows 0-23, row 24 = menu line), + bar at row 16 (text screen), exploring (3D view cells 3-13, party right of column 16, text rows 17-22), combat (columns 0 / 22 / 39). The viewer's **Screen Test** draws them from Tom's own files. |
 | Strings: Pascal strings (length byte + text) in the program's data (START.EXE, unpacked) and in GAME.OVR, a Turbo Pascal overlay file ("FBOV") whose procedures keep their string constants in their code segment | `src/engine/text.*` | **v0.4.0**: Curse's "Press any key to continue" read from START.EXE. Every string the engine will show comes from the player's files the same way (profile offsets). |
 | Fixed screens printed by code (Curse credits): a run of 32-byte calls `B0 col 50 B0 row 50 B0 fg 50 B0 bg 50 8D 7E xx 16 57 BF <string offset> 0E 57 9A .... 9A ....` | `src/engine/printcalls.*` | **v0.4.0**: the 34 credit lines (text, row, column, colours) read from Tom's GAME.OVR; profile = where the run starts + its code segment base. |
-| Title sequence (Curse): TITLE.DAX 1 at (0,0) 5 s; 2 at (0,0) + 3 at row 11 col 6, 10 s; 4 at row 11 col 0, 10 s; credits (outer frame + bars at rows 3 and 8), 10 s; a key skips each | `src/engine/profile.*` (steps), `src/ui/look.cpp`, `src/ui/play.cpp` | **v0.4.0**, in the Screen Test. **v0.53.0** (Tom: "like starting the game for real"): the Play Test opens with it (sound 0x0D with picture 4; a tap or key skips each wait), then a clear screen with the version line and its menu from the program ("Curse of the Azure Bonds v1.3 " Pascal string at image 0x06, "Play Demo" at 0x25); Play opens the party menu. The demo (area 1, ECL1 block 0x52 with no party, game speed 9; after 30 s the original starts it by itself) is still to come - Demo says so, and the version line waits. |
+| Title sequence (Curse): TITLE.DAX 1 at (0,0) 5 s; 2 at (0,0) + 3 at row 11 col 6, 10 s; 4 at row 11 col 0, 10 s; credits (outer frame + bars at rows 3 and 8), 10 s; a key skips each | `src/engine/profile.*` (steps), `src/ui/look.cpp`, `src/ui/play.cpp` | **v0.4.0**, in the Screen Test. **v0.53.0** (Tom: "like starting the game for real"): the Play Test opens with it (sound 0x0D with picture 4; a tap or key skips each wait), then a clear screen with the version line and its menu from the program ("Curse of the Azure Bonds v1.3 " Pascal string at image 0x06, "Play Demo" at 0x25); Play opens the party menu. The demo: v0.54.0 (roadmap 6). |
 | Text window: printed a character at a time (game speed 4 = 12 ms) into a cell rectangle (text area rows 17-22 x cols 1-38; rows 21-22; combat panel rows 1-21 x cols 23-38); a word = punctuation + letters + punctuation + one space, wrapped whole if it (with its space) doesn't fit, longer-than-a-line words broken; leading spaces dropped after a wrap; area full = "Press any key to continue" (colour 13, row 24), clear, go on | `src/engine/text.*` | **v0.4.0** (behaviour from coab, own code). Touch: a tap = the key; a tap while printing finishes the page. |
 | Combat screen: its frame ends at row 22; row 23 = a status line (range, "Spell: ...", "Item: ..."), row 24 = the menu as on every screen | `src/engine/layout.*` | Checked (coab). |
 | Menu line (row 24): choices start at capitals / digits; prompt colour 13, key letters 15, the rest 10, the chosen word reversed (15 background) | `src/engine/text.*` | **v0.4.0**. Touch: tapping a word moves the highlight to it, shows it for 250 ms, then acts (its trailing space counts, so no gaps between targets; the tap area starts a row higher, at row 23 - Tom, v0.5.1). The chosen word stays chosen next time, as in the games. |
@@ -311,8 +311,9 @@ stay in the session's scratch space, never in the repo.
    speed 9, no party menu, the three NPCs it adds fight the dragons
    computer-run, key waits pass at once, no experience / treasure; an
    all-NPC party wins while one stands; PROGRAM 3 ends it, the title
-   again. As in the original, a tap doesn't stop it (Esc leaves the Play
-   Test). v0.56.0 (facts: claude/import_facts.md): Add Character ->
+   again. v0.64.0 (Tom): a tap or key stops it and the title comes back
+   (the original's can't be stopped; switch `CYD_DEMO_TAP_STOPS`, section
+   12). v0.56.0 (facts: claude/import_facts.md): Add Character ->
    **Pool** - Pool of Radiance characters (*.CHA, then *.SAV of exactly 285
    bytes, player characters) from Curse's save folder (as the original)
    AND from the player's own Pool of Radiance folder on the card (the
@@ -634,3 +635,36 @@ a PC, PortMaster handhelds):
     new combat icon - 480x320 always, in the Companion strip; 320x240 with
     Game menu -> Options -> Large Icons, in the editor's empty right side;
     a tap flips ready / action.
+  - `CYD_DEMO_TAP_STOPS` (v0.64.0, Tom): a tap or key stops the title's
+    Demo (the title comes back); the original's demo can't be stopped.
+
+## 12. Where the engine differs from the original games (Tom, 2026-10-10: keep this list up to date)
+
+Everything here is on purpose; anything else that plays differently from
+the originals is a bug. Engine comforts with a `features.h` switch are
+marked (switch).
+
+- **Controls and screens**: taps on menu words, list lines and combat
+  squares; on-screen keys (movement pad, cursor keys - Up / Down / Left /
+  Right / Select - Game, Look, Esc, and on 320x240 Map: the area map over
+  the game screen until the next tap; Tom confirmed Map 2026-10-10); the
+  480x320 Companion strip (map, party); the Game menu (Journal, Journal
+  PDF, Sounds, Options); a tap on the 3D view toggles 3D / Area.
+- **The journal**: the entries are pictures the board makes from the
+  player's own journal PDF and shows when the game mentions one (the next
+  tap opens it); the whole PDF as a book. The originals only print "read
+  entry N".
+- **Copy protection**: never asked.
+- **The demo**: a tap or key stops it (switch `CYD_DEMO_TAP_STOPS`).
+- **Add Character**: Curse also lists the members of saved games ("NAME
+  from saved game A"); Pool lists the Pool of Radiance characters straight
+  from the player's Pool of Radiance folder on the card too (the original
+  needs them copied into Curse's save folder) - **the standard for every
+  game's import from the game before it** (Tom, 2026-10-10); Hillsfar
+  characters can't be added (not one of the engine's games).
+- **The icon editor's big preview** (switch `CYD_BIG_ICON_PREVIEW`).
+- **Sound**: Tandy (default), PC speaker or off, with a volume slider in
+  the engine's Settings.
+- **Saving**: the GOG files' save folder on the card, as the game.
+- Smaller things kept from the originals although they look like bugs are
+  NOT differences: they're listed as quirks in the facts docs.

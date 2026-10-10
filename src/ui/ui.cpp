@@ -166,6 +166,19 @@ void clear()
     clear_gen = ++key_gen;
 }
 
+void clear_area(const Rect& r)
+{
+    g->fillRect(r.x, r.y, r.w, r.h, style::kBackground);
+    int n = 0;
+    for (int i = 0; i < n_keys; ++i) {
+        const Rect& k = keys[i].r;
+        const bool inside = k.x >= r.x && k.y >= r.y && k.x + k.w <= r.x + r.w && k.y + k.h <= r.y + r.h;
+        if (!inside) keys[n++] = keys[i];
+    }
+    n_keys = n;
+    ++key_gen;
+}
+
 Rect back_rect() { return {0, 0, header_h() * 3 / 2, header_h()}; }
 
 void header(const char* title, bool back)
