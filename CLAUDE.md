@@ -93,6 +93,14 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   Move Keys, Game, then Map; Esc went into the Game menu (tab bar's right,
   320x240 only); Map (map over the game screen until the next tap) is
   Claude's pick for the freed slot, Tom to confirm.
+- Add Character -> Pool (v0.56.0): lists Pool of Radiance characters from
+  Curse's save folder (the original) AND the player's Pool of Radiance
+  folder on the card (Claude's convenience, Tom to confirm). The demo
+  (v0.54.0) can't be stopped by a tap, as in the original (Tom to confirm).
+- Stats (v0.57.0): bytes 0x10 + 2i = a stat's own value, 0x11 + 2i = the
+  one in use (18/xx the other way round: 0x1D own, 0x1C in use);
+  `rules::stats` works the in-use ones out on every recalculation - never
+  write the in-use bytes as if they were the character's own.
 - Journal book memory (v0.52.0): while the book is open the game canvas
   waits on the card (`frame::park` / `unpark`, `_CYD/CANVAS.TMP`); a
   memory failure must never be reported as "no scanned picture".
