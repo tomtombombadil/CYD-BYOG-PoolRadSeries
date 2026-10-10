@@ -48,15 +48,17 @@ void learn(party::Character& c, int spell)
     if (spell >= 1 && spell <= 100) c.rec[kSpellBook + spell - 1] = 1;
 }
 
-int classes_held(const party::Character& c)
+// The experience a new character starts with: 25,000 for one class, 12,500
+// for two, 8,333 for three - and for the magic-user / thief, as the
+// original gives it (its createPlayer: 8,333 for C/F/MU, F/MU/T and MU/T)
+uint32_t start_exp(int cls)
 {
-    int n = 0;
-    for (int k = 0; k < classes::kClasses; ++k)
-        if (c.level(k) > 0) ++n;
-    return n;
+    if (cls < ClericFighter) return 25000u;
+    return cls == ClericFighterMU || cls == FighterMUThief || cls == MUThief ? 8333u : 12500u;
 }
 
-// The games' race / class level limits (coab's rules)
+// The games' race / class level limits for training (the original's
+// train_player: a half-elf magic-user's by Intelligence, as an elf's)
 bool race_limited(const party::Character& c, int cls, int lvl)
 {
     const int str = c.stat(0), intel = c.stat(1);
@@ -71,13 +73,31 @@ bool race_limited(const party::Character& c, int cls, int lvl)
         return cls == Fighter && (lvl == 6 || (lvl == 5 && str < 18));
     case 4:                                     // half-elf
         if (cls == Cleric) return lvl == 5;
-        if (cls == Fighter || cls == Ranger || cls == MagicUser)
-            return lvl == 8 || (lvl == 7 && str == 17) || (lvl == 6 && str < 17);
+        if (cls == Fighter || cls == Ranger) return lvl == 8 || (lvl == 7 && str == 17) || (lvl == 6 && str < 17);
+        if (cls == MagicUser) return lvl == 8 || (lvl == 7 && intel == 17) || (lvl == 6 && intel < 17);
         return false;
     case 5:                                     // halfling
         return cls == Fighter && (lvl == 6 || (lvl == 5 && str == 17) || (lvl == 4 && str < 17));
     default:
         return false;
+    }
+}
+
+// Restoration's own limits (the original's, a routine of its own): fewer
+// than training's - no dwarf fighter 9, no elf magic-user, half-elves'
+// clerics and fighters only
+bool restore_limited(const party::Character& c, int cls, int lvl)
+{
+    const int str = c.stat(0);
+    switch (c.race()) {
+    case 1: return cls == Fighter && ((lvl == 8 && str == 17) || (lvl == 7 && str < 17));
+    case 2: return cls == Fighter && (lvl == 7 || (lvl == 6 && str == 17) || (lvl == 5 && str < 17));
+    case 3: return cls == Fighter && (lvl == 6 || (lvl == 5 && str < 18));
+    case 4:
+        if (cls == Cleric) return lvl == 5;
+        return cls == Fighter && (lvl == 8 || (lvl == 7 && str == 17) || (lvl == 6 && str < 17));
+    case 5: return cls == Fighter && (lvl == 6 || (lvl == 5 && str == 17) || (lvl == 4 && str < 17));
+    default: return false;
     }
 }
 
@@ -235,13 +255,9 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
     r[kClass] = static_cast<uint8_t>(cls);
     r[kHitDice] = 1;
     const uint8_t lv = cls >= 0 && cls < 17 ? kStartLevels[cls] : 0;
-    int n = 0;
     for (int k = 0; k < 8; ++k)
-        if (lv & (1 << k)) {
-            r[kLevels + k] = 1;
-            ++n;
-        }
-    put32(r, kExp, n >= 3 ? 8333u : n == 2 ? 12500u : 25000u);
+        if (lv & (1 << k)) r[kLevels + k] = 1;
+    put32(r, kExp, start_exp(cls));
     if (r[kLevels + classes::Paladin]) {
         r[kCures] = 1;
         add_affect(c, f.prot_evil);
@@ -279,8 +295,7 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
     r[kHitDice] = 1;
     memset(r + kSpellBook, 0, 100);
     memset(r + kMoney, 0, 14);
-    const int n = classes_held(c);
-    put32(r, kExp, n >= 3 ? 8333u : n == 2 ? 12500u : 25000u);
+    put32(r, kExp, start_exp(cls));
 
     for (int i = 0; i < 7; ++i) set_stat(c, i, 0);
     for (int k = 0; k < 6; ++k)
@@ -386,6 +401,43 @@ int trainable(const party::Character& c, const classes::Tables& t)
     return mask;
 }
 
+int train_pick(const party::Character& c, const classes::Tables& t, uint32_t* exp_after)
+{
+    // The experience figure to go on from `lvl` (none past the table)
+    auto need_at = [&](int k, int lvl) -> int32_t { return lvl >= 1 && lvl <= 11 ? t.exp_needed(k, lvl) : -1; };
+    const uint32_t xp = c.exp();
+    int ready = 0, last = 0;
+    int32_t keep = 0;
+    for (int k = 0; k < classes::kClasses; ++k) {
+        const int lv = c.level(k);
+        if (lv <= 0) continue;
+        last = lv;
+        if (race_limited(c, k, lv)) continue;
+        const int32_t need = need_at(k, lv);
+        if (need <= 0 || static_cast<uint32_t>(need) > xp) continue;
+        ready |= t.u8(static_cast<uint16_t>(t.lay.class_masks + k));
+        const int32_t after = need_at(k, lv + 1);
+        if (after > 0 && xp >= static_cast<uint32_t>(after) && after > keep) keep = after - 1;
+    }
+    int pick = -1;
+    int32_t most = 0;
+    for (int k = 0; k < classes::kClasses; ++k)
+        if (t.u8(static_cast<uint16_t>(t.lay.class_masks + k)) & ready) {
+            const int32_t need = need_at(k, last);
+            if (need > most) {
+                most = need;
+                pick = k;
+            }
+        }
+    if (pick >= 0) {
+        ready = t.u8(static_cast<uint16_t>(t.lay.class_masks + pick));
+        const int32_t after = need_at(pick, last + 1);
+        if (after > 0 && xp >= static_cast<uint32_t>(after) && after > keep) keep = after - 1;
+    }
+    *exp_after = keep > 0 ? static_cast<uint32_t>(keep) : xp;
+    return ready;
+}
+
 void train_classes(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, int mask, bool silent)
 {
     uint8_t* r = c.rec;
@@ -393,7 +445,16 @@ void train_classes(party::Character& c, const classes::Tables& t, const Facts& f
     for (int k = 0; k < classes::kClasses; ++k) {
         if (c.level(k) <= 0) continue;
         ++held;
-        if (t.u8(static_cast<uint16_t>(t.lay.class_masks + k)) & mask) ++r[kLevels + k];
+        if (t.u8(static_cast<uint16_t>(t.lay.class_masks + k)) & mask) {
+            ++r[kLevels + k];
+            // A level lost (record 0xE7, its hit points 0xE8) is made up by
+            // one trained: its share of the lost hit points no longer owed
+            // (the original's train_player)
+            if (r[0xE7] > 0) {
+                r[0xE8] = static_cast<uint8_t>(r[0xE8] - r[0xE8] / r[0xE7]);
+                --r[0xE7];
+            }
+        }
     }
     classes::class_bonuses(c, t);
     if (silent) {
@@ -438,7 +499,7 @@ bool restore(party::Character& c, const classes::Tables& t)
         const int lv = c.level(k);
         if (lv <= 0) continue;
         const int32_t need = t.exp_needed(k, lv);
-        if (lv <= lim_level && need > 0 && need < lim_exp && !race_limited(c, k, lv)) {
+        if (lv <= lim_level && need > 0 && need < lim_exp && !restore_limited(c, k, lv)) {
             pick = k;
             lim_level = lv;
             lim_exp = need;

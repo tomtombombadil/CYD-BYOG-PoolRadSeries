@@ -146,6 +146,17 @@ struct Facts {
     uint8_t bestow, blink, fumbling, silence, entangle, sticks, faerie, blinded, animals_blind, feeble;
     MonFx   mon;
     SpellFx sp;
+    // The races' and rangers' effects (created with the character; the
+    // original's handlers): Constitution's bonus to saves against spells
+    // and wands (dwarves, gnomes, halflings: Con 4-6 +1, 7-10 +2, 11-13 +3,
+    // 14-17 +4, 18-20 +5), the half-elves' 30% against sleep and charm,
+    // +1 to hit orcs (dwarves: target flag 0x14B & 4) and the gnomes'
+    // foes (0x14B & 2), -4 to be hit by giants / trolls (dwarves, gnomes)
+    // and by kobold-kind (gnomes: type 1) of size 2, rangers' level as
+    // extra damage against giants (0x14B & 8)
+    struct RaceFx {
+        uint8_t con_save, halfelf, dwarf_orc, gnome_foe, giants, gnome_extra, ranger_giant;
+    } race{};
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a
@@ -658,9 +669,10 @@ Outcome finish(Battle& b, const Monster* monsters);
 // Experience for the pool's money: gold worth + 250 a gem + 2200 a piece of
 // jewellery
 int money_exp(const int money[7]);
-// Shares `total` among the party members still standing (not animated):
-// +10% for a high prime requisite (over 15), multi-classes divided by their
-// classes; the share each got before that
+// Shares `total` among the party (all but the animated dead: those who
+// fell count too, as in the original) and gives it to those still standing
+// (not animated): +10% for a high prime requisite (over 15), multi-classes
+// divided by their classes; the share each got before that
 int award(Battle& b, int total);
 // The readied weapon among the fighter's items (-1: none)
 int weapon(const Fighter& f, const items::Names& names);

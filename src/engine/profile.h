@@ -297,7 +297,7 @@ struct Profile {
                         qmark;
         // Human Change: a new magic-user's spells; GAME.OVR "Pick New Class", " doesn't qualify.",
         // "Select", " is now a 1st level ", "."
-        uint8_t         mu_change[3];
+        uint8_t         mu_change[4];
         uint32_t        pick_new, no_qualify, change_select, now_first, dot;
     } create;
 

@@ -2463,6 +2463,108 @@ static create::Facts make_facts()
     return f;
 }
 
+// The original's class rules (the behaviour checks' findings, from its
+// listing): starting experience, race limits, a training hall's choice and
+// the experience kept, levels lost made up, Restoration's own limits, the
+// Constitution saving bonus
+static void test_class_rules()
+{
+    static classes::Tables t;
+    make_tables(t);
+    const create::Facts f = make_facts();
+    static party::Character c;
+    create::Dice d(5);
+    auto xp = [&](uint32_t v) { for (int i = 0; i < 4; ++i) c.rec[0x127 + i] = static_cast<uint8_t>(v >> (8 * i)); };
+    // A magic-user / thief starts with 8,333 (as the three-class ones); two classes 12,500
+    create::begin(c, t, f, d, 2, 0, create::MUThief, 0);
+    CHECK(c.exp() == 8333);
+    create::begin(c, t, f, d, 2, 0, create::FighterMU, 0);
+    CHECK(c.exp() == 12500);
+    create::begin(c, t, f, d, 2, 0, create::FighterMUThief, 0);
+    CHECK(c.exp() == 8333);
+    // A half-elf magic-user's limit goes by Intelligence: level 6 stops below 17
+    c = party::Character{};
+    c.rec[0x74] = 4;
+    c.rec[0x109 + classes::MagicUser] = 6;
+    c.rec[0x11] = 18;
+    c.rec[0x13] = 16;
+    xp(3000000);
+    CHECK(create::trainable(c, t) == 0);
+    c.rec[0x13] = 18;
+    CHECK(create::trainable(c, t) == 1 << classes::MagicUser);
+    // A training hall: a fighter 3 with the experience for level 5 trains one
+    // level and keeps one under level 5's figure (4 -> 5: 16000)
+    c = party::Character{};
+    c.rec[0x74] = 7;
+    c.rec[0x109 + classes::Fighter] = 3;
+    xp(20000);
+    uint32_t keep = 0;
+    CHECK(create::train_pick(c, t, &keep) == 1 << classes::Fighter && keep == 15999);
+    xp(9000);
+    CHECK(create::train_pick(c, t, &keep) == 1 << classes::Fighter && keep == 9000);
+    // A fighter 3 / magic-user 2 with both ready: the original compares the
+    // figures at the last class's level (2): magic-user 5000 over fighter 4000
+    c.rec[0x109 + classes::MagicUser] = 2;
+    xp(10000);
+    CHECK(create::train_pick(c, t, &keep) == 1 << classes::MagicUser && keep == 9999);
+    // Levels lost (0xE7, hit points 0xE8): a level trained makes one up
+    c = party::Character{};
+    c.rec[0x74] = 7;
+    c.rec[0x109 + classes::Fighter] = 4;
+    c.rec[0xE5] = 4;
+    c.rec[0xE7] = 2;
+    c.rec[0xE8] = 15;
+    create::train_classes(c, t, f, d, 1 << classes::Fighter, false);
+    CHECK(c.level(classes::Fighter) == 5 && c.rec[0xE7] == 1 && c.rec[0xE8] == 8);
+    // Restoration has its own limits: an elf magic-user 9 with Int 16 can't
+    // train on, but a lost level comes back
+    c = party::Character{};
+    c.rec[0x74] = 2;
+    c.rec[0x109 + classes::MagicUser] = 9;
+    c.rec[0x13] = 16;
+    c.rec[0xE7] = 1;
+    c.rec[0xE8] = 4;
+    xp(3000000);
+    CHECK(create::trainable(c, t) == 0);
+    CHECK(create::restore(c, t) && c.level(classes::MagicUser) == 10);
+    // The Constitution saving bonus (dwarves, gnomes, halflings): against
+    // spells and wands, Con 14-17 +4 - nothing against breath
+    static combat::Facts fx{};
+    fx.race.con_save = 0x61;
+    static uint8_t rec[party::kRecordSize];
+    static uint8_t aff[2][party::kAffectSize];
+    static int naff = 1;
+    memset(rec, 0, sizeof rec);
+    memset(aff, 0, sizeof aff);
+    aff[0][0] = 0x61;
+    rec[0x19] = 14;
+    static combat::Battle b;
+    b = combat::Battle{};
+    b.fx = &fx;
+    b.f[0].rec = rec;
+    b.f[0].aff = aff;
+    b.f[0].n_aff = &naff;
+    b.f[0].max_aff = 2;
+    b.n = 1;
+    combat::set_actor(b, 0);
+    bool tried = false;
+    for (uint32_t seed = 1; seed < 50; ++seed) {
+        create::Dice probe(seed);
+        const int r = probe.roll(20, 1);
+        if (r <= 1 || r >= 16) continue;
+        for (int k = 0; k < 5; ++k) rec[0xDF + k] = static_cast<uint8_t>(r + 4);
+        create::Dice d1(seed), d2(seed), d3(seed), d4(seed);
+        CHECK(combat::saving_throw(b.f[0], 4, 0, d1) && combat::saving_throw(b.f[0], 2, 0, d2));
+        CHECK(!combat::saving_throw(b.f[0], 3, 0, d3));
+        naff = 0;
+        CHECK(!combat::saving_throw(b.f[0], 4, 0, d4));
+        naff = 1;
+        tried = true;
+        break;
+    }
+    CHECK(tried);
+}
+
 static void test_create()
 {
     static classes::Tables t;
@@ -3248,10 +3350,13 @@ static void test_combat()
     CHECK(o.result == combat::Won && o.exp == 70 && o.money[3] == 30);
     const int m[7] = {0, 0, 0, 400, 0, 1, 0};
     CHECK(combat::money_exp(m) == 400 + 250);
-    // Shared by the two standing (member 2 is dead): a fighter with Str 16 gets 10% more
+    // Shared by the whole party (member 2 is dead: counted, gets none - the
+    // original's calc_battle_exp); a fighter with Str 16 gets 10% more
     rec[0][0x75] = 2; rec[0][0x11] = 16;
-    CHECK(combat::award(b, 1000) == 500);
-    CHECK(rec[0][0x127] == (550 & 0xFF) && rec[0][0x128] == (550 >> 8) && rec[1][0x127] == (500 & 0xFF));
+    const uint8_t dead_xp = rec[2][0x127];
+    CHECK(combat::award(b, 1000) == 333);
+    CHECK(rec[0][0x127] == (366 & 0xFF) && rec[0][0x128] == (366 >> 8) && rec[1][0x127] == (333 & 0xFF) &&
+          rec[1][0x128] == (333 >> 8) && rec[2][0x127] == dead_xp);
     // ---- Spells in fights (made-up spell lines in the games' layout)
     static uint8_t sds[0x100];
     memset(sds, 0, sizeof sds);
@@ -4406,6 +4511,7 @@ int main()
     test_spells_batch2();
     test_spells_batch3();
     test_create();
+    test_class_rules();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;
