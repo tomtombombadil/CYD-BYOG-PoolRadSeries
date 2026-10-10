@@ -10,7 +10,7 @@
 // the script's LOAD MONSTERs (RUNAT=that address FIGHT=1 runs the fight),
 // FIGHTOPS, FORCESPELL=m:id,id (fighter m has those spells), FORCEWEAPON=m:type
 // (fighter m's weapon becomes that type), FXSHOTS=n (snapshots of the pages'
-// pictures in flight). Needs an out/ folder.
+// pictures in flight), PAGELOG (each fight page's lines). Needs an out/ folder.
 #include "ui/play.cpp"
 #include "engine/rules.h"
 #include <vector>
@@ -375,6 +375,7 @@ int main(int argc, char** argv)
             // taken), the results and treasure tapped through
             auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
             shot("fight_start");
+            play::log_pages = getenv("PAGELOG") != nullptr;
             if (play::fg) for (int i = 0; i < play::fg->b.n; ++i) { const auto& f = play::fg->b.f[i]; printf("  fighter %d at %d,%d size %d icon %d px %p up %d rec141 %d 142 %d 144 %d\n", i, f.x, f.y, f.size, f.icon, (void*)play::fg->icon[f.icon].px[0], f.up(), f.rec[0x141], f.rec[0x142], f.rec[0x144]); }
             int turns = 0, n = 0;
             const char* fops = getenv("FIGHTOPS");      // taps while the fight waits: letters, &rr rows; then Quick

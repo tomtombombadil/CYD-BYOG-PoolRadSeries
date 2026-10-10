@@ -810,10 +810,14 @@ void page_over(pic::Canvas& c)
     if (fg->cur >= 0 && fg->b.f[fg->cur].up()) mark(c, fg->cur);
 }
 
+bool log_pages = false;                  // (the playsim's PAGELOG: each page's lines printed)
+
 void show_page(pic::Canvas& c)
 {
     page_over(c);
     const Page& p = fg->page[fg->at++];
+    if (log_pages) Serial.printf("[page] %s %s %s\n", p.lines > 0 ? p.line[0] : "", p.lines > 1 ? p.line[1] : "",
+                                 p.lines > 2 ? p.line[2] : "");
     if (p.sound) sfx(p.sound);
     clear_panel(c, 10, 21);
     int row = 10;
@@ -2419,6 +2423,13 @@ void cast_now(pic::Canvas& c, bool forgotten)
     const spells::Entry se = spells::entry(mrules->tables, sp);
     const int aim = se.aim & 0x0F;
     const bool each = aim >= 1 && aim <= 4 && se.targets != spells::kParty;
+    if ((fs->does == combat::SpellDoes::Cone || fs->does == combat::SpellDoes::Fear) && ax >= 0) {
+        // A cone from the caster through the square aimed at: Fear 3 rays of 6 squares, Cone of Cold 2 of (level + 1) / 2
+        const int lv = from_item ? pw : combat::power_of(f.rec, mrules->tables, sp, false);
+        const bool fear = fs->does == combat::SpellDoes::Fear;
+        const int reach = fear ? 6 : ((lv + 1) / 2 > 1 ? (lv + 1) / 2 : 1);
+        fg->sp_n = combat::cone(b, fg->t, i, ax, ay, reach, fear ? 3 : 2, fg->sp_t, combat::kMaxFighters);
+    }
     if (fs->does == combat::SpellDoes::Cloud && ax >= 0) {
         // A cloud on the field (2 x 2 from the square aimed at) for the caster's level in rounds; those in it breathe it
         const int rounds = from_item ? pw : combat::power_of(f.rec, mrules->tables, sp, false);

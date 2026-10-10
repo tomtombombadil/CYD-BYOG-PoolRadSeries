@@ -67,6 +67,7 @@ struct Facts {
     uint8_t backstab_weapons[6];        // the weapons a thief backstabs with (or none)
     uint8_t charm;                      // Charm Person's effect (its data: the caster's side << 7, the
                                         // charmed one's own << 6, 0x20, the caster's level)
+    uint8_t fear;                       // Fear's effect (they flee; data 1: a party member made Quick by it)
     // How a shot looks in flight, by the item type that flies: pointed (an
     // arrow's picture by direction), spinning, a flask, a sling's stone; the
     // rest a rock
@@ -318,13 +319,15 @@ enum class SpellDoes : uint8_t {
     Bolt,                               // damage along a line from the target away from the caster
     Cloud,                              // a save against poison or helpless 1d4 + 1 rounds (word / word2 saved)
     Charm,                              // a person (humanoid, man-sized) joins the caster's side (word; word2 not a person)
+    Cone,                               // damage to those in a cone (cone(): 2 rays, the caster's (level + 1) / 2 squares)
+    Fear,                               // those in a cone (3 rays, 6 squares) that fail a save flee (word)
 };
 struct FightSpell {
     uint8_t   spell;
     SpellDoes does;
     uint8_t   n, sides, plus;           // dice
     uint8_t   per;                      // 1: + the caster's level, 2: (level + 1) / 2 missiles of 1d4 + 1, 3: level dice,
-                                        // 5: 3, 5 or 7 dice; effects: the dice are rounds (4: x 10)
+                                        // 5: 3, 5 or 7 dice, 6: level dice + the level; effects: the dice are rounds (4: x 10)
     uint8_t   kind;                     // damage: 1 fire, 2 cold, 4 electricity, 8 magic, 0x10 acid
     uint32_t  word;                     // what's said ("is Blessed", "falls asleep"; GAME.OVR, 0: nothing;
                                         // Heal: "is Healed" instead of fully / partly healed)
@@ -367,6 +370,14 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
 // The caster's level for a spell: by its kind; from an item 6 (the
 // monsters' spells - the items' own - as the caster's)
 int power_of(const uint8_t* rec, const classes::Tables& st, int spell, bool item = false);
+
+// A cone (Fear, Cone of Cold; coab's facts): the line from the caster
+// through (tx, ty) carried on (its steps repeated) to `reach` squares
+// (straight steps 2 half-squares, slanted 3), stopped by the field's edge
+// and before a wall; the fighters (not the caster) on the line to its end
+// and - rays 2 / 3 - on the lines to the end moved a square to the right
+// / and the left of the line's last step
+int cone(const Battle& b, const Tables& t, int caster, int tx, int ty, int reach, int rays, int* out, int cap);
 
 // A lightning bolt's squares: from (tx, ty) on, away from the caster, up to
 // `len` squares or a wall / the field's edge; the fighters on them

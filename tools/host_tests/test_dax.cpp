@@ -3119,6 +3119,23 @@ static void test_combat()
     }
     mrec[0][0x10E] = 5;
     combat::occupancy(sb);
+    // A cone east from (10, 10) through (12, 10), 6 squares: the line takes
+    // 12, 13, 14; one off the line only with a second ray (to the end a
+    // square to the right: south); a wall cuts it short
+    {
+        int cn[8];
+        CHECK(combat::cone(sb, t, 0, 12, 10, 6, 1, cn, 8) == 3);
+        sb.f[3].x = 15; sb.f[3].y = 11;
+        combat::occupancy(sb);
+        CHECK(combat::cone(sb, t, 0, 12, 10, 6, 1, cn, 8) == 2);
+        CHECK(combat::cone(sb, t, 0, 12, 10, 6, 2, cn, 8) == 3 && cn[2] == 3);
+        sb.ground[10][13] = 0x01;
+        CHECK(combat::cone(sb, t, 0, 12, 10, 6, 3, cn, 8) == 1 && cn[0] == 1);
+        sb.ground[10][13] = 0x37;
+        CHECK(combat::cone(sb, t, 0, 10, 10, 6, 3, cn, 8) == 0);          // no direction
+        sb.f[3].x = 14; sb.f[3].y = 10;
+        combat::occupancy(sb);
+    }
     // A bolt from the first target on, away from the caster; a wall stops it
     int line[8];
     CHECK(combat::bolt_line(sb, t, 0, 12, 10, 7, line, 8) == 3 && line[0] == 1 && line[1] == 2 && line[2] == 3);
@@ -3165,6 +3182,20 @@ static void test_combat()
         CHECK(sb.f[1].team() == 1 && !sb.f[1].has(0x0B));
         mrec[2][0xDE] = 1;
         fx.charm = 0;
+        // Fear (2 rounds): those failing their save flee until it's over
+        fx.fear = 0x8E;
+        const combat::FightSpell fear{4, combat::SpellDoes::Fear, 0, 0, 0, 0, 0, 0x5555};
+        mnaff[1] = 0; sb.f[1].fleeing = false;
+        int one = 1;
+        n = combat::cast(sb, st, 0, 4, fear, &one, 1, d, sline, 16);
+        CHECK(n == 1 && (sline[0].did == combat::Did::Word) == sb.f[1].fleeing);
+        if (sb.f[1].fleeing) {
+            CHECK(sb.f[1].has(0x8E));
+            combat::tick(sb);
+            combat::tick(sb);
+            CHECK(!sb.f[1].fleeing && !sb.f[1].has(0x8E));
+        }
+        fx.fear = 0;
     }
     // The computer's spells: missiles (priority 7, reach 6) at the party member in reach
     sds[1 * 16 + 13] = 7; sds[1 * 16 + 2] = 6;

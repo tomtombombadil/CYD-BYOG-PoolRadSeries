@@ -555,6 +555,10 @@ void tick(Battle& b)
                     uncharm(f.rec, f.aff[k]);           // back to their own side
                     f.target = -1;
                 }
+                if (b.fx && b.fx->fear && f.aff[k][0] == b.fx->fear) {
+                    f.fleeing = false;                  // the fear is over
+                    if (f.aff[k][3] & 1) f.quick = false;
+                }
                 drop_aff(f, k);
             } else {
                 f.aff[k][1] = static_cast<uint8_t>(m - 1);
@@ -1274,12 +1278,34 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             if (r != Did::Unaffected) say(who[k], r, 0);
         }
         break;
+    case SpellDoes::Fear:
+        // Those that fail a save run (the computer runs them) until it wears off
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up() || who[k] == caster) continue;
+            if (saving_throw(f, e.save, 0, d)) {
+                say(who[k], Did::Unaffected, 0);
+                continue;
+            }
+            const bool made_quick = f.member >= 0 && f.rec[0xF7] < 0x80 && !f.quick;
+            if (b.fx && b.fx->fear) give_aff(f, b.fx->fear, minutes, made_quick ? 1 : 0, false);
+            f.fleeing = true;
+            if (made_quick) f.quick = true;
+            f.target = -1;
+            say(who[k], Did::Word, 0);
+        }
+        break;
+    case SpellDoes::Cone:
     case SpellDoes::Bolt:
     case SpellDoes::Damage:
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
             if (!f.up()) continue;
             int count = fs.n, plus = fs.plus;
+            if (fs.per == 6) {
+                count = pw;
+                plus += pw;
+            }
             if (fs.per == 1) plus += pw;
             if (fs.per == 2) {
                 count = (pw + 1) / 2;
@@ -1849,6 +1875,103 @@ int clouds_round(Battle& b)
         for (int k = 0; k < 4; ++k)
             if (b.clouds[c].present >> k & 1) b.ground[b.clouds[c].y + kCloudDy[k]][b.clouds[c].x + kCloudDx[k]] = kCloudGround;
     return gone;
+}
+
+// ---- Cones
+namespace {
+// The squares of a straight line from (x0, y0) to (x1, y1), the first left out
+template <typename F> void line_squares(int x0, int y0, int x1, int y1, F each)
+{
+    const int ax = x1 > x0 ? x1 - x0 : x0 - x1, ay = y1 > y0 ? y1 - y0 : y0 - y1;
+    const int sx = x1 > x0 ? 1 : x1 < x0 ? -1 : 0, sy = y1 > y0 ? 1 : y1 < y0 ? -1 : 0;
+    int x = x0, y = y0, err = 0;
+    while (x != x1 || y != y1) {
+        int dir_x = 0, dir_y = 0;
+        if (ax >= ay) {
+            x += sx;
+            dir_x = sx;
+            err += 2 * ay;
+            if (err >= ax) {
+                y += sy;
+                dir_y = sy;
+                err -= 2 * ax;
+            }
+        } else {
+            y += sy;
+            dir_y = sy;
+            err += 2 * ax;
+            if (err >= ay) {
+                x += sx;
+                dir_x = sx;
+                err -= 2 * ay;
+            }
+        }
+        if (!each(x, y, dir_x, dir_y)) return;
+    }
+}
+} // namespace
+
+int cone(const Battle& b, const Tables& t, int caster, int tx, int ty, int reach, int rays, int* out, int cap)
+{
+    const Fighter& me = b.f[caster];
+    const int x0 = me.x, y0 = me.y;
+    if (tx == x0 && ty == y0) return 0;
+    // The steps from the caster to the target, then the same steps on
+    int sdx[64], sdy[64], ns = 0, cost = 0;
+    line_squares(x0, y0, tx, ty, [&](int, int, int dx2, int dy2) {
+        if (ns < 64) {
+            sdx[ns] = dx2;
+            sdy[ns] = dy2;
+            ++ns;
+        }
+        cost += dx2 && dy2 ? 3 : 2;
+        return true;
+    });
+    int ex = tx, ey = ty;
+    for (int k = 0; ns && cost < reach * 2; k = (k + 1) % ns) {
+        const int nx = ex + sdx[k], ny = ey + sdy[k];
+        if (nx <= 0 || nx >= kW - 1 || ny <= 0 || ny >= kH - 1) break;
+        ex = nx;
+        ey = ny;
+        cost += sdx[k] && sdy[k] ? 3 : 2;
+    }
+    // No further than the last square before a wall
+    int lx = x0, ly = y0, last_dir = 8;
+    line_squares(x0, y0, ex, ey, [&](int x, int y, int dx2, int dy2) {
+        if (!on_field(x, y) || tile(b, t, x, y)[0] == 0xFF) return false;
+        lx = x;
+        ly = y;
+        for (int dd = 0; dd < 8; ++dd)
+            if (kDx[dd] == dx2 && kDy[dd] == dy2) last_dir = dd;
+        return true;
+    });
+    if (lx == x0 && ly == y0) return 0;
+    int n = 0;
+    auto take = [&](int x, int y) {
+        if (!on_field(x, y) || !b.who[y][x]) return;
+        const int f = b.who[y][x] - 1;
+        if (f == caster) return;
+        for (int j = 0; j < n; ++j)
+            if (out[j] == f) return;
+        if (n < cap) out[n++] = f;
+    };
+    auto ray = [&](int x1, int y1) {
+        if (x1 < 0) x1 = 0;
+        if (x1 >= kW) x1 = kW - 1;
+        if (y1 < 0) y1 = 0;
+        if (y1 >= kH) y1 = kH - 1;
+        line_squares(x0, y0, x1, y1, [&](int x, int y, int, int) {
+            take(x, y);
+            return true;
+        });
+    };
+    ray(lx, ly);
+    if (last_dir < 8) {
+        const int right = ((last_dir & ~1) + 2) & 7, left = (((last_dir + 1) & ~1) + 6) & 7;
+        if (rays >= 2) ray(lx + kDx[right], ly + kDy[right]);
+        if (rays >= 3) ray(lx + kDx[left], ly + kDy[left]);
+    }
+    return n;
 }
 
 } // namespace combat
