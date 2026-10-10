@@ -99,6 +99,8 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   (v0.54.0) can't be stopped by a tap, as in the original (Tom to confirm).
   Add Character -> Curse (Tom, v0.58.0): also the members of saved games
   ("NAME from saved game A"), beyond the original's .GUY-only list.
+  Add Character -> Hillsfar: NOT supported (Tom, 2026-10-10 - Hillsfar
+  isn't one of the engine's games); the menu word stays, with a message.
 - Stats (v0.57.0): bytes 0x10 + 2i = a stat's own value, 0x11 + 2i = the
   one in use (18/xx the other way round: 0x1D own, 0x1C in use);
   `rules::stats` works the in-use ones out on every recalculation - never

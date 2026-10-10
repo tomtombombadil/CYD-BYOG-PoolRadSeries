@@ -1952,7 +1952,8 @@ void add_from_tap(int x, int y, pic::Canvas& c)
         draw_add_list(c);
         return;
     case 'H':
-        error(c, "Not in the engine yet.");
+        // (Tom, 2026-10-10: Hillsfar isn't one of the engine's games - no import)
+        error(c, "Hillsfar characters can't be added.");
         return;
     default:
         return;
