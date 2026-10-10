@@ -209,13 +209,14 @@ constexpr treasure::Facts kCurseRandom = {
 };
 
 // Title: picture 1 for 5 s; picture 2 with 3 on it at row 11, column 6 for
-// 10 s; picture 4 at row 11 for 10 s; the credits for 10 s.
+// 10 s; picture 4 at row 11 for 10 s (with sound 0x0D); the credits for
+// 10 s.
 constexpr TitleStep kCurseTitle[] = {
-    {1, 0, 0, true, 5000},
-    {2, 0, 0, true, 0},
-    {3, 11, 6, false, 10000},
-    {4, 11, 0, false, 10000},
-    {0, 0, 0, true, 10000},
+    {1, 0, 0, true, 5000, 0},
+    {2, 0, 0, true, 0, 0},
+    {3, 11, 6, false, 10000, 0},
+    {4, 11, 0, false, 10000, 0x0D},
+    {0, 0, 0, true, 10000, 0},
 };
 
 // Curse's ECL opcodes (operand counts as coab lists them)
@@ -244,7 +245,7 @@ const Profile kProfiles[] = {
      {0x6E60, 0x6E88, 0x6EB0, 0x6EF2, 0x6F1B, 0x6F0A, 0x6ED6, 0x6EE3, 0x6F31, 0x6F3E, 0x6F4D, 0x6F64, 0x6F7B},
      "8X8D1.DAX", 202,
      20830,
-     "TITLE.DAX", kCurseTitle, sizeof kCurseTitle / sizeof kCurseTitle[0],
+     "TITLE.DAX", kCurseTitle, sizeof kCurseTitle / sizeof kCurseTitle[0], 0x06, 0x25,
      "GAME.OVR", 272137, 706, 218, {3, 8},
      2, 6, 203, "SKY.DAX", 252, &kCurseEcl,
      0x6D9A, 2, 1,

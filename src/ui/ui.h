@@ -65,6 +65,8 @@ void key2(const Rect& r, const char* label, const char* sub, KeyStyle s = KeySty
 // A key labelled in the small font (the cursor keys: words, so they don't
 // look like the party's movement arrows)
 void key_small(const Rect& r, const char* label, KeyStyle s = KeyStyle::Normal);
+// A big key: the label in the large font, a small line under it
+void key_big(const Rect& r, const char* label, const char* sub, KeyStyle s = KeyStyle::Normal);
 // A key showing a movement arrow instead of words.
 enum class Arrow : uint8_t { Forward, Left, Right, TurnLeft, TurnRight, TurnAround };
 void key_arrow(const Rect& r, Arrow a, KeyStyle s = KeyStyle::Normal);

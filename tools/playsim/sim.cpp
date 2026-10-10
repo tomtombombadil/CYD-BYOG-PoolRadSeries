@@ -190,6 +190,22 @@ int main(int argc, char** argv)
     const char* dir = folder.c_str();
     const char* e = play::open(dir, games::Game::CurseOfTheAzureBonds, C, getenv("CACHE"));
     if (e) { printf("open: %s\n", e); return 1; }
+    // The title sequence (v0.53.0): a tap through each step (TITLESHOTS:
+    // a snapshot of each), then Play on the version line
+    for (int guard = 0; play::screen == play::Screen::Title && guard < 20; ++guard) {
+        if (play::title_run && play::title_run->prompt) {
+            printf("title prompt [%s%s]\n", play::menu.prompt, play::menu.s);
+            if (getenv("TITLESHOTS")) shot("title_prompt");
+            int x = 0, y = 0;
+            for (int k = 0; k < play::menu.count; ++k)
+                if (text::key(play::menu, k) == 'P') { x = (int)(strlen(play::menu.prompt) + play::menu.start[k]) * 8 + 2; y = text::kMenuRow * 8 + 2; }
+            play::tap(x, y, C);
+            continue;
+        }
+        printf("title step %d (%d credit lines)\n", play::title_run ? play::title_run->step : -1, play::title_run ? play::title_run->n_credits : -1);
+        if (getenv("TITLESHOTS")) { char t[24]; snprintf(t, sizeof t, "title_%d", play::title_run->step); shot(t); }
+        play::tap(2, 2, C);
+    }
     // The party menu: tap its lines by their first letter
     auto pm_line = [](char k) { for (int i = 0; i < play::pm_lines; ++i) if (play::pm_key(play::pm_item[i]) == k) return i; return -1; };
     printf("party menu:");

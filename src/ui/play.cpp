@@ -20,6 +20,7 @@
 #include "engine/magic.h"
 #include "engine/layout.h"
 #include "engine/party.h"
+#include "engine/printcalls.h"
 #include "engine/profile.h"
 #include "engine/rules.h"
 #include "engine/savegame.h"
@@ -138,7 +139,7 @@ pic::Canvas* cv = nullptr;
 // Game" question, or the game itself
 enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich, AddFrom,
                                AddList, YesNo, CreatePick, CreateName, TradeWho, Heal, Take, Appraise, Magic,
-                               SpellList, Rest, Cast, Effects, Alter, Fight, Loot, Modify };
+                               SpellList, Rest, Cast, Effects, Alter, Fight, Loot, Modify, Title };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
 Screen save_from = Screen::PartyMenu;   // where Save Which Game goes back to
@@ -4752,9 +4753,15 @@ void pm_choose(int i, pic::Canvas& c)
     }
 }
 
+void title_tap(int x, int y, pic::Canvas& c);
+
 void pm_tap(int x, int y, pic::Canvas& c)
 {
     const int row = y / 8, col = x / 8;
+    if (screen == Screen::Title) {
+        title_tap(x, y, c);
+        return;
+    }
     if (screen == Screen::Modify) {
         modify_tap(x, y, c);
         return;
@@ -5653,6 +5660,154 @@ void load_sound()
     }
 }
 
+// ---- the title sequence (Tom, 2026-10-10: "like starting the game for real")
+// As the game begins: the title pictures (TITLE.DAX) and the credits
+// (GAME.OVR's print calls), each for its time or until a tap; then the
+// version line with Play / Demo on a clear screen; Play opens the party
+// menu. Only while it runs: the credits' lines (~2 KB).
+constexpr int kTitleCredits = 48;
+struct TitleRun {
+    printcalls::Line credits[kTitleCredits];
+    int      n_credits = 0;
+    int      step = 0;
+    uint32_t since = 0;
+    bool     prompt = false;
+    char     version[48] = {};
+    char     words[24] = {};
+};
+TitleRun* title_run = nullptr;
+
+bool title_picture(pic::Canvas& c, int block, int row, int col)
+{
+    fs::File f;
+    if (!open_dax(d->prof->title_file, f)) return false;
+    library::FileSource src(f);
+    bool ok = false;
+    const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
+    if (e) {
+        dax::RleReader r(src, d->idx, *e);
+        uint8_t hdr[pic::kHeaderSize];
+        pic::Header h;
+        ok = r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_header(hdr, e->raw_size, h) &&
+             pic::draw(r, h, 0, c, col * 8, row * 8);
+    }
+    f.close();
+    return ok;
+}
+
+// Draws steps from `from` on until one that waits; that one is current
+void title_show(int from, pic::Canvas& c)
+{
+    const profile::Profile& p = *d->prof;
+    for (int s = from; s < p.title_steps; ++s) {
+        const profile::TitleStep& st = p.title[s];
+        if (st.block == 0 && title_run->n_credits == 0) continue;      // no GAME.OVR: no credits
+        if (st.clear) c.clear(0);
+        if (st.block == 0) {
+            layout::outer(c, d->tables, d->frame_tiles);
+            for (uint8_t bar : p.credits_bars) layout::bar(c, d->tables, d->frame_tiles, bar);
+            for (int i = 0; i < title_run->n_credits; ++i) {
+                const printcalls::Line& l = title_run->credits[i];
+                font::draw_text(c, d->font, l.s, l.col, l.row, l.fg, l.bg);
+            }
+        } else {
+            title_picture(c, st.block, st.row, st.col);
+        }
+        if (st.sound) sfx(st.sound);
+        title_run->step = s;
+        if (st.wait_ms > 0) break;
+    }
+    title_run->since = millis();
+    dirty_rows(0, 24);
+}
+
+void end_title(pic::Canvas& c)
+{
+    delete title_run;
+    title_run = nullptr;
+    c.clear(0);
+    menu_on = false;
+    screen = Screen::PartyMenu;
+    draw_party_menu(c);
+}
+
+// After the pictures: the version line and its menu (Play / Demo)
+void title_prompt(pic::Canvas& c)
+{
+    title_run->prompt = true;
+    c.clear(0);
+    dirty_rows(0, 24);
+    if (!title_run->words[0]) {
+        end_title(c);
+        return;
+    }
+    text::build(menu, title_run->version, title_run->words);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+void title_next(pic::Canvas& c)
+{
+    if (title_run->step + 1 < d->prof->title_steps) title_show(title_run->step + 1, c);
+    else title_prompt(c);
+}
+
+void title_tick(uint32_t now, pic::Canvas& c)
+{
+    if (!title_run || title_run->prompt) return;
+    if (now - title_run->since >= d->prof->title[title_run->step].wait_ms) title_next(c);
+}
+
+void title_tap(int x, int y, pic::Canvas& c)
+{
+    if (!title_run->prompt) {
+        title_next(c);                      // a tap skips the wait
+        return;
+    }
+    if (note_until) {
+        redraw_menu(c);
+        return;
+    }
+    if (y < text::kMenuTapTop) return;
+    const int k = text::hit(menu, x / 8);
+    if (k < 0) return;
+    menu.selected = k;
+    show_menu_line(c);
+    // The demo plays itself in area 1 (ECL1 block 0x52 with no party, a
+    // key ends it): still to come; Play goes on to the party menu
+    if (text::key(menu, k) == 'D') error(c, "The demo isn't in the engine yet: choose Play.");
+    else end_title(c);
+}
+
+// Starts the title (false: this game has none - straight to the party menu)
+bool start_title(pic::Canvas& c)
+{
+    const profile::Profile& p = *d->prof;
+    if (!p.title_file || p.title_steps <= 0) return false;
+    title_run = new (std::nothrow) TitleRun;
+    if (!title_run) return false;
+    fs::File f;
+    if ((p.title_version || p.title_menu) && open_file(p.program, f)) {
+        library::FileSource src(f);
+        exepack::Info info;
+        if (exepack::parse(src, info) == exepack::Status::Ok) {
+            if (p.title_version) text::read_pascal(src, info, p.title_version, title_run->version, sizeof title_run->version);
+            if (p.title_menu) text::read_pascal(src, info, p.title_menu, title_run->words, sizeof title_run->words);
+        }
+        f.close();
+    }
+    if (open_file(p.overlay, f)) {
+        library::FileSource osrc(f);
+        if (osrc.size() == p.overlay_size)
+            title_run->n_credits = printcalls::read(osrc, p.credits_at, p.credits_base, title_run->credits, kTitleCredits);
+        f.close();
+    }
+    screen = Screen::Title;
+    c.clear(0);
+    title_show(0, c);
+    return true;
+}
+
 } // namespace
 
 bool available(games::Game g) { return profile::program_name(g) != nullptr; }
@@ -5796,8 +5951,11 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     idle_cycles = 0;
     exit_wanted = false;
     w = text::Writer{};
-    screen = Screen::PartyMenu;
-    draw_party_menu(c);
+    // The title sequence first, as the games begin; then the party menu
+    if (!start_title(c)) {
+        screen = Screen::PartyMenu;
+        draw_party_menu(c);
+    }
     return nullptr;
 }
 
@@ -5822,6 +5980,8 @@ void close()
     ground = nullptr;
     delete mk;
     mk = nullptr;
+    delete title_run;
+    title_run = nullptr;
     new_char = nullptr;
     input_engine = false;
     if (d) {
@@ -5849,6 +6009,10 @@ bool act(Act a, pic::Canvas& c)
     cv = &c;
     if (screen == Screen::Fight) return fight_act(a, c);
     if (screen == Screen::Modify) return modify_act(a, c);
+    if (screen == Screen::Title && title_run && !title_run->prompt) {
+        title_next(c);                      // any key skips the wait, as in the games
+        return true;
+    }
     if (screen != Screen::Game) return false;
     if (waiting) {
         // Any key goes on, like the games' "press a key": the rest of the
@@ -6391,6 +6555,11 @@ void tick(uint32_t now, pic::Canvas& c)
     if (screen == Screen::Rest) {
         cv = &c;
         rest_tick(now, c);
+        return;
+    }
+    if (screen == Screen::Title) {
+        cv = &c;
+        title_tick(now, c);
         return;
     }
     if (screen == Screen::Cast) {

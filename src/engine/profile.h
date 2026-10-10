@@ -50,6 +50,7 @@ struct TitleStep {
     uint8_t  row, col;       // where the picture's top left goes, in cells
     bool     clear;          // clear the screen first
     uint16_t wait_ms;        // 0 = go straight on
+    uint8_t  sound;          // a sound effect as it shows (0 = none)
 };
 
 // A table of names in the program: Pascal strings, each in a fixed-size
@@ -164,6 +165,9 @@ struct Profile {
     const char*      title_file;
     const TitleStep* title;
     int              title_steps;
+    // After it, the version line and its menu ("Play Demo"): Pascal
+    // strings in the program image (0 = none)
+    uint32_t         title_version, title_menu;
 
     // GAME.OVR (the overlay file): the credits screen's print calls
     const char*  overlay;

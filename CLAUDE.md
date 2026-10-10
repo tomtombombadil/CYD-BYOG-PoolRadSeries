@@ -162,6 +162,10 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   use those names, not short DOS names (the scanner still recognises short
   names like CURSE: `engine/games.*`). Dark Queen / Unlimited Adventures are
   .TLB/.GLB "newer format" games, listed, not readable.
+- Chooser (Tom, 2026-10-10, v0.53.0): a game's page is four big keys -
+  Resource Test (the DAX file / block viewer, behind it now), Screen Test,
+  Walk Test, Play Test. The Play Test starts with the title sequence and
+  the version line's Play / Demo, then the party menu (as the games do).
 - Library (Tom, 2026-10-07): title bar shows the firmware version (to see
   which build is flashed); ONE game a page, no key look, the whole space
   between header and bottom keys - its GOG icon as big as fits (scaled from

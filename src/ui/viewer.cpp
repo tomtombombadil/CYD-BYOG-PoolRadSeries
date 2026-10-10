@@ -33,7 +33,7 @@ namespace viewer {
 
 namespace {
 
-enum class Screen : uint8_t { Home, Files, Blocks, View, Look, Walk, Play, Journal, Pdf, GameMenu, Settings, Logs };
+enum class Screen : uint8_t { Home, Files, Resources, Blocks, View, Look, Walk, Play, Journal, Pdf, GameMenu, Settings, Logs };
 
 Env       env_;
 Settings* cfg = nullptr;
@@ -107,7 +107,7 @@ void list_files();
 // else (the game screens need the memory)
 void go(Screen s)
 {
-    const bool assets = s == Screen::Files || s == Screen::Blocks || s == Screen::View;
+    const bool assets = s == Screen::Resources || s == Screen::Blocks || s == Screen::View;
     if (assets && !A) {
         A = new (std::nothrow) Assets;
         if (A) list_files();
@@ -779,7 +779,7 @@ void tap_home(const ui::Tap& t)
     if (home_card().contains(t.x, t.y)) {
         game_sel = home_page;
         file_page = 0;
-        go(Screen::Files);                 // lists the game's files
+        go(Screen::Files);                 // the chooser: the four tests
     }
 }
 
@@ -794,64 +794,50 @@ void list_files()
 int file_cols() { return ui::large() ? 4 : 3; }
 constexpr int kFileRows = 4;
 
+// The chooser (Tom, 2026-10-10): the four tests as big keys; the game's
+// files (the Resource Test) behind the first one
+int chooser_keys() { return look::available(game_dirs[game_sel].game) ? 4 : 1; }
+ui::Rect chooser_key(int i)
+{
+    if (chooser_keys() == 1) return ui::grid_cell(2, 2, 2, false);
+    return ui::grid_cell(i, 2, 2, false);
+}
+
 void draw_files()
 {
     ui::clear();
-    Pager p{n_files, file_cols() * kFileRows, file_page};
-    char title[80];
-    snprintf(title, sizeof title, "%s  %d/%d", games::short_title(game_dirs[game_sel].game), p.page + 1, p.pages());
-    ui::header(title, true);
-    if (game_dirs[game_sel].format == library::Format::Hlib) {
-        // The Dark Queen of Krynn and Unlimited Adventures
-        const int x = ui::gap() * 3;
-        int y = ui::header_h() + ui::gap() * 3;
-        const int lh = ui::line_h() + 4;
-        ui::text(x, y, games::title(game_dirs[game_sel].game), style::kGold);
-        y += lh * 3 / 2;
-        ui::text(x, y, "Its files are .TLB / .GLB libraries,", style::kText);
-        y += lh;
-        ui::text(x, y, "a newer format the viewer", style::kText);
-        y += lh;
-        ui::text(x, y, "can't read yet.", style::kText);
+    ui::header(games::title(game_dirs[game_sel].game), true);
+    static const char* const kKeys[4][2] = {{"Resource Test", "The game's files"},
+                                            {"Screen Test", "Pictures and screens"},
+                                            {"Walk Test", "Walk the maps"},
+                                            {"Play Test", "Play the game"}};
+    if (chooser_keys() == 1) {
+        // The Dark Queen of Krynn and Unlimited Adventures; other games
+        // the engine doesn't play yet
+        const int x = ui::gap() * 3, wdt = ui::width() - ui::gap() * 6;
+        const bool hlib = game_dirs[game_sel].format == library::Format::Hlib;
+        wrap_text(x, ui::header_h() + ui::gap() * 3, wdt,
+                  hlib ? "Its files are .TLB / .GLB libraries, a newer format the viewer can't read yet."
+                       : "The engine can't play this game yet; its files can be looked at.",
+                  ui::Font::Normal, style::kText, true);
+        if (hlib) return;
     }
-    for (int i = 0; i < p.per_page && p.first() + i < n_files; ++i) {
-        // Every file here is a .DAX: show the name without it, so it fits
-        char label[library::kNameLen];
-        strlcpy(label, A->files[p.first() + i], sizeof label);
-        const size_t n = strlen(label);
-        if (n > 4 && strcasecmp(label + n - 4, ".DAX") == 0) label[n - 4] = 0;
-        ui::key(ui::grid_cell(i, file_cols(), kFileRows), label);
-    }
-    if (look::available(game_dirs[game_sel].game)) {
-        // < Prev | Screen Test | Walk Test | Play Test | Next >
-        ui::key(ui::bottom_key(0, 5), "< Prev", p.page > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
-        ui::key(ui::bottom_key(1, 5), "Screen\nTest");
-        ui::key(ui::bottom_key(2, 5), "Walk\nTest");
-        ui::key(ui::bottom_key(3, 5), "Play\nTest");
-        ui::key(ui::bottom_key(4, 5), "Next >", p.page + 1 < p.pages() ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
-    } else {
-        draw_pager_keys(p);
-    }
+    for (int i = 0; i < chooser_keys(); ++i) ui::key_big(chooser_key(i), kKeys[i][0], kKeys[i][1]);
 }
 
 void tap_files(const ui::Tap& t)
 {
     if (ui::back_rect().contains(t.x, t.y)) { go(Screen::Home); return; }
-    Pager p{n_files, file_cols() * kFileRows, file_page};
-    const bool has_look = look::available(game_dirs[game_sel].game);
-    bool look_hit = false, walk_hit = false, play_hit = false;
-    if (has_look) {
-        const int k = bottom_hit(t, 5);
-        if (k == 0 && p.page > 0) { --file_page; dirty = true; return; }
-        if (k == 4 && p.page + 1 < p.pages()) { ++file_page; dirty = true; return; }
-        look_hit = k == 1;
-        walk_hit = k == 2;
-        play_hit = k == 3;
-    } else if (pager_tap(t, p, &file_page)) {
-        dirty = true;
+    int k = -1;
+    for (int i = 0; i < chooser_keys(); ++i)
+        if (chooser_key(i).contains(t.x, t.y)) k = i;
+    if (k < 0 || (chooser_keys() == 1 && game_dirs[game_sel].format == library::Format::Hlib)) return;
+    if (k == 0) {
+        file_page = 0;
+        go(Screen::Resources);
         return;
     }
-    if (play_hit) {
+    if (k == 3) {
         frame::set_scale(frame::Scale::One);    // the game's screen: 1:1 at the top left
         frame::set_left(true);
         frame::set_ega_palette();
@@ -863,18 +849,45 @@ void tap_files(const ui::Tap& t)
         go(Screen::Play);
         return;
     }
-    if (walk_hit) {
+    if (k == 2) {
         walk_error = walk::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game);
         frame::set_scale(frame::Scale::One);    // the game's screen: 1:1 at the top left
         frame::set_left(true);
         go(Screen::Walk);
         return;
     }
-    if (look_hit) {
-        look_error = look::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game);
-        look_page = 0;
-        frame::set_scale(frame::Scale::One);    // the game's screen: always 1:1
-        go(Screen::Look);
+    look_error = look::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game);
+    look_page = 0;
+    frame::set_scale(frame::Scale::One);    // the game's screen: always 1:1
+    go(Screen::Look);
+}
+
+// The Resource Test: the game's .DAX files, a page at a time; one opens
+// its blocks
+void draw_resources()
+{
+    ui::clear();
+    Pager p{n_files, file_cols() * kFileRows, file_page};
+    char title[80];
+    snprintf(title, sizeof title, "%s Files  %d/%d", games::short_title(game_dirs[game_sel].game), p.page + 1, p.pages());
+    ui::header(title, true);
+    for (int i = 0; i < p.per_page && p.first() + i < n_files; ++i) {
+        // Every file here is a .DAX: show the name without it, so it fits
+        char label[library::kNameLen];
+        strlcpy(label, A->files[p.first() + i], sizeof label);
+        const size_t n = strlen(label);
+        if (n > 4 && strcasecmp(label + n - 4, ".DAX") == 0) label[n - 4] = 0;
+        ui::key(ui::grid_cell(i, file_cols(), kFileRows), label);
+    }
+    draw_pager_keys(p);
+}
+
+void tap_resources(const ui::Tap& t)
+{
+    if (ui::back_rect().contains(t.x, t.y)) { go(Screen::Files); return; }
+    Pager p{n_files, file_cols() * kFileRows, file_page};
+    if (pager_tap(t, p, &file_page)) {
+        dirty = true;
         return;
     }
     for (int i = 0; i < p.per_page && p.first() + i < n_files; ++i) {
@@ -925,7 +938,7 @@ void tap_blocks(const ui::Tap& t)
 {
     if (ui::back_rect().contains(t.x, t.y)) {
         close_file();
-        go(Screen::Files);
+        go(Screen::Resources);
         return;
     }
     Pager p{A->index_.count, block_cols() * kBlockRows, block_page};
@@ -2860,6 +2873,7 @@ void tick()
         switch (screen) {
         case Screen::Home:     tap_home(t); break;
         case Screen::Files:    tap_files(t); break;
+        case Screen::Resources: tap_resources(t); break;
         case Screen::Blocks:   tap_blocks(t); break;
         case Screen::View:     tap_view(t); break;
         case Screen::Look:     tap_look(t); break;
@@ -2889,6 +2903,7 @@ void tick()
     switch (screen) {
     case Screen::Home:     draw_home(); break;
     case Screen::Files:    draw_files(); break;
+    case Screen::Resources: draw_resources(); break;
     case Screen::Blocks:   draw_blocks(); break;
     case Screen::View:     draw_view(); break;
     case Screen::Look:     draw_look(); break;

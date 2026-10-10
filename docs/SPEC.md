@@ -167,7 +167,7 @@ stay in the session's scratch space, never in the repo.
 | Screen frame: tiles = 8X8D1 block 202 (a picture block 8 high, 1 column, 40 frames; colour 13 not drawn); frame tile = 30 + table value, 3D-view frame tile = 20 + value. Tables (one byte a cell) in the program's data segment: top, bar, bottom (40), left, right (24), the explore screen's split column (17) and 3D-view frame (4 x 15), combat's three columns (23) | `src/engine/layout.*` | **v0.3.0** (Curse). Screens: outer border (rows 0-23, row 24 = menu line), + bar at row 16 (text screen), exploring (3D view cells 3-13, party right of column 16, text rows 17-22), combat (columns 0 / 22 / 39). The viewer's **Screen Test** draws them from Tom's own files. |
 | Strings: Pascal strings (length byte + text) in the program's data (START.EXE, unpacked) and in GAME.OVR, a Turbo Pascal overlay file ("FBOV") whose procedures keep their string constants in their code segment | `src/engine/text.*` | **v0.4.0**: Curse's "Press any key to continue" read from START.EXE. Every string the engine will show comes from the player's files the same way (profile offsets). |
 | Fixed screens printed by code (Curse credits): a run of 32-byte calls `B0 col 50 B0 row 50 B0 fg 50 B0 bg 50 8D 7E xx 16 57 BF <string offset> 0E 57 9A .... 9A ....` | `src/engine/printcalls.*` | **v0.4.0**: the 34 credit lines (text, row, column, colours) read from Tom's GAME.OVR; profile = where the run starts + its code segment base. |
-| Title sequence (Curse): TITLE.DAX 1 at (0,0) 5 s; 2 at (0,0) + 3 at row 11 col 6, 10 s; 4 at row 11 col 0, 10 s; credits (outer frame + bars at rows 3 and 8), 10 s; a key skips each | `src/engine/profile.*` (steps), `src/ui/look.cpp` | **v0.4.0**, in the Screen Test. |
+| Title sequence (Curse): TITLE.DAX 1 at (0,0) 5 s; 2 at (0,0) + 3 at row 11 col 6, 10 s; 4 at row 11 col 0, 10 s; credits (outer frame + bars at rows 3 and 8), 10 s; a key skips each | `src/engine/profile.*` (steps), `src/ui/look.cpp`, `src/ui/play.cpp` | **v0.4.0**, in the Screen Test. **v0.53.0** (Tom: "like starting the game for real"): the Play Test opens with it (sound 0x0D with picture 4; a tap or key skips each wait), then a clear screen with the version line and its menu from the program ("Curse of the Azure Bonds v1.3 " Pascal string at image 0x06, "Play Demo" at 0x25); Play opens the party menu. The demo (area 1, ECL1 block 0x52 with no party, game speed 9; after 30 s the original starts it by itself) is still to come - Demo says so, and the version line waits. |
 | Text window: printed a character at a time (game speed 4 = 12 ms) into a cell rectangle (text area rows 17-22 x cols 1-38; rows 21-22; combat panel rows 1-21 x cols 23-38); a word = punctuation + letters + punctuation + one space, wrapped whole if it (with its space) doesn't fit, longer-than-a-line words broken; leading spaces dropped after a wrap; area full = "Press any key to continue" (colour 13, row 24), clear, go on | `src/engine/text.*` | **v0.4.0** (behaviour from coab, own code). Touch: a tap = the key; a tap while printing finishes the page. |
 | Combat screen: its frame ends at row 22; row 23 = a status line (range, "Spell: ...", "Item: ..."), row 24 = the menu as on every screen | `src/engine/layout.*` | Checked (coab). |
 | Menu line (row 24): choices start at capitals / digits; prompt colour 13, key letters 15, the rest 10, the chosen word reversed (15 background) | `src/engine/text.*` | **v0.4.0**. Touch: tapping a word moves the highlight to it, shows it for 250 ms, then acts (its trailing space counts, so no gaps between targets; the tap area starts a row higher, at row 23 - Tom, v0.5.1). The chosen word stays chosen next time, as in the games. |
@@ -248,6 +248,12 @@ stay in the session's scratch space, never in the repo.
    card, lists DAX files and blocks, draws EGA pictures (all frames), hex-dumps
    the rest. Proves: SD on every board (incl. the 2.8" with software touch),
    the DAX and picture decoders on Tom's real files, 1:1 vs 1.5x on 480x320.
+   The chooser (a game tapped in the library; Tom, 2026-10-10, v0.53.0):
+   four big keys filling the screen under the title bar - **Resource
+   Test** (the game's DAX files a page at a time, then their blocks: what
+   the chooser used to show), **Screen Test**, **Walk Test**, **Play
+   Test**, each with a small line under its name. A game the engine can't
+   play yet shows a note and Resource Test only; .TLB / .GLB games the note.
 2. **The game's look**: its font (v0.2.0), screen frame (v0.3.0, Curse - the
    viewer's Screen Test), title sequence + credits, text windows and the menu
    line (v0.4.0). Done for Curse; the other games get theirs on their turn.
@@ -265,7 +271,8 @@ stay in the session's scratch space, never in the repo.
    pictures, the wilderness map and travel between areas. Still to come:
    PoolRad's own opcode table; the rest needs a party (M5).
 5. **Party**: characters (create / load), inventory, camp, shops.
-   v0.14.0: the Play Test opens at the games' party menu; Load Saved Game
+   v0.14.0: the Play Test opens at the games' party menu (v0.53.0: after
+   the title sequence, as the games do); Load Saved Game
    reads a saved game and its party (the GOG release's sample party), the
    party list on the menu and the exploring screen, the scripts see the
    selected character. v0.15.0: View Character. v0.17.0: items, the rules

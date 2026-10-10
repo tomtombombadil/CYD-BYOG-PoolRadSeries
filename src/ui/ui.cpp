@@ -28,13 +28,15 @@ int      moved_x = 0, moved_y = 0;   // drag movement not yet collected
 // The keys on screen (for the tap highlight): rect and style, since the
 // last clear(); 255 = the header's back key
 struct KeyRec {
-    Rect    r;
-    uint8_t style;
+    Rect     r;
+    uint8_t  style;
+    uint32_t gen;               // key_gen when it was last drawn
 };
 constexpr int kMaxKeys = 40;
 KeyRec   keys[kMaxKeys];
 int      n_keys = 0;
 uint32_t key_gen = 0;           // counts key drawing (a key redrawn since a flash?)
+uint32_t clear_gen = 0;         // key_gen at the last clear()
 
 void note_key(const Rect& r, uint8_t style)
 {
@@ -42,9 +44,10 @@ void note_key(const Rect& r, uint8_t style)
     for (int i = 0; i < n_keys; ++i)
         if (keys[i].r.x == r.x && keys[i].r.y == r.y && keys[i].r.w == r.w && keys[i].r.h == r.h) {
             keys[i].style = style;
+            keys[i].gen = key_gen;
             return;
         }
-    if (n_keys < kMaxKeys) keys[n_keys++] = {r, style};
+    if (n_keys < kMaxKeys) keys[n_keys++] = {r, style, key_gen};
 }
 
 constexpr int kAgreePx = 8;
@@ -160,7 +163,7 @@ void clear()
 {
     g->fillScreen(style::kBackground);
     n_keys = 0;
-    ++key_gen;
+    clear_gen = ++key_gen;
 }
 
 Rect back_rect() { return {0, 0, header_h() * 3 / 2, header_h()}; }
@@ -308,6 +311,24 @@ void key2(const Rect& r, const char* label, const char* sub, KeyStyle s, int lef
     g->drawString(sub, cx, top + lh + 2);
 }
 
+void key_big(const Rect& r, const char* label, const char* sub, KeyStyle s)
+{
+    note_key(r, static_cast<uint8_t>(s));
+    const uint16_t fill = key_fill(s);
+    const int rad = large() ? 8 : 6;
+    g->fillRoundRect(r.x, r.y, r.w, r.h, rad, fill);
+    g->drawRoundRect(r.x, r.y, r.w, r.h, rad, s == KeyStyle::Lit ? style::kGold : style::kKeyEdge);
+    const int lh = line_h(Font::Large), sh = line_h(Font::Small);
+    const int top = r.y + (r.h - lh - sh - 4) / 2;
+    use_font(Font::Large);
+    g->setTextColor(s == KeyStyle::Dim ? style::kTextMuted : style::kGold);
+    g->setTextDatum(textdatum_t::top_center);
+    g->drawString(label, r.x + r.w / 2, top);
+    use_font(Font::Small);
+    g->setTextColor(s == KeyStyle::Lit ? style::kText : style::kTextMuted);
+    g->drawString(sub, r.x + r.w / 2, top + lh + 4);
+}
+
 void text(int x, int y, const char* s, uint16_t color, Font f)
 {
     use_font(f);
@@ -364,6 +385,7 @@ namespace {
 
 uint32_t flash_gen = 0;
 int      flash_key = -1;
+Rect     flash_rect{};
 
 void ring(const Rect& r, uint16_t outer, uint16_t inner, int width)
 {
@@ -397,6 +419,7 @@ int tap_flash(const Tap& t)
         ring(k.r, style::kText, style::kGold, w);
         g->endWrite();
         flash_key = i;
+        flash_rect = k.r;
         flash_gen = key_gen;
         return i;
     }
@@ -405,11 +428,20 @@ int tap_flash(const Tap& t)
 
 void tap_unflash()
 {
-    if (flash_key < 0 || flash_gen != key_gen || flash_key >= n_keys) {
+    // Put the key back as it was - unless the screen was cleared or that
+    // key drawn again since (v0.53.0: other keys drawn meanwhile, e.g. the
+    // Companion's keys after a step, used to leave the ring on for good)
+    int at = -1;
+    if (flash_key >= 0 && clear_gen <= flash_gen)
+        for (int i = 0; i < n_keys; ++i)
+            if (keys[i].r.x == flash_rect.x && keys[i].r.y == flash_rect.y && keys[i].r.w == flash_rect.w &&
+                keys[i].r.h == flash_rect.h)
+                at = i;
+    if (at < 0 || keys[at].gen > flash_gen) {
         flash_key = -1;
         return;
     }
-    const KeyRec& k = keys[flash_key];
+    const KeyRec& k = keys[at];
     const uint16_t edge = k.style == 255 ? style::kHeader
                         : k.style == static_cast<uint8_t>(KeyStyle::Lit) ? style::kGold : style::kKeyEdge;
     g->startWrite();
