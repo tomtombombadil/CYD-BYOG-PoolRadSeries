@@ -44,6 +44,7 @@ enum class Then : uint8_t {
     Look,          // the search script ran for Look
     Door,          // a locked door stopped the party: "Locked." waits for a key
     Begun,         // BEGIN's first run of the script ended: it's the last script run now
+    Camp,          // Encamp: the area's before-camp script ran (entry 2) - now the camp
 };
 
 struct Host;
@@ -5795,6 +5796,10 @@ void handle(ecl::Stop r)
     case Then::Look:
         vm->set(0x7ECA, vm->get(0x7ECA) & 1);
         break;
+    case Then::Camp:
+        then = Then::Idle;
+        open_camp(c);
+        return;
     case Then::Begun:
         if (in_demo) {                      // the demo is its first run only
             end_demo(c);
@@ -7194,7 +7199,9 @@ void tap(int x, int y, pic::Canvas& c)
             view_character(c);
             break;
         case 'E':
-            open_camp(c);
+            // As the games encamp: the area's before-camp script first
+            // (entry 2), then the camp; an interrupted rest runs entry 3
+            run_entry(2, Then::Camp);
             break;
         case 'C': open_cast_exploring(c); break;
         default: break;

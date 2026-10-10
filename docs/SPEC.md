@@ -290,7 +290,8 @@ stay in the session's scratch space, never in the repo.
    Sell / Id in shops). v0.26.0: the temple, Take, Appraise. v0.27.0:
    training halls. v0.28.0: camp Magic - Memorize - and Rest. v0.29.0:
    Cast (camp and exploring) and Display; effects run out with game time.
-   v0.30.0: Alter (Order, Drop, Speed) and Fix. v0.31.0: Scribe, and
+   v0.30.0: Alter (Order, Drop, Speed) and Fix. (v0.60.1: Encamp runs the
+   area's before-camp script - entry 2 - first, as the games do.) v0.31.0: Scribe, and
    training's new magic-user spell. v0.37.0: the scripts and the party
    (LOAD CHARACTER, WHO, ROB, DAMAGE, ADD NPC, DUMP, DESTROY ITEMS, FIND
    ITEM / SPECIAL, SPELL, PARTYSTRENGTH, CHECKPARTY; character fields
