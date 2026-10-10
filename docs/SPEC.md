@@ -325,7 +325,24 @@ stay in the session's scratch space, never in the repo.
    the computer's weapon choice. v0.43.0: clouds that stay on the field.
    v0.44.0: Charm Person. v0.46.0: cones (Fear, Cone of Cold).
    v0.47.0: Cloudkill. v0.48.0: Charm Monsters, unarmoured magic-users
-   staying back. v0.49.0: coughing in stinking clouds.
+   staying back. v0.49.0: coughing in stinking clouds. v0.55.0 (facts:
+   the Project's claude/spell_facts.md, checked against the original code
+   where coab differs): Silence 15' (no spells or items for the silenced and
+   those next to them, "is silenced" at their turn), Snake Charm, Cure
+   Blindness, Bestow Curse (a touch; attacks and saves -4), Blink (attacks
+   miss once it has acted), Poison, Sticks to Snakes (turns lost while the
+   snakes outnumber its attacks), Slay Living, Entangle (outdoors; no
+   moving, 24 rounds), Faerie Fire (the original's +2 to the stored AC),
+   Invisibility to Animals (an animal's attacks -4), Fumble (the
+   original's two saves), Ice Storm, Feeblemind; blinded fighters (attacks
+   -4, easier to hit, saves -4); Cone of Cold is cold + magic (coab: acid);
+   the hold spells take persons only (but Hold Monsters); Charm Monsters
+   as the original (the last picked, non-persons and large ones
+   unaffected). Still to come: Enlarge, Reduce, Friends, Strength (the
+   stat effects), Spiritual Hammer, Animate Dead, Dispel Magic,
+   Restoration, Dispel Evil, Confusion, Dimension Door, Fire Shield, Slow
+   Poison in fights; the group-by-size aim (Faerie Fire, Charm Monsters)
+   is a radius of 1 for now.
 7. **All four games**: the per-game differences (PoD's VGA graphics), party
    transfer between games.
 

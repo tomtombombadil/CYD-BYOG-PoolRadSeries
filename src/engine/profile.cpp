@@ -94,7 +94,7 @@ constexpr spells::CampSpell kCurseCamp[] = {
     {0x47, Does::Heal, 3, 8, 3, 0},                // Cure Critical Wounds
     {0x4B, Does::Raise, 0, 0, 0, 0},
     {0x4D, Does::Affect, 0, 0, 0, 0x2FDE3},
-    {0x50, Does::Affect, 0, 0, 0, 0x3067C},
+    {0x50, Does::Affect, 0, 0, 0, 0x3274C},        // Invisibility to Animals: "is invisible" (spell_facts.md)
     {0x55, Does::NotYet, 0, 0, 0, 0},              // Fire Shield (hot or cold)
     {0x58, Does::Affect, 0, 0, 0, 0x2FE1C},        // Minor Globe of Invulnerability
     {0x59, Does::RemoveCurse, 0, 0, 0, 0},
@@ -154,15 +154,33 @@ constexpr combat::FightSpell kCurseFight[] = {
     {0x21, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x3074F},      // Ray of Enfeeblement: "is weakened"
     {0x22, SpellDoes::Cloud, 0, 0, 0, 0, 0, 0x35E37, 0x35E27},  // Stinking Cloud: "chokes and gags from nausea" / "starts to cough"
     {0x0A, SpellDoes::Charm, 0, 0, 0, 0, 0, 0x2FED8, 0x2FECA},  // Charm Person: "is charmed" / "is unaffected"
-    {0x51, SpellDoes::Charm, 0, 0, 0, 0, 1, 0x32786},       // Charm Monsters: "is charmed" (any creature, the table's targets)
+    {0x51, SpellDoes::Charm, 0, 0, 0, 0, 1, 0x32786},       // Charm Monsters: "is charmed" (the last picked, non-persons
+                                                            // and large ones unaffected - spell_facts.md 1.10)
     {0x54, SpellDoes::Fear, 0, 0, 0, 0, 0, 0x32A7A},        // Fear: "runs in terror" (a cone, 3 rays, 6 squares)
     {0x5B, SpellDoes::Poison, 0, 0, 0, 0, 0, 0x35E53},      // Cloudkill: "is Poisoned" (a 3 x 3 cloud)
-    {0x5C, SpellDoes::Cone, 0, 4, 0, 6, 0x10, 0},           // Cone of Cold: level d4 + level (a cone, 2 rays; coab: acid)
+    {0x5C, SpellDoes::Cone, 0, 4, 0, 6, 0x0A, 0},           // Cone of Cold: level d4 + level (a cone, 2 rays; cold
+                                                            // and magic - spell_facts.md: coab says acid)
     {0x26, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x30FB6},      // Cause Blindness: "is blind"
     {0x28, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x310A2},      // Cause Disease: "is diseased"
     {0x33, SpellDoes::Bolt, 0, 6, 0, 3, 4, 0},              // Lightning Bolt: level d6
     {0x37, SpellDoes::Theirs, 0, 0, 0, 0, 0, 0x31CD9},      // Slow: "is Slowed"
     {0x5E, SpellDoes::Hold, 0, 0, 0, 0, 0, 0x303F1},        // Hold Monster
+    // spell_facts.md (v0.55.0)
+    {0x19, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x30489},      // Silence 15' Radius: "is silenced"
+    {0x1B, SpellDoes::SnakeCharm, 0, 0, 0, 0, 0, 0x30577},  // Snake Charm: "is charmed"
+    {0x25, SpellDoes::CureBlind, 0, 0, 0, 0, 0, 0x30F71, 0x36666},   // Cure Blindness: "is Cured", "can see"
+    {0x2C, SpellDoes::Theirs, 0, 0, 0, 0, 0, 0x316BF},      // Bestow Curse: "has been cursed!" (a touch)
+    {0x2D, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x316FD},      // Blink: "is blinking"
+    {0x44, SpellDoes::Kill, 0, 0, 0, 0, 0, 0x112D8},        // Poison: "is Poisoned", then "is killed"
+    {0x46, SpellDoes::Snakes, 0, 0, 0, 0, 0, 0xFFAB, 0x322FD},   // Sticks to Snakes: "is fighting with snakes" /
+                                                            // "smashes them flat"
+    {0x4C, SpellDoes::Slay, 2, 8, 1, 0, 8, 0x3259B},        // Slay Living: "is slain"; saved 2d8 + 1
+    {0x4E, SpellDoes::Entangle, 0, 0, 0, 0, 0, 0x32663},    // Entangle: "is entangled" (outdoors)
+    {0x4F, SpellDoes::Faerie, 0, 0, 0, 0, 0, 0x3271D},      // Faerie Fire: "is highlighted"
+    {0x50, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x3274C},      // Invisibility to Animals: "is invisible"
+    {0x56, SpellDoes::Fumble, 0, 0, 0, 0, 0, 0x32D97, 0x32DA1},  // Fumble: "is clumsy" / "is slowed"
+    {0x57, SpellDoes::Damage, 3, 10, 0, 0, 0x0A, 0},        // Ice Storm: 3d10 cold (and magic), radius 2
+    {0x5D, SpellDoes::Feeble, 0, 0, 0, 0, 0, 0x11465},      // Feeblemind: "is stupid"
     // The items' own spells (the spell table's monster spells)
     {0x39, SpellDoes::Haste, 5, 4, 0, 0, 0, 0x31ED7},       // speed: "is Speedy", 5d4 rounds
     {0x3C, SpellDoes::Bolt, 1, 6, 20, 0, 4, 0},             // a lightning stroke: 1d6 + 20
@@ -313,12 +331,13 @@ const Profile kProfiles[] = {
        0x6CF0, 0x6D10, 0x699B, 0x69A3,
        0x36F1F, 0x36F26, 0x36F39, 0x36F52, 0x36F5C, 0x36F66, 0x36F77, 0x36F81, 0x36F99,
        0x372F5, 0x3442D, 0x3443B, 0x15AC6, 0x15AB6, 0x14556, 0x14566, 0x14570,
-       0x1457D, 0x15583, 0x2F27A, 0x2F288, 0x30788, 0x10AE9, 0x32F30, 0x35E53, 0x106C3},
+       0x1457D, 0x15583, 0x2F27A, 0x2F288, 0x30788, 0x10AE9, 0x32F30, 0x35E53, 0x106C3, 0x1038C, 0xFFAB},
       {0x03, 0x0B, 0x0D, 0x15, 0x17, 0x1B, 0x1F, 0x23, 0x28, 0x33, 0x34, 0x35, 0x3A, 0x4D, 0x5B, 0x88, 0x8E,
        0x90},
       {{0x33, 0x34, 0x35, 0x1F}, 0x01, 0x02, 0x31, 0x27, 0x2A, 0x19, 0x08, 0x09, 0x1C,
        {0x07, 0x08, 0x23, 0x24, 0x25, 0x61}, 0x0B, 0x8E, 0x1E,
-       {9, 21, 100, 28, 31, 73}, {2, 7, 14}, {85, 86}, {47, 98, 101}},
+       {9, 21, 100, 28, 31, 73}, {2, 7, 14}, {85, 86}, {47, 98, 101},
+       0x24, 0x25, 0x1B, 0x15, 0x88, 0x03, 0x07, 0x21, 0x45, 0x44},
       kCurseFight, sizeof kCurseFight / sizeof kCurseFight[0]},
      {0x29A2, 0x29B3, 0xA28D, 0xA295, 0xA2A2, 0x3222},
      &kCurseRandom, 0x0830,

@@ -142,6 +142,7 @@ enum FightWord {
     kIsUnaffectedS, kCastsASpell, kSpellColon, kBeginsCasting, kCampOnly, kTurnsUndead, kIsTurned, kIsDestroyed,
     kNothingHappens, kAlreadyTargeted, kAbortSpell, kSpellAborted,               // ... "Abort Spell? ", "Spell Aborted"
     kNoxiousCloud, kAirClears, kPoisonCloud, kIsPoisoned, kIsCoughing,            // "Creates a noxious cloud" ...
+    kIsSilenced, kFightingSnakes,                                                // a turn's start: "is silenced" ...
     kFightWords
 };
 

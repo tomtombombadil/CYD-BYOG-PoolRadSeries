@@ -1209,6 +1209,26 @@ void start_turn(pic::Canvas& c)
         say(c, FSt::Resume);
         return;
     }
+    // Effects at the turn's start (spell_facts.md 1.8): silenced (no
+    // spells or items), fighting snakes or fumbling (the turn lost)
+    if (!f.coughed) {
+        const combat::TurnFx tf = combat::turn_effects(b, fg->cur);
+        if (tf == combat::TurnFx::Silenced) {
+            f.coughed = true;                  // (said once a round)
+            add_page(fg->cur, fw(profile::kIsSilenced));
+            say(c, FSt::Resume);
+            return;
+        }
+        if (tf == combat::TurnFx::Snakes) {
+            add_page(fg->cur, fw(profile::kFightingSnakes));
+            say(c, FSt::Next);
+            return;
+        }
+        if (tf == combat::TurnFx::Fumbling) {
+            end_turn(c);
+            return;
+        }
+    }
     if (f.spell) {
         // A spell begun earlier this round goes off (lost if they were hurt)
         const int sp = f.spell;
@@ -2300,7 +2320,8 @@ void begin_targeting(pic::Canvas& c, int sp)
     const combat::FightSpell* fs = fight_spell(sp);
     const bool hostile = fs && fs->does != combat::SpellDoes::Ours && fs->does != combat::SpellDoes::Heal &&
                          fs->does != combat::SpellDoes::Haste && fs->does != combat::SpellDoes::Prayer &&
-                         fs->does != combat::SpellDoes::Mirror && fs->does != combat::SpellDoes::Affect;
+                         fs->does != combat::SpellDoes::Mirror && fs->does != combat::SpellDoes::CureBlind &&
+                         (fs->does != combat::SpellDoes::Affect || e.targets == spells::kCombat);
     fg->ci = -1;
     for (int k = 0; k < fg->n_cand && fg->ci < 0; ++k)
         if (fg->cand[k] != fg->cur && (!hostile || fg->b.f[fg->cand[k]].team() != fg->b.f[fg->cur].team())) fg->ci = k;
@@ -2428,6 +2449,9 @@ void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::Fi
             page_fx_set(1, hit_fx(l[k].who, true));
             break;
         case combat::Did::Misses: add_page(caster, fw(profile::kMisses), nullptr, l[k].who); break;
+        case combat::Did::Fallen:
+            if (fg->pages > 0) fg->page[fg->pages - 1].fx[1] = skull_fx(l[k].who);
+            break;
         case combat::Did::Healed: {
             char w2[24];
             cw(f.hp() >= f.hp_max() ? profile::kFullyHealed : profile::kPartlyHealed, w2, sizeof w2);

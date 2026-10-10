@@ -3196,6 +3196,83 @@ static void test_combat()
             CHECK(!sb.f[1].fleeing && !sb.f[1].has(0x8E));
         }
         fx.fear = 0;
+        // ---- spell_facts.md (v0.55.0)
+        auto fresh = [&](int i) {
+            mrec[i][0x196] = 1; mrec[i][0x195] = 0; mrec[i][0x1A4] = 20; mrec[i][0xE5] = 1; mrec[i][0x11A] = 0;
+            mrec[i][0xDE] = 1; mnaff[i] = 0; sb.f[i].size = 1; sb.f[i].fleeing = false;
+        };
+        int one2 = 1;
+        // Slay Living: slain (the skull, no words) or 2d8 + 1 when saved (saves need a 20 here)
+        fresh(1);
+        const combat::FightSpell slay{4, combat::SpellDoes::Slay, 2, 8, 1, 0, 8, 0x6666};
+        n = combat::cast(sb, st, 0, 4, slay, &one2, 1, d, sline, 16);
+        CHECK(n >= 1);
+        if (sline[0].did == combat::Did::Word)
+            CHECK(n == 2 && sline[1].did == combat::Did::Fallen && sb.f[1].status() == party::Dead && !sb.f[1].up());
+        else
+            CHECK(sline[0].did == combat::Did::Damage && sline[0].amount >= 3 && sline[0].amount <= 17);
+        // Poison: poisoned and killed unless saved
+        fresh(1);
+        const combat::FightSpell poison{4, combat::SpellDoes::Kill, 0, 0, 0, 0, 0, 0x7777};
+        n = combat::cast(sb, st, 0, 4, poison, &one2, 1, d, sline, 16);
+        CHECK(n == 0 || (n == 2 && sline[0].did == combat::Did::Word && sline[1].did == combat::Did::Down &&
+                         sb.f[1].status() == party::Dead));
+        // Fumble: clumsy (its moves and attacks gone) or slowed, then clumsy again or unaffected
+        fresh(1);
+        fx.fumbling = 0x1B; fx.slow = 0x2A;
+        sb.f[1].moves = 8; sb.f[1].attacks[0] = 1;
+        const combat::FightSpell fumble{4, combat::SpellDoes::Fumble, 0, 0, 0, 0, 0, 0x8888, 0x9999};
+        n = combat::cast(sb, st, 0, 4, fumble, &one2, 1, d, sline, 16);
+        CHECK(n == 2 && (sline[0].did == combat::Did::Word || sline[0].did == combat::Did::Word2));
+        CHECK(sb.f[1].has(0x1B) || sb.f[1].has(0x2A));
+        if (sb.f[1].has(0x1B)) CHECK(combat::turn_effects(sb, 1) == combat::TurnFx::Fumbling && sb.f[1].moves == 0);
+        // Entangle: nothing indoors; outdoors no moving (24 rounds)
+        fresh(1);
+        fx.entangle = 0x88;
+        const combat::FightSpell ent{4, combat::SpellDoes::Entangle, 0, 0, 0, 0, 0, 0xAAAA};
+        sb.indoors = true;
+        CHECK(combat::cast(sb, st, 0, 4, ent, &one2, 1, d, sline, 16) == 0 && !sb.f[1].has(0x88));
+        sb.indoors = false;
+        n = combat::cast(sb, st, 0, 4, ent, &one2, 1, d, sline, 16);
+        CHECK(n == 1 && (sline[0].did == combat::Did::Word) == sb.f[1].has(0x88));
+        if (sb.f[1].has(0x88)) {
+            combat::start_round(sb, d);
+            CHECK(sb.f[1].moves == 0);
+        }
+        sb.indoors = true;
+        // Sticks to Snakes: 6 Hit Dice smash them; else the turn goes while the snakes outnumber its attacks
+        fresh(1);
+        fx.sticks = 0x03;
+        const combat::FightSpell sticks{4, combat::SpellDoes::Snakes, 0, 0, 0, 0, 0, 0xBBBB, 0xCCCC};
+        mrec[1][0xE5] = 6;
+        n = combat::cast(sb, st, 0, 4, sticks, &one2, 1, d, sline, 16);
+        CHECK(n == 1 && sline[0].did == combat::Did::Word2 && !sb.f[1].has(0x03));
+        mrec[1][0xE5] = 2;
+        mrec[0][0x10E] = 5;
+        n = combat::cast(sb, st, 0, 4, sticks, &one2, 1, d, sline, 16, 5);
+        CHECK(n == 1 && sline[0].did == combat::Did::Word && sb.f[1].has(0x03));
+        sb.f[1].attacks[0] = 1; sb.f[1].attacks[1] = 0;
+        CHECK(combat::turn_effects(sb, 1) == combat::TurnFx::Snakes);       // 5 - 1 = 4 snakes > 1 attack
+        sb.f[1].attacks[0] = 2;
+        CHECK(combat::turn_effects(sb, 1) == combat::TurnFx::None && !sb.f[1].has(0x03));  // 4 - 2 = 2 <= 2: gone
+        // Silence: the silenced one and those next to it can't cast or use items this turn
+        fresh(1); fresh(2);
+        fx.silence = 0x15;
+        mnaff[1] = 0;
+        const combat::FightSpell sil{4, combat::SpellDoes::Affect, 0, 0, 0, 0, 0, 0xDDDD};
+        (void)sil;
+        uint8_t* a = maff[1][mnaff[1]++];
+        memset(a, 0, party::kAffectSize);
+        a[0] = 0x15; a[1] = 5;
+        sb.f[1].can_use = sb.f[2].can_use = true;
+        sb.f[2].x = sb.f[1].x + 1; sb.f[2].y = sb.f[1].y;
+        CHECK(combat::turn_effects(sb, 2) == combat::TurnFx::Silenced && !sb.f[2].can_cast);
+        sb.f[2].x = sb.f[1].x + 3;
+        sb.f[2].can_use = true; sb.f[2].can_cast = true;
+        CHECK(combat::turn_effects(sb, 2) == combat::TurnFx::None && sb.f[2].can_cast);
+        combat::occupancy(sb);
+        fx.fumbling = fx.entangle = fx.sticks = fx.silence = 0;
+        fresh(1); fresh(2);
     }
     // The computer's spells: missiles (priority 7, reach 6) at the party member in reach
     sds[1 * 16 + 13] = 7; sds[1 * 16 + 2] = 6;

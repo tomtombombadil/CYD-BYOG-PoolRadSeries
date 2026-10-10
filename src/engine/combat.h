@@ -73,6 +73,14 @@ struct Facts {
     // arrow's picture by direction), spinning, a flask, a sling's stone; the
     // rest a rock
     uint8_t shot_pointed[6], shot_spinning[3], shot_flask[2], shot_sling[3];
+    // More effects (spell_facts.md): Bestow Curse (its attacks and saves
+    // -4), Blink (attacks on it miss once it has acted), fumbling (its turn
+    // lost), Silence (no spells or items for it and those next to it),
+    // Entangle (no moving), Sticks to Snakes (its turn lost while the
+    // snakes last; data: snakes), Faerie Fire (stored AC + 2), blinded
+    // (attacks -4, AC 4 worse, saves -4), invisible to animals (an animal's
+    // attacks -4), Feeblemind
+    uint8_t bestow, blink, fumbling, silence, entangle, sticks, faerie, blinded, animals_blind, feeble;
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a
@@ -159,6 +167,11 @@ struct Battle {
 
 // Effects on a fighter
 bool helpless(const Battle& b, const Fighter& f);
+// The start of a fighter's turn (spell_facts.md 1.8): what an effect does
+// to it. Silenced: no spells or items this turn (it may still fight);
+// Snakes / Fumbling: its turn is lost
+enum class TurnFx : uint8_t { None, Silenced, Snakes, Fumbling };
+TurnFx turn_effects(Battle& b, int i);
 // A charm's end: back to their own side (the effect's data, bit 6)
 void uncharm(uint8_t* rec, const uint8_t* affect);
 // Timed effects a round on (a minute); those run out go
@@ -328,6 +341,17 @@ enum class SpellDoes : uint8_t {
                                         // (word; word2 not a person)
     Cone,                               // damage to those in a cone (cone(): 2 rays, the caster's (level + 1) / 2 squares)
     Fear,                               // those in a cone (3 rays, 6 squares) that fail a save flee (word)
+    Slay,                               // a save or slain (word); saved: the dice of magic damage (Slay Living)
+    Kill,                               // a save against poison or poisoned and killed (word, then "is killed")
+    Fumble,                             // a save or clumsy (word, fumbling), saved slowed (word2); then a second
+                                        // save: clumsy again, or unaffected
+    Feeble,                             // a save (class-adjusted) or Int and Wis 7 for good (word)
+    Entangle,                           // outdoors only: a save or no moving (word), 24 rounds
+    Faerie,                             // the picked by size: the last one, non-persons and large ones unaffected,
+                                        // else a save or highlighted (word)
+    Snakes,                             // Sticks to Snakes: 6+ Hit Dice smash them (word2), else snakes (word)
+    SnakeCharm,                         // snakes whose hit points the caster's cover, charmed for the fight (word)
+    CureBlind,                          // blinded: "is Cured" (word2), "can see" (word)
 };
 struct FightSpell {
     uint8_t   spell;
@@ -341,7 +365,7 @@ struct FightSpell {
     uint32_t  word2 = 0;                // ... when they saved (clouds: "starts to cough")
 };
 // What happened to each target, in order
-enum class Did : uint8_t { Word, Damage, Unaffected, Misses, Healed, Down, Word2 };
+enum class Did : uint8_t { Word, Damage, Unaffected, Misses, Healed, Down, Word2, Fallen };    // Fallen: the skull, no words
 struct SpellLine {
     uint8_t who;
     Did     did;

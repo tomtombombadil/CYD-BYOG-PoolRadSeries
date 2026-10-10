@@ -542,6 +542,50 @@ void give_aff(Fighter& f, int type, int minutes, int data, bool call)
 
 void uncharm(uint8_t* rec, const uint8_t* a) { rec[0x197] = static_cast<uint8_t>((a[3] & 0x40) >> 6); }
 
+namespace {
+const Facts* g_fx = nullptr;         // the fight's effects, for saving throws (set as rounds start)
+}
+
+TurnFx turn_effects(Battle& b, int i)
+{
+    Fighter& f = b.f[i];
+    if (!b.fx || !f.up()) return TurnFx::None;
+    const Facts& fx = *b.fx;
+    if (fx.fumbling && f.has(fx.fumbling)) {
+        f.moves = f.attacks[0] = f.attacks[1] = 0;
+        return TurnFx::Fumbling;
+    }
+    const int s = fx.sticks ? find_aff(f, fx.sticks) : -1;
+    if (s >= 0) {
+        // The snakes go down by its attacks this round; when they're no more
+        // than its attacks, they're gone
+        const int att = f.attacks[0] + f.attacks[1];
+        int snakes = f.aff[s][3] - att;
+        if (snakes <= att) {
+            drop_aff(f, s);
+        } else {
+            f.aff[s][3] = static_cast<uint8_t>(snakes);
+            f.moves = f.attacks[0] = f.attacks[1] = 0;
+            return TurnFx::Snakes;
+        }
+    }
+    if (fx.silence && f.can_use) {
+        bool hushed = f.has(fx.silence);
+        for (int c = 0; !hushed && c < b.n; ++c) {
+            const Fighter& o = b.f[c];
+            if (c == i || !o.size || !o.has(fx.silence)) continue;
+            const int ddx = o.x - f.x, ddy = o.y - f.y;
+            hushed = ddx >= -1 && ddx <= 1 && ddy >= -1 && ddy <= 1;
+        }
+        if (hushed) {
+            f.can_use = false;
+            f.can_cast = false;
+            return TurnFx::Silenced;
+        }
+    }
+    return TurnFx::None;
+}
+
 void tick(Battle& b)
 {
     for (int i = 0; i < b.n; ++i) {
@@ -584,6 +628,7 @@ int attacks_this_round(int half, int round) { return (half + (round % 2 ? 1 : 0)
 
 void start_round(Battle& b, create::Dice& d)
 {
+    g_fx = b.fx;
     for (int i = 0; i < b.n; ++i) {
         Fighter& f = b.f[i];
         f.attacked = false;
@@ -618,6 +663,7 @@ void start_round(Battle& b, create::Dice& d)
         }
         f.attacks[0] = attacks_this_round(half1, b.round);
         f.attacks[1] = attacks_this_round(half2, b.round);
+        if (b.fx && b.fx->entangle && f.has(b.fx->entangle)) f.moves = 0;      // entangled: no moving
     }
     b.surprise = 0;
 }
@@ -734,6 +780,13 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             side += (b.f[i].aff[k][3] >> 4) == at.team() ? 1 : -1;
             break;
         }
+        if (fx.bestow && at.has(fx.bestow)) side -= 4;
+        if (fx.blinded && at.has(fx.blinded)) side -= 4;
+        if (fx.animals_blind && at.rec[0x11A] == 19 && tg.has(fx.animals_blind)) side -= 4;
+        if (fx.blinded && tg.has(fx.blinded)) ac -= 4;         // a blind target: easier
+        // Faerie Fire: the stored AC + 2 (to AC 0 at most) - the original's
+        // own rule, which makes the target harder to hit
+        if (fx.faerie && tg.has(fx.faerie)) ac = ac < 58 ? ac + 2 : 60;
         const int al = at.rec[0x11B];
         if (tg.has(fx.prot_evil) && al >= 6) side -= 2;
         if (tg.has(fx.prot_good) && al <= 2) side -= 2;
@@ -758,6 +811,8 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             --at.attacks[slot];
             const int roll = d.roll(20, 1);
             bool hit = roll == 20 || (roll != 1 && roll + static_cast<int8_t>(at.rec[kHit]) + side >= ac);
+            // Blinking, once it has acted this round: not there to be hit
+            if (b.fx && b.fx->blink && tg.has(b.fx->blink) && tg.delay == 0) hit = false;
             Hit h;
             h.hit = hit;
             if (hit) {
@@ -1147,6 +1202,10 @@ bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
     if (r == 1) return false;
     if (r == 20) return true;
     if (type < 0 || type > 4) type = 4;
+    if (g_fx) {
+        if (g_fx->bestow && f.has(g_fx->bestow)) bonus -= 4;
+        if (g_fx->blinded && f.has(g_fx->blinded)) bonus -= 4;
+    }
     return r + bonus + static_cast<int8_t>(f.rec[0x186]) >= f.rec[0xDF + type];
 }
 
@@ -1221,6 +1280,19 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         if (fs.does == SpellDoes::Hold) bonus = m == 1 ? (spell == 0x17 ? -2 : -3) : m == 2 ? -1 : 0;
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
+            // The hold spells take persons only (but Hold Monsters)
+            if (fs.does == SpellDoes::Hold && spell != 0x5E && (f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) {
+                say(who[k], Did::Unaffected, 0);
+                continue;
+            }
+            // A touch (Bestow Curse): the blow has to land
+            if (e.range == -1 && e.on_save == 1) {
+                const int roll = d.roll(20, 1);
+                if (roll == 1 || (roll != 20 && roll + static_cast<int8_t>(me.rec[kHit]) < f.rec[kAc])) {
+                    say(who[k], Did::Unaffected, 0);
+                    continue;
+                }
+            }
             if (e.on_save != 0 && saving_throw(f, e.save, bonus, d) && e.on_save == 1) {
                 say(who[k], Did::Unaffected, 0);
                 continue;
@@ -1271,7 +1343,13 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
             if (!f.up()) continue;
-            if (fs.kind != 1 && (f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) {     // (kind 1: Charm Monsters, any creature)
+            // Charm Monsters (kind 1): the last one picked is unaffected, and
+            // (the original's rule) so are non-persons and large ones
+            if (fs.kind == 1 && (k == m - 1 || f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) {
+                say(who[k], Did::Unaffected, 0);
+                continue;
+            }
+            if (fs.kind != 1 && (f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) {
                 say(who[k], Did::Word2, 0);
                 continue;
             }
@@ -1356,6 +1434,137 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             }
             say(who[k], Did::Damage, dmg);
             if (damage(b, who[k], dmg)) say(who[k], Did::Down, 0);
+        }
+        break;
+    case SpellDoes::Slay:
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up()) continue;
+            if (!saving_throw(f, e.save, 0, d)) {
+                say(who[k], Did::Word, 0);
+                damage(b, who[k], f.hp() + 10);
+                f.rec[kHealth] = party::Dead;
+                say(who[k], Did::Fallen, 0);
+                continue;
+            }
+            const int dmg = d.roll(fs.sides, fs.n) + fs.plus;
+            say(who[k], Did::Damage, dmg);
+            if (damage(b, who[k], dmg)) say(who[k], Did::Down, 0);
+        }
+        break;
+    case SpellDoes::Kill:
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up() || saving_throw(f, 0, 0, d)) continue;
+            say(who[k], Did::Word, 0);
+            damage(b, who[k], f.hp() + 10);
+            f.rec[kHealth] = party::Dead;
+            say(who[k], Did::Down, 0);
+        }
+        break;
+    case SpellDoes::Fumble:
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up() || !b.fx) continue;
+            if (!saving_throw(f, e.save, 0, d)) {
+                give_aff(f, b.fx->fumbling, pw, 0, false);
+                f.moves = f.attacks[0] = f.attacks[1] = 0;
+                say(who[k], Did::Word, 0);
+            } else {
+                give_aff(f, b.fx->slow, pw, 0, false);
+                say(who[k], Did::Word2, 0);
+            }
+            // (the original then saves again: clumsy again, or unaffected)
+            if (!saving_throw(f, e.save, 0, d)) {
+                give_aff(f, b.fx->fumbling, pw, pw, false);
+                say(who[k], Did::Word, 0);
+            } else {
+                say(who[k], Did::Unaffected, 0);
+            }
+        }
+        break;
+    case SpellDoes::Feeble:
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up()) continue;
+            // This save only: a cleric -1, a magic-user +4, others +2 on the number needed
+            const int adj = f.rec[0x75] == 0 ? -1 : f.rec[0x75] == 5 ? 4 : 2;
+            const uint8_t was = f.rec[0xE3];
+            f.rec[0xE3] = static_cast<uint8_t>(was + adj);
+            const bool saved = saving_throw(f, 4, 0, d);
+            f.rec[0xE3] = was;
+            if (saved) {
+                say(who[k], Did::Unaffected, 0);
+                continue;
+            }
+            if (b.fx && b.fx->feeble) give_aff(f, b.fx->feeble, 0, pw, false);
+            f.rec[0x12] = f.rec[0x14] = 7;          // Intelligence, Wisdom
+            f.can_cast = false;
+            f.spell = 0;
+            say(who[k], Did::Word, 0);
+        }
+        break;
+    case SpellDoes::Entangle:
+        if (b.indoors) break;                       // outdoors only
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up() || !b.fx) continue;
+            if (saving_throw(f, e.save, 0, d)) {
+                say(who[k], Did::Unaffected, 0);
+                continue;
+            }
+            // (the original reads a row past the table's end for how long:
+            // 6 + 3 a level at level 6)
+            give_aff(f, b.fx->entangle, 24, 0, false);
+            f.moves = 0;
+            say(who[k], Did::Word, 0);
+        }
+        break;
+    case SpellDoes::Faerie:
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up()) continue;
+            if (k == m - 1 || f.rec[0x11A] > 1 || f.rec[0xDE] > 1 || saving_throw(f, e.save, 0, d)) {
+                say(who[k], Did::Unaffected, 0);
+                continue;
+            }
+            if (e.affect) give_aff(f, e.affect, minutes, pw, false);
+            say(who[k], Did::Word, 0);
+        }
+        break;
+    case SpellDoes::Snakes:
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up() || !b.fx) continue;
+            if (f.rec[0xE5] >= 6) {
+                say(who[k], Did::Word2, 0);
+                continue;
+            }
+            give_aff(f, b.fx->sticks, minutes, pw, false);
+            f.moves = f.attacks[0] = f.attacks[1] = 0;
+            say(who[k], Did::Word, 0);
+        }
+        break;
+    case SpellDoes::SnakeCharm: {
+        // Snakes on either side, as many as the caster's hit points cover
+        int budget = me.hp();
+        for (int c = 0; c < b.n; ++c) {
+            Fighter& f = b.f[c];
+            if (!f.up() || !f.size || f.rec[0x11A] != 14 || f.hp() > budget) continue;
+            budget -= f.hp();
+            if (e.affect) give_aff(f, e.affect, 0, pw, false);
+            say(c, Did::Word, 0);
+        }
+        break;
+    }
+    case SpellDoes::CureBlind:
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            const int at = b.fx && b.fx->blinded ? find_aff(f, b.fx->blinded) : -1;
+            if (at < 0) continue;
+            drop_aff(f, at);
+            say(who[k], Did::Word2, 0);
+            say(who[k], Did::Word, 0);
         }
         break;
     case SpellDoes::Sleep: {
