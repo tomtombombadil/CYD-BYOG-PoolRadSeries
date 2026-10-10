@@ -1114,6 +1114,10 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
     out.behind = behind && !stab;
     out.backstab = stab;
     int ac = tg.rec[behind ? kAcBehind : kAc];
+    // Coughing (a stinking cloud): its rear AC 2 worse (AC 10 at most worse;
+    // worse than 10 becomes 10 - the original's), from any side
+    const bool coughing = b.fx && hasx(tg, b.fx->cough);
+    if (coughing) ac = tg.rec[kAcBehind] > 0x34 ? tg.rec[kAcBehind] - 2 : 0x32;
     if (stab) ac -= 4;
     const int times = stab ? (at.rec[kThiefLevel] - 1) / 4 + 2 : 1;
     // Large targets: the weapon's large dice
@@ -1146,7 +1150,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
         if (fx.animals_blind && at.rec[0x11A] == 19 && tg.has(fx.animals_blind) && !sees) side -= 4;
         if (hasx(tg, fx.invisible) && !sees) side -= 4;              // an invisible target
         if (hasx(tg, fx.sp.evil_ward) && (at.rec[0x14B] & 1)) side -= 7;   // Dispel Evil against the evil
-        if (fx.blinded && tg.has(fx.blinded)) ac -= 4;         // a blind target: easier
+        if (fx.blinded && tg.has(fx.blinded) && !coughing) ac -= 4;     // a blind target: easier (coughing: lost)
         // Faerie Fire: the stored AC + 2 (to AC 0 at most) - the original's
         // own rule, which makes the target harder to hit
         if (fx.faerie && tg.has(fx.faerie)) ac = ac < 58 ? ac + 2 : 60;
@@ -1821,6 +1825,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
          int n, create::Dice& d, SpellLine* out, int cap, int pw)
 {
     int lines = 0;
+    b.n_bolt = 0;
     auto say = [&](int who, Did did, int amount) {
         if (lines < cap) out[lines++] = SpellLine{static_cast<uint8_t>(who), did, amount};
     };
@@ -1995,8 +2000,35 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             say(who[k], Did::Word, 0);
         }
         break;
-    case SpellDoes::Cone:
     case SpellDoes::Bolt:
+        if (b.tables && b.aim_x >= 0 && fs.reach) {
+            // The original's bolt (curse_finish_facts.md 2): one roll, for the
+            // one on the square aimed at and all on the path (an item's fixed
+            // stroke: the path takes its plus alone); each saves for half
+            const int count = fs.per == 3 ? pw : fs.n;
+            const int roll = ((count && fs.sides ? d.roll(fs.sides, count) : 0) + fs.plus) & 0xFF;
+            const int on_path = fs.per == 0 ? fs.plus : roll;
+            Harm h = hs;
+            h.dice = count;
+            h.save = e.on_save ? e.save : -1;
+            h.on_save = e.on_save;
+            auto hit = [&](int c, int amount) {
+                if (c < 0 || c >= b.n || !b.f[c].up()) return;
+                bool dn = false;
+                const int done = harm(b, c, amount, h, d, &dn);
+                say(c, done > 0 ? Did::Damage : Did::Unaffected, done);
+                if (dn) say(c, Did::Down, 0);
+            };
+            const int on = on_field(b.aim_x, b.aim_y) ? b.who[b.aim_y][b.aim_x] : 0;
+            if (on) hit(on - 1, roll);
+            int hits[32];
+            const int nh = bolt_path(b, *b.tables, caster, b.aim_x, b.aim_y, fs.reach, fs.per != 0, hits, 32, b.bolt,
+                                     &b.n_bolt, 16);
+            for (int k = 0; k < nh; ++k) hit(hits[k], on_path);
+            break;
+        }
+        [[fallthrough]];
+    case SpellDoes::Cone:
     case SpellDoes::Damage:
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
@@ -2371,6 +2403,108 @@ int bolt_line(const Battle& b, const Tables& t, int caster, int tx, int ty, int 
     return n;
 }
 
+namespace {
+
+// The original's path stepper: half squares (straight 2, slanted 3), the
+// count kept in a byte
+struct Stepper {
+    int x, y, tx, ty, dx, dy, sx, sy, err = 0, steps = 0;
+    Stepper(int x0, int y0, int x1, int y1)
+        : x(x0), y(y0), tx(x1), ty(y1), dx(x1 > x0 ? x1 - x0 : x0 - x1), dy(y1 > y0 ? y1 - y0 : y0 - y1),
+          sx((x1 > x0) - (x1 < x0)), sy((y1 > y0) - (y1 < y0))
+    {
+    }
+    bool step()
+    {
+        if (dx >= dy) {
+            if (x == tx) return false;
+            x += sx;
+            err += 2 * dy;
+            steps += 2;
+            if (err >= dx) {
+                y += sy;
+                err -= 2 * dx;
+                steps += 1;
+            }
+        } else {
+            if (y == ty) return false;
+            y += sy;
+            err += 2 * dx;
+            steps += 2;
+            if (err >= dy) {
+                x += sx;
+                err -= 2 * dy;
+                steps += 1;
+            }
+        }
+        steps &= 0xFF;
+        return true;
+    }
+};
+
+} // namespace
+
+int bolt_path(const Battle& b, const Tables& t, int caster, int tx, int ty, int length, bool near_rule, int* hits,
+              int hit_cap, BoltSeg* segs, int* n_segs, int seg_cap)
+{
+    int nh = 0;
+    *n_segs = 0;
+    const int cx = b.f[caster].x, cy = b.f[caster].y;
+    if (cx == tx && cy == ty) return 0;
+    // The square's move cost (-1: off the field) and who's on it (0 none, fighter + 1)
+    auto cost = [&](int x, int y) { return on_field(x, y) && b.ground[y][x] ? tile(b, t, x, y)[0] : -1; };
+    auto who = [&](int x, int y) { return on_field(x, y) ? static_cast<int>(b.who[y][x]) : 0; };
+    int Tx = tx, Ty = ty, sign = 1, prev = 0;
+    int last = who(tx, ty);
+    bool wall = false, near = near_rule;
+    int budget = (length * 2) & 0xFF;
+    while (budget > 0) {
+        Stepper p(Tx, Ty, Tx + (Tx - cx) * sign * budget, Ty + (Ty - cy) * sign * budget);
+        int px = Tx, py = Ty;                       // where the segment's picture starts
+        while (true) {
+            if (p.x != p.tx || p.y != p.ty) {
+                while (true) {
+                    const bool moved = p.step();
+                    const int g = cost(p.x, p.y), c = who(p.x, p.y);
+                    if (g == 1) wall = false;
+                    if (!(moved && (c == 0 || c == last) && g >= 0 && g <= 1 && p.steps < budget)) break;
+                }
+            }
+            const int g = cost(p.x, p.y), c = who(p.x, p.y);
+            if (g < 0) budget = 0;
+            if (*n_segs < seg_cap) {
+                BoltSeg& s = segs[(*n_segs)++];
+                s.x0 = static_cast<uint8_t>(px);
+                s.y0 = static_cast<uint8_t>(py);
+                s.x1 = static_cast<uint8_t>(p.x < 0 ? 0 : p.x >= kW ? kW - 1 : p.x);
+                s.y1 = static_cast<uint8_t>(p.y < 0 ? 0 : p.y >= kH ? kH - 1 : p.y);
+            }
+            px = p.x;
+            py = p.y;
+            wall = g == 0xFF && b.indoors && !wall;
+            if (c > 0 && c != last && nh < hit_cap) hits[nh++] = c - 1;
+            last = c;
+            if (wall) {
+                // A bounce: back toward the caster from here
+                Tx = p.x;
+                Ty = p.y;
+                Stepper q(Tx, Ty, cx, cy);
+                while (q.step()) {
+                }
+                if (near && q.steps <= 8) p.steps = (p.steps + 8) & 0xFF;
+                sign = -sign;
+                near = false;
+                last = 0;
+            }
+            const int used = (p.steps - prev) & 0xFF;
+            budget = used < budget ? budget - used : 0;
+            prev = p.steps;
+            if (wall || budget == 0) break;
+        }
+    }
+    return nh;
+}
+
 const FightSpell* fight_spell(const FightSpell* table, int n, int spell)
 {
     for (int i = 0; table && i < n; ++i)
@@ -2434,6 +2568,20 @@ bool spell_targets(Battle& b, const Tables& t, const classes::Tables& st, int i,
         for (int k = 0; k < ni; ++k)
             if ((b.f[in[k]].team() ? 1 : 0) == my && !saving_throw(b.f[in[k]], e.save, my ? 8 : -2, d)) return false;
         for (int k = 0; k < ni; ++k) targets[(*n_targets)++] = in[k];
+    } else if (aim == 5) {
+        // One by one at random (repeats lower the budget) until 2+ pass it
+        const bool by_size = fs.does == SpellDoes::Faerie;
+        int budget = by_size ? pw : d.roll(4, 2);
+        targets[(*n_targets)++] = tg;
+        for (int tries = 0; tries < 64 && budget > 0 && *n_targets < kMaxFighters &&
+                            !picks_done(b, targets, *n_targets, budget, by_size);
+             ++tries) {
+            const int c = cand[d.roll(nc, 1) - 1];
+            bool again = false;
+            for (int k = 0; k < *n_targets; ++k) again = again || targets[k] == c;
+            if (again) --budget;
+            else targets[(*n_targets)++] = c;
+        }
     } else {
         const int want = aim >= 1 && aim <= 4 ? (e.aim & 3) + 1 : 1;
         targets[(*n_targets)++] = tg;
@@ -2441,6 +2589,31 @@ bool spell_targets(Battle& b, const Tables& t, const classes::Tables& st, int i,
             if (cand[k] != tg) targets[(*n_targets)++] = cand[k];
     }
     return *n_targets > 0;
+}
+
+int pick_cost(const Fighter& f, bool by_size)
+{
+    if (by_size) {
+        switch (f.rec[kSize]) {
+        case 1: return 1;
+        case 2: case 3: return 2;
+        case 4: return 4;
+        default: return 0;
+        }
+    }
+    switch (f.rec[kHd]) {
+    case 0: case 1: return 1;
+    case 2: return 2;
+    case 3: return 4;
+    default: return 8;
+    }
+}
+
+bool picks_done(const Battle& b, const int* picked, int n, int budget, bool by_size)
+{
+    int total = 0;
+    for (int k = 0; k < n; ++k) total += pick_cost(b.f[picked[k]], by_size);
+    return n >= 2 && total > budget;
 }
 
 int choose_spell(Battle& b, const Tables& t, const classes::Tables& st, int i, const FightSpell* table, int n_table,
@@ -3317,19 +3490,25 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
         if (inv >= 0) drop_aff(f, inv);
         const int tg = special_target(b, t, i, 10, false, d);
         if (tg >= 0) {
-            fly(i, b.f[tg].x, b.f[tg].y, 6, 4, 50);
+            // As Lightning Bolt (its routine), but 10 squares long, no near rule, a second roll for the path
             Harm h;
             h.kind = 0x0C;
             h.level = 6;
             h.dice = 16;
             h.save = 4;
             h.on_save = 2;
-            int on[kMaxFighters];
-            const int k = bolt_line(b, t, i, b.f[tg].x, b.f[tg].y, 10, on, kMaxFighters);
+            const int tx = b.f[tg].x, ty = b.f[tg].y;
+            Event* e = ev(i, Ev::BoltFly);
+            if (e) {
+                e->x = static_cast<uint8_t>(tx);
+                e->y = static_cast<uint8_t>(ty);
+                e->pic = 6;
+            }
             hurt(tg, d.roll(6, 16), h);
+            int on[32];
+            const int k = bolt_path(b, t, i, tx, ty, 10, false, on, 32, b.bolt, &b.n_bolt, 16);
             const int second = d.roll(6, 16);
-            for (int j = 0; j < k; ++j)
-                if (on[j] != tg) hurt(on[j], second, h);
+            for (int j = 0; j < k; ++j) hurt(on[j], second, h);
         }
         return n;
     }

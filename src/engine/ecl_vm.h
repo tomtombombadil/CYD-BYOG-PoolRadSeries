@@ -73,6 +73,7 @@ enum class Wait : uint8_t {
     Who,          // WHO: prompt() + "Select" over the party list; answer(member) - it's selected
     Key,          // "press <enter>/<return> to continue" on the menu line; resume() on any key
     Camp,         // PROGRAM 9: the camp; resume() when the party breaks camp (the script has ended)
+    Won,          // PROGRAM 8: the game won - the ending, then the party menu (the script has ended)
 };
 
 enum class Stop : uint8_t { Running, Waiting, Stopped, NewScript, Error };

@@ -163,7 +163,8 @@ constexpr combat::FightSpell kCurseFight[] = {
                                                             // and magic - spell_facts.md: coab says acid)
     {0x26, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x30FB6},      // Cause Blindness: "is blind"
     {0x28, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x310A2},      // Cause Disease: "is diseased"
-    {0x33, SpellDoes::Bolt, 0, 6, 0, 3, 4, 0},              // Lightning Bolt: level d6
+    {0x33, SpellDoes::Bolt, 0, 6, 0, 3, 0x0C, 0, 0, 0, 7},  // Lightning Bolt: level d6, 7 squares (electricity and
+                                                            // magic; curse_finish_facts.md 2)
     {0x37, SpellDoes::Theirs, 0, 0, 0, 0, 0, 0x31CD9},      // Slow: "is Slowed"
     {0x5E, SpellDoes::Hold, 0, 0, 0, 0, 0, 0x303F1},        // Hold Monster
     // spell_facts.md (v0.55.0)
@@ -202,7 +203,7 @@ constexpr combat::FightSpell kCurseFight[] = {
     {0x38, SpellDoes::Restore, 0, 0, 0, 0, 0, 0x31D11},     // Restoration: "is restored"
     // The items' own spells (the spell table's monster spells)
     {0x39, SpellDoes::Haste, 5, 4, 0, 0, 0, 0x31ED7},       // speed: "is Speedy", 5d4 rounds
-    {0x3C, SpellDoes::Bolt, 1, 6, 20, 0, 4, 0},             // a lightning stroke: 1d6 + 20
+    {0x3C, SpellDoes::Bolt, 1, 6, 20, 0, 4, 0, 0, 0, 3},    // a lightning stroke: 1d6 + 20, the path 20, 3 squares
     {0x3D, SpellDoes::Theirs, 5, 4, 0, 0, 0, 0x32033},      // paralysis: "is paralyzed", 5d4 rounds
     {0x3E, SpellDoes::Heal, 2, 4, 2, 0, 0, 0x3206D},        // healing: "is Healed"
     {0x3F, SpellDoes::Ours, 2, 10, 0, 4, 0, 0x320C4},       // the party invisible: "is invisible", 2d10 x 10
@@ -381,7 +382,10 @@ const Profile kProfiles[] = {
      {0x29A2, 0x29B3, 0xA28D, 0xA295, 0xA2A2, 0x3222},
      &kCurseRandom, 0x0830,
      {0x6990, 0x04A2, 0x12BB, 0x04A2, 0x054A, 21, 0x2F, 0x33},
-     {0x18B8B, 0x18B90, 0x18B96, 0x18B9D, 0x18BA3, 0x1F}},
+     {0x18B8B, 0x18B90, 0x18B96, 0x18B9D, 0x18BA3, 0x1F},
+     {{0x265C6, 0x265F5, 0x2662A, 0x26660, 0x266B5, 0x266E6, 0x2671F, 0x26754, 0x2678E, 0x267C0, 0x267FA, 0x26831,
+       0x2683E, 0x2686C, 0x268A1, 0x268D4, 0x268DA, 0x26901, 0x26936, 0x26969, 0x2698D, 0x269C2, 0x269FD, 0x26A33},
+      {4, 4, 4, 4, 4, 4}, {0x4A, 0x4B}, 0x4D, 0x41, 0x41, 0x7A, 0x0AAA, 0x4CFD, 0x7EA8}},
 };
 
 } // namespace

@@ -1593,6 +1593,27 @@ static void test_ecl_party()
         r = vm.resume();
     }
     CHECK(said_killed && said_dies && host.killed == 1 && pa.m[0].health() == party::Dead);
+    // PROGRAM 8 (the game won): the ending waits, the script is over; PROGRAM 5: nothing at all
+    Bytes c4;
+    for (int i = 0; i < 5; ++i) { c4.push_back(0); op_addr(c4, 0); }
+    const size_t f4 = c4.size();
+    c4.push_back(0x38); op_imm(c4, 5);
+    c4.push_back(0x09); op_imm(c4, 7); op_addr(c4, 0x4C06);
+    c4.push_back(0x38); op_imm(c4, 8);
+    c4.push_back(0x09); op_imm(c4, 9); op_addr(c4, 0x4C07);
+    c4.push_back(0x00);
+    for (int i = 0; i < 5; ++i) {
+        c4[1 + i * 4] = 1;
+        c4[2 + i * 4] = static_cast<uint8_t>((kBase + f4) & 0xFF);
+        c4[3 + i * 4] = static_cast<uint8_t>((kBase + f4) >> 8);
+    }
+    memcpy(gs.code, c4.data(), c4.size());
+    gs.code_len = static_cast<uint32_t>(c4.size());
+    CHECK(vm.init_script());
+    r = vm.run(vm.entry(4));
+    CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Won && vm.get(0x4C06) == 7);
+    r = vm.resume();
+    CHECK(r == ecl::Stop::Stopped && vm.get(0x4C07) != 9);
 }
 
 static void test_ecl_vm()
@@ -4024,6 +4045,46 @@ static void test_spells_batch2()
     aff[3][0][0] = 0x90; aff[3][0][3] = 0; naff[3] = 1;
     CHECK(!combat::teleport(b, t, 0, 11, 10) && combat::teleport(b, t, 0, 20, 12));
     CHECK(b.f[0].x == 20 && b.who[12][20] == 1 && !b.f[0].has(0x3A) && !b.f[3].has(0x90));
+    // Picking one by one: costs by size / Hit Dice; done with 2+ over the budget
+    setup();
+    rec[2][0xDE] = 1; rec[3][0xDE] = 4; rec[2][0xE5] = 3; rec[3][0xE5] = 1;
+    CHECK(combat::pick_cost(b.f[2], true) == 1 && combat::pick_cost(b.f[3], true) == 4 &&
+          combat::pick_cost(b.f[2], false) == 4 && combat::pick_cost(b.f[3], false) == 1);
+    int two[2] = {2, 3};
+    CHECK(!combat::picks_done(b, two, 1, 0, true) && combat::picks_done(b, two, 2, 4, true) &&
+          !combat::picks_done(b, two, 2, 5, true));
+    // Coughing: the rear AC 2 worse from any side (0x37 rear -> 0x35)
+    fx.cough = 0x1E;
+    aff[2][0][0] = 0x1E; naff[2] = 1;
+    rec[2][0x19A] = 60; rec[2][0x19B] = 0x37;
+    rec[0][0x199] = 0x35 - 2;                                   // hits AC 0x35 on a 2 or better... (d20 + 0x33)
+    b.f[0].x = 11; b.f[2].x = 12; b.f[1].x = 30;
+    combat::occupancy(b);
+    int hits = 0;
+    for (int r = 0; r < 40; ++r) {
+        b.f[0].attacks[0] = 1;
+        rec[2][0x1A4] = 100;
+        hits += combat::attack(b, 0, 2, nullptr, d).any ? 1 : 0;
+    }
+    CHECK(hits > 30);                                           // (front AC 60 would need a 9)
+    fx.cough = 0;
+    // The original's bolt (curse_finish_facts.md 2.5): caster at x 10, row 10
+    setup();
+    t.ground[0x01][0] = 0xFF;
+    for (int i = 1; i < 4; ++i) b.f[i].size = 0;
+    b.f[0].x = 10; b.f[0].y = 10;
+    b.indoors = true;
+    combat::occupancy(b);
+    int bh[16], nsg = 0;
+    combat::BoltSeg sg[16];
+    int nh = combat::bolt_path(b, t, 0, 13, 10, 7, true, bh, 16, sg, &nsg, 16);
+    CHECK(nh == 0 && nsg == 1 && sg[0].x1 == 20 && sg[0].y1 == 10);                 // open floor: 7 squares on
+    b.ground[10][16] = 0x01;                                                         // a wall 6 squares out
+    nh = combat::bolt_path(b, t, 0, 13, 10, 7, true, bh, 16, sg, &nsg, 16);
+    CHECK(nh == 1 && bh[0] == 0 && nsg >= 2 && sg[0].x1 == 16 && sg[1].x1 == 12);   // back: the caster hit
+    b.indoors = false;                                                               // outdoors: no bounce
+    nh = combat::bolt_path(b, t, 0, 13, 10, 7, true, bh, 16, sg, &nsg, 16);
+    CHECK(nh == 0 && sg[nsg - 1].x1 == 20);
 }
 
 // Slow Poison, Spiritual Hammer, Animate Dead, Restoration

@@ -147,7 +147,7 @@ pic::Canvas* cv = nullptr;
 // Game" question, or the game itself
 enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich, AddFrom,
                                AddList, YesNo, CreatePick, CreateName, TradeWho, Heal, Take, Appraise, Magic,
-                               SpellList, Rest, Cast, Effects, Alter, Fight, Loot, Modify, Title, Icon };
+                               SpellList, Rest, Cast, Effects, Alter, Fight, Loot, Modify, Title, Icon, Won };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
 Screen save_from = Screen::PartyMenu;   // where Save Which Game goes back to
@@ -202,6 +202,8 @@ bool party_dead = false;      // DAMAGE killed everyone: the party menu after th
 // experience or treasure after its fight; PROGRAM 3 ends it - the title
 // again, then the version line with a 10 s timeout
 bool in_demo = false;
+bool game_won = false;                  // PROGRAM 8 ran: training is free (not saved, as in the original)
+void won_key(pic::Canvas& c);
 bool auto_tap = false;                  // (the demo's own "key presses", not the player's)
 void end_demo(pic::Canvas& c);
 void fight_clear_monsters();
@@ -4676,7 +4678,7 @@ void train_character(pic::Canvas& c)
         train_note(profile::kTrainConscious, c);
         return;
     }
-    if (rules::gold_worth(ch) < 1000) {
+    if (!game_won && rules::gold_worth(ch) < 1000) {      // (free once the game is won)
         train_note(profile::kTrainCost, c);
         return;
     }
@@ -4740,7 +4742,7 @@ bool train_yes_no(Ask what, char k, pic::Canvas& c)
     screen = Screen::PartyMenu;
     party::Character* ch = pt->sel();
     if (k == 'Y' && ch && trainer && train_mask) {
-        rules::pay(*ch, 1000);
+        if (!game_won) rules::pay(*ch, 1000);
         const int mu = ch->level(classes::MagicUser);
         create::train_classes(*ch, trainer->tables, trainer->facts, trainer->dice, train_mask, false);
         rules::recalc(*ch, *names, d->facts);
@@ -4986,6 +4988,10 @@ void pm_tap(int x, int y, pic::Canvas& c)
     const int row = y / 8, col = x / 8;
     if (screen == Screen::Title) {
         title_tap(x, y, c);
+        return;
+    }
+    if (screen == Screen::Won) {
+        won_key(c);
         return;
     }
     if (screen == Screen::Icon) {
@@ -5509,6 +5515,8 @@ void draw_input(pic::Canvas& c)
     if (x + input_len < 40) c.fill((x + input_len) * 8, text::kMenuRow * 8, 8, 8, 15);     // the cursor
 }
 
+void start_won(pic::Canvas& c);
+
 void begin_wait(pic::Canvas& c)
 {
     waiting = true;
@@ -5587,6 +5595,9 @@ void begin_wait(pic::Canvas& c)
     case ecl::Wait::Camp:               // PROGRAM 9: the camp
         camp_from_script = true;
         open_camp(c);
+        break;
+    case ecl::Wait::Won:                // PROGRAM 8: the game won
+        start_won(c);
         break;
     case ecl::Wait::Key:                // "press <enter>/<return> to continue"
         clear_menu_line(c);
@@ -5913,6 +5924,8 @@ void back_from_view(pic::Canvas& c)
 void begin_adventuring()
 {
     pic::Canvas& c = *cv;
+    // Won: Begin does nothing any more (area word 0x3FA, as the original)
+    if (!in_demo && d->prof->won.begin_word && (vm->get(d->prof->won.begin_word) & 0xFF) != 0) return;
     if (in_game_menu) {
         // PROGRAM 0's party menu: back to the game where the script was
         in_game_menu = false;
@@ -6366,6 +6379,319 @@ void title_tap(int x, int y, pic::Canvas& c)
     else end_title(c);
 }
 
+// ---- The game won (PROGRAM 8; the Project's claude/curse_finish_facts.md 1)
+// Six pages of the end texts in the text window ("Press any key to
+// continue." after each but the 4th), the pictures between them (two
+// animations played once, a picture drawn faded, a head and body, the big
+// picture with fireworks until a key), then the party healed, training
+// for everyone and free, Begin stopped, and the party menu.
+struct WonRun {
+    enum Stage : uint8_t { Text, Anim, Key, Hold, Fireworks } stage = Text;
+    int      page = 0;
+    uint32_t at = 0;
+    uint8_t  fade[16] = {};
+    char     text[320] = {};            // the page's text (the writer reads it while it prints)
+    // The fireworks (an approximation of the original's; facts 1.4)
+    bool     rocket = false, burst = false, stop = false;
+    int      rx = 0, ry = 0, rvx = 0, rvy = 0, steps = 0;
+    uint32_t next_rocket = 0, step_at = 0;
+    struct Spark { int16_t x, y, vx, vy; uint8_t col, under; bool drawn; };
+    Spark    spark[120];
+    struct Px { int16_t x, y; uint8_t under; };
+    Px       trail[64];
+    int      n_trail = 0;
+};
+WonRun* won = nullptr;
+
+void won_page(int page, pic::Canvas& c);
+
+// The page's text, all at once (a key goes on when the window fills)
+void won_text(int page, pic::Canvas& c)
+{
+    const auto& wf = d->prof->won;
+    int first = 0;
+    for (int p = 0; p < page; ++p) first += wf.page_lines[p];
+    char* buf = won->text;
+    const size_t cap = sizeof won->text;
+    size_t o = 0;
+    fs::File f;
+    if (open_file(d->prof->overlay, f)) {
+        library::FileSource src(f);
+        for (int k = 0; k < wf.page_lines[page] && first + k < 24; ++k) {
+            char line[text::kMaxString];
+            if (!text::read_pascal(src, wf.text[first + k], line, sizeof line)) continue;
+            for (const char* q = line; *q && o + 1 < cap; ++q) buf[o++] = *q;
+        }
+        f.close();
+    }
+    buf[o] = 0;
+    text::begin(w, c, buf, text::kTextArea, 10, true);
+    text::step(w, c, d->font, -1);
+    dirty_rows(17, 22);
+}
+
+void won_prompt(pic::Canvas& c)
+{
+    won->stage = WonRun::Key;
+    clear_menu_line(c);
+    put(c, d->press_key, 0, text::kMenuRow, 13);
+}
+
+// After the text (and its window full): the page's picture, or the key
+void won_after_text(pic::Canvas& c)
+{
+    const auto& wf = d->prof->won;
+    if (w.state == text::State::PageFull) {         // the window filled: a key first
+        won_prompt(c);
+        return;
+    }
+    switch (won->page) {
+    case 1:
+    case 2:
+        // An animation played once (on black, at the event picture's place)
+        c.fill(24, 24, 88, 88, 0);
+        if (anim_start(wf.anim[won->page - 1]) && anim_block >= 0 && d->anim.frames > 1) {
+            won->stage = WonRun::Anim;
+            won->at = millis();
+            return;
+        }
+        anim_stop();
+        won_prompt(c);
+        return;
+    case 3: {
+        // The picture faded (each colour by the program's table), held
+        // (10 - game speed) x 2 draws' time, then the head and body
+        c.fill(24, 24, 88, 88, 0);
+        if (anim_start(wf.fade_pic)) {
+            anim_stop();
+            for (int y = 24; y < 112; ++y)
+                for (int x = 24; x < 112; ++x) c.px[y * c.w + x] = won->fade[c.px[y * c.w + x] & 15];
+            dirty_rows(3, 13);
+        }
+        int speed = vm->get(0x4BFC) & 0xFF;
+        if (speed > 9) speed = 9;
+        won->stage = WonRun::Hold;
+        won->at = millis() + static_cast<uint32_t>((10 - speed) * 2) * 250;
+        return;
+    }
+    case 5:
+        won->stage = WonRun::Fireworks;
+        won->next_rocket = millis() + 300;
+        return;
+    default:
+        won_prompt(c);
+        return;
+    }
+}
+
+void won_page(int page, pic::Canvas& c)
+{
+    const auto& wf = d->prof->won;
+    won->page = page;
+    won->stage = WonRun::Text;
+    if (page == 4) {
+        // The head and body (no key before them)
+        c.fill(24, 24, 88, 88, 0);
+        draw_block(c, "HEAD", wf.head, 24, 24);
+        draw_block(c, "BODY", wf.body, 24, 64);
+        dirty_rows(3, 13);
+    } else if (page == 5) {
+        anim_stop();
+        layout::outer(c, d->tables, d->frame_tiles);
+        layout::bar(c, d->tables, d->frame_tiles, 16);
+        draw_block(c, "BIGPIC", wf.bigpic, 8, 8);
+        dirty(0, 17 * 8);
+    }
+    won_text(page, c);
+    won_after_text(c);
+}
+
+// Everyone healed and back up, training for everyone (free), Begin
+// stopped; the party menu
+void won_finish(pic::Canvas& c)
+{
+    const auto& wf = d->prof->won;
+    delete won;
+    won = nullptr;
+    anim_stop();
+    for (int i = 0; i < pt->count; ++i) {
+        uint8_t* r = pt->m[i].rec;
+        r[0x1A4] = r[0x78];
+        r[0x195] = party::Okay;
+        r[0x196] = 1;
+    }
+    vm->set(wf.train_word, 0xFF);
+    vm->set(wf.begin_word, static_cast<uint16_t>((vm->get(wf.begin_word) & 0xFF00) | 0xFF));
+    game_won = true;
+    waiting = false;
+    clear_menu_line(c);
+    c.clear(0);
+    screen = Screen::PartyMenu;
+    draw_party_menu(c);
+}
+
+void start_won(pic::Canvas& c)
+{
+    anim_stop();
+    if (!won) won = new (std::nothrow) WonRun;
+    if (!won) {
+        won_finish(c);
+        return;
+    }
+    // The fade's table (the program's data)
+    for (int k = 0; k < 16; ++k) won->fade[k] = static_cast<uint8_t>(k);
+    fs::File f;
+    if (open_file(d->prof->program, f)) {
+        library::FileSource src(f);
+        exepack::Info info;
+        if (exepack::parse(src, info) == exepack::Status::Ok)
+            exepack::read(src, info, d->prof->data_base + d->prof->won.fade_table, won->fade, sizeof won->fade);
+        f.close();
+    }
+    screen = Screen::Won;
+    won_page(0, c);
+}
+
+// A key or tap during the ending
+void won_key(pic::Canvas& c)
+{
+    if (!won) return;
+    switch (won->stage) {
+    case WonRun::Key:
+        clear_menu_line(c);
+        if (w.state == text::State::PageFull) {
+            text::next_page(w, c);
+            text::step(w, c, d->font, -1);
+            dirty_rows(17, 22);
+            won_after_text(c);
+            return;
+        }
+        if (won->page + 1 < 6) won_page(won->page + 1, c);
+        else won_finish(c);
+        return;
+    case WonRun::Fireworks:
+        won->stop = true;               // (the original ends after the rocket in the air)
+        return;
+    default:
+        return;                         // (the pictures play out)
+    }
+}
+
+// The fireworks: a pixel drawn over the big picture, what was under kept
+void fw_put(pic::Canvas& c, int x, int y, uint8_t col, uint8_t* under)
+{
+    *under = c.px[y * c.w + x];
+    c.px[y * c.w + x] = col;
+}
+bool fw_on(int x, int y) { return x >= 8 && x < 312 && y >= 9 && y <= 64; }
+
+void fireworks_step(pic::Canvas& c, uint32_t now)
+{
+    WonRun& r = *won;
+    if (!r.rocket) {
+        if (r.stop) {
+            won_finish(c);
+            return;
+        }
+        if (static_cast<int32_t>(now - r.next_rocket) < 0) return;
+        r.rocket = true;
+        r.burst = false;
+        r.rx = 65 * 32;
+        r.ry = 65 * 32;
+        r.rvx = 34 + rng.roll(20, 1);
+        r.rvy = -(49 + rng.roll(5, 1));
+        r.steps = 0;
+        r.n_trail = 0;
+        r.step_at = now;
+    }
+    if (static_cast<int32_t>(now - r.step_at) < 15) return;
+    r.step_at = now;
+    if (!r.burst) {
+        // Up, a trail of colours 8-14 behind
+        r.rx += r.rvx;
+        r.ry += r.rvy;
+        ++r.rvy;
+        const int x = r.rx >> 5, y = r.ry >> 5;
+        if (fw_on(x, y) && r.n_trail < 64) {
+            WonRun::Px& p = r.trail[r.n_trail++];
+            p.x = static_cast<int16_t>(x);
+            p.y = static_cast<int16_t>(y);
+            fw_put(c, x, y, static_cast<uint8_t>(7 + rng.roll(7, 1)), &p.under);
+        }
+        if (++r.steps >= 60) {
+            // The burst: 3 groups of 40 sparks, 1 or 2 of them coloured 2-6, the rest 1
+            const int coloured = rng.roll(2, 1);
+            for (int g = 0; g < 3; ++g) {
+                const uint8_t col = g < coloured ? static_cast<uint8_t>(1 + rng.roll(5, 1)) : 1;
+                for (int k = 0; k < 40; ++k) {
+                    WonRun::Spark& s = r.spark[g * 40 + k];
+                    s.x = static_cast<int16_t>(r.rx);
+                    s.y = static_cast<int16_t>(r.ry);
+                    s.vx = static_cast<int16_t>(rng.roll(65, 1) - 33);
+                    s.vy = static_cast<int16_t>(rng.roll(65, 1) - 37);
+                    s.col = col;
+                    s.drawn = false;
+                }
+            }
+            r.burst = true;
+            r.steps = 0;
+        }
+    } else {
+        // The sparks: off their old pixels (last drawn first), on to the new
+        for (int k = 119; k >= 0; --k) {
+            WonRun::Spark& s = r.spark[k];
+            if (s.drawn) c.px[(s.y >> 5) * c.w + (s.x >> 5)] = s.under;
+            s.drawn = false;
+        }
+        if (++r.steps < 40) {
+            for (int k = 0; k < 120; ++k) {
+                WonRun::Spark& s = r.spark[k];
+                s.x = static_cast<int16_t>(s.x + s.vx);
+                s.y = static_cast<int16_t>(s.y + s.vy);
+                ++s.vy;
+                const int x = s.x >> 5, y = s.y >> 5;
+                if (!fw_on(x, y)) continue;
+                fw_put(c, x, y, s.col, &s.under);
+                s.drawn = true;
+            }
+        } else {
+            // Over: the trail goes too
+            for (int k = r.n_trail - 1; k >= 0; --k) c.px[r.trail[k].y * c.w + r.trail[k].x] = r.trail[k].under;
+            r.n_trail = 0;
+            r.rocket = false;
+            r.next_rocket = now + 200 + static_cast<uint32_t>(rng.roll(1000, 1));
+        }
+    }
+    dirty(8, 66);
+}
+
+void won_tick(uint32_t now, pic::Canvas& c)
+{
+    if (!won) return;
+    switch (won->stage) {
+    case WonRun::Anim: {
+        const uint32_t delay = d->anim.delay[anim_frame] ? d->anim.delay[anim_frame] * 100u : 100u;
+        if (now - won->at < delay) return;
+        won->at = now;
+        if (anim_frame + 1 >= d->anim.frames) {     // once round
+            anim_stop();
+            won_prompt(c);
+            return;
+        }
+        anim_draw(++anim_frame);
+        return;
+    }
+    case WonRun::Hold:
+        if (static_cast<int32_t>(now - won->at) >= 0) won_page(4, c);
+        return;
+    case WonRun::Fireworks:
+        fireworks_step(c, now);
+        return;
+    default:
+        return;
+    }
+}
+
 // The demo: the party menu skipped, area 1, speed 9, ECL1 block 0x52's
 // first-run entry
 void start_demo(pic::Canvas& c)
@@ -6707,6 +7033,10 @@ bool act(Act a, pic::Canvas& c)
         title_next(c);                      // any key skips the wait, as in the games
         return true;
     }
+    if (screen == Screen::Won) {
+        won_key(c);
+        return true;
+    }
     if (screen != Screen::Game) return false;
     if (waiting) {
         // Any key goes on, like the games' "press a key": the rest of the
@@ -6880,6 +7210,10 @@ bool nav(Nav n, pic::Canvas& c)
     cv = &c;
     if (demo_input(c)) return true;
     const bool first = !keys_used;
+    if (screen == Screen::Won) {
+        won_key(c);
+        return true;
+    }
     keys_used = true;
     if (first && screen == Screen::PartyMenu) {
         draw_party_menu(c);                 // the highlight shows from the first key on
@@ -7283,6 +7617,11 @@ void tick(uint32_t now, pic::Canvas& c)
         title_tick(now, c);
         return;
     }
+    if (screen == Screen::Won) {
+        cv = &c;
+        won_tick(now, c);
+        return;
+    }
     if (screen == Screen::Cast) {
         cv = &c;
         cast_tick(now, c);
@@ -7408,6 +7747,10 @@ bool back(pic::Canvas& c)
     if (!d) return false;
     cv = &c;
     if (demo_input(c)) return true;
+    if (screen == Screen::Won) {
+        won_key(c);
+        return true;
+    }
     if (screen == Screen::Icon) {
         icon_back(c);
         return true;

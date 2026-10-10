@@ -373,6 +373,21 @@ struct Profile {
         uint32_t bash, pick, knock, exit, locked;
         uint8_t  knock_spell;
     } door;
+    // The game won (PROGRAM 8; curse_finish_facts.md 1): the end texts
+    // (GAME.OVR, the pages' lines one after another), the pictures (PIC
+    // animations played once with pages 2 and 3, the picture drawn faded
+    // with page 4, the head and body for page 5, the big picture for the
+    // last page and its fireworks), the fade's colour table (DS: the new
+    // colour for each of 16), the area word that stops Begin and the
+    // training mask word (everyone may train, free)
+    struct {
+        uint32_t text[24];
+        uint8_t  page_lines[6];
+        uint8_t  anim[2];
+        uint8_t  fade_pic, head, body, bigpic;
+        uint16_t fade_table;
+        uint16_t begin_word, train_word;
+    } won;
 };
 
 // The game's program file name (to look for it), or nullptr if no

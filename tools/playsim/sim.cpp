@@ -485,10 +485,34 @@ int main(int argc, char** argv)
             play::vm->set((uint16_t)(a + 6), (uint16_t)(icon ? icon : id));
             printf("  monster swapped: MON%u #%u\n", area, id);
         }
+        if (getenv("WINPATCH")) {
+            // WINPATCH: PROGRAM 8 written at RUNAT (the ending from where the party stands)
+            play::vm->set((uint16_t)a, 0x38);
+            play::vm->set((uint16_t)(a + 1), 0);
+            play::vm->set((uint16_t)(a + 2), 8);
+        }
         play::then = play::Then::Idle;
         play::handle(play::vm->run((uint16_t)a));
         settle(0, 5000);
         printf("  screen %d, %d goods, menu [%s]\n", (int)play::screen, play::ground->n, play::menu.s);
+        if (play::screen == play::Screen::Won) {
+            // The game won (RUNAT at a PROGRAM 8): a tap every 2 s, a snapshot before each
+            int n = 0;
+            for (int t = 0; t < 120000 && play::screen == play::Screen::Won; t += 20) {
+                g_now += 20;
+                play::tick(g_now, C);
+                if (t % 2000 == 1980) {
+                    char nm[24];
+                    snprintf(nm, sizeof nm, "won_%d", n++);
+                    shot(nm);
+                    play::tap(100, 100, C);
+                }
+            }
+            printf("  after the ending: screen %d, party %d, hp %d/%d, 0x7EA8 %04X, 0x4CFD %04X\n", (int)play::screen,
+                   play::pt->count, play::pt->count ? play::pt->m[0].rec[0x1A4] : 0, play::pt->count ? play::pt->m[0].rec[0x78] : 0,
+                   play::vm->get(0x7EA8), play::vm->get(0x4CFD));
+            shot("won_after");
+        }
         if (play::screen == play::Screen::Fight && getenv("FIGHT")) {
             // FIGHT: the fight played out - Quick for each party member on
             // their menu (FIGHT=m: their menu is left alone and snapshots

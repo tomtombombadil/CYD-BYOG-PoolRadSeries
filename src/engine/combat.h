@@ -41,6 +41,9 @@ constexpr int kMonsterAffects = 12;    // the most in a monster file (9) and tho
 int dx(int dir);
 int dy(int dir);
 
+// A bolt's segment (bolt_path): the picture flies from (x0, y0) to (x1, y1)
+struct BoltSeg { uint8_t x0, y0, x1, y1; };
+
 // ---- The program's tables (Curse: START.EXE's data segment)
 struct Tables {
     uint8_t ground[kGroundValues][4];   // move cost (0xFF: can't), eye height, obstacle height, picture
@@ -226,6 +229,10 @@ struct Battle {
     // Set by the caller before a cast: the square aimed at (Dispel Magic's
     // clouds), the fire shield's flame (1 hot, 2 cold, 0 the computer's pick)
     int     aim_x = -1, aim_y = -1, flame = 0;
+    // The fight's tables (set by the caller: a bolt's path), the last bolt's segments (its picture)
+    const Tables* tables = nullptr;
+    BoltSeg bolt[16];
+    int     n_bolt = 0;
     Cloud   clouds[kMaxClouds];
     int     n_clouds = 0;
 };
@@ -257,6 +264,8 @@ enum class Ev : uint8_t {
     // said of `who`
     Avoids, Poisoned, Paralyzed, ParalyzedLow, Reflects, Stoned, GazeStoned, Disintegrated, Killed, Damage,
     Unaffected, Down, Suffocates, StandsUp, GetsUp,
+    // A bolt's picture along the Battle's bolt segments (from `who` to (x, y) first: COMSPR `pic`)
+    BoltFly,
     // Dispel Evil's hit: "is dispelled" / "resists dispel evil"; a fire shield: "gets zapped"
     Dispelled, ResistsDispel, Zapped,
     // Slow Poison run out, still poisoned: "dies from poison"
@@ -505,6 +514,7 @@ struct FightSpell {
                                         // Heal: "is Healed" instead of fully / partly healed)
     uint32_t  word2 = 0;                // ... when they saved (clouds: "starts to cough")
     uint32_t  word3 = 0;                // a third ("has an item un-cursed")
+    uint8_t   reach = 0;                // Bolt: its length (squares; the original's bolt with the square aimed at)
 };
 // What happened to each target, in order
 // Fallen: the skull, no words; Risen: "gets back up" / "stands up and grins"
@@ -573,6 +583,24 @@ int cone(const Battle& b, const Tables& t, int caster, int tx, int ty, int reach
 // A lightning bolt's squares: from (tx, ty) on, away from the caster, up to
 // `len` squares or a wall / the field's edge; the fighters on them
 int bolt_line(const Battle& b, const Tables& t, int caster, int tx, int ty, int len, int* out, int cap);
+// The bolt as the original runs it (curse_finish_facts.md 2): from the
+// square aimed at on, away from the caster, `length` squares (a budget of
+// half squares); it stops at each creature, ends at the field's edge,
+// bounces back off a wall indoors (`near_rule`: a bounce within 4 squares
+// of the caster costs 8 more - Lightning Bolt's), and the original's byte
+// sums for what's left after a bounce. The fighters it hits in order (not
+// the one on the square aimed at; after a bounce anyone again, the caster
+// too) and its segments (the picture flies along each).
+int bolt_path(const Battle& b, const Tables& t, int caster, int tx, int ty, int length, bool near_rule, int* hits,
+              int hit_cap, BoltSeg* segs, int* n_segs, int seg_cap);
+
+// Picking creatures one by one (spell aim 5: Faerie Fire, Charm Monsters;
+// curse_finish_facts.md 7): a budget - Faerie Fire the caster's level,
+// the others 2d4 - and each pick's cost: by size (1 -> 1, 2 / 3 -> 2, 4 ->
+// 4, else 0) or by Hit Dice (0 / 1 -> 1, 2 -> 2, 3 -> 4, more -> 8). The
+// picking ends once 2 or more are picked and their costs pass the budget.
+int pick_cost(const Fighter& f, bool by_size);
+bool picks_done(const Battle& b, const int* picked, int n, int budget, bool by_size);
 
 // The computer's spells (monsters): d7 rounds of 3 random picks from the
 // memorized list, from priority 7 down; a spell is taken when its priority

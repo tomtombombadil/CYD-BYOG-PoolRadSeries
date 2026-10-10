@@ -227,7 +227,9 @@ enum class FSt : uint8_t {
 // fighter (the games' magic hits), a fallen one's skull blinking; each with
 // the sound it starts with (a sound alone: kind None)
 struct Fx {
-    enum Kind : uint8_t { None, Fly, Burst, Skull, Redraw } kind = None;     // Redraw: the field again (a cloud laid)
+    // Redraw: the field again (a cloud laid); Bolt: a flight to (x1, y1), then lightning along the
+    // fight's bolt segments
+    enum Kind : uint8_t { None, Fly, Burst, Skull, Redraw, Bolt } kind = None;
     uint8_t sound = 0;
     combat::Flight fl;                  // Fly / Burst: the pictures, their cycle, ms a step
     uint8_t loops = 1;                  // Burst: times round the cycle
@@ -273,6 +275,8 @@ struct Fight {
     int      spell = 0;
     int      sp_t[combat::kMaxFighters] = {};
     int      sp_n = 0, sp_need = 0, sp_area = -1;
+    int      pick_budget = -1;          // spell aim 5: picked one by one against this (-1: not that kind)
+    bool     pick_size = false;         // ... costs by size (Faerie Fire), else by Hit Dice
     bool     ai_checked = false;        // this turn's morale and spell choice done
     int      use_item = -1;             // Use: the item the spell comes from (its charge goes)
     bool     use_scroll = false;        // ... a scroll
@@ -286,6 +290,7 @@ struct Fight {
     combat::FlightPath path;
     uint8_t* fx_pic[2] = {};            // its ready / attack pictures (COMSPR)
     int      fx_step = 0;
+    int      bolt_at = -1;              // a Bolt picture: the segment flying (-1: the flight to the square first)
     uint8_t  under[kSq * kSq];          // what the flying picture covers
     int      under_x = 0, under_y = 0;
     bool     has_under = false;
@@ -706,9 +711,19 @@ bool fx_step(pic::Canvas& c)
     Fx& e = fg->fx;
     const int k = fg->fx_step++;
     switch (e.kind) {
+    case Fx::Bolt:
     case Fx::Fly: {
         under_put(c);
-        if (!combat::flight_step(fg->path)) return false;
+        while (!combat::flight_step(fg->path)) {
+            // A bolt: on along its segments (the lightning picture, COMSPR 6, 50 ms a step)
+            if (e.kind != Fx::Bolt || fg->bolt_at + 1 >= fg->b.n_bolt) return false;
+            if (fg->bolt_at < 0) {
+                if (!fx_load(6)) return false;
+                e.fl = combat::spell_flight(6, 50);
+            }
+            const combat::BoltSeg& sg = fg->b.bolt[++fg->bolt_at];
+            combat::flight_begin(fg->path, sg.x0, sg.y0, sg.x1, sg.y1);
+        }
         const int x = kViewX + (fg->path.x - fg->b.vx * 3) * 8, y = kViewY + (fg->path.y - fg->b.vy * 3) * 8;
         under_save(c, x, y);
         fx_draw(c, x, y, e.fl.slot[e.fl.frames ? k % e.fl.frames : 0]);
@@ -759,7 +774,9 @@ bool fx_begin(pic::Canvas& c, const Fx& e)
     fg->has_under = false;
     switch (e.kind) {
     case Fx::Fly:
+    case Fx::Bolt:
         if (!fx_load(e.fl.pic)) return false;
+        fg->bolt_at = -1;
         combat::flight_begin(fg->path, e.x0, e.y0, e.x1, e.y1);
         break;
     case Fx::Burst:
@@ -1072,6 +1089,21 @@ void event_page(const combat::Event& e)
     case combat::Ev::Dispelled: fallen(profile::kIsDispelled); break;
     case combat::Ev::ResistsDispel: said(profile::kResistsDispel); break;
     case combat::Ev::Zapped: said(profile::kGetsZapped); break;
+    case combat::Ev::BoltFly: {
+        // Thrown lightning: to the square, then along the bolt
+        if (!fg->pages) break;
+        Fx f;
+        f.kind = Fx::Bolt;
+        f.fl = combat::spell_flight(e.pic, 50);
+        f.x0 = static_cast<uint8_t>(fg->b.f[who].x);
+        f.y0 = static_cast<uint8_t>(fg->b.f[who].y);
+        f.x1 = e.x;
+        f.y1 = e.y;
+        f.sound = sound::kLightning;
+        Page& p = fg->page[fg->pages - 1];
+        p.fx[p.fx[0].kind == Fx::None ? 0 : 1] = f;
+        break;
+    }
     case combat::Ev::DiesPoison: fallen(profile::kDiesFromPoison); break;
     }
 }
@@ -1790,8 +1822,8 @@ void aim_tap(int x, int y, pic::Canvas& c)
         break;
     case 'E':
         status_line(c, "");
-        if (fg->spell && fg->sp_n > 0) {
-            cast_now(c);
+        if (fg->spell && (fg->sp_n > 0 || fg->pick_budget >= 0)) {
+            cast_now(c);                // (picking one by one: cast even with none picked - the original)
             return;
         }
         if (fg->use_item >= 0 && fg->spell) {
@@ -2090,6 +2122,7 @@ void fight_start(pic::Canvas& c)
     combat::Battle& b = fg->b;
     b.~Battle();
     new (&b) combat::Battle();         // (in place: a temporary would take 10 KB of stack)
+    b.tables = &fg->t;
     b.indoors = vm->get(0x4BE6) != 0;
     if (b.indoors) combat::build_indoors(b, fg->t, d->map, d->gs.x, d->gs.y, rng);
     else combat::build_outdoors(b, fg->t, vm->get(0x4CA1) & 0xFF, rng);
@@ -2505,6 +2538,7 @@ void begin_targeting(pic::Canvas& c, int sp)
     fg->spell = sp;
     fg->sp_n = 0;
     fg->sp_area = -1;
+    fg->pick_budget = -1;
     fg->aim_x = fg->aim_y = -1;
     const int aim = e.aim & 0x0F;
     const combat::FightSpell* bfs = fight_spell(sp);
@@ -2531,8 +2565,12 @@ void begin_targeting(pic::Canvas& c, int sp)
         fg->sp_need = 1;
         fg->sp_area = e.aim & 7;
     } else if (aim == 5) {
-        fg->sp_need = 1;
-        fg->sp_area = 1;
+        // One by one until 2+ pass the budget (Faerie Fire: the level, by
+        // size; else 2d4, by Hit Dice - never shown, as in the original)
+        const combat::FightSpell* afs = fight_spell(sp);
+        fg->pick_size = afs && afs->does == combat::SpellDoes::Faerie;
+        fg->pick_budget = fg->pick_size ? combat::power_of(fg->b.f[fg->cur].rec, mrules->tables, sp) : rng.roll(4, 2);
+        fg->sp_need = combat::kMaxFighters;
     } else if (aim == 15) {
         fg->sp_need = 1;
     } else {
@@ -2627,7 +2665,8 @@ void spell_target(pic::Canvas& c, int t)
             return;
         }
     fg->sp_t[fg->sp_n++] = t;
-    if (fg->sp_n >= fg->sp_need || fg->sp_n >= combat::kMaxFighters) {
+    if (fg->sp_n >= fg->sp_need || fg->sp_n >= combat::kMaxFighters ||
+        (fg->pick_budget >= 0 && combat::picks_done(b, fg->sp_t, fg->sp_n, fg->pick_budget, fg->pick_size))) {
         cast_now(c);
         return;
     }
@@ -2827,8 +2866,8 @@ void cast_now(pic::Canvas& c, bool forgotten)
     if (fg->pages > first_page) {
         const bool bolt = sp == d->prof->sound.lightning_spell;
         Fx e;
-        e.kind = ax >= 0 ? Fx::Fly : Fx::None;
-        e.fl = combat::spell_flight(bolt ? 6 : 5, bolt ? 50 : 30);
+        e.kind = ax >= 0 ? (b.n_bolt > 0 ? Fx::Bolt : Fx::Fly) : Fx::None;
+        e.fl = combat::spell_flight(bolt && b.n_bolt == 0 ? 6 : 5, bolt && b.n_bolt == 0 ? 50 : 30);
         e.x0 = static_cast<uint8_t>(f.x);
         e.y0 = static_cast<uint8_t>(f.y);
         e.x1 = static_cast<uint8_t>(ax < 0 ? f.x : ax);
@@ -3108,6 +3147,10 @@ bool fight_back(pic::Canvas& c)
     }
     case FSt::Aim:
         status_line(c, "");
+        if (fg->spell && fg->pick_budget >= 0) {
+            cast_now(c);                // picking one by one: Esc ends it, the spell goes anyway
+            return true;
+        }
         draw_fight(c);
         fight_menu(c);
         return true;

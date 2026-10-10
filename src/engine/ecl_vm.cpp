@@ -1169,10 +1169,11 @@ Stop Vm::step()
             h_.party_killed();
             return Stop::Running;
         }
-        snprintf(line, sizeof line, "PROGRAM %d (not in the engine yet)", v);
-        h_.log(line);
-        if (v == 8) stop_script();
-        return Stop::Running;
+        if (v == 8) {                                       // the game won: the ending
+            stop_script();
+            return wait_for(Wait::Won);
+        }
+        return Stop::Running;                               // (other values: nothing)
     }
     case 0x39:                                  // WHO: "<prompt> Select" over the party list
         if (!need(1)) return Stop::Error;
