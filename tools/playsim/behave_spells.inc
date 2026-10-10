@@ -1424,6 +1424,36 @@ static void sp_check_camp()
         expect(SP, "camp: Spiritual Hammer at level 6 - its effect for 6 minutes, data 6", tm == 6 && da == 6, "time %d data %d", tm,
                da);
     }
+    // The stats with the spells' effects (the recalculation; spell_facts.md 0x0C, 0x0E, 0x23, 0x3B, 0x5D)
+    struct Rc {
+        const char* what;
+        int effect, data;
+        int str, str00, stat, stat_idx;     // the Strength (str00) or stat stat_idx (-1: Str) wanted
+    };
+    const Rc rcs[] = {
+        {"Enlarge 18/51 on Str 10: 18/51", 0x0C, 52, 18, 51, 0, -1},
+        {"Enlarge 20 on Str 10: 20", 0x0C, 120, 20, 0, 0, -1},
+        {"Strength +3 on Str 10: 13", 0x26, 103, 13, 0, 0, -1},
+        {"giant strength (21) on Str 10: 21", 0x92, 121, 21, 0, 0, -1},
+        {"Friends +5 on Cha 10: 15", 0x0E, 5, 0, 0, 15, 5},
+        {"Feeblemind: Int 3", 0x44, 9, 0, 0, 3, 1},
+        {"Feeblemind: Wis 3", 0x44, 9, 0, 0, 3, 2},
+    };
+    for (const Rc& r : rcs) {
+        sp_member(1, classes::Thief, 3);
+        party::Character& c = P(1);
+        for (int k = 0; k < 6; ++k) c.rec[0x10 + 2 * k] = c.rec[0x11 + 2 * k] = 10;
+        c.rec[0x1C] = c.rec[0x1D] = 0;
+        c.n_items = 0;
+        spells::add_affect(c, r.effect, 30, r.data, false);
+        rules::recalc(c, *names, d->facts);
+        char what[100];
+        snprintf(what, sizeof what, "stats: %s", r.what);
+        if (r.stat_idx < 0)
+            expect(SP, what, c.stat(0) == r.str && c.str00() == r.str00, "Str %d/%02d", c.stat(0), c.str00());
+        else
+            expect(SP, what, c.stat(r.stat_idx) == r.stat, "%d", c.stat(r.stat_idx));
+    }
     // The camp clock: an effect of N minutes is gone after N minutes (coab: removed when the time left <= the step)
     sp_member(1, classes::Fighter, 3);
     spells::add_affect(P(1), 0x01, 6, 1, false);
