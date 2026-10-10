@@ -154,6 +154,7 @@ constexpr combat::FightSpell kCurseFight[] = {
     {0x21, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x3074F},      // Ray of Enfeeblement: "is weakened"
     {0x22, SpellDoes::Cloud, 0, 0, 0, 0, 0, 0x35E37, 0x35E27},  // Stinking Cloud: "chokes and gags from nausea" / "starts to cough"
     {0x0A, SpellDoes::Charm, 0, 0, 0, 0, 0, 0x2FED8, 0x2FECA},  // Charm Person: "is charmed" / "is unaffected"
+    {0x51, SpellDoes::Charm, 0, 0, 0, 0, 1, 0x32786},       // Charm Monsters: "is charmed" (any creature, the table's targets)
     {0x54, SpellDoes::Fear, 0, 0, 0, 0, 0, 0x32A7A},        // Fear: "runs in terror" (a cone, 3 rays, 6 squares)
     {0x5B, SpellDoes::Poison, 0, 0, 0, 0, 0, 0x35E53},      // Cloudkill: "is Poisoned" (a 3 x 3 cloud)
     {0x5C, SpellDoes::Cone, 0, 4, 0, 6, 0x10, 0},           // Cone of Cold: level d4 + level (a cone, 2 rays; coab: acid)

@@ -1047,6 +1047,19 @@ Plan think(Battle& b, const Tables& t, int i, create::Dice& d)
     } else {
         return p;
     }
+    // An unarmoured magic-user doesn't go forward: it guards
+    if (f.rec[0x10E] > 0 && b.names && f.items) {
+        bool armour = false;
+        for (int k = 0; k < f.n_items && !armour; ++k)
+            armour = f.items[k][0x34] && b.names->type(f.items[k][0x2E]).slot == items::kSlotArmour;
+        if (!armour) {
+            p.act = Act::Guard;
+            return p;
+        }
+    } else if (f.rec[0x10E] > 0 && !f.items) {
+        p.act = Act::Guard;
+        return p;
+    }
     // A step toward it: straight, else a little to either side
     if (f.moves < 2) return p;
     const Fighter& tg = b.f[f.target];
@@ -1256,7 +1269,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
             if (!f.up()) continue;
-            if (f.rec[0x11A] > 1 || f.rec[0xDE] > 1) {
+            if (fs.kind != 1 && (f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) {     // (kind 1: Charm Monsters, any creature)
                 say(who[k], Did::Word2, 0);
                 continue;
             }

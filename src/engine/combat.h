@@ -321,7 +321,8 @@ enum class SpellDoes : uint8_t {
     Bolt,                               // damage along a line from the target away from the caster
     Cloud,                              // a save against poison or helpless 1d4 + 1 rounds (word / word2 saved)
     Poison,                             // Cloudkill: those in it die by their Hit Dice (word: "is Poisoned")
-    Charm,                              // a person (humanoid, man-sized) joins the caster's side (word; word2 not a person)
+    Charm,                              // a person (humanoid, man-sized; kind 1: any creature) joins the caster's side
+                                        // (word; word2 not a person)
     Cone,                               // damage to those in a cone (cone(): 2 rays, the caster's (level + 1) / 2 squares)
     Fear,                               // those in a cone (3 rays, 6 squares) that fail a save flee (word)
 };

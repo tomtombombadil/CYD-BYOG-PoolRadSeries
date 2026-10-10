@@ -3407,6 +3407,21 @@ static void test_combat()
     combat::occupancy(sb);
     const combat::Plan shot = combat::think(sb, t, 1, d);
     CHECK(shot.act == combat::Act::Attack && shot.missile && shot.target == 0);
+    // An unarmoured magic-user without a shot doesn't step forward: it guards
+    {
+        const uint8_t keep_t = mitems[0][0x2E], keep_mu = mrec[1][0x10E];
+        mitems[0][0x2E] = 36;                                           // (a sword: no shot)
+        mrec[1][0x10E] = 3;
+        sb.f[1].x = 14;
+        sb.f[1].moves = 12;
+        combat::occupancy(sb);
+        CHECK(combat::think(sb, t, 1, d).act == combat::Act::Guard);
+        mrec[1][0x10E] = 0;
+        CHECK(combat::think(sb, t, 1, d).act == combat::Act::Step);
+        mitems[0][0x2E] = keep_t; mrec[1][0x10E] = keep_mu;
+        sb.f[1].x = 12;
+        combat::occupancy(sb);
+    }
     // Sweeps, backstabs, free attacks: the party member at (10, 10), three
     // weak enemies (under 1 Hit Die) round them
     sb.ground[10][14] = 0x37;
