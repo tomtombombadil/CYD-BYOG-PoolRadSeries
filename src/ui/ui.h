@@ -63,7 +63,10 @@ void key(const Rect& r, const char* label, KeyStyle s = KeyStyle::Normal);
 // is centred in the rest.
 void key2(const Rect& r, const char* label, const char* sub, KeyStyle s = KeyStyle::Normal, int left_inset = 0);
 // A key showing a movement arrow instead of words.
-enum class Arrow : uint8_t { Forward, Left, Right, TurnLeft, TurnRight, TurnAround };
+// Forward ... TurnAround: the party's moves (arrows with stems); Cursor*:
+// the cursor pad (plain triangles, so the two pads don't look alike)
+enum class Arrow : uint8_t { Forward, Left, Right, TurnLeft, TurnRight, TurnAround,
+                             CursorUp, CursorDown, CursorLeft, CursorRight };
 void key_arrow(const Rect& r, Arrow a, KeyStyle s = KeyStyle::Normal);
 
 // The fill colour of a key in style s (to draw pictures on it)

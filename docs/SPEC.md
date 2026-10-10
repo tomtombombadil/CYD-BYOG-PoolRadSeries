@@ -88,14 +88,31 @@ The games draw a 320x200 screen. The canvas is presented:
     Right, Turn Around (Tom, 2026-10-07: side-steps outside the turns), Esc,
     and a Companion key (auto-map, journal, party on a full-screen page).
     Combat: the 8 direction arrows.
-  - 480x320: the 320x120 area under the game holds a 3x3 pad laid out like a
-    numeric keypad (Tom): exploring 7 = Turn Left, 8 = Forward, 9 = Turn
-    Right, 4 = Side-step Left, 6 = Side-step Right, 2 = Turn Around; combat:
-    all 8 directions. Beside it Enter / Esc / Keys. The companion panel has
-    Journal and Map.
-- **The Menu key** (Tom, 2026-10-09; v0.16.0): the Play Test's key where
-  the Walk Test has Area (320x240 row: 7th key; 480x320: the first key
-  beside the pad) opens the engine's own screen, tabbed along the top:
+  - 480x320 (Tom, 2026-10-10, v0.50.0): the 320x120 area under the game
+    holds two pads. The **movement pad**, 3 x 2 like a numeric keypad's top
+    rows: Turn Left, Forward, Turn Right / Side-step Left, Turn Around,
+    Side-step Right (Turn Around moved up between the side-steps). The
+    **cursor pad**: up, left, Select, right, down (plain triangles, unlike
+    the movement arrows) for the highlighted thing on the game screen -
+    many of the games' menus are small to hit with a stylus. Up / Down move
+    a list's highlight (the party menu's lines - highlighted once a cursor
+    key is used -, the game's list menus, items, goods, spells, the party
+    for a WHO pick or a trade, Modify's items); Left / Right move the menu
+    line's (Up / Down too when there's no list; on the party menu, with no
+    menu line, they pick the character; in Modify Character they change the
+    value). Select = a tap on the highlighted thing (it lights up first, as
+    taps do): the menu line's word, the list menu's line, the party menu's
+    line, "press a key". Under the Companion map, stacked: **Game** (was
+    "Menu": the engine's Menu, renamed so it isn't confused with the cursor
+    keys), **Look**, **Esc**. The map is tighter: no "Map" heading, the
+    area / script / map and position lines small at the top (for
+    troubleshooting), one legend line under it. The Walk Test has the
+    movement pad and Area / Next Map / Esc, no cursor pad.
+    320x240: the same cursor functions are still to be worked out (Tom).
+- **The Game key** (Tom, 2026-10-09; v0.16.0; called Menu until v0.50.0):
+  the Play Test's key where the Walk Test has Area (320x240 row: 7th key;
+  480x320: the first key under the map) opens the engine's own screen,
+  tabbed along the top:
   **Journal** (the journal entries and tavern tales the game has mentioned
   so far, oldest first, the latest in gold - tap one to read it; kept for
   the session until saved games keep it) and **Journal PDF** (the book
@@ -342,7 +359,10 @@ How it works (v0.12.0, Curse):
   doesn't know with its size and /ID, so a table can be added.
 - The engine watches the printed text for "JOURNAL ENTRY n" / "JOURNAL AS
   ENTRY n" / "TAVERN TALE n" (numbers may come in the next PRINT) and, when
-  the game next waits for a key, shows the entry: scaled (bilinear) to the
+  the game next waits for a key, the screen stays to be read (Tom,
+  2026-10-10, v0.50.0: it used to jump straight to the entry); the player's
+  next tap (or key) shows the entry instead of going on, and after Back to
+  Game the game still waits for its tap. The entry: scaled (bilinear) to the
   screen's width, on white, header "Journal Entry 31  1/2", Prev Page /
   Back to Game / Next Page. Without JOURNAL.DAT: "Read Journal Entry 31 in
   your Adventurer's Journal." (as the original).

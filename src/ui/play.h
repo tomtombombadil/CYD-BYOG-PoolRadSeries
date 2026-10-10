@@ -56,8 +56,22 @@ Input input();
 void input_key(char k, pic::Canvas& c);
 
 // The game mentioned a journal entry ('J') or tavern tale ('T') and now
-// waits for the player: true once, with what to show.
+// waits for the player (Tom, 2026-10-10: the screen stays to be read; the
+// next tap - or key - shows the entry instead of going on, and the game
+// still waits after the viewer closes): journal_waiting() says one is due;
+// journal_request() takes it (true once, with what to show).
+bool journal_waiting();
 bool journal_request(char* kind, int* number);
+
+// The cursor keys (Tom, 2026-10-10): the games' arrow keys and Enter for
+// the highlighted thing on screen - Up / Down move a list's highlight (the
+// party menu, the game's list menus, items, goods, spells, a party pick),
+// Left / Right the menu line's (Up / Down too when there's no list).
+// false: nothing to move. Select: nav_point() gives where the highlighted
+// thing is on the canvas; the front end taps there (tap_highlight, tap).
+enum class Nav : uint8_t { Up, Down, Left, Right };
+bool nav(Nav n, pic::Canvas& c);
+bool nav_point(int* x, int* y);
 
 // The journal entries ('J') and tavern tales ('T') the game has mentioned
 // so far, in the order heard (the Menu's Journal list)

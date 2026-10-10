@@ -70,7 +70,20 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   key (both screen sizes) opening the engine's own tabbed screen: Journal
   (entries met so far) and Journal PDF (the book) now; further engine
   features get tabs there. Area stays on the game's menu line, and a tap
-  on the 3D view toggles 3D / Area.
+  on the 3D view toggles 3D / Area. The key is labelled **Game** (Tom,
+  2026-10-10) so it isn't confused with the cursor keys.
+- Journal entries (Tom, 2026-10-10): when the game mentions one, its screen
+  stays up to be read; the next tap (or key) opens the entry, and after the
+  viewer closes the game still waits for its tap. Never jump straight in.
+- Cursor keys (Tom, 2026-10-10; SPEC section 4): the games' menus are small
+  for a stylus, so 480x320 has a cursor pad (up / left / Select / right /
+  down) beside a 3 x 2 movement pad (Turn Around between the side-steps),
+  and Game / Look / Esc under the Companion map (no big "Map" heading; the
+  area / script / map lines small). Up / Down: a list's highlight (Left /
+  Right on the menu line; Up / Down too when there's no list); Select = a
+  tap on the highlighted thing (`play::nav`, `play::nav_point`). New screens
+  with lists or menus must take part. 320x240: still to be worked out
+  with Tom.
 - Card scan (Tom, 2026-10-09): scan ONCE; boot reads the scan log and
   loads the library from it. Rescan Card is the only rescan - never
   check the card for changes on its own. Everything the board makes from

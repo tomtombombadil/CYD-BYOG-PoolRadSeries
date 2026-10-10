@@ -249,6 +249,18 @@ void key_arrow(const Rect& r, Arrow a, KeyStyle s)
         g->fillTriangle(cx + dir * sz, ty, ex, ty - hh, ex, ty + hh, col);
         break;
     }
+    case Arrow::CursorUp:
+        g->fillTriangle(cx, cy - sz * 2 / 3, cx - sz, cy + sz / 2, cx + sz, cy + sz / 2, col);
+        break;
+    case Arrow::CursorDown:
+        g->fillTriangle(cx, cy + sz * 2 / 3, cx - sz, cy - sz / 2, cx + sz, cy - sz / 2, col);
+        break;
+    case Arrow::CursorLeft:
+        g->fillTriangle(cx - sz * 2 / 3, cy, cx + sz / 2, cy - sz, cx + sz / 2, cy + sz, col);
+        break;
+    case Arrow::CursorRight:
+        g->fillTriangle(cx + sz * 2 / 3, cy, cx - sz / 2, cy - sz, cx - sz / 2, cy + sz, col);
+        break;
     case Arrow::TurnAround: {
         // Up the right, across the top, down the left with the head
         const int rx = cx + sz / 2, lx = cx - sz / 2, top = cy - sz * 2 / 3;

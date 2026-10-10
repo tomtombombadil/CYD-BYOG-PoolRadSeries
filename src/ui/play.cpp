@@ -158,6 +158,8 @@ bool     note_held = false;      // an error: stays until a tap (Tom, 2026-10-09
 int last_pic_id = -1, last_pic_head = 0xFF;   // the script's picture (shops come back to it)
 int  pm_item[Data::kItems];   // the menu item on each list line
 int  pm_lines = 0;
+int  pm_sel = 0;              // the party menu line the cursor keys highlight
+bool keys_used = false;       // a cursor key was used: highlights where the games had none (the party menu)
 char pm_saves[12];            // save slots found ("AB")
 bool exit_wanted = false;     // Exit to DOS: back to the viewer
 
@@ -210,6 +212,7 @@ uint32_t     t_last = 0;
 bool         t_started = false;
 uint32_t     pause_until = 0;
 int          list_row0 = 0;         // first row of a list menu's items
+int          list_sel = 0;          // the highlighted one (the cursor keys)
 bool         list_wait = false;     // the prompt printed; the list is up
 char         menu_text[160];
 
@@ -232,7 +235,7 @@ uint32_t     cursor_at = 0;
 char         jtext[200];            // the latest printed text
 char         journal_kind = 0;      // mentioned, not yet shown
 int          journal_num = 0;
-bool         journal_due = false;   // the viewer should show it now
+bool         journal_due = false;   // the game waits for the player: the next tap shows it
 // Every entry mentioned so far, in order (the Menu's Journal list); kept
 // for this session until saving games keeps it with the game
 constexpr int kMaxSeen = 192;
@@ -605,6 +608,13 @@ void draw_party_menu(pic::Canvas& c)
         put(c, first, 2, row, 15);
         put(c, d->item[i] + 1, 3, row, 10);
         pm_item[pm_lines++] = i;
+    }
+    if (pm_sel >= pm_lines) pm_sel = pm_lines ? pm_lines - 1 : 0;
+    if (keys_used && pm_lines) {
+        // the cursor keys' line, highlighted as the games' lists are
+        const char* it = d->item[pm_item[pm_sel]];
+        c.fill(2 * 8, (12 + pm_sel) * 8, static_cast<int>(strlen(it)) * 8, 8, 15);
+        font::draw_text(c, d->font, it, 2, 12 + pm_sel, 0, -1);
     }
     pm_prompt(c);
     dirty(0, pic::kScreenH);
@@ -5509,22 +5519,30 @@ void step(int dir_of_step)
     run_entry(0, Then::Move);
 }
 
+// A list menu's choices, the highlighted one (list_sel) black on white
+void draw_list_menu(pic::Canvas& c)
+{
+    for (int i = 0; i < vm->items(); ++i) {
+        const int row = list_row0 + i;
+        if (row > text::kTextArea.y1) break;
+        c.fill(8, row * 8, 38 * 8, 8, 0);
+        if (i == list_sel) {
+            c.fill(8, row * 8, static_cast<int>(strlen(vm->item(i))) * 8, 8, 15);
+            font::draw_text(c, d->font, vm->item(i), 1, row, 0, -1);
+        } else {
+            put(c, vm->item(i), 1, row, 10);
+        }
+    }
+    dirty_rows(17, 22);
+}
+
 void finish_print_wait()
 {
     // A list menu prints its prompt first, then shows the choices
     if (vm->wait() == ecl::Wait::ListMenu) {
         list_row0 = w.row + (w.col > w.r.x0 ? 1 : 0);
-        for (int i = 0; i < vm->items(); ++i) {
-            const int row = list_row0 + i;
-            if (row > text::kTextArea.y1) break;
-            put(*cv, vm->item(i), 1, row, i == 0 ? 0 : 10);
-            if (i == 0) {
-                // the first choice starts highlighted, as in the games
-                cv->fill(8, row * 8, static_cast<int>(strlen(vm->item(i))) * 8, 8, 15);
-                font::draw_text(*cv, d->font, vm->item(i), 1, row, 0, -1);
-            }
-        }
-        dirty_rows(17, 22);
+        list_sel = 0;                   // the first choice starts highlighted, as in the games
+        draw_list_menu(*cv);
         list_wait = true;
         return;
     }
@@ -5868,6 +5886,188 @@ bool act(Act a, pic::Canvas& c)
     g.wall_ahead = static_cast<uint8_t>(geo::wall(d->map, g.x, g.y, g.dir));
     draw_view(c);
     draw_position(c);
+    return true;
+}
+
+// ---- the cursor keys (Tom, 2026-10-10) ---------------------------------------------
+// The games' arrow keys and Enter, for the highlighted thing on screen:
+// Up / Down a list's highlight, Left / Right the menu line's (Up / Down
+// too when there's no list); Select is a tap on the highlighted thing
+// (nav_point), so it does exactly what a tap does.
+
+bool plist_screen()
+{
+    return screen == Screen::Items || screen == Screen::ShopBuy || screen == Screen::AddList ||
+           screen == Screen::CreatePick || screen == Screen::Heal || screen == Screen::Take || screen == Screen::Loot;
+}
+
+void plist_redraw(pic::Canvas& c)
+{
+    if (screen == Screen::CreatePick) draw_pick(c);
+    else if (screen == Screen::ShopBuy) draw_buy(c);
+    else if (screen == Screen::Loot) draw_loot(c);
+    else if (screen == Screen::AddList) draw_add_list(c);
+    else if (screen == Screen::Heal) draw_heal(c);
+    else if (screen == Screen::Take) draw_take(c);
+    else draw_items(c);
+}
+
+// The menu line's choice kept across a redraw that builds it again
+void keep_menu_choice(int sel, pic::Canvas& c)
+{
+    if (menu_on && sel > 0 && sel < menu.count && menu.selected != sel) {
+        menu.selected = sel;
+        show_menu_line(c);
+    }
+}
+
+// Up / Down on a list: true when there is one here
+bool nav_list(int step, pic::Canvas& c)
+{
+    const int keep = menu.selected;
+    if (screen == Screen::Game) {
+        if (!waiting) return false;
+        if (vm->wait() == ecl::Wait::ListMenu && list_wait) {
+            int n = vm->items();
+            if (list_row0 + n - 1 > text::kTextArea.y1) n = text::kTextArea.y1 - list_row0 + 1;
+            if (n <= 0) return false;
+            list_sel = (list_sel + step + n) % n;
+            draw_list_menu(c);
+            return true;
+        }
+        if (vm->wait() == ecl::Wait::Who && pt->count && !bigpic_shown()) {
+            pt->selected = (pt->selected + step + pt->count) % pt->count;
+            draw_party(c, 17);
+            return true;
+        }
+        return false;
+    }
+    if (screen == Screen::PartyMenu) {
+        if (!pm_lines) return false;
+        pm_sel = (pm_sel + step + pm_lines) % pm_lines;
+        draw_party_menu(c);
+        return true;
+    }
+    if (screen == Screen::TradeWho && pt->count) {
+        pt->selected = (pt->selected + step + pt->count) % pt->count;
+        draw_party(c, 1);
+        return true;
+    }
+    if (screen == Screen::Modify && modder) {
+        mod_item = (mod_item + step + 8) % 8;
+        draw_modify(c);
+        return true;
+    }
+    if (plist_screen()) {
+        PickList& l = plist;
+        const int lo = screen == Screen::CreatePick ? 1 : 0;
+        if (l.n <= lo) return false;
+        int i = l.index + step;
+        if (i < lo) i = l.n - 1;
+        if (i >= l.n) i = lo;
+        l.index = i;
+        plist_redraw(c);
+        keep_menu_choice(keep, c);
+        return true;
+    }
+    if (screen == Screen::SpellList && !sl.learning && sl.sel >= 0) {
+        int i = sl.sel;
+        for (int k = 0; k < sl.n; ++k) {
+            i = (i + step + sl.n) % sl.n;
+            if (sl.id[i]) break;
+        }
+        sl.sel = i;
+        const int rows = list_rows();
+        while (sl.sel < sl.top) sl.top = sl.top >= rows ? sl.top - rows : 0;
+        while (sl.sel >= sl.top + rows) sl.top += rows;
+        draw_spells(c);
+        keep_menu_choice(keep, c);
+        return true;
+    }
+    return false;
+}
+
+bool nav(Nav n, pic::Canvas& c)
+{
+    if (!d || input_mode != Input::None) return false;
+    cv = &c;
+    const bool first = !keys_used;
+    keys_used = true;
+    if (first && screen == Screen::PartyMenu) {
+        draw_party_menu(c);                 // the highlight shows from the first key on
+        if (n == Nav::Up || n == Nav::Down) return true;
+    }
+    if (note_until && !note_held) redraw_menu(c);
+    const int step = n == Nav::Up || n == Nav::Left ? -1 : 1;
+    // Modify Character: left / right change the value (the games' arrows)
+    if (screen == Screen::Modify && (n == Nav::Left || n == Nav::Right)) {
+        modify_step(step, c);
+        return true;
+    }
+    if ((n == Nav::Up || n == Nav::Down) && nav_list(step, c)) return true;
+    // The party menu has no menu line: left / right pick the character
+    if (screen == Screen::PartyMenu && (n == Nav::Left || n == Nav::Right)) {
+        if (pt->count < 2) return false;
+        pt->selected = (pt->selected + step + pt->count) % pt->count;
+        draw_party_menu(c);
+        return true;
+    }
+    if (menu_on && menu.count > 1) {
+        menu.selected = ((menu.selected < 0 ? 0 : menu.selected) + step + menu.count) % menu.count;
+        show_menu_line(c);
+        return true;
+    }
+    return false;
+}
+
+bool nav_point(int* x, int* y)
+{
+    if (!d || input_mode != Input::None) return false;
+    keys_used = true;
+    auto at_word = [&]() {
+        const int sel = menu.selected >= 0 && menu.selected < menu.count ? menu.selected : 0;
+        *x = (static_cast<int>(strlen(menu.prompt)) + menu.start[sel]) * 8 + 2;
+        *y = text::kMenuRow * 8 + 2;
+        return true;
+    };
+    auto anywhere = [&]() {                 // "press a key": a tap on the text
+        *x = 8 * 2;
+        *y = text::kTextArea.y0 * 8 + 2;
+        return true;
+    };
+    if (note_until) {
+        *x = 2;
+        *y = text::kMenuRow * 8 + 2;
+        return true;
+    }
+    if (screen == Screen::Game) {
+        if (waiting) {
+            switch (vm->wait()) {
+            case ecl::Wait::ListMenu:
+                if (!list_wait) return anywhere();
+                *x = 8 + 2;
+                *y = (list_row0 + list_sel) * 8 + 2;
+                return true;
+            case ecl::Wait::Menu:
+                if (vm->items() == 1) return anywhere();
+                return menu_on && menu.count ? at_word() : anywhere();
+            case ecl::Wait::Who:
+                return menu_on && menu.count ? at_word() : false;
+            default:
+                return anywhere();
+            }
+        }
+        return menu_on && menu.count ? at_word() : false;
+    }
+    if (screen == Screen::PartyMenu) {
+        if (!pm_lines) return false;
+        *x = 3 * 8 + 2;
+        *y = (12 + pm_sel) * 8 + 2;
+        return true;
+    }
+    if (menu_on && menu.count) return at_word();
+    *x = 2;
+    *y = text::kMenuRow * 8 + 2;            // a tap anywhere (a page, "press a key")
     return true;
 }
 
@@ -6378,6 +6578,8 @@ bool exit_requested()
     exit_wanted = false;
     return e;
 }
+
+bool journal_waiting() { return d && journal_due && journal_kind; }
 
 bool journal_request(char* kind, int* number)
 {

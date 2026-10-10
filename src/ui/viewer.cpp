@@ -1245,9 +1245,14 @@ void tap_look(const ui::Tap& t)
 // ---- Walk test --------------------------------------------------------------
 
 // Controls under the game screen (SPEC section 4). 320x240: one row of 8
-// keys. 480x320: a 3x3 pad like a numeric keypad (7 / 9 turn, 8 forward,
-// 4 / 6 side-step, 2 turn around) with Area / Next Map / Esc beside it.
-enum WalkKey { kWTurnL, kWStepL, kWFwd, kWStepR, kWTurnR, kWAround, kWArea, kWNext, kWEsc, kWKeys };
+// keys. 480x320 (Tom, 2026-10-10): under the game screen a movement pad of
+// 3 x 2 (turn left, forward, turn right / side-step left, turn around,
+// side-step right) and a cursor pad (up, left, Select, right, down: the
+// highlighted thing on the game screen - menus, lists); beside them, under
+// the Companion map, Game (the engine's Menu) / Look / Esc stacked.
+enum WalkKey { kWTurnL, kWStepL, kWFwd, kWStepR, kWTurnR, kWAround, kWArea, kWNext, kWEsc,
+               kWUp, kWLeft, kWSel, kWRight, kWDown, kWKeys };
+constexpr int kWMoveKeys = kWUp;        // the Walk Test has no cursor pad
 
 ui::Rect walk_key(int k)
 {
@@ -1256,24 +1261,33 @@ ui::Rect walk_key(int k)
     const int h_all = ui::height() - top - gp;
     if (!ui::large()) {
         // Row of 8: StepL TurnL Fwd TurnR StepR Around Area Esc (Next Map: menu / panel tap)
-        static const int kOrder[kWKeys] = {1, 0, 2, 4, 3, 5, 6, -1, 7};
+        static const int kOrder[kWKeys] = {1, 0, 2, 4, 3, 5, 6, -1, 7, -1, -1, -1, -1, -1};
         const int i = kOrder[k];
         if (i < 0) return ui::Rect{};
         const int w = (pic::kScreenW - gp * 9) / 8;
         return {gp + i * (w + gp), top, w, h_all};
     }
-    const int kh = (h_all - gp * 2) / 3;
-    const int pad_w = 210, kw = (pad_w - gp * 4) / 3;
-    auto pad = [&](int col, int row) { return ui::Rect{gp + col * (kw + gp), top + row * (kh + gp), kw, kh}; };
-    const int rx = pad_w + gp, rw = pic::kScreenW - rx - gp;
-    auto side = [&](int row) { return ui::Rect{rx, top + row * (kh + gp), rw, kh}; };
+    const int pad_w = (pic::kScreenW - gp * 3) / 2;
+    const int kw = (pad_w - gp * 2) / 3;
+    const int mh = (h_all - gp) / 2;                    // the movement pad: 2 rows
+    const int ch = (h_all - gp * 2) / 3;                // the cursor pad: 3 rows
+    auto move = [&](int col, int row) { return ui::Rect{gp + col * (kw + gp), top + row * (mh + gp), kw, mh}; };
+    const int cx0 = gp * 2 + pad_w;
+    auto cur = [&](int col, int row) { return ui::Rect{cx0 + col * (kw + gp), top + row * (ch + gp), kw, ch}; };
+    const int sx = pic::kScreenW + gp, sw = ui::width() - sx - gp;
+    auto side = [&](int row) { return ui::Rect{sx, top + row * (ch + gp), sw, ch}; };
     switch (k) {
-    case kWTurnL:  return pad(0, 0);
-    case kWFwd:    return pad(1, 0);
-    case kWTurnR:  return pad(2, 0);
-    case kWStepL:  return pad(0, 1);
-    case kWStepR:  return pad(2, 1);
-    case kWAround: return pad(1, 2);
+    case kWTurnL:  return move(0, 0);
+    case kWFwd:    return move(1, 0);
+    case kWTurnR:  return move(2, 0);
+    case kWStepL:  return move(0, 1);
+    case kWAround: return move(1, 1);
+    case kWStepR:  return move(2, 1);
+    case kWUp:     return cur(1, 0);
+    case kWLeft:   return cur(0, 1);
+    case kWSel:    return cur(1, 1);
+    case kWRight:  return cur(2, 1);
+    case kWDown:   return cur(1, 2);
     case kWArea:   return side(0);
     case kWNext:   return side(1);
     case kWEsc:    return side(2);
@@ -1282,7 +1296,7 @@ ui::Rect walk_key(int k)
 }
 
 // Where the Companion strip draws the map (480x320)
-constexpr int kCompCell = 9, kCompMapY = 70;
+constexpr int kCompCell = 9, kCompMapY = 30;
 int comp_map_x() { return pic::kScreenW + (ui::width() - pic::kScreenW - kCompCell * geo::kSize) / 2; }
 
 // What the Companion strip shows: the Walk Test's or the Play Test's party
@@ -1297,6 +1311,16 @@ struct MapSource {
 const MapSource kWalkMap{walk::map, walk::pos_x, walk::pos_y, walk::dir, walk::describe, true};
 const MapSource kPlayMap{play::map, play::pos_x, play::pos_y, play::dir, play::describe, false};
 
+// The keys beside the map (480x320) / at the row's end: Area or Game,
+// Next Map or Look, Esc (the strip is redrawn with the map)
+const char* side_keys[2] = {"Area", "Next Map"};
+void redraw_side_keys()
+{
+    ui::key(walk_key(kWArea), side_keys[0]);
+    if (ui::large()) ui::key(walk_key(kWNext), side_keys[1]);
+    ui::key(walk_key(kWEsc), "Esc");
+}
+
 // The Gold Box Companion strip (480x320): the whole map, the party arrow
 void draw_companion(const MapSource& ms = kWalkMap)
 {
@@ -1307,11 +1331,14 @@ void draw_companion(const MapSource& ms = kWalkMap)
     g.drawFastVLine(x0, 0, ui::height(), style::kKeyEdge);
     char l1[48], l2[48];
     ms.describe(l1, l2, sizeof l1);
-    ui::text(x0 + 8, 6, "Map", style::kGold);
-    ui::text(x0 + 8, 30, l1, style::kText, ui::Font::Small);
-    ui::text(x0 + 8, 46, l2, style::kTextMuted, ui::Font::Small);
+    // Where the party is (small: for troubleshooting), then the map
+    ui::text(x0 + 6, 2, l1, style::kTextMuted, ui::Font::Small);
+    ui::text(x0 + 6, 2 + ui::line_h(ui::Font::Small), l2, style::kTextMuted, ui::Font::Small);
     const geo::Map* m = ms.map();
-    if (!m) return;
+    if (!m) {
+        redraw_side_keys();
+        return;
+    }
     const int cell = kCompCell, mx = comp_map_x(), my = kCompMapY;
     g.fillRect(mx, my, cell * geo::kSize + 1, cell * geo::kSize + 1, style::kKey);
     for (int y = 0; y < geo::kSize; ++y)
@@ -1335,23 +1362,29 @@ void draw_companion(const MapSource& ms = kWalkMap)
     const int lx = cx + geo::dx((dir + 6) & 7) * r - geo::dx(dir) * r, ly = cy + geo::dy((dir + 6) & 7) * r - geo::dy(dir) * r;
     const int rx = cx + geo::dx((dir + 2) & 7) * r - geo::dx(dir) * r, ry = cy + geo::dy((dir + 2) & 7) * r - geo::dy(dir) * r;
     g.fillTriangle(fx, fy, lx, ly, rx, ry, style::kGold);
-    ui::text(x0 + 8, my + cell * geo::kSize + 8, "White: wall", style::kTextMuted, ui::Font::Small);
-    ui::text(x0 + 8, my + cell * geo::kSize + 24, "Gold: door, red: locked", style::kTextMuted, ui::Font::Small);
-    if (ms.teleport)
-        ui::text(x0 + 8, my + cell * geo::kSize + 40, "Tap a square to go there", style::kTextMuted, ui::Font::Small);
+    ui::text(x0 + 6, my + cell * geo::kSize + 3, ms.teleport ? "Tap a square to go there" : "Gold: door, red: locked",
+             style::kTextMuted, ui::Font::Small);
+    redraw_side_keys();
 }
 
-void draw_walk_keys(const char* side_label = "Next Map", const char* area_label = "Area")
+void draw_walk_keys(const char* side_label, const char* area_label, bool cursor)
 {
+    side_keys[0] = area_label;
+    side_keys[1] = side_label;
     ui::key_arrow(walk_key(kWTurnL), ui::Arrow::TurnLeft);
     ui::key_arrow(walk_key(kWStepL), ui::Arrow::Left);
     ui::key_arrow(walk_key(kWFwd), ui::Arrow::Forward);
     ui::key_arrow(walk_key(kWStepR), ui::Arrow::Right);
     ui::key_arrow(walk_key(kWTurnR), ui::Arrow::TurnRight);
     ui::key_arrow(walk_key(kWAround), ui::Arrow::TurnAround);
-    ui::key(walk_key(kWArea), area_label);
-    if (ui::large()) ui::key(walk_key(kWNext), side_label);
-    ui::key(walk_key(kWEsc), "Esc");
+    if (cursor && ui::large()) {
+        ui::key_arrow(walk_key(kWUp), ui::Arrow::CursorUp);
+        ui::key_arrow(walk_key(kWLeft), ui::Arrow::CursorLeft);
+        ui::key(walk_key(kWSel), "Select");
+        ui::key_arrow(walk_key(kWRight), ui::Arrow::CursorRight);
+        ui::key_arrow(walk_key(kWDown), ui::Arrow::CursorDown);
+    }
+    redraw_side_keys();
 }
 
 void leave_walk()
@@ -1376,7 +1409,7 @@ void draw_walk()
     walk::draw(frame::canvas());
     ui::clear();
     frame::present();
-    draw_walk_keys();
+    draw_walk_keys("Next Map", "Area", false);
     draw_companion();
 }
 
@@ -1386,10 +1419,10 @@ void tap_walk(const ui::Tap& t)
         if (ui::back_rect().contains(t.x, t.y)) leave_walk();
         return;
     }
-    static const walk::Act kActs[kWKeys] = {walk::Act::TurnLeft, walk::Act::StepLeft, walk::Act::Forward,
+    static const walk::Act kActs[kWMoveKeys] = {walk::Act::TurnLeft, walk::Act::StepLeft, walk::Act::Forward,
                                             walk::Act::StepRight, walk::Act::TurnRight, walk::Act::TurnAround,
                                             walk::Act::Area, walk::Act::NextMap, walk::Act::Forward};
-    for (int k = 0; k < kWKeys; ++k) {
+    for (int k = 0; k < kWMoveKeys; ++k) {
         const ui::Rect r = walk_key(k);
         if (r.w == 0 || !r.contains(t.x, t.y)) continue;
         if (k == kWEsc) { leave_walk(); return; }
@@ -2256,12 +2289,6 @@ void present_play()
         return;
     }
     if (kb_shown) return;
-    char jk;
-    int jn;
-    if (play::journal_request(&jk, &jn)) {
-        open_journal(jk, jn);
-        return;
-    }
     if (play::pos_x() != play_last_x || play::pos_y() != play_last_y || play::dir() != play_last_dir ||
         play::map() != play_last_map) {
         play_last_x = play::pos_x();
@@ -2288,9 +2315,40 @@ void draw_play()
     int y0, y1;
     play::take_dirty(y0, y1);
     kb_shown = false;
-    draw_walk_keys("Look", "Menu");      // Play Test: the game's own Area is on its menu line
+    draw_walk_keys("Look", "Game", true);    // Play Test: the game's own Area is on its menu line; Game = the engine's Menu
     play_last_map = nullptr;
     play_last_x = -1;
+    present_play();
+}
+
+// The journal entry the game mentioned, shown on the player's next tap
+bool play_journal()
+{
+    char jk;
+    int jn;
+    if (!play::journal_request(&jk, &jn)) return false;
+    open_journal(jk, jn);
+    return true;
+}
+
+// A tap on the game screen (or Select at the highlighted thing): what it
+// acts on lights up first (Tom, 2026-10-09), then the game takes it
+void play_canvas_tap(int cx, int cy)
+{
+    int y0, y1;
+    if (play::tap_highlight(cx, cy, frame::canvas(), &y0, &y1)) {
+        frame::present_rows(y0, y1);
+        if (play::tap_highlight_blink(frame::canvas())) {
+            delay(70);
+            frame::present_rows(y0, y1);
+        }
+    }
+    play::tap(cx, cy, frame::canvas());
+    play::tap_highlight_end(frame::canvas());
+    if (play::exit_requested()) {
+        leave_play();
+        return;
+    }
     present_play();
 }
 
@@ -2305,9 +2363,9 @@ void tap_play(const ui::Tap& t)
         present_play();
         return;
     }
-    static const play::Act kActs[kWKeys] = {play::Act::TurnLeft, play::Act::StepLeft, play::Act::Forward,
-                                            play::Act::StepRight, play::Act::TurnRight, play::Act::TurnAround,
-                                            play::Act::Area, play::Act::Look, play::Act::Forward};
+    static const play::Act kActs[kWMoveKeys] = {play::Act::TurnLeft, play::Act::StepLeft, play::Act::Forward,
+                                                play::Act::StepRight, play::Act::TurnRight, play::Act::TurnAround,
+                                                play::Act::Area, play::Act::Look, play::Act::Forward};
     for (int k = 0; k < kWKeys; ++k) {
         const ui::Rect r = walk_key(k);
         if (r.w == 0 || !r.contains(t.x, t.y)) continue;
@@ -2316,33 +2374,34 @@ void tap_play(const ui::Tap& t)
             else leave_play();
             return;
         }
-        if (k == kWArea) {          // the Menu key
+        if (k == kWArea) {          // the Game key: the engine's Menu
             kb_shown = false;
             open_menu();
             return;
         }
-        play::act(kActs[k], frame::canvas());
+        // A journal entry the game mentioned: this tap shows it (the game still waits)
+        if (play_journal()) return;
+        int cx, cy;
+        switch (k) {
+        case kWUp:    play::nav(play::Nav::Up, frame::canvas()); break;
+        case kWDown:  play::nav(play::Nav::Down, frame::canvas()); break;
+        case kWLeft:  play::nav(play::Nav::Left, frame::canvas()); break;
+        case kWRight: play::nav(play::Nav::Right, frame::canvas()); break;
+        case kWSel:
+            if (play::nav_point(&cx, &cy)) {
+                play_canvas_tap(cx, cy);
+                return;
+            }
+            break;
+        default: play::act(kActs[k], frame::canvas()); break;
+        }
         present_play();
         return;
     }
     int cx, cy;
     if (frame::to_canvas(t.x, t.y, cx, cy)) {
-        // What the tap acts on lights up first (Tom, 2026-10-09)
-        int y0, y1;
-        if (play::tap_highlight(cx, cy, frame::canvas(), &y0, &y1)) {
-            frame::present_rows(y0, y1);
-            if (play::tap_highlight_blink(frame::canvas())) {
-                delay(70);
-                frame::present_rows(y0, y1);
-            }
-        }
-        play::tap(cx, cy, frame::canvas());
-        play::tap_highlight_end(frame::canvas());
-        if (play::exit_requested()) {
-            leave_play();
-            return;
-        }
-        present_play();
+        if (play_journal()) return;
+        play_canvas_tap(cx, cy);
     }
 }
 

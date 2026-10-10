@@ -277,6 +277,22 @@ int main(int argc, char** argv)
             tap_word('I');
             item_ops(getenv("ITEMOPS"));
         }
+        if (getenv("NAVOPS")) {
+            // NAVOPS at the party menu: u d l r the cursor keys, s Select (a tap at
+            // nav_point), # a snapshot; prints the screen and menu after each
+            for (const char* q = getenv("NAVOPS"); *q; ++q) {
+                int x = 0, y = 0;
+                switch (*q) {
+                case 'u': play::nav(play::Nav::Up, C); break;
+                case 'd': play::nav(play::Nav::Down, C); break;
+                case 'l': play::nav(play::Nav::Left, C); break;
+                case 'r': play::nav(play::Nav::Right, C); break;
+                case 's': if (play::nav_point(&x, &y)) { printf("  select at %d,%d\n", x, y); play::tap(x, y, C); } break;
+                case '#': shot("nav"); continue;
+                }
+                printf("  %c: screen %d pm_sel %d plist %d sel char %d menu [%s%s] sel %d\n", *q, (int)play::screen, play::pm_sel, play::plist.index, play::pt->selected, play::menu.prompt, play::menu.s, play::menu.selected);
+            }
+        }
         if (getenv("CHANGE")) {
             // CHANGE=n: Human Change for character WHO where training is offered: list line n
             auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
@@ -354,6 +370,22 @@ int main(int argc, char** argv)
     settle(0, getenv("MS") ? atoi(getenv("MS")) : 60000);
     if (getenv("CAMPRUN")) run_ops(getenv("CAMPRUN"));
     shot("start");
+    if (getenv("NAVGAME")) {
+        // NAVGAME on the game screen: as NAVOPS (u d l r s #), the game going on between
+        for (const char* q = getenv("NAVGAME"); *q; ++q) {
+            int x = 0, y = 0;
+            switch (*q) {
+            case 'u': play::nav(play::Nav::Up, C); break;
+            case 'd': play::nav(play::Nav::Down, C); break;
+            case 'l': play::nav(play::Nav::Left, C); break;
+            case 'r': play::nav(play::Nav::Right, C); break;
+            case 's': if (play::nav_point(&x, &y)) { printf("  select at %d,%d\n", x, y); play::tap(x, y, C); } break;
+            case '#': shot("navgame"); continue;
+            }
+            settle(0, 3000);
+            printf("  %c: screen %d waiting %d wait %d list_sel %d menu [%s%s] sel %d\n", *q, (int)play::screen, (int)play::waiting, (int)play::vm->wait(), play::list_sel, play::menu.prompt, play::menu.s, play::menu.selected);
+        }
+    }
     if (getenv("FINDMON")) {
         // LOAD MONSTER (0x0B) with three plain numbers in the script: where (for RUNAT)
         auto b = [](unsigned a) { return play::vm->get((uint16_t)a) & 0xFF; };
