@@ -1346,6 +1346,50 @@ struct TestHost : ecl::Host {
     void log(const char*) override {}
 };
 
+// Random treasure: a thousand items made with the Curse facts and made-up
+// ready-made rows; each is one of the kinds, with its words, plus and weight
+static void test_treasure()
+{
+    const profile::Profile* pr = profile::find(games::Game::CurseOfTheAzureBonds, 57789, 62432);
+    CHECK(pr && pr->random_items);
+    if (!pr || !pr->random_items) return;
+    const treasure::Facts& f = *pr->random_items;
+    treasure::Rows rows{};
+    for (int r = 0; r < 7; ++r)
+        for (int k = 0; k < 8; ++k) rows.r[r][k] = static_cast<uint16_t>(r * 10 + k + 1);
+    create::Dice d(7);
+    uint8_t it[items::kRecordSize];
+    int scrolls = 0, potions = 0, weapons = 0, bracers = 0;
+    for (int i = 0; i < 1000; ++i) {
+        treasure::make(it, f, rows, d);
+        const int t = it[0x2E];
+        CHECK(it[0x36] == 0 && it[0x34] == 0);                 // never cursed or readied
+        if (t == f.mu_scroll || t == f.cleric_scroll) {
+            ++scrolls;
+            const int n = it[0x30] - f.with_word;
+            CHECK(n >= 1 && n <= 3 && it[0x32] == 1 && it[0x3C + n - 1] != 0);
+            if (n < 3) CHECK(it[0x3C + n] == 0);
+            for (int k = 0; k < n; ++k)
+                if (t == f.cleric_scroll) CHECK(it[0x3C + k] >= 1 && it[0x3C + k] <= 0x4C);
+        } else if (t == f.potion || t == f.giant || t == f.wand) {
+            ++potions;
+            CHECK(it[0x32] == 1 && it[0x33] == 1);
+            const int row = it[0x2F] / 10;                     // the made-up rows' first word: row x 10 + 1
+            CHECK((t == f.potion && (row == 0 || row == 2)) || (t == f.giant && row == 1) || (t == f.wand && row == 4));
+        } else if (t == f.bracers) {
+            ++bracers;
+            CHECK((it[0x32] == 4 && it[0x2F] == f.ac6_word) || (it[0x32] == 6 && it[0x2F] == f.ac4_word));
+        } else {
+            ++weapons;
+            CHECK(t >= 1 && t <= 0x5D && t != f.heavy_crossbow);
+            CHECK(it[0x32] == 1 || it[0x32] == 2);               // (a javelin of lightning: row 6, +1)
+            CHECK((it[0x37] | it[0x38] << 8) > 0);
+        }
+    }
+    // About 25% magic-user scrolls, 7% clerics', 6% potions / wands, 60% the rest
+    CHECK(scrolls > 250 && scrolls < 400 && potions > 25 && potions < 100 && weapons > 500 && bracers > 0);
+}
+
 // The scripts and the party: LOAD CHARACTER, the selected character's fields
 // written, ROB, DAMAGE, FIND ITEM, DESTROY ITEMS, SPELL, WHO, ADD NPC, DUMP
 struct PartyHost : TestHost {
@@ -3051,6 +3095,7 @@ int main()
     test_ecl();
     test_ecl_vm();
     test_ecl_party();
+    test_treasure();
     test_journal();
     test_geo_view();
     test_party();

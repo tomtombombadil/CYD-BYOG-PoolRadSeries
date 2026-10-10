@@ -72,6 +72,7 @@ enum class Wait : uint8_t {
     Treasure,     // COMBAT with none: the after-fight step (treasure the script set out); resume() after
     Who,          // WHO: prompt() + "Select" over the party list; answer(member) - it's selected
     Key,          // "press <enter>/<return> to continue" on the menu line; resume() on any key
+    Camp,         // PROGRAM 9: the camp; resume() when the party breaks camp (the script has ended)
 };
 
 enum class Stop : uint8_t { Running, Waiting, Stopped, NewScript, Error };
@@ -98,6 +99,8 @@ public:
     // TREASURE: the items of ITEM<area> block `block` (shop goods, a
     // treasure) added to g
     virtual void load_items(int block, items::Ground& g) { (void)block; (void)g; }
+    // TREASURE 0x80 + n: n random items added to g
+    virtual void random_items(int n, items::Ground& g) { (void)n; (void)g; }
     // LOAD MONSTER: `copies` (0 = 1) of MON<area> block `id` for the next
     // fight, its CPIC<area> icon block; CLEARMONSTERS: none
     virtual void load_monster(int id, int copies, int icon) { (void)id; (void)copies; (void)icon; }

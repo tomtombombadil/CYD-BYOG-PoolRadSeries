@@ -20,6 +20,7 @@
 #include "combat.h"
 #include "ecl.h"
 #include "games.h"
+#include "treasure.h"
 
 namespace profile {
 
@@ -319,6 +320,11 @@ struct Profile {
 
     // The script machine's own words (GAME.OVR), in ecl::ScriptWord's order
     uint32_t script_words[ecl::kScriptWords];
+
+    // Random treasure (TREASURE 0x80 + n): the rules' numbers, and where the
+    // program keeps its rows of ready-made items (DS offset, 7 x 16 bytes)
+    const treasure::Facts* random_items;
+    uint16_t               random_rows;
 };
 
 // The game's program file name (to look for it), or nullptr if no

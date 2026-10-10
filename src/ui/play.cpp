@@ -1450,6 +1450,8 @@ void draw_camp(pic::Canvas& c)
     show_menu_line(c);
 }
 
+bool camp_from_script = false;     // PROGRAM 9: breaking camp lets the script go on
+
 void open_camp(pic::Canvas& c)
 {
     screen = Screen::Camp;
@@ -1473,6 +1475,12 @@ void leave_camp(pic::Canvas& c)
     text::clear(c, text::kTextArea);
     dirty_rows(17, 22);
     draw_position(c);
+    if (camp_from_script) {
+        camp_from_script = false;
+        waiting = false;
+        handle(vm->resume());
+        return;
+    }
     idle_menu(c);
 }
 
@@ -4943,6 +4951,32 @@ struct Host : ecl::Host {
         f.close();
         Serial.printf("[play] %s #%d: %d items\n", name, block, g.n);
     }
+    void random_items(int n, items::Ground& g) override
+    {
+        // The program's rows of ready-made items (potions, the wand ...), then the dice
+        const profile::Profile* p = d->prof;
+        if (!p->random_items || !p->random_rows) return;
+        treasure::Rows rows{};
+        fs::File f;
+        bool ok = false;
+        if (open_file(p->program, f)) {
+            library::FileSource src(f);
+            exepack::Info info;
+            uint8_t raw[sizeof rows.r];
+            ok = exepack::parse(src, info) == exepack::Status::Ok &&
+                 exepack::read(src, info, p->create.ds_image + p->random_rows, raw, sizeof raw) == exepack::Status::Ok;
+            for (int r = 0; ok && r < 7; ++r)
+                for (int k = 0; k < 8; ++k)
+                    rows.r[r][k] = static_cast<uint16_t>(raw[r * 16 + k * 2] | raw[r * 16 + k * 2 + 1] << 8);
+            f.close();
+        }
+        if (!ok) {
+            log("TREASURE: the program's item rows didn't read");
+            return;
+        }
+        for (int k = 0; k < n && g.n < items::kMaxGround; ++k) treasure::make(g.item[g.n++], *p->random_items, rows, rng);
+        Serial.printf("[play] TREASURE: %d random items (%d on the ground)\n", n, g.n);
+    }
     void load_monster(int id, int copies, int icon) override { fight_load_monster(id, copies, icon); }
     void clear_monsters() override { fight_clear_monsters(); }
     bool add_npc(int id) override { return npc_join(id); }
@@ -5043,6 +5077,10 @@ void begin_wait(pic::Canvas& c)
         if (!bigpic_shown()) draw_party(c, 17);
         break;
     }
+    case ecl::Wait::Camp:               // PROGRAM 9: the camp
+        camp_from_script = true;
+        open_camp(c);
+        break;
     case ecl::Wait::Key:                // "press <enter>/<return> to continue"
         clear_menu_line(c);
         put(c, d->press_key, 0, text::kMenuRow, 15);

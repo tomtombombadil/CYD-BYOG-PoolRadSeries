@@ -917,7 +917,7 @@ Stop Vm::step()
             for (int m = 0; m < 7; ++m) ground_->money[m] = value(o[m]);
             const int block = value(o[7]) & 0xFF;
             if (block < 0x80) h_.load_items(block, *ground_);
-            else if (block != 0xFF) h_.log("TREASURE: random items (not in the engine yet)");
+            else if (block != 0xFF) h_.random_items(block - 0x80, *ground_);
         }
         return Stop::Running;
     }
@@ -1151,9 +1151,18 @@ Stop Vm::step()
         const int v = value(o[0]) & 0xFF;
         restore_selected();
         if (v == 0) return wait_for(Wait::PartyMenu);      // the party menu, then on
+        if (v == 9) {                                       // the camp, then EXIT
+            stop_script();
+            return wait_for(Wait::Camp);
+        }
+        if (v == 3) {                                       // the party is killed
+            stop_script();
+            h_.party_killed();
+            return Stop::Running;
+        }
         snprintf(line, sizeof line, "PROGRAM %d (not in the engine yet)", v);
         h_.log(line);
-        if (v == 3 || v == 8 || v == 9) stop_script();
+        if (v == 8) stop_script();
         return Stop::Running;
     }
     case 0x39:                                  // WHO: "<prompt> Select" over the party list
