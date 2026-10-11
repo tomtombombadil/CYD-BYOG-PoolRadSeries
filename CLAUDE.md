@@ -137,7 +137,8 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   write the in-use bytes as if they were the character's own.
 - Magic Missile (Tom, 2026-10-11): (caster level + 1) / 2 missiles of
   1d4 + 1, always hitting - the AD&D rule, every game (Pool's code was read
-  as level / 2; not followed). The originals put them all on one target.
+  as level / 2; not followed). All on one target as the originals (Tom,
+  2026-10-11: keep it; separate targets maybe later, as an option).
 - Settings help (Tom, v0.84.0): every switch on the Settings page / Game
   menu Options tab has a circled "?" at its right (`ui::key_help`) opening
   what it does (`comfort_help_text`; Game Font's shows each font); a new
