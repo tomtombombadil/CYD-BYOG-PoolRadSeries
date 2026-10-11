@@ -408,6 +408,30 @@ constexpr treasure::Facts kPoolRandom = {
     0x90, 0x61,
 };
 
+// Pool's wilderness (poolrad_overland_facts.md): the map, the areas'
+// first columns, the special squares and when they show their other icon
+// (the area words, engine numbering), the healed land's colour maps, the
+// bytes no step goes onto (sea, coast, the lake round the pyramid), the
+// stinking river until the land is healed
+constexpr uint8_t kPoolBlocked[] = {0x4E, 0x4E, 0x7E, 0x80, 0x82, 0x84, 0xA8, 0xAC, 0xAE, 0xB3,
+                                    0xBC, 0xBC, 0xDD, 0xDE, 0xE1, 0xE9, 0xF5, 0xF5};
+using OvOp = overland::Op;
+constexpr overland::Facts kPoolOverland = {
+    0x3648, 0x3C78, 0x0C36, {0x0900, 0x090B}, {0x092D, 0x093D}, {11, 18},
+    0x4CA2, {0x66, 0x6C}, 0x72,
+    kPoolBlocked, sizeof kPoolBlocked / 2,
+    {{{{0, OvOp::Never, 0}}},
+     {{{0, OvOp::Never, 0}}},
+     {{{0x4C8C, OvOp::Ne, 0xFF}}},
+     {{{0x4CD2, OvOp::Ne, 0}, {0x4C7C, OvOp::Bit, 8}, {0x4C9F, OvOp::Ne, 0}}},
+     {{{0x4CA0, OvOp::NoBit, 2}}},
+     {{{0, OvOp::Always, 0}}},
+     {{{0x4CA0, OvOp::NoBit, 1}}},
+     {{{0x4CB3, OvOp::Above, 0xFD}}},
+     {{{0x4CB3, OvOp::Above, 0xFD}}}},
+    0x16EBF,
+};
+
 // Title: picture 1 for 5 s; picture 2 with 3 on it at row 11, column 6 for
 // 10 s; picture 4 at row 11 for 10 s (with sound 0x0D); the credits for
 // 10 s.
@@ -734,7 +758,8 @@ const Profile kProfiles[] = {
      .won = {{0x207B1, 0x207D5, 0x207FA, 0x20818, 0x2083C, 0x20861, 0x20888, 0x208A8, 0x208CD, 0x208D6, 0x208FD,
               0x20925, 0x20938},
              {3, 6, 4}},
-     .variant = {{20, 21, 22}, 29, true, 15, 7, 6, 1, true, true, true, true, 0x3648, 25, true}},
+     .variant = {{20, 21, 22}, 29, true, 15, 7, 6, 1, true, true, true, true, 0x3648, 25, true},
+     .overland = &kPoolOverland},
 };
 
 } // namespace

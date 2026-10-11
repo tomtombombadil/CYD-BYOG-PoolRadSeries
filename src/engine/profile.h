@@ -21,6 +21,7 @@
 #include "ecl.h"
 #include "games.h"
 #include "treasure.h"
+#include "overland.h"
 #include "sound.h"
 
 namespace profile {
@@ -440,6 +441,8 @@ struct Profile {
         // pages of won.page_lines), then the script goes on
         bool     final_end;
     } variant;
+    // Pool's wilderness map (overland.h; null: none)
+    const overland::Facts* overland;
 };
 
 // The game's program file name (to look for it), or nullptr if no

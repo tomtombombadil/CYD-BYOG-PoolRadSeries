@@ -43,6 +43,7 @@
 #include "engine/picture.h"
 #include "engine/spells.h"
 #include "engine/combat.h"
+#include "engine/overland.h"
 
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); ++failures; } } while (0)
@@ -5331,6 +5332,66 @@ static void test_pool_monsters()
     }
 }
 
+// Pool's wilderness map (overland.h): reading it, the window, special
+// squares by the area words, the healed land's colours, a step's rules
+static void test_overland()
+{
+    const profile::Profile* pp = profile::find(games::Game::PoolOfRadiance, 65231, 68592);
+    CHECK(pp && pp->overland && pp->variant.overland_area == 25);
+    if (!pp || !pp->overland) return;
+    const overland::Facts& f = *pp->overland;
+    // A made-up data segment: the map grass (1), the sea (0x4E) along row
+    // 35, river (0x66) at column 20, the specials' table, the colour maps
+    static uint8_t ds[0x4000];
+    memset(ds, 0, sizeof ds);
+    for (int r = 0; r < overland::kH; ++r)
+        for (int c = 0; c < overland::kW; ++c) ds[f.map + r * overland::kW + c] = r == 35 ? 0x4E : c == 20 ? 0x66 : 1;
+    ds[f.columns] = 0; ds[f.columns + 1] = 13; ds[f.columns + 2] = 26;
+    auto word = [&](uint16_t at, uint16_t v) { ds[at] = static_cast<uint8_t>(v); ds[at + 1] = static_cast<uint8_t>(v >> 8); };
+    word(f.specials + 0, 10); word(f.specials + 2, 9); word(f.specials + 4, 240);         // (never)
+    word(f.specials + 12, 12); word(f.specials + 14, 31); word(f.specials + 16, 2);       // 3rd: word 0x4C8C != 0xFF
+    word(f.specials + 30, 33); word(f.specials + 32, 23); word(f.specials + 34, 157);     // 6th: always
+    ds[f.heal[0]] = 0;                                                                     // frame 0 healed ...
+    for (int k = 0; k < 16; ++k) ds[f.heal_map[0] + k] = static_cast<uint8_t>(k == 0 ? 1 : k);   // ... black -> blue
+    static overland::Data d;
+    CHECK(overland::read(d, f, [](void*, uint16_t at, uint8_t* out, size_t n) {
+        if (at + n > sizeof ds) return false;
+        memcpy(out, ds + at, n);
+        return true;
+    }, nullptr));
+    CHECK(d.map[0] == 1 && d.cols[2] == 26 && d.spec[2][0] == 12 && d.spec[2][2] == 2);
+    CHECK(overland::column(d, 1, 3) == 16);
+    int x0, y0;
+    overland::window(21, 16, &x0, &y0);
+    CHECK(x0 == 19 && y0 == 14);
+    overland::window(0, 0, &x0, &y0);
+    CHECK(x0 == 0 && y0 == 0);
+    overland::window(43, 35, &x0, &y0);
+    CHECK(x0 == 39 && y0 == 31);
+    static uint16_t words[0x8000];
+    memset(words, 0, sizeof words);
+    auto get = [](void*, uint16_t w) { return words[w]; };
+    CHECK(overland::frame(d, f, 0, 0, get, nullptr) == 0);
+    CHECK(overland::frame(d, f, 10, 9, get, nullptr) == 0);                // (never)
+    CHECK(overland::frame(d, f, 12, 31, get, nullptr) == 1);               // word 0 != 0xFF
+    words[0x4C8C] = 0xFF;
+    CHECK(overland::frame(d, f, 12, 31, get, nullptr) == 0);
+    CHECK(overland::frame(d, f, 33, 23, get, nullptr) == 156);             // always
+    CHECK(overland::frame(d, f, 44, 0, get, nullptr) == -1);
+    CHECK(overland::healed_colour(d, f, 0, 0) == 1 && overland::healed_colour(d, f, 5, 0) == 0);
+    // Steps: grass moves; sea doesn't; the river until the land is healed;
+    // the local column stays 0-15
+    int x = 5, y = 10;
+    CHECK(overland::step(d, f, 0, &x, &y, 0, false) == overland::Step::Moved && x == 5 && y == 9);
+    x = 5; y = 34;
+    CHECK(overland::step(d, f, 0, &x, &y, 4, false) == overland::Step::Blocked && y == 34);
+    x = 6; y = 10;                                                          // area 26: column 13 + 6 = 19, east is 20
+    CHECK(overland::step(d, f, 1, &x, &y, 2, false) == overland::Step::River && x == 6);
+    CHECK(overland::step(d, f, 1, &x, &y, 2, true) == overland::Step::Moved && x == 7);
+    x = 15; y = 10;
+    CHECK(overland::step(d, f, 0, &x, &y, 2, false) == overland::Step::Moved && x == 15);   // (clamped: still a step)
+}
+
 static void test_monster_fx()
 {
     static combat::Tables t;
@@ -6159,6 +6220,7 @@ int main()
     test_spells();
     test_combat();
     test_monster_fx();
+    test_overland();
     test_pool_monsters();
     test_spells_batch2();
     test_spell_rules();

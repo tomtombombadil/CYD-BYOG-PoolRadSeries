@@ -453,7 +453,13 @@ int main(int argc, char** argv)
         play::vm->set(0x7F12, play::d->gs.game_area);
         play::d->gs.script = (uint8_t)atoi(getenv("BLOCK"));
         play::waiting = false;
-        if (getenv("SETVAR")) { unsigned a, v; sscanf(getenv("SETVAR"), "%x=%u", &a, &v); play::vm->set((uint16_t)a, (uint16_t)v); }
+        if (getenv("SETVAR"))           // (a list: addr=value,addr=value ...)
+            for (const char* q = getenv("SETVAR"); q && *q;) {
+                unsigned a, v;
+                if (sscanf(q, "%x=%u", &a, &v) == 2) play::vm->set((uint16_t)a, (uint16_t)v);
+                q = strchr(q, ',');
+                if (q) ++q;
+            }
         play::host->load_script(play::d->gs.script, play::d->gs.code, &play::d->gs.code_len);
         play::vm->init_script();
         play::run_entry(4, play::Then::NewFirst);

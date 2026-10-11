@@ -2579,7 +2579,7 @@ void fight_back_to_game(pic::Canvas& c)
     bigpic = -1;
     pic_shown = false;
     head_shown = body_shown = -1;
-    if (!vm->get(0x4BE6)) host->picture(0x79, 0xFF);
+    if (!vm->get(0x4BE6) && !pool_overland()) host->picture(0x79, 0xFF);     // (Curse's wilderness map)
     draw_frame(c);
     draw_view(c);
     draw_panel(c);

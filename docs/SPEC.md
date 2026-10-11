@@ -652,6 +652,25 @@ Steps (each pushed when it works; Curse stays as it is):
    **the script goes on** (Pool's PROGRAM 8 doesn't end it, and its
    PROGRAM 3 does nothing - its handler knows 0, 8 and 9 only).
 6. Behaviour tests (`sweep.cpp`) with Pool's expectations.
+7. v0.83.0: **the wilderness** (areas 25-27 while their area word 0x4BE6 is
+   0; the Project's claude/poolrad_overland_facts.md, `engine/overland.*`):
+   the program's 44 x 36 map of icon numbers (the three areas windows on
+   it, side by side), 5 x 5 of SQRPACI.DAX's 24 x 24 icons filling the left
+   box around the party, the rider (ICON.DAX, a gallop picture each
+   redraw, mirrored facing south or west) on its square; special squares
+   showing other icons as the area words say (camps gone, the pyramid and
+   the town changed); the land healed after the pyramid (the river and
+   dead land's colours, the river passable). The arrow keys face north /
+   east / south / west and step: the scripts' step entry first (the map's
+   edges and the crossings to the next area are theirs), then the square
+   unless it's sea, coast or the lake ("The river's stench drives you
+   back." until the land is healed), **12 hours a step**, then the
+   arrival entry (places, random encounters) even when the step was
+   blocked. Menu "Cast View Encamp Search Look" (no Area); the status line
+   gives the map's column; pictures put the 3D view's frame over the map;
+   fights outdoors as step 5. Open (a DOSBox test): whether mountains
+   stop the party in the original (its program's check doesn't, its
+   scripts' check reads an undefined value - taken as never).
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -931,7 +950,14 @@ the game's Settings (As Original: all of them).
   fight's own keys while a fighter moves or aims by hand (the 8 directions
   and Select); the 480x320 Companion strip (map - black, doors 3 px -,
   party); the Game menu (Journal, Journal PDF, Sounds, Options, Exit Game);
-  a tap on the 3D view toggles 3D / Area.
+  a tap on the 3D view toggles 3D / Area; in Pool's wilderness the
+  movement pad's Forward / Side-step Left / Side-step Right / Turn Around
+  are its arrow keys (north / west / east / south; the turn keys do
+  nothing, as there's no turning there) and a tap on the square north,
+  east, south or west of the rider steps there.
+- **Pool's healed land** (after the pyramid): the wilderness icons show
+  their healed colours at once; the original recolours them a few pixels
+  at a time while panning the map from the city to the pyramid.
 - **The journal**: the entries are pictures the board makes from the
   player's own journal PDF (Steam / SNEG: text and pictures from its Gold
   Box Companion files) and shows when the game mentions one (the next tap

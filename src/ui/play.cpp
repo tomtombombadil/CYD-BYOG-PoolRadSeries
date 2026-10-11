@@ -60,6 +60,7 @@ struct Host;
 // heap is in pieces and no one piece has room for all of it (v0.21.1)
 struct Data {
     Data(view3d::World& w, ecl::GameState& g) : world(w), gs(g) {}
+    ~Data() { delete ov; }
     Data(const Data&) = delete;
     Data& operator=(const Data&) = delete;
     layout::Tiles  frame_tiles;
@@ -86,6 +87,10 @@ struct Data {
 
     // A monster's sprite in the 3D view (SPRITn)
     pic::Anim      sprite;
+
+    // Pool's wilderness map (read from the program when first shown), the rider's gallop
+    overland::Data* ov = nullptr;
+    uint8_t        gallop = 0;
 
     // The wilderness map's places (from the program)
     uint8_t        city_x[32] = {}, city_y[32] = {};
@@ -424,18 +429,154 @@ void draw_frame(pic::Canvas& c);
 void draw_panel(pic::Canvas& c);
 bool bigpic_shown() { return bigpic >= 0; }
 
+// ---- Pool's wilderness (overland.h; poolrad_overland_facts.md) ---------------
+// In one of its three wilderness areas with the map showing (area word
+// 0x4BE6 = 0; 1: a 3D place inside it)
+int ov_area()
+{
+    const profile::Profile& p = *d->prof;
+    if (!p.overland || vm->get(0x4BE6)) return -1;
+    const int a = d->gs.script - p.variant.overland_area;
+    return a >= 0 && a < 3 ? a : -1;
+}
+bool pool_overland() { return d && vm && ov_area() >= 0; }
+
+bool ov_load()
+{
+    if (d->ov) return true;
+    d->ov = new (std::nothrow) overland::Data;
+    if (!d->ov) return false;
+    fs::File f;
+    bool ok = false;
+    if (open_file(d->prof->program, f)) {
+        library::FileSource src(f);
+        exepack::Info info;
+        struct Ctx {
+            library::FileSource* src;
+            exepack::Info* info;
+            uint32_t base;
+        } ctx{&src, &info, d->prof->create.ds_image};
+        ok = exepack::parse(src, info) == exepack::Status::Ok &&
+             overland::read(*d->ov, *d->prof->overland,
+                            [](void* p, uint16_t ds, uint8_t* out, size_t n) {
+                                Ctx* c = static_cast<Ctx*>(p);
+                                return exepack::read(*c->src, *c->info, c->base + ds, out, n) == exepack::Status::Ok;
+                            },
+                            &ctx);
+        f.close();
+    }
+    if (!ok) {
+        delete d->ov;
+        d->ov = nullptr;
+    }
+    return ok;
+}
+
+// The party's square on the whole map
+void ov_square(int* col, int* row)
+{
+    *col = overland::column(*d->ov, ov_area(), vm->get(0x4BC3) & 0xFF);
+    *row = vm->get(0x4BC4) & 0xFF;
+}
+
+// The left box: 5 x 5 icons (SQRPACI.DAX blocks 1 and 2, 128 frames each,
+// opaque; the healed land recoloured), the rider (ICON.DAX 0, 128, 1, 129,
+// 2, 130 in turn - a picture each redraw; black see-through; facing south
+// or west mirrored) on the party's square
+void draw_overland(pic::Canvas& c)
+{
+    if (!ov_load()) {
+        c.fill(8, 8, 120, 120, 0);
+        return;
+    }
+    const overland::Facts& of = *d->prof->overland;
+    int col, row, x0, y0;
+    ov_square(&col, &row);
+    overland::window(col, row, &x0, &y0);
+    int fr[overland::kView * overland::kView];
+    for (int i = 0; i < overland::kView; ++i)
+        for (int j = 0; j < overland::kView; ++j)
+            fr[i * overland::kView + j] = overland::frame(*d->ov, of, x0 + j, y0 + i,
+                                                          [](void*, uint16_t w) { return vm->get(w); }, nullptr);
+    const bool healed = vm->get(of.healed) != 0;
+    uint8_t px[24 * 12];
+    auto put_icon = [&](int at, int frame) {
+        const int x = 8 + 24 * (at % overland::kView), y = 8 + 24 * (at / overland::kView);
+        for (int r = 0; r < 24; ++r)
+            for (int k = 0; k < 24; ++k) {
+                uint8_t v = static_cast<uint8_t>(k & 1 ? px[r * 12 + k / 2] & 15 : px[r * 12 + k / 2] >> 4);
+                if (healed) v = overland::healed_colour(*d->ov, of, frame, v);
+                c.px[(y + r) * c.w + x + k] = v;
+            }
+    };
+    c.fill(8, 8, 120, 120, 0);
+    fs::File f;
+    if (open_dax("SQRPACI.DAX", f)) {
+        library::FileSource src(f);
+        for (int blk = 1; blk <= 2; ++blk) {
+            // One pass through the block: each frame wanted drawn as it goes by
+            int last = -1;
+            for (int k = 0; k < overland::kView * overland::kView; ++k)
+                if (fr[k] >= 0 && fr[k] / 128 == blk - 1 && fr[k] % 128 > last) last = fr[k] % 128;
+            const dax::Entry* e = last >= 0 ? d->idx.find(static_cast<uint8_t>(blk)) : nullptr;
+            if (!e) continue;
+            dax::RleReader r(src, d->idx, *e);
+            uint8_t hdr[pic::kHeaderSize];
+            pic::Header h;
+            if (r.read(hdr, sizeof hdr) != sizeof hdr || !pic::parse_header(hdr, e->raw_size, h) ||
+                h.frame_bytes() != sizeof px)
+                continue;
+            for (int n = 0; n <= last; ++n) {
+                if (r.read(px, sizeof px) != sizeof px) break;
+                for (int k = 0; k < overland::kView * overland::kView; ++k)
+                    if (fr[k] == (blk - 1) * 128 + n) put_icon(k, fr[k]);
+            }
+        }
+        f.close();
+    }
+    // The rider
+    static const uint8_t kRider[6] = {0, 128, 1, 129, 2, 130};
+    if (open_dax("ICON.DAX", f)) {
+        library::FileSource src(f);
+        const dax::Entry* e = d->idx.find(kRider[d->gallop % 6]);
+        uint8_t hdr[pic::kHeaderSize];
+        pic::Header h;
+        if (e) {
+            dax::RleReader r(src, d->idx, *e);
+            if (r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_header(hdr, e->raw_size, h) &&
+                h.frame_bytes() == sizeof px && r.read(px, sizeof px) == sizeof px) {
+                const int pxl = 8 + 24 * (col - x0), pyl = 8 + 24 * (row - y0);
+                const bool mirror = d->gs.dir > 3;
+                for (int r2 = 0; r2 < 24; ++r2)
+                    for (int k = 0; k < 24; ++k) {
+                        const int sk = mirror ? 23 - k : k;
+                        const uint8_t v = static_cast<uint8_t>(sk & 1 ? px[r2 * 12 + sk / 2] & 15 : px[r2 * 12 + sk / 2] >> 4);
+                        if (v) c.px[(pyl + r2) * c.w + pxl + k] = v;
+                    }
+            }
+        }
+        f.close();
+    }
+    d->gallop = static_cast<uint8_t>((d->gallop + 1) % 6);
+    dirty_rows(1, 15);
+}
+
 void draw_view(pic::Canvas& c)
 {
     if (bigpic >= 0) {
         // A big picture covers the screen: outdoors it stays (the wilderness
         // map); in a 3D area the exploring screen comes back
-        if (!vm->get(0x4BE6)) return;
+        if (!vm->get(0x4BE6) && !pool_overland()) return;
         bigpic = -1;
         pic_shown = false;
         draw_frame(c);
         draw_panel(c);
     }
     if (pic_shown) return;
+    if (pool_overland()) {
+        draw_overland(c);
+        return;
+    }
     if (!d->map.loaded) {
         c.fill(24, 24, 88, 88, 0);
     } else if (area_view && (vm->get(0x4BFB) == 0)) {
@@ -458,8 +599,10 @@ void draw_position(pic::Canvas& c)
     c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);
     char line[40];
     const int hours = vm->get(0x4BC9), tens = vm->get(0x4BC8), ones = vm->get(0x4BC7);
+    int x = g.x, y = g.y;
+    if (pool_overland() && ov_load()) ov_square(&x, &y);        // (the wilderness: its global column, its row)
     if (vm->get(0x4BFB) == 0)
-        snprintf(line, sizeof line, "%d,%d %s %02d:%d%d%s", g.x, g.y, geo::dir_name(g.dir), hours, tens, ones,
+        snprintf(line, sizeof line, "%d,%d %s %02d:%d%d%s", x, y, geo::dir_name(g.dir), hours, tens, ones,
                  (vm->get(0x7ECA) & 1) ? " SEARCH" : "");
     else
         snprintf(line, sizeof line, "%s %02d:%d%d", geo::dir_name(g.dir), hours, tens, ones);
@@ -530,7 +673,12 @@ void clear_menu_line(pic::Canvas& c)
 // The game's own menu while exploring
 void idle_menu(pic::Canvas& c)
 {
-    if (vm->get(0x4BE6)) {
+    if (pool_overland()) {
+        // Pool's wilderness: no Area (its program's words)
+        text::build(menu, "", "Cast View Encamp Search Look");
+        menu.selected = 0;
+        show_menu_line(c);
+    } else if (vm->get(0x4BE6)) {
         text::build(menu, "", "Area Cast View Encamp Search Look");
         menu.selected = 0;
         show_menu_line(c);
@@ -5760,11 +5908,14 @@ struct Host : ecl::Host {
             draw_block(c, "BIGPIC", id, 8, 8);
             dirty(0, 17 * 8);
         } else if (head == 0xFF) {
+            // (Pool's wilderness: the 3D view's frame drawn over the map first)
+            if (pool_overland()) layout::box(c, d->tables, d->frame_tiles, 2, 2, 14, 14);
             c.fill(24, 24, 88, 88, 0);
             anim_start(id);
-            dirty_rows(3, 13);
+            dirty_rows(2, 14);
         } else {
             anim_stop();
+            if (pool_overland()) layout::box(c, d->tables, d->frame_tiles, 2, 2, 14, 14);
             c.fill(24, 24, 88, 88, 0);
             draw_block(c, "HEAD", head, 24, 24);
             draw_block(c, "BODY", id, 24, 64);
@@ -6069,11 +6220,37 @@ bool can_bash = true, can_pick = true, can_knock = true;
 
 // Moves the party (after the step script). False when a locked door
 // stopped it (the caller asks for a key first)
+// Pool's wilderness step (its ovr15 routine): a square that way unless
+// it's sea, coast or the stinking river ("The river's stench drives you
+// back.", until the land is healed); 12 hours a step
+void ov_step()
+{
+    const overland::Facts& of = *d->prof->overland;
+    int x = vm->get(0x4BC3) & 0xFF, y = vm->get(0x4BC4) & 0xFF;
+    const overland::Step st = overland::step(*d->ov, of, ov_area(), &x, &y, step_dir, vm->get(of.healed) != 0);
+    if (st == overland::Step::River) {
+        char w[48];
+        OvrWords src;
+        if (src.open() && text::read_pascal(src, of.river_words, w, sizeof w)) note(*cv, w);
+        return;
+    }
+    if (st != overland::Step::Moved) return;
+    vm->set(0x4BC3, static_cast<uint16_t>(x));
+    vm->set(0x4BC4, static_cast<uint16_t>(y));
+    vm->advance_clock(3, 12);                   // (slot 3, the hours: 12)
+}
+
 bool do_move()
 {
     ecl::GameState& g = d->gs;
     vm->set(0x4BF0, static_cast<uint16_t>(g.x));
     vm->set(0x4BF1, static_cast<uint16_t>(g.y));
+    if (pool_overland()) {
+        if (vm->get(0x7EC9) < 0xFF && ov_load()) ov_step();
+        vm->set(0x7EC9, 0);
+        after_move_redraw();
+        return true;
+    }
     bool locked = false;
     if (vm->get(0x7EC9) < 0xFF && d->map.loaded) {
         const int p = geo::passage(d->map, g.x, g.y, step_dir);
@@ -6252,7 +6429,7 @@ void handle(ecl::Stop r)
         look_pending = false;
         vm->set(0x7ECA, look_search);
     }
-    if (!vm->get(0x4BE6)) {
+    if (!vm->get(0x4BE6) && !pool_overland()) {
         // Outdoors the scripts run the show: go round again, unless nothing
         // happened (a script with nothing to do would spin forever)
         if (++idle_cycles < 3) {
@@ -6279,7 +6456,8 @@ void step(int dir_of_step)
         const ecl::GameState& g = d->gs;
         const int nx = g.x + geo::dx(dir_of_step), ny = g.y + geo::dy(dir_of_step);
         const bool off = nx < 0 || nx > 15 || ny < 0 || ny > 15;
-        vm->set(0x7ED5, d->map.loaded && off && geo::passage(d->map, g.x, g.y, dir_of_step) != 0 ? 1 : 0);
+        vm->set(0x7ED5, d->map.loaded && off && !pool_overland() && geo::passage(d->map, g.x, g.y, dir_of_step) != 0
+                            ? 1 : 0);
     }
     // The original's exploring menu clears 0x7EC9 (field_592) before every
     // key: a "don't move" left by an earlier script (a block's first run)
@@ -6402,8 +6580,8 @@ void begin_adventuring()
             if (d->save.wall_block[0] > 0) host->load_map(vm->get(0x4BC5) & 0xFF);
             for (int i = 0; i < 3; ++i)
                 if (d->save.wall_block[i] > 0) host->load_walls(d->save.wall_set[i], d->save.wall_block[i]);
-        } else {
-            host->picture(0x79, 0xFF);
+        } else if (!d->prof->overland) {
+            host->picture(0x79, 0xFF);          // (Curse's wilderness map; Pool's is drawn as the view)
         }
     }
     d->gs.roof = geo::flags(d->map, gs.x, gs.y);
@@ -8184,6 +8362,22 @@ bool act(Act a, pic::Canvas& c)
     }
     if (then != Then::Idle) return false;
     ecl::GameState& g = d->gs;
+    if (pool_overland()) {
+        // Pool's wilderness: the arrow keys face that way and step (north,
+        // east, south, west); no turning in place
+        int dir = -1;
+        if (a == Act::Forward) dir = 0;
+        else if (a == Act::StepRight) dir = 2;
+        else if (a == Act::TurnAround) dir = 4;
+        else if (a == Act::StepLeft) dir = 6;
+        else if (a == Act::Look) dir = -2;
+        if (dir >= 0) {
+            g.dir = static_cast<uint8_t>(dir);
+            step(dir);
+            return true;
+        }
+        if (dir == -1) return false;
+    }
     switch (a) {
     case Act::TurnLeft:   g.dir = (g.dir + 6) & 7; sfx(sound::kStep); break;
     case Act::TurnRight:  g.dir = (g.dir + 2) & 7; sfx(sound::kStep); break;
@@ -8423,7 +8617,7 @@ bool walking()
 {
     if (!d || input_mode != Input::None) return false;
     if (screen == Screen::Fight) return fg && (fg->st == FSt::Move || (fg->st == FSt::Aim && fg->manual));
-    return screen == Screen::Game && !waiting && then == Then::Idle && vm->get(0x4BE6) != 0;
+    return screen == Screen::Game && !waiting && then == Then::Idle && (vm->get(0x4BE6) != 0 || pool_overland());
 }
 
 bool nav_point(int* x, int* y)
@@ -8780,6 +8974,18 @@ void tap(int x, int y, pic::Canvas& c)
         act(Act::Area, c);
         return;
     }
+    // Pool's wilderness: a tap on the square north, east, south or west of
+    // the rider steps there (as the arrow keys)
+    if (pool_overland() && !pic_shown && x >= 8 && x < 128 && y >= 8 && y < 128 && ov_load()) {
+        int col, row, x0, y0;
+        ov_square(&col, &row);
+        overland::window(col, row, &x0, &y0);
+        const int dx = (x - 8) / 24 - (col - x0), dy = (y - 8) / 24 - (row - y0);
+        const Act a = dx == 0 && dy < 0 ? Act::Forward : dx == 0 && dy > 0 ? Act::TurnAround
+                    : dy == 0 && dx > 0 ? Act::StepRight : dy == 0 && dx < 0 ? Act::StepLeft : Act::Area;
+        if (a != Act::Area) act(a, c);
+        return;
+    }
     // A tap on a character in the party list selects them
     if (col >= 17 && row >= 4 && row < 4 + pt->count && !bigpic_shown()) {
         pt->selected = row - 4;
@@ -8787,7 +8993,7 @@ void tap(int x, int y, pic::Canvas& c)
         return;
     }
     // The exploring menu: Area Cast View Encamp Search Look
-    if (y >= text::kMenuTapTop && vm->get(0x4BE6)) {
+    if (y >= text::kMenuTapTop && (vm->get(0x4BE6) || pool_overland())) {
         switch (text::key(menu, text::hit(menu, col))) {
         case 'A': act(Act::Area, c); break;
         case 'L': act(Act::Look, c); break;
