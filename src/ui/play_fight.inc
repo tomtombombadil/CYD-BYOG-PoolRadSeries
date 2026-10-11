@@ -1510,10 +1510,12 @@ void start_turn(pic::Canvas& c)
             say(c, FSt::Next);
             return;
         }
-        if (tf == combat::TurnFx::RunsAway || tf == combat::TurnFx::Berserk || tf == combat::TurnFx::Enraged) {
+        if (tf == combat::TurnFx::RunsAway || tf == combat::TurnFx::Berserk || tf == combat::TurnFx::Enraged ||
+            tf == combat::TurnFx::Berzerk) {
             // (the turn goes on: fleeing, at the nearest one, or as ever)
             add_page(fg->cur, fw(tf == combat::TurnFx::RunsAway ? profile::kRunsAway
                                  : tf == combat::TurnFx::Berserk ? profile::kGoesBerserk
+                                 : tf == combat::TurnFx::Berzerk ? profile::kGoesBerzerk
                                                                  : profile::kIsEnraged));
             say(c, FSt::Resume);
             return;
