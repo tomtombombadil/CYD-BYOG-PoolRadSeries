@@ -18,6 +18,7 @@
 #include "engine/journal.h"
 #include "engine/pdf.h"
 #include "engine/picture.h"
+#include "engine/profile.h"
 #include "engine/text.h"
 #include "frame.h"
 #include "hal/panel_prefs.h"
@@ -889,7 +890,9 @@ constexpr int kFileRows = 4;
 // The game's page (Tom, 2026-10-11, v0.72.0): Play and Settings; the tests
 // (Resource / Screen / Walk) are under Settings -> Dev Tools. A game the
 // engine doesn't play yet: its note and Settings (its files in Dev Tools).
-bool playable() { return look::available(game_dirs[game_sel].game); }
+bool playable() { return profile::ready(game_dirs[game_sel].game); }
+// A release the engine knows (its tests run), maybe still being built
+bool known() { return look::available(game_dirs[game_sel].game); }
 int chooser_keys() { return playable() ? 2 : 1; }
 ui::Rect chooser_key(int i)
 {
@@ -907,8 +910,10 @@ void draw_files()
         const int x = ui::gap() * 3, wdt = ui::width() - ui::gap() * 6;
         const bool hlib = game_dirs[game_sel].format == library::Format::Hlib;
         wrap_text(x, ui::header_h() + ui::gap() * 3, wdt,
-                  hlib ? "Its files are .TLB / .GLB libraries, a newer format the engine can't read yet."
-                       : "The engine can't play this game yet; its files can be looked at in Settings, Dev Tools.",
+                  hlib    ? "Its files are .TLB / .GLB libraries, a newer format the engine can't read yet."
+                  : known() ? "The engine is still being built for this game: what works so far is in Settings, Dev Tools "
+                              "(the tests and the Play Test)."
+                            : "The engine can't play this game yet; its files can be looked at in Settings, Dev Tools.",
                   ui::Font::Normal, style::kText, true);
         ui::key_big(chooser_key(0), "Settings", "Engine options");
         return;
@@ -989,16 +994,22 @@ void tap_files(const ui::Tap& t)
 }
 
 // ---- Dev Tools (Settings -> Dev Tools): the tests ---------------------------
-int dev_keys() { return playable() ? 3 : (game_dirs[game_sel].format == library::Format::Hlib ? 0 : 1); }
+// Resource / Screen / Walk Test; a game still being built: its Play Test too
+int dev_keys()
+{
+    if (known()) return playable() ? 3 : 4;
+    return game_dirs[game_sel].format == library::Format::Hlib ? 0 : 1;
+}
 ui::Rect dev_key(int i) { return ui::grid_cell(i, 2, 2, false); }
 
 void draw_dev()
 {
     ui::clear();
     ui::header("Dev Tools", true);
-    static const char* const kKeys[3][2] = {{"Resource Test", "The game's files"},
+    static const char* const kKeys[4][2] = {{"Resource Test", "The game's files"},
                                             {"Screen Test", "Pictures and screens"},
-                                            {"Walk Test", "Walk the maps"}};
+                                            {"Walk Test", "Walk the maps"},
+                                            {"Play Test", "As far as it goes"}};
     if (dev_keys() == 0)
         wrap_text(ui::gap() * 3, ui::header_h() + ui::gap() * 3, ui::width() - ui::gap() * 6,
                   "Its files are .TLB / .GLB libraries, a newer format the engine can't read yet.", ui::Font::Normal,
@@ -1016,6 +1027,10 @@ void tap_dev(const ui::Tap& t)
     if (k == 0) {
         file_page = 0;
         go(Screen::Resources);
+        return;
+    }
+    if (k == 3) {
+        start_play();
         return;
     }
     if (frame::parked()) {
@@ -1399,6 +1414,19 @@ void leave_look()
     // The game screen is always 1:1 here; back to the viewer's own choice
     frame::set_scale(cfg->scale_15x ? frame::Scale::OneAndHalf : frame::Scale::One);
     go(Screen::Dev);
+}
+
+// Pool's title lightning: palette entry `index` shown as `colour` (-1: as
+// itself again); the whole canvas again when it changes
+int flash_index = -1, flash_colour = -1;
+void show_flash(int index, int colour, bool show = true)
+{
+    if (colour == flash_colour) return;
+    if (flash_index >= 0) frame::set_palette(flash_index, pic::kEga[flash_index]);
+    flash_colour = colour;
+    flash_index = colour >= 0 ? index : -1;
+    if (colour >= 0) frame::set_palette(index, pic::kEga[colour]);
+    if (show) frame::present();
 }
 
 void present(const look::Rows& r)
@@ -3542,11 +3570,20 @@ void tick()
     if (screen == Screen::Settings && !dirty) settings_tick();
     if (screen == Screen::Journal && !dirty) tick_journal();
     if (screen == Screen::Pdf && !dirty) tick_pdf();
-    if (screen == Screen::Look && !look_error && !dirty) present(look::tick(millis(), frame::canvas()));
+    if (screen == Screen::Look && !look_error && !dirty) {
+        present(look::tick(millis(), frame::canvas()));
+        int index = 0;
+        const int colour = look::flash(index);
+        show_flash(index, colour);
+    }
     if (screen == Screen::Play && !play_error && !dirty && !map_shown) {
         play::tick(millis(), frame::canvas());
         present_play();
+        int index = 0;
+        const int colour = play::flash(index);
+        show_flash(index, colour);
     }
+    if (screen != Screen::Look && screen != Screen::Play) show_flash(0, -1, false);
     if (!dirty) return;
     dirty = false;
     switch (screen) {

@@ -37,6 +37,9 @@ struct Rows {
 void enter(int page, pic::Canvas& c);
 // Moves animated pages on (title sequence, text printing). Call often.
 Rows tick(uint32_t now_ms, pic::Canvas& c);
+// The title's lightning (Pool): the colour palette entry `index` shows now,
+// or -1 (as itself)
+int flash(int& index);
 // A tap on the canvas at pixel (x, y): skips a title picture, goes on after
 // "press any key", picks from the menu line.
 Rows tap(int x, int y, uint32_t now_ms, pic::Canvas& c);

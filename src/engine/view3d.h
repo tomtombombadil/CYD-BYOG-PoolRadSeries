@@ -76,6 +76,11 @@ void draw_tile(pic::Canvas& c, const World& w, int id, int row, int col);
 
 // The view from square (x, y) facing dir (0, 2, 4, 6).
 void draw(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int dir, uint8_t sky);
+// Pool of Radiance's background (no horizon picture; screen_facts.md 4):
+// four flat bands - sky / ceiling (y 24-66), a line (67), a band (68-69)
+// and the floor (70-111)
+struct Bands { uint8_t sky, line, band, floor; };
+void draw(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int dir, const Bands& b);
 
 // The AREA map: 11 x 11 squares round the party (kept inside the map), the
 // party as an arrow.

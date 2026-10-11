@@ -46,7 +46,18 @@ struct OpSet {
     uint8_t exit, go_to, go_sub, ret, new_ecl, on_goto, on_gosub;
     uint8_t if_first, if_last;      // IF opcodes: the next instruction may be skipped
     uint8_t load_files, load_pieces;
+    // Pool of Radiance's memory map (poolrad_facts.md 4.2): its scripts
+    // are loaded at 0x9900 and keep their words elsewhere; decode() moves
+    // every address to where Curse keeps the same thing, so the script
+    // machine works with one map (vm_address)
+    bool pool_map;
 };
+
+// A script's memory address as the engine's machine (Curse's map) knows
+// it: unchanged for Curse; Pool's area words 0x4900-0x4CFF -> 0x4B00-,
+// game / character 0x6B00-0x6EFF -> 0x7C00-, the table 0x9700-0x98FF ->
+// 0x7A00-, the code 0x9900-0xB6FF -> 0x8000-; others unchanged
+uint16_t vm_address(const OpSet& set, uint16_t a);
 
 struct Operand {
     uint8_t code = 0, low = 0, high = 0;
@@ -63,6 +74,8 @@ struct Insn {
 
 // Decodes the instruction at offset `at` of a block's code (the block
 // without its first 2 bytes). False if it isn't one or runs past the end.
+// Addresses (operands of code 1, 3 and 0x81, and the jumps' targets) come
+// out as vm_address gives them.
 bool decode(const uint8_t* code, uint32_t len, uint32_t at, const OpSet& set, Insn& out);
 
 // The 5 entry points (offsets in the code; 0xFFFFFFFF if not in the block).

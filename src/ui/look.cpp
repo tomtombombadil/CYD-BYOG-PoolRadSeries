@@ -10,6 +10,7 @@
 #include "engine/font.h"
 #include "engine/layout.h"
 #include "engine/printcalls.h"
+#include "engine/lightning.h"
 #include "engine/profile.h"
 #include "engine/text.h"
 #include "hal/sdcard.h"
@@ -102,8 +103,7 @@ bool draw_title_picture(pic::Canvas& c, int block, int row, int col)
 
 void draw_credits(pic::Canvas& c)
 {
-    layout::outer(c, d->tables, d->tiles);
-    for (uint8_t bar : d->prof->credits_bars) layout::bar(c, d->tables, d->tiles, bar);
+    layout::credits(c, d->tables, d->tiles, d->prof->credits_bars);
     for (int i = 0; i < d->n_credits; ++i) {
         const printcalls::Line& l = d->credits[i];
         font::draw_text(c, d->font, l.s, l.col, l.row, l.fg, l.bg);
@@ -135,6 +135,10 @@ void title_next(pic::Canvas& c)
     if (t_step + 1 < d->prof->title_steps) title_show(t_step + 1, c);
     else t_done = true;     // the last picture stays; a tap starts again
 }
+
+// Pool's lightning on the title's last picture (profile variant.title_flash)
+lightning::State lstate;
+int              flash_now = -1;
 
 // ---- Text window -------------------------------------------------------------
 
@@ -221,15 +225,23 @@ void draw_still(pic::Canvas& c)
         break;
     case kTiles:
         c.clear(1);
-        for (int n = 0; n < layout::kTiles; ++n) {
+        for (int n = 0; n < t.count; ++n) {
             const int col = 2 + (n % 10) * 3, row = 2 + (n / 10) * 4;
             layout::tile(c, t, n, col, row);
             char num[4];
             snprintf(num, sizeof num, "%d", n);
             put_text(c, num, col, row + 1, 7);
         }
-        put_text(c, "TILES 0-39 (8X8D1 #202)", 2, 20);
-        put_text(c, "FRAME = 30-39, 3D VIEW = 20-29", 2, 21, 7);
+        if (tb.box[0]) {
+            char line[40];
+            snprintf(line, sizeof line, "TILES 0-%d (8X8D1 #202)", t.count - 1);
+            put_text(c, line, 2, 20);
+            snprintf(line, sizeof line, "BOXES: CORNER %d, SIDE %d, EDGE %d", tb.box[0], tb.box[1], tb.box[2]);
+            put_text(c, line, 2, 21, 7);
+        } else {
+            put_text(c, "TILES 0-39 (8X8D1 #202)", 2, 20);
+            put_text(c, "FRAME = 30-39, 3D VIEW = 20-29", 2, 21, 7);
+        }
         break;
     }
 }
@@ -237,6 +249,13 @@ void draw_still(pic::Canvas& c)
 } // namespace
 
 bool available(games::Game g) { return profile::program_name(g) != nullptr; }
+
+int flash(int& index)
+{
+    if (!d || page != kTitle) return -1;
+    index = d->prof->variant.title_flash;
+    return flash_now;
+}
 
 const char* open(const char* data_dir, games::Game g)
 {
@@ -314,7 +333,8 @@ const char* open(const char* data_dir, games::Game g)
     if (open_file(data_dir, p->overlay, f)) {
         library::FileSource osrc(f);
         if (osrc.size() == p->overlay_size)
-            d->n_credits = printcalls::read(osrc, p->credits_at, p->credits_base, d->credits, kMaxCredits);
+            d->n_credits = printcalls::read(osrc, p->credits_at, p->credits_base, d->credits, kMaxCredits,
+                                             p->variant.credits_stride ? p->variant.credits_stride : printcalls::kBlock);
         f.close();
     }
     Serial.printf("[look] %s: %d credit lines\n", p->overlay, d->n_credits);
@@ -360,6 +380,7 @@ Rows tick(uint32_t now, pic::Canvas& c)
 {
     if (!d) return Rows{};
     if (page == kTitle) {
+        flash_now = !t_done && profile::title_flash_step(*d->prof, t_step) ? lightning::colour(lstate, now) : -1;
         if (t_done) return Rows{};
         if (!t_timed) {
             t_since = now;

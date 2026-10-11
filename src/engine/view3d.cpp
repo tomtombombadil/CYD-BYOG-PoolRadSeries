@@ -44,7 +44,7 @@ void put_packed(pic::Canvas& c, const uint8_t* px, int x0, int y0, uint8_t mask1
 
 void put_frame_tile(pic::Canvas& c, const layout::Tiles& t, int n, int x0, int y0, uint8_t mask1, uint8_t mask2)
 {
-    if (n < 0 || n >= layout::kTiles || !t.loaded) return;
+    if (n < 0 || n >= t.count || !t.loaded) return;
     for (int y = 0; y < 8; ++y)
         for (int x = 0; x < 8; ++x) {
             const uint8_t v = t.px[n][y * 8 + x];
@@ -232,13 +232,10 @@ void draw_tile(pic::Canvas& c, const World& w, int id, int row, int col)
     }
 }
 
-void draw(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int dir, uint8_t sky)
+namespace {
+
+void walls(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int dir)
 {
-    const int x0 = kCell0 * 8, y0 = kCell0 * 8, wpx = kCells * 8;
-    c.fill(x0, y0, wpx, 44, sky);
-    c.fill(x0, y0 + 44, wpx, 2, 0);
-    c.fill(x0, y0 + 46, wpx, 42, 8);
-    if (w.has_horizon) pic::draw_pixels(w.horizon, w.horizon_hdr, c, x0, 64, kMask);
     dir &= 6;
     // Far to near: two squares ahead, one, then the party's own row
     for (int step = 2; step >= 0; --step) {
@@ -247,6 +244,28 @@ void draw(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int d
         else if (step == 1) middle(c, w, m, bx, by, dir);
         else near(c, w, m, bx, by, dir);
     }
+}
+
+} // namespace
+
+void draw(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int dir, uint8_t sky)
+{
+    const int x0 = kCell0 * 8, y0 = kCell0 * 8, wpx = kCells * 8;
+    c.fill(x0, y0, wpx, 44, sky);
+    c.fill(x0, y0 + 44, wpx, 2, 0);
+    c.fill(x0, y0 + 46, wpx, 42, 8);
+    if (w.has_horizon) pic::draw_pixels(w.horizon, w.horizon_hdr, c, x0, 64, kMask);
+    walls(c, w, m, x, y, dir);
+}
+
+void draw(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int dir, const Bands& b)
+{
+    const int x0 = kCell0 * 8, y0 = kCell0 * 8, wpx = kCells * 8;
+    c.fill(x0, y0, wpx, 43, b.sky);
+    c.fill(x0, y0 + 43, wpx, 1, b.line);
+    c.fill(x0, y0 + 44, wpx, 2, b.band);
+    c.fill(x0, y0 + 46, wpx, 42, b.floor);
+    walls(c, w, m, x, y, dir);
 }
 
 void draw_area_map(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int dir)

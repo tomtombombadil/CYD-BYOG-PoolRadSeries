@@ -507,6 +507,49 @@ Darkness. Milestones 2-6 are built against Azure Bonds' files.
    bigger speaker or amplifier. Later games' AdLib /
    Sound Blaster: when we get there.
 
+## 6b. Pool of Radiance (Tom, 2026-10-11: started after Curse)
+
+The second game (build order: Curse, Pool, Silver Blades, Darkness). Facts
+from the player's own files: the Project's `claude/poolrad_facts.md`
+(program, DAX files, saves, the character record, scripts) and
+`claude/poolrad_screen_facts.md` (how its program draws its screens).
+The Steam / SNEG game files are the same bytes as GOG's (POOL.CFG aside),
+so one profile covers both.
+
+How it fits the engine: one more `profile::Profile` (START.EXE 65,231 /
+68,592 bytes), and `profile.variant` for what Pool's older program does
+otherwise (all zero = Curse):
+- **Frames**: no frame tables - boxes drawn by code: block 202's tile 20
+  at every corner and junction, 21 down the sides, 22 along the tops and
+  bottoms (`layout`'s box mode; the same screens' rows and columns).
+- **Credits**: 29-byte print calls (no background push; `printcalls`).
+- **Title**: picture 1 (5 s), picture 2 (5 s) with lightning on colour 1
+  now and then (`engine/lightning`, the viewer flashes the palette), the
+  credits (10 s). No version line, no demo.
+- **3D view**: no SKY.DAX - four flat bands (sky / ceiling colour through
+  the DS 0x0C26 table, a white line, a light grey band, a brown floor;
+  `view3d::Bands`).
+- **Scripts**: Curse's opcodes 0x00-0x3D (ECL CLOCK 1 operand), loaded at
+  0x9900 with Pool's own memory map; `ecl::vm_address` moves every address
+  to Curse's map as instructions are decoded, so the script machine and
+  the front end keep one map.
+- `variant.unfinished`: while Pool is being built the game page has no
+  Play key; Dev Tools has the tests **and the Play Test** (as far as it
+  goes).
+
+Steps (each pushed when it works; Curse stays as it is):
+1. v0.75.0: the profile, frames, title (with the lightning), credits, the
+   Screen Test and the Walk Test (21 of Pool's maps found from the
+   scripts; the flat bands), script decoding with Pool's map.
+2. Party menu, saved games (13,137 bytes: no wall-set block), the
+   285-byte character record, View Character.
+3. Scripts in play: a new game starts in ECL3 block 0; PROGRAM 0 / 8 / 9;
+   Pool's character fields; the view colours scripts set (0xC059 /
+   0xC05F).
+4. Create New Character (Pool's rule tables), training, camp (no Fix).
+5. Combat, spells, items, monsters; the end (FINAL5.DAX).
+6. Behaviour tests (`sweep.cpp`) with Pool's expectations.
+
 ## 7. The journal (Tom, 2026-10-06)
 
 The games tell the player to "read journal entry N" from the printed

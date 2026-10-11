@@ -307,6 +307,14 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   coab facts - never from our own code. The expectations live in the
   Project (claude/behaviour_facts.md), the checks in `sweep.cpp`'s
   `behave` mode; results reports stay out of the repo.
+- Pool of Radiance (Tom, 2026-10-11: implement it next; SPEC 6b): facts
+  in the Project's claude/poolrad_facts.md + claude/poolrad_screen_facts.md
+  (also GBC/Resources docs - facts only). Differences from Curse go in
+  `profile.variant` (zero = Curse); Pool's script addresses are moved to
+  Curse's map by `ecl::vm_address` at decode time. `variant.unfinished`
+  keeps Play off the game page (Dev Tools has a Play Test) until Pool
+  plays. Its GOG files: scratch /tmp/claude-0/games2/poolrad/...;
+  the playsim takes GAME=1 for Pool.
 - PortMaster ports are a stretch goal (Tom): keep everything portable.
 - Game screens (Walk Test, Play Test now, the games later): canvas 1:1 at the top left
   (`frame::set_left`), controls below it, on 480x320 the Companion strip on

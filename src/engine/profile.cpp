@@ -275,7 +275,7 @@ constexpr TitleStep kCurseTitle[] = {
 
 // Curse's ECL opcodes (operand counts as coab lists them)
 constexpr int8_t K3 = ecl::kCount3, K2 = ecl::kCount2;
-const ecl::OpSet kCurseEcl = [] {
+constexpr ecl::OpSet kCurseEcl = [] {
     ecl::OpSet s{};
     for (auto& v : s.sizes) v = ecl::kUnknown;
     const int8_t sizes[0x41] = {
@@ -291,6 +291,39 @@ const ecl::OpSet kCurseEcl = [] {
     s.exit = 0x00; s.go_to = 0x01; s.go_sub = 0x02; s.ret = 0x13; s.new_ecl = 0x20;
     s.on_goto = 0x25; s.on_gosub = 0x26; s.if_first = 0x16; s.if_last = 0x1B;
     s.load_files = 0x21; s.load_pieces = 0x37;
+    return s;
+}();
+
+// Pool of Radiance, GOG release (the Steam / SNEG START.EXE is the same
+// file): START.EXE 65,231 bytes, EXEPACK, unpacked 68,592; its data
+// segment at image 0xC7C0 (poolrad_facts.md 1.1). Found from the player's
+// files (poolrad_facts.md, screen_facts.md; facts only):
+// - frames: boxes drawn by code - block 202's tile 20 at every corner and
+//   junction, 21 down the sides, 22 along the tops and bottoms;
+// - title: TITLE.DAX picture 1 for 5 s, picture 2 for 5 s with lightning
+//   on colour 1 now and then, then the credits for 10 s (29-byte print
+//   calls in GAME.OVR from 0x32C, the overlay's code at 0xD4; boxes down
+//   to row 24 with a bar at row 4); no version line, no demo;
+// - areas: ECL / GEO / WALLDEF / 8X8D 1-8; no SKY.DAX - the 3D view's
+//   background is four flat bands: the sky / ceiling colour through the
+//   table at DS 0x0C26 (area words 0x49FD / 0x49FE, as Curse's), then a
+//   white line, a light grey band and a brown floor (each area's start);
+// - scripts: Curse's opcodes 0x00-0x3D (ECL CLOCK reads 1 operand, ADD NPC
+//   2), loaded at 0x9900 with its own memory map (ecl::vm_address);
+// - a new game starts in ECL3 block 0.
+constexpr TitleStep kPoolTitle[] = {
+    {1, 0, 0, true, 5000, 0},
+    {2, 0, 0, true, 5000, 0},
+    {0, 0, 0, true, 10000, 0},
+};
+
+constexpr ecl::OpSet kPoolEcl = [] {
+    ecl::OpSet s = kCurseEcl;
+    for (int i = 0x3E; i < 0x41; ++i) s.sizes[i] = ecl::kUnknown;
+    s.sizes[0x34] = 1;   // ECL CLOCK (poolrad_facts.md 4.3)
+    s.sizes[0x36] = 2;   // ADD NPC
+    s.sizes[0x0C] = 3;   // SETUP MONSTER
+    s.pool_map = true;
     return s;
 }();
 
@@ -418,6 +451,20 @@ const Profile kProfiles[] = {
      {{0x265C6, 0x265F5, 0x2662A, 0x26660, 0x266B5, 0x266E6, 0x2671F, 0x26754, 0x2678E, 0x267C0, 0x267FA, 0x26831,
        0x2683E, 0x2686C, 0x268A1, 0x268D4, 0x268DA, 0x26901, 0x26936, 0x26969, 0x2698D, 0x269C2, 0x269FD, 0x26A33},
       {4, 4, 4, 4, 4, 4}, {0x4A, 0x4B}, 0x4D, 0x41, 0x41, 0x7A, 0x0AAA, 0x4CFD, 0x7EA8}},
+    // Pool of Radiance (being built: what's named here; the rest follows
+    // as its screens are done - zero = not known yet)
+    {.game = games::Game::PoolOfRadiance, .release = "GOG", .program = "START.EXE",
+     .program_size = 65231, .image_size = 68592, .data_base = 0xC7C0,
+     .frame = {},
+     .tiles_file = "8X8D1.DAX", .tiles_block = 202,
+     .press_any_key = 0x77DE,
+     .title_file = "TITLE.DAX", .title = kPoolTitle, .title_steps = sizeof kPoolTitle / sizeof kPoolTitle[0],
+     .title_version = 0, .title_menu = 0,
+     .overlay = "GAME.OVR", .overlay_size = 206105, .credits_at = 0x32C, .credits_base = 0xD4, .credits_bars = {4, 0},
+     .first_area = 1, .last_area = 8, .common_tiles_block = 203, .sky_file = nullptr, .horizon_block = 0,
+     .ecl_ops = &kPoolEcl,
+     .sky_colours = 0x0C26, .start_area = 3, .start_script = 0,
+     .variant = {{20, 21, 22}, 29, true, 15, 7, 6, 1, true}},
 };
 
 } // namespace
@@ -427,6 +474,21 @@ const char* program_name(games::Game g)
     for (const Profile& p : kProfiles)
         if (p.game == g) return p.program;
     return nullptr;
+}
+
+bool title_flash_step(const Profile& p, int step)
+{
+    if (!p.variant.title_flash || step < 0 || step >= p.title_steps || !p.title[step].block) return false;
+    for (int k = step + 1; k < p.title_steps; ++k)
+        if (p.title[k].block) return false;
+    return true;
+}
+
+bool ready(games::Game g)
+{
+    for (const Profile& p : kProfiles)
+        if (p.game == g && !p.variant.unfinished) return true;
+    return false;
 }
 
 const Profile* find(games::Game g, uint32_t program_size, uint32_t image_size)

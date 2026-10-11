@@ -194,6 +194,8 @@ private:
         int str = -1;               // string slot
     };
     bool operands(int n, Op* out);
+    void to_map(Op& o) const;
+    uint16_t target(const Op& o) const;
     uint16_t value(const Op& o) const;
     const char* string_of(const Op& o) const;
     uint8_t byte_at(uint32_t p) const { return p < kCodeSize ? s_.code[p] : 0; }

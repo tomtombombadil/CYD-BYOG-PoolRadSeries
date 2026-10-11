@@ -276,7 +276,7 @@ const char* open(const char* data_dir, games::Game g)
         return msg;
     }
     d->world.frame = &d->frame_tiles;
-    if (open_dax(d->prof->sky_file, f)) {
+    if (d->prof->sky_file && open_dax(d->prof->sky_file, f)) {
         library::FileSource src(f);
         view3d::load_horizon(src, d->idx, d->prof->horizon_block, d->world);
         f.close();
@@ -310,7 +310,9 @@ void draw(pic::Canvas& c)
         } else {
             // Under a roof: the indoor sky (black); outside: light blue
             const uint8_t sky = geo::flags(d->map, px, py) >= 0x80 ? 0 : 11;
-            view3d::draw(c, d->world, d->map, px, py, pdir, sky);
+            const auto& v = d->prof->variant;
+            if (v.flat_view) view3d::draw(c, d->world, d->map, px, py, pdir, view3d::Bands{sky, v.view_line, v.view_band, v.view_floor});
+            else view3d::draw(c, d->world, d->map, px, py, pdir, sky);
         }
     }
     const MapRef& r = d->maps[cur];

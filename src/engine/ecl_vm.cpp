@@ -277,6 +277,17 @@ void Vm::add_string(const char* src, size_t n, bool packed)
 
 // Reads n operands after position pc_ (the opcode, or the last operand byte
 // when continuing a list); pc_ ends on the last byte read + 1
+// Pool's addresses where the engine keeps them (ecl::vm_address)
+void Vm::to_map(Op& o) const
+{
+    const uint16_t a = vm_address(set_, o.word());
+    o.low = static_cast<uint8_t>(a);
+    o.high = static_cast<uint8_t>(a >> 8);
+}
+
+// A jump's target: a plain number is a code address too
+uint16_t Vm::target(const Op& o) const { return o.code == 2 ? vm_address(set_, o.word()) : o.word(); }
+
 bool Vm::operands(int n, Op* out)
 {
     uint32_t p = pc_;
@@ -287,6 +298,7 @@ bool Vm::operands(int n, Op* out)
         p += 2;
         if (o.code == 1 || o.code == 2 || o.code == 3) {
             o.high = byte_at(++p);
+            if (o.code != 2) to_map(o);
         } else if (o.code == 0x80) {
             if (p + o.low >= kCodeSize) return false;
             o.str = n_slots_;
@@ -294,6 +306,7 @@ bool Vm::operands(int n, Op* out)
             p += o.low;
         } else if (o.code == 0x81) {
             o.high = byte_at(++p);
+            to_map(o);
             o.str = n_slots_;
             char tmp[256];
             read_string(o.word(), tmp, sizeof tmp);
@@ -668,12 +681,12 @@ Stop Vm::step()
         return Stop::Running;
     case 0x01:                                  // GOTO
         if (!need(1)) return Stop::Error;
-        pc_ = o[0].word() - kBase;
+        pc_ = target(o[0]) - kBase;
         return Stop::Running;
     case 0x02:                                  // GOSUB
         if (!need(1)) return Stop::Error;
         if (sp_ < 32) stack_[sp_++] = pc_;
-        pc_ = o[0].word() - kBase;
+        pc_ = target(o[0]) - kBase;
         return Stop::Running;
     case 0x03:                                  // COMPARE
         if (!need(2)) return Stop::Error;
@@ -966,7 +979,7 @@ Stop Vm::step()
         if (!more(2, n, i, &to)) return Stop::Error;
         if (i < n) {
             if (op_ == 0x26 && sp_ < 32) stack_[sp_++] = pc_;
-            pc_ = to.word() - kBase;
+            pc_ = target(to) - kBase;
         }
         return Stop::Running;
     }

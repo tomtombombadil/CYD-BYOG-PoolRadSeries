@@ -104,6 +104,9 @@ struct Options {
                                   // Clear font, 2 the player's Pools of Darkness font (set_darkness_dir)
 };
 void set_options(const Options& o);
+// The title's lightning (Pool): the colour palette entry `index` shows now,
+// or -1 (as itself)
+int flash(int& index);
 // The icon editor's NEW icon (Alter -> Icon, Create New Character) for the
 // big preview (Tom, v0.59.0): its 24 x 24 colour indexes (0: see-through)
 // in the ready or action pose; false when the editor isn't up. (An engine

@@ -397,11 +397,35 @@ struct Profile {
         uint16_t fade_table;
         uint16_t begin_word, train_word;
     } won;
+
+    // How an older program does things Curse does otherwise (Pool of
+    // Radiance; poolrad_facts.md, screen_facts.md). All zero: as Curse.
+    struct {
+        // Frames are boxes drawn by code, not tables: block 202's tiles
+        // for every corner / junction, the left and right sides, the top
+        // and bottom (0: the frame tables)
+        uint8_t box[3];
+        uint8_t credits_stride;        // the credits' print calls (0: 32 bytes, with a background)
+        // The 3D view's background: four flat bands (sky / a line / a band
+        // / the floor; 43, 1, 2 and 42 rows) instead of sky, black line,
+        // ground and the horizon picture; the line, band and floor colours
+        bool    flat_view;
+        uint8_t view_line, view_band, view_floor;
+        uint8_t title_flash;           // the title's last picture: lightning on this colour (0: none)
+        bool    unfinished;            // being built: its tests and Play Test under Dev Tools, no Play key
+    } variant;
 };
 
 // The game's program file name (to look for it), or nullptr if no
 // release of that game is known yet.
 const char* program_name(games::Game g);
+
+// Whether title step `step` is the one with the lightning (the last
+// picture, when the profile has variant.title_flash)
+bool title_flash_step(const Profile& p, int step);
+
+// A game the engine plays (a release known and not still being built)
+bool ready(games::Game g);
 
 // The profile matching a program, or nullptr.
 const Profile* find(games::Game g, uint32_t program_size, uint32_t image_size);

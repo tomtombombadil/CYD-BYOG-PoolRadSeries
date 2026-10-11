@@ -16,6 +16,8 @@
 //   9A + 4 bytes                  print it
 // The run ends at the first block that doesn't match. The profile gives
 // where the run starts and where the code segment starts in the file.
+// Pool of Radiance's calls are 29 bytes: no background push (its print
+// clears the paper to black).
 #pragma once
 
 #include <cstdint>
@@ -25,6 +27,7 @@
 namespace printcalls {
 
 constexpr int kBlock = 32;
+constexpr int kBlockNoBack = 29;
 
 struct Line {
     uint8_t row, col, fg, bg;
@@ -33,6 +36,6 @@ struct Line {
 
 // Reads the run of print calls at `at`. Returns how many lines (max at most),
 // 0 if the first block doesn't match or a string can't be read.
-int read(dax::ByteSource& ovr, uint32_t at, uint32_t seg_base, Line* out, int max);
+int read(dax::ByteSource& ovr, uint32_t at, uint32_t seg_base, Line* out, int max, int stride = kBlock);
 
 } // namespace printcalls

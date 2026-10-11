@@ -39,6 +39,7 @@
 #include "engine/view3d.h"
 #include "engine/font.h"
 #include "engine/games.h"
+#include "engine/lightning.h"
 #include "engine/picture.h"
 #include "engine/spells.h"
 #include "engine/combat.h"
@@ -756,8 +757,33 @@ static void test_layout()
     CHECK(exepack::parse(e2, in) == exepack::Status::Ok);
     CHECK(layout::load_tables(e2, in, p, tb) == layout::Status::BadTables && !tb.loaded);
 
+    // Pool of Radiance: boxes drawn with tiles 20 / 21 / 22 (no tables read)
+    {
+        profile::Profile pp{};
+        pp.variant.box[0] = 20; pp.variant.box[1] = 21; pp.variant.box[2] = 22;
+        static layout::Tables bt;
+        CHECK(layout::load_tables(e2, in, pp, bt) == layout::Status::Ok && bt.loaded && bt.box[1] == 21);
+        auto is = [&](int col, int row, int n) { return at(col * 8 + 1, row * 8 + 2) == tp(n, 1, 2); };
+        c.clear(9);
+        layout::explore(c, bt, t);
+        CHECK(is(0, 0, 20) && is(16, 0, 20) && is(39, 0, 20) && is(5, 0, 22) && is(30, 0, 22));
+        CHECK(is(0, 5, 21) && is(16, 5, 21) && is(39, 5, 21) && is(16, 16, 20) && is(0, 16, 20) && is(20, 16, 22));
+        CHECK(is(0, 20, 21) && is(39, 23, 20) && is(10, 23, 22));
+        CHECK(is(2, 2, 20) && is(14, 14, 20) && is(8, 2, 22) && is(2, 8, 21) && is(14, 8, 21));
+        CHECK(at(16 * 8 + 1, 20 * 8 + 2) == 0 && at(1 * 8 + 1, 1 * 8 + 2) == 0);   // inside: black
+        c.clear(9);
+        layout::combat(c, bt, t);
+        CHECK(is(22, 0, 20) && is(22, 22, 20) && is(22, 9, 21) && is(10, 22, 22) && at(5, 23 * 8 + 2) == 0);
+        c.clear(9);
+        const uint8_t bars[2] = {4, 0};
+        layout::credits(c, bt, t, bars);
+        CHECK(is(0, 24, 20) && is(39, 4, 20) && is(10, 4, 22) && is(10, 24, 22) && is(0, 10, 21));
+    }
+
     // The known release is found only by both sizes
     CHECK(profile::find(games::Game::CurseOfTheAzureBonds, 57789, 62432) != nullptr);
+    CHECK(profile::find(games::Game::PoolOfRadiance, 65231, 68592) != nullptr);
+    CHECK(profile::ready(games::Game::CurseOfTheAzureBonds) && !profile::ready(games::Game::PoolOfRadiance));
     CHECK(profile::find(games::Game::CurseOfTheAzureBonds, 57789, 62400) == nullptr);
     CHECK(profile::find(games::Game::PoolOfRadiance, 57789, 62432) == nullptr);
     CHECK(profile::program_name(games::Game::CurseOfTheAzureBonds) != nullptr);
@@ -878,6 +904,29 @@ static void test_menu()
     CHECK(at(30) == 0 && c.px[(text::kMenuRow * 8 - 1) * c.w] == 7);   // rest of row 24 cleared, row 23 untouched
 }
 
+static void test_lightning()
+{
+    // Nothing at first; within 4 s a run of 1-3 flashes 9, 11, 15, 11, 9
+    lightning::State s;
+    CHECK(lightning::colour(s, 1000) == -1);
+    uint32_t t = 1000;
+    while (t < 6000 && lightning::colour(s, t) < 0) t += 10;
+    CHECK(t < 1000 + 4000 + 20 && t >= 2000);
+    CHECK(lightning::colour(s, t) == 9 && lightning::colour(s, t + 160) == 11 && lightning::colour(s, t + 260) == 15 &&
+          lightning::colour(s, t + 310) == 11 && lightning::colour(s, t + 410) == 9);
+    // Then more flashes (up to 3) and a gap of 1-4 s with nothing
+    int flashes = 1;
+    uint32_t u = t + 560;
+    int c = lightning::colour(s, u);
+    while (c == 9) {
+        ++flashes;
+        u += 560;
+        c = lightning::colour(s, u);
+    }
+    CHECK(c == -1 && flashes >= 1 && flashes <= 3);
+    CHECK(lightning::colour(s, u + 900) == -1);
+}
+
 static void test_printcalls()
 {
     // A fake overlay: code segment at 0x40, two strings, then two print calls
@@ -910,6 +959,25 @@ static void test_printcalls()
     CHECK(printcalls::read(src, calls, seg, l, 1) == 1);
     CHECK(printcalls::read(src, calls + 1, seg, l, 8) == 0);     // not on a call
     CHECK(printcalls::read(src, calls, seg + 3, l, 8) == 0);     // strings don't read
+    // Pool of Radiance's 29-byte calls: no background push
+    const uint32_t calls29 = static_cast<uint32_t>(ovr.size());
+    auto call29 = [&](int col, int row, int fg, uint32_t off) {
+        const uint8_t blk[printcalls::kBlockNoBack] = {
+            0xB0, (uint8_t)col, 0x50, 0xB0, (uint8_t)row, 0x50, 0xB0, (uint8_t)fg, 0x50,
+            0x8D, 0x7E, 0xDB, 0x16, 0x57, 0xBF, (uint8_t)(off & 0xFF), (uint8_t)(off >> 8), 0x0E, 0x57,
+            0x9A, 1, 2, 3, 4, 0x9A, 5, 6, 7, 8};
+        ovr.insert(ovr.end(), blk, blk + sizeof blk);
+    };
+    call29(5, 1, 10, b2);
+    call29(26, 3, 14, a);
+    ovr.push_back(0x89);
+    ovr.insert(ovr.end(), 40, 0);
+    dax::MemorySource src2(ovr.data(), static_cast<uint32_t>(ovr.size()));
+    CHECK(printcalls::read(src2, calls29, seg, l, 8, printcalls::kBlockNoBack) == 2);
+    CHECK(l[0].col == 5 && l[0].row == 1 && l[0].fg == 10 && l[0].bg == 0 && strcmp(l[0].s, "by: someone") == 0);
+    CHECK(l[1].col == 26 && l[1].row == 3 && l[1].fg == 14 && strcmp(l[1].s, "credits") == 0);
+    CHECK(printcalls::read(src2, calls29, seg, l, 8) == 0);                       // not 32-byte calls
+    CHECK(printcalls::read(src2, calls29, seg, l, 8, 30) == 0);                   // no such size
 }
 
 // ---- Icons -----------------------------------------------------------------
@@ -1375,6 +1443,43 @@ static void test_ecl()
     quiet_only[2 + 2] = static_cast<uint8_t>((kBase + quiet) >> 8);
     const ecl::MapLoad none = ecl::find_map_load(quiet_only.data(), static_cast<uint32_t>(quiet_only.size()), set);
     CHECK(!none.has_geo() && !none.has_walls());
+
+    // Pool of Radiance: the same script loaded at 0x9900, its words at Pool's
+    // addresses - decoded into Curse's map
+    const profile::Profile* pp = profile::find(games::Game::PoolOfRadiance, 65231, 68592);
+    CHECK(pp && pp->ecl_ops && pp->ecl_ops->pool_map);
+    if (!pp || !pp->ecl_ops) return;
+    const ecl::OpSet& ps = *pp->ecl_ops;
+    CHECK(ecl::vm_address(ps, 0x4900) == 0x4B00 && ecl::vm_address(ps, 0x4CFF) == 0x4EFF);
+    CHECK(ecl::vm_address(ps, 0x6B72) == 0x7C72 && ecl::vm_address(ps, 0x9700) == 0x7A00);
+    CHECK(ecl::vm_address(ps, 0x9914) == 0x8014 && ecl::vm_address(ps, 0xB6FF) == 0x9DFF);
+    CHECK(ecl::vm_address(ps, 0xC04B) == 0xC04B && ecl::vm_address(ps, 0x4D00) == 0x4D00);
+    CHECK(ecl::vm_address(set, 0x4900) == 0x4900);                        // Curse: as it is
+    Bytes pc = code;
+    auto ppatch = [&](size_t at, size_t target, uint8_t kind) {
+        pc[at] = kind;
+        pc[at + 1] = static_cast<uint8_t>((0x9900 + target) & 0xFF);
+        pc[at + 2] = static_cast<uint8_t>((0x9900 + target) >> 8);
+    };
+    ppatch(1, 20, 2);                                  // an entry given as a plain number
+    for (int i = 1; i < 5; ++i) ppatch(1 + i * 4, quiet, 1);
+    ppatch(goto_at, main_at, 2);                       // GOTO main as a plain number
+    ppatch(gosub_at, quiet, 1);
+    const size_t menu_at = quiet - 15;
+    pc[menu_at + 2] = 0x00; pc[menu_at + 3] = 0x49;    // the menu's answer: Pool's area word 0x4900
+    CHECK(ecl::entries(pc.data(), static_cast<uint32_t>(pc.size()), ps, ent) && ent[0] == 20 && ent[4] == quiet);
+    CHECK(ecl::decode(pc.data(), static_cast<uint32_t>(pc.size()), 20, ps, in) && in.ops[0].word() == kBase + main_at);
+    CHECK(ecl::decode(pc.data(), static_cast<uint32_t>(pc.size()), static_cast<uint32_t>(menu_at), ps, in) &&
+          in.op == 0x15 && in.ops[0].word() == 0x4B00);
+    Bytes pblock = {0x12, 0x34};
+    pblock.insert(pblock.end(), pc.begin(), pc.end());
+    const ecl::MapLoad pm = ecl::find_map_load(pblock.data(), static_cast<uint32_t>(pblock.size()), ps);
+    CHECK(pm.geo == 7 && pm.walls[0] == 3 && pm.walls[2] == 9);
+    // ECL CLOCK reads 1 operand in Pool; 0x3E-0x40 aren't opcodes
+    const uint8_t clock1[] = {0x34, 0, 5, 0x00};
+    CHECK(ecl::decode(clock1, 4, 0, ps, in) && in.count == 1 && in.next == 3);
+    const uint8_t dump[] = {0x3E, 0x00};
+    CHECK(!ecl::decode(dump, 2, 0, ps, in) && ecl::decode(dump, 2, 0, set, in));
 }
 
 // Packs A-Z, space and digits the way the scripts' strings are packed
@@ -1813,6 +1918,34 @@ static void test_vm_events_facts()
         CHECK(run(b, mh, vp, vm) == ecl::Stop::Stopped);
         CHECK(vm.get(0x4C00) == 9 && vm.get(0x4C01) == 4 && vm.get(0x4C02) == 0);
         CHECK(mh.mon[1][0x197] == 0 && mh.mon[1][0x198] == 1 && pa.m[1].rec[0x198] == 0 && pa.selected == 1);
+    }
+    // Pool of Radiance's map: SAVE 5 -> area word 0x4A00, GOTO over junk
+    // (a plain number), SAVE 7 -> table 0x9710, the game word 0x6C20 = 3
+    {
+        const profile::Profile* pp = profile::find(games::Game::PoolOfRadiance, 65231, 68592);
+        CHECK(pp && pp->ecl_ops);
+        if (!pp || !pp->ecl_ops) return;
+        Bytes c;
+        auto paddr = [&](Bytes& b, uint8_t kind, uint16_t a) { b.push_back(kind); b.push_back(a & 0xFF); b.push_back(a >> 8); };
+        for (int i = 0; i < 5; ++i) { c.push_back(0); paddr(c, 1, 0x9900 + 20); }
+        c.push_back(0x09); op_imm(c, 5); paddr(c, 1, 0x4A00);
+        c.push_back(0x01); paddr(c, 2, 0);
+        const size_t go = c.size() - 2;
+        c.push_back(0x09); op_imm(c, 1); paddr(c, 1, 0x4A01);              // jumped over
+        const size_t to = c.size();
+        c.push_back(0x09); op_imm(c, 7); paddr(c, 1, 0x9710);
+        c.push_back(0x09); op_imm(c, 3); paddr(c, 1, 0x6C20);
+        c.push_back(0x00);
+        c[go] = static_cast<uint8_t>((0x9900 + to) & 0xFF);
+        c[go + 1] = static_cast<uint8_t>((0x9900 + to) >> 8);
+        ecl::GameState gs;
+        TestHost host;
+        memcpy(gs.code, c.data(), c.size());
+        gs.code_len = static_cast<uint32_t>(c.size());
+        ecl::Vm vm(gs, host, *pp->ecl_ops);
+        CHECK(vm.init_script() && vm.entry(0) == 0x8000 + 20);
+        CHECK(vm.run(vm.entry(0)) == ecl::Stop::Stopped);
+        CHECK(vm.get(0x4C00) == 5 && vm.get(0x4C01) == 0 && vm.get(0x7A10) == 7 && vm.get(0x7D20) == 3);
     }
 }
 
@@ -2450,11 +2583,17 @@ static void test_geo_view()
     c.clear(1);
     view3d::draw(c, w, m, 5, 9, geo::East, 0);
     CHECK(at(30, 30) == 0);                                        // indoor sky
+    // Pool's flat bands: sky y 24-66, line 67, band 68-69, floor 70-111
+    c.clear(1);
+    view3d::draw(c, w, m, 5, 9, geo::East, view3d::Bands{11, 15, 7, 6});
+    CHECK(at(25, 24) == 11 && at(25, 66) == 11 && at(25, 67) == 15 && at(25, 68) == 7 && at(25, 69) == 7 &&
+          at(25, 70) == 6 && at(25, 111) == 6 && at(25, 112) == 1 && at(23, 50) == 1);
     // Type 1 = set 1 piece 0: not filled in (no tiles) -> nothing drawn there
     // Area map without frame tiles: nothing; with: arrow at the party
     static layout::Tiles ft;
     for (int t = 0; t < layout::kTiles; ++t)
         for (int i = 0; i < 64; ++i) ft.px[t][i] = static_cast<uint8_t>(t < 4 ? 14 : (t - 4) % 16 == 13 ? 12 : (t - 4) % 16);
+    ft.count = layout::kTiles;
     ft.loaded = true;
     w.frame = &ft;
     c.clear(1);
@@ -5344,6 +5483,7 @@ int main()
     test_text();
     test_menu();
     test_printcalls();
+    test_lightning();
     test_inflate();
     test_png();
     test_icon();

@@ -9,8 +9,15 @@ namespace {
 
 constexpr uint16_t kBase = 0x8000;   // VM address of the code's first byte
 
+void move_word(const OpSet& set, Operand& o)
+{
+    const uint16_t a = vm_address(set, o.word());
+    o.low = static_cast<uint8_t>(a);
+    o.high = static_cast<uint8_t>(a >> 8);
+}
+
 // Reads n operands from p; *count grows, ops beyond kMaxOps are dropped
-bool operands(const uint8_t* c, uint32_t len, uint32_t& p, int n, Insn& in)
+bool operands(const OpSet& set, const uint8_t* c, uint32_t len, uint32_t& p, int n, Insn& in)
 {
     for (int i = 0; i < n; ++i) {
         if (p + 2 > len) return false;
@@ -21,6 +28,7 @@ bool operands(const uint8_t* c, uint32_t len, uint32_t& p, int n, Insn& in)
         if (o.code == 1 || o.code == 2 || o.code == 3 || o.code == 0x81) {
             if (p + 1 > len) return false;
             o.high = c[p++];
+            if (set.pool_map && o.code != 2) move_word(set, o);
         } else if (o.code == 0x80) {
             if (p + o.low > len) return false;
             p += o.low;
@@ -42,6 +50,16 @@ uint32_t target(const Operand& o, uint32_t len)
 
 } // namespace
 
+uint16_t vm_address(const OpSet& set, uint16_t a)
+{
+    if (!set.pool_map) return a;
+    if (a >= 0x4900 && a < 0x4D00) return static_cast<uint16_t>(a + 0x200);
+    if (a >= 0x6B00 && a < 0x6F00) return static_cast<uint16_t>(a + 0x1100);
+    if (a >= 0x9700 && a < 0x9900) return static_cast<uint16_t>(a - 0x1D00);
+    if (a >= 0x9900 && a < 0xB700) return static_cast<uint16_t>(a - 0x1900);
+    return a;
+}
+
 bool decode(const uint8_t* c, uint32_t len, uint32_t at, const OpSet& set, Insn& out)
 {
     out = Insn{};
@@ -52,25 +70,35 @@ bool decode(const uint8_t* c, uint32_t len, uint32_t at, const OpSet& set, Insn&
     if (size == kUnknown) return false;
     uint32_t p = at + 1;
     if (size >= 0) {
-        if (!operands(c, len, p, size, out)) return false;
+        if (!operands(set, c, len, p, size, out)) return false;
     } else {
         const int first = size == kCount3 ? 3 : 2;
-        if (!operands(c, len, p, first, out)) return false;
+        if (!operands(set, c, len, p, first, out)) return false;
         const Operand& n = out.ops[first - 1];
         if (!n.immediate()) return false;
-        if (!operands(c, len, p, n.low, out)) return false;
+        if (!operands(set, c, len, p, n.low, out)) return false;
+    }
+    if (set.pool_map) {
+        // Jump targets given as plain numbers are code addresses too
+        int from = -1;
+        if (out.op == set.go_to || out.op == set.go_sub) from = 0;
+        else if (out.op == set.on_goto || out.op == set.on_gosub) from = 2;
+        if (from >= 0)
+            for (int i = from; i < out.count && i < kMaxOps; ++i)
+                if (out.ops[i].code == 2) move_word(set, out.ops[i]);
     }
     out.next = p;
     return true;
 }
 
-bool entries(const uint8_t* c, uint32_t len, const OpSet&, uint32_t out[5])
+bool entries(const uint8_t* c, uint32_t len, const OpSet& set, uint32_t out[5])
 {
     uint32_t p = 0;
     for (int i = 0; i < 5; ++i) {
         Insn in;
         p += 1;                       // the filler byte
-        if (!operands(c, len, p, 1, in)) return false;
+        if (!operands(set, c, len, p, 1, in)) return false;
+        if (set.pool_map && in.ops[0].code == 2) move_word(set, in.ops[0]);
         out[i] = target(in.ops[0], len);
     }
     return true;

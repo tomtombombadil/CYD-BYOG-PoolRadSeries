@@ -10,7 +10,7 @@ constexpr int kCols = pic::kScreenW / 8;    // 40
 
 void put(pic::Canvas& c, const Tiles& t, int n, int col, int row)
 {
-    if (n < 0 || n >= kTiles || !t.loaded) return;
+    if (n < 0 || n >= t.count || !t.loaded) return;
     const uint8_t* s = t.px[n];
     for (int y = 0; y < 8; ++y) {
         const int py = row * 8 + y;
@@ -55,8 +55,9 @@ bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tile
     if (r.read(hdr, sizeof hdr) != sizeof hdr) return false;
     pic::Header h;
     if (!pic::parse_header(hdr, e->raw_size, h)) return false;
-    if (h.height != 8 || h.width_cols != 1 || h.frames < kTiles) return false;
-    for (int n = 0; n < kTiles; ++n) {
+    if (h.height != 8 || h.width_cols != 1 || h.frames < 23) return false;
+    out.count = static_cast<uint8_t>(h.frames < kTiles ? h.frames : kTiles);
+    for (int n = 0; n < out.count; ++n) {
         uint8_t packed[32];
         if (r.read(packed, sizeof packed) != sizeof packed) return false;
         for (int i = 0; i < 32; ++i) {
@@ -71,6 +72,12 @@ bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tile
 Status load_tables(dax::ByteSource& program, const exepack::Info& info, const profile::Profile& p, Tables& out)
 {
     out.loaded = false;
+    if (p.variant.box[0]) {
+        // Pool: boxes, no tables to read
+        memcpy(out.box, p.variant.box, sizeof out.box);
+        out.loaded = true;
+        return Status::Ok;
+    }
     const profile::FrameTables& f = p.frame;
     struct Slice { uint16_t at; uint8_t* dst; uint8_t len; };
     const Slice s[] = {
@@ -114,8 +121,34 @@ Status load_tables(dax::ByteSource& program, const exepack::Info& info, const pr
 
 void tile(pic::Canvas& c, const Tiles& t, int n, int col, int row) { put(c, t, n, col, row); }
 
+namespace {
+
+// Pool: the border of a box whose corners are cells (c0, r0) and (c1, r1)
+void box(pic::Canvas& c, const Tables& tb, const Tiles& t, int c0, int r0, int c1, int r1)
+{
+    for (int col = c0 + 1; col < c1; ++col) {
+        put(c, t, tb.box[2], col, r0);
+        put(c, t, tb.box[2], col, r1);
+    }
+    for (int row = r0 + 1; row < r1; ++row) {
+        put(c, t, tb.box[1], c0, row);
+        put(c, t, tb.box[1], c1, row);
+    }
+    put(c, t, tb.box[0], c0, r0);
+    put(c, t, tb.box[0], c1, r0);
+    put(c, t, tb.box[0], c0, r1);
+    put(c, t, tb.box[0], c1, r1);
+}
+
+} // namespace
+
 void outer(pic::Canvas& c, const Tables& tb, const Tiles& t)
 {
+    if (tb.box[0]) {
+        c.fill(8, 8, 38 * 8, 22 * 8, 0);
+        box(c, tb, t, 0, 0, kCols - 1, 23);
+        return;
+    }
     c.fill(8, 8, 38 * 8, 22 * 8, 0);
     for (int col = 0; col < kCols; ++col) put(c, t, kFrameTile + tb.top[col], col, 0);
     for (int row = 0; row <= 22; ++row) {
@@ -127,6 +160,12 @@ void outer(pic::Canvas& c, const Tables& tb, const Tiles& t)
 
 void bar(pic::Canvas& c, const Tables& tb, const Tiles& t, int row)
 {
+    if (tb.box[0]) {
+        for (int col = 1; col < kCols - 1; ++col) put(c, t, tb.box[2], col, row);
+        put(c, t, tb.box[0], 0, row);
+        put(c, t, tb.box[0], kCols - 1, row);
+        return;
+    }
     for (int col = 0; col < kCols; ++col) put(c, t, kFrameTile + tb.bar[col], col, row);
 }
 
@@ -134,6 +173,12 @@ void explore(pic::Canvas& c, const Tables& tb, const Tiles& t)
 {
     outer(c, tb, t);
     bar(c, tb, t, 16);
+    if (tb.box[0]) {
+        // Pool (screen_facts.md 3.2): the left box and the 3D view's own
+        box(c, tb, t, 0, 0, 16, 16);
+        box(c, tb, t, 2, 2, 14, 14);
+        return;
+    }
     for (int row = 0; row <= 16; ++row) put(c, t, kFrameTile + tb.view_split[row], 16, row);
     for (int i = 2; i <= 14; ++i) {
         put(c, t, kViewTile + tb.view_top[i], i, 2);
@@ -146,6 +191,12 @@ void explore(pic::Canvas& c, const Tables& tb, const Tiles& t)
 void combat(pic::Canvas& c, const Tables& tb, const Tiles& t)
 {
     c.fill(0, 0, pic::kScreenW, 24 * 8, 0);
+    if (tb.box[0]) {
+        // Pool (screen_facts.md 7): the battlefield and the side panel
+        box(c, tb, t, 0, 0, 22, 22);
+        box(c, tb, t, 22, 0, kCols - 1, 22);
+        return;
+    }
     for (int col = 0; col < kCols; ++col) put(c, t, kFrameTile + tb.top[col], col, 0);
     for (int row = 0; row <= 22; ++row) {
         put(c, t, kFrameTile + tb.combat_left[row], 0, row);
@@ -153,6 +204,19 @@ void combat(pic::Canvas& c, const Tables& tb, const Tiles& t)
         put(c, t, kFrameTile + tb.combat_right[row], kCols - 1, row);
     }
     for (int col = 0; col < kCols; ++col) put(c, t, kFrameTile + tb.bottom[col], col, 22);
+}
+
+void credits(pic::Canvas& c, const Tables& tb, const Tiles& t, const uint8_t rows[2])
+{
+    if (tb.box[0]) {
+        // Pool (screen_facts.md 5): boxes down to row 24
+        c.fill(0, 0, pic::kScreenW, pic::kScreenH, 0);
+        box(c, tb, t, 0, 0, kCols - 1, 24);
+    } else {
+        outer(c, tb, t);
+    }
+    for (int i = 0; i < 2; ++i)
+        if (rows[i]) bar(c, tb, t, rows[i]);
 }
 
 } // namespace layout

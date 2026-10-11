@@ -15,6 +15,7 @@
 #include "engine/font.h"
 #include "engine/icon_looks.h"
 #include "engine/gbc_icons.h"
+#include "engine/lightning.h"
 #include "engine/journal.h"
 #include "engine/classes.h"
 #include "engine/combat.h"
@@ -399,7 +400,14 @@ void draw_view(pic::Canvas& c)
     } else if (area_view && (vm->get(0x4BFB) == 0)) {
         view3d::draw_area_map(c, d->world, d->map, d->gs.x, d->gs.y, d->gs.dir);
     } else {
-        view3d::draw(c, d->world, d->map, d->gs.x, d->gs.y, d->gs.dir, sky_colour());
+        if (d->prof->variant.flat_view) {
+            // Pool: flat bands (screen_facts.md 4)
+            const auto& v = d->prof->variant;
+            view3d::draw(c, d->world, d->map, d->gs.x, d->gs.y, d->gs.dir,
+                         view3d::Bands{sky_colour(), v.view_line, v.view_band, v.view_floor});
+        } else {
+            view3d::draw(c, d->world, d->map, d->gs.x, d->gs.y, d->gs.dir, sky_colour());
+        }
     }
     dirty_rows(3, 13);
 }
@@ -6942,6 +6950,8 @@ struct TitleRun {
     uint32_t timeout_ms = 30000;        // the version line picks Demo after this (10 s after a demo)
     char     version[48] = {};
     char     words[24] = {};
+    lightning::State lt;                // Pool: lightning on the last picture
+    int      flash = -1;
 };
 TitleRun* title_run = nullptr;
 
@@ -6976,8 +6986,7 @@ void title_show(int from, pic::Canvas& c)
         shown = true;
         if (st.clear) c.clear(0);
         if (st.block == 0) {
-            layout::outer(c, d->tables, d->frame_tiles);
-            for (uint8_t bar : p.credits_bars) layout::bar(c, d->tables, d->frame_tiles, bar);
+            layout::credits(c, d->tables, d->frame_tiles, p.credits_bars);
             for (int i = 0; i < title_run->n_credits; ++i) {
                 const printcalls::Line& l = title_run->credits[i];
                 font::draw_text(c, d->font, l.s, l.col, l.row, l.fg, l.bg);
@@ -7031,6 +7040,8 @@ void title_next(pic::Canvas& c)
 void title_tick(uint32_t now, pic::Canvas& c)
 {
     if (!title_run) return;
+    title_run->flash = !title_run->prompt && profile::title_flash_step(*d->prof, title_run->step)
+                           ? lightning::colour(title_run->lt, now) : -1;
     if (title_run->prompt) {
         if (title_run->words[0] && now - title_run->since >= title_run->timeout_ms) start_demo(c);
         return;
@@ -7476,7 +7487,8 @@ bool start_title(pic::Canvas& c, uint32_t timeout_ms)
     if (open_file(p.overlay, f)) {
         library::FileSource osrc(f);
         if (osrc.size() == p.overlay_size)
-            title_run->n_credits = printcalls::read(osrc, p.credits_at, p.credits_base, title_run->credits, kTitleCredits);
+            title_run->n_credits = printcalls::read(osrc, p.credits_at, p.credits_base, title_run->credits, kTitleCredits,
+                                                         p.variant.credits_stride ? p.variant.credits_stride : printcalls::kBlock);
         f.close();
     }
     screen = Screen::Title;
@@ -7490,6 +7502,13 @@ bool start_title(pic::Canvas& c, uint32_t timeout_ms)
 bool available(games::Game g) { return profile::program_name(g) != nullptr; }
 
 bool icon_editing() { return d && screen == Screen::Icon && ie; }
+
+int flash(int& index)
+{
+    if (!d || screen != Screen::Title || !title_run) return -1;
+    index = d->prof->variant.title_flash;
+    return title_run->flash;
+}
 
 bool icon_gallery()
 {
@@ -7660,7 +7679,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
         return msg;
     }
     d->world.frame = &d->frame_tiles;
-    if (open_dax(d->prof->sky_file, f)) {
+    if (d->prof->sky_file && open_dax(d->prof->sky_file, f)) {
         library::FileSource src(f);
         view3d::load_horizon(src, d->idx, d->prof->horizon_block, d->world);
         f.close();

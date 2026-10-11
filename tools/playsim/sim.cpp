@@ -6,7 +6,7 @@
 // game A at the party menu first; otherwise BEGIN with no party; VIEW=n then
 // views character n), AREA / BLOCK (start
 // script), SETVAR=addr=value, CHOICES=digits, TYPE=text, TELE=x,y,dir,
-// FINDLOCK, PAUSESHOT, ANIMSHOTS, MS (ms to settle). Fights: FINDMON lists
+// FINDLOCK, PAUSESHOT, ANIMSHOTS, MS (ms to settle), GAME=n (games::Game: 1 Pool). Fights: FINDMON lists
 // the script's LOAD MONSTERs (RUNAT=that address FIGHT=1 runs the fight),
 // FIGHTOPS, FORCESPELL=m:id,id (fighter m has those spells), FORCEWEAPON=m:type
 // (fighter m's weapon becomes that type), FXSHOTS=n (snapshots of the pages'
@@ -191,7 +191,9 @@ int main(int argc, char** argv)
     fs::sim_root() = slash == std::string::npos ? "." : host.substr(0, slash);
     const std::string folder = slash == std::string::npos ? host : host.substr(slash + 1);
     const char* dir = folder.c_str();
-    const char* e = play::open(dir, games::Game::CurseOfTheAzureBonds, C, getenv("CACHE"));
+    // GAME=n: another game (games::Game's number: 1 Pool of Radiance)
+    const games::Game game = getenv("GAME") ? (games::Game)atoi(getenv("GAME")) : games::Game::CurseOfTheAzureBonds;
+    const char* e = play::open(dir, game, C, getenv("CACHE"));
     if (e) { printf("open: %s\n", e); return 1; }
     // The title sequence (v0.53.0): a tap through each step (TITLESHOTS:
     // a snapshot of each), then Play on the version line
