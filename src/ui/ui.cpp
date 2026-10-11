@@ -300,6 +300,28 @@ void key_arrow(const Rect& r, Arrow a, KeyStyle s)
     }
 }
 
+void key_compass(const Rect& r, int dir, KeyStyle s)
+{
+    key(r, "", s);
+    const uint16_t col = s == KeyStyle::Dim ? style::kTextMuted : style::kGold;
+    const float cx = r.x + r.w / 2.0f, cy = r.y + r.h / 2.0f;
+    float sz = (r.w < r.h ? r.w : r.h) * 0.32f;
+    if (sz < 6) sz = 6;
+    const float t = sz / 3 < 3 ? 3 : sz / 3;        // line thickness
+    const float hh = sz * 2 / 3;                     // arrow head half size
+    static const float kX[8] = {0, 0.7071f, 1, 0.7071f, 0, -0.7071f, -1, -0.7071f};
+    static const float kY[8] = {-1, -0.7071f, 0, 0.7071f, 1, 0.7071f, 0, -0.7071f};
+    const float ux = kX[dir & 7], uy = kY[dir & 7], px = -uy, py = ux;
+    const float tipx = cx + ux * sz, tipy = cy + uy * sz;
+    const float bx = tipx - ux * hh * 1.3f, by = tipy - uy * hh * 1.3f;   // the head's base
+    const float tx = cx - ux * sz, ty = cy - uy * sz;                     // the tail
+    auto P = [](float v) { return static_cast<int32_t>(v + (v < 0 ? -0.5f : 0.5f)); };
+    const float h = t / 2;
+    g->fillTriangle(P(tx + px * h), P(ty + py * h), P(tx - px * h), P(ty - py * h), P(bx + px * h), P(by + py * h), col);
+    g->fillTriangle(P(tx - px * h), P(ty - py * h), P(bx - px * h), P(by - py * h), P(bx + px * h), P(by + py * h), col);
+    g->fillTriangle(P(tipx), P(tipy), P(bx + px * hh), P(by + py * hh), P(bx - px * hh), P(by - py * hh), col);
+}
+
 uint16_t key_fill(KeyStyle s)
 {
     return s == KeyStyle::Lit ? style::kKeyLit : s == KeyStyle::Dim ? style::kKeyDim : style::kKey;

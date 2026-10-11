@@ -7490,6 +7490,39 @@ bool nav(Nav n, pic::Canvas& c)
     return false;
 }
 
+bool fight_pad()
+{
+    return d && input_mode == Input::None && screen == Screen::Fight && fg &&
+           (fg->st == FSt::Move || (fg->st == FSt::Aim && fg->manual));
+}
+
+bool fight_dir(int dir, pic::Canvas& c)
+{
+    if (!fight_pad()) return false;
+    cv = &c;
+    return fight_way(dir, c);
+}
+
+bool fight_select(pic::Canvas& c)
+{
+    if (!fight_pad()) return false;
+    cv = &c;
+    if (fg->st == FSt::Move) {
+        end_move(c);
+        return true;
+    }
+    // Manual aim: Target, when it's on the menu line
+    for (int k = 0; k < menu.count; ++k)
+        if (text::key(menu, k) == 'T') {
+            menu.selected = k;
+            int x, y;
+            if (!nav_point(&x, &y)) return false;
+            tap(x, y, c);
+            return true;
+        }
+    return false;
+}
+
 bool walking()
 {
     if (!d || input_mode != Input::None) return false;

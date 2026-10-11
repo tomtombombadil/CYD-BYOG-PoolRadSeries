@@ -97,6 +97,14 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   Map, Esc too); Select gives 8 px so Up / Down / Left / Right are each
   2 px wider ("Right" fits) - widths change in multiples of 4, and
   Select's text must still fit.
+  Tom, 2026-10-10: Map then Game (Game last on the right); the Game menu's
+  Esc became **Exit Game** (out of the Play Test; both sizes). A fight's
+  own keys while a fighter moves or aims by hand (`play::fight_pad`): the
+  8 directions + Select (Select = end the move / Target) - 320x240 one row
+  in keypad order 7 8 9 4 Select 6 1 2 3 + Game (arrows 23 px, Select and
+  Game wide enough for their words), 480x320 a 3 x 3 pad in the movement
+  pad's place. The map (Companion / Map key): black behind, walls 1 px,
+  doors 3 px.
 - Add Character -> Pool (v0.56.0): lists Pool of Radiance characters from
   Curse's save folder (the original) AND the player's Pool of Radiance
   folder on the card (confirmed by Tom, 2026-10-10). The demo stops on
@@ -192,7 +200,12 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   are - `/GOLDBOX/Curse of the Azure Bonds` etc. Docs, screens and examples
   use those names, not short DOS names (the scanner still recognises short
   names like CURSE: `engine/games.*`). Dark Queen / Unlimited Adventures are
-  .TLB/.GLB "newer format" games, listed, not readable.
+  .TLB/.GLB "newer format" games, listed, not readable. The Steam / SNEG
+  releases (Tom, 2026-10-10) are found too: each game's SNEG folder copied
+  into /GOLDBOX as it is (`CURSE`, `POOLRAD`, `SECRET`, `Pools of Darkness`
+  ...), the DAX files two down (`<folder>/GAME/<SHORT>`), the journal in
+  `<folder>/Documentation/`, the icon `game.ico`; folder listings in the
+  Project ("Steam SNEG Directory Listing*.txt").
 - Chooser (Tom, 2026-10-10, v0.53.0): a game's page is four big keys -
   Resource Test (the DAX file / block viewer, behind it now), Screen Test,
   Walk Test, Play Test. The Play Test starts with the title sequence and

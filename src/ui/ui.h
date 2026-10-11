@@ -74,6 +74,9 @@ void key_big(const Rect& r, const char* label, const char* sub, KeyStyle s = Key
 // A key showing a movement arrow instead of words.
 enum class Arrow : uint8_t { Forward, Left, Right, TurnLeft, TurnRight, TurnAround };
 void key_arrow(const Rect& r, Arrow a, KeyStyle s = KeyStyle::Normal);
+// A straight arrow pointing one of 8 ways (0 north, 1 north-east ... 7
+// north-west): a fight's direction keys
+void key_compass(const Rect& r, int dir, KeyStyle s = KeyStyle::Normal);
 
 // The fill colour of a key in style s (to draw pictures on it)
 uint16_t key_fill(KeyStyle s);

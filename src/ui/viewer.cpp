@@ -1289,16 +1289,24 @@ void tap_look(const ui::Tap& t)
 // engine's Menu) / Look / Esc stacked. 320x240: one row - the Walk Test's
 // 8 keys; the Play Test's 9 slots showing either the movement keys (Side-
 // step Left, Turn Left, Forward, Turn Right, Side-step Right, Turn Around,
-// Menu Keys, Game, Map) or the cursor keys (Up, Down, Select - two slots
-// wide -, Left, Right, Move Keys, Game, Map; Tom, v0.52.0 - Esc moved to
-// the Game menu): the movement keys while the party can walk
-// (play::walking), the cursor keys otherwise; Menu Keys / Move Keys swap
-// them by hand until the game's state changes.
+// Menu Keys, Map, Game) or the cursor keys (Up, Down, Select - two slots
+// wide -, Left, Right, Move Keys, Map, Game; Tom, v0.52.0 - Esc moved to
+// the Game menu, 2026-10-10 - Game last, the menu's Esc became Exit Game):
+// the movement keys while the party can walk (play::walking), the cursor
+// keys otherwise; Menu Keys / Move Keys swap them by hand until the game's
+// state changes. A fighter moving or aiming by hand (play::fight_pad) gets
+// the fight's keys instead: the 8 ways and Select (320x240: a row of 10 in
+// the numeric keypad's order, then Game; 480x320: a 3 x 3 pad in the
+// movement pad's place).
 enum WalkKey { kWTurnL, kWStepL, kWFwd, kWStepR, kWTurnR, kWAround, kWArea, kWNext, kWEsc,
-               kWUp, kWLeft, kWSel, kWRight, kWDown, kWCursor, kWMove, kWMap, kWKeys };
+               kWUp, kWLeft, kWSel, kWRight, kWDown, kWCursor, kWMove, kWMap,
+               // a fight's own keys (Tom, 2026-10-10): the 8 ways (0 north ... 7
+               // north-west) and Select, while a fighter moves or aims by hand
+               kWD0, kWD1, kWD2, kWD3, kWD4, kWD5, kWD6, kWD7, kWFSel, kWKeys };
 constexpr int kWMoveKeys = kWUp;        // the Walk Test has no cursor keys
 
-enum class Row : uint8_t { Walk, Move, Cursor };
+enum class Row : uint8_t { Walk, Move, Cursor, Fight };
+bool pad_fight = false;                 // 480x320: the fight's pad shown in the movement pad's place
 Row row = Row::Walk;                    // what 320x240's row shows
 
 ui::Rect walk_key(int k)
@@ -1309,15 +1317,31 @@ ui::Rect walk_key(int k)
     if (!ui::large()) {
         if (row == Row::Walk) {
             // Row of 8: StepL TurnL Fwd TurnR StepR Around Area Esc (Next Map: menu / panel tap)
-            static const int kOrder[kWKeys] = {1, 0, 2, 4, 3, 5, 6, -1, 7, -1, -1, -1, -1, -1, -1, -1, -1};
+            static const int kOrder[kWKeys] = {1, 0, 2, 4, 3, 5, 6, -1, 7, -1, -1, -1, -1, -1, -1, -1, -1,
+                                               -1, -1, -1, -1, -1, -1, -1, -1, -1};
             const int i = kOrder[k];
             if (i < 0) return ui::Rect{};
             const int w = (pic::kScreenW - gp * 9) / 8;
             return {gp + i * (w + gp), top, w, h_all};
         }
-        // 9 slots
-        static const int kMove[kWKeys] = {1, 0, 2, 4, 3, 5, 7, -1, -1, -1, -1, -1, -1, -1, 6, -1, 8};
-        static const int kCur[kWKeys] = {-1, -1, -1, -1, -1, -1, 7, -1, -1, 0, 4, 2, 5, 1, -1, 6, 8};
+        if (row == Row::Fight) {
+            // 10 slots, the numeric keypad's order: 7 8 9 4 Select 6 1 2 3, then Game
+            static const int kFight[kWKeys] = {-1, -1, -1, -1, -1, -1, 9, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                                               1, 2, 5, 8, 7, 6, 3, 0, 4};
+            const int i = kFight[k];
+            if (i < 0) return ui::Rect{};
+            // The arrows narrow; Select and Game wide enough for their words
+            // (the small font: "Select" 36 px, "Game" 24)
+            const int dw = (pic::kScreenW - gp * 11 - 52 - 40) / 8;
+            const int ww = i == 4 ? 52 : i == 9 ? pic::kScreenW - gp * 11 - dw * 8 - 52 : dw;
+            const int x = gp + i * (dw + gp) + (i > 4 ? 52 - dw : 0);
+            return {x, top, ww, h_all};
+        }
+        // 9 slots; Map then Game, the Game menu last on the right (Tom, 2026-10-10)
+        static const int kMove[kWKeys] = {1, 0, 2, 4, 3, 5, 8, -1, -1, -1, -1, -1, -1, -1, 6, -1, 7,
+                                          -1, -1, -1, -1, -1, -1, -1, -1, -1};
+        static const int kCur[kWKeys] = {-1, -1, -1, -1, -1, -1, 8, -1, -1, 0, 4, 2, 5, 1, -1, 6, 7,
+                                         -1, -1, -1, -1, -1, -1, -1, -1, -1};
         const int i = (row == Row::Move ? kMove : kCur)[k];
         if (i < 0) return ui::Rect{};
         const int w = (pic::kScreenW - gp * 10) / 9;
@@ -1339,6 +1363,15 @@ ui::Rect walk_key(int k)
     const int pad_w = (pic::kScreenW - gp * 3) / 2;
     const int kw = (pad_w - gp * 2) / 3;
     const int mh = (h_all - gp) / 2;                    // the movement pad: 2 rows
+    // A fight's pad in the movement pad's place: 3 x 3, Select in the middle
+    // (the numeric keypad: 7 8 9 / 4 5 6 / 1 2 3)
+    const bool fight_key = k >= kWD0 && k <= kWFSel;
+    if (fight_key != pad_fight && (fight_key || k <= kWAround)) return ui::Rect{};
+    if (fight_key) {
+        static const int kCol[9] = {1, 2, 2, 2, 1, 0, 0, 0, 1}, kRow[9] = {0, 0, 1, 2, 2, 2, 1, 0, 1};
+        const int fh = (h_all - gp * 2) / 3;
+        return ui::Rect{gp + kCol[k - kWD0] * (kw + gp), top + kRow[k - kWD0] * (fh + gp), kw, fh};
+    }
     const int ch = (h_all - gp * 2) / 3;                // the cursor pad: 3 rows
     auto move = [&](int col, int r) { return ui::Rect{gp + col * (kw + gp), top + r * (mh + gp), kw, mh}; };
     const int cx0 = gp * 2 + pad_w;
@@ -1432,25 +1465,41 @@ void draw_companion(const MapSource& ms = kWalkMap)
     redraw_side_keys();
 }
 
-// The map's walls and doors, the party a triangle pointing the way it faces
+// The map's walls and doors, the party a triangle pointing the way it faces.
+// Black behind (Tom, 2026-10-10: the best contrast); walls a pixel wide,
+// doors 3 (drawn after the walls, so a neighbour's wall doesn't cover them)
 void draw_map_grid(const geo::Map& map, const MapSource& ms, int mx, int my, int cell)
 {
     LGFX& g = ui::gfx();
     const geo::Map* m = &map;
-    g.fillRect(mx, my, cell * geo::kSize + 1, cell * geo::kSize + 1, style::kKey);
-    for (int y = 0; y < geo::kSize; ++y)
-        for (int x = 0; x < geo::kSize; ++x) {
-            const int sx = mx + x * cell, sy = my + y * cell;
-            for (int d = 0; d < 8; d += 2) {
-                if (!geo::wall(*m, x, y, d)) continue;
-                const int door = geo::door(*m, x, y, d);
-                const uint16_t col = door == 1 ? style::kGold : door >= 2 ? style::kWarn : style::kText;
-                if (d == 0) g.drawFastHLine(sx, sy, cell + 1, col);
-                if (d == 4) g.drawFastHLine(sx, sy + cell, cell + 1, col);
-                if (d == 6) g.drawFastVLine(sx, sy, cell + 1, col);
-                if (d == 2) g.drawFastVLine(sx + cell, sy, cell + 1, col);
+    const int span = cell * geo::kSize + 1;
+    g.fillRect(mx, my, span, span, style::kBackground);
+    for (int pass = 0; pass < 2; ++pass)
+        for (int y = 0; y < geo::kSize; ++y)
+            for (int x = 0; x < geo::kSize; ++x) {
+                const int sx = mx + x * cell, sy = my + y * cell;
+                for (int d = 0; d < 8; d += 2) {
+                    if (!geo::wall(*m, x, y, d)) continue;
+                    const int door = geo::door(*m, x, y, d);
+                    if ((door != 0) != (pass == 1)) continue;
+                    const uint16_t col = door == 1 ? style::kGold : door >= 2 ? style::kWarn : style::kText;
+                    const bool across = d == 0 || d == 4;           // a wall along x
+                    const int lx = d == 2 ? sx + cell : sx, ly = d == 4 ? sy + cell : sy;
+                    if (!door) {
+                        if (across) g.drawFastHLine(lx, ly, cell + 1, col);
+                        else g.drawFastVLine(lx, ly, cell + 1, col);
+                        continue;
+                    }
+                    // A door: 3 pixels across the wall line, kept inside the map
+                    int rx = across ? lx : lx - 1, ry = across ? ly - 1 : ly;
+                    int rw = across ? cell + 1 : 3, rh = across ? 3 : cell + 1;
+                    if (rx < mx) { rw -= mx - rx; rx = mx; }
+                    if (ry < my) { rh -= my - ry; ry = my; }
+                    if (rx + rw > mx + span) rw = mx + span - rx;
+                    if (ry + rh > my + span) rh = my + span - ry;
+                    g.fillRect(rx, ry, rw, rh, col);
+                }
             }
-        }
     // The party: a triangle pointing the way it faces
     const int cx = mx + ms.x() * cell + cell / 2, cy = my + ms.y() * cell + cell / 2;
     const int r = cell / 2 - 1;
@@ -1466,7 +1515,7 @@ void draw_map_grid(const geo::Map& map, const MapSource& ms, int mx, int my, int
 void draw_map_page()
 {
     LGFX& g = ui::gfx();
-    g.fillRect(0, 0, pic::kScreenW, pic::kScreenH, style::kBackground);
+    g.fillRect(0, 0, pic::kScreenW, pic::kScreenH, style::kBackground);     // (black: the map's)
     const int cell = 12, mx = 4, my = (pic::kScreenH - cell * geo::kSize - 1) / 2;
     const int tx = mx + cell * geo::kSize + 8, tw = pic::kScreenW - tx - 4;
     char l1[48], l2[48];
@@ -1488,14 +1537,25 @@ void draw_walk_keys(const char* side_label, const char* area_label, bool cursor)
 {
     side_keys[0] = area_label;
     side_keys[1] = side_label;
+    pad_fight = cursor && play::fight_pad();
+    if (ui::large()) {
+        // (the movement pad's place: its keys or the fight's - cleared first)
+        const int gp = ui::gap();
+        ui::clear_area({0, pic::kScreenH, (pic::kScreenW - gp * 3) / 2 + gp * 2, ui::height() - pic::kScreenH});
+    }
     if (!ui::large()) {
         // The row: cleared first (it changes between the movement and cursor keys)
-        row = !cursor ? Row::Walk : play::walking() == row_flip ? Row::Cursor : Row::Move;
+        row = !cursor ? Row::Walk
+              : pad_fight ? Row::Fight
+              : play::walking() == row_flip ? Row::Cursor : Row::Move;
         // (v0.64.0: the keys forgotten too - the movement row's Forward key, under the cursor row's
         // Select, took Select's tap ring: a small key's ghost on it)
         ui::clear_area({0, pic::kScreenH, pic::kScreenW, ui::height() - pic::kScreenH});
     }
-    if (row != Row::Cursor || ui::large()) {
+    if (pad_fight) {
+        for (int k = kWD0; k <= kWD7; ++k) ui::key_compass(walk_key(k), k - kWD0);
+        ui::key_small(walk_key(kWFSel), "Select");
+    } else if (row != Row::Cursor || ui::large()) {
         ui::key_arrow(walk_key(kWTurnL), ui::Arrow::TurnLeft);
         ui::key_arrow(walk_key(kWStepL), ui::Arrow::Left);
         ui::key_arrow(walk_key(kWFwd), ui::Arrow::Forward);
@@ -1503,7 +1563,7 @@ void draw_walk_keys(const char* side_label, const char* area_label, bool cursor)
         ui::key_arrow(walk_key(kWTurnR), ui::Arrow::TurnRight);
         ui::key_arrow(walk_key(kWAround), ui::Arrow::TurnAround);
     }
-    if (cursor && (ui::large() || row == Row::Cursor)) {
+    if (cursor && (ui::large() || row == Row::Cursor) && row != Row::Fight) {
         ui::key_small(walk_key(kWUp), "Up");
         ui::key_small(walk_key(kWLeft), "Left");
         ui::key_small(walk_key(kWSel), "Select");
@@ -1664,32 +1724,32 @@ int  menu_page = 0;
 bool from_menu = false;       // the journal / PDF screens go back to the Menu
 char menu_note[160] = {};
 
-// 320x240: Esc lives in the Game menu, at the tab bar's right (Tom,
-// v0.52.0 - its place in the row went to Map): back to the game, Esc
+// Exit Game at the tab bar's right, both sizes (Tom, 2026-10-10: it was
+// 320x240's Esc): out of the Play Test, back to the game's page
 ui::Rect menu_esc_rect()
 {
-    if (ui::large()) return ui::Rect{};
-    const int gp = ui::gap(), w = 44;
+    const int gp = ui::gap(), w = ui::large() ? 110 : 62;
     return {ui::width() - gp - w, 2, w, ui::header_h() - 4};
 }
 
 ui::Rect tab_rect(int i)
 {
     const int gp = ui::gap();
-    const int right = ui::large() ? ui::width() : menu_esc_rect().x;
+    const int right = menu_esc_rect().x;
     const int w = (right - gp * (kTabs + 1)) / kTabs;
     return {gp + i * (w + gp), 2, w, ui::header_h() - 4};
 }
 
 void draw_tabs(int active)
 {
-    // (320x240: four tabs and Esc - the book's tab is "PDF")
+    // (four tabs and Exit Game - 320x240's book tab is "PDF")
     static const char* const kNames[kTabs] = {"Journal", "Journal PDF", "Sounds", "Options"};
     static const char* const kShort[kTabs] = {"Journal", "PDF", "Sounds", "Options"};
     ui::gfx().fillRect(0, 0, ui::width(), ui::header_h(), style::kHeader);
     for (int i = 0; i < kTabs; ++i)
         ui::key(tab_rect(i), ui::large() ? kNames[i] : kShort[i], i == active ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
-    if (menu_esc_rect().w > 0) ui::key(menu_esc_rect(), "Esc");
+    if (ui::large()) ui::key(menu_esc_rect(), "Exit Game");
+    else ui::key_small(menu_esc_rect(), "Exit Game");
 }
 
 bool menu_esc_hit(const ui::Tap& t)
@@ -1738,14 +1798,13 @@ void leave_menu()
 void close_book();
 void leave_play();
 
-// The Game menu's Esc (320x240): back to the game, then Esc as the row's
-// key did (out of what the game shows; at the top, out of the Play Test)
+// The Game menu's Exit Game: out of the Play Test (no question - the UI
+// rules; the game is saved in camp, as the originals)
 void menu_esc()
 {
     close_book();
-    leave_menu();
-    if (play_error) return;
-    if (!play::back(frame::canvas())) leave_play();
+    from_menu = false;
+    leave_play();
 }
 
 // The Sounds tab: the game's sound effects to hear, Tandy or PC speaker
@@ -2599,8 +2658,10 @@ void present_play()
             row_walking = w;
             row_flip = false;               // the game moved on: back to what it needs
         }
-        const Row want = w == row_flip ? Row::Cursor : Row::Move;
+        const Row want = play::fight_pad() ? Row::Fight : w == row_flip ? Row::Cursor : Row::Move;
         if (row != want) draw_walk_keys("Look", "Game", true);
+    } else if (play::fight_pad() != pad_fight) {
+        draw_walk_keys("Look", "Game", true);        // the fight's pad comes and goes
     }
     if (!big && (play::pos_x() != play_last_x || play::pos_y() != play_last_y || play::dir() != play_last_dir ||
                  play::map() != play_last_map)) {
@@ -2722,6 +2783,16 @@ void tap_play(const ui::Tap& t)
         }
         // A journal entry the game mentioned: this tap shows it (the game still waits)
         if (play_journal()) return;
+        if (k >= kWD0 && k <= kWD7) {
+            play::fight_dir(k - kWD0, frame::canvas());
+            present_play();
+            return;
+        }
+        if (k == kWFSel) {
+            play::fight_select(frame::canvas());
+            present_play();
+            return;
+        }
         int cx, cy;
         switch (k) {
         case kWUp:    play::nav(play::Nav::Up, frame::canvas()); break;

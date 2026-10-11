@@ -21,8 +21,9 @@ enum class Format : uint8_t { Dax, Hlib };
 struct GameDir {
     char         folder[40];      // folder name under /GOLDBOX
     char         data_dir[96];    // where the DAX files are, relative to /GOLDBOX:
-                                  // the folder itself, or one folder inside it
-                                  // (a whole GOG install copied as it is)
+                                  // the folder itself, or one or two folders inside
+                                  // it (a whole GOG install copied as it is; the
+                                  // Steam / SNEG releases: <folder>/GAME/<SHORT>)
     games::Game  game;
     Format       format;
     int          dax_files;       // .DAX files (Dax), .TLB + .GLB files (Hlib)
@@ -40,9 +41,10 @@ constexpr int kNameLen  = 32;
 enum class ScanResult : uint8_t { Ok, NoCard, NoRootFolder };
 
 // Lists the game folders, sorted by games::list_order() then name: those
-// holding .DAX files (in the folder or one folder down), and those holding
-// .TLB / .GLB files (in the folder or up to two folders down - Dark Queen
-// keeps them in DISK1-3). *n = how many.
+// holding .DAX files (in the folder or up to two folders down), and those
+// holding .TLB / .GLB files (in the folder or up to three folders down - Dark
+// Queen keeps them in DISK1-3, the SNEG release in GAME/DQK/DISK1-3). The
+// journal PDF: in the folder, the data folder or Documentation/. *n = how many.
 // Finds the games on the card. progress(line, replace_last, ctx), if
 // given, hears what it finds as it goes ("Found Curse of the Azure Bonds").
 using Progress = void (*)(const char* line, bool replace_last, void* ctx);

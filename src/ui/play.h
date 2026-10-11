@@ -79,6 +79,15 @@ bool nav_point(int* x, int* y);
 // moving / aiming by hand); otherwise the cursor keys (320x240's row
 // shows one set or the other - Tom, 2026-10-10)
 bool walking();
+// A fight wants the direction keys (Tom, 2026-10-10: a fight's own keys -
+// the 8 ways and Select): a fighter moving or aiming by hand
+bool fight_pad();
+// A direction key in a fight (0 north ... 7 north-west): a step (into an
+// enemy: an attack), or Manual aim's square moved; false: not now
+bool fight_dir(int dir, pic::Canvas& c);
+// Select in a fight: Move - the move ends (as a tap on the menu line);
+// Manual aim - Target when it's offered
+bool fight_select(pic::Canvas& c);
 // The player's Pool of Radiance folder on the card (Add Character -> Pool
 // lists its characters too); "" or nullptr: none
 void set_pool_dir(const char* dir);

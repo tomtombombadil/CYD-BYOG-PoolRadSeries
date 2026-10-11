@@ -3465,6 +3465,8 @@ bool fight_back(pic::Canvas& c)
 bool fight_moving() { return fg && screen == Screen::Fight && fg->st == FSt::Move; }
 void fight_move_prompt(pic::Canvas& c) { move_prompt(c); }
 
+bool fight_way(int dir, pic::Canvas& c);
+
 bool fight_act(Act a, pic::Canvas& c)
 {
     if (!fg || (fg->st != FSt::Move && !(fg->st == FSt::Aim && fg->manual))) return false;
@@ -3478,6 +3480,13 @@ bool fight_act(Act a, pic::Canvas& c)
     case Act::TurnAround: dir = 4; break;
     default: return false;
     }
+    return fight_way(dir, c);
+}
+
+// A direction (0-7) in Move or Manual aim
+bool fight_way(int dir, pic::Canvas& c)
+{
+    if (!fg || dir < 0 || dir > 7 || (fg->st != FSt::Move && !(fg->st == FSt::Aim && fg->manual))) return false;
     if (fg->st == FSt::Aim) {
         // Manual aim: the pad moves the square (the original's cursor keys)
         static const int kDx[8] = {0, 1, 1, 1, 0, -1, -1, -1}, kDy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};

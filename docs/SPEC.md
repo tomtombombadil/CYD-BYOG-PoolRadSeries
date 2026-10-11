@@ -19,7 +19,8 @@ inside the GOG install, and the PDFs that come with them).
   `/GOLDBOX/` on a FAT32 microSD card: `/GOLDBOX/Curse of the Azure Bonds`
   and so on (Tom, 2026-10-09: what nearly everyone will do - the docs use
   the GOG names, not short DOS names). If the folder has no DAX files, the
-  engine looks one folder down.
+  engine looks one folder down, then two (the Steam / SNEG releases:
+  `/GOLDBOX/CURSE/GAME/CURSE`, the journal in `CURSE/Documentation/`).
 - Folder names are free; the game is recognised from words in the name
   (`POOLRAD`, `Pool of Radiance`, `CURSE`, `AZURE`, `SILVER`, `BLADES`, `DARK...`) -
   `src/engine/games.*`. A folder with DAX files and no known name still shows up.
