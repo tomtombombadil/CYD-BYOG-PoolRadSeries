@@ -106,6 +106,35 @@ struct MonFx {
     // beholder casts when no ray fits (Fear, Slow, Sleep)
     uint8_t mirror_word, blessed_word;
     uint8_t ray_spells[3];
+    // Pool of Radiance's own (poolrad_combat_facts.md 4; 0: none). After a
+    // hit (either attack): one / two levels drained, the mummy's disease
+    // (the rot's ten-day clock and the rot itself), the ghoul's paralysis
+    // (63 rounds, not elves), the drider's (d9 + 10 rounds, a save at -2).
+    // After attack 1's hit: the stirge's blood drain (sucking: on the
+    // stirge, data its victim, the victim held fast), the mantis's bite and
+    // hold (holding: as the stirge's), the tiger's rear claws (both claws
+    // hit: two rakes of 2d4)
+    uint8_t drain1, drain2, rot_touch, rot_clock, rot, ghoul, drider;
+    uint8_t blood, sucking, bite_hold, holding, rake;
+    // A weapon's blow: none but a magic or silver weapon's (the wight's),
+    // a +0 silver weapon half and any other +0 none (the wraith's); the
+    // silver name word; a flask of oil (its item type) 3d8 and fire or
+    // magic a point more a die (the mummy's)
+    uint8_t silver_only, silver_half, silver_word, oil_bane, oil_flask;
+    // The computer's actions: the vampire's charming gaze (a save at -2),
+    // lightning breath (3 a fight; a line of 10, its maximum hit points, a
+    // save for half; after the first round only half its turns); at 0 hit
+    // points the vampire turns gaseous and escapes
+    uint8_t charm_gaze, lightning_breath, gas_escape;
+    // A round's start: the dragon's fear (every round; Hit Dice 0-3
+    // paralysed for the fight, 4-5 cursed), the mummy's (once a fight:
+    // paralysed d4 rounds; the save +1 for a side of 6 or more, +2 humans)
+    uint8_t dragon_fear, mummy_fear;
+    // Magic resistance: the caster's level counts against it (Pool's: base
+    // - 5 x (11 - level), weak casters get through more easily)
+    uint8_t mr_low;
+    // Poison at +4 / +2 (as poison; no Curse monster has them)
+    uint8_t poison_p4, poison_p2;
 };
 
 // More spells' effects (spell_facts.md 2): Enlarge, Confusion (and going
@@ -224,6 +253,7 @@ struct Fighter {
     bool    swept = false;              // swept this round
     bool    gone = false;               // a monster there was no room for: not in the fight at all
     bool    fleeing = false;            // turned undead, panic: runs for the field's edge
+    bool    escaped = false;            // turned gaseous and escaped (Pool's vampire): away, not down
     int     down_size = 0;              // its footprint before it fell (a troll gets up again)
     uint8_t was_control = 0;            // its control byte before Animate Dead (back after the fight)
     int     spell = 0;                  // a spell being cast (it goes off at its delay)
@@ -272,6 +302,9 @@ struct Battle {
     int     lost_image = -1;            // harm(): the one whose mirror image took it ("lost an image")
     // The fight's tables (set by the caller: a bolt's path), the last bolt's segments (its picture)
     const Tables* tables = nullptr;
+    // The experience each class's level needs ([class][level], from the
+    // rule tables; set by the caller when a level can be drained - Pool)
+    int32_t level_exp[8][13] = {};
     BoltSeg bolt[16];
     int     n_bolt = 0;
     Cloud   clouds[kMaxClouds];
@@ -318,6 +351,12 @@ enum class Ev : uint8_t {
     Cast,
     // Cause Disease's course: "is weakened"; Haste: "ages"
     Weakened, Ages,
+    // Pool's: "is drained a level" / "N levels" (amount), "is dead forever",
+    // "is Diseased", "Sucks some Blood" (to: the victim), "is held fast",
+    // "Rakes...", the charming "Gazes..." and "is charmed", "Breathes!",
+    // "is paralyzed with fear", "is weakened by fear"
+    Drained, DeadForever, Diseased, SucksBlood, HeldFast, Rakes, CharmGaze, Charmed, Breathes, FearParalyzed,
+    FearWeakened,
 };
 struct Event {
     uint8_t who = 0;
@@ -419,6 +458,7 @@ struct Attack {
     Event ev[8];                        // the extras after hits (poison, paralysis, a touch's damage, engulfing ...)
     int  n_ev = 0;
     int  shots = 0;                     // the weapon's (slot 1) attacks made: a shot uses one missile each
+    bool rake = false;                  // (Pool's tiger: its rakes follow)
 };
 // A backstab: a thief (backstabbing weapon or none) straight behind a man-
 // sized target that has had an attack this round already: the rear AC 4
@@ -439,6 +479,21 @@ int sweep(const Battle& b, int a, int target, int* out, int cap);
 // (the large dice against large targets), applied at once. The target turns
 // to face the attacker (fewer than 2 attacks received).
 Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& d, bool from_behind = false);
+// Pool's holds at a fighter's turn start (its effect group 15): a stirge
+// sucks 1d4 blood from its victim ("Sucks some Blood"; full - its effect's
+// time / 16 not over the blood - or either out of the fight: it lets go);
+// a mantis holding its victim: *bite = the victim (bite_attack makes its
+// one 3d4 attack), -1 none. The events said.
+int turn_holds(Battle& b, int i, create::Dice& d, Event* out, int cap, int* bite);
+// The mantis's bite while it holds its victim: one attack of 3d4 (its
+// attacks this round as they were); the victim out of the fight: it lets go
+Attack bite_attack(Battle& b, int a, int c, const items::Names* names, create::Dice& d);
+// Pool's level drain (its ovr13 routine): n levels off fighter c, as the
+// original - its hit points by the share of a level, the class with the
+// highest level (by its experience) a level less, the experience the new
+// level needs; at level 1: dead forever. The class values (THAC0, saves,
+// slots) are the caller's to work out again (a party member).
+void drain(Battle& b, int c, int n, Event* out, int cap, int* n_out, int hit = -1);
 // Damage: HP 0 unconscious, -1..-9 dying (bleeding), -10 dead (HP kept 0
 // when down); true when they went down
 bool damage(Battle& b, int c, int amount);

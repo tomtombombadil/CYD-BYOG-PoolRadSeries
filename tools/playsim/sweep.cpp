@@ -321,7 +321,11 @@ static bool boot(char slot = 'A')
 // The fight at 8AC2 (save A's inn): RUNAT as the playsim does
 static bool start_fight(int area = 0, int mon = 0, int copies = 0)
 {
-    const uint16_t a = 0x8AC2;
+    // A LOAD MONSTER in save A's script (Curse: 8AC2; Pool, GAME=1: 85F9, the
+    // Slums' goblins; FIGHTAT=hex another)
+    const uint16_t a = getenv("FIGHTAT")  ? static_cast<uint16_t>(strtol(getenv("FIGHTAT"), nullptr, 16))
+                       : getenv("GAME") && atoi(getenv("GAME")) == 1 ? 0x85F9
+                                                                     : 0x8AC2;
     if (mon) {
         play::d->gs.game_area = static_cast<uint8_t>(area);
         play::vm->set(a + 2, static_cast<uint16_t>(mon));
@@ -437,7 +441,7 @@ static void sweep_campspells()
 // ---- monsters
 static void sweep_monsters(int only)
 {
-    for (int area = 1; area <= 6; ++area) {
+    for (int area = 1; area <= 9; ++area) {
         if (only && area != only) continue;
         char path[300];
         snprintf(path, sizeof path, "%s/MON%dCHA.DAX", game_dir.c_str(), area);

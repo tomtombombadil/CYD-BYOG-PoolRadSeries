@@ -4885,6 +4885,330 @@ static void test_combat()
 }
 
 // Monster special abilities (monster_fx_facts.md), on made-up fighters
+// Pool of Radiance's monster specials (poolrad_combat_facts.md 4): level
+// drain, the mummy's disease and fear, paralysis, the stirge, the mantis,
+// the tiger, silver and oil, the vampire's gaze and escape, lightning
+// breath, the dragon's fear, its magic resistance, the rot's months
+static void test_pool_monsters()
+{
+    static combat::Tables t;
+    memset(&t, 0, sizeof t);
+    t.ground[0x37][0] = 1; t.ground[0x37][1] = 1;
+    static combat::Facts fx;
+    fx = combat::Facts{};
+    const uint8_t held[4] = {0x33, 0x34, 0x35, 0x1F};
+    memcpy(fx.held, held, 4);
+    fx.invisible = 0x19; fx.charm = 0x0B; fx.curse = 0x02;
+    combat::MonFx& m = fx.mon;
+    m.held_fast = 0x3A; m.paralyzed = 0x34; m.poisoned = 0x37; m.mr50 = 0x69;
+    m.drain1 = 0x55; m.drain2 = 0x56; m.rot_touch = 0x57; m.rot_clock = 0x32; m.rot = 0x39; m.ghoul = 0x44;
+    m.drider = 0x45; m.blood = 0x4C; m.sucking = 0x4B; m.bite_hold = 0x4D; m.holding = 0x4A; m.rake = 0x49;
+    m.silver_only = 0x60; m.silver_half = 0x7B; m.silver_word = 0xB1; m.oil_bane = 0x7A; m.oil_flask = 0x56;
+    m.charm_gaze = 0x54; m.lightning_breath = 0x58; m.gas_escape = 0x67; m.dragon_fear = 0x51;
+    m.mummy_fear = 0x52; m.mr_low = 1;
+    static uint8_t rec[6][party::kRecordSize];
+    static uint8_t aff[6][combat::kMonsterAffects][party::kAffectSize];
+    static int naff[6];
+    static combat::Battle b;
+    create::Dice d(23);
+    // Fighters 0-2 the party, 3-5 monsters next to them; all hit but on a 1, never save but on a 20
+    auto setup = [&]() {
+        b = combat::Battle{};
+        b.fx = &fx;
+        b.tables = &t;
+        for (int y = 0; y < combat::kH; ++y)
+            for (int x = 0; x < combat::kW; ++x) b.ground[y][x] = 0x37;
+        memset(rec, 0, sizeof rec);
+        memset(aff, 0, sizeof aff);
+        for (int i = 0; i < 6; ++i) {
+            uint8_t* r = rec[i];
+            r[0x196] = 1; r[0x197] = i >= 3; r[0xDE] = 1; r[0x78] = r[0x1A4] = 100; r[0xE5] = 1;
+            r[0x1A5] = 12; r[0x11C] = 2; r[0x199] = 100; r[0x19A] = 50; r[0x19B] = 50;
+            r[0x19E] = 1; r[0x1A0] = 1; r[0x1A2] = 9;              // 1d1 + 9 = 10
+            for (int k = 0; k < 5; ++k) r[0xDF + k] = 30;
+            naff[i] = 0;
+            combat::Fighter& f = b.f[i];
+            f = combat::Fighter{};
+            f.rec = r; f.aff = aff[i]; f.n_aff = &naff[i]; f.max_aff = combat::kMonsterAffects;
+            f.member = i < 3 ? i : -1;
+            f.monster = i < 3 ? -1 : i - 3;
+            f.x = i < 3 ? 10 : 11; f.y = 10 + (i % 3) * 3; f.size = 1;
+        }
+        b.n = 6;
+        b.party_size = 3;
+        for (int k = 0; k < 8; ++k)
+            for (int l = 2; l < 13; ++l) b.level_exp[k][l] = (k + 1) * 1000 * l;
+        combat::occupancy(b);
+    };
+    auto give = [&](int i, uint8_t type, int data = 0xFF, int minutes = 0) {
+        uint8_t* a = aff[i][naff[i]++];
+        a[0] = type; a[1] = static_cast<uint8_t>(minutes); a[2] = static_cast<uint8_t>(minutes >> 8);
+        a[3] = static_cast<uint8_t>(data);
+    };
+    auto find = [&](int i, uint8_t type) {
+        for (int k = 0; k < naff[i]; ++k)
+            if (aff[i][k][0] == type) return k;
+        return -1;
+    };
+    auto has_ev = [](const combat::Attack& a, combat::Ev e) {
+        for (int k = 0; k < a.n_ev; ++k)
+            if (a.ev[k].ev == e) return true;
+        return false;
+    };
+    auto hit_one = [&](int a, int c) {
+        b.f[a].attacks[0] = 1;
+        b.f[a].attacks[1] = 0;
+        return combat::attack(b, a, c, nullptr, d);
+    };
+    auto exp_of = [&](int i) { return rec[i][0x127] | rec[i][0x128] << 8 | rec[i][0x129] << 16 | rec[i][0x12A] << 24; };
+    // A wight's touch: a level off the fighter (5th -> 4th), its share of the
+    // hit points (50 / 5), the experience 4th level needs, the highest level
+    int tries = 0;
+    for (; tries < 20; ++tries) {
+        setup();
+        give(3, m.drain1);
+        rec[0][0x109 + 2] = 5; rec[0][0xE5] = 5; rec[0][0x78] = rec[0][0x1A4] = rec[0][0x12C] = 50;
+        const combat::Attack at = hit_one(3, 0);
+        if (!at.hits[0].hit) continue;
+        CHECK(has_ev(at, combat::Ev::Drained));
+        CHECK(rec[0][0x109 + 2] == 4 && rec[0][0xE5] == 4 && rec[0][0xE7] == 1 && rec[0][0xE8] == 10);
+        CHECK(rec[0][0x78] == 40 && rec[0][0x12C] == 40 && rec[0][0x1A4] == 30);   // (the blow's 10 first)
+        CHECK(exp_of(0) == 3 * 1000 * 4);
+        break;
+    }
+    CHECK(tries < 20);
+    // Two levels (a spectre's), a multi-class: the class whose level needs more experience goes
+    setup();
+    give(3, m.drain2);
+    rec[0][0x109 + 2] = 3; rec[0][0x109 + 5] = 3; rec[0][0xE5] = 3;
+    {
+        combat::Event ev[8];
+        int n = 0;
+        combat::drain(b, 0, 2, ev, 8, &n);
+        CHECK(n == 1 && ev[0].ev == combat::Ev::Drained && ev[0].amount == 2);
+        CHECK(rec[0][0x109 + 5] == 2 && rec[0][0x109 + 2] == 2);   // (MU's 3rd level needs more: off first)
+        CHECK(rec[0][0xE7] == 2 && rec[0][0xE5] == 2);
+    }
+    // First level: dead forever; the animated dead too
+    setup();
+    rec[0][0x109 + 2] = 1; rec[0][0xE5] = 1;
+    {
+        combat::Event ev[8];
+        int n = 0;
+        combat::drain(b, 0, 1, ev, 8, &n);
+        CHECK(n == 2 && ev[1].ev == combat::Ev::DeadForever && b.f[0].status() == party::Gone && !b.f[0].up());
+        CHECK(rec[0][0x78] == 0);
+        setup();
+        rec[1][0x195] = party::Animated;
+        n = 0;
+        combat::drain(b, 1, 1, ev, 8, &n);
+        CHECK(b.f[1].status() == party::Gone && n == 2);
+    }
+    // The mummy's touch: diseased (no save), once; the rot's months d6
+    setup();
+    give(3, m.rot_touch);
+    for (tries = 0; tries < 20 && find(0, m.rot) < 0; ++tries) hit_one(3, 0);
+    CHECK(find(0, m.rot_clock) >= 0 && find(0, m.rot) >= 0);
+    {
+        const int k = find(0, m.rot);
+        const int months = aff[0][k][3] >> 4;
+        CHECK(months >= 1 && months <= 6 && (aff[0][k][3] & 0x0F) == 0x0F);
+        CHECK((aff[0][k][1] | aff[0][k][2] << 8) == 43200);
+        const int before = naff[0];
+        hit_one(3, 0);
+        CHECK(naff[0] == before);                 // (already diseased: nothing more)
+    }
+    // The ghoul: paralysis unless an elf (race 2)
+    setup();
+    give(3, m.ghoul);
+    for (tries = 0; tries < 20 && find(0, m.paralyzed) < 0; ++tries) hit_one(3, 0);
+    CHECK(find(0, m.paralyzed) >= 0 && aff[0][find(0, m.paralyzed)][1] == 63);
+    setup();
+    give(3, m.ghoul);
+    rec[0][0x74] = 2;
+    for (tries = 0; tries < 10; ++tries) hit_one(3, 0);
+    CHECK(find(0, m.paralyzed) < 0);
+    // The stirge: attached, its victim held; at its turn it drinks 1d4 and
+    // its time / 16 (the blood it can hold) goes down by that
+    setup();
+    give(3, m.blood);
+    for (tries = 0; tries < 20 && find(3, m.sucking) < 0; ++tries) hit_one(3, 0);
+    CHECK(find(3, m.sucking) >= 0 && aff[3][find(3, m.sucking)][3] == 0 && find(0, m.held_fast) >= 0);
+    {
+        const int hp = b.f[0].hp();
+        combat::Event ev[4];
+        int bite = -2;
+        const int n = combat::turn_holds(b, 3, d, ev, 4, &bite);
+        CHECK(n >= 2 && ev[0].ev == combat::Ev::SucksBlood && ev[1].ev == combat::Ev::Damage && bite == -1);
+        const int took = hp - b.f[0].hp();
+        CHECK(took >= 1 && took <= 4 && ev[1].amount == took);
+        const int k = find(3, m.sucking);
+        CHECK(k >= 0 && (aff[3][k][1] | aff[3][k][2] << 8) == 0xCF - (took << 4));
+        // Its victim down: it lets go at its next turn
+        rec[0][0x196] = 0;
+        combat::turn_holds(b, 3, d, ev, 4, &bite);
+        CHECK(find(3, m.sucking) < 0 && find(0, m.held_fast) < 0);
+    }
+    // The mantis: holds one of Strength under 19 ("is held fast"), then
+    // bites it with one 3d4 at its turns
+    setup();
+    give(3, m.bite_hold);
+    rec[0][0x11] = 18;
+    {
+        combat::Attack at;
+        for (tries = 0; tries < 20 && find(3, m.holding) < 0; ++tries) at = hit_one(3, 0);
+        CHECK(find(3, m.holding) >= 0 && has_ev(at, combat::Ev::HeldFast) && find(0, m.held_fast) >= 0);
+        combat::Event ev[4];
+        int bite = -1;
+        combat::turn_holds(b, 3, d, ev, 4, &bite);
+        CHECK(bite == 0);
+        b.f[3].attacks[0] = 2;
+        const int hp = b.f[0].hp();
+        const combat::Attack ba = combat::bite_attack(b, 3, 0, nullptr, d);
+        CHECK(ba.n == 1 && (!ba.hits[0].hit || (hp - b.f[0].hp() >= 3 + 9 && hp - b.f[0].hp() <= 12 + 9)));
+        CHECK(b.f[3].attacks[0] == 2 && rec[3][0x19E] == 1 && rec[3][0x1A0] == 1);   // (as they were)
+    }
+    setup();
+    give(3, m.bite_hold);
+    rec[0][0x11] = 19;
+    for (tries = 0; tries < 10; ++tries) hit_one(3, 0);
+    CHECK(find(3, m.holding) < 0);
+    // The tiger: both claws hit - two rakes of 2d4 follow
+    for (tries = 0; tries < 40; ++tries) {
+        setup();
+        give(3, m.rake);
+        b.f[3].attacks[0] = 2;
+        b.f[3].attacks[1] = 0;
+        const combat::Attack at = combat::attack(b, 3, 0, nullptr, d);
+        if (!(at.hits[0].hit && at.hits[1].hit)) {
+            CHECK(!has_ev(at, combat::Ev::Rakes) && at.n == 2);
+            continue;
+        }
+        CHECK(has_ev(at, combat::Ev::Rakes) && at.n == 4);
+        for (int k = 2; k < 4; ++k) CHECK(!at.hits[k].hit || (at.hits[k].damage >= 2 && at.hits[k].damage <= 8));   // (slot 2's bonus: 0)
+        CHECK(rec[3][0x19F] == 0 && rec[3][0x1A1] == 0);       // (slot 2's dice as they were)
+        break;
+    }
+    CHECK(tries < 40);
+    // The wight: bare hands (no weapon) do nothing; the wraith the same
+    setup();
+    give(3, m.silver_only);
+    hit_one(0, 3);
+    CHECK(b.f[3].hp() == 100);
+    setup();
+    give(3, m.silver_half);
+    hit_one(0, 3);
+    CHECK(b.f[3].hp() == 100);
+    // The mummy burns: fire a point more a die
+    setup();
+    give(3, m.oil_bane);
+    {
+        combat::Harm h;
+        h.kind = 1;
+        h.dice = 5;
+        bool dn = false;
+        CHECK(combat::harm(b, 3, 20, h, d, &dn) == 25);
+        h.kind = 4;
+        CHECK(combat::harm(b, 3, 20, h, d, &dn) == 20);
+    }
+    // The vampire at 0 hit points: gaseous, away - not down
+    setup();
+    give(3, m.gas_escape);
+    CHECK(combat::damage(b, 3, 150) && b.f[3].escaped && b.f[3].status() == party::Running && !b.f[3].up() &&
+          b.f[3].size == 0);
+    // Magic resistance, Pool's way: a 1st level caster always gets through 50%
+    setup();
+    give(3, m.mr50);
+    {
+        combat::Harm h;
+        h.level = 1;
+        int resisted = 0;
+        for (int k = 0; k < 50; ++k) resisted += combat::resists(b, 3, fx.charm, h, d);
+        CHECK(resisted == 0);
+        m.mr_low = 0;                               // (Curse's: 50 + 50 - always)
+        resisted = 0;
+        for (int k = 0; k < 50; ++k) resisted += combat::resists(b, 3, fx.charm, h, d);
+        CHECK(resisted == 50);
+        m.mr_low = 1;
+    }
+    // The dragon's fear each round: Hit Dice 0-3 paralysed for the fight,
+    // 4-5 cursed, 6 and up nothing (no saves made here)
+    setup();
+    give(3, m.dragon_fear);
+    rec[0][0xE5] = 2; rec[1][0xE5] = 4; rec[2][0xE5] = 6;
+    {
+        combat::Event ev[16];
+        const int n = combat::start_round(b, d, ev, 16);
+        CHECK(find(0, m.paralyzed) >= 0 && aff[0][find(0, m.paralyzed)][1] == 0);
+        CHECK(find(1, fx.curse) >= 0 && find(1, m.paralyzed) < 0);
+        CHECK(find(2, m.paralyzed) < 0 && find(2, fx.curse) < 0);
+        int said = 0;
+        for (int k = 0; k < n; ++k) said += ev[k].ev == combat::Ev::FearParalyzed || ev[k].ev == combat::Ev::FearWeakened;
+        CHECK(said == 2);
+        CHECK(find(3, m.dragon_fear) >= 0);             // (every round)
+    }
+    // The mummy's: once a fight (every mummy's aura goes), d4 rounds
+    setup();
+    give(3, m.mummy_fear);
+    give(4, m.mummy_fear);
+    {
+        combat::Event ev[16];
+        combat::start_round(b, d, ev, 16);
+        CHECK(find(3, m.mummy_fear) < 0 && find(4, m.mummy_fear) < 0);
+        const int k = find(0, m.paralyzed);
+        CHECK(k >= 0 && aff[0][k][1] >= 1 && aff[0][k][1] <= 4);
+    }
+    // The vampire's gaze: charmed (no saves here), on its side; the
+    // dragon's breath: its maximum hit points, 3 a fight
+    setup();
+    give(3, m.charm_gaze);
+    {
+        combat::Event ev[24];
+        bool ends = false;
+        combat::special(b, t, 3, d, ev, 24, &ends);
+        int charmed = -1;
+        for (int i = 0; i < 3; ++i)
+            if (find(i, fx.charm) >= 0) charmed = i;
+        CHECK(charmed >= 0 && b.f[charmed].team() == 1 && (aff[charmed][find(charmed, fx.charm)][3] & 0x80));
+    }
+    setup();
+    give(3, m.lightning_breath);
+    rec[3][0x78] = 30;
+    {
+        combat::Event ev[24];
+        bool ends = false;
+        const int n = combat::special(b, t, 3, d, ev, 24, &ends);
+        CHECK(ends && n > 0 && ev[0].ev == combat::Ev::Breathes);
+        int hurt = 0;
+        for (int i = 0; i < 3; ++i) hurt += b.f[i].hp() == 70;
+        CHECK(hurt >= 1);
+        CHECK(aff[3][find(3, m.lightning_breath)][3] == 0xFE);
+        combat::special(b, t, 3, d, ev, 24, &ends);       // (round 0: always)
+        combat::special(b, t, 3, d, ev, 24, &ends);
+        CHECK(find(3, m.lightning_breath) < 0);          // three breaths
+    }
+    // The rot's months outside fights: Charisma 2 less (3 at least), a month
+    // less; none left - dies, gone
+    {
+        static party::Character ch;
+        ch = party::Character{};
+        ch.rec[0x1A] = ch.rec[0x1B] = 10;
+        ch.rec[0x195] = party::Okay;
+        ch.rec[0x196] = 1;
+        ch.affects[0][0] = 0x39; ch.affects[0][1] = 10; ch.affects[0][3] = 0x2F;
+        ch.n_affects = 1;
+        rules::RotStep rs = rules::rot_clock(ch, 9, 0x39, 0x32);
+        magic::tick_affects(ch, 9);
+        CHECK(rs.rots == 0 && !rs.dies && ch.rec[0x1A] == 10);
+        rs = rules::rot_clock(ch, 10, 0x39, 0x32);
+        magic::tick_affects(ch, 10);
+        CHECK(rs.rots == 1 && !rs.dies && ch.rec[0x1A] == 8 && ch.affects[0][3] == 0x1F);
+        CHECK((ch.affects[0][1] | ch.affects[0][2] << 8) == 43191);     // (ran out a minute in: 9 of the next 30 days gone)
+        rs = rules::rot_clock(ch, 43191, 0x39, 0x32);
+        CHECK(rs.rots == 1 && rs.dies && ch.rec[0x1A] == 6 && ch.rec[0x195] == party::Gone && ch.n_affects == 0);
+    }
+}
+
 static void test_monster_fx()
 {
     static combat::Tables t;
@@ -5712,6 +6036,7 @@ int main()
     test_spells();
     test_combat();
     test_monster_fx();
+    test_pool_monsters();
     test_spells_batch2();
     test_spell_rules();
     test_spells_batch3();

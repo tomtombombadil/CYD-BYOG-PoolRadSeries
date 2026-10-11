@@ -605,11 +605,31 @@ Steps (each pushed when it works; Curse stays as it is):
    area fights on its 3D map. Fixed for Curse while comparing (its own
    program's lists): Cure Disease takes effect 0x32 (not 0x20), the fight's
    end takes 0x89 and 0x8B away (not 0x4D), hammers spin in flight (not
-   glaives). Still to do: Pool's own monster specials (level drain,
-   mummy rot and fear, dragon fear and lightning breath, gazes, the
-   stirge, bite and hold, rear claws, silver / fire rules, the vampire's
-   escape, paralysis kinds), the races' fight bonuses by monster name,
-   random treasure (19 rows), the ending (FINAL5.DAX).
+   glaives). v0.79.0: **Pool's own monster specials** (traced in its
+   program: poolrad_combat_facts.md 4 and 4.1): level drain (wight 1,
+   spectre and vampire 2 - "is drained a level / N levels": its share of
+   the hit points, the highest class level off (its experience the most on
+   a tie), the experience the new level needs, THAC0 / saves / slots /
+   attacks again; drained at 1st level or animated: "is dead forever"); the
+   mummy's touch ("is Diseased" - the rot: each 30 days "Rots...", Charisma
+   - 2, after d6 months "Dies rots away"; Cure Disease ends it), its fear
+   (once a fight, paralysed d4 rounds; humans +2, a side of 6+ +1) and a
+   flask of oil (3d8; fire and magic a point more a die); the ghoul's
+   paralysis (63 rounds, not elves), the drider's (d9 + 10, -2); the
+   stirge (attached: "Sucks some Blood" 1d4 at its turns until full), the
+   mantis ("is held fast", a 3d4 bite at its turns; Strength 19+ breaks
+   free), the tiger ("Rakes..." twice 2d4 when both claws hit), the wight
+   (only magic or silver hurts it) and the wraith (+0 silver half, other
+   +0 nothing), the vampire's charming gaze and its escape at 0 hit points
+   ("Turns gaseous and escapes": fled, no experience), Tyranthraxus's
+   lightning breath (3 a fight, its maximum hit points along 10 squares,
+   after the first round half its turns) and dragon fear (every round:
+   Hit Dice 0-3 paralysed for the fight, 4-5 cursed), poison at +4 / +2,
+   holders get no free attacks, magic resistance Pool's way (the caster's
+   level counts against it). Guesses (noted in the facts): the mummy fear's
+   "side of 6" is those standing; the lightning breath aims as the
+   computer's Lightning Bolt. Still to do: the races' fight bonuses by
+   monster name, random treasure (19 rows), the ending (FINAL5.DAX).
 6. Behaviour tests (`sweep.cpp`) with Pool's expectations.
 
 ## 7. The journal (Tom, 2026-10-06)

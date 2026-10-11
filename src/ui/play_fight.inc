@@ -1018,6 +1018,11 @@ void end_turn(pic::Canvas& c)
 // Someone down: "goes down" / "and is Dying" / "is killed", the skull blinking on them
 void down_page(int t)
 {
+    if (fg->b.f[t].escaped) {
+        // Pool's vampire: "Turns gaseous and escapes"
+        add_page(t, fw(profile::kGaseous));
+        return;
+    }
     const combat::Down dn = combat::down_state(fg->b.f[t]);
     if (dn == combat::Down::Dead) add_page(t, fw(profile::kIsKilled));
     else if (dn == combat::Down::Dying) add_page(t, fw(profile::kGoesDown), fw(profile::kIsDying));
@@ -1099,6 +1104,22 @@ void special_cast(int i, int sp)
     spell_pages(i, lines, n, *fs, false);
 }
 
+// A party member drained of a level (Pool): their class values worked out
+// again - THAC0, saves, spell slots, thief skills; a fighter's attacks (3
+// past 6th level, else 2: Pool's ovr24 routine)
+void drained_member(int who)
+{
+    const combat::Fighter& f = fg->b.f[who];
+    if (f.member < 0 || f.member >= pt->count) return;
+    const bool had = mrules != nullptr;
+    if (!had && !load_rules(mrules)) return;
+    party::Character& ch = pt->m[f.member];
+    classes::class_bonuses(ch, mrules->tables);
+    if (ch.level(classes::Fighter) > 0) ch.rec[0x11C] = ch.level(classes::Fighter) > 6 ? 3 : 2;
+    if (names) rules::recalc(ch, *names, d->facts);
+    if (!had) end_magic();
+}
+
 // What the engine says happened besides the plain blows (monster_fx_facts.md),
 // as pages: the special's words, its picture flying, the results
 void event_page(const combat::Event& e)
@@ -1163,6 +1184,10 @@ void event_page(const combat::Event& e)
         break;
     case combat::Ev::Unaffected: said(profile::kIsUnaffectedS); break;
     case combat::Ev::Down: {
+        if (fg->b.f[who].escaped) {
+            add_page(who, fw(profile::kGaseous));
+            break;
+        }
         const combat::Down dn = combat::down_state(fg->b.f[who]);
         if (dn == combat::Down::Dead) add_page(who, fw(profile::kIsKilled));
         else if (dn == combat::Down::Dying) add_page(who, fw(profile::kGoesDownS), fw(profile::kIsDying));
@@ -1198,6 +1223,26 @@ void event_page(const combat::Event& e)
         break;
     }
     case combat::Ev::DiesPoison: fallen(profile::kDiesFromPoison); break;
+    // Pool's monsters
+    case combat::Ev::Drained: {
+        char lv[16];
+        if (e.amount > 1) snprintf(lv, sizeof lv, "%d%s", e.amount, fw(profile::kNLevels));
+        else snprintf(lv, sizeof lv, "%s", fw(profile::kDrainLevel));
+        snprintf(t, sizeof t, "%s%s", fw(profile::kIsDrained), lv);
+        add_page(who, t);
+        drained_member(who);
+        break;
+    }
+    case combat::Ev::DeadForever: fallen(profile::kDeadForever); break;
+    case combat::Ev::Diseased: said(profile::kIsDiseased); break;
+    case combat::Ev::SucksBlood: said(profile::kSucksBlood); break;
+    case combat::Ev::HeldFast: said(profile::kHeldFast); break;
+    case combat::Ev::Rakes: said(profile::kRakes); break;
+    case combat::Ev::CharmGaze: said(profile::kGazesCharm); break;
+    case combat::Ev::Charmed: said(profile::kIsCharmedG); break;
+    case combat::Ev::Breathes: said(profile::kBreathesB); break;
+    case combat::Ev::FearParalyzed: said(profile::kFearParalyzed); break;
+    case combat::Ev::FearWeakened: said(profile::kFearWeakened); break;
     case combat::Ev::Weakened: said(profile::kIsWeakened); break;
     case combat::Ev::Ages: said(profile::kAges); break;
     case combat::Ev::Regen: {
@@ -1212,6 +1257,7 @@ void event_page(const combat::Event& e)
 // An attack and what it did, as pages. A shot (`ammo`: the item that flies,
 // -1 none) flies first: its picture and sound on the first page. The
 // weapon's attacks made (each shot uses a missile).
+void attack_pages(int a, int t, const combat::Attack& at, bool behind, bool shot, const Fx& fly);
 int do_attack(pic::Canvas& c, int a, int t, bool behind, bool shot = false, int ammo = -1)
 {
     combat::Battle& b = fg->b;
@@ -1228,6 +1274,14 @@ int do_attack(pic::Canvas& c, int a, int t, bool behind, bool shot = false, int 
         fly.sound = fly.fl.sound;
     }
     const combat::Attack at = combat::attack(b, a, t, names, rng, behind);
+    attack_pages(a, t, at, behind, shot, fly);
+    return at.shots;
+}
+
+// An attack's pages: each hit ("Attacks ... Hitting for N points of
+// damage") and what it did besides, a miss, the target going down
+void attack_pages(int a, int t, const combat::Attack& at, bool behind, bool shot, const Fx& fly)
+{
     char line[48];
     bool first = true;
     // The sounds: a shot's flight, then a blow each hit, a swish for no hit at all
@@ -1270,7 +1324,6 @@ int do_attack(pic::Canvas& c, int a, int t, bool behind, bool shot = false, int 
         else page_sound(sound::kMiss);
     }
     if (at.down) down_page(t);
-    return at.shots;
 }
 
 // After an attack's pages: the turn ends unless attacks are left and the
@@ -1561,6 +1614,22 @@ void start_turn(pic::Canvas& c)
             page_fx_set(1, skull_fx(fg->cur));
             draw_fight(c);
             say(c, FSt::Next);
+            return;
+        }
+        // Pool's holds: the stirge drinks, the mantis bites the one it holds
+        combat::Event hev[4];
+        int bite = -1;
+        const int nh = combat::turn_holds(b, fg->cur, rng, hev, 4, &bite);
+        if (nh > 0 || bite >= 0) {
+            if (!on_screen(fg->cur)) focus(fg->cur, 3);
+            draw_fight(c);
+            for (int k = 0; k < nh; ++k) event_page(hev[k]);
+            if (bite >= 0) {
+                const combat::Attack at = combat::bite_attack(b, fg->cur, bite, names, rng);
+                attack_pages(fg->cur, bite, at, false, false, Fx{});
+            }
+            draw_fight(c);
+            say(c, f.up() ? FSt::Resume : FSt::Next);
             return;
         }
     }
@@ -2376,6 +2445,15 @@ void fight_start(pic::Canvas& c)
         return;
     }
     anim_stop();
+    // A level can be drained (Pool's undead): the experience each level
+    // needs, from the rule tables (loaded for this, before the field's blocks)
+    int32_t level_exp[8][13] = {};
+    const combat::MonFx& mf = d->prof->fight.facts.mon;
+    if ((mf.drain1 || mf.drain2) && load_rules(mrules)) {
+        for (int k = 0; k < 8; ++k)
+            for (int l = 2; l < 13; ++l) level_exp[k][l] = mrules->tables.exp_needed(k, l - 1);
+        end_magic();
+    }
     load_fight_words();
     const bool room = alloc_tiles();
     if (!room || !load_fight_tables()) {
@@ -2392,6 +2470,7 @@ void fight_start(pic::Canvas& c)
     b.~Battle();
     new (&b) combat::Battle();         // (in place: a temporary would take 10 KB of stack)
     b.tables = &fg->t;
+    memcpy(b.level_exp, level_exp, sizeof level_exp);
     b.indoors = vm->get(0x4BE6) != 0;
     // Pool: only its wilderness areas are fought outdoors (the rest from the 3D map)
     const int over = d->prof->variant.overland_area;

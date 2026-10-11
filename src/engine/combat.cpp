@@ -19,6 +19,7 @@ constexpr int kHit = 0x199, kAc = 0x19A, kAcBehind = 0x19B;
 constexpr int kDice = 0x19E, kSides = 0x1A0, kBonus = 0x1A2;
 constexpr int kControl = 0xF7;
 constexpr int kHd = 0xE5, kFighterLevel = 0x10B, kThiefLevel = 0x10F;
+constexpr int kLevels = 0x109, kExp = 0x127, kHpRolled = 0x12C, kDrained = 0xE7, kDrainedHp = 0xE8, kCha = 0x14;
 
 
 // ---- Indoors: a map square's side codes
@@ -760,6 +761,8 @@ void fall(Battle& b, int c)
     const MonFx& m = b.fx->mon;
     let_go(b, f, m.engulfing);
     let_go(b, f, m.hugging);
+    let_go(b, f, m.sucking);
+    let_go(b, f, m.holding);
     const uint8_t regen[2] = {m.regen_wait, m.regen};
     for (uint8_t t : regen) {
         const int k = t ? find_aff(f, t) : -1;
@@ -797,7 +800,8 @@ void end_effect(Battle& b, Fighter& f, int k)
             f.target = -1;
         }
         // A hold taken away (dispelled): its victim (the data) goes free
-        if ((fx.mon.engulfing && type == fx.mon.engulfing) || (fx.mon.hugging && type == fx.mon.hugging)) {
+        if ((fx.mon.engulfing && type == fx.mon.engulfing) || (fx.mon.hugging && type == fx.mon.hugging) ||
+            (fx.mon.sucking && type == fx.mon.sucking) || (fx.mon.holding && type == fx.mon.holding)) {
             if (data < b.n) {
                 Fighter& vf = b.f[data];
                 int j = fx.mon.held_fast ? find_aff(vf, fx.mon.held_fast) : -1;
@@ -1285,6 +1289,58 @@ int start_round(Battle& b, create::Dice& d, Event* out, int cap)
         if (b.fx && hasx(f, b.fx->mon.held_fast)) f.moves = 0;                 // engulfed, hugged
     }
     b.surprise = 0;
+    // Pool's fear auras (its effect group 8, the round's start;
+    // poolrad_combat_facts.md 4): each one in the fight on the other side
+    // saves or is struck with fear
+    if (b.fx && (b.fx->mon.dragon_fear || b.fx->mon.mummy_fear)) {
+        const MonFx& m = b.fx->mon;
+        auto said = [&](int who, Ev e) {
+            if (!out || n_ev >= cap) return;
+            out[n_ev] = Event{};
+            out[n_ev].who = static_cast<uint8_t>(who);
+            out[n_ev++].ev = e;
+        };
+        // (its side's count: DS 0x6814 + side, which the fight's end also
+        // tests for 0 - those standing, as far as read)
+        int side_count[2] = {};
+        for (int i = 0; i < b.n; ++i)
+            if (b.f[i].up() && b.f[i].size) ++side_count[b.f[i].team() ? 1 : 0];
+        for (int i = 0; i < b.n; ++i) {
+            Fighter& f = b.f[i];
+            const bool dragon = hasx(f, m.dragon_fear), mummy = hasx(f, m.mummy_fear);
+            if (!dragon && !mummy) continue;
+            // The mummy's works once a fight: every mummy's aura goes with the first
+            if (mummy)
+                for (int k = 0; k < b.n; ++k) {
+                    const int j = find_aff(b.f[k], m.mummy_fear);
+                    if (j >= 0) drop_aff(b.f[k], j);
+                }
+            for (int c = 0; c < b.n; ++c) {
+                Fighter& v = b.f[c];
+                if (!v.up() || v.team() == f.team()) continue;
+                if (dragon) {
+                    // Every round: Hit Dice 0-3 paralysed (for the fight), 4-5 cursed, 6 and up unaffected
+                    const int hd = static_cast<int8_t>(v.rec[kHd]);
+                    if (hd > 5 || saving_throw(v, 4, 0, d)) continue;
+                    if (hd <= 3) {
+                        if (m.paralyzed && !v.has(m.paralyzed)) {
+                            give_aff(v, m.paralyzed, 0, 12, false);
+                            said(c, Ev::FearParalyzed);
+                        }
+                    } else if (b.fx->curse && !v.has(b.fx->curse)) {
+                        give_aff(v, b.fx->curse, 0, 12, false);
+                        said(c, Ev::FearWeakened);
+                    }
+                } else {
+                    // Once: d4 rounds; the save +1 for a side of 6 or more, +2 for humans
+                    const int bonus = (side_count[v.team() ? 1 : 0] >= 6 ? 1 : 0) + (v.rec[0x74] == 7 ? 2 : 0);
+                    if (!m.paralyzed || saving_throw(v, 0, bonus, d)) continue;
+                    give_aff(v, m.paralyzed, d.roll(4, 1), 12, false);
+                    said(c, Ev::FearParalyzed);
+                }
+            }
+        }
+    }
     return n_ev;
 }
 
@@ -1320,6 +1376,14 @@ bool damage(Battle& b, int c, int amount)
     }
     const int over = amount - hp;
     f.rec[kHp] = 0;
+    // Pool's vampire at 0 hit points: "Turns gaseous and escapes" - away
+    // (as fled), not down
+    if (b.fx && hasx(f, b.fx->mon.gas_escape)) {
+        f.rec[kHealth] = party::Running;
+        f.escaped = true;
+        fall(b, c);
+        return true;
+    }
     if (f.status() == party::Animated || over > 9) {
         f.rec[kHealth] = party::Dead;
     } else if (over == 0) {
@@ -1418,7 +1482,27 @@ void after_hit(Battle& b, int a, int c, int slot, int roll, int hits1, create::D
         tg.moves = 0;
         give_aff(at, holding, 0, c, true);
     };
+    // Pool's: a level or two drained; the mummy's disease (no save: the
+    // rot's clock 10 days, the rot itself d6 months - its data's high
+    // nibble - checked every 30 days); paralysis (the ghoul's not on elves)
+    auto pool_hit = [&]() {
+        if (hasx(at, m.drain1) && tg.up()) drain(b, c, 1, out.ev, 8, &out.n_ev, out.n - 1);
+        if (hasx(at, m.drain2) && tg.up()) drain(b, c, 2, out.ev, 8, &out.n_ev, out.n - 1);
+        if (hasx(at, m.rot_touch) && m.rot_clock && m.rot && tg.up() && !tg.has(m.rot_clock)) {
+            give_aff(tg, m.rot_clock, 14400, 0xFF, true);
+            give_aff(tg, m.rot, 43200, (d.roll(6, 1) << 4) + 0x0F, true);
+            add_event(out, c, Ev::Diseased);
+        }
+        auto paralyze = [&](int rounds, int bonus) {
+            if (!m.paralyzed || !tg.up() || saving_throw(tg, 0, bonus, d)) return;
+            give_aff(tg, m.paralyzed, rounds, 12, false);
+            add_event(out, c, Ev::Paralyzed);
+        };
+        if (hasx(at, m.ghoul) && tg.rec[0x74] != 2) paralyze(63, 0);
+        if (slot == 1 && hasx(at, m.drider)) paralyze(d.roll(9, 1) + 10, -2);
+    };
     if (slot == 0) {
+        pool_hit();
         if (hasx(at, m.fire_touch)) touch(d.roll(10, 2), 9);
         if (hasx(at, m.acid_bite)) touch(d.roll(4, 1), 0x10);
         if (hasx(at, m.engulf) && hits1 == 2 && tg.up() && m.held_fast && m.suffocate && m.engulfing &&
@@ -1454,14 +1538,35 @@ void after_hit(Battle& b, int a, int c, int slot, int roll, int hits1, create::D
                 add_event(out, c, Ev::ResistsDispel);
             }
         }
+        // Pool's, attack 1: the stirge drinks (its victim held), the
+        // mantis holds on (both: its effect's data the victim; the
+        // stirge's time / 16 the blood it can take), the tiger rakes
+        auto latch = [&](uint8_t holding, int minutes) {
+            if (!holding || !m.held_fast || !tg.up()) return;
+            give_aff(at, holding, minutes, c, true);
+            give_aff(tg, m.held_fast, 0, 0xFF, false);
+            tg.moves = 0;
+        };
+        if (hasx(at, m.blood)) latch(m.sucking, 0xCF);
+        if (hasx(at, m.rake) && hits1 == 2 && tg.up()) {
+            add_event(out, a, Ev::Rakes);
+            out.rake = true;
+        }
+        if (hasx(at, m.bite_hold) && tg.up() && tg.rec[0x11] < 19) {     // (the Strength in use under 19)
+            latch(m.holding, 0);
+            add_event(out, c, Ev::HeldFast);
+        }
     } else {
         if (hasx(at, m.poison)) poison(0);
-        if (hasx(at, m.poison_m2)) poison(-2);
+        if (hasx(at, m.poison_p4)) poison(4);
+        if (hasx(at, m.poison_p2)) poison(2);
         if (hasx(at, m.kreen_bite) && m.paralyzed && tg.up() && !saving_throw(tg, 0, 0, d)) {
             give_aff(tg, m.paralyzed, d.roll(8, 2), 12, false);
             add_event(out, c, Ev::Paralyzed);
         }
+        if (hasx(at, m.poison_m2)) poison(-2);
         if (hasx(at, m.fire_touch)) touch(d.roll(10, 2), 9);
+        pool_hit();
     }
 }
 
@@ -1672,6 +1777,14 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                 }
                 if (hasx(tg, m.half)) dmg /= 2;
                 if (hasx(tg, m.pierce_one) && item && names && names->type(item[0x2E]).blow == 1) dmg = 1;
+                // Pool's undead: only magic (any plus) or silver hurts the
+                // wight; the wraith takes half from +0 silver, nothing from
+                // other +0 weapons or none; a flask of oil burns the mummy
+                // (the blow's item, as blow_item: the arrows from a bow)
+                const bool silver = item && m.silver_word && item[0x31] == m.silver_word;
+                if (hasx(tg, m.silver_only) && !(item && (plus != 0 || silver))) dmg = 0;
+                if (hasx(tg, m.silver_half) && (!item || plus == 0)) dmg = silver ? dmg / 2 : 0;
+                if (hasx(tg, m.oil_bane) && item && m.oil_flask && item[0x2E] == m.oil_flask) dmg = d.roll(8, 3);
                 // A blessed quarrel slays it outright
                 if (hasx(tg, m.blessed_bane) && item && item[0x2E] == b.quarrel && m.blessed_word &&
                     item[0x31] == m.blessed_word)
@@ -1706,8 +1819,190 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                 if (!at.up()) break;
             }
             if (b.fx && tg.up()) after_hit(b, a, c, slot, roll, hits1, d, out);
+            if (out.rake) {
+                // Pool's tiger (its ovr14 routine): both claws hit - two
+                // rakes of 2d4 at once (the attack made again with them)
+                out.rake = false;
+                const int keep[2] = {at.attacks[0], at.attacks[1]};
+                const uint8_t keep_dice = at.rec[kDice + 1], keep_sides = at.rec[kSides + 1];
+                at.attacks[0] = 0;
+                at.attacks[1] = 2;
+                at.rec[kDice + 1] = 2;
+                at.rec[kSides + 1] = 4;
+                const Attack more = attack(b, a, c, names, d, from_behind);
+                at.attacks[0] = keep[0];
+                at.attacks[1] = keep[1];
+                at.rec[kDice + 1] = keep_dice;
+                at.rec[kSides + 1] = keep_sides;
+                const int base = out.n;
+                for (int k = 0; k < more.n && out.n < 8; ++k) {
+                    out.avoided[out.n] = more.avoided[k];
+                    out.hits[out.n++] = more.hits[k];
+                }
+                for (int k = 0; k < more.n_ev && out.n_ev < 8; ++k) {
+                    out.ev[out.n_ev] = more.ev[k];
+                    if (out.ev[out.n_ev].hit >= 0) out.ev[out.n_ev].hit = static_cast<int8_t>(out.ev[out.n_ev].hit + base);
+                    ++out.n_ev;
+                }
+                out.any = out.any || more.any;
+                out.down = out.down || more.down;
+            }
         }
     }
+    return out;
+}
+
+namespace {
+// The class a drained level comes off (the original's pick, its ovr13
+// routine): the highest level, of those the one whose level needed the
+// most experience (a later class on a tie); that experience in *exp
+int drain_class(const Battle& b, const uint8_t* r, int32_t* exp)
+{
+    int best = 0, best_l = 0;
+    int32_t best_e = 0;
+    for (int k = 0; k < 8; ++k) {
+        const int l = r[kLevels + k];
+        if (l < best_l) continue;
+        const int32_t e = l > 1 && l < 13 ? b.level_exp[k][l] : 0;
+        if (e >= best_e || e == -1) {
+            best = k;
+            best_l = l;
+            best_e = e;
+        }
+    }
+    *exp = best_e;
+    return best;
+}
+} // namespace
+
+void drain(Battle& b, int c, int n, Event* out, int cap, int* n_out, int hit)
+{
+    Fighter& f = b.f[c];
+    uint8_t* r = f.rec;
+    auto said = [&](Ev e, int amount) {
+        if (!out || *n_out >= cap) return;
+        Event& x = out[(*n_out)++];
+        x = Event{};
+        x.who = static_cast<uint8_t>(c);
+        x.ev = e;
+        x.hit = static_cast<int8_t>(hit);
+        x.amount = static_cast<int16_t>(amount);
+    };
+    // Out (said whatever: the original's - the dead, stoned and gone stay so)
+    auto put_down = [&](int status, Ev e) {
+        said(e, 0);
+        const int st = f.status();
+        if (st == party::Stoned || st == party::Dead || st == party::Gone) return;
+        r[kHealth] = static_cast<uint8_t>(status);
+        r[kHp] = 0;
+        fall(b, c);
+    };
+    said(Ev::Drained, n);
+    if (f.status() == party::Animated) {
+        put_down(party::Gone, Ev::DeadForever);
+        r[kHpMax] = 0;
+        return;
+    }
+    for (int k = 0; k < n; ++k) {
+        if (f.status() == party::Gone) continue;
+        ++r[kDrained];
+        // A level's share of the hit points
+        int sum = 0;
+        for (int j = 0; j < 8; ++j) sum += r[kLevels + j];
+        const int per = sum ? r[kHpMax] / sum : 0;
+        for (int j = 0; j < per; ++j) {
+            if (r[kHpMax]) --r[kHpMax];
+            if (r[kHpRolled]) --r[kHpRolled];
+            if (r[kHp]) --r[kHp];
+            ++r[kDrainedHp];
+        }
+        int32_t e = 0;
+        if (r[kHd] < 2) {
+            put_down(party::Gone, Ev::DeadForever);
+            r[kHpMax] = 0;
+            const int cls = drain_class(b, r, &e);
+            if (r[kLevels + cls] > 0 && n == 2) r[kLevels + cls] = 0;
+        } else {
+            const int cls = drain_class(b, r, &e);
+            --r[kLevels + cls];
+            if (r[kHp] == 0 && f.status() != party::Dead) put_down(party::Dead, Ev::Killed);
+        }
+        const int cls = drain_class(b, r, &e);
+        r[kHd] = r[kLevels + cls];
+        for (int j = 0; j < 4; ++j) r[kExp + j] = static_cast<uint8_t>(static_cast<uint32_t>(e) >> (8 * j));
+    }
+}
+
+int turn_holds(Battle& b, int i, create::Dice& d, Event* out, int cap, int* bite)
+{
+    *bite = -1;
+    if (!b.fx || i < 0 || i >= b.n) return 0;
+    Fighter& f = b.f[i];
+    const MonFx& m = b.fx->mon;
+    int n = 0;
+    auto ev = [&](int who, Ev e, int to = -1) -> Event* {
+        if (n >= cap) return nullptr;
+        Event& x = out[n++];
+        x = Event{};
+        x.who = static_cast<uint8_t>(who);
+        x.ev = e;
+        x.to = static_cast<int8_t>(to);
+        return &x;
+    };
+    // The stirge: blood while both are in the fight and it isn't full
+    const int s = m.sucking ? find_aff(f, m.sucking) : -1;
+    if (s >= 0) {
+        const int v = f.aff[s][3];
+        if (!f.up() || v >= b.n || !b.f[v].up()) {
+            let_go(b, f, m.sucking);
+        } else {
+            ev(i, Ev::SucksBlood, v);
+            set_actor(b, i);
+            const int amount = d.roll(4, 1);
+            const bool dn = damage(b, v, amount);
+            Event* e = ev(v, Ev::Damage);
+            if (e) e->amount = static_cast<int16_t>(amount);
+            if (dn) ev(v, Ev::Down);
+            const int k = find_aff(f, m.sucking);
+            if (k >= 0 && b.f[v].up()) {
+                const int t = f.aff[k][1] | f.aff[k][2] << 8;
+                if ((t >> 4) > amount) {
+                    const int left = t - (amount << 4);
+                    f.aff[k][1] = static_cast<uint8_t>(left);
+                    f.aff[k][2] = static_cast<uint8_t>(left >> 8);
+                } else {
+                    let_go(b, f, m.sucking);
+                }
+            } else if (k >= 0) {
+                let_go(b, f, m.sucking);
+            }
+        }
+    }
+    // The mantis: its bite on the one it holds
+    const int h = m.holding ? find_aff(f, m.holding) : -1;
+    if (h >= 0) {
+        const int v = f.aff[h][3];
+        if (!f.up() || v >= b.n || !b.f[v].up()) let_go(b, f, m.holding);
+        else *bite = v;
+    }
+    return n;
+}
+
+Attack bite_attack(Battle& b, int a, int c, const items::Names* names, create::Dice& d)
+{
+    Fighter& at = b.f[a];
+    const int keep[2] = {at.attacks[0], at.attacks[1]};
+    const uint8_t keep_dice = at.rec[kDice], keep_sides = at.rec[kSides];
+    at.attacks[0] = 1;
+    at.attacks[1] = 0;
+    at.rec[kDice] = 3;
+    at.rec[kSides] = 4;
+    Attack out = attack(b, a, c, names, d, false);
+    at.attacks[0] = keep[0];
+    at.attacks[1] = keep[1];
+    at.rec[kDice] = keep_dice;
+    at.rec[kSides] = keep_sides;
+    if (b.fx && !b.f[c].up()) let_go(b, at, b.fx->mon.holding);
     return out;
 }
 
@@ -1722,7 +2017,7 @@ bool resists(Battle& b, int c, int effect, const Harm& h, create::Dice& d)
     // round to always resisted, as in the original)
     auto chance = [&](uint8_t type, int base) {
         if (!magic || !hasx(f, type)) return false;
-        const int v = (base + (11 - h.level) * 5) & 0xFF;
+        const int v = (m.mr_low ? base - (11 - h.level) * 5 : base + (11 - h.level) * 5) & 0xFF;
         return d.roll(100, 1) <= v;
     };
     if (chance(m.mr50, 50) || chance(m.mr15, 15)) return true;
@@ -1773,9 +2068,12 @@ int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* dow
         }
         if (hasx(f, m.resist_cold) && (h.kind & 2)) dmg /= 2;
         if (hasx(f, m.resist_fire) && (h.kind & 1)) dmg /= 2;
+        if (hasx(f, m.oil_bane) && (h.kind & 9)) dmg += h.dice;    // (Pool's mummy: a point more a die)
         auto chance = [&](uint8_t type, int base) {
             if (!(h.kind & 8) || !hasx(f, type)) return false;
-            return d.roll(100, 1) <= ((base + (11 - h.level) * 5) & 0xFF);
+            // (Pool's code takes the level's part away: weak casters get through more easily)
+            const int odds = m.mr_low ? base - (11 - h.level) * 5 : base + (11 - h.level) * 5;
+            return d.roll(100, 1) <= (odds & 0xFF);
         };
         if (chance(m.mr50, 50) || chance(m.mr15, 15)) safe = true;
         if (hasx(f, m.no_fire) && (h.kind & 1)) safe = true;
@@ -1843,8 +2141,12 @@ bool free_attack_ok(const Battle& b, const Tables& t, int e, int mover)
     const Fighter& en = b.f[e];
     const Fighter& m = b.f[mover];
     if (helpless(b, en) || !range(b, t, e, mover, false, nullptr)) return false;
-    // (one with the Dragon Slayer's or the Robe of Vermin's effect never - the original's)
-    if (b.fx && (hasx(en, b.fx->items.dragon_slayer) || hasx(en, b.fx->items.vermin))) return false;
+    // (one with the Dragon Slayer's or the Robe of Vermin's effect never - the
+    // original's; Pool's code asks the same of its stirge drinking and its
+    // mantis holding on: those never)
+    if (b.fx && (hasx(en, b.fx->items.dragon_slayer) || hasx(en, b.fx->items.vermin) ||
+                 hasx(en, b.fx->mon.sucking) || hasx(en, b.fx->mon.holding)))
+        return false;
     if (en.delay > 0 || en.received == 0) return true;
     const int dir = direction(en.x, en.y, m.x, m.y);
     if (dir > 7) return true;
@@ -3812,6 +4114,8 @@ void release_holds(Battle& b, int i)
     const MonFx& m = b.fx->mon;
     let_go(b, f, m.engulfing);
     let_go(b, f, m.hugging);
+    let_go(b, f, m.sucking);
+    let_go(b, f, m.holding);
     const uint8_t mine[2] = {m.suffocate, m.held_fast};
     for (uint8_t t : mine) {
         const int k = t ? find_aff(f, t) : -1;
@@ -3943,6 +4247,58 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
             }
             if (!saving_throw(b.f[tg], 1, 0, d)) remove(tg, party::Stoned, Ev::GazeStoned);
             if (!f.up()) return n;
+        }
+    }
+    // Pool's vampire: its charming gaze at its pick in sight - a save
+    // against spells at -2 or charmed, on its side for the fight
+    if (hasx(f, m.charm_gaze) && b.fx->charm) {
+        const int tg = pick_target(b, t, i, d);
+        if (tg >= 0 && range(b, t, i, tg, false, nullptr)) {
+            ev(i, Ev::CharmGaze);
+            fly(i, b.f[tg].x, b.f[tg].y, 5, 4, 45);
+            Fighter& v = b.f[tg];
+            Harm h;
+            h.level = 12;
+            if (!resists(b, tg, b.fx->charm, h, d) && !saving_throw(v, 4, -2, d)) {
+                const int was = find_aff(v, b.fx->charm);
+                const int own = was >= 0 ? (v.aff[was][3] & 0x40) >> 6 : (v.team() ? 1 : 0);
+                give_aff(v, b.fx->charm, 0, (f.team() << 7) | (own << 6) | 0x0C, false);
+                v.rec[kTeam] = static_cast<uint8_t>(f.team());
+                v.target = -1;
+                ev(tg, Ev::Charmed);
+            }
+        }
+    }
+    // Pool's lightning breath (its ovr23 routine; the bronze dragon): 3 a
+    // fight - after the first round only half its turns - a bolt of 10
+    // squares at one it can reach as Lightning Bolt would; its maximum hit
+    // points, a save against breath for half; the turn is over
+    if (hasx(f, m.lightning_breath) && (b.round == 0 || d.roll(100, 1) > 50)) {
+        const int tg = special_target(b, t, i, 10, false, d);
+        if (tg >= 0) {
+            *ends_turn = true;
+            ev(i, Ev::Breathes);
+            Harm h = breath;
+            h.kind = 4;
+            const int tx = b.f[tg].x, ty = b.f[tg].y;
+            Event* e = ev(i, Ev::BoltFly);
+            if (e) {
+                e->x = static_cast<uint8_t>(tx);
+                e->y = static_cast<uint8_t>(ty);
+                e->pic = 6;
+            }
+            const int amount = f.hp_max();
+            hurt(tg, amount, h);
+            int on[32];
+            const int k = bolt_path(b, t, i, tx, ty, 10, false, on, 32, b.bolt, &b.n_bolt, 16);
+            for (int j = 0; j < k; ++j)
+                if (on[j] != tg) hurt(on[j], amount, h);
+            const int left = find_aff(f, m.lightning_breath);
+            if (left >= 0) {
+                if (f.aff[left][3] > 0xFD) --f.aff[left][3];
+                else drop_aff(f, left);
+            }
+            return n;
         }
     }
     // The ankheg's acid: once a fight (its acid bite goes with it); the turn is over

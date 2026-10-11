@@ -158,6 +158,12 @@ enum FightWord {
     kLostImage,                                                                  // Mirror Image: "lost an image"
     kIsWeakened, kAges,                                                          // the disease's "is weakened", Haste's "ages"
     kGoesBerzerk,                                                                // the Berserker's "goes berzerk"
+    // Pool's monsters: "is drained ", "a level", " levels", "is dead forever", "is Diseased",
+    // "Sucks some Blood", "is held fast", "Rakes...", "Gazes...", "is charmed", "Breathes!",
+    // "Turns gaseous and escapes", "is paralyzed with fear", "is weakened by fear", "Rots...",
+    // "Dies rots away"
+    kIsDrained, kDrainLevel, kNLevels, kDeadForever, kIsDiseased, kSucksBlood, kHeldFast, kRakes, kGazesCharm,
+    kIsCharmedG, kBreathesB, kGaseous, kFearParalyzed, kFearWeakened, kRotsW, kRotsAway,
     kFightWords
 };
 

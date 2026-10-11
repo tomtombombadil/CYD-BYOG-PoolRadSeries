@@ -912,6 +912,37 @@ int repeat_clock(uint8_t* a, int minutes, int period)
 }
 } // namespace
 
+RotStep rot_clock(party::Character& c, int minutes, uint8_t rot, uint8_t clock)
+{
+    RotStep out;
+    if (minutes <= 0 || !rot) return out;
+    const int ck = clock ? find_effect(c, clock) : -1;
+    if (ck >= 0) repeat_clock(c.affects[ck], minutes, 14400);
+    const int k = find_effect(c, rot);
+    if (k < 0) return out;
+    for (int n = repeat_clock(c.affects[k], minutes, 43200); n > 0; --n) {
+        ++out.rots;
+        int cha = c.rec[0x1A];
+        cha = cha > 2 ? cha - 2 : 0;
+        if (cha < 3) cha = 3;
+        c.rec[0x1A] = c.rec[0x1B] = static_cast<uint8_t>(cha);
+        uint8_t& data = c.affects[k][3];
+        if ((data >> 4) > 1) {
+            data = static_cast<uint8_t>(data - 0x10);
+            continue;
+        }
+        out.dies = true;
+        remove_affects(c, rot);
+        if (c.rec[0x195] != party::Dead && c.rec[0x195] != party::Stoned && c.rec[0x195] != party::Gone) {
+            c.rec[0x195] = party::Gone;
+            c.rec[0x196] = 0;
+            c.rec[0x1A4] = 0;
+        }
+        break;
+    }
+    return out;
+}
+
 int con_regen(party::Character& c, int minutes, const ItemFacts& f)
 {
     if (!f.con_regen_fx) return 0;

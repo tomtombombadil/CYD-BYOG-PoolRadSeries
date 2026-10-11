@@ -154,6 +154,16 @@ DiseaseStep disease_clock(party::Character& c, int minutes, const CureFacts& f);
 // back ("is fully healed" / "is partially healed"). Call before
 // magic::tick_affects, as poison_clock.
 int con_regen(party::Character& c, int minutes, const ItemFacts& f);
+// Pool's mummy rot (poolrad_combat_facts.md 4) as `minutes` pass outside
+// fights: each time the rot's 30 days run out "Rots..." - Charisma 2 less
+// (3 at least) and a month less to go (its data's high nibble); with none
+// left "Dies rots away" (gone). The disease's 10-day clock starts again
+// each time it runs out. Call before magic::tick_affects.
+struct RotStep {
+    int  rots = 0;
+    bool dies = false;
+};
+RotStep rot_clock(party::Character& c, int minutes, uint8_t rot, uint8_t clock);
 // Whether the cure does anything for them (else the temple asks "cast cure
 // anyway?"; wounds always do)
 bool needs_cure(const party::Character& c, Cure cure, const CureFacts& f);
