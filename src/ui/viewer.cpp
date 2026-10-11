@@ -34,7 +34,8 @@ namespace viewer {
 
 namespace {
 
-enum class Screen : uint8_t { Home, Files, Resources, Blocks, View, Look, Walk, Play, Journal, Pdf, GameMenu, Settings, Logs };
+enum class Screen : uint8_t { Home, Files, Resources, Blocks, View, Look, Walk, Play, Journal, Pdf, GameMenu, Settings, Logs,
+                               GameSettings, Dev };
 
 Env       env_;
 Settings* cfg = nullptr;
@@ -870,7 +871,7 @@ void tap_home(const ui::Tap& t)
     if (home_card().contains(t.x, t.y)) {
         game_sel = home_page;
         file_page = 0;
-        go(Screen::Files);                 // the chooser: the four tests
+        go(Screen::Files);                 // the game's page: Play, Settings
     }
 }
 
@@ -885,51 +886,43 @@ void list_files()
 int file_cols() { return ui::large() ? 4 : 3; }
 constexpr int kFileRows = 4;
 
-// The chooser (Tom, 2026-10-10): the four tests as big keys; the game's
-// files (the Resource Test) behind the first one
-int chooser_keys() { return look::available(game_dirs[game_sel].game) ? 4 : 1; }
+// The game's page (Tom, 2026-10-11, v0.72.0): Play and Settings; the tests
+// (Resource / Screen / Walk) are under Settings -> Dev Tools. A game the
+// engine doesn't play yet: its note and Settings (its files in Dev Tools).
+bool playable() { return look::available(game_dirs[game_sel].game); }
+int chooser_keys() { return playable() ? 2 : 1; }
 ui::Rect chooser_key(int i)
 {
-    if (chooser_keys() == 1) return ui::grid_cell(2, 2, 2, false);
-    return ui::grid_cell(i, 2, 2, false);
+    if (!playable()) return ui::grid_cell(2, 2, 2, false);
+    return ui::grid_cell(i, 2, 1, false);
 }
 
 void draw_files()
 {
     ui::clear();
     ui::header(games::title(game_dirs[game_sel].game), true);
-    static const char* const kKeys[4][2] = {{"Resource Test", "The game's files"},
-                                            {"Screen Test", "Pictures and screens"},
-                                            {"Walk Test", "Walk the maps"},
-                                            {"Play Test", "Play the game"}};
-    if (chooser_keys() == 1) {
+    if (!playable()) {
         // The Dark Queen of Krynn and Unlimited Adventures; other games
         // the engine doesn't play yet
         const int x = ui::gap() * 3, wdt = ui::width() - ui::gap() * 6;
         const bool hlib = game_dirs[game_sel].format == library::Format::Hlib;
         wrap_text(x, ui::header_h() + ui::gap() * 3, wdt,
-                  hlib ? "Its files are .TLB / .GLB libraries, a newer format the viewer can't read yet."
-                       : "The engine can't play this game yet; its files can be looked at.",
+                  hlib ? "Its files are .TLB / .GLB libraries, a newer format the engine can't read yet."
+                       : "The engine can't play this game yet; its files can be looked at in Settings, Dev Tools.",
                   ui::Font::Normal, style::kText, true);
-        if (hlib) return;
+        ui::key_big(chooser_key(0), "Settings", "Engine options");
+        return;
     }
-    for (int i = 0; i < chooser_keys(); ++i) ui::key_big(chooser_key(i), kKeys[i][0], kKeys[i][1]);
+    ui::key_big(chooser_key(0), "Play", "Play the game");
+    ui::key_big(chooser_key(1), "Settings", "Engine options");
 }
 
 void canvas_park_path(char* out, size_t cap);
 
-void tap_files(const ui::Tap& t)
+void apply_options();
+
+void start_play()
 {
-    if (ui::back_rect().contains(t.x, t.y)) { go(Screen::Home); return; }
-    int k = -1;
-    for (int i = 0; i < chooser_keys(); ++i)
-        if (chooser_key(i).contains(t.x, t.y)) k = i;
-    if (k < 0 || (chooser_keys() == 1 && game_dirs[game_sel].format == library::Format::Hlib)) return;
-    if (k == 0) {
-        file_page = 0;
-        go(Screen::Resources);
-        return;
-    }
     if (frame::parked()) {
         // The game screen still on the card (after the journal book, short
         // of memory then): it has to come back before any game screen
@@ -941,29 +934,78 @@ void tap_files(const ui::Tap& t)
             return;
         }
     }
-    if (k == 3) {
-        frame::set_scale(frame::Scale::One);    // the game's screen: 1:1 at the top left
-        frame::set_left(true);
-        frame::set_ega_palette();
-        char cdir[160];
-        library::make_cache_dirs(game_dirs[game_sel]);
-        snprintf(cdir, sizeof cdir, "%s/%s/%s", games::kRootDir, library::kCacheDir, game_dirs[game_sel].folder);
-        play::set_sound(cfg->sound, cfg->volume);
-        // Pool of Radiance's folder on the card: its characters can be added
-        play::set_pool_dir("");
-        for (int g = 0; g < n_games; ++g)
-            if (game_dirs[g].game == games::Game::PoolOfRadiance && game_dirs[g].format == library::Format::Dax) {
-                char pd[160], sv[170];
-                snprintf(pd, sizeof pd, "%s/%s", games::kRootDir, game_dirs[g].data_dir);
-                // Steam / SNEG: its saves are in the game folder's SAVE (POOL.CFG
-                // "C:\POOLRAD\SAVE\"); GOG: the game folder itself
-                snprintf(sv, sizeof sv, "%s/SAVE", pd);
-                play::set_pool_dir(sd_fs().exists(sv) ? sv : pd);
-                break;
-            }
-        play_error = play::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game, frame::canvas(), cdir);
-        go(Screen::Play);
+    frame::set_scale(frame::Scale::One);    // the game's screen: 1:1 at the top left
+    frame::set_left(true);
+    frame::set_ega_palette();
+    char cdir[160];
+    library::make_cache_dirs(game_dirs[game_sel]);
+    snprintf(cdir, sizeof cdir, "%s/%s/%s", games::kRootDir, library::kCacheDir, game_dirs[game_sel].folder);
+    play::set_sound(cfg->sound, cfg->volume);
+    apply_options();
+    // Pool of Radiance's folder on the card: its characters can be added
+    play::set_pool_dir("");
+    for (int g = 0; g < n_games; ++g)
+        if (game_dirs[g].game == games::Game::PoolOfRadiance && game_dirs[g].format == library::Format::Dax) {
+            char pd[160], sv[170];
+            snprintf(pd, sizeof pd, "%s/%s", games::kRootDir, game_dirs[g].data_dir);
+            // Steam / SNEG: its saves are in the game folder's SAVE (POOL.CFG
+            // "C:\POOLRAD\SAVE\"); GOG: the game folder itself
+            snprintf(sv, sizeof sv, "%s/SAVE", pd);
+            play::set_pool_dir(sd_fs().exists(sv) ? sv : pd);
+            break;
+        }
+    play_error = play::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game, frame::canvas(), cdir);
+    go(Screen::Play);
+}
+
+void tap_files(const ui::Tap& t)
+{
+    if (ui::back_rect().contains(t.x, t.y)) { go(Screen::Home); return; }
+    int k = -1;
+    for (int i = 0; i < chooser_keys(); ++i)
+        if (chooser_key(i).contains(t.x, t.y)) k = i;
+    if (k < 0) return;
+    if (!playable() || k == 1) {
+        go(Screen::GameSettings);
         return;
+    }
+    start_play();
+}
+
+// ---- Dev Tools (Settings -> Dev Tools): the tests ---------------------------
+int dev_keys() { return playable() ? 3 : (game_dirs[game_sel].format == library::Format::Hlib ? 0 : 1); }
+ui::Rect dev_key(int i) { return ui::grid_cell(i, 2, 2, false); }
+
+void draw_dev()
+{
+    ui::clear();
+    ui::header("Dev Tools", true);
+    static const char* const kKeys[3][2] = {{"Resource Test", "The game's files"},
+                                            {"Screen Test", "Pictures and screens"},
+                                            {"Walk Test", "Walk the maps"}};
+    if (dev_keys() == 0)
+        wrap_text(ui::gap() * 3, ui::header_h() + ui::gap() * 3, ui::width() - ui::gap() * 6,
+                  "Its files are .TLB / .GLB libraries, a newer format the engine can't read yet.", ui::Font::Normal,
+                  style::kText, true);
+    for (int i = 0; i < dev_keys(); ++i) ui::key_big(dev_key(i), kKeys[i][0], kKeys[i][1]);
+}
+
+void tap_dev(const ui::Tap& t)
+{
+    if (ui::back_rect().contains(t.x, t.y)) { go(Screen::GameSettings); return; }
+    int k = -1;
+    for (int i = 0; i < dev_keys(); ++i)
+        if (dev_key(i).contains(t.x, t.y)) k = i;
+    if (k < 0) return;
+    if (k == 0) {
+        file_page = 0;
+        go(Screen::Resources);
+        return;
+    }
+    if (frame::parked()) {
+        char path[96];
+        canvas_park_path(path, sizeof path);
+        if (!frame::unpark(path)) return;
     }
     if (k == 2) {
         walk_error = walk::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game);
@@ -1000,7 +1042,7 @@ void draw_resources()
 
 void tap_resources(const ui::Tap& t)
 {
-    if (ui::back_rect().contains(t.x, t.y)) { go(Screen::Files); return; }
+    if (ui::back_rect().contains(t.x, t.y)) { go(Screen::Dev); return; }
     Pager p{n_files, file_cols() * kFileRows, file_page};
     if (pager_tap(t, p, &file_page)) {
         dirty = true;
@@ -1340,7 +1382,7 @@ void leave_look()
     look_error = nullptr;
     // The game screen is always 1:1 here; back to the viewer's own choice
     frame::set_scale(cfg->scale_15x ? frame::Scale::OneAndHalf : frame::Scale::One);
-    go(Screen::Files);
+    go(Screen::Dev);
 }
 
 void present(const look::Rows& r)
@@ -1674,7 +1716,7 @@ void leave_walk()
     walk_error = nullptr;
     frame::set_left(false);
     frame::set_scale(cfg->scale_15x ? frame::Scale::OneAndHalf : frame::Scale::One);
-    go(Screen::Files);
+    go(Screen::Dev);
 }
 
 void draw_walk()
@@ -1966,10 +2008,143 @@ void tap_sounds(const ui::Tap& t)
         }
 }
 
-ui::Rect options_key()
+// ---- The engine comforts' switches (Tom, 2026-10-11, v0.72.0) ----------------
+// One set for all games (settings.h comforts_off): the game's Settings page
+// and the in-game Game menu's Options tab show the same keys; a comfort
+// compiled out (app/features.h) isn't listed.
+enum Comfort { kCGallery, kCBigIcon, kCJournal, kCDemoTap, kCMoreGuys, kCSound, kComforts };
+
+bool comfort_built(int c)
 {
-    const ui::Rect a = journal_area();
-    return {ui::gap() * 3, a.y + ui::gap() * 2, ui::width() - ui::gap() * 6, ui::key_h()};
+    switch (c) {
+    case kCGallery: return CYD_ICON_GALLERY;
+    case kCBigIcon: return CYD_BIG_ICON_PREVIEW;
+    case kCJournal: return CYD_JOURNAL_POPUP;
+    case kCDemoTap: return CYD_DEMO_TAP_STOPS;
+    case kCMoreGuys: return CYD_MORE_CHARACTERS;
+    default: return true;
+    }
+}
+uint8_t comfort_bit(int c)
+{
+    static const uint8_t kBits[kComforts] = {kOffGallery, kOffBigIcon, kOffJournal, kOffDemoTap, kOffMoreGuys, 0};
+    return kBits[c];
+}
+bool comfort_on(int c)
+{
+    if (!comfort_built(c)) return false;
+    if (c == kCBigIcon && !ui::large()) return cfg->large_icons != 0;      // (320x240: off unless chosen - it covers the editor)
+    return c == kCSound ? cfg->sound != kSoundOff : !(cfg->comforts_off & comfort_bit(c));
+}
+
+void apply_options()
+{
+    play::Options o;
+    o.gallery = comfort_on(kCGallery);
+    o.demo_tap = comfort_on(kCDemoTap);
+    o.more_guys = comfort_on(kCMoreGuys);
+    play::set_options(o);
+}
+
+// The listed comforts, in order
+int comfort_list(int* out)
+{
+    int n = 0;
+    for (int c = 0; c < kComforts; ++c)
+        if (comfort_built(c)) out[n++] = c;
+    return n;
+}
+
+// Cell i of the switches' grid (2 columns, 3 rows) in area a
+ui::Rect comfort_cell(const ui::Rect& a, int i)
+{
+    const int gp = ui::gap(), cols = 2, rows = 3;
+    const int w = (a.w - gp * (cols + 1)) / cols, h = (a.h - gp * (rows + 1)) / rows;
+    return {a.x + gp + (i % cols) * (w + gp), a.y + gp + (i / cols) * (h + gp), w, h};
+}
+
+void draw_comforts(const ui::Rect& a)
+{
+    static const char* const kNames[kComforts] = {"Icon Gallery", "Large Icon", "Journal Pop-Up", "Demo Tap Stops",
+                                                  "More Characters", "Game Sound"};
+    int list[kComforts];
+    const int n = comfort_list(list);
+    for (int i = 0; i < n; ++i) {
+        const int c = list[i];
+        const bool on = comfort_on(c);
+        const char* sub = on ? "On" : "Off";
+        if (c == kCSound) sub = cfg->sound == kSoundPc ? "PC Speaker" : cfg->sound == kSoundOff ? "Off" : "Tandy";
+        ui::key2(comfort_cell(a, i), kNames[c], sub, on ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+    }
+}
+
+// True when a switch was tapped (and changed)
+bool tap_comforts(const ui::Rect& a, const ui::Tap& t)
+{
+    int list[kComforts];
+    const int n = comfort_list(list);
+    for (int i = 0; i < n; ++i) {
+        if (!comfort_cell(a, i).contains(t.x, t.y)) continue;
+        const int c = list[i];
+        if (c == kCSound) {
+            cfg->sound = cfg->sound == kSoundTandy ? kSoundPc : cfg->sound == kSoundPc ? kSoundOff : kSoundTandy;
+            play::set_sound(cfg->sound, cfg->volume);
+        } else if (c == kCBigIcon && !ui::large()) {
+            cfg->large_icons = !cfg->large_icons;
+        } else {
+            cfg->comforts_off ^= comfort_bit(c);
+        }
+        settings_save(*cfg);
+        apply_options();
+        return true;
+    }
+    return false;
+}
+
+// "As Original": every comfort off (or all on again)
+bool all_comforts_off()
+{
+    int list[kComforts];
+    const int n = comfort_list(list);
+    for (int i = 0; i < n; ++i)
+        if (list[i] != kCSound && comfort_on(list[i])) return false;
+    return true;
+}
+void toggle_original()
+{
+    const bool on = all_comforts_off();
+    cfg->comforts_off = on ? 0 : (kOffGallery | kOffBigIcon | kOffDemoTap | kOffJournal | kOffMoreGuys);
+    if (!on) cfg->large_icons = 0;
+    settings_save(*cfg);
+    apply_options();
+}
+
+// ---- The game's Settings page: the switches; As Original, Dev Tools below
+ui::Rect game_settings_area()
+{
+    const int top = ui::header_h();
+    return {0, top, ui::width(), ui::height() - top - ui::key_h() - ui::gap() * 2};
+}
+
+void draw_game_settings()
+{
+    ui::clear();
+    ui::header("Settings", true);
+    draw_comforts(game_settings_area());
+    ui::key(ui::bottom_key(0, 2), all_comforts_off() ? "All On" : "As Original");
+    ui::key(ui::bottom_key(1, 2), "Dev Tools");
+}
+
+void tap_game_settings(const ui::Tap& t)
+{
+    if (ui::back_rect().contains(t.x, t.y)) { go(Screen::Files); return; }
+    if (ui::bottom_key(1, 2).contains(t.x, t.y)) { go(Screen::Dev); return; }
+    if (ui::bottom_key(0, 2).contains(t.x, t.y)) {
+        toggle_original();
+        dirty = true;
+        return;
+    }
+    if (tap_comforts(game_settings_area(), t)) dirty = true;
 }
 
 void draw_game_menu()
@@ -1984,25 +2159,7 @@ void draw_game_menu()
     }
     if (menu_tab == kTabOptions) {
         ui::key(ui::bottom_key(0, 1), "Back to Game");
-        const int x = ui::gap() * 3, wdt = ui::width() - ui::gap() * 6;
-        int y = a.y + ui::gap() * 2;
-        if (!CYD_BIG_ICON_PREVIEW) {
-            wrap_text(x, y, wdt, "Nothing to set here yet.", ui::Font::Normal, style::kText, true);
-            return;
-        }
-        if (ui::large()) {
-            wrap_text(x, y, wdt,
-                      "Large icons: on this screen the icon editor (Alter, Icon) always shows the new icon large "
-                      "beside it. Tap it to see the other pose.",
-                      ui::Font::Normal, style::kText, true);
-            return;
-        }
-        ui::key(options_key(), cfg->large_icons ? "Large Icons: On" : "Large Icons: Off",
-                cfg->large_icons ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
-        wrap_text(x, options_key().y + options_key().h + ui::gap() * 2, wdt,
-                  "The icon editor (Alter, Icon) shows the new icon large in its empty space. Tap it to see the "
-                  "other pose.",
-                  ui::Font::Small, style::kTextMuted, true);
+        draw_comforts({0, a.y, ui::width(), a.h});
         return;
     }
     const int pages = menu_tab == kTabPdf || menu_note[0] ? 1 : menu_pages();   // (a note: no list pages)
@@ -2076,10 +2233,9 @@ void tap_game_menu(const ui::Tap& t)
     if (menu_tab == kTabOptions) {
         if (bottom_hit(t, 1) == 0) {
             leave_menu();
-        } else if (CYD_BIG_ICON_PREVIEW && !ui::large() && options_key().contains(t.x, t.y)) {
-            cfg->large_icons = !cfg->large_icons;
-            settings_save(*cfg);
-            dirty = true;
+        } else {
+            const ui::Rect a = journal_area();
+            if (tap_comforts({0, a.y, ui::width(), a.h}, t)) dirty = true;
         }
         return;
     }
@@ -2818,8 +2974,8 @@ bool big_action = false, big_was = false, big_force = false;
 
 bool big_icon_on()
 {
-    return CYD_BIG_ICON_PREVIEW && play::icon_editing() &&
-           (ui::large() || (cfg->large_icons && !play::icon_gallery()));   // (the gallery fills the canvas)
+    return comfort_on(kCBigIcon) && play::icon_editing() &&
+           (ui::large() || !play::icon_gallery());   // (320x240: the gallery fills the canvas)
 }
 
 ui::Rect big_icon_area()
@@ -2937,6 +3093,7 @@ bool play_journal()
     char jk;
     int jn;
     if (!play::journal_request(&jk, &jn)) return false;
+    if (!comfort_on(kCJournal)) return false;           // (switched off: as the original, the tap goes on)
     if (!open_journal(jk, jn)) {
         play::journal_failed(jk, jn, "Not enough memory to show the journal entry.", frame::canvas());
         present_play();
@@ -3346,6 +3503,8 @@ void tick()
         case Screen::Pdf:      tap_pdf(t); break;
         case Screen::GameMenu: tap_game_menu(t); break;
         case Screen::Settings: tap_settings(t); break;
+        case Screen::GameSettings: tap_game_settings(t); break;
+        case Screen::Dev:      tap_dev(t); break;
         case Screen::Logs:
             if (!logui::tap(t)) go(logui::from_scan() ? Screen::Home : Screen::Settings);
             break;
@@ -3376,6 +3535,8 @@ void tick()
     case Screen::Pdf:      draw_pdf(); break;
     case Screen::GameMenu: draw_game_menu(); break;
     case Screen::Settings: draw_settings(); break;
+    case Screen::GameSettings: draw_game_settings(); break;
+    case Screen::Dev:      draw_dev(); break;
     case Screen::Logs:      logui::draw(); break;
     }
 }

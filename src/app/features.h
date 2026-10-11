@@ -38,3 +38,22 @@
 #ifndef CYD_ICON_GALLERY
 #define CYD_ICON_GALLERY 1
 #endif
+
+// More characters to add (Tom, v0.56.0 / v0.58.0): Add Character also lists
+// the members of saved games ("NAME from saved game A") and, for Pool of
+// Radiance, the player's Pool of Radiance folder on the card; the original
+// lists only its save folder's files. Where: play.cpp (find_guys).
+#ifndef CYD_MORE_CHARACTERS
+#define CYD_MORE_CHARACTERS 1
+#endif
+
+// Journal entries shown (Tom, 2026-10-10): when the game says "read entry
+// N", the next tap opens the entry from the player's own journal (the
+// original only prints the number). Where: viewer.cpp (play_journal).
+#ifndef CYD_JOURNAL_POPUP
+#define CYD_JOURNAL_POPUP 1
+#endif
+
+// Each comfort compiled in can also be switched off by the player: the
+// game's Settings page (Tom, 2026-10-11, v0.72.0; one set for all games,
+// settings.h comforts_off), also the in-game Game menu's Options tab.

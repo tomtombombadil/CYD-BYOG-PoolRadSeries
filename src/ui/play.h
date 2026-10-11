@@ -91,6 +91,14 @@ bool fight_select(pic::Canvas& c);
 // The player's Pool of Radiance folder on the card (Add Character -> Pool
 // lists its characters too); "" or nullptr: none
 void set_pool_dir(const char* dir);
+// The engine comforts (app/features.h) the player has on - Settings,
+// shared by all games (Tom, 2026-10-11); a switch compiled out stays off
+struct Options {
+    bool gallery = true;          // the icon editor opens on the gallery (CYD_ICON_GALLERY)
+    bool demo_tap = true;         // a tap stops the demo (CYD_DEMO_TAP_STOPS)
+    bool more_guys = true;        // Add Character: saved games' members, the earlier game's folder (CYD_MORE_CHARACTERS)
+};
+void set_options(const Options& o);
 // The icon editor's NEW icon (Alter -> Icon, Create New Character) for the
 // big preview (Tom, v0.59.0): its 24 x 24 colour indexes (0: see-through)
 // in the ready or action pose; false when the editor isn't up. (An engine

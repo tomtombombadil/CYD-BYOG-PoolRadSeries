@@ -1778,6 +1778,7 @@ void yes_no_key(char k, pic::Canvas& c)
 
 // The .GUY files in the save folder not already in the party
 char pool_dir[128] = {};        // the player's Pool of Radiance folder on the card ("" if none)
+Options opts;                   // the engine comforts switched on (Settings)
 
 bool in_party(const char* name)
 {
@@ -1828,7 +1829,8 @@ void find_guys(char from = 'C')
     d->guy_from = from;
     if (from == 'P') {
         find_pool_guys(d->save_dir, 1);
-        if (pool_dir[0] && strcasecmp(pool_dir, d->save_dir) != 0) find_pool_guys(pool_dir, 2);
+        if (CYD_MORE_CHARACTERS && opts.more_guys && pool_dir[0] && strcasecmp(pool_dir, d->save_dir) != 0)
+            find_pool_guys(pool_dir, 2);
         return;
     }
     fs::File dir = sd_fs().open(d->save_dir, "r");
@@ -1841,7 +1843,8 @@ void find_guys(char from = 'C')
         // .GUY files, and (Tom, v0.58.0 - the original lists only those)
         // the members of saved games, CHRDAT<letter><n>.SAV
         const bool guy = n >= 5 && n <= 12 && strcasecmp(nm + n - 4, ".GUY") == 0;
-        const bool member = n == 12 && strncasecmp(nm, "CHRDAT", 6) == 0 && strcasecmp(nm + 8, ".SAV") == 0;
+        const bool member = CYD_MORE_CHARACTERS && opts.more_guys && n == 12 && strncasecmp(nm, "CHRDAT", 6) == 0 &&
+                            strcasecmp(nm + 8, ".SAV") == 0;
         if (f.isDirectory() || (!guy && !member) || f.size() != party::kRecordSize) continue;
         uint8_t rec[0x100];
         if (f.read(rec, 0xF8) != 0xF8 || rec[0xF7] > 0x7F) continue;     // NPCs aren't listed
@@ -6278,7 +6281,6 @@ void icon_menu(pic::Canvas& c)
     show_menu_line(c);
 }
 
-#if !CYD_ICON_GALLERY
 // A pass: the kept values from the record, the old pair, the new pair
 void icon_pass(pic::Canvas& c)
 {
@@ -6289,7 +6291,6 @@ void icon_pass(pic::Canvas& c)
     ie->level = 1;
     icon_menu(c);
 }
-#endif
 
 // The editor's screen: the frame, the words, the old pair (new: icon_new)
 void icon_screen(pic::Canvas& c)
@@ -6342,13 +6343,15 @@ void start_icon(pic::Canvas& c, Screen from)
     pic_shown = false;
     palette_fight(true);
 #if CYD_ICON_GALLERY
-    icon_take(ie->keep, ch->rec);
-    build_icon(ch->rec, ie->old_ic);
-    gal_open(c, 0);
-#else
+    if (opts.gallery) {
+        icon_take(ie->keep, ch->rec);
+        build_icon(ch->rec, ie->old_ic);
+        gal_open(c, 0);
+        return;
+    }
+#endif
     icon_screen(c);
     icon_pass(c);
-#endif
 }
 
 void end_icon_art()
@@ -6395,12 +6398,13 @@ void icon_key(char k, pic::Canvas& c)
         else if (k == 'E') {
             icon_put(rec, ie->keep);            // only what was kept
 #if CYD_ICON_GALLERY
-            gal_open(c, ie->glast);             // (the gallery is the editor's top: Done asks)
-            return;
-#else
+            if (opts.gallery) {
+                gal_open(c, ie->glast);         // (the gallery is the editor's top: Done asks)
+                return;
+            }
+#endif
             icon_new(c);
             ie->level = 6;
-#endif
         } else return;
         icon_menu(c);
         return;
@@ -6469,10 +6473,9 @@ void icon_key(char k, pic::Canvas& c)
     default:
         if (k == 'Y') end_icon(c);
 #if CYD_ICON_GALLERY
-        else if (k == 'N') gal_open(c, ie->glast);
-#else
-        else if (k == 'N') icon_pass(c);
+        else if (k == 'N' && opts.gallery) gal_open(c, ie->glast);
 #endif
+        else if (k == 'N') icon_pass(c);
         return;
     }
 }
@@ -7295,6 +7298,7 @@ bool demo_input(pic::Canvas& c)
 {
     if (!in_demo || auto_tap) return false;
 #if CYD_DEMO_TAP_STOPS
+    if (!opts.demo_tap) return true;          // (as the original: ignored)
     if (fg) {
         // A fight in the demo: gone, as at the demo's own end
         end_fight_art();
@@ -7394,6 +7398,8 @@ bool icon_preview(bool action, uint8_t* out)
         for (int x = 0; x < kSq; ++x) out[y * kSq + x] = static_cast<uint8_t>(nib(p, kSq, x, y));
     return true;
 }
+
+void set_options(const Options& o) { opts = o; }
 
 void set_pool_dir(const char* dir)
 {

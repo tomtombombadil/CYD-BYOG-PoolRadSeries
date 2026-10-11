@@ -15,7 +15,12 @@ struct Settings {
     uint8_t volume     = kDefaultVolume;  // game sound 0-255 (0 in older files: kDefaultVolume)
     uint8_t large_icons = 0;      // 320x240: the icon editor's big preview (Tom, v0.59.0; 480x320 always;
                                   // CYD_BIG_ICON_PREVIEW in app/features.h)
+    uint8_t comforts_off = 0;     // the engine comforts the player switched off (kOff*; 0 = all on,
+                                  // as older files read; Tom, 2026-10-11)
 };
+
+// comforts_off bits (app/features.h)
+constexpr uint8_t kOffGallery = 1, kOffBigIcon = 2, kOffDemoTap = 4, kOffJournal = 8, kOffMoreGuys = 16;
 
 
 constexpr uint8_t kMinBrightness = 20;

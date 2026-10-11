@@ -268,6 +268,16 @@ stay in the session's scratch space, never in the repo.
    the chooser used to show), **Screen Test**, **Walk Test**, **Play
    Test**, each with a small line under its name. A game the engine can't
    play yet shows a note and Resource Test only; .TLB / .GLB games the note.
+   v0.72.0 (Tom, 2026-10-11: Curse playable): the game's page is two big
+   keys, **Play** (the former Play Test) and **Settings**. Settings (one
+   set for all games, saved with the engine's settings) holds the engine
+   comforts' switches - Icon Gallery, Large Icon, Journal Pop-Up, Demo Tap
+   Stops, More Characters - and Game Sound (Tandy / PC Speaker / Off), each
+   key lit when on; below them **As Original** (every comfort off; then the
+   key reads All On) and **Dev Tools** (Resource Test, Screen Test, Walk
+   Test; their Back returns there). The in-game Game menu's Options tab
+   shows the same switches. A game the engine can't play yet: its note
+   and Settings (its files under Dev Tools).
 2. **The game's look**: its font (v0.2.0), screen frame (v0.3.0, Curse - the
    viewer's Screen Test), title sequence + credits, text windows and the menu
    line (v0.4.0). Done for Curse; the other games get theirs on their turn.
@@ -727,7 +737,8 @@ a PC, PortMaster handhelds):
 
 Everything here is on purpose; anything else that plays differently from
 the originals is a bug. Engine comforts with a `features.h` switch are
-marked (switch).
+marked (switch); since v0.72.0 the player can also turn each one off in
+the game's Settings (As Original: all of them).
 
 - **Controls and screens**: taps on menu words, list lines and combat
   squares; on-screen keys (movement pad, cursor keys - Up / Down / Left /
@@ -740,7 +751,7 @@ marked (switch).
 - **The journal**: the entries are pictures the board makes from the
   player's own journal PDF (Steam / SNEG: text and pictures from its Gold
   Box Companion files) and shows when the game mentions one (the next tap
-  opens it); the whole PDF as a book. The originals only print "read entry
+  opens it; switch `CYD_JOURNAL_POPUP`); the whole PDF as a book. The originals only print "read entry
   N".
 - **Copy protection**: never asked.
 - **The demo**: a tap or key stops it (switch `CYD_DEMO_TAP_STOPS`).
@@ -749,7 +760,8 @@ marked (switch).
   from the player's Pool of Radiance folder on the card too (the original
   needs them copied into Curse's save folder) - **the standard for every
   game's import from the game before it** (Tom, 2026-10-10); Hillsfar
-  characters can't be added (not one of the engine's games).
+  characters can't be added (not one of the engine's games) (switch
+  `CYD_MORE_CHARACTERS`).
 - **The icon editor's big preview** (switch `CYD_BIG_ICON_PREVIEW`).
 - **The icon gallery** (switch `CYD_ICON_GALLERY`): the icon editor opens
   on ready-made icons, heads, weapons and colour schemes to tap; the
