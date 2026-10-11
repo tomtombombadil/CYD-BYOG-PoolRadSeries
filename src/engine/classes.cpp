@@ -251,7 +251,12 @@ void class_bonuses(party::Character& c, const Tables& t)
     }
     c.rec[kThac0] = static_cast<uint8_t>(thac0);
     c.rec[kHitDice] = static_cast<uint8_t>(hd);
-    if (c.level(Fighter) >= 7 || c.level(Paladin) >= 7 || c.level(Ranger) >= 8) c.rec[kAttacks] = 3;
+    if (t.lay.pool) {
+        // Pool (create_facts.md 2.1): a fighter's attacks set by the level, 3 / 2 over 6
+        if (c.level(Fighter) > 0) c.rec[kAttacks] = c.level(Fighter) > 6 ? 3 : 2;
+    } else if (c.level(Fighter) >= 7 || c.level(Paladin) >= 7 || c.level(Ranger) >= 8) {
+        c.rec[kAttacks] = 3;
+    }
     spell_slots(c, t);
     saving_throws(c, t);
     if (c.level(Thief) > 0) thief_skills(c, t);

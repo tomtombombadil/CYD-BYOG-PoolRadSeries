@@ -522,18 +522,18 @@ void recalc_values(party::Character& c, const items::Names& names, const ItemFac
     }
 }
 
-int gold_worth(const int money[7])
+int gold_worth(const int money[7], bool round)
 {
-    long copper = 0;
+    long copper = round ? kPerCopper[3] / 2 : 0;
     for (int m = 0; m < 5; ++m) copper += static_cast<long>(money[m]) * kPerCopper[m];
     return static_cast<int>(copper / kPerCopper[3]);
 }
 
-int gold_worth(const party::Character& c)
+int gold_worth(const party::Character& c, bool round)
 {
     int m[7];
     for (int i = 0; i < 7; ++i) m[i] = c.money(i);
-    return gold_worth(m);
+    return gold_worth(m, round);
 }
 
 void pay(int money[7], int gold)

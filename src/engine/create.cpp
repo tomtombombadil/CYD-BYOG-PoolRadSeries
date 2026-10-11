@@ -210,6 +210,14 @@ int con_hp_adj(const party::Character& c, const classes::Tables& t)
 {
     int adj = 0;
     const int con = stat_full(c, 4);
+    if (t.lay.pool) {
+        // Pool (create_facts.md 2.5): the table's figure per class held; a
+        // single-class fighter +1 over 16 and +1 more over 17
+        for (int k = 0; k <= classes::Monk; ++k)
+            if (c.level(k) > 0) adj += con >= 0 && con < 26 ? kConHp[con] : 0;
+        if (c.cls() == Fighter) adj += (con > 16) + (con > 17);
+        return adj;
+    }
     for (int k = 0; k <= classes::Monk; ++k) {
         const int lv = c.level(k);
         if (lv <= 0 || lv >= t.max_hit_dice(k)) continue;
@@ -446,6 +454,11 @@ int train_pick(const party::Character& c, const classes::Tables& t, uint32_t* ex
         ready |= t.u8(static_cast<uint16_t>(t.lay.class_masks + k));
         const int32_t after = need_at(k, lv + 1);
         if (after > 0 && xp >= static_cast<uint32_t>(after) && after > keep) keep = after - 1;
+    }
+    if (t.lay.pool) {
+        // Pool (create_facts.md 3): every ready class trains, a level each
+        *exp_after = keep > 0 ? static_cast<uint32_t>(keep) : xp;
+        return ready;
     }
     int pick = -1;
     int32_t most = 0;
@@ -726,6 +739,20 @@ int hp_most(const party::Character& c, const classes::Tables& t, const Facts& f)
 {
     int total = 0, n = 0;
     const int con = stat_full(c, 4);
+    if (t.lay.pool) {
+        // Pool (create_facts.md 2.6): every die at its highest (rangers and
+        // monks a die more), then the Constitution adjustment as at creation
+        for (int k = 0; k <= classes::Monk; ++k) {
+            const int lv = c.level(k);
+            if (lv <= 0) continue;
+            ++n;
+            total += f.hp_dice[k] * (lv + f.hp_count[k] - 1);
+        }
+        if (!n) return 1;
+        const int adj = con_hp_adj(c, t);
+        const int v = adj < 0 ? (total > -adj + n ? (total + adj) / n : 1) : (total + adj) / n;
+        return v < 1 ? 1 : v > 255 ? 255 : v;
+    }
     for (int k = 0; k <= classes::Monk; ++k) {
         int lv = c.level(k);
         if (lv <= 0) continue;
@@ -764,12 +791,20 @@ void modify_stat(party::Character& c, const classes::Tables& t, const Facts& f, 
     }
     const bool strong = c.level(classes::Fighter) || c.level(classes::Ranger) || c.level(classes::Paladin);
     int v = stat_full(c, i);
+    const int was = v;
     if (dir > 0) {
         ++v;
         if (v > hi) v = hi;
         if (v < lo) v = lo;
         set_stat(c, i, v);
-        if (i == 0) {
+        if (i == 0 && t.lay.pool) {
+            // Pool's program (ovr17 +2581): past the maximum, a fighter's
+            // 18/xx goes up instead (so 17 -> 18 first, then 18/01)
+            if (was + 1 > hi && was + 1 > 18 && strong) {
+                const int emax = t.u8(static_cast<uint16_t>(lim + 4 + sex));
+                if (stat_full(c, 6) < emax) set_stat(c, 6, stat_full(c, 6) + 1);
+            }
+        } else if (i == 0) {
             if (v == 18 && strong) {
                 int e = stat_full(c, 6) + 1;
                 const int emax = t.u8(static_cast<uint16_t>(lim + 4 + sex));
@@ -814,8 +849,9 @@ void modify_done(party::Character& c, const classes::Tables& t, const Facts& f)
     }
     if (n) base /= n;
     const int rolled = r[kHpMax] - base;
-    r[kHpRolled] = static_cast<uint8_t>(rolled < 0 ? 0 : rolled);
-    if (t.lay.pool) r[0xF8] = 1;                    // Pool's "modified" (its record's 0x85)
+    // (Pool's Keep leaves the rolled figure as made, and sets its "modified" mark, record 0x85)
+    if (t.lay.pool) r[0xF8] = 1;
+    else r[kHpRolled] = static_cast<uint8_t>(rolled < 0 ? 0 : rolled);
 }
 
 } // namespace create

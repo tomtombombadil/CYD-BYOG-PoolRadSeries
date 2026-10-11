@@ -5206,7 +5206,7 @@ void train_character(pic::Canvas& c)
         train_note(profile::kTrainConscious, c);
         return;
     }
-    if (!game_won && rules::gold_worth(ch) < 1000) {      // (free once the game is won)
+    if (!game_won && rules::gold_worth(ch, pool_files()) < 1000) {      // (free once the game is won; Pool rounds)
         train_note(profile::kTrainCost, c);
         return;
     }

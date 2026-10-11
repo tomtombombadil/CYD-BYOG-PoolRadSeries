@@ -76,9 +76,10 @@ int knock_member(const party::Party& p, int knock_spell);
 
 // Money: worth in gold (copper 1, silver 10, electrum 100, gold 200,
 // platinum 1000 copper; gems and jewellery not counted), and paying
-// `gold` from the coins, making change as the games do
-int gold_worth(const int money[7]);
-int gold_worth(const party::Character& c);
+// `gold` from the coins, making change as the games do. round: half a
+// gold piece rounds up (Pool's training: (copper + 100) / 200)
+int gold_worth(const int money[7], bool round = false);
+int gold_worth(const party::Character& c, bool round = false);
 void pay(int money[7], int gold);
 void pay(party::Character& c, int gold);
 
