@@ -5297,6 +5297,8 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         d->facts.friends_fx = pi.stat_fx[3];
         d->facts.feeble_fx = pi.stat_fx[4];
         d->facts.con_regen_fx = pi.stat_fx[5];
+        d->facts.berserk_fx = pi.berserk;
+        rules::set_berserk_fx(pi.berserk);
         {
             const auto& pc = d->prof->create;
             if (pc.ds_image && pc.tables.max_hit_dice &&

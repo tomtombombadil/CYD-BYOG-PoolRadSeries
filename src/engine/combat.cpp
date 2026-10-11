@@ -1676,11 +1676,14 @@ int money_exp(const int m[7])
 
 int award(Battle& b, int total)
 {
-    // The share: the whole party's but the animated dead (the original's
-    // calc_battle_exp - those out of the fight still count, and get none)
+    // The share: among those still in the fight and not animated dead (the
+    // original's calc_battle_exp divides by the party less its count kept in
+    // sub_2D556, which counts the members out of the fight (in_combat 0) OR
+    // animated - the listing at ovr006:06D5-06E8, before the fallen are put
+    // back on their feet); those out of the fight get none
     int members = 0;
     for (int i = 0; i < b.party_size; ++i)
-        if (b.f[i].status() != party::Animated) ++members;
+        if (b.f[i].up() && b.f[i].status() != party::Animated) ++members;
     if (!members) return 0;
     const int share = total / members;
     for (int i = 0; i < b.party_size; ++i) {

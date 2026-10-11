@@ -998,11 +998,13 @@ void experience()
         if (cs.cls == 4) r[0x13] = r[0x15] = 16;
         before[i] = r[0x127] | r[0x128] << 8 | r[0x129] << 16 | static_cast<uint32_t>(r[0x12A]) << 24;
     }
-    // One of the party down (out of the fight): the share is still the party's (listing ovr006:0337)
+    // One of the party down (out of the fight): not counted - calc_battle_exp
+    // (ovr006:0337) divides by the party less sub_2D556's count, which counts
+    // the members out of the fight (in_combat 0) or animated (ovr006:06D5-06E8)
     b.f[n - 1].rec[0x196] = 0;
     const int total = 6000;
     combat::award(b, total);
-    const int share = total / b.party_size;
+    const int share = total / (b.party_size - 1);
     for (int i = 0; i < n; ++i) {
         const uint8_t* r = b.f[i].rec;
         const uint32_t now = r[0x127] | r[0x128] << 8 | r[0x129] << 16 | static_cast<uint32_t>(r[0x12A]) << 24;

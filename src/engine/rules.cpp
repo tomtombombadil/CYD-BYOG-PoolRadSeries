@@ -692,6 +692,28 @@ bool keep_hammer(party::Character& c, const items::Names& names, const ItemFacts
     return true;
 }
 
+namespace {
+uint8_t g_berserk_fx = 0;
+
+// The berserk effect's handler outside a fight (the listing's spl_berzerk):
+// given - computer-run (record 0x198) and control 0xB3 (an NPC's, other than
+// 0xB3: 0xB2); taken away - control 0xB3 back to 0, the party's side
+void berserk(party::Character& c, int type, bool on)
+{
+    if (!g_berserk_fx || type != g_berserk_fx) return;
+    uint8_t* r = c.rec;
+    if (on) {
+        r[0x198] = 1;
+        r[0xF7] = r[0xF7] <= 0x7F || r[0xF7] == 0xB3 ? 0xB3 : 0xB2;
+    } else {
+        if (r[0xF7] == 0xB3) r[0xF7] = 0;
+        r[0x197] = 0;
+    }
+}
+} // namespace
+
+void set_berserk_fx(uint8_t type) { g_berserk_fx = type; }
+
 bool worn(party::Character& c, int i, bool on)
 {
     if (i < 0 || i >= c.n_items) return true;
@@ -708,10 +730,12 @@ bool worn(party::Character& c, int i, bool on)
             a[0] = static_cast<uint8_t>(v);
             a[3] = 0xFF;                    // (data 0xFF: Dispel Magic leaves it; the handler on)
             a[4] = 1;
+            berserk(c, v, true);
         } else if (!on && k >= 0) {
             for (int j = k; j + 1 < c.n_affects; ++j) memcpy(c.affects[j], c.affects[j + 1], party::kAffectSize);
             --c.n_affects;
             memset(c.affects[c.n_affects], 0, party::kAffectSize);
+            berserk(c, v, false);
         }
         return true;
     }
@@ -814,6 +838,7 @@ int remove_affects(party::Character& c, uint8_t type)
         memset(c.affects[c.n_affects], 0, party::kAffectSize);
         ++n;
     }
+    if (n) berserk(c, type, false);         // (its handler on taking it away)
     return n;
 }
 
