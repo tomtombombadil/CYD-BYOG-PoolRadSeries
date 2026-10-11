@@ -297,7 +297,10 @@ void stats(party::Character& c, const ItemFacts& f)
         if ((s == 1 || s == 2) && find_effect(c, f.feeble_fx) >= 0) set = 3;
         if (s == 5) {
             const int k = find_effect(c, f.friends_fx);
-            if (k >= 0) v += c.affects[k][3];        // (the original adds; coab sets it)
+            if (k >= 0) {
+                v += c.affects[k][3];                // (the original adds; coab sets it)
+                if (f.friends_max && v > f.friends_max) v = f.friends_max;
+            }
         }
         if (v < 0) v = 0;
         const int was = r[0x11 + s * 2];

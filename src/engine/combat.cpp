@@ -2079,7 +2079,8 @@ int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* dow
         // (d(images + 1) over 1) - the effect's whole data byte counts down,
         // gone at 0 (the original's; weapons never meet the images)
         const int mi = b.fx->mirror && h.spell > 0 && h.single ? find_aff(f, b.fx->mirror) : -1;
-        if (mi >= 0 && d.roll((f.aff[mi][3] >> 4) + 1, 1) > 1) {
+        const int images = mi < 0 ? 0 : b.fx->mirror_plain ? f.aff[mi][3] : f.aff[mi][3] >> 4;
+        if (mi >= 0 && d.roll(images + 1, 1) > 1) {
             b.lost_image = c;
             if (--f.aff[mi][3] == 0) drop_aff(f, mi);
             return 0;
@@ -2751,7 +2752,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             }
             int data = pw;
             if (fs.does == SpellDoes::Prayer) data = my * 16 + pw;
-            if (fs.does == SpellDoes::Mirror) data = (d.roll(4, 1) << 4) + pw;
+            if (fs.does == SpellDoes::Mirror) data = b.fx && b.fx->mirror_plain ? d.roll(4, 1) : (d.roll(4, 1) << 4) + pw;
             if (e.affect) give_aff(f, e.affect, minutes, data, false);
             if (fs.word) say(who[k], Did::Word, 0);
         }
@@ -3204,8 +3205,10 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         // Every effect of the first one (but those with data 0xFF) a chance,
         // as many passes as there are in the area (the original's); then
         // the clouds round the square aimed at
-        Fighter& f = b.f[who[0]];
+        // (Pool, poolrad_combat_facts.md 3.2: every target in the area, once each)
+        const bool pool = st.lay.pool;
         for (int pass = 0; pass < m; ++pass) {
+            Fighter& f = b.f[who[pool ? pass : 0]];
             bool any = false;
             for (int k = 0; f.n_aff && k < *f.n_aff;) {
                 const int data = f.aff[k][3];
@@ -3216,7 +3219,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                 end_effect(b, f, k);
                 any = true;
             }
-            if (any) say(who[0], Did::Word, 0);
+            if (any) say(who[pool ? pass : 0], Did::Word, 0);
         }
         if (b.aim_x >= 0) dispel_clouds(b, b.aim_x, b.aim_y, pw, d);
         break;

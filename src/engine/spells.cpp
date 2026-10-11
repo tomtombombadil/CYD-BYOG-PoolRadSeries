@@ -205,7 +205,7 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
     }
     case Does::Affect: affect_all(pw, false); break;
     case Does::Prayer: affect_all(me.rec[kSide] * 16 + pw, false); break;
-    case Does::Mirror: affect_all((d.roll(4, 1) << 4) + pw, false); break;
+    case Does::Mirror: affect_all(t.lay.pool ? d.roll(4, 1) : (d.roll(4, 1) << 4) + pw, false); break;   // (Pool: the images alone)
     case Does::Haste: {
         // The first `power` of the party: a slowed one is cured instead
         int left = pw, m = 0;

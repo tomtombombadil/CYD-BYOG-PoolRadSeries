@@ -712,6 +712,203 @@ void money()
     expect(P, w, bad == 0, "%d wrong, first %s", bad, first.c_str());
 }
 
+
+#ifdef BEHAVE_SPELLS
+// ---- 7. Spells in fights (poolrad_combat_facts.md 3; built with
+// -DBEHAVE_SPELLS too, for its fight helpers): damage, saves, the bolt's
+// length, Hold Person, Dispel Magic, Mirror Image, magic resistance
+int sp_affect(int s) { const auto* r = b_row("spell", s); return r ? (*r)[11] : 0; }
+int sp_savekind(int s) { const auto* r = b_row("spell", s); return r ? (*r)[10] : 4; }
+void spells_in_fights()
+{
+    using namespace play;
+    struct D {
+        int spell, cls, level, lo, hi;
+        char save;                      // 'N' no save, 'H' half
+    };
+    auto mm = [](int L) { return (L + 1) / 2; };          // (Tom's rule: AD&D's)
+    const D cases[] = {
+        {0x04, 0, 3, 1, 8, 'N'},                  // Cause Light Wounds 1d8 (a touch)
+        {0x09, 5, 1, 1, 1, 'N'},                  // Burning Hands: the level
+        {0x09, 5, 6, 6, 6, 'N'},
+        {0x0F, 5, 1, mm(1) * 2, mm(1) * 5, 'N'},  // Magic Missile: (L + 1) / 2 x (1d4 + 1)
+        {0x0F, 5, 4, mm(4) * 2, mm(4) * 5, 'N'},
+        {0x0F, 5, 6, mm(6) * 2, mm(6) * 5, 'N'},
+        {0x14, 5, 5, 1 + 5, 8 + 5, 'N'},          // Shocking Grasp 1d8 + level (a touch)
+        {0x2F, 5, 5, 5, 30, 'H'},                 // Fireball: level d6
+        {0x2F, 5, 6, 6, 36, 'H'},
+        {0x33, 5, 5, 5, 30, 'H'},                 // Lightning Bolt: level d6
+        {0x40, 5, 5, 3, 42, 'H'},                 // the wand's fireball (Fireball's handler: (d3 x 2 + 1) d6)
+        {0x41, 5, 5, 4, 10, 'N'},                 // the wand's missile 2d4 + 2
+    };
+    char w[120];
+    for (const D& c : cases)
+        for (int pass = 0; pass < 3; ++pass) {          // dice low, high (save failed); high, the save made
+            if (!sp_new_fight() || !sp_pick()) {
+                expect(P, "a fight", false);
+                return;
+            }
+            sp_caster(sp_c, c.cls, c.level);
+            sp_put(sp_c, 0, 10, 12);
+            sp_put(sp_t[0], 1, 12, 12);
+            if (c.spell == 0x04 || c.spell == 0x14) sp_put(sp_t[0], 1, 11, 12);
+            fg->b.aim_x = F(sp_t[0]).x, fg->b.aim_y = F(sp_t[0]).y;
+            if (pass == 2) {
+                F(sp_t[0]).rec[0xDF + sp_savekind(c.spell)] = 2;
+                sp_dice(1, 19, 100);
+            } else {
+                sp_dice(pass ? 1 : 2, 2, 100);
+            }
+            const int n = sp_cast(sp_c, c.spell, {sp_t[0]});
+            const int got = 200 - F(sp_t[0]).hp();
+            const int want = pass == 0 ? c.lo : pass == 1 ? c.hi : c.save == 'H' ? c.hi / 2 : c.hi;
+            snprintf(w, sizeof w, "spell %02X level %d, %s: damage", c.spell, c.level,
+                     pass == 0 ? "dice low" : pass == 1 ? "dice high" : c.save == 'H' ? "the save made (half)" : "no save");
+            expect(P, w, n >= 0 && got == want, "%d, the original's %d", got, want);
+        }
+    // 0x3A (an item's): heals d4 + 8; the poisoned: slow poison taken off instead
+    for (int pass = 0; pass < 2; ++pass) {
+        if (!sp_new_fight() || !sp_pick()) return;
+        sp_caster(sp_c, 0, 5);
+        sp_put(sp_c, 0, 10, 12);
+        sp_put(sp_t[0], 0, 11, 12, 100);
+        F(sp_t[0]).rec[0x78] = 200;
+        sp_dice(pass ? 1 : 2, 0, 0);
+        sp_cast(sp_c, 0x3A, {sp_t[0]});
+        snprintf(w, sizeof w, "spell 3A, dice %s: heals d4 + 8", pass ? "high" : "low");
+        expect(P, w, F(sp_t[0]).hp() == 100 + (pass ? 12 : 9), "%d, the original's %d", F(sp_t[0]).hp() - 100, pass ? 12 : 9);
+    }
+    // Lightning Bolt: on from the square aimed at for 8 squares (the path's
+    // length argument 8, Curse 7: the half steps it may take, 2 a square)
+    if (!sp_new_fight() || !sp_pick()) return;
+    sp_caster(sp_c, 5, 6);
+    sp_put(sp_c, 0, 6, 12);
+    sp_put(sp_t[0], 1, 9, 12);
+    sp_put(sp_t[1], 1, 12, 12);
+    sp_put(sp_t[2], 1, 17, 12);
+    sp_put(sp_t[3], 1, 18, 12);
+    sp_dice(1, 2, 100);
+    fg->b.aim_x = 9, fg->b.aim_y = 12;
+    sp_cast(sp_c, 0x33, {sp_t[0]});
+    {
+        const int d0 = 200 - F(sp_t[0]).hp(), d1 = 200 - F(sp_t[1]).hp(), d2 = 200 - F(sp_t[2]).hp(),
+                  d3 = 200 - F(sp_t[3]).hp();
+        expect(P, "Lightning Bolt: the square aimed at and 8 beyond (Curse 7)", d0 == 36 && d1 == 36 && d2 == 36,
+               "%d %d %d", d0, d1, d2);
+        expect(P, "Lightning Bolt: none 9 beyond", d3 == 0, "%d", d3);
+    }
+    // Hold Person: the save by the number of targets (1: cleric -2 / magic-user
+    // -3, 2: -1, 3-4: 0); monsters of type > 1 or size > 1 unaffected
+    for (int sp : {0x17, 0x31})
+        for (int nt = 1; nt <= 4; ++nt) {
+            const int bonus = nt == 1 ? (sp == 0x17 ? -2 : -3) : nt == 2 ? -1 : 0;
+            for (int made = 0; made < 2; ++made) {
+                if (!sp_new_fight() || !sp_pick()) return;
+                sp_caster(sp_c, sp == 0x17 ? 0 : 5, 5);
+                sp_put(sp_c, 0, 6, 12);
+                for (int i = 0; i < nt; ++i) sp_put(sp_t[i], 1, 10 + i, 12);
+                // save 15: made when d20 + bonus >= 15
+                const int roll = 15 - bonus - (made ? 0 : 1);
+                for (int i = 0; i < nt; ++i)
+                    for (int k = 0; k < 5; ++k) F(sp_t[i]).rec[0xDF + k] = 15;
+                sp_dice(1, roll, 100);
+                switch (nt) {
+                case 1: sp_cast(sp_c, sp, {sp_t[0]}); break;
+                case 2: sp_cast(sp_c, sp, {sp_t[0], sp_t[1]}); break;
+                case 3: sp_cast(sp_c, sp, {sp_t[0], sp_t[1], sp_t[2]}); break;
+                default: sp_cast(sp_c, sp, {sp_t[0], sp_t[1], sp_t[2], sp_t[3]}); break;
+                }
+                int held = 0;
+                for (int i = 0; i < nt; ++i) held += sp_aff(sp_t[i], sp_affect(sp)) >= 0;
+                snprintf(w, sizeof w, "Hold Person %02X, %d target%s, d20 %d (save %+d): %s", sp, nt, nt > 1 ? "s" : "", roll,
+                         bonus, made ? "saved" : "held");
+                expect(P, w, held == (made ? 0 : nt), "%d held", held);
+            }
+        }
+    for (int what = 0; what < 2; ++what) {
+        if (!sp_new_fight() || !sp_pick()) return;
+        sp_caster(sp_c, 0, 5);
+        sp_put(sp_c, 0, 6, 12);
+        sp_put(sp_t[0], 1, 10, 12);
+        if (what) F(sp_t[0]).rec[0xDE] = 2;
+        else F(sp_t[0]).rec[0x11A] = 2;
+        sp_dice(1, 2, 100);
+        sp_cast(sp_c, 0x17, {sp_t[0]});
+        snprintf(w, sizeof w, "Hold Person: %s unaffected", what ? "size 2" : "monster type 2");
+        expect(P, w, sp_aff(sp_t[0], sp_affect(0x17)) < 0);
+    }
+    // Mirror Image: d4 images, the data nothing else
+    for (int pass = 0; pass < 2; ++pass) {
+        if (!sp_new_fight() || !sp_pick()) return;
+        sp_caster(sp_c, 5, 5);
+        sp_put(sp_c, 0, 6, 12);
+        sp_dice(pass ? 1 : 2, 0, 0);
+        sp_cast(sp_c, 0x20, {sp_c});
+        snprintf(w, sizeof w, "Mirror Image, dice %s: the effect's data = the images", pass ? "high" : "low");
+        expect(P, w, sp_aff_data(sp_c, sp_affect(0x20)) == (pass ? 4 : 1), "%d", sp_aff_data(sp_c, sp_affect(0x20)));
+    }
+    // An image takes a spell aimed at one: d(images + 1) over 1, the images count down
+    {
+        if (!sp_new_fight() || !sp_pick()) return;
+        sp_caster(sp_c, 5, 5);
+        sp_put(sp_c, 0, 6, 12);
+        sp_put(sp_t[0], 1, 10, 12);
+        sp_give(sp_t[0], sp_affect(0x20), 30, 1, false);
+        sp_dice(1, 2, 100);
+        sp_cast(sp_c, 0x0F, {sp_t[0]});
+        expect(P, "Mirror Image (1 image): a magic missile takes the image, the effect gone",
+               F(sp_t[0]).hp() == 200 && sp_aff(sp_t[0], sp_affect(0x20)) < 0, "HP %d, effect %d", F(sp_t[0]).hp(),
+               sp_aff(sp_t[0], sp_affect(0x20)));
+    }
+    // Dispel Magic: every effect (data < 0xFF) of EACH target: E = data & 15,
+    // chance 50 + 5 (L - E) / 50 - 2 (E - L) / 50; d100 <= chance ends it
+    for (int sp : {0x29, 0x2E})
+        for (int E : {2, 5, 9})
+            for (int over = 0; over < 2; ++over) {
+                if (!sp_new_fight() || !sp_pick()) return;
+                const int L = 5;
+                sp_caster(sp_c, sp == 0x29 ? 0 : 5, L);
+                sp_put(sp_c, 0, 6, 12);
+                sp_put(sp_t[0], 1, 10, 12);
+                sp_put(sp_t[1], 1, 11, 12);
+                const int chance = L > E ? 50 + 5 * (L - E) : L < E ? 50 - 2 * (E - L) : 50;
+                sp_give(sp_t[0], 0x01, 30, E, false);
+                sp_give(sp_t[1], 0x01, 30, E, false);
+                sp_give(sp_t[1], 0x19, 30, 0xFF, false);
+                sp_dice(1, 0, chance + over);
+                fg->b.aim_x = 10, fg->b.aim_y = 12;
+                sp_cast(sp_c, sp, {sp_t[0], sp_t[1]});
+                const bool gone0 = sp_aff(sp_t[0], 0x01) < 0, gone1 = sp_aff(sp_t[1], 0x01) < 0;
+                const bool kept = sp_aff(sp_t[1], 0x19) >= 0;
+                snprintf(w, sizeof w, "Dispel Magic %02X level %d on effects of level %d, d100 %d (chance %d): %s", sp, L, E,
+                         chance + over, chance, over ? "kept" : "ended, both targets");
+                expect(P, w, gone0 == !over && gone1 == !over && kept, "first %s, second %s, data 0xFF %s",
+                       gone0 ? "ended" : "kept", gone1 ? "ended" : "kept", kept ? "kept" : "ended");
+            }
+    // Magic resistance (4.1): base - 5 x (11 - caster level) as a byte, d100 <= it
+    for (int type : {0x69, 0x6A})
+        for (int L : {1, 4, 6, 8})
+            for (int over = 0; over < 2; ++over) {
+                const int base = type == 0x69 ? 50 : 15;
+                const int v = (base - 5 * (11 - L)) & 0xFF;
+                const int roll = std::min(100, std::max(1, v + over));
+                const bool want = roll <= v;
+                if (over && v >= 100) continue;
+                if (!sp_new_fight() || !sp_pick()) return;
+                sp_caster(sp_c, 5, L);
+                sp_put(sp_c, 0, 6, 12);
+                sp_put(sp_t[0], 1, 10, 12);
+                sp_give(sp_t[0], type, 0, 0xFF, false);
+                sp_dice(1, 2, roll);
+                sp_cast(sp_c, 0x0F, {sp_t[0]});
+                const bool res = F(sp_t[0]).hp() == 200;
+                snprintf(w, sizeof w, "magic resistance %02X, caster level %d, d100 %d (%d): %s", type, L, roll, v,
+                         want ? "resisted" : "hurt");
+                expect(P, w, res == want, "%s", res ? "resisted" : "hurt");
+            }
+}
+#endif
+
 } // namespace bpool
 
 static void behave_pool()
@@ -739,4 +936,7 @@ static void behave_pool()
     if (want("train")) training();
     if (want("modify")) modify();
     if (want("money")) money();
+#ifdef BEHAVE_SPELLS
+    if (want("spells")) spells_in_fights();
+#endif
 }

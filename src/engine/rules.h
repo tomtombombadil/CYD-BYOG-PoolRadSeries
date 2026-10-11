@@ -20,6 +20,7 @@ struct ItemFacts {
     // Effects in the stats: Strength, the giant strength potion's, Enlarge,
     // Friends, Feeblemind (0: none)
     uint8_t strength_fx = 0, giant_fx = 0, enlarge_fx = 0, friends_fx = 0, feeble_fx = 0;
+    uint8_t friends_max = 0;            // Friends' Charisma at most this (Pool 25; 0: no limit)
     // Spiritual Hammer: its effect, the item's type and name words
     uint8_t hammer_fx = 0, hammer_type = 0, hammer_word = 0, hammer_word2 = 0;
     // Constitution: the healing effect at 20 and up (0: none), and each

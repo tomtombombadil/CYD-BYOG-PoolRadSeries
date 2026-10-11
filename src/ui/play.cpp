@@ -5674,6 +5674,7 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         d->facts.giant_fx = pi.stat_fx[1];
         d->facts.enlarge_fx = pi.stat_fx[2];
         d->facts.friends_fx = pi.stat_fx[3];
+        d->facts.friends_max = d->prof->variant.pool_files ? 25 : 0;      // (Pool: Charisma 25 at most)
         d->facts.feeble_fx = pi.stat_fx[4];
         d->facts.con_regen_fx = pi.stat_fx[5];
         d->facts.berserk_fx = pi.berserk;

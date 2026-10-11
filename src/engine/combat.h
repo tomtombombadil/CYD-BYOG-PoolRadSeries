@@ -220,6 +220,9 @@ struct Facts {
     // creature as its target and goes to the side against it ("goes
     // berzerk"), computer-run, no spells that turn
     uint8_t berserk = 0;
+    // Mirror Image's data: the images alone (Pool) - Curse keeps them in the
+    // high nibble with the caster's level
+    bool    mirror_plain = false;
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a
