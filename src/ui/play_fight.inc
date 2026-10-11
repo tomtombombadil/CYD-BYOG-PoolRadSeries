@@ -55,6 +55,17 @@ int read_block(const char* file, int block, uint8_t* out, int cap)
     return n;
 }
 
+// A character / monster record (MON<area>CHA block) into rec, Curse's
+// layout (Pool's 285-byte records moved into it)
+bool read_record_block(const char* file, int block, uint8_t* rec)
+{
+    if (!pool_files()) return read_block(file, block, rec, party::kRecordSize) == static_cast<int>(party::kRecordSize);
+    uint8_t pool[party::kPoolRecordSize];
+    if (read_block(file, block, pool, sizeof pool) != static_cast<int>(sizeof pool)) return false;
+    party::from_pool(pool, rec);
+    return true;
+}
+
 // ADD NPC: MON<area> block `id` (its record, effects, items) joins the party
 // at its end and is selected; its fight icon is CPIC<area> block `id`
 bool npc_join(int id)
@@ -64,7 +75,7 @@ bool npc_join(int id)
     ch = party::Character{};
     char file[24];
     snprintf(file, sizeof file, "MON%dCHA.DAX", d->gs.game_area);
-    if (read_block(file, id, ch.rec, sizeof ch.rec) != static_cast<int>(sizeof ch.rec)) {
+    if (!read_record_block(file, id, ch.rec)) {
         Serial.printf("[play] ADD NPC: %s #%d not there\n", file, id);
         return false;
     }
@@ -100,7 +111,7 @@ void fight_load_monster(int id, int copies, int icon)
     // MON<area>CHA.DAX
     char cha[24];
     snprintf(cha, sizeof cha, "MON%dCHA.DAX", d->gs.game_area);
-    if (read_block(cha, id, rec, sizeof rec) != static_cast<int>(sizeof rec)) {
+    if (!read_record_block(cha, id, rec)) {
         Serial.printf("[play] %s #%d: no monster\n", cha, id);
         return;
     }
@@ -359,12 +370,10 @@ bool in_fight() { return fg != nullptr; }
 
 void load_fight_words()
 {
-    fs::File f;
-    if (!open_file(d->prof->overlay, f)) return;
-    library::FileSource src(f);
+    OvrWords src;
+    if (!src.open()) return;
     for (int i = 0; i < profile::kFightWords; ++i)
         if (d->prof->fight.words[i]) text::read_pascal(src, d->prof->fight.words[i], fg->w[i], sizeof fg->w[i]);
-    f.close();
 }
 
 bool load_fight_tables()
@@ -2325,6 +2334,14 @@ void fight_start(pic::Canvas& c)
     end_magic();
     delete hw;
     hw = nullptr;
+    if (!d->prof->fight.tables.ground) {
+        // A game whose fights aren't in the engine yet (Pool while it's built)
+        error(c, "Fights aren't in the engine for this game yet.");
+        fight_clear_monsters();
+        vm->set(0x7EC7, 0x81);          // (no fight: as if the party fled - never a win)
+        resume_after_note = true;
+        return;
+    }
     if (!fg) fg = make_fight();
     if (!fg || !ml || !pt->count) {
         error(c, ml && pt->count ? no_memory("the fight") : "Not enough memory.");
@@ -3573,11 +3590,9 @@ const char* tw(int i)
     char* out = buf[k++ & 3];
     out[0] = 0;
     const uint32_t at = d->prof->fight.words[i];
-    fs::File f;
-    if (!at || !open_file(d->prof->overlay, f)) return out;
-    library::FileSource src(f);
+    OvrWords src;
+    if (!at || !src.open()) return out;
     text::read_pascal(src, at, out, 48);
-    f.close();
     return out;
 }
 

@@ -258,6 +258,16 @@ void draw(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int d
     walls(c, w, m, x, y, dir);
 }
 
+Bands pool_bands(uint8_t sky, uint8_t floor_byte, uint8_t line_byte)
+{
+    Bands b{sky, 15, 7, 6};
+    if (line_byte == 0x08 || line_byte == 0x41) b.line = 0;
+    if (line_byte == 0x08) b.band = 8;
+    if (floor_byte == 0x0B) b.floor = 8;
+    else if (floor_byte == 0x06) b.floor = 1;
+    return b;
+}
+
 void draw(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int dir, const Bands& b)
 {
     const int x0 = kCell0 * 8, y0 = kCell0 * 8, wpx = kCells * 8;

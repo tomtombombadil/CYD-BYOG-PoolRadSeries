@@ -1935,6 +1935,7 @@ static void test_vm_events_facts()
         const size_t to = c.size();
         c.push_back(0x09); op_imm(c, 7); paddr(c, 1, 0x9710);
         c.push_back(0x09); op_imm(c, 3); paddr(c, 1, 0x6C20);
+        c.push_back(0x34); op_imm(c, 75);                                 // Pool's ECL CLOCK: one operand
         c.push_back(0x00);
         c[go] = static_cast<uint8_t>((0x9900 + to) & 0xFF);
         c[go + 1] = static_cast<uint8_t>((0x9900 + to) >> 8);
@@ -1946,6 +1947,7 @@ static void test_vm_events_facts()
         CHECK(vm.init_script() && vm.entry(0) == 0x8000 + 20);
         CHECK(vm.run(vm.entry(0)) == ecl::Stop::Stopped);
         CHECK(vm.get(0x4C00) == 5 && vm.get(0x4C01) == 0 && vm.get(0x7A10) == 7 && vm.get(0x7D20) == 3);
+        CHECK(vm.get(0x4BC7) == 5 && vm.get(0x4BC8) == 1);                 // 1:15
     }
 }
 
@@ -2588,6 +2590,14 @@ static void test_geo_view()
     view3d::draw(c, w, m, 5, 9, geo::East, view3d::Bands{11, 15, 7, 6});
     CHECK(at(25, 24) == 11 && at(25, 66) == 11 && at(25, 67) == 15 && at(25, 68) == 7 && at(25, 69) == 7 &&
           at(25, 70) == 6 && at(25, 111) == 6 && at(25, 112) == 1 && at(23, 50) == 1);
+    {
+        const view3d::Bands d0 = view3d::pool_bands(11, 0x41, 0x09);    // an area's start
+        CHECK(d0.sky == 11 && d0.line == 15 && d0.band == 7 && d0.floor == 6);
+        const view3d::Bands d1 = view3d::pool_bands(0, 0x0B, 0x08);
+        CHECK(d1.line == 0 && d1.band == 8 && d1.floor == 8);
+        const view3d::Bands d2 = view3d::pool_bands(0, 0x06, 0x41);
+        CHECK(d2.line == 0 && d2.band == 7 && d2.floor == 1);
+    }
     // Type 1 = set 1 piece 0: not filled in (no tiles) -> nothing drawn there
     // Area map without frame tiles: nothing; with: arrow at the party
     static layout::Tiles ft;
@@ -2609,6 +2619,42 @@ static void test_geo_view()
 // scripts reading the selected character
 static void test_party()
 {
+    // Pool of Radiance's 285-byte record into Curse's layout and back: every
+    // byte but the in-memory pointers and the item count comes back
+    {
+        uint8_t pool[party::kPoolRecordSize];
+        for (size_t i = 0; i < sizeof pool; ++i) pool[i] = static_cast<uint8_t>(i * 7 + 3);
+        auto zero = [&](size_t a, size_t b) { memset(pool + a, 0, b - a); };
+        zero(0x7F, 0x83); zero(0xC7, 0x100); zero(0x104, 0x10C);
+        pool[0] = 9;                                         // the name's length
+        memset(pool + 0x17, 0, party::kPoolMemorized);
+        pool[0x17 + 18] = 3; pool[0x17 + 19] = 5; pool[0x17 + 20] = 0x15;   // memorized, at the end (as Pool keeps them)
+        static party::Character pc;
+        party::from_pool(pool, pc);
+        CHECK(pc.stat(0) == pool[0x10] && pc.stat_now(5) == pool[0x15] && pc.rec[0x1C] == pool[0x16] && pc.rec[0x1D] == pool[0x16]);
+        CHECK(pc.race() == pool[0x2E] && pc.cls() == pool[0x2F] && pc.hp_max() == pool[0x32] && pc.hp() == pool[0x11B]);
+        CHECK(pc.money(3) == (pool[0x8E] | pool[0x8F] << 8) && pc.level(5) == pool[0x9B] && pc.alignment() == pool[0xA0]);
+        CHECK(pc.exp() == (pool[0xAC] | pool[0xAD] << 8 | pool[0xAE] << 16 | (uint32_t)pool[0xAF] << 24));
+        CHECK(pc.rec[0x1E + 20] == 0x15 && pc.rec[0x13F] == pool[0xBB] && pc.rec[0x145] == pool[0xC1]);
+        uint8_t back[party::kPoolRecordSize];
+        party::to_pool(pc, back);
+        CHECK(memcmp(back, pool, sizeof pool) == 0);
+        // Spells the engine memorized past Pool's 21 places go into its free ones (from the end)
+        pc.rec[0x1E + 30] = 0x22;
+        pc.n_items = 2;
+        party::to_pool(pc, back);
+        CHECK(back[0x17 + 17] == 0x22 && back[0x17 + 20] == 0x15 && back[0xC7] == 2);
+        // read_record / record_bytes in Pool's format
+        dax::MemorySource ms(pool, sizeof pool);
+        static party::Character rc;
+        CHECK(party::read_record(ms, rc, party::Format::Pool) && rc.race() == pool[0x2E]);
+        size_t n = 0;
+        CHECK(party::record_bytes(rc, party::Format::Pool, back, &n) == back && n == party::kPoolRecordSize &&
+              memcmp(back, pool, n) == 0);
+        CHECK(party::record_bytes(rc, party::Format::Curse, back, &n) == rc.rec && n == party::kRecordSize);
+        dax::MemorySource shortsrc(pool, 100);
+        CHECK(!party::read_record(shortsrc, rc, party::Format::Pool));
+    }
     static party::Character ch;
     ch = party::Character{};
     uint8_t rec[party::kRecordSize] = {};
@@ -2670,6 +2716,8 @@ static void test_party()
     CHECK(party::script_value(pt, 0x100, &v) && v == 1);
     CHECK(party::script_value(pt, 0x2B1, &v) && v == 1);
     CHECK(party::script_value(pt, 0x2CF, &v) && v == 50);
+    CHECK(!party::script_value(pt, 0x72, &v, true) && !party::script_value(pt, 0x15, &v, true) &&
+          party::script_value(pt, 0x18, &v, true));     // Pool's program: race, Int are the scripts' memory
     CHECK(!party::script_value(pt, 0x2C9, &v));
 
     // A saved game
@@ -2746,6 +2794,29 @@ static void test_party()
     CHECK(!savegame::drop_own_folder("GAME/CURSE", sub4));
     char sub5[32] = "CURSE/";
     CHECK(!savegame::drop_own_folder("GAME/CURSE", sub5));
+    // Pool of Radiance: POOL.CFG names the game's folder, then the saves'
+    const char cfg3[] = "E\r\nP\r\nC:\\POOLRAD\\\r\nC:\\POOLRAD\\SAVE\\\r\nF\r\n";
+    savegame::save_dir(cfg3, sizeof cfg3 - 1, dir, sizeof dir);
+    CHECK(strcmp(dir, "POOLRAD/SAVE") == 0);
+    char sub6[32] = "POOLRAD";                         // GOG: the saves beside the game's files
+    CHECK(savegame::drop_own_folder("Pool of Radiance/POOLRAD", sub6) && sub6[0] == 0);
+    char sub7[32] = "POOLRAD/SAVE";                    // Steam / SNEG
+    CHECK(savegame::drop_own_folder("POOLRAD/GAME/POOLRAD", sub7) && strcmp(sub7, "SAVE") == 0);
+    // Pool's saved game: no wall sets (12 bytes fewer)
+    {
+        std::vector<uint8_t> ps(sv.begin(), sv.end());
+        const size_t walls = 1 + 0x800 + 0x800 + 0x400 + 0x1E00 + 5 + 2;
+        ps.erase(ps.begin() + walls, ps.begin() + walls + 12);
+        CHECK(ps.size() == savegame::kPoolSize && savegame::kPoolSize == 13137);
+        ecl::GameState pg;
+        savegame::Header ph;
+        dax::MemorySource src(ps.data(), static_cast<uint32_t>(ps.size()));
+        CHECK(savegame::read(src, pg, ph, false));
+        CHECK(pg.x == 7 && pg.y == 13 && ph.count == 2 && strcmp(ph.names[1], "CHRDATA2") == 0 && ph.wall_block[0] == 0);
+        CHECK(!savegame::read(src, pg, ph, true));    // too short for Curse's
+        VecSink ps_sink;
+        CHECK(savegame::write(ps_sink, pg, ph, false) && ps_sink.v == ps);
+    }
 }
 
 // Item names, types, the rules' recalculation, money, the shop in the VM

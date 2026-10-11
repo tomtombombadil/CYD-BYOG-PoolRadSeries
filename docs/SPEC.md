@@ -541,11 +541,30 @@ Steps (each pushed when it works; Curse stays as it is):
 1. v0.75.0: the profile, frames, title (with the lightning), credits, the
    Screen Test and the Walk Test (21 of Pool's maps found from the
    scripts; the flat bands), script decoding with Pool's map.
-2. Party menu, saved games (13,137 bytes: no wall-set block), the
-   285-byte character record, View Character.
-3. Scripts in play: a new game starts in ECL3 block 0; PROGRAM 0 / 8 / 9;
-   Pool's character fields; the view colours scripts set (0xC059 /
-   0xC05F).
+2. v0.76.0: the party menu (11 entries), saved games (13,137 bytes: no
+   wall-set block; after a load the walls come from the script's own LOAD
+   FILES / LOAD PIECES), POOL.CFG's last folder line (GOG: the game's own
+   folder), the 285-byte character record (`party::from_pool` / `to_pool`:
+   moved into Curse's layout and back, every field Pool has - a load and
+   save gives back the same bytes but the record's in-memory pointers),
+   NAME.CHA / .ITM / .SPC, Add Character straight to the list (no "Add
+   from where?"), Remove without an Overwrite question, View Character,
+   items; BEGIN goes into the saved game's area. Words Pool keeps in its
+   program (not GAME.OVR) are marked `text::kInProgram` in the profile
+   (`text::Words` reads both).
+3. Scripts in play (v0.76.0, most of it): a new game starts in ECL3
+   block 0; Pool's ECL CLOCK (one operand: the clock's slot 1, as its
+   program's handler); CALL 0x2C90 (the view redrawn) and 0xBA03 (a
+   sound), other CALL addresses nothing (as Pool's handler; Curse's log
+   them); the view colours scripts set (0xC059 floor, 0xC05F line / band:
+   `view3d::pool_bands`, back to the defaults as each area starts); the
+   character fields Pool's program gives scripts (Int, race, class, the
+   magic-user's level, sex and 0xE4 are plain script memory there, as in
+   the original - so its race checks in Podol Plaza and the Temple of Bane
+   never match; worth a DOSBox look before changing); monsters' 285-byte
+   records. The sweep (`sweep.cpp events`, GAME=1) walks every square of
+   all 30 area scripts with no problems. Fights aren't in yet: a COMBAT
+   says so and the script goes on as if the party fled.
 4. Create New Character (Pool's rule tables), training, camp (no Fix).
 5. Combat, spells, items, monsters; the end (FINAL5.DAX).
 6. Behaviour tests (`sweep.cpp`) with Pool's expectations.

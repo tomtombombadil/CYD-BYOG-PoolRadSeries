@@ -48,6 +48,25 @@ bool read_pascal(dax::ByteSource& src, uint32_t pos, char* out, size_t cap)
     return true;
 }
 
+size_t Words::read_at(uint32_t pos, uint8_t* buf, size_t n)
+{
+    if (!(pos & kInProgram)) return ovr_.read_at(pos, buf, n);
+    pos &= ~kInProgram;
+    if (!exe_ || !info_ || pos >= info_->image_size) return 0;
+    if (pos < win_at_ || pos + n > win_at_ + win_len_) {
+        uint32_t want = info_->image_size - pos;
+        if (want > sizeof win_) want = sizeof win_;
+        win_len_ = 0;
+        if (exepack::read(*exe_, *info_, pos, win_, want) != exepack::Status::Ok) return 0;
+        win_at_ = pos;
+        win_len_ = want;
+    }
+    const uint32_t have = win_at_ + win_len_ - pos;
+    if (n > have) n = have;
+    memcpy(buf, win_ + (pos - win_at_), n);
+    return n;
+}
+
 bool read_pascal(dax::ByteSource& exe, const exepack::Info& info, uint32_t pos, char* out, size_t cap)
 {
     if (cap == 0) return false;

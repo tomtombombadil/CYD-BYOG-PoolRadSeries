@@ -19,12 +19,13 @@
 //   monkey [seed [n]] n random taps, keys, moves and cursor keys anywhere, checking
 //                    the party's invariants and screens that can't be left
 //                    (MAREA / MBLOCK: start in that script block)
-// Env: BLOCK (events: one block), FIGHTLOG / PAGELOG / TURNLOG / STLOG (a fight's
+// Env: GAME=n (games::Game: 1 Pool of Radiance), BLOCK (events: one block), FIGHTLOG / PAGELOG / TURNLOG / STLOG (a fight's
 // progress), AIMLOG, ENTRIES, ONLY. Each run saves over the slots: give each
 // its own copy of the game folder.
 #include "ui/play.cpp"
 #include "engine/rules.h"
 #include <cstdarg>
+#include <sys/stat.h>
 #include <random>
 #include <string>
 #include <vector>
@@ -294,7 +295,9 @@ static bool boot(char slot = 'A')
     fs::sim_root() = host.substr(0, s);
     static std::string folder;
     folder = host.substr(s + 1);
-    const char* e = play::open(folder.c_str(), games::Game::CurseOfTheAzureBonds, C, nullptr);
+    // GAME=n: another game (games::Game's number: 1 Pool of Radiance)
+    const games::Game game = getenv("GAME") ? (games::Game)atoi(getenv("GAME")) : games::Game::CurseOfTheAzureBonds;
+    const char* e = play::open(folder.c_str(), game, C, nullptr);
     if (e) {
         printf("open: %s\n", e);
         return false;
@@ -598,16 +601,12 @@ static void sweep_classes()
 // ---- events: every ECL block, every square
 static void sweep_events(int only)
 {
-    const int areas[] = {1, 2, 3, 4, 5, 6};
-    for (int area : areas) {
+    for (int area = 1; area <= 8; ++area) {          // (Curse 1-6, Pool 1-8)
         if (only && area != only) continue;
         char path[300];
         snprintf(path, sizeof path, "/GOLDBOX/%s/ECL%d.DAX", game_dir.substr(game_dir.rfind('/') + 1).c_str(), area);
         fs::File f = sd_fs().open(path, "r");
-        if (!f) {
-            printf("no %s\n", path);
-            continue;
-        }
+        if (!f) continue;
         library::FileSource src(f);
         static dax::Index dir;
         std::vector<int> ids;
@@ -832,7 +831,10 @@ static void sweep_monkey(int rounds)
     int boots = 0;
     // The monkey saves over the slots: every boot starts from the folder's
     // first state (kept in SAVE.MONKEY)
-    const std::string save = game_dir + "/SAVE", keep = game_dir + "/SAVE.MONKEY";
+    // (GOG's Pool keeps its saves beside the game's files: the whole folder, kept beside it)
+    struct stat st;
+    const bool own = stat((game_dir + "/SAVE").c_str(), &st) != 0;
+    const std::string save = own ? game_dir : game_dir + "/SAVE", keep = own ? game_dir + ".MONKEY" : game_dir + "/SAVE.MONKEY";
     const std::string snap = "rm -rf '" + keep + "' && cp -r '" + save + "' '" + keep + "'";
     const std::string back_up = "rm -rf '" + save + "' && cp -r '" + keep + "' '" + save + "'";
     if (system(snap.c_str()) != 0) return;

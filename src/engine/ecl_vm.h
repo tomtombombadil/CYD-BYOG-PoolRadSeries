@@ -173,6 +173,9 @@ public:
     bool new_script() const { return new_script_; }
 
     uint16_t get(uint16_t addr) const;
+    // Pool of Radiance's 3D view colours as the scripts set them (0xC059
+    // the floor's, 0xC05F the line's and band's; screen_facts.md 4)
+    uint8_t view_byte(int i) const { return view_bytes_[i & 1]; }
     void set(uint16_t addr, uint16_t v);
     bool flag(int i) const { return flags_[i]; }
     uint16_t pc() const { return pc_; }
@@ -219,6 +222,7 @@ private:
     party::Party* party_ = nullptr;
     uint8_t haste_ = 0, slow_ = 0;
     uint16_t sound_kind_ = 0;          // what the scripts wrote to 0x03DE (CALL B200's sound)
+    uint8_t  view_bytes_[2] = {0x41, 0x09};   // Pool: 0xC059 / 0xC05F, the 3D view's floor / line (each area's start)
     const char* const* words_ = nullptr;
     const char* word(int i) const { return words_ && words_[i] ? words_[i] : ""; }
     // The selected character: LOAD CHARACTER's (put back at EXIT / PROGRAM),

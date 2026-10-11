@@ -51,6 +51,9 @@ struct OpSet {
     // every address to where Curse keeps the same thing, so the script
     // machine works with one map (vm_address)
     bool pool_map;
+    // CALL's machine-code addresses that differ: the 3D view redrawn, a
+    // sound (Pool: 0x2C90, 0xBA03)
+    uint16_t redraw_call = 0x2E10, sound_call = 0xB200;
 };
 
 // A script's memory address as the engine's machine (Curse's map) knows

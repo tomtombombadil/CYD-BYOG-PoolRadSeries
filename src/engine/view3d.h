@@ -81,6 +81,11 @@ void draw(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int d
 // and the floor (70-111)
 struct Bands { uint8_t sky, line, band, floor; };
 void draw(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int dir, const Bands& b);
+// Pool's bands from the sky colour and the two bytes its scripts set
+// (VM 0xC059 floor, 0xC05F line / band; screen_facts.md 4): the line
+// black for 0x08 / 0x41 else white, the band dark grey for 0x08 else light
+// grey, the floor dark grey for 0x0B, blue for 0x06, else brown
+Bands pool_bands(uint8_t sky, uint8_t floor_byte, uint8_t line_byte);
 
 // The AREA map: 11 x 11 squares round the party (kept inside the map), the
 // party as an arrow.

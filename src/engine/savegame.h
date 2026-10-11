@@ -27,6 +27,9 @@
 namespace savegame {
 
 constexpr uint32_t kSize = 1 + 0x800 + 0x800 + 0x400 + 0x1E00 + 5 + 2 + 12 + 1 + 8 * 41;   // 13,149
+// Pool of Radiance's saves (poolrad_facts.md 3.2) are the same without the
+// wall sets (its scripts load them again): 13,137 bytes
+constexpr uint32_t kPoolSize = kSize - 12;
 constexpr char kFirst = 'A', kLast = 'J';    // the games' ten save slots
 
 struct Header {
@@ -39,7 +42,8 @@ struct Header {
 
 // Reads a saved game into gs (memory, script, position) and h. False if
 // the file isn't one.
-bool read(dax::ByteSource& src, ecl::GameState& gs, Header& h);
+// wall_sets = false: Pool's layout (no wall sets; h's stay 0).
+bool read(dax::ByteSource& src, ecl::GameState& gs, Header& h, bool wall_sets = true);
 
 // Where write() puts the bytes (a file on the card, a buffer in tests)
 class Sink {
@@ -51,7 +55,7 @@ public:
 // Writes a saved game: gs (memory, script, position), h (game area,
 // states, wall sets, the party's file names). The characters' own files
 // are written by the caller (their records as kept, items, effects).
-bool write(Sink& out, const ecl::GameState& gs, const Header& h);
+bool write(Sink& out, const ecl::GameState& gs, const Header& h, bool wall_sets = true);
 
 // The save file's name for slot 'A'..'J' ("SAVGAMA.DAT"), and the n-th
 // character's (1 ..: "CHRDATA1", + ".SAV" / ".SWG" / ".FX").
@@ -59,15 +63,17 @@ void file_name(char slot, char* out, size_t cap);
 void char_file(char slot, int n, char* out, size_t cap);
 
 // The save folder from the game's configuration file (Curse: CURSE.CFG,
-// lines "E", "P", "C:\SAVE\", "F"): the line naming a folder, without its
-// drive and with '/' between folders ("SAVE"); "" if none. The games run
+// lines "E", "P", "C:\SAVE\", "F"): the last line naming a folder (Pool's
+// POOL.CFG names the game's folder first, then the save folder), without
+// its drive and with '/' between folders ("SAVE"); "" if none. The games run
 // with their own folder as drive C:, so it is a folder inside it.
 void save_dir(const char* cfg, size_t len, char* out, size_t cap);
 // The Steam / SNEG releases run with the folder ABOVE the game's as C:
 // (CURSE.CFG "C:\CURSE\SAVE\", the files in GAME/CURSE): when the save
 // folder's first part is the game folder's own name (the data folder's last
-// part, any case) and more follows, drops it ("CURSE/SAVE" -> "SAVE").
-// True if it did.
+// part, any case) and more follows, drops it ("CURSE/SAVE" -> "SAVE"); the
+// game folder's own name alone (GOG Pool's POOL.CFG "C:\POOLRAD\": the
+// saves are beside the game's files) becomes "". True if it did.
 bool drop_own_folder(const char* data_dir, char* sub);
 
 } // namespace savegame

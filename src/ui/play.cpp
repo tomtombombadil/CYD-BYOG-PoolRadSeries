@@ -362,6 +362,45 @@ bool open_dax(const char* name, fs::File& f)
     return true;
 }
 
+// GAME.OVR's words, and the program's (Pool keeps a few in START.EXE: the
+// profile marks those text::kInProgram) - text::read_pascal(src, at ...)
+class OvrWords : public dax::ByteSource {
+public:
+    ~OvrWords()
+    {
+        delete w_;
+        delete exe_;
+        delete ovr_;
+    }
+    bool open()
+    {
+        fs::File f;
+        if (!open_file(d->prof->overlay, f)) return false;
+        ovr_ = new (std::nothrow) library::FileSource(f);
+        if (!ovr_) return false;
+        if (d->prof->variant.program_words) {
+            fs::File x;
+            if (open_file(d->prof->program, x)) {
+                exe_ = new (std::nothrow) library::FileSource(x);
+                if (exe_ && exepack::parse(*exe_, info_) != exepack::Status::Ok) {
+                    delete exe_;
+                    exe_ = nullptr;
+                }
+            }
+        }
+        w_ = new (std::nothrow) text::Words(*ovr_, exe_, exe_ ? &info_ : nullptr);
+        return w_ != nullptr;
+    }
+    size_t read_at(uint32_t pos, uint8_t* buf, size_t n) override { return w_ ? w_->read_at(pos, buf, n) : 0; }
+    uint32_t size() const override { return ovr_ ? ovr_->size() : 0; }
+
+private:
+    library::FileSource* ovr_ = nullptr;
+    library::FileSource* exe_ = nullptr;
+    exepack::Info        info_;
+    text::Words*         w_ = nullptr;
+};
+
 void area_file(char* out, size_t cap, const char* stem) { snprintf(out, cap, "%s%d.DAX", stem, d->gs.game_area); }
 
 // ---- drawing ------------------------------------------------------------------
@@ -402,9 +441,8 @@ void draw_view(pic::Canvas& c)
     } else {
         if (d->prof->variant.flat_view) {
             // Pool: flat bands (screen_facts.md 4)
-            const auto& v = d->prof->variant;
             view3d::draw(c, d->world, d->map, d->gs.x, d->gs.y, d->gs.dir,
-                         view3d::Bands{sky_colour(), v.view_line, v.view_band, v.view_floor});
+                         view3d::pool_bands(sky_colour(), vm->view_byte(0), vm->view_byte(1)));
         } else {
             view3d::draw(c, d->world, d->map, d->gs.x, d->gs.y, d->gs.dir, sky_colour());
         }
@@ -692,6 +730,25 @@ bool open_save_file(const char* name, fs::File& f)
 
 void load_journal_list(char slot);
 
+// The characters' files: Curse's 422-byte records (.SAV in a saved game,
+// NAME.GUY when removed), items .SWG, effects .FX; Pool of Radiance's
+// 285-byte records (NAME.CHA), items .ITM, effects .SPC
+// (profile variant.pool_files; party::from_pool / to_pool)
+bool pool_files() { return d->prof->variant.pool_files; }
+party::Format rec_format() { return pool_files() ? party::Format::Pool : party::Format::Curse; }
+const char* ext_guy() { return pool_files() ? ".CHA" : ".GUY"; }
+const char* ext_items() { return pool_files() ? ".ITM" : ".SWG"; }
+const char* ext_fx() { return pool_files() ? ".SPC" : ".FX"; }
+size_t rec_file_size() { return pool_files() ? party::kPoolRecordSize : party::kRecordSize; }
+bool write_file(const char* dir, const char* name, const uint8_t* p, size_t n);
+bool write_record(const char* dir, const char* fn, const party::Character& ch)
+{
+    uint8_t buf[party::kPoolRecordSize];
+    size_t n = 0;
+    const uint8_t* p = party::record_bytes(ch, rec_format(), buf, &n);
+    return write_file(dir, fn, p, n);
+}
+
 // Loads saved game `slot`: the game's memory, position and script, and
 // the party from their files (.SAV, with .SWG items and .FX effects)
 const char* load_problem = nullptr;     // what went wrong with the last load (shown, stays until tapped)
@@ -709,7 +766,7 @@ bool load_game(char slot)
     bool ok;
     {
         library::FileSource src(f);
-        ok = savegame::read(src, d->gs, d->save);
+        ok = savegame::read(src, d->gs, d->save, !pool_files());
     }
     f.close();
     // Whatever was going on is over now (a script's party menu, a wait)
@@ -736,20 +793,20 @@ bool load_game(char slot)
         }
         {
             library::FileSource src(f);
-            ok = party::read_record(src, ch);
+            ok = party::read_record(src, ch, rec_format());
         }
         f.close();
         if (!ok) {
             load_problem = "A character of that saved game couldn't be read.";
             continue;
         }
-        snprintf(fn, sizeof fn, "%s.SWG", d->save.names[i]);
+        snprintf(fn, sizeof fn, "%s%s", d->save.names[i], ext_items());
         if (open_save_file(fn, f)) {
             library::FileSource src(f);
             party::read_items(src, ch);
             f.close();
         }
-        snprintf(fn, sizeof fn, "%s.FX", d->save.names[i]);
+        snprintf(fn, sizeof fn, "%s%s", d->save.names[i], ext_fx());
         if (open_save_file(fn, f)) {
             library::FileSource src(f);
             party::read_affects(src, ch);
@@ -1467,17 +1524,17 @@ bool save_game(char slot)
     bool ok;
     {
         FileSink sink(f);
-        ok = savegame::write(sink, d->gs, h);
+        ok = savegame::write(sink, d->gs, h, !pool_files());
     }
     f.close();
     for (int i = 0; ok && i < pt->count; ++i) {
         const party::Character& ch = pt->m[i];
         char fn[48];
         snprintf(fn, sizeof fn, "%s.SAV", h.names[i]);
-        ok = write_file(d->save_dir, fn, ch.rec, party::kRecordSize);
-        snprintf(fn, sizeof fn, "%s.SWG", h.names[i]);
+        ok = write_record(d->save_dir, fn, ch);
+        snprintf(fn, sizeof fn, "%s%s", h.names[i], ext_items());
         ok = ok && write_file(d->save_dir, fn, ch.items[0], static_cast<size_t>(ch.n_items) * party::kItemSize);
-        snprintf(fn, sizeof fn, "%s.FX", h.names[i]);
+        snprintf(fn, sizeof fn, "%s%s", h.names[i], ext_fx());
         ok = ok && write_file(d->save_dir, fn, ch.affects[0], static_cast<size_t>(ch.n_affects) * party::kAffectSize);
     }
     // The journal entries met (the engine's own, beside the save)
@@ -1653,18 +1710,18 @@ void guy_base(const party::Character& ch, char* out, size_t cap)
 bool write_character(const char* base, const party::Character& ch)
 {
     char fn[24];
-    snprintf(fn, sizeof fn, "%s.GUY", base);
-    bool ok = write_file(d->save_dir, fn, ch.rec, party::kRecordSize);
-    snprintf(fn, sizeof fn, "%s.SWG", base);
+    snprintf(fn, sizeof fn, "%s%s", base, ext_guy());
+    bool ok = write_record(d->save_dir, fn, ch);
+    snprintf(fn, sizeof fn, "%s%s", base, ext_items());
     ok = ok && write_file(d->save_dir, fn, ch.items[0], static_cast<size_t>(ch.n_items) * party::kItemSize);
-    snprintf(fn, sizeof fn, "%s.FX", base);
+    snprintf(fn, sizeof fn, "%s%s", base, ext_fx());
     ok = ok && write_file(d->save_dir, fn, ch.affects[0], static_cast<size_t>(ch.n_affects) * party::kAffectSize);
     return ok;
 }
 
 void delete_character(const char* base)
 {
-    for (const char* ext : {".GUY", ".SWG", ".FX"}) {
+    for (const char* ext : {ext_guy(), ext_items(), ext_fx()}) {
         char fn[24];
         snprintf(fn, sizeof fn, "%s%s", base, ext);
         write_file(d->save_dir, fn, nullptr, 0);
@@ -1704,8 +1761,9 @@ void remove_character(pic::Canvas& c, bool overwrite_ok)
     char base[12], fn[24], path[200];
     guy_base(*ch, base, sizeof base);
     if (new_base[0]) snprintf(base, sizeof base, "%s", new_base);       // the name typed (not cleaned, as the original)
-    snprintf(fn, sizeof fn, "%s.GUY", base);
+    snprintf(fn, sizeof fn, "%s%s", base, ext_guy());
     save_path(fn, path, sizeof path);
+    if (!d->prof->party.overwrite) overwrite_ok = true;       // (Pool doesn't ask)
     if (!overwrite_ok && sd_fs().exists(path)) {
         char t[60];
         snprintf(t, sizeof t, "%s%s%s", rw(Data::kOverwrite), base, rw(Data::kQmark));
@@ -1717,7 +1775,7 @@ void remove_character(pic::Canvas& c, bool overwrite_ok)
         screen = Screen::PartyMenu;
         draw_party_menu(c);
         char t[48];
-        snprintf(t, sizeof t, "Couldn't write %s.GUY to the card.", base);
+        snprintf(t, sizeof t, "Couldn't write %s%s to the card.", base, ext_guy());
         error(c, t);
         return;
     }
@@ -1856,12 +1914,14 @@ void find_guys(char from = 'C')
         const size_t n = strlen(nm);
         // .GUY files, and (Tom, v0.58.0 - the original lists only those)
         // the members of saved games, CHRDAT<letter><n>.SAV
-        const bool guy = n >= 5 && n <= 12 && strcasecmp(nm + n - 4, ".GUY") == 0;
+        // (Pool of Radiance: .CHA, 285-byte records, the control byte at 0x84)
+        const bool guy = n >= 5 && n <= 12 && strcasecmp(nm + n - 4, ext_guy()) == 0;
         const bool member = CYD_MORE_CHARACTERS && opts.more_guys && n == 12 && strncasecmp(nm, "CHRDAT", 6) == 0 &&
                             strcasecmp(nm + 8, ".SAV") == 0;
-        if (f.isDirectory() || (!guy && !member) || f.size() != party::kRecordSize) continue;
+        if (f.isDirectory() || (!guy && !member) || f.size() != rec_file_size()) continue;
         uint8_t rec[0x100];
-        if (f.read(rec, 0xF8) != 0xF8 || rec[0xF7] > 0x7F) continue;     // NPCs aren't listed
+        const int ctl = pool_files() ? 0x84 : 0xF7;
+        if (f.read(rec, ctl + 1) != ctl + 1 || rec[ctl] > 0x7F) continue;     // NPCs aren't listed
         char name[16];
         size_t len = rec[0] > 15 ? 15 : rec[0];
         memcpy(name, rec + 1, len);
@@ -1936,18 +1996,18 @@ void add_character(int i, pic::Canvas& c)
     bool ok;
     {
         library::FileSource src(f);
-        ok = party::read_record(src, ch);
+        ok = party::read_record(src, ch, rec_format());
     }
     f.close();
     if (!ok) return;
     char fn[24];
-    snprintf(fn, sizeof fn, "%s.SWG", base);
+    snprintf(fn, sizeof fn, "%s%s", base, ext_items());
     if (open_save_file(fn, f)) {
         library::FileSource src(f);
         party::read_items(src, ch);
         f.close();
     }
-    snprintf(fn, sizeof fn, "%s.FX", base);
+    snprintf(fn, sizeof fn, "%s%s", base, ext_fx());
     if (open_save_file(fn, f)) {
         library::FileSource src(f);
         party::read_affects(src, ch);
@@ -2137,13 +2197,12 @@ bool load_rules(Making*& m)
     const uint32_t at[9] = {pc.pick_race, pc.pick_gender, pc.pick_class, pc.pick_alignment, pc.select,
                             pc.reroll,    pc.char_name,   pc.save_q,     pc.qmark};
     const uint32_t ch_at[5] = {pc.pick_new, pc.no_qualify, pc.change_select, pc.now_first, pc.dot};
-    if (open_file(d->prof->overlay, f)) {
-        library::FileSource src(f);
+    OvrWords src;
+    if (src.open()) {
         for (int i = 0; i < 9; ++i)
             if (at[i]) text::read_pascal(src, at[i], m->words[i], sizeof m->words[i]);
         for (int i = 0; i < 5; ++i)
             if (ch_at[i]) text::read_pascal(src, ch_at[i], m->change[i], sizeof m->change[i]);
-        f.close();
     }
     return ok;
 }
@@ -2373,7 +2432,7 @@ void save_new(pic::Canvas& c, bool overwrite_ok)
     char base[12], fn[24], path[200];
     guy_base(mk->ch, base, sizeof base);
     if (new_base[0]) snprintf(base, sizeof base, "%s", new_base);       // the name typed (Overwrite -> No)
-    snprintf(fn, sizeof fn, "%s.GUY", base);
+    snprintf(fn, sizeof fn, "%s%s", base, ext_guy());
     save_path(fn, path, sizeof path);
     if (!overwrite_ok && sd_fs().exists(path)) {
         char t[60];
@@ -2386,7 +2445,7 @@ void save_new(pic::Canvas& c, bool overwrite_ok)
     end_create(c);
     if (!ok) {
         char t[48];
-        snprintf(t, sizeof t, "Couldn't write %s.GUY to the card.", base);
+        snprintf(t, sizeof t, "Couldn't write %s%s to the card.", base, ext_guy());
         error(c, t);
     }
 }
@@ -2448,11 +2507,9 @@ void sw(int i, char* out, size_t cap)
 {
     out[0] = 0;
     const uint32_t at = d->prof->shop_words[i];
-    fs::File f;
-    if (!at || !open_file(d->prof->overlay, f)) return;
-    library::FileSource src(f);
+    OvrWords src;
+    if (!at || !src.open()) return;
     text::read_pascal(src, at, out, cap);
-    f.close();
 }
 
 void treasure_menu(pic::Canvas& c);
@@ -3157,11 +3214,9 @@ void mw(int i, char* out, size_t cap)
 {
     out[0] = 0;
     const uint32_t at = d->prof->magic.words[i];
-    fs::File f;
-    if (!at || !open_file(d->prof->overlay, f)) return;
-    library::FileSource src(f);
+    OvrWords src;
+    if (!at || !src.open()) return;
     text::read_pascal(src, at, out, cap);
-    f.close();
 }
 
 void end_effects();
@@ -3970,22 +4025,18 @@ void cw(int i, char* out, size_t cap)
 {
     out[0] = 0;
     const uint32_t at = d->prof->magic.cast_words[i];
-    fs::File f;
-    if (!at || !open_file(d->prof->overlay, f)) return;
-    library::FileSource src(f);
+    OvrWords src;
+    if (!at || !src.open()) return;
     text::read_pascal(src, at, out, cap);
-    f.close();
 }
 
 // A GAME.OVR word by its offset
 void ow(uint32_t at, char* out, size_t cap)
 {
     out[0] = 0;
-    fs::File f;
-    if (!at || !open_file(d->prof->overlay, f)) return;
-    library::FileSource src(f);
+    OvrWords src;
+    if (!at || !src.open()) return;
     text::read_pascal(src, at, out, cap);
-    f.close();
 }
 
 uint32_t game_delay_ms()
@@ -5133,6 +5184,15 @@ void pm_choose(int i, pic::Canvas& c)
         start_create(c);
         return;
     case 'A':
+        if (!d->prof->party.add_from) {
+            // Pool of Radiance: its own characters only, straight to the list
+            find_guys();
+            if (!d->guys) return;
+            screen = Screen::AddList;
+            plist = PickList{};
+            draw_add_list(c);
+            return;
+        }
         screen = Screen::AddFrom;
         text::build(menu, rw(Data::kAddFrom), rw(Data::kAddSources));
         menu.selected = 0;
@@ -5384,8 +5444,8 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         free(buf);
     }
     fs::File f;
-    if (open_file(d->prof->overlay, f)) {
-        library::FileSource src(f);
+    OvrWords src;
+    if (src.open()) {
         struct { uint32_t at; char* out; size_t cap; } words[] = {
             {pv.npc, d->v_npc, sizeof d->v_npc}, {pv.age, d->v_age, sizeof d->v_age},
             {pv.level, d->v_level, sizeof d->v_level}, {pv.exp, d->v_exp, sizeof d->v_exp},
@@ -5418,7 +5478,6 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         text::read_pascal(src, pp.load_which, d->load_which, sizeof d->load_which);
         text::read_pascal(src, pp.name, d->name_head, sizeof d->name_head);
         text::read_pascal(src, pp.ac_hp, d->ac_hp_head, sizeof d->ac_hp_head);
-        f.close();
     }
     if (!d->choose[0]) strcpy(d->choose, "Choose a function ");
     if (!d->load_which[0]) strcpy(d->load_which, "Load Which Game: ");
@@ -5441,14 +5500,12 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
                                                  pp.drop, pp.forever, pp.sure, pp.dump, pp.out_back, pp.farewell,
                                                  pp.relief, pp.yes_no, pp.cant_modify, pp.modify, pp.keep_exit,
                                                  pp.from_saved, pp.new_file};
-        fs::File of;
-        if (open_file(d->prof->overlay, of)) {
-            library::FileSource src(of);
+        OvrWords rsrc;
+        if (rsrc.open())
             for (int i = 0; i < Data::kRosterWords; ++i)
-                if (at[i]) text::read_pascal(src, at[i], d->roster[i], sizeof d->roster[i]);
-            of.close();
-        }
+                if (at[i]) text::read_pascal(rsrc, at[i], d->roster[i], sizeof d->roster[i]);
         if (!d->roster[Data::kYesNo][0]) strcpy(d->roster[Data::kYesNo], "Yes No");
+        if (!d->roster[Data::kAdd][0]) strcpy(d->roster[Data::kAdd], "Add ");     // (Pool: "Add Exit")
         if (!d->roster[Data::kModify][0]) strcpy(d->roster[Data::kModify], "Modify: ");
         if (!d->roster[Data::kKeepExit][0]) strcpy(d->roster[Data::kKeepExit], "Keep Exit");
         if (!d->roster[Data::kCantModify][0]) strcpy(d->roster[Data::kCantModify], " can't be modified.");
@@ -5466,9 +5523,12 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         }
     }
     library::path_of(d->data_dir, sub, d->save_dir, sizeof d->save_dir);
-    // Steam / SNEG: C: is the folder above the game's ("C:\CURSE\SAVE\")
-    if (!sd_fs().exists(d->save_dir) && savegame::drop_own_folder(d->data_dir, sub))
-        library::path_of(d->data_dir, sub, d->save_dir, sizeof d->save_dir);
+    // Steam / SNEG: C: is the folder above the game's ("C:\CURSE\SAVE\");
+    // GOG's Pool: "C:\POOLRAD\" - the game's own folder
+    if (!sd_fs().exists(d->save_dir) && savegame::drop_own_folder(d->data_dir, sub)) {
+        if (sub[0]) library::path_of(d->data_dir, sub, d->save_dir, sizeof d->save_dir);
+        else snprintf(d->save_dir, sizeof d->save_dir, "%s/%s", games::kRootDir, d->data_dir);
+    }
 }
 
 // ---- the script host ------------------------------------------------------------
@@ -6189,7 +6249,20 @@ void begin_adventuring()
     }
     draw_frame(c);
     if (resume) {
-        if (dungeon) {
+        if (dungeon && pool_files()) {
+            // Pool's saves keep no wall sets: what the script loads (its
+            // first LOAD FILES / LOAD PIECES, as the walk test finds them)
+            uint8_t* blk = static_cast<uint8_t*>(malloc(gs.code_len + 2));
+            if (blk) {
+                blk[0] = blk[1] = 0;
+                memcpy(blk + 2, gs.code, gs.code_len);
+                const ecl::MapLoad ml = ecl::find_map_load(blk, gs.code_len + 2, *d->prof->ecl_ops);
+                free(blk);
+                if (ml.has_geo()) host->load_map(ml.geo);
+                for (int i = 0; i < 3; ++i)
+                    if (ml.walls[i] != ecl::kNone) host->load_walls(i + 1, ml.walls[i]);
+            }
+        } else if (dungeon) {
             if (d->save.wall_block[0] > 0) host->load_map(vm->get(0x4BC5) & 0xFF);
             for (int i = 0; i < 3; ++i)
                 if (d->save.wall_block[i] > 0) host->load_walls(d->save.wall_set[i], d->save.wall_block[i]);
@@ -7103,15 +7176,13 @@ void won_text(int page, pic::Canvas& c)
     char* buf = won->text;
     const size_t cap = sizeof won->text;
     size_t o = 0;
-    fs::File f;
-    if (open_file(d->prof->overlay, f)) {
-        library::FileSource src(f);
+    OvrWords src;
+    if (src.open()) {
         for (int k = 0; k < wf.page_lines[page] && first + k < 24; ++k) {
             char line[text::kMaxString];
             if (!text::read_pascal(src, wf.text[first + k], line, sizeof line)) continue;
             for (const char* q = line; *q && o + 1 < cap; ++q) buf[o++] = *q;
         }
-        f.close();
     }
     buf[o] = 0;
     text::begin(w, c, buf, text::kTextArea, 10, true);
@@ -7697,15 +7768,15 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     vm->set_party(pt);
     vm->set_ground(ground);
     vm->set_move_affects(d->prof->fight.facts.haste, d->prof->fight.facts.slow);
-    if (open_file(d->prof->overlay, f)) {
+    {
         // The script machine's own words
-        library::FileSource src(f);
+        OvrWords src;
+        const bool ok = src.open();
         for (int i = 0; i < ecl::kScriptWords; ++i) {
-            if (d->prof->script_words[i])
+            if (ok && d->prof->script_words[i])
                 text::read_pascal(src, d->prof->script_words[i], d->script_word[i], sizeof d->script_word[i]);
             d->script_words[i] = d->script_word[i];
         }
-        f.close();
     }
     vm->set_words(d->script_words);
     vm->set(0x4BFF, 3);                     // Pics and Animation on, as the game starts (a save says its own)

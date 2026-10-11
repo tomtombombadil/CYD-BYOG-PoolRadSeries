@@ -102,13 +102,34 @@ bool read_record(dax::ByteSource& src, Character& out);
 void read_items(dax::ByteSource& src, Character& out);
 void read_affects(dax::ByteSource& src, Character& out);
 
+// Pool of Radiance's characters (poolrad_facts.md 3.3): a 285-byte record
+// (.SAV / .CHA), items in .ITM (63 bytes each, as Curse's), effects in
+// .SPC (9 bytes, as Curse's .FX). The engine works on Curse's layout, so a
+// Pool record is moved into it field by field when read and back when
+// written: one value per stat (both of Curse's), the 21 memorized spells
+// (in place, in Curse's list), 55 spell book bytes, cleric / magic-user
+// slots for levels 1-3, the portrait's head / body; its in-memory pointers
+// are written as 0, its item count from the items kept.
+constexpr size_t kPoolRecordSize = 0x11D;
+constexpr int    kPoolMemorized = 21;
+// Record format: Curse's or Pool's
+enum class Format : uint8_t { Curse, Pool };
+bool read_record(dax::ByteSource& src, Character& out, Format f);
+void from_pool(const uint8_t* pool, Character& out);              // out.rec only
+void from_pool(const uint8_t* pool, uint8_t* rec);                 // a record (kRecordSize bytes) of Curse's layout
+void to_pool(const Character& c, uint8_t out[kPoolRecordSize]);
+// The record as the game's file holds it (*n: its size)
+const uint8_t* record_bytes(const Character& c, Format f, uint8_t* buf, size_t* n);
+
 // What the scripts read at 0x7C00 + off about the selected character
 // (race, class, thief skills, money ...). False if off isn't a character
 // field (the scripts' memory holds it).
-bool script_value(const Party& p, uint16_t off, uint16_t* out);
+// pool: Pool of Radiance's program (fewer fields: Int, race, class, the
+// magic-user's level, sex and 0xE4 are the scripts' memory there)
+bool script_value(const Party& p, uint16_t off, uint16_t* out, bool pool = false);
 // The same for any record (a loaded monster's too); index = its place in the
 // list (0x7EB1 / 0x7EB4)
-bool script_value(const uint8_t* rec, int index, uint16_t off, uint16_t* out);
+bool script_value(const uint8_t* rec, int index, uint16_t off, uint16_t* out, bool pool = false);
 // What a script's write at 0x7C00 + off does to the selected character:
 // money, the control byte (over 0xB2: - 0x32), 0x7CF7 / 0x7CF9, spell slots
 // (0x7C20-0x7C70: record off - 1), 0x7D00 >= 0x80 out of action (0x87

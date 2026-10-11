@@ -159,8 +159,12 @@ uint16_t Vm::get(uint16_t a) const
         }
         if (const uint8_t* mr = sel_rec()) {
             // a loaded monster LOAD CHARACTER chose (its place: after the party)
-            if (party::script_value(mr, (party_ ? party_->count : 0) + sel_mon_, static_cast<uint16_t>(a - 0x7C00), &v)) return v;
-        } else if (party_ && party::script_value(*party_, static_cast<uint16_t>(a - 0x7C00), &v)) return v;
+            if (party::script_value(mr, (party_ ? party_->count : 0) + sel_mon_, static_cast<uint16_t>(a - 0x7C00), &v,
+                                    set_.pool_map))
+                return v;
+        } else if (party_ && party::script_value(*party_, static_cast<uint16_t>(a - 0x7C00), &v, set_.pool_map)) {
+            return v;
+        }
         if (a == 0x7D00) return 0;                         // "no character loaded"
         if (a == 0x7F12) return s_.game_area;
         return word_at(s_.area2, (a - 0x7C00u) * 2);
@@ -174,6 +178,8 @@ uint16_t Vm::get(uint16_t a) const
     case 0xC04D: return static_cast<uint16_t>(s_.dir / 2);
     case 0xC04E: return s_.wall_ahead;
     case 0xC04F: return s_.roof;
+    case 0xC059: return view_bytes_[0];
+    case 0xC05F: return view_bytes_[1];
     }
     return 0;
 }
@@ -208,6 +214,8 @@ void Vm::set(uint16_t a, uint16_t v)
     case 0xC04B: s_.x = static_cast<int8_t>(v) & 15; s_.moved = true; break;
     case 0xC04C: s_.y = static_cast<int8_t>(v) & 15; s_.moved = true; break;
     case 0xC04D: s_.dir = (v % 4) * 2; s_.moved = true; break;
+    case 0xC059: view_bytes_[0] = static_cast<uint8_t>(v); break;     // (seen at the next redraw)
+    case 0xC05F: view_bytes_[1] = static_cast<uint8_t>(v); break;
     default: break;
     }
 }
@@ -352,6 +360,8 @@ bool Vm::init_script(bool reload)
     enc_phase_ = EncPhase::None;
     enc_.in_menu = false;
     set(0x7EE1, 0xFF);                 // no head picture
+    view_bytes_[0] = 0x41;             // (Pool: the view's colours as each area starts)
+    view_bytes_[1] = 0x09;
     set(0x7ED2, 0);
     set(0x7ED3, 0);
     if (!reload) {
@@ -1072,7 +1082,7 @@ Stop Vm::step()
     case 0x2D: {                                // CALL
         if (!need(1)) return Stop::Error;
         const uint16_t w = o[0].word();
-        if (w == 0x2E10) {
+        if (w == set_.redraw_call) {
             h_.redraw();
         } else if (w == 0x6803) {
             // The event picture's next frame, then the game's delay
@@ -1081,7 +1091,7 @@ Stop Vm::step()
             if (speed == 0) speed = 4;
             pause_ms_ = static_cast<uint32_t>(speed) * 100;
             return wait_for(Wait::Pause);
-        } else if (w == 0xB200) {
+        } else if (w == set_.sound_call) {
             h_.sound(sound_kind_ == 10 ? 0x0B : 0x0A);         // a step; 10: the fireball's roar
         } else if (w == 0xC018) {
             // The wall type ahead (worked out anyway)
@@ -1089,7 +1099,9 @@ Stop Vm::step()
             s_.x = (s_.x + (s_.dir == 2 ? 1 : s_.dir == 6 ? -1 : 0)) & 15;
             s_.y = (s_.y + (s_.dir == 4 ? 1 : s_.dir == 0 ? -1 : 0)) & 15;
             s_.moved = true;
-        } else {
+        } else if (!set_.pool_map || w == 0x8000 || w == 0x8001) {
+            // (Pool's program does nothing for addresses it doesn't know;
+            // 0x8000 / 0x8001 are its duels)
             snprintf(line, sizeof line, "CALL %04X (not in the engine yet)", w);
             h_.log(line);
         }
@@ -1204,6 +1216,12 @@ Stop Vm::step()
         clear_ = false;
         return wait_for(Wait::Print);
     case 0x34:                                  // ECL CLOCK
+        if (set_.sizes[0x34] == 1) {
+            // Pool's: one operand, the clock's slot 1 (its program's handler)
+            if (!need(1)) return Stop::Error;
+            advance_clock(1, value(o[0]) & 0xFF);
+            return Stop::Running;
+        }
         if (!need(2)) return Stop::Error;
         advance_clock(value(o[1]) & 0xFF, value(o[0]) & 0xFF);
         return Stop::Running;

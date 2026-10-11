@@ -182,6 +182,7 @@ static void settle(int choice = 0, int max_ms = 60000)
 }
 int main(int argc, char** argv)
 {
+    setvbuf(stdout, nullptr, _IOLBF, 0);       // (lines out at once: a hang or a crash keeps them)
     // SIZES: the fight's blocks' sizes
     if (getenv("SIZES")) { printf("Fight %zu Battle %zu Page %zu Monster %zu\n", sizeof(play::Fight), sizeof(combat::Battle), sizeof(play::Page), sizeof(combat::Monster)); return 0; }
     // argv[1]: the game folder on the PC; its parent stands for /GOLDBOX

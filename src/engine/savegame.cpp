@@ -5,9 +5,9 @@
 
 namespace savegame {
 
-bool read(dax::ByteSource& src, ecl::GameState& gs, Header& h)
+bool read(dax::ByteSource& src, ecl::GameState& gs, Header& h, bool wall_sets)
 {
-    if (src.size() < kSize) return false;
+    if (src.size() < (wall_sets ? kSize : kPoolSize)) return false;
     h = Header{};
     uint32_t p = 0;
     auto take = [&](uint8_t* out, size_t n) {
@@ -31,10 +31,12 @@ bool read(dax::ByteSource& src, ecl::GameState& gs, Header& h)
     if (!take(b, 2)) return false;
     h.last_state = b[0];
     h.state = b[1];
-    if (!take(b, 12)) return false;
-    for (int i = 0; i < 3; ++i) {
-        h.wall_block[i] = static_cast<int16_t>(b[i * 4] | b[i * 4 + 1] << 8);
-        h.wall_set[i] = static_cast<int16_t>(b[i * 4 + 2] | b[i * 4 + 3] << 8);
+    if (wall_sets) {
+        if (!take(b, 12)) return false;
+        for (int i = 0; i < 3; ++i) {
+            h.wall_block[i] = static_cast<int16_t>(b[i * 4] | b[i * 4 + 1] << 8);
+            h.wall_set[i] = static_cast<int16_t>(b[i * 4 + 2] | b[i * 4 + 3] << 8);
+        }
     }
     if (!take(b, 1)) return false;
     int n = b[0];
@@ -53,7 +55,7 @@ bool read(dax::ByteSource& src, ecl::GameState& gs, Header& h)
     return true;
 }
 
-bool write(Sink& out, const ecl::GameState& gs, const Header& h)
+bool write(Sink& out, const ecl::GameState& gs, const Header& h, bool wall_sets)
 {
     uint8_t b[12];
     b[0] = h.game_area;
@@ -75,7 +77,7 @@ bool write(Sink& out, const ecl::GameState& gs, const Header& h)
         b[i * 4 + 2] = static_cast<uint8_t>(h.wall_set[i]);
         b[i * 4 + 3] = static_cast<uint8_t>(static_cast<uint16_t>(h.wall_set[i]) >> 8);
     }
-    if (!out.put(b, 12)) return false;
+    if (wall_sets && !out.put(b, 12)) return false;
     b[0] = static_cast<uint8_t>(h.count);
     if (!out.put(b, 1)) return false;
     uint8_t names[8 * 41] = {};
@@ -115,8 +117,7 @@ void save_dir(const char* cfg, size_t len, char* out, size_t cap)
             size_t o = 0;
             for (size_t k = s; k < n && o + 1 < cap; ++k) out[o++] = line[k] == '\\' ? '/' : line[k];
             while (o > 0 && out[o - 1] == '/') --o;
-            out[o] = 0;
-            return;
+            out[o] = 0;                     // (a later one wins: Pool names the game's folder first)
         }
         i = e;
         while (i < len && (cfg[i] == '\r' || cfg[i] == '\n')) ++i;
@@ -131,12 +132,14 @@ bool drop_own_folder(const char* data_dir, char* sub)
     size_t b = e;
     while (b > 0 && data_dir[b - 1] != '/' && data_dir[b - 1] != '\\') --b;
     const size_t n = e - b;
-    if (!n || strlen(sub) <= n + 1 || sub[n] != '/') return false;
+    const size_t len = strlen(sub);
+    if (!n || len < n || (len > n && (len == n + 1 || sub[n] != '/'))) return false;
     for (size_t i = 0; i < n; ++i) {
         const char a = sub[i], c = data_dir[b + i];
         if ((a >= 'a' && a <= 'z' ? a - 32 : a) != (c >= 'a' && c <= 'z' ? c - 32 : c)) return false;
     }
-    memmove(sub, sub + n + 1, strlen(sub + n + 1) + 1);
+    if (len == n) sub[0] = 0;
+    else memmove(sub, sub + n + 1, strlen(sub + n + 1) + 1);
     return true;
 }
 

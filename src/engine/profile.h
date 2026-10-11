@@ -413,6 +413,8 @@ struct Profile {
         uint8_t view_line, view_band, view_floor;
         uint8_t title_flash;           // the title's last picture: lightning on this colour (0: none)
         bool    unfinished;            // being built: its tests and Play Test under Dev Tools, no Play key
+        bool    program_words;         // some words are in the program, not GAME.OVR (marked text::kInProgram)
+        bool    pool_files;            // Pool's character files (285-byte records, .CHA / .ITM / .SPC) and saves (no wall sets)
     } variant;
 };
 

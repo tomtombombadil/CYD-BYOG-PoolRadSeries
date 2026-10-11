@@ -20,6 +20,78 @@ bool read_record(dax::ByteSource& src, Character& out)
     return src.read_at(0, out.rec, kRecordSize) == kRecordSize;
 }
 
+namespace {
+
+// Byte runs one to one: Pool offset, Curse offset, length
+constexpr uint16_t kPoolRuns[][3] = {
+    {0x00, 0x00, 16},   {0x2C, 0x72, 1},    {0x2D, 0x73, 1},    {0x2E, 0x74, 1},    {0x2F, 0x75, 1},
+    {0x30, 0x76, 2},    {0x32, 0x78, 1},    {0x33, 0x79, 56},   {0x6B, 0xDD, 1},    {0x6C, 0xDE, 1},
+    {0x6D, 0xDF, 5},    {0x72, 0xE4, 1},    {0x73, 0xE5, 1},    {0x74, 0xE7, 1},    {0x75, 0xE8, 1},
+    {0x76, 0xE9, 1},    {0x77, 0xEA, 8},    {0x83, 0xF6, 1},    {0x84, 0xF7, 1},    {0x85, 0xF8, 1},
+    {0x86, 0xF9, 2},    {0x88, 0xFB, 14},   {0x96, 0x109, 8},   {0x9E, 0x119, 3},   {0xA1, 0x11C, 8},
+    {0xA9, 0x124, 1},   {0xAA, 0x125, 1},   {0xAB, 0x126, 1},   {0xAC, 0x127, 4},   {0xB0, 0x12B, 1},
+    {0xB1, 0x12C, 1},   {0xB2, 0x12D, 3},   {0xB5, 0x137, 3},   {0xB8, 0x13C, 2},   {0xBA, 0x13E, 3},
+    {0xBD, 0x141, 3},   {0xC0, 0x144, 7},   {0x100, 0x185, 1},  {0x101, 0x186, 1},  {0x102, 0x187, 2},
+    {0x10C, 0x195, 1},  {0x10D, 0x196, 1},  {0x10E, 0x197, 1},  {0x10F, 0x198, 1},  {0x110, 0x199, 1},
+    {0x111, 0x19A, 2},  {0x113, 0x19C, 8},  {0x11B, 0x1A4, 1},  {0x11C, 0x1A5, 1},
+};
+constexpr int kListAt = 0x1E, kListSize = 84;   // Curse's memorized list
+
+} // namespace
+
+void from_pool(const uint8_t* p, Character& c) { from_pool(p, c.rec); }
+
+void from_pool(const uint8_t* p, uint8_t* r)
+{
+    memset(r, 0, kRecordSize);
+    for (const auto& run : kPoolRuns) memcpy(r + run[1], p + run[0], run[2]);
+    for (int i = 0; i < 6; ++i) r[0x10 + i * 2] = r[0x11 + i * 2] = p[0x10 + i];
+    r[0x1C] = r[0x1D] = p[0x16];                            // 18/xx
+    memcpy(r + kListAt, p + 0x17, kPoolMemorized);          // the memorized spells, in place
+    r[0xE6] = r[0xE5];                                      // (Curse's hit dice for multi-classes)
+}
+
+void to_pool(const Character& c, uint8_t* p)
+{
+    const uint8_t* r = c.rec;
+    memset(p, 0, kPoolRecordSize);
+    for (const auto& run : kPoolRuns) memcpy(p + run[0], r + run[1], run[2]);
+    for (int i = 0; i < 6; ++i) p[0x10 + i] = r[0x10 + i * 2];   // its own value
+    p[0x16] = r[0x1D];
+    // The memorized spells: Pool has 21 places; any the engine put further
+    // on go into its free places, from the end (as the game fills them)
+    memcpy(p + 0x17, r + kListAt, kPoolMemorized);
+    int free_at = kPoolMemorized - 1;
+    for (int i = kPoolMemorized; i < kListSize; ++i) {
+        if (!r[kListAt + i]) continue;
+        while (free_at >= 0 && p[0x17 + free_at]) --free_at;
+        if (free_at < 0) break;
+        p[0x17 + free_at] = r[kListAt + i];
+    }
+    p[0xC7] = static_cast<uint8_t>(c.n_items);
+}
+
+bool read_record(dax::ByteSource& src, Character& out, Format f)
+{
+    if (f == Format::Curse) return read_record(src, out);
+    uint8_t pool[kPoolRecordSize];
+    out = Character{};
+    if (src.read_at(0, pool, kPoolRecordSize) != kPoolRecordSize) return false;
+    from_pool(pool, out);
+    return true;
+}
+
+const uint8_t* record_bytes(const Character& c, Format f, uint8_t* buf, size_t* n)
+{
+    if (f == Format::Curse) {
+        *n = kRecordSize;
+        return c.rec;
+    }
+    to_pool(c, buf);
+    *n = kPoolRecordSize;
+    return buf;
+}
+
 void read_items(dax::ByteSource& src, Character& out)
 {
     out.n_items = 0;
@@ -37,15 +109,18 @@ void read_affects(dax::ByteSource& src, Character& out)
 }
 
 // The fields the scripts can read (Curse; from coab's list of them)
-bool script_value(const Party& p, uint16_t off, uint16_t* out)
+bool script_value(const Party& p, uint16_t off, uint16_t* out, bool pool)
 {
     const Character* c = p.sel();
     if (!c) return false;
-    return script_value(c->rec, p.selected, off, out);
+    return script_value(c->rec, p.selected, off, out, pool);
 }
 
-bool script_value(const uint8_t* r, int index, uint16_t off, uint16_t* out)
+bool script_value(const uint8_t* r, int index, uint16_t off, uint16_t* out, bool pool)
 {
+    // Pool's program gives scripts fewer fields: Int, race, class, the
+    // magic-user's level, sex and 0xE4 are plain memory there (poolrad_facts.md 4.4)
+    if (pool && (off == 0x15 || off == 0x72 || off == 0x73 || off == 0xC9 || off == 0xD6 || off == 0xE4)) return false;
     auto u16 = [r](int o) { return static_cast<uint16_t>(r[o] | r[o + 1] << 8); };
     if (off >= 0xA5 && off <= 0xAC) {           // thief skills
         *out = r[0xEA + (off - 0xA5)];

@@ -40,6 +40,24 @@ bool read_pascal(dax::ByteSource& src, uint32_t pos, char* out, size_t cap);
 // The same from the unpacked image of an EXEPACK program.
 bool read_pascal(dax::ByteSource& exe, const exepack::Info& info, uint32_t pos, char* out, size_t cap);
 
+// A game's words: GAME.OVR's, and (Pool of Radiance) the few its program
+// keeps in a resident code segment - offsets marked kInProgram are offsets
+// in the program's unpacked image (read_at unpacks 256 bytes there once,
+// so read_pascal's two reads cost one unpacking); others are GAME.OVR's
+constexpr uint32_t kInProgram = 0x80000000u;
+class Words : public dax::ByteSource {
+public:
+    Words(dax::ByteSource& ovr, dax::ByteSource* exe, const exepack::Info* info) : ovr_(ovr), exe_(exe), info_(info) {}
+    size_t read_at(uint32_t pos, uint8_t* buf, size_t n) override;
+    uint32_t size() const override { return ovr_.size(); }
+private:
+    dax::ByteSource&       ovr_;
+    dax::ByteSource*       exe_;
+    const exepack::Info*   info_;
+    uint8_t                win_[kMaxString];
+    uint32_t               win_at_ = 0, win_len_ = 0;
+};
+
 // ---- Text windows ----------------------------------------------------------
 
 struct Region {
