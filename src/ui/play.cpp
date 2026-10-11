@@ -2110,7 +2110,7 @@ bool load_rules(Making*& m)
     memcpy(fa.mu_level3, pc.mu_level3, 2);
     fa.mu_level4 = pc.mu_level4;
     fa.mu_level5 = pc.mu_level5;
-    memcpy(fa.mu_change, pc.mu_change, 3);
+    memcpy(fa.mu_change, pc.mu_change, 4);
     const uint32_t at[9] = {pc.pick_race, pc.pick_gender, pc.pick_class, pc.pick_alignment, pc.select,
                             pc.reroll,    pc.char_name,   pc.save_q,     pc.qmark};
     const uint32_t ch_at[5] = {pc.pick_new, pc.no_qualify, pc.change_select, pc.now_first, pc.dot};
@@ -4803,7 +4803,8 @@ void alter_tap(int x, int y, pic::Canvas& c)
 // then "NAME will become:" (row 4, column 4) / "    a level 6 Fighter"
 // (row 5, column 6) and "Do you wish to train? Yes No": "Congratulations...",
 // 1000 gp, one level (one class: the one needing the most experience),
-// hit points. (A magic-user's new spell: with the spells.)
+// hit points; experience past the level after the next is lost (one under
+// it kept - create::train_pick). (A magic-user's new spell: with the spells.)
 
 Making* trainer = nullptr;          // the rule tables while training
 int     train_mask = 0;
@@ -4846,24 +4847,18 @@ void train_character(pic::Canvas& c)
     int has = 0;
     for (int k = 0; k < classes::kClasses; ++k)
         if (ch.level(k) > 0) has |= t.u8(static_cast<uint16_t>(t.lay.class_masks + k));
-    // The class that needs the most experience of those ready (one a time)
-    const int ready = create::trainable(ch, t);
-    int best = -1;
-    int32_t most = 0;
-    for (int k = 0; k < classes::kClasses; ++k)
-        if (ready & t.u8(static_cast<uint16_t>(t.lay.class_masks + k))) {
-            const int32_t need = t.exp_needed(k, ch.level(k));
-            if (need > most) {
-                most = need;
-                best = k;
-            }
-        }
+    // The class that needs the most experience of those ready (one a time),
+    // and the experience held to one under the level after the next - as
+    // the original, before it looks at the hall and the answer
+    uint32_t keep = 0;
+    const int pick = create::train_pick(ch, t, &keep);
+    for (int i = 0; i < 4; ++i) ch.rec[0x127 + i] = static_cast<uint8_t>(keep >> (8 * i));
     if (!(has & here)) {
         end_training();
         train_note(profile::kTrainClass, c);
         return;
     }
-    train_mask = best >= 0 ? t.u8(static_cast<uint16_t>(t.lay.class_masks + best)) & here : 0;
+    train_mask = pick & here;
     if (!train_mask) {
         end_training();
         train_note(profile::kTrainExp, c);
@@ -4897,13 +4892,13 @@ bool train_yes_no(Ask what, char k, pic::Canvas& c)
     party::Character* ch = pt->sel();
     if (k == 'Y' && ch && trainer && train_mask) {
         if (!game_won) rules::pay(*ch, 1000);
-        const int mu = ch->level(classes::MagicUser), ra = ch->level(classes::Ranger);
+        const int mu = ch->level(classes::MagicUser);
         create::train_classes(*ch, trainer->tables, trainer->facts, trainer->dice, train_mask, false);
         rules::recalc(*ch, *names, d->facts);
         end_training();
-        // A magic-user's new level (or a ranger's past 8th): a new spell
-        if ((ch->level(classes::MagicUser) > mu || (ch->level(classes::Ranger) > ra && ch->level(classes::Ranger) > 8)) &&
-            open_learn(c))
+        // A magic-user's new level, or any training of a ranger past 8th (the
+        // original asks whichever class went up): a new spell
+        if ((ch->level(classes::MagicUser) > mu || ch->level(classes::Ranger) > 8) && open_learn(c))
             return true;
         train_note(profile::kCongrats, c);
         return true;

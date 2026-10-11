@@ -698,5 +698,8 @@ marked (switch).
 - **The giant strength potion on someone already stronger than 21**: the
   original's effect then holds an unset byte (anything); the engine gives
   their own Strength (no change).
+- **Thief skills**: the original adds to every skill a value it never sets
+  (whatever was on the stack - the GOG sample party's thief has +7 on all
+  eight); the engine adds nothing (the table's skills).
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.

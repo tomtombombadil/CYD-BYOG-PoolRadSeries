@@ -56,7 +56,7 @@ struct Facts {
     uint8_t  con_save, dwarf_orc, giants, gnome_giant, gnome_extra, elf_sleep, halfelf, prot_evil, ranger_giant;
     // spells: a new magic-user's four, and those silent training teaches at levels 2-5
     uint8_t  mu_first[4], mu_level2, mu_level3[2], mu_level4, mu_level5;
-    uint8_t  mu_change[3];              // a human turned magic-user learns these
+    uint8_t  mu_change[4];              // a human turned magic-user learns these
 };
 
 // Starts a character: race, sex, class, alignment chosen. Sets the
@@ -94,6 +94,14 @@ bool restore(party::Character& c, const classes::Tables& t);
 // class mask bits (the tables' class masks; a training hall's 0x7EA8 uses
 // the same bits)
 int trainable(const party::Character& c, const classes::Tables& t);
+// A training hall's choice (the original's train_player, not silent): of
+// the classes ready, the one whose experience figure is the largest - the
+// original compares them all at the level of the LAST class held - (all of
+// them when none has a figure there); and the experience the character
+// keeps: one under the figure for the level after the next when they have
+// that much already (AD&D: one level at a time). The class mask (0: none
+// ready); *exp_after: the experience to keep.
+int train_pick(const party::Character& c, const classes::Tables& t, uint32_t* exp_after);
 // Trains the classes in mask one level up: class bonuses, hit points
 // (silent: a magic-user's spells, as at creation)
 void train_classes(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, int mask, bool silent);
@@ -125,7 +133,7 @@ int change_classes(const party::Character& c, const classes::Tables& t, int* out
 // Changes to class `cls` at level 1: experience 0, the present class's
 // level kept as the former one, the hit dice count kept (record 0xE6),
 // spell counts and the memorized list cleared (a cleric: one first-level
-// spell; a magic-user: the profile's three spells), the class values
+// spell; a magic-user: the profile's four spells), the class values
 // recomputed. (Items the new class can't use: the caller unreadies them.)
 void change_class(party::Character& c, const classes::Tables& t, const Facts& f, int cls);
 

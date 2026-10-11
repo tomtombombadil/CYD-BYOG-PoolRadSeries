@@ -1203,6 +1203,15 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
         if (fx.animals_blind && at.rec[0x11A] == 19 && tg.has(fx.animals_blind) && !sees) side -= 4;
         if (hasx(tg, fx.invisible) && !sees) side -= 4;              // an invisible target
         if (hasx(tg, fx.sp.evil_ward) && (at.rec[0x14B] & 1)) side -= 7;   // Dispel Evil against the evil
+        // The races: dwarves +1 against orcs, gnomes +1 against their foes;
+        // dwarves and gnomes -4 to be hit by giants and trolls of size 2,
+        // gnomes by kobold-kind (type 1) of size 2
+        if (hasx(at, fx.race.dwarf_orc) && (tg.rec[0x14B] & 4)) ++side;
+        if (hasx(at, fx.race.gnome_foe) && (tg.rec[0x14B] & 2)) ++side;
+        if ((at.rec[0xDE] & 0x7F) == 2) {
+            if (hasx(tg, fx.race.giants) && (at.rec[0x11A] == 2 || at.rec[0x11A] == 10)) side -= 4;
+            if (hasx(tg, fx.race.gnome_extra) && at.rec[0x11A] == 1) side -= 4;
+        }
         if (fx.blinded && tg.has(fx.blinded) && !coughing) ac -= 4;     // a blind target: easier (coughing: lost)
         if (fx.sp.shield && tg.has(fx.sp.shield) && ac < 0x39) ac = 0x39;   // Shield: AC 3 at worst
         // Faerie Fire: the stored AC + 2 (to AC 0 at most) - the original's
@@ -1249,6 +1258,8 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             int dmg = (n && s ? d.roll(s, n) : 0) + bo;
             if (dmg < 0) dmg = 0;
             dmg *= times;
+            // A ranger against giants: their ranger level more
+            if (b.fx && hasx(at, b.fx->race.ranger_giant) && (tg.rec[0x14B] & 8)) dmg += at.rec[0x10D];
             bool bane = false;
             if (b.fx) {
                 const MonFx& m = b.fx->mon;
@@ -1337,6 +1348,7 @@ bool resists(Battle& b, int c, int effect, const Harm& h, create::Dice& d)
     if (hasx(f, m.no_cold) && (h.kind & 2)) return true;
     if (hasx(f, m.no_fire) && (h.kind & 1)) return true;
     if (hasx(f, m.mind) && (sleep_charm || paralysis || (effect > 0 && m.poisoned && effect == m.poisoned))) return true;
+    if (hasx(f, fx.race.halfelf) && sleep_charm && d.roll(100, 1) <= 30) return true;      // half-elves: 30%
     if (hasx(f, m.globe) && h.spell > 0 && h.spell_level < 4) return true;
     if (hasx(f, m.no_magic) && magic) return true;
     return false;
@@ -1508,11 +1520,13 @@ int money_exp(const int m[7])
 
 int award(Battle& b, int total)
 {
-    int survivors = 0;
+    // The share: the whole party's but the animated dead (the original's
+    // calc_battle_exp - those out of the fight still count, and get none)
+    int members = 0;
     for (int i = 0; i < b.party_size; ++i)
-        if (b.f[i].up() && b.f[i].status() != party::Animated) ++survivors;
-    if (!survivors) return 0;
-    const int share = total / survivors;
+        if (b.f[i].status() != party::Animated) ++members;
+    if (!members) return 0;
+    const int share = total / members;
     for (int i = 0; i < b.party_size; ++i) {
         Fighter& f = b.f[i];
         if (!f.up() || f.status() == party::Animated) continue;
@@ -1841,6 +1855,12 @@ bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
             if (k < 0) continue;
             bonus += (g_b->f[c].aff[k][3] >> 4) == f.team() ? 1 : -1;
             break;
+        }
+        // Dwarves', gnomes', halflings' Constitution: against spells and wands
+        if ((type == 4 || type == 2) && hasx(f, fx.race.con_save)) {
+            const int con = f.rec[0x19];
+            bonus += con >= 4 && con <= 6 ? 1 : con >= 7 && con <= 10 ? 2 : con >= 11 && con <= 13 ? 3 : con >= 14 && con <= 17 ? 4
+                     : con >= 18 && con <= 20 ? 5 : 0;
         }
         if ((g_kind & 2) && hasx(f, fx.mon.resist_cold)) bonus += 3;
         if ((g_kind & 1) && hasx(f, fx.mon.resist_fire)) bonus += 3;
