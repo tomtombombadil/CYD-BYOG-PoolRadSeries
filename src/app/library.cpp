@@ -207,6 +207,23 @@ ScanResult scan(GameDir* out, int max, int* n, Progress progress, void* ctx)
                 int best = 0;
                 find_icon(fs, g.folder, g.icon, sizeof g.icon, best);
                 if (strcmp(g.data_dir, g.folder) != 0) find_icon(fs, g.data_dir, g.icon, sizeof g.icon, best);
+                // The Gold Box Companion (Steam / SNEG): GBC/Games/<nn. Title>/Game.dat
+                g.gbc[0] = 0;
+                {
+                    char path[160];
+                    snprintf(path, sizeof path, "%s/%s/GBC/Games", games::kRootDir, g.folder);
+                    fs::File gd = fs.open(path);
+                    char sub[48] = {};
+                    for (fs::File f = gd ? gd.openNextFile() : fs::File(); f && !sub[0]; f = gd.openNextFile()) {
+                        if (f.isDirectory()) strlcpy(sub, base_name(f.name()), sizeof sub);
+                        f.close();
+                    }
+                    if (gd) gd.close();
+                    if (sub[0]) {
+                        snprintf(path, sizeof path, "%s/%s/GBC/Games/%s/Game.dat", games::kRootDir, g.folder, sub);
+                        if (fs.exists(path)) strlcpy(g.gbc, sub, sizeof g.gbc);
+                    }
+                }
                 find_journal(fs, g.folder, g);
                 if (strcmp(g.data_dir, g.folder) != 0) find_journal(fs, g.data_dir, g);
                 {
@@ -222,6 +239,7 @@ ScanResult scan(GameDir* out, int max, int* n, Progress progress, void* ctx)
                 if (g.format == Format::Hlib) say(progress, ctx, false, "  (newer format - not readable yet)");
                 if (g.icon[0]) say(progress, ctx, false, "Found the %s game icon", games::short_title(g.game));
                 if (g.journal[0]) say(progress, ctx, false, "Found the %s journal", games::title(g.game));
+                if (g.gbc[0]) say(progress, ctx, false, "Found the Gold Box Companion's %s journal", games::short_title(g.game));
                 ++*n;
             } else {
                 say(progress, ctx, true, "No game files in %s", g.folder);
@@ -334,6 +352,13 @@ int list_dax(const char* data_dir, char (*names)[kNameLen], int max)
         strlcpy(names[j + 1], t, kNameLen);
     }
     return n;
+}
+
+bool gbc_path(const GameDir& g, const char* file, char* out, size_t cap)
+{
+    if (!g.gbc[0]) return false;
+    snprintf(out, cap, "%s/%s/GBC/Games/%s/%s", games::kRootDir, g.folder, g.gbc, file);
+    return true;
 }
 
 void path_of(const char* data_dir, const char* file, char* out, size_t cap)

@@ -258,12 +258,240 @@ bool make(dax::ByteSource& src, const Table& t, Output& out, Progress progress, 
     return ok;
 }
 
+// ---- the Gold Box Companion's journal (Steam / SNEG) ---------------------------
+
+namespace {
+
+// Game.dat a byte at a time, through a small buffer
+struct Reader {
+    dax::ByteSource& src;
+    uint32_t pos = 0, buf_at = 0;
+    size_t buf_n = 0;
+    uint8_t buf[512];
+    explicit Reader(dax::ByteSource& s, uint32_t at = 0) : src(s), pos(at) {}
+    int get()
+    {
+        if (pos < buf_at || pos >= buf_at + buf_n) {
+            buf_at = pos;
+            buf_n = src.read_at(pos, buf, sizeof buf);
+            if (buf_n == 0) return -1;
+        }
+        return buf[pos++ - buf_at];
+    }
+    // Whether `word` comes next (moves past it if so)
+    bool next_is(const char* word)
+    {
+        const uint32_t save = pos;
+        for (; *word; ++word)
+            if (get() != static_cast<uint8_t>(*word)) {
+                pos = save;
+                return false;
+            }
+        return true;
+    }
+};
+
+bool is_blank(int c) { return c == ' ' || c == '\t' || c == '\r'; }
+
+} // namespace
+
+int gbc_entries(dax::ByteSource& dat, GbcEntry* out, int max)
+{
+    Reader r(dat);
+    int n = 0;
+    for (int c = r.get(); c >= 0 && n < max; c = r.get()) {
+        if (c != '<' || !r.next_is("journal ")) continue;
+        int num = 0, digits = 0;
+        for (c = r.get(); c >= '0' && c <= '9' && digits < 4; c = r.get(), ++digits) num = num * 10 + (c - '0');
+        if (c != '>' || digits == 0) continue;
+        GbcEntry& e = out[n];
+        e = GbcEntry{};
+        e.number = num;
+        e.at = r.pos;
+        // To "</journal>"
+        bool closed = false;
+        for (c = r.get(); c >= 0; c = r.get()) {
+            if (c == '<' && r.next_is("/journal>")) {
+                closed = true;
+                break;
+            }
+        }
+        if (!closed) break;
+        e.len = r.pos - 10 - e.at;
+        // A short "( ... )" note: a picture entry
+        char t[160];
+        const size_t tl = gbc_text(dat, e, t, sizeof t);
+        e.picture = tl > 1 && tl < 120 && t[0] == '(' && t[tl - 1] == ')';
+        ++n;
+    }
+    return n;
+}
+
+size_t gbc_text(dax::ByteSource& dat, const GbcEntry& e, char* out, size_t cap)
+{
+    if (cap == 0) return 0;
+    Reader r(dat, e.at);
+    size_t n = 0;
+    bool line_empty = true;       // nothing yet on this line
+    bool blank = false;           // blanks since the last text on this line
+    int breaks = 0;               // line ends since the last text
+    auto put = [&](char ch) {
+        if (n + 1 < cap) out[n++] = ch;
+    };
+    while (r.pos < e.at + e.len) {
+        const int c = r.get();
+        if (c < 0) break;
+        if (c == '\r') continue;
+        if (c == '\n') {
+            if (!line_empty) breaks = 1;
+            else if (breaks > 0) breaks = 2;          // an empty line: a new paragraph
+            line_empty = true;
+            blank = false;
+            continue;
+        }
+        if (is_blank(c)) {
+            blank = !line_empty;                      // (leading blanks go)
+            continue;
+        }
+        if (line_empty && n > 0) put(breaks >= 2 ? '\n' : ' ');
+        else if (blank) put(' ');
+        line_empty = false;
+        blank = false;
+        breaks = 0;
+        put(static_cast<char>(c));
+    }
+    while (n > 0 && (out[n - 1] == ' ' || out[n - 1] == '\r')) --n;
+    out[n] = 0;
+    return n;
+}
+
+namespace {
+
+// A whole JPEG into a picture piece, a band of MCU rows at a time
+struct WholeWork {
+    Output* out;
+    uint32_t base = 0;
+    int w = 0, h = 0;
+    int band_y = -1, band_h = 16;
+    uint8_t* band = nullptr;
+    bool ok = true;
+};
+
+void whole_flush(WholeWork& w)
+{
+    if (w.band_y < 0 || !w.ok) return;
+    int rows = w.band_h;
+    if (w.band_y + rows > w.h) rows = w.h - w.band_y;
+    if (rows <= 0) return;
+    w.ok = w.out->write_at(w.base + static_cast<uint32_t>(w.band_y) * w.w, w.band, static_cast<size_t>(rows) * w.w);
+}
+
+bool whole_block(int x, int y, int bw, int bh, const uint8_t* rgb, void* ctx)
+{
+    WholeWork& w = *static_cast<WholeWork*>(ctx);
+    if (y != w.band_y) {
+        whole_flush(w);
+        w.band_y = y;
+        memset(w.band, 215, static_cast<size_t>(w.w) * w.band_h);
+    }
+    for (int r = 0; r < bh && r < w.band_h; ++r) {
+        const uint8_t* s = rgb + static_cast<size_t>(r) * bw * 3;
+        for (int c = 0; c < bw; ++c, s += 3) {
+            const int px = x + c;
+            if (px >= w.w) break;
+            w.band[static_cast<size_t>(r) * w.w + px] = index_of(s[0], s[1], s[2]);
+        }
+    }
+    return w.ok;
+}
+
+} // namespace
+
+bool make_gbc(dax::ByteSource& dat, GbcPictures& pics, const char* id, Output& out, Progress progress, void* ctx)
+{
+    GbcEntry* es = new (std::nothrow) GbcEntry[kMaxGbcEntries];
+    uint8_t* table = nullptr;
+    char* text = static_cast<char*>(malloc(16384));
+    uint8_t* pool = static_cast<uint8_t*>(malloc(jpeg::kPoolSize));
+    const int n = es ? gbc_entries(dat, es, kMaxGbcEntries) : 0;
+    bool ok = es && text && pool && n > 0;
+    if (ok) table = static_cast<uint8_t*>(calloc(static_cast<size_t>(n) * 16, 1));
+    ok = ok && table;
+    // The data after the header and the tables; each entry one piece
+    uint32_t at = kHeader + 16u * static_cast<uint32_t>(n);
+    for (int i = 0; ok && i < n; ++i) {
+        const GbcEntry& e = es[i];
+        uint8_t* er = table + 8 * i;
+        uint8_t* pr = table + 8 * n + 8 * i;
+        er[0] = 'J';
+        put16(er + 2, static_cast<unsigned>(e.number));
+        put16(er + 4, static_cast<unsigned>(i));
+        put16(er + 6, 1);
+        bool done = false;
+        if (e.picture) {
+            dax::ByteSource* js = pics.open(e.number);
+            jpeg::Info ji;
+            if (js && jpeg::probe(*js, 0, js->size(), pool, ji) && ji.width > 0 && ji.width <= 1700 && ji.height > 0 &&
+                ji.height < 65536) {
+                WholeWork w;
+                w.out = &out;
+                w.base = at;
+                w.w = ji.width;
+                w.h = ji.height;
+                w.band_h = ji.mcu_h;
+                w.band = static_cast<uint8_t*>(malloc(static_cast<size_t>(w.w) * w.band_h));
+                ok = w.band && jpeg::decode(*js, 0, js->size(), pool, nullptr, whole_block, &w) && w.ok;
+                if (ok) {
+                    whole_flush(w);
+                    ok = w.ok;
+                }
+                free(w.band);
+                if (ok) {
+                    put16(pr, static_cast<unsigned>(w.w));
+                    put16(pr + 2, static_cast<unsigned>(w.h));
+                    put32(pr + 4, at);
+                    at += static_cast<uint32_t>(w.w) * w.h;
+                    done = true;
+                }
+            }
+        }
+        if (ok && !done) {
+            // Text (a picture entry without its picture keeps its note)
+            const size_t len = gbc_text(dat, e, text, 16384);
+            const size_t keep = len > 0 ? len : 1;
+            if (len == 0) text[0] = ' ';
+            ok = out.write_at(at, reinterpret_cast<const uint8_t*>(text), keep);
+            put16(pr, 0);
+            put16(pr + 2, static_cast<unsigned>(keep));
+            put32(pr + 4, at);
+            at += static_cast<uint32_t>(keep);
+        }
+        if (progress) progress(i + 1, n, ctx);
+    }
+    if (ok) {
+        uint8_t h[kHeader] = {};
+        h[4] = 2;
+        put16(h + 6, static_cast<unsigned>(n));
+        put16(h + 8, static_cast<unsigned>(n));
+        const size_t il = strlen(id);
+        memcpy(h + 12, id, il < 32 ? il : 32);
+        for (int i = 0; i < 256; ++i) palette_rgb(i, h + 44 + 3 * i, h + 45 + 3 * i, h + 46 + 3 * i);
+        ok = out.write_at(0, h, sizeof h) && out.write_at(kHeader, table, static_cast<size_t>(n) * 16);
+    }
+    if (ok) ok = out.write_at(0, reinterpret_cast<const uint8_t*>("GBJ2"), 4);
+    free(table);
+    free(pool);
+    free(text);
+    delete[] es;
+    return ok;
+}
+
 // ---- reading it -------------------------------------------------------------
 
 bool read_info(dax::ByteSource& src, Info& out)
 {
     uint8_t h[kHeader];
-    if (src.read_at(0, h, sizeof h) != sizeof h || memcmp(h, "GBJ2", 4) != 0 || h[4] != 1) return false;
+    if (src.read_at(0, h, sizeof h) != sizeof h || memcmp(h, "GBJ2", 4) != 0 || (h[4] != 1 && h[4] != 2)) return false;
     out.entries = u16(h + 6);
     out.pieces = u16(h + 8);
     memcpy(out.pdf_id, h + 12, 32);
@@ -293,7 +521,8 @@ bool piece(dax::ByteSource& src, const Info& info, int i, PieceInfo& out)
     out.w = u16(r);
     out.h = u16(r + 2);
     out.offset = u32(r + 4);
-    return out.w > 0 && out.h > 0 && out.offset + static_cast<uint32_t>(out.w) * out.h <= src.size();
+    if (out.w == 0) return out.h > 0 && out.offset + static_cast<uint32_t>(out.h) <= src.size();     // text
+    return out.h > 0 && out.offset + static_cast<uint32_t>(out.w) * out.h <= src.size();
 }
 
 char find_mention(const char* text, int* number)

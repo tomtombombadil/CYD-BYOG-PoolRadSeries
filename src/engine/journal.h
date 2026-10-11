@@ -14,7 +14,10 @@
 //   entries x { u8 kind ('J' journal entry, 'T' tavern tale), u8 0,
 //               u16 number, u16 first piece, u16 pieces }
 //   pieces x  { u16 w, u16 h, u32 offset }  a rectangle of a page, at the
-//             scan's resolution, w x h bytes (palette indexes), top to bottom
+//             scan's resolution, w x h bytes (palette indexes), top to bottom;
+//             version 2: w 0 = text, h bytes (ASCII, '\n' between
+//             paragraphs) - the Steam / SNEG releases' Gold Box Companion
+//             has each entry's text (Tom, 2026-10-10: text, not pictures)
 // An entry is its pieces stacked (narrower ones centred).
 //
 // Plain C++, host-tested in tools/host_tests/test_dax.cpp.
@@ -85,14 +88,51 @@ struct Info {
 };
 
 struct PieceInfo {
-    int      w = 0, h = 0;
+    int      w = 0, h = 0;             // text: w 0, h its length
     uint32_t offset = 0;
+    bool text() const { return w == 0; }
 };
 
 bool read_info(dax::ByteSource& src, Info& out);
 // The entry's pieces: first index and count. False if it isn't there.
 bool find(dax::ByteSource& src, const Info& info, char kind, int number, int* first, int* count);
 bool piece(dax::ByteSource& src, const Info& info, int i, PieceInfo& out);
+
+// ---- the Steam / SNEG releases: the Gold Box Companion's journal ------------
+// GBC/Games/<nn. Title>/Game.dat (the player's own copy) holds each entry's
+// text as "<journal N>" ... "</journal>" (plain text, lines broken at ~70
+// columns, a blank line between paragraphs); the picture entries say
+// "(map)" there (the first, long one "(this is a long text ...)") and are
+// JE_NNN.jpg beside it.
+
+struct GbcEntry {
+    int      number = 0;
+    uint32_t at = 0, len = 0;          // the text between the tags, in Game.dat
+    bool     picture = false;          // a short "( ... )" note: its JE_NNN.jpg is the entry
+};
+constexpr int kMaxGbcEntries = 160;
+
+// The entries in Game.dat (read in pieces); how many (at most max)
+int gbc_entries(dax::ByteSource& dat, GbcEntry* out, int max);
+
+// The entry's text, tidied: CR LF to LF, the lines of a paragraph joined
+// with spaces, one '\n' between paragraphs, no leading / trailing blanks.
+// Returns the length (at most cap - 1; out is 0-terminated).
+size_t gbc_text(dax::ByteSource& dat, const GbcEntry& e, char* out, size_t cap);
+
+// Opens JE_NNN.jpg for entry `number` (false: none); the source stays
+// valid until the next call
+struct GbcPictures {
+    virtual ~GbcPictures() = default;
+    virtual dax::ByteSource* open(int number) = 0;
+};
+
+// Writes JOURNAL.DAT (version 2) from Game.dat: text pieces for the text
+// entries, a picture piece (the whole JPEG at its own size) for each
+// picture entry whose JE file is there (a picture entry without one keeps
+// its note as text). id: what read_info's pdf_id gets (to know the file is
+// ready on the next scan).
+bool make_gbc(dax::ByteSource& dat, GbcPictures& pics, const char* id, Output& out, Progress progress, void* ctx);
 
 // ---- the game's text ----------------------------------------------------------
 

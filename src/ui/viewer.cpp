@@ -557,8 +557,98 @@ void prepare_journal(const library::GameDir& g)
     sd_fs().remove(try_path);
 }
 
+// The Steam / SNEG releases: the Gold Box Companion's journal - each
+// entry's text, and its JE_NNN.jpg pictures (Tom, 2026-10-10: text reads
+// better on these screens than the page scans, and needs less memory)
+struct GbcJpegs : journal::GbcPictures {
+    const library::GameDir* g = nullptr;
+    fs::File f;
+    library::FileSource* src = nullptr;
+    ~GbcJpegs() { close(); }
+    void close()
+    {
+        delete src;
+        src = nullptr;
+        if (f) f.close();
+    }
+    dax::ByteSource* open(int number) override
+    {
+        close();
+        char name[24], path[200];
+        snprintf(name, sizeof name, "JE_%03d.jpg", number);
+        if (!library::gbc_path(*g, name, path, sizeof path)) return nullptr;
+        f = sd_fs().open(path, "r");
+        if (!f) return nullptr;
+        src = new (std::nothrow) library::FileSource(f);
+        return src;
+    }
+};
+
+void gbc_progress(int done, int total, void* ctx)
+{
+    char line[100];
+    snprintf(line, sizeof line, "Processing the %s journal: entry %d of %d", static_cast<JournalProgress*>(ctx)->title,
+             done, total);
+    scan_say(line, true, nullptr);
+    delay(1);
+}
+
+void prepare_journal_gbc(const library::GameDir& g)
+{
+    char line[200], path[200], id[32];
+    const char* title = games::title(g.game);
+    if (!library::gbc_path(g, "Game.dat", path, sizeof path)) return;
+    fs::File f = sd_fs().open(path, "r");
+    if (!f) return;
+    library::FileSource src(f);
+    snprintf(id, sizeof id, "gbc:%u", static_cast<unsigned>(src.size()));
+    char out_path[160];
+    library::cache_path(g, "JOURNAL.DAT", out_path, sizeof out_path);
+    {
+        fs::File old = sd_fs().open(out_path, "r");
+        if (old) {
+            library::FileSource os(old);
+            journal::Info info;
+            const bool ready = journal::read_info(os, info) && strcmp(info.pdf_id, id) == 0;
+            old.close();
+            if (ready) {
+                snprintf(line, sizeof line, "The %s journal is ready (made by an earlier scan)", title);
+                scan_say(line, false, nullptr);
+                f.close();
+                return;
+            }
+        }
+    }
+    snprintf(line, sizeof line, "Processing the %s journal (the Gold Box Companion's)...", title);
+    scan_say(line, false, nullptr);
+    scan_flush_log();
+    SdOutput out;
+    bool ok = library::make_cache_dirs(g);
+    if (ok) out.f = sd_fs().open(out_path, "w");
+    GbcJpegs pics;
+    pics.g = &g;
+    JournalProgress jp{title};
+    const uint32_t t0 = millis();
+    ok = ok && out.f && journal::make_gbc(src, pics, id, out, gbc_progress, &jp);
+    pics.close();
+    if (out.f) out.f.close();
+    f.close();
+    if (ok)
+        snprintf(line, sizeof line, "Prepared the %s journal from the Gold Box Companion (%lu s)", title,
+                 static_cast<unsigned long>((millis() - t0) / 1000));
+    else {
+        sd_fs().remove(out_path);
+        snprintf(line, sizeof line, "The %s journal couldn't be processed (card full, or not enough memory).", title);
+    }
+    scan_say(line, true, nullptr);
+}
+
 void prepare_journal_now(const library::GameDir& g)
 {
+    if (g.gbc[0]) {
+        prepare_journal_gbc(g);         // (the text, rather than the PDF's page pictures)
+        return;
+    }
     char line[160], path[200];
     const char* title = games::title(g.game);
     snprintf(path, sizeof path, "%s/%s", games::kRootDir, g.journal);
@@ -645,7 +735,7 @@ void prepare_made(void*)
         scan_say(line, true, nullptr);
     }
     for (int i = 0; i < n_games; ++i)
-        if (game_dirs[i].journal[0]) prepare_journal(game_dirs[i]);
+        if (game_dirs[i].journal[0] || game_dirs[i].gbc[0]) prepare_journal(game_dirs[i]);
 }
 
 void rescan()
@@ -1957,7 +2047,10 @@ void tap_game_menu(const ui::Tap& t)
         menu_tab = kTabPdf;
         if (!open_book()) {
             strlcpy(menu_note,
-                    game_dirs[game_sel].journal[0]
+                    game_dirs[game_sel].gbc[0]
+                        ? "This edition's journal PDF is typeset text, not scanned pages: the book view can't show it. "
+                          "Its entries are in the Journal tab."
+                    : game_dirs[game_sel].journal[0]
                         ? "The journal PDF couldn't be read as a book of scanned pages."
                         : "There is no journal PDF in this game's folder. GOG's install folder has one: copy the "
                           "whole folder to the card, then Rescan Card.",
@@ -2041,8 +2134,20 @@ struct JournalView {
     uint8_t  row[2][1700];
     int      row_y[2] = {-1, -1};
     int      row_piece = -1;
+    // A text entry (the Gold Box Companion's, Steam / SNEG): the text laid
+    // out in the engine's font - Zoom picks its size
+    bool     text_mode = false;
+    char*    text = nullptr;
+    int      n_lines = 0;
+    uint16_t line_at[700], line_len[700];  // line_len 0: a paragraph's gap
+    int      line_px = 16;
+    ~JournalView() { free(text); }
 };
 JournalView* jv = nullptr;
+
+constexpr int kTextPad = 8;               // a text entry's margins
+ui::Font text_font(int fit) { return fit == 0 ? ui::Font::Small : fit == 2 ? ui::Font::Large : ui::Font::Normal; }
+const char* const kTextSlim[3] = {"Small", "Medium", "Large"};
 
 // Zoom levels (Tom, 2026-10-09: the Zoom key cycles them): the whole
 // entry / page, its width across the screen, the scan's own pixels
@@ -2120,10 +2225,73 @@ bool journal_source(fs::File& f)
     return static_cast<bool>(f);
 }
 
+ui::Rect view_area();
+
+// A text entry's lines: each paragraph word-wrapped to the screen, a half
+// line between paragraphs
+void journal_text_layout()
+{
+    JournalView& v = *jv;
+    const ui::Font f = text_font(v.fit);
+    const int room = view_area().w - kTextPad * 2;
+    v.line_px = ui::line_h(f) + 2;
+    v.n_lines = 0;
+    const char* t = v.text;
+    const int n = static_cast<int>(strlen(t));
+    char buf[256];
+    int i = 0;
+    while (i < n && v.n_lines < 699) {
+        int end = i;                                   // this paragraph: [i, end)
+        while (end < n && t[end] != '\n') ++end;
+        int p = i;
+        while (p < end && v.n_lines < 699) {
+            // The most words from p that fit
+            int fit_end = p, k = p;
+            while (k < end) {
+                int w_end = k;
+                while (w_end < end && t[w_end] != ' ') ++w_end;
+                const int len = w_end - p;
+                if (len >= static_cast<int>(sizeof buf)) break;
+                memcpy(buf, t + p, len);
+                buf[len] = 0;
+                if (ui::text_width(buf, f) > room && fit_end > p) break;
+                fit_end = w_end;
+                k = w_end < end ? w_end + 1 : w_end;
+                if (ui::text_width(buf, f) > room) break;          // one word wider than the screen
+            }
+            if (fit_end == p) fit_end = end;                       // (nothing measured: the rest)
+            v.line_at[v.n_lines] = static_cast<uint16_t>(p);
+            v.line_len[v.n_lines] = static_cast<uint16_t>(fit_end - p);
+            ++v.n_lines;
+            p = fit_end;
+            while (p < end && t[p] == ' ') ++p;
+        }
+        if (end < n && v.n_lines < 699) {
+            v.line_at[v.n_lines] = static_cast<uint16_t>(end);
+            v.line_len[v.n_lines] = 0;                 // the gap
+            ++v.n_lines;
+        }
+        i = end + 1;
+    }
+    v.total_h = kTextPad;
+    for (int k = 0; k < v.n_lines; ++k) v.total_h += v.line_len[k] ? v.line_px : v.line_px / 2;
+    v.total_h += kTextPad;
+    v.scale256 = 256;
+    v.maxw = v.shown_w = view_area().w;
+    v.left = 0;
+    const int max_top = v.total_h > view_area().h ? v.total_h - view_area().h : 0;
+    if (v.top > max_top) v.top = max_top;
+    if (v.top < 0) v.top = 0;
+}
+
 // Sizes for fitted (the screen's width) or zoomed (1:1) viewing
 void journal_layout()
 {
     JournalView& v = *jv;
+    if (v.text_mode) {
+        journal_text_layout();
+        return;
+    }
     const int room = ui::width() - 6;
     int full_h = 0;
     for (int i = 0; i < v.count; ++i) full_h += v.piece[i].h;
@@ -2182,9 +2350,25 @@ bool open_journal(char kind, int number)
             jv->count <= kMaxJournalPieces) {
             bool ok = true;
             jv->maxw = 0;
+            jv->text_mode = false;
+            free(jv->text);
+            jv->text = nullptr;
             for (int i = 0; i < jv->count && ok; ++i) {
                 ok = journal::piece(src, jv->info, first + i, jv->piece[i]) && jv->piece[i].w <= 1700;
                 if (jv->piece[i].w > jv->maxw) jv->maxw = jv->piece[i].w;
+            }
+            if (ok && jv->count == 1 && jv->piece[0].text()) {
+                // A text entry: its text, laid out in the engine's font
+                const int len = jv->piece[0].h < 16000 ? jv->piece[0].h : 16000;
+                jv->text = static_cast<char*>(malloc(static_cast<size_t>(len) + 1));
+                if (jv->text && src.read_at(jv->piece[0].offset, reinterpret_cast<uint8_t*>(jv->text), len) == static_cast<size_t>(len)) {
+                    jv->text[len] = 0;
+                    jv->text_mode = true;
+                    jv->fit = 1;
+                    jv->have = true;
+                    journal_layout();
+                }
+                ok = false;                          // (not a picture)
             }
             if (ok && jv->maxw > 0) {
                 for (int i = 0; i < 256; ++i)
@@ -2290,7 +2474,8 @@ void draw_journal()
     if (nk == 5) {
         const bool more = jv->top + a.h < jv->total_h;
         ui::key(slim_key(0, 5), "Back");
-        ui::key(slim_key(1, 5), kFitSlim[jv->fit], jv->fit != kFitWidth ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+        ui::key(slim_key(1, 5), jv->text_mode ? kTextSlim[jv->fit] : kFitSlim[jv->fit],
+                jv->fit != kFitWidth ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
         ui::key(slim_key(2, 5), "Prev", jv->top > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
         slim_label(slim_key(3, 5), page, nullptr);
         ui::key(slim_key(4, 5), "Next", more ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
@@ -2306,6 +2491,25 @@ void draw_journal()
     // On white, like the journal's paper
     LGFX& g = ui::gfx();
     g.fillRect(0, a.y, a.w, a.h, TFT_WHITE);
+    if (jv->text_mode) {
+        const ui::Font fnt = text_font(jv->fit);
+        g.setClipRect(a.x, a.y, a.w, a.h);
+        int y = a.y + kTextPad - jv->top;
+        char buf[256];
+        for (int k = 0; k < jv->n_lines; ++k) {
+            const int lh = jv->line_len[k] ? jv->line_px : jv->line_px / 2;
+            if (y + lh > a.y && y < a.y + a.h && jv->line_len[k]) {
+                const int len = jv->line_len[k] < sizeof buf - 1 ? jv->line_len[k] : static_cast<int>(sizeof buf) - 1;
+                memcpy(buf, jv->text + jv->line_at[k], len);
+                buf[len] = 0;
+                ui::text(a.x + kTextPad, y, buf, TFT_BLACK, fnt);
+            }
+            y += lh;
+            if (y >= a.y + a.h) break;
+        }
+        g.clearClipRect();
+        return;
+    }
     fs::File f;
     if (!journal_source(f)) return;
     library::FileSource src(f);
@@ -2387,7 +2591,11 @@ void tap_journal(const ui::Tap& t)
     if (k == 0) { leave_journal(); return; }                  // Back
     if (nk == 2 && k == 1) {
         if (!open_book()) {
-            strlcpy(jv->why, "The journal PDF couldn't be read as a book of scanned pages.", sizeof jv->why);
+            strlcpy(jv->why,
+                    game_dirs[game_sel].gbc[0] ? "This edition's journal PDF is typeset text, not scanned pages: the book "
+                                                 "view can't show it."
+                                               : "The journal PDF couldn't be read as a book of scanned pages.",
+                    sizeof jv->why);
             dirty = true;
         }
         return;

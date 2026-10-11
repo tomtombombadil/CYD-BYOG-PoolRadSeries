@@ -2018,6 +2018,47 @@ static Bytes make_pdf()
     return Bytes(s.begin(), s.end());
 }
 
+// The Gold Box Companion's journal (Steam / SNEG): a synthetic Game.dat
+static void test_journal_gbc()
+{
+    const std::string dat =
+        "junk <items>\r\nSword\r\n</items>\r\n"
+        "<journal 1>\r\n(this is a long note, see elsewhere)\r\n\r\n</journal>\r\n"
+        "<journal 2>\r\nThe first line of a paragraph\r\n  goes on here.\r\n\r\nA second\r\nparagraph.\r\n\r\n</journal>\r\n"
+        "<journal 7>\r\n(map)\r\n\r\n</journal>\r\n"
+        "<journal 12>\r\n\r\n</journal>";
+    dax::MemorySource src(reinterpret_cast<const uint8_t*>(dat.data()), dat.size());
+    journal::GbcEntry es[8];
+    CHECK(journal::gbc_entries(src, es, 8) == 4);
+    CHECK(es[0].number == 1 && es[0].picture && es[1].number == 2 && !es[1].picture && es[2].number == 7 && es[2].picture &&
+          es[3].number == 12 && !es[3].picture);
+    char t[200];
+    CHECK(journal::gbc_text(src, es[1], t, sizeof t) == strlen(t));
+    CHECK(strcmp(t, "The first line of a paragraph goes on here.\nA second paragraph.") == 0);
+    CHECK(journal::gbc_text(src, es[2], t, sizeof t) == 5 && strcmp(t, "(map)") == 0);
+    // JOURNAL.DAT: entry 7's picture there (the JPEG at its own size), entry 1's not (its note as text)
+    struct Pics : journal::GbcPictures {
+        dax::MemorySource jpg{kJpeg0, sizeof kJpeg0};
+        dax::ByteSource* open(int number) override { return number == 7 ? &jpg : nullptr; }
+    } pics;
+    MemOut out;
+    CHECK(journal::make_gbc(src, pics, "gbc:1234", out, nullptr, nullptr));
+    dax::MemorySource js(out.b.data(), out.b.size());
+    journal::Info info;
+    CHECK(journal::read_info(js, info) && info.entries == 4 && info.pieces == 4 && strcmp(info.pdf_id, "gbc:1234") == 0);
+    int first = 0, count = 0;
+    journal::PieceInfo pi;
+    CHECK(journal::find(js, info, 'J', 2, &first, &count) && count == 1 && journal::piece(js, info, first, pi) && pi.text() &&
+          pi.h == static_cast<int>(strlen("The first line of a paragraph goes on here.\nA second paragraph.")) &&
+          memcmp(out.b.data() + pi.offset, "The first line", 14) == 0);
+    CHECK(journal::find(js, info, 'J', 7, &first, &count) && journal::piece(js, info, first, pi) && !pi.text() &&
+          pi.w == kJpeg0W && pi.h == kJpeg0H);
+    CHECK(journal::find(js, info, 'J', 1, &first, &count) && journal::piece(js, info, first, pi) && pi.text() &&
+          memcmp(out.b.data() + pi.offset, "(this is", 8) == 0);
+    CHECK(journal::find(js, info, 'J', 12, &first, &count) && journal::piece(js, info, first, pi) && pi.text() && pi.h == 1);
+    CHECK(!journal::find(js, info, 'J', 3, &first, &count));
+}
+
 static void test_journal()
 {
     // JPEG: decodes close to what PIL makes of it, and want() skips MCUs
@@ -5125,6 +5166,7 @@ int main()
     test_treasure();
     test_sound();
     test_journal();
+    test_journal_gbc();
     test_geo_view();
     test_party();
     test_items();

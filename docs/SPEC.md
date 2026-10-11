@@ -580,6 +580,25 @@ How it works (v0.12.0, Curse):
 - v0.64.0 (Tom): no title bar; one slim key row, Back | Zoom | Prev |
   page numbers | Next. v0.66.1 (Tom): the page numbers are just "2 of 3"
   (the entry's number is in its picture; no "Page").
+- v0.70.0 (Tom, 2026-10-10: the Steam / SNEG releases): their journal PDFs
+  are typeset (InDesign, cross-reference and object streams, thousands of
+  objects) - far too heavy to take apart on the board, and nothing the
+  page-picture tables can use. But the SNEG folders carry the **Gold Box
+  Companion** (`<folder>/GBC/Games/<nn. Game>/`), whose `Game.dat` holds
+  every journal entry as plain text (`<journal N>` ... `</journal>`), and
+  `JE_NNN.jpg` the entries that are maps or pictures (their text is just
+  "(map)" or similar). So when the scan finds a GBC folder with Game.dat,
+  JOURNAL.DAT is made from those instead of the PDF (id `gbc:<Game.dat
+  size>`): a **text piece** per entry (format version 2: width 0, height =
+  the text's length; lines joined into paragraphs, blank lines between
+  them), or the entry's JPEG decoded whole when it's a picture entry.
+  Text is laid out by the viewer at the screen's width, black on white;
+  Zoom cycles Small / Medium / Large text. Curse's GBC: 59 entries, 9 of
+  them pictures. The SNEG game files themselves are the GOG ones byte for
+  byte (Curse checked), so they share the GOG profile. The book view (the
+  Journal PDF tab) can't show a typeset PDF; on a GBC game it says so.
+  Only Curse's Game.dat has been looked at; the other games' are assumed
+  to be the same format (the scan says when one isn't).
 
 ## 8. Copy protection (Tom, 2026-10-06)
 
@@ -677,9 +696,10 @@ marked (switch).
   party); the Game menu (Journal, Journal PDF, Sounds, Options, Exit Game);
   a tap on the 3D view toggles 3D / Area.
 - **The journal**: the entries are pictures the board makes from the
-  player's own journal PDF and shows when the game mentions one (the next
-  tap opens it); the whole PDF as a book. The originals only print "read
-  entry N".
+  player's own journal PDF (Steam / SNEG: text and pictures from its Gold
+  Box Companion files) and shows when the game mentions one (the next tap
+  opens it); the whole PDF as a book. The originals only print "read entry
+  N".
 - **Copy protection**: never asked.
 - **The demo**: a tap or key stops it (switch `CYD_DEMO_TAP_STOPS`).
 - **Add Character**: Curse also lists the members of saved games ("NAME

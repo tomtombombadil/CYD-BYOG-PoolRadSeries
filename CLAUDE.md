@@ -59,6 +59,11 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   v0.13.0), `journal_tables.cpp` from
   `tools/journal/make_table.py` (run on the player's PDF in scratch space;
   check every entry by eye; renders stay in scratch).
+  SNEG (Tom, 2026-10-10, v0.70.0): its PDFs are typeset text the board
+  can't take apart, so the journal comes from the Gold Box Companion's
+  `GBC/Games/<nn. Game>/Game.dat` (`<journal N>` text) + `JE_NNN.jpg`
+  (`journal::make_gbc`); text entries are laid out by the viewer (Zoom =
+  Small / Medium / Large text). No book view for those PDFs.
 - Settings / logs (Tom, 2026-10-09; SPEC 5c): the card scan ends at its
   scrolling log until Continue; Settings has a brightness slider, Swap
   Red/Blue with red / green / blue blocks, a Logs key (Card Scan, Restarts,

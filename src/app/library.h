@@ -32,6 +32,9 @@ struct GameDir {
                                   // (not GOG's generic Support.ico)
     char         journal[128];    // the journal PDF, relative to /GOLDBOX ("" = none)
     uint32_t     journal_size;
+    char         gbc[48];         // the Steam / SNEG releases' Gold Box Companion: its folder
+                                  // for this game in <folder>/GBC/Games/ ("02. Curse of the
+                                  // Azure Bonds"; "" = none) - Game.dat has the journal's text
 };
 
 constexpr int kMaxGames = 16;
@@ -70,6 +73,8 @@ int list_dax(const char* data_dir, char (*names)[kNameLen], int max);
 
 // "/GOLDBOX/<data_dir>/<file>"
 void path_of(const char* data_dir, const char* file, char* out, size_t cap);
+// "/GOLDBOX/<folder>/GBC/Games/<gbc>/<file>" (false: no Gold Box Companion)
+bool gbc_path(const GameDir& g, const char* file, char* out, size_t cap);
 
 // A DAX source over an open SD file. Keeps a 512-byte read-ahead buffer.
 class FileSource : public dax::ByteSource {
