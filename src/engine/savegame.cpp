@@ -123,4 +123,21 @@ void save_dir(const char* cfg, size_t len, char* out, size_t cap)
     }
 }
 
+bool drop_own_folder(const char* data_dir, char* sub)
+{
+    if (!data_dir || !sub) return false;
+    size_t e = strlen(data_dir);
+    while (e > 0 && (data_dir[e - 1] == '/' || data_dir[e - 1] == '\\')) --e;
+    size_t b = e;
+    while (b > 0 && data_dir[b - 1] != '/' && data_dir[b - 1] != '\\') --b;
+    const size_t n = e - b;
+    if (!n || strlen(sub) <= n + 1 || sub[n] != '/') return false;
+    for (size_t i = 0; i < n; ++i) {
+        const char a = sub[i], c = data_dir[b + i];
+        if ((a >= 'a' && a <= 'z' ? a - 32 : a) != (c >= 'a' && c <= 'z' ? c - 32 : c)) return false;
+    }
+    memmove(sub, sub + n + 1, strlen(sub + n + 1) + 1);
+    return true;
+}
+
 } // namespace savegame

@@ -141,7 +141,8 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   a gallery of ready-made icons / heads / weapons / colour schemes (the
   player's own parts; the combinations are `engine/icon_looks.*`, ours);
   Edit = the original editor (its Exit returns to the gallery), Done =
-  "Is this icon ok?".
+  "Is this icon ok?". v0.71.1 (Tom): icons at twice their size, 4 x 3 a
+  page, Prev / Next boxes beside them.
 - Journal book memory (v0.52.0): while the book is open the game canvas
   waits on the card (`frame::park` / `unpark`, `_CYD/CANVAS.TMP`); a
   memory failure must never be reported as "no scanned picture".
@@ -215,7 +216,9 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   into /GOLDBOX as it is (`CURSE`, `POOLRAD`, `SECRET`, `Pools of Darkness`
   ...), the DAX files two down (`<folder>/GAME/<SHORT>`), the journal in
   `<folder>/Documentation/`, the icon `game.ico`; folder listings in the
-  Project ("Steam SNEG Directory Listing*.txt").
+  Project ("Steam SNEG Directory Listing*.txt"). Their .CFG save path
+  includes the game folder's own name (`C:\CURSE\SAVE\` = `GAME/CURSE/SAVE`;
+  `savegame::drop_own_folder`, v0.71.1).
 - Chooser (Tom, 2026-10-10, v0.53.0): a game's page is four big keys -
   Resource Test (the DAX file / block viewer, behind it now), Screen Test,
   Walk Test, Play Test. The Play Test starts with the title sequence and

@@ -2461,6 +2461,17 @@ static void test_party()
     CHECK(strcmp(dir, "GAMES/CURSE/SAVES") == 0);
     savegame::save_dir("E\nP\n", 4, dir, sizeof dir);
     CHECK(dir[0] == 0);
+    // Steam / SNEG: "C:\CURSE\SAVE\" with the files in <folder>/GAME/CURSE
+    char sub[32] = "CURSE/SAVE";
+    CHECK(savegame::drop_own_folder("CURSE/GAME/CURSE", sub) && strcmp(sub, "SAVE") == 0);
+    char sub2[32] = "curse/Save/Old";
+    CHECK(savegame::drop_own_folder("X/GAME/Curse/", sub2) && strcmp(sub2, "Save/Old") == 0);
+    char sub3[32] = "SAVE";
+    CHECK(!savegame::drop_own_folder("CURSE/GAME/CURSE", sub3) && strcmp(sub3, "SAVE") == 0);
+    char sub4[32] = "CURSES/SAVE";
+    CHECK(!savegame::drop_own_folder("GAME/CURSE", sub4));
+    char sub5[32] = "CURSE/";
+    CHECK(!savegame::drop_own_folder("GAME/CURSE", sub5));
 }
 
 // Item names, types, the rules' recalculation, money, the shop in the VM

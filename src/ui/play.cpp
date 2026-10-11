@@ -1422,6 +1422,7 @@ bool write_file(const char* dir, const char* name, const uint8_t* p, size_t n)
         if (sd_fs().exists(path)) sd_fs().remove(path);
         return true;
     }
+    if (!sd_fs().exists(dir)) sd_fs().mkdir(dir);          // (a save folder the copy left out)
     fs::File f = sd_fs().open(path, "w");
     if (!f) return false;
     const bool ok = f.write(p, n) == n;
@@ -1447,6 +1448,7 @@ bool save_game(char slot)
     char name[24], path[200];
     savegame::file_name(slot, name, sizeof name);
     save_path(name, path, sizeof path);
+    if (!sd_fs().exists(d->save_dir)) sd_fs().mkdir(d->save_dir);
     fs::File f = sd_fs().open(path, "w");
     if (!f) return false;
     bool ok;
@@ -5447,6 +5449,9 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         }
     }
     library::path_of(d->data_dir, sub, d->save_dir, sizeof d->save_dir);
+    // Steam / SNEG: C: is the folder above the game's ("C:\CURSE\SAVE\")
+    if (!sd_fs().exists(d->save_dir) && savegame::drop_own_folder(d->data_dir, sub))
+        library::path_of(d->data_dir, sub, d->save_dir, sizeof d->save_dir);
 }
 
 // ---- the script host ------------------------------------------------------------
@@ -6205,7 +6210,8 @@ struct IconEdit {
 #if CYD_ICON_GALLERY
     int      gpage = -1;                // the gallery's page shown (icon_looks::Page), -1 the editor
     int      glast = 0;                 // the page it was on (back to it after No)
-    int      gsel = -1;                 // the cell picked
+    int      gsel = -1;                 // the choice picked
+    int      gfirst = 0;                // the first choice on the page shown
     int      gsize = 0;                 // the size the parts below are for
     uint8_t* ghead[icon_looks::kHeads] = {};    // the parts' ready pictures, 24 x 24 (loaded as needed)
     uint8_t* gbody[icon_looks::kBodies] = {};
@@ -6515,38 +6521,71 @@ void icon_back(pic::Canvas& c)
 // the character at once; Edit goes to the original editor, Done to its
 // "Is this icon ok?" (No: back here). The original editor's Exit comes
 // back here too - the gallery is the editor's top.
-constexpr int kGalCols = 8, kGalX = 16, kGalY = 22, kGalPitch = 36;
+// Tom (v0.71.1, on a 2.8"): the 24 px icons are too small to pick from, so
+// each cell shows its icon twice the size, 4 x 3 to a page, with big Prev /
+// Next boxes and "1 of 3" to the right of them.
+constexpr int kGalCols = 4, kGalRows = 3, kGalPer = kGalCols * kGalRows;
+constexpr int kGalX = 12, kGalY = 18, kGalPitchX = 58, kGalPitchY = 55, kGalBox = 2 * kSq + 6;
+constexpr int kGalNavX = kGalX + kGalCols * kGalPitchX + 2, kGalNavW = 308 - kGalNavX;
 
 icon_looks::Page gal_page() { return static_cast<icon_looks::Page>(ie->gpage); }
+int gal_pages() { return (icon_looks::count(gal_page()) + kGalPer - 1) / kGalPer; }
 
-// The cell under canvas (x, y), or -1
+// The cell (a choice's index) under canvas (x, y), or -1
 int gal_cell_at(int x, int y)
 {
     if (!ie || ie->gpage < 0 || x < kGalX || y < kGalY) return -1;
-    const int col = (x - kGalX) / kGalPitch, row = (y - kGalY) / kGalPitch;
-    if (col >= kGalCols) return -1;
-    const int i = row * kGalCols + col;
+    const int col = (x - kGalX) / kGalPitchX, row = (y - kGalY) / kGalPitchY;
+    if (col >= kGalCols || row >= kGalRows) return -1;
+    const int i = ie->gfirst + row * kGalCols + col;
     return i < icon_looks::count(gal_page()) ? i : -1;
 }
 
-// The square around cell i's icon (its highlight)
+// The square around choice i's icon (its highlight); i on the page shown
 void gal_box(int i, int* x, int* y, int* w, int* h)
 {
-    *x = kGalX + (i % kGalCols) * kGalPitch + 3;
-    *y = kGalY + (i / kGalCols) * kGalPitch + 3;
-    *w = *h = kSq + 6;
+    const int k = i - ie->gfirst;
+    *x = kGalX + (k % kGalCols) * kGalPitchX;
+    *y = kGalY + (k / kGalCols) * kGalPitchY;
+    *w = *h = kGalBox;
 }
 
-void gal_frame(pic::Canvas& c, int i, uint8_t colour)
+// The Prev (0) / Next (1) boxes
+void gal_nav_box(int which, int* x, int* y, int* w, int* h)
 {
-    if (i < 0) return;
-    int x, y, w, h;
-    gal_box(i, &x, &y, &w, &h);
+    *x = kGalNavX;
+    *w = kGalNavW;
+    *h = kGalBox;
+    *y = which ? kGalY + (kGalRows - 1) * kGalPitchY : kGalY;
+}
+
+// Prev 0 / Next 1 under canvas (x, y), or -1 (none when one page)
+int gal_nav_at(int x, int y)
+{
+    if (!ie || ie->gpage < 0 || gal_pages() < 2) return -1;
+    for (int k = 0; k < 2; ++k) {
+        int bx, by, bw, bh;
+        gal_nav_box(k, &bx, &by, &bw, &bh);
+        if (x >= bx && x < bx + bw && y >= by && y < by + bh) return k;
+    }
+    return -1;
+}
+
+void gal_outline(pic::Canvas& c, int x, int y, int w, int h, uint8_t colour)
+{
     c.fill(x, y, w, 2, colour);
     c.fill(x, y + h - 2, w, 2, colour);
     c.fill(x, y, 2, h, colour);
     c.fill(x + w - 2, y, 2, h, colour);
     dirty(y, y + h);
+}
+
+void gal_frame(pic::Canvas& c, int i, uint8_t colour)
+{
+    if (i < ie->gfirst || i >= ie->gfirst + kGalPer) return;     // (not on this page)
+    int x, y, w, h;
+    gal_box(i, &x, &y, &w, &h);
+    gal_outline(c, x, y, w, h, colour);
 }
 
 // The parts' ready pictures for the character's size, read once (each
@@ -6600,17 +6639,31 @@ bool gal_parts()
            gal_load(ie->gbody, icon_looks::kBodies, "CBODY.DAX", add);
 }
 
+// A 24 x 24 picture at twice its size, colour 0 see-through
+void blit4_x2(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y)
+{
+    if (!p) return;
+    for (int j = 0; j < h; ++j)
+        for (int i = 0; i < w; ++i) {
+            const int v = nib(p, w, i, j);
+            if (v) c.fill(x + 2 * i, y + 2 * j, 2, 2, static_cast<uint8_t>(v));
+        }
+}
+
 void gal_cell(pic::Canvas& c, int i)
 {
     uint8_t head, body, colours[6];
     icon_looks::preview(gal_page(), i, ie->ch->rec, &head, &body, colours);
-    const int x = kGalX + (i % kGalCols) * kGalPitch + 6, y = kGalY + (i / kGalCols) * kGalPitch + 6;
-    blit4(c, ie->base[0].px[0], ie->base[0].w, ie->base[0].h, x, y, false, true, 0, 0, pic::kScreenW, pic::kScreenH);
+    int x, y, w, h;
+    gal_box(i, &x, &y, &w, &h);
+    x += 3;
+    y += 3;
+    blit4_x2(c, ie->base[0].px[0], ie->base[0].w, ie->base[0].h, x, y);
     if (body >= icon_looks::kBodies || !ie->gbody[body]) return;
     uint8_t px[kTileBytes];
     memcpy(px, ie->gbody[body], kTileBytes);
     icon_compose(px, head < icon_looks::kHeads ? ie->ghead[head] : nullptr, kSq, colours);
-    blit4(c, px, kSq, kSq, x, y, false, true, 0, 0, pic::kScreenW, pic::kScreenH);
+    blit4_x2(c, px, kSq, kSq, x, y);
 }
 
 void gal_menu(pic::Canvas& c)
@@ -6623,6 +6676,30 @@ void gal_menu(pic::Canvas& c)
     show_menu_line(c);
 }
 
+// The page holding choice `first` (rounded down to a page's start)
+void gal_draw_page(pic::Canvas& c, int first)
+{
+    ie->gfirst = first - first % kGalPer;
+    c.fill(8, kGalY - 2, 304, 184 - kGalY + 2, 0);
+    const int n = icon_looks::count(gal_page());
+    for (int i = ie->gfirst; i < n && i < ie->gfirst + kGalPer; ++i) gal_cell(c, i);
+    gal_frame(c, ie->gsel, 15);
+    const int pages = gal_pages();
+    if (pages > 1) {
+        static const char* const kWord[2] = {"PREV", "NEXT"};
+        for (int k = 0; k < 2; ++k) {
+            int x, y, w, h;
+            gal_nav_box(k, &x, &y, &w, &h);
+            gal_outline(c, x, y, w, h, 7);
+            put(c, kWord[k], (x + (w - 32) / 2) / 8, (y + h / 2 - 4) / 8, 15);
+        }
+        char t[12];
+        snprintf(t, sizeof t, "%d OF %d", ie->gfirst / kGalPer + 1, pages);
+        put(c, t, (kGalNavX + (kGalNavW - static_cast<int>(strlen(t)) * 8) / 2) / 8, (kGalY + kGalPitchY + kGalBox / 2 - 4) / 8, 15);
+    }
+    dirty(kGalY - 2, 184);
+}
+
 void gal_open(pic::Canvas& c, int page)
 {
     ie->gpage = ie->glast = page;
@@ -6631,17 +6708,14 @@ void gal_open(pic::Canvas& c, int page)
     layout::outer(c, d->tables, d->frame_tiles);
     static const char* const kTitle[icon_looks::kPages] = {"Ready-Made Icons", "Heads", "Weapons", "Colors"};
     put(c, kTitle[page], 2, 1, 15);
+    dirty(0, pic::kScreenH);
     if (!gal_parts()) {
-        dirty(0, pic::kScreenH);
         gal_menu(c);
         error(c, no_memory("the icon gallery"));
         return;
     }
-    const int n = icon_looks::count(gal_page());
-    for (int i = 0; i < n; ++i) gal_cell(c, i);
     ie->gsel = icon_looks::match(gal_page(), ie->ch->rec);
-    gal_frame(c, ie->gsel, 15);
-    dirty(0, pic::kScreenH);
+    gal_draw_page(c, ie->gsel < 0 ? 0 : ie->gsel);
     gal_menu(c);
 }
 
@@ -6651,8 +6725,18 @@ void gal_pick(int i, pic::Canvas& c)
     gal_frame(c, ie->gsel, 0);
     icon_looks::apply(gal_page(), i, ie->ch->rec);
     ie->gsel = i;
-    gal_frame(c, i, 15);
+    if (i < ie->gfirst || i >= ie->gfirst + kGalPer) gal_draw_page(c, i);   // (Up / Down past the page)
+    else gal_frame(c, i, 15);
     build_icon(ie->ch->rec, ie->new_ic);    // (the big preview)
+}
+
+// Prev / Next: the page before / after (round)
+void gal_turn(int step, pic::Canvas& c)
+{
+    const int pages = gal_pages();
+    if (pages < 2) return;
+    const int pg = (ie->gfirst / kGalPer + step + pages) % pages;
+    gal_draw_page(c, pg * kGalPer);
 }
 
 void gal_key(char k, pic::Canvas& c)
@@ -6684,14 +6768,22 @@ void gal_tap(int x, int y, pic::Canvas& c)
         gal_key(text::key(menu, k), c);
         return;
     }
+    const int nav = gal_nav_at(x, y);
+    if (nav >= 0) {
+        gal_turn(nav ? 1 : -1, c);
+        return;
+    }
     gal_pick(gal_cell_at(x, y), c);
 }
 
-// Up / Down: the next / previous cell, picked
+// Up / Down: the next / previous choice, picked (the page turns with it)
 void gal_step(int step, pic::Canvas& c)
 {
     const int n = icon_looks::count(gal_page());
-    gal_pick(ie->gsel < 0 ? (step > 0 ? 0 : n - 1) : (ie->gsel + step + n) % n, c);
+    int i;
+    if (ie->gsel >= ie->gfirst && ie->gsel < ie->gfirst + kGalPer) i = (ie->gsel + step + n) % n;
+    else i = step > 0 ? ie->gfirst : (ie->gfirst + kGalPer < n ? ie->gfirst + kGalPer : n) - 1;   // (none on this page)
+    gal_pick(i, c);
 }
 #endif
 
@@ -7976,9 +8068,10 @@ bool tap_highlight(int x, int y, pic::Canvas& c, int* y0, int* y1)
 #if CYD_ICON_GALLERY
     // An icon gallery cell: a frame around it
     if (icon_gallery() && y < text::kMenuTapTop) {
-        const int i = gal_cell_at(x, y);
-        if (i < 0) return false;
-        gal_box(i, &fl.x0, &fl.y0, &fl.w, &fl.h);
+        const int i = gal_cell_at(x, y), nav = gal_nav_at(x, y);
+        if (i < 0 && nav < 0) return false;
+        if (nav >= 0) gal_nav_box(nav, &fl.x0, &fl.y0, &fl.w, &fl.h);
+        else gal_box(i, &fl.x0, &fl.y0, &fl.w, &fl.h);
         fl.orig = static_cast<uint8_t*>(malloc(static_cast<size_t>(fl.w) * fl.h));
         if (!fl.orig) return false;
         for (int j = 0; j < fl.h; ++j)
@@ -7986,7 +8079,7 @@ bool tap_highlight(int x, int y, pic::Canvas& c, int* y0, int* y1)
         fl.box = true;
         *y0 = fl.y0;
         *y1 = fl.y0 + fl.h;
-        if (i == ie->gsel) {
+        if (nav < 0 && i == ie->gsel) {
             ink(c, 0);                      // already lit: off, then on again
             return true;
         }

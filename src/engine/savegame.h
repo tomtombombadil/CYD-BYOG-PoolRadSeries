@@ -63,5 +63,11 @@ void char_file(char slot, int n, char* out, size_t cap);
 // drive and with '/' between folders ("SAVE"); "" if none. The games run
 // with their own folder as drive C:, so it is a folder inside it.
 void save_dir(const char* cfg, size_t len, char* out, size_t cap);
+// The Steam / SNEG releases run with the folder ABOVE the game's as C:
+// (CURSE.CFG "C:\CURSE\SAVE\", the files in GAME/CURSE): when the save
+// folder's first part is the game folder's own name (the data folder's last
+// part, any case) and more follows, drops it ("CURSE/SAVE" -> "SAVE").
+// True if it did.
+bool drop_own_folder(const char* data_dir, char* sub);
 
 } // namespace savegame

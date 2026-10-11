@@ -21,6 +21,13 @@ inside the GOG install, and the PDFs that come with them).
   the GOG names, not short DOS names). If the folder has no DAX files, the
   engine looks one folder down, then two (the Steam / SNEG releases:
   `/GOLDBOX/CURSE/GAME/CURSE`, the journal in `CURSE/Documentation/`).
+  Their CURSE.CFG names the save folder `C:\CURSE\SAVE\` (DOSBox mounts
+  `GAME` as C:), i.e. the game folder's own `SAVE`; since v0.71.1 the
+  engine takes off the game folder's own name when the path as written
+  isn't there (v0.70.0 looked for `GAME/CURSE/CURSE/SAVE`, so saved games
+  weren't found and saving a character failed: "Couldn't write
+  NAME.GUY"). A save folder missing from a copy is made when first
+  written to.
 - Folder names are free; the game is recognised from words in the name
   (`POOLRAD`, `Pool of Radiance`, `CURSE`, `AZURE`, `SILVER`, `BLADES`, `DARK...`) -
   `src/engine/games.*`. A folder with DAX files and no known name still shows up.
@@ -684,8 +691,10 @@ a PC, PortMaster handhelds):
     "one of the worst parts of the game"): the icon editor (Alter -> Icon,
     Create New Character) opens on a gallery - pages Icons (32 ready-made
     icons), Heads (all 14), Weapons (all 32 bodies) and Colors (24
-    schemes), each cell the character's icon with that choice in place, 8
-    to a row. A tap (or Up / Down) puts it on the character at once (the
+    schemes), each cell the character's icon with that choice in place.
+    v0.71.1 (Tom, on a 2.8": too small to pick from): the icons are shown
+    at twice their size, 4 x 3 to a page, with big Prev / Next boxes and
+    "1 of 3" to their right (Up / Down step on past a page's end too). A tap (or Up / Down) puts it on the character at once (the
     480x320 big preview follows; on 320x240 the gallery fills the screen,
     so its big preview waits for the editor). Edit opens the original
     editor for fine work, whose Exit comes back to the gallery; Done (or
