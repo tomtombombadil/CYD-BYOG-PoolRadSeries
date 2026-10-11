@@ -41,6 +41,8 @@ void stats(party::Character& c, const ItemFacts& f);
 // Strength as one number: 3-17, 18 = 18, 19-23 = 18/01-50, /51-75,
 // /76-90, /91-99, /00; 19-25 = 24-30
 int strength_group(const party::Character& c);
+// Strength's damage bonus (for those with the Strength flag 0x125) from a record
+int strength_damage(const uint8_t* rec);
 // Extra weight carried before slowing down (can be negative)
 int max_encumbrance(const party::Character& c);
 int dex_ac_bonus(const party::Character& c);

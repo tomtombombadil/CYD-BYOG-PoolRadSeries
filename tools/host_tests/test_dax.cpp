@@ -2565,6 +2565,247 @@ static void test_class_rules()
     CHECK(tried);
 }
 
+// The items' rules in fights (behaviour_facts.md items, coab's facts): a
+// missile weapon's rate of fire and its pile, the range's penalty, the magic
+// weapons' bonuses by the target's kind, displacement, the ring's
+// invisibility, the large and backstab size tests
+static void test_item_combat()
+{
+    static combat::Tables t;
+    memset(&t, 0, sizeof t);
+    t.ground[0x37][0] = 1; t.ground[0x37][1] = 1;
+    static combat::Battle b;
+    b = combat::Battle{};
+    for (int y = 0; y < combat::kH; ++y)
+        for (int x = 0; x < combat::kW; ++x) b.ground[y][x] = 0x37;
+    static uint8_t rec[2][party::kRecordSize];
+    static uint8_t aff[2][party::kMaxAffects][party::kAffectSize];
+    static int naff[2];
+    static uint8_t its[2][4][items::kRecordSize];
+    memset(rec, 0, sizeof rec);
+    memset(aff, 0, sizeof aff);
+    memset(its, 0, sizeof its);
+    naff[0] = naff[1] = 0;
+    for (int i = 0; i < 2; ++i) {
+        uint8_t* r = rec[i];
+        r[0x196] = 1; r[0x197] = static_cast<uint8_t>(i); r[0xDE] = 1;
+        r[0x78] = r[0x1A4] = 250; r[0x1A5] = 12; r[0x11C] = 2;
+        r[0x199] = 40;                                       // a 10 hits AC 10
+        r[0x19A] = r[0x19B] = 50;
+        r[0x19E] = 1; r[0x1A0] = 6; r[0x17] = 10;
+        b.f[i].rec = r;
+        b.f[i].aff = aff[i];
+        b.f[i].n_aff = &naff[i];
+        b.f[i].max_aff = party::kMaxAffects;
+        b.f[i].items = its[i];
+        b.f[i].member = i == 0 ? 0 : -1;
+        b.f[i].monster = i == 0 ? -1 : 0;
+        b.f[i].size = 1;
+        b.f[i].y = 10;
+    }
+    b.f[0].x = 10;
+    b.f[1].x = 11;
+    b.n = 2;
+    b.party_size = 1;
+    combat::occupancy(b);
+    // The types: long bow 43 (2 hands, 1d6, 4 half attacks, range 22, arrows),
+    // arrows 73, darts 9 (6 half attacks, range 6, thrown), sling 47 (2, range
+    // 21), long sword 36 (1d8 / 1d12 large, melee)
+    static items::Names names;
+    std::vector<uint8_t> ty(2 + items::kTypes * 16, 0);
+    auto def = [&](int k, int hands, int dice, int sides, int attacks, int range, int flags, int ld, int ls) {
+        uint8_t* q = &ty[2 + k * 16];
+        q[0] = 0; q[1] = (uint8_t)hands; q[2] = (uint8_t)ld; q[3] = (uint8_t)ls; q[5] = (uint8_t)attacks;
+        q[9] = (uint8_t)dice; q[10] = (uint8_t)sides; q[12] = (uint8_t)range; q[13] = 0xFF; q[14] = (uint8_t)flags;
+    };
+    def(43, 2, 1, 6, 4, 22, 0x0B, 1, 6);
+    def(9, 1, 1, 3, 6, 6, 0x1A, 1, 2);
+    def(47, 1, 1, 4, 2, 21, 0x0A, 1, 6);
+    def(36, 1, 1, 8, 0, 0, 0x04, 1, 12);
+    ty[2 + 73 * 16] = 10;                                    // arrows: slot 10
+    dax::MemorySource src(ty.data(), static_cast<uint32_t>(ty.size()));
+    CHECK(names.read_types(src));
+    static combat::Facts fx;
+    fx = combat::Facts{};
+    fx.invisible = 0x19;
+    fx.haste = 0x27;
+    fx.items.flame_tongue = 0x06; fx.items.dragon_slayer = 0x4B; fx.items.frost_brand = 0x4C;
+    fx.items.displace = 0x59; fx.items.ring_invisible = 0x38;
+    b.fx = &fx;
+    b.names = &names;
+    b.arrow = 73;
+    b.quarrel = 28;
+    b.tables = &t;
+    create::Dice d(7);
+    uint8_t (*it)[items::kRecordSize] = its[0];
+    auto hold = [&](int type, int pile, bool arrows, int arrow_pile) {
+        memset(its[0], 0, sizeof its[0]);
+        it[0][0x2E] = (uint8_t)type; it[0][0x34] = 1; it[0][0x39] = (uint8_t)pile;
+        b.f[0].n_items = 1;
+        if (arrows) {
+            it[1][0x2E] = 73; it[1][0x34] = 1; it[1][0x39] = (uint8_t)arrow_pile;
+            b.f[0].n_items = 2;
+        }
+    };
+    // Rate of fire: a bow with its arrows 2 a round, no more than the pile;
+    // without arrows readied the fighter's own 1; Haste doubles; darts 3; a sling 1
+    hold(43, 0, true, 12);
+    combat::start_round(b, d);
+    CHECK(b.f[0].attacks[0] == 2);
+    it[1][0x39] = 1;
+    combat::start_round(b, d);
+    CHECK(b.f[0].attacks[0] == 1);
+    it[1][0x34] = 0;
+    combat::start_round(b, d);
+    CHECK(b.f[0].attacks[0] == 1);
+    it[1][0x34] = 1; it[1][0x39] = 12;
+    aff[0][0][0] = 0x27; naff[0] = 1;                        // hasted
+    combat::start_round(b, d);
+    CHECK(b.f[0].attacks[0] == 4);
+    naff[0] = 0;
+    hold(9, 12, false, 0);
+    combat::start_round(b, d);
+    CHECK(b.f[0].attacks[0] == 3);
+    it[0][0x39] = 2;
+    combat::start_round(b, d);
+    CHECK(b.f[0].attacks[0] == 2);
+    hold(47, 0, false, 0);
+    combat::start_round(b, d);
+    CHECK(b.f[0].attacks[0] == 1);
+    // After attacking this round a new weapon gives no more attacks
+    hold(36, 0, false, 0);
+    combat::start_round(b, d);
+    b.f[0].attacked = true;
+    hold(43, 0, true, 12);
+    combat::recount_attacks(b, 0);
+    CHECK(b.f[0].attacks[0] == 1);
+    // The range: a bow's third is 7 squares; beyond it AC 2 better, beyond 14 5 better
+    auto swing = [&](int a, int c) {
+        b.f[a].attacks[0] = 1; b.f[a].attacks[1] = 0;
+        b.f[c].received = 0;
+        b.f[c].rec[0x1A4] = 250; b.f[c].rec[0x195] = 0; b.f[c].rec[0x196] = 1;
+        return combat::attack(b, a, c, &names, d, false);
+    };
+    hold(43, 0, true, 50);
+    const int dists[] = {1, 7, 8, 14, 15, 21};
+    const int pens[] = {0, 0, 2, 2, 5, 5};
+    for (int k = 0; k < 6; ++k) {
+        b.f[1].x = 10 + dists[k];
+        combat::occupancy(b);
+        bool ok = true;
+        for (int n = 0; n < 40; ++n) {
+            create::Dice peek = d;
+            const int r = peek.roll(20, 1);
+            const bool want = r == 20 || (r != 1 && r + 40 >= 50 + pens[k]);
+            if (swing(0, 1).hits[0].hit != want) ok = false;
+        }
+        CHECK(ok);
+    }
+    // Magic weapons by the target's kind (0x11A): Flame Tongue (effect 6)
+    // trolls (10) +1, 9 / 12 +2, the animated dead (4) +3; Frost Brand (0x4C)
+    // fire (8) +3; Dragon Slayer (0x4B) dragons (3): +2 and 3 x d12 + 4
+    hold(36, 0, false, 0);
+    b.f[1].x = 11;
+    combat::occupancy(b);
+    struct W { uint8_t fx; int kind, bonus; bool slayer; };
+    const W ws[] = {{6, 10, 1, false}, {6, 9, 2, false}, {6, 12, 2, false}, {6, 4, 3, false}, {6, 3, 0, false},
+                    {0x4C, 8, 3, false}, {0x4C, 10, 0, false}, {0x4B, 3, 2, true}, {0x4B, 8, 0, false}};
+    for (const W& w : ws) {
+        naff[0] = 1;
+        memset(aff[0][0], 0, party::kAffectSize);
+        aff[0][0][0] = w.fx; aff[0][0][3] = 0xFF;
+        rec[1][0x11A] = (uint8_t)w.kind;
+        bool ok = true;
+        for (int n = 0; n < 30; ++n) {
+            create::Dice peek = d;
+            const int r = peek.roll(20, 1);
+            const int extra = r > 1 ? w.bonus : 0;
+            const bool want = r == 20 || (r != 1 && r + 40 + extra >= 50);
+            const combat::Attack at = swing(0, 1);
+            if (at.hits[0].hit != want) ok = false;
+            if (want) {
+                int dmg = peek.roll(6, 1) + (w.slayer ? 0 : w.bonus);       // (rec dice 1d6: the long sword's 1d8 isn't
+                if (w.slayer) dmg = peek.roll(12, 1) * 3 + 4;               // in the record here)
+                if (at.hits[0].damage != dmg) ok = false;
+            }
+        }
+        CHECK(ok);
+    }
+    naff[0] = 0;
+    rec[1][0x11A] = 0;
+    // Displacement: its data's 0x10 set by the first attack (past a 1) - that one
+    // misses even on a 20; a fight's start clears it
+    naff[1] = 1;
+    memset(aff[1][0], 0, party::kAffectSize);
+    aff[1][0][0] = 0x59; aff[1][0][3] = 0xFF;
+    combat::battle_start(b);
+    CHECK(aff[1][0][3] == 0x0F);
+    rec[0][0x199] = 100;                                     // all but a 1 would hit
+    int misses = 0, swings = 0;
+    for (int n = 0; n < 12; ++n) {
+        create::Dice peek = d;
+        const int r = peek.roll(20, 1);
+        const combat::Attack at = swing(0, 1);
+        ++swings;
+        if (!at.hits[0].hit) {
+            ++misses;
+            if (r > 1) CHECK(misses == 1 || r == 1);
+        }
+        if (r > 1 && swings == 1) CHECK(!at.hits[0].hit);
+    }
+    CHECK((aff[1][0][3] & 0x10) != 0);
+    rec[0][0x199] = 40;
+    naff[1] = 0;
+    // The Ring of Invisibility: invisible at the start, seen after attacking, again after the round
+    naff[0] = 1;
+    memset(aff[0][0], 0, party::kAffectSize);
+    aff[0][0][0] = 0x38; aff[0][0][3] = 0xFF;
+    combat::battle_start(b);
+    CHECK(b.f[0].has(0x19));
+    swing(0, 1);
+    CHECK(!b.f[0].has(0x19));
+    combat::tick(b);
+    CHECK(b.f[0].has(0x19));
+    combat::tick(b);
+    CHECK(b.f[0].has(0x19));
+    naff[0] = 0;
+    // Large targets: size byte over 0x80, or & 7 over 1 (0x80 itself is man-sized): the large dice
+    rec[0][0x19E] = 1; rec[0][0x1A0] = 8; rec[0][0x199] = 100;
+    for (int sz : {0x80, 0x81, 0x02, 0x01}) {
+        rec[1][0xDE] = (uint8_t)sz;
+        bool ok = true;
+        for (int n = 0; n < 20; ++n) {
+            create::Dice peek = d;
+            const int r = peek.roll(20, 1);
+            const int dmg = peek.roll(sz > 0x80 || (sz & 7) > 1 ? 12 : 8, 1);
+            const combat::Attack at = swing(0, 1);
+            if (r != 1 && at.hits[0].damage != dmg) ok = false;
+        }
+        CHECK(ok);
+    }
+    // Free attacks: none from one with the Dragon Slayer's (0x4B) or the Robe of Vermin's (0x4A) effect
+    fx.items.vermin = 0x4A;
+    rec[1][0xDE] = 1;
+    b.f[1].delay = 5;
+    CHECK(combat::free_attack_ok(b, t, 1, 0));
+    for (uint8_t e : {static_cast<uint8_t>(0x4B), static_cast<uint8_t>(0x4A)}) {
+        naff[1] = 1;
+        memset(aff[1][0], 0, party::kAffectSize);
+        aff[1][0][0] = e;
+        CHECK(!combat::free_attack_ok(b, t, 1, 0));
+    }
+    naff[1] = 0;
+    // Backstab: man-sized or smaller is (size & 0x7F) 1 or less
+    rec[0][0x10F] = 3;                                       // a thief
+    hold(36, 0, false, 0);
+    for (int sz : {0x01, 0x81, 0x02, 0x09}) {
+        rec[1][0xDE] = (uint8_t)sz;
+        b.f[1].received = 2;
+        b.f[1].facing = 2;                                   // its back to the thief (west of it)
+        CHECK(combat::can_backstab(b, 0, 1, nullptr) == ((sz & 0x7F) <= 1));
+    }
+}
+
 static void test_create()
 {
     static classes::Tables t;
@@ -2743,6 +2984,43 @@ static void test_create()
     th.rec[0x74] = 1;
     classes::thief_skills(th, t);
     CHECK(th.rec[0xEA + 1] == 0);
+    // The thief items (listing ovr026:0AEA): Gloves of Thievery (0x8B) - skill
+    // 1 at 5th level below it, else +5; skill 2 at 7th below it, else +5; that
+    // bonus on for skills 3-8 (0 when skill 2 was raised to 7th); Gauntlets of
+    // Dexterity (0x82) - below 4th level the skills of 4th, else +10 on each,
+    // added even to a skill the race made 0; the race's floor counts the bonus
+    th.rec[0x74] = 7;
+    th.n_items = 1;
+    memset(th.items[0], 0, sizeof th.items[0]);
+    th.items[0][0x34] = 1;
+    th.items[0][0x3E] = 0x8B;
+    auto base = [](int lv, int s) { return 10 + 5 * lv + s; };
+    classes::thief_skills(th, t);                                   // level 3
+    CHECK(th.rec[0xEA] == base(5, 1) + 5 && th.rec[0xEB] == base(7, 2) + 5 && th.rec[0xEC] == base(3, 3) + 5 &&
+          th.rec[0xEF] == base(3, 6));
+    th.rec[0x10F] = 6;
+    classes::thief_skills(th, t);
+    CHECK(th.rec[0xEA] == base(6, 1) + 5 + 5 && th.rec[0xEB] == base(7, 2) + 5 && th.rec[0xEC] == base(6, 3) + 5);
+    th.rec[0x10F] = 8;
+    classes::thief_skills(th, t);
+    CHECK(th.rec[0xEA] == base(8, 1) + 10 && th.rec[0xEB] == base(8, 2) + 10 && th.rec[0xEC] == base(8, 3) + 10 &&
+          th.rec[0xEF] == base(8, 6) + 5);
+    th.rec[0x74] = 1;                                               // a dwarf: skill 2 -50, 52 < 50 + 5: 0
+    classes::thief_skills(th, t);
+    CHECK(th.rec[0xEB] == 0);
+    th.items[0][0x3E] = 0x82;                                       // gauntlets
+    th.rec[0x74] = 7;
+    th.rec[0x10F] = 3;
+    classes::thief_skills(th, t);
+    CHECK(th.rec[0xEA] == base(4, 1) + 5 && th.rec[0xEF] == base(4, 6));
+    th.rec[0x10F] = 5;
+    classes::thief_skills(th, t);
+    CHECK(th.rec[0xEA] == base(5, 1) + 5 + 10 && th.rec[0xEF] == base(5, 6) + 10);
+    th.rec[0x74] = 1;
+    th.rec[0x10F] = 7;                                              // 47 < 50: 0, then the +10
+    classes::thief_skills(th, t);
+    CHECK(th.rec[0xEB] == 10);
+    th.n_items = 0;
 
     // A Pool of Radiance record (285 bytes): the fields go where Curse keeps
     // them; stats held to the race's and sex's limits; no Animate Dead;
@@ -4674,6 +4952,7 @@ int main()
     test_spells_batch3();
     test_create();
     test_class_rules();
+    test_item_combat();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;
