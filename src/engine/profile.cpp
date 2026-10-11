@@ -146,7 +146,7 @@ constexpr combat::FightSpell kCurseFight[] = {
     {0x20, SpellDoes::Mirror, 0, 0, 0, 0, 0, 0x306EF},
     {0x2A, SpellDoes::Prayer, 0, 0, 0, 0, 0, 0x31544},
     {0x2F, SpellDoes::Damage, 0, 6, 0, 3, 9, 0},            // Fireball: level d6
-    {0x30, SpellDoes::Haste, 0, 0, 0, 0, 0, 0x31907},
+    {0x30, SpellDoes::Haste, 0, 0, 0, 0, 0, 0x31907, 0x36666},     // Haste: "is Hasted"; a slowed one "is Cured"
     {0x31, SpellDoes::Hold, 0, 0, 0, 0, 0, 0x303F1},
     {0x32, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x3067C},
     {0x34, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FE1C},
@@ -169,10 +169,12 @@ constexpr combat::FightSpell kCurseFight[] = {
     {0x5C, SpellDoes::Cone, 0, 4, 0, 6, 0x0A, 0},           // Cone of Cold: level d4 + level (a cone, 2 rays; cold
                                                             // and magic - spell_facts.md: coab says acid)
     {0x26, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x30FB6},      // Cause Blindness: "is blind"
-    {0x28, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x310A2},      // Cause Disease: "is diseased"
+    {0x28, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x310A2},      // Cause Disease: "is diseased" (till cured: the
+                                                            // original's d6 x 10 minutes start the disease's
+                                                            // course, not in the engine yet)
     {0x33, SpellDoes::Bolt, 0, 6, 0, 3, 0x0C, 0, 0, 0, 7},  // Lightning Bolt: level d6, 7 squares (electricity and
                                                             // magic; curse_finish_facts.md 2)
-    {0x37, SpellDoes::Theirs, 0, 0, 0, 0, 0, 0x31CD9},      // Slow: "is Slowed"
+    {0x37, SpellDoes::Slow, 0, 0, 0, 0, 0, 0x31CD9, 0x36666},       // Slow: "is Slowed"; a hasted one "is Cured"
     {0x5E, SpellDoes::Hold, 0, 0, 0, 0, 0, 0x303F1},        // Hold Monster
     // spell_facts.md (v0.55.0)
     {0x19, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x30489},      // Silence 15' Radius: "is silenced"
@@ -187,6 +189,7 @@ constexpr combat::FightSpell kCurseFight[] = {
     {0x4E, SpellDoes::Entangle, 0, 0, 0, 0, 0, 0x32663},    // Entangle: "is entangled" (outdoors)
     {0x4F, SpellDoes::Faerie, 0, 0, 0, 0, 0, 0x3271D},      // Faerie Fire: "is highlighted"
     {0x50, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x3274C},      // Invisibility to Animals: "is invisible"
+    {0x4D, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FDE3},      // Detect Magic (the druids'): "is affected"
     {0x56, SpellDoes::Fumble, 0, 0, 0, 0, 0, 0x32D97, 0x32DA1},  // Fumble: "is clumsy" / "is slowed"
     {0x57, SpellDoes::Damage, 3, 10, 0, 0, 0x0A, 0},        // Ice Storm: 3d10 cold (and magic), radius 2
     {0x5D, SpellDoes::Feeble, 0, 0, 0, 0, 0, 0x11465},      // Feeblemind: "is stupid"
@@ -209,7 +212,7 @@ constexpr combat::FightSpell kCurseFight[] = {
     {0x5A, SpellDoes::Animate, 0, 0, 0, 0, 0, 0x30DC2},
     {0x38, SpellDoes::Restore, 0, 0, 0, 0, 0, 0x31D11},     // Restoration: "is restored"
     // The items' own spells (the spell table's monster spells)
-    {0x39, SpellDoes::Haste, 5, 4, 0, 0, 0, 0x31ED7},       // speed: "is Speedy", 5d4 rounds
+    {0x39, SpellDoes::Haste, 5, 4, 0, 0, 0, 0x31ED7, 0x36666},     // speed: "is Speedy", 5d4 rounds
     {0x3C, SpellDoes::Bolt, 1, 6, 20, 0, 4, 0, 0, 0, 3},    // a lightning stroke: 1d6 + 20, the path 20, 3 squares
     {0x3D, SpellDoes::Theirs, 5, 4, 0, 0, 0, 0x32033},      // paralysis: "is paralyzed", 5d4 rounds
     {0x3E, SpellDoes::Heal, 2, 4, 2, 0, 0, 0x3206D},        // healing: "is Healed"
@@ -395,8 +398,8 @@ const Profile kProfiles[] = {
         0x0D, 0x3A, 0x8B, 0x90, 0x34, 0x37, 0x35,
         0x76, 0x87, {0x54, 0x37, 0x15}},
        // More spells' effects (spell_facts.md 2): enlarge, confuse, berserk, dispel evil (0x04, 0x91),
-       // the fire shields (hot 0x32, cold 0x36, the zap 0x8F)
-       {0x0C, 0x23, 0x89, 0x04, 0x91, 0x32, 0x36, 0x8F, 0x16, 0x0F, 0x17, 0x20, 0x3E, 0x92, 0x11},
+       // the fire shields (hot 0x32, cold 0x36, the zap 0x8F); Ray of Enfeeblement's 0x1D
+       {0x0C, 0x23, 0x89, 0x04, 0x91, 0x32, 0x36, 0x8F, 0x16, 0x0F, 0x17, 0x20, 0x3E, 0x92, 0x11, 0x1D},
        // The races' and rangers' effects (as created: Constitution saves, half-elf
        // resistance, dwarf vs orcs, gnome's foes, vs giants, gnome's other, ranger vs giants)
        {0x61, 0x7C, 0x1A, 0x12, 0x2F, 0x30, 0x86}},

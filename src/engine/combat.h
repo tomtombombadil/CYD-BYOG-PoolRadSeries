@@ -121,6 +121,7 @@ struct SpellFx {
     uint8_t con_regen;
     uint8_t giant;                      // the giant strength potion's (its data: the Strength)
     uint8_t shield;                     // Shield: AC 3 at worst, saves +1, Magic Missile stopped
+    uint8_t enfeeble;                   // Ray of Enfeeblement: its blows do damage - damage / 4
 };
 
 // The effects the fights' rules look at (per game, from the profile)
@@ -525,6 +526,8 @@ enum class SpellDoes : uint8_t {
                                         // either way
     Defoliate,                          // the wand: a cone of 3 squares (1 ray), dice of damage - plants all of it,
                                         // the rest as when saved (the spell table's)
+    Slow,                               // as Haste for the other side: at most the caster's level of them, a hasted
+                                        // one cured of it instead (word2 "is Cured")
 };
 struct FightSpell {
     uint8_t   spell;

@@ -3593,10 +3593,21 @@ static void test_combat()
         mrec[0][0x10E] = 5;
         n = combat::cast(sb, st, 0, 4, sticks, &one2, 1, d, sline, 16, 5);
         CHECK(n == 1 && sline[0].did == combat::Did::Word && sb.f[1].has(0x03));
+        // (the original's handler: more snakes than its attacks - fewer by those; else gone; the turn lost either way)
+        for (int k = 0; k < mnaff[1]; ++k)
+            if (maff[1][k][0] == 0x03) maff[1][k][3] = 5;
         sb.f[1].attacks[0] = 1; sb.f[1].attacks[1] = 0;
-        CHECK(combat::turn_effects(sb, 1) == combat::TurnFx::Snakes);       // 5 - 1 = 4 snakes > 1 attack
+        CHECK(combat::turn_effects(sb, 1) == combat::TurnFx::Snakes && sb.f[1].attacks[0] == 0);   // 5 > 1: 4 left
+        sb.f[1].attacks[0] = 3;
+        CHECK(combat::turn_effects(sb, 1) == combat::TurnFx::Snakes && sb.f[1].has(0x03));         // 4 > 3: 1 left
         sb.f[1].attacks[0] = 2;
-        CHECK(combat::turn_effects(sb, 1) == combat::TurnFx::None && !sb.f[1].has(0x03));  // 4 - 2 = 2 <= 2: gone
+        CHECK(combat::turn_effects(sb, 1) == combat::TurnFx::Snakes && !sb.f[1].has(0x03) &&
+              sb.f[1].attacks[0] == 0);                                                          // 1 <= 2: gone, turn lost
+        CHECK(combat::turn_effects(sb, 1) == combat::TurnFx::None);
+        // Cast on one with as many attacks left as the snakes: none stay, its actions gone
+        sb.f[1].attacks[0] = 5;
+        n = combat::cast(sb, st, 0, 4, sticks, &one2, 1, d, sline, 16, 5);
+        CHECK(n == 1 && sline[0].did == combat::Did::Word && !sb.f[1].has(0x03) && sb.f[1].attacks[0] == 0);
         // Silence: the silenced one and those next to it can't cast or use items this turn
         fresh(1); fresh(2);
         fx.silence = 0x15;
@@ -4083,6 +4094,156 @@ static void test_monster_fx()
     CHECK(casts <= 3);
 }
 
+// The behaviour test's spell fixes (the original's rules, coab's facts), on made-up fighters:
+// a dual-classed human's caster level, Slow, Bless next to an enemy, a fireball outdoors, Ray of
+// Enfeeblement on blows
+static void test_spell_rules()
+{
+    static combat::Tables t;
+    memset(&t, 0, sizeof t);
+    t.ground[0x37][0] = 1; t.ground[0x37][1] = 1;
+    static combat::Facts fx;
+    fx = combat::Facts{};
+    fx.bless = 0x01; fx.haste = 0x27; fx.slow = 0x2A;
+    fx.sp.enfeeble = 0x1D;
+    static uint8_t rec[6][party::kRecordSize];
+    static uint8_t aff[6][combat::kMonsterAffects][party::kAffectSize];
+    static int naff[6];
+    static combat::Battle b;
+    create::Dice d(7);
+    auto setup = [&]() {
+        b = combat::Battle{};
+        b.fx = &fx;
+        b.tables = &t;
+        for (int y = 0; y < combat::kH; ++y)
+            for (int x = 0; x < combat::kW; ++x) b.ground[y][x] = 0x37;
+        memset(rec, 0, sizeof rec);
+        memset(aff, 0, sizeof aff);
+        for (int i = 0; i < 6; ++i) {
+            uint8_t* r = rec[i];
+            r[0x196] = 1; r[0x197] = i >= 3; r[0xDE] = 1; r[0x78] = r[0x1A4] = 200; r[0xE5] = 1;
+            r[0x199] = 100; r[0x19A] = r[0x19B] = 50;
+            for (int k = 0; k < 5; ++k) r[0xDF + k] = 30;
+            naff[i] = 0;
+            combat::Fighter& f = b.f[i];
+            f = combat::Fighter{};
+            f.rec = r; f.aff = aff[i]; f.n_aff = &naff[i]; f.max_aff = combat::kMonsterAffects;
+            f.member = i < 3 ? i : -1;
+            f.x = 10 + 3 * i; f.y = 10; f.size = 1;
+        }
+        b.n = 6;
+        b.party_size = 3;
+        combat::occupancy(b);
+    };
+    static uint8_t sds[0x60 * 16];
+    memset(sds, 0, sizeof sds);
+    auto sp = [&](int s2, int cls, int lasts, int per, int aim, int on_save, int affect) {
+        uint8_t* e = sds + s2 * 16;
+        e[0] = static_cast<uint8_t>(cls); e[1] = 3; e[4] = static_cast<uint8_t>(lasts); e[5] = static_cast<uint8_t>(per);
+        e[6] = static_cast<uint8_t>(aim); e[8] = static_cast<uint8_t>(on_save); e[9] = 4;
+        e[10] = static_cast<uint8_t>(affect); e[11] = 2;
+    };
+    sp(0x01, 0, 6, 0, 10, 0, 0x01);         // Bless
+    sp(0x30, 2, 3, 1, 10, 0, 0x27);         // Haste
+    sp(0x37, 2, 3, 1, 10, 0, 0x2A);         // Slow
+    sp(0x2F, 2, 0, 0, 11, 2, 0);            // Fireball
+    classes::Layout sl{};
+    sl.lo = 0; sl.hi = sizeof sds; sl.spells = 0; sl.spell_count = 0x60;
+    static classes::Tables st;
+    CHECK(st.set(sl, sds, sizeof sds));
+    combat::SpellLine out[16];
+    // A human magic-user 6, once a 5th level cleric: casts the clerics' spells at 5 (the old levels count
+    // once the new class has passed them), the magic-users' at 6
+    {
+        uint8_t r[party::kRecordSize] = {};
+        r[0x74] = 7; r[0x10E] = 6; r[0x111] = 5; r[0xE6] = 5;
+        CHECK(combat::power_of(r, st, 0x01, false) == 5 && combat::power_of(r, st, 0x30, false) == 6);
+        r[0x10E] = 5;                                                // not past it yet: the old levels don't count
+        CHECK(combat::power_of(r, st, 0x01, false) == 0);
+    }
+    // Slow: the other side, at most the caster's level of them; a hasted one's Haste cured instead ("is Cured")
+    setup();
+    rec[0][0x10E] = 2;
+    aff[3][0][0] = 0x27; aff[3][0][1] = 5; naff[3] = 1;
+    const combat::FightSpell slow{0x37, combat::SpellDoes::Slow, 0, 0, 0, 0, 0, 0xAAAA, 0xBBBB};
+    int all[6] = {1, 3, 4, 5, 2, 0};
+    int n = combat::cast(b, st, 0, 0x37, slow, all, 6, d, out, 16);
+    CHECK(!b.f[3].has(0x27) && !b.f[3].has(0x2A) && b.f[4].has(0x2A) && !b.f[5].has(0x2A) && !b.f[1].has(0x2A));
+    CHECK(n == 2 && out[0].who == 3 && out[0].did == combat::Did::Word2 && out[1].who == 4);
+    // Haste: the caster's side; a slowed one cured instead
+    setup();
+    rec[0][0x10E] = 2;
+    aff[1][0][0] = 0x2A; aff[1][0][1] = 5; naff[1] = 1;
+    const combat::FightSpell haste{0x30, combat::SpellDoes::Haste, 0, 0, 0, 0, 0, 0xAAAA, 0xBBBB};
+    n = combat::cast(b, st, 0, 0x30, haste, all, 6, d, out, 16);
+    CHECK(!b.f[1].has(0x2A) && !b.f[1].has(0x27) && b.f[2].has(0x27) && !b.f[0].has(0x27) && !b.f[3].has(0x27));
+    // Bless in a fight: not on one with an enemy next to it
+    setup();
+    rec[0][0x109] = 3;
+    b.f[1].x = 30; b.f[3].x = 31;                                    // 1 next to the enemy 3
+    combat::occupancy(b);
+    const combat::FightSpell bless{0x01, combat::SpellDoes::Ours, 0, 0, 0, 0, 0, 0xAAAA};
+    int ours[3] = {0, 1, 2};
+    combat::cast(b, st, 0, 0x01, bless, ours, 3, d, out, 16);
+    CHECK(b.f[0].has(0x01) && !b.f[1].has(0x01) && b.f[2].has(0x01));
+    // A fireball outdoors: those within 2 squares of the square aimed at (indoors the targets given)
+    for (int outdoors = 0; outdoors < 2; ++outdoors) {
+        setup();
+        b.indoors = !outdoors;
+        rec[0][0x10E] = 3;
+        b.f[3].x = 30; b.f[4].x = 32; b.f[5].x = 33;              // 0, 2 and 3 squares from (30, 10)
+        combat::occupancy(b);
+        b.aim_x = 30; b.aim_y = 10;
+        const combat::FightSpell fb{0x2F, combat::SpellDoes::Damage, 0, 6, 0, 3, 9, 0};
+        int area[3] = {3, 4, 5};
+        combat::cast(b, st, 0, 0x2F, fb, area, 3, d, out, 16);
+        CHECK(b.f[3].hp() < 200 && b.f[4].hp() < 200 && (b.f[5].hp() < 200) == !outdoors);
+    }
+    // Ray of Enfeeblement: its blows do damage - damage / 4
+    setup();
+    rec[0][0x19E] = 1; rec[0][0x1A0] = 1; rec[0][0x1A2] = 11;      // 1d1 + 11 = 12
+    aff[0][0][0] = 0x1D; aff[0][0][1] = 5; naff[0] = 1;
+    b.f[3].x = 11;
+    combat::occupancy(b);
+    b.f[0].attacks[0] = 1;
+    const combat::Attack a = combat::attack(b, 0, 3, nullptr, d);
+    CHECK(a.n == 1 && (!a.hits[0].hit || b.f[3].hp() == 200 - 9));
+    // Poison (the spell) and a poisonous cloud: the dead carry the poisoned effect (data 0xFF)
+    fx.mon.poisoned = 0x37;
+    setup();
+    sp(0x44, 0, 0, 0, 4, 1, 0);
+    CHECK(st.set(sl, sds, sizeof sds));
+    const combat::FightSpell poison{0x44, combat::SpellDoes::Kill, 0, 0, 0, 0, 0, 0xAAAA};
+    int killed = 0;
+    for (int i = 3; i <= 4; ++i) {                     // (each saves only on a 20)
+        combat::cast(b, st, 0, 0x44, poison, &i, 1, d, out, 16);
+        if (b.f[i].status() == party::Dead) {
+            ++killed;
+            CHECK(b.f[i].has(0x37));
+        }
+    }
+    CHECK(killed > 0);
+    rec[5][0xE5] = 3;
+    CHECK(combat::breathe_poison(b, 5, d) && b.f[5].status() == party::Dead && b.f[5].has(0x37));
+    // Prayer: its holder's +1 / -1 reach 6 squares (not one 30 away)
+    fx.prayer = 0x31;
+    setup();
+    b.f[1].x = 40;
+    combat::occupancy(b);
+    aff[1][0][0] = 0x31; aff[1][0][1] = 5; aff[1][0][3] = 0x05; naff[1] = 1;     // the party's prayer, far away
+    for (int k = 0; k < 5; ++k) rec[3][0xDF + k] = 12;
+    combat::set_actor(b, 0);
+    create::Dice d1(11), d2(11);                      // the same rolls both times
+    int saved_far = 0, saved_near = 0;
+    for (int k = 0; k < 200; ++k) saved_far += combat::saving_throw(b.f[3], 4, 0, d1);
+    b.f[1].x = 14;                                    // 4 squares from the enemy 3 (at 19)
+    combat::occupancy(b);
+    for (int k = 0; k < 200; ++k) saved_near += combat::saving_throw(b.f[3], 4, 0, d2);
+    CHECK(saved_near < saved_far);                    // (near: -1 on every save)
+    fx.prayer = 0;
+    fx.mon.poisoned = 0;
+}
+
 // The second batch of fight spells (spell_facts.md 2), on made-up fighters
 static void test_spells_batch2()
 {
@@ -4509,6 +4670,7 @@ int main()
     test_combat();
     test_monster_fx();
     test_spells_batch2();
+    test_spell_rules();
     test_spells_batch3();
     test_create();
     test_class_rules();

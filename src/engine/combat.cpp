@@ -414,6 +414,19 @@ bool path_xy(const Battle& b, const Tables& t, int x0, int y0, int x, int y, boo
     return seen;
 }
 
+// A prayer's reach: its holder's effect counts for those within 6 squares
+// of it (coab's facts: calc_affect_effect - the prayer's range 6, in sight);
+// the holder itself always (no field's tables: everyone, as before)
+bool prayer_reaches(const Battle& b, int holder, int c)
+{
+    if (holder == c || !b.tables) return true;
+    const Fighter& h = b.f[holder];
+    const Fighter& f = b.f[c];
+    if (!h.size || !f.size) return false;
+    int len = 0;
+    return path_xy(b, *b.tables, h.x, h.y, f.x, f.y, false, &len) && len <= 2 * 6 + 1;
+}
+
 } // namespace
 
 bool path(const Battle& b, const Tables& t, int a, int x, int y, bool ignore_walls, int* length)
@@ -727,17 +740,15 @@ TurnFx turn_effects(Battle& b, int i)
     // (the original's order: the restrained - snakes -, silence, then confusion)
     const int s = fx.sticks ? find_aff(f, fx.sticks) : -1;
     if (s >= 0) {
-        // The snakes go down by its attacks this round; when they're no more
-        // than its attacks, they're gone
+        // More snakes than its attacks this round: they go down by its
+        // attacks; else they're gone - either way it fights them this turn
+        // (coab's facts, listing ovr013:00DC: "is fighting with snakes", the
+        // actions cleared)
         const int att = f.attacks[0] + f.attacks[1];
-        int snakes = f.aff[s][3] - att;
-        if (snakes <= att) {
-            drop_aff(f, s);
-        } else {
-            f.aff[s][3] = static_cast<uint8_t>(snakes);
-            f.moves = f.attacks[0] = f.attacks[1] = 0;
-            return TurnFx::Snakes;
-        }
+        if (f.aff[s][3] > att) f.aff[s][3] = static_cast<uint8_t>(f.aff[s][3] - att);
+        else drop_aff(f, s);
+        f.moves = f.attacks[0] = f.attacks[1] = 0;
+        return TurnFx::Snakes;
     }
     bool silenced = false;
     if (fx.silence && f.can_use) {
@@ -1193,7 +1204,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
         // A prayer helps its caster's side and hinders the other
         for (int i = 0; i < b.n; ++i) {
             const int k = find_aff(b.f[i], fx.prayer);
-            if (k < 0) continue;
+            if (k < 0 || !prayer_reaches(b, i, a)) continue;
             side += (b.f[i].aff[k][3] >> 4) == at.team() ? 1 : -1;
             break;
         }
@@ -1263,6 +1274,9 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             bool bane = false;
             if (b.fx) {
                 const MonFx& m = b.fx->mon;
+                // Ray of Enfeeblement on the attacker: a quarter off (coab's
+                // facts: three_quarters_damage, the attacker's checks first)
+                if (b.fx->sp.enfeeble && at.has(b.fx->sp.enfeeble)) dmg -= dmg / 4;
                 // The salamander's heat
                 if (hasx(at, m.heat) && !hasx(tg, m.heat_proof[0]) && !hasx(tg, m.heat_proof[1]) &&
                     !hasx(tg, m.heat_proof[2]))
@@ -1852,7 +1866,10 @@ bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
         // A prayer: +1 on its caster's side, -1 on the other
         for (int c = 0; fx.prayer && g_b && c < g_b->n; ++c) {
             const int k = find_aff(g_b->f[c], fx.prayer);
-            if (k < 0) continue;
+            int me = -1;
+            for (int j = 0; k >= 0 && j < g_b->n && me < 0; ++j)
+                if (&g_b->f[j] == &f) me = j;
+            if (k < 0 || (me >= 0 && !prayer_reaches(*g_b, c, me))) continue;
             bonus += (g_b->f[c].aff[k][3] >> 4) == f.team() ? 1 : -1;
             break;
         }
@@ -1892,10 +1909,17 @@ int power_of(const uint8_t* r, const classes::Tables& st, int s, bool item)
     const int cl = r[0x109], pa = r[0x10C], ra = r[0x10D], mu = r[0x10E];
     if (cl == 0 && mu == 0 && pa < 9 && ra < 8) return 6;
     auto most = [](int a, int b) { return a > b ? a : b; };
+    // The levels that count (classes::skill_level): a human who changed
+    // class adds the old class's levels once the new class has passed them
+    // (coab's facts: spellMaxTargetCount uses the skill levels)
+    int k = 0;
+    while (k < 7 && r[0x109 + k] == 0) ++k;
+    const bool past = r[0x74] == 7 && r[0x109 + k] > r[0xE6];
+    auto skill = [&](int cls) { return r[0x109 + cls] + (past ? r[0x111 + cls] : 0); };
     switch (st.spell_class(s)) {
-    case 0: return most(cl, pa - 8);
-    case 1: return most(ra - 7, 0);
-    case 2: return most(mu, ra - 8);
+    case 0: return most(skill(0), skill(3) - 8);
+    case 1: return most(skill(4) - 7, 0);
+    case 2: return most(skill(5), skill(4) - 8);
     case 3: return 12;
     default: return 0;
     }
@@ -1943,8 +1967,21 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         const int side = b.f[i].team() ? 1 : 0;
         if (fs.does == SpellDoes::Ours && side != my) continue;
         if (fs.does == SpellDoes::Theirs && side == my) continue;
+        // Bless in a fight: not on those with an enemy next to them (coab's
+        // facts: CastTeamSpell, spell 1 in combat)
+        if (fs.does == SpellDoes::Ours && spell == 0x01) {
+            bool near = false;
+            for (int c = 0; c < b.n && !near; ++c)
+                near = c != i && b.f[c].up() && b.f[c].size && (b.f[c].team() ? 1 : 0) != side && adjacent(b, i, c);
+            if (near) continue;
+        }
         who[m++] = i;
     }
+    // A fireball outdoors: those within 2 squares of the square aimed at
+    // (indoors the spell's area, 3; coab's facts: the fireball's routine
+    // rebuilds its targets when the area isn't a dungeon)
+    if ((spell == 0x2F || spell == 0x40) && fs.does == SpellDoes::Damage && !b.indoors && b.tables && b.aim_x >= 0)
+        m = in_area(b, *b.tables, b.aim_x, b.aim_y, 2, who, kMaxFighters);
     if (m == 0) return 0;
     b.no_action = b.round + 15;
     set_actor(b, caster);
@@ -2008,18 +2045,24 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         }
         break;
     }
-    case SpellDoes::Haste: {
+    case SpellDoes::Haste:
+    case SpellDoes::Slow: {
+        // The first `level` of the caster's side (Slow: of the other side);
+        // one with the opposite effect is cured of it instead ("is Cured",
+        // word2) - coab's facts: RemoveComplimentSpellFirst
+        const bool slow = fs.does == SpellDoes::Slow;
         int left = pw;
         for (int k = 0; k < m && left > 0; ++k) {
             Fighter& f = b.f[who[k]];
-            if ((f.team() ? 1 : 0) != my) continue;
+            if (((f.team() ? 1 : 0) == my) == slow) continue;
             --left;
-            if (resisted(k, e.affect)) continue;
-            const int sl = b.fx ? find_aff(f, b.fx->slow) : -1;
+            const int sl = b.fx ? find_aff(f, slow ? b.fx->haste : b.fx->slow) : -1;
             if (sl >= 0) {
                 drop_aff(f, sl);
+                if (fs.word2) say(who[k], Did::Word2, 0);
                 continue;
             }
+            if (resisted(k, e.affect)) continue;
             if (e.affect) give_aff(f, e.affect, minutes, pw, false);
             if (fs.word) say(who[k], Did::Word, 0);
         }
@@ -2210,6 +2253,9 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             Fighter& f = b.f[who[k]];
             if (!f.up() || (b.fx && resisted(k, b.fx->mon.poisoned)) || saving_throw(f, 0, 0, d)) continue;
             say(who[k], Did::Word, 0);
+            // poisoned (data 0xFF), then killed: Slow / Neutralize Poison can
+            // bring them back (listing ovr013:1407, the poison attack)
+            if (b.fx && b.fx->mon.poisoned) give_aff(f, b.fx->mon.poisoned, 0, 0xFF, false);
             damage(b, who[k], f.hp() + 10);
             f.rec[kHealth] = party::Dead;
             say(who[k], Did::Down, 0);
@@ -2295,11 +2341,12 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                 continue;
             }
             if (resisted(k, b.fx->sticks)) continue;
-            // The handler at once: the snakes less its attacks left this round
+            // The handler at once (as at its turns): more snakes than its
+            // attacks left this round - they go down by those, else gone;
+            // either way its actions this round are gone
             const int att = f.attacks[0] + f.attacks[1];
             say(who[k], Did::Word, 0);
-            if (pw - att <= att) continue;              // (as many as its attacks, or fewer: gone already)
-            give_aff(f, b.fx->sticks, minutes, pw - att, false);
+            if (pw > att) give_aff(f, b.fx->sticks, minutes, pw - att, false);
             f.moves = f.attacks[0] = f.attacks[1] = 0;
         }
         break;
@@ -3188,6 +3235,9 @@ bool breathe_poison(Battle& b, int i, create::Dice& d)
     else if (hd == 5) dies = !saving_throw(f, 0, -4, d);
     else if (hd == 6) dies = !saving_throw(f, 0, 0, d);
     if (!dies) return false;
+    // poisoned (data 0xFF) and dead: Slow / Neutralize Poison can bring them
+    // back (listing ovr024 in_poison_cloud: effect 0x37 in every branch)
+    if (b.fx && b.fx->mon.poisoned) give_aff(f, b.fx->mon.poisoned, 0, 0xFF, false);
     damage(b, i, f.hp() + 10);                       // dead
     return true;
 }
