@@ -917,6 +917,53 @@ int dex_reaction(int dex)
 
 int attacks_this_round(int half, int round) { return (half + (round % 2 ? 1 : 0)) / 2; }
 
+// Slot 1's attacks this round (coab's facts: reclac_attacks): half attacks
+// from the record (a monster with none in slot 1 has none - the spiders
+// bite with slot 2 only); a missile weapon readied that can shoot (a thrown
+// one, a launcher with its arrows / quarrels, a sling) the ITEMS file's
+// number for it instead, at least 2; haste x 2, slow / 2; no more attacks
+// than the missiles it has
+int slot1_attacks(const Battle& b, const Fighter& f, bool* ranged)
+{
+    int half1 = f.rec[kHalf1];
+    int missiles = 0;
+    *ranged = false;
+    if (b.names && f.items) {
+        const int w = weapon(f, *b.names);
+        const items::TypeInfo* ti = w >= 0 ? &b.names->type(f.items[w][0x2E]) : nullptr;
+        if (ti && ti->range > 1) {
+            const uint8_t* shot = (ti->flags & 0x10) ? f.items[w] : nullptr;
+            if (ti->flags & 0x08)
+                for (int k = 0; k < f.n_items; ++k) {
+                    const int ty = f.items[k][0x2E];
+                    if (f.items[k][0x34] && (((ti->flags & 0x01) && ty == b.arrow) || ((ti->flags & 0x80) && ty == b.quarrel)))
+                        shot = f.items[k];
+                }
+            if (shot || ti->flags == 0x0A) {
+                half1 = ti->attacks < 2 ? 2 : ti->attacks;
+                missiles = shot ? shot[0x39] : 0;
+                *ranged = true;
+            }
+        }
+    }
+    if (b.fx && f.has(b.fx->haste)) half1 *= 2;
+    if (b.fx && f.has(b.fx->slow)) half1 /= 2;
+    int n = attacks_this_round(half1, b.round);
+    if (missiles > 0 && missiles < n) n = missiles;
+    return n;
+}
+
+void recount_attacks(Battle& b, int i)
+{
+    Fighter& f = b.f[i];
+    bool ranged = false;
+    const int now = f.attacks[0];
+    const int n = slot1_attacks(b, f, &ranged);
+    // Never back the attacks already used: once it has attacked, only fewer
+    // (or, in melee, up to twice what was left)
+    if (!f.attacked || n < now || (n < now * 2 && !ranged)) f.attacks[0] = n;
+}
+
 void start_round(Battle& b, create::Dice& d)
 {
     g_fx = b.fx;
@@ -945,42 +992,13 @@ void start_round(Battle& b, create::Dice& d)
         int mv = f.rec[kMove];
         if (mv < 1 || mv > 96) mv = 1;
         f.moves = mv * 2;
-        // Half attacks: the record's (a monster with none in slot 1 has none -
-        // the spiders bite with slot 2 only); a missile weapon readied that
-        // can shoot (a thrown one, a launcher with its arrows / quarrels, a
-        // sling) the ITEMS file's number for it instead, at least 2, and no
-        // more attacks than the missiles it has (coab's facts: reclac_attacks)
-        int half1 = f.rec[kHalf1], half2 = f.rec[kHalf2];
-        int missiles = 0;
-        if (b.names && f.items) {
-            const int w = weapon(f, *b.names);
-            const items::TypeInfo* ti = w >= 0 ? &b.names->type(f.items[w][0x2E]) : nullptr;
-            if (ti && ti->range > 1) {
-                const uint8_t* shot = (ti->flags & 0x10) ? f.items[w] : nullptr;
-                if (ti->flags & 0x08)
-                    for (int k = 0; k < f.n_items; ++k) {
-                        const int ty = f.items[k][0x2E];
-                        if (f.items[k][0x34] && (((ti->flags & 0x01) && ty == b.arrow) || ((ti->flags & 0x80) && ty == b.quarrel)))
-                            shot = f.items[k];
-                    }
-                if (shot || ti->flags == 0x0A) {
-                    half1 = ti->attacks < 2 ? 2 : ti->attacks;
-                    missiles = shot ? shot[0x39] : 0;
-                }
-            }
-        }
-        if (b.fx && f.has(b.fx->haste)) {
-            f.moves *= 2;
-            half1 *= 2;
-            half2 *= 2;
-        }
-        if (b.fx && f.has(b.fx->slow)) {
-            f.moves /= 2;
-            half1 /= 2;
-            half2 /= 2;
-        }
-        f.attacks[0] = attacks_this_round(half1, b.round);
-        if (missiles > 0 && missiles < f.attacks[0]) f.attacks[0] = missiles;
+        if (b.fx && f.has(b.fx->haste)) f.moves *= 2;
+        if (b.fx && f.has(b.fx->slow)) f.moves /= 2;
+        bool ranged = false;
+        f.attacks[0] = slot1_attacks(b, f, &ranged);
+        int half2 = f.rec[kHalf2];
+        if (b.fx && f.has(b.fx->haste)) half2 *= 2;
+        if (b.fx && f.has(b.fx->slow)) half2 /= 2;
         f.attacks[1] = attacks_this_round(half2, b.round);
         if (b.fx && b.fx->entangle && f.has(b.fx->entangle)) f.moves = 0;      // entangled: no moving
         if (b.fx && hasx(f, b.fx->mon.held_fast)) f.moves = 0;                 // engulfed, hugged
@@ -1177,6 +1195,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
     g_kind = 0;
     b.no_action = b.round + 15;
     at.attacked = true;
+    at.swept = true;                            // (no sweep after any attack this round: the original zeroes its sweep count)
     // The original's order (the listing's sub_3F94D, called before the attack
     // itself, sub_3F9DB): the attack is counted first - attacks received + 1,
     // and the angle between the target's facing (before it turns) and where
@@ -1491,7 +1510,9 @@ bool free_attack_ok(const Battle& b, const Tables& t, int e, int mover)
 int sweep(const Battle& b, int a, int target, int* out, int cap)
 {
     const Fighter& at = b.f[a];
-    const int level = at.member >= 0 ? at.rec[kFighterLevel] : 0;
+    // The sweep count: the attack level (record 0xDD - the fighter level of
+    // a character or a monster of a race, else 1; coab reclac_player_values)
+    const int level = at.rec[0xDD];
     if (level <= 0 || at.swept || at.attacks[0] >= level) return 0;
     const Fighter& tg = b.f[target];
     if (tg.rec[kHd] != 0 || !adjacent(b, a, target)) return 0;

@@ -342,6 +342,12 @@ int next(Battle& b, create::Dice& d);
 // Attacks this round: half attacks (record 0x11C slot 1, 0x11D slot 2) by
 // round (3 half attacks = 1, 2, 1, 2 ...)
 int attacks_this_round(int half, int round);
+// Slot 1's attacks this round by the readied weapon (a missile weapon: the
+// ITEMS file's number, at least 2, no more than the missiles); *ranged: so
+int slot1_attacks(const Battle& b, const Fighter& f, bool* ranged);
+// A weapon changed in the round (the computer's choice, View, Use): its
+// attacks counted again - never giving back those used (coab reclac_attacks)
+void recount_attacks(Battle& b, int i);
 
 // ---- Attacking
 struct Hit {

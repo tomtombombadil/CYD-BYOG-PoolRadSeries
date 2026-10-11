@@ -1123,7 +1123,8 @@ void event_page(const combat::Event& e)
 
 // An attack and what it did, as pages. A shot (`ammo`: the item that flies,
 // -1 none) flies first: its picture and sound on the first page.
-void do_attack(pic::Canvas& c, int a, int t, bool behind, bool shot = false, int ammo = -1)
+// (the swings made: a shot's missiles used)
+int do_attack(pic::Canvas& c, int a, int t, bool behind, bool shot = false, int ammo = -1)
 {
     combat::Battle& b = fg->b;
     if (!on_screen(a) || !on_screen(t)) {
@@ -1181,6 +1182,7 @@ void do_attack(pic::Canvas& c, int a, int t, bool behind, bool shot = false, int
         else page_sound(sound::kMiss);
     }
     if (at.down) down_page(t);
+    return at.slain ? 1 : at.n;
 }
 
 // After an attack's pages: the turn ends unless attacks are left and the
@@ -1296,7 +1298,7 @@ void remove_group_item(const combat::Fighter& f, int k)
 }
 
 // A shot: one arrow / quarrel of the pile, or the thrown weapon, goes
-void spend_ammo(int i, int k)
+void spend_one(int i, int k)
 {
     combat::Fighter& f = fg->b.f[i];
     if (k < 0 || k >= f.n_items) return;
@@ -1326,6 +1328,17 @@ void spend_ammo(int i, int k)
     const int left = f.items[k][0x39];
     if (left > 1) f.items[k][0x39] = static_cast<uint8_t>(left - 1);
     else remove_group_item(f, k);
+}
+
+// A missile used up for each shot made (a bow shoots 2 a round: 2 arrows)
+void spend_ammo(int i, int k, int shots)
+{
+    combat::Fighter& f = fg->b.f[i];
+    for (int s = 0; s < shots; ++s) {
+        const int before = f.n_items;
+        spend_one(i, k);
+        if (f.n_items != before) break;     // (the last one: gone)
+    }
 }
 
 // ---- Use in a fight: the item's spell goes off at once (no casting time),
@@ -1864,9 +1877,8 @@ void strike(pic::Canvas& c, int t)
     combat::Fighter& f = fg->b.f[fg->cur];
     int ammo = -1;
     const bool shot = !combat::adjacent(fg->b, fg->cur, t) && combat::missile(fg->b, f, &ammo) > 0;
-    if (shot) do_attack(c, fg->cur, t, false, true, ammo);
+    if (shot) spend_ammo(fg->cur, ammo, do_attack(c, fg->cur, t, false, true, ammo));
     else melee(c, fg->cur, t);
-    if (shot) spend_ammo(fg->cur, ammo);
 }
 
 void spell_target(pic::Canvas& c, int t);
@@ -2051,6 +2063,7 @@ bool ai_ready_weapon(int i)
         }
         delete tmp;
     }
+    combat::recount_attacks(fg->b, i);      // (its attacks for the weapon now: coab reclac_attacks)
     return true;
 }
 
@@ -2160,9 +2173,8 @@ void ai_step(pic::Canvas& c)
     const combat::Plan p = combat::think(b, fg->t, i, rng);
     switch (p.act) {
     case combat::Act::Attack:
-        if (p.missile) do_attack(c, i, p.target, false, true, p.ammo);
+        if (p.missile) spend_ammo(i, p.ammo, do_attack(c, i, p.target, false, true, p.ammo));
         else melee(c, i, p.target);
-        if (p.missile) spend_ammo(i, p.ammo);
         say(c, FSt::Turn);
         return;
     case combat::Act::Step: {
@@ -3403,6 +3415,7 @@ void fight_after_view(pic::Canvas& c)
         rules::recalc(ch, *names, d->facts);
         f.n_items = ch.n_items;
         compose_icon(f.member, ch);
+        combat::recount_attacks(fg->b, fg->cur);    // (a weapon changed: its attacks)
     }
     draw_fight(c);
     fight_menu(c);
