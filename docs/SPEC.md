@@ -565,7 +565,29 @@ Steps (each pushed when it works; Curse stays as it is):
    records. The sweep (`sweep.cpp events`, GAME=1) walks every square of
    all 30 area scripts with no problems. Fights aren't in yet: a COMBAT
    says so and the script goes on as if the party fled.
-4. Create New Character (Pool's rule tables), training, camp (no Fix).
+4. v0.77.0: Create New Character as Pool makes one (create_facts.md):
+   its races / classes (no half-orcs; humans C, F, MU, T), the best of six
+   3d6 (no +1), HP (one roll, at level 1 at least 2/3 of the die), gold
+   only (the classes' money dice x 10, shared), no starting experience and
+   no silent training, a cleric's every 1st-level spell, a magic-user's
+   Detect Magic / Read Magic / Shield / Sleep, dwarves' and halflings'
+   poison effect; "Keep this character? Yes No" (No rolls again), the name,
+   the **portrait picker** ("Head Body Keep": heads 1-14, bodies 1-12 from
+   HEAD3 / BODY3 by the program's tables), the icon editor, saved as
+   NAME.CHA (no question) and listed in CHARLIST.TXT. Pool's rule tables
+   have their own shapes (`classes::Layout pool`: THAC0 11 levels, saves
+   class x 45, 56-byte class records whose spell slots are the TOTALS
+   for levels 2-9, race classes 12 bytes, the spell table's magic-user
+   class 1, no hit dice limit, flags / masks at DS 0x5D6 / 0x5DE); the
+   GOG sample party's THAC0, saves, slots, thief skills and class flags
+   come out exactly as the game stored them. Training: Pool's level caps
+   (cleric 6, fighter 8, magic-user 6, thief 9 by its experience table),
+   no magic-user race limits. Rest: Pool's keys (Rest daYs Hours Mins
+   Inc Dec Exit). Not copied (quirks read from the code, SPEC 12 if ever
+   wanted): the new thief's Dex-0 skills in the .CHA until joining, a
+   magic-user with no spell left to choose at training getting 1 HP.
+   Still to do: Pool's Alter (Monsters / Portraits on/off), Modify's
+   limits, the portrait on View Character.
 5. Combat, spells, items, monsters; the end (FINAL5.DAX).
 6. Behaviour tests (`sweep.cpp`) with Pool's expectations.
 

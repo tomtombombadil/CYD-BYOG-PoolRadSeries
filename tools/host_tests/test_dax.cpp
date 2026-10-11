@@ -3027,6 +3027,95 @@ static create::Facts make_facts()
     return f;
 }
 
+// Pool of Radiance's shapes (create_facts.md 2): THAC0 11 levels, saves
+// class * 45, 56-byte class records with TOTAL slots, race classes 12
+// bytes, the spell class byte 1 = magic-user, money dice, flags elsewhere
+static void make_pool_tables(classes::Tables& t)
+{
+    classes::Layout l{};
+    l.pool = true;
+    l.lo = 0x1000; l.hi = 0x1C00; l.lo2 = 0x500; l.hi2 = 0x510;
+    l.spells = 0x1000; l.spell_count = 10;
+    l.thac0 = 0x1100; l.class_flags = 0x500; l.class_masks = 0x508;
+    l.thief_base = 0x1190; l.thief_race = 0x1210; l.thief_dex = 0x1260; l.stat_limits = 0x1300;
+    l.race_classes = 0x1380; l.race_ages = 0x13F0; l.age_brackets = 0x14D0; l.class_min = 0x1520;
+    l.class_alignments = 0x1590; l.class_records = 0x1640; l.saves = 0x1960; l.money_dice = 0x1B00;
+    static uint8_t ds[0xC00], ds2[16];
+    memset(ds, 0, sizeof ds);
+    auto at = [&](int off) -> uint8_t& { return ds[off - 0x1000]; };
+    auto put32 = [&](int off, uint32_t v) { for (int i = 0; i < 4; ++i) at(off + i) = static_cast<uint8_t>(v >> (8 * i)); };
+    // spells 1-3 cleric 1, 4 cleric 2, 5-6 magic-user 1 (class byte 1), 7 an item's (2)
+    const uint8_t sp[8][2] = {{0, 0}, {0, 1}, {0, 1}, {0, 1}, {0, 2}, {1, 1}, {1, 1}, {2, 6}};
+    for (int s = 1; s < 8; ++s) { at(0x1000 + s * 16) = sp[s][0]; at(0x1000 + s * 16 + 1) = sp[s][1]; }
+    for (int c = 0; c < 8; ++c) {
+        ds2[c] = static_cast<uint8_t>(1 << c);
+        ds2[8 + c] = static_cast<uint8_t>(1 << c);
+        for (int lv = 0; lv <= 10; ++lv) at(0x1100 + c * 11 + lv) = static_cast<uint8_t>(40 + lv);
+        for (int lv = 1; lv <= 8; ++lv) put32(0x1640 + c * 56 + (lv - 1) * 4, c == classes::Fighter && lv >= 5 ? 0xFFFFFFFFu : 1000u << (lv - 1));
+        for (int lv = 2; lv <= 9; ++lv) {
+            at(0x1640 + c * 56 + 32 + (lv - 2) * 3) = static_cast<uint8_t>(lv);       // totals: level 1 spells = level
+            at(0x1640 + c * 56 + 32 + (lv - 2) * 3 + 1) = static_cast<uint8_t>(lv >= 3 ? 1 : 0);
+        }
+        for (int lv = 1; lv <= 9; ++lv)        // (level 9 of a class is the next class's place 0)
+            for (int k = 0; k < 5; ++k) at(0x1960 + c * 45 + lv * 5 + k) = static_cast<uint8_t>(16 - lv);
+        at(0x1B00 + c * 2) = 2;                      // money: 2d4
+        at(0x1B00 + c * 2 + 1) = 4;
+    }
+    for (int r = 0; r < 8; ++r) {
+        const int o = 0x1300 + r * 16;
+        at(o) = 3; at(o + 1) = 3; at(o + 2) = 18; at(o + 3) = 18; at(o + 4) = 100; at(o + 5) = 50;
+        for (int i = 1; i < 6; ++i) { at(o + 4 + i * 2) = 3; at(o + 5 + i * 2) = 18; }
+        for (int e = 0; e < 7; ++e) { at(0x13F0 + r * 28 + e * 4) = 15; at(0x13F0 + r * 28 + e * 4 + 2) = 1; at(0x13F0 + r * 28 + e * 4 + 3) = 4; }
+        for (int b = 0; b < 5; ++b) { at(0x14D0 + r * 10 + b * 2) = 0xF4; at(0x14D0 + r * 10 + b * 2 + 1) = 0x01; }
+    }
+    const uint8_t human[5] = {4, 0, 2, 5, 6};
+    memcpy(&at(0x1380 + 7 * 12), human, 5);
+    for (int c = 0; c < 17; ++c) {
+        at(0x1590 + c * 10) = 9;
+        for (int a = 0; a < 9; ++a) at(0x1590 + c * 10 + 1 + a) = static_cast<uint8_t>(a);
+    }
+    CHECK(t.set(l, ds, sizeof ds, ds2, sizeof ds2));
+}
+
+static void test_pool_rules()
+{
+    static classes::Tables t;
+    make_pool_tables(t);
+    create::Facts f = make_facts();
+    f.poison_save = 0x5A;
+    int list[16];
+    CHECK(create::classes_for(t, 7, list, 16) == 4 && list[0] == 0 && list[3] == 6);
+    CHECK(t.thac0(2, 3) == 43 && t.thac0(2, 12) == 50 && t.save(2, 9, 0) == 7 && t.save(2, 12, 0) == 7);
+    CHECK(t.spell_class(5) == 2 && t.spell_class(1) == 0 && t.spell_class(7) == 3);
+    CHECK(t.exp_needed(0, 1) == 1000 && t.exp_needed(0, 8) == 128000 && t.exp_needed(0, 9) == -1);
+    CHECK(t.slots_total(0, 3, 0) == 3 && t.max_hit_dice(2) == 99 && t.u8(0x503) == 8);
+    // A human cleric / magic-user: no experience, no silent training, 1 slot each, gold only
+    static party::Character c;
+    create::Dice d(5);
+    create::begin(c, t, f, d, 7, 0, create::ClericMU, 0);
+    create::roll(c, t, f, d);
+    CHECK(c.exp() == 0 && c.level(0) == 1 && c.level(5) == 1 && c.money(4) == 0);
+    CHECK(c.money(3) >= 20 && c.money(3) <= 80 && c.money(3) % 5 == 0);    // (2d4 + 2d4) x 10 / 2
+    CHECK(c.rec[0x12D] >= 1 && c.rec[0x137] == 1 && c.rec[0x79 + 0] && c.rec[0x79 + 2] && !c.rec[0x79 + 3]);
+    CHECK(c.rec[0x79 + 4] && c.rec[0x79 + 5]);                 // f.mu_first: 5 and 6
+    CHECK(c.rec[0x13F] == 1 && c.rec[0x140] == 1);             // the portrait: head 1, body 1
+    for (int i = 0; i < 6; ++i) CHECK(c.stat(i) >= 3 && c.stat(i) <= 18);
+    // Level 3 cleric: the TOTALS for level 3 (3 first, 1 second) and the level-2 spell learnt
+    c.rec[0x109] = 3;
+    classes::class_bonuses(c, t);
+    const int wis = c.stat(2), bonus = (wis >= 13) + (wis >= 14);
+    CHECK(c.rec[0x12D] == 3 + bonus && c.rec[0x12E] == 1 + (wis >= 15) + (wis >= 16) && c.rec[0x79 + 3]);
+    CHECK(c.rec[0x73] == 43 && c.rec[0xDF] == 13);           // THAC0 from the 11-level rows, saves level 3
+    // Dwarves and halflings: the poison effect too
+    static party::Character dw;
+    create::begin(dw, t, f, d, 1, 0, create::Fighter, 0);
+    CHECK(dw.n_affects == 4 && dw.affects[0][0] == 0x5A && dw.affects[1][0] == 0x61);
+    // Training: fighters stop where the table does
+    dw.rec[0x109 + 2] = 5;
+    dw.rec[0x127] = 0; dw.rec[0x128] = 0; dw.rec[0x129] = 0x10;
+    CHECK(create::trainable(dw, t) == 0);
+}
+
 // The original's class rules (the behaviour checks' findings, from its
 // listing): starting experience, race limits, a training hall's choice and
 // the experience kept, levels lost made up, Restoration's own limits, the
@@ -5582,6 +5671,7 @@ int main()
     test_spell_rules();
     test_spells_batch3();
     test_create();
+    test_pool_rules();
     test_class_rules();
     test_item_combat();
     if (failures) {

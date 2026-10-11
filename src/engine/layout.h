@@ -75,6 +75,9 @@ void outer(pic::Canvas& c, const Tables& tb, const Tiles& t);
 void bar(pic::Canvas& c, const Tables& tb, const Tiles& t, int row);
 void explore(pic::Canvas& c, const Tables& tb, const Tiles& t);
 void combat(pic::Canvas& c, const Tables& tb, const Tiles& t);
+// A box's border with its corners at cells (c0, r0) and (c1, r1) (Pool's
+// framebox; a game with frame tables: nothing)
+void box(pic::Canvas& c, const Tables& tb, const Tiles& t, int c0, int r0, int c1, int r1);
 // The credits screen: the border and bars at `rows` (0: none); with boxes
 // (Pool) the border goes down to row 24
 void credits(pic::Canvas& c, const Tables& tb, const Tiles& t, const uint8_t rows[2]);

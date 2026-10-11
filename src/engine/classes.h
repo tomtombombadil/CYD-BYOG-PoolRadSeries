@@ -40,37 +40,76 @@ struct Layout {
     uint16_t class_alignments;         // [class 0-16] 10 bytes: count, alignments
     uint16_t class_records;            // [class] 99 bytes: experience for levels 2-12 (11 x i32), spell slots gained (11 x 5)
     uint16_t saves;                    // + class * 60 + level * 5 + save (level 1-12)
+    // Pool of Radiance's shapes (create_facts.md 2; all zero: Curse's):
+    // THAC0 [class][11 levels 0-10], saves + class * 45 (levels 1-9),
+    // class records of 56 bytes (8 x i32 experience for levels 2-9, then
+    // 8 x 3 spell slots: the TOTAL for levels 2-9), race classes 12 bytes,
+    // the spell table's class byte 0 cleric / 1 magic-user / 2 the items'
+    // and monsters' (read as Curse's 0 / 2 / 3), no hit dice limit, money
+    // dice per class (count, sides); the class flags / masks in a second
+    // part of the data segment (lo2..hi2)
+    bool     pool;
+    uint16_t money_dice;
+    uint16_t lo2, hi2;
 };
 
 // A copy of the tables (read from the program)
 class Tables {
 public:
     Layout   lay{};
-    // ds_lo..ds_hi of the data segment
-    bool set(const Layout& l, const uint8_t* bytes, size_t n);
-    uint8_t  u8(uint16_t ds) const { return ds >= lay.lo && ds < lay.hi ? data_[ds - lay.lo] : 0; }
+    // ds_lo..ds_hi of the data segment (and lo2..hi2: second)
+    bool set(const Layout& l, const uint8_t* bytes, size_t n, const uint8_t* bytes2 = nullptr, size_t n2 = 0);
+    uint8_t  u8(uint16_t ds) const
+    {
+        if (ds >= lay.lo && ds < lay.hi) return data_[ds - lay.lo];
+        return ds >= lay.lo2 && ds < lay.hi2 ? data2_[ds - lay.lo2] : 0;
+    }
     int8_t   s8(uint16_t ds) const { return static_cast<int8_t>(u8(ds)); }
     uint16_t u16(uint16_t ds) const { return static_cast<uint16_t>(u8(ds) | u8(static_cast<uint16_t>(ds + 1)) << 8); }
     int32_t  i32(uint16_t ds) const;
 
-    int  thac0(int cls, int level) const { return s8(static_cast<uint16_t>(lay.thac0 + cls * 13 + level)); }
-    int  max_hit_dice(int cls) const { return u8(static_cast<uint16_t>(lay.max_hit_dice + cls)); }
-    int  save(int cls, int level, int kind) const { return u8(static_cast<uint16_t>(lay.saves + cls * 60 + level * 5 + kind)); }
-    // Spell slots gained on reaching `level` (2-12): row level - 2
+    // The highest level the tables have (Curse 12, Pool 9; THAC0 one more row in Pool)
+    int  top_level() const { return lay.pool ? 9 : 12; }
+    int  thac0(int cls, int level) const
+    {
+        const int n = lay.pool ? 11 : 13;
+        if (level > n - 1) level = n - 1;
+        return s8(static_cast<uint16_t>(lay.thac0 + cls * n + level));
+    }
+    int  max_hit_dice(int cls) const { return lay.pool ? 99 : u8(static_cast<uint16_t>(lay.max_hit_dice + cls)); }
+    int  save(int cls, int level, int kind) const
+    {
+        if (level > top_level()) level = top_level();
+        return u8(static_cast<uint16_t>(lay.saves + cls * (lay.pool ? 45 : 60) + level * 5 + kind));
+    }
+    int  record_size() const { return lay.pool ? 56 : 99; }
+    // Spell slots gained on reaching `level` (2-12): row level - 2 (Curse)
     int  slots_gained(int cls, int level, int col) const
     {
         return u8(static_cast<uint16_t>(lay.class_records + cls * 99 + 44 + (level - 2) * 5 + col));
     }
+    // Pool: the spell slots a class has in all at `level` (2-9), level col + 1
+    int  slots_total(int cls, int level, int col) const
+    {
+        return u8(static_cast<uint16_t>(lay.class_records + cls * 56 + 32 + (level - 2) * 3 + col));
+    }
     // Experience needed to go from `level` (1-11) to the next; <= 0: no more
     int32_t exp_needed(int cls, int level) const
     {
-        return i32(static_cast<uint16_t>(lay.class_records + cls * 99 + (level - 1) * 4));
+        if (level < 1 || level > top_level() - 1) return -1;
+        return i32(static_cast<uint16_t>(lay.class_records + cls * record_size() + (level - 1) * 4));
     }
-    int  spell_class(int spell) const { return u8(static_cast<uint16_t>(lay.spells + spell * 16)); }
+    // 0 cleric, 1 druid, 2 magic-user, 3 the items' and monsters' (Pool's numbers moved to these)
+    int  spell_class(int spell) const
+    {
+        const int v = u8(static_cast<uint16_t>(lay.spells + spell * 16));
+        return lay.pool && v > 0 ? v + 1 : v;
+    }
     int  spell_level(int spell) const { return u8(static_cast<uint16_t>(lay.spells + spell * 16 + 1)); }
 
 private:
-    uint8_t data_[4096] = {};
+    uint8_t data_[4608] = {};
+    uint8_t data2_[32] = {};
 };
 
 // The level that counts for a class (a human who changed class adds the

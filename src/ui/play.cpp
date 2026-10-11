@@ -156,7 +156,8 @@ pic::Canvas* cv = nullptr;
 // Game" question, or the game itself
 enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich, AddFrom,
                                AddList, YesNo, CreatePick, CreateName, TradeWho, Heal, Take, Appraise, Magic,
-                               SpellList, Rest, Cast, Effects, Alter, Fight, Loot, Modify, Title, Icon, Won };
+                               SpellList, Rest, Cast, Effects, Alter, Fight, Loot, Modify, Title, Icon, Won,
+                               Portrait };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
 Screen save_from = Screen::PartyMenu;   // where Save Which Game goes back to
@@ -2134,6 +2135,9 @@ struct Making {
     char words[9][24] = {};         // Pick Race ... "? " (profile create.pick_race ...)
     // Human Change (stage 4): "Pick New Class", " doesn't qualify.", "Select", " is now a 1st level ", "."
     char change[5][24] = {};
+    // Pool: the portrait picker's "Head Body Keep", its HEAD / BODY blocks for heads 1-14 / bodies 1-12
+    char portrait_menu[24] = {};
+    uint8_t head_map[15] = {}, body_map[13] = {};
 };
 Making* mk = nullptr;
 
@@ -2165,8 +2169,13 @@ bool load_rules(Making*& m)
         if (exepack::parse(src, info) == exepack::Status::Ok) {
             const size_t n = pc.tables.hi - pc.tables.lo;
             uint8_t* buf = static_cast<uint8_t*>(malloc(n));
+            // (Pool: the class flags / masks elsewhere in the data segment)
+            uint8_t buf2[32];
+            const size_t n2 = pc.tables.hi2 > pc.tables.lo2 ? pc.tables.hi2 - pc.tables.lo2 : 0;
             ok = buf && exepack::read(src, info, pc.ds_image + pc.tables.lo, buf, n) == exepack::Status::Ok &&
-                 m->tables.set(pc.tables, buf, n);
+                 (!n2 || (n2 <= sizeof buf2 &&
+                          exepack::read(src, info, pc.ds_image + pc.tables.lo2, buf2, n2) == exepack::Status::Ok)) &&
+                 m->tables.set(pc.tables, buf, n, buf2, n2);
             free(buf);
             uint8_t hp[16];
             ok = ok && exepack::read(src, info, pc.ds_image + pc.hp_count, hp, 8) == exepack::Status::Ok &&
@@ -2175,6 +2184,12 @@ bool load_rules(Making*& m)
                      exepack::Status::Ok;
             memcpy(m->facts.hp_count, hp, 8);
             memcpy(m->facts.hp_dice, hp + 8, 8);
+            if (pc.head_blocks && pc.body_blocks &&
+                (exepack::read(src, info, pc.ds_image + pc.head_blocks, m->head_map, sizeof m->head_map) !=
+                     exepack::Status::Ok ||
+                 exepack::read(src, info, pc.ds_image + pc.body_blocks, m->body_map, sizeof m->body_map) !=
+                     exepack::Status::Ok))
+                memset(m->head_map, 0, sizeof m->head_map);
         }
     }
     f.close();
@@ -2188,6 +2203,7 @@ bool load_rules(Making*& m)
     fa.halfelf = pc.halfelf;
     fa.prot_evil = pc.prot_evil;
     fa.ranger_giant = pc.ranger_giant;
+    fa.poison_save = pc.poison_save;
     memcpy(fa.mu_first, pc.mu_first, 4);
     fa.mu_level2 = pc.mu_level2;
     memcpy(fa.mu_level3, pc.mu_level3, 2);
@@ -2203,6 +2219,7 @@ bool load_rules(Making*& m)
             if (at[i]) text::read_pascal(src, at[i], m->words[i], sizeof m->words[i]);
         for (int i = 0; i < 5; ++i)
             if (ch_at[i]) text::read_pascal(src, ch_at[i], m->change[i], sizeof m->change[i]);
+        if (pc.portrait_menu) text::read_pascal(src, pc.portrait_menu, m->portrait_menu, sizeof m->portrait_menu);
     }
     return ok;
 }
@@ -2393,17 +2410,30 @@ void start_icon(pic::Canvas& c, Screen from);
 void create_after_icon(pic::Canvas& c);
 
 // The name, then the icon editor (as the games do), then "save NAME?"
+void start_portrait(pic::Canvas& c);
+
 void create_named(const char* name, pic::Canvas& c)
 {
     if (!mk) return;
     create::set_name(mk->ch, name);
+    if (mk->portrait_menu[0] && d->prof->create.head_blocks) {
+        start_portrait(c);
+        return;
+    }
     start_icon(c, Screen::CreateName);
     if (screen != Screen::Icon) create_after_icon(c);      // (no memory for the editor)
 }
 
+void save_new(pic::Canvas& c, bool overwrite_ok);
+
 void create_after_icon(pic::Canvas& c)
 {
     if (!mk) return;
+    if (!d->prof->create.save_q) {
+        // Pool: no "Save NAME?" - the character is saved (over one of that name)
+        save_new(c, true);
+        return;
+    }
     screen = Screen::CreateName;
     show_new_character(c);
     char t[72], nm[20];
@@ -2426,6 +2456,43 @@ void ask_name(pic::Canvas& c)
     draw_input(c);
 }
 
+// Pool: a new character's name goes on the save folder's CHARLIST.TXT too
+// (a name a line; the original's list of characters made)
+void add_to_charlist(const party::Character& ch)
+{
+    char path[200], nm[20];
+    ch.name(nm, sizeof nm);
+    save_path(d->prof->create.charlist, path, sizeof path);
+    constexpr size_t kCap = 1024;                       // (on the heap: static RAM is dear)
+    char* buf = static_cast<char*>(malloc(kCap));
+    if (!buf) return;
+    size_t n = 0;
+    fs::File f = sd_fs().open(path, "r");
+    if (f) {
+        const int got = f.read(reinterpret_cast<uint8_t*>(buf), kCap - 40);
+        f.close();
+        n = got > 0 ? static_cast<size_t>(got) : 0;
+    }
+    // Already listed: nothing to add
+    for (size_t i = 0; i < n;) {
+        size_t e = i;
+        while (e < n && buf[e] != '\r' && buf[e] != '\n') ++e;
+        if (e - i == strlen(nm) && strncmp(buf + i, nm, e - i) == 0) {
+            free(buf);
+            return;
+        }
+        i = e;
+        while (i < n && (buf[i] == '\r' || buf[i] == '\n')) ++i;
+    }
+    if (n && buf[n - 1] != '\n') {
+        buf[n++] = '\r';
+        buf[n++] = '\n';
+    }
+    n += static_cast<size_t>(snprintf(buf + n, kCap - n, "%s\r\n", nm));
+    write_file(d->save_dir, d->prof->create.charlist, reinterpret_cast<const uint8_t*>(buf), n);
+    free(buf);
+}
+
 // Saves the new character as NAME.GUY (asking first if there is one)
 void save_new(pic::Canvas& c, bool overwrite_ok)
 {
@@ -2442,6 +2509,7 @@ void save_new(pic::Canvas& c, bool overwrite_ok)
     }
     new_base[0] = 0;
     const bool ok = write_character(base, mk->ch);
+    if (ok && d->prof->create.charlist) add_to_charlist(mk->ch);
     end_create(c);
     if (!ok) {
         char t[48];
@@ -2454,7 +2522,8 @@ void save_new(pic::Canvas& c, bool overwrite_ok)
 bool create_yes_no(Ask what, char k, pic::Canvas& c)
 {
     if (what == Ask::Reroll) {
-        if (k == 'Y') {
+        // Pool asks "Keep this character? " (No rolls again)
+        if (d->prof->create.keep_question ? k != 'Y' : k == 'Y') {
             create::roll(mk->ch, mk->tables, mk->facts, mk->dice);
             rules::recalc(mk->ch, *names, d->facts);
             show_new_character(c);
@@ -2487,6 +2556,52 @@ bool create_yes_no(Ask what, char k, pic::Canvas& c)
         return true;
     }
     return false;
+}
+
+// ---- Pool's portrait picker (create_facts.md 1.15): "Head Body Keep" -
+// the next head (1-14) / body (1-12), round again; only Keep leaves; the
+// pictures in a box at cells 28-38, rows 1-11 (HEAD3 / BODY3, the party
+// menu's area)
+void draw_portrait(pic::Canvas& c)
+{
+    uint8_t* r = mk->ch.rec;
+    int head = r[0x13F], body = r[0x140];
+    if (head < 1 || head > 14) head = 1;
+    if (body < 1 || body > 12) body = 1;
+    const int keep = d->gs.game_area;
+    d->gs.game_area = 3;
+    c.fill(28 * 8, 8, 11 * 8, 11 * 8, 0);
+    draw_block(c, "HEAD", mk->head_map[head], 28 * 8, 8);
+    draw_block(c, "BODY", mk->body_map[body], 28 * 8, 8 + 40);
+    d->gs.game_area = static_cast<uint8_t>(keep);
+    dirty_rows(1, 11);
+}
+
+void start_portrait(pic::Canvas& c)
+{
+    show_new_character(c);
+    screen = Screen::Portrait;
+    c.fill(27 * 8, 0, 13 * 8, 13 * 8, 0);
+    layout::box(c, d->tables, d->frame_tiles, 27, 0, 39, 12);
+    draw_portrait(c);
+    text::build(menu, "", mk->portrait_menu);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+void portrait_key(char k, pic::Canvas& c)
+{
+    uint8_t* r = mk->ch.rec;
+    if (k == 'H') r[0x13F] = static_cast<uint8_t>(r[0x13F] >= 14 ? 1 : r[0x13F] + 1);
+    else if (k == 'B') r[0x140] = static_cast<uint8_t>(r[0x140] >= 12 ? 1 : r[0x140] + 1);
+    else if (k == 'K') {
+        start_icon(c, Screen::CreateName);
+        if (screen != Screen::Icon) create_after_icon(c);      // (no memory for the editor)
+        return;
+    } else {
+        return;
+    }
+    draw_portrait(c);
 }
 
 // ---- The shop -------------------------------------------------------------------
@@ -3812,7 +3927,11 @@ void rest_tap(int x, int y, pic::Canvas& c)
         return;
     }
     if (y < text::kMenuTapTop) return;
-    const char k = text::key(menu, text::hit(menu, x / 8));
+    char k = text::key(menu, text::hit(menu, x / 8));
+    if (d->prof->variant.pool_rest_keys) {
+        // Pool's "Rest daYs Hours Mins Inc Dec Exit" (create_facts.md 4)
+        k = k == 'Y' ? 'D' : k == 'D' ? 'S' : k == 'I' ? 'A' : k;
+    }
     switch (k) {
     case 'R':
         if (rest.left <= 0) break;
@@ -5259,6 +5378,16 @@ void pm_tap(int x, int y, pic::Canvas& c)
         return;
     }
     if (screen == Screen::CreateName) return;      // the keyboard types the name
+    if (screen == Screen::Portrait) {
+        if (y >= text::kMenuTapTop) {
+            const int k = text::hit(menu, col);
+            if (k >= 0) {
+                menu.selected = k;
+                portrait_key(text::key(menu, k), c);
+            }
+        }
+        return;
+    }
     if (screen == Screen::TradeWho) {
         trade_tap(x, y, c);
         return;

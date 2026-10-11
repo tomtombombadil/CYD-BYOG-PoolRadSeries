@@ -59,9 +59,10 @@ uint32_t start_exp(int cls)
 
 // The games' race / class level limits for training (the original's
 // train_player: a half-elf magic-user's by Intelligence, as an elf's)
-bool race_limited(const party::Character& c, int cls, int lvl)
+bool race_limited(const party::Character& c, int cls, int lvl, bool pool = false)
 {
     const int str = c.stat(0), intel = c.stat(1);
+    if (pool && cls == MagicUser) return false;         // (Pool's train_player: none for magic-users)
     switch (c.race()) {
     case 1:                                     // dwarf
         return cls == Fighter && (lvl == 9 || (lvl == 8 && str == 17) || (lvl == 7 && str < 17));
@@ -110,7 +111,14 @@ int hp_roll(const party::Character& c, const classes::Tables& t, const Facts& f,
     for (int k = 0; k < classes::kClasses; ++k) {
         const int lv = c.level(k);
         if (lv <= 0 || !(t.u8(static_cast<uint16_t>(t.lay.class_masks + k)) & mask)) continue;
-        if (lv < t.max_hit_dice(k)) {
+        if (t.lay.pool) {
+            // Pool (create_facts.md 1.12): one roll of the class's dice every
+            // level; at level 1 a roll under 2/3 of the die is raised to it
+            int v = d.roll(f.hp_dice[k], f.hp_count[k]);
+            const int least = f.hp_dice[k] * 2 / 3;
+            if (lv == 1 && v < least) v = least;
+            total += v;
+        } else if (lv < t.max_hit_dice(k)) {
             const int n = lv > 1 ? 1 : f.hp_count[k];
             const int a = d.roll(f.hp_dice[k], n), b = d.roll(f.hp_dice[k], n);
             total += a > b ? a : b;
@@ -179,9 +187,10 @@ int races(int* out, int cap)
 
 int classes_for(const classes::Tables& t, int race, int* out, int cap)
 {
-    const uint16_t at = static_cast<uint16_t>(t.lay.race_classes + race * 14);
+    const int stride = t.lay.pool ? 12 : 14;
+    const uint16_t at = static_cast<uint16_t>(t.lay.race_classes + race * stride);
     int n = t.u8(at);
-    if (n > 13) n = 13;
+    if (n > stride - 1) n = stride - 1;
     int k = 0;
     for (int i = 0; i < n && k < cap; ++i) out[k++] = t.u8(static_cast<uint16_t>(at + 1 + i));
     return k;
@@ -233,6 +242,8 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
 
     r[kRace] = static_cast<uint8_t>(race);
     r[kIconSize] = race == 1 || race == 3 || race == 5 ? 1 : 2;
+    r[0x13F] = r[0x140] = t.lay.pool ? 1 : 0;      // (Pool: the portrait's head and body, from 1)
+    if (race == 1 || race == 5) add_affect(c, f.poison_save);     // (Pool's dwarves and halflings)
     switch (race) {
     case 5: add_affect(c, f.con_save); break;
     case 1:
@@ -257,7 +268,7 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
     const uint8_t lv = cls >= 0 && cls < 17 ? kStartLevels[cls] : 0;
     for (int k = 0; k < 8; ++k)
         if (lv & (1 << k)) r[kLevels + k] = 1;
-    put32(r, kExp, start_exp(cls));
+    put32(r, kExp, t.lay.pool ? 0 : start_exp(cls));
     if (r[kLevels + classes::Paladin]) {
         r[kCures] = 1;
         add_affect(c, f.prot_evil);
@@ -278,7 +289,9 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
         age_entry(cls, &base, &count, &sides);
         put16(r, kAge, d.roll(sides, count) + base);
     } else {
-        const int e = cls == FighterThief ? 2 : (cls == FighterMU || cls == FighterMUThief || cls == MUThief) ? 6 : 0;
+        // (the entry: Curse's thief one for the magic-users, Pool's magic-user one)
+        const int mu = t.lay.pool ? 5 : 6;
+        const int e = cls == FighterThief ? 2 : (cls == FighterMU || cls == FighterMUThief || cls == MUThief) ? mu : 0;
         age_entry(e, &base, &count, &sides);
         put16(r, kAge, base + count * sides);
     }
@@ -295,12 +308,13 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
     r[kHitDice] = 1;
     memset(r + kSpellBook, 0, 100);
     memset(r + kMoney, 0, 14);
-    put32(r, kExp, start_exp(cls));
+    const bool pool = t.lay.pool;
+    put32(r, kExp, pool ? 0 : start_exp(cls));
 
     for (int i = 0; i < 7; ++i) set_stat(c, i, 0);
     for (int k = 0; k < 6; ++k)
         for (int i = 0; i < 6; ++i) {
-            const int v = d.roll(6, 3) + 1;
+            const int v = d.roll(6, 3) + (pool ? 0 : 1);       // (Pool: no +1)
             if (v > stat_full(c, i)) set_stat(c, i, v);
         }
     // The age's effects (the program's: per stat, for each age bracket the
@@ -330,7 +344,7 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
         if (v < lo) v = lo;
         const int mn = t.u8(static_cast<uint16_t>(t.lay.class_min + cls * 6 + i));
         if (v < mn) v = mn;
-        if (i == 2 && v < 13 && cls >= ClericFighter && cls <= ClericThief) v = 13;   // multi-class clerics
+        if (!pool && i == 2 && v < 13 && cls >= ClericFighter && cls <= ClericThief) v = 13;   // multi-class clerics (Curse)
         set_stat(c, i, v);
         if (i == 0 && v == 18 && (c.level(classes::Fighter) || c.level(classes::Ranger) || c.level(classes::Paladin))) {
             int e = d.random(100) + 1;
@@ -361,7 +375,20 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
             for (uint8_t s : f.mu_first) learn(c, s);
         }
     }
-    put16(r, kMoney + 4 * 2, 300);              // 300 platinum
+    if (pool) {
+        // Pool: gold only, 10 x the classes' money dice (a byte), shared
+        // by the classes held (create_facts.md 1.11)
+        int sum = 0, n = 0;
+        for (int k = 0; k < 8; ++k)
+            if (c.level(k)) {
+                sum += d.roll(t.u8(static_cast<uint16_t>(t.lay.money_dice + 2 * k + 1)),
+                              t.u8(static_cast<uint16_t>(t.lay.money_dice + 2 * k)));
+                ++n;
+            }
+        put16(r, kMoney + 3 * 2, n ? (sum & 0xFF) * 10 / n : 0);
+    } else {
+        put16(r, kMoney + 4 * 2, 300);          // 300 platinum
+    }
 
     const int rolled = hp_roll(c, t, f, d, 0xFF);
     int hp = rolled;
@@ -375,8 +402,9 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
     r[kHpRolled] = static_cast<uint8_t>(rolled / held);
 
     classes::class_bonuses(c, t);
-    while (train(c, t, f, d, true)) {
-    }
+    if (!pool)
+        while (train(c, t, f, d, true)) {
+        }
 }
 
 void set_name(party::Character& c, const char* name)
@@ -394,7 +422,7 @@ int trainable(const party::Character& c, const classes::Tables& t)
     const uint32_t xp = c.exp();
     for (int k = 0; k < classes::kClasses; ++k) {
         const int lv = c.level(k);
-        if (lv <= 0 || lv >= 12 || race_limited(c, k, lv)) continue;
+        if (lv <= 0 || lv >= t.top_level() || race_limited(c, k, lv, t.lay.pool)) continue;
         const int32_t need = t.exp_needed(k, lv);
         if (need > 0 && static_cast<uint32_t>(need) <= xp) mask |= t.u8(static_cast<uint16_t>(t.lay.class_masks + k));
     }
@@ -404,7 +432,7 @@ int trainable(const party::Character& c, const classes::Tables& t)
 int train_pick(const party::Character& c, const classes::Tables& t, uint32_t* exp_after)
 {
     // The experience figure to go on from `lvl` (none past the table)
-    auto need_at = [&](int k, int lvl) -> int32_t { return lvl >= 1 && lvl <= 11 ? t.exp_needed(k, lvl) : -1; };
+    auto need_at = [&](int k, int lvl) -> int32_t { return t.exp_needed(k, lvl); };
     const uint32_t xp = c.exp();
     int ready = 0, last = 0;
     int32_t keep = 0;
@@ -412,7 +440,7 @@ int train_pick(const party::Character& c, const classes::Tables& t, uint32_t* ex
         const int lv = c.level(k);
         if (lv <= 0) continue;
         last = lv;
-        if (race_limited(c, k, lv)) continue;
+        if (race_limited(c, k, lv, t.lay.pool)) continue;
         const int32_t need = need_at(k, lv);
         if (need <= 0 || static_cast<uint32_t>(need) > xp) continue;
         ready |= t.u8(static_cast<uint16_t>(t.lay.class_masks + k));

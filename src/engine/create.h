@@ -57,6 +57,7 @@ struct Facts {
     // spells: a new magic-user's four, and those silent training teaches at levels 2-5
     uint8_t  mu_first[4], mu_level2, mu_level3[2], mu_level4, mu_level5;
     uint8_t  mu_change[4];              // a human turned magic-user learns these
+    uint8_t  poison_save;               // Pool: dwarves and halflings get this effect too (0: none)
 };
 
 // Starts a character: race, sex, class, alignment chosen. Sets the

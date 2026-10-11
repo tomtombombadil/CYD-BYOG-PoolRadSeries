@@ -264,13 +264,24 @@ int main(int argc, char** argv)
             for (int k = 0; k < 8; ++k) printf(" %d", ch.level(k));
             printf(" age %d thac0 %d ac %d xp %u align %d\n", ch.age(), ch.thac0(), ch.ac(), ch.exp(), ch.alignment());
             shot("rolled");
-            tap_word(r == 0 ? 'Y' : 'N');
+            // (Curse: "Reroll stats?" Yes then No; Pool: "Keep this character?" No then Yes)
+            const bool keepq = play::d->prof->create.keep_question;
+            tap_word(r == 0 ? (keepq ? 'N' : 'Y') : (keepq ? 'Y' : 'N'));
         }
         printf("  input %d prompt [%s]\n", (int)play::input(), play::input_prompt);
         for (const char* n = getenv("NAME") ? getenv("NAME") : "TESTER"; *n; ++n) play::input_key(*n, C);
         play::input_key('\n', C);
         printf("  ask [%s]\n", play::menu.prompt);
         shot("named");
+        if (play::screen == play::Screen::Portrait) {
+            // Pool's portrait picker: the next head twice, a body, Keep
+            printf("  portrait menu [%s]\n", play::menu.s);
+            tap_word('H'); tap_word('H'); tap_word('B');
+            shot("portrait");
+            tap_word('K');
+            printf("  head %d body %d, screen %d menu [%s%s]\n", play::mk->ch.rec[0x13F], play::mk->ch.rec[0x140], (int)play::screen, play::menu.prompt, play::menu.s);
+            if (play::screen == play::Screen::Icon) tap_word('D');      // the gallery's Done: "Is this icon ok?"
+        }
         tap_word('Y');
         if (play::screen == play::Screen::YesNo) { printf("  ask [%s]\n", play::menu.prompt); tap_word('Y'); }
         printf("  screen %d\n", (int)play::screen);

@@ -303,6 +303,16 @@ struct Profile {
         // "Select", " is now a 1st level ", "."
         uint8_t         mu_change[4];
         uint32_t        pick_new, no_qualify, change_select, now_first, dot;
+        // Pool (create_facts.md 1): dwarves' and halflings' poison effect;
+        // its "Keep this character? " in place of "Reroll stats? " (Yes
+        // keeps); the portrait picker's "Head Body Keep" (GAME.OVR) and the
+        // HEAD / BODY blocks for heads 1-14 / bodies 1-12 (DS tables); the
+        // list of characters made (CHARLIST.TXT, a name a line)
+        uint8_t         poison_save;
+        bool            keep_question;
+        uint32_t        portrait_menu;
+        uint16_t        head_blocks, body_blocks;
+        const char*     charlist;
     } create;
 
     // Items: Use Trade Drop Halve Join Sell Id and their words (ItemWord order)
@@ -415,6 +425,7 @@ struct Profile {
         bool    unfinished;            // being built: its tests and Play Test under Dev Tools, no Play key
         bool    program_words;         // some words are in the program, not GAME.OVR (marked text::kInProgram)
         bool    pool_files;            // Pool's character files (285-byte records, .CHA / .ITM / .SPC) and saves (no wall sets)
+        bool    pool_rest_keys;        // the Rest menu's keys: R Y(days) H M I(+) D(-) E, not Curse's R D H M A S E
     } variant;
 };
 

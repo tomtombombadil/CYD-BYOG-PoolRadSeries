@@ -121,11 +121,10 @@ Status load_tables(dax::ByteSource& program, const exepack::Info& info, const pr
 
 void tile(pic::Canvas& c, const Tiles& t, int n, int col, int row) { put(c, t, n, col, row); }
 
-namespace {
-
 // Pool: the border of a box whose corners are cells (c0, r0) and (c1, r1)
 void box(pic::Canvas& c, const Tables& tb, const Tiles& t, int c0, int r0, int c1, int r1)
 {
+    if (!tb.box[0]) return;
     for (int col = c0 + 1; col < c1; ++col) {
         put(c, t, tb.box[2], col, r0);
         put(c, t, tb.box[2], col, r1);
@@ -139,8 +138,6 @@ void box(pic::Canvas& c, const Tables& tb, const Tiles& t, int c0, int r0, int c
     put(c, t, tb.box[0], c0, r1);
     put(c, t, tb.box[0], c1, r1);
 }
-
-} // namespace
 
 void outer(pic::Canvas& c, const Tables& tb, const Tiles& t)
 {

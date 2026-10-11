@@ -1,6 +1,7 @@
 #include "classes.h"
 
 #include <cstring>
+#include <initializer_list>
 
 namespace classes {
 
@@ -34,11 +35,14 @@ void wisdom_spells(party::Character& c)
 
 } // namespace
 
-bool Tables::set(const Layout& l, const uint8_t* bytes, size_t n)
+bool Tables::set(const Layout& l, const uint8_t* bytes, size_t n, const uint8_t* bytes2, size_t n2)
 {
     if (l.hi <= l.lo || static_cast<size_t>(l.hi - l.lo) > sizeof data_ || n < static_cast<size_t>(l.hi - l.lo)) return false;
+    const size_t m2 = l.hi2 > l.lo2 ? static_cast<size_t>(l.hi2 - l.lo2) : 0;
+    if (m2 > sizeof data2_ || (m2 && (!bytes2 || n2 < m2))) return false;
     lay = l;
     memcpy(data_, bytes, l.hi - l.lo);
+    if (m2) memcpy(data2_, bytes2, m2);
     return true;
 }
 
@@ -58,8 +62,34 @@ int skill_level(const party::Character& c, int cls)
     return lv;
 }
 
+// Pool (create_facts.md 2): a level-1 cleric or magic-user has one 1st
+// level slot; from level 2 the table's TOTALS for the level (cleric and
+// magic-user, levels 1-3); a cleric's Wisdom bonus, and every cleric
+// spell of the levels they can cast (Animate Dead too)
+static void pool_slots(party::Character& c, const Tables& t)
+{
+    for (int i = 0; i < 15; ++i) c.rec[kCastCount + i] = 0;
+    for (const int cls : {static_cast<int>(Cleric), static_cast<int>(MagicUser)}) {
+        const int lv = c.level(cls), row = cls == Cleric ? 0 : 2;
+        if (lv <= 0) continue;
+        if (lv == 1) cast(c, row, 0) = 1;
+        else
+            for (int k = 0; k < 3; ++k) cast(c, row, k) = static_cast<uint8_t>(t.slots_total(cls, lv > 9 ? 9 : lv, k));
+        if (cls != Cleric) continue;
+        wisdom_spells(c);
+        for (int s = 1; s < t.lay.spell_count; ++s)
+            if (t.spell_class(s) == 0 && t.spell_level(s) >= 1 && t.spell_level(s) <= 3 &&
+                cast(c, 0, t.spell_level(s) - 1) > 0)
+                learn(c, s);
+    }
+}
+
 void spell_slots(party::Character& c, const Tables& t)
 {
+    if (t.lay.pool) {
+        pool_slots(c, t);
+        return;
+    }
     for (int i = 0; i < 15; ++i) c.rec[kCastCount + i] = 0;
     for (int cls = Cleric; cls <= Monk; ++cls) {
         const int lv = skill_level(c, cls);
@@ -136,7 +166,7 @@ void saving_throws(party::Character& c, const Tables& t)
         for (int cls = 0; cls < kClasses; ++cls) {
             const int lv = c.level(cls);
             if (lv <= 0) continue;
-            const int v = t.save(cls, lv > 12 ? 12 : lv, kind);
+            const int v = t.save(cls, lv, kind);
             if (v < best) best = v;
         }
         c.rec[kSaves + kind] = static_cast<uint8_t>(best);
@@ -159,13 +189,15 @@ void saving_throws(party::Character& c, const Tables& t)
     else if (con == 21 || con == 22) add += 2;
     else if (con == 23 || con == 24) add += 3;
     else if (con == 25) add += 4;
-    c.rec[kSaves] = static_cast<uint8_t>(c.rec[kSaves] + add);
+    // (Pool: none here - its dwarves and halflings have an effect for it, 0x5A;
+    // the sample dwarf's and halfling's saves are the table's)
+    if (!t.lay.pool) c.rec[kSaves] = static_cast<uint8_t>(c.rec[kSaves] + add);
 }
 
 void thief_skills(party::Character& c, const Tables& t)
 {
     int lv = skill_level(c, Thief);
-    if (lv > 12) lv = 12;
+    if (lv > t.top_level()) lv = t.top_level();
     const int dex = c.rec[kDexFull];
     // The first readied Gauntlets of Dexterity (item effect 0x82) or Gloves
     // of Thievery (0x8B; curse_finish_facts.md 5.4)
@@ -213,7 +245,7 @@ void class_bonuses(party::Character& c, const Tables& t)
     int thac0 = 0, hd = c.rec[kHitDice];
     for (int cls = 0; cls < kClasses; ++cls) {
         const int lv = c.level(cls);
-        const int v = t.thac0(cls, lv > 12 ? 12 : lv);
+        const int v = t.thac0(cls, lv);
         if (v > thac0) thac0 = v;
         if (lv > hd) hd = lv;
     }
@@ -237,7 +269,7 @@ void class_bonuses(party::Character& c, const Tables& t)
         if (c.level(k) > c.rec[kMultiLevel]) {
             for (int cls = 0; cls < kClasses; ++cls) {
                 const int old = c.old_level(cls);
-                const int v = t.thac0(cls, old > 12 ? 12 : old);
+                const int v = t.thac0(cls, old);
                 if (v > c.rec[kThac0]) c.rec[kThac0] = static_cast<uint8_t>(v);
             }
             if (c.old_level(Fighter) > 6 || c.old_level(Paladin) > 6 || c.old_level(Ranger) > 7) c.rec[kAttacks] = 3;
