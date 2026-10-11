@@ -3752,13 +3752,14 @@ static void test_combat()
     CHECK(o.result == combat::Won && o.exp == 70 && o.money[3] == 30);
     const int m[7] = {0, 0, 0, 400, 0, 1, 0};
     CHECK(combat::money_exp(m) == 400 + 250);
-    // Shared by the whole party (member 2 is dead: counted, gets none - the
-    // original's calc_battle_exp); a fighter with Str 16 gets 10% more
+    // Shared by those still in the fight (member 2 is dead: not counted, gets
+    // none - the original's calc_battle_exp with sub_2D556's count of those
+    // out of the fight or animated); a fighter with Str 16 gets 10% more
     rec[0][0x75] = 2; rec[0][0x11] = 16;
     const uint8_t dead_xp = rec[2][0x127];
-    CHECK(combat::award(b, 1000) == 333);
-    CHECK(rec[0][0x127] == (366 & 0xFF) && rec[0][0x128] == (366 >> 8) && rec[1][0x127] == (333 & 0xFF) &&
-          rec[1][0x128] == (333 >> 8) && rec[2][0x127] == dead_xp);
+    CHECK(combat::award(b, 1000) == 500);
+    CHECK(rec[0][0x127] == (550 & 0xFF) && rec[0][0x128] == (550 >> 8) && rec[1][0x127] == (500 & 0xFF) &&
+          rec[1][0x128] == (500 >> 8) && rec[2][0x127] == dead_xp);
     // ---- Spells in fights (made-up spell lines in the games' layout)
     static uint8_t sds[0x100];
     memset(sds, 0, sizeof sds);

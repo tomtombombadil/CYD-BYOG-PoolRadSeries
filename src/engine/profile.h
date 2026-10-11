@@ -276,6 +276,7 @@ struct Profile {
         uint8_t     stat_fx[6];
         uint8_t     hammer[4];                     // Spiritual Hammer: its effect, the item type, its two words
         uint8_t     detect[4];                     // Detect Magic: its effect, the spells that give it (treasure's Detect)
+        uint8_t     berserk = 0;                   // the berserk effect an item gives (the Berserker sword)
     } items;
 
     // Character rules (making and training characters): the rule tables in

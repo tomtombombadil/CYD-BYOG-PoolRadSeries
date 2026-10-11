@@ -27,6 +27,10 @@ struct ItemFacts {
     // Constitution in use rebuilds the hit points with them
     uint8_t con_regen_fx = 0;
     uint8_t max_hd[8] = {};
+    // Berserk (the Berserker sword's effect): given, its handler makes the
+    // wearer computer-run (quick) and control 0xB3 (an NPC's 0xB2); taken
+    // away, control 0xB3 back to 0 and the party's side
+    uint8_t berserk_fx = 0;
 };
 
 // The stats as they stand (the games' recalculation; spell_facts.md and
@@ -100,6 +104,8 @@ void remove_item(party::Character& c, int i);
 // damage. False when the item didn't stay readied. (The others - stats,
 // a ring of wizardry ... - are to come.)
 bool worn(party::Character& c, int i, bool on);
+// The game's berserk effect for worn() (0: none; set as the game opens)
+void set_berserk_fx(uint8_t type);
 // Spiritual Hammer (spell_facts.md 0x1C): while they have its effect, the
 // hammer is in their items, readied (a new one when it's gone and there's
 // room: +1, "Gains an item" - true); without it, the hammer goes

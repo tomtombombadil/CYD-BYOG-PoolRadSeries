@@ -579,6 +579,7 @@ void rules_checks()
     //    else roll + bonus + record 0x186 (a byte) >= the record's save (0xDF + kind)
     {
         combat::Fighter& f = b.f[F];
+        *f.n_aff = 0;                           // (no effects: a dwarf's / halfling's Constitution bonus is the classes part's)
         const uint8_t saves[5] = {10, 11, 12, 13, 14};
         memcpy(f.rec + 0xDF, saves, 5);
         f.rec[0x186] = 0;
@@ -662,10 +663,16 @@ void rules_checks()
         ready_target(4, 1);
         at = stab({20, 3});
         expect(kPart, "backstab: not from the side", !at.backstab);
+        // (the listing's sub_408D7: size byte & 0x7F <= 1 - a large one-square
+        // creature, 0x81, can be backstabbed; a two-square one can't)
         ready_target(6, 1);
         mr[0xDE] = 0x81;
         at = stab({20, 3});
-        expect(kPart, "backstab: not a large target", !at.backstab);
+        const bool large1 = at.backstab;
+        ready_target(6, 1);
+        mr[0xDE] = 0x82;
+        at = stab({20, 3});
+        expect(kPart, "backstab: a one-square large target (0x81) yes, a two-square one (0x82) not", large1 && !at.backstab);
         tr[0x10F] = 0;
         ready_target(6, 1);
         at = stab({20, 3});
