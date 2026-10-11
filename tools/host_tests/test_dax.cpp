@@ -1616,6 +1616,130 @@ static void test_ecl_party()
     CHECK(r == ecl::Stop::Stopped && vm.get(0x4C07) != 9);
 }
 
+// The original's ways (coab's facts / the listing): RETURN with nothing to
+// return to is an EXIT (the step's member put back); SURPRISE's result
+// goes nowhere the scripts or the fight see (0x02CB); the encounter menu's
+// Flee weighs every member, out of action too, hasted x2 / slowed / 2
+static void test_vm_events_facts()
+{
+    const profile::Profile* p = profile::find(games::Game::CurseOfTheAzureBonds, 57789, 62432);
+    if (!p || !p->ecl_ops) return;
+    const uint16_t kBase = 0x8000;
+    static party::Party pa;
+    static ecl::GameState gs;
+    auto run = [&](const Bytes& body, PartyHost& host, ecl::Vm*& vm, ecl::Vm& v) {
+        Bytes c;
+        for (int i = 0; i < 5; ++i) { c.push_back(0); op_addr(c, static_cast<uint16_t>(kBase + 20)); }
+        c.insert(c.end(), body.begin(), body.end());
+        gs = ecl::GameState{};
+        memcpy(gs.code, c.data(), c.size());
+        gs.code_len = static_cast<uint32_t>(c.size());
+        (void)host;
+        vm = &v;
+        CHECK(v.init_script());
+        return v.run(v.entry(0));
+    };
+    auto party = [&](int n) {
+        pa = party::Party{};
+        pa.count = n;
+        for (int i = 0; i < n; ++i) {
+            party::Character& c = pa.m[i];
+            c.rec[0] = 1; c.rec[1] = static_cast<uint8_t>('A' + i);
+            c.rec[0x196] = 1; c.rec[0x1A4] = c.rec[0x78] = 20;
+            c.rec[0x1A5] = 12;                                // movement 12
+        }
+    };
+    PartyHost host;
+    host.p = &pa;
+    ecl::Vm* vp = nullptr;
+    // RETURN, nothing to return to: the member selected before put back
+    {
+        party(4);
+        pa.selected = 2;
+        ecl::Vm vm(gs, host, *p->ecl_ops);
+        vm.set_party(&pa);
+        Bytes b;
+        b.push_back(0x0A); op_imm(b, 0);                     // LOAD CHARACTER 0
+        b.push_back(0x13);                                    // RETURN
+        CHECK(run(b, host, vp, vm) == ecl::Stop::Stopped && pa.selected == 2);
+    }
+    // SURPRISE: 0x7ECB untouched
+    {
+        party(2);
+        ecl::Vm vm(gs, host, *p->ecl_ops);
+        vm.set_party(&pa);
+        Bytes b;
+        b.push_back(0x23); op_imm(b, 0); op_imm(b, 9); op_imm(b, 0); op_imm(b, 9);   // both sides sure to be surprised
+        b.push_back(0x00);
+        Bytes c;
+        for (int i = 0; i < 5; ++i) { c.push_back(0); op_addr(c, static_cast<uint16_t>(kBase + 20)); }
+        c.insert(c.end(), b.begin(), b.end());
+        gs = ecl::GameState{};
+        memcpy(gs.code, c.data(), c.size());
+        gs.code_len = static_cast<uint32_t>(c.size());
+        CHECK(vm.init_script());
+        vm.set(0x7ECB, 0x33);
+        vm.run(vm.entry(0));
+        CHECK(vm.get(0x7ECB) == 0x33);
+    }
+    // ENCOUNTER MENU, every result Combat-or-flee (code 0), the party chooses Flee: 2 when
+    // its slowest is as fast as the speed asked (12), else 1
+    auto flee = [&](int want) {
+        ecl::Vm vm(gs, host, *p->ecl_ops);
+        vm.set_party(&pa);
+        vm.set_move_affects(0x40, 0x41);
+        Bytes b;
+        b.push_back(0x29);
+        op_imm(b, 1); op_imm(b, 0); op_imm(b, 1); op_addr(b, 0x4C00);
+        for (int k = 0; k < 5; ++k) op_imm(b, 0);
+        op_str(b, ""); op_str(b, ""); op_str(b, "");
+        op_imm(b, 12); op_imm(b, 12);
+        b.push_back(0x00);
+        ecl::Stop r = run(b, host, vp, vm);
+        for (int g = 0; g < 5 && r == ecl::Stop::Waiting && vm.wait() != ecl::Wait::Menu; ++g) r = vm.resume();
+        CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Menu);
+        vm.answer(2);
+        CHECK(vm.get(0x4C00) == want);
+    };
+    party(3);
+    flee(2);
+    party(3);
+    pa.m[1].rec[0x1A5] = 6; pa.m[1].rec[0x195] = party::Dead; pa.m[1].rec[0x196] = 0;   // dead and slow: still counts
+    flee(1);
+    party(3);
+    pa.m[2].rec[0x1A5] = 6; pa.m[2].n_affects = 1; pa.m[2].affects[0][0] = 0x40;        // hasted: 12
+    flee(2);
+    party(3);
+    pa.m[0].n_affects = 1; pa.m[0].affects[0][0] = 0x41;                                 // slowed: 6
+    flee(1);
+    // LOAD CHARACTER past the party: the loaded monsters (the original's list
+    // goes on into them) - their fields read and written; past them: not found
+    {
+        struct MonHost : PartyHost {
+            uint8_t mon[2][party::kRecordSize] = {};
+            uint8_t* monster_record(int k) override { return k >= 0 && k < 2 ? mon[k] : nullptr; }
+        } mh;
+        mh.p = &pa;
+        mh.mon[1][0x197] = 1;
+        mh.mon[1][0x75] = 9;
+        party(3);
+        pa.selected = 1;
+        ecl::Vm vm(gs, mh, *p->ecl_ops);
+        vm.set_party(&pa);
+        Bytes b;
+        b.push_back(0x0A); op_imm(b, 4);                                     // the 2nd monster
+        b.push_back(0x09); op_addr(b, 0x7C73); op_addr(b, 0x4C00);         // its class
+        b.push_back(0x09); op_imm(b, 0x80); op_addr(b, 0x7D0C);             // to the party's side
+        b.push_back(0x09); op_addr(b, 0x7EB1); op_addr(b, 0x4C01);         // its place in the list
+        b.push_back(0x0A); op_imm(b, 5);                                     // past them
+        b.push_back(0x09); op_addr(b, 0x7D00); op_addr(b, 0x4C02);
+        b.push_back(0x00);
+        CHECK(run(b, mh, vp, vm) == ecl::Stop::Stopped);
+        CHECK(vm.get(0x4C00) == 9 && vm.get(0x4C01) == 4 && vm.get(0x4C02) == 0);
+        CHECK(mh.mon[1][0x197] == 0 && mh.mon[1][0x198] == 1 && pa.m[1].rec[0x198] == 0 && pa.selected == 1);
+    }
+}
+
 // AND / OR: the flags as the original sets them - 0 against the result
 static void test_vm_and()
 {
@@ -4947,6 +5071,7 @@ int main()
     test_ecl();
     test_ecl_vm();
     test_vm_and();
+    test_vm_events_facts();
     test_ecl_party();
     test_treasure();
     test_sound();

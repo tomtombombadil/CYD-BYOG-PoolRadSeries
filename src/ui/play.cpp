@@ -197,6 +197,7 @@ void sfx(int id)
 }
 
 void fight_load_monster(int id, int copies, int icon);
+uint8_t* fight_monster_record(int k);
 bool npc_join(int id);
 bool party_dead = false;      // DAMAGE killed everyone: the party menu after the script
 // The demo (demo_facts.md): area 1, ECL1 block 0x52's first run, speed 9,
@@ -3648,11 +3649,14 @@ struct RestRun {
     bool running = false, from_magic = false, interrupted = false;
     bool fix = false;               // Fix's rest: `fix_heal` shared out at its end
     int  fix_heal = 0;
-    int  enc = 0;                   // steps since the last encounter check
     uint32_t pause_until = 0;       // a message stays a moment
     int  shown = 0;                 // steps since the time was shown
     magic::Rest r;
 } rest;
+// Rest steps since the last encounter check: from rest to rest, area to
+// area - the original's counter starts at 0 only when the program starts
+// (coab's facts: ovr021 resting, rest_incounter_count)
+int rest_encounter_steps = 0;
 
 void draw_rest_time(pic::Canvas& c)
 {
@@ -3807,8 +3811,8 @@ void rest_tick(uint32_t now, pic::Canvas& c)
             }
         // An encounter can break in
         const int period = vm->get(d->prof->magic.rest_period), chance = vm->get(d->prof->magic.rest_chance);
-        if (period > 0 && ++rest.enc >= period) {
-            rest.enc = 0;
+        if (period > 0 && ++rest_encounter_steps >= period) {
+            rest_encounter_steps = 0;
             if (rng.roll(100, 1) <= chance) {
                 char t[40];
                 mw(profile::kInterrupted, t, sizeof t);
@@ -5651,6 +5655,7 @@ struct Host : ecl::Host {
     }
     void load_monster(int id, int copies, int icon) override { fight_load_monster(id, copies, icon); }
     void clear_monsters() override { fight_clear_monsters(); }
+    uint8_t* monster_record(int k) override { return fight_monster_record(k); }
     bool add_npc(int id) override { return npc_join(id); }
     void party_changed() override
     {
@@ -5823,6 +5828,9 @@ void after_move_redraw()
 
 // The step the player asked for (dir = the way the party goes)
 int step_dir = 0;
+// Look: search mode before it (put back after the search script)
+uint16_t look_search = 0;
+bool look_pending = false;
 // Locked doors (door_facts.md): what the "Locked." menu may offer, all
 // back on with each step the party takes
 bool can_bash = true, can_pick = true, can_knock = true;
@@ -5959,7 +5967,9 @@ void handle(ecl::Stop r)
     }
     if (r == ecl::Stop::NewScript) {
         // A new script block: its first run, then its step and arrival runs
+        // (no map edge tried in it: coab's facts, sub_29677)
         d->gs.moved = false;
+        vm->set(0x7ED5, 0);
         run_entry(4, Then::NewFirst);
         return;
     }
@@ -5988,7 +5998,6 @@ void handle(ecl::Stop r)
         run_entry(1, Then::Arrive);
         return;
     case Then::Look:
-        vm->set(0x7ECA, vm->get(0x7ECA) & 1);
         break;
     case Then::Camp:
         then = Then::Idle;
@@ -6006,6 +6015,11 @@ void handle(ecl::Stop r)
         break;
     }
     then = Then::Idle;
+    if (look_pending) {
+        // Look's search script (and any block it led to) done: search mode as before
+        look_pending = false;
+        vm->set(0x7ECA, look_search);
+    }
     if (!vm->get(0x4BE6)) {
         // Outdoors the scripts run the show: go round again, unless nothing
         // happened (a script with nothing to do would spin forever)
@@ -6026,6 +6040,19 @@ void step(int dir_of_step)
     clear_menu_line(*cv);
     text::clear(*cv, text::kTextArea);
     dirty_rows(17, 22);
+    // A step through a side that isn't solid, off the map's edge: 0x7ED5 = 1
+    // for the step script (the scripts take the party to the next area);
+    // else 0 (coab's facts: TryStepForward)
+    {
+        const ecl::GameState& g = d->gs;
+        const int nx = g.x + geo::dx(dir_of_step), ny = g.y + geo::dy(dir_of_step);
+        const bool off = nx < 0 || nx > 15 || ny < 0 || ny > 15;
+        vm->set(0x7ED5, d->map.loaded && off && geo::passage(d->map, g.x, g.y, dir_of_step) != 0 ? 1 : 0);
+    }
+    // The original's exploring menu clears 0x7EC9 (field_592) before every
+    // key: a "don't move" left by an earlier script (a block's first run)
+    // doesn't hold back this step - only this step's script can
+    vm->set(0x7EC9, 0);
     // The step script runs before the move, on the square the party is on
     run_entry(0, Then::Move);
 }
@@ -7113,6 +7140,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     vm = new (vm_mem) ecl::Vm(d->gs, *host, *d->prof->ecl_ops);
     vm->set_party(pt);
     vm->set_ground(ground);
+    vm->set_move_affects(d->prof->fight.facts.haste, d->prof->fight.facts.slow);
     if (open_file(d->prof->overlay, f)) {
         // The script machine's own words
         library::FileSource src(f);
@@ -7136,6 +7164,8 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     vm->set(0x7F12, gs.game_area);
     area_view = false;
     pic_shown = false;
+    look_pending = false;
+    rest_encounter_steps = 0;
     waiting = false;
     then = Then::Idle;
     anim_block = bigpic = last_pic = -1;
@@ -7263,8 +7293,12 @@ bool act(Act a, pic::Canvas& c)
         pic_shown = false;
         break;
     case Act::Look: {
-        // Search this square (+10 minutes); the search script runs
-        vm->set(0x7ECA, static_cast<uint16_t>((vm->get(0x7ECA) & 1) | 2));
+        // Search this square (+10 minutes); the search script runs with the
+        // search word 1 - the scripts look for 1 - and search mode is put
+        // back as it was after (coab's facts: sub_29758's Look)
+        look_search = vm->get(0x7ECA) & 1;
+        look_pending = true;
+        vm->set(0x7ECA, 1);
         vm->advance_clock(2, 1);
         clear_menu_line(c);
         run_entry(1, Then::Look);

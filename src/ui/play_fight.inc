@@ -144,6 +144,14 @@ void fight_load_monster(int id, int copies, int icon)
     Serial.printf("[play] LOAD MONSTER %d x%d (icon %d): %d monsters\n", id, copies, icon, ml->n);
 }
 
+// The k-th loaded monster's own record (LOAD CHARACTER past the party: the
+// scripts can change one before the fight - the Thieves' Guild hideout makes
+// four of the loaded thieves fight on the party's side); nullptr past them
+uint8_t* fight_monster_record(int k)
+{
+    return ml && k >= 0 && k < ml->n ? ml->m[k].rec : nullptr;
+}
+
 // ---- Pictures, 4 bits a pixel
 struct Pic4 {
     uint8_t w = 0, h = 0;
@@ -2304,7 +2312,11 @@ void fight_start(pic::Canvas& c)
     b.names = names;
     b.arrow = d->facts.arrow;
     b.quarrel = d->facts.quarrel;
+    // The scripts' surprise word (coab's facts: area2 0x596): (team + 1) &
+    // it - 1 the party, 2 the monsters; the original clears it with the
+    // first round's initiative, so it counts for this fight only
     b.surprise = vm->get(0x7ECB) & 3;
+    vm->set(0x7ECB, 0);
     b.to_hit_party = static_cast<int8_t>(vm->get(0x7F71));
     b.to_hit_monsters = static_cast<int8_t>(vm->get(0x7F70));
     combat::place(b, fg->t, d->gs.dir & 6, vm->fight_distance(), b.indoors ? solid_side : nullptr, nullptr);

@@ -157,7 +157,10 @@ uint16_t Vm::get(uint16_t a) const
             not_found_ = false;                            // LOAD CHARACTER found no one
             return 0;
         }
-        if (party_ && party::script_value(*party_, static_cast<uint16_t>(a - 0x7C00), &v)) return v;
+        if (const uint8_t* mr = sel_rec()) {
+            // a loaded monster LOAD CHARACTER chose (its place: after the party)
+            if (party::script_value(mr, (party_ ? party_->count : 0) + sel_mon_, static_cast<uint16_t>(a - 0x7C00), &v)) return v;
+        } else if (party_ && party::script_value(*party_, static_cast<uint16_t>(a - 0x7C00), &v)) return v;
         if (a == 0x7D00) return 0;                         // "no character loaded"
         if (a == 0x7F12) return s_.game_area;
         return word_at(s_.area2, (a - 0x7C00u) * 2);
@@ -189,7 +192,9 @@ void Vm::set(uint16_t a, uint16_t v)
         word_to(s_.area2, (a - 0x7C00u) * 2, v);
         if (a == 0x7C00 && v == 0) cleared_name_ = true;
         if (a == 0x7D00 && v == 0) cleared_status_ = true;
-        if (party_ && a < 0x7EB0) party::script_set(*party_, static_cast<uint16_t>(a - 0x7C00), v);
+        if (uint8_t* mr = sel_rec()) {
+            if (a < 0x7EB0) party::script_set(mr, static_cast<uint16_t>(a - 0x7C00), v);
+        } else if (party_ && a < 0x7EB0) party::script_set(*party_, static_cast<uint16_t>(a - 0x7C00), v);
         if (a == 0x7F12) s_.game_area = static_cast<uint8_t>(v);
         if ((a == 0x7F22 || a == 0x7F24 || a == 0x7F26) && v > 0x80) h_.load_walls(1 + (a - 0x7F22) / 2, v & 0x7F);
         return;
@@ -210,9 +215,10 @@ void Vm::set(uint16_t a, uint16_t v)
 // Strings in memory: a character a word (a byte in the script), 0 ends
 void Vm::store_string(uint16_t a, const char* t)
 {
-    if (a == 0x7C00 && party_ && party_->sel()) {
+    uint8_t* mr = a == 0x7C00 ? sel_rec() : nullptr;
+    if (a == 0x7C00 && (mr || (party_ && party_->sel()))) {
         // The selected character's name
-        uint8_t* r = party_->sel()->rec;
+        uint8_t* r = mr ? mr : party_->sel()->rec;
         size_t n = strlen(t);
         if (n > party::kNameMax) n = party::kNameMax;
         r[0] = static_cast<uint8_t>(n);
@@ -228,9 +234,18 @@ void Vm::store_string(uint16_t a, const char* t)
 
 void Vm::read_string(uint16_t a, char* out, size_t cap) const
 {
-    if (a == 0x7C00 && party_ && party_->sel()) {
-        party_->sel()->name(out, cap);          // the selected character's name
-        return;
+    if (a == 0x7C00) {
+        const uint8_t* r = sel_rec();
+        if (!r && party_ && party_->sel()) r = party_->sel()->rec;
+        if (r) {                                // the selected character's name
+            size_t n = r[0] < party::kNameMax ? r[0] : party::kNameMax;
+            if (cap && n > cap - 1) n = cap - 1;
+            if (cap) {
+                memcpy(out, r + 1, n);
+                out[n] = 0;
+            }
+            return;
+        }
     }
     size_t o = 0;
     for (; o + 1 < cap; ++o, a = static_cast<uint16_t>(a + 1)) {
@@ -319,6 +334,7 @@ bool Vm::init_script(bool reload)
     sp_ = 0;
     for (bool& f : flags_) f = false;
     cleared_name_ = cleared_status_ = false;
+    sel_mon_ = -1;
     reset_encounter();
     enc_phase_ = EncPhase::None;
     enc_.in_menu = false;
@@ -344,6 +360,7 @@ void Vm::restore_selected()
 {
     if (!restore_) return;
     restore_ = false;
+    sel_mon_ = -1;
     if (party_ && start_sel_ >= 0 && start_sel_ < party_->count) party_->selected = start_sel_;
 }
 
@@ -352,15 +369,25 @@ void Vm::party_size()
     if (party_) set(0x7F3E, static_cast<uint16_t>(party_->count));
 }
 
+// 0 .. n - 1 (n > 0): every random number the scripts use
+uint32_t Vm::rnd(uint32_t n)
+{
+    rng_ ^= rng_ << 13;
+    rng_ ^= rng_ >> 17;
+    rng_ ^= rng_ << 5;
+#ifdef CYD_TEST_HOOKS
+    if (create::g_die_hook && n > 0) {
+        const int v = create::g_die_hook(static_cast<int>(n));
+        if (v >= 0) return static_cast<uint32_t>(v) < n ? static_cast<uint32_t>(v) : n - 1;
+    }
+#endif
+    return n ? rng_ % n : 0;
+}
+
 uint8_t Vm::roll(int sides, int n)
 {
     int t = 0;
-    for (int k = 0; k < n; ++k) {
-        rng_ ^= rng_ << 13;
-        rng_ ^= rng_ >> 17;
-        rng_ ^= rng_ << 5;
-        t += sides > 0 ? static_cast<int>(rng_ % static_cast<uint32_t>(sides)) + 1 : 0;
-    }
+    for (int k = 0; k < n; ++k) t += sides > 0 ? static_cast<int>(rnd(static_cast<uint32_t>(sides))) + 1 : 0;
     return static_cast<uint8_t>(t);             // (the games' dice: a byte)
 }
 
@@ -440,7 +467,10 @@ Stop Vm::run(uint16_t address)
 
 Stop Vm::resume()
 {
-    if (wait_ == Wait::Combat) monsters_ = false;      // the fight's monsters are gone
+    if (wait_ == Wait::Combat) {
+        monsters_ = false;                              // the fight's monsters are gone
+        sel_mon_ = -1;
+    }
     wait_ = Wait::None;
     budget_ = kBudget;                                  // (each stretch between waits has its own)
     if (enc_.pic_due) {
@@ -479,19 +509,21 @@ Stop Vm::answer(int v)
         int sel = v;
         if (near && sel == 3) sel = 4;
         if (sel < 0 || sel > 4) sel = 1;
-        // The party's slowest and fastest movement (no party: 12, a person on foot)
+        // The party's slowest and fastest movement (no party: 12, a person on
+        // foot): every member, out of action too, doubled when hasted, halved
+        // when slowed (coab's facts: calc_group_inituative, a byte each)
         int party_min = 12, party_max = 12;
         if (party_ && party_->count) {
             party_min = 255;
             party_max = 0;
             for (int i = 0; i < party_->count; ++i) {
                 const party::Character& c = party_->m[i];
-                if (!c.in_combat()) continue;
-                const int mv = c.movement();
+                int mv = c.movement();
+                if (haste_ && c.has_affect(haste_)) mv = (mv * 2) & 0xFF;
+                else if (slow_ && c.has_affect(slow_)) mv >>= 1;
                 if (mv < party_min) party_min = mv;
                 if (mv > party_max) party_max = mv;
             }
-            if (party_max == 0) party_min = party_max = 12;
         }
         auto result = [&](int r) {
             set(enc_dest_, static_cast<uint16_t>(r));
@@ -678,10 +710,7 @@ Stop Vm::step()
         if (!need(2)) return Stop::Error;
         int max = value(o[0]) & 0xFF;
         if (max < 0xFF) ++max;
-        rng_ ^= rng_ << 13;
-        rng_ ^= rng_ >> 17;
-        rng_ ^= rng_ << 5;
-        set(o[1].word(), static_cast<uint16_t>(max ? rng_ % static_cast<uint32_t>(max) : 0));
+        set(o[1].word(), static_cast<uint16_t>(max ? rnd(static_cast<uint32_t>(max)) : 0));
         return Stop::Running;
     }
     case 0x09:                                  // SAVE
@@ -693,13 +722,20 @@ Stop Vm::step()
         if (!need(1)) return Stop::Error;
         const int v = value(o[0]) & 0xFF, i = v & 0x7F;
         restore_ = true;
-        if (party_ && i < party_->count) {
+        const int members = party_ ? party_->count : 0;
+        if (party_ && i < members) {
             party_->selected = i;
+            sel_mon_ = -1;
+            not_found_ = false;
+        } else if (h_.monster_record(i - members)) {
+            // past the party: the monsters loaded for the next fight (the
+            // original's list goes on into them; coab's facts, LOAD MONSTER)
+            sel_mon_ = i - members;
             not_found_ = false;
         } else {
             not_found_ = true;
         }
-        if ((v & 0x80) && cleared_name_ && cleared_status_ && party_ && party_->count) {
+        if ((v & 0x80) && cleared_name_ && cleared_status_ && party_ && party_->count && sel_mon_ < 0) {
             // The selected member leaves the party
             const int gone = party_->selected;
             if (gone == start_sel_) restore_ = false;
@@ -765,7 +801,10 @@ Stop Vm::step()
     case 0x13:                                  // RETURN
         ++pc_;
         if (sp_ > 0) pc_ = stack_[--sp_];
-        else stop_script();
+        else {
+            restore_selected();                 // nothing to return to: an EXIT (coab's facts)
+            stop_script();
+        }
         return Stop::Running;
     case 0x14:                                  // COMPARE AND
         if (!need(4)) return Stop::Error;
@@ -790,6 +829,7 @@ Stop Vm::step()
     case 0x1C:                                  // CLEARMONSTERS: and the treasure
         ++pc_;
         monsters_ = false;
+        sel_mon_ = -1;
         h_.clear_monsters();
         if (ground_) ground_->clear();
         return Stop::Running;
@@ -890,13 +930,7 @@ Stop Vm::step()
     case 0x23: {                                // SURPRISE: two d6 against (d + 2 - a) and (b + 2 - c)
         if (!need(4)) return Stop::Error;
         const int a = value(o[0]) & 0xFF, b = value(o[1]) & 0xFF, c = value(o[2]) & 0xFF, dd = value(o[3]) & 0xFF;
-        auto d6 = [&]() {
-            rng_ ^= rng_ << 13;
-            rng_ ^= rng_ >> 17;
-            rng_ ^= rng_ << 5;
-            return static_cast<int>(rng_ % 6) + 1;
-        };
-        const int r1 = d6(), r2 = d6();
+        const int r1 = roll(6, 1), r2 = roll(6, 1);
         int result = 0;
         if (r1 <= dd + 2 - a) result = 1;               // the party surprised
         if (r2 <= b + 2 - c) result = 2;                // the monsters (the games: this wins over both)

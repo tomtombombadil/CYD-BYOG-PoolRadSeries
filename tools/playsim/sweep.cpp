@@ -1057,6 +1057,9 @@ int main(int argc, char** argv)
         printf("== behaviour: %d passed, %d failed\n", b_pass, b_fail);
     }
 #endif
+#ifdef BEHAVE_EVENTS
+    else if (mode == "events_dump") behave_events_dump(argc > 3 ? argv[3] : "events_state.txt");
+#endif
     else printf("no mode %s\n", mode.c_str());
     play::close();
     printf("== %d problems\n", problems);
