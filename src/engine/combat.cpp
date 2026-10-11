@@ -737,6 +737,41 @@ TurnFx turn_effects(Battle& b, int i)
         f.moves = f.attacks[0] = f.attacks[1] = 0;
         return TurnFx::Fumbling;
     }
+    // Berserk (the Berserker sword; the turn-start list, after silence,
+    // clouds, charm, suffocation): the listing's spl_berzerk (ovr013:17B3)
+    // makes it computer-run, control 0xB3 (an NPC's 0xB2), takes as its
+    // target the SECOND entry of sub_738D8's list of every combatant on the
+    // field sorted by range (byte_1D1C4 = DS 6EB4, entries from 6EB1 three
+    // bytes each - the first, at range 0, is the wearer itself: the nearest
+    // other creature, friend or foe), no spells, and puts it on the side
+    // against that target ("goes berzerk")
+    if (fx.berserk && f.has(fx.berserk) && f.size) {
+        f.quick = true;
+        f.rec[0x198] = 1;
+        f.rec[kControl] = f.rec[kControl] <= 0x7F || f.rec[kControl] == 0xB3 ? 0xB3 : 0xB2;
+        int near = -1, best = 9999;
+        for (int c = 0; c < b.n; ++c) {
+            const Fighter& o = b.f[c];
+            if (c == i || !o.size || o.gone) continue;
+            int sq = 9999;
+            if (b.tables) {
+                if (!range(b, *b.tables, i, c, false, &sq)) continue;
+            } else {
+                const int ddx = o.x > f.x ? o.x - f.x : f.x - o.x, ddy = o.y > f.y ? o.y - f.y : f.y - o.y;
+                sq = ddx > ddy ? ddx : ddy;
+            }
+            if (sq < best) {
+                best = sq;
+                near = c;
+            }
+        }
+        if (near >= 0) {
+            f.target = near;
+            f.can_cast = false;
+            f.rec[kTeam] = static_cast<uint8_t>(b.f[near].team() ^ 1);
+            return TurnFx::Berzerk;
+        }
+    }
     // (the original's order: the restrained - snakes -, silence, then confusion)
     const int s = fx.sticks ? find_aff(f, fx.sticks) : -1;
     if (s >= 0) {
@@ -1736,8 +1771,10 @@ int missile(const Battle& b, const Fighter& f, int* ammo)
 
 int money_exp(const int m[7])
 {
-    const long copper = m[0] + 10L * m[1] + 100L * m[2] + 200L * m[3] + 1000L * m[4];
-    return static_cast<int>(copper / 200 + 250L * m[5] + 2200L * m[6]);
+    // Each kind on its own, the divisions rounded down one by one (the
+    // listing's calc_battle_exp, ovr006:0248-02D9: the pool's copper / 200,
+    // silver / 20, electrum / 2, gold, platinum x 5, gems x 250, jewellery x 2200)
+    return static_cast<int>(m[0] / 200L + m[1] / 20L + m[2] / 2L + m[3] + 5L * m[4] + 250L * m[5] + 2200L * m[6]);
 }
 
 int award(Battle& b, int total)

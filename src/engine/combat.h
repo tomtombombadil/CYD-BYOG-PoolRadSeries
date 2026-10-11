@@ -177,6 +177,11 @@ struct Facts {
         uint8_t con_save, halfelf, dwarf_orc, gnome_foe, giants, gnome_extra, ranger_giant;
     } race{};
     ItemFx  items;
+    // Berserk (the Berserker sword's effect, the listing's spl_berzerk): at
+    // the start of each of its turns the wearer takes the nearest other
+    // creature as its target and goes to the side against it ("goes
+    // berzerk"), computer-run, no spells that turn
+    uint8_t berserk = 0;
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a
@@ -284,7 +289,8 @@ bool hidden(const Battle& b, int viewer, int target);
 // Suffocates: engulfed too long - killed
 // Confusion: Confused (the turn lost), RunsAway (it flees), Berserk (it
 // attacks the nearest, friend or foe), Enraged (it acts as ever)
-enum class TurnFx : uint8_t { None, Silenced, Snakes, Fumbling, Suffocates, Confused, RunsAway, Berserk, Enraged };
+// Berzerk: the Berserker's effect - on the side against the nearest other creature (its target)
+enum class TurnFx : uint8_t { None, Silenced, Snakes, Fumbling, Suffocates, Confused, RunsAway, Berserk, Enraged, Berzerk };
 TurnFx turn_effects(Battle& b, int i);
 // A charm's end: back to their own side (the effect's data, bit 6)
 void uncharm(uint8_t* rec, const uint8_t* affect);

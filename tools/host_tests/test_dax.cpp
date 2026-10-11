@@ -3752,6 +3752,8 @@ static void test_combat()
     CHECK(o.result == combat::Won && o.exp == 70 && o.money[3] == 30);
     const int m[7] = {0, 0, 0, 400, 0, 1, 0};
     CHECK(combat::money_exp(m) == 400 + 250);
+    const int m2[7] = {199, 19, 1, 0, 1, 0, 0};                   // each kind rounded down on its own: 0 + 0 + 0 + 5
+    CHECK(combat::money_exp(m2) == 5);
     // Shared by those still in the fight (member 2 is dead: not counted, gets
     // none - the original's calc_battle_exp with sub_2D556's count of those
     // out of the fight or animated); a fighter with Str 16 gets 10% more

@@ -157,6 +157,7 @@ enum FightWord {
     kIsAffectedW,                                                                // Detect's "is affected"
     kLostImage,                                                                  // Mirror Image: "lost an image"
     kIsWeakened, kAges,                                                          // the disease's "is weakened", Haste's "ages"
+    kGoesBerzerk,                                                                // the Berserker's "goes berzerk"
     kFightWords
 };
 

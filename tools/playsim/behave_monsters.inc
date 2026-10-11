@@ -966,10 +966,11 @@ void rules_more()
             }
         }
         expect(kPart, "experience: shares, prime requisites, multi-classes", ok, "share %d", share);
-        // the money's worth (cp + 10 sp + 100 ep + 200 gp + 1000 pp) / 200 + 250 a gem + 2200 a jewel
-        const int money[7] = {200, 20, 2, 1, 1, 2, 1};
-        expect(kPart, "experience: the money's worth", combat::money_exp(money) == (200 + 200 + 200 + 200 + 1000) / 200 + 500 + 2200,
-               "%d", combat::money_exp(money));
+        // the money's worth (the listing's calc_battle_exp, ovr006:0248-02D9): each kind
+        // on its own - cp / 200 + sp / 20 + ep / 2 + gp + 5 pp + 250 a gem + 2200 a jewel
+        const int money[7] = {399, 39, 3, 1, 1, 2, 1};
+        expect(kPart, "experience: the money's worth, each coin kind rounded down on its own",
+               combat::money_exp(money) == 1 + 1 + 1 + 1 + 5 + 500 + 2200, "%d", combat::money_exp(money));
     }
     // -- Turn undead (the listing's turn_undead): d12 undead at most, one d20,
     //    the weakest first (record 0xE9), the table by level; T turns, D / D* destroy
@@ -1894,6 +1895,35 @@ void specials_more()
         h.kind = 8;
         bool dn, res;
         expect(kPart, "beholder: magic none (0x81)", combat::harm(b, M, 20, h, rng, &dn, &res) == 0);
+    }
+    // -- Berserk (the Berserker sword's 0x4D, the listing's spl_berzerk): at the
+    //    turn's start, the nearest OTHER creature (the sorted list's 2nd entry,
+    //    the wearer itself the 1st) becomes its target and it goes to the side
+    //    against it; computer-run, control 0xB3, no spells
+    if (vs(1, 83) && fxs.berserk) {
+        combat::Battle& b = *B;
+        const int O = 1;
+        put(P, 20, 10, 2);
+        put(O, 20, 11, 2);                    // a friend next to it
+        put(M, 23, 10, 6);                    // the enemy further off
+        uint8_t* a = b.f[P].aff[(*b.f[P].n_aff)++];
+        memset(a, 0, party::kAffectSize);
+        a[0] = fxs.berserk;
+        a[3] = 0xFF;
+        b.f[P].rec[0xF7] = 0;
+        b.f[P].can_cast = true;
+        const combat::TurnFx tf = combat::turn_effects(b, P);
+        expect(kPart, "berserk: the nearest other creature (a friend next to it) its target, on the side against it",
+               tf == combat::TurnFx::Berzerk && b.f[P].target == O && b.f[P].team() == 1 && b.f[P].rec[0xF7] == 0xB3 &&
+               b.f[P].quick && !b.f[P].can_cast, "fx %d target %d team %d control %02X", static_cast<int>(tf), b.f[P].target,
+               b.f[P].team(), b.f[P].rec[0xF7]);
+        put(O, 30, 15, 2);                    // the friend away: the enemy nearest
+        combat::turn_effects(b, P);
+        expect(kPart, "berserk: the enemy nearest - back on the party's side against it", b.f[P].target == M && b.f[P].team() == 0,
+               "target %d team %d", b.f[P].target, b.f[P].team());
+        rules::remove_affects(pt->m[P], fxs.berserk);
+        expect(kPart, "berserk taken away (the fight's end): control 0xB3 back to 0, the party's side",
+               pt->m[P].rec[0xF7] == 0 && pt->m[P].rec[0x197] == 0);
     }
     (void)fxs;
 }
