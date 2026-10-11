@@ -271,8 +271,8 @@ stay in the session's scratch space, never in the repo.
    v0.72.0 (Tom, 2026-10-11: Curse playable): the game's page is two big
    keys, **Play** (the former Play Test) and **Settings**. Settings (one
    set for all games, saved with the engine's settings) holds the engine
-   comforts' switches - Icon Gallery, Large Icon, Journal Pop-Up, Demo Tap
-   Stops, More Characters - and Game Sound (Tandy / PC Speaker / Off), each
+   comforts' switches - Clear Font (v0.73.0), Icon Gallery, Large Icon,
+   Journal Pop-Up, Demo Tap Stops, More Characters - and Game Sound (Tandy / PC Speaker / Off), each
    key lit when on; below them **As Original** (every comfort off; then the
    key reads All On) and **Dev Tools** (Resource Test, Screen Test, Walk
    Test; their Back returns there). The in-game Game menu's Options tab
@@ -714,6 +714,19 @@ a PC, PortMaster handhelds):
     a tap flips ready / action.
   - `CYD_DEMO_TAP_STOPS` (v0.64.0, Tom): a tap or key stops the title's
     Demo (the title comes back); the original's demo can't be stopped.
+  - `CYD_CLEAR_FONT` (v0.73.0, Tom: the Gold Box Companion offers other
+    fonts; easier reading matters on these screens): the engine's own
+    **Clear** font - upright, bold (2-pixel stems) capitals, digits and
+    punctuation, plus real lower case - in place of the game's narrow
+    slanted capitals (glyphs 1-26 and 32-63; lower case gets glyphs of its
+    own, so the program's mixed-case words - menus, character sheets -
+    print as written; the scripts' text is stored in capitals and stays
+    so). The game's symbols and frame pieces (glyphs 0, 27-31, 64-176) are
+    kept. Drawn for the engine, glyph by glyph, in
+    `tools/fonts/clear8.txt` (`tools/fonts/make_font.py` makes
+    `engine/font_clear.cpp`); the Companion's Font_01-03.bmp were only
+    looked at (they are the game's own font, lightly retouched, capitals
+    only). Switching it in Settings changes text drawn from then on.
   - `CYD_ICON_GALLERY` (v0.71.0, Tom: making icons a value at a time is
     "one of the worst parts of the game"): the icon editor (Alter -> Icon,
     Create New Character) opens on a gallery - pages Icons (32 ready-made
@@ -763,6 +776,8 @@ the game's Settings (As Original: all of them).
   characters can't be added (not one of the engine's games) (switch
   `CYD_MORE_CHARACTERS`).
 - **The icon editor's big preview** (switch `CYD_BIG_ICON_PREVIEW`).
+- **The Clear font** (switch `CYD_CLEAR_FONT`): the engine's own upright,
+  bold letters with lower case instead of the game's font.
 - **The icon gallery** (switch `CYD_ICON_GALLERY`): the icon editor opens
   on ready-made icons, heads, weapons and colour schemes to tap; the
   original's Parts / colours / Size menus are behind Edit, and their Exit

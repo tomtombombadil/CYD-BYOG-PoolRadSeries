@@ -395,6 +395,30 @@ static void test_font()
     CHECK(font::load(src, idx, f) && f.loaded);
     CHECK(font::glyph_of('A') == 1 && font::glyph_of('a') == 1 && font::glyph_of(' ') == 32 &&
           font::glyph_of('0') == 48 && font::glyph_of('?') == 63);
+    // The Clear font: in place of the letters / digits / punctuation, real
+    // lower case, the game's other glyphs kept; off puts the game's back
+    {
+        static font::Font g;
+        g = f;
+        CHECK(font::glyph_of(g, 'a') == 1);
+        font::set_clear(g, true);
+        CHECK(g.clear && font::glyph_of(g, 'a') == font::kGlyphs && font::glyph_of(g, 'z') == font::kGlyphs + 25 &&
+              font::glyph_of(g, 'A') == 1 && font::glyph_of(g, '5') == 53);
+        CHECK(memcmp(g.glyph[1], font::kClearUpper[0], 8) == 0 && memcmp(g.glyph[63], font::kClearText[31], 8) == 0);
+        CHECK(memcmp(g.glyph[0], f.glyph[0], 8) == 0 && memcmp(g.glyph[27], f.glyph[27], 5 * 8) == 0 &&
+              memcmp(g.glyph[64], f.glyph[64], (font::kGlyphs - 64) * 8) == 0);
+        static uint8_t gp[pic::kScreenW * pic::kScreenH];
+        pic::Canvas gc{gp, pic::kScreenW, pic::kScreenH};
+        gc.clear(0);
+        font::draw_text(gc, g, "b", 0, 0, 15, 0);
+        bool same = true;
+        for (int r = 0; r < 8; ++r)
+            for (int x = 0; x < 8; ++x)
+                same &= (gp[r * pic::kScreenW + x] == 15) == ((font::kClearLower[1][r] & (0x80 >> x)) != 0);
+        CHECK(same);
+        font::set_clear(g, false);
+        CHECK(!g.clear && memcmp(g.glyph, f.glyph, sizeof g.glyph) == 0 && font::glyph_of(g, 'a') == 1);
+    }
     static uint8_t px[pic::kScreenW * pic::kScreenH];
     pic::Canvas c{px, pic::kScreenW, pic::kScreenH};
     c.clear(9);

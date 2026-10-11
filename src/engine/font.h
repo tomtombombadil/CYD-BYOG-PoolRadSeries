@@ -31,14 +31,30 @@ constexpr int kRows = pic::kScreenH / 8;   // 25
 struct Font {
     uint8_t glyph[kGlyphs][8];
     bool loaded = false;
+    // The engine's Clear font in place of the game's letters (set_clear)
+    bool    clear = false;
+    uint8_t saved[26 + 32][8];         // the game's glyphs 1-26 and 32-63 while it is
 };
+
+// The engine's own Clear font (Tom, 2026-10-11: easier to read on the small
+// screens; drawn for the engine - tools/fonts/clear8.txt, nothing from the
+// games): upright bold capitals, digits and punctuation in place of glyphs
+// 1-26 and 32-63, and real lower case (glyph kGlyphs + 0..25). The game's
+// other glyphs (0, 27-31, 64-176: symbols, frame bits) stay its own.
+extern const uint8_t kClearUpper[26][8];
+extern const uint8_t kClearLower[26][8];
+extern const uint8_t kClearText[32][8];
+// Puts the Clear font in (on) or the game's own back (off)
+void set_clear(Font& f, bool on);
 
 // Loads block 201 from an open DAX file. False if the file has no such
 // block or it isn't 1416 bytes.
 bool load(dax::ByteSource& src, const dax::Index& idx, Font& out);
 
-// The glyph a character prints with.
+// The glyph a character prints with (the game's font: capitals only).
 int glyph_of(char c);
+// The same in font f: with the Clear font, lower case has glyphs of its own
+int glyph_of(const Font& f, char c);
 
 // Draws glyph g with its top-left at pixel (x, y). bg < 0 = leave the
 // paper pixels as they are.

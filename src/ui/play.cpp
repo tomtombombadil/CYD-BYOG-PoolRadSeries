@@ -7399,7 +7399,11 @@ bool icon_preview(bool action, uint8_t* out)
     return true;
 }
 
-void set_options(const Options& o) { opts = o; }
+void set_options(const Options& o)
+{
+    opts = o;
+    if (d) font::set_clear(d->font, CYD_CLEAR_FONT && opts.clear_font);     // (text drawn from now on)
+}
 
 void set_pool_dir(const char* dir)
 {
@@ -7488,6 +7492,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
         ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles) && font::load(src, d->idx, d->font) &&
              view3d::load_tiles(src, d->idx, d->prof->common_tiles_block, d->world.common);
         f.close();
+        font::set_clear(d->font, CYD_CLEAR_FONT && opts.clear_font);
     }
     if (!ok) {
         snprintf(msg, sizeof msg, "%s: the tiles or font didn't load.", d->prof->tiles_file);

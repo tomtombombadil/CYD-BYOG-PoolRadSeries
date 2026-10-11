@@ -20,7 +20,8 @@ struct Settings {
 };
 
 // comforts_off bits (app/features.h)
-constexpr uint8_t kOffGallery = 1, kOffBigIcon = 2, kOffDemoTap = 4, kOffJournal = 8, kOffMoreGuys = 16;
+constexpr uint8_t kOffGallery = 1, kOffBigIcon = 2, kOffDemoTap = 4, kOffJournal = 8, kOffMoreGuys = 16,
+                  kOffClearFont = 32;
 
 
 constexpr uint8_t kMinBrightness = 20;

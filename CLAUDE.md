@@ -228,6 +228,12 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   for ALL games (settings.h `comforts_off`; per-game only if a need shows
   up), As Original / All On, and **Dev Tools** at the bottom (the three
   tests). New comforts get a features.h switch AND a Settings key.
+- Clear font (Tom, 2026-10-11, v0.73.0): the engine's OWN 8x8 font
+  (`tools/fonts/clear8.txt` -> `make_font.py` -> `engine/font_clear.cpp`),
+  bold upright capitals + real lower case, a comfort (`CYD_CLEAR_FONT`,
+  Settings key, default on). Third-party fonts (the Gold Box Companion's
+  have no license and are the game's own glyphs retouched) are only looked
+  at, never copied; edit the .txt art and regenerate.
 - Library (Tom, 2026-10-07): title bar shows the firmware version (to see
   which build is flashed); ONE game a page, no key look, the whole space
   between header and bottom keys - its GOG icon as big as fits (scaled from

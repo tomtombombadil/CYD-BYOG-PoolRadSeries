@@ -54,6 +54,15 @@
 #define CYD_JOURNAL_POPUP 1
 #endif
 
+// The Clear font (Tom, 2026-10-11, v0.73.0): the engine's own upright, bold
+// letters with real lower case (tools/fonts/clear8.txt, drawn for the
+// engine) in place of the game's narrow slanted capitals - much easier to
+// read on 2.8" - 4.0" screens. The game's symbols and frame pieces stay.
+// Where: engine/font.* (set_clear), play.cpp.
+#ifndef CYD_CLEAR_FONT
+#define CYD_CLEAR_FONT 1
+#endif
+
 // Each comfort compiled in can also be switched off by the player: the
 // game's Settings page (Tom, 2026-10-11, v0.72.0; one set for all games,
 // settings.h comforts_off), also the in-game Game menu's Options tab.

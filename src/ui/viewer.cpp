@@ -2012,11 +2012,12 @@ void tap_sounds(const ui::Tap& t)
 // One set for all games (settings.h comforts_off): the game's Settings page
 // and the in-game Game menu's Options tab show the same keys; a comfort
 // compiled out (app/features.h) isn't listed.
-enum Comfort { kCGallery, kCBigIcon, kCJournal, kCDemoTap, kCMoreGuys, kCSound, kComforts };
+enum Comfort { kCFont, kCGallery, kCBigIcon, kCJournal, kCDemoTap, kCMoreGuys, kCSound, kComforts };
 
 bool comfort_built(int c)
 {
     switch (c) {
+    case kCFont: return CYD_CLEAR_FONT;
     case kCGallery: return CYD_ICON_GALLERY;
     case kCBigIcon: return CYD_BIG_ICON_PREVIEW;
     case kCJournal: return CYD_JOURNAL_POPUP;
@@ -2027,7 +2028,7 @@ bool comfort_built(int c)
 }
 uint8_t comfort_bit(int c)
 {
-    static const uint8_t kBits[kComforts] = {kOffGallery, kOffBigIcon, kOffJournal, kOffDemoTap, kOffMoreGuys, 0};
+    static const uint8_t kBits[kComforts] = {kOffClearFont, kOffGallery, kOffBigIcon, kOffJournal, kOffDemoTap, kOffMoreGuys, 0};
     return kBits[c];
 }
 bool comfort_on(int c)
@@ -2043,6 +2044,7 @@ void apply_options()
     o.gallery = comfort_on(kCGallery);
     o.demo_tap = comfort_on(kCDemoTap);
     o.more_guys = comfort_on(kCMoreGuys);
+    o.clear_font = comfort_on(kCFont);
     play::set_options(o);
 }
 
@@ -2055,18 +2057,18 @@ int comfort_list(int* out)
     return n;
 }
 
-// Cell i of the switches' grid (2 columns, 3 rows) in area a
+// Cell i of the switches' grid (2 columns, 4 rows) in area a
 ui::Rect comfort_cell(const ui::Rect& a, int i)
 {
-    const int gp = ui::gap(), cols = 2, rows = 3;
+    const int gp = ui::gap(), cols = 2, rows = 4;
     const int w = (a.w - gp * (cols + 1)) / cols, h = (a.h - gp * (rows + 1)) / rows;
     return {a.x + gp + (i % cols) * (w + gp), a.y + gp + (i / cols) * (h + gp), w, h};
 }
 
 void draw_comforts(const ui::Rect& a)
 {
-    static const char* const kNames[kComforts] = {"Icon Gallery", "Large Icon", "Journal Pop-Up", "Demo Tap Stops",
-                                                  "More Characters", "Game Sound"};
+    static const char* const kNames[kComforts] = {"Clear Font",     "Icon Gallery",    "Large Icon", "Journal Pop-Up",
+                                                  "Demo Tap Stops", "More Characters", "Game Sound"};
     int list[kComforts];
     const int n = comfort_list(list);
     for (int i = 0; i < n; ++i) {
@@ -2113,7 +2115,7 @@ bool all_comforts_off()
 void toggle_original()
 {
     const bool on = all_comforts_off();
-    cfg->comforts_off = on ? 0 : (kOffGallery | kOffBigIcon | kOffDemoTap | kOffJournal | kOffMoreGuys);
+    cfg->comforts_off = on ? 0 : (kOffClearFont | kOffGallery | kOffBigIcon | kOffDemoTap | kOffJournal | kOffMoreGuys);
     if (!on) cfg->large_icons = 0;
     settings_save(*cfg);
     apply_options();

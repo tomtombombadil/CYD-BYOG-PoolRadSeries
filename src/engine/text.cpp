@@ -124,7 +124,7 @@ State step(Writer& w, pic::Canvas& c, const font::Font& f, int n)
                 w.unit_end = e;
             }
         }
-        font::draw_glyph(c, f, font::glyph_of(w.s[w.pos]), w.col * 8, w.row * 8, w.fg, 0);
+        font::draw_glyph(c, f, font::glyph_of(f, w.s[w.pos]), w.col * 8, w.row * 8, w.fg, 0);
         ++w.pos;
         ++w.col;
         if (n > 0) --n;
@@ -170,10 +170,10 @@ void draw(pic::Canvas& c, const font::Font& f, const Menu& m, const MenuColors& 
     c.fill(0, kMenuRow * 8, pic::kScreenW, 8, 0);
     int x = 0;
     for (const char* p = m.prompt; *p && x < font::kCols; ++p, ++x)
-        font::draw_glyph(c, f, font::glyph_of(*p), x * 8, kMenuRow * 8, col.prompt, 0);
+        font::draw_glyph(c, f, font::glyph_of(f, *p), x * 8, kMenuRow * 8, col.prompt, 0);
     const int sel = m.selected >= 0 && m.selected < m.count ? m.selected : -1;
     for (int i = 0; m.s[i] && x < font::kCols; ++i, ++x) {
-        const int g = font::glyph_of(m.s[i]);
+        const int g = font::glyph_of(f, m.s[i]);
         if (sel >= 0 && i >= m.start[sel] && i <= m.end[sel])
             font::draw_glyph(c, f, g, x * 8, kMenuRow * 8, 0, col.highlight);
         else
