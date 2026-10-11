@@ -810,7 +810,7 @@ static void test_layout()
     // The known release is found only by both sizes
     CHECK(profile::find(games::Game::CurseOfTheAzureBonds, 57789, 62432) != nullptr);
     CHECK(profile::find(games::Game::PoolOfRadiance, 65231, 68592) != nullptr);
-    CHECK(profile::ready(games::Game::CurseOfTheAzureBonds) && !profile::ready(games::Game::PoolOfRadiance));
+    CHECK(profile::ready(games::Game::CurseOfTheAzureBonds) && profile::ready(games::Game::PoolOfRadiance));   // (Pool plays: v0.85.0)
     CHECK(profile::find(games::Game::CurseOfTheAzureBonds, 57789, 62400) == nullptr);
     CHECK(profile::find(games::Game::PoolOfRadiance, 57789, 62432) == nullptr);
     CHECK(profile::program_name(games::Game::CurseOfTheAzureBonds) != nullptr);
@@ -2574,6 +2574,8 @@ static void test_journal()
     CHECK(journal::find_mention("YOU LISTEN, AND YOU RECORD IT IN JOURNAL ENTRY 31. 'PERHAPS", &n) == 'J' && n == 31);
     CHECK(journal::find_mention("YOU PLACE IT IN YOUR JOURNAL AS ENTRY 59.", &n) == 'J' && n == 59);
     CHECK(journal::find_mention("LOG IT AS JOURNAL \nENTRY 5.", &n) == 'J' && n == 5);
+    CHECK(journal::find_mention("YOU MAKE HASSAD AHWAL'S TALK ENTRY 55 IN YOUR JOURNAL.", &n) == 'J' && n == 55);   // (Pool)
+    CHECK(journal::find_mention("THE ENTRY 4 TO THE CITY.", &n) == 0);
     CHECK(journal::find_mention("YOU OVERHEAR TAVERN TALE #12 ", &n) == 'T' && n == 12);
     CHECK(journal::find_mention("YOU OVERHEAR TAVERN TALE 7", &n) == 'T' && n == 7);
     CHECK(journal::find_mention("AND YOU RECORD IT IN JOURNAL ENTRY ", &n) == 0);
@@ -3714,6 +3716,19 @@ static void test_create()
         CHECK(m.stat(4) == 17 && m.hp_max() == 65 && m.hp() == 65);
         create::modify_done(m, t, f);
         CHECK(m.rec[0x12C] == 65 - 5 * 3);
+        // Pool (poolrad_create_facts.md 5): experience 0 only; down past the
+        // class's minimum goes to the race's minimum; Keep marks it modified
+        CHECK(!create::can_modify(m, true));
+        m.rec[0x127] = m.rec[0x128] = m.rec[0x129] = m.rec[0x12A] = 0;
+        CHECK(create::can_modify(m, true));
+        classes::Tables tp = t;
+        tp.lay.pool = true;
+        set(0, 9); set(6, 0);
+        create::modify_stat(m, tp, f, 0, -1);
+        CHECK(m.stat(0) == t.u8(static_cast<uint16_t>(t.lay.stat_limits + m.race() * 16 + (m.sex() ? 1 : 0))));
+        m.rec[0xF8] = 0;
+        create::modify_done(m, tp, f);
+        CHECK(m.rec[0xF8] == 1);
     }
 
     // Human Change: a human fighter with Str 15+ may become a cleric or a

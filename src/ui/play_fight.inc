@@ -1785,9 +1785,18 @@ void round_rest(pic::Canvas& c)
 }
 
 // ---- The player's menu
+void draw_fight(pic::Canvas& c);
+
 void fight_menu(pic::Canvas& c)
 {
     const combat::Fighter& f = fg->b.f[fg->cur];
+    // The one whose menu it is in view (v0.85.0: after Aim / View looked
+    // elsewhere the view stayed there, the fighter off the screen - their
+    // moves then seemed to do nothing)
+    if (f.size && (f.x - fg->b.vx < 1 || f.x - fg->b.vx > 5 || f.y - fg->b.vy < 1 || f.y - fg->b.vy > 5)) {
+        focus(fg->cur, 2);
+        draw_fight(c);
+    }
     char words[64];
     words[0] = 0;
     if (f.moves > 1) strcat(words, fw(profile::kFMove));

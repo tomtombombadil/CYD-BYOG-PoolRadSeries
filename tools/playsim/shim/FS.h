@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdio>
+#include <cstdlib>
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
@@ -16,10 +17,17 @@ inline std::string host_path(const char* p)
     if (!sim_root().empty() && strncmp(p, "/GOLDBOX", 8) == 0 && (p[8] == '/' || p[8] == 0)) return sim_root() + (p + 8);
     return p;
 }
+// The board's card mounts with 4 file slots: a fifth open file fails
+// there, so it fails here too (said on stderr)
+inline int& open_files() { static int n = 0; return n; }
+inline std::string* open_names() { static std::string n[64]; return n; }
 class File {
 public:
     File() = default;
-    explicit File(FILE* f) : f_(f, [](FILE* p) { fclose(p); }) {}
+    explicit File(FILE* f) : f_(f, [](FILE* p) {
+        const std::string k = std::to_string((uintptr_t)p) + "=";
+        for (int i = 0; i < 64; ++i) if (open_names()[i].compare(0, k.size(), k) == 0) open_names()[i].clear();
+        fclose(p); --open_files(); }) { ++open_files(); }
     File(DIR* d, const std::string& path) : d_(d, [](DIR* p) { closedir(p); }), path_(path) {}
     explicit operator bool() const { return f_ != nullptr || d_ != nullptr; }
     size_t size() const { long c = ftell(f_.get()); fseek(f_.get(), 0, SEEK_END); long s = ftell(f_.get()); fseek(f_.get(), c, SEEK_SET); return (size_t)s; }
@@ -58,8 +66,18 @@ public:
         const char* path = hp.c_str();
         struct stat st;
         if ((!mode || mode[0] != 'w') && stat(path, &st) == 0 && S_ISDIR(st.st_mode)) return File(opendir(path), path);
+        if (open_files() >= 4) {
+            fprintf(stderr, "[fs] no file slot left for %s (%d open:", card_path, open_files());
+            for (int i = 0; i < 64; ++i) if (!open_names()[i].empty()) fprintf(stderr, " %s", open_names()[i].c_str());
+            fprintf(stderr, ")\n");
+            if (getenv("FSABORT")) abort();
+            return File();
+        }
         FILE* f = fopen(path, mode && mode[0] == 'w' ? "wb" : mode && mode[0] == 'a' ? "ab" : "rb");
-        return f ? File(f) : File();
+        if (!f) return File();
+        File r(f);
+        for (int i = 0; i < 64; ++i) if (open_names()[i].empty()) { open_names()[i] = std::to_string((uintptr_t)f) + "=" + card_path; break; }
+        return r;
     }
     bool remove(const char* path) { return ::remove(host_path(path).c_str()) == 0; }
     bool exists(const char* path) { struct stat st; return stat(host_path(path).c_str(), &st) == 0; }

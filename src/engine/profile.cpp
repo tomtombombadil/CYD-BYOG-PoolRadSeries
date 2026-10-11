@@ -700,7 +700,8 @@ const Profile kProfiles[] = {
                nullptr, 0, nullptr, 0, 0xD2, 0x10},
      .alter = {0xCD1A, 0xCD44, 0xCD6D,
                {0x19441, 0x18F71, 0x18F9F, 0x19261, 0x1926F, 0x19286, 0x1928E, 0x19296, 0x1929C, 0x190B6, 0x190C3,
-                0x190A8, 0x190D5, 0x190E7, 0x190FC, 0, 0, 0, 0, 0x19485},
+                0x190A8, 0x190D5, 0x190E7, 0x190FC, 0x19449, 0x19466, 0x19475, 0x19457, 0x19485},
+               // (Pics: "Monsters on  ", "Portraits on  ", "Portraits off  ", "Monsters off  ", "Exit")
                {0xCFA8, 0xCFD1, 0xCFFA, 0xD023, 0xD04C},
                {0x1D148, 0x1D14C, 0x1D15B, 0x1D15F, 0x1D165, 0x1D16B, 0x1D170, 0x1D19A}},
      // Fights (poolrad_combat_facts.md 1, 2): Curse's tables but the ground
@@ -758,7 +759,7 @@ const Profile kProfiles[] = {
      .won = {{0x207B1, 0x207D5, 0x207FA, 0x20818, 0x2083C, 0x20861, 0x20888, 0x208A8, 0x208CD, 0x208D6, 0x208FD,
               0x20925, 0x20938},
              {3, 6, 4}},
-     .variant = {{20, 21, 22}, 29, true, 15, 7, 6, 1, true, true, true, true, 0x3648, 25, true},
+     .variant = {{20, 21, 22}, 29, true, 15, 7, 6, 1, false, true, true, true, 0x3648, 25, true, true},
      .overland = &kPoolOverland},
 };
 

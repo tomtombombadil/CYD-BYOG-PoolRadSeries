@@ -604,6 +604,19 @@ char find_mention(const char* text, int* number)
                     break;
                 }
             }
+        } else if (upper_eq(s, "ENTRY") && (s == text || !((s[-1] | 0x20) >= 'a' && (s[-1] | 0x20) <= 'z'))) {
+            // Pool: "... TALK ENTRY 55 IN YOUR JOURNAL" - the number first
+            const int n = number_after(s + 5);
+            if (n < 0) continue;
+            const char* t = s + 5;
+            while (*t == ' ') ++t;
+            while (*t >= '0' && *t <= '9') ++t;
+            for (int k = 0; k < 24 && *t; ++k, ++t)
+                if (upper_eq(t, "JOURNAL")) {
+                    kind = 'J';
+                    *number = n;
+                    break;
+                }
         } else if (upper_eq(s, "TAVERN TALE")) {
             const int n = number_after(s + 11);
             if (n >= 0) {

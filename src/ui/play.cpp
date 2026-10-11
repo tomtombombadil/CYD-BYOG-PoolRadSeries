@@ -4974,17 +4974,23 @@ void start_icon(pic::Canvas& c, Screen from);
 // Animation off: event pictures show their first frame only. Pics itself
 // changes nothing else in Curse.
 bool pics_on() { return !vm || (vm->get(0x4BFF) & 2); }
-bool animation_on() { return !vm || (vm->get(0x4BFF) & 1); }
+bool animation_on() { return !vm || d->prof->variant.pics_portraits || (vm->get(0x4BFF) & 1); }
+// Pool's Alter -> Pics: Portraits (View Character's portrait) / Monsters
+// (the event pictures while exploring the 3D areas; its ovr8 +0619)
+bool portraits_on() { return !vm || !d->prof->variant.pics_portraits || (vm->get(0x4BFF) & 1); }
+bool monster_pics_on() { return !vm || !d->prof->variant.pics_portraits || (vm->get(0x4BFF) & 2); }
 
 void pics_menu(pic::Canvas& c)
 {
     alter_mode = AlterMode::Pics;
-    char words[48], a[20];
+    char words[56], a[20];
     words[0] = 0;
     aw(pics_on() ? profile::kPicsOn : profile::kPicsOff, a, sizeof a);
     strlcat(words, a, sizeof words);
-    if (pics_on()) {
-        aw(animation_on() ? profile::kAnimOn : profile::kAnimOff, a, sizeof a);
+    // (Pool: "Monsters on  Portraits on  Exit" - both always offered)
+    if (pics_on() || d->prof->variant.pics_portraits) {
+        const bool second = d->prof->variant.pics_portraits ? portraits_on() : animation_on();
+        aw(second ? profile::kAnimOn : profile::kAnimOff, a, sizeof a);
         strlcat(words, a, sizeof words);
     }
     aw(profile::kPicsExit, a, sizeof a);
@@ -5119,8 +5125,9 @@ void alter_tap(int x, int y, pic::Canvas& c)
         return;
     case AlterMode::Pics: {
         const uint16_t v = vm->get(0x4BFF);
-        if (k == 'P') vm->set(0x4BFF, static_cast<uint16_t>(v ^ 2));
-        else if (k == 'A') vm->set(0x4BFF, static_cast<uint16_t>(v ^ 1));
+        const bool pool = d->prof->variant.pics_portraits;      // M Monsters, P Portraits
+        if (k == (pool ? 'M' : 'P')) vm->set(0x4BFF, static_cast<uint16_t>(v ^ 2));
+        else if (k == (pool ? 'P' : 'A')) vm->set(0x4BFF, static_cast<uint16_t>(v ^ 1));
         else if (k == 'E') {
             alter_menu(c);
             return;
@@ -5338,7 +5345,7 @@ void start_modify(pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
     if (!ch) return;
-    if (!create::can_modify(*ch)) {
+    if (!create::can_modify(*ch, d->prof->variant.pool_files)) {
         char t[60], nm[20];
         ch->name(nm, sizeof nm);
         snprintf(t, sizeof t, "%s%s", nm, rw(Data::kCantModify));
@@ -5735,7 +5742,9 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         }
         free(buf);
     }
-    fs::File f;
+    // (its files closed before the roster's words open theirs: the card
+    // has 4 file slots, and Pool's words need START.EXE open too)
+    {
     OvrWords src;
     if (src.open()) {
         struct { uint32_t at; char* out; size_t cap; } words[] = {
@@ -5771,6 +5780,7 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         text::read_pascal(src, pp.name, d->name_head, sizeof d->name_head);
         text::read_pascal(src, pp.ac_hp, d->ac_hp_head, sizeof d->ac_hp_head);
     }
+    }
     if (!d->choose[0]) strcpy(d->choose, "Choose a function ");
     if (!d->load_which[0]) strcpy(d->load_which, "Load Which Game: ");
     if (!d->name_head[0]) strcpy(d->name_head, "Name");
@@ -5804,6 +5814,7 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
     }
     if (!d->w_slots[0]) strcpy(d->w_slots, "A B C D E F G H I J");
     char sub[64] = "SAVE";
+    fs::File f;
     if (pp.cfg && open_file(pp.cfg, f)) {
         char cfg[256];
         const int n = f.read(reinterpret_cast<uint8_t*>(cfg), sizeof cfg);
@@ -5920,6 +5931,8 @@ struct Host : ecl::Host {
             draw_block(c, "BIGPIC", id, 8, 8);
             dirty(0, 17 * 8);
         } else if (head == 0xFF) {
+            // Pool with Monsters off: no picture in the 3D areas (the view stays)
+            if (!monster_pics_on() && !pool_overland()) return;
             // (Pool's wilderness: the 3D view's frame drawn over the map first)
             if (pool_overland()) layout::box(c, d->tables, d->frame_tiles, 2, 2, 14, 14);
             c.fill(24, 24, 88, 88, 0);
@@ -6679,7 +6692,7 @@ void rec_name(const uint8_t* rec, char* out)
 // party menu only; with the comfort, wherever View is)
 bool view_has_portrait()
 {
-    if (!d->prof->create.head_blocks || !d->prof->create.body_blocks) return false;
+    if (!d->prof->create.head_blocks || !d->prof->create.body_blocks || !portraits_on()) return false;
     return (CYD_ICON_PORTRAIT && opts.portrait) || view_from == Screen::PartyMenu;
 }
 

@@ -592,8 +592,14 @@ Steps (each pushed when it works; Curse stays as it is):
    right (cols 28-38, rows 1-11) when viewed from the party menu, as the
    original (its View: DS 0x49F5 portraits on and 0x5376 = 3); with the
    Icon Portrait comfort wherever View is (section 11).
-   Still to do: Pool's Alter (Monsters / Portraits on/off), Modify's
-   limits.
+   v0.85.0: **Alter -> Pics** is Pool's "Monsters on/off  Portraits on/off
+   Exit" (its ovr16 +1D02; the area word 0x4BFF as Curse's Pics /
+   Animation, saved with the game: bit 1 the monsters' event pictures while
+   exploring the 3D areas - off: the view stays -, bit 0 the portrait on
+   View Character). **Modify** as Pool's program: experience 0 only; a
+   stat taken below the race's or the class's minimum goes to the race's
+   minimum; no multi-class cleric Wisdom 13; Keep marks the record
+   "modified" (its 0x85).
 5. Combat (v0.78.0, started; the Project's claude/poolrad_combat_facts.md):
    Curse's fight code with Pool's tables (the ground table at DS 0x2744 -
    Pool's own outdoor pictures and costs -, placement, turn undead at
@@ -659,7 +665,19 @@ Steps (each pushed when it works; Curse stays as it is):
    times round (the last once), no key; then a pause, the screen back and
    **the script goes on** (Pool's PROGRAM 8 doesn't end it, and its
    PROGRAM 3 does nothing - its handler knows 0, 8 and 9 only).
-6. Behaviour tests (`sweep.cpp`) with Pool's expectations.
+6. Tests (v0.85.0): the sweep's events (every block, every square),
+   monsters (every MON file fought), saveload (Pool's area 3 entry sets
+   0x4C05 / 0x7F79 / 0x7F7D itself: the test uses another word) and
+   monkey runs in areas 1, 2, 4, 6, 8, 25 with fight checks (each party
+   fighter can walk to an enemy; the fighter whose menu it is is in view;
+   the card's 4 file slots emulated in the playsim). **Pool plays** from
+   v0.85.0: its game page has Play (`variant.unfinished` off). Tom's first
+   fight (v0.84.0, a 3.2") showed two party members and moves that seemed
+   to do nothing - not reproduced (all six placed, Move / Aim work); the
+   fixes it led to: the view comes back to the fighter whose menu it is
+   (after Aim / View looked elsewhere it stayed there, the fighter off the
+   screen), and the party menu's words no longer open five files at once
+   (two word sources alive together: on the board the fifth failed).
 7. v0.83.0: **the wilderness** (areas 25-27 while their area word 0x4BE6 is
    0; the Project's claude/poolrad_overland_facts.md, `engine/overland.*`):
    the program's 44 x 36 map of icon numbers (the three areas windows on
@@ -708,6 +726,14 @@ of the player's own PDF with a table of rectangles for that exact PDF
 (coordinates only). The repo, the firmware and the flasher site never
 contain journal text or images; tests use made-up pictures. Each game's
 journal gets its own table once its GOG PDF has been looked at.
+v0.85.0: **Pool of Radiance's** GOG journal (the copy in the game folder,
+6,325,424 bytes, 21 spreads 1328 x 1003 at 150 dpi): its headings are
+italic text, not Curse's blue boxes, so `make_table.py poolrad` finds
+"Journal Entry N:" and the tavern page's "Tale N:" with tesseract (on the
+player's PDF, in scratch space); 58 entries and 23 tavern tales, each
+checked by eye (entry 37 is the atlas across a whole spread; the "legend
+for all maps" box belongs to none). Pool's scripts also say "TALK ENTRY 55
+IN YOUR JOURNAL" (the number first): the mention finder knows that too.
 
 v0.10.0 did this in a browser page (pdf.js) on the player's PC; Tom
 (2026-10-09) wants no PC step: since v0.12.0 the board does it.

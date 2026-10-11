@@ -440,6 +440,11 @@ struct Profile {
         // pictures and animations with the dragon's words (won.text, three
         // pages of won.page_lines), then the script goes on
         bool     final_end;
+        // Alter -> Pics is "Monsters on/off  Portraits on/off  Exit" (Pool,
+        // its ovr16 +1D02): the area word 0x4BFF's bit 1 = the monsters'
+        // encounter pictures, bit 0 = the portrait on View Character
+        // (Curse: Pics / Animation)
+        bool     pics_portraits;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

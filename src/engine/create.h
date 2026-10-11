@@ -141,12 +141,16 @@ void change_class(party::Character& c, const classes::Tables& t, const Facts& f,
 // ---- Modify Character (the games' rules, facts from coab): a character
 // who hasn't adventured (experience as made: 0, 8333, 12500 or 25000) and
 // has no former class
-bool can_modify(const party::Character& c);
+// Pool (pool = true; poolrad_create_facts.md 5): experience 0 only.
+bool can_modify(const party::Character& c, bool pool = false);
 // A stat (0 Str ... 5 Cha) a step up (dir > 0) or down: within the race's
 // and sex's limits, down no lower than the class's minimums; a fighter,
 // ranger or paladin at Strength 18 goes on into 18/01 ... 18/00 (and back
 // down through it first). Constitution keeps the hit points within their
 // bounds (hp_least / hp_most).
+// Pool (t.lay.pool): down below the race's OR the class's minimum puts it
+// at the race's minimum (its program's way - so a class minimum above the
+// race's can be passed), and no multi-class cleric Wisdom 13.
 void modify_stat(party::Character& c, const classes::Tables& t, const Facts& f, int stat, int dir);
 // The hit points a step up or down, within their bounds
 void modify_hp(party::Character& c, const classes::Tables& t, const Facts& f, int dir);
@@ -157,7 +161,7 @@ int hp_least(const party::Character& c, const classes::Tables& t, const Facts& f
 int hp_most(const party::Character& c, const classes::Tables& t, const Facts& f);
 // Keep: the class values follow the stats (spell slots, thief skills ...),
 // and the "rolled" hit points (record 0x12C) are what's left after the
-// Constitution bonus
+// Constitution bonus. Pool: its "modified" mark (Pool record 0x85 = 1).
 void modify_done(party::Character& c, const classes::Tables& t, const Facts& f);
 
 } // namespace create

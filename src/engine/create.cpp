@@ -698,9 +698,10 @@ int class_con_bonus(int con, int cls)
 }
 } // namespace
 
-bool can_modify(const party::Character& c)
+bool can_modify(const party::Character& c, bool pool)
 {
     const uint32_t e = c.exp();
+    if (pool) return e == 0;
     return (e == 0 || e == 8333 || e == 12500 || e == 25000) && c.rec[kMultiLevel] == 0;
 }
 
@@ -782,10 +783,14 @@ void modify_stat(party::Character& c, const classes::Tables& t, const Facts& f, 
         set_stat(c, 6, stat_full(c, 6) - 1);         // through the exceptional strength first
     } else {
         --v;
-        if (v < lo) v = lo;
         const int mn = t.u8(static_cast<uint16_t>(t.lay.class_min + cls * 6 + i));
-        if (v < mn) v = mn;
-        if (i == 2 && v < 13 && cls >= ClericFighter && cls <= ClericThief) v = 13;
+        if (t.lay.pool) {
+            if (v < lo || v < mn) v = lo;           // (Pool's program: the race's minimum)
+        } else {
+            if (v < lo) v = lo;
+            if (v < mn) v = mn;
+            if (i == 2 && v < 13 && cls >= ClericFighter && cls <= ClericThief) v = 13;
+        }
         if (v > hi) v = hi;
         set_stat(c, i, v);
     }
@@ -810,6 +815,7 @@ void modify_done(party::Character& c, const classes::Tables& t, const Facts& f)
     if (n) base /= n;
     const int rolled = r[kHpMax] - base;
     r[kHpRolled] = static_cast<uint8_t>(rolled < 0 ? 0 : rolled);
+    if (t.lay.pool) r[0xF8] = 1;                    // Pool's "modified" (its record's 0x85)
 }
 
 } // namespace create

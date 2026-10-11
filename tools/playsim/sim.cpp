@@ -57,7 +57,15 @@ static void shot(const char* tag)
     if (!f) return;                     // no out/ folder: no snapshots
     fprintf(f, "P6 320 200 255\n");
     const bool swap = play::fight_colours();     // the fight's colours: 0 and 8 swapped
-    for (uint8_t v : px) { int k = v & 15; if (swap && (k == 0 || k == 8)) k ^= 8; const pic::Rgb& c = pic::kEga[k]; fputc(c.r, f); fputc(c.g, f); fputc(c.b, f); }
+    // LCD: what the board's screen would show - only the rows the game
+    // marked as changed reach it (play::take_dirty, as the viewer does)
+    static std::vector<uint8_t> lcd(320 * 200, 0);
+    if (getenv("LCD")) {
+        int y0, y1;
+        play::take_dirty(y0, y1);
+        if (y1 > y0) memcpy(lcd.data() + y0 * 320, px.data() + y0 * 320, (size_t)(y1 - y0) * 320);
+    }
+    for (uint8_t v : (getenv("LCD") ? lcd : px)) { int k = v & 15; if (swap && (k == 0 || k == 8)) k ^= 8; const pic::Rgb& c = pic::kEga[k]; fputc(c.r, f); fputc(c.g, f); fputc(c.b, f); }
     fclose(f);
 }
 // ITEMOPS on the items screen: a digit picks list line n, a letter taps
@@ -180,6 +188,147 @@ static void settle(int choice = 0, int max_ms = 60000)
     }
     printf("  (still waiting)\n");
 }
+static void run_fight()
+{
+
+            // FIGHT: the fight played out - Quick for each party member on
+            // their menu (FIGHT=m: their menu is left alone and snapshots
+            // taken), the results and treasure tapped through
+            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
+            shot("fight_start");
+            if (getenv("FIGHTCHECK") && play::fg && play::fg->b.tables) {
+                // FIGHTCHECK: can each party fighter walk to an enemy (walls only)? how many show?
+                const combat::Battle& b = play::fg->b;
+                int stuck = 0, shown = 0;
+                for (int i = 0; i < b.party_size; ++i) {
+                    const auto& f = b.f[i];
+                    if (f.x >= b.vx && f.x < b.vx + 7 && f.y >= b.vy && f.y < b.vy + 7) ++shown;
+                    static uint8_t seen[combat::kH][combat::kW];
+                    memset(seen, 0, sizeof seen);
+                    int qx[combat::kH * combat::kW], qy[combat::kH * combat::kW], h = 0, t = 0;
+                    qx[t] = f.x; qy[t++] = f.y; seen[f.y][f.x] = 1;
+                    bool found = false;
+                    while (h < t && !found) {
+                        const int x = qx[h], y = qy[h++];
+                        for (int dd = 0; dd < 8 && !found; ++dd) {
+                            const int nx = x + geo::dx(dd), ny = y + geo::dy(dd);
+                            if (nx < 0 || ny < 0 || nx >= combat::kW || ny >= combat::kH || seen[ny][nx]) continue;
+                            const int w = b.who[ny][nx];
+                            if (w && w - 1 >= b.party_size) { found = true; break; }
+                            const uint8_t* g = combat::tile(b, *b.tables, nx, ny);
+                            if (!g || g[0] == 0xFF) continue;
+                            seen[ny][nx] = 1; qx[t] = nx; qy[t++] = ny;
+                        }
+                    }
+                    if (!found) { ++stuck; printf("  STUCK fighter %d at %d,%d (reach %d squares)\n", i, f.x, f.y, t); }
+                }
+                printf("  FIGHTCHECK at %d,%d %s: %d stuck, %d of %d party shown (view %d,%d)\n", play::pos_x(), play::pos_y(), geo::dir_name(play::dir()), stuck, shown, b.party_size, b.vx, b.vy);
+                if (getenv("FIGHTCHECK")[0] == 'q') { play::close(); exit(0); }
+            }
+            play::log_pages = getenv("PAGELOG") != nullptr;
+            if (play::fg) for (int i = 0; i < play::fg->b.n; ++i) { const auto& f = play::fg->b.f[i]; printf("  fighter %d [%.15s] at %d,%d size %d icon %d px %p up %d rec141 %d 142 %d 144 %d\n", i, (const char*)f.rec + 1, f.x, f.y, f.size, f.icon, (void*)play::fg->icon[f.icon].px[0], f.up(), f.rec[0x141], f.rec[0x142], f.rec[0x144]); }
+            int turns = 0, n = 0;
+            const char* fops = getenv("FIGHTOPS");      // taps while the fight waits: letters, &rr rows; then Quick
+            for (int k = 0; k < 200000 && (play::screen == play::Screen::Fight || play::screen == play::Screen::SpellList || play::screen == play::Screen::Items); ++k) {
+                g_now += 50;
+                play::tick(g_now, C);
+                if (!play::fg) continue;
+                static bool forced_item = false;
+                if (!forced_item && getenv("FORCEWEAPON")) {
+                    // FORCEWEAPON=m:type: fighter m's readied weapon becomes that type (to try shots)
+                    forced_item = true;
+                    const int m = atoi(getenv("FORCEWEAPON")), ty = atoi(strchr(getenv("FORCEWEAPON"), ':') + 1);
+                    combat::Fighter& f = play::fg->b.f[m];
+                    int w = combat::weapon(f, *play::names);
+                    if (w < 0 && f.member >= 0) {           // none: one is given
+                        party::Character& ch = play::pt->m[f.member];
+                        w = ch.n_items++;
+                        memset(ch.items[w], 0, sizeof ch.items[w]);
+                        ch.items[w][0x34] = 1;
+                        f.items = ch.items;
+                        f.n_items = ch.n_items;
+                    }
+                    if (w >= 0) { f.items[w][0x2E] = (uint8_t)ty; f.items[w][0x39] = 5; }
+                    printf("  fighter %d: weapon %d now type %d\n", m, w, ty);
+                    if (play::fg->st == play::FSt::Menu) play::fight_menu(C);
+                }
+                static bool forced = false;
+                if (!forced && getenv("FORCESPELL")) {
+                    // FORCESPELL=m:id,id...: fighter m has those spells in memory (to try them)
+                    forced = true;
+                    const char* q = getenv("FORCESPELL");
+                    const int m = atoi(q);
+                    q = strchr(q, ':');
+                    for (int k = 0; q && *q; ++k) { ++q; play::fg->b.f[m].rec[magic::kListAt + k] = (uint8_t)strtol(q, nullptr, 16); q = strchr(q, ','); }
+                    play::fg->b.f[m].can_cast = true;
+                    if (play::fg->st == play::FSt::Menu) play::fight_menu(C);
+                    printf("  forced spells: fighter %d (of %d), list %02X %02X\n", m, play::fg->b.n, play::fg->b.f[m].rec[magic::kListAt], play::fg->b.f[m].rec[magic::kListAt + 1]);
+                }
+                const bool asks = play::screen == play::Screen::SpellList || play::screen == play::Screen::Items ||
+                                  (play::fg->st == play::FSt::Menu || play::fg->st == play::FSt::Aim || play::fg->st == play::FSt::DoneMenu ||
+                                   (play::fg->st == play::FSt::Move && fops && (*fops == '>' || *fops == '.' || *fops == '!' || *fops == '#')));
+                if (asks && fops && *fops == '>') {          // >d: the fight pad's direction d (0 N .. 7 NW)
+                    printf("  [pad %c: %d]\n", fops[1], (int)play::fight_dir(fops[1] - '0', C));
+                    fops += 2;
+                    continue;
+                }
+                if (asks && fops && *fops == '.') {          // .: the pad's Select
+                    printf("  [select: %d]\n", (int)play::fight_select(C));
+                    ++fops;
+                    continue;
+                }
+                if (asks && fops && *fops == '!') {          // !xxx,yyy: a tap on the canvas
+                    int x = atoi(fops + 1), y = atoi(strchr(fops, ',') + 1);
+                    play::tap(x, y, C);
+                    printf("  [tap %d,%d: st %d cur %d]\n", x, y, (int)play::fg->st, play::fg->cur);
+                    fops = strchr(fops, ',') + 1;
+                    while (*fops >= '0' && *fops <= '9') ++fops;
+                    continue;
+                }
+                if (asks && fops && *fops) {
+                    if (*fops == '@') {             // @n: Quick the others until member n's menu
+                        if (play::fg->st == play::FSt::Menu && play::fg->cur != fops[1] - '0') { tap_word('Q'); continue; }
+                        fops += 2;
+                        continue;
+                    }
+                    if (*fops == '&') { const int r = (fops[1] - '0') * 10 + (fops[2] - '0'); fops += 3; play::tap(4 * 8 + 2, r * 8 + 2, C); }
+                    else if (*fops == '#') { ++fops; static int fo = 0; char t[16]; snprintf(t, 16, "fops%d", fo++); shot(t); printf("  [fight st %d screen %d cur %d items %d cast %d list %02X menu %s%s]\n", (int)play::fg->st, (int)play::screen, play::fg->cur, play::fg->cur >= 0 ? play::fg->b.f[play::fg->cur].n_items : -1, play::fg->cur >= 0 ? (int)play::fg->b.f[play::fg->cur].can_cast : -1, play::fg->cur >= 0 ? play::fg->b.f[play::fg->cur].rec[magic::kListAt] : 0, play::menu.prompt, play::menu.s); }
+                    else { tap_word(*fops++); }
+                    continue;
+                }
+                if (getenv("FXSHOTS") && play::fg->fx_on) {
+                    static int fx_shots = 0;
+                    if (fx_shots < atoi(getenv("FXSHOTS"))) { char t[16]; snprintf(t, 16, "fx%d", fx_shots++); shot(t); }
+                    continue;
+                }
+                static int pages_shot = 0;
+                if (play::fg->st == play::FSt::Pages && pages_shot < 150 && play::fg->until > g_now + 10) { char t[16]; snprintf(t, 16, "fpage%d", pages_shot++); shot(t); g_now = play::fg->until; }
+                if (play::fg->st == play::FSt::Aim) {
+                    static int aims = 0;
+                    if (aims++ < 3) { char t[16]; snprintf(t, 16, "faim%d", aims); shot(t); printf("  [aim: menu %s%s]\n", play::menu.prompt, play::menu.s); }
+                    if (!tap_word('T')) tap_word('E');
+                    continue;
+                }
+                if (play::fg->st == play::FSt::ContinueAsk) {
+                    printf("  [Continue Battle: No]\n");
+                    tap_word('N');
+                    continue;
+                }
+                if (play::fg->st == play::FSt::Menu) {
+                    if (n < 6) { char t[16]; snprintf(t, 16, "fmenu%d", n++); shot(t); }
+                    ++turns;
+                    tap_word('Q');
+                } else if (play::fg->st == play::FSt::Results || play::fg->st == play::FSt::Destroyed) {
+                    shot("fight_results");
+                    printf("  fight over: result %d, each %d xp, round %d\n", play::vm->get(0x7EC7), play::fg->share, play::fg->b.round);
+                    for (int i = 0; i < play::pt->count; ++i) { char nm[20]; play::pt->m[i].name(nm, 20); printf("   %s HP %d/%d status %d xp %u", nm, play::pt->m[i].hp(), play::pt->m[i].hp_max(), play::pt->m[i].health(), play::pt->m[i].exp()); for (int k = 0; k < play::pt->m[i].n_items; ++k) if (play::pt->m[i].items[k][0x3D]) printf(" [item %d: %d x spell %02X]", k, play::pt->m[i].items[k][0x3C], play::pt->m[i].items[k][0x3D]); else printf(" [type %d x%d]", play::pt->m[i].items[k][0x2E], play::pt->m[i].items[k][0x39]); printf("\n"); }
+                    play::tap(2, 2, C);
+                }
+            }
+            printf("  after the fight: screen %d menu [%s%s] ground %d items, gold %d\n", (int)play::screen, play::menu.prompt, play::menu.s, play::ground->n, play::ground->money[3]);
+            shot("after_fight");
+        }
+
 int main(int argc, char** argv)
 {
     setvbuf(stdout, nullptr, _IOLBF, 0);       // (lines out at once: a hang or a crash keeps them)
@@ -496,6 +645,30 @@ int main(int argc, char** argv)
             if (b(a) == 0x0B && b(a + 1) == 0 && b(a + 3) == 0 && b(a + 5) == 0 && b(a + 4) >= 1 && b(a + 4) <= 12)
                 printf("  LOAD MONSTER at %04X: id %u, %u copies, icon %u\n", a, b(a + 2), b(a + 4), b(a + 6));
     }
+    if (getenv("PEEK")) for (const char* q = getenv("PEEK"); q && *q;) {      // PEEK=addr,addr: script memory words
+        const unsigned a = (unsigned)strtol(q, nullptr, 16);
+        printf("  PEEK %04X = %04X\n", a, play::vm->get((uint16_t)a));
+        q = strchr(q, ',');
+        if (q) ++q;
+    }
+    if (getenv("DISASM")) {
+        // DISASM=from,to (hex, vm addresses): the loaded script's instructions
+        unsigned a0 = 0, a1 = 0xFFFF;
+        sscanf(getenv("DISASM"), "%x,%x", &a0, &a1);
+        const auto& gs = play::d->gs;
+        for (uint32_t at = 0; at < gs.code_len;) {
+            ecl::Insn in;
+            if (!ecl::decode(gs.code, gs.code_len, at, *play::d->prof->ecl_ops, in)) { ++at; continue; }
+            const unsigned va = 0x8000 + in.at;
+            if (va >= a0 && va <= a1) {
+                printf("%04X op %02X:", va, in.op);
+                for (int k = 0; k < in.count && k < ecl::kMaxOps; ++k) printf(" %X:%04X", in.ops[k].code, in.ops[k].word());
+                printf("\n");
+            }
+            at = in.next;
+        }
+    }
+    if (getenv("TELE0")) { int x, y, dd; sscanf(getenv("TELE0"), "%d,%d,%d", &x, &y, &dd); play::d->gs.x = x; play::d->gs.y = y; play::d->gs.dir = dd; play::after_move_redraw(); }
     if (getenv("RUNAT")) {
         // Run the script from an address (e.g. a shop), then BUY=n,n,...
         // buys those goods for character 0, READY=i readies their item i
@@ -538,96 +711,7 @@ int main(int argc, char** argv)
                    play::vm->get(0x7EA8), play::vm->get(0x4CFD));
             shot("won_after");
         }
-        if (play::screen == play::Screen::Fight && getenv("FIGHT")) {
-            // FIGHT: the fight played out - Quick for each party member on
-            // their menu (FIGHT=m: their menu is left alone and snapshots
-            // taken), the results and treasure tapped through
-            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
-            shot("fight_start");
-            play::log_pages = getenv("PAGELOG") != nullptr;
-            if (play::fg) for (int i = 0; i < play::fg->b.n; ++i) { const auto& f = play::fg->b.f[i]; printf("  fighter %d at %d,%d size %d icon %d px %p up %d rec141 %d 142 %d 144 %d\n", i, f.x, f.y, f.size, f.icon, (void*)play::fg->icon[f.icon].px[0], f.up(), f.rec[0x141], f.rec[0x142], f.rec[0x144]); }
-            int turns = 0, n = 0;
-            const char* fops = getenv("FIGHTOPS");      // taps while the fight waits: letters, &rr rows; then Quick
-            for (int k = 0; k < 200000 && (play::screen == play::Screen::Fight || play::screen == play::Screen::SpellList || play::screen == play::Screen::Items); ++k) {
-                g_now += 50;
-                play::tick(g_now, C);
-                if (!play::fg) continue;
-                static bool forced_item = false;
-                if (!forced_item && getenv("FORCEWEAPON")) {
-                    // FORCEWEAPON=m:type: fighter m's readied weapon becomes that type (to try shots)
-                    forced_item = true;
-                    const int m = atoi(getenv("FORCEWEAPON")), ty = atoi(strchr(getenv("FORCEWEAPON"), ':') + 1);
-                    combat::Fighter& f = play::fg->b.f[m];
-                    int w = combat::weapon(f, *play::names);
-                    if (w < 0 && f.member >= 0) {           // none: one is given
-                        party::Character& ch = play::pt->m[f.member];
-                        w = ch.n_items++;
-                        memset(ch.items[w], 0, sizeof ch.items[w]);
-                        ch.items[w][0x34] = 1;
-                        f.items = ch.items;
-                        f.n_items = ch.n_items;
-                    }
-                    if (w >= 0) { f.items[w][0x2E] = (uint8_t)ty; f.items[w][0x39] = 5; }
-                    printf("  fighter %d: weapon %d now type %d\n", m, w, ty);
-                    if (play::fg->st == play::FSt::Menu) play::fight_menu(C);
-                }
-                static bool forced = false;
-                if (!forced && getenv("FORCESPELL")) {
-                    // FORCESPELL=m:id,id...: fighter m has those spells in memory (to try them)
-                    forced = true;
-                    const char* q = getenv("FORCESPELL");
-                    const int m = atoi(q);
-                    q = strchr(q, ':');
-                    for (int k = 0; q && *q; ++k) { ++q; play::fg->b.f[m].rec[magic::kListAt + k] = (uint8_t)strtol(q, nullptr, 16); q = strchr(q, ','); }
-                    play::fg->b.f[m].can_cast = true;
-                    if (play::fg->st == play::FSt::Menu) play::fight_menu(C);
-                    printf("  forced spells: fighter %d (of %d), list %02X %02X\n", m, play::fg->b.n, play::fg->b.f[m].rec[magic::kListAt], play::fg->b.f[m].rec[magic::kListAt + 1]);
-                }
-                const bool asks = play::screen == play::Screen::SpellList || play::screen == play::Screen::Items ||
-                                  (play::fg->st == play::FSt::Menu || play::fg->st == play::FSt::Aim || play::fg->st == play::FSt::DoneMenu);
-                if (asks && fops && *fops) {
-                    if (*fops == '@') {             // @n: Quick the others until member n's menu
-                        if (play::fg->st == play::FSt::Menu && play::fg->cur != fops[1] - '0') { tap_word('Q'); continue; }
-                        fops += 2;
-                        continue;
-                    }
-                    if (*fops == '&') { const int r = (fops[1] - '0') * 10 + (fops[2] - '0'); fops += 3; play::tap(4 * 8 + 2, r * 8 + 2, C); }
-                    else if (*fops == '#') { ++fops; static int fo = 0; char t[16]; snprintf(t, 16, "fops%d", fo++); shot(t); printf("  [fight st %d screen %d cur %d items %d cast %d list %02X menu %s%s]\n", (int)play::fg->st, (int)play::screen, play::fg->cur, play::fg->cur >= 0 ? play::fg->b.f[play::fg->cur].n_items : -1, play::fg->cur >= 0 ? (int)play::fg->b.f[play::fg->cur].can_cast : -1, play::fg->cur >= 0 ? play::fg->b.f[play::fg->cur].rec[magic::kListAt] : 0, play::menu.prompt, play::menu.s); }
-                    else { tap_word(*fops++); }
-                    continue;
-                }
-                if (getenv("FXSHOTS") && play::fg->fx_on) {
-                    static int fx_shots = 0;
-                    if (fx_shots < atoi(getenv("FXSHOTS"))) { char t[16]; snprintf(t, 16, "fx%d", fx_shots++); shot(t); }
-                    continue;
-                }
-                static int pages_shot = 0;
-                if (play::fg->st == play::FSt::Pages && pages_shot < 150 && play::fg->until > g_now + 10) { char t[16]; snprintf(t, 16, "fpage%d", pages_shot++); shot(t); g_now = play::fg->until; }
-                if (play::fg->st == play::FSt::Aim) {
-                    static int aims = 0;
-                    if (aims++ < 3) { char t[16]; snprintf(t, 16, "faim%d", aims); shot(t); printf("  [aim: menu %s%s]\n", play::menu.prompt, play::menu.s); }
-                    if (!tap_word('T')) tap_word('E');
-                    continue;
-                }
-                if (play::fg->st == play::FSt::ContinueAsk) {
-                    printf("  [Continue Battle: No]\n");
-                    tap_word('N');
-                    continue;
-                }
-                if (play::fg->st == play::FSt::Menu) {
-                    if (n < 6) { char t[16]; snprintf(t, 16, "fmenu%d", n++); shot(t); }
-                    ++turns;
-                    tap_word('Q');
-                } else if (play::fg->st == play::FSt::Results || play::fg->st == play::FSt::Destroyed) {
-                    shot("fight_results");
-                    printf("  fight over: result %d, each %d xp, round %d\n", play::vm->get(0x7EC7), play::fg->share, play::fg->b.round);
-                    for (int i = 0; i < play::pt->count; ++i) { char nm[20]; play::pt->m[i].name(nm, 20); printf("   %s HP %d/%d status %d xp %u", nm, play::pt->m[i].hp(), play::pt->m[i].hp_max(), play::pt->m[i].health(), play::pt->m[i].exp()); for (int k = 0; k < play::pt->m[i].n_items; ++k) if (play::pt->m[i].items[k][0x3D]) printf(" [item %d: %d x spell %02X]", k, play::pt->m[i].items[k][0x3C], play::pt->m[i].items[k][0x3D]); else printf(" [type %d x%d]", play::pt->m[i].items[k][0x2E], play::pt->m[i].items[k][0x39]); printf("\n"); }
-                    play::tap(2, 2, C);
-                }
-            }
-            printf("  after the fight: screen %d menu [%s%s] ground %d items, gold %d\n", (int)play::screen, play::menu.prompt, play::menu.s, play::ground->n, play::ground->money[3]);
-            shot("after_fight");
-        }
+        if (play::screen == play::Screen::Fight && getenv("FIGHT")) run_fight();
         if ((play::screen == play::Screen::Shop || play::screen == play::Screen::PartyMenu) && getenv("SHOPRUN")) {
             // SHOPRUN: letters tap menu words, digits pick a list line, %n taps
             // party row n (the shop's list at column 17), =n; types a number
@@ -719,6 +803,7 @@ int main(int argc, char** argv)
         char l1[48], l2[48]; play::describe(l1, l2, 48);
         printf("   now %d,%d %s | %s | %s\n", play::pos_x(), play::pos_y(), geo::dir_name(play::dir()), l1, l2);
     }
+    if (play::screen == play::Screen::Fight && getenv("FIGHT")) run_fight();
     if (getenv("SAVESLOT")) {
         // Encamp, Save to that slot
         auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };

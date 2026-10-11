@@ -309,6 +309,10 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   folder's parent, and `library::path_of` adds `/GOLDBOX` as on the board
   (v0.21.0: a doubled `/GOLDBOX` in the save paths went unseen before).
   Snapshots of real game screens stay in scratch, never in the repo.
+  v0.85.0: the shim's card has the board's 4 file slots (a fifth open
+  fails, "[fs] no file slot left" on stderr); LCD=1 snapshots show only
+  the rows the game marked changed (what the board's screen gets);
+  FIGHTCHECK, FIGHTOPS pad steps (>d, ., !x,y), TELE0, PEEK, DISASM.
   `tools/playsim/sweep.cpp` (v0.68.1) is the game test: modes spells,
   campspells, monsters, items, classes, events (every script block,
   every square), saveload (round trip) and monkey (random taps / keys /
@@ -330,9 +334,11 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   (also GBC/Resources docs - facts only). Differences from Curse go in
   `profile.variant` (zero = Curse); Pool's script addresses are moved to
   Curse's map by `ecl::vm_address` at decode time. `variant.unfinished`
-  keeps Play off the game page (Dev Tools has a Play Test) until Pool
-  plays. Its GOG files: scratch /tmp/claude-0/games2/poolrad/...;
-  the playsim takes GAME=1 for Pool.
+  kept Play off the game page until Pool played: off since v0.85.0
+  (Tom: playable 2026-10-11) - the next game starts with it on. Its GOG
+  files: scratch /tmp/claude-0/games2/poolrad/...; the playsim takes
+  GAME=1 for Pool. Journal table: `make_table.py poolrad` (tesseract
+  finds its text headings).
 - PortMaster ports are a stretch goal (Tom): keep everything portable.
 - Game screens (Walk Test, Play Test now, the games later): canvas 1:1 at the top left
   (`frame::set_left`), controls below it, on 480x320 the Companion strip on

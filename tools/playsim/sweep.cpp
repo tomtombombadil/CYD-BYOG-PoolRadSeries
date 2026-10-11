@@ -94,7 +94,15 @@ static bool pump(int max_iter = 400000)
         {
             char jk;
             int jn;
-            play::journal_request(&jk, &jn);
+            if (play::journal_request(&jk, &jn) && getenv("JOURNALLOG"))
+                printf("  JOURNAL %c %d (area %d block %d)\n", jk, jn, d ? d->gs.game_area : -1, d ? d->gs.script : -1);
+            if (getenv("JOURNALLOG") && vm && vm->wait() == ecl::Wait::Print) {
+                static std::string last;
+                const std::string t = vm->text();
+                if (t != last && (t.find("JOURNAL") != std::string::npos || t.find("TALE") != std::string::npos))
+                    printf("  TEXT: %s\n", t.c_str());
+                last = t;
+            }
         }
         if (!d) return false;
         if (getenv("FIGHTLOG") && fg && it % 10000 == 0) {
@@ -732,7 +740,11 @@ static void sweep_saveload()
     }
     pt->m[0].rec[0x103] = 77;
     pt->m[1].rec[0x1A4] = 5;
-    vm->set(0x4C05, 0x1234);
+    // (Pool's area 3 entry script sets 0x4C05 itself - and 0x7F79 / 0x7F7D,
+    // a random number and a counter - every time it starts: another word)
+    const bool pool = d->prof->variant.pool_files;
+    const uint16_t aw = pool ? 0x4EF0 : 0x4C05;
+    vm->set(aw, 0x1234);
     vm->set(0x7E10, 0x5678);
     static ecl::GameState g1;
     static party::Party p1;
@@ -747,7 +759,7 @@ static void sweep_saveload()
     }
     printf("  loaded C at %d,%d dir %d area %d script %d\n", d->gs.x, d->gs.y, d->gs.dir, d->gs.game_area, d->gs.script);
     if (d->gs.x != x || d->gs.y != y || d->gs.dir != dr) problem("position not the same after load");
-    if (vm->get(0x4C05) != 0x1234 || vm->get(0x7E10) != 0x5678) problem("script memory not the same after load");
+    if (vm->get(aw) != 0x1234 || vm->get(0x7E10) != 0x5678) problem("script memory not the same after load");
     if (pt->count != p1.count) problem("party size differs");
     for (int i = 0; i < pt->count && i < p1.count; ++i) {
         const party::Character& a = p1.m[i];
@@ -762,13 +774,13 @@ static void sweep_saveload()
         if (a.n_affects != b.n_affects || memcmp(a.affects, b.affects, sizeof a.affects[0] * a.n_affects)) problem("effects differ");
     }
     for (size_t o = 0; o < sizeof g1.area1; ++o)
-        if (g1.area1[o] != d->gs.area1[o]) {
+        if (g1.area1[o] != d->gs.area1[o] && !(pool && (o == 0x20A || o == 0x20B))) {
             char t[64];
             snprintf(t, sizeof t, "area1 byte %03zX differs", o);
             problem(t);
         }
     for (size_t o = 0; o < sizeof g1.area2; ++o)
-        if (g1.area2[o] != d->gs.area2[o] && o != 0x58E) {
+        if (g1.area2[o] != d->gs.area2[o] && o != 0x58E && !(pool && o >= 0x6F2 && o <= 0x6FB)) {
             char t[64];
             snprintf(t, sizeof t, "area2 byte %03zX differs", o);
             problem(t);
@@ -811,6 +823,7 @@ static void sweep_saveload()
 // ---- monkey: random taps, keys and moves everywhere (crashes, stuck
 // screens, broken invariants)
 // A boot, then (MAREA / MBLOCK set) into that script block as a NEWECL would
+static int fights_seen = 0;
 static bool monkey_boot()
 {
     using namespace play;
@@ -865,9 +878,9 @@ static void sweep_monkey(int rounds)
             continue;
         }
         const int a = pick(100);
+        static char ring[16][96];
+        static int ri = 0;
         {
-            static char ring[16][96];
-            static int ri = 0;
             static bool told = false;
             snprintf(ring[ri++ % 16], 96, "a %d screen %d fg %d st %d menu [%s%s] vf %d", a, (int)screen, fg ? 1 : 0,
                      fg ? (int)fg->st : -1, menu.prompt, menu.s, (int)view_from);
@@ -912,6 +925,91 @@ static void sweep_monkey(int rounds)
             play::journal_request(&jk, &jn);
         }
         // Invariants
+        // Fights: at the start every party fighter can walk to an enemy
+        // (walls only); on a party member's menu that fighter is in view
+        {
+            static const void* last_fg = nullptr;
+            if (fg && fg != last_fg && fg->b.tables) {
+                last_fg = fg;
+                const combat::Battle& b = fg->b;
+                ++fights_seen;
+                for (int i = 0; i < b.party_size; ++i) {
+                    const auto& f = b.f[i];
+                    if (!f.size) continue;
+                    static uint8_t seen[combat::kH][combat::kW];
+                    memset(seen, 0, sizeof seen);
+                    static int qx[combat::kH * combat::kW], qy[combat::kH * combat::kW];
+                    int h = 0, t = 0;
+                    qx[t] = f.x; qy[t++] = f.y; seen[f.y][f.x] = 1;
+                    bool found = false;
+                    while (h < t && !found) {
+                        const int x = qx[h], y = qy[h++];
+                        for (int dd = 0; dd < 8 && !found; ++dd) {
+                            const int nx = x + geo::dx(dd), ny = y + geo::dy(dd);
+                            if (nx < 0 || ny < 0 || nx >= combat::kW || ny >= combat::kH || seen[ny][nx]) continue;
+                            const int w = b.who[ny][nx];
+                            if (w && w - 1 >= b.party_size) { found = true; break; }
+                            const uint8_t* g = combat::tile(b, *b.tables, nx, ny);
+                            if (!g || g[0] == 0xFF) continue;
+                            seen[ny][nx] = 1; qx[t] = nx; qy[t++] = ny;
+                        }
+                    }
+                    if (!found && b.n > b.party_size) {
+                        char tx[128];
+                        snprintf(tx, sizeof tx, "fight in area %d at %d,%d: party fighter %d at %d,%d can't reach an enemy (%d squares)",
+                                 d->gs.game_area, d->gs.x, d->gs.y, i, f.x, f.y, t);
+                        problem(tx);
+                    }
+                }
+            }
+            if (fg && fg == last_fg && getenv("FIGHTSTART")) {
+                static const void* told = nullptr;
+                if (told != fg) {
+                    told = fg;
+                    printf("  [fight start: area %d at %d,%d, %d fighters, party %d, view %d,%d, indoors %d]\n", d->gs.game_area,
+                           d->gs.x, d->gs.y, fg->b.n, fg->b.party_size, fg->b.vx, fg->b.vy, (int)fg->b.indoors);
+                    for (int i = 0; i < fg->b.n; ++i)
+                        printf("    f%d at %d,%d size %d moves %d up %d\n", i, fg->b.f[i].x, fg->b.f[i].y, fg->b.f[i].size,
+                               fg->b.f[i].moves, (int)fg->b.f[i].up());
+                }
+            }
+            {
+                // A party member's turn begins: Move offered (unless held or slowed to nothing)
+                static int last_cur = -1, last_round = -1;
+                if (fg && fg->st == FSt::Menu && fg->cur >= 0 && fg->cur < fg->b.party_size &&
+                    (fg->cur != last_cur || fg->b.round != last_round)) {
+                    last_cur = fg->cur;
+                    last_round = fg->b.round;
+                    const auto& f = fg->b.f[fg->cur];
+                    bool mv = false;
+                    for (int k = 0; k < menu.count; ++k) if (text::key(menu, k) == 'M') mv = true;
+                    if (!mv && f.turns == 0 && f.delay != 1) {      // (back from Delay: its moves may be spent)
+                        char tx[128];
+                        snprintf(tx, sizeof tx, "fight: fighter %d's turn without Move (moves %d, rec move %d)", fg->cur, f.moves,
+                                 f.rec[0x1A5]);
+                        problem(tx);
+                        printf("    [round %d surprise %d delay %d attacks %d/%d helpless %d menu %s affects:", fg->b.round, fg->b.surprise, f.delay,
+                               f.attacks[0], f.attacks[1], (int)combat::helpless(fg->b, f), menu.s);
+                        for (int k = 0; f.n_aff && k < *f.n_aff; ++k) printf(" %02X", f.aff[k][0]);
+                        printf("]\n");
+                        for (int k = 0; k < 16; ++k) printf("    %s\n", ring[(ri + k) % 16]);
+                    }
+                }
+                if (!fg) last_cur = -1;
+            }
+            if (!fg) last_fg = nullptr;
+            if (fg && fg->st == FSt::Menu && fg->cur >= 0 && fg->cur < fg->b.party_size) {
+                const auto& f = fg->b.f[fg->cur];
+                if (f.x < fg->b.vx || f.x >= fg->b.vx + 7 || f.y < fg->b.vy || f.y >= fg->b.vy + 7) {
+                    char tx[128];
+                    snprintf(tx, sizeof tx, "fight: fighter %d's menu with them out of view (%d,%d, view %d,%d)", fg->cur, f.x, f.y,
+                             fg->b.vx, fg->b.vy);
+                    problem(tx);
+                    static int rings = 0;
+                    if (rings++ < 4) for (int k = 0; k < 16; ++k) printf("    %s\n", ring[(ri + k) % 16]);
+                }
+            }
+        }
         if (pt->count < 0 || pt->count > party::kMaxParty) problem("party size out of range");
         if (pt->count && (pt->selected < 0 || pt->selected >= pt->count)) {
             char t[64];
@@ -947,7 +1045,7 @@ static void sweep_monkey(int rounds)
         }
         if (r % 1000 == 0) printf("  monkey %d: screen %d party %d area %d script %d\n", r, (int)screen, pt->count, d->gs.game_area, d->gs.script);
     }
-    printf("  %d boots\n", boots);
+    printf("  %d boots, %d fights\n", boots, fights_seen);
 }
 
 // ---- behaviour checks (CLAUDE.md "Game testing"): what each thing DOES,

@@ -62,7 +62,80 @@ def curse_layout(t):
     t['J'][1] = [[2, 55, 250, 382, BOTTOM - 250], [2, 440, 232, 377, BOTTOM - 232]]
 
 
+def ocr_lines(path):
+    """The page's text lines (tesseract): [(x, y, h, text)]"""
+    import subprocess
+    out = subprocess.run(['tesseract', path, '-', 'tsv'], capture_output=True, text=True).stdout
+    lines = {}
+    for row in out.splitlines()[1:]:
+        f = row.split('\t')
+        if len(f) < 12 or not f[11].strip():
+            continue
+        k = (f[2], f[3], f[4])
+        lines.setdefault(k, []).append((int(f[6]), int(f[7]), int(f[9]), f[11]))
+    res = []
+    for ws in lines.values():
+        res.append((min(w[0] for w in ws), min(w[1] for w in ws), max(w[2] for w in ws), ws))
+    return res
+
+
+def pool_heads(files, L):
+    """Pool's headings are italic text, not boxes: "Journal Entry N:" lines
+    and, on the tavern page, "Tale N:" at a column's start (the number
+    token "N:" just right of "Tale", which OCR reads more surely)"""
+    import re
+    heads = []
+    for fi, f in enumerate(files):
+        if fi not in L['pages']:
+            continue
+        for x, y, h, ws in ocr_lines(f):
+            text = ' '.join(w[3] for w in ws)
+            m = re.match(r'\s*J\w*rnal\s+Entry\s+(\d+)\s*:', text)
+            if m:
+                heads.append(('J', int(m.group(1)), fi, x, y))
+                continue
+            if fi == L['tale_page']:
+                for wx, wy, wh, t in ws:
+                    m = re.fullmatch(r'(\d+):', t)
+                    if m:
+                        for c, (a, _) in enumerate(L['cols']):
+                            if 20 <= wx - a <= 72:
+                                heads.append(('T', int(m.group(1)), fi, a, wy))
+    return heads
+
+
+def pool_layout(t):
+    # Entry 2 ends at its column's foot (above entry 3: the section's title
+    # and introduction across the right page)
+    t['J'][2] = t['J'][2][:1]
+    # PDF page 10: the "Adventurer's note: Legend for all maps" box across
+    # the left book page's foot belongs to no entry
+    for kind in 'JT':
+        for n in t[kind]:
+            t[kind][n] = [[p, x, y, w, min(h, 778 - y) if p == 10 and x < 660 else h]
+                          for p, x, y, w, h in t[kind][n]]
+    # Entry 37 (PDF page 14): an atlas across the whole spread under its
+    # heading - the left book page, then the right one
+    t['J'][37] = [[14, 40, 15, 615, 935], [14, 690, 15, 620, 935]]
+    # Tale 5 ends at its column's foot (the title above tale 6 is the intro's)
+    t['T'][5] = t['T'][5][:1]
+
+
 LAYOUTS = {
+    'poolrad': {
+        'sha256': '67cbfc0c833b835494310680ad298bc4de1cdcc0168115cc3608c2f6074c737c',
+        'pdf_size': 6325424,
+        'pdf_id': '1d9365f3923839543e16fb839aa4631a',
+        'game': 'POOLRAD',
+        'title': "Pool of Radiance - Adventurer's Journal (GOG, the copy in the game folder)",
+        'cols': [(40, 345), (345, 655), (695, 1000), (1000, 1310)],
+        'top': 12, 'bottom': [952, 968, 968, 952],      # (page numbers at the outer columns' feet)
+        'pages': range(8, 18),                           # the entries' and tales' spreads (0-based)
+        'tale_page': 17,
+        'heads': pool_heads,
+        'stop': {'J': (16, 3), 'T': (17, 3)},
+        'fix': pool_layout,
+    },
     'curse': {
         'sha256': '7c918ead661b353e7da606b9137929f1dee2c9c203408b0b751cf719cd8529bb',
         'pdf_size': 6779800,
@@ -90,35 +163,51 @@ def main():
                 return i
         return None
 
-    heads = []
-    for fi, f in enumerate(files):
-        if fi in (0, len(files) - 1):
-            continue
-        for x, y in find_boxes(f):
+    top, bottom = L.get('top', TOP), L.get('bottom', BOTTOM)
+    items = []
+    if 'heads' in L:
+        for kind, n, fi, x, y in L['heads'](files, L):
             c = col_of(x)
             if c is not None:
-                heads.append((fi, c, y, x))
-    heads.sort()
-    kept = []
-    for h in heads:      # letters like "o" look like boxes too: keep the leftmost on a line
-        if kept and kept[-1][:2] == h[:2] and abs(kept[-1][2] - h[2]) < 15:
-            if h[3] < kept[-1][3]:
-                kept[-1] = h
-            continue
-        kept.append(h)
-
-    items = []
-    for i, (fi, c, y, _) in enumerate(kept):
-        if i < L['first_tale']:
-            items.append(('J', L['journal_numbers'][i], fi, c, y))
-        else:
-            items.append(('T', i - L['first_tale'] + 1, fi, c, y))
+                items.append((kind, n, fi, c, y))
+        # one each, in the book's order (journal entries, then tales)
+        seen, uniq = set(), []
+        for it in sorted(items, key=lambda i: (i[0] != 'J', i[2], i[3], i[4])):
+            if it[:2] not in seen:
+                seen.add(it[:2])
+                uniq.append(it)
+        items = uniq
+        for kind in 'JT':
+            got = sorted(i[1] for i in items if i[0] == kind)
+            print(kind, len(got), 'missing', sorted(set(range(1, max(got) + 1)) - set(got)) if got else '-')
+    else:
+        heads = []
+        for fi, f in enumerate(files):
+            if fi in (0, len(files) - 1):
+                continue
+            for x, y in find_boxes(f):
+                c = col_of(x)
+                if c is not None:
+                    heads.append((fi, c, y, x))
+        heads.sort()
+        kept = []
+        for h in heads:      # letters like "o" look like boxes too: keep the leftmost on a line
+            if kept and kept[-1][:2] == h[:2] and abs(kept[-1][2] - h[2]) < 15:
+                if h[3] < kept[-1][3]:
+                    kept[-1] = h
+                continue
+            kept.append(h)
+        for i, (fi, c, y, _) in enumerate(kept):
+            if i < L['first_tale']:
+                items.append(('J', L['journal_numbers'][i], fi, c, y))
+            else:
+                items.append(('T', i - L['first_tale'] + 1, fi, c, y))
 
     def pieces(fi, c, y, end, stop):
         out = []
         while True:
             last = end is not None and end[0] == fi and end[1] == c
-            y1 = end[2] - 14 if last else BOTTOM
+            y1 = end[2] - 14 if last else (bottom[c] if isinstance(bottom, list) else bottom)
             x0, x1 = cols[c]
             if y1 - y >= 30:
                 out.append([fi + 1, x0, y, x1 - x0, y1 - y])
@@ -127,7 +216,7 @@ def main():
             c += 1
             if c == 4:
                 c, fi = 0, fi + 1
-            y = TOP
+            y = top
 
     t = {'J': {}, 'T': {}}
     for k, (kind, n, fi, c, y) in enumerate(items):
