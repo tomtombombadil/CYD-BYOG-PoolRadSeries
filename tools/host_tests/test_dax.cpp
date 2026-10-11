@@ -418,6 +418,34 @@ static void test_font()
         CHECK(same);
         font::set_clear(g, false);
         CHECK(!g.clear && memcmp(g.glyph, f.glyph, sizeof g.glyph) == 0 && font::glyph_of(g, 'a') == 1);
+        // Mid-game: text already on the screen changes font with it (a menu
+        // choice's reverse colours too); other pictures stay
+        static uint8_t ep[pic::kScreenW * pic::kScreenH];
+        pic::Canvas want{ep, pic::kScreenW, pic::kScreenH};
+        static font::Font k;
+        k = f;
+        // (the synthetic font: make glyphs 1-63 distinct, as a real font's are)
+        for (int i = 1; i < 64; ++i) for (int r = 0; r < 8; ++r) k.glyph[i][r] = static_cast<uint8_t>(i * 4 + r * 64 + 1);
+        gc.clear(0);
+        font::draw_text(gc, k, "HP 49", 2, 3, 10, 0);
+        font::draw_glyph(gc, k, font::glyph_of('E'), 8 * 8, 24 * 8, 0, 14);      // a menu choice: black on yellow
+        gc.fill(100, 100, 8, 8, 4);
+        gc.fill(102, 102, 2, 2, 6);                                              // a picture's cell (2 colours, not text)
+        font::set_clear(k, true, &gc);
+        want.clear(0);
+        font::draw_text(want, k, "HP 49", 2, 3, 10, 0);
+        font::draw_glyph(want, k, font::glyph_of('E'), 8 * 8, 24 * 8, 0, 14);
+        want.fill(100, 100, 8, 8, 4);
+        want.fill(102, 102, 2, 2, 6);
+        CHECK(memcmp(gp, ep, sizeof gp) == 0);
+        font::draw_text(gc, k, "ab", 0, 0, 15, 0);
+        font::set_clear(k, false, &gc);                                         // lower case -> the game's capitals
+        want.clear(0);
+        font::set_clear(k, false);
+        font::draw_text(want, k, "AB", 0, 0, 15, 0);
+        bool row0 = true;
+        for (int y = 0; y < 8; ++y) row0 &= memcmp(gp + y * pic::kScreenW, ep + y * pic::kScreenW, 16) == 0;
+        CHECK(row0);
     }
     static uint8_t px[pic::kScreenW * pic::kScreenH];
     pic::Canvas c{px, pic::kScreenW, pic::kScreenH};

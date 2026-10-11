@@ -1,5 +1,6 @@
 #include "font.h"
 
+#include <cstdlib>
 #include <cstring>
 
 #include <cctype>
@@ -27,9 +28,78 @@ int glyph_of(const Font& f, char c)
     return glyph_of(c);
 }
 
-void set_clear(Font& f, bool on)
+namespace {
+
+// The text glyphs a font prints with: index (1-26, 32-63, then lower case)
+// and bits
+int text_glyphs(const Font& f, uint8_t (*bits)[8], int* index)
+{
+    int n = 0;
+    for (int g = 1; g < 64; ++g) {
+        if (g >= 27 && g < 32) continue;
+        memcpy(bits[n], f.glyph[g], 8);
+        index[n++] = g;
+    }
+    if (f.clear)
+        for (int i = 0; i < 26; ++i) {
+            memcpy(bits[n], kClearLower[i], 8);
+            index[n++] = kGlyphs + i;
+        }
+    return n;
+}
+
+void redraw_text(pic::Canvas& c, const uint8_t (*old_bits)[8], const int* old_index, int n, const Font& f)
+{
+    for (int cy = 0; cy + 8 <= c.h; cy += 8)
+        for (int cx = 0; cx + 8 <= c.w; cx += 8) {
+            // The cell's colours: black and one other
+            int other = -1;
+            bool ok = true;
+            for (int y = 0; y < 8 && ok; ++y) {
+                const uint8_t* row = c.px + static_cast<size_t>(cy + y) * c.w + cx;
+                for (int x = 0; x < 8 && ok; ++x) {
+                    if (row[x] == 0) continue;
+                    if (other < 0) other = row[x];
+                    else if (row[x] != other) ok = false;
+                }
+            }
+            if (!ok || other < 0) continue;            // more colours, or all black (a space)
+            for (int pass = 0; pass < 2; ++pass) {
+                // pass 0: ink = the colour on black; pass 1: ink = black on the colour
+                uint8_t pat[8];
+                for (int y = 0; y < 8; ++y) {
+                    const uint8_t* row = c.px + static_cast<size_t>(cy + y) * c.w + cx;
+                    uint8_t b = 0;
+                    for (int x = 0; x < 8; ++x)
+                        if ((row[x] != 0) == (pass == 0)) b |= static_cast<uint8_t>(0x80 >> x);
+                    pat[y] = b;
+                }
+                int hit = -1;
+                for (int k = 0; k < n && hit < 0; ++k)
+                    if (memcmp(pat, old_bits[k], 8) == 0) hit = k;
+                if (hit < 0) continue;
+                int g = old_index[hit];
+                if (g >= kGlyphs && !f.clear) g = g - kGlyphs + 1;          // lower case -> the capital
+                if (pass == 0) draw_glyph(c, f, g, cx, cy, static_cast<uint8_t>(other), 0);
+                else draw_glyph(c, f, g, cx, cy, 0, other);
+                break;
+            }
+        }
+}
+
+} // namespace
+
+void set_clear(Font& f, bool on, pic::Canvas* redraw)
 {
     if (on == f.clear) return;
+    // (the old font's text glyphs, while it's redrawn; on the heap - static
+    // RAM is dear on the boards)
+    struct Old {
+        uint8_t bits[26 + 32 + 26][8];
+        int index[26 + 32 + 26];
+    };
+    Old* old = redraw ? static_cast<Old*>(malloc(sizeof(Old))) : nullptr;
+    const int n = old ? text_glyphs(f, old->bits, old->index) : 0;
     if (on) {
         memcpy(f.saved, f.glyph[1], 26 * 8);
         memcpy(f.saved[26], f.glyph[32], 32 * 8);
@@ -40,6 +110,8 @@ void set_clear(Font& f, bool on)
         memcpy(f.glyph[32], f.saved[26], 32 * 8);
     }
     f.clear = on;
+    if (old) redraw_text(*redraw, old->bits, old->index, n, f);
+    free(old);
 }
 
 void draw_glyph(pic::Canvas& c, const Font& f, int g, int x, int y, uint8_t fg, int bg)

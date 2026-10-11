@@ -97,7 +97,7 @@ struct Options {
     bool gallery = true;          // the icon editor opens on the gallery (CYD_ICON_GALLERY)
     bool demo_tap = true;         // a tap stops the demo (CYD_DEMO_TAP_STOPS)
     bool more_guys = true;        // Add Character: saved games' members, the earlier game's folder (CYD_MORE_CHARACTERS)
-    bool clear_font = true;       // the engine's Clear font for the game's text (CYD_CLEAR_FONT)
+    bool clear_font = false;      // the engine's Clear font for the game's text (CYD_CLEAR_FONT; off unless chosen)
 };
 void set_options(const Options& o);
 // The icon editor's NEW icon (Alter -> Icon, Create New Character) for the

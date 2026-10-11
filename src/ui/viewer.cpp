@@ -2028,13 +2028,14 @@ bool comfort_built(int c)
 }
 uint8_t comfort_bit(int c)
 {
-    static const uint8_t kBits[kComforts] = {kOffClearFont, kOffGallery, kOffBigIcon, kOffJournal, kOffDemoTap, kOffMoreGuys, 0};
+    static const uint8_t kBits[kComforts] = {0, kOffGallery, kOffBigIcon, kOffJournal, kOffDemoTap, kOffMoreGuys, 0};
     return kBits[c];
 }
 bool comfort_on(int c)
 {
     if (!comfort_built(c)) return false;
     if (c == kCBigIcon && !ui::large()) return cfg->large_icons != 0;      // (320x240: off unless chosen - it covers the editor)
+    if (c == kCFont) return cfg->clear_font != 0;                          // (off unless chosen - Tom)
     return c == kCSound ? cfg->sound != kSoundOff : !(cfg->comforts_off & comfort_bit(c));
 }
 
@@ -2093,6 +2094,8 @@ bool tap_comforts(const ui::Rect& a, const ui::Tap& t)
             play::set_sound(cfg->sound, cfg->volume);
         } else if (c == kCBigIcon && !ui::large()) {
             cfg->large_icons = !cfg->large_icons;
+        } else if (c == kCFont) {
+            cfg->clear_font = !cfg->clear_font;
         } else {
             cfg->comforts_off ^= comfort_bit(c);
         }
@@ -2115,8 +2118,9 @@ bool all_comforts_off()
 void toggle_original()
 {
     const bool on = all_comforts_off();
-    cfg->comforts_off = on ? 0 : (kOffClearFont | kOffGallery | kOffBigIcon | kOffDemoTap | kOffJournal | kOffMoreGuys);
+    cfg->comforts_off = on ? 0 : (kOffGallery | kOffBigIcon | kOffDemoTap | kOffJournal | kOffMoreGuys);
     if (!on) cfg->large_icons = 0;
+    cfg->clear_font = on ? 1 : 0;
     settings_save(*cfg);
     apply_options();
 }

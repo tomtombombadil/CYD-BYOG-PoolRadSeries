@@ -17,11 +17,11 @@ struct Settings {
                                   // CYD_BIG_ICON_PREVIEW in app/features.h)
     uint8_t comforts_off = 0;     // the engine comforts the player switched off (kOff*; 0 = all on,
                                   // as older files read; Tom, 2026-10-11)
+    uint8_t clear_font = 0;       // the Clear font: OFF unless the player picks it (Tom, 2026-10-11)
 };
 
 // comforts_off bits (app/features.h)
-constexpr uint8_t kOffGallery = 1, kOffBigIcon = 2, kOffDemoTap = 4, kOffJournal = 8, kOffMoreGuys = 16,
-                  kOffClearFont = 32;
+constexpr uint8_t kOffGallery = 1, kOffBigIcon = 2, kOffDemoTap = 4, kOffJournal = 8, kOffMoreGuys = 16;
 
 
 constexpr uint8_t kMinBrightness = 20;

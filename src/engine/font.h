@@ -44,8 +44,13 @@ struct Font {
 extern const uint8_t kClearUpper[26][8];
 extern const uint8_t kClearLower[26][8];
 extern const uint8_t kClearText[32][8];
-// Puts the Clear font in (on) or the game's own back (off)
-void set_clear(Font& f, bool on);
+// Puts the Clear font in (on) or the game's own back (off). With a canvas:
+// the text already on it is redrawn in the other font too (mid-game,
+// Tom 2026-10-11) - every 8 x 8 cell holding exactly a text glyph of the
+// old font in one colour on black (or black on one colour, the menu's
+// choice) gets the new font's glyph in the same colours. (Lower case
+// printed in capitals by the game's font stays capitals.)
+void set_clear(Font& f, bool on, pic::Canvas* redraw = nullptr);
 
 // Loads block 201 from an open DAX file. False if the file has no such
 // block or it isn't 1416 bytes.

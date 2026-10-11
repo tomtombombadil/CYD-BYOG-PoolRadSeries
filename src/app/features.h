@@ -58,6 +58,8 @@
 // letters with real lower case (tools/fonts/clear8.txt, drawn for the
 // engine) in place of the game's narrow slanted capitals - much easier to
 // read on 2.8" - 4.0" screens. The game's symbols and frame pieces stay.
+// Off unless the player picks it (Tom); switchable mid-game (Game menu ->
+// Options), the text on screen changing with it.
 // Where: engine/font.* (set_clear), play.cpp.
 #ifndef CYD_CLEAR_FONT
 #define CYD_CLEAR_FONT 1

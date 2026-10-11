@@ -231,7 +231,9 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
 - Clear font (Tom, 2026-10-11, v0.73.0): the engine's OWN 8x8 font
   (`tools/fonts/clear8.txt` -> `make_font.py` -> `engine/font_clear.cpp`),
   bold upright capitals + real lower case, a comfort (`CYD_CLEAR_FONT`,
-  Settings key, default on). Third-party fonts (the Gold Box Companion's
+  Settings key) - OFF by default (Tom: the original font stays the
+  default), switchable mid-game from the Game menu's Options tab (the
+  text on screen changes with it). Third-party fonts (the Gold Box Companion's
   have no license and are the game's own glyphs retouched) are only looked
   at, never copied; edit the .txt art and regenerate.
 - Library (Tom, 2026-10-07): title bar shows the firmware version (to see

@@ -7402,7 +7402,17 @@ bool icon_preview(bool action, uint8_t* out)
 void set_options(const Options& o)
 {
     opts = o;
-    if (d) font::set_clear(d->font, CYD_CLEAR_FONT && opts.clear_font);     // (text drawn from now on)
+    const bool clear = CYD_CLEAR_FONT && opts.clear_font;
+    if (!d || d->font.clear == clear) return;
+    // Mid-game (Tom, 2026-10-11): the text on the screen changes font too
+    font::set_clear(d->font, clear, cv);
+    if (cv) {
+        if (screen == Screen::Game && !pic_shown && bigpic < 0) draw_view(*cv);   // (the 3D view as it was)
+        // The party list and the menu line again: their mixed case as written
+        if (screen == Screen::Game && bigpic < 0 && !waiting) draw_panel(*cv);
+        if (menu_on) show_menu_line(*cv);
+        dirty(0, pic::kScreenH);
+    }
 }
 
 void set_pool_dir(const char* dir)

@@ -726,7 +726,13 @@ a PC, PortMaster handhelds):
     `tools/fonts/clear8.txt` (`tools/fonts/make_font.py` makes
     `engine/font_clear.cpp`); the Companion's Font_01-03.bmp were only
     looked at (they are the game's own font, lightly retouched, capitals
-    only). Switching it in Settings changes text drawn from then on.
+    only). v0.73.1 (Tom): OFF unless the player picks it (settings.h
+    `clear_font`; the other comforts are on by default), and switching it
+    mid-game (Game menu -> Options) changes the text already on the screen
+    too: every 8 x 8 cell holding exactly an old-font text glyph (one
+    colour on black, or black on one colour for the menu's choice) is
+    redrawn in the new font, then the 3D view, the party list and the menu
+    line are drawn again (`font::set_clear` with a canvas).
   - `CYD_ICON_GALLERY` (v0.71.0, Tom: making icons a value at a time is
     "one of the worst parts of the game"): the icon editor (Alter -> Icon,
     Create New Character) opens on a gallery - pages Icons (32 ready-made
