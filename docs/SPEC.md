@@ -680,6 +680,22 @@ a PC, PortMaster handhelds):
     a tap flips ready / action.
   - `CYD_DEMO_TAP_STOPS` (v0.64.0, Tom): a tap or key stops the title's
     Demo (the title comes back); the original's demo can't be stopped.
+  - `CYD_ICON_GALLERY` (v0.71.0, Tom: making icons a value at a time is
+    "one of the worst parts of the game"): the icon editor (Alter -> Icon,
+    Create New Character) opens on a gallery - pages Icons (32 ready-made
+    icons), Heads (all 14), Weapons (all 32 bodies) and Colors (24
+    schemes), each cell the character's icon with that choice in place, 8
+    to a row. A tap (or Up / Down) puts it on the character at once (the
+    480x320 big preview follows; on 320x240 the gallery fills the screen,
+    so its big preview waits for the editor). Edit opens the original
+    editor for fine work, whose Exit comes back to the gallery; Done (or
+    Esc) asks the original's "Is this icon ok?" over the old / new pairs,
+    No back to the gallery. The pictures are the player's CHEAD / CBODY
+    parts at the character's size; the schemes and combinations are the
+    engine's own numbers (`engine/icon_looks.*`, host-tested). The SNEG
+    Gold Box Companion has no ready-made character icons (its Head.bmp /
+    Body.bmp are the same parts; its other pictures are the NPCs), so
+    there was nothing of the player's to take them from.
 
 ## 12. Where the engine differs from the original games (Tom, 2026-10-10: keep this list up to date)
 
@@ -709,6 +725,10 @@ marked (switch).
   game's import from the game before it** (Tom, 2026-10-10); Hillsfar
   characters can't be added (not one of the engine's games).
 - **The icon editor's big preview** (switch `CYD_BIG_ICON_PREVIEW`).
+- **The icon gallery** (switch `CYD_ICON_GALLERY`): the icon editor opens
+  on ready-made icons, heads, weapons and colour schemes to tap; the
+  original's Parts / colours / Size menus are behind Edit, and their Exit
+  goes back to the gallery instead of straight to "Is this icon ok?".
 - **Sound**: Tandy (default), PC speaker or off, with a volume slider in
   the engine's Settings.
 - **Saving**: the GOG files' save folder on the card, as the game.

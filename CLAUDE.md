@@ -137,6 +137,11 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   for bigger screens can turn it off. First: `CYD_BIG_ICON_PREVIEW`, the
   icon editor's big preview (480x320 always; 320x240 via Game menu ->
   Options -> Large Icons).
+  `CYD_ICON_GALLERY` (Tom, 2026-10-11, v0.71.0): the icon editor opens on
+  a gallery of ready-made icons / heads / weapons / colour schemes (the
+  player's own parts; the combinations are `engine/icon_looks.*`, ours);
+  Edit = the original editor (its Exit returns to the gallery), Done =
+  "Is this icon ok?".
 - Journal book memory (v0.52.0): while the book is open the game canvas
   waits on the card (`frame::park` / `unpark`, `_CYD/CANVAS.TMP`); a
   memory failure must never be reported as "no scanned picture".

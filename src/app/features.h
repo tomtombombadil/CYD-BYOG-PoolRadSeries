@@ -24,3 +24,17 @@
 #ifndef CYD_DEMO_TAP_STOPS
 #define CYD_DEMO_TAP_STOPS 1
 #endif
+
+// The icon gallery (Tom, 2026-10-11, v0.71.0): the icon editor (Alter ->
+// Icon, Create New Character) opens on pages of ready-made icons to tap -
+// whole icons, then every head, every body / weapon and colour schemes,
+// each shown on the character - instead of stepping through values one at
+// a time with Next / Prev. Edit goes on to the original editor (its Exit
+// comes back here); Done asks the original's "Is this icon ok?" (No: back
+// here). The pictures are the player's own CHEAD / CBODY parts; the schemes
+// and combinations are the engine's (engine/icon_looks.*).
+// Where: play.cpp (gal_*), viewer.cpp (no 320x240 big preview over it).
+// 0: the original editor only.
+#ifndef CYD_ICON_GALLERY
+#define CYD_ICON_GALLERY 1
+#endif

@@ -424,20 +424,33 @@ void load_tiles(bool indoors)
 // body's top rows - where both have a colour the two colour numbers OR'd,
 // as the program does -, then each pixel recoloured once from its own
 // colour: default d -> the byte's low nibble, d + 8 -> its high
+// b: a 24 x 24 body picture, made the icon in place; h: the head (hh rows)
+void icon_compose(uint8_t* b, const uint8_t* h, int hh, const uint8_t* colours)
+{
+    static const uint8_t kDefault[6] = {1, 2, 3, 4, 6, 7};
+    uint8_t map[16];
+    for (int i = 0; i < 16; ++i) map[i] = static_cast<uint8_t>(i);
+    for (int i = 0; i < 6; ++i) {
+        map[kDefault[i]] = colours[i] & 15;
+        map[kDefault[i] + 8] = colours[i] >> 4;
+    }
+    if (h)
+        for (int y = 0; y < hh && y < kSq; ++y)
+            for (int x = 0; x < kSq; ++x) {
+                const int v = nib(h, kSq, x, y);
+                if (v) set_nib(b, kSq, x, y, v | nib(b, kSq, x, y));
+            }
+    for (int y = 0; y < kSq; ++y)
+        for (int x = 0; x < kSq; ++x) set_nib(b, kSq, x, y, map[nib(b, kSq, x, y)]);
+}
+
 void build_icon(const uint8_t* rec, Pic4& ic)
 {
     free_pic(ic);
     const int head = rec[0x141], body = rec[0x142];
     const bool small = rec[0x144] == 1;
-    static const uint8_t kDefault[6] = {1, 2, 3, 4, 6, 7};
-    uint8_t map[16];
-    for (int i = 0; i < 16; ++i) map[i] = static_cast<uint8_t>(i);
-    for (int i = 0; i < 6; ++i) {
-        map[kDefault[i]] = rec[0x145 + i] & 15;
-        map[kDefault[i] + 8] = rec[0x145 + i] >> 4;
-    }
     for (int fr = 0; fr < 2; ++fr) {
-        int bw, bh, hw, hh;
+        int bw = 0, bh = 0, hw = 0, hh = 0;
         uint8_t* b = load_pic4("CBODY.DAX", body + (small ? 0 : 0x40) + fr * 0x80, 0, &bw, &bh);
         uint8_t* h = load_pic4("CHEAD.DAX", head + (small ? 0 : 0x40) + fr * 0x80, 0, &hw, &hh);
         if (!b || bw != kSq || bh != kSq) {
@@ -445,15 +458,8 @@ void build_icon(const uint8_t* rec, Pic4& ic)
             free(h);
             continue;
         }
-        if (h && hw == kSq)
-            for (int y = 0; y < hh && y < kSq; ++y)
-                for (int x = 0; x < kSq; ++x) {
-                    const int v = nib(h, hw, x, y);
-                    if (v) set_nib(b, kSq, x, y, v | nib(b, kSq, x, y));
-                }
+        icon_compose(b, h && hw == kSq ? h : nullptr, hh, rec + 0x145);
         free(h);
-        for (int y = 0; y < kSq; ++y)
-            for (int x = 0; x < kSq; ++x) set_nib(b, kSq, x, y, map[nib(b, kSq, x, y)]);
         ic.px[fr] = b;
         ic.w = ic.h = kSq;
     }

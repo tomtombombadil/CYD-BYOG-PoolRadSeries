@@ -97,6 +97,9 @@ void set_pool_dir(const char* dir);
 // comfort: CYD_BIG_ICON_PREVIEW in app/features.h switches the preview off.)
 bool icon_editing();
 bool icon_preview(bool action, uint8_t* out);
+// The editor's icon gallery is up (CYD_ICON_GALLERY): it fills the game
+// screen, so the 320x240 big preview (drawn over the canvas) stays off
+bool icon_gallery();
 
 // The journal entries ('J') and tavern tales ('T') the game has mentioned
 // so far, in the order heard (the Menu's Journal list)

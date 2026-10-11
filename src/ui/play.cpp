@@ -13,6 +13,7 @@
 #include "engine/ecl_vm.h"
 #include "engine/exepack.h"
 #include "engine/font.h"
+#include "engine/icon_looks.h"
 #include "engine/journal.h"
 #include "engine/classes.h"
 #include "engine/combat.h"
@@ -6201,6 +6202,14 @@ struct IconEdit {
     Pic4     old_ic, new_ic, base[2];
     char     menus[5][42] = {};
     char     words[profile::kIconWords][20] = {};
+#if CYD_ICON_GALLERY
+    int      gpage = -1;                // the gallery's page shown (icon_looks::Page), -1 the editor
+    int      glast = 0;                 // the page it was on (back to it after No)
+    int      gsel = -1;                 // the cell picked
+    int      gsize = 0;                 // the size the parts below are for
+    uint8_t* ghead[icon_looks::kHeads] = {};    // the parts' ready pictures, 24 x 24 (loaded as needed)
+    uint8_t* gbody[icon_looks::kBodies] = {};
+#endif
 };
 IconEdit* ie = nullptr;
 
@@ -6263,6 +6272,7 @@ void icon_menu(pic::Canvas& c)
     show_menu_line(c);
 }
 
+#if !CYD_ICON_GALLERY
 // A pass: the kept values from the record, the old pair, the new pair
 void icon_pass(pic::Canvas& c)
 {
@@ -6273,6 +6283,24 @@ void icon_pass(pic::Canvas& c)
     ie->level = 1;
     icon_menu(c);
 }
+#endif
+
+// The editor's screen: the frame, the words, the old pair (new: icon_new)
+void icon_screen(pic::Canvas& c)
+{
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    put(c, ie->words[profile::kIconOld], 8, 6, 15);
+    put(c, ie->words[profile::kIconReadyAction], 3, 10, 15);
+    put(c, ie->words[profile::kIconNew], 8, 12, 15);
+    put(c, ie->words[profile::kIconReadyAction], 3, 16, 15);
+    icon_pair(c, ie->old_ic, 56);
+    dirty(0, pic::kScreenH);
+}
+
+#if CYD_ICON_GALLERY
+void gal_open(pic::Canvas& c, int page);
+#endif
 
 void start_icon(pic::Canvas& c, Screen from)
 {
@@ -6306,15 +6334,15 @@ void start_icon(pic::Canvas& c, Screen from)
     screen = Screen::Icon;
     anim_stop();
     pic_shown = false;
-    c.clear(0);
-    layout::outer(c, d->tables, d->frame_tiles);
-    put(c, ie->words[profile::kIconOld], 8, 6, 15);
-    put(c, ie->words[profile::kIconReadyAction], 3, 10, 15);
-    put(c, ie->words[profile::kIconNew], 8, 12, 15);
-    put(c, ie->words[profile::kIconReadyAction], 3, 16, 15);
-    dirty(0, pic::kScreenH);
     palette_fight(true);
+#if CYD_ICON_GALLERY
+    icon_take(ie->keep, ch->rec);
+    build_icon(ch->rec, ie->old_ic);
+    gal_open(c, 0);
+#else
+    icon_screen(c);
     icon_pass(c);
+#endif
 }
 
 void end_icon_art()
@@ -6324,6 +6352,10 @@ void end_icon_art()
     free_pic(ie->new_ic);
     free_pic(ie->base[0]);
     free_pic(ie->base[1]);
+#if CYD_ICON_GALLERY
+    for (uint8_t*& p : ie->ghead) free(p), p = nullptr;
+    for (uint8_t*& p : ie->gbody) free(p), p = nullptr;
+#endif
     delete ie;
     ie = nullptr;
 }
@@ -6356,8 +6388,13 @@ void icon_key(char k, pic::Canvas& c)
         } else if (k == 'S') ie->level = 4;
         else if (k == 'E') {
             icon_put(rec, ie->keep);            // only what was kept
+#if CYD_ICON_GALLERY
+            gal_open(c, ie->glast);             // (the gallery is the editor's top: Done asks)
+            return;
+#else
             icon_new(c);
             ie->level = 6;
+#endif
         } else return;
         icon_menu(c);
         return;
@@ -6425,13 +6462,27 @@ void icon_key(char k, pic::Canvas& c)
     }
     default:
         if (k == 'Y') end_icon(c);
+#if CYD_ICON_GALLERY
+        else if (k == 'N') gal_open(c, ie->glast);
+#else
         else if (k == 'N') icon_pass(c);
+#endif
         return;
     }
 }
 
+#if CYD_ICON_GALLERY
+void gal_tap(int x, int y, pic::Canvas& c);
+#endif
+
 void icon_tap(int x, int y, pic::Canvas& c)
 {
+#if CYD_ICON_GALLERY
+    if (ie && ie->gpage >= 0) {
+        gal_tap(x, y, c);
+        return;
+    }
+#endif
     if (!ie || y < text::kMenuTapTop) return;
     const int k = text::hit(menu, x / 8);
     if (k < 0) return;
@@ -6440,8 +6491,209 @@ void icon_tap(int x, int y, pic::Canvas& c)
     icon_key(text::key(menu, k), c);
 }
 
-// Esc: as Exit at the level shown (No at the question)
-void icon_back(pic::Canvas& c) { icon_key(ie->level == 6 ? 'N' : 'E', c); }
+#if CYD_ICON_GALLERY
+void gal_key(char k, pic::Canvas& c);
+#endif
+
+// Esc: as Exit at the level shown (No at the question); the gallery's Done
+void icon_back(pic::Canvas& c)
+{
+#if CYD_ICON_GALLERY
+    if (ie->gpage >= 0) {
+        gal_key('D', c);
+        return;
+    }
+#endif
+    icon_key(ie->level == 6 ? 'N' : 'E', c);
+}
+
+#if CYD_ICON_GALLERY
+// ---- the icon gallery (engine comfort, features.h CYD_ICON_GALLERY) ----------------
+// Pages of cells, each the character's icon with one choice in place: the
+// engine's whole icons, every head, every body (weapon), the colour
+// schemes (engine/icon_looks.*). A tap (or Up / Down) puts that choice on
+// the character at once; Edit goes to the original editor, Done to its
+// "Is this icon ok?" (No: back here). The original editor's Exit comes
+// back here too - the gallery is the editor's top.
+constexpr int kGalCols = 8, kGalX = 16, kGalY = 22, kGalPitch = 36;
+
+icon_looks::Page gal_page() { return static_cast<icon_looks::Page>(ie->gpage); }
+
+// The cell under canvas (x, y), or -1
+int gal_cell_at(int x, int y)
+{
+    if (!ie || ie->gpage < 0 || x < kGalX || y < kGalY) return -1;
+    const int col = (x - kGalX) / kGalPitch, row = (y - kGalY) / kGalPitch;
+    if (col >= kGalCols) return -1;
+    const int i = row * kGalCols + col;
+    return i < icon_looks::count(gal_page()) ? i : -1;
+}
+
+// The square around cell i's icon (its highlight)
+void gal_box(int i, int* x, int* y, int* w, int* h)
+{
+    *x = kGalX + (i % kGalCols) * kGalPitch + 3;
+    *y = kGalY + (i / kGalCols) * kGalPitch + 3;
+    *w = *h = kSq + 6;
+}
+
+void gal_frame(pic::Canvas& c, int i, uint8_t colour)
+{
+    if (i < 0) return;
+    int x, y, w, h;
+    gal_box(i, &x, &y, &w, &h);
+    c.fill(x, y, w, 2, colour);
+    c.fill(x, y + h - 2, w, 2, colour);
+    c.fill(x, y, 2, h, colour);
+    c.fill(x + w - 2, y, 2, h, colour);
+    dirty(y, y + h);
+}
+
+// The parts' ready pictures for the character's size, read once (each
+// file opened once); heads padded to 24 rows
+bool gal_load(uint8_t** parts, int n, const char* file, int add)
+{
+    bool need = false;
+    for (int i = 0; i < n; ++i) need |= parts[i] == nullptr;
+    if (!need) return true;
+    fs::File f;
+    if (!open_dax(file, f)) return false;
+    library::FileSource src(f);
+    bool ok = true;
+    for (int i = 0; i < n && ok; ++i) {
+        if (parts[i]) continue;
+        const dax::Entry* e = d->idx.find(static_cast<uint8_t>(i + add));
+        if (!e) continue;                   // a missing part: its cell stays empty
+        dax::RleReader r(src, d->idx, *e);
+        uint8_t hdr[pic::kHeaderSize];
+        pic::Header ph;
+        if (r.read(hdr, sizeof hdr) != sizeof hdr || !pic::parse_header(hdr, e->raw_size, ph) || ph.width_px() != kSq ||
+            ph.height > kSq || !ph.frames)
+            continue;
+        uint8_t* p = static_cast<uint8_t*>(malloc(kTileBytes));
+        if (!p) {
+            ok = false;
+            break;
+        }
+        memset(p, 0, kTileBytes);
+        const uint32_t fb = ph.frame_bytes();
+        if (fb > kTileBytes || r.read(p, fb) != fb) {
+            free(p);
+            continue;
+        }
+        parts[i] = p;
+    }
+    f.close();
+    return ok;
+}
+
+bool gal_parts()
+{
+    const int size = ie->ch->rec[0x144];
+    if (size != ie->gsize) {
+        for (uint8_t*& p : ie->ghead) free(p), p = nullptr;
+        for (uint8_t*& p : ie->gbody) free(p), p = nullptr;
+        ie->gsize = size;
+    }
+    const int add = size == 1 ? 0 : 0x40;
+    return gal_load(ie->ghead, icon_looks::kHeads, "CHEAD.DAX", add) &&
+           gal_load(ie->gbody, icon_looks::kBodies, "CBODY.DAX", add);
+}
+
+void gal_cell(pic::Canvas& c, int i)
+{
+    uint8_t head, body, colours[6];
+    icon_looks::preview(gal_page(), i, ie->ch->rec, &head, &body, colours);
+    const int x = kGalX + (i % kGalCols) * kGalPitch + 6, y = kGalY + (i / kGalCols) * kGalPitch + 6;
+    blit4(c, ie->base[0].px[0], ie->base[0].w, ie->base[0].h, x, y, false, true, 0, 0, pic::kScreenW, pic::kScreenH);
+    if (body >= icon_looks::kBodies || !ie->gbody[body]) return;
+    uint8_t px[kTileBytes];
+    memcpy(px, ie->gbody[body], kTileBytes);
+    icon_compose(px, head < icon_looks::kHeads ? ie->ghead[head] : nullptr, kSq, colours);
+    blit4(c, px, kSq, kSq, x, y, false, true, 0, 0, pic::kScreenW, pic::kScreenH);
+}
+
+void gal_menu(pic::Canvas& c)
+{
+    text::build(menu, "", "Icons Heads Weapons Colors Edit Done");
+    static const char kKeys[icon_looks::kPages] = {'I', 'H', 'W', 'C'};
+    menu.selected = 0;
+    for (int k = 0; k < menu.count; ++k)
+        if (text::key(menu, k) == kKeys[ie->gpage]) menu.selected = k;
+    show_menu_line(c);
+}
+
+void gal_open(pic::Canvas& c, int page)
+{
+    ie->gpage = ie->glast = page;
+    ie->level = 1;
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    static const char* const kTitle[icon_looks::kPages] = {"Ready-Made Icons", "Heads", "Weapons", "Colors"};
+    put(c, kTitle[page], 2, 1, 15);
+    if (!gal_parts()) {
+        dirty(0, pic::kScreenH);
+        gal_menu(c);
+        error(c, no_memory("the icon gallery"));
+        return;
+    }
+    const int n = icon_looks::count(gal_page());
+    for (int i = 0; i < n; ++i) gal_cell(c, i);
+    ie->gsel = icon_looks::match(gal_page(), ie->ch->rec);
+    gal_frame(c, ie->gsel, 15);
+    dirty(0, pic::kScreenH);
+    gal_menu(c);
+}
+
+void gal_pick(int i, pic::Canvas& c)
+{
+    if (i < 0 || i >= icon_looks::count(gal_page())) return;
+    gal_frame(c, ie->gsel, 0);
+    icon_looks::apply(gal_page(), i, ie->ch->rec);
+    ie->gsel = i;
+    gal_frame(c, i, 15);
+    build_icon(ie->ch->rec, ie->new_ic);    // (the big preview)
+}
+
+void gal_key(char k, pic::Canvas& c)
+{
+    static const char kKeys[icon_looks::kPages] = {'I', 'H', 'W', 'C'};
+    for (int p = 0; p < icon_looks::kPages; ++p)
+        if (k == kKeys[p]) {
+            if (p != ie->gpage) gal_open(c, p);
+            else gal_menu(c);
+            return;
+        }
+    if (k != 'E' && k != 'D') return;
+    // The picks are kept; on to the original editor, or its question
+    ie->gpage = -1;
+    icon_take(ie->keep, ie->ch->rec);
+    icon_screen(c);
+    icon_new(c);
+    ie->level = k == 'E' ? 1 : 6;
+    icon_menu(c);
+}
+
+void gal_tap(int x, int y, pic::Canvas& c)
+{
+    if (y >= text::kMenuTapTop) {
+        const int k = text::hit(menu, x / 8);
+        if (k < 0) return;
+        menu.selected = k;
+        show_menu_line(c);
+        gal_key(text::key(menu, k), c);
+        return;
+    }
+    gal_pick(gal_cell_at(x, y), c);
+}
+
+// Up / Down: the next / previous cell, picked
+void gal_step(int step, pic::Canvas& c)
+{
+    const int n = icon_looks::count(gal_page());
+    gal_pick(ie->gsel < 0 ? (step > 0 ? 0 : n - 1) : (ie->gsel + step + n) % n, c);
+}
+#endif
 
 // The sound driver's tables and byte code, from the player's program
 void load_sound()
@@ -7031,6 +7283,15 @@ bool available(games::Game g) { return profile::program_name(g) != nullptr; }
 
 bool icon_editing() { return d && screen == Screen::Icon && ie; }
 
+bool icon_gallery()
+{
+#if CYD_ICON_GALLERY
+    return icon_editing() && ie->gpage >= 0;
+#else
+    return false;
+#endif
+}
+
 bool icon_preview(bool action, uint8_t* out)
 {
     if (!icon_editing()) return false;
@@ -7406,6 +7667,12 @@ bool nav_list(int step, pic::Canvas& c)
         keep_menu_choice(keep, c);
         return true;
     }
+#if CYD_ICON_GALLERY
+    if (icon_gallery()) {
+        gal_step(step, c);
+        return true;
+    }
+#endif
     if (screen == Screen::SpellList && !sl.learning && sl.sel >= 0) {
         int i = sl.sel;
         for (int k = 0; k < sl.n; ++k) {
@@ -7592,6 +7859,7 @@ namespace {
 struct Flash {
     int x0 = 0, y0 = 0, w = 0, h = 0;
     uint8_t* orig = nullptr;
+    bool box = false;                   // a frame around the area (the icon gallery's cells), not its letters
 };
 Flash fl;
 
@@ -7684,6 +7952,13 @@ bool tap_target(int x, int y, int* row, int* c0, int* c1)
 
 void ink(pic::Canvas& c, uint8_t colour)
 {
+    if (fl.box) {
+        c.fill(fl.x0, fl.y0, fl.w, 2, colour);
+        c.fill(fl.x0, fl.y0 + fl.h - 2, fl.w, 2, colour);
+        c.fill(fl.x0, fl.y0, 2, fl.h, colour);
+        c.fill(fl.x0 + fl.w - 2, fl.y0, 2, fl.h, colour);
+        return;
+    }
     for (int j = 0; j < fl.h; ++j) {
         uint8_t* p = c.px + static_cast<size_t>(fl.y0 + j) * c.w + fl.x0;
         const uint8_t* o = fl.orig + static_cast<size_t>(j) * fl.w;
@@ -7697,6 +7972,31 @@ bool tap_highlight(int x, int y, pic::Canvas& c, int* y0, int* y1)
 {
     tap_highlight_end(c);
     if (!d) return false;
+    fl.box = false;
+#if CYD_ICON_GALLERY
+    // An icon gallery cell: a frame around it
+    if (icon_gallery() && y < text::kMenuTapTop) {
+        const int i = gal_cell_at(x, y);
+        if (i < 0) return false;
+        gal_box(i, &fl.x0, &fl.y0, &fl.w, &fl.h);
+        fl.orig = static_cast<uint8_t*>(malloc(static_cast<size_t>(fl.w) * fl.h));
+        if (!fl.orig) return false;
+        for (int j = 0; j < fl.h; ++j)
+            memcpy(fl.orig + static_cast<size_t>(j) * fl.w, c.px + static_cast<size_t>(fl.y0 + j) * c.w + fl.x0, fl.w);
+        fl.box = true;
+        *y0 = fl.y0;
+        *y1 = fl.y0 + fl.h;
+        if (i == ie->gsel) {
+            ink(c, 0);                      // already lit: off, then on again
+            return true;
+        }
+        ink(c, 15);
+        fb_y0 = fl.y0;
+        fb_y1 = fl.y0 + fl.h;
+        fb_touched = false;
+        return true;
+    }
+#endif
     int row, c0, c1;
     if (!tap_target(x, y, &row, &c0, &c1)) return false;
     if (c0 < 0) c0 = 0;

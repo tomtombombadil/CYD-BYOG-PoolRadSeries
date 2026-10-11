@@ -18,6 +18,7 @@
 #include "engine/exepack.h"
 #include "engine/geo.h"
 #include "engine/icon.h"
+#include "engine/icon_looks.h"
 #include "engine/inflate.h"
 #include "engine/journal.h"
 #include "engine/jpeg.h"
@@ -2019,6 +2020,48 @@ static Bytes make_pdf()
 }
 
 // The Gold Box Companion's journal (Steam / SNEG): a synthetic Game.dat
+// The icon gallery's tables: every choice in range, no see-through colour
+// 0, every look distinct; apply / match round trips, the size untouched
+static void test_icon_looks()
+{
+    using namespace icon_looks;
+    for (int i = 0; i < kSchemes; ++i)
+        for (int k = 0; k < 6; ++k) CHECK((kScheme[i].c[k] & 15) && (kScheme[i].c[k] >> 4));
+    for (int i = 0; i < kLooks; ++i) {
+        CHECK(kLook[i].head < kHeads && kLook[i].body < kBodies && kLook[i].scheme < kSchemes);
+        for (int j = 0; j < i; ++j)
+            CHECK(kLook[i].head != kLook[j].head || kLook[i].body != kLook[j].body || kLook[i].scheme != kLook[j].scheme);
+    }
+    for (int i = 0; i < kSchemes; ++i)
+        for (int j = 0; j < i; ++j) CHECK(memcmp(kScheme[i].c, kScheme[j].c, 6) != 0);
+    CHECK(count(Page::Looks) == kLooks && count(Page::Heads) == kHeads && count(Page::Bodies) == kBodies &&
+          count(Page::Colours) == kSchemes);
+    uint8_t rec[0x200] = {};
+    rec[0x141] = 3;
+    rec[0x142] = 9;
+    rec[0x144] = 1;
+    const uint8_t mine[6] = {0x21, 0x43, 0x65, 0x87, 0xA9, 0xCB};
+    memcpy(rec + 0x145, mine, 6);
+    CHECK(match(Page::Heads, rec) == 3 && match(Page::Bodies, rec) == 9);
+    CHECK(match(Page::Colours, rec) == -1 && match(Page::Looks, rec) == -1);
+    apply(Page::Heads, 11, rec);
+    CHECK(rec[0x141] == 11 && rec[0x142] == 9 && memcmp(rec + 0x145, mine, 6) == 0);
+    apply(Page::Bodies, 30, rec);
+    CHECK(rec[0x141] == 11 && rec[0x142] == 30);
+    apply(Page::Colours, 5, rec);
+    CHECK(memcmp(rec + 0x145, kScheme[5].c, 6) == 0 && rec[0x141] == 11 && rec[0x142] == 30);
+    CHECK(match(Page::Colours, rec) == 5);
+    apply(Page::Looks, 7, rec);
+    CHECK(rec[0x141] == kLook[7].head && rec[0x142] == kLook[7].body &&
+          memcmp(rec + 0x145, kScheme[kLook[7].scheme].c, 6) == 0);
+    CHECK(match(Page::Looks, rec) == 7 && rec[0x144] == 1);
+    uint8_t h, b, c[6];
+    preview(Page::Heads, 2, rec, &h, &b, c);
+    CHECK(h == 2 && b == kLook[7].body && rec[0x141] == kLook[7].head);   // the record unchanged
+    preview(Page::Heads, 99, rec, &h, &b, c);                             // out of range: as it is
+    CHECK(h == kLook[7].head);
+}
+
 static void test_journal_gbc()
 {
     const std::string dat =
@@ -5167,6 +5210,7 @@ int main()
     test_sound();
     test_journal();
     test_journal_gbc();
+    test_icon_looks();
     test_geo_view();
     test_party();
     test_items();

@@ -2793,7 +2793,8 @@ bool big_action = false, big_was = false, big_force = false;
 
 bool big_icon_on()
 {
-    return CYD_BIG_ICON_PREVIEW && play::icon_editing() && (ui::large() || cfg->large_icons);
+    return CYD_BIG_ICON_PREVIEW && play::icon_editing() &&
+           (ui::large() || (cfg->large_icons && !play::icon_gallery()));   // (the gallery fills the canvas)
 }
 
 ui::Rect big_icon_area()
