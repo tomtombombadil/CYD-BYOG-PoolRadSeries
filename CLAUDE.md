@@ -235,7 +235,16 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   default), switchable mid-game from the Game menu's Options tab (the
   text on screen changes with it). Third-party fonts (the Gold Box Companion's
   have no license and are the game's own glyphs retouched) are only looked
-  at, never copied; edit the .txt art and regenerate.
+  at, never copied; edit the .txt art and regenerate. v0.74.0 (Tom): the
+  key is **Game Font** - Original / Clear / Darkness (the player's own
+  Pools of Darkness 8X8D0.DAX, only when that game is on the card).
+- Gold Box Companion files (Tom, 2026-10-11): its author's work - read
+  from the player's copy on the card, NEVER shipped or copied into the
+  repo (no license). Its combat icons: `/GOLDBOX/GBC/DAX-Icons-EGA`
+  (the GOG Companion's GBC folder copied to /GOLDBOX/GBC) as more icon
+  gallery pages, picks by name in `_CYD/<folder>/ICONS.TXT`
+  (`engine/gbc_icons.*`). Its Resources docs (formats, item lists,
+  monster manuals) may be read for facts, like coab.
 - Library (Tom, 2026-10-07): title bar shows the firmware version (to see
   which build is flashed); ONE game a page, no key look, the whole space
   between header and bottom keys - its GOG icon as big as fits (scaled from

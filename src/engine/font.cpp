@@ -89,9 +89,10 @@ void redraw_text(pic::Canvas& c, const uint8_t (*old_bits)[8], const int* old_in
 
 } // namespace
 
-void set_clear(Font& f, bool on, pic::Canvas* redraw)
+void set_letters(Font& f, int letters, const Font* alt, pic::Canvas* redraw)
 {
-    if (on == f.clear) return;
+    if (letters == kAltLetters && (!alt || !alt->loaded)) letters = kGameLetters;
+    if (letters == f.letters) return;
     // (the old font's text glyphs, while it's redrawn; on the heap - static
     // RAM is dear on the boards)
     struct Old {
@@ -100,19 +101,29 @@ void set_clear(Font& f, bool on, pic::Canvas* redraw)
     };
     Old* old = redraw ? static_cast<Old*>(malloc(sizeof(Old))) : nullptr;
     const int n = old ? text_glyphs(f, old->bits, old->index) : 0;
-    if (on) {
-        memcpy(f.saved, f.glyph[1], 26 * 8);
-        memcpy(f.saved[26], f.glyph[32], 32 * 8);
-        memcpy(f.glyph[1], kClearUpper, 26 * 8);
-        memcpy(f.glyph[32], kClearText, 32 * 8);
-    } else {
+    // The game's own letters back first
+    if (f.letters != kGameLetters) {
         memcpy(f.glyph[1], f.saved, 26 * 8);
         memcpy(f.glyph[32], f.saved[26], 32 * 8);
     }
-    f.clear = on;
+    if (letters != kGameLetters) {
+        memcpy(f.saved, f.glyph[1], 26 * 8);
+        memcpy(f.saved[26], f.glyph[32], 32 * 8);
+        if (letters == kClearLetters) {
+            memcpy(f.glyph[1], kClearUpper, 26 * 8);
+            memcpy(f.glyph[32], kClearText, 32 * 8);
+        } else {
+            memcpy(f.glyph[1], alt->glyph[1], 26 * 8);
+            memcpy(f.glyph[32], alt->glyph[32], 32 * 8);
+        }
+    }
+    f.letters = static_cast<uint8_t>(letters);
+    f.clear = letters == kClearLetters;
     if (old) redraw_text(*redraw, old->bits, old->index, n, f);
     free(old);
 }
+
+void set_clear(Font& f, bool on, pic::Canvas* redraw) { set_letters(f, on ? kClearLetters : kGameLetters, nullptr, redraw); }
 
 void draw_glyph(pic::Canvas& c, const Font& f, int g, int x, int y, uint8_t fg, int bg)
 {

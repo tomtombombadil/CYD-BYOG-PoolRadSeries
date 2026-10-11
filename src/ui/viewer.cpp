@@ -921,6 +921,19 @@ void canvas_park_path(char* out, size_t cap);
 
 void apply_options();
 
+// The player's Pools of Darkness folder on the card (its font is the third
+// Game Font choice); false if there's none
+bool darkness_dir(char* out, size_t cap)
+{
+    for (int g = 0; g < n_games; ++g)
+        if (game_dirs[g].game == games::Game::PoolsOfDarkness && game_dirs[g].format == library::Format::Dax) {
+            snprintf(out, cap, "%s/%s", games::kRootDir, game_dirs[g].data_dir);
+            return true;
+        }
+    out[0] = 0;
+    return false;
+}
+
 void start_play()
 {
     if (frame::parked()) {
@@ -941,6 +954,9 @@ void start_play()
     library::make_cache_dirs(game_dirs[game_sel]);
     snprintf(cdir, sizeof cdir, "%s/%s/%s", games::kRootDir, library::kCacheDir, game_dirs[game_sel].folder);
     play::set_sound(cfg->sound, cfg->volume);
+    char dd[160];
+    darkness_dir(dd, sizeof dd);
+    play::set_darkness_dir(dd);
     apply_options();
     // Pool of Radiance's folder on the card: its characters can be added
     play::set_pool_dir("");
@@ -2035,7 +2051,7 @@ bool comfort_on(int c)
 {
     if (!comfort_built(c)) return false;
     if (c == kCBigIcon && !ui::large()) return cfg->large_icons != 0;      // (320x240: off unless chosen - it covers the editor)
-    if (c == kCFont) return cfg->clear_font != 0;                          // (off unless chosen - Tom)
+    if (c == kCFont) return cfg->game_font != kFontGame;                   // (the game's own unless chosen - Tom)
     return c == kCSound ? cfg->sound != kSoundOff : !(cfg->comforts_off & comfort_bit(c));
 }
 
@@ -2045,7 +2061,7 @@ void apply_options()
     o.gallery = comfort_on(kCGallery);
     o.demo_tap = comfort_on(kCDemoTap);
     o.more_guys = comfort_on(kCMoreGuys);
-    o.clear_font = comfort_on(kCFont);
+    o.font = comfort_on(kCFont) ? cfg->game_font : kFontGame;
     play::set_options(o);
 }
 
@@ -2068,7 +2084,7 @@ ui::Rect comfort_cell(const ui::Rect& a, int i)
 
 void draw_comforts(const ui::Rect& a)
 {
-    static const char* const kNames[kComforts] = {"Clear Font",     "Icon Gallery",    "Large Icon", "Journal Pop-Up",
+    static const char* const kNames[kComforts] = {"Game Font",      "Icon Gallery",    "Large Icon", "Journal Pop-Up",
                                                   "Demo Tap Stops", "More Characters", "Game Sound"};
     int list[kComforts];
     const int n = comfort_list(list);
@@ -2077,6 +2093,7 @@ void draw_comforts(const ui::Rect& a)
         const bool on = comfort_on(c);
         const char* sub = on ? "On" : "Off";
         if (c == kCSound) sub = cfg->sound == kSoundPc ? "PC Speaker" : cfg->sound == kSoundOff ? "Off" : "Tandy";
+        if (c == kCFont) sub = cfg->game_font == kFontClear ? "Clear" : cfg->game_font == kFontDarkness ? "Darkness" : "Original";
         ui::key2(comfort_cell(a, i), kNames[c], sub, on ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
     }
 }
@@ -2095,7 +2112,11 @@ bool tap_comforts(const ui::Rect& a, const ui::Tap& t)
         } else if (c == kCBigIcon && !ui::large()) {
             cfg->large_icons = !cfg->large_icons;
         } else if (c == kCFont) {
-            cfg->clear_font = !cfg->clear_font;
+            // Original -> Clear -> Pools of Darkness (when its folder is on
+            // the card: the player's own font) -> Original
+            char dd[160];
+            const uint8_t next = cfg->game_font == kFontGame ? kFontClear : cfg->game_font == kFontClear ? kFontDarkness : kFontGame;
+            cfg->game_font = next == kFontDarkness && !darkness_dir(dd, sizeof dd) ? kFontGame : next;
         } else {
             cfg->comforts_off ^= comfort_bit(c);
         }
@@ -2120,7 +2141,7 @@ void toggle_original()
     const bool on = all_comforts_off();
     cfg->comforts_off = on ? 0 : (kOffGallery | kOffBigIcon | kOffDemoTap | kOffJournal | kOffMoreGuys);
     if (!on) cfg->large_icons = 0;
-    cfg->clear_font = on ? 1 : 0;
+    cfg->game_font = on ? kFontClear : kFontGame;
     settings_save(*cfg);
     apply_options();
 }

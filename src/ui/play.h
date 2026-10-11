@@ -91,13 +91,17 @@ bool fight_select(pic::Canvas& c);
 // The player's Pool of Radiance folder on the card (Add Character -> Pool
 // lists its characters too); "" or nullptr: none
 void set_pool_dir(const char* dir);
+// The player's Pools of Darkness folder on the card (its 8X8D0.DAX: the
+// third font choice, Options::font 2); "" or nullptr: none
+void set_darkness_dir(const char* dir);
 // The engine comforts (app/features.h) the player has on - Settings,
 // shared by all games (Tom, 2026-10-11); a switch compiled out stays off
 struct Options {
     bool gallery = true;          // the icon editor opens on the gallery (CYD_ICON_GALLERY)
     bool demo_tap = true;         // a tap stops the demo (CYD_DEMO_TAP_STOPS)
     bool more_guys = true;        // Add Character: saved games' members, the earlier game's folder (CYD_MORE_CHARACTERS)
-    bool clear_font = false;      // the engine's Clear font for the game's text (CYD_CLEAR_FONT; off unless chosen)
+    uint8_t font = 0;             // the game's text (CYD_CLEAR_FONT): 0 its own (the default), 1 the engine's
+                                  // Clear font, 2 the player's Pools of Darkness font (set_darkness_dir)
 };
 void set_options(const Options& o);
 // The icon editor's NEW icon (Alter -> Icon, Create New Character) for the

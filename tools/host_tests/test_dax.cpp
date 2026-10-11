@@ -19,6 +19,7 @@
 #include "engine/geo.h"
 #include "engine/icon.h"
 #include "engine/icon_looks.h"
+#include "engine/gbc_icons.h"
 #include "engine/inflate.h"
 #include "engine/journal.h"
 #include "engine/jpeg.h"
@@ -446,6 +447,28 @@ static void test_font()
         bool row0 = true;
         for (int y = 0; y < 8; ++y) row0 &= memcmp(gp + y * pic::kScreenW, ep + y * pic::kScreenW, 16) == 0;
         CHECK(row0);
+        // Another game's letters (the player's Pools of Darkness font): its
+        // glyphs 1-26 / 32-63 only; straight from Clear to it and back
+        static font::Font alt;
+        alt = k;
+        for (int i = 0; i < font::kGlyphs; ++i) for (int r = 0; r < 8; ++r) alt.glyph[i][r] = static_cast<uint8_t>(i * 3 + r * 32 + 2);
+        memset(alt.glyph[32], 0, 8);                                             // a real font's space is blank
+        static font::Font m;
+        m = k;
+        font::set_letters(m, font::kClearLetters, nullptr);
+        gc.clear(0);
+        font::draw_text(gc, m, "HP 49", 2, 3, 10, 0);
+        font::set_letters(m, font::kAltLetters, &alt, &gc);
+        CHECK(m.letters == font::kAltLetters && !m.clear && memcmp(m.glyph[5], alt.glyph[5], 8) == 0 &&
+              memcmp(m.glyph[40], alt.glyph[40], 8) == 0 && memcmp(m.glyph[0], k.glyph[0], 8) == 0 &&
+              memcmp(m.glyph[70], k.glyph[70], 8) == 0);
+        want.clear(0);
+        font::draw_text(want, m, "HP 49", 2, 3, 10, 0);
+        CHECK(memcmp(gp, ep, sizeof gp) == 0);
+        font::set_letters(m, font::kGameLetters, &alt);
+        CHECK(m.letters == font::kGameLetters && memcmp(m.glyph, k.glyph, sizeof m.glyph) == 0);
+        font::set_letters(m, font::kAltLetters, nullptr);                         // no alt: stays the game's
+        CHECK(m.letters == font::kGameLetters);
     }
     static uint8_t px[pic::kScreenW * pic::kScreenH];
     pic::Canvas c{px, pic::kScreenW, pic::kScreenH};
@@ -2112,6 +2135,51 @@ static void test_icon_looks()
     CHECK(h == 2 && b == kLook[7].body && rec[0x141] == kLook[7].head);   // the record unchanged
     preview(Page::Heads, 99, rec, &h, &b, c);                             // out of range: as it is
     CHECK(h == kLook[7].head);
+}
+
+// The Companion's icons (a synthetic 24 x 24 BMP) and the picks file
+static void test_gbc_icons()
+{
+    for (int bits : {24, 32}) {
+        const int bytes = bits / 8, stride = (24 * bytes + 3) & ~3;
+        Bytes bmp(54 + stride * 24, 0);
+        auto le32 = [&](int at, uint32_t v) { for (int k = 0; k < 4; ++k) bmp[at + k] = static_cast<uint8_t>(v >> (8 * k)); };
+        bmp[0] = 'B'; bmp[1] = 'M';
+        le32(10, 54); le32(14, 40); le32(18, 24); le32(22, 24);
+        bmp[26] = 1; bmp[28] = static_cast<uint8_t>(bits);
+        for (int y = 0; y < 24; ++y)
+            for (int x = 0; x < 24; ++x) {
+                uint8_t* px = &bmp[54 + (23 - y) * stride + x * bytes];          // bottom-up
+                // background dark grey; (2,1) black; (3,1) bright red; (5,4) near-yellow
+                int r = 85, g = 85, b = 85;
+                if (y == 1 && x == 2) r = g = b = 0;
+                if (y == 1 && x == 3) r = 255, g = 85, b = 85;
+                if (y == 4 && x == 5) r = 250, g = 250, b = 90;
+                px[0] = static_cast<uint8_t>(b); px[1] = static_cast<uint8_t>(g); px[2] = static_cast<uint8_t>(r);
+            }
+        dax::MemorySource src(bmp.data(), static_cast<uint32_t>(bmp.size()));
+        uint8_t pic4[gbc_icons::kPicBytes];
+        CHECK(gbc_icons::bmp_to_pic4(src, pic4));
+        auto nib = [&](int x, int y) { const uint8_t b = pic4[y * 12 + x / 2]; return x & 1 ? b & 15 : b >> 4; };
+        CHECK(nib(0, 0) == 0 && nib(2, 1) == 8 && nib(3, 1) == 12 && nib(5, 4) == 14 && nib(23, 23) == 0);
+    }
+    Bytes junk(60, 0);
+    dax::MemorySource jsrc(junk.data(), static_cast<uint32_t>(junk.size()));
+    uint8_t pic4[gbc_icons::kPicBytes];
+    CHECK(!gbc_icons::bmp_to_pic4(jsrc, pic4));
+    gbc_icons::Choices c;
+    const char* text = "MATHEW=3\r\nSHARA=12\nbad line\nX=0\nTOOLONGNAMEXXXXXXXXX=4\n";
+    gbc_icons::parse(text, strlen(text), c);
+    CHECK(c.count == 2 && gbc_icons::find(c, "MATHEW") == 3 && gbc_icons::find(c, "SHARA") == 12 &&
+          gbc_icons::find(c, "MARK") == 0);
+    gbc_icons::set(c, "MARK", 7);
+    gbc_icons::set(c, "MATHEW", 0);
+    CHECK(c.count == 2 && gbc_icons::find(c, "MATHEW") == 0 && gbc_icons::find(c, "MARK") == 7);
+    char out[100];
+    const size_t n = gbc_icons::write(c, out, sizeof out);
+    gbc_icons::Choices d;
+    gbc_icons::parse(out, n, d);
+    CHECK(d.count == 2 && gbc_icons::find(d, "SHARA") == 12 && gbc_icons::find(d, "MARK") == 7);
 }
 
 static void test_journal_gbc()
@@ -5289,6 +5357,7 @@ int main()
     test_journal();
     test_journal_gbc();
     test_icon_looks();
+    test_gbc_icons();
     test_geo_view();
     test_party();
     test_items();

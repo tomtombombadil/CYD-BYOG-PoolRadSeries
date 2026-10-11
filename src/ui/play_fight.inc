@@ -447,6 +447,24 @@ void icon_compose(uint8_t* b, const uint8_t* h, int hh, const uint8_t* colours)
 void build_icon(const uint8_t* rec, Pic4& ic)
 {
     free_pic(ic);
+#if CYD_ICON_GALLERY
+    // A Gold Box Companion icon picked for this character (the player's
+    // copy of the Companion on the card)
+    if (opts.gallery && d->icon_picks.count) {
+        char nm[16];
+        rec_name(rec, nm);
+        const int pair = gbc_icons::find(d->icon_picks, nm);
+        if (pair > 0) {
+            ic.px[0] = load_gbc_icon(2 * pair - 1);
+            ic.px[1] = load_gbc_icon(2 * pair);
+            if (ic.px[0] && ic.px[1]) {
+                ic.w = ic.h = kSq;
+                return;
+            }
+            free_pic(ic);
+        }
+    }
+#endif
     const int head = rec[0x141], body = rec[0x142];
     const bool small = rec[0x144] == 1;
     for (int fr = 0; fr < 2; ++fr) {

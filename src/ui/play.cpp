@@ -14,6 +14,7 @@
 #include "engine/exepack.h"
 #include "engine/font.h"
 #include "engine/icon_looks.h"
+#include "engine/gbc_icons.h"
 #include "engine/journal.h"
 #include "engine/classes.h"
 #include "engine/combat.h"
@@ -63,6 +64,8 @@ struct Data {
     layout::Tiles  frame_tiles;
     layout::Tables tables;
     font::Font     font;
+    font::Font*    alt_font = nullptr;      // the player's Pools of Darkness font while it's chosen
+    bool           alt_tried = false;       // (its file was looked for)
     view3d::World& world;
     geo::Map       map;
     ecl::GameState& gs;
@@ -96,6 +99,8 @@ struct Data {
     savegame::Header save;                 // the saved game loaded
     bool           loaded = false;
     char           cache_dir[128] = {};     // _CYD/<folder>: what the engine keeps beside a save
+    gbc_icons::Choices icon_picks;          // the Companion icons picked, by name (_CYD/<folder>/ICONS.TXT)
+    int            gbc_pairs = -1;          // the Companion's icon pairs on the card (-1: not looked yet)
     int16_t        wall_block[3] = {-1, -1, -1}, wall_set[3] = {-1, -1, -1};   // the wall sets loaded (saves)
     // Add / Remove / Drop words (profile party.add_from ... yes_no, in order)
     enum Roster { kAddFrom, kAddSources, kAddPrompt, kAdd, kAdded, kPaladinEvil, kRangers, kNoEvil, kOverwrite,
@@ -1778,6 +1783,7 @@ void yes_no_key(char k, pic::Canvas& c)
 
 // The .GUY files in the save folder not already in the party
 char pool_dir[128] = {};        // the player's Pool of Radiance folder on the card ("" if none)
+char darkness_dir[128] = {};    // the player's Pools of Darkness folder ("" if none): its font
 Options opts;                   // the engine comforts switched on (Settings)
 
 bool in_party(const char* name)
@@ -6189,6 +6195,69 @@ void begin_adventuring()
     run_entry(4, Then::Begun);
 }
 
+// ---- The Gold Box Companion's icons (the player's copy on the card; an
+// engine comfort with the icon gallery): picks by name in _CYD/<folder>/ICONS.TXT
+void load_icon_picks()
+{
+    d->icon_picks = gbc_icons::Choices{};
+    if (!d->cache_dir[0]) return;
+    char path[200];
+    snprintf(path, sizeof path, "%s/ICONS.TXT", d->cache_dir);
+    fs::File f = sd_fs().open(path, "r");
+    if (!f) return;
+    char buf[700];
+    const int n = f.read(reinterpret_cast<uint8_t*>(buf), sizeof buf);
+    f.close();
+    if (n > 0) gbc_icons::parse(buf, static_cast<size_t>(n), d->icon_picks);
+}
+
+void save_icon_picks()
+{
+    if (!d->cache_dir[0]) return;
+    char buf[700];
+    const size_t n = gbc_icons::write(d->icon_picks, buf, sizeof buf);
+    write_file(d->cache_dir, "ICONS.TXT", reinterpret_cast<const uint8_t*>(buf), n);
+}
+
+// Companion icon file k (1..) into 4-bit rows (malloc'd), or nullptr
+uint8_t* load_gbc_icon(int k)
+{
+    char path[96];
+    snprintf(path, sizeof path, "%s/%s/%03d.bmp", games::kRootDir, gbc_icons::kFolder, k);
+    fs::File f = sd_fs().open(path, "r");
+    if (!f) return nullptr;
+    uint8_t* p = static_cast<uint8_t*>(malloc(gbc_icons::kPicBytes));
+    library::FileSource src(f);
+    if (p && !gbc_icons::bmp_to_pic4(src, p)) {
+        free(p);
+        p = nullptr;
+    }
+    f.close();
+    return p;
+}
+
+// How many icon pairs the Companion has on the card (looked once)
+int gbc_pairs()
+{
+    if (d->gbc_pairs >= 0) return d->gbc_pairs;
+    int n = 0;
+    for (; n < gbc_icons::kMaxPairs; ++n) {
+        char path[96];
+        snprintf(path, sizeof path, "%s/%s/%03d.bmp", games::kRootDir, gbc_icons::kFolder, 2 * n + 2);
+        if (!sd_fs().exists(path)) break;
+    }
+    d->gbc_pairs = n;
+    return n;
+}
+
+void rec_name(const uint8_t* rec, char* out)
+{
+    size_t n = rec[0] > 15 ? 15 : rec[0];
+    memcpy(out, rec + 1, n);
+    while (n > 0 && out[n - 1] == ' ') --n;
+    out[n] = 0;
+}
+
 #include "play_fight.inc"
 
 // ---- the icon editor (alter_icon_facts.md 1): Alter -> Icon, and Create
@@ -6207,6 +6276,7 @@ struct IconEdit {
     int      part = 0;                  // level 5: 0 head, 1 body, 2 a colour
     int      slot = 0;                  // the colour slot (0-5)
     bool     second = false;            // 2nd-color
+    bool     picks_changed = false;     // a Gold Box Companion icon picked / dropped (ICONS.TXT to write)
     Pic4     old_ic, new_ic, base[2];
     char     menus[5][42] = {};
     char     words[profile::kIconWords][20] = {};
@@ -6374,6 +6444,7 @@ void create_after_icon(pic::Canvas& c);
 void end_icon(pic::Canvas& c)
 {
     const Screen from = ie->from;
+    if (ie->picks_changed) save_icon_picks();
     end_icon_art();
     palette_fight(false);
     if (from == Screen::CreateName) {
@@ -6532,7 +6603,28 @@ constexpr int kGalX = 12, kGalY = 18, kGalPitchX = 58, kGalPitchY = 55, kGalBox 
 constexpr int kGalNavX = kGalX + kGalCols * kGalPitchX + 2, kGalNavW = 308 - kGalNavX;
 
 icon_looks::Page gal_page() { return static_cast<icon_looks::Page>(ie->gpage); }
-int gal_pages() { return (icon_looks::count(gal_page()) + kGalPer - 1) / kGalPer; }
+// The page's choices: Icons also has the Companion's icons after the
+// engine's own (the player's copy of the Companion on the card)
+int gal_count()
+{
+    return icon_looks::count(gal_page()) + (gal_page() == icon_looks::Page::Looks ? gbc_pairs() : 0);
+}
+bool gal_gbc(int i) { return gal_page() == icon_looks::Page::Looks && i >= icon_looks::kLooks; }
+int gal_pick_now()           // the character's Companion pick (pair from 1), 0 none
+{
+    char nm[16];
+    rec_name(ie->ch->rec, nm);
+    return gbc_icons::find(d->icon_picks, nm);
+}
+void gal_set_pick(int pair)
+{
+    char nm[16];
+    rec_name(ie->ch->rec, nm);
+    if (gbc_icons::find(d->icon_picks, nm) == pair) return;
+    gbc_icons::set(d->icon_picks, nm, pair);
+    ie->picks_changed = true;
+}
+int gal_pages() { return (gal_count() + kGalPer - 1) / kGalPer; }
 
 // The cell (a choice's index) under canvas (x, y), or -1
 int gal_cell_at(int x, int y)
@@ -6541,7 +6633,7 @@ int gal_cell_at(int x, int y)
     const int col = (x - kGalX) / kGalPitchX, row = (y - kGalY) / kGalPitchY;
     if (col >= kGalCols || row >= kGalRows) return -1;
     const int i = ie->gfirst + row * kGalCols + col;
-    return i < icon_looks::count(gal_page()) ? i : -1;
+    return i < gal_count() ? i : -1;
 }
 
 // The square around choice i's icon (its highlight); i on the page shown
@@ -6655,6 +6747,16 @@ void blit4_x2(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y)
 
 void gal_cell(pic::Canvas& c, int i)
 {
+    if (gal_gbc(i)) {
+        // A Companion icon (its ready pose)
+        int x, y, w, h;
+        gal_box(i, &x, &y, &w, &h);
+        blit4_x2(c, ie->base[0].px[0], ie->base[0].w, ie->base[0].h, x + 3, y + 3);
+        uint8_t* p = load_gbc_icon(2 * (i - icon_looks::kLooks) + 1);
+        blit4_x2(c, p, kSq, kSq, x + 3, y + 3);
+        free(p);
+        return;
+    }
     uint8_t head, body, colours[6];
     icon_looks::preview(gal_page(), i, ie->ch->rec, &head, &body, colours);
     int x, y, w, h;
@@ -6684,7 +6786,11 @@ void gal_draw_page(pic::Canvas& c, int first)
 {
     ie->gfirst = first - first % kGalPer;
     c.fill(8, kGalY - 2, 304, 184 - kGalY + 2, 0);
-    const int n = icon_looks::count(gal_page());
+    static const char* const kTitle[icon_looks::kPages] = {"Ready-Made Icons", "Heads", "Weapons", "Colors"};
+    c.fill(16, 8, 288, 8, 0);
+    put(c, gal_gbc(ie->gfirst) ? "Gold Box Companion Icons" : kTitle[ie->gpage], 2, 1, 15);
+    dirty(8, 16);
+    const int n = gal_count();
     for (int i = ie->gfirst; i < n && i < ie->gfirst + kGalPer; ++i) gal_cell(c, i);
     gal_frame(c, ie->gsel, 15);
     const int pages = gal_pages();
@@ -6709,24 +6815,29 @@ void gal_open(pic::Canvas& c, int page)
     ie->level = 1;
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
-    static const char* const kTitle[icon_looks::kPages] = {"Ready-Made Icons", "Heads", "Weapons", "Colors"};
-    put(c, kTitle[page], 2, 1, 15);
     dirty(0, pic::kScreenH);
     if (!gal_parts()) {
         gal_menu(c);
         error(c, no_memory("the icon gallery"));
         return;
     }
-    ie->gsel = icon_looks::match(gal_page(), ie->ch->rec);
+    const int pick = gal_pick_now();
+    ie->gsel = pick ? (gal_page() == icon_looks::Page::Looks ? icon_looks::kLooks + pick - 1 : -1)
+                    : icon_looks::match(gal_page(), ie->ch->rec);
     gal_draw_page(c, ie->gsel < 0 ? 0 : ie->gsel);
     gal_menu(c);
 }
 
 void gal_pick(int i, pic::Canvas& c)
 {
-    if (i < 0 || i >= icon_looks::count(gal_page())) return;
+    if (i < 0 || i >= gal_count()) return;
     gal_frame(c, ie->gsel, 0);
-    icon_looks::apply(gal_page(), i, ie->ch->rec);
+    if (gal_gbc(i)) {
+        gal_set_pick(i - icon_looks::kLooks + 1);
+    } else {
+        gal_set_pick(0);                    // (the game's own icon again)
+        icon_looks::apply(gal_page(), i, ie->ch->rec);
+    }
     ie->gsel = i;
     if (i < ie->gfirst || i >= ie->gfirst + kGalPer) gal_draw_page(c, i);   // (Up / Down past the page)
     else gal_frame(c, i, 15);
@@ -6752,6 +6863,7 @@ void gal_key(char k, pic::Canvas& c)
             return;
         }
     if (k != 'E' && k != 'D') return;
+    if (k == 'E') gal_set_pick(0);          // (the editor works on the game's own icon)
     // The picks are kept; on to the original editor, or its question
     ie->gpage = -1;
     icon_take(ie->keep, ie->ch->rec);
@@ -6782,7 +6894,7 @@ void gal_tap(int x, int y, pic::Canvas& c)
 // Up / Down: the next / previous choice, picked (the page turns with it)
 void gal_step(int step, pic::Canvas& c)
 {
-    const int n = icon_looks::count(gal_page());
+    const int n = gal_count();
     int i;
     if (ie->gsel >= ie->gfirst && ie->gsel < ie->gfirst + kGalPer) i = (ie->gsel + step + n) % n;
     else i = step > 0 ? ie->gfirst : (ie->gfirst + kGalPer < n ? ie->gfirst + kGalPer : n) - 1;   // (none on this page)
@@ -7399,13 +7511,41 @@ bool icon_preview(bool action, uint8_t* out)
     return true;
 }
 
+// The letters the game's text is in (Options::font): loads the player's
+// Pools of Darkness font the first time it's asked for; without it (or
+// short of memory) the game's own
+int font_wanted()
+{
+    if (!CYD_CLEAR_FONT || !d) return font::kGameLetters;
+    if (opts.font == 1) return font::kClearLetters;
+    if (opts.font != 2) return font::kGameLetters;
+    if (!d->alt_font && !d->alt_tried && darkness_dir[0]) {
+        d->alt_tried = true;
+        char path[160];
+        snprintf(path, sizeof path, "%s/8X8D0.DAX", darkness_dir);
+        fs::File f = sd_fs().open(path, "r");
+        font::Font* af = f ? new (std::nothrow) font::Font : nullptr;
+        if (af) {
+            library::FileSource src(f);
+            dax::Index* idx = new (std::nothrow) dax::Index;
+            const bool ok = idx && dax::read_index(src, *idx) == dax::Status::Ok && font::load(src, *idx, *af);
+            delete idx;
+            if (ok) d->alt_font = af;
+            else delete af;
+        }
+        if (f) f.close();
+    }
+    return d->alt_font ? font::kAltLetters : font::kGameLetters;
+}
+
 void set_options(const Options& o)
 {
     opts = o;
-    const bool clear = CYD_CLEAR_FONT && opts.clear_font;
-    if (!d || d->font.clear == clear) return;
+    if (!d) return;
+    const int letters = font_wanted();
+    if (d->font.letters == letters) return;
     // Mid-game (Tom, 2026-10-11): the text on the screen changes font too
-    font::set_clear(d->font, clear, cv);
+    font::set_letters(d->font, letters, d->alt_font, cv);
     if (cv) {
         if (screen == Screen::Game && !pic_shown && bigpic < 0) draw_view(*cv);   // (the 3D view as it was)
         // The party list and the menu line again: their mixed case as written
@@ -7413,6 +7553,12 @@ void set_options(const Options& o)
         if (menu_on) show_menu_line(*cv);
         dirty(0, pic::kScreenH);
     }
+}
+
+void set_darkness_dir(const char* dir)
+{
+    strncpy(darkness_dir, dir ? dir : "", sizeof darkness_dir - 1);
+    darkness_dir[sizeof darkness_dir - 1] = 0;
 }
 
 void set_pool_dir(const char* dir)
@@ -7464,6 +7610,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     }
     strncpy(d->data_dir, data_dir, sizeof d->data_dir - 1);
     if (cache_dir) strncpy(d->cache_dir, cache_dir, sizeof d->cache_dir - 1);
+    load_icon_picks();
 
     fs::File f;
     if (!open_file(prog, f)) {
@@ -7502,7 +7649,10 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
         ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles) && font::load(src, d->idx, d->font) &&
              view3d::load_tiles(src, d->idx, d->prof->common_tiles_block, d->world.common);
         f.close();
-        font::set_clear(d->font, CYD_CLEAR_FONT && opts.clear_font);
+        if (ok) {
+            const int letters = font_wanted();     // (loads the alt font first)
+            font::set_letters(d->font, letters, d->alt_font);
+        }
     }
     if (!ok) {
         snprintf(msg, sizeof msg, "%s: the tiles or font didn't load.", d->prof->tiles_file);
@@ -7624,6 +7774,7 @@ void close()
     if (d) {
         view3d::World* w = &d->world;
         ecl::GameState* g = &d->gs;
+        delete d->alt_font;
         delete d;
         delete w;
         delete g;

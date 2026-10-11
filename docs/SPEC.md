@@ -271,7 +271,7 @@ stay in the session's scratch space, never in the repo.
    v0.72.0 (Tom, 2026-10-11: Curse playable): the game's page is two big
    keys, **Play** (the former Play Test) and **Settings**. Settings (one
    set for all games, saved with the engine's settings) holds the engine
-   comforts' switches - Clear Font (v0.73.0), Icon Gallery, Large Icon,
+   comforts' switches - Game Font (v0.73.0; Original / Clear / Darkness since v0.74.0), Icon Gallery, Large Icon,
    Journal Pop-Up, Demo Tap Stops, More Characters - and Game Sound (Tandy / PC Speaker / Off), each
    key lit when on; below them **As Original** (every comfort off; then the
    key reads All On) and **Dev Tools** (Resource Test, Screen Test, Walk
@@ -733,6 +733,13 @@ a PC, PortMaster handhelds):
     colour on black, or black on one colour for the menu's choice) is
     redrawn in the new font, then the 3D view, the party list and the menu
     line are drawn again (`font::set_clear` with a canvas).
+    v0.74.0 (Tom): a third choice, the player's own **Pools of Darkness**
+    font (block 201 of 8X8D0.DAX in their Pools of Darkness folder on the
+    card; its glyphs 1-26 and 32-63, capitals only) - the key is **Game
+    Font**, cycling Original / Clear / Darkness (Darkness only offered
+    when that folder was found; settings.h `game_font` 0 / 1 / 2, older
+    files' Clear = 1). `font::set_letters` swaps any of the three, mid-game
+    too (the same redraw; checked pixel for pixel against a fresh start).
   - `CYD_ICON_GALLERY` (v0.71.0, Tom: making icons a value at a time is
     "one of the worst parts of the game"): the icon editor (Alter -> Icon,
     Create New Character) opens on a gallery - pages Icons (32 ready-made
@@ -751,6 +758,18 @@ a PC, PortMaster handhelds):
     Gold Box Companion has no ready-made character icons (its Head.bmp /
     Body.bmp are the same parts; its other pictures are the NPCs), so
     there was nothing of the player's to take them from.
+    v0.74.0 (Tom): the GOG release of the Companion does have combat icons
+    (GBC/DAX-Icons-EGA: 24 x 24 BMPs in pairs, odd = ready, even =
+    action, dark grey behind). With the player's copy of the Companion's
+    GBC folder on the card as **/GOLDBOX/GBC**, its pairs follow the
+    ready-made icons as more gallery pages ("Gold Box Companion Icons").
+    The games' character records hold only head / body / colours, so a
+    pick is the engine's own note, by name, in `_CYD/<folder>/ICONS.TXT`
+    ("NAME=n"); fights draw the picked pair instead of the head / body
+    icon (dark grey see-through, black kept black). Tapping another gallery
+    icon or Edit drops the pick. Never shipped: the Companion is its
+    author's work, read only from the card (Tom, `engine/gbc_icons.*`,
+    host-tested with synthetic BMPs).
 
 ## 12. Where the engine differs from the original games (Tom, 2026-10-10: keep this list up to date)
 
@@ -782,12 +801,15 @@ the game's Settings (As Original: all of them).
   characters can't be added (not one of the engine's games) (switch
   `CYD_MORE_CHARACTERS`).
 - **The icon editor's big preview** (switch `CYD_BIG_ICON_PREVIEW`).
-- **The Clear font** (switch `CYD_CLEAR_FONT`): the engine's own upright,
-  bold letters with lower case instead of the game's font.
+- **The game font** (switch `CYD_CLEAR_FONT`): the engine's own Clear font
+  (upright, bold letters with lower case) or the player's Pools of Darkness
+  font instead of the game's own; changeable mid-game.
 - **The icon gallery** (switch `CYD_ICON_GALLERY`): the icon editor opens
   on ready-made icons, heads, weapons and colour schemes to tap; the
   original's Parts / colours / Size menus are behind Edit, and their Exit
   goes back to the gallery instead of straight to "Is this icon ok?".
+  With the player's Gold Box Companion on the card its combat icons can be
+  picked too (kept by name in the engine's ICONS.TXT, not in the save).
 - **Sound**: Tandy (default), PC speaker or off, with a volume slider in
   the engine's Settings.
 - **Saving**: the GOG files' save folder on the card, as the game.

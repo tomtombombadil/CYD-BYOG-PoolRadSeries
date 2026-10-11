@@ -31,8 +31,10 @@ constexpr int kRows = pic::kScreenH / 8;   // 25
 struct Font {
     uint8_t glyph[kGlyphs][8];
     bool loaded = false;
-    // The engine's Clear font in place of the game's letters (set_clear)
-    bool    clear = false;
+    // Other letters in place of the game's (set_letters): the engine's
+    // Clear font (with lower case) or another game's font
+    uint8_t letters = 0;               // kGameLetters / kClearLetters / kAltLetters
+    bool    clear = false;             // the Clear font's (lower case has glyphs of its own)
     uint8_t saved[26 + 32][8];         // the game's glyphs 1-26 and 32-63 while it is
 };
 
@@ -51,6 +53,13 @@ extern const uint8_t kClearText[32][8];
 // choice) gets the new font's glyph in the same colours. (Lower case
 // printed in capitals by the game's font stays capitals.)
 void set_clear(Font& f, bool on, pic::Canvas* redraw = nullptr);
+
+// The letters a font prints with (Tom, 2026-10-11): the game's own, the
+// Clear font, or another game's (alt: e.g. the player's own Pools of
+// Darkness font - its glyphs 1-26 and 32-63; capitals only). Redraw as
+// set_clear. kAltLetters without a loaded alt: the game's own.
+enum { kGameLetters = 0, kClearLetters = 1, kAltLetters = 2 };
+void set_letters(Font& f, int letters, const Font* alt, pic::Canvas* redraw = nullptr);
 
 // Loads block 201 from an open DAX file. False if the file has no such
 // block or it isn't 1416 bytes.

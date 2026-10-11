@@ -33,6 +33,11 @@
 // comes back here); Done asks the original's "Is this icon ok?" (No: back
 // here). The pictures are the player's own CHEAD / CBODY parts; the schemes
 // and combinations are the engine's (engine/icon_looks.*).
+// v0.74.0 (Tom): with the player's Gold Box Companion on the card
+// (/GOLDBOX/GBC, its GOG release's DAX-Icons-EGA), its icon pairs follow as
+// more pages; a pick is kept by the character's name (_CYD/<folder>/
+// ICONS.TXT) and drawn in fights instead of the head / body icon. Never
+// shipped: the Companion is its author's work (engine/gbc_icons.*).
 // Where: play.cpp (gal_*), viewer.cpp (no 320x240 big preview over it).
 // 0: the original editor only.
 #ifndef CYD_ICON_GALLERY
@@ -60,7 +65,11 @@
 // read on 2.8" - 4.0" screens. The game's symbols and frame pieces stay.
 // Off unless the player picks it (Tom); switchable mid-game (Game menu ->
 // Options), the text on screen changing with it.
-// Where: engine/font.* (set_clear), play.cpp.
+// v0.74.0 (Tom): the switch is the Game Font key - Original / Clear /
+// Darkness, the last the player's own Pools of Darkness font (8X8D0.DAX in
+// their Pools of Darkness folder; offered only when it's on the card).
+// Where: engine/font.* (set_letters), play.cpp (font_wanted), viewer.cpp,
+// settings.h (game_font).
 #ifndef CYD_CLEAR_FONT
 #define CYD_CLEAR_FONT 1
 #endif
