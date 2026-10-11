@@ -110,6 +110,7 @@ enum CastWord {
     kToChoose, kLearnKey,                                                         // training's "to Choose", "Learn"
     kThatItem, kCombatOnly, kUseIt,                                               // "That Item", "is a combat-only item...", "Use it? "
     kUsesItem, kItemColon, kOops, kOnScroll,                                      // "uses an item", "Item:", "oops!", "on Scroll"
+    kMiscasts,                                                                    // "miscasts" (the Robe of Vermin)
     kCastWords
 };
 

@@ -4199,10 +4199,14 @@ void choose_spell(int spell, pic::Canvas& c)
         error(c, "Not in the engine yet.");          // the spell stays in memory
         return;
     }
+    // The Robe of Vermin's effect on the caster: a d2 of 1 - "NAME miscasts" /
+    // the spell, nothing else, the spell kept (listing ovr023:1403, the cast)
+    const uint8_t vermin = d->prof->fight.facts.items.vermin;
+    const bool miscast = vermin && pt->m[cr.caster].has_affect(vermin) && rng.roll(2, 1) == 1;
     // "NAME casts" / the spell, for a moment
     char nm[20], w1[16], t[48];
     pt->m[cr.caster].name(nm, sizeof nm);
-    cw(profile::kCasts, w1, sizeof w1);
+    cw(miscast ? profile::kMiscasts : profile::kCasts, w1, sizeof w1);
     snprintf(t, sizeof t, "%s %s", nm, w1);
     c.fill(8, 17 * 8, 38 * 8, 6 * 8, 0);
     put(c, t, 1, 19, 10);
@@ -4211,6 +4215,11 @@ void choose_spell(int spell, pic::Canvas& c)
     clear_menu_line(c);
     screen = Screen::Cast;
     cr.stage = CastRun::Casts;
+    if (miscast) {
+        // (then the memory list again: nothing said, nothing cast)
+        cr.stage = CastRun::Saying;
+        cr.n = cr.at = 0;
+    }
     cr.until = millis() + game_delay_ms();
     if (!cr.until) cr.until = 1;
 }
