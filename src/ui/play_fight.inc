@@ -144,6 +144,14 @@ void fight_load_monster(int id, int copies, int icon)
     Serial.printf("[play] LOAD MONSTER %d x%d (icon %d): %d monsters\n", id, copies, icon, ml->n);
 }
 
+// The k-th loaded monster's own record (LOAD CHARACTER past the party: the
+// scripts can change one before the fight - the Thieves' Guild hideout makes
+// four of the loaded thieves fight on the party's side); nullptr past them
+uint8_t* fight_monster_record(int k)
+{
+    return ml && k >= 0 && k < ml->n ? ml->m[k].rec : nullptr;
+}
+
 // ---- Pictures, 4 bits a pixel
 struct Pic4 {
     uint8_t w = 0, h = 0;

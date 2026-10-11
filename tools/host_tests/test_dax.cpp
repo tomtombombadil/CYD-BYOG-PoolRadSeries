@@ -1712,6 +1712,32 @@ static void test_vm_events_facts()
     party(3);
     pa.m[0].n_affects = 1; pa.m[0].affects[0][0] = 0x41;                                 // slowed: 6
     flee(1);
+    // LOAD CHARACTER past the party: the loaded monsters (the original's list
+    // goes on into them) - their fields read and written; past them: not found
+    {
+        struct MonHost : PartyHost {
+            uint8_t mon[2][party::kRecordSize] = {};
+            uint8_t* monster_record(int k) override { return k >= 0 && k < 2 ? mon[k] : nullptr; }
+        } mh;
+        mh.p = &pa;
+        mh.mon[1][0x197] = 1;
+        mh.mon[1][0x75] = 9;
+        party(3);
+        pa.selected = 1;
+        ecl::Vm vm(gs, mh, *p->ecl_ops);
+        vm.set_party(&pa);
+        Bytes b;
+        b.push_back(0x0A); op_imm(b, 4);                                     // the 2nd monster
+        b.push_back(0x09); op_addr(b, 0x7C73); op_addr(b, 0x4C00);         // its class
+        b.push_back(0x09); op_imm(b, 0x80); op_addr(b, 0x7D0C);             // to the party's side
+        b.push_back(0x09); op_addr(b, 0x7EB1); op_addr(b, 0x4C01);         // its place in the list
+        b.push_back(0x0A); op_imm(b, 5);                                     // past them
+        b.push_back(0x09); op_addr(b, 0x7D00); op_addr(b, 0x4C02);
+        b.push_back(0x00);
+        CHECK(run(b, mh, vp, vm) == ecl::Stop::Stopped);
+        CHECK(vm.get(0x4C00) == 9 && vm.get(0x4C01) == 4 && vm.get(0x4C02) == 0);
+        CHECK(mh.mon[1][0x197] == 0 && mh.mon[1][0x198] == 1 && pa.m[1].rec[0x198] == 0 && pa.selected == 1);
+    }
 }
 
 // AND / OR: the flags as the original sets them - 0 against the result

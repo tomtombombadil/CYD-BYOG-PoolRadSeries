@@ -197,6 +197,7 @@ void sfx(int id)
 }
 
 void fight_load_monster(int id, int copies, int icon);
+uint8_t* fight_monster_record(int k);
 bool npc_join(int id);
 bool party_dead = false;      // DAMAGE killed everyone: the party menu after the script
 // The demo (demo_facts.md): area 1, ECL1 block 0x52's first run, speed 9,
@@ -5659,6 +5660,7 @@ struct Host : ecl::Host {
     }
     void load_monster(int id, int copies, int icon) override { fight_load_monster(id, copies, icon); }
     void clear_monsters() override { fight_clear_monsters(); }
+    uint8_t* monster_record(int k) override { return fight_monster_record(k); }
     bool add_npc(int id) override { return npc_join(id); }
     void party_changed() override
     {
@@ -6052,6 +6054,10 @@ void step(int dir_of_step)
         const bool off = nx < 0 || nx > 15 || ny < 0 || ny > 15;
         vm->set(0x7ED5, d->map.loaded && off && geo::passage(d->map, g.x, g.y, dir_of_step) != 0 ? 1 : 0);
     }
+    // The original's exploring menu clears 0x7EC9 (field_592) before every
+    // key: a "don't move" left by an earlier script (a block's first run)
+    // doesn't hold back this step - only this step's script can
+    vm->set(0x7EC9, 0);
     // The step script runs before the move, on the square the party is on
     run_entry(0, Then::Move);
 }

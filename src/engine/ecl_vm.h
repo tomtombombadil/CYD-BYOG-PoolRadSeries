@@ -106,6 +106,10 @@ public:
     // fight, its CPIC<area> icon block; CLEARMONSTERS: none
     virtual void load_monster(int id, int copies, int icon) { (void)id; (void)copies; (void)icon; }
     virtual void clear_monsters() {}
+    // The k-th monster loaded for the next fight (its own copy's record),
+    // nullptr past them: the original's LOAD MONSTER puts them at the end of
+    // the party's list, so LOAD CHARACTER can select them
+    virtual uint8_t* monster_record(int k) { (void)k; return nullptr; }
     // ADD NPC: MON<area> block `id` (record, effects, items; CPIC icon) joins
     // the party at its end and is selected; false when it can't (full)
     virtual bool add_npc(int id) { (void)id; return false; }
@@ -143,6 +147,9 @@ public:
     // Treasure and shop goods the scripts set out (TREASURE)
     void set_ground(items::Ground* g) { ground_ = g; }
     bool monsters() const { return monsters_; }
+#ifdef CYD_TEST_HOOKS
+    void test_set_monsters(bool v) { monsters_ = v; }     // (tests: a dumped state put back)
+#endif
     // How far apart the two sides start a fight (map squares): the
     // encounter's distance, no further than the party can see
     int fight_distance() const
@@ -216,6 +223,8 @@ private:
     // one it didn't find (0x7D00 reads 0 once), the writes of 0 to 0x7C00 /
     // 0x7D00 that let LOAD CHARACTER + 0x80 remove a member
     int  start_sel_ = 0;
+    int  sel_mon_ = -1;                 // LOAD CHARACTER chose loaded monster k (-1: a member)
+    uint8_t* sel_rec() const { return sel_mon_ >= 0 ? h_.monster_record(sel_mon_) : nullptr; }
     bool restore_ = false;
     mutable bool not_found_ = false;
     bool cleared_name_ = false, cleared_status_ = false;

@@ -1251,16 +1251,77 @@ static void b_dump(FILE* f, int area, int block)
     hex("CODE", g.code, g.code_len);
     for (int k = 0; k < 4; ++k) hex("GEO", d->map.plane[k], 256);
     fprintf(f, "MAPLOADED %d\n", d->map.loaded ? 1 : 0);
+    fprintf(f, "MONSTERS %d\n", vm->monsters() ? 1 : 0);
     fprintf(f, "PARTY %d\n", pt->count);
     for (int i = 0; i < pt->count; ++i) {
         hex("REC", pt->m[i].rec, party::kRecordSize);
-        fprintf(f, "ITEMS %d", pt->m[i].n_items);
-        for (int k = 0; k < pt->m[i].n_items; ++k) fprintf(f, " %d", pt->m[i].items[k][0x2E]);
-        fprintf(f, "\nFX %d", pt->m[i].n_affects);
-        for (int k = 0; k < pt->m[i].n_affects; ++k) fprintf(f, " %d", pt->m[i].affects[k][0]);
-        fprintf(f, "\n");
+        hex("ITEMS", &pt->m[i].items[0][0], party::kItemSize * pt->m[i].n_items);
+        hex("FX", &pt->m[i].affects[0][0], party::kAffectSize * pt->m[i].n_affects);
     }
     fprintf(f, "END\n");
+}
+
+// Reads the dumped state of ECL<area> block `block` back into the game
+static bool b_monsters = false;
+static bool b_restore(const char* path, int area, int block)
+{
+    using namespace play;
+    FILE* f = fopen(path, "r");
+    if (!f) return false;
+    static char line[40000];
+    bool in = false;
+    int member = -1, geo_n = 0;
+    auto unhex = [](const char* s, uint8_t* out, size_t cap) {
+        size_t n = 0;
+        while (s[0] && s[1] && s[0] != '\n' && n < cap) {
+            unsigned v;
+            sscanf(s, "%2x", &v);
+            out[n++] = static_cast<uint8_t>(v);
+            s += 2;
+        }
+        return n;
+    };
+    ecl::GameState& g = d->gs;
+    while (fgets(line, sizeof line, f)) {
+        int a, b, x, y, dir, sel;
+        unsigned len;
+        if (sscanf(line, "STATE %d %d %d %d %d %u %d", &a, &b, &x, &y, &dir, &len, &sel) == 7) {
+            in = a == area && b == block;
+            if (in) {
+                g.x = x;
+                g.y = y;
+                g.dir = dir;
+                g.code_len = len;
+                pt->selected = sel;
+                member = -1;
+            }
+            continue;
+        }
+        if (!in) continue;
+        const char* sp = strchr(line, ' ');
+        const char* v = sp ? sp + 1 : "";
+        if (!strncmp(line, "AREA1 ", 6)) unhex(v, g.area1, sizeof g.area1);
+        else if (!strncmp(line, "AREA2 ", 6)) unhex(v, g.area2, sizeof g.area2);
+        else if (!strncmp(line, "TABLE ", 6)) unhex(v, g.table, sizeof g.table);
+        else if (!strncmp(line, "CODE ", 5)) unhex(v, g.code, sizeof g.code);
+        else if (!strncmp(line, "GEO ", 4) && geo_n < 4) unhex(v, d->map.plane[geo_n++], 256);
+        else if (!strncmp(line, "MAPLOADED ", 10)) d->map.loaded = atoi(v) != 0;
+        else if (!strncmp(line, "MONSTERS ", 9)) b_monsters = atoi(v) != 0;
+        else if (!strncmp(line, "PARTY ", 6)) pt->count = atoi(v);
+        else if (!strncmp(line, "REC ", 4)) unhex(v, pt->m[++member].rec, party::kRecordSize);
+        else if (!strncmp(line, "ITEMS", 5))
+            pt->m[member].n_items = static_cast<int>(unhex(v, &pt->m[member].items[0][0], sizeof pt->m[member].items) / party::kItemSize);
+        else if (!strncmp(line, "FX", 2))
+            pt->m[member].n_affects = static_cast<int>(unhex(v, &pt->m[member].affects[0][0], sizeof pt->m[member].affects) / party::kAffectSize);
+        else if (!strncmp(line, "END", 3)) {
+            fclose(f);
+            g.game_area = static_cast<uint8_t>(area);
+            g.script = static_cast<uint8_t>(block);
+            return true;
+        }
+    }
+    fclose(f);
+    return false;
 }
 
 // One step from (x, y, dir): the waits met (up to 3), then where the party is
@@ -1335,9 +1396,11 @@ static std::string b_one_step(int area, int block, int x, int y, int dir)
             return out;               // a fight, a shop, the camp ...: the oracle stops there too
         }
         out += t;
-        // empty prints ("\n") count as nothing
-        if (wt == (int)ecl::Wait::Print && !*vm->text()) out.resize(out.size() - strlen(t));
-        else ++events;
+        // empty prints (only spaces / "\n") count as nothing
+        bool blank = wt == (int)ecl::Wait::Print;
+        for (const char* q = vm->text(); blank && *q; ++q) blank = *q == ' ' || *q == '\n';
+        if (blank) out.resize(out.size() - strlen(t));
+        else if (++events >= 3) return out;
     }
     char t[32];
     snprintf(t, sizeof t, " AT:%d,%d,%d", d->gs.x, d->gs.y, d->gs.dir);
@@ -1348,18 +1411,22 @@ static std::string b_one_step(int area, int block, int x, int y, int dir)
 static bool b_enter(int area, int block)
 {
     using namespace play;
-    if (!boot()) return false;
-    god = true;
-    d->gs.game_area = static_cast<uint8_t>(area);
-    vm->set(0x7F12, d->gs.game_area);
-    d->gs.script = static_cast<uint8_t>(block);
-    waiting = false;
-    if (!host->load_script(d->gs.script, d->gs.code, &d->gs.code_len) || !vm->init_script()) return false;
-    rnd.seed(1);
-    run_entry(4, Then::NewFirst);
-    const bool ok = pump();
-    god = false;
-    return ok && d->gs.script == block && d->gs.game_area == area && screen == Screen::Game && !waiting;
+    for (int seed = 1; seed <= 6; ++seed) {
+        if (!boot()) return false;
+        god = true;
+        d->gs.game_area = static_cast<uint8_t>(area);
+        vm->set(0x7F12, d->gs.game_area);
+        d->gs.script = static_cast<uint8_t>(block);
+        waiting = false;
+        if (!host->load_script(d->gs.script, d->gs.code, &d->gs.code_len) || !vm->init_script()) return false;
+        rnd.seed(static_cast<unsigned>(seed));
+        dice_usual();
+        run_entry(4, Then::NewFirst);
+        const bool ok = pump(60000);
+        god = false;
+        if (ok && d->gs.script == block && d->gs.game_area == area && screen == Screen::Game && !waiting) return true;
+    }
+    return false;
 }
 
 static const int b_blocks[][2] = {{1, 80}, {1, 81}, {1, 82}, {2, 1},  {2, 2},  {2, 3},  {2, 4},  {3, 16}, {3, 17},
@@ -1373,9 +1440,7 @@ static void behave_events_dump(const char* path)
     if (!f) return;
     for (auto& ab : b_blocks) {
         if (getenv("BLOCK") && atoi(getenv("BLOCK")) != ab[1]) continue;
-        dice_low();
         const bool ok = b_enter(ab[0], ab[1]);
-        dice_usual();
         if (!ok) {
             fprintf(f, "SKIP %d %d\n", ab[0], ab[1]);
             continue;
@@ -1398,12 +1463,15 @@ static void b_triggers()
         char key[48];
         snprintf(key, sizeof key, "BLOCK%d_%d", ab[0], ab[1]);
         if (b_oracle.find(key) == b_oracle.end()) continue;
-        dice_low();
-        if (!b_enter(ab[0], ab[1])) {
+        const char* sp = getenv("EVSTATE");
+        const std::string states = sp ? sp : "/tmp/claude-0/bt_events/states.txt";
+        if (!b_enter(ab[0], ab[1]) || !b_restore(states.c_str(), ab[0], ab[1]) || !vm->init_script(true) ||
+            !b_restore(states.c_str(), ab[0], ab[1])) {
             dice_usual();
-            expect(P, "triggers: into the block", false, "ECL%d block %d", ab[0], ab[1]);
+            expect(P, "triggers: into the block (the dumped state)", false, "ECL%d block %d", ab[0], ab[1]);
             continue;
         }
+        vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
         // the state to go back to before every step
         static ecl::GameState g0;
         static party::Party p0;
@@ -1425,6 +1493,7 @@ static void b_triggers()
                     if (!d || d->gs.script != ab[1] || d->gs.game_area != ab[0] || screen != Screen::Game || waiting) {
                         if (!b_enter(ab[0], ab[1])) break;
                     }
+                    d->gs = g0;
                     vm->init_script(true);
                     d->gs = g0;
                     *pt = p0;
@@ -1432,12 +1501,41 @@ static void b_triggers()
                     waiting = false;
                     then = Then::Idle;
                     note_until = 0;
-                    dice_low();
+                    vm->test_set_monsters(b_monsters);
+                    dice_high();               // (RANDOM n gives n: the scripts' "until" loops end)
                     const std::string got = b_one_step(ab[0], ab[1], x, y, dir);
                     ++n;
-                    if (got != want) {
+                    // "STOP": the oracle went no further (a fight, party damage
+                    // ...) - the events before it must match; "P:*" any text
+                    std::vector<std::string> wt, gt;
+                    {
+                        char buf[512];
+                        snprintf(buf, sizeof buf, "%s", want.c_str());
+                        for (char* t = strtok(buf, " "); t; t = strtok(nullptr, " ")) wt.push_back(t);
+                        snprintf(buf, sizeof buf, "%s", got.c_str());
+                        for (char* t = strtok(buf, " "); t; t = strtok(nullptr, " ")) gt.push_back(t);
+                    }
+                    bool same = true;
+                    const bool partial = !wt.empty() && wt.back() == "STOP";
+                    const size_t nw = partial ? wt.size() - 1 : wt.size();
+                    if (!partial && gt.size() != nw) same = false;
+                    for (size_t k = 0; same && k < nw; ++k) {
+                        if (k >= gt.size()) same = false;
+                        else if (wt[k] == "P:*") same = gt[k].compare(0, 2, "P:") == 0;
+                        else {
+                            // the front end goes straight to the screen for what the script waits on
+                            char scr[24] = "";
+                            // (the treasure step without a fight is shown on the fight's screen)
+                            if (wt[k] == "W10" || wt[k] == "W11") snprintf(scr, sizeof scr, "SCREEN:%d", (int)Screen::Fight);
+                            if (wt[k] == "W7" || wt[k] == "W8") snprintf(scr, sizeof scr, "SCREEN:%d", (int)Screen::Shop);
+                            if (wt[k] == "W9") snprintf(scr, sizeof scr, "SCREEN:%d", (int)Screen::PartyMenu);
+                            if (wt[k] == "W14") snprintf(scr, sizeof scr, "SCREEN:%d", (int)Screen::Camp);
+                            same = wt[k] == gt[k] || (scr[0] && gt[k] == scr);
+                        }
+                    }
+                    if (!same) {
                         ++bad;
-                        if (shown++ < 12) printf("   ECL%d/%d %d,%d dir %d: engine%s | original%s\n", ab[0], ab[1], x, y, dir, got.c_str(), want.c_str());
+                        if (shown++ < (getenv("SHOWALL") ? 100000 : 12)) printf("   ECL%d/%d %d,%d dir %d: engine%s | original%s\n", ab[0], ab[1], x, y, dir, got.c_str(), want.c_str());
                     }
                 }
         dice_usual();
@@ -1445,6 +1543,50 @@ static void b_triggers()
         snprintf(what, sizeof what, "triggers ECL%d block %d: a step from every square and facing", ab[0], ab[1]);
         expect(P, what, bad == 0 && n > 0, "%d of %d differ", bad, n);
     }
+}
+
+// LOAD CHARACTER past the party reaches the monsters loaded for the next
+// fight (the original's LOAD MONSTER links them onto the party's list):
+// the Thieves' Guild hideout (ECL2 block 2) turns list places 10-13 - with
+// six members, loaded monsters 4-7 - to the party's side (0x7D0C = 0x80)
+static void b_guild()
+{
+    using namespace play;
+    const char* P = "events";
+    if (!b_enter(2, 2)) {
+        expect(P, "guild fight: into ECL2 block 2", false);
+        return;
+    }
+    const int members = pt->count;
+    // the segment from "the side door explodes" on (its own start address in the block)
+    const uint16_t at = getenv("GUILD_AT") ? static_cast<uint16_t>(strtol(getenv("GUILD_AT"), nullptr, 16)) : 0x82CB;
+    then = Then::Idle;
+    handle(vm->run(at));
+    for (int k = 0; k < 20000 && screen != Screen::Fight; ++k) {
+        g_now += 20;
+        play::tick(g_now, C);
+        if (waiting && vm->wait() == ecl::Wait::Menu) tap_item(0);
+        if (waiting && vm->wait() == ecl::Wait::Print && page_prompt) play::tap(10, 10, C);
+    }
+    if (!expect(P, "guild fight: the fight starts", screen == Screen::Fight && fg, "screen %d", (int)screen)) return;
+    int ours = 0, theirs = 0, want_ours = 0;
+    for (int i = 0; i < fg->b.n; ++i) {
+        const combat::Fighter& f = fg->b.f[i];
+        if (f.member >= 0) continue;
+        const int place = members + f.monster;
+        const bool ally = place >= 10 && place <= 13;
+        want_ours += ally;
+        if (f.team() == 0) ++ours;
+        else ++theirs;
+        if (ally != (f.team() == 0)) printf("   monster %d (list place %d): team %d\n", f.monster, place, f.team());
+    }
+    expect(P, "guild fight: list places 10-13 fight on the party's side, the rest against", ours == want_ours && want_ours == 4,
+           "%d on ours (want %d), %d against", ours, want_ours, theirs);
+    god = true;
+    const bool done = pump(800000);
+    god = false;
+    expect(P, "guild fight: fought to its end with the allies (the script goes on)", done && !fg && screen == Screen::Game,
+           "screen %d result %d", (int)screen, vm->get(0x7EC7));
 }
 
 static void behave_events()
@@ -1463,5 +1605,6 @@ static void behave_events()
     if (want("surprise")) b_surprise();
     if (want("steps")) b_steps();
     if (want("rest")) b_rest();
+    if (want("guild")) b_guild();
     if (want("triggers")) b_triggers();
 }

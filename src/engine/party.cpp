@@ -41,7 +41,11 @@ bool script_value(const Party& p, uint16_t off, uint16_t* out)
 {
     const Character* c = p.sel();
     if (!c) return false;
-    const uint8_t* r = c->rec;
+    return script_value(c->rec, p.selected, off, out);
+}
+
+bool script_value(const uint8_t* r, int index, uint16_t off, uint16_t* out)
+{
     auto u16 = [r](int o) { return static_cast<uint16_t>(r[o] | r[o + 1] << 8); };
     if (off >= 0xA5 && off <= 0xAC) {           // thief skills
         *out = r[0xEA + (off - 0xA5)];
@@ -71,11 +75,11 @@ bool script_value(const Party& p, uint16_t off, uint16_t* out)
     case 0xE4:  *out = r[0x192] & 1; return true;
     case 0xF7:  *out = u16(0x13C); return true;
     case 0xF9:  *out = r[0x13E]; return true;
-    case 0x100: *out = c->in_combat() ? 1 : 0x80; return true;
+    case 0x100: *out = r[0x196] ? 1 : 0x80; return true;
     case 0x10C: *out = r[0x197] == 1 ? 0x81 : r[0x197] == 0 && r[0x198] ? 0x80 : 0; return true;   // side
     case 0x11B: *out = r[0x1A5]; return true;   // movement
     case 0x2B1:
-    case 0x2B4: *out = static_cast<uint16_t>(p.selected); return true;
+    case 0x2B4: *out = static_cast<uint16_t>(index); return true;
     case 0x2CF: {                               // charisma: a percentage
         const int cha = r[0x1B];
         static const uint8_t kLow[] = {0, 5, 10, 15, 20};          // 3-7
@@ -94,8 +98,11 @@ bool script_value(const Party& p, uint16_t off, uint16_t* out)
 void script_set(Party& p, uint16_t off, uint16_t v)
 {
     Character* c = p.sel();
-    if (!c) return;
-    uint8_t* r = c->rec;
+    if (c) script_set(c->rec, off, v);
+}
+
+void script_set(uint8_t* r, uint16_t off, uint16_t v)
+{
     auto w16 = [r, v](int o) {
         r[o] = static_cast<uint8_t>(v);
         r[o + 1] = static_cast<uint8_t>(v >> 8);
