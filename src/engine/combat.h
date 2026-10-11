@@ -236,7 +236,7 @@ struct Battle {
     int     n = 0;
     int     party_size = 0;
     int     round = 0, no_action = 15;
-    int     surprise = 0;               // bit 1: our side, bit 2: the enemies
+    int     surprise = 0;               // 1: our side surprised, 2: the enemies (the script's word 0x7ECB)
     int     enemy_health = 100;         // %
     int     vx = 0, vy = 0;             // the view's top-left square (7 x 7 shown)
     bool    indoors = true;
@@ -368,17 +368,18 @@ int next(Battle& b, create::Dice& d);
 // Attacks this round: half attacks (record 0x11C slot 1, 0x11D slot 2) by
 // round (3 half attacks = 1, 2, 1, 2 ...)
 int attacks_this_round(int half, int round);
-// Slot 1's attacks worked out again (the round's start; after View / Use
-// in a fight - the weapon may have changed): a missile weapon readied with
-// what it shoots gives its own half attacks (at least 2) instead of the
-// fighter's, then Haste / Slow, never more than the pile it shoots holds;
-// once it has attacked this round only fewer count (a blow up to twice as
-// many) - coab's facts, combat_rules_facts 3.1
-void recount_attacks(Battle& b, int i);
 // What fighter f's readied missile weapon shoots (its range over 1): the
 // item that flies (the thrown weapon itself, the readied arrows / quarrels;
 // -1 none); *can: it can shoot (a sling needs nothing)
 int shot_item(const Battle& b, const Fighter& f, bool* can);
+// Slot 1's attacks this round by the readied weapon (a missile weapon: the
+// ITEMS file's number, at least 2, no more than the missiles); *ranged: so
+int slot1_attacks(const Battle& b, const Fighter& f, bool* ranged);
+// Slot 1's attacks worked out again when the weapon may have changed in
+// the round (the computer's choice, View, Use): never giving back those
+// used - once it has attacked only fewer count (a blow up to twice as
+// many) - coab's facts (reclac_attacks), combat_rules_facts 3.1
+void recount_attacks(Battle& b, int i);
 
 // ---- Attacking
 struct Hit {

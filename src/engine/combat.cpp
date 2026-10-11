@@ -964,26 +964,51 @@ int shot_item(const Battle& b, const Fighter& f, bool* can)
     return item;
 }
 
+// Slot 1's attacks this round (coab's facts: reclac_attacks): half attacks
+// from the record (a monster with none in slot 1 has none - the spiders
+// bite with slot 2 only); a missile weapon readied that can shoot (a thrown
+// one, a launcher with its arrows / quarrels, a sling) the ITEMS file's
+// number for it instead, at least 2; haste x 2, slow / 2; no more attacks
+// than the missiles it has
+int slot1_attacks(const Battle& b, const Fighter& f, bool* ranged)
+{
+    int half1 = f.rec[kHalf1];
+    int missiles = 0;
+    *ranged = false;
+    if (b.names && f.items) {
+        const int w = weapon(f, *b.names);
+        const items::TypeInfo* ti = w >= 0 ? &b.names->type(f.items[w][0x2E]) : nullptr;
+        if (ti && ti->range > 1) {
+            const uint8_t* shot = (ti->flags & 0x10) ? f.items[w] : nullptr;
+            if (ti->flags & 0x08)
+                for (int k = 0; k < f.n_items; ++k) {
+                    const int ty = f.items[k][0x2E];
+                    if (f.items[k][0x34] && (((ti->flags & 0x01) && ty == b.arrow) || ((ti->flags & 0x80) && ty == b.quarrel)))
+                        shot = f.items[k];
+                }
+            if (shot || ti->flags == 0x0A) {
+                half1 = ti->attacks < 2 ? 2 : ti->attacks;
+                missiles = shot ? shot[0x39] : 0;
+                *ranged = true;
+            }
+        }
+    }
+    if (b.fx && f.has(b.fx->haste)) half1 *= 2;
+    if (b.fx && f.has(b.fx->slow)) half1 /= 2;
+    int n = attacks_this_round(half1, b.round);
+    if (missiles > 0 && missiles < n) n = missiles;
+    return n;
+}
+
 void recount_attacks(Battle& b, int i)
 {
     Fighter& f = b.f[i];
-    const int before = f.attacks[0];
-    bool shoots = false;
-    const int item = shot_item(b, f, &shoots);
-    int half = f.rec[kHalf1];
-    if (half < 1) half = 2;
-    if (shoots) {
-        half = b.names->type(f.items[weapon(f, *b.names)][0x2E]).attacks;
-        if (half < 2) half = 2;
-    }
-    if (b.fx && f.has(b.fx->haste)) half *= 2;
-    if (b.fx && f.has(b.fx->slow)) half /= 2;
-    int n = attacks_this_round(half, b.round);
-    if (shoots && item >= 0) {
-        const int pile = f.items[item][0x39];
-        if (pile > 0 && pile < n) n = pile;
-    }
-    if (!f.attacked || n < before || (n < before * 2 && !shoots)) f.attacks[0] = n;
+    bool ranged = false;
+    const int now = f.attacks[0];
+    const int n = slot1_attacks(b, f, &ranged);
+    // Never back the attacks already used: once it has attacked, only fewer
+    // (or, in melee, up to twice what was left)
+    if (!f.attacked || n < now || (n < now * 2 && !ranged)) f.attacks[0] = n;
 }
 
 void start_round(Battle& b, create::Dice& d)
@@ -1007,24 +1032,20 @@ void start_round(Battle& b, create::Dice& d)
         }
         int delay = d.roll(6, 1) + dex_reaction(f.rec[kDexFull]);
         if (delay < 1) delay = 1;
-        if (b.surprise & (f.team() ? 4 : 2)) delay -= 6;
+        if (b.surprise & (f.team() + 1)) delay -= 6;       // (the word: 1 our side, 2 the enemies - the listing's sub_3E000)
         if (delay < 0 || delay > 20) delay = 0;
         f.delay = delay;
         if (helpless(b, f)) f.delay = 0;
         int mv = f.rec[kMove];
         if (mv < 1 || mv > 96) mv = 1;
         f.moves = mv * 2;
+        if (b.fx && f.has(b.fx->haste)) f.moves *= 2;
+        if (b.fx && f.has(b.fx->slow)) f.moves /= 2;
+        bool ranged = false;
+        f.attacks[0] = slot1_attacks(b, f, &ranged);
         int half2 = f.rec[kHalf2];
-        if (b.fx && f.has(b.fx->haste)) {
-            f.moves *= 2;
-            half2 *= 2;
-        }
-        if (b.fx && f.has(b.fx->slow)) {
-            f.moves /= 2;
-            half2 /= 2;
-        }
-        f.attacks[0] = 0;
-        recount_attacks(b, i);
+        if (b.fx && f.has(b.fx->haste)) half2 *= 2;
+        if (b.fx && f.has(b.fx->slow)) half2 /= 2;
         f.attacks[1] = attacks_this_round(half2, b.round);
         if (b.fx && b.fx->entangle && f.has(b.fx->entangle)) f.moves = 0;      // entangled: no moving
         if (b.fx && hasx(f, b.fx->mon.held_fast)) f.moves = 0;                 // engulfed, hugged
@@ -1221,14 +1242,28 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
     g_kind = 0;
     b.no_action = b.round + 15;
     at.attacked = true;
-    // The target turns to face the attacker
+    at.swept = true;                            // (no sweep after any attack this round: the original zeroes its sweep count)
+    // The original's order (the listing's sub_3F94D, called before the attack
+    // itself, sub_3F9DB): the attack is counted first - attacks received + 1,
+    // and the angle between the target's facing (before it turns) and where
+    // the attacker stands added to its facing changes (free attacks on one
+    // stepping away aren't counted). Then the target turns: to face the
+    // attacker on its first attack this round; on later ones (a normal
+    // attack) it turns about (+4) - the original does so for a target on the
+    // screen, and the engine brings every target into view before an attack.
     const int dir = direction(at.x, at.y, tg.x, tg.y);
-    if (!from_behind && tg.received < 2 && dir < 8) tg.facing = (dir + 4) & 7;
+    if (!from_behind) {
+        ++tg.received;
+        int turn = dir < 8 ? ((((dir + 4) & 7) - tg.facing) & 7) : 0;
+        if (turn > 4) turn = 8 - turn;
+        tg.turns = (tg.turns + turn) & 7;
+        if (tg.received < 2) {
+            if (dir < 8) tg.facing = (dir + 4) & 7;
+        } else {
+            tg.facing = (tg.facing + 4) & 7;
+        }
+    }
     if (dir < 8) at.facing = dir;
-    int turn = dir < 8 ? ((dir - tg.facing) & 7) : 0;
-    if (turn > 4) turn = 8 - turn;
-    tg.turns = (tg.turns + turn) & 7;
-    ++tg.received;
     const bool stab = !from_behind && can_backstab(b, a, c, names);
     const bool behind = from_behind || stab || (tg.received > 1 && dir == tg.facing && tg.turns > 4);
     out.behind = behind && !stab;
@@ -1586,7 +1621,9 @@ bool free_attack_ok(const Battle& b, const Tables& t, int e, int mover)
 int sweep(const Battle& b, int a, int target, int* out, int cap)
 {
     const Fighter& at = b.f[a];
-    const int level = at.member >= 0 ? at.rec[kFighterLevel] : 0;
+    // The sweep count: the attack level (record 0xDD - the fighter level of
+    // a character or a monster of a race, else 1; coab reclac_player_values)
+    const int level = at.rec[0xDD];
     if (level <= 0 || at.swept || at.attacks[0] >= level) return 0;
     const Fighter& tg = b.f[target];
     if (tg.rec[kHd] != 0 || !adjacent(b, a, target)) return 0;
@@ -1958,11 +1995,12 @@ bool teleport(Battle& b, const Tables& t, int i, int x, int y)
 bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
 {
     if (type < 0 || type > 4) type = 4;
-    // Immune to poison, paralysis and death magic: every such save made
-    if (g_fx && type == 0 && hasx(f, g_fx->mon.mind)) return true;
     const int r = d.roll(20, 1);
     if (r == 1) return false;
     if (r == 20) return true;
+    // Immune to poison, paralysis and death magic: every such save made
+    // (the effect works on the roll after the natural 1 / 20: a 1 still fails)
+    if (g_fx && type == 0 && hasx(f, g_fx->mon.mind)) return true;
     if (g_fx) {
         const Facts& fx = *g_fx;
         if (fx.bestow && f.has(fx.bestow)) bonus -= 4;
@@ -2004,7 +2042,9 @@ bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
             }
         }
     }
-    return r + bonus + static_cast<int8_t>(f.rec[0x186]) >= f.rec[0xDF + type];
+    // (a byte, compared unsigned: a total below 0 wraps round to a save made -
+    // the listing's do_saving_throw)
+    return ((r + bonus + static_cast<int8_t>(f.rec[0x186])) & 0xFF) >= f.rec[0xDF + type];
 }
 
 // The caster's level for the spell's kind (as spells::power, from the record)
@@ -3031,7 +3071,7 @@ int turn_undead(Battle& b, const Tables& t, int cleric, create::Dice& d, int* ou
             out[n++] = best + 1000;
         }
         if (extra > 0) --extra;
-        if (--count == 0 && extra > 0 && v <= 0) ++count;
+        if (--count == 0 && extra > 0 && v < 0) ++count;    // (D* only: the listing's turn_undead tests < 0)
     }
     return n;
 }

@@ -1230,7 +1230,8 @@ void free_attacks(pic::Canvas& c, int i, int dir)
         f.x -= combat::dx(dir);
         f.y -= combat::dy(dir);
         if (still || !combat::free_attack_ok(b, fg->t, e, i)) continue;
-        if (en.attacks[0] <= 0 && en.attacks[1] <= 0) en.attacks[0] = 1;
+        // None left: one (in slot 2 for those with no slot 1 attacks - the spiders; coab's facts)
+        if (en.attacks[0] <= 0 && en.attacks[1] <= 0) en.attacks[en.rec[0x11C] == 0 ? 1 : 0] = 1;
         do_attack(c, e, i, true);
         if (!f.up()) return;
     }
@@ -1245,7 +1246,8 @@ void guard_attacks(pic::Canvas& c, int i)
         combat::Fighter& en = b.f[e];
         if (!en.guarding || !en.up() || (en.team() ? 1 : 0) == my || !combat::adjacent(b, i, e)) continue;
         en.guarding = false;
-        if (en.attacks[0] <= 0 && en.attacks[1] <= 0) en.attacks[0] = 1;
+        // (with the attacks it has left: none, no blow - the original's)
+        if (en.attacks[0] <= 0 && en.attacks[1] <= 0) continue;
         do_attack(c, e, i, false);
     }
 }
@@ -1534,6 +1536,7 @@ void next_turn(pic::Canvas& c)
 void begin_round(pic::Canvas& c)
 {
     combat::start_round(fg->b, rng);
+    vm->set(0x7ECB, 0);                 // (the surprise word: cleared after the initiative, as the original)
     next_turn(c);
 }
 
@@ -1971,17 +1974,35 @@ void speed_menu(pic::Canvas& c)
 }
 
 // ---- The computer's turn
-// Quick members and NPCs in the party ready the weapon the games' rating
-// picks (monsters keep theirs: their attacks are in their records); a
+// Everyone the computer plays - Quick members, NPCs and the monsters too
+// (the original's computer turn readies weapons for all: coab's facts,
+// AI_items_selection) - readies the weapon the games' rating picks; a
 // two-handed one puts the shield away (a cursed shield: the weapon goes
-// back), free hands take the best shield (its plus + 1). True: it changed.
+// back), free hands take the best shield (its plus + 1). A monster's
+// record is worked out again as the original's routine does (with its
+// group's items). True: it changed.
 bool ai_ready_weapon(int i)
 {
     combat::Fighter& f = fg->b.f[i];
-    if (f.member < 0 || f.member >= pt->count) return false;
+    const bool member = f.member >= 0 && f.member < pt->count;
+    if (!member && (f.monster < 0 || !ml || !f.items)) return false;
     const int want = combat::choose_weapon(fg->b, i);
     if (want == combat::kKeep) return false;
-    party::Character& ch = pt->m[f.member];
+    party::Character* tmp = nullptr;
+    if (!member) {
+        tmp = new (std::nothrow) party::Character;
+        if (!tmp) return false;
+        memcpy(tmp->rec, f.rec, sizeof tmp->rec);
+        tmp->n_items = f.n_items < party::kMaxItems ? f.n_items : party::kMaxItems;
+        memcpy(tmp->items, f.items, static_cast<size_t>(tmp->n_items) * items::kRecordSize);
+        tmp->n_affects = f.n_aff ? (*f.n_aff < party::kMaxAffects ? *f.n_aff : party::kMaxAffects) : 0;
+        memcpy(tmp->affects, f.aff, static_cast<size_t>(tmp->n_affects) * party::kAffectSize);
+    }
+    party::Character& ch = member ? pt->m[f.member] : *tmp;
+    auto recalc = [&]() {
+        if (member) rules::recalc(ch, *names, d->facts);
+        else rules::recalc_values(ch, *names, d->facts);
+    };
     const int held = combat::weapon(f, *names);
     if (held >= 0) {
         ch.items[held][0x34] = 0;
@@ -1991,7 +2012,7 @@ bool ai_ready_weapon(int i)
         ch.items[want][0x34] = 1;
         rules::worn(ch, want, true);
     }
-    rules::recalc(ch, *names, d->facts);
+    recalc();
     // The shield
     int shield = -1, best = -1, best_plus = 0;
     for (int k = 0; k < ch.n_items; ++k) {
@@ -2019,9 +2040,21 @@ bool ai_ready_weapon(int i)
         ch.items[best][0x34] = 1;
         rules::worn(ch, best, true);
     }
-    rules::recalc(ch, *names, d->facts);
-    f.n_items = ch.n_items;
-    f.items = ch.items;
+    recalc();
+    if (member) {
+        f.n_items = ch.n_items;
+        f.items = ch.items;
+    } else {
+        // Back into the monster (its record, effects) and its group's items
+        memcpy(f.rec, tmp->rec, sizeof tmp->rec);
+        memcpy(f.items, tmp->items, static_cast<size_t>(tmp->n_items) * items::kRecordSize);
+        if (f.n_aff) {
+            *f.n_aff = tmp->n_affects < f.max_aff ? tmp->n_affects : f.max_aff;
+            memcpy(f.aff, tmp->affects, static_cast<size_t>(*f.n_aff) * party::kAffectSize);
+        }
+        delete tmp;
+    }
+    combat::recount_attacks(fg->b, i);      // (its attacks for the weapon now: coab reclac_attacks)
     return true;
 }
 
@@ -2122,7 +2155,7 @@ void ai_step(pic::Canvas& c)
                 return;
             }
         }
-    } else if (f.member >= 0 && combat::missile_in_melee(b, i)) {
+    } else if (combat::missile_in_melee(b, i)) {
         // A bow with an enemy next to them: another weapon, and the turn is over
         if (ai_ready_weapon(i)) draw_panel_for(c, i);
         end_turn(c);
@@ -2236,6 +2269,24 @@ void fight_start(pic::Canvas& c)
         f.max_aff = party::kMaxAffects;
     }
     b.party_size = pt->count;
+    // The original recalculates every combatant's values at the battle's
+    // setup (coab's facts: SetupCombatActions; the listing's sub_380E0 calls
+    // sub_66C20 for each): a monster's to-hit, AC, damage dice and movement
+    // come from its record's base values and its readied items - the
+    // record's own stored ones are not used
+    if (party::Character* tmp = new (std::nothrow) party::Character) {
+        for (int k = 0; k < ml->n; ++k) {
+            combat::Monster& m = ml->m[k];
+            const combat::Group& g = ml->g[m.group];
+            memcpy(tmp->rec, m.rec, sizeof tmp->rec);
+            tmp->n_items = g.n_items < party::kMaxItems ? g.n_items : party::kMaxItems;
+            memcpy(tmp->items, g.item, static_cast<size_t>(tmp->n_items) * items::kRecordSize);
+            tmp->n_affects = 0;
+            rules::recalc_values(*tmp, *names, d->facts);
+            memcpy(m.rec, tmp->rec, sizeof m.rec);
+        }
+        delete tmp;
+    }
     for (int k = 0; k < ml->n && b.n < combat::kMaxFighters; ++k) {
         combat::Monster& m = ml->m[k];
         combat::Fighter& f = b.f[b.n++];
@@ -2253,7 +2304,7 @@ void fight_start(pic::Canvas& c)
     b.names = names;
     b.arrow = d->facts.arrow;
     b.quarrel = d->facts.quarrel;
-    b.surprise = vm->get(0x7ECB) & 6;
+    b.surprise = vm->get(0x7ECB) & 3;
     b.to_hit_party = static_cast<int8_t>(vm->get(0x7F71));
     b.to_hit_monsters = static_cast<int8_t>(vm->get(0x7F70));
     combat::place(b, fg->t, d->gs.dir & 6, vm->fight_distance(), b.indoors ? solid_side : nullptr, nullptr);

@@ -900,8 +900,12 @@ Stop Vm::step()
         int result = 0;
         if (r1 <= dd + 2 - a) result = 1;               // the party surprised
         if (r2 <= b + 2 - c) result = 2;                // the monsters (the games: this wins over both)
-        // The fight's surprise word: bit 1 our side, bit 2 the enemies
-        set(0x7ECB, static_cast<uint16_t>(result == 1 ? 2 : result == 2 ? 4 : 0));
+        // ... and nothing more: the original writes the result to address
+        // 0x2CB, which its memory map drops (the listing's sub_2771E and
+        // cmd_table01 / sub_30723: below 0x4B00 and not one of its special
+        // addresses), so the fight's surprise word (0x7ECB) is the scripts'
+        // own to set
+        (void)result;
         return Stop::Running;
     }
     case 0x24:                                  // COMBAT

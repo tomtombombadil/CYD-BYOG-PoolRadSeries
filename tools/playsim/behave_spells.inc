@@ -1091,11 +1091,11 @@ static const spells::CampSpell* sp_camp(int s)
         if (m.camp[k].spell == s) return &m.camp[k];
     return nullptr;
 }
-static party::Character& P(int i) { return play::pt->m[i]; }
+static party::Character& sp_member(int i) { return play::pt->m[i]; }
 // Party member i: only class `cls` at `level`, all HP, nothing on them
 static void sp_member(int i, int cls, int level, int hp = 100)
 {
-    party::Character& c = P(i);
+    party::Character& c = sp_member(i);
     for (int k = 0; k < 8; ++k) c.rec[0x109 + k] = c.rec[0x111 + k] = 0;
     if (cls >= 0) c.rec[0x109 + cls] = static_cast<uint8_t>(level);
     c.rec[0x74] = 7;
@@ -1126,7 +1126,7 @@ static int sp_csaid(int who, spells::Said s)
 }
 static int sp_caff(int i, int type, int* minutes = nullptr, int* data = nullptr)
 {
-    const party::Character& c = P(i);
+    const party::Character& c = sp_member(i);
     for (int k = 0; k < c.n_affects; ++k)
         if (c.affects[k][0] == type) {
             if (minutes) *minutes = c.affects[k][1] | c.affects[k][2] << 8;
@@ -1167,12 +1167,12 @@ static void sp_check_camp()
         for (int pass = 0; pass < 2; ++pass) {
             sp_member(4, C, 9);
             sp_member(1, classes::Fighter, 5, 100);
-            P(1).rec[0x1A4] = 40;
+            sp_member(1).rec[0x1A4] = 40;
             sp_dice(pass ? 1 : 2);
             // (the items' healing 0x3E / 0x63 is on the user: the row's target "self")
             if (orow(h.spell, OTargets) == 1) sp_ccast(1, 1, h.spell);
             else sp_ccast(4, 1, h.spell);
-            const int got = P(1).hp() - 40, want = pass ? h.hi : h.lo;
+            const int got = sp_member(1).hp() - 40, want = pass ? h.hi : h.lo;
             char what[80];
             snprintf(what, sizeof what, "camp: healing spell %02X, dice %s", h.spell, pass ? "high" : "low");
             expect(SP, what, got == want, "%d (original %d)", got, want);
@@ -1195,7 +1195,7 @@ static void sp_check_camp()
         for (int i = 0; i < pt->count; ++i) sp_member(i, classes::Fighter, 3);
         sp_member(4, e.cls, e.level);
         static party::Character probe;
-        probe = P(4);
+        probe = sp_member(4);
         const int L = sp_level_rule(probe, e.spell, false);
         sp_dice(1, 10, 100);
         const int n = sp_ccast(4, 1, e.spell);
@@ -1234,7 +1234,7 @@ static void sp_check_camp()
     // Haste in camp: the first `level` members; a slowed one cured ("is Cured")
     for (int i = 0; i < pt->count; ++i) sp_member(i, classes::Fighter, 3);
     sp_member(5, M, 3);
-    spells::add_affect(P(0), 0x2A, 10, 1, false);
+    spells::add_affect(sp_member(0), 0x2A, 10, 1, false);
     sp_ccast(5, 0, 0x30);
     {
         int hasted = 0;
@@ -1247,8 +1247,8 @@ static void sp_check_camp()
     for (int lv = 1; lv <= 12; ++lv) {
         for (int i = 0; i < pt->count; ++i) sp_member(i, classes::Fighter, 3);
         sp_member(5, M, lv);
-        P(1).rec[0x10] = P(1).rec[0x11] = 10;
-        P(1).rec[0x1C] = P(1).rec[0x1D] = 0;
+        sp_member(1).rec[0x10] = sp_member(1).rec[0x11] = 10;
+        sp_member(1).rec[0x1C] = sp_member(1).rec[0x1D] = 0;
         sp_ccast(5, 1, 0x0C);
         int da = -1, tm = -1;
         const bool on = sp_caff(1, 0x0C, &tm, &da) >= 0;
@@ -1261,8 +1261,8 @@ static void sp_check_camp()
     }
     for (int i = 0; i < pt->count; ++i) sp_member(i, classes::Fighter, 3);
     sp_member(5, M, 3);
-    P(1).rec[0x10] = P(1).rec[0x11] = 18;
-    P(1).rec[0x1C] = P(1).rec[0x1D] = 60;
+    sp_member(1).rec[0x10] = sp_member(1).rec[0x11] = 18;
+    sp_member(1).rec[0x1C] = sp_member(1).rec[0x1D] = 60;
     sp_ccast(5, 1, 0x0C);
     expect(SP, "camp: Enlarge at level 3 (18/51) on 18/60: \"is unaffected\"",
            sp_caff(1, 0x0C) < 0 && sp_csaid(1, spells::Said::Unaffected) == 1);
@@ -1270,7 +1270,7 @@ static void sp_check_camp()
     for (int pass = 0; pass < 2; ++pass) {
         sp_member(1, classes::Fighter, 3);
         sp_member(5, M, 3);
-        spells::add_affect(P(1), 0x0C, 30, 52, false);
+        spells::add_affect(sp_member(1), 0x0C, 30, 52, false);
         sp_dice(1, pass ? 20 : 2);
         sp_ccast(5, 1, 0x0D);
         if (!pass)
@@ -1293,7 +1293,7 @@ static void sp_check_camp()
     };
     for (const St& s : {St{M, 4}, St{C, 6}, St{classes::Thief, 6}, St{classes::Fighter, 8}}) {
         sp_member(1, s.cls, 3);
-        P(1).rec[0x10] = P(1).rec[0x11] = 10;
+        sp_member(1).rec[0x10] = sp_member(1).rec[0x11] = 10;
         sp_member(5, M, 5);
         sp_dice(1);
         sp_ccast(5, 1, 0x23);
@@ -1311,8 +1311,8 @@ static void sp_check_camp()
         for (int roll : {dc.chance, dc.chance + 1}) {
             sp_member(1, classes::Fighter, 3);
             sp_member(4, C, dc.L);
-            spells::add_affect(P(1), 0x01, 30, dc.lvl, false);
-            spells::add_affect(P(1), 0x3B, 0, 0xFF, false);
+            spells::add_affect(sp_member(1), 0x01, 30, dc.lvl, false);
+            spells::add_affect(sp_member(1), 0x3B, 0, 0xFF, false);
             sp_dice(1, 10, roll);
             sp_ccast(4, 1, 0x29);
             char what[100];
@@ -1338,74 +1338,74 @@ static void sp_check_camp()
     // The cures
     sp_member(1, classes::Fighter, 3);
     sp_member(4, C, 9);
-    spells::add_affect(P(1), 0x21, 0, 9, false);
+    spells::add_affect(sp_member(1), 0x21, 0, 9, false);
     sp_ccast(4, 1, 0x25);
     expect(SP, "camp: Cure Blindness - \"is Cured\", \"can see\"",
            sp_caff(1, 0x21) < 0 && sp_csaid(1, spells::Said::Cured) == 1 && sp_csaid(1, spells::Said::CanSee) == 1);
     sp_member(1, classes::Fighter, 3);
-    spells::add_affect(P(1), 0x2B, 60, 9, true);
-    spells::add_affect(P(1), 0x2C, 10, 9, true);
-    spells::add_affect(P(1), 0x1F, 0, 0xFF, false);
+    spells::add_affect(sp_member(1), 0x2B, 60, 9, true);
+    spells::add_affect(sp_member(1), 0x2C, 10, 9, true);
+    spells::add_affect(sp_member(1), 0x1F, 0, 0xFF, false);
     sp_ccast(4, 1, 0x27);
     expect(SP, "camp: Cure Disease - weakness (0x2B) cured, with 0x2C and helpless (0x1F)",
            sp_caff(1, 0x2B) < 0 && sp_caff(1, 0x2C) < 0 && sp_caff(1, 0x1F) < 0 && sp_csaid(1, spells::Said::Cured) == 1);
     sp_member(1, classes::Fighter, 3);
-    spells::add_affect(P(1), 0x22, 30, 9, true);
+    spells::add_affect(sp_member(1), 0x22, 30, 9, true);
     sp_ccast(4, 1, 0x27);
     expect(SP, "camp: Cure Disease - the disease (0x22) cured", sp_caff(1, 0x22) < 0 && sp_csaid(1, spells::Said::Cured) == 1);
     // Neutralize Poison
     sp_member(1, classes::Fighter, 3);
-    spells::add_affect(P(1), 0x37, 0, 0xFF, false);
-    P(1).rec[0x1A4] = 0;
-    P(1).rec[0x195] = party::Dead;
-    P(1).rec[0x196] = 0;
+    spells::add_affect(sp_member(1), 0x37, 0, 0xFF, false);
+    sp_member(1).rec[0x1A4] = 0;
+    sp_member(1).rec[0x195] = party::Dead;
+    sp_member(1).rec[0x196] = 0;
     sp_ccast(4, 1, 0x43);
     expect(SP, "camp: Neutralize Poison on the poisoned dead - 1 HP, okay, \"is unpoisoned\"",
-           sp_caff(1, 0x37) < 0 && P(1).hp() == 1 && P(1).health() == party::Okay && sp_csaid(1, spells::Said::Unpoisoned) == 1,
-           "HP %d status %d", P(1).hp(), P(1).health());
+           sp_caff(1, 0x37) < 0 && sp_member(1).hp() == 1 && sp_member(1).health() == party::Okay && sp_csaid(1, spells::Said::Unpoisoned) == 1,
+           "HP %d status %d", sp_member(1).hp(), sp_member(1).health());
     sp_member(1, classes::Fighter, 3);
     sp_ccast(4, 1, 0x43);
     expect(SP, "camp: Neutralize Poison on the unpoisoned - \"is unaffected\"", sp_csaid(1, spells::Said::Unaffected) == 1);
     // Slow Poison: the poisoned - effect 0x16 (data 0xFF) 60 x level, poison damage 0x0F every 10 minutes
     sp_member(1, classes::Fighter, 3);
-    spells::add_affect(P(1), 0x37, 0, 0xFF, false);
-    P(1).rec[0x1A4] = 0;
+    spells::add_affect(sp_member(1), 0x37, 0, 0xFF, false);
+    sp_member(1).rec[0x1A4] = 0;
     sp_ccast(4, 1, 0x1A);
     {
         int tm = -1, da = -1, tp = -1;
         sp_caff(1, 0x16, &tm, &da);
         sp_caff(1, 0x0F, &tp);
         expect(SP, "camp: Slow Poison at level 9 - 540 minutes, data 0xFF, poison damage every 10, 1 HP",
-               tm == 540 && da == 0xFF && tp == 10 && P(1).hp() == 1, "time %d data %d pd %d HP %d", tm, da, tp, P(1).hp());
+               tm == 540 && da == 0xFF && tp == 10 && sp_member(1).hp() == 1, "time %d data %d pd %d HP %d", tm, da, tp, sp_member(1).hp());
     }
     sp_member(1, classes::Fighter, 3);
     sp_ccast(4, 1, 0x1A);
-    expect(SP, "camp: Slow Poison on the unpoisoned - nothing, nothing said", P(1).n_affects == 0 && sp_cn == 0);
+    expect(SP, "camp: Slow Poison on the unpoisoned - nothing, nothing said", sp_member(1).n_affects == 0 && sp_cn == 0);
     // Remove Curse: Bestow Curse cured ("is Cured", "is un-cursed"); else the first cursed item comes off
     sp_member(1, classes::Fighter, 3);
-    spells::add_affect(P(1), 0x24, 30, 5, false);
+    spells::add_affect(sp_member(1), 0x24, 30, 5, false);
     sp_ccast(4, 1, 0x2B);
     expect(SP, "camp: Remove Curse - Bestow Curse cured, \"is Cured\", \"is un-cursed\"",
            sp_caff(1, 0x24) < 0 && sp_csaid(1, spells::Said::Cured) == 1 && sp_csaid(1, spells::Said::Uncursed) == 1);
     // Raise Dead: the dead (not elves, Con > 0) - okay, 1 HP, Con - 1
     for (int race : {7, 2}) {
         sp_member(1, classes::Fighter, 3);
-        P(1).rec[0x74] = static_cast<uint8_t>(race);
-        P(1).rec[0x18] = P(1).rec[0x19] = 12;
-        P(1).rec[0x1A4] = 0;
-        P(1).rec[0x195] = party::Dead;
-        P(1).rec[0x196] = 0;
+        sp_member(1).rec[0x74] = static_cast<uint8_t>(race);
+        sp_member(1).rec[0x18] = sp_member(1).rec[0x19] = 12;
+        sp_member(1).rec[0x1A4] = 0;
+        sp_member(1).rec[0x195] = party::Dead;
+        sp_member(1).rec[0x196] = 0;
         sp_ccast(4, 1, 0x4B);
         if (race == 7)
             expect(SP, "camp: Raise Dead on a dead human - okay, 1 HP, Con 12 -> 11, \"is raised\"",
-                   P(1).health() == party::Okay && P(1).hp() == 1 && P(1).rec[0x18] == 11 && sp_csaid(1, spells::Said::Raised) == 1,
-                   "status %d HP %d Con %d", P(1).health(), P(1).hp(), P(1).rec[0x18]);
+                   sp_member(1).health() == party::Okay && sp_member(1).hp() == 1 && sp_member(1).rec[0x18] == 11 && sp_csaid(1, spells::Said::Raised) == 1,
+                   "status %d HP %d Con %d", sp_member(1).health(), sp_member(1).hp(), sp_member(1).rec[0x18]);
         else
-            expect(SP, "camp: Raise Dead on a dead elf - nothing", P(1).health() == party::Dead && sp_cn == 0);
+            expect(SP, "camp: Raise Dead on a dead elf - nothing", sp_member(1).health() == party::Dead && sp_cn == 0);
     }
     // Giant strength (the potion, 0x3B): Strength 21, (d4 + 4) x 10 minutes
     sp_member(1, classes::Fighter, 3);
-    P(1).rec[0x10] = P(1).rec[0x11] = 16;
+    sp_member(1).rec[0x10] = sp_member(1).rec[0x11] = 16;
     sp_dice(2);
     {
         const spells::CampSpell* cs = sp_camp(0x3B);
@@ -1441,7 +1441,7 @@ static void sp_check_camp()
     };
     for (const Rc& r : rcs) {
         sp_member(1, classes::Thief, 3);
-        party::Character& c = P(1);
+        party::Character& c = sp_member(1);
         for (int k = 0; k < 6; ++k) c.rec[0x10 + 2 * k] = c.rec[0x11 + 2 * k] = 10;
         c.rec[0x1C] = c.rec[0x1D] = 0;
         c.n_items = 0;
@@ -1456,11 +1456,11 @@ static void sp_check_camp()
     }
     // The camp clock: an effect of N minutes is gone after N minutes (coab: removed when the time left <= the step)
     sp_member(1, classes::Fighter, 3);
-    spells::add_affect(P(1), 0x01, 6, 1, false);
-    spells::add_affect(P(1), 0x3B, 0, 0xFF, false);
-    magic::tick_affects(P(1), 5);
+    spells::add_affect(sp_member(1), 0x01, 6, 1, false);
+    spells::add_affect(sp_member(1), 0x3B, 0, 0xFF, false);
+    magic::tick_affects(sp_member(1), 5);
     const bool after5 = sp_caff(1, 0x01) >= 0;
-    magic::tick_affects(P(1), 1);
+    magic::tick_affects(sp_member(1), 1);
     expect(SP, "camp clock: a 6-minute effect lasts 6 minutes; time 0 stays", after5 && sp_caff(1, 0x01) < 0 && sp_caff(1, 0x3B) >= 0);
 }
 // ---- 6. What the effects do in fights: to hit, AC, saves, damage, actions

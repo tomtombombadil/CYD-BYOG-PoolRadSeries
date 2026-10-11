@@ -4146,7 +4146,19 @@ static void test_combat()
     sb.f[0].attacks[0] = 1;
     CHECK(combat::sweep(sb, 0, 1, swept, 8) == 0);                 // not a fighter
     mrec[0][0x10B] = 3;                                            // a 3rd level fighter
+    mrec[0][0xDD] = 3;                                             // (its attack level, as the recalculation makes it)
+    sb.f[0].swept = false;                                         // (no attack yet this round)
     CHECK(combat::sweep(sb, 0, 1, swept, 8) == 3 && swept[0] == 1);
+    sb.f[0].attacks[0] = 1;
+    combat::attack(sb, 0, 3, nullptr, d);                          // after any attack this round: no sweep
+    CHECK(combat::sweep(sb, 0, 1, swept, 8) == 0);
+    sb.f[0].swept = false;
+    for (int i = 0; i < 4; ++i) {
+        mrec[i][0x195] = 0; mrec[i][0x196] = 1; mrec[i][0x1A4] = 20;
+        sb.f[i].x = sx4[i]; sb.f[i].y = sy4[i]; sb.f[i].size = 1;
+        sb.f[i].received = sb.f[i].turns = 0;
+    }
+    combat::occupancy(sb);
     sb.f[0].attacks[0] = 3;
     CHECK(combat::sweep(sb, 0, 1, swept, 8) == 0);                 // as many attacks as the level
     sb.f[0].attacks[0] = 1;
@@ -4353,6 +4365,7 @@ static void test_monster_fx()
     CHECK(out[2].who == 0 && out[2].ev == combat::Ev::Damage && out[2].amount == 48 && b.f[0].hp() == 52);
     CHECK(aff[3][0][3] == 2);
     b.f[4].x = 12;                                              // a friend on the line: no breath
+    b.f[1].x = b.f[2].x = 45;                                   // (the only one in reach: the one behind the friend)
     combat::occupancy(b);
     b.round = 1;
     n = combat::special(b, t, 3, d, out, 16, &ends);
