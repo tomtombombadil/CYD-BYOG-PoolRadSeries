@@ -1502,6 +1502,17 @@ static void test_ecl()
     pblock.insert(pblock.end(), pc.begin(), pc.end());
     const ecl::MapLoad pm = ecl::find_map_load(pblock.data(), static_cast<uint32_t>(pblock.size()), ps);
     CHECK(pm.geo == 7 && pm.walls[0] == 3 && pm.walls[2] == 9);
+    // Pool's LOAD PIECES 0x7F ...: block 0 in set 1 (Phlan: WALLDEF3 block 0, three parts)
+    {
+        Bytes p7 = pblock;
+        size_t at = 0;
+        for (size_t i = 0; i + 2 < p7.size() && !at; ++i)
+            if (p7[i] == 0x37 && p7[i + 1] == 0 && p7[i + 2] == 3) at = i + 2;
+        CHECK(at != 0);
+        p7[at] = 0x7F;
+        const ecl::MapLoad m7 = ecl::find_map_load(p7.data(), static_cast<uint32_t>(p7.size()), ps);
+        CHECK(m7.walls[0] == 0 && m7.walls[1] == ecl::kNone && m7.walls[2] == ecl::kNone);
+    }
     // ECL CLOCK reads 1 operand in Pool; 0x3E-0x40 aren't opcodes
     const uint8_t clock1[] = {0x34, 0, 5, 0x00};
     CHECK(ecl::decode(clock1, 4, 0, ps, in) && in.count == 1 && in.next == 3);

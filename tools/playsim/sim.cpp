@@ -5,7 +5,7 @@
 // Run: playsim <game folder> [moves: F L R B A K]; env: SAVE=A (load saved
 // game A at the party menu first; otherwise BEGIN with no party; VIEW=n then
 // views character n), AREA / BLOCK (start
-// script), SETVAR=addr=value, CHOICES=digits, TYPE=text, TELE=x,y,dir,
+// script), NEWGAME (a new game with save A's party), SETVAR=addr=value, CHOICES=digits, TYPE=text, TELE=x,y,dir,
 // FINDLOCK, PAUSESHOT, ANIMSHOTS, MS (ms to settle), GAME=n (games::Game: 1 Pool). Fights: FINDMON lists
 // the script's LOAD MONSTERs (RUNAT=that address FIGHT=1 runs the fight),
 // FIGHTOPS, FORCESPELL=m:id,id (fighter m has those spells), FORCEWEAPON=m:type
@@ -499,6 +499,14 @@ int main(int argc, char** argv)
     }
     // BEGIN needs a party: saved game A (GOG's sample party) unless SAVE names another
     const char* save = getenv("SAVE") ? getenv("SAVE") : "A";
+    // NEWGAME: a new game with save A's party (the game's state as at the
+    // start - kept before the load and put back - as after Create / Add)
+    static ecl::GameState fresh_gs;
+    static uint16_t fresh_words[0x10000 - 0x4B00];
+    if (getenv("NEWGAME")) {
+        fresh_gs = play::d->gs;
+        for (unsigned a = 0x4B00; a < 0x10000; ++a) fresh_words[a - 0x4B00] = play::vm->get((uint16_t)a);
+    }
     {
         play::tap(24, (12 + pm_line('L')) * 8 + 2, C);
         printf("  saves [%s] menu [%s%s]\n", play::pm_saves, play::menu.prompt, play::menu.s);
@@ -636,6 +644,14 @@ int main(int argc, char** argv)
             play::tap(2, text::kMenuRow * 8 + 2, C);
             shot("view_back");
         }
+    }
+    if (getenv("NEWGAME")) {
+        const uint16_t n = play::vm->get(0x7F3E);
+        play::d->gs = fresh_gs;
+        for (unsigned a = 0x4B00; a < 0x10000; ++a) play::vm->set((uint16_t)a, fresh_words[a - 0x4B00]);
+        play::vm->set(0x7F3E, n);
+        play::d->loaded = false;
+        printf("  new game: area %d script %d\n", play::d->gs.game_area, play::d->gs.script);
     }
     play::tap(24, (12 + pm_line('B')) * 8 + 2, C);
     if (getenv("AREA")) {

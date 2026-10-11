@@ -340,7 +340,12 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   GAME=1 for Pool. Journal table: `make_table.py poolrad` (tesseract
   finds its text headings). Pool's race checks (Podol Plaza patrols, the
   Temple of Bane's trap doors) are corrected, not copied (Tom, v0.85.1:
-  its scripts get the race; SPEC 12).
+  its scripts get the race; SPEC 12). Pool's behaviour checks: sweep's
+  `behave pool` (-DBEHAVE_POOL -DBEHAVE_SPELLS, GAME=1; ONLY= values, con,
+  creation, train, modify, money, spells, fights), oracle
+  /tmp/claude-0/bt/oracle_pool.txt from scratch `pool_oracle.py` (Pool's
+  own tables + the facts' constants; never in the repo). The playsim's
+  NEWGAME=1 starts a new game (the tour) with save A's party.
 - PortMaster ports are a stretch goal (Tom): keep everything portable.
 - Game screens (Walk Test, Play Test now, the games later): canvas 1:1 at the top left
   (`frame::set_left`), controls below it, on 480x320 the Companion strip on

@@ -146,6 +146,11 @@ MapLoad find_map_load(const uint8_t* block, uint32_t len, const OpSet& set)
             if (in.op == set.load_pieces && p < walls_at && in.count >= 3 && in.ops[0].immediate() &&
                 in.ops[1].immediate() && in.ops[2].immediate()) {
                 for (int k = 0; k < 3; ++k) m.walls[k] = value(in.ops[k]);
+                // (Pool: 0x7F first is block 0 in set 1 - its program's LOAD PIECES)
+                if (set.pool_map && in.ops[0].low == 0x7F) {
+                    m.walls[0] = 0;
+                    m.walls[1] = m.walls[2] = kNone;
+                }
                 walls_at = p;
             }
             if (in.op == set.go_to || in.op == set.go_sub) {

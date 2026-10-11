@@ -679,6 +679,28 @@ Steps (each pushed when it works; Curse stays as it is):
    (after Aim / View looked elsewhere it stayed there, the fighter off the
    screen), and the party menu's words no longer open five files at once
    (two word sources alive together: on the board the fifth failed).
+   v0.85.2: **behaviour checks** (sweep.cpp's `behave pool`, built with
+   -DBEHAVE_POOL -DBEHAVE_SPELLS, GAME=1; expectations from Pool's own
+   tables - a scratch oracle - and the facts docs' formulas): class values,
+   Constitution, creation (every race / class / alignment / sex, dice high
+   and low), training, Modify, money, spells in fights, the races' foes,
+   backstabs, paralysing hits, turning, level drain - 400 checks. What
+   they found and fixed (all Pool only): **every ready class trains** at
+   once (Curse's one-class pick isn't Pool's); Constitution's hit points
+   +1 over 16 / +1 more over 17 for a single-class fighter only (Curse's
+   17-25 scale); Modify's most hit points every die high plus the
+   adjustment once; Modify's Strength 17 -> 18 first, then a fighter's
+   18/01 (not straight to 18/01) and Keep leaves the rolled hit points as
+   they are; a fighter's attacks set by its level (back to 2 when drained
+   to 6th); training's 1000 gp counts half a gold piece up; Mirror Image's
+   data is the images alone (Curse: images << 4 + level) and an image
+   takes a spell as that count says; Dispel Magic works on every target
+   in its area once (Curse: the first one, as many passes as targets);
+   Friends' Charisma at most 25; a backstab is x (thief level / 4 + 2)
+   and only in leather or no body armour. **Phlan's walls** (Tom, a 4.0"
+   new game: the 3D view empty after the tour): Pool's LOAD PIECES 0x7F
+   loads block 0 into set 1 (WALLDEF3 block 0, three parts - area 3's
+   scripts all use it); the engine took 0x7F as "no walls" (Curse's).
 7. v0.83.0: **the wilderness** (areas 25-27 while their area word 0x4BE6 is
    0; the Project's claude/poolrad_overland_facts.md, `engine/overland.*`):
    the program's 44 x 36 map of icon numbers (the three areas windows on
@@ -1028,6 +1050,10 @@ the game's Settings (As Original: all of them).
   find its trap doors - 1 in 5 while searching, +1 in 5 for an elf or a
   half-elf (the original: elves and half-elves no better, and nobody finds
   them without searching).
+- **Pool's training, a magic-user with no spell left to learn**: the
+  original writes the "learnt" mark to spell 0's place, which is the
+  record's maximum hit points (they become 1 before the level's gain); the
+  engine just learns nothing.
 - **Pool's healed land** (after the pyramid): the wilderness icons show
   their healed colours at once; the original recolours them a few pixels
   at a time while panning the map from the city to the pyramid.

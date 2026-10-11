@@ -930,7 +930,9 @@ Stop Vm::step()
             }
             if (c != 0xFF && !dungeon) h_.picture(0x79, 0xFF);
         } else if (a == 0x7F) {
-            h_.load_walls(1, -1);
+            // Pool's program: block 0 into set 1 (Phlan's WALLDEF3 block 0,
+            // three parts: all three sets); Curse has no block 0 - none
+            h_.load_walls(1, set_.pool_map ? 0 : -1);
         } else if (get(0x4BE7) && get(0x4BE8)) {
             if (a != 0xFF) h_.load_walls(1, a);
             if (c != 0xFF) h_.load_walls(3, c);
