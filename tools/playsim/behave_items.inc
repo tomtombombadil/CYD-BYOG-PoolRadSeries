@@ -1562,6 +1562,503 @@ static void b_worn_items()
     }
 }
 
+// ---- 7. Using items (item_use_facts 1-2, curse_finish_facts 10): which
+// items are used and how, charges, the item spells outside fights, the
+// caster level 6, scrolls (who reads them, the spell off the scroll)
+static magic::Scrolls b_scrolls()
+{
+    return play::scroll_facts();
+}
+
+// Uses item i of member `who` on the items screen (outside fights), drives
+// the cast to its end: "Cast Spell on whom" -> `target`, "Use it?" -> `answer`
+static void b_use(int who, int i, int target, char answer)
+{
+    using namespace play;
+    pt->selected = who;
+    view_from = Screen::Game;
+    screen = Screen::Items;
+    use_item(i, C);
+    for (int k = 0; k < 400; ++k) {
+        if (screen == Screen::YesNo) {
+            tap_word(answer);
+            continue;
+        }
+        if (screen != Screen::Cast) break;
+        if (cr.stage == CastRun::Whom) {
+            pt->selected = target;
+            cr.target = target;
+            do_cast(C);
+            continue;
+        }
+        g_now += 5000;
+        play::tick(g_now, C);
+    }
+    note_until = 0;
+    screen = Screen::Game;
+    load_magic();                               // (the use may have let the tables go: back for the checks)
+}
+
+static void b_use_items()
+{
+    using namespace play;
+    if (!boot()) return;
+    if (!load_magic()) {
+        expect("items", "the spell tables", false);
+        return;
+    }
+    const magic::Scrolls sc = b_scrolls();
+    // Which are used: scrolls (slots 11-13) by their spell list; the rest when
+    // 0x3D is a spell and 0x3E under 0x80 (coab UseMagicItem, Item.IsScroll)
+    for (int k = 0; k < b_n_items; ++k) {
+        const uint8_t* r = b_rec(k);
+        const int slot = names->type(r[0x2E]).slot;
+        const bool scroll = slot >= 11 && slot <= 13;
+        const bool usable = !scroll && r[0x3D] != 0 && r[0x3E] < 0x80;
+        char what[96];
+        snprintf(what, sizeof what, "record %d %s: %s", k, b_nm(r), scroll ? "a scroll" : usable ? "used: its spell" : "not used");
+        expect("items", what,
+               magic::is_scroll(sc, r) == scroll && magic::usable(sc, r) == usable && (!usable || magic::item_spell(r) == (r[0x3D] & 0x7F)));
+    }
+    // (what the program's spell table says of each item's spell - for the report)
+    for (int k = 0; k < b_n_items; ++k) {
+        const uint8_t* r = b_rec(k);
+        if (!magic::usable(sc, r)) continue;
+        const int s = magic::item_spell(r);
+        const spells::Entry e = spells::entry(play::mrules->tables, s);
+        printf("NOTE items: record %d %s: spell %02X class %d targets %d when %d affect %02X lasts %d+%d/level aim %d save %d/%d\n",
+               k, b_nm(r), s, play::mrules->tables.spell_class(s), e.targets, e.when, e.affect, e.lasts, e.lasts_level, e.aim,
+               e.on_save, e.save);
+    }
+    // The caster level of an item's spell: 6 (the monsters' own spells: the
+    // user's - 6 without casting levels, else 12)
+    for (int k = 0; k < b_n_items; ++k) {
+        const uint8_t* r = b_rec(k);
+        if (!magic::usable(sc, r)) continue;
+        const int s = magic::item_spell(r);
+        for (int who : {kA, 4, 5}) {
+            const party::Character& ch = b_saved[who];
+            const bool casts = ch.level(classes::Cleric) || ch.level(classes::MagicUser) || ch.level(classes::Paladin) >= 9 ||
+                               ch.level(classes::Ranger) >= 8;
+            const int want = play::mrules->tables.spell_class(s) != 3 ? 6 : casts ? 12 : 6;
+            char what[96];
+            snprintf(what, sizeof what, "record %d %s (spell %02X) used by member %d: caster level %d", k, b_nm(r), s, who, want);
+            expect("items", what, spells::item_power(ch, play::mrules->tables, s) == want && combat::power_of(ch.rec, play::mrules->tables, s, true) == want, "%d / %d",
+                   spells::item_power(ch, play::mrules->tables, s), combat::power_of(ch.rec, play::mrules->tables, s, true));
+        }
+    }
+    // Every usable record used outside a fight
+    for (int k = 0; k < b_n_items; ++k) {
+        const uint8_t* r = b_rec(k);
+        if (!magic::usable(sc, r)) continue;
+        const int s = magic::item_spell(r);
+        const spells::Entry e = spells::entry(play::mrules->tables, s);
+        const items::TypeInfo& t = names->type(r[0x2E]);
+        const int who = (t.classes & ov("class_bits", 2)) ? kA : 5;   // (a magic-user for the magic-users' wands)
+        char what[128];
+        // Not readied: "Must be Readied", nothing used
+        {
+            party::Character& ch = b_fresh(who);
+            const int i = b_give(ch, r, false);
+            rules::recalc(ch, *names, d->facts);
+            b_use(who, i, who, 'N');
+            snprintf(what, sizeof what, "record %d %s not readied: nothing used", k, b_nm(r));
+            expect("items", what, ch.n_items == 1 && memcmp(ch.items[0], r, 0x34) == 0 && ch.items[0][0x3C] == r[0x3C]);
+        }
+        party::Character& ch = b_fresh(who);
+        ch.rec[0x1A4] = static_cast<uint8_t>(ch.hp_max() > 20 ? ch.hp_max() - 20 : 1);
+        const int hp0 = ch.hp();
+        const int i = b_give(ch, r, false);
+        rules::recalc(ch, *names, d->facts);
+        if (!b_ready(i)) {
+            snprintf(what, sizeof what, "record %d %s readied by member %d", k, b_nm(r), who);
+            expect("items", what, false);
+            continue;
+        }
+        const int n_aff0 = ch.n_affects;
+        const int charges = r[0x3C], count = r[0x39];
+        // The use taken: one of a pile, else a charge (0: never runs out), gone at 0
+        auto used_ok = [&]() {
+            if (count > 1) return ch.n_items == 1 && ch.items[0][0x39] == count - 1 && ch.items[0][0x3C] == charges;
+            if (charges == 0) return ch.n_items == 1 && ch.items[0][0x3C] == 0;
+            if (charges == 1) return ch.n_items == 0;
+            return ch.n_items == 1 && ch.items[0][0x3C] == charges - 1;
+        };
+        if (e.targets == spells::kCombat) {
+            // "That Item is a combat-only item... Use it?" No: nothing; Yes: a use for nothing
+            b_use(who, i, who, 'N');
+            snprintf(what, sizeof what, "record %d %s (spell %02X, fights only) outside a fight, Use it? No: kept", k, b_nm(r), s);
+            expect("items", what, ch.n_items == 1 && ch.items[0][0x3C] == charges, "items %d charges %d", ch.n_items,
+                   ch.n_items ? ch.items[0][0x3C] : -1);
+            b_use(who, i, who, 'Y');
+            snprintf(what, sizeof what, "record %d %s outside a fight, Use it? Yes: a use gone, nothing done", k, b_nm(r));
+            expect("items", what, used_ok() && ch.hp() == hp0 && ch.n_affects == n_aff0, "items %d charges %d hp %d effects %d",
+                   ch.n_items, ch.n_items ? ch.items[0][0x3C] : -1, ch.hp(), ch.n_affects);
+            continue;
+        }
+        // Cast: the dice forced to their middle-ish faces
+        if (s == 0x39) {
+            dice_faces({4, 4, 4, 4, 4});
+        } else if (s == 0x3B) {
+            dice_faces({3});
+        } else if (s == 0x3F) {
+            dice_faces({5, 5, 5, 5, 5, 5, 5, 5});
+        } else if (s == 0x3E || s == 0x63) {
+            dice_faces({4, 4});
+        }
+        b_use(who, i, who, 'Y');
+        dice_usual();
+        snprintf(what, sizeof what, "record %d %s (spell %02X) used: %s", k, b_nm(r), s,
+                 count > 1 ? "one of the pile" : charges == 0 ? "never runs out" : charges == 1 ? "gone" : "a charge less");
+        expect("items", what, used_ok(), "items %d count %d charges %d", ch.n_items, ch.n_items ? ch.items[0][0x39] : -1,
+               ch.n_items ? ch.items[0][0x3C] : -1);
+        const int pw = spells::item_power(ch, play::mrules->tables, s);
+        auto aff_time = [&](const party::Character& c, int type) {
+            for (int j = 0; j < c.n_affects; ++j)
+                if (c.affects[j][0] == type) return c.affects[j][1] | c.affects[j][2] << 8;
+            return -1;
+        };
+        switch (s) {
+        case 0x3E:
+        case 0x63:
+            snprintf(what, sizeof what, "record %d %s: heals 2d4 + 2 (4 + 4 + 2 = 10)", k, b_nm(r));
+            expect("items", what, ch.hp() == hp0 + 10, "HP %d -> %d", hp0, ch.hp());
+            break;
+        case 0x39:
+            snprintf(what, sizeof what, "record %d %s: hasted for 5d4 (20) minutes", k, b_nm(r));
+            expect("items", what, aff_time(ch, e.affect) == 20, "effect %02X time %d", e.affect, aff_time(ch, e.affect));
+            break;
+        case 0x3B: {
+            snprintf(what, sizeof what, "record %d %s: Strength 21 for d4 x 10 + 40 (70) minutes", k, b_nm(r));
+            const int g = d->prof->magic.facts.giant;
+            expect("items", what, ch.rec[0x11] == 21 && aff_time(ch, g) == 70, "Str %d/%d, effect %02X time %d", ch.rec[0x11],
+                   ch.rec[0x1C], g, aff_time(ch, g));
+            break;
+        }
+        case 0x3F: {
+            bool all = true;
+            for (int m = 0; m < pt->count; ++m) all &= aff_time(pt->m[m], e.affect) == 150;
+            snprintf(what, sizeof what, "record %d %s: the whole party invisible for (d10 + 10) x 10 (150) minutes", k, b_nm(r));
+            expect("items", what, all, "member 0 time %d", aff_time(pt->m[0], e.affect));
+            for (int m = 0; m < pt->count; ++m) pt->m[m].n_affects = 0;
+            break;
+        }
+        default: {
+            const int want = e.lasts + e.lasts_level * pw;
+            snprintf(what, sizeof what, "record %d %s: effect %02X for %d minutes (the table at level %d)", k, b_nm(r), e.affect,
+                     want, pw);
+            expect("items", what, e.affect == 0 || aff_time(ch, e.affect) == want, "time %d", aff_time(ch, e.affect));
+        }
+        }
+    }
+    // Speed on the slowed: the slow is cured, nothing else
+    for (int k = 0; k < b_n_items; ++k) {
+        const uint8_t* r = b_rec(k);
+        if (!magic::usable(sc, r) || magic::item_spell(r) != 0x39) continue;
+        party::Character& ch = b_fresh(kA);
+        const uint8_t slow = d->prof->magic.facts.slow;
+        spells::add_affect(ch, slow, 10, 0, true);
+        const int i = b_give(ch, r, false);
+        rules::recalc(ch, *names, d->facts);
+        b_ready(i);
+        b_use(kA, i, kA, 'Y');
+        const int haste = spells::entry(play::mrules->tables, 0x39).affect;
+        char what[96];
+        snprintf(what, sizeof what, "record %d %s on the slowed: the slow cured, no haste", k, b_nm(r));
+        expect("items", what, !ch.has_affect(slow) && !ch.has_affect(static_cast<uint8_t>(haste)));
+        break;
+    }
+    // Giant strength on someone already stronger than 21: no change
+    for (int k = 0; k < b_n_items; ++k) {
+        const uint8_t* r = b_rec(k);
+        if (!magic::usable(sc, r) || magic::item_spell(r) != 0x3B) continue;
+        party::Character& ch = b_fresh(kA);
+        ch.rec[0x10] = ch.rec[0x11] = 22;
+        const int i = b_give(ch, r, false);
+        rules::recalc(ch, *names, d->facts);
+        b_ready(i);
+        b_use(kA, i, kA, 'Y');
+        char what[96];
+        snprintf(what, sizeof what, "record %d %s on Str 22: stays 22", k, b_nm(r));
+        expect("items", what, ch.rec[0x11] == 22, "%d", ch.rec[0x11]);
+        break;
+    }
+    // Scrolls: who can read them (magic-users and clerics either kind; a
+    // thief of 10th level on d100 75 or less; anyone else "oops!")
+    {
+        party::Character t = b_saved[kA];
+        expect("items", "a paladin of 5th level can't read a scroll", !magic::reads_scroll(t, 1));
+        t = b_saved[5];
+        expect("items", "a magic-user reads scrolls", magic::reads_scroll(t, 100));
+        t = b_saved[4];
+        expect("items", "a cleric reads scrolls", magic::reads_scroll(t, 100));
+        t = b_saved[2];
+        t.rec[0x10F] = 9;
+        expect("items", "a 9th level thief can't", !magic::reads_scroll(t, 1));
+        t.rec[0x10F] = 10;
+        expect("items", "a 10th level thief: d100 75 reads, 76 doesn't", magic::reads_scroll(t, 75) && !magic::reads_scroll(t, 76));
+    }
+    // The spell read off a scroll: the last line holding it emptied, the
+    // count word down one; under "With 1 Spell" the scroll is gone
+    for (int k = 0; k < b_n_items; ++k) {
+        const uint8_t* r = b_rec(k);
+        if (!magic::is_scroll(sc, r)) continue;
+        party::Character& ch = b_fresh(5);
+        int i = b_give(ch, r, true);
+        ch.items[i][0x35] = 0;
+        int n = 0;
+        for (int l = 0; l < 3; ++l) n += r[0x3C + l] != 0;
+        bool ok = true;
+        int left = n;
+        for (int l = 2; l >= 0 && ok; --l) {
+            const int sp = ch.n_items ? ch.items[0][0x3C + l] & 0x7F : 0;
+            if (!sp) continue;
+            const int word = ch.items[0][0x30];
+            magic::scroll_used(ch, sc, 0, sp);
+            --left;
+            if (word - 1 < sc.one_spell) ok &= ch.n_items == 0;
+            else ok &= ch.n_items == 1 && ch.items[0][0x30] == word - 1 && ch.items[0][0x3C + l] == 0;
+        }
+        char what[96];
+        snprintf(what, sizeof what, "record %d %s: each spell read goes, then the scroll", k, b_nm(r));
+        expect("items", what, ok && (ch.n_items == 0 || r[0x30] - n >= sc.one_spell), "items %d", ch.n_items);
+        (void)i;
+    }
+    // Only an identified scroll lists its spells; a cleric reads a clerics' scroll (it's known then)
+    for (int k = 0; k < b_n_items; ++k) {
+        const uint8_t* r = b_rec(k);
+        if (!magic::is_scroll(sc, r) || !r[0x35]) continue;
+        party::Character& ch = b_fresh(5);
+        b_give(ch, r, true);
+        uint8_t ids[3];
+        const int n = magic::scroll_list(ch, play::mrules->tables, sc, 0, ids, 3);
+        char what[96];
+        snprintf(what, sizeof what, "record %d %s (unidentified): no spells to read for a magic-user", k, b_nm(r));
+        expect("items", what, n == 0, "%d", n);
+    }
+    for (int k = 0; k < b_n_items; ++k) {
+        const uint8_t* r = b_rec(k);
+        if (!magic::is_scroll(sc, r) || names->type(r[0x2E]).slot != 12) continue;
+        party::Character& ch = b_fresh(4);
+        b_give(ch, r, true);
+        ch.items[0][0x35] = 6;
+        uint8_t ids[3];
+        const int n = magic::scroll_list(ch, play::mrules->tables, sc, 0, ids, 3);
+        char what[96];
+        snprintf(what, sizeof what, "record %d %s (hidden) read by a cleric: identified, its spells listed", k, b_nm(r));
+        expect("items", what, n > 0 && ch.items[0][0x35] == 0, "%d spells, hidden %d", n, ch.items[0][0x35]);
+    }
+}
+
+// ---- 8. Using an item in a fight (item_use_facts 2-3): the spell goes off
+// at once (no casting time), the use is taken, the turn is over; the wands'
+// and the necklace's damage on the monsters
+static int b_fu_stage = 0, b_fu_item = -1, b_fu_round = -1;
+static int b_fu_hp[combat::kMaxFighters];
+static const uint8_t* b_fu_rec = nullptr;
+static int b_fu_charges = 0;
+
+static int b_fu_menu()
+{
+    using namespace play;
+    combat::Fighter& f = fg->b.f[fg->cur];
+    if (fg->cur != kA) return 0;                    // (the others go Quick)
+    if (b_fu_stage == 0) {
+        for (int i = 0; i < fg->b.n; ++i) b_fu_hp[i] = fg->b.f[i].hp();
+        b_fu_round = fg->b.round;
+        b_fu_stage = 1;
+        if (!load_magic()) return 0;
+        fight_use(b_fu_item, magic::item_spell(pt->m[kA].items[b_fu_item]), false, C);
+        return 1;
+    }
+    if (b_fu_stage == 1) {
+        b_fu_stage = 2;
+        const uint8_t* r = b_fu_rec;
+        const int s = r[0x3D] & 0x7F;
+        party::Character& ch = pt->m[kA];
+        char what[128];
+        snprintf(what, sizeof what, "record %d %s used in a fight: the turn over at once (next turn a round later)",
+                 static_cast<int>((r - b_rec(0)) / 63), b_nm(r));
+        expect("items", what, fg->b.round > b_fu_round, "used in round %d, back in round %d", b_fu_round, fg->b.round);
+        const bool used = r[0x3C] == 1 ? ch.n_items == 0 : ch.n_items == 1 && ch.items[0][0x3C] == b_fu_charges - 1;
+        snprintf(what, sizeof what, "record %d %s used in a fight: a charge gone", static_cast<int>((r - b_rec(0)) / 63), b_nm(r));
+        expect("items", what, used, "items %d charges %d", ch.n_items, ch.n_items ? ch.items[0][0x3C] : -1);
+        // The damage on the monsters (only this item hurt them)
+        int hurt = 0, lo = 9999, hi = 0;
+        for (int i = 0; i < fg->b.n; ++i) {
+            if (fg->b.f[i].member >= 0) continue;
+            const int lost = b_fu_hp[i] - fg->b.f[i].hp();
+            if (lost <= 0) continue;
+            ++hurt;
+            lo = lost < lo ? lost : lo;
+            hi = lost > hi ? lost : hi;
+        }
+        int want_lo = 0, want_hi = 0, most = 99;
+        bool down_ok = true;                         // (a monster may go down: its loss is then its HP)
+        switch (s) {
+        case 0x41: want_lo = 4; want_hi = 10; most = 1; break;          // 2d4 + 2, one target, no save
+        case 0x2F: case 0x33: want_lo = 3; want_hi = 36; break;         // 6d6 (level 6), half on a save
+        case 0x40: want_lo = 1; want_hi = 42; break;                    // 3, 5 or 7 d6, half on a save
+        case 0x57: want_lo = 3; want_hi = 30; break;                    // 3d10
+        case 0x62: want_lo = 0; want_hi = 0; most = 0; break;          // defoliation: only plants hurt
+        default: down_ok = false; most = 99; break;
+        }
+        if (s == 0x3D) {
+            const uint8_t para = d->prof->fight.facts.mon.paralyzed;
+            int held = 0;
+            for (int i = 0; i < fg->b.n; ++i)
+                if (fg->b.f[i].member < 0 && fg->b.f[i].has(para)) ++held;
+            snprintf(what, sizeof what, "record %d %s: no damage, the paralysed (%d) by their saves", static_cast<int>((r - b_rec(0)) / 63),
+                     b_nm(r), held);
+            expect("items", what, hurt == 0);
+        } else if (down_ok) {
+            snprintf(what, sizeof what, "record %d %s (spell %02X): %d hurt (at most %d), %d-%d each (%d-%d)",
+                     static_cast<int>((r - b_rec(0)) / 63), b_nm(r), s, hurt, most, hurt ? lo : 0, hi, want_lo, want_hi);
+            const bool ok = hurt <= most && (most == 0 || hurt >= 1) && (hurt == 0 || (hi <= want_hi && lo >= (want_lo > 16 ? 1 : 1)));
+            expect("items", what, ok && (hurt == 0 || lo >= 1));
+        }
+    }
+    return 0;
+}
+
+static void b_fight_use()
+{
+    using namespace play;
+    if (!boot()) return;
+    std::vector<int> usable;                        // (found before the boots: each one frees the names)
+    {
+        const magic::Scrolls sc = scroll_facts();
+        for (int k = 0; k < b_n_items; ++k)
+            if (magic::usable(sc, b_rec(k))) usable.push_back(k);
+    }
+    for (int k : usable) {
+        const uint8_t* r = b_rec(k);
+        if (!boot()) return;
+        if (!load_magic()) return;
+        const int s = magic::item_spell(r);
+        if (spells::entry(mrules->tables, s).targets != spells::kCombat) continue;   // (the self / party ones: as outside)
+        party::Character& ch = pt->m[kA];
+        ch.n_items = 0;
+        ch.rec[0x12B] = 0xFF;                       // (any class: the wand for the test)
+        const int i = b_give(ch, r, true);
+        rules::recalc(ch, *names, d->facts);
+        // The others out of it: only the item hurts the monsters
+        for (int m = 0; m < pt->count; ++m)
+            if (m != kA) pt->m[m].rec[0x195] = party::Unconscious, pt->m[m].rec[0x196] = 0;
+        b_fu_stage = 0;
+        b_fu_item = i;
+        b_fu_rec = r;
+        b_fu_charges = r[0x3C];
+        on_menu = b_fu_menu;
+        god = true;
+        if (!start_fight()) {
+            expect("items", "the inn's fight", false);
+            continue;
+        }
+        pump(400000);
+        on_menu = nullptr;
+        god = false;
+        if (b_fu_stage < 2) {
+            char what[96];
+            snprintf(what, sizeof what, "record %d %s used in a fight", k, b_nm(r));
+            expect("items", what, false, "stage %d", b_fu_stage);
+        }
+    }
+}
+
+// ---- 9. The cursed weapons' and robes' own effects: the Robe of Vermin
+// (effect 0x4A: a spell miscasts 1 in 2 - "miscasts", nothing cast, the
+// spell kept; coab ovr023 sub_5D2E1), the Berserker sword (0x4D: readied
+// outside a fight its wearer goes Quick, control 0xB3 - coab AffectBerzerk),
+// and those with Dragon Slayer (0x4B) or 0x4A get no free attack on one
+// stepping away (coab ovr014 move_step_away_attack)
+static void b_cursed_effects()
+{
+    using namespace play;
+    if (!boot()) return;
+    for (int m = 0; m < pt->count; ++m) b_saved[m] = pt->m[m];
+    // Robe of Vermin: a camp spell with the d2 a 1
+    for (int k = 0; k < b_n_items; ++k) {
+        const uint8_t* r = b_rec(k);
+        if (r[0x3E] != 0x80 || r[0x3D] != 0x4A) continue;
+        if (!load_magic()) return;
+        party::Character& ch = b_fresh(5);
+        const int i = b_give(ch, r, false, true);
+        rules::recalc(ch, *names, d->facts);
+        b_ready(i);
+        int sp = 0;
+        for (int s = 1; s <= 0x38 && !sp; ++s) {
+            const spells::CampSpell* cs = camp_spell(s);
+            const spells::Entry e = spells::entry(mrules->tables, s);
+            if (cs && cs->does == spells::Does::Affect && e.affect && e.level <= 2 && mrules->tables.spell_class(s) == 2 &&
+                (e.targets == spells::kSelf || e.targets == spells::kMember))
+                sp = s;
+        }
+        if (sp) ch.rec[magic::kListAt] = static_cast<uint8_t>(sp);     // (memorized)
+        if (!sp) {
+            expect("items", "a camp spell memorized by the magic-user", false);
+            break;
+        }
+        uint8_t ids[magic::kListSize];
+        auto count = [&]() { return magic::in_memory(ch, mrules->tables, false, ids, magic::kListSize); };
+        const int held = count();
+        const int fx = spells::entry(mrules->tables, sp).affect;
+        cr = CastRun{};
+        cr.caster = 5;
+        pt->selected = 5;
+        view_from = Screen::Game;
+        dice_faces({1, 1, 1, 1});
+        choose_spell(sp, C);
+        for (int n = 0; n < 200; ++n) {
+            if (screen != Screen::Cast) break;
+            if (cr.stage == CastRun::Whom) {
+                cr.target = 5;
+                do_cast(C);
+                continue;
+            }
+            g_now += 5000;
+            play::tick(g_now, C);
+        }
+        dice_usual();
+        screen = Screen::Game;
+        load_magic();
+        char what[112];
+        snprintf(what, sizeof what, "record %d %s worn, a spell (%02X) with the d2 a 1: miscasts - no effect, the spell kept", k,
+                 b_nm(r), sp);
+        const int after = count();
+        expect("items", what, !ch.has_affect(static_cast<uint8_t>(fx)) && after == held, "effect %s, spells %d -> %d",
+               ch.has_affect(static_cast<uint8_t>(fx)) ? "given" : "not given", held, after);
+    }
+    // Berserker: readied, Quick and control 0xB3
+    for (int k = 0; k < b_n_items; ++k) {
+        const uint8_t* r = b_rec(k);
+        if (r[0x3E] != 0x80 || r[0x3D] != 0x4D) continue;
+        party::Character& ch = b_fresh(kA);
+        const int i = b_give(ch, r, false, true);
+        rules::recalc(ch, *names, d->facts);
+        b_ready(i);
+        char what[96];
+        snprintf(what, sizeof what, "record %d %s readied: the wearer goes berserk (control 0xB3)", k, b_nm(r));
+        expect("items", what, ch.rec[0xF7] == 0xB3, "control %02X", ch.rec[0xF7]);
+    }
+    // No free attack from one with Dragon Slayer's effect (or 0x4A)
+    if (start_fight()) {
+        combat::Battle& b = fg->b;
+        for (uint8_t fx : {static_cast<uint8_t>(0x4B), static_cast<uint8_t>(0x4A)}) {
+            party::Character& ch = b_fresh(kA);
+            spells::add_affect(ch, fx, 0, 0xFF, true);
+            b_sync(kA);
+            b_place(kA, kT, 1);
+            b.f[kA].delay = 5;                         // (it hasn't acted: a free attack due)
+            b.f[kA].rec[0x196] = 1;
+            const bool free = combat::free_attack_ok(b, fg->t, kA, kT);
+            char what[96];
+            snprintf(what, sizeof what, "a party member with effect %02X: no free attack on a monster stepping away", fx);
+            expect("items", what, !free);
+        }
+    }
+}
+
 static void behave_items()
 {
     using namespace play;
@@ -1606,6 +2103,9 @@ static void behave_items()
     if (part("names")) b_names_detect();
     if (part("money")) b_money();
     if (part("worn")) b_worn_items();
+    if (part("use")) b_use_items();
+    if (part("fightuse")) b_fight_use();
+    if (part("cursed")) b_cursed_effects();
     if (part("fight")) b_fight_weapons();
     if (part("effects")) b_fight_effects();
     for (int m = 0; pt && m < pt->count; ++m) pt->m[m] = b_saved[m];

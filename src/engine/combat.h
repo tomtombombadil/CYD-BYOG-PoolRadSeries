@@ -129,9 +129,11 @@ struct SpellFx {
 // animated dead +3), the Dragon Slayer's (dragons: +2 to hit, damage 3 x
 // d12 + 4 + Strength's), the Frost Brand's (fire creatures +3), the Cloak of
 // Displacement (the first attack on its wearer each fight misses), the Ring
-// of Invisibility (invisible at a fight's start and at each round's end)
+// of Invisibility (invisible at a fight's start and at each round's end);
+// the Robe of Vermin's effect - with it, or the Dragon Slayer's, no free
+// attack on one stepping away (listing ovr014:0B37-0B68)
 struct ItemFx {
-    uint8_t flame_tongue, dragon_slayer, frost_brand, displace, ring_invisible;
+    uint8_t flame_tongue, dragon_slayer, frost_brand, displace, ring_invisible, vermin;
 };
 
 // The effects the fights' rules look at (per game, from the profile)

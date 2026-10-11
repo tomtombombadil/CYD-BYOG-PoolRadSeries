@@ -1547,6 +1547,8 @@ bool free_attack_ok(const Battle& b, const Tables& t, int e, int mover)
     const Fighter& en = b.f[e];
     const Fighter& m = b.f[mover];
     if (helpless(b, en) || !range(b, t, e, mover, false, nullptr)) return false;
+    // (one with the Dragon Slayer's or the Robe of Vermin's effect never - the original's)
+    if (b.fx && (hasx(en, b.fx->items.dragon_slayer) || hasx(en, b.fx->items.vermin))) return false;
     if (en.delay > 0 || en.received == 0) return true;
     const int dir = direction(en.x, en.y, m.x, m.y);
     if (dir > 7) return true;

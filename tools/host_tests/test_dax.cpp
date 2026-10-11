@@ -2681,6 +2681,18 @@ static void test_item_combat()
         }
         CHECK(ok);
     }
+    // Free attacks: none from one with the Dragon Slayer's (0x4B) or the Robe of Vermin's (0x4A) effect
+    fx.items.vermin = 0x4A;
+    rec[1][0xDE] = 1;
+    b.f[1].delay = 5;
+    CHECK(combat::free_attack_ok(b, t, 1, 0));
+    for (uint8_t e : {static_cast<uint8_t>(0x4B), static_cast<uint8_t>(0x4A)}) {
+        naff[1] = 1;
+        memset(aff[1][0], 0, party::kAffectSize);
+        aff[1][0][0] = e;
+        CHECK(!combat::free_attack_ok(b, t, 1, 0));
+    }
+    naff[1] = 0;
     // Backstab: man-sized or smaller is (size & 0x7F) 1 or less
     rec[0][0x10F] = 3;                                       // a thief
     hold(36, 0, false, 0);
