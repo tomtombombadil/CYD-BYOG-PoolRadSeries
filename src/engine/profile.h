@@ -426,6 +426,8 @@ struct Profile {
         bool    program_words;         // some words are in the program, not GAME.OVR (marked text::kInProgram)
         bool    pool_files;            // Pool's character files (285-byte records, .CHA / .ITM / .SPC) and saves (no wall sets)
         bool    pool_rest_keys;        // the Rest menu's keys: R Y(days) H M I(+) D(-) E, not Curse's R D H M A S E
+        uint16_t overland_map;         // DS: the overland map (44 a row) outdoor fights are made from (Pool; 0: none)
+        uint8_t  overland_area;        // the first of the three wilderness areas on it, 13 places each side by side
     } variant;
 };
 

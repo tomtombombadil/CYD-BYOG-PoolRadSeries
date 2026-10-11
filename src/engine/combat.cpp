@@ -143,7 +143,8 @@ bool read_tables(Tables& t, const TableAt& at, ReadDs read, void* ctx)
            read(ctx, at.facing, t.facing, sizeof t.facing) && read(ctx, at.start_x, t.start_x, sizeof t.start_x) &&
            read(ctx, at.start_y, t.start_y, sizeof t.start_y) &&
            read(ctx, at.shapes, &t.shapes[0][0][0], sizeof t.shapes) &&
-           read(ctx, at.terrain, t.terrain, sizeof t.terrain) && read(ctx, at.turn, t.turn, sizeof t.turn);
+           (!at.terrain || read(ctx, at.terrain, t.terrain, sizeof t.terrain)) &&     // (Pool: none)
+           read(ctx, at.turn, t.turn, sizeof t.turn);
 }
 
 bool Fighter::has(uint8_t type) const
@@ -247,6 +248,139 @@ void build_outdoors(Battle& b, const Tables& t, int city, create::Dice& d)
                     b.ground[y][x] = static_cast<uint8_t>(kFirst[k] + d.roll(kKinds[k], 1) - 1);
                     break;
                 }
+            }
+        }
+}
+
+int pool_terrain(int t, bool special)
+{
+    struct Range { uint8_t lo, hi, f; };
+    // First match wins, in this order (its code's compare chain)
+    static const Range kChain[] = {
+        {1, 2, 0x01}, {0x28, 0x29, 0x01}, {0x4F, 0x56, 0x01}, {0x5B, 0x5C, 0x01}, {0x2B, 0x2B, 0x01}, {0xF1, 0xF1, 0x01},
+        {0xA8, 0xB1, 0x21},
+        {0xB9, 0xB9, 0x11}, {0xBC, 0xC0, 0x11},
+        {3, 4, 0x03}, {6, 9, 0x03}, {0x13, 0x15, 0x03}, {0x17, 0x19, 0x03},
+        {7, 7, 0x02}, {0x0A, 0x12, 0x02}, {0x16, 0x16, 0x02}, {0x1A, 0x24, 0x02}, {0xC9, 0xD0, 0x02},
+        {0xD1, 0xD5, 0x12},
+        {0x25, 0x25, 0x04}, {0x39, 0x39, 0x04}, {0x40, 0x40, 0x04}, {0x9A, 0x9E, 0x04}, {0xA4, 0xA5, 0x04},
+        {0xB4, 0xB4, 0x04}, {0xF3, 0xF3, 0x04}, {0xEF, 0xF0, 0x04}, {0xFA, 0xFA, 0x04}, {0xFC, 0xFC, 0x04},
+        {0x27, 0x2C, 0x05}, {0x99, 0x99, 0x05}, {0x9F, 0x9F, 0x05},
+        {0x2D, 0x2E, 0x44}, {0x33, 0x38, 0x44}, {0x43, 0x4D, 0x44}, {0x5D, 0x61, 0x44},
+        {0xB5, 0xB8, 0x14}, {0xBA, 0xBA, 0x14}, {0xC1, 0xC8, 0x14},
+        {0x2F, 0x32, 0x40}, {0x62, 0x65, 0x40}, {0xF2, 0xF2, 0x40},
+        {0x26, 0x26, 0x41},
+        {0xB2, 0xB3, 0x60},
+        {0x3A, 0x3C, 0x48}, {0x41, 0x42, 0x48},
+        {0x3D, 0x3F, 0x08}, {0x79, 0x7C, 0x08}, {0x87, 0x89, 0x08}, {0x8B, 0x8B, 0x08}, {0x8D, 0x8D, 0x08},
+        {0x90, 0x93, 0x08}, {0x95, 0x95, 0x08}, {0x97, 0x98, 0x08}, {0xA0, 0xA2, 0x08}, {0xA6, 0xA7, 0x08},
+        {0xD6, 0xD8, 0x08}, {0xEE, 0xEE, 0x08},
+        {0x57, 0x5A, 0x88}, {0xA3, 0xA3, 0x88}, {0xE0, 0xE0, 0x88},
+        {0x7C, 0x7D, 0x09}, {0x8A, 0x8A, 0x09}, {0x8C, 0x8C, 0x09}, {0x8E, 0x8F, 0x09}, {0x94, 0x94, 0x09},
+        {0x96, 0x96, 0x09},
+        {0x7E, 0x85, 0x28}, {0xE5, 0xE7, 0x28},
+        {0xD9, 0xDF, 0x18},
+        {0x4E, 0x4E, 0x20}, {0xF5, 0xF5, 0x20}, {0xE8, 0xE9, 0x20},
+        {0x6D, 0x6D, 0x80}, {0xF4, 0xF6, 0x80},
+        {0x6E, 0x71, 0x81}, {0x73, 0x78, 0x81},
+        {0x66, 0x6C, 0x90}, {0x72, 0x72, 0x90},
+        {0xE1, 0xE4, 0xA0}, {0xEA, 0xED, 0xA0},
+    };
+    int f = 0;
+    for (const Range& r : kChain)
+        if (t >= r.lo && t <= r.hi) {
+            f = r.f;
+            break;
+        }
+    if ((f & 0x80) && special) f = (f - 0x80) | 1;
+    return f;
+}
+
+void build_outdoors_pool(Battle& b, int f, create::Dice& d)
+{
+    b.indoors = false;
+    const uint8_t plain = 0x36;
+    for (int y = 0; y < kH; ++y)
+        for (int x = 0; x < kW; ++x) b.ground[y][x] = plain;
+    auto set = [&](int x, int y, uint8_t v) {
+        if (x >= 0 && x < kW && y >= 0 && y < kH) b.ground[y][x] = v;
+    };
+    // The stream (and a crossing, always one)
+    const int chance = (f & 0x10) ? 75 : (f & 0x20) ? 35 : 0;
+    if (chance && d.roll(100, 1) <= chance) {
+        int col = 34 - 5 * d.roll(4, 1);
+        while ((col + 2) % 7 != 0) --col;
+        const int start = col;
+        bool crossing = false;
+        for (int row = 0; row < kH && col <= 49; ++row, ++col) {
+            set(col, row, 0x32);
+            set(col + 1, row, 0x33);
+            if (d.roll(20, 1) == 1) {
+                set(col, row, 0x34);
+                set(col + 1, row, 0x35);
+                crossing = true;
+            }
+        }
+        if (!crossing) {
+            const int r = 16 - d.roll(9, 1), c = start + r;
+            set(c, r, 0x34);
+            set(c + 1, r, 0x35);
+        }
+    }
+    // Trees (the tops above)
+    int n = 1;
+    if (f & 0x02) n = 1;
+    if (f & 0x04) n = 3;
+    if (f & 0x40) n = 4;
+    if (f & 0x08) n = 7;
+    if (f & 0x80) n = 0;
+    for (int y = 1; y < kH; ++y)
+        for (int x = 0; x < kW; ++x) {
+            if (b.ground[y][x] != plain || b.ground[y - 1][x] != plain || d.roll(100, 1) > n) continue;
+            int r = d.roll(10, 1);
+            r = r > 8 ? 4 + d.roll(2, 1) : (r + 1) / 2;
+            if (f & 0x40) r = 3 + d.roll(3, 1);
+            b.ground[y][x] = static_cast<uint8_t>(0x23 + r);
+            if (r < 5) b.ground[y - 1][x] = static_cast<uint8_t>(0x1F + r);
+        }
+    // The rest scattered
+    int A = 0, B = 6, C = 15, D = 40, E = 0;
+    if (f & 0x02) {
+        C = 45;
+        D = 10;
+    }
+    if (f & 0x04) C = 25;
+    if (f & 0x40) {
+        D = 5;
+        E = 30;
+    }
+    if (f & 0x80) {
+        A = 15;
+        D = 25;
+        C = 10;
+    }
+    for (int y = 0; y < kH; ++y)
+        for (int x = 0; x < kW; ++x) {
+            if (b.ground[y][x] != plain) continue;
+            const int v = d.roll(255, 1);
+            if (v <= A) {
+                const int r = d.roll(4, 1);
+                if (r == 4 && y > 0 && b.ground[y - 1][x] == plain) {
+                    b.ground[y - 1][x] = 0x41;
+                    b.ground[y][x] = 0x40;
+                } else if (r < 4) {
+                    b.ground[y][x] = static_cast<uint8_t>(0x3C + r);
+                }
+            } else if (v <= A + B) {
+                b.ground[y][x] = static_cast<uint8_t>(0x36 + d.roll(3, 1));
+            } else if (v <= A + B + C) {
+                b.ground[y][x] = static_cast<uint8_t>(0x29 + d.roll(4, 1));
+            } else if (v <= A + B + C + E) {
+                b.ground[y][x] = static_cast<uint8_t>(0x38 + ((d.roll(10, 1) - 1) / 3 + 1));
+            } else if (v <= A + B + C + E + D) {
+                int r = d.roll(4, 1);
+                if (r == 4 && !(f & 0x40)) r = d.roll(3, 1);
+                b.ground[y][x] = static_cast<uint8_t>(0x2D + r);
             }
         }
 }
@@ -2443,6 +2577,10 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             if (fs.per == 1) plus += pw;
             if (fs.per == 2) {
                 count = (pw + 1) / 2;
+                plus += count;
+            }
+            if (fs.per == 7) {                  // Pool's Magic Missile: level / 2 missiles of 1d4 + 1
+                count = pw / 2;
                 plus += count;
             }
             if (fs.per == 3) count = pw;

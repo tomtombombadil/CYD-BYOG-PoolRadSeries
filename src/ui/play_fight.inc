@@ -2327,6 +2327,29 @@ bool solid_side(void*, int dir)
     return geo::wall(d->map, x, y, dir) != 0 && geo::door(d->map, x, y, dir) == 0;
 }
 
+// Pool's outdoor field: the place on its overland map under the party
+// (area words 0x4BC3 / 0x4BC4 = x / y - the program's 0x49C3 / 0x49C4; the
+// three wildernesses' maps side by side, 13 places each) - its flags
+// (poolrad_combat_facts.md 1.2)
+int pool_place_flags()
+{
+    const int y = vm->get(0x4BC4) & 0xFF;
+    const int x = (vm->get(0x4BC3) & 0xFF) + 13 * (d->gs.script - d->prof->variant.overland_area);
+    if (x < 0 || x >= 44 || y < 0) return 0;
+    uint8_t place = 0;
+    fs::File f;
+    if (open_file(d->prof->program, f)) {
+        library::FileSource src(f);
+        exepack::Info info;
+        if (exepack::parse(src, info) != exepack::Status::Ok ||
+            exepack::read(src, info, d->prof->create.ds_image + d->prof->variant.overland_map + y * 44 + x, &place, 1) !=
+                exepack::Status::Ok)
+            place = 0;
+        f.close();
+    }
+    return combat::pool_terrain(place, (vm->get(0x4CB3) & 0xFF) == 0xFF);
+}
+
 void fight_start(pic::Canvas& c)
 {
     // What only other screens use goes first (they load again when needed):
@@ -2370,7 +2393,11 @@ void fight_start(pic::Canvas& c)
     new (&b) combat::Battle();         // (in place: a temporary would take 10 KB of stack)
     b.tables = &fg->t;
     b.indoors = vm->get(0x4BE6) != 0;
+    // Pool: only its wilderness areas are fought outdoors (the rest from the 3D map)
+    const int over = d->prof->variant.overland_area;
+    if (d->prof->variant.overland_map && (d->gs.script < over || d->gs.script > over + 2)) b.indoors = true;
     if (b.indoors) combat::build_indoors(b, fg->t, d->map, d->gs.x, d->gs.y, rng);
+    else if (d->prof->variant.overland_map) combat::build_outdoors_pool(b, pool_place_flags(), rng);
     else combat::build_outdoors(b, fg->t, vm->get(0x4CA1) & 0xFF, rng);
     load_tiles(b.indoors);
     // The fighters: the party, then the monsters
@@ -2436,6 +2463,9 @@ void fight_start(pic::Canvas& c)
     fight_party_icons();
     for (int g = 0; g < ml->groups; ++g) load_monster_icon(8 + g, ml->g[g].icon);
     int w, h;
+    free(fg->cursor);                        // (a fight started over another: nothing kept twice)
+    free(fg->skull);
+    free(fg->outline);
     fg->cursor = load_pic4("COMSPR.DAX", 0x19, 0, &w, &h);
     fg->skull = load_pic4("COMSPR.DAX", 11 + 0x80, 0, &w, &h);
     fg->outline = load_pic4("COMSPR.DAX", 0x19 + 0x80, 0, &w, &h);

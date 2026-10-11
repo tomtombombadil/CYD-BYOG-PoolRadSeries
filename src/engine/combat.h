@@ -341,6 +341,13 @@ int squares(int size, int* sx, int* sy);
 // Builds the field
 void build_indoors(Battle& b, const Tables& t, const geo::Map& m, int px, int py, create::Dice& d);
 void build_outdoors(Battle& b, const Tables& t, int city, create::Dice& d);
+// Pool of Radiance (poolrad_combat_facts.md 1.2): no terrain table - the
+// field's flags come from the place on its overland map (a byte of the
+// program's map; `special`: the area's word says so) and its own
+// generator lays out the stream (and a crossing, always), trees and the
+// rest
+int pool_terrain(int place, bool special);
+void build_outdoors_pool(Battle& b, int flags, create::Dice& d);
 // The square's ground entry (0 when off the field)
 const uint8_t* tile(const Battle& b, const Tables& t, int x, int y);
 

@@ -230,6 +230,113 @@ constexpr combat::FightSpell kCurseFight[] = {
     {0x62, SpellDoes::Defoliate, 6, 6, 0, 0, 0, 0},         // defoliation: 6d6, a cone of 3
 };
 
+// Pool's spells in fights and in camp (poolrad_combat_facts.md 3; the
+// words: Pool's GAME.OVR strings the same code prints): Curse's that Pool
+// has, with Pool's own Magic Missile (half the level in missiles - a
+// first-level caster's does nothing, per the code; per 7), a Lightning Bolt
+// of 8, its item spells
+constexpr combat::FightSpell kPoolFight[] = {
+    {0x01, SpellDoes::Ours, 0, 0, 0, 0, 0, 0x2801C},        // Bless: "is Blessed"
+    {0x02, SpellDoes::Theirs, 0, 0, 0, 0, 0, 0x2804E},      // Curse: "is Cursed"
+    {0x03, SpellDoes::Heal, 1, 8, 0, 0, 0, 0},              // Cure Light Wounds
+    {0x04, SpellDoes::Damage, 1, 8, 0, 0, 8, 0},            // Cause Light Wounds (a touch)
+    {0x05, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x280F5},
+    {0x06, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2812E},
+    {0x07, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2812E},
+    {0x08, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x28168},
+    {0x09, SpellDoes::Damage, 0, 0, 0, 1, 9, 0},            // Burning Hands: the caster's level
+    {0x0B, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x280F5},
+    {0x0F, SpellDoes::Damage, 0, 4, 0, 7, 8, 0},            // Magic Missile (Pool's: level / 2 missiles)
+    {0x10, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2812E},
+    {0x11, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2812E},
+    {0x13, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x284A5},      // Shield
+    {0x14, SpellDoes::Damage, 1, 8, 0, 1, 0x0C, 0},         // Shocking Grasp: 1d8 + level
+    {0x15, SpellDoes::Sleep, 0, 0, 0, 0, 0, 0x28526},       // Sleep: "falls asleep"
+    {0x17, SpellDoes::Hold, 0, 0, 0, 0, 0, 0x28668},        // Hold Person: "is held"
+    {0x18, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x287EF},
+    {0x1D, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x280F5},
+    {0x1E, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x28A21},      // Invisibility
+    {0x20, SpellDoes::Mirror, 0, 0, 0, 0, 0, 0x28A94},
+    {0x2A, SpellDoes::Prayer, 0, 0, 0, 0, 0, 0x294E3},
+    {0x2F, SpellDoes::Damage, 0, 6, 0, 3, 9, 0},            // Fireball: level d6
+    {0x30, SpellDoes::Haste, 0, 0, 0, 0, 0, 0x298A0, 0x2BF62},
+    {0x31, SpellDoes::Hold, 0, 0, 0, 0, 0, 0x28668},
+    {0x32, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x28A21},
+    {0x34, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2812E},
+    {0x35, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2812E},
+    {0x36, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2812E},
+    {0x21, SpellDoes::Affect, 0, 0, 0, 0, 0, 0xFD2D},       // Ray of Enfeeblement: "is weakened"
+    {0x22, SpellDoes::Cloud, 0, 0, 0, 0, 0, 0x2B9B5, 0x2B9A5},  // Stinking Cloud
+    {0x0A, SpellDoes::Charm, 0, 0, 0, 0, 0, 0x10AC7, 0x281DC},  // Charm Person: "is charmed" / "is unaffected"
+    {0x26, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2926C},      // Cause Blindness: "is blind"
+    {0x28, SpellDoes::Affect, 1, 6, 0, 4, 0, 0x29358},      // Cause Disease: "is diseased", d6 x 10 minutes
+    {0x33, SpellDoes::Bolt, 0, 6, 0, 3, 0x0C, 0, 0, 0, 8},  // Lightning Bolt: level d6, 8 squares (Pool)
+    {0x37, SpellDoes::Slow, 0, 0, 0, 0, 0, 0x29C17, 0x2BF62},
+    {0x19, SpellDoes::Affect, 0, 0, 0, 0, 0, 0xF35E},       // Silence 15' Radius
+    {0x1B, SpellDoes::SnakeCharm, 0, 0, 0, 0, 0, 0x10AC7},
+    {0x25, SpellDoes::CureBlind, 0, 0, 0, 0, 0, 0x29227, 0x2BF62},
+    {0x2C, SpellDoes::Theirs, 0, 0, 0, 0, 0, 0x2960B},      // Bestow Curse (a touch)
+    {0x2D, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x29649},      // Blink
+    {0x0C, SpellDoes::Enlarge, 0, 0, 0, 0, 0, 0x11BA6},
+    {0x0D, SpellDoes::Reduce, 0, 0, 0, 0, 0, 0x28375},
+    {0x2B, SpellDoes::RemoveCurse, 0, 0, 0, 0, 0, 0x29536, 0x2BF62, 0},
+    {0x29, SpellDoes::Dispel, 0, 0, 0, 0, 0, 0x280F5},
+    {0x2E, SpellDoes::Dispel, 0, 0, 0, 0, 0, 0x280F5},
+    {0x1A, SpellDoes::SlowPoison, 0, 0, 0, 0, 0, 0x280F5},
+    {0x1C, SpellDoes::Hammer, 0, 0, 0, 0, 0, 0},
+    {0x24, SpellDoes::Animate, 0, 0, 0, 0, 0, 0x2907B},
+    {0x38, SpellDoes::Restore, 0, 0, 0, 0, 0, 0x29C4F},
+    // The items' own spells
+    {0x39, SpellDoes::Haste, 5, 4, 0, 0, 0, 0x29E10, 0x2BF62},
+    {0x3A, SpellDoes::Heal, 1, 4, 8, 0, 0, 0x29E5B},        // Pool's: d4 + 8, "is Healed"
+    {0x3C, SpellDoes::Bolt, 1, 6, 20, 0, 4, 0, 0, 0, 3},
+    {0x3D, SpellDoes::Theirs, 5, 4, 0, 0, 0, 0x29FA4},
+    {0x3E, SpellDoes::Heal, 2, 4, 2, 0, 0, 0x29E5B},
+    {0x3F, SpellDoes::Ours, 2, 10, 0, 4, 0, 0x28A21},
+    {0x40, SpellDoes::Damage, 0, 6, 0, 5, 9, 0},
+    {0x41, SpellDoes::Damage, 2, 4, 2, 0, 8, 0},
+};
+constexpr spells::CampSpell kPoolCamp[] = {
+    {0x01, Does::Affect, 0, 0, 0, 0x2801C},
+    {0x03, Does::Heal, 1, 8, 0, 0},
+    {0x05, Does::Affect, 0, 0, 0, 0x280F5},
+    {0x06, Does::Affect, 0, 0, 0, 0x2812E},
+    {0x07, Does::Affect, 0, 0, 0, 0x2812E},
+    {0x08, Does::Affect, 0, 0, 0, 0x28168},
+    {0x0B, Does::Affect, 0, 0, 0, 0x280F5},
+    {0x0C, Does::Enlarge, 0, 0, 0, 0x11BA6},
+    {0x0D, Does::Reduce, 0, 0, 0, 0x28375},
+    {0x0E, Does::Friends, 0, 0, 0, 0x283E4},
+    {0x10, Does::Affect, 0, 0, 0, 0x2812E},
+    {0x11, Does::Affect, 0, 0, 0, 0x2812E},
+    {0x12, Does::Affect, 0, 0, 0, 0x280F5},
+    {0x13, Does::Affect, 0, 0, 0, 0x284A5},
+    {0x16, Does::Affect, 0, 0, 0, 0x280F5},
+    {0x18, Does::Affect, 0, 0, 0, 0x287EF},
+    {0x1A, Does::SlowPoison, 0, 0, 0, 0x280F5},
+    {0x1C, Does::Hammer, 0, 0, 0, 0xF42D},
+    {0x1D, Does::Affect, 0, 0, 0, 0x280F5},
+    {0x1E, Does::Affect, 0, 0, 0, 0x28A21},
+    {0x20, Does::Mirror, 0, 0, 0, 0x28A94},
+    {0x23, Does::Strength, 0, 0, 0, 0},
+    {0x25, Does::CureBlind, 0, 0, 0, 0},
+    {0x27, Does::CureDisease, 0, 0, 0, 0},
+    {0x29, Does::Dispel, 0, 0, 0, 0x280F5},
+    {0x2A, Does::Prayer, 0, 0, 0, 0x294E3},
+    {0x2B, Does::RemoveCurse, 0, 0, 0, 0},
+    {0x2E, Does::Dispel, 0, 0, 0, 0x280F5},
+    {0x30, Does::Haste, 0, 0, 0, 0x298A0},
+    {0x32, Does::Affect, 0, 0, 0, 0x28A21},
+    {0x34, Does::Affect, 0, 0, 0, 0x2812E},
+    {0x35, Does::Affect, 0, 0, 0, 0x2812E},
+    {0x36, Does::Affect, 0, 0, 0, 0x2812E},
+    {0x38, Does::Restore, 0, 0, 0, 0x29C4F},
+    {0x39, Does::Haste, 0, 0, 0, 0x29E10},
+    {0x3A, Does::Heal, 1, 4, 8, 0x29E5B},          // Pool's: d4 + 8
+    {0x3E, Does::Heal, 2, 4, 2, 0x29E5B},
+    {0x3F, Does::Affect, 0, 0, 0, 0x28A21},
+};
+
 // Random treasure (Curse): item types, name words, weights, values per
 // plus, the scrolls' spell bands (from the program's code)
 constexpr uint8_t kCurseWeightType[] = {
@@ -378,7 +485,7 @@ const Profile kProfiles[] = {
       0x2C96D, 0x2C982, 0x2C989, 0x2C993, 0x2BE8D,
       0x24C2E, 0x24C4D, 0x24C65, 0x24C84, 0x24C9A, 0x24CA8, 0x24CB7, 0x24CC4, 0x24CDB},
      {{1000, 1000, 100, 350, 600, 5000, 1000, 5500, 3500, 2000},
-      0x21, {0x1F, 0x22, 0x2B, 0x2C, 0x20, 0x39}, 0x44, 0x37, 0x16, 0x0F, 0x20, 0x24, 0x22, 0x2B, 0x2C, 0x1F},
+      0x21, {0x1F, 0x22, 0x2B, 0x2C, 0x32, 0x39}, 0x44, 0x37, 0x16, 0x0F, 0x20, 0x24, 0x22, 0x2B, 0x2C, 0x1F},
      70, 0x65, 0xD6,
      {0xB033, {0xB480, 41, 5}, {0xD39F, 41, 101},
       {0x27B87, 0x2A486, 0x2A490, 0x2A4BB, 0x2E177, 0x2E141, 0x19878, 0x198AB, 0x194FB, 0x19509, 0x1951C, 0x1952F,
@@ -423,11 +530,12 @@ const Profile kProfiles[] = {
        0x1089C, 0x10892, 0x108A8, 0x108B5, 0x128DF, 0x128EC, 0x12850, 0x32BBE, 0x32BCB, 0x32BE2, 0x32BF0,
        0x1045C, 0x1077B, 0x103ED, 0x2FDE3, 0x10618,
        0x10F13, 0x10A87, 0x1168D},
-      {0x03, 0x0B, 0x0D, 0x15, 0x17, 0x1B, 0x1F, 0x23, 0x28, 0x33, 0x34, 0x35, 0x3A, 0x4D, 0x5B, 0x88, 0x8E,
-       0x90},
+      // (Curse's own list at its DS 0x02AA - poolrad_combat_facts.md 8: 0x89 / 0x8B, not 0x4D)
+      {0x03, 0x0B, 0x0D, 0x15, 0x17, 0x1B, 0x23, 0x28, 0x33, 0x34, 0x35, 0x3A, 0x5B, 0x88, 0x89, 0x8B, 0x8E,
+       0x90, 0x1F},
       {{0x33, 0x34, 0x35, 0x1F}, 0x01, 0x02, 0x31, 0x27, 0x2A, 0x19, 0x08, 0x09, 0x1C,
        {0x07, 0x08, 0x23, 0x24, 0x25, 0x61}, 0x0B, 0x8E, 0x1E,
-       {9, 21, 100, 28, 31, 73}, {2, 7, 14}, {85, 86}, {47, 98, 101},
+       {9, 21, 100, 28, 31, 73}, {2, 7, 20}, {85, 86}, {47, 98, 101},     // (spinning: 20 the hammer - Curse's code tests 0x14)
        0x24, 0x25, 0x1B, 0x15, 0x88, 0x03, 0x07, 0x21, 0x45, 0x44,
        // The monsters' special abilities (monster_fx_facts.md)
        {0x40, 0x46, 0x43, 0x7A, 0x7B, 0x4F, 0x50, 0x39, 0x60, 0x67, {0x14, 0x36, 0x3D},
@@ -510,7 +618,10 @@ const Profile kProfiles[] = {
                     0x26623, 0x26569, 0x2657C, 0x26581, 0x26587, 0x26599,
                     0x23160, kP | 0x37E1, 0x2595A, 0x25964, 0x24E64,
                     0x1C26D, 0x1C28C, 0x1C2A4, 0x1C2C3, 0x1C2D9, 0x1C2E7, 0x1C2F6, 0x1C303, 0x1C31A},
-     .cures = {}, .gem_type = 0, .gem_word = 0, .jewel_word = 0,
+     // The temple (poolrad_combat_facts.md 7): Curse's prices, no Heal
+     .cures = {{1000, 1000, 100, 350, 600, 0, 1000, 5500, 3500, 2000},
+               0x21, {0x1F, 0x22, 0x2B, 0x2C, 0x32, 0x39}, 0, 0x37, 0x16, 0x0F, 0x20, 0x24, 0x22, 0x2B, 0x2C, 0x1F},
+     .gem_type = 70, .gem_word = 0x65, .jewel_word = 0xD6,
      // Spells: 57 names (spell 0 isn't one); the rest words "Rest daYs Hours
      // Mins Inc Dec Exit" differ from Curse's (not used yet)
      .magic = {0xCCF1, {0xD262, 41, 5}, {0xF0A9, 41, 57},
@@ -520,13 +631,20 @@ const Profile kProfiles[] = {
                {0x17B6A, 0x17CBA, 0x27018, 0x27C16, 0, 0x27BE0, 0x27A96, kP | 0x2EC6, kP | 0x2ED6, 0x2BF62, 0x281DC,
                 0x29227, 0, 0, 0x29536, 0, 0x187D0, 0x27026, 0x23995, 0, 0x18300, 0x18318, 0x18334, 0x18357, 0x182EA,
                 0x18376, 0x17B8A, 0x247A7, 0x239A0, 0x2702D, 0x27BEA, 0x27BF4, 0x27C0D, 0x22AB1, 0x22ABE, 0, 0x2398B, 0},
-               nullptr, 0, {}, nullptr, 0, nullptr, 0, 0, 0},
+               kPoolCamp, sizeof kPoolCamp / sizeof kPoolCamp[0],
+               {2, 0x2A, {0x22, 0x2B, 0x32}, {{0, 0}, {0x2C, 0x1F}, {0x39, 0}}, 0x0C, 0x17, 0, 0, 0, 0,
+                {{0x28, 1, 6, 0, 10}, {0x39, 5, 4, 0, 1}, {0x3D, 5, 4, 0, 1}, {0x3F, 1, 10, 10, 10}}},
+               nullptr, 0, nullptr, 0, 0xD2, 0x10},
      .alter = {0xCD1A, 0xCD44, 0xCD6D,
                {0x19441, 0x18F71, 0x18F9F, 0x19261, 0x1926F, 0x19286, 0x1928E, 0x19296, 0x1929C, 0x190B6, 0x190C3,
                 0x190A8, 0x190D5, 0x190E7, 0x190FC, 0, 0, 0, 0, 0x19485},
                {0xCFA8, 0xCFD1, 0xCFFA, 0xD023, 0xD04C},
                {0x1D148, 0x1D14C, 0x1D15B, 0x1D15F, 0x1D165, 0x1D16B, 0x1D170, 0x1D19A}},
-     .fight = {{},
+     // Fights (poolrad_combat_facts.md 1, 2): Curse's tables but the ground
+     // table's place, no terrain table (Pool's outdoor fields are made by
+     // code), turn undead at DS 0x0447; the effects Pool has (the same
+     // number often means something else in Pool: those are 0 here)
+     .fight = {{0x2744, 0x02D2, 0x02E2, 0x02F2, 0x02F6, 0x02FE, 0x0306, 0, 0x0447},
                {0xE3EF, 0x9E00, 0x9E06, 0x9E10, 0x9E15, 0x9E1B, 0x9E21, 0xA1BB, 0xA1D8, 0, 0xA537, 0x15264, 0x15270,
                 0x15278, 0x1528A, 0x15296, 0xA605, 0xA60C, 0xA618, 0xA621, kP | 0x321D, 0xA8D6, 0xA8E2, 0xA8E8, 0xA8F0,
                 0xA8F8, 0x12A2D, 0x12A39, 0x12A48, 0x12A50, 0x12A5F, 0x12A73, 0x12A80, 0x12A88, 0x12A91, 0x12A9B,
@@ -538,14 +656,32 @@ const Profile kProfiles[] = {
                 0x27C1C, 0x27C2A, 0x28B11, 0xF903, 0, 0x1018A, 0xF6B4, 0xF35E, 0, 0, 0, 0xFBFD, 0x10239, 0x29FA4,
                 0, 0, 0, 0, 0x108FE, 0, 0, 0x108E8, 0x108F1, 0x108FE, 0x1186C, 0, 0, 0, 0, 0, 0x2C732, 0x2C746,
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x2D979, 0xF42D, 0xF76C, 0xF3BF, 0x280F5, 0xF60D, 0xFD2D, 0xF8A1, 0},
-               {}, {}, nullptr, 0},
+               {},                                       // (no list of effects a fight's end takes away)
+               {{0x33, 0x34, 0x35, 0x1F}, 0x01, 0x02, 0x31, 0x27, 0x2A, 0x19, 0x08, 0x09, 0x1C,
+                {0x07, 0x08, 0x23, 0x24, 0x25, 0}, 0x0B, 0, 0x1E,
+                {9, 21, 28, 31, 73, 0}, {2, 7, 20}, {85, 86}, {0, 0, 0},
+                0x24, 0x25, 0, 0x15, 0, 0, 0, 0x21, 0, 0,
+                {0x40, 0x46, 0x43, 0, 0, 0x4F, 0x50, 0, 0, 0, {0, 0, 0},
+                 0, 0x77, 0, 0, 0, 0x29, 0x68,
+                 0x70, 0x6E, 0x5B, 0, 0, 0x71, 0x0A, 0x14, 0,
+                 0x69, 0x6A, 0, 0, 0x6B, 0x6C, 0x6D, 0x7D,
+                 0x65, 0x3B, 0x62, 0x64, 0x66,
+                 0, 0x18, 0x2D,
+                 0, 0, 0, 0, 0, 0x79, 0x53, 0x7F, 0,
+                 0, 0x3A, 0, 0, 0x34, 0x37, 0x35,
+                 0x76, 0, {0, 0, 0}},
+                {0x0C, 0, 0, 0, 0, 0, 0, 0, 0x16, 0x0F, 0x17, 0x20, 0x3E, 0, 0x11, 0x1D, 0x22, 0x2B, 0x2C},
+                {0x61, 0x7C, 0x1A, 0x12, 0x2F, 0x30, 0},
+                {0x06, 0, 0, 0x59, 0x38, 0},
+                0},
+               kPoolFight, sizeof kPoolFight / sizeof kPoolFight[0]},
      .script_words = {0x2C1A, 0x2C2B, 0x9554, 0x955C, 0x9569, 0x347C},
      .random_items = nullptr, .random_rows = 0,
      // The sound driver: Curse's, 0xBD further on in its segment (poolrad_facts.md 1.5)
      .sound = {0x8AE0, 0x055F, 0x1378, 0x055F, 0x0607, 21, 0x2F, 0x33},
      .door = {0x17417, 0x1741C, 0x17422, 0x17429, 0x1742F, 0x1F},
      .won = {},
-     .variant = {{20, 21, 22}, 29, true, 15, 7, 6, 1, true, true, true, true}},
+     .variant = {{20, 21, 22}, 29, true, 15, 7, 6, 1, true, true, true, true, 0x3648, 25}},
 };
 
 } // namespace

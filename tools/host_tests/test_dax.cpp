@@ -3077,6 +3077,51 @@ static void make_pool_tables(classes::Tables& t)
     CHECK(t.set(l, ds, sizeof ds, ds2, sizeof ds2));
 }
 
+// Pool's outdoor fields (poolrad_combat_facts.md 1.2): the place's flags
+// from the compare chain, and the generator's field
+static void test_pool_outdoors()
+{
+    CHECK(combat::pool_terrain(1, false) == 0x01);
+    CHECK(combat::pool_terrain(0x2B, false) == 0x01);         // (0x27-0x2C -> 5, but 0x2B matched first)
+    CHECK(combat::pool_terrain(0x2A, false) == 0x05);
+    CHECK(combat::pool_terrain(7, false) == 0x03);            // (3-4, 6-9 before 7 -> 2)
+    CHECK(combat::pool_terrain(0x0A, false) == 0x02);
+    CHECK(combat::pool_terrain(0x7C, false) == 0x08);         // (0x79-0x7C before 0x7C-0x7D -> 9)
+    CHECK(combat::pool_terrain(0x7D, false) == 0x09);
+    CHECK(combat::pool_terrain(0xD3, false) == 0x12);
+    CHECK(combat::pool_terrain(0x6D, false) == 0x80);
+    CHECK(combat::pool_terrain(0x6D, true) == 0x01);          // the area's word: the 0x80 goes, 1 comes
+    CHECK(combat::pool_terrain(0x70, true) == 0x01);
+    CHECK(combat::pool_terrain(0x66, true) == 0x11);
+    CHECK(combat::pool_terrain(0, false) == 0);
+    CHECK(combat::pool_terrain(0xFF, false) == 0);
+    static combat::Battle b;
+    int streams = 0;
+    for (uint32_t seed = 1; seed <= 300; ++seed) {
+        b = combat::Battle{};
+        create::Dice d(seed);
+        const int f = seed & 1 ? 0x10 : 0x48;             // a stream likely / woods, no stream
+        combat::build_outdoors_pool(b, f, d);
+        bool stream = false, crossing = false, bad = false;
+        for (int y = 0; y < combat::kH; ++y)
+            for (int x = 0; x < combat::kW; ++x) {
+                const uint8_t g = b.ground[y][x];
+                if (g < 0x1F || g > 0x41) bad = true;     // outdoor ground only
+                if (g == 0x32) stream = true;
+                if (g == 0x34) crossing = true;
+                // a tree's top only over a tree that has one
+                if (g >= 0x20 && g <= 0x23 && (y + 1 >= combat::kH || b.ground[y + 1][x] != g + 4)) bad = true;
+            }
+        CHECK(!bad);
+        if (!(f & 0x10)) CHECK(!stream && !crossing);
+        if (stream) {
+            ++streams;
+            CHECK(crossing);                              // always a way over
+        }
+    }
+    CHECK(streams > 75 && streams < 150);                 // 75% of the 150 stream fields
+}
+
 static void test_pool_rules()
 {
     static classes::Tables t;
@@ -5672,6 +5717,7 @@ int main()
     test_spells_batch3();
     test_create();
     test_pool_rules();
+    test_pool_outdoors();
     test_class_rules();
     test_item_combat();
     if (failures) {
