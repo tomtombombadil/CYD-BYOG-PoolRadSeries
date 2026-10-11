@@ -471,6 +471,21 @@ static void test_font()
         CHECK(m.letters == font::kGameLetters && memcmp(m.glyph, k.glyph, sizeof m.glyph) == 0);
         font::set_letters(m, font::kAltLetters, nullptr);                         // no alt: stays the game's
         CHECK(m.letters == font::kGameLetters);
+        // Clear Caps (v0.84.0): the Clear capitals, lower case printed as them;
+        // from Clear, the lower case on screen turns to the Clear capitals
+        font::set_letters(m, font::kClearLetters, nullptr);
+        gc.clear(0);
+        font::draw_text(gc, m, "Ab", 0, 0, 15, 0);
+        font::set_letters(m, font::kClearCapsLetters, nullptr, &gc);
+        CHECK(m.letters == font::kClearCapsLetters && !m.clear && memcmp(m.glyph[1], font::kClearUpper[0], 8) == 0 &&
+              font::glyph_of(m, 'b') == font::glyph_of('B'));
+        want.clear(0);
+        font::draw_text(want, m, "AB", 0, 0, 15, 0);
+        bool caps = true;
+        for (int y = 0; y < 8; ++y) caps &= memcmp(gp + y * pic::kScreenW, ep + y * pic::kScreenW, 16) == 0;
+        CHECK(caps);
+        font::set_letters(m, font::kGameLetters, nullptr);
+        CHECK(memcmp(m.glyph, k.glyph, sizeof m.glyph) == 0);
     }
     static uint8_t px[pic::kScreenW * pic::kScreenH];
     pic::Canvas c{px, pic::kScreenW, pic::kScreenH};
@@ -745,6 +760,14 @@ static void test_layout()
     CHECK(at(14 * 8 + 0, 3 * 8 + 0) == tp(23, 0, 0));             // view right, row 3
     CHECK(at(8 * 8 + 4, 8 * 8 + 4) == 0);                         // the 3D view, cleared
 
+    // The portrait box (v0.84.0): the 3D view's frame tiles moved
+    c.clear(9);
+    layout::picture_frame(c, tb, t, 26, 1);
+    CHECK(at(33 * 8 + 0, 1 * 8 + 1) == tp(29, 0, 1));             // top, col 26 + 7: view top 9
+    CHECK(at(26 * 8 + 4, 11 * 8 + 0) == tp(32, 4, 0));            // left, row 1 + 10: view left 12
+    CHECK(at(38 * 8 + 0, 2 * 8 + 0) == tp(23, 0, 0));             // right, row 2: view right 3
+    CHECK(at(32 * 8 + 4, 7 * 8 + 4) == 9);                         // inside: untouched
+
     c.clear(9);
     layout::combat(c, tb, t);
     CHECK(at(22 * 8 + 1, 7 * 8 + 1) == tp(37, 1, 1));
@@ -772,6 +795,9 @@ static void test_layout()
         CHECK(is(0, 20, 21) && is(39, 23, 20) && is(10, 23, 22));
         CHECK(is(2, 2, 20) && is(14, 14, 20) && is(8, 2, 22) && is(2, 8, 21) && is(14, 8, 21));
         CHECK(at(16 * 8 + 1, 20 * 8 + 2) == 0 && at(1 * 8 + 1, 1 * 8 + 2) == 0);   // inside: black
+        c.clear(9);
+        layout::picture_frame(c, bt, t, 27, 0);
+        CHECK(is(27, 0, 20) && is(39, 12, 20) && is(30, 0, 22) && is(27, 5, 21) && is(39, 5, 21) && is(30, 12, 22));
         c.clear(9);
         layout::combat(c, bt, t);
         CHECK(is(22, 0, 20) && is(22, 22, 20) && is(22, 9, 21) && is(10, 22, 22) && at(5, 23 * 8 + 2) == 0);

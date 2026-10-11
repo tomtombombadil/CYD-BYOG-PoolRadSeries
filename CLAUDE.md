@@ -109,7 +109,11 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   in keypad order 7 8 9 4 Select 6 1 2 3 + Game (arrows 23 px, Select and
   Game wide enough for their words), 480x320 a 3 x 3 pad in the movement
   pad's place. The map (Companion / Map key): black behind, walls 1 px,
-  doors 3 px.
+  doors 3 px - v0.84.0 (Tom): a pixel short at each end so the white wall
+  line shows there; the party arrow bright green (`style::kParty`);
+  secret doors an S on the wall line (no mark in the data: a passable
+  side of a wall type mostly solid on that map - SPEC 12); the movement
+  keys move the party while the 320x240 Map is up (the map follows).
 - Add Character -> Pool (v0.56.0): lists Pool of Radiance characters from
   Curse's save folder (the original) AND the player's Pool of Radiance
   folder on the card (confirmed by Tom, 2026-10-10). The demo stops on
@@ -131,6 +135,13 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   one in use (18/xx the other way round: 0x1D own, 0x1C in use);
   `rules::stats` works the in-use ones out on every recalculation - never
   write the in-use bytes as if they were the character's own.
+- Magic Missile (Tom, 2026-10-11): (caster level + 1) / 2 missiles of
+  1d4 + 1, always hitting - the AD&D rule, every game (Pool's code was read
+  as level / 2; not followed). The originals put them all on one target.
+- Settings help (Tom, v0.84.0): every switch on the Settings page / Game
+  menu Options tab has a circled "?" at its right (`ui::key_help`) opening
+  what it does (`comfort_help_text`; Game Font's shows each font); a new
+  switch needs its help text too. Key renamed: "Tap to Stop Demo".
 - Engine comforts (Tom, 2026-10-10): anything the original games didn't do,
   added for the small screens, goes behind a switch in
   `src/app/features.h` (documented there and in SPEC section 11) so forks
@@ -237,7 +248,13 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   have no license and are the game's own glyphs retouched) are only looked
   at, never copied; edit the .txt art and regenerate. v0.74.0 (Tom): the
   key is **Game Font** - Original / Clear / Darkness (the player's own
-  Pools of Darkness 8X8D0.DAX, only when that game is on the card).
+  Pools of Darkness 8X8D0.DAX, only when that game is on the card);
+  v0.84.0 (Tom) adds **Clear Caps** (Clear's capitals, no lower case).
+- Icon Portrait (Tom, v0.84.0; `CYD_ICON_PORTRAIT`): View Character shows
+  the combat icon x3 in a game-tile frame where Pool draws portraits
+  (Curse: the 3D view's frame tiles, cols 26-38 rows 1-13); where the game
+  has a portrait (Pool) it comes first, a tap swaps; Pool's own portrait
+  on View is the original's (from the party menu).
 - Gold Box Companion files (Tom, 2026-10-11): its author's work - read
   from the player's copy on the card, NEVER shipped or copied into the
   repo (no license). Its combat icons: `/GOLDBOX/GBC/DAX-Icons-EGA`

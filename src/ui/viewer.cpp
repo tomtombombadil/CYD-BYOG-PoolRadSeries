@@ -1639,44 +1639,88 @@ void draw_companion(const MapSource& ms = kWalkMap)
     }
     const int cell = kCompCell, my = kCompMapY;
     draw_map_grid(*m, ms, comp_map_x(), my, cell);
-    ui::text(x0 + 6, my + cell * geo::kSize + 3, ms.teleport ? "Tap a square to go there" : "Gold: door, red: locked",
-             style::kTextMuted, ui::Font::Small);
+    const int ly = my + cell * geo::kSize + 3;
+    if (ms.teleport) ui::text(x0 + 6, ly, "Tap a square to go there", style::kTextMuted, ui::Font::Small);
+    else {
+        // (two short lines in the small fixed font: the keys start at 200)
+        ui::text(x0 + 6, ly, "Gold: door", style::kGold, ui::Font::Mono);
+        ui::text(x0 + 6 + 11 * 6, ly, "Red: locked", style::kWarn, ui::Font::Mono);
+        ui::text(x0 + 6, ly + 9, "S: secret door", style::kGold, ui::Font::Mono);
+    }
     redraw_side_keys();
 }
 
 // The map's walls and doors, the party a triangle pointing the way it faces.
 // Black behind (Tom, 2026-10-10: the best contrast); walls a pixel wide,
-// doors 3 (drawn after the walls, so a neighbour's wall doesn't cover them)
+// doors a 3-pixel band on the wall line a pixel short at each end, so the
+// wall shows there (Tom, v0.84.0: a door in a wall); drawn after the walls
+// so a neighbour's wall doesn't cover them. A secret door (a passage drawn
+// as the area's ordinary wall - the data has no mark of its own; SPEC 12)
+// is the maps' S on the wall line. The party: bright green (Tom).
+// The secret door's S (5 x 7; the wall line through its middle)
+constexpr uint8_t kSecretS[7] = {0x0E, 0x11, 0x10, 0x0E, 0x01, 0x11, 0x0E};
+
+// The wall types that look like the area's ordinary walls: mostly solid
+// sides on this map (a passable side of one is a secret door)
+uint16_t plain_walls(const geo::Map& m)
+{
+    uint16_t solid[16] = {}, open[16] = {};
+    for (int y = 0; y < geo::kSize; ++y)
+        for (int x = 0; x < geo::kSize; ++x)
+            for (int d = 0; d < 8; d += 2) {
+                const int w = geo::wall(m, x, y, d);
+                if (!w) continue;
+                if (geo::door(m, x, y, d) == 0) ++solid[w];
+                else ++open[w];
+            }
+    uint16_t bits = 0;
+    for (int w = 1; w < 16; ++w)
+        if (solid[w] && solid[w] >= open[w] * 4) bits |= 1u << w;
+    return bits;
+}
+
 void draw_map_grid(const geo::Map& map, const MapSource& ms, int mx, int my, int cell)
 {
     LGFX& g = ui::gfx();
     const geo::Map* m = &map;
     const int span = cell * geo::kSize + 1;
+    const uint16_t plain = plain_walls(map);
     g.fillRect(mx, my, span, span, style::kBackground);
+    auto clip_fill = [&](int rx, int ry, int rw, int rh, uint16_t col) {
+        if (rx < mx) { rw -= mx - rx; rx = mx; }
+        if (ry < my) { rh -= my - ry; ry = my; }
+        if (rx + rw > mx + span) rw = mx + span - rx;
+        if (ry + rh > my + span) rh = my + span - ry;
+        if (rw > 0 && rh > 0) g.fillRect(rx, ry, rw, rh, col);
+    };
     for (int pass = 0; pass < 2; ++pass)
         for (int y = 0; y < geo::kSize; ++y)
             for (int x = 0; x < geo::kSize; ++x) {
                 const int sx = mx + x * cell, sy = my + y * cell;
                 for (int d = 0; d < 8; d += 2) {
-                    if (!geo::wall(*m, x, y, d)) continue;
+                    const int w = geo::wall(*m, x, y, d);
+                    if (!w) continue;
                     const int door = geo::door(*m, x, y, d);
                     if ((door != 0) != (pass == 1)) continue;
-                    const uint16_t col = door == 1 ? style::kGold : door >= 2 ? style::kWarn : style::kText;
                     const bool across = d == 0 || d == 4;           // a wall along x
                     const int lx = d == 2 ? sx + cell : sx, ly = d == 4 ? sy + cell : sy;
-                    if (!door) {
-                        if (across) g.drawFastHLine(lx, ly, cell + 1, col);
-                        else g.drawFastVLine(lx, ly, cell + 1, col);
+                    // The wall line (under a door too: its ends show)
+                    if (across) g.drawFastHLine(lx, ly, cell + 1, style::kText);
+                    else g.drawFastVLine(lx, ly, cell + 1, style::kText);
+                    if (!door) continue;
+                    if (door == 1 && (plain >> w & 1)) {
+                        // A secret door: the S across the middle of the line
+                        const int ox = across ? lx + cell / 2 - 2 : lx - 2;
+                        const int oy = across ? ly - 3 : ly + cell / 2 - 3;
+                        for (int r = 0; r < 7; ++r)
+                            for (int c = 0; c < 5; ++c)
+                                if (kSecretS[r] >> (4 - c) & 1) clip_fill(ox + c, oy + r, 1, 1, style::kGold);
                         continue;
                     }
-                    // A door: 3 pixels across the wall line, kept inside the map
-                    int rx = across ? lx : lx - 1, ry = across ? ly - 1 : ly;
-                    int rw = across ? cell + 1 : 3, rh = across ? 3 : cell + 1;
-                    if (rx < mx) { rw -= mx - rx; rx = mx; }
-                    if (ry < my) { rh -= my - ry; ry = my; }
-                    if (rx + rw > mx + span) rw = mx + span - rx;
-                    if (ry + rh > my + span) rh = my + span - ry;
-                    g.fillRect(rx, ry, rw, rh, col);
+                    // A door: 3 pixels across the wall line, a pixel short at each end
+                    const uint16_t col = door == 1 ? style::kGold : style::kWarn;
+                    if (across) clip_fill(lx + 1, ly - 1, cell - 1, 3, col);
+                    else clip_fill(lx - 1, ly + 1, 3, cell - 1, col);
                 }
             }
     // The party: a triangle pointing the way it faces
@@ -1686,7 +1730,7 @@ void draw_map_grid(const geo::Map& map, const MapSource& ms, int mx, int my, int
     const int fx = cx + geo::dx(dir) * r, fy = cy + geo::dy(dir) * r;
     const int lx = cx + geo::dx((dir + 6) & 7) * r - geo::dx(dir) * r, ly = cy + geo::dy((dir + 6) & 7) * r - geo::dy(dir) * r;
     const int rx = cx + geo::dx((dir + 2) & 7) * r - geo::dx(dir) * r, ry = cy + geo::dy((dir + 2) & 7) * r - geo::dy(dir) * r;
-    g.fillTriangle(fx, fy, lx, ly, rx, ry, style::kGold);
+    g.fillTriangle(fx, fy, lx, ly, rx, ry, style::kParty);
 }
 
 // 320x240's Map key: the map over the game screen, what the 480x320
@@ -1707,7 +1751,8 @@ void draw_map_page()
     y = wrap_text(tx, y, tw, l2, ui::Font::Small, style::kTextMuted, true) + 8;
     if (m) {
         y = wrap_text(tx, y, tw, "Gold: door", ui::Font::Small, style::kGold, true);
-        y = wrap_text(tx, y, tw, "Red: locked", ui::Font::Small, style::kWarn, true) + 8;
+        y = wrap_text(tx, y, tw, "Red: locked", ui::Font::Small, style::kWarn, true);
+        y = wrap_text(tx, y, tw, "S: secret door", ui::Font::Small, style::kGold, true) + 8;
     }
     wrap_text(tx, y, tw, "Tap to go back to the game.", ui::Font::Small, style::kText, true);
 }
@@ -2056,7 +2101,7 @@ void tap_sounds(const ui::Tap& t)
 // One set for all games (settings.h comforts_off): the game's Settings page
 // and the in-game Game menu's Options tab show the same keys; a comfort
 // compiled out (app/features.h) isn't listed.
-enum Comfort { kCFont, kCGallery, kCBigIcon, kCJournal, kCDemoTap, kCMoreGuys, kCSound, kComforts };
+enum Comfort { kCFont, kCGallery, kCBigIcon, kCJournal, kCDemoTap, kCMoreGuys, kCPortrait, kCSound, kComforts };
 
 bool comfort_built(int c)
 {
@@ -2067,12 +2112,14 @@ bool comfort_built(int c)
     case kCJournal: return CYD_JOURNAL_POPUP;
     case kCDemoTap: return CYD_DEMO_TAP_STOPS;
     case kCMoreGuys: return CYD_MORE_CHARACTERS;
+    case kCPortrait: return CYD_ICON_PORTRAIT;
     default: return true;
     }
 }
 uint8_t comfort_bit(int c)
 {
-    static const uint8_t kBits[kComforts] = {0, kOffGallery, kOffBigIcon, kOffJournal, kOffDemoTap, kOffMoreGuys, 0};
+    static const uint8_t kBits[kComforts] = {0, kOffGallery, kOffBigIcon, kOffJournal, kOffDemoTap, kOffMoreGuys,
+                                             kOffPortrait, 0};
     return kBits[c];
 }
 bool comfort_on(int c)
@@ -2089,6 +2136,7 @@ void apply_options()
     o.gallery = comfort_on(kCGallery);
     o.demo_tap = comfort_on(kCDemoTap);
     o.more_guys = comfort_on(kCMoreGuys);
+    o.portrait = comfort_on(kCPortrait);
     o.font = comfort_on(kCFont) ? cfg->game_font : kFontGame;
     play::set_options(o);
 }
@@ -2109,11 +2157,23 @@ ui::Rect comfort_cell(const ui::Rect& a, int i)
     const int w = (a.w - gp * (cols + 1)) / cols, h = (a.h - gp * (rows + 1)) / rows;
     return {a.x + gp + (i % cols) * (w + gp), a.y + gp + (i / cols) * (h + gp), w, h};
 }
+// A cell's switch and its "?" (Tom, v0.84.0: what the option does, in a
+// pop-up) at its right
+int comfort_help_w() { return ui::large() ? 34 : 26; }
+ui::Rect comfort_key(const ui::Rect& cell) { return {cell.x, cell.y, cell.w - comfort_help_w(), cell.h}; }
+ui::Rect comfort_qmark(const ui::Rect& cell)
+{
+    return {cell.x + cell.w - comfort_help_w(), cell.y, comfort_help_w(), cell.h};
+}
+
+const char* const kComfortNames[kComforts] = {"Game Font",        "Icon Gallery",    "Large Icon",    "Journal Pop-Up",
+                                              "Tap to Stop Demo", "More Characters", "Icon Portrait", "Game Sound"};
+
+// The option whose help is up (-1: none); the next tap puts it away
+int8_t comfort_help = -1;
 
 void draw_comforts(const ui::Rect& a)
 {
-    static const char* const kNames[kComforts] = {"Game Font",      "Icon Gallery",    "Large Icon", "Journal Pop-Up",
-                                                  "Demo Tap Stops", "More Characters", "Game Sound"};
     int list[kComforts];
     const int n = comfort_list(list);
     for (int i = 0; i < n; ++i) {
@@ -2121,12 +2181,162 @@ void draw_comforts(const ui::Rect& a)
         const bool on = comfort_on(c);
         const char* sub = on ? "On" : "Off";
         if (c == kCSound) sub = cfg->sound == kSoundPc ? "PC Speaker" : cfg->sound == kSoundOff ? "Off" : "Tandy";
-        if (c == kCFont) sub = cfg->game_font == kFontClear ? "Clear" : cfg->game_font == kFontDarkness ? "Darkness" : "Original";
-        ui::key2(comfort_cell(a, i), kNames[c], sub, on ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+        if (c == kCFont)
+            sub = cfg->game_font == kFontClear       ? "Clear"
+                : cfg->game_font == kFontClearCaps ? "Clear Caps"
+                : cfg->game_font == kFontDarkness  ? "Darkness"
+                                                   : "Original";
+        const ui::Rect cell = comfort_cell(a, i);
+        ui::key2(comfort_key(cell), kComfortNames[c], sub, on ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+        ui::key_help(comfort_qmark(cell));
     }
 }
 
-// True when a switch was tapped (and changed)
+// What each option does (sentence case; Tom, v0.84.0)
+const char* comfort_help_text(int c)
+{
+    switch (c) {
+    case kCFont:
+        return "The letters the game's text is printed in. Original: the game's own. Clear: the engine's upright, "
+               "bold letters with real lower case, easier to read on a small screen. Clear Caps: the same letters, "
+               "all capitals, as the games print. Darkness: the font from your own Pools of Darkness (only when it "
+               "is on the card). It can change mid-game: the text on screen changes too.";
+    case kCGallery:
+        return "The icon editor (Alter - Icon, and Create New Character) opens on pages of ready-made combat icons, "
+               "heads, weapons and colour schemes made from your game's own pictures - and the Gold Box "
+               "Companion's icons when its GBC folder is on the card. Edit opens the game's own editor. Off: the "
+               "game's editor straight away, as the original.";
+    case kCBigIcon:
+        return "The icon editor also shows the new icon as large as fits, beside the editor on 480x320 and over its "
+               "empty right side on 320x240. Tap it to see the ready or the action pose. The game's own icons are "
+               "only 24 pixels square.";
+    case kCJournal:
+        return "When the game tells you to read a journal entry, the next tap opens that entry from your own "
+               "Adventurer's Journal (made from your copy during the card scan). The original only prints the "
+               "number. Off: just the number.";
+    case kCDemoTap:
+        return "A tap or key stops the game's demo and brings the title back. In the original the demo can't be "
+               "stopped: it runs until the demo party wins or falls.";
+    case kCMoreGuys:
+        return "Add Character also lists the members of your saved games, and the characters in the earlier "
+               "game's folder on the card (Pool of Radiance characters for Curse, Curse's for Silver Blades). "
+               "Off: only what the original lists.";
+    case kCPortrait:
+        return "View Character shows the character's combat icon three times its size, in a frame of the game's "
+               "own tiles, where a portrait would go. Where the game has a portrait (Pool of Radiance: every "
+               "character) the portrait comes first: tap it to swap to the icon and back. Tap the icon for its "
+               "action pose. Off: as the original.";
+    case kCSound:
+        return "The games' own sound effects. Tandy: the Tandy 1000's three voices and noise, the better of the "
+               "two (the default). PC Speaker: the PC's one beeper. Off: silence. The volume is on the board's "
+               "Settings page.";
+    }
+    return "";
+}
+
+// The help's font samples: a line in a game font, its pixels s x s
+void font_sample(int x, int y, int s, const font::Font& f, const char* txt)
+{
+    const int n = static_cast<int>(strlen(txt));
+    uint8_t* px = static_cast<uint8_t*>(malloc(static_cast<size_t>(n) * 64));
+    if (!px) return;
+    pic::Canvas cv{px, n * 8, 8};
+    cv.clear(0);
+    font::draw_text(cv, f, txt, 0, 0, 15, 0);
+    LGFX& g = ui::gfx();
+    g.startWrite();
+    for (int j = 0; j < 8; ++j)
+        for (int i = 0; i < n * 8; ++i)
+            if (px[j * n * 8 + i]) g.fillRect(x + i * s, y + j * s, s, s, style::kText);
+    g.endWrite();
+    free(px);
+}
+
+// The game's own font (block 201 of an 8X8D file in `dir`); false: none
+bool load_game_font(const char* dir, font::Font& out)
+{
+    static const char* const kFiles[] = {"8X8D1.DAX", "8X8D5.DAX", "8X8D0.DAX"};
+    dax::Index* idx = new (std::nothrow) dax::Index;
+    if (!idx) return false;
+    bool ok = false;
+    for (const char* nm : kFiles) {
+        char path[192];
+        snprintf(path, sizeof path, "%s/%s", dir, nm);
+        fs::File f = sd_fs().open(path, "r");
+        if (!f) continue;
+        library::FileSource src(f);
+        ok = dax::read_index(src, *idx) == dax::Status::Ok && font::load(src, *idx, out);
+        f.close();
+        if (ok) break;
+    }
+    delete idx;
+    return ok;
+}
+
+void draw_comfort_help()
+{
+    ui::clear();
+    const int c = comfort_help;
+    const int gp = ui::gap(), m = gp * 2;
+    LGFX& g = ui::gfx();
+    const ui::Rect box{m, m, ui::width() - m * 2, ui::height() - m * 2};
+    g.drawRoundRect(box.x, box.y, box.w, box.h, ui::large() ? 8 : 6, style::kGold);
+    const int x = box.x + gp * 2, w = box.w - gp * 4;
+    int y = box.y + gp * 2;
+    ui::text(x, y, kComfortNames[c], style::kGold);
+    y += ui::line_h() + gp;
+    y = wrap_text(x, y, w, comfort_help_text(c), ui::Font::Small, style::kText, true) + gp * 2;
+    if (c == kCFont) {
+        // Each font, as it prints (the player's own fonts from the card)
+        font::Font* base = new (std::nothrow) font::Font();
+        font::Font* alt = new (std::nothrow) font::Font();
+        if (base && alt) {
+            char dir[160];
+            snprintf(dir, sizeof dir, "%s/%s", games::kRootDir, game_dirs[game_sel].data_dir);
+            const bool have = load_game_font(dir, *base);
+            char dd[160];
+            const bool dark = darkness_dir(dd, sizeof dd) && load_game_font(dd, *alt);
+            const int s = ui::large() ? 2 : 1;
+            const char* sample = "The Party Rests. 1,234 Gold";
+            const char* const kLabel[4] = {"Original", "Clear", "Clear Caps", "Darkness"};
+            static const uint8_t kLetters[4] = {font::kGameLetters, font::kClearLetters, font::kClearCapsLetters,
+                                                font::kAltLetters};
+            for (int k = 0; k < 4; ++k) {
+                ui::text(x, y, kLabel[k], style::kTextMuted, ui::Font::Small);
+                y += ui::line_h(ui::Font::Small) + 1;
+                if (k == 3 && !dark) {
+                    ui::text(x, y, "(needs Pools of Darkness on the card)", style::kTextMuted, ui::Font::Small);
+                    y += ui::line_h(ui::Font::Small) + gp;
+                    continue;
+                }
+                if (k == 0 && !have) {
+                    ui::text(x, y, "(the game's font file wasn't found)", style::kTextMuted, ui::Font::Small);
+                    y += ui::line_h(ui::Font::Small) + gp;
+                    continue;
+                }
+                font::Font& f = *base;
+                font::set_letters(f, kLetters[k], alt);
+                font_sample(x, y, s, f, sample);
+                font::set_letters(f, font::kGameLetters, alt);
+                y += 8 * s + gp;
+            }
+        }
+        delete base;
+        delete alt;
+    }
+    const int lh = ui::line_h(ui::Font::Small);
+    ui::text(x, box.y + box.h - gp - lh, "Tap to close.", style::kTextMuted, ui::Font::Small);
+}
+
+// A tap while the help is up puts it away (true: the screen wants drawing)
+bool comfort_help_tap()
+{
+    if (comfort_help < 0) return false;
+    comfort_help = -1;
+    return true;
+}
+
+// True when a switch was tapped (and changed), or its help opened
 bool tap_comforts(const ui::Rect& a, const ui::Tap& t)
 {
     int list[kComforts];
@@ -2134,16 +2344,23 @@ bool tap_comforts(const ui::Rect& a, const ui::Tap& t)
     for (int i = 0; i < n; ++i) {
         if (!comfort_cell(a, i).contains(t.x, t.y)) continue;
         const int c = list[i];
+        if (comfort_qmark(comfort_cell(a, i)).contains(t.x, t.y)) {
+            comfort_help = static_cast<int8_t>(c);
+            return true;
+        }
         if (c == kCSound) {
             cfg->sound = cfg->sound == kSoundTandy ? kSoundPc : cfg->sound == kSoundPc ? kSoundOff : kSoundTandy;
             play::set_sound(cfg->sound, cfg->volume);
         } else if (c == kCBigIcon && !ui::large()) {
             cfg->large_icons = !cfg->large_icons;
         } else if (c == kCFont) {
-            // Original -> Clear -> Pools of Darkness (when its folder is on
-            // the card: the player's own font) -> Original
+            // Original -> Clear -> Clear Caps -> Pools of Darkness (when its
+            // folder is on the card: the player's own font) -> Original
             char dd[160];
-            const uint8_t next = cfg->game_font == kFontGame ? kFontClear : cfg->game_font == kFontClear ? kFontDarkness : kFontGame;
+            const uint8_t next = cfg->game_font == kFontGame        ? kFontClear
+                               : cfg->game_font == kFontClear     ? kFontClearCaps
+                               : cfg->game_font == kFontClearCaps ? kFontDarkness
+                                                                  : kFontGame;
             cfg->game_font = next == kFontDarkness && !darkness_dir(dd, sizeof dd) ? kFontGame : next;
         } else {
             cfg->comforts_off ^= comfort_bit(c);
@@ -2167,7 +2384,7 @@ bool all_comforts_off()
 void toggle_original()
 {
     const bool on = all_comforts_off();
-    cfg->comforts_off = on ? 0 : (kOffGallery | kOffBigIcon | kOffDemoTap | kOffJournal | kOffMoreGuys);
+    cfg->comforts_off = on ? 0 : (kOffGallery | kOffBigIcon | kOffDemoTap | kOffJournal | kOffMoreGuys | kOffPortrait);
     if (!on) cfg->large_icons = 0;
     cfg->game_font = on ? kFontClear : kFontGame;
     settings_save(*cfg);
@@ -2183,6 +2400,10 @@ ui::Rect game_settings_area()
 
 void draw_game_settings()
 {
+    if (comfort_help >= 0) {
+        draw_comfort_help();
+        return;
+    }
     ui::clear();
     ui::header("Settings", true);
     draw_comforts(game_settings_area());
@@ -2192,6 +2413,10 @@ void draw_game_settings()
 
 void tap_game_settings(const ui::Tap& t)
 {
+    if (comfort_help_tap()) {
+        dirty = true;
+        return;
+    }
     if (ui::back_rect().contains(t.x, t.y)) { go(Screen::Files); return; }
     if (ui::bottom_key(1, 2).contains(t.x, t.y)) { go(Screen::Dev); return; }
     if (ui::bottom_key(0, 2).contains(t.x, t.y)) {
@@ -2213,6 +2438,10 @@ void draw_game_menu()
         return;
     }
     if (menu_tab == kTabOptions) {
+        if (comfort_help >= 0) {
+            draw_comfort_help();
+            return;
+        }
         ui::key(ui::bottom_key(0, 1), "Back to Game");
         draw_comforts({0, a.y, ui::width(), a.h});
         return;
@@ -2253,6 +2482,10 @@ void draw_game_menu()
 
 void tap_game_menu(const ui::Tap& t)
 {
+    if (menu_tab == kTabOptions && comfort_help_tap()) {
+        dirty = true;
+        return;
+    }
     if (menu_esc_hit(t)) {
         menu_esc();
         return;
@@ -3193,16 +3426,36 @@ void tap_play(const ui::Tap& t)
         draw_big_icon();
         return;
     }
+    static const play::Act kActs[kWMoveKeys] = {play::Act::TurnLeft, play::Act::StepLeft, play::Act::Forward,
+                                                play::Act::StepRight, play::Act::TurnRight, play::Act::TurnAround,
+                                                play::Act::Area, play::Act::Look, play::Act::Forward};
     if (map_shown) {
-        // The next tap closes the map; one on it or on the Map key does only that
+        // The movement keys move the party with the map kept up, redrawn
+        // after each step (Tom, v0.84.0: no jumping back to the 3D view);
+        // a step that starts something (a message, a menu, a fight) brings
+        // the game screen back
+        for (int k = kWTurnL; k <= kWAround; ++k) {
+            const ui::Rect r = walk_key(k);
+            if (r.w == 0 || !r.contains(t.x, t.y) || !play::walking() || play::fight_pad()) continue;
+            play::act(kActs[k], frame::canvas());
+            if (play::walking() && play::map()) {
+                int y0, y1;
+                play::take_dirty(y0, y1);           // (shown when the map closes)
+                draw_map_page();
+                return;
+            }
+            map_shown = false;
+            frame::present();
+            redraw_side_keys();
+            present_play();
+            return;
+        }
+        // Any other tap closes the map; one on it or on the Map key does only that
         map_shown = false;
         frame::present();
         redraw_side_keys();
         if (t.y < pic::kScreenH || walk_key(kWMap).contains(t.x, t.y)) return;
     }
-    static const play::Act kActs[kWMoveKeys] = {play::Act::TurnLeft, play::Act::StepLeft, play::Act::Forward,
-                                                play::Act::StepRight, play::Act::TurnRight, play::Act::TurnAround,
-                                                play::Act::Area, play::Act::Look, play::Act::Forward};
     for (int k = 0; k < kWKeys; ++k) {
         const ui::Rect r = walk_key(k);
         if (r.w == 0 || !r.contains(t.x, t.y)) continue;

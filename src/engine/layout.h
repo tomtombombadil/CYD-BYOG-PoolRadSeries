@@ -78,6 +78,11 @@ void combat(pic::Canvas& c, const Tables& tb, const Tiles& t);
 // A box's border with its corners at cells (c0, r0) and (c1, r1) (Pool's
 // framebox; a game with frame tables: nothing)
 void box(pic::Canvas& c, const Tables& tb, const Tiles& t, int c0, int r0, int c1, int r1);
+// A 13 x 13 cell frame with its top-left corner at cell (col, row) round an
+// 88 x 88 picture (cells col + 1 .. col + 11): the 3D view's own frame
+// tiles moved there (a game with frame tables), Pool's box otherwise. (The
+// engine's View Character portrait box, v0.84.0.)
+void picture_frame(pic::Canvas& c, const Tables& tb, const Tiles& t, int col, int row);
 // The credits screen: the border and bars at `rows` (0: none); with boxes
 // (Pool) the border goes down to row 24
 void credits(pic::Canvas& c, const Tables& tb, const Tiles& t, const uint8_t rows[2]);

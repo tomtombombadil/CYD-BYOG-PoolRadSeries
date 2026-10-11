@@ -109,7 +109,7 @@ void set_letters(Font& f, int letters, const Font* alt, pic::Canvas* redraw)
     if (letters != kGameLetters) {
         memcpy(f.saved, f.glyph[1], 26 * 8);
         memcpy(f.saved[26], f.glyph[32], 32 * 8);
-        if (letters == kClearLetters) {
+        if (letters == kClearLetters || letters == kClearCapsLetters) {
             memcpy(f.glyph[1], kClearUpper, 26 * 8);
             memcpy(f.glyph[32], kClearText, 32 * 8);
         } else {

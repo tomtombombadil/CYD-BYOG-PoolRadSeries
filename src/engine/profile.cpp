@@ -232,8 +232,8 @@ constexpr combat::FightSpell kCurseFight[] = {
 
 // Pool's spells in fights and in camp (poolrad_combat_facts.md 3; the
 // words: Pool's GAME.OVR strings the same code prints): Curse's that Pool
-// has, with Pool's own Magic Missile (half the level in missiles - a
-// first-level caster's does nothing, per the code; per 7), a Lightning Bolt
+// has (Magic Missile as AD&D's: (level + 1) / 2 missiles of 1d4 + 1 - Tom,
+// 2026-10-11; Pool's code was read as level / 2), a Lightning Bolt
 // of 8, its item spells
 constexpr combat::FightSpell kPoolFight[] = {
     {0x01, SpellDoes::Ours, 0, 0, 0, 0, 0, 0x2801C},        // Bless: "is Blessed"
@@ -246,7 +246,7 @@ constexpr combat::FightSpell kPoolFight[] = {
     {0x08, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x28168},
     {0x09, SpellDoes::Damage, 0, 0, 0, 1, 9, 0},            // Burning Hands: the caster's level
     {0x0B, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x280F5},
-    {0x0F, SpellDoes::Damage, 0, 4, 0, 7, 8, 0},            // Magic Missile (Pool's: level / 2 missiles)
+    {0x0F, SpellDoes::Damage, 0, 4, 0, 2, 8, 0},            // Magic Missile: (level + 1) / 2 missiles (Tom: the AD&D rule)
     {0x10, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2812E},
     {0x11, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2812E},
     {0x13, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x284A5},      // Shield

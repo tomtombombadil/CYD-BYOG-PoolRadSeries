@@ -33,7 +33,7 @@ struct Font {
     bool loaded = false;
     // Other letters in place of the game's (set_letters): the engine's
     // Clear font (with lower case) or another game's font
-    uint8_t letters = 0;               // kGameLetters / kClearLetters / kAltLetters
+    uint8_t letters = 0;               // kGameLetters / kClearLetters / kAltLetters / kClearCapsLetters
     bool    clear = false;             // the Clear font's (lower case has glyphs of its own)
     uint8_t saved[26 + 32][8];         // the game's glyphs 1-26 and 32-63 while it is
 };
@@ -58,7 +58,9 @@ void set_clear(Font& f, bool on, pic::Canvas* redraw = nullptr);
 // Clear font, or another game's (alt: e.g. the player's own Pools of
 // Darkness font - its glyphs 1-26 and 32-63; capitals only). Redraw as
 // set_clear. kAltLetters without a loaded alt: the game's own.
-enum { kGameLetters = 0, kClearLetters = 1, kAltLetters = 2 };
+// kClearCapsLetters (Tom, v0.84.0): the Clear font's capitals, digits and
+// punctuation without its lower case - all capitals, as the games print.
+enum { kGameLetters = 0, kClearLetters = 1, kAltLetters = 2, kClearCapsLetters = 3 };
 void set_letters(Font& f, int letters, const Font* alt, pic::Canvas* redraw = nullptr);
 
 // Loads block 201 from an open DAX file. False if the file has no such

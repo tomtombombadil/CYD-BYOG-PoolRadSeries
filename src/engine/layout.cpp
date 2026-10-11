@@ -185,6 +185,21 @@ void explore(pic::Canvas& c, const Tables& tb, const Tiles& t)
     }
 }
 
+void picture_frame(pic::Canvas& c, const Tables& tb, const Tiles& t, int col, int row)
+{
+    if (tb.box[0]) {
+        box(c, tb, t, col, row, col + 12, row + 12);
+        return;
+    }
+    for (int i = 2; i <= 14; ++i) {
+        const int k = i - 2;
+        put(c, t, kViewTile + tb.view_top[i], col + k, row);
+        put(c, t, kViewTile + tb.view_bottom[i], col + k, row + 12);
+        put(c, t, kViewTile + tb.view_left[i], col, row + k);
+        put(c, t, kViewTile + tb.view_right[i], col + 12, row + k);
+    }
+}
+
 void combat(pic::Canvas& c, const Tables& tb, const Tiles& t)
 {
     c.fill(0, 0, pic::kScreenW, 24 * 8, 0);

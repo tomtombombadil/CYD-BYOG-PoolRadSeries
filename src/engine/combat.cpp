@@ -2906,10 +2906,6 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                 count = (pw + 1) / 2;
                 plus += count;
             }
-            if (fs.per == 7) {                  // Pool's Magic Missile: level / 2 missiles of 1d4 + 1
-                count = pw / 2;
-                plus += count;
-            }
             if (fs.per == 3) count = pw;
             if (fs.per == 5) count = d.roll(3, 1) * 2 + 1;
             int dmg = (count && fs.sides ? d.roll(fs.sides, count) : 0) + plus;

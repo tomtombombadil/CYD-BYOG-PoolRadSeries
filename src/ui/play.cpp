@@ -68,6 +68,11 @@ struct Data {
     font::Font     font;
     font::Font*    alt_font = nullptr;      // the player's Pools of Darkness font while it's chosen
     bool           alt_tried = false;       // (its file was looked for)
+    // View Character's portrait box (view_box): Pool's portrait blocks for
+    // heads 1-14 / bodies 1-12 (read once), what the box shows
+    uint8_t        head_map[15] = {}, body_map[13] = {};
+    bool           maps_read = false;
+    bool           view_icon = false, view_action = false;
     view3d::World& world;
     geo::Map       map;
     ecl::GameState& gs;
@@ -997,6 +1002,9 @@ const char* name_of(const char* table, int stride, int count, int i)
 
 const party::Character* new_char = nullptr;   // the character being made (Create New Character)
 
+void view_box(pic::Canvas& c, const party::Character& ch);
+bool view_box_tap(int x, int y, pic::Canvas& c);
+
 void draw_character(pic::Canvas& c)
 {
     const party::Character* ch = new_char ? new_char : pt->sel();
@@ -1004,6 +1012,7 @@ void draw_character(pic::Canvas& c)
     layout::outer(c, d->tables, d->frame_tiles);
     dirty(0, pic::kScreenH);
     if (!ch) return;
+    view_box(c, *ch);
     char t[48];
     ch->name(t, sizeof t);
     put(c, t, 1, 1, !ch->in_combat() ? 12 : ch->enemy() ? 14 : 11);
@@ -1110,6 +1119,7 @@ void view_character(pic::Canvas& c)
     if (!pt->sel()) return;
     view_from = screen;
     screen = Screen::View;
+    d->view_icon = d->view_action = false;      // (a portrait first, the ready pose)
     draw_character(c);
 }
 
@@ -5519,7 +5529,9 @@ void pm_tap(int x, int y, pic::Canvas& c)
         return;
     }
     if (screen == Screen::View) {
-        // Items on the menu line opens the list; anything else is Exit
+        // The portrait box swaps portrait / icon; Items on the menu line
+        // opens the list; anything else is Exit
+        if (view_box_tap(x, y, c)) return;
         if (y >= text::kMenuTapTop && text::key(menu, text::hit(menu, col)) == 'I') open_items(c);
         else back_from_view(c);
         return;
@@ -6654,6 +6666,112 @@ void rec_name(const uint8_t* rec, char* out)
 }
 
 #include "play_fight.inc"
+
+// ---- View Character's portrait box ---------------------------------------------
+// Pool of Radiance draws the character's portrait (HEAD3 / BODY3 pictures)
+// in a box top right - from the party menu, with its portraits on
+// (poolrad_create_facts.md 15; its View: DS 0x49F5 and 0x5376 = 3). The
+// engine comfort CYD_ICON_PORTRAIT (Tom, v0.84.0) fills the same space
+// with the combat icon three times its size, in a frame of the game's own
+// tiles; where a portrait exists it comes first, a tap swaps the two.
+
+// Pool's portrait for this character can be shown (the original: from the
+// party menu only; with the comfort, wherever View is)
+bool view_has_portrait()
+{
+    if (!d->prof->create.head_blocks || !d->prof->create.body_blocks) return false;
+    return (CYD_ICON_PORTRAIT && opts.portrait) || view_from == Screen::PartyMenu;
+}
+
+// The box's place: Pool's (its box shares the screen's border), else
+// inside the border with room for the text beside it
+void view_box_place(int* col, int* row)
+{
+    const bool pool = d->tables.box[0] != 0;
+    *col = pool ? 27 : 26;
+    *row = pool ? 0 : 1;
+}
+
+void view_box(pic::Canvas& c, const party::Character& ch)
+{
+    const bool icon_on = CYD_ICON_PORTRAIT && opts.portrait;
+    const bool portrait = view_has_portrait();
+    if (!icon_on && !portrait) return;
+    int col, row;
+    view_box_place(&col, &row);
+    const int x0 = (col + 1) * 8, y0 = (row + 1) * 8;
+    c.fill(x0, y0, 88, 88, 0);
+    layout::picture_frame(c, d->tables, d->frame_tiles, col, row);
+    dirty_rows(row, row + 12);
+    if (portrait && !(icon_on && d->view_icon)) {
+        if (!d->maps_read) {
+            d->maps_read = true;
+            const auto& pc = d->prof->create;
+            fs::File f;
+            if (open_file(d->prof->program, f)) {
+                library::FileSource src(f);
+                exepack::Info info;
+                if (exepack::parse(src, info) != exepack::Status::Ok ||
+                    exepack::read(src, info, pc.ds_image + pc.head_blocks, d->head_map, sizeof d->head_map) !=
+                        exepack::Status::Ok ||
+                    exepack::read(src, info, pc.ds_image + pc.body_blocks, d->body_map, sizeof d->body_map) !=
+                        exepack::Status::Ok)
+                    memset(d->head_map, 0, sizeof d->head_map);
+                f.close();
+            }
+        }
+        int head = ch.rec[0x13F], body = ch.rec[0x140];
+        if (head < 1 || head > 14) head = 1;
+        if (body < 1 || body > 12) body = 1;
+        const int keep = d->gs.game_area;
+        d->gs.game_area = 3;                    // (HEAD3 / BODY3, as the program)
+        draw_block(c, "HEAD", d->head_map[head], x0, y0);
+        draw_block(c, "BODY", d->body_map[body], x0, y0 + 40);
+        d->gs.game_area = static_cast<uint8_t>(keep);
+        return;
+    }
+    // The combat icon, 3 x 3 a pixel (72 x 72) in the middle; an NPC from
+    // the monsters' files: its own picture (as in fights)
+    Pic4 ic;
+    if (ch.rec[0xF7] >= 0x80 && ch.rec[0x126] && !ch.rec[0x141] && !ch.rec[0x142]) {
+        char file[16];
+        snprintf(file, sizeof file, "CPIC%d.DAX", d->gs.game_area);
+        for (int fr = 0; fr < 2; ++fr) {
+            int w = 0, h = 0;
+            ic.px[fr] = load_pic4(file, ch.rec[0x126] + fr * 0x80, 0, &w, &h);
+            if (ic.px[fr]) ic.w = static_cast<uint8_t>(w), ic.h = static_cast<uint8_t>(h);
+        }
+    }
+    if (!ic.px[0]) build_icon(ch.rec, ic);
+    const uint8_t* p = ic.px[d->view_action && ic.px[1] ? 1 : 0];
+    if (p && ic.w && ic.h) {
+        const int sc = ic.w > 24 || ic.h > 24 ? 1 : 3;     // (a 48-pixel monster: as it is)
+        const int ox = x0 + (88 - ic.w * sc) / 2, oy = y0 + (88 - ic.h * sc) / 2;
+        for (int j = 0; j < ic.h; ++j)
+            for (int i = 0; i < ic.w; ++i) {
+                const int v = nib(p, ic.w, i, j);
+                if (v) c.fill(ox + i * sc, oy + j * sc, sc, sc, static_cast<uint8_t>(v));
+            }
+    }
+    free_pic(ic);
+}
+
+// A tap on the box: portrait <-> icon, or the icon's ready <-> action pose
+bool view_box_tap(int x, int y, pic::Canvas& c)
+{
+    const bool icon_on = CYD_ICON_PORTRAIT && opts.portrait;
+    const party::Character* ch = new_char ? new_char : pt->sel();
+    if (!ch || (!icon_on && !view_has_portrait())) return false;
+    int col, row;
+    view_box_place(&col, &row);
+    if (x < col * 8 || x >= (col + 13) * 8 || y < row * 8 || y >= (row + 13) * 8) return false;
+    if (!icon_on) return true;                  // (Pool's portrait alone: nothing to swap)
+    if (view_has_portrait() && !d->view_icon) d->view_icon = true, d->view_action = false;
+    else if (view_has_portrait() && d->view_action) d->view_icon = false;
+    else d->view_action = !d->view_action;
+    view_box(c, *ch);
+    return true;
+}
 
 // ---- the icon editor (alter_icon_facts.md 1): Alter -> Icon, and Create
 // New Character after the name. The outer frame, the combat colours (0 / 8
@@ -8061,6 +8179,7 @@ int font_wanted()
 {
     if (!CYD_CLEAR_FONT || !d) return font::kGameLetters;
     if (opts.font == 1) return font::kClearLetters;
+    if (opts.font == 3) return font::kClearCapsLetters;      // (settings.h kFontClearCaps)
     if (opts.font != 2) return font::kGameLetters;
     if (!d->alt_font && !d->alt_tried && darkness_dir[0]) {
         d->alt_tried = true;

@@ -442,6 +442,11 @@ int main(int argc, char** argv)
             play::tap(16, (4 + atoi(getenv("VIEW"))) * 8 + 2, C);
             play::tap(24, (12 + pm_line('V')) * 8 + 2, C);
             shot("view");
+            // VIEWTAPS=n: n taps on the portrait box (portrait / icon / action)
+            for (int k = 0; k < (getenv("VIEWTAPS") ? atoi(getenv("VIEWTAPS")) : 0); ++k) {
+                play::tap(33 * 8, 6 * 8, C);
+                shot("view_box");
+            }
             play::tap(2, text::kMenuRow * 8 + 2, C);
             shot("view_back");
         }

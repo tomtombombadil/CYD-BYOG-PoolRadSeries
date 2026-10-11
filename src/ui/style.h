@@ -24,5 +24,6 @@ constexpr uint16_t kTextMuted  = rgb(150, 145, 130);
 constexpr uint16_t kGold       = rgb(232, 184, 64);
 constexpr uint16_t kWarn       = rgb(220, 90, 70);
 constexpr uint16_t kHeader     = rgb(16, 24, 56);
+constexpr uint16_t kParty      = rgb(40, 255, 40);     // the map's party arrow (Tom: bright green)
 
 } // namespace style

@@ -271,9 +271,12 @@ stay in the session's scratch space, never in the repo.
    v0.72.0 (Tom, 2026-10-11: Curse playable): the game's page is two big
    keys, **Play** (the former Play Test) and **Settings**. Settings (one
    set for all games, saved with the engine's settings) holds the engine
-   comforts' switches - Game Font (v0.73.0; Original / Clear / Darkness since v0.74.0), Icon Gallery, Large Icon,
-   Journal Pop-Up, Demo Tap Stops, More Characters - and Game Sound (Tandy / PC Speaker / Off), each
-   key lit when on; below them **As Original** (every comfort off; then the
+   comforts' switches - Game Font (v0.73.0; Original / Clear / Darkness since v0.74.0, Clear Caps
+   since v0.84.0), Icon Gallery, Large Icon, Journal Pop-Up, Tap to Stop Demo (v0.84.0; was Demo Tap
+   Stops), More Characters, Icon Portrait (v0.84.0) - and Game Sound (Tandy / PC Speaker / Off), each
+   key lit when on, with a circled "?" at its right (Tom, v0.84.0) that opens what the option does
+   (the next tap closes it; Game Font's shows a line in each font, the player's own fonts read from
+   the card); below them **As Original** (every comfort off; then the
    key reads All On) and **Dev Tools** (Resource Test, Screen Test, Walk
    Test; their Back returns there). The in-game Game menu's Options tab
    shows the same switches. A game the engine can't play yet: its note
@@ -585,15 +588,20 @@ Steps (each pushed when it works; Curse stays as it is):
    Inc Dec Exit). Not copied (quirks read from the code, SPEC 12 if ever
    wanted): the new thief's Dex-0 skills in the .CHA until joining, a
    magic-user with no spell left to choose at training getting 1 HP.
+   View Character's portrait (v0.84.0): HEAD3 / BODY3 in Pool's box top
+   right (cols 28-38, rows 1-11) when viewed from the party menu, as the
+   original (its View: DS 0x49F5 portraits on and 0x5376 = 3); with the
+   Icon Portrait comfort wherever View is (section 11).
    Still to do: Pool's Alter (Monsters / Portraits on/off), Modify's
-   limits, the portrait on View Character.
+   limits.
 5. Combat (v0.78.0, started; the Project's claude/poolrad_combat_facts.md):
    Curse's fight code with Pool's tables (the ground table at DS 0x2744 -
    Pool's own outdoor pictures and costs -, placement, turn undead at
    0x0447), its effect numbers (the same number often means something
    else in Pool: those Curse rules are off for it), its spells (Magic
-   Missile: half the caster's level in missiles - none at level 1, as its
-   code; Lightning Bolt 8 squares; Heal and the later spells not in Pool),
+   Missile: (level + 1) / 2 missiles of 1d4 + 1, always hitting - the AD&D
+   rule, Tom 2026-10-11 (v0.84.0; v0.78.0 had level / 2 as its code was
+   read); Lightning Bolt 8 squares; Heal and the later spells not in Pool),
    camp spells, the temple's cures (Curse's prices, no Heal), gem and
    jewel words, no end-of-fight effect list (its program has none - effects
    run out by their own time). Fights in the three wilderness areas (25-27)
@@ -905,6 +913,21 @@ a PC, PortMaster handhelds):
     when that folder was found; settings.h `game_font` 0 / 1 / 2, older
     files' Clear = 1). `font::set_letters` swaps any of the three, mid-game
     too (the same redraw; checked pixel for pixel against a fresh start).
+    v0.84.0 (Tom): a fourth, **Clear Caps** - the Clear font's capitals,
+    digits and punctuation without its lower case, all capitals as the
+    games print (`font::kClearCapsLetters`, settings.h `game_font` 3);
+    the key cycles Original / Clear / Clear Caps / Darkness.
+  - `CYD_ICON_PORTRAIT` (v0.84.0, Tom: the games have no character
+    portraits, but View Character leaves room for one): the character's
+    combat icon at three times its size (72 x 72) in an 88 x 88 box where
+    Pool draws its portraits - Curse: cols 27-37, rows 2-12, framed with
+    the 3D view's own frame tiles (`layout::picture_frame`); Pool: its own
+    box, top right. Where the game has a portrait (Pool: every character,
+    NPCs too) the portrait comes first and a tap on it swaps to the icon;
+    a tap on the icon flips ready / action (with a portrait: action ->
+    the portrait again). An NPC from the monsters' files shows its CPIC
+    picture, as in fights. Off: as the originals (Pool's portrait from the
+    party menu only). Settings key **Icon Portrait**.
   - `CYD_ICON_GALLERY` (v0.71.0, Tom: making icons a value at a time is
     "one of the worst parts of the game"): the icon editor (Alter -> Icon,
     Create New Character) opens on a gallery - pages Icons (32 ready-made
@@ -948,13 +971,27 @@ the game's Settings (As Original: all of them).
   Right / Select - Game, Look, Esc, and on 320x240 Map: the area map over
   the game screen until the next tap; Tom confirmed Map 2026-10-10); a
   fight's own keys while a fighter moves or aims by hand (the 8 directions
-  and Select); the 480x320 Companion strip (map - black, doors 3 px -,
-  party); the Game menu (Journal, Journal PDF, Sounds, Options, Exit Game);
+  and Select); the 480x320 Companion strip (map - black, walls 1 px, doors
+  a 3 px band a pixel short of each end so the wall line shows there,
+  secret doors an S on the wall line, the party a bright green arrow -
+  Tom, v0.84.0); while the 320x240 Map is up the movement keys move the
+  party and the map follows (Tom, v0.84.0; a step that starts a message,
+  menu or fight brings the game screen back); the Game menu (Journal, Journal PDF, Sounds, Options, Exit Game);
   a tap on the 3D view toggles 3D / Area; in Pool's wilderness the
   movement pad's Forward / Side-step Left / Side-step Right / Turn Around
   are its arrow keys (north / west / east / south; the turn keys do
   nothing, as there's no turning there) and a tap on the square north,
   east, south or west of the rider steps there.
+- **Secret doors on the map** (v0.84.0): the GEO data has no secret-door
+  mark (nor the Gold Box Companion's docs), so the engine takes a
+  passable side whose wall type is drawn as the area's ordinary wall - a
+  type at least four times as often solid as open on that map - to be a
+  secret door (the 3D view shows a plain wall there). Most maps have a
+  handful; it's a guess from the data, not the games' own notion.
+- **Magic Missile** (Tom, 2026-10-11): (level + 1) / 2 missiles of 1d4 + 1,
+  always hitting - the AD&D rule, Curse's code too; Pool's code was read as
+  level / 2 (nothing at first level). All on one target, as both games.
+- **View Character's icon portrait** (switch `CYD_ICON_PORTRAIT`).
 - **Pool's healed land** (after the pyramid): the wilderness icons show
   their healed colours at once; the original recolours them a few pixels
   at a time while panning the map from the city to the pyramid.
@@ -974,8 +1011,9 @@ the game's Settings (As Original: all of them).
   `CYD_MORE_CHARACTERS`).
 - **The icon editor's big preview** (switch `CYD_BIG_ICON_PREVIEW`).
 - **The game font** (switch `CYD_CLEAR_FONT`): the engine's own Clear font
-  (upright, bold letters with lower case) or the player's Pools of Darkness
-  font instead of the game's own; changeable mid-game.
+  (upright, bold letters with lower case), Clear Caps (its capitals only)
+  or the player's Pools of Darkness font instead of the game's own;
+  changeable mid-game.
 - **The icon gallery** (switch `CYD_ICON_GALLERY`): the icon editor opens
   on ready-made icons, heads, weapons and colour schemes to tap; the
   original's Parts / colours / Size menus are behind Edit, and their Exit

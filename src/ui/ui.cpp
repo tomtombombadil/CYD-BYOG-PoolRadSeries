@@ -327,6 +327,24 @@ uint16_t key_fill(KeyStyle s)
     return s == KeyStyle::Lit ? style::kKeyLit : s == KeyStyle::Dim ? style::kKeyDim : style::kKey;
 }
 
+namespace {
+void help_circle(const Rect& r, int* cx, int* cy, int* rad);
+}
+
+void key_help(const Rect& r)
+{
+    note_key(r, 254);                       // (kHelpStyle: tap_flash rings the circle)
+    int cx, cy, rad;
+    help_circle(r, &cx, &cy, &rad);
+    g->fillRect(r.x, r.y, r.w, r.h, style::kBackground);
+    g->fillCircle(cx, cy, rad, style::kKey);
+    g->drawCircle(cx, cy, rad, style::kKeyEdge);
+    use_font(Font::Normal);
+    g->setTextColor(style::kText);
+    g->setTextDatum(textdatum_t::middle_center);
+    g->drawString("?", cx + 1, cy + 1);
+}
+
 void key2(const Rect& r, const char* label, const char* sub, KeyStyle s, int left_inset)
 {
     note_key(r, static_cast<uint8_t>(s));
@@ -422,8 +440,26 @@ uint32_t flash_gen = 0;
 int      flash_key = -1;
 Rect     flash_rect{};
 
-void ring(const Rect& r, uint16_t outer, uint16_t inner, int width)
+constexpr uint8_t kHelpStyle = 254;      // a key_help circle (its ring is round)
+
+void help_circle(const Rect& r, int* cx, int* cy, int* rad)
 {
+    const int m = r.w < r.h ? r.w : r.h;
+    *rad = m / 2 - 1;
+    if (*rad > (large() ? 15 : 11)) *rad = large() ? 15 : 11;
+    *cx = r.x + r.w / 2;
+    *cy = r.y + r.h / 2;
+}
+
+void ring(const Rect& r, uint16_t outer, uint16_t inner, int width, uint8_t st = 0)
+{
+    if (st == kHelpStyle) {
+        int cx, cy, rad;
+        help_circle(r, &cx, &cy, &rad);
+        g->drawCircle(cx, cy, rad, outer);
+        for (int i = 1; i < width; ++i) g->drawCircle(cx, cy, rad - i, inner);
+        return;
+    }
     const int rad = large() ? 6 : 4;
     g->drawRoundRect(r.x, r.y, r.w, r.h, rad, outer);
     for (int i = 1; i < width; ++i) g->drawRoundRect(r.x + i, r.y + i, r.w - i * 2, r.h - i * 2, rad, inner);
@@ -431,6 +467,7 @@ void ring(const Rect& r, uint16_t outer, uint16_t inner, int width)
 
 uint16_t fill_of(uint8_t st)
 {
+    if (st == kHelpStyle) return style::kKey;
     return st == 255 ? style::kHeader : key_fill(static_cast<KeyStyle>(st));
 }
 
@@ -446,12 +483,12 @@ int tap_flash(const Tap& t)
         g->startWrite();
         if (k.style == static_cast<uint8_t>(KeyStyle::Lit)) {
             // already lit: off, then on again
-            ring(k.r, fill_of(k.style), fill_of(k.style), w);
+            ring(k.r, fill_of(k.style), fill_of(k.style), w, k.style);
             g->endWrite();
             delay(70);
             g->startWrite();
         }
-        ring(k.r, style::kText, style::kGold, w);
+        ring(k.r, style::kText, style::kGold, w, k.style);
         g->endWrite();
         flash_key = i;
         flash_rect = k.r;
@@ -480,7 +517,7 @@ void tap_unflash()
     const uint16_t edge = k.style == 255 ? style::kHeader
                         : k.style == static_cast<uint8_t>(KeyStyle::Lit) ? style::kGold : style::kKeyEdge;
     g->startWrite();
-    ring(k.r, edge, fill_of(k.style), large() ? 4 : 3);
+    ring(k.r, edge, fill_of(k.style), large() ? 4 : 3, k.style);
     g->endWrite();
     flash_key = -1;
 }

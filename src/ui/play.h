@@ -100,8 +100,10 @@ struct Options {
     bool gallery = true;          // the icon editor opens on the gallery (CYD_ICON_GALLERY)
     bool demo_tap = true;         // a tap stops the demo (CYD_DEMO_TAP_STOPS)
     bool more_guys = true;        // Add Character: saved games' members, the earlier game's folder (CYD_MORE_CHARACTERS)
+    bool portrait = true;         // View Character: the icon portrait (CYD_ICON_PORTRAIT)
     uint8_t font = 0;             // the game's text (CYD_CLEAR_FONT): 0 its own (the default), 1 the engine's
-                                  // Clear font, 2 the player's Pools of Darkness font (set_darkness_dir)
+                                  // Clear font, 2 the player's Pools of Darkness font (set_darkness_dir),
+                                  // 3 Clear Caps (the Clear capitals only)
 };
 void set_options(const Options& o);
 // The title's lightning (Pool): the colour palette entry `index` shows now,

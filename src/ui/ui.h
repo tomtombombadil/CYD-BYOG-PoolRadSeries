@@ -78,6 +78,9 @@ void key_arrow(const Rect& r, Arrow a, KeyStyle s = KeyStyle::Normal);
 // north-west): a fight's direction keys
 void key_compass(const Rect& r, int dir, KeyStyle s = KeyStyle::Normal);
 
+// A help key (Tom, v0.84.0): a "?" in a circle, centred in r (all of r
+// takes the tap; its tap highlight is a round ring)
+void key_help(const Rect& r);
 // The fill colour of a key in style s (to draw pictures on it)
 uint16_t key_fill(KeyStyle s);
 

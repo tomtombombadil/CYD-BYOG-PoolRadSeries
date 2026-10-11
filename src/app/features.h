@@ -74,6 +74,24 @@
 #define CYD_CLEAR_FONT 1
 #endif
 
+// v0.84.0 (Tom): Clear Caps, a fourth choice - the Clear font's capitals,
+// digits and punctuation without its lower case (all capitals, as the
+// games print).
+
+// The icon portrait (Tom, 2026-10-11, v0.84.0): the games have no
+// character portraits, but View Character leaves room for one (Pool of
+// Radiance draws its head / body portrait there, top right). The engine
+// shows the character's combat icon three times its size in that space,
+// inside a frame of the game's own tiles (the 3D view's frame; Pool's
+// box). Where the game has a portrait (Pool: every character, NPCs too)
+// the portrait comes first and a tap on it swaps to the icon and back;
+// otherwise a tap flips the icon's ready / action pose. 0: as the
+// originals (Pool's portrait only; nothing in Curse's space).
+// Where: play.cpp (view_box), engine/layout.* (picture_frame).
+#ifndef CYD_ICON_PORTRAIT
+#define CYD_ICON_PORTRAIT 1
+#endif
+
 // Each comfort compiled in can also be switched off by the player: the
 // game's Settings page (Tom, 2026-10-11, v0.72.0; one set for all games,
 // settings.h comforts_off), also the in-game Game menu's Options tab.
