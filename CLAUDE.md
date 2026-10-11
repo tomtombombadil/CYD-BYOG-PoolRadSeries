@@ -346,6 +346,7 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   /tmp/claude-0/bt/oracle_pool.txt from scratch `pool_oracle.py` (Pool's
   own tables + the facts' constants; never in the repo). The playsim's
   NEWGAME=1 starts a new game (the tour) with save A's party.
+  Pool expectations: the Project's claude/poolrad_behaviour_facts.md.
 - PortMaster ports are a stretch goal (Tom): keep everything portable.
 - Game screens (Walk Test, Play Test now, the games later): canvas 1:1 at the top left
   (`frame::set_left`), controls below it, on 480x320 the Companion strip on
