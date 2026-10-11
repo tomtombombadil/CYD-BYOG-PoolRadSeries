@@ -1096,6 +1096,10 @@ void racial()
             combat::Fighter& at = b.f[a];
             combat::Fighter& tg = b.f[t];
             const uint8_t hp = tg.rec[0x1A4], st = tg.rec[0x195], in = tg.rec[0x196];
+            // (each try the first attack on it this round: never "from behind",
+            // which the original's counting of attacks received would make it)
+            tg.received = 0;
+            tg.turns = 0;
             at.attacks[0] = 1;
             at.attacks[1] = 0;
             dice_faces({face, 1, 1, 1, 1, 1, 1});
@@ -1157,6 +1161,8 @@ void racial()
         mo.rec[0x14B] |= 8;
         mo.rec[0x1A4] = 200;
         auto dmg = [&]() {
+            mo.received = 0;
+            mo.turns = 0;
             pc.attacks[0] = 1;
             pc.attacks[1] = 0;
             dice_faces({20, 1, 1, 1, 1, 1, 1});
