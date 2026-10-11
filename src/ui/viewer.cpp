@@ -601,7 +601,7 @@ void prepare_journal_gbc(const library::GameDir& g)
     fs::File f = sd_fs().open(path, "r");
     if (!f) return;
     library::FileSource src(f);
-    snprintf(id, sizeof id, "gbc:%u", static_cast<unsigned>(src.size()));
+    snprintf(id, sizeof id, "gbc2:%u", static_cast<unsigned>(src.size()));
     char out_path[160];
     library::cache_path(g, "JOURNAL.DAT", out_path, sizeof out_path);
     {
@@ -953,9 +953,12 @@ void tap_files(const ui::Tap& t)
         play::set_pool_dir("");
         for (int g = 0; g < n_games; ++g)
             if (game_dirs[g].game == games::Game::PoolOfRadiance && game_dirs[g].format == library::Format::Dax) {
-                char pd[160];
+                char pd[160], sv[170];
                 snprintf(pd, sizeof pd, "%s/%s", games::kRootDir, game_dirs[g].data_dir);
-                play::set_pool_dir(pd);
+                // Steam / SNEG: its saves are in the game folder's SAVE (POOL.CFG
+                // "C:\POOLRAD\SAVE\"); GOG: the game folder itself
+                snprintf(sv, sizeof sv, "%s/SAVE", pd);
+                play::set_pool_dir(sd_fs().exists(sv) ? sv : pd);
                 break;
             }
         play_error = play::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game, frame::canvas(), cdir);
@@ -2134,10 +2137,13 @@ struct JournalView {
     uint8_t  row[2][1700];
     int      row_y[2] = {-1, -1};
     int      row_piece = -1;
-    // A text entry (the Gold Box Companion's, Steam / SNEG): the text laid
-    // out in the engine's font - Zoom picks its size
-    bool     text_mode = false;
-    char*    text = nullptr;
+    // Text pieces (the Gold Box Companion's, Steam / SNEG): laid out in the
+    // engine's font, Zoom picks its size; an entry can mix text and pictures
+    // (Pool of Radiance: text, the map, more text)
+    bool     text_mode = false;           // only text: Zoom names text sizes
+    char*    text = nullptr;              // the text pieces, each 0-terminated
+    int      text_at[kMaxJournalPieces] = {};   // piece i's text in it (-1: a picture)
+    int      l0[kMaxJournalPieces] = {}, ln[kMaxJournalPieces] = {};   // piece i's lines
     int      n_lines = 0;
     uint16_t line_at[700], line_len[700];  // line_len 0: a paragraph's gap
     int      line_px = 16;
@@ -2227,23 +2233,24 @@ bool journal_source(fs::File& f)
 
 ui::Rect view_area();
 
-// A text entry's lines: each paragraph word-wrapped to the screen, a half
-// line between paragraphs
-void journal_text_layout()
+// A text piece's lines: each paragraph word-wrapped to the screen, a half
+// line between paragraphs; returns its height (with its margins)
+int journal_text_piece(int i)
 {
     JournalView& v = *jv;
     const ui::Font f = text_font(v.fit);
     const int room = view_area().w - kTextPad * 2;
     v.line_px = ui::line_h(f) + 2;
-    v.n_lines = 0;
+    v.l0[i] = v.n_lines;
     const char* t = v.text;
-    const int n = static_cast<int>(strlen(t));
+    const int start = v.text_at[i];
+    const int n = start + static_cast<int>(strlen(t + start));
     char buf[256];
-    int i = 0;
-    while (i < n && v.n_lines < 699) {
-        int end = i;                                   // this paragraph: [i, end)
+    int p0 = start;
+    while (p0 < n && v.n_lines < 699) {
+        int end = p0;                                  // this paragraph: [p0, end)
         while (end < n && t[end] != '\n') ++end;
-        int p = i;
+        int p = p0;
         while (p < end && v.n_lines < 699) {
             // The most words from p that fit
             int fit_end = p, k = p;
@@ -2271,49 +2278,48 @@ void journal_text_layout()
             v.line_len[v.n_lines] = 0;                 // the gap
             ++v.n_lines;
         }
-        i = end + 1;
+        p0 = end + 1;
     }
-    v.total_h = kTextPad;
-    for (int k = 0; k < v.n_lines; ++k) v.total_h += v.line_len[k] ? v.line_px : v.line_px / 2;
-    v.total_h += kTextPad;
-    v.scale256 = 256;
-    v.maxw = v.shown_w = view_area().w;
-    v.left = 0;
-    const int max_top = v.total_h > view_area().h ? v.total_h - view_area().h : 0;
-    if (v.top > max_top) v.top = max_top;
-    if (v.top < 0) v.top = 0;
+    v.ln[i] = v.n_lines - v.l0[i];
+    int h = kTextPad * 2;
+    for (int k = v.l0[i]; k < v.n_lines; ++k) h += v.line_len[k] ? v.line_px : v.line_px / 2;
+    return h;
 }
 
-// Sizes for fitted (the screen's width) or zoomed (1:1) viewing
+// Sizes for fitted (the screen's width) or zoomed (1:1) viewing; text
+// pieces at the font Zoom picks (Whole: small, Width: medium, Full: large)
 void journal_layout()
 {
     JournalView& v = *jv;
-    if (v.text_mode) {
-        journal_text_layout();
-        return;
-    }
     const int room = ui::width() - 6;
     int full_h = 0;
-    for (int i = 0; i < v.count; ++i) full_h += v.piece[i].h;
-    if (v.fit == kFitFull) {
-        v.scale256 = 256;
+    for (int i = 0; i < v.count; ++i)
+        if (v.text_at[i] < 0) full_h += v.piece[i].h;
+    if (v.maxw <= 0) {
+        v.scale256 = 256;                              // only text
+        v.shown_w = view_area().w;
     } else {
-        v.scale256 = room * 256 / v.maxw;
-        if (v.fit == kFitWhole && full_h > 0) {
-            const int fh = view_area().h * 256 / full_h;
-            if (fh < v.scale256) v.scale256 = fh;
+        if (v.fit == kFitFull) {
+            v.scale256 = 256;
+        } else {
+            v.scale256 = room * 256 / v.maxw;
+            if (v.fit == kFitWhole && full_h > 0) {
+                const int fh = view_area().h * 256 / full_h;
+                if (fh < v.scale256) v.scale256 = fh;
+            }
+            if (v.scale256 < 1) v.scale256 = 1;
         }
-        if (v.scale256 < 1) v.scale256 = 1;
+        v.shown_w = v.maxw * v.scale256 / 256;
+        if (v.shown_w > ui::width()) v.shown_w = ui::width();
+        if (v.shown_w > 480) v.shown_w = 480;
     }
-    v.shown_w = v.maxw * v.scale256 / 256;
-    if (v.shown_w > ui::width()) v.shown_w = ui::width();
-    if (v.shown_w > 480) v.shown_w = 480;
     v.total_h = 0;
+    v.n_lines = 0;
     for (int i = 0; i < v.count; ++i) {
-        v.out_h[i] = v.piece[i].h * v.scale256 / 256;
+        v.out_h[i] = v.text_at[i] >= 0 ? journal_text_piece(i) : v.piece[i].h * v.scale256 / 256;
         v.total_h += v.out_h[i];
     }
-    const int max_left = v.fit == kFitFull && v.maxw > v.shown_w ? v.maxw - v.shown_w : 0;
+    const int max_left = v.maxw > 0 && v.fit == kFitFull && v.maxw > v.shown_w ? v.maxw - v.shown_w : 0;
     const int max_top = v.total_h > view_area().h ? v.total_h - view_area().h : 0;
     if (v.top > max_top) v.top = max_top;
     if (v.top < 0) v.top = 0;
@@ -2350,27 +2356,39 @@ bool open_journal(char kind, int number)
             jv->count <= kMaxJournalPieces) {
             bool ok = true;
             jv->maxw = 0;
-            jv->text_mode = false;
             free(jv->text);
             jv->text = nullptr;
+            int text_len = 0, n_text = 0;
             for (int i = 0; i < jv->count && ok; ++i) {
                 ok = journal::piece(src, jv->info, first + i, jv->piece[i]) && jv->piece[i].w <= 1700;
-                if (jv->piece[i].w > jv->maxw) jv->maxw = jv->piece[i].w;
-            }
-            if (ok && jv->count == 1 && jv->piece[0].text()) {
-                // A text entry: its text, laid out in the engine's font
-                const int len = jv->piece[0].h < 16000 ? jv->piece[0].h : 16000;
-                jv->text = static_cast<char*>(malloc(static_cast<size_t>(len) + 1));
-                if (jv->text && src.read_at(jv->piece[0].offset, reinterpret_cast<uint8_t*>(jv->text), len) == static_cast<size_t>(len)) {
-                    jv->text[len] = 0;
-                    jv->text_mode = true;
-                    jv->fit = 1;
-                    jv->have = true;
-                    journal_layout();
+                if (!ok) break;
+                if (jv->piece[i].text()) {
+                    ++n_text;
+                    text_len += (jv->piece[i].h < 16000 ? jv->piece[i].h : 16000) + 1;
+                } else if (jv->piece[i].w > jv->maxw) {
+                    jv->maxw = jv->piece[i].w;
                 }
-                ok = false;                          // (not a picture)
             }
-            if (ok && jv->maxw > 0) {
+            jv->text_mode = ok && n_text == jv->count;
+            // Text pieces: their text, laid out in the engine's font
+            if (ok && n_text) {
+                jv->text = static_cast<char*>(malloc(static_cast<size_t>(text_len)));
+                ok = jv->text != nullptr;
+                int at = 0;
+                for (int i = 0; i < jv->count && ok; ++i) {
+                    jv->text_at[i] = -1;
+                    if (!jv->piece[i].text()) continue;
+                    const int len = jv->piece[i].h < 16000 ? jv->piece[i].h : 16000;
+                    ok = src.read_at(jv->piece[i].offset, reinterpret_cast<uint8_t*>(jv->text + at), len) ==
+                         static_cast<size_t>(len);
+                    jv->text[at + len] = 0;
+                    jv->text_at[i] = at;
+                    at += len + 1;
+                }
+            } else {
+                for (int i = 0; i < jv->count; ++i) jv->text_at[i] = -1;
+            }
+            if (ok && (jv->maxw > 0 || n_text)) {
                 for (int i = 0; i < 256; ++i)
                     jv->pal[i] = lgfx::rgb888_t(jv->info.palette[i][0], jv->info.palette[i][1], jv->info.palette[i][2]);
                 jv->have = true;
@@ -2491,42 +2509,49 @@ void draw_journal()
     // On white, like the journal's paper
     LGFX& g = ui::gfx();
     g.fillRect(0, a.y, a.w, a.h, TFT_WHITE);
-    if (jv->text_mode) {
-        const ui::Font fnt = text_font(jv->fit);
-        g.setClipRect(a.x, a.y, a.w, a.h);
-        int y = a.y + kTextPad - jv->top;
-        char buf[256];
-        for (int k = 0; k < jv->n_lines; ++k) {
-            const int lh = jv->line_len[k] ? jv->line_px : jv->line_px / 2;
-            if (y + lh > a.y && y < a.y + a.h && jv->line_len[k]) {
-                const int len = jv->line_len[k] < sizeof buf - 1 ? jv->line_len[k] : static_cast<int>(sizeof buf) - 1;
-                memcpy(buf, jv->text + jv->line_at[k], len);
-                buf[len] = 0;
-                ui::text(a.x + kTextPad, y, buf, TFT_BLACK, fnt);
-            }
-            y += lh;
-            if (y >= a.y + a.h) break;
-        }
-        g.clearClipRect();
-        return;
-    }
     fs::File f;
-    if (!journal_source(f)) return;
+    const bool pics = jv->maxw > 0 && journal_source(f);
     library::FileSource src(f);
-    g.startWrite();
     int y0 = 0;                           // where the piece starts (scaled)
     for (int i = 0; i < jv->count; ++i) {
+        if (jv->text_at[i] >= 0) {
+            // A text piece, black on the white
+            if (y0 + jv->out_h[i] - jv->top > 0 && y0 - jv->top < a.h) {
+                const ui::Font fnt = text_font(jv->fit);
+                g.setClipRect(a.x, a.y, a.w, a.h);
+                int y = a.y + y0 + kTextPad - jv->top;
+                char buf[256];
+                for (int k = jv->l0[i]; k < jv->l0[i] + jv->ln[i]; ++k) {
+                    const int lh = jv->line_len[k] ? jv->line_px : jv->line_px / 2;
+                    if (y + lh > a.y && y < a.y + a.h && jv->line_len[k]) {
+                        const int len =
+                            jv->line_len[k] < sizeof buf - 1 ? jv->line_len[k] : static_cast<int>(sizeof buf) - 1;
+                        memcpy(buf, jv->text + jv->line_at[k], len);
+                        buf[len] = 0;
+                        ui::text(a.x + kTextPad, y, buf, TFT_BLACK, fnt);
+                    }
+                    y += lh;
+                    if (y >= a.y + a.h) break;
+                }
+                g.clearClipRect();
+            }
+            y0 += jv->out_h[i];
+            if (y0 - jv->top >= a.h) break;
+            continue;
+        }
+        if (!pics) break;
+        g.startWrite();
         for (int y = 0; y < jv->out_h[i]; ++y) {
             const int sy = y0 + y - jv->top;
             if (sy < 0) continue;
             if (sy >= a.h) break;
             journal_draw_row(src, i, y, a.y + sy);
         }
+        g.endWrite();
         y0 += jv->out_h[i];
         if (y0 - jv->top >= a.h) break;
     }
-    g.endWrite();
-    f.close();
+    if (pics) f.close();
 }
 
 // The journal book needs ~50 KB while it draws a page; beside the Play

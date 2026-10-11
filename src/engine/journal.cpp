@@ -365,6 +365,22 @@ size_t gbc_text(dax::ByteSource& dat, const GbcEntry& e, char* out, size_t cap)
     return n;
 }
 
+bool gbc_marker(const char* t, size_t len, size_t* a, size_t* b)
+{
+    size_t i = 0;
+    while (i < len) {
+        size_t e = i;
+        while (e < len && t[e] != '\n') ++e;
+        if (e - i > 1 && e - i < 120 && t[i] == '(' && t[e - 1] == ')') {
+            *a = i;
+            *b = e;
+            return true;
+        }
+        i = e + 1;
+    }
+    return false;
+}
+
 namespace {
 
 // A whole JPEG into a picture piece, a band of MCU rows at a time
@@ -407,29 +423,79 @@ bool whole_block(int x, int y, int bw, int bh, const uint8_t* rgb, void* ctx)
 
 } // namespace
 
+namespace {
+
+// A text piece [from, to) of the tidied text (blanks and paragraph breaks
+// at its ends dropped); false: nothing left
+bool gbc_trim(const char* t, size_t* from, size_t* to)
+{
+    while (*from < *to && (t[*from] == '\n' || t[*from] == ' ')) ++*from;
+    while (*to > *from && (t[*to - 1] == '\n' || t[*to - 1] == ' ')) --*to;
+    return *to > *from;
+}
+
+} // namespace
+
 bool make_gbc(dax::ByteSource& dat, GbcPictures& pics, const char* id, Output& out, Progress progress, void* ctx)
 {
     GbcEntry* es = new (std::nothrow) GbcEntry[kMaxGbcEntries];
+    uint8_t* plan = static_cast<uint8_t*>(calloc(kMaxGbcEntries, 1));   // per entry: 1 its picture's there
     uint8_t* table = nullptr;
     char* text = static_cast<char*>(malloc(16384));
     uint8_t* pool = static_cast<uint8_t*>(malloc(jpeg::kPoolSize));
     const int n = es ? gbc_entries(dat, es, kMaxGbcEntries) : 0;
-    bool ok = es && text && pool && n > 0;
-    if (ok) table = static_cast<uint8_t*>(calloc(static_cast<size_t>(n) * 16, 1));
+    bool ok = es && plan && text && pool && n > 0;
+    // First the pieces' count: a note whose picture opens splits the entry
+    int pieces = 0;
+    for (int i = 0; ok && i < n; ++i) {
+        const size_t len = gbc_text(dat, es[i], text, 16384);
+        size_t ma = 0, mb = 0;
+        int np = 1;
+        if (gbc_marker(text, len, &ma, &mb)) {
+            dax::ByteSource* js = pics.open(es[i].number);
+            jpeg::Info ji;
+            if (js && jpeg::probe(*js, 0, js->size(), pool, ji) && ji.width > 0 && ji.width <= 1700 && ji.height > 0 &&
+                ji.height < 65536) {
+                plan[i] = 1;
+                size_t f0 = 0, t0 = ma, f1 = mb, t1 = len;
+                np = 1 + (gbc_trim(text, &f0, &t0) ? 1 : 0) + (gbc_trim(text, &f1, &t1) ? 1 : 0);
+            }
+        }
+        pieces += np;
+    }
+    if (ok) table = static_cast<uint8_t*>(calloc(static_cast<size_t>(n + pieces), 8));
     ok = ok && table;
-    // The data after the header and the tables; each entry one piece
-    uint32_t at = kHeader + 16u * static_cast<uint32_t>(n);
+    // The data after the header and the tables
+    uint32_t at = kHeader + 8u * static_cast<uint32_t>(n + pieces);
+    int pi = 0;
+    auto put_text = [&](const char* t, size_t len) {
+        if (len == 0) {
+            t = " ";
+            len = 1;
+        }
+        uint8_t* pr = table + 8 * n + 8 * pi++;
+        if (!out.write_at(at, reinterpret_cast<const uint8_t*>(t), len)) return false;
+        put16(pr, 0);
+        put16(pr + 2, static_cast<unsigned>(len));
+        put32(pr + 4, at);
+        at += static_cast<uint32_t>(len);
+        return true;
+    };
     for (int i = 0; ok && i < n; ++i) {
         const GbcEntry& e = es[i];
         uint8_t* er = table + 8 * i;
-        uint8_t* pr = table + 8 * n + 8 * i;
         er[0] = 'J';
         put16(er + 2, static_cast<unsigned>(e.number));
-        put16(er + 4, static_cast<unsigned>(i));
-        put16(er + 6, 1);
-        bool done = false;
-        if (e.picture) {
-            dax::ByteSource* js = pics.open(e.number);
+        put16(er + 4, static_cast<unsigned>(pi));
+        const int first = pi;
+        const size_t len = gbc_text(dat, e, text, 16384);
+        size_t ma = 0, mb = 0;
+        if (plan[i] && gbc_marker(text, len, &ma, &mb)) {
+            size_t f0 = 0, t0 = ma, f1 = mb, t1 = len;
+            if (gbc_trim(text, &f0, &t0)) ok = put_text(text + f0, t0 - f0);
+            // The picture
+            bool done = false;
+            dax::ByteSource* js = ok ? pics.open(e.number) : nullptr;
             jpeg::Info ji;
             if (js && jpeg::probe(*js, 0, js->size(), pool, ji) && ji.width > 0 && ji.width <= 1700 && ji.height > 0 &&
                 ji.height < 65536) {
@@ -447,6 +513,7 @@ bool make_gbc(dax::ByteSource& dat, GbcPictures& pics, const char* id, Output& o
                 }
                 free(w.band);
                 if (ok) {
+                    uint8_t* pr = table + 8 * n + 8 * pi++;
                     put16(pr, static_cast<unsigned>(w.w));
                     put16(pr + 2, static_cast<unsigned>(w.h));
                     put32(pr + 4, at);
@@ -454,34 +521,29 @@ bool make_gbc(dax::ByteSource& dat, GbcPictures& pics, const char* id, Output& o
                     done = true;
                 }
             }
+            if (ok && !done) ok = put_text(text + ma, mb - ma);       // (the picture wouldn't open after all: its note)
+            if (ok && gbc_trim(text, &f1, &t1)) ok = put_text(text + f1, t1 - f1);
+        } else if (ok) {
+            ok = put_text(text, len);
         }
-        if (ok && !done) {
-            // Text (a picture entry without its picture keeps its note)
-            const size_t len = gbc_text(dat, e, text, 16384);
-            const size_t keep = len > 0 ? len : 1;
-            if (len == 0) text[0] = ' ';
-            ok = out.write_at(at, reinterpret_cast<const uint8_t*>(text), keep);
-            put16(pr, 0);
-            put16(pr + 2, static_cast<unsigned>(keep));
-            put32(pr + 4, at);
-            at += static_cast<uint32_t>(keep);
-        }
+        put16(er + 6, static_cast<unsigned>(pi - first));
         if (progress) progress(i + 1, n, ctx);
     }
     if (ok) {
         uint8_t h[kHeader] = {};
         h[4] = 2;
         put16(h + 6, static_cast<unsigned>(n));
-        put16(h + 8, static_cast<unsigned>(n));
+        put16(h + 8, static_cast<unsigned>(pi));
         const size_t il = strlen(id);
         memcpy(h + 12, id, il < 32 ? il : 32);
         for (int i = 0; i < 256; ++i) palette_rgb(i, h + 44 + 3 * i, h + 45 + 3 * i, h + 46 + 3 * i);
-        ok = out.write_at(0, h, sizeof h) && out.write_at(kHeader, table, static_cast<size_t>(n) * 16);
+        ok = out.write_at(0, h, sizeof h) && out.write_at(kHeader, table, static_cast<size_t>(n + pi) * 8);
     }
     if (ok) ok = out.write_at(0, reinterpret_cast<const uint8_t*>("GBJ2"), 4);
     free(table);
     free(pool);
     free(text);
+    free(plan);
     delete[] es;
     return ok;
 }

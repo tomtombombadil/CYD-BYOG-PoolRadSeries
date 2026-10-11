@@ -27,7 +27,11 @@ inside the GOG install, and the PDFs that come with them).
   isn't there (v0.70.0 looked for `GAME/CURSE/CURSE/SAVE`, so saved games
   weren't found and saving a character failed: "Couldn't write
   NAME.GUY"). A save folder missing from a copy is made when first
-  written to.
+  written to. SNEG Pool of Radiance (POOL.CFG: `C:\POOLRAD\` then
+  `C:\POOLRAD\SAVE\`) keeps its characters in `GAME/POOLRAD/SAVE`: Curse's
+  Add Character -> Pool looks there when it exists (v0.71.2). (When Pool of
+  Radiance itself is played: its save folder is the CFG's 4th line, not
+  the first path line.)
 - Folder names are free; the game is recognised from words in the name
   (`POOLRAD`, `Pool of Radiance`, `CURSE`, `AZURE`, `SILVER`, `BLADES`, `DARK...`) -
   `src/engine/games.*`. A folder with DAX files and no known name still shows up.
@@ -606,6 +610,19 @@ How it works (v0.12.0, Curse):
   Journal PDF tab) can't show a typeset PDF; on a GBC game it says so.
   Only Curse's Game.dat has been looked at; the other games' are assumed
   to be the same format (the scan says when one isn't).
+  v0.71.2 (SNEG Pool of Radiance looked at: same format, 58 entries, 12
+  pictures): some entries are text, the picture's note ("(picture)"),
+  then more text - those become up to 3 pieces (text, the JPEG, text) and
+  the viewer shows text and pictures in one scroll (text at the font Zoom
+  picks: Whole small, Width medium, Full Size large). The journal's id
+  became `gbc2:<size>`, so a Rescan Card rebuilds it.
+  Art (Tom asked, 2026-10-11): neither release has Pool of Radiance's own
+  1988 cover - the SNEG `game.ico` is the same picture as GOG's
+  `goggame-*.ico` (the later Ruins of Myth Drannor art), `gog.ico` /
+  `Support.ico` are GOG's generic ones, GBC.exe has only a 32 px app icon,
+  and the Companion folder holds only parts, fonts, the map and the
+  journal pictures. The game's own title screen (TITLE.DAX: the SSI / AD&D
+  page and the "Pool of Radiance" title page) is the only 1988 art there.
 
 ## 8. Copy protection (Tom, 2026-10-06)
 

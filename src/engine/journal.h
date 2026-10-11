@@ -120,6 +120,12 @@ int gbc_entries(dax::ByteSource& dat, GbcEntry* out, int max);
 // Returns the length (at most cap - 1; out is 0-terminated).
 size_t gbc_text(dax::ByteSource& dat, const GbcEntry& e, char* out, size_t cap);
 
+// The entry's picture note in tidied text: the first paragraph that is a
+// short "( ... )" - "(map)", "(picture)" (Pool of Radiance: some entries
+// have text, the picture, then more text). a / b: where it starts / ends
+// (b past it). False: none.
+bool gbc_marker(const char* t, size_t len, size_t* a, size_t* b);
+
 // Opens JE_NNN.jpg for entry `number` (false: none); the source stays
 // valid until the next call
 struct GbcPictures {
@@ -128,9 +134,10 @@ struct GbcPictures {
 };
 
 // Writes JOURNAL.DAT (version 2) from Game.dat: text pieces for the text
-// entries, a picture piece (the whole JPEG at its own size) for each
-// picture entry whose JE file is there (a picture entry without one keeps
-// its note as text). id: what read_info's pdf_id gets (to know the file is
+// entries; an entry with a picture note whose JE file is there gets its
+// text before the note, the picture (the whole JPEG at its own size) and
+// its text after (up to 3 pieces); without the JE file the note stays in
+// the text. id: what read_info's pdf_id gets (to know the file is
 // ready on the next scan).
 bool make_gbc(dax::ByteSource& dat, GbcPictures& pics, const char* id, Output& out, Progress progress, void* ctx);
 

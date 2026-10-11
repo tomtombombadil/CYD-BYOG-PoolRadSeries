@@ -2069,10 +2069,12 @@ static void test_journal_gbc()
         "<journal 1>\r\n(this is a long note, see elsewhere)\r\n\r\n</journal>\r\n"
         "<journal 2>\r\nThe first line of a paragraph\r\n  goes on here.\r\n\r\nA second\r\nparagraph.\r\n\r\n</journal>\r\n"
         "<journal 7>\r\n(map)\r\n\r\n</journal>\r\n"
-        "<journal 12>\r\n\r\n</journal>";
+        "<journal 12>\r\n\r\n</journal>"
+        "<journal 26>\r\nA small book:\r\n\r\nBefore the\r\npicture.\r\n\r\n(picture)\r\n\r\nAfter it.\r\n</journal>"
+        "<journal 27>\r\nNo file:\r\n\r\n(picture)\r\n\r\nThe end.\r\n</journal>";
     dax::MemorySource src(reinterpret_cast<const uint8_t*>(dat.data()), dat.size());
     journal::GbcEntry es[8];
-    CHECK(journal::gbc_entries(src, es, 8) == 4);
+    CHECK(journal::gbc_entries(src, es, 8) == 6);
     CHECK(es[0].number == 1 && es[0].picture && es[1].number == 2 && !es[1].picture && es[2].number == 7 && es[2].picture &&
           es[3].number == 12 && !es[3].picture);
     char t[200];
@@ -2082,13 +2084,14 @@ static void test_journal_gbc()
     // JOURNAL.DAT: entry 7's picture there (the JPEG at its own size), entry 1's not (its note as text)
     struct Pics : journal::GbcPictures {
         dax::MemorySource jpg{kJpeg0, sizeof kJpeg0};
-        dax::ByteSource* open(int number) override { return number == 7 ? &jpg : nullptr; }
+        dax::ByteSource* open(int number) override { return number == 7 || number == 26 ? &jpg : nullptr; }
     } pics;
     MemOut out;
     CHECK(journal::make_gbc(src, pics, "gbc:1234", out, nullptr, nullptr));
     dax::MemorySource js(out.b.data(), out.b.size());
     journal::Info info;
-    CHECK(journal::read_info(js, info) && info.entries == 4 && info.pieces == 4 && strcmp(info.pdf_id, "gbc:1234") == 0);
+    // (26: text, picture, text = 3 pieces; 27 has no picture: one text piece)
+    CHECK(journal::read_info(js, info) && info.entries == 6 && info.pieces == 8 && strcmp(info.pdf_id, "gbc:1234") == 0);
     int first = 0, count = 0;
     journal::PieceInfo pi;
     CHECK(journal::find(js, info, 'J', 2, &first, &count) && count == 1 && journal::piece(js, info, first, pi) && pi.text() &&
@@ -2100,6 +2103,18 @@ static void test_journal_gbc()
           memcmp(out.b.data() + pi.offset, "(this is", 8) == 0);
     CHECK(journal::find(js, info, 'J', 12, &first, &count) && journal::piece(js, info, first, pi) && pi.text() && pi.h == 1);
     CHECK(!journal::find(js, info, 'J', 3, &first, &count));
+    CHECK(journal::find(js, info, 'J', 26, &first, &count) && count == 3);
+    CHECK(journal::piece(js, info, first, pi) && pi.text() && pi.h == static_cast<int>(strlen("A small book:\nBefore the picture.")) &&
+          memcmp(out.b.data() + pi.offset, "A small book:\nBefore the picture.", pi.h) == 0);
+    CHECK(journal::piece(js, info, first + 1, pi) && !pi.text() && pi.w == kJpeg0W && pi.h == kJpeg0H);
+    CHECK(journal::piece(js, info, first + 2, pi) && pi.text() && pi.h == 9 && memcmp(out.b.data() + pi.offset, "After it.", 9) == 0);
+    CHECK(journal::find(js, info, 'J', 27, &first, &count) && count == 1 && journal::piece(js, info, first, pi) && pi.text() &&
+          memcmp(out.b.data() + pi.offset, "No file:\n(picture)\nThe end.", pi.h) == 0);
+    // The note finder
+    size_t ma = 0, mb = 0;
+    const char* tx = "Text.\n(map)\nMore (x).";
+    CHECK(journal::gbc_marker(tx, strlen(tx), &ma, &mb) && ma == 6 && mb == 11);
+    CHECK(!journal::gbc_marker("Plain (text) here.", 18, &ma, &mb));
 }
 
 static void test_journal()
