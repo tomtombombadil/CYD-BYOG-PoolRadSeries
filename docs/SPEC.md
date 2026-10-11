@@ -564,7 +564,8 @@ Steps (each pushed when it works; Curse stays as it is):
    character fields Pool's program gives scripts (Int, race, class, the
    magic-user's level, sex and 0xE4 are plain script memory there, as in
    the original - so its race checks in Podol Plaza and the Temple of Bane
-   never match; worth a DOSBox look before changing); monsters' 285-byte
+   never match; v0.85.1 (Tom): race is given to Pool's scripts after all,
+   so those checks work - SPEC 12); monsters' 285-byte
    records. The sweep (`sweep.cpp events`, GAME=1) walks every square of
    all 30 area scripts with no problems. Fights: step 5.
 4. v0.77.0: Create New Character as Pool makes one (create_facts.md):
@@ -1018,6 +1019,15 @@ the game's Settings (As Original: all of them).
   always hitting - the AD&D rule, Curse's code too; Pool's code was read as
   level / 2 (nothing at first level). All on one target, as both games.
 - **View Character's icon portrait** (switch `CYD_ICON_PORTRAIT`).
+- **Pool's race checks** (Tom, v0.85.1): Pool's program never gives its
+  scripts the character's race (they read a memory word nothing sets: 0),
+  so two checks never matched. The engine gives the race, so they work as
+  written: in Podol Plaza (ECL1 block 18) a passing patrol stops the party
+  with a chance of 5% + 5% for each human in it (the original: always
+  5%); in the Temple of Bane (ECL1 block 24) each member gets a chance to
+  find its trap doors - 1 in 5 while searching, +1 in 5 for an elf or a
+  half-elf (the original: elves and half-elves no better, and nobody finds
+  them without searching).
 - **Pool's healed land** (after the pyramid): the wilderness icons show
   their healed colours at once; the original recolours them a few pixels
   at a time while panning the map from the city to the pyramid.

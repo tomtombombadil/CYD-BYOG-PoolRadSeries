@@ -188,6 +188,43 @@ static void settle(int choice = 0, int max_ms = 60000)
     }
     printf("  (still waiting)\n");
 }
+static void disasm()
+{
+    {
+        // DISASM=from,to (hex, vm addresses): the loaded script's instructions
+        unsigned a0 = 0, a1 = 0xFFFF;
+        sscanf(getenv("DISASM"), "%x,%x", &a0, &a1);
+        const auto& gs = play::d->gs;
+        for (uint32_t at = 0; at < gs.code_len;) {
+            ecl::Insn in;
+            if (!ecl::decode(gs.code, gs.code_len, at, *play::d->prof->ecl_ops, in)) { ++at; continue; }
+            const unsigned va = 0x8000 + in.at;
+            if (va >= a0 && va <= a1) {
+                printf("%04X op %02X:", va, in.op);
+                uint32_t sp = in.at + 1;
+                for (int k = 0; k < in.count && k < ecl::kMaxOps; ++k) {
+                    printf(" %X:%04X", in.ops[k].code, in.ops[k].word());
+                    if (in.ops[k].code == 0x80) {
+                        // the packed string after it: 3 bytes = four 6-bit characters
+                        while (sp + 1 < in.next && !(gs.code[sp] == 0x80 && gs.code[sp + 1] == in.ops[k].low)) ++sp;
+                        const uint8_t* b = gs.code + sp + 2;
+                        printf(" \"");
+                        uint32_t bits = 0; int nb = 0;
+                        for (int i = 0; i < in.ops[k].low; ++i) {
+                            bits = bits << 8 | b[i]; nb += 8;
+                            while (nb >= 6) { int ch = bits >> (nb - 6) & 63; nb -= 6; if (ch == 0) continue; putchar(ch <= 26 ? 'A' + ch - 1 : ch); }
+                        }
+                        printf("\"");
+                        sp += 2 + in.ops[k].low;
+                    }
+                }
+                printf("\n");
+            }
+            at = in.next;
+        }
+    }
+}
+
 static void run_fight()
 {
 
@@ -618,6 +655,7 @@ int main(int argc, char** argv)
         play::vm->init_script();
         play::run_entry(4, play::Then::NewFirst);
     }
+    if (getenv("DISASM") && getenv("AREA")) disasm();
     if (getenv("CHOICES")) for (const char* q = getenv("CHOICES"); *q; ++q) if (*q >= '0' && *q <= '9') choices.push_back(*q - '0');
     settle(0, getenv("MS") ? atoi(getenv("MS")) : 60000);
     if (getenv("CAMPRUN")) run_ops(getenv("CAMPRUN"));
@@ -651,23 +689,7 @@ int main(int argc, char** argv)
         q = strchr(q, ',');
         if (q) ++q;
     }
-    if (getenv("DISASM")) {
-        // DISASM=from,to (hex, vm addresses): the loaded script's instructions
-        unsigned a0 = 0, a1 = 0xFFFF;
-        sscanf(getenv("DISASM"), "%x,%x", &a0, &a1);
-        const auto& gs = play::d->gs;
-        for (uint32_t at = 0; at < gs.code_len;) {
-            ecl::Insn in;
-            if (!ecl::decode(gs.code, gs.code_len, at, *play::d->prof->ecl_ops, in)) { ++at; continue; }
-            const unsigned va = 0x8000 + in.at;
-            if (va >= a0 && va <= a1) {
-                printf("%04X op %02X:", va, in.op);
-                for (int k = 0; k < in.count && k < ecl::kMaxOps; ++k) printf(" %X:%04X", in.ops[k].code, in.ops[k].word());
-                printf("\n");
-            }
-            at = in.next;
-        }
-    }
+    if (getenv("DISASM") && !getenv("AREA")) disasm();
     if (getenv("TELE0")) { int x, y, dd; sscanf(getenv("TELE0"), "%d,%d,%d", &x, &y, &dd); play::d->gs.x = x; play::d->gs.y = y; play::d->gs.dir = dd; play::after_move_redraw(); }
     if (getenv("RUNAT")) {
         // Run the script from an address (e.g. a shop), then BUY=n,n,...

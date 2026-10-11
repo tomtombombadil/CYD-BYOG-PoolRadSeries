@@ -2819,8 +2819,8 @@ static void test_party()
     CHECK(party::script_value(pt, 0x100, &v) && v == 1);
     CHECK(party::script_value(pt, 0x2B1, &v) && v == 1);
     CHECK(party::script_value(pt, 0x2CF, &v) && v == 50);
-    CHECK(!party::script_value(pt, 0x72, &v, true) && !party::script_value(pt, 0x15, &v, true) &&
-          party::script_value(pt, 0x18, &v, true));     // Pool's program: race, Int are the scripts' memory
+    CHECK(!party::script_value(pt, 0x15, &v, true) && party::script_value(pt, 0x18, &v, true));   // Pool's program: Int is the scripts' memory
+    CHECK(party::script_value(pt, 0x72, &v, true) && v == pt.sel()->race());   // race: given (Pool's bug corrected, v0.85.1)
     CHECK(!party::script_value(pt, 0x2C9, &v));
 
     // A saved game

@@ -119,8 +119,12 @@ bool script_value(const Party& p, uint16_t off, uint16_t* out, bool pool)
 bool script_value(const uint8_t* r, int index, uint16_t off, uint16_t* out, bool pool)
 {
     // Pool's program gives scripts fewer fields: Int, race, class, the
-    // magic-user's level, sex and 0xE4 are plain memory there (poolrad_facts.md 4.4)
-    if (pool && (off == 0x15 || off == 0x72 || off == 0x73 || off == 0xC9 || off == 0xD6 || off == 0xE4)) return false;
+    // magic-user's level, sex and 0xE4 are plain memory there (poolrad_facts.md 4.4).
+    // Race is given all the same (Tom, v0.85.1): the scripts' race checks -
+    // Podol Plaza's patrols stopping a party with humans more often, the
+    // Temple of Bane's elves and half-elves finding its trap doors - never
+    // matched in the original (a Pool bug); here they work as written.
+    if (pool && (off == 0x15 || off == 0x73 || off == 0xC9 || off == 0xD6 || off == 0xE4)) return false;
     auto u16 = [r](int o) { return static_cast<uint16_t>(r[o] | r[o + 1] << 8); };
     if (off >= 0xA5 && off <= 0xAC) {           // thief skills
         *out = r[0xEA + (off - 0xA5)];

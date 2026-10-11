@@ -338,7 +338,9 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   (Tom: playable 2026-10-11) - the next game starts with it on. Its GOG
   files: scratch /tmp/claude-0/games2/poolrad/...; the playsim takes
   GAME=1 for Pool. Journal table: `make_table.py poolrad` (tesseract
-  finds its text headings).
+  finds its text headings). Pool's race checks (Podol Plaza patrols, the
+  Temple of Bane's trap doors) are corrected, not copied (Tom, v0.85.1:
+  its scripts get the race; SPEC 12).
 - PortMaster ports are a stretch goal (Tom): keep everything portable.
 - Game screens (Walk Test, Play Test now, the games later): canvas 1:1 at the top left
   (`frame::set_left`), controls below it, on 480x320 the Companion strip on
