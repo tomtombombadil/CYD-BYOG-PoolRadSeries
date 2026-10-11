@@ -2456,7 +2456,16 @@ void fight_start(pic::Canvas& c)
     }
     load_fight_words();
     const bool room = alloc_tiles();
-    if (!room || !load_fight_tables()) {
+    const bool tables = room && load_fight_tables();
+    // Pool's two names gnomes dodge (its GAME.OVR words), as Pascal names
+    for (int k = 0; tables && k < 2; ++k) {
+        const char* w = fg->w[profile::kDodge1 + k];
+        size_t n = strlen(w);
+        if (n > 15) n = 15;
+        fg->t.dodge_names[k][0] = static_cast<uint8_t>(n);
+        memcpy(&fg->t.dodge_names[k][1], w, n);
+    }
+    if (!tables) {
         error(c, room ? "The combat tables can't be read." : no_memory("the fight's field"));
         end_fight_art();
         delete fg;

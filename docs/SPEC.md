@@ -628,8 +628,15 @@ Steps (each pushed when it works; Curse stays as it is):
    holders get no free attacks, magic resistance Pool's way (the caster's
    level counts against it). Guesses (noted in the facts): the mummy fear's
    "side of 6" is those standing; the lightning breath aims as the
-   computer's Lightning Bolt. Still to do: the races' fight bonuses by
-   monster name, random treasure (19 rows), the ending (FINAL5.DAX).
+   computer's Lightning Bolt. v0.80.0: **the races' fight bonuses by
+   name** (Pool's code, not Curse's class bits): dwarves +1 to hit a man-
+   sized humanoid named ORC, ORC LEADER, GOBLIN, GOBLIN LEADER, HOBGOBLIN,
+   HOBGOBLIN CHIEF, GAGOOL or MACE, gnomes one named KOBOLD, KOBOLD
+   LEADER, GOBLIN or GOBLIN LEADER; dwarves and gnomes are hit at -4 by a
+   size-2 humanoid when the one they fight is named OGRE, OGRE LEADER,
+   TROLL, FIRE GIANT or HILL GIANT, gnomes by any BUGBEAR or GNOLL (the
+   names read from the player's program). Still to do: random treasure
+   (19 rows), the ending (FINAL5.DAX).
 6. Behaviour tests (`sweep.cpp`) with Pool's expectations.
 
 ## 7. The journal (Tom, 2026-10-06)

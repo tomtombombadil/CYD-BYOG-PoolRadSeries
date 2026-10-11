@@ -54,10 +54,19 @@ struct Tables {
     uint8_t shapes[5][6][2];            // allowed columns (min, max) a row; [4] = the fallback shape
     uint8_t terrain[33];                // outdoors: terrain flags a place (city)
     uint8_t turn[13 * 10 + 11];         // turn undead: [undead type * 10 + column]
+    // Pool: the races' foes by name (poolrad_combat_facts.md 2.2; Pascal
+    // names 16 bytes apart: 4 the gnomes' foes, 8 the dwarves', 8 the
+    // giants the dwarves and gnomes dodge - the last 3 the turn table's
+    // bytes, never a name), and the two the gnomes dodge too (from its
+    // GAME.OVR, set by the caller); by_name: these count, not the class bits
+    bool    by_name;
+    uint8_t foe_names[20][16];
+    uint8_t dodge_names[2][16];
 };
 // Where they are (data segment offsets), from the profile
 struct TableAt {
     uint16_t ground, fallback, formation, facing, start_x, start_y, shapes, terrain, turn;
+    uint16_t race_names;                // Pool's foe names (0: none - the class bits)
 };
 // Reads them: read(ctx, ds offset, out, n) gives the data segment's bytes
 using ReadDs = bool (*)(void* ctx, uint16_t ds, uint8_t* out, size_t n);

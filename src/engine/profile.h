@@ -164,6 +164,7 @@ enum FightWord {
     // "Dies rots away"
     kIsDrained, kDrainLevel, kNLevels, kDeadForever, kIsDiseased, kSucksBlood, kHeldFast, kRakes, kGazesCharm,
     kIsCharmedG, kBreathesB, kGaseous, kFearParalyzed, kFearWeakened, kRotsW, kRotsAway,
+    kDodge1, kDodge2,                                                            // Pool: "BUGBEAR", "GNOLL" (gnomes -4)
     kFightWords
 };
 

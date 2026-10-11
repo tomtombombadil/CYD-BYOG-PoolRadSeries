@@ -5187,6 +5187,54 @@ static void test_pool_monsters()
         combat::special(b, t, 3, d, ev, 24, &ends);
         CHECK(find(3, m.lightning_breath) < 0);          // three breaths
     }
+    // The races by name: a dwarf +1 against an ORC (type 1, size 1); a
+    // gnome -4 to be hit by a BUGBEAR; a dwarf -4 to be hit by a size 2
+    // humanoid when the one it fights is named OGRE (hit rates over many tries)
+    {
+        static combat::Tables nt;
+        nt = t;
+        nt.by_name = true;
+        const char* foes[20] = {"KOBOLD", "KOBOLD LEADER", "GOBLIN", "GOBLIN LEADER", "ORC", "ORC LEADER", "GOBLIN",
+                                "GOBLIN LEADER", "HOBGOBLIN", "HOBGOBLIN CHIEF", "GAGOOL", "MACE", "OGRE", "OGRE LEADER",
+                                "TROLL", "FIRE GIANT", "HILL GIANT", "", "", ""};
+        for (int k = 0; k < 20; ++k) {
+            nt.foe_names[k][0] = static_cast<uint8_t>(strlen(foes[k]));
+            memcpy(&nt.foe_names[k][1], foes[k], strlen(foes[k]));
+        }
+        nt.dodge_names[0][0] = 7;
+        memcpy(&nt.dodge_names[0][1], "BUGBEAR", 7);
+        fx.race.dwarf_orc = 0x1A; fx.race.giants = 0x2F; fx.race.gnome_extra = 0x30;
+        auto rate = [&](int a, int c, auto prep) {
+            int hits = 0;
+            for (int k = 0; k < 2000; ++k) {
+                setup();
+                b.tables = &nt;
+                prep();
+                rec[a][0x199] = 0;                    // hits on 11+ (AC 11), all else equal
+                rec[c][0x19A] = rec[c][0x19B] = 11;
+                rec[c][0x78] = rec[c][0x1A4] = 200;
+                const combat::Attack at = hit_one(a, c);
+                hits += at.hits[0].hit;
+            }
+            return hits;
+        };
+        auto name = [&](int i, const char* nm) {
+            rec[i][0] = static_cast<uint8_t>(strlen(nm));
+            memcpy(&rec[i][1], nm, strlen(nm));
+        };
+        const int plain = rate(0, 3, [&]() { name(3, "ORC"); rec[3][0x11A] = 1; });
+        const int dwarf = rate(0, 3, [&]() { name(3, "ORC"); rec[3][0x11A] = 1; give(0, 0x1A); });
+        const int not_type = rate(0, 3, [&]() { name(3, "ORC"); rec[3][0x11A] = 2; give(0, 0x1A); });
+        CHECK(plain > 900 && plain < 1100 && dwarf > plain + 40 && not_type < dwarf - 40);
+        const int bugbear = rate(3, 0, [&]() { name(3, "BUGBEAR"); rec[3][0x11A] = 1; give(0, 0x30); });
+        CHECK(bugbear < plain - 250);
+        const int ogre = rate(3, 0, [&]() {
+            name(3, "OGRE"); rec[3][0x11A] = 1; rec[3][0xDE] = 2; give(0, 0x2F); b.f[0].target = 3; });
+        const int ogre_no_target = rate(3, 0, [&]() {
+            name(3, "OGRE"); rec[3][0x11A] = 1; rec[3][0xDE] = 2; give(0, 0x2F); b.f[0].target = -1; });
+        CHECK(ogre < plain - 250 && ogre_no_target > plain - 120);
+        fx.race = {};
+    }
     // The rot's months outside fights: Charisma 2 less (3 at least), a month
     // less; none left - dies, gone
     {

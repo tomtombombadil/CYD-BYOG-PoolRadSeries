@@ -145,7 +145,8 @@ bool read_tables(Tables& t, const TableAt& at, ReadDs read, void* ctx)
            read(ctx, at.start_y, t.start_y, sizeof t.start_y) &&
            read(ctx, at.shapes, &t.shapes[0][0][0], sizeof t.shapes) &&
            (!at.terrain || read(ctx, at.terrain, t.terrain, sizeof t.terrain)) &&     // (Pool: none)
-           read(ctx, at.turn, t.turn, sizeof t.turn);
+           read(ctx, at.turn, t.turn, sizeof t.turn) &&
+           (!at.race_names || (t.by_name = read(ctx, at.race_names, &t.foe_names[0][0], sizeof t.foe_names)));
 }
 
 bool Fighter::has(uint8_t type) const
@@ -1665,11 +1666,35 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
         // The races: dwarves +1 against orcs, gnomes +1 against their foes;
         // dwarves and gnomes -4 to be hit by giants and trolls of size 2,
         // gnomes by kobold-kind (type 1) of size 2
-        if (hasx(at, fx.race.dwarf_orc) && (tg.rec[0x14B] & 4)) ++side;
-        if (hasx(at, fx.race.gnome_foe) && (tg.rec[0x14B] & 2)) ++side;
-        if ((at.rec[0xDE] & 0x7F) == 2) {
-            if (hasx(tg, fx.race.giants) && (at.rec[0x11A] == 2 || at.rec[0x11A] == 10)) side -= 4;
-            if (hasx(tg, fx.race.gnome_extra) && at.rec[0x11A] == 1) side -= 4;
+        if (b.tables && b.tables->by_name) {
+            // Pool's by name (its ovr13 handlers): the target a man-sized
+            // humanoid (type 1, size 1) named as a foe; giants: a humanoid
+            // of size 2 attacking - the name compared that of the one the
+            // defender fights (its target: the original's); bugbears and
+            // gnolls (type 1) any size
+            const Tables& tt = *b.tables;
+            auto named = [&](const uint8_t* rec, int from, int n) {
+                for (int k = from; k < from + n; ++k)
+                    if (tt.foe_names[k][0] && tt.foe_names[k][0] < 16 && !memcmp(rec, tt.foe_names[k], tt.foe_names[k][0] + 1))
+                        return true;
+                return false;
+            };
+            if (hasx(at, fx.race.dwarf_orc) && tg.rec[0x11A] == 1 && tg.rec[kSize] == 1 && named(tg.rec, 4, 8)) ++side;
+            if (hasx(at, fx.race.gnome_foe) && tg.rec[0x11A] == 1 && tg.rec[kSize] == 1 && named(tg.rec, 0, 4)) ++side;
+            if (hasx(tg, fx.race.giants) && at.rec[0x11A] == 1 && (at.rec[kSize] & 0x7F) == 2 && tg.target >= 0 &&
+                tg.target < b.n && named(b.f[tg.target].rec, 12, 8))
+                side -= 4;
+            if (hasx(tg, fx.race.gnome_extra) && at.rec[0x11A] == 1) {
+                for (const uint8_t* nm : tt.dodge_names)
+                    if (nm[0] && nm[0] < 16 && !memcmp(at.rec, nm, nm[0] + 1)) side -= 4;
+            }
+        } else {
+            if (hasx(at, fx.race.dwarf_orc) && (tg.rec[0x14B] & 4)) ++side;
+            if (hasx(at, fx.race.gnome_foe) && (tg.rec[0x14B] & 2)) ++side;
+            if ((at.rec[0xDE] & 0x7F) == 2) {
+                if (hasx(tg, fx.race.giants) && (at.rec[0x11A] == 2 || at.rec[0x11A] == 10)) side -= 4;
+                if (hasx(tg, fx.race.gnome_extra) && at.rec[0x11A] == 1) side -= 4;
+            }
         }
         if (fx.blinded && tg.has(fx.blinded) && !coughing) ac -= 4;     // a blind target: easier (coughing: lost)
         if (fx.sp.shield && tg.has(fx.sp.shield) && ac < 0x39) ac = 0x39;   // Shield: AC 3 at worst
