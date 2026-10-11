@@ -1330,6 +1330,8 @@ void melee(pic::Canvas& c, int a, int t)
 }
 
 void forget_spell(combat::Fighter& f, int sp);
+bool fight_miscast(pic::Canvas& c, int sp);
+void remember_spell(combat::Fighter& f, int sp);
 void aim_exit(pic::Canvas& c);
 void strike(pic::Canvas& c, int t);
 void begin_targeting(pic::Canvas& c, int sp);
@@ -1534,6 +1536,11 @@ void start_turn(pic::Canvas& c)
             f.spell_n = 0;
             add_page(fg->cur, fw(profile::kLostSpell));
             say(c, FSt::Next);
+            return;
+        }
+        if (fight_miscast(c, sp)) {
+            if (f.spell_n) remember_spell(f, sp);
+            f.spell_n = 0;
             return;
         }
         if (f.spell_n) {
@@ -2172,8 +2179,9 @@ void ai_step(pic::Canvas& c)
             const int sp = combat::choose_spell(b, fg->t, mrules->tables, i, d->prof->fight.spells,
                                                 d->prof->fight.n_spells, rng, tg, &nt);
             if (sp) {
-                forget_spell(f, sp);
                 const int delay = spells::entry(mrules->tables, sp).delay / 3;
+                if (delay == 0 && fight_miscast(c, sp)) return;
+                forget_spell(f, sp);
                 if (delay > 0) {
                     f.spell = sp;
                     f.spell_n = 0;
@@ -2711,6 +2719,34 @@ void forget_spell(combat::Fighter& f, int sp)
         }
 }
 
+// The Robe of Vermin's effect on the one casting (a d2 of 1): the spell
+// miscasts as it goes off - "Casts a Spell" / "Spell: NAME" and nothing
+// else, the spell kept in memory, the turn over (listing ovr023:1403; in a
+// fight the cast's words are "Casts a Spell", not "miscasts")
+bool fight_miscast(pic::Canvas& c, int sp)
+{
+    combat::Fighter& f = fg->b.f[fg->cur];
+    const uint8_t vermin = d->prof->fight.facts.items.vermin;
+    if (!vermin || !f.has(vermin) || rng.roll(2, 1) != 1) return false;
+    char t[40];
+    snprintf(t, sizeof t, "%s%s", fw(profile::kSpellColon), spell_name(sp));
+    status_line(c, t);
+    add_page(fg->cur, fw(profile::kCastsASpell));
+    fg->spell = 0;
+    f.moves = f.attacks[0] = f.attacks[1] = 0;
+    say(c, FSt::Next);
+    return true;
+}
+// A spell back in memory (the computer's, taken out when chosen, miscast)
+void remember_spell(combat::Fighter& f, int sp)
+{
+    for (int k = 0; k < magic::kListSize; ++k)
+        if (!f.rec[magic::kListAt + k]) {
+            f.rec[magic::kListAt + k] = static_cast<uint8_t>(sp);
+            return;
+        }
+}
+
 const combat::FightSpell* fight_spell(int sp)
 {
     return combat::fight_spell(d->prof->fight.spells, d->prof->fight.n_spells, sp);
@@ -2842,6 +2878,7 @@ void fight_spell_chosen(int sp, pic::Canvas& c)
         fg->after = FSt::Begin;
         return;
     }
+    if (fight_miscast(c, sp)) return;
     begin_targeting(c, sp);
 }
 

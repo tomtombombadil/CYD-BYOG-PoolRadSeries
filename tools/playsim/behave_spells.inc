@@ -820,7 +820,9 @@ static void sp_fight_effects()
             if (!c.self) sp_put(tg, c.team, 11, 12);
             const bool saves = c.save == 'Z' && pass == 1;
             const bool high = c.minutes == -2 && pass == (c.save == 'Z' ? 2 : 1);
-            sp_dice(high ? 1 : 2, saves ? 20 : 2, 100);
+            // (a failed save: d20 5 - a 2 with the Hold spells' -3 would wrap round to a save made, the
+            // original's byte sum - checked below)
+            sp_dice(high ? 1 : 2, saves ? 20 : 5, 100);
             if (c.spell == 0x4F || c.spell == 0x51) {
                 // (picked one by one: the last picked is unaffected - a second one picked last)
                 sp_put(sp_t[1], 1, 13, 12);
@@ -924,8 +926,18 @@ static void sp_fight_targets()
     sp_cast(sp_c, 0x17, {sp_t[0], sp_t[1]});
     expect(SP, "Hold Person: not a non-person (monster type 7)", sp_aff(sp_t[0], 0x34) < 0);
     expect(SP, "Hold Person: not a large one", sp_aff(sp_t[1], 0x34) < 0);
+    sp_dice(1, 5, 100);
     sp_cast(sp_c, 0x5E, {sp_t[0]});
     expect(SP, "Hold Monsters: a non-person too", sp_aff(sp_t[0], 0x34) >= 0);
+    // The save's total is a byte compared unsigned (listing ovr024:12F1 do_saving_throw): a 2 with -3 is
+    // 255 - saved
+    if (!sp_new_fight() || !sp_pick()) return;
+    sp_caster(sp_c, classes::MagicUser, 9);
+    sp_put(sp_c, 0, 10, 12);
+    sp_put(sp_t[0], 1, 11, 12);
+    sp_dice(1, 2, 100);
+    sp_cast(sp_c, 0x31, {sp_t[0]});
+    expect(SP, "Hold Person (MU) on one, d20 2 at -3: the byte wraps - saved", sp_aff(sp_t[0], 0x34) < 0);
     struct HoldBonus {
         int spell, n, bonus;
     };
@@ -2006,6 +2018,61 @@ static void sp_check_special()
     }
 }
 
+// ---- 6c. The Robe of Vermin's effect (0x4A) on a caster: a d2 of 1 miscasts - nothing cast, the
+// memorized spell kept (listing ovr023:1403); a 2 casts as ever
+static void sp_check_miscast()
+{
+    using namespace play;
+    const uint8_t vermin = d->prof->fight.facts.items.vermin;
+    if (!expect(SP, "the Robe of Vermin's effect in the profile", vermin == 0x4A, "%02X", vermin)) return;
+    for (int face : {1, 2}) {
+        // In a fight: Shield (0x13, no casting time) by a magic-user with the effect
+        if (!sp_new_fight() || !sp_pick()) return;
+        combat::Fighter& f = F(sp_c);
+        sp_caster(sp_c, classes::MagicUser, 5);
+        sp_put(sp_c, 0, 10, 12);
+        sp_put(sp_t[0], 1, 30, 12);
+        sp_give(sp_c, vermin, 0, 0xFF, false);
+        memset(f.rec + magic::kListAt, 0, magic::kListSize);
+        f.rec[magic::kListAt] = 0x13;
+        fg->cur = sp_c;
+        fg->pages = 0;
+        sp_dice(0);
+        dice_faces({face});
+        fight_spell_chosen(0x13, C);
+        if (fg->st == FSt::Aim) spell_target(C, sp_c);
+        const bool kept = f.rec[magic::kListAt] == 0x13, shielded = sp_aff(sp_c, 0x11) >= 0;
+        char what[120];
+        snprintf(what, sizeof what, "Robe of Vermin, a fight, d2 %d: %s", face, face == 1 ? "miscast - no Shield, the spell kept" : "Shield cast");
+        expect(SP, what, face == 1 ? (kept && !shielded) : (!kept && shielded), "kept %d shielded %d", (int)kept, (int)shielded);
+    }
+    for (int face : {1, 2}) {
+        // In camp: Shield again
+        if (!boot() || !load_magic()) return;
+        sp_member(5, classes::MagicUser, 5);
+        spells::add_affect(sp_member(5), vermin, 0, 0xFF, false);
+        memset(sp_member(5).rec + magic::kListAt, 0, magic::kListSize);
+        sp_member(5).rec[magic::kListAt] = 0x13;
+        cr = CastRun{};
+        cr.caster = 5;
+        pt->selected = 5;
+        view_from = Screen::Game;
+        screen = Screen::SpellList;
+        sp_dice(0);
+        dice_faces({face});
+        choose_spell(0x13, C);
+        for (int n = 0; n < 200 && screen == Screen::Cast; ++n) {
+            g_now += 5000;
+            play::tick(g_now, C);
+        }
+        const bool kept = sp_member(5).rec[magic::kListAt] == 0x13, shielded = sp_caff(5, 0x11) >= 0;
+        char what[120];
+        snprintf(what, sizeof what, "Robe of Vermin, camp, d2 %d: %s", face, face == 1 ? "\"miscasts\" - no Shield, the spell kept" : "Shield cast");
+        expect(SP, what, face == 1 ? (kept && !shielded) : (!kept && shielded), "kept %d shielded %d", (int)kept, (int)shielded);
+        screen = Screen::Game;
+    }
+}
+
 // ---- 7. Spells the engine doesn't do yet (fights): every spell that can be
 // cast in a fight (when: combat / both) must be in the fight table
 static void sp_check_notyet()
@@ -2054,6 +2121,7 @@ static void behave_spells()
     if (want("camp")) sp_check_camp();
     if (want("effects")) sp_check_effects();
     if (want("special")) sp_check_special();
+    if (want("miscast")) sp_check_miscast();
     if (want("notyet")) sp_check_notyet();
     sp_dice(0);
     create::g_die_hook = nullptr;
