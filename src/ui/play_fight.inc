@@ -1115,7 +1115,6 @@ void drained_member(int who)
     if (!had && !load_rules(mrules)) return;
     party::Character& ch = pt->m[f.member];
     classes::class_bonuses(ch, mrules->tables);
-    if (ch.level(classes::Fighter) > 0) ch.rec[0x11C] = ch.level(classes::Fighter) > 6 ? 3 : 2;
     if (names) rules::recalc(ch, *names, d->facts);
     if (!had) end_magic();
 }

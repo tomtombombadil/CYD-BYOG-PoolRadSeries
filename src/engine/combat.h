@@ -223,6 +223,11 @@ struct Facts {
     // Mirror Image's data: the images alone (Pool) - Curse keeps them in the
     // high nibble with the caster's level
     bool    mirror_plain = false;
+    // Pool's backstab (poolrad_combat_facts.md 5.1): body armour none or
+    // this item type (leather; 0: any armour), and the blow times the thief
+    // level / 4 + 2 (Curse: (level - 1) / 4 + 2)
+    uint8_t backstab_armour = 0;
+    bool    backstab_plain = false;
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a
@@ -474,7 +479,8 @@ struct Attack {
 };
 // A backstab: a thief (backstabbing weapon or none) straight behind a man-
 // sized target that has had an attack this round already: the rear AC 4
-// worse, damage x ((thief level - 1) / 4 + 2)
+// worse, damage x ((thief level - 1) / 4 + 2); Pool: thief level / 4 + 2,
+// and no body armour but leather (Facts backstab_*)
 bool can_backstab(const Battle& b, int a, int c, const items::Names* names);
 // A free attack on one stepping away (leaving enemy e's side): e isn't held,
 // sees them, and either hasn't acted this round, hasn't been attacked this

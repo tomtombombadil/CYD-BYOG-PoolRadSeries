@@ -1632,7 +1632,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             if (dist > third) ac += 3;
         }
     }
-    const int times = stab ? (at.rec[kThiefLevel] - 1) / 4 + 2 : 1;
+    const int times = !stab ? 1 : b.fx && b.fx->backstab_plain ? at.rec[kThiefLevel] / 4 + 2 : (at.rec[kThiefLevel] - 1) / 4 + 2;
     // Large targets: the weapon's large dice
     const bool large = tg.rec[kSize] > 0x80 || (tg.rec[kSize] & 7) > 1;    // (0x80 itself isn't: the original's)
     int dice1 = at.rec[kDice], sides1 = at.rec[kSides], bonus1 = static_cast<int8_t>(at.rec[kBonus]);
@@ -2157,6 +2157,11 @@ bool can_backstab(const Battle& b, int a, int c, const items::Names* names)
             for (uint8_t t : b.fx->backstab_weapons)
                 if (t && at.items[w][0x2E] == t) ok = true;
             if (!ok) return false;
+        }
+        // (Pool: no body armour but leather)
+        if (b.fx->backstab_armour) {
+            const int ar = items::readied_in(at.items, at.n_items, *names, items::kSlotArmour);
+            if (ar >= 0 && at.items[ar][0x2E] != b.fx->backstab_armour) return false;
         }
     }
     return true;

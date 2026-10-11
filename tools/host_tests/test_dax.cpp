@@ -3262,6 +3262,55 @@ static void test_pool_rules()
     dw.rec[0x109 + 2] = 5;
     dw.rec[0x127] = 0; dw.rec[0x128] = 0; dw.rec[0x129] = 0x10;
     CHECK(create::trainable(dw, t) == 0);
+
+    // The behaviour checks' findings (create_facts.md 2-5):
+    static party::Character p;
+    auto setxp = [&](uint32_t v) { for (int i = 0; i < 4; ++i) p.rec[0x127 + i] = static_cast<uint8_t>(v >> (8 * i)); };
+    auto bare = [&](int race, int cls) {
+        p = party::Character{};
+        p.rec[0x74] = static_cast<uint8_t>(race);
+        p.rec[0x75] = static_cast<uint8_t>(cls);
+        for (int i = 0; i < 6; ++i) p.rec[0x10 + i * 2] = p.rec[0x11 + i * 2] = 12;
+        p.rec[0x11C] = 2;
+    };
+    // a fighter's attacks by its level: 3 past 6th, 2 again when it's 6th
+    bare(7, create::Fighter);
+    p.rec[0x109 + 2] = 7;
+    classes::class_bonuses(p, t);
+    CHECK(p.rec[0x11C] == 3);
+    p.rec[0x109 + 2] = 6;
+    classes::class_bonuses(p, t);
+    CHECK(p.rec[0x11C] == 2);
+    // Constitution: the table per class; a single-class fighter +1 over 16, +1 more over 17
+    p.rec[0x19] = 19;
+    CHECK(create::con_hp_adj(p, t) == 4);
+    p.rec[0x19] = 17;
+    CHECK(create::con_hp_adj(p, t) == 3);
+    bare(7, create::ClericFighter);
+    p.rec[0x109] = p.rec[0x109 + 2] = 1;
+    p.rec[0x19] = 18;
+    CHECK(create::con_hp_adj(p, t) == 4);                  // (2 a class, no fighter's extra)
+    // Modify's bounds: the most every die high, then the adjustment (4) once, averaged
+    CHECK(create::hp_most(p, t, f) == (f.hp_dice[0] * f.hp_count[0] + f.hp_dice[2] * f.hp_count[2] + 4) / 2);
+    CHECK(create::hp_least(p, t, f) == (f.hp_count[0] + f.hp_count[2] + 4) / 2);
+    // Modify: Strength 17 -> 18 first, then a fighter's 18/01
+    bare(7, create::Fighter);
+    p.rec[0x109 + 2] = 1;
+    p.rec[0x10] = p.rec[0x11] = 17;
+    create::modify_stat(p, t, f, 0, 1);
+    CHECK(p.stat(0) == 18 && p.stat(6) == 0);
+    create::modify_stat(p, t, f, 0, 1);
+    CHECK(p.stat(0) == 18 && p.stat(6) == 1);
+    // Training: every ready class together; one under the next-but-one figure kept
+    bare(7, create::ClericFighter);
+    p.rec[0x109] = 2;
+    p.rec[0x109 + 2] = 2;
+    setxp(4500);                                           // (2 -> 3: 2000 each; 3 -> 4: 4000)
+    uint32_t keep = 0;
+    CHECK(create::train_pick(p, t, &keep) == ((1 << 0) | (1 << 2)) && keep == 3999);
+    // Training's gold: half a gold piece rounds up (200 copper a gold piece)
+    const int coins[7] = {100, 0, 0, 999, 0, 0, 0}, fewer[7] = {99, 0, 0, 999, 0, 0, 0};
+    CHECK(rules::gold_worth(coins, true) == 1000 && rules::gold_worth(fewer, true) == 999 && rules::gold_worth(coins) == 999);
 }
 
 // The original's class rules (the behaviour checks' findings, from its

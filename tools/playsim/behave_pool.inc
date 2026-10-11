@@ -907,6 +907,285 @@ void spells_in_fights()
                 expect(P, w, res == want, "%s", res ? "resisted" : "hurt");
             }
 }
+
+// ---- 8. Fights: the races' foes by name, backstabs, turning undead, level drain
+void set_name(combat::Fighter& f, const char* nm)
+{
+    memset(f.rec, 0, 16);
+    f.rec[0] = static_cast<uint8_t>(strlen(nm));
+    memcpy(f.rec + 1, nm, strlen(nm));
+}
+// The lowest d20 (2-19) that hits; 21 none
+int lowest_hit(int a, int c, int ac)
+{
+    for (int r = 2; r <= 19; ++r)
+        if (sp_blow(a, c, r, ac, 0)) return r;      // (d20 + to-hit + effects >= the stored AC)
+    return 21;
+}
+void fights()
+{
+    using namespace play;
+    char w[140];
+    // Dwarves +1 against orc-kind, gnomes against kobold-kind (type 1, size 1, by name)
+    struct Foe {
+        uint8_t effect;
+        const char* name;
+        int type, size, bonus;
+        const char* what;
+    };
+    const Foe foes[] = {
+        {0x1A, "ORC", 1, 1, 1, "a dwarf against an ORC: +1"},
+        {0x1A, "HOBGOBLIN CHIEF", 1, 1, 1, "a dwarf against a HOBGOBLIN CHIEF: +1"},
+        {0x1A, "KOBOLD", 1, 1, 0, "a dwarf against a KOBOLD: nothing"},
+        {0x1A, "ORC", 1, 2, 0, "a dwarf against an ORC of size 2: nothing"},
+        {0x1A, "ORC", 2, 1, 0, "a dwarf against an ORC of monster type 2: nothing"},
+        {0x12, "KOBOLD LEADER", 1, 1, 1, "a gnome against a KOBOLD LEADER: +1"},
+        {0x12, "GOBLIN", 1, 1, 1, "a gnome against a GOBLIN: +1"},
+        {0x12, "ORC", 1, 1, 0, "a gnome against an ORC: nothing"},
+    };
+    for (const Foe& fo : foes) {
+        if (!sp_new_fight() || !sp_pick()) return;
+        sp_put(sp_c, 0, 10, 12);
+        sp_put(sp_t[0], 1, 11, 12);
+        set_name(F(sp_t[0]), fo.name);
+        F(sp_t[0]).rec[0x11A] = static_cast<uint8_t>(fo.type);
+        F(sp_t[0]).rec[0xDE] = static_cast<uint8_t>(fo.size);
+        const int base = lowest_hit(sp_c, sp_t[0], 12);
+        sp_give(sp_c, fo.effect, 0, 0xFF, false);
+        const int with = lowest_hit(sp_c, sp_t[0], 12);
+        snprintf(w, sizeof w, "races: %s to hit", fo.what);
+        expect(P, w, base - with == fo.bonus, "lowest d20 %d, %d without", with, base);
+    }
+    // Dwarves and gnomes -4 to be hit by OGRE / TROLL / FIRE GIANT ... (type 1, size 2);
+    // gnomes by BUGBEAR / GNOLL (type 1)
+    struct Big {
+        uint8_t effect;
+        const char* name;
+        int size, malus;
+        const char* what;
+    };
+    const Big bigs[] = {
+        {0x2F, "OGRE", 2, 4, "an OGRE (size 2) at a dwarf: -4"},
+        {0x2F, "TROLL", 2, 4, "a TROLL (size 2) at a dwarf: -4"},
+        {0x2F, "OGRE", 1, 0, "an OGRE of size 1: nothing"},
+        {0x2F, "ORC", 2, 0, "an ORC of size 2: nothing"},
+        {0x30, "BUGBEAR", 1, 4, "a BUGBEAR at a gnome: -4"},
+        {0x30, "GNOLL", 2, 4, "a GNOLL at a gnome: -4"},
+        {0x30, "ORC", 1, 0, "an ORC at a gnome: nothing"},
+    };
+    for (const Big& bg : bigs) {
+        if (!sp_new_fight() || !sp_pick()) return;
+        sp_put(sp_t[0], 1, 10, 12);                  // the attacker (a monster)
+        sp_put(sp_c, 0, 11, 12);                     // the dwarf / gnome
+        set_name(F(sp_t[0]), bg.name);
+        F(sp_t[0]).rec[0x11A] = 1;
+        F(sp_t[0]).rec[0xDE] = static_cast<uint8_t>(bg.size);
+        F(sp_c).target = sp_t[0];                    // (the original compares the name of the one it fights)
+        const int base = lowest_hit(sp_t[0], sp_c, 12);
+        sp_give(sp_c, bg.effect, 0, 0xFF, false);
+        const int with = lowest_hit(sp_t[0], sp_c, 12);
+        snprintf(w, sizeof w, "races: %s to hit", bg.what);
+        expect(P, w, with - base == bg.malus, "lowest d20 %d, %d without", with, base);
+    }
+
+    // Backstab (5.1): a thief straight behind; the damage x (thief level / 4 + 2)
+    for (int L : {1, 3, 4, 7, 8, 9}) {
+        if (!sp_new_fight() || !sp_pick()) return;
+        combat::Fighter& th = F(sp_c);
+        sp_caster(sp_c, 6, L);
+        sp_put(sp_c, 0, 10, 12);
+        sp_put(sp_t[0], 1, 11, 12);
+        combat::Fighter& tg = F(sp_t[0]);
+        // (attacked once this round by one in front of it: the thief's blow, its
+        // second, turns it about - so it faces away from the thief, as the original)
+        tg.facing = (combat::direction(10, 12, 11, 12) + 4) & 7;
+        tg.received = 1;
+        for (int i = 0; i < th.n_items; ++i) th.items[i][0x34] = 0;     // nothing readied
+        th.rec[0x199] = 100;
+        th.attacks[0] = 1;
+        th.attacks[1] = 0;
+        th.rec[0x19E] = 1;
+        th.rec[0x1A0] = 1;
+        th.rec[0x1A2] = 0;
+        sp_dice(1, 15, 100);
+        const combat::Attack r = combat::attack(fg->b, sp_c, sp_t[0], names, rng);
+        const int want = L / 4 + 2;
+        snprintf(w, sizeof w, "backstab, thief level %d: damage x %d", L, want);
+        expect(P, w, r.backstab && r.n > 0 && r.hits[0].hit && r.hits[0].damage == want, "backstab %d, damage %d",
+               r.backstab, r.n ? r.hits[0].damage : -1);
+    }
+    // ... in no body armour but leather
+    {
+        if (!sp_new_fight() || !sp_pick()) return;
+        combat::Fighter& th = F(sp_c);
+        sp_caster(sp_c, 6, 4);
+        sp_put(sp_c, 0, 10, 12);
+        sp_put(sp_t[0], 1, 11, 12);
+        F(sp_t[0]).facing = combat::direction(10, 12, 11, 12);
+        F(sp_t[0]).received = 2;
+        int armour = -1;
+        for (int i = 0; i < th.n_items; ++i) {
+            th.items[i][0x34] = 0;
+            if (armour < 0 && names->type(th.items[i][0x2E]).slot == items::kSlotArmour) armour = i;
+        }
+        if (armour < 0 && th.n_items > 0) armour = 0;
+        if (armour >= 0) {
+            th.items[armour][0x34] = 1;
+            const uint8_t keep = th.items[armour][0x2E];
+            th.items[armour][0x2E] = 0x32;                          // leather
+            const bool leather = combat::can_backstab(fg->b, sp_c, sp_t[0], names);
+            th.items[armour][0x2E] = 0x34;                          // chain mail
+            const bool chain = names->type(0x34).slot == items::kSlotArmour && combat::can_backstab(fg->b, sp_c, sp_t[0], names);
+            th.items[armour][0x2E] = keep;
+            expect(P, "backstab: in leather armour, yes; in other body armour, no", leather && !chain, "leather %d, chain %d",
+                   leather, chain);
+        }
+    }
+
+    // Paralysing hits (4 / 4.1): the ghoul's 63 rounds (not elves), the
+    // drider's d9 + 10 (a save at -2), the thri-kreen's 2d8 - effect 0x34
+    // (effect groups 2 / 3: after a hit by attack 1 / attack 2 - 0x44 in
+    // both, 0x43 and 0x45 after attack 2's only)
+    struct Para {
+        uint8_t effect;
+        int race, rounds, slot;
+        const char* what;
+    };
+    const Para paras[] = {
+        {0x44, 7, 63, 1, "the ghoul's touch (attack 1): paralysed 63 rounds"},
+        {0x44, 7, 63, 2, "the ghoul's touch (attack 2): paralysed 63 rounds"},
+        {0x44, 2, -1, 1, "the ghoul's touch on an elf: nothing"},
+        {0x45, 7, 19, 2, "the drider's (attack 2): d9 + 10 rounds (dice high 19)"},
+        {0x45, 7, -1, 1, "the drider's attack 1: nothing"},
+        {0x43, 7, 16, 2, "the thri-kreen's (attack 2): 2d8 rounds (dice high 16)"},
+    };
+    for (const Para& pa : paras) {
+        if (!sp_new_fight() || !sp_pick()) return;
+        sp_put(sp_t[0], 1, 10, 12);
+        sp_put(sp_c, 0, 11, 12);
+        F(sp_c).rec[0x74] = static_cast<uint8_t>(pa.race);
+        for (int k = 0; k < 5; ++k) F(sp_c).rec[0xDF + k] = 21;       // (no save but a 20)
+        sp_give(sp_t[0], pa.effect, 0, 0xFF, false);
+        combat::Fighter& at = F(sp_t[0]);
+        at.rec[0x199] = 0;
+        at.attacks[0] = pa.slot == 1 ? 1 : 0;
+        at.attacks[1] = pa.slot == 2 ? 1 : 0;
+        at.rec[0x19E] = at.rec[0x19F] = 1;
+        at.rec[0x1A0] = at.rec[0x1A1] = 1;
+        at.rec[0x1A2] = at.rec[0x1A3] = 0;
+        F(sp_c).rec[0x19A] = F(sp_c).rec[0x19B] = 12;
+        fg->b.to_hit_party = fg->b.to_hit_monsters = 0;
+        sp_dice(1, 19, 100);
+        const combat::Attack r = combat::attack(fg->b, sp_t[0], sp_c, nullptr, rng);
+        const bool hit = r.n > 0 && r.hits[0].hit;
+        const int t = sp_aff_time(sp_c, 0x34);
+        snprintf(w, sizeof w, "monsters: %s", pa.what);
+        expect(P, w, hit && t == pa.rounds, "hit %d, paralysed %d", hit, t);
+    }
+
+    // Turning undead (5.1): the column by cleric level (1-8, 9-13 -> 9, then 10), d20 against it
+    {
+        if (!sp_new_fight() || !sp_pick()) return;
+        combat::Battle& b = fg->b;
+        sp_caster(sp_c, 0, 1);
+        sp_put(sp_c, 0, 10, 12);
+        sp_put(sp_t[0], 1, 12, 12, 50);
+        combat::Fighter& me = F(sp_c);
+        combat::Fighter& un = F(sp_t[0]);
+        int bad = 0, done = 0;
+        std::string first;
+        for (int L = 1; L <= 12; ++L)
+            for (int type = 1; type <= 10; ++type) {
+                const auto* row = b_row("turn", type);
+                const int col = L <= 8 ? L : L <= 13 ? 9 : 10;
+                const int v = (*row)[1 + col];
+                const int need = v < 0 ? -v : v;
+                for (int face : {need, need - 1}) {
+                    if (face < 1 || face > 20) continue;
+                    memset(me.rec + 0x109, 0, 8);
+                    me.rec[0x109] = static_cast<uint8_t>(L);
+                    me.turned_undead = false;
+                    un.rec[0xE9] = static_cast<uint8_t>(type);
+                    un.rec[0x195] = party::Okay;
+                    un.rec[0x196] = 1;
+                    un.size = 1;
+                    un.fleeing = false;
+                    combat::occupancy(b);
+                    int out[16];
+                    dice_faces({1, face});
+                    const int n = combat::turn_undead(b, fg->t, sp_c, rng, out, 16);
+                    dice_usual();
+                    const bool want = face >= need;
+                    const bool got = n == 1 && (out[0] == sp_t[0] || out[0] == sp_t[0] + 1000);
+                    const bool kind_ok = !got || (v > 0 ? out[0] == sp_t[0] : out[0] == sp_t[0] + 1000);
+                    ++done;
+                    if ((got != want || !kind_ok) && !bad++) {
+                        char t[96];
+                        snprintf(t, sizeof t, "level %d type %d entry %d d20 %d: %s", L, type, v, face, got ? "turned" : "not");
+                        first = t;
+                    }
+                }
+            }
+        snprintf(w, sizeof w, "turn undead: Pool's table by cleric level, the d20 against it (%d tries)", done);
+        expect(P, w, bad == 0, "%d wrong, first %s", bad, first.c_str());
+    }
+
+    // Level drain (4.1, ovr13+2122): HP max / the levels' sum off a level,
+    // the highest class (the bigger experience figure on a tie) down one,
+    // the experience that level needs
+    struct Dr {
+        int lv[8], hp, n;
+        int want_lv[8], want_hp, cls_exp, lv_exp;
+        const char* what;
+    };
+    const Dr drs[] = {
+        {{0, 0, 5}, 40, 1, {0, 0, 4}, 32, 2, 4, "fighter 5, 40 HP, one level"},
+        {{0, 0, 5}, 40, 2, {0, 0, 3}, 24, 2, 3, "fighter 5, 40 HP, two levels"},
+        {{4, 0, 4}, 40, 1, {4, 0, 3}, 35, 0, 4, "cleric 4 / fighter 4, 40 HP: the fighter (its figure bigger)"},
+        {{0, 0, 0, 0, 0, 3, 5}, 30, 1, {0, 0, 0, 0, 0, 3, 4}, 27, 6, 4, "magic-user 3 / thief 5, 30 HP: the thief"},
+    };
+    for (const Dr& dr : drs) {
+        if (!sp_new_fight() || !sp_pick()) return;
+        sp_put(sp_c, 0, 10, 12);
+        combat::Fighter& f = F(sp_c);
+        int hd = 0;
+        for (int k = 0; k < 8; ++k) {
+            f.rec[0x109 + k] = static_cast<uint8_t>(dr.lv[k]);
+            f.rec[0x111 + k] = 0;
+            hd = std::max(hd, dr.lv[k]);
+        }
+        f.rec[0xE5] = static_cast<uint8_t>(hd);
+        f.rec[0x78] = f.rec[0x1A4] = static_cast<uint8_t>(dr.hp);
+        f.rec[0x12C] = static_cast<uint8_t>(dr.hp);
+        put32(f.rec, 0x127, 200000);
+        combat::Event ev[8];
+        int ne = 0;
+        combat::drain(fg->b, sp_c, dr.n, ev, 8, &ne);
+        bool lok = true;
+        for (int k = 0; k < 8; ++k) lok = lok && f.rec[0x109 + k] == dr.want_lv[k];
+        const int want_exp = dr.lv_exp >= 2 ? oxp(dr.cls_exp, dr.lv_exp - 1) : 0;
+        const uint32_t exp = f.rec[0x127] | f.rec[0x128] << 8 | f.rec[0x129] << 16 | static_cast<uint32_t>(f.rec[0x12A]) << 24;
+        snprintf(w, sizeof w, "level drain: %s", dr.what);
+        expect(P, w, lok && f.rec[0x78] == dr.want_hp && f.rec[0x1A4] == dr.want_hp && exp == static_cast<uint32_t>(want_exp) &&
+                         f.rec[0xE5] == dr.lv_exp,
+               "levels %d/%d/%d/%d, HP %d/%d, exp %u (the original's %d), HD %d", f.rec[0x109], f.rec[0x10B], f.rec[0x10E],
+               f.rec[0x10F], f.rec[0x1A4], f.rec[0x78], exp, want_exp, f.rec[0xE5]);
+    }
+    // One of a single level: dead forever
+    {
+        if (!sp_new_fight() || !sp_pick()) return;
+        sp_put(sp_c, 0, 10, 12);
+        combat::Fighter& f = F(sp_c);
+        for (int k = 0; k < 8; ++k) f.rec[0x109 + k] = 0;
+        f.rec[0x10B] = 1;
+        f.rec[0xE5] = 1;
+        combat::Event ev[8];
+        int ne = 0;
+        combat::drain(fg->b, sp_c, 1, ev, 8, &ne);
+        expect(P, "level drain: a level-1 character is dead forever", f.status() == party::Gone && f.rec[0x78] == 0,
+               "status %d, HP max %d", f.status(), f.rec[0x78]);
+    }
+}
 #endif
 
 } // namespace bpool
@@ -938,5 +1217,6 @@ static void behave_pool()
     if (want("money")) money();
 #ifdef BEHAVE_SPELLS
     if (want("spells")) spells_in_fights();
+    if (want("fights")) fights();
 #endif
 }
