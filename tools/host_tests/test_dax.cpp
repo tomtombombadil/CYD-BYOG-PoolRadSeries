@@ -1857,6 +1857,18 @@ static void test_ecl_party()
     CHECK(r == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Won && vm.get(0x4C06) == 7);
     r = vm.resume();
     CHECK(r == ecl::Stop::Stopped && vm.get(0x4C07) != 9);
+    // Pool's: after its ending the script goes on (PROGRAM 3 does nothing)
+    static ecl::OpSet pool_set;
+    pool_set = *pr->ecl_ops;
+    pool_set.program_ends = false;
+    pool_set.program_kills = false;
+    static ecl::Vm pvm(gs, host, pool_set);
+    pvm.set(0x4C07, 0);
+    CHECK(pvm.init_script());
+    r = pvm.run(pvm.entry(4));
+    CHECK(r == ecl::Stop::Waiting && pvm.wait() == ecl::Wait::Won);
+    r = pvm.resume();
+    CHECK(pvm.get(0x4C07) == 9);
 }
 
 // The original's ways (coab's facts / the listing): RETURN with nothing to

@@ -643,7 +643,14 @@ Steps (each pushed when it works; Curse stays as it is):
    from its program's 19 rows (some by a die); its quirks kept - a weapon
    roll of 48 / 49 repeats the item before, and the javelin of lightning
    reads its words across two rows (a nameless "of Elvenkind" javelin).
-   Still to do: the ending (FINAL5.DAX).
+   v0.82.0: **the ending** (PROGRAM 8, its ovr19): the dragon's words in
+   the text box (three pages: 3, 6 and 4 lines, read from GAME.OVR),
+   FINAL<area>.DAX's pictures in the left box (the dragon, then the
+   party's figures by its size) and its animations, each frame (speed + 3)
+   x its delay in hundredths of a second, played 5 x (10 - speed) / 2
+   times round (the last once), no key; then a pause, the screen back and
+   **the script goes on** (Pool's PROGRAM 8 doesn't end it, and its
+   PROGRAM 3 does nothing - its handler knows 0, 8 and 9 only).
 6. Behaviour tests (`sweep.cpp`) with Pool's expectations.
 
 ## 7. The journal (Tom, 2026-10-06)

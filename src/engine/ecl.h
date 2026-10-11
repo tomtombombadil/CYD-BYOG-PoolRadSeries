@@ -54,6 +54,10 @@ struct OpSet {
     // CALL's machine-code addresses that differ: the 3D view redrawn, a
     // sound (Pool: 0x2C90, 0xBA03)
     uint16_t redraw_call = 0x2E10, sound_call = 0xB200;
+    // PROGRAM: 8 ends the script after the ending (Curse) or the script
+    // goes on after it (Pool); 3 kills the party (Curse; Pool's program
+    // does nothing for it - its handler knows 0, 8 and 9 only)
+    bool program_ends = true, program_kills = true;
 };
 
 // A script's memory address as the engine's machine (Curse's map) knows

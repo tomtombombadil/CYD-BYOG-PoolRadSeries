@@ -435,6 +435,10 @@ struct Profile {
         bool    pool_rest_keys;        // the Rest menu's keys: R Y(days) H M I(+) D(-) E, not Curse's R D H M A S E
         uint16_t overland_map;         // DS: the overland map (44 a row) outdoor fights are made from (Pool; 0: none)
         uint8_t  overland_area;        // the first of the three wilderness areas on it, 13 places each side by side
+        // PROGRAM 8 (Pool; poolrad_combat_facts.md 8): FINAL<area>.DAX's
+        // pictures and animations with the dragon's words (won.text, three
+        // pages of won.page_lines), then the script goes on
+        bool     final_end;
     } variant;
 };
 

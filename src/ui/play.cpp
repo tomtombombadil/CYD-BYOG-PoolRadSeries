@@ -81,6 +81,7 @@ struct Data {
     // The event picture (a PIC animation): its file stays open while shown
     pic::Anim      anim;
     fs::File       anim_file;
+    int16_t        anim_x = 24, anim_y = 24;   // where it's drawn (the view; Pool's ending: elsewhere)
     dax::Index     anim_idx;
 
     // A monster's sprite in the 3D view (SPRITn)
@@ -571,19 +572,21 @@ void anim_draw(int frame)
     if (anim_block < 0) return;
     library::FileSource src(d->anim_file);
     const dax::Entry* e = d->anim_idx.find(static_cast<uint8_t>(anim_block));
-    if (e) pic::draw_anim(src, d->anim_idx, *e, d->anim, frame, true, *cv, 24, 24);
-    dirty_rows(3, 13);
+    if (e) pic::draw_anim(src, d->anim_idx, *e, d->anim, frame, true, *cv, d->anim_x, d->anim_y);
+    dirty_rows(d->anim_y / 8, (d->anim_y + 88) / 8);
 }
 
 bool animation_on();
 
 // An event picture: PIC<area> block id, drawn in the view; it animates
 // while the game waits at a menu
-bool anim_start(int id)
+bool anim_start(int id, const char* stem = "PIC", int x = 24, int y = 24)
 {
     anim_stop();
+    d->anim_x = static_cast<int16_t>(x);
+    d->anim_y = static_cast<int16_t>(y);
     char name[24];
-    area_file(name, sizeof name, "PIC");
+    area_file(name, sizeof name, stem);
     if (!open_file(name, d->anim_file)) return false;
     library::FileSource src(d->anim_file);
     const dax::Entry* e = nullptr;
@@ -7284,6 +7287,9 @@ struct WonRun {
     enum Stage : uint8_t { Text, Anim, Key, Hold, Fireworks } stage = Text;
     int      page = 0;
     uint32_t at = 0;
+    // Pool's ending: its loops of the animation, those played; its frame time
+    bool     pool = false;
+    int      loops = 0, loop = 0, last_pic = -1;
     uint8_t  fade[16] = {};
     char     text[320] = {};            // the page's text (the writer reads it while it prints)
     // The fireworks (an approximation of the original's; facts 1.4)
@@ -7423,9 +7429,141 @@ void won_finish(pic::Canvas& c)
     draw_party_menu(c);
 }
 
+// ---- Pool's ending (PROGRAM 8; poolrad_combat_facts.md 8, its ovr19):
+// the dragon's words in the text box (colour 10, a line a row from row
+// 17), FINAL<area>.DAX's pictures in the left box and its animations played
+// (speed + 3) x their delays in hundredths of a second a frame, 5 x (10 -
+// speed) / 2 times round (the last once); the party's figures by its size;
+// a pause of 3 x speed x 225 ms; then the screen back and the script on
+int pool_speed()
+{
+    const int s = vm->get(0x4BFC) & 0xFF;
+    return s > 9 ? 9 : s;
+}
+
+void pool_end_text(pic::Canvas& c, int first, int n)
+{
+    const auto& wf = d->prof->won;
+    c.fill(8, 17 * 8, 38 * 8, 6 * 8, 0);
+    OvrWords src;
+    if (src.open())
+        for (int k = 0; k < n && first + k < 24; ++k) {
+            char line[text::kMaxString];
+            if (text::read_pascal(src, wf.text[first + k], line, sizeof line)) put(c, line, 1, 17 + k, 10);
+        }
+    dirty_rows(17, 22);
+}
+
+void pool_end_anim(int block, int x, int y, int loops)
+{
+    won->stage = WonRun::Anim;
+    won->loops = loops < 1 ? 1 : loops;
+    won->loop = 0;
+    won->at = millis();
+    if (!anim_start(block, "FINAL", x, y) || d->anim.frames < 1) {
+        // (no animation: on at once)
+        won->stage = WonRun::Hold;
+        won->at = millis();
+        return;
+    }
+    if (anim_block < 0) {
+        // Alter's animations off: its first frame held as long as the loops would take
+        uint32_t t = 0;
+        for (int k = 0; k < d->anim.frames; ++k) t += d->anim.delay[k];
+        won->stage = WonRun::Hold;
+        won->at = millis() + t * static_cast<uint32_t>(pool_speed() + 3) * 10u * static_cast<uint32_t>(won->loops);
+    }
+}
+
+void pool_end_step(pic::Canvas& c)
+{
+    const auto& wf = d->prof->won;
+    const int speed = pool_speed();
+    const int loops = 5 * (10 - speed) / 2;
+    switch (won->page) {
+    case 0:
+        pool_end_text(c, 0, wf.page_lines[0]);
+        draw_block(c, "FINAL", 1, 8, 8);
+        dirty_rows(1, 15);
+        pool_end_anim(2, 24, 40, loops);
+        return;
+    case 1:
+        draw_block(c, "FINAL", 3, 8, 8);
+        // The party's figures (up to three more by its size)
+        if (pt->count > 1) draw_block(c, "FINAL", 4, 8, 96);
+        if (pt->count > 2) draw_block(c, "FINAL", 5, 112, 80);
+        if (pt->count > 3) draw_block(c, "FINAL", 6, 8, 80);
+        dirty_rows(1, 15);
+        pool_end_text(c, wf.page_lines[0], wf.page_lines[1]);
+        pool_end_anim(7, 24, 8, loops);
+        return;
+    case 2:
+        pool_end_text(c, wf.page_lines[0] + wf.page_lines[1], wf.page_lines[2]);
+        pool_end_anim(8, 24, 8, 1);
+        return;
+    case 3:
+        anim_stop();
+        won->stage = WonRun::Hold;
+        won->at = millis() + static_cast<uint32_t>(3 * speed * 225);
+        return;
+    default: {
+        // The screen back, the script on
+        last_pic = won->last_pic;
+        delete won;
+        won = nullptr;
+        fight_back_to_game(c);
+        waiting = false;
+        handle(vm->resume());
+        return;
+    }
+    }
+}
+
+void pool_end_tick(uint32_t now, pic::Canvas& c)
+{
+    if (won->stage == WonRun::Hold) {
+        if (static_cast<int32_t>(now - won->at) < 0) return;
+        ++won->page;
+        pool_end_step(c);
+        return;
+    }
+    if (won->stage != WonRun::Anim || anim_block < 0) {
+        ++won->page;
+        pool_end_step(c);
+        return;
+    }
+    const uint32_t delay = static_cast<uint32_t>(pool_speed() + 3) * d->anim.delay[anim_frame] * 10u;
+    if (now - won->at < delay) return;
+    won->at = now;
+    if (anim_frame + 1 >= d->anim.frames) {
+        if (++won->loop >= won->loops) {
+            ++won->page;
+            pool_end_step(c);
+            return;
+        }
+        anim_frame = -1;
+    }
+    anim_draw(++anim_frame);
+}
+
 void start_won(pic::Canvas& c)
 {
     anim_stop();
+    if (d->prof->variant.final_end) {
+        if (!won) won = new (std::nothrow) WonRun;
+        if (!won) {
+            waiting = false;                // (no memory: the script goes on without it)
+            handle(vm->resume());
+            return;
+        }
+        won->pool = true;
+        won->last_pic = last_pic;
+        clear_menu_line(c);
+        screen = Screen::Won;
+        won->page = 0;
+        pool_end_step(c);
+        return;
+    }
     if (!won) won = new (std::nothrow) WonRun;
     if (!won) {
         won_finish(c);
@@ -7448,7 +7586,7 @@ void start_won(pic::Canvas& c)
 // A key or tap during the ending
 void won_key(pic::Canvas& c)
 {
-    if (!won) return;
+    if (!won || won->pool) return;      // (Pool's plays out: no key, as the original)
     switch (won->stage) {
     case WonRun::Key:
         clear_menu_line(c);
@@ -7561,6 +7699,10 @@ void fireworks_step(pic::Canvas& c, uint32_t now)
 void won_tick(uint32_t now, pic::Canvas& c)
 {
     if (!won) return;
+    if (won->pool) {
+        pool_end_tick(now, c);
+        return;
+    }
     switch (won->stage) {
     case WonRun::Anim: {
         const uint32_t delay = d->anim.delay[anim_frame] ? d->anim.delay[anim_frame] * 100u : 100u;

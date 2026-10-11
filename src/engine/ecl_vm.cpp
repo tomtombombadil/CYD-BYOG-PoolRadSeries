@@ -1248,13 +1248,13 @@ Stop Vm::step()
             stop_script();
             return wait_for(Wait::Camp);
         }
-        if (v == 3) {                                       // the party is killed
+        if (v == 3 && set_.program_kills) {                 // the party is killed
             stop_script();
             h_.party_killed();
             return Stop::Running;
         }
         if (v == 8) {                                       // the game won: the ending
-            stop_script();
+            if (set_.program_ends) stop_script();           // (Pool's script goes on after it)
             return wait_for(Wait::Won);
         }
         return Stop::Running;                               // (other values: nothing)

@@ -474,6 +474,8 @@ constexpr ecl::OpSet kPoolEcl = [] {
     s.pool_map = true;
     s.redraw_call = 0x2C90;
     s.sound_call = 0xBA03;
+    s.program_ends = false;
+    s.program_kills = false;
     return s;
 }();
 
@@ -728,8 +730,11 @@ const Profile kProfiles[] = {
      // The sound driver: Curse's, 0xBD further on in its segment (poolrad_facts.md 1.5)
      .sound = {0x8AE0, 0x055F, 0x1378, 0x055F, 0x0607, 21, 0x2F, 0x33},
      .door = {0x17417, 0x1741C, 0x17422, 0x17429, 0x1742F, 0x1F},
-     .won = {},
-     .variant = {{20, 21, 22}, 29, true, 15, 7, 6, 1, true, true, true, true, 0x3648, 25}},
+     // The ending's words (GAME.OVR, its ovr19): 3, 6 and 4 lines
+     .won = {{0x207B1, 0x207D5, 0x207FA, 0x20818, 0x2083C, 0x20861, 0x20888, 0x208A8, 0x208CD, 0x208D6, 0x208FD,
+              0x20925, 0x20938},
+             {3, 6, 4}},
+     .variant = {{20, 21, 22}, 29, true, 15, 7, 6, 1, true, true, true, true, 0x3648, 25, true}},
 };
 
 } // namespace
