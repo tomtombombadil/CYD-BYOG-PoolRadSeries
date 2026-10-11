@@ -1165,6 +1165,8 @@ void event_page(const combat::Event& e)
         break;
     }
     case combat::Ev::DiesPoison: fallen(profile::kDiesFromPoison); break;
+    case combat::Ev::Weakened: said(profile::kIsWeakened); break;
+    case combat::Ev::Ages: said(profile::kAges); break;
     case combat::Ev::Regen: {
         char w[24];
         cw(fg->b.f[who].hp() >= fg->b.f[who].hp_max() ? profile::kFullyHealed : profile::kPartlyHealed, w, sizeof w);
@@ -1595,8 +1597,16 @@ void next_turn(pic::Canvas& c)
 
 void begin_round(pic::Canvas& c)
 {
-    combat::start_round(fg->b, rng);
+    combat::Event ev[8];
+    const int nev = combat::start_round(fg->b, rng, ev, 8);
     vm->set(0x7ECB, 0);                 // (the surprise word: cleared after the initiative, as the original)
+    if (nev > 0) {
+        // the hasted "ages" (the first round of their Haste), then the turns
+        for (int k = 0; k < nev; ++k) event_page(ev[k]);
+        draw_fight(c);
+        say(c, FSt::Begin);
+        return;
+    }
     next_turn(c);
 }
 

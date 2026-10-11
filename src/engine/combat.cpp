@@ -824,11 +824,21 @@ int tick(Battle& b, Event* out, int cap)
     for (int i = 0; i < b.n; ++i) {
         Fighter& f = b.f[i];
         bool regen = false, rise = false, sting = false, slow_over = false, con_up = false;
+        int weak_due = 0, sick_due = 0, ill_over = -1;
         for (int k = 0; f.n_aff && k < *f.n_aff;) {
             const int m = f.aff[k][1] | f.aff[k][2] << 8;
+            const uint8_t ty = f.aff[k][0];
             if (m == 0) {
                 ++k;
+            } else if (m <= 1 && b.fx && ((b.fx->sp.weak && ty == b.fx->sp.weak) || (b.fx->sp.sick && ty == b.fx->sp.sick))) {
+                // The disease's course renews itself (60 / 10 minutes)
+                const bool weak = ty == b.fx->sp.weak;
+                f.aff[k][1] = static_cast<uint8_t>(weak ? 60 : 10);
+                f.aff[k][2] = 0;
+                ++(weak ? weak_due : sick_due);
+                ++k;
             } else if (m <= 1) {
+                if (b.fx && b.fx->sp.ill && ty == b.fx->sp.ill) ill_over = f.aff[k][3];
                 if (b.fx && b.fx->mon.regen_wait && f.aff[k][0] == b.fx->mon.regen_wait) regen = true;
                 if (b.fx && b.fx->mon.troll_up && f.aff[k][0] == b.fx->mon.troll_up) rise = true;
                 if (b.fx && b.fx->sp.poison_damage && f.aff[k][0] == b.fx->sp.poison_damage) sting = true;
@@ -843,6 +853,46 @@ int tick(Battle& b, Event* out, int cap)
         }
         if (!b.fx) continue;
         const MonFx& mf = b.fx->mon;
+        // Cause Disease run out: weakness and sickness begin (coab's facts,
+        // listing ovr013:1038 / 10C2) - each a step now, then every 60 / 10
+        if (ill_over >= 0 && b.fx->sp.weak && b.fx->sp.sick) {
+            give_aff(f, b.fx->sp.weak, 60, ill_over, true);
+            give_aff(f, b.fx->sp.sick, 10, ill_over, true);
+            ++weak_due;
+            ++sick_due;
+        }
+        auto ev_of = [&](Ev e, int amount) {
+            if (!out || n >= cap) return;
+            out[n] = Event{};
+            out[n].who = static_cast<uint8_t>(i);
+            out[n].ev = e;
+            out[n++].amount = static_cast<int16_t>(amount);
+        };
+        auto helpless_now = [&]() {
+            const uint8_t h = b.fx->held[3];
+            if (h && !f.has(h)) give_aff(f, h, 0, 0xFF, false);
+        };
+        for (; weak_due > 0; --weak_due) {
+            // Weakness: the Strength in use - 1, "is weakened"; at 3 helpless
+            if (f.rec[0x11] > 3) {
+                --f.rec[0x11];
+                ev_of(Ev::Weakened, 0);
+            } else {
+                helpless_now();
+            }
+        }
+        for (; sick_due > 0; --sick_due) {
+            // Sickness: a point of damage while over 1 HP ("takes 1 point of damage"), else helpless
+            if (f.hp() > 1) {
+                damage(b, i, 1);
+                ev_of(Ev::Damage, 1);
+                // (no damage kind: the original's message still says "from Magic" - its test is
+                // flags & 8 == flags, true for 0)
+                if (out && n > 0 && out[n - 1].ev == Ev::Damage) out[n - 1].kind = 8;
+            } else {
+                helpless_now();
+            }
+        }
         // The Ring of Invisibility: invisible again for the next round
         if (b.fx->items.ring_invisible && b.fx->invisible && hasx(f, b.fx->items.ring_invisible) &&
             !f.has(b.fx->invisible))
@@ -1011,8 +1061,9 @@ void recount_attacks(Battle& b, int i)
     if (!f.attacked || n < now || (n < now * 2 && !ranged)) f.attacks[0] = n;
 }
 
-void start_round(Battle& b, create::Dice& d)
+int start_round(Battle& b, create::Dice& d, Event* out, int cap)
 {
+    int n_ev = 0;
     g_fx = b.fx;
     g_b = &b;
     g_dice = &d;
@@ -1029,6 +1080,20 @@ void start_round(Battle& b, create::Dice& d)
         if (!f.up() || !f.size) {
             f.delay = f.moves = f.attacks[0] = f.attacks[1] = 0;
             continue;
+        }
+        // Hasted: a year older the first time ("ages"; the effect's data +
+        // 0x10 marks it - listing ovr013:0BA5)
+        const int hk = b.fx && b.fx->haste ? find_aff(f, b.fx->haste) : -1;
+        if (hk >= 0 && !(f.aff[hk][3] & 0x10)) {
+            f.aff[hk][3] = static_cast<uint8_t>(f.aff[hk][3] + 0x10);
+            const int age = (f.rec[0x76] | f.rec[0x77] << 8) + 1;
+            f.rec[0x76] = static_cast<uint8_t>(age);
+            f.rec[0x77] = static_cast<uint8_t>(age >> 8);
+            if (out && n_ev < cap) {
+                out[n_ev] = Event{};
+                out[n_ev].who = static_cast<uint8_t>(i);
+                out[n_ev++].ev = Ev::Ages;
+            }
         }
         int delay = d.roll(6, 1) + dex_reaction(f.rec[kDexFull]);
         if (delay < 1) delay = 1;
@@ -1051,6 +1116,7 @@ void start_round(Battle& b, create::Dice& d)
         if (b.fx && hasx(f, b.fx->mon.held_fast)) f.moves = 0;                 // engulfed, hugged
     }
     b.surprise = 0;
+    return n_ev;
 }
 
 int next(Battle& b, create::Dice& d)

@@ -128,6 +128,8 @@ enum Cure : uint8_t {
 struct CureFacts {
     uint16_t cost[kCures];            // gold
     uint8_t  blinded, disease[6], feeblemind, poisoned, slow_poison, poison_damage, animate_dead, curse;
+    // Cause Disease's course (combat.h SpellFx): the disease, weakness, sickness; helpless
+    uint8_t  ill, weak, sick, helpless;
 };
 // Removes a character's effects of a type; how many
 int remove_affects(party::Character& c, uint8_t type);
@@ -136,6 +138,17 @@ int remove_affects(party::Character& c, uint8_t type);
 // out while they're still poisoned, they die ("dies from poison": true).
 // Call before the effects' minutes are taken (magic::tick_affects).
 bool poison_clock(party::Character& c, int minutes, const CureFacts& f);
+// Cause Disease's course as `minutes` pass outside fights (coab's facts,
+// listing ovr013:1038 / 10C2): the disease running out starts weakness (60
+// minutes) and sickness (10), each renewing itself until cured - weakness:
+// Strength in use - 1 ("is weakened"), at 3 helpless; sickness: a hit point
+// while over 1, else helpless. What happened (the last of each); call before
+// magic::tick_affects, as poison_clock.
+struct DiseaseStep {
+    int  weakened = 0, hurt = 0;        // how many times
+    bool helpless = false;
+};
+DiseaseStep disease_clock(party::Character& c, int minutes, const CureFacts& f);
 // Constitution 20 and up (its effect, given by stats()): a hit point back
 // each time 60 minutes run out (curse_finish_facts.md 5.4). How many came
 // back ("is fully healed" / "is partially healed"). Call before

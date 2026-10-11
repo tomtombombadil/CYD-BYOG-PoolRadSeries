@@ -945,6 +945,74 @@ bool poison_clock(party::Character& c, int minutes, const CureFacts& f)
     return true;
 }
 
+DiseaseStep disease_clock(party::Character& c, int minutes, const CureFacts& f)
+{
+    DiseaseStep out;
+    if (minutes <= 0 || !f.ill || !f.weak || !f.sick) return out;
+    auto helpless = [&]() {
+        if (!f.helpless || find_effect(c, f.helpless) >= 0 || c.n_affects >= party::kMaxAffects) return;
+        uint8_t* a = c.affects[c.n_affects++];
+        memset(a, 0, party::kAffectSize);
+        a[0] = f.helpless;
+        a[3] = 0xFF;                            // (for good)
+        out.helpless = true;
+    };
+    auto weaken = [&]() {
+        if (c.rec[0x11] > 3) {
+            --c.rec[0x11];                      // (the Strength in use: a recalculation gives it back, as the original)
+            ++out.weakened;
+        } else {
+            helpless();
+        }
+    };
+    auto sicken = [&]() {
+        if (c.rec[0x1A4] > 1) {
+            --c.rec[0x1A4];
+            ++out.hurt;
+        } else {
+            helpless();
+        }
+    };
+    // The disease running out: the course begins (its minutes after that on the new clocks)
+    const int k = find_effect(c, f.ill);
+    if (k >= 0) {
+        const int left = c.affects[k][1] | c.affects[k][2] << 8;
+        if (left > 0 && minutes >= left) {
+            const uint8_t data = c.affects[k][3];
+            remove_affects(c, f.ill);
+            const int rest = minutes - left;
+            const uint8_t types[2] = {f.weak, f.sick};
+            const int period[2] = {60, 10};
+            for (int t = 0; t < 2; ++t) {
+                if (c.n_affects >= party::kMaxAffects) break;
+                uint8_t* a = c.affects[c.n_affects++];
+                memset(a, 0, party::kAffectSize);
+                a[0] = types[t];
+                a[1] = static_cast<uint8_t>(period[t]);
+                a[2] = static_cast<uint8_t>(period[t] >> 8);
+                a[3] = data;
+                a[4] = 1;
+                if (t == 0) weaken();
+                else sicken();
+                // its own minutes from here on; then the tick's `minutes` taken back
+                for (int n = repeat_clock(a, rest, period[t]); n > 0; --n) t == 0 ? weaken() : sicken();
+                const int m = (a[1] | a[2] << 8) + left;
+                a[1] = static_cast<uint8_t>(m);
+                a[2] = static_cast<uint8_t>(m >> 8);
+            }
+            return out;
+        }
+    }
+    // The course: weakness every 60 minutes, sickness every 10
+    const int w = find_effect(c, f.weak);
+    if (w >= 0)
+        for (int n = repeat_clock(c.affects[w], minutes, 60); n > 0; --n) weaken();
+    const int s = find_effect(c, f.sick);
+    if (s >= 0)
+        for (int n = repeat_clock(c.affects[s], minutes, 10); n > 0; --n) sicken();
+    return out;
+}
+
 void apply_cure(party::Character& c, Cure cure, const CureFacts& f, create::Dice& d)
 {
     switch (cure) {

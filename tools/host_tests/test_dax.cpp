@@ -4658,6 +4658,52 @@ static void test_spell_rules()
     CHECK(saved_near < saved_far);                    // (near: -1 on every save)
     fx.prayer = 0;
     fx.mon.poisoned = 0;
+    // Cause Disease's course in a fight: the disease run out - weakness (60) and sickness (10), a step of
+    // each at once (Str in use - 1, 1 HP), then every 60 / 10 rounds; at 1 HP helpless
+    fx.sp.ill = 0x22; fx.sp.weak = 0x2B; fx.sp.sick = 0x2C; fx.held[3] = 0x1F;
+    setup();
+    rec[3][0x11] = 12; rec[3][0x1A4] = 50;
+    aff[3][0][0] = 0x22; aff[3][0][1] = 1; aff[3][0][3] = 5; aff[3][0][4] = 1; naff[3] = 1;
+    combat::Event tev[8];
+    int ne = combat::tick(b, tev, 8);
+    CHECK(!b.f[3].has(0x22) && b.f[3].has(0x2B) && b.f[3].has(0x2C) && rec[3][0x11] == 11 && b.f[3].hp() == 49 && ne == 2);
+    for (int r = 0; r < 60; ++r) combat::tick(b, tev, 8);
+    CHECK(b.f[3].hp() == 43 && rec[3][0x11] == 10);
+    rec[3][0x1A4] = 1;
+    for (int r = 0; r < 10; ++r) combat::tick(b, tev, 8);
+    CHECK(b.f[3].hp() == 1 && b.f[3].has(0x1F));
+    // ... and in camp (rules::disease_clock before the effects' minutes)
+    {
+        static party::Character pc;
+        pc = party::Character{};
+        pc.rec[0x11] = 14; pc.rec[0x1A4] = pc.rec[0x78] = 60;
+        rules::CureFacts cf{};
+        cf.ill = 0x22; cf.weak = 0x2B; cf.sick = 0x2C; cf.helpless = 0x1F;
+        spells::add_affect(pc, 0x22, 30, 5, true);
+        int weak = 0, hurt = 0;
+        for (int k = 0; k < 30; ++k) {                // 150 minutes, 5 at a time
+            const rules::DiseaseStep s = rules::disease_clock(pc, 5, cf);
+            weak += s.weakened;
+            hurt += s.hurt;
+            magic::tick_affects(pc, 5);
+        }
+        CHECK(weak == 3 && hurt == 13 && pc.rec[0x11] == 11 && pc.hp() == 47);
+        // one long step (a rest's): the same
+        pc.rec[0x11] = 14; pc.rec[0x1A4] = 60; pc.n_affects = 0;
+        spells::add_affect(pc, 0x22, 30, 5, true);
+        const rules::DiseaseStep s1 = rules::disease_clock(pc, 150, cf);
+        magic::tick_affects(pc, 150);
+        CHECK(s1.weakened == 3 && s1.hurt == 13 && pc.has_affect(0x2B) && pc.has_affect(0x2C));
+    }
+    // Haste: a year older the first round of it ("ages"), not again
+    fx.sp.ill = fx.sp.weak = fx.sp.sick = 0;
+    setup();
+    rec[1][0x76] = 20;
+    aff[1][0][0] = 0x27; aff[1][0][1] = 10; aff[1][0][3] = 5; naff[1] = 1;
+    combat::Event aev[8];
+    CHECK(combat::start_round(b, d, aev, 8) == 1 && aev[0].ev == combat::Ev::Ages && aev[0].who == 1 && rec[1][0x76] == 21 &&
+          aff[1][0][3] == 0x15);
+    CHECK(combat::start_round(b, d, aev, 8) == 0 && rec[1][0x76] == 21);
 }
 
 // The second batch of fight spells (spell_facts.md 2), on made-up fighters

@@ -2018,6 +2018,87 @@ static void sp_check_special()
     }
 }
 
+// ---- 6b2. Cause Disease's course and Haste's aging (coab's facts; listing ovr013:1038 weaken, 10C2
+// the sickness, 0BA5 spl_age)
+static void sp_check_course()
+{
+    using namespace play;
+    // In a fight: the disease (0x22) running out - weakness 0x2B (60) and sickness 0x2C (10) begin,
+    // Strength in use - 1 ("is weakened"), 1 HP ("takes 1 point of damage"); then every 60 / 10 rounds
+    if (sp_new_fight() && sp_pick()) {
+        const int T = sp_t[0];
+        sp_put(T, 1, 12, 12, 50);
+        F(T).rec[0x11] = 12;
+        sp_give(T, 0x22, 1, 5, true);
+        combat::Event ev[8];
+        int n = combat::tick(fg->b, ev, 8);
+        bool weak_ev = false, hurt_ev = false;
+        for (int k = 0; k < n; ++k) {
+            weak_ev = weak_ev || (ev[k].who == T && ev[k].ev == combat::Ev::Weakened);
+            hurt_ev = hurt_ev || (ev[k].who == T && ev[k].ev == combat::Ev::Damage && ev[k].amount == 1);
+        }
+        expect(SP, "Cause Disease run out (a fight): weakness 60 and sickness 10 begin, Str 12 -> 11, HP 50 -> 49, said",
+               sp_aff(T, 0x22) < 0 && sp_aff_time(T, 0x2B) == 60 && sp_aff_time(T, 0x2C) == 10 && F(T).rec[0x11] == 11 &&
+                   F(T).hp() == 49 && weak_ev && hurt_ev,
+               "weak %d sick %d Str %d HP %d events %d/%d", sp_aff_time(T, 0x2B), sp_aff_time(T, 0x2C), F(T).rec[0x11], F(T).hp(),
+               (int)weak_ev, (int)hurt_ev);
+        for (int r = 0; r < 60; ++r) combat::tick(fg->b, ev, 8);
+        expect(SP, "the disease's course, 60 rounds on: 6 more HP, Str 1 less",
+               F(T).hp() == 43 && F(T).rec[0x11] == 10 && sp_aff(T, 0x2B) >= 0 && sp_aff(T, 0x2C) >= 0, "HP %d Str %d", F(T).hp(),
+               F(T).rec[0x11]);
+        F(T).rec[0x1A4] = 1;
+        for (int r = 0; r < 10; ++r) combat::tick(fg->b, ev, 8);
+        expect(SP, "the disease's course at 1 HP: no damage, helpless", F(T).hp() == 1 && sp_aff(T, 0x1F) >= 0, "HP %d", F(T).hp());
+    }
+    // In camp: the same on the camp's clock; Cure Disease ends it
+    if (boot() && load_magic()) {
+        party::Character& c = pt->m[1];
+        c.n_affects = 0;
+        c.rec[0x1A4] = c.rec[0x78] = 60;
+        c.rec[0x11] = 14;
+        spells::add_affect(c, 0x22, 30, 5, true);
+        auto pass = [&](int minutes) {
+            rules::DiseaseStep s{};
+            for (int k = 0; k < minutes / 5; ++k) {
+                const rules::DiseaseStep t = rules::disease_clock(c, 5, d->prof->cures);
+                s.weakened += t.weakened;
+                s.hurt += t.hurt;
+                magic::tick_affects(c, 5);
+            }
+            return s;
+        };
+        const rules::DiseaseStep a = pass(30);
+        expect(SP, "camp: Cause Disease (30 minutes) run out - Str 14 -> 13, 1 HP, weakness and sickness on",
+               a.weakened == 1 && a.hurt == 1 && c.rec[0x11] == 13 && c.hp() == 59 && sp_caff(1, 0x2B) >= 0 && sp_caff(1, 0x2C) >= 0,
+               "weakened %d hurt %d Str %d HP %d", a.weakened, a.hurt, c.rec[0x11], c.hp());
+        const rules::DiseaseStep b2 = pass(120);
+        expect(SP, "camp: two hours on - Str 2 less, 12 HP less", b2.weakened == 2 && b2.hurt == 12 && c.rec[0x11] == 11 && c.hp() == 47,
+               "weakened %d hurt %d Str %d HP %d", b2.weakened, b2.hurt, c.rec[0x11], c.hp());
+        sp_member(4, classes::Cleric, 9);
+        sp_ccast(4, 1, 0x27);
+        const rules::DiseaseStep c3 = pass(120);
+        expect(SP, "camp: Cure Disease ends the course", c3.weakened == 0 && c3.hurt == 0 && sp_caff(1, 0x2B) < 0 && sp_caff(1, 0x2C) < 0,
+               "weakened %d hurt %d", c3.weakened, c3.hurt);
+    }
+    // Haste: a year older the first round ("ages"), not again
+    if (sp_new_fight() && sp_pick()) {
+        const int T = sp_t[0];
+        sp_put(T, 0, 12, 12);
+        sp_give(T, 0x27, 10, 5, false);
+        const int age0 = F(T).rec[0x76] | F(T).rec[0x77] << 8;
+        combat::Event ev[8];
+        sp_dice(1, 10, 100);
+        int n = combat::start_round(fg->b, rng, ev, 8);
+        bool aged_ev = false;
+        for (int k = 0; k < n; ++k) aged_ev = aged_ev || (ev[k].who == T && ev[k].ev == combat::Ev::Ages);
+        const int age1 = F(T).rec[0x76] | F(T).rec[0x77] << 8;
+        n = combat::start_round(fg->b, rng, ev, 8);
+        const int age2 = F(T).rec[0x76] | F(T).rec[0x77] << 8;
+        expect(SP, "Haste: a year older the first round (\"ages\"), not the next", age1 == age0 + 1 && aged_ev && age2 == age1 && n == 0,
+               "age %d -> %d -> %d", age0, age1, age2);
+    }
+}
+
 // ---- 6c. The Robe of Vermin's effect (0x4A) on a caster: a d2 of 1 miscasts - nothing cast, the
 // memorized spell kept (listing ovr023:1403); a 2 casts as ever
 static void sp_check_miscast()
@@ -2122,6 +2203,7 @@ static void behave_spells()
     if (want("effects")) sp_check_effects();
     if (want("special")) sp_check_special();
     if (want("miscast")) sp_check_miscast();
+    if (want("course")) sp_check_course();
     if (want("notyet")) sp_check_notyet();
     sp_dice(0);
     create::g_die_hook = nullptr;

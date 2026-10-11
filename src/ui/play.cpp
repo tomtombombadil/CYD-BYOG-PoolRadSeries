@@ -7909,6 +7909,27 @@ void effects_clock(int m, pic::Canvas& c)
     if (!vm || !pt || m <= 0) return;
     {
         for (int i = 0; m && i < pt->count; ++i) {
+            {
+                // Cause Disease's course: "NAME is weakened", "NAME takes 1 point of damage from Magic"
+                const rules::DiseaseStep ds = rules::disease_clock(pt->m[i], m, d->prof->cures);
+                if (ds.weakened || ds.hurt) {
+                    char nm[20], w[32], t[64];
+                    pt->m[i].name(nm, sizeof nm);
+                    if (ds.hurt) {
+                        char w2[16];
+                        ow(d->prof->fight.words[profile::kTakes1], w, sizeof w);
+                        ow(d->prof->fight.words[profile::kFromMagic], w2, sizeof w2);
+                        snprintf(t, sizeof t, "%s %s%s", nm, w, w2);
+                    } else {
+                        ow(d->prof->fight.words[profile::kIsWeakened], w, sizeof w);
+                        snprintf(t, sizeof t, "%s %s", nm, w);
+                    }
+                    cv = &c;
+                    note(c, t);
+                }
+            }
+            // (the disease's own Strength step isn't undone by a recalculation now - the original's
+            // doesn't recalculate there)
             const int before = pt->m[i].n_affects;
             if (rules::poison_clock(pt->m[i], m, d->prof->cures)) {
                 // "NAME dies from poison" on the menu line

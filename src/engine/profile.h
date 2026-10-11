@@ -156,6 +156,7 @@ enum FightWord {
     kGainsItem, kCollapses, kDiesFromPoison,                                     // "Gains an item" ...
     kIsAffectedW,                                                                // Detect's "is affected"
     kLostImage,                                                                  // Mirror Image: "lost an image"
+    kIsWeakened, kAges,                                                          // the disease's "is weakened", Haste's "ages"
     kFightWords
 };
 

@@ -122,6 +122,11 @@ struct SpellFx {
     uint8_t giant;                      // the giant strength potion's (its data: the Strength)
     uint8_t shield;                     // Shield: AC 3 at worst, saves +1, Magic Missile stopped
     uint8_t enfeeble;                   // Ray of Enfeeblement: its blows do damage - damage / 4
+    // Cause Disease's course (coab's facts, listing ovr013:1038 / 10C2): the
+    // disease (its time out), then weakness (60 minutes, renewing: Strength
+    // in use - 1, "is weakened"; at 3 helpless) and sickness (10 minutes,
+    // renewing: 1 point of damage while over 1 HP, else helpless)
+    uint8_t ill, weak, sick;
 };
 
 // The effects magic items give while readied (item 0x3E = 0x80: the effect
@@ -305,6 +310,8 @@ enum class Ev : uint8_t {
     Regen,
     // the beholder casts spell `amount` (the caller casts it, as the computer does)
     Cast,
+    // Cause Disease's course: "is weakened"; Haste: "ages"
+    Weakened, Ages,
 };
 struct Event {
     uint8_t who = 0;
@@ -361,8 +368,9 @@ void step(Battle& b, int i, int dir);
 // Dex reaction adjustment (initiative, missiles)
 int dex_reaction(int dex);
 // Initiative for everyone (d6 + Dex reaction, the surprised side -6),
-// moves (movement x 2) and attacks for the round
-void start_round(Battle& b, create::Dice& d);
+// moves (movement x 2) and attacks for the round. The hasted age a year
+// the first time (the effect's data + 0x10; "ages": Ev::Ages events, how many)
+int start_round(Battle& b, create::Dice& d, Event* out = nullptr, int cap = 0);
 // The next to act (highest delay; ties by d100), -1 when the round is over
 int next(Battle& b, create::Dice& d);
 // Attacks this round: half attacks (record 0x11C slot 1, 0x11D slot 2) by
