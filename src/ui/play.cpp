@@ -5857,25 +5857,29 @@ struct Host : ecl::Host {
         // The program's rows of ready-made items (potions, the wand ...), then the dice
         const profile::Profile* p = d->prof;
         if (!p->random_items || !p->random_rows) return;
+        // (the program's array of words: its first row starts at word 1)
         treasure::Rows rows{};
         fs::File f;
         bool ok = false;
         if (open_file(p->program, f)) {
             library::FileSource src(f);
             exepack::Info info;
-            uint8_t raw[sizeof rows.r];
             ok = exepack::parse(src, info) == exepack::Status::Ok &&
-                 exepack::read(src, info, p->create.ds_image + p->random_rows, raw, sizeof raw) == exepack::Status::Ok;
-            for (int r = 0; ok && r < 7; ++r)
-                for (int k = 0; k < 8; ++k)
-                    rows.r[r][k] = static_cast<uint16_t>(raw[r * 16 + k * 2] | raw[r * 16 + k * 2 + 1] << 8);
+                 exepack::read(src, info, p->create.ds_image + p->random_rows - 2, reinterpret_cast<uint8_t*>(rows.w),
+                               sizeof rows.w) == exepack::Status::Ok;
+            for (int k = 0; ok && k < treasure::kRowWords; ++k) {
+                const uint8_t* b = reinterpret_cast<const uint8_t*>(&rows.w[k]);
+                rows.w[k] = static_cast<uint16_t>(b[0] | b[1] << 8);       // (little-endian, as read)
+            }
             f.close();
         }
         if (!ok) {
             log("TREASURE: the program's item rows didn't read");
             return;
         }
-        for (int k = 0; k < n && g.n < items::kMaxGround; ++k) treasure::make(g.item[g.n++], *p->random_items, rows, rng);
+        uint8_t last = 0;
+        for (int k = 0; k < n && g.n < items::kMaxGround; ++k)
+            treasure::make(g.item[g.n++], *p->random_items, rows, rng, &last);
         Serial.printf("[play] TREASURE: %d random items (%d on the ground)\n", n, g.n);
     }
     void load_monster(int id, int copies, int icon) override { fight_load_monster(id, copies, icon); }

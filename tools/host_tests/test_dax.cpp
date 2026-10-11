@@ -1594,7 +1594,7 @@ static void test_treasure()
     const treasure::Facts& f = *pr->random_items;
     treasure::Rows rows{};
     for (int r = 0; r < 7; ++r)
-        for (int k = 0; k < 8; ++k) rows.r[r][k] = static_cast<uint16_t>(r * 10 + k + 1);
+        for (int k = 0; k < 8; ++k) rows.w[1 + 8 * r + k] = static_cast<uint16_t>(r * 10 + k + 1);
     create::Dice d(7);
     uint8_t it[items::kRecordSize];
     int scrolls = 0, potions = 0, weapons = 0, bracers = 0;
@@ -1626,6 +1626,68 @@ static void test_treasure()
     }
     // About 25% magic-user scrolls, 7% clerics', 6% potions / wands, 60% the rest
     CHECK(scrolls > 250 && scrolls < 400 && potions > 25 && potions < 100 && weapons > 500 && bracers > 0);
+}
+
+// Pool's random treasure: its kinds (93-98 a d16 of rings, potions,
+// necklaces ...; 99-100 type 0x45), each kind's row by its die, +3 on a 20
+// (bracers AC 2), 3 scroll bands, the javelin of lightning's odd start
+static void test_treasure_pool()
+{
+    const profile::Profile* pr = profile::find(games::Game::PoolOfRadiance, 65231, 68592);
+    CHECK(pr && pr->random_items && pr->random_rows == 0x0972);
+    if (!pr || !pr->random_items) return;
+    const treasure::Facts& f = *pr->random_items;
+    treasure::Rows rows{};
+    for (int k = 0; k < treasure::kRowWords; ++k) rows.w[k] = static_cast<uint16_t>(k);   // word k = k
+    create::Dice d(9);
+    uint8_t it[items::kRecordSize];
+    uint8_t last = 0;
+    int threes = 0, misc = 0, scrolls = 0;
+    for (int i = 0; i < 4000; ++i) {
+        treasure::make(it, f, rows, d, &last);
+        const int t = it[0x2E];
+        CHECK(t == last);
+        if (t == f.mu_scroll || t == f.cleric_scroll) {
+            ++scrolls;
+            const int n = it[0x30] - f.with_word;
+            const int value = it[0x3A] | it[0x3B] << 8;
+            CHECK(n >= 1 && n <= 3 && value >= 300 * n && value <= 900 * n);   // (bands 1-3)
+            for (int k = 0; k < n; ++k) {
+                const int sp = it[0x3C + k];
+                if (t == f.mu_scroll) CHECK((sp >= 9 && sp <= 21) || (sp >= 29 && sp <= 35) || (sp >= 45 && sp <= 55));
+                else CHECK((sp >= 1 && sp <= 8) || (sp >= 22 && sp <= 28) || (sp >= 36 && sp <= 44));
+            }
+            continue;
+        }
+        if (t == 0x3F || t == 0x43 || t == 0x45 || t == 0x46 || t == 0x47 || t == 0x4E || t == 0x4F || t == 0x54 ||
+            t == 0x5C) {
+            ++misc;
+            const int start = it[0x2F];                                     // (word k = k: the row's first word)
+            if (start == 0) {
+                CHECK(t == 0x4E || t == 0x47);                              // (none: a nameless item)
+                continue;
+            }
+            CHECK(it[0x30] == start + 1 && it[0x31] == start + 2 && (it[0x37] | it[0x38] << 8) == start + 3);
+            if (t == 0x45) CHECK(start == 0x29 || start == 0x79 || start == 0x81);
+            if (t == 0x47) CHECK(start == 0x11 || start == 0x01 || start == 0x19 || start == 0x51);
+            if (t == 0x46) CHECK(start == 0x59 || start == 0x89);
+            if (t == 0x4E) CHECK(start == 0x41 || start == 0x71);
+            if (t == 0x5C) CHECK(start == 0x61 && it[0x32] == 2 && it[0x33] == 2);
+            continue;
+        }
+        if (t == f.bracers) {
+            CHECK((it[0x32] == 4 && it[0x2F] == f.ac6_word) || (it[0x32] == 6 && it[0x2F] == f.ac4_word) ||
+                  (it[0x32] == 8 && it[0x2F] == f.ac2_word));
+            continue;
+        }
+        if (t == f.javelin && it[0x2F] == 0x90) {
+            CHECK(it[0x30] == 0x91 && (it[0x37] | it[0x38] << 8) == 0x93);  // (read across two rows)
+            continue;
+        }
+        if (it[0x32] == 3) ++threes;
+        CHECK(it[0x32] >= 1 && it[0x32] <= 3);
+    }
+    CHECK(threes > 30 && scrolls > 1000 && misc > 200 && misc < 400);
 }
 
 // The scripts and the party: LOAD CHARACTER, the selected character's fields
@@ -6070,6 +6132,7 @@ int main()
     test_vm_events_facts();
     test_ecl_party();
     test_treasure();
+    test_treasure_pool();
     test_sound();
     test_journal();
     test_journal_gbc();

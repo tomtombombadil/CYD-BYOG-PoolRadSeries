@@ -635,8 +635,15 @@ Steps (each pushed when it works; Curse stays as it is):
    LEADER, GOBLIN or GOBLIN LEADER; dwarves and gnomes are hit at -4 by a
    size-2 humanoid when the one they fight is named OGRE, OGRE LEADER,
    TROLL, FIRE GIANT or HILL GIANT, gnomes by any BUGBEAR or GNOLL (the
-   names read from the player's program). Still to do: random treasure
-   (19 rows), the ending (FINAL5.DAX).
+   names read from the player's program). v0.81.0: **random treasure**
+   (TREASURE 0x80 + n) as Pool's own code makes it: Curse's weapons,
+   armour and scrolls (3 spell bands of its own), a 20 on the plus's d20
+   makes +3 (bracers AC 2); 93-98 a d16 of its kinds (potions, rings,
+   necklaces, wands ...), 99-100 type 0x45; each kind's ready-made item
+   from its program's 19 rows (some by a die); its quirks kept - a weapon
+   roll of 48 / 49 repeats the item before, and the javelin of lightning
+   reads its words across two rows (a nameless "of Elvenkind" javelin).
+   Still to do: the ending (FINAL5.DAX).
 6. Behaviour tests (`sweep.cpp`) with Pool's expectations.
 
 ## 7. The journal (Tom, 2026-10-06)

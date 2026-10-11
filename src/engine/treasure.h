@@ -44,16 +44,38 @@ struct Facts {
     uint16_t scroll_value;                  // x the spell's band
     // Scroll spells: per band 1-5, a die and what's added (magic-user, cleric)
     uint8_t mu_band[5][2], cleric_band[5][2];
+    // Pool of Radiance's ways (poolrad_combat_facts.md 6; all zero: Curse's)
+    uint8_t bands;                          // the scrolls' bands (0: 5)
+    bool    plus3;                          // a 20 on the plus's d20: +3 (Curse: 15-20 all +2)
+    uint8_t ac2_word;                       // bracers AC 2 (+3)
+    bool    keep_type;                      // a weapon roll of 48 / 49: the type rolled before (Curse: a shield)
+    uint8_t misc_die;                       // 93-98: the type by this die (0: Curse's potion / giant / wand by d15)
+    uint8_t misc[16];
+    uint8_t last;                           // 99-100 (0: a shield)
+    // The ready-made row a type takes: d(sides) + add - 1 picks a row's
+    // first word number (the program's: row r = 1 + 8r; 0 none); sides 0: start[0]
+    struct Pick {
+        uint8_t type, sides, add;
+        uint8_t start[11];
+    };
+    const Pick* picks;
+    uint8_t     n_picks;
+    uint8_t     javelin_start;              // the javelin of lightning's first word (0: Curse's row 6)
+    uint8_t     plus2_start;                // the row made +2 (Pool's 0x61)
 };
 
-// The program's rows of ready-made items: 7 rows of 8 words (w1, w2, w3,
-// weight, value, effects 0x3C-0x3E); row 0 extra healing, 1 giant strength,
-// 2 healing, 4 the wand, 6 the javelin of lightning
+// The program's ready-made items as its array of words (w[1 + 8r] the
+// first of row r: w1, w2, w3, weight, value, effects 0x3C-0x3E); Curse's 7
+// rows: 0 extra healing, 1 giant strength, 2 healing, 4 the wand, 6 the
+// javelin of lightning; Pool's 19
+constexpr int kRowWords = 160;
 struct Rows {
-    uint16_t r[7][8];
+    uint16_t w[kRowWords];
+    const uint16_t* row(int r) const { return &w[1 + 8 * r]; }
 };
 
-// One random item into rec (kRecordSize bytes)
-void make(uint8_t* rec, const Facts& f, const Rows& rows, create::Dice& d);
+// One random item into rec (kRecordSize bytes). last: the type rolled
+// before in this treasure (Pool's 48 / 49), updated; may be null
+void make(uint8_t* rec, const Facts& f, const Rows& rows, create::Dice& d, uint8_t* last = nullptr);
 
 } // namespace treasure
