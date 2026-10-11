@@ -255,10 +255,28 @@ struct Page {
     Fx      fx[2];                      // then these, one after the other; then the page's wait
 };
 
+constexpr int kTileBytes = kSq * kSq / 2;
+constexpr int kTiles = 40;
+
+// A fight's state in pieces - the battle, this, each field picture a block
+// of its own - so a heap broken up by the area's pictures and a big monster
+// load still finds room (Tom, 2026-10-10: the Thieves' Guild ambush, 17
+// monsters, ran out on the 2.8")
 struct Fight {
-    combat::Battle b;
+    combat::Battle& b;                  // (its own block: make_fight)
+    explicit Fight(combat::Battle& battle) : b(battle) {}
+    ~Fight()
+    {
+        for (uint8_t*& t : tile) {
+            free(t);
+            t = nullptr;
+        }
+        delete &b;
+    }
+    Fight(const Fight&) = delete;
+    Fight& operator=(const Fight&) = delete;
     combat::Tables t;
-    uint8_t  (*tile)[kSq * kSq / 2] = nullptr;      // the field's 40 pictures (a block of their own)
+    uint8_t* tile[kTiles] = {};         // the field's 40 pictures (each kTileBytes)
     Pic4     icon[8 + combat::kMaxGroups];
     uint8_t* cursor = nullptr;          // COMSPR 0x19 (ready): the box under the one whose turn it is
     uint8_t* skull = nullptr;           // COMSPR 11 (attack)
@@ -312,6 +330,30 @@ struct Fight {
 };
 Fight* fg = nullptr;
 
+// A new fight's state (nullptr: no memory)
+Fight* make_fight()
+{
+    combat::Battle* b = new (std::nothrow) combat::Battle;
+    if (!b) return nullptr;
+    Fight* f = new (std::nothrow) Fight(*b);
+    if (!f) delete b;
+    return f;
+}
+
+// The field's pictures' blocks (false: no memory - those got are freed)
+bool alloc_tiles()
+{
+    for (uint8_t*& t : fg->tile)
+        if (!t && !(t = static_cast<uint8_t*>(malloc(kTileBytes)))) {
+            for (uint8_t*& u : fg->tile) {
+                free(u);
+                u = nullptr;
+            }
+            return false;
+        }
+    return true;
+}
+
 const char* fw(int i) { return fg ? fg->w[i] : ""; }
 bool in_fight() { return fg != nullptr; }
 
@@ -362,7 +404,7 @@ void load_frames(const char* file, int at, int n)
         if (r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_header(hdr, e->raw_size, ph) && ph.width_px() == kSq &&
             ph.height == kSq)
             for (int k = 0; k < n && k < ph.frames && at + k < 40; ++k)
-                if (r.read(fg->tile[at + k], sizeof fg->tile[0]) != sizeof fg->tile[0]) break;
+                if (r.read(fg->tile[at + k], kTileBytes) != kTileBytes) break;
     }
     f.close();
 }
@@ -370,7 +412,8 @@ void load_frames(const char* file, int at, int n)
 // The field's pictures: DUNGCOM / WILDCOM (0-33), RANDCOM (34-39)
 void load_tiles(bool indoors)
 {
-    memset(fg->tile, 0, 40 * sizeof fg->tile[0]);
+    for (uint8_t* t : fg->tile)
+        if (t) memset(t, 0, kTileBytes);
     load_frames(indoors ? "DUNGCOM.DAX" : "WILDCOM.DAX", 0, indoors ? 25 : 34);
     load_frames("RANDCOM.DAX", 34, 6);
 }
@@ -451,8 +494,10 @@ void load_monster_icon(int slot, int block)
 void end_fight_art()
 {
     if (!fg) return;
-    free(fg->tile);
-    fg->tile = nullptr;
+    for (uint8_t*& t : fg->tile) {
+        free(t);
+        t = nullptr;
+    }
     for (Pic4& p : fg->icon) free_pic(p);
     free(fg->cursor);
     free(fg->skull);
@@ -496,7 +541,7 @@ void draw_square(pic::Canvas& c, int x, int y)
     const int sx = kViewX + (x - fg->b.vx) * kSq, sy = kViewY + (y - fg->b.vy) * kSq;
     const uint8_t* g = combat::tile(fg->b, fg->t, x, y);
     const int pic_no = x >= 0 && x < combat::kW && y >= 0 && y < combat::kH && fg->b.ground[y][x] ? g[3] : -1;
-    if (pic_no < 0 || pic_no >= 40 || !fg->tile) c.fill(sx, sy, kSq, kSq, 0);
+    if (pic_no < 0 || pic_no >= kTiles || !fg->tile[pic_no]) c.fill(sx, sy, kSq, kSq, 0);
     else blit4(c, fg->tile[pic_no], kSq, kSq, sx, sy, false, false, 0, 0, pic::kScreenW, pic::kScreenH);
 }
 
@@ -2231,9 +2276,14 @@ bool solid_side(void*, int dir)
 
 void fight_start(pic::Canvas& c)
 {
-    if (!fg) fg = new (std::nothrow) Fight;
+    // What only other screens use goes first (they load again when needed):
+    // the most room for the fight's blocks
+    end_magic();
+    delete hw;
+    hw = nullptr;
+    if (!fg) fg = make_fight();
     if (!fg || !ml || !pt->count) {
-        error(c, "Not enough memory.");
+        error(c, ml && pt->count ? no_memory("the fight") : "Not enough memory.");
         delete fg;
         fg = nullptr;
         fight_clear_monsters();
@@ -2243,9 +2293,9 @@ void fight_start(pic::Canvas& c)
     }
     anim_stop();
     load_fight_words();
-    fg->tile = static_cast<uint8_t(*)[kSq * kSq / 2]>(malloc(40 * sizeof *fg->tile));
-    if (!fg->tile || !load_fight_tables()) {
-        error(c, "The combat tables can't be read.");
+    const bool room = alloc_tiles();
+    if (!room || !load_fight_tables()) {
+        error(c, room ? "The combat tables can't be read." : no_memory("the fight's field"));
         end_fight_art();
         delete fg;
         fg = nullptr;
@@ -2525,7 +2575,7 @@ void fight_treasure_only(pic::Canvas& c)
         handle(vm->resume());
         return;
     }
-    if (!fg) fg = new (std::nothrow) Fight;
+    if (!fg) fg = make_fight();
     if (!fg) {
         open_treasure(c);
         return;

@@ -33,6 +33,8 @@
 
 namespace play {
 
+const char* no_memory(const char* what);   // (below: the message with the heap's numbers)
+
 namespace {
 
 // What to do when a script run ends

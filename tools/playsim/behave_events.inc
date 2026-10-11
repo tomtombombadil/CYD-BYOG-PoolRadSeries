@@ -121,8 +121,8 @@ static int b_ask_hook(int n)
 }
 
 // ---- reading the oracle file: "key value value ..." lines
-static std::map<std::string, std::vector<std::string>> b_oracle;
-static bool b_load_oracle()
+static std::map<std::string, std::vector<std::string>> ev_oracle;
+static bool ev_load_oracle()
 {
     const char* dir = getenv("ORACLE_DIR");
     std::string path = std::string(dir ? dir : "/tmp/claude-0/bt") + "/oracle_events.txt";
@@ -137,15 +137,15 @@ static bool b_load_oracle()
         if (parts.size() < 2) continue;
         const std::string key = parts[0];
         parts.erase(parts.begin());
-        b_oracle[key] = parts;
+        ev_oracle[key] = parts;
     }
     fclose(f);
-    return !b_oracle.empty();
+    return !ev_oracle.empty();
 }
 static int b_oi(const char* key, int i, int def = -9999)
 {
-    auto it = b_oracle.find(key);
-    if (it == b_oracle.end() || i >= static_cast<int>(it->second.size())) return def;
+    auto it = ev_oracle.find(key);
+    if (it == ev_oracle.end() || i >= static_cast<int>(it->second.size())) return def;
     return static_cast<int>(strtol(it->second[i].c_str(), nullptr, 0));
 }
 
@@ -1454,7 +1454,7 @@ static void b_triggers()
 {
     using namespace play;
     const char* P = "events";
-    if (!b_load_oracle()) {
+    if (!ev_load_oracle()) {
         expect(P, "triggers: the oracle file", false, "no ORACLE_DIR/oracle_events.txt");
         return;
     }
@@ -1462,7 +1462,7 @@ static void b_triggers()
         if (getenv("BLOCK") && atoi(getenv("BLOCK")) != ab[1]) continue;
         char key[48];
         snprintf(key, sizeof key, "BLOCK%d_%d", ab[0], ab[1]);
-        if (b_oracle.find(key) == b_oracle.end()) continue;
+        if (ev_oracle.find(key) == ev_oracle.end()) continue;
         const char* sp = getenv("EVSTATE");
         const std::string states = sp ? sp : "/tmp/claude-0/bt_events/states.txt";
         if (!b_enter(ab[0], ab[1]) || !b_restore(states.c_str(), ab[0], ab[1]) || !vm->init_script(true) ||
@@ -1484,8 +1484,8 @@ static void b_triggers()
                 for (int dir = 0; dir < 8; dir += 2) {
                     char k2[64];
                     snprintf(k2, sizeof k2, "T%d_%d_%d_%d_%d", ab[0], ab[1], x, y, dir);
-                    auto it = b_oracle.find(k2);
-                    if (it == b_oracle.end()) continue;
+                    auto it = ev_oracle.find(k2);
+                    if (it == ev_oracle.end()) continue;
                     std::string want;
                     for (auto& s : it->second) want += " " + s;
                     if (want == " SKIP") continue;
