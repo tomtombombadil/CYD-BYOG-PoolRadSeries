@@ -35,8 +35,11 @@ or Edge on a computer - pick your board, click Install.
 | 3.2" ESP32-32E, 240x320 | `TTB-CYD-PRS_3.2in_ST7789_Resistive` |
 | 3.5" ESP32-32E, 320x480 | `TTB-CYD-PRS_3.5in_ST7796_Resistive` |
 | 4.0" ESP32-32E, 320x480 | `TTB-CYD-PRS_4.0in_ST7796_Resistive` |
+| 4.0" ESP32-S3, 480x320 capacitive touch (FNK0104, ST7796 model) | `TTB-CYD-PRS_4.0in_ST7796_Capacitive_ESP32-S3` |
+| 2.8" ESP32-C5, two USB-C (NM-CYD-C5) | `TTB-CYD-PRS_2.8in_ST7789_Resistive_ESP32-C5` |
 
-All five boards are tested with this firmware.
+The five ESP32 boards are tested with this firmware. The ESP32-S3 and
+ESP32-C5 builds are new and not tested on their boards yet.
 
 **Testing and development for ESP32-S3 and NM-CYD-C5 boards is under way!**
 
@@ -56,8 +59,10 @@ All five boards are tested with this firmware.
 Red/Blue shows red, green and blue blocks - if they don't match their
 names, tap it), Rotate 180, touch calibration and **Logs**. The card scan
 ends on its log; read it (tap the top / bottom half of the box, or drag),
-then tap Continue. **Logs** shows the scan log, restarts and errors; to
-send them, take the card to a PC - they're text files in `GOLDBOX/_CYD`.
+then tap Continue. **Logs** shows the scan log, restarts, errors and memory; to
+send them, tap **Send Logs** and scan its QR code with a phone (the page
+it opens emails them), or take the card to a PC - they're text files in
+`GOLDBOX/_CYD`.
 
 ## The Adventurer's Journal
 

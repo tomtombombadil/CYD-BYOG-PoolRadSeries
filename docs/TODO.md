@@ -35,10 +35,6 @@ the Project as claude/TODO.md.
 - [ ] Memory, next cuts (measure each with heapprof): the party's unused
       member slots (1.7 KB each), Data's words read on demand, the spell
       names' 4 KB read buffer in pieces.
-- [ ] README.md's board table: add the S3 and C5 rows (firmware names
-      TTB-CYD-PRS_4.0in_ST7796_Capacitive_ESP32-S3 /
-      TTB-CYD-PRS_2.8in_ST7789_Resistive_ESP32-C5) - after Tom's README
-      edits are in (he's editing it on GitHub, 2026-10-12): fetch first.
 - [ ] S3 / C5 follow-ups once Tom has run them: fix what his reports show
       (colours, touch direction, sound level - the codec's volume is
       0 dB); then the 8-bit canvas for the VGA games there.
@@ -53,6 +49,8 @@ the Project as claude/TODO.md.
 
 ## Done
 
+- 2026-10-12: README.md's board table has the S3 and C5 rows (after Tom's
+  README edits); its Logs paragraph mentions Send Logs.
 - v0.88.0: ESP32-S3 4.0" capacitive and ESP32-C5 2.8" resistive builds on
   the flasher (untested); Tom decided the C5 boards get a build.
 
