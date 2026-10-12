@@ -50,16 +50,22 @@ the Project as claude/TODO.md.
       the classic boards as its own EGA mode shows it.
 - [ ] QEMU: the cache-error panic inside play::open (parked).
 - [ ] **Secret of the Silver Blades** (started 2026-10-12; facts and the
-      work plan in the Project's claude/secret_facts.md). Done: program
-      layout (DS 0xDE20, 37 overlays), font in 8X8D5, 220 of Curse's words
-      found in its GAME.OVR, the screen seen in DOSBox. Next, a chunk a
-      commit: (1) its script opcodes 0x41+ from the program's interpreter;
-      (2) the profile entry (Play off) - Screen / Walk Test; (3) the
-      439-byte record and the saves; (4) party menu, camp, items, shops;
-      (5) combat, spells, monsters; (6) sound, sky, approaching monsters;
-      (7) behaviour tests.
+      work plan in the Project's claude/secret_facts.md; SPEC 6c). Done:
+      program layout, words, scripts, frame, font, title, Screen / Walk
+      Test (v0.92.0). Next, a chunk a commit: (3) the 439-byte record and
+      the saves; (4) party menu, camp, items, shops (its version line's
+      two-line look with it); (5) combat (its fight frame not seen yet:
+      Curse's shape for now), spells, monsters; (6) sound, sky,
+      approaching monsters; (7) behaviour tests.
+- [ ] Tom: when you have a moment, Secret's Screen Test and Walk Test
+      (Settings - Dev Tools on its page) on a board - the frame, title,
+      credits and maps should look like the original's.
 
 ## Done
+
+- v0.92.0: Secret of the Silver Blades - its scripts decode (Curse's
+  opcodes but 0x3C / 0x41), its frame bars (tiles 52-59 through a tile
+  window), font (8X8D5), title, credits; Screen Test and Walk Test work.
 
 - v0.91.1: the platform layer - the game code (src/game: play, fights,
   Screen / Walk Tests) and the engine use only src/platform/*.h (time,

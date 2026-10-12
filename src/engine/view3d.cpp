@@ -44,6 +44,7 @@ void put_packed(pic::Canvas& c, const uint8_t* px, int x0, int y0, uint8_t mask1
 
 void put_frame_tile(pic::Canvas& c, const layout::Tiles& t, int n, int x0, int y0, uint8_t mask1, uint8_t mask2)
 {
+    n = t.slot(n);
     if (n < 0 || n >= t.count || !t.loaded) return;
     for (int y = 0; y < 8; ++y)
         for (int x = 0; x < 8; ++x) {

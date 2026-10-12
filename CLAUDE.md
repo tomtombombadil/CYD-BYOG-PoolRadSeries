@@ -468,9 +468,19 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   at 0 failures), and `behave itemtest` - the ITEMTEST characters read by
   Add Character from the game folder (ITEMTEST_REPORT=file: a line an
   item, for Tom).
-- Secret of the Silver Blades (next): first look in the Project's
-  claude/secret_facts.md (439-byte records, its own save format, sound in
-  SOUND.DAX, SKY / SPRIT1 files).
+- Secret of the Silver Blades (Tom, 2026-10-12: implementing now, in
+  discrete chunks a commit each - his usage is limited, nothing may be
+  lost): facts and the plan in the Project's claude/secret_facts.md, SPEC
+  6c. Its GOG files: scratch /tmp/claude-0/games3/secret/...; game number
+  3 (lwsim / playsim GAME=3). Its frame is code-drawn bars
+  (`variant.bars`, tiles 52-59 through `variant.tile_window`), font in
+  8X8D5 (`font_file`), scripts = Curse's opcodes but 0x3C / 0x41. The
+  Play Test refuses it until `party.items` is known. Scratch tools:
+  /tmp/claude-0/secret (ops.py: the interpreter's operand counts,
+  ecltrace: every block followed from its entry points, py/match.py:
+  DOSBox screenshots matched against tiles, lw/lwsim.cpp: the Screen /
+  Walk Tests on the PC). DOSBox: `usescancodes=false` makes Return and
+  letters work.
 - PortMaster ports are a stretch goal (Tom): keep everything portable.
 - Game screens (Walk Test, Play Test now, the games later): canvas 1:1 at the top left
   (`frame::set_left`), controls below it, on 480x320 the Companion strip on

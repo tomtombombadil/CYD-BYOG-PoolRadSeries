@@ -506,6 +506,40 @@ constexpr ecl::OpSet kPoolEcl = [] {
     return s;
 }();
 
+// Secret of the Silver Blades, GOG release (secret_facts.md; facts only):
+// START.EXE 72,097 bytes, EXEPACK, unpacked 79,824; its data segment at
+// image 0xDE20 (DS offsets below are from there).
+// - frame: bars drawn by code (no tables) with block 202's tiles 52-59:
+//   55 every horizontal bar, 52 / 53 / 54 the verticals' top cap, side and
+//   bottom cap, 59 / 56 / 57 / 58 the 3D view frame's edge, top cap, side,
+//   bottom cap - so 202's tiles 40-59 are kept (tile_window 40);
+// - the font: 8X8D5.DAX block 201 (8X8D1 has no block 201);
+// - title: TITLE.DAX picture 1 for 5 s, picture 2 for 10 s, picture 3 at
+//   row 5, column 2 on it for 10 s, picture 2 again with 4 at row 5,
+//   column 5 for 5 s, then the credits for 10 s (32-byte print calls in
+//   GAME.OVR from 0x379, the code segment at 0xD2; a bar at row 1, the
+//   title on row 0); the version line's words at image 0x2D / 0x64 (times
+//   measured in DOSBox, roughly);
+// - areas: ECL / GEO / WALLDEF / 8X8D 1-3, SKY.DAX as Curse's, its 16 sky
+//   colours at DS 0x0AA8 (the same bytes as Curse's);
+// - scripts: Curse's opcodes and operand counts (the interpreter's handlers
+//   read the same ones) but 0x3C reads none and 0x41 (new) reads 2.
+constexpr TitleStep kSecretTitle[] = {
+    {1, 0, 0, true, 5000, 0},
+    {2, 0, 0, true, 10000, 0},
+    {3, 5, 2, false, 10000, 0},
+    {2, 0, 0, true, 0, 0},
+    {4, 5, 5, false, 5000, 0},
+    {0, 0, 0, true, 10000, 0},
+};
+
+constexpr ecl::OpSet kSecretEcl = [] {
+    ecl::OpSet s = kCurseEcl;
+    s.sizes[0x3C] = 0;
+    s.sizes[0x41] = 2;
+    return s;
+}();
+
 const Profile kProfiles[] = {
     {games::Game::CurseOfTheAzureBonds, "GOG", "START.EXE", 57789, 62432, 0x48D0,
      {0x6E60, 0x6E88, 0x6EB0, 0x6EF2, 0x6F1B, 0x6F0A, 0x6ED6, 0x6EE3, 0x6F31, 0x6F3E, 0x6F4D, 0x6F64, 0x6F7B},
@@ -775,6 +809,22 @@ const Profile kProfiles[] = {
              {3, 6, 4}},
      .variant = {{20, 21, 22}, 29, true, 15, 7, 6, 1, false, true, true, true, 0x3648, 25, true, true},
      .overland = &kPoolOverland},
+    // Secret of the Silver Blades (being built: the screens and the maps so
+    // far; zero = not known yet)
+    {.game = games::Game::SecretOfTheSilverBlades, .release = "GOG", .program = "START.EXE",
+     .program_size = 72097, .image_size = 79824, .data_base = 0xDE20,
+     .frame = {},
+     .tiles_file = "8X8D1.DAX", .tiles_block = 202,
+     .press_any_key = 0x589F,
+     .title_file = "TITLE.DAX", .title = kSecretTitle, .title_steps = sizeof kSecretTitle / sizeof kSecretTitle[0],
+     .title_version = 0x2D, .title_menu = 0x64,
+     .overlay = "GAME.OVR", .overlay_size = 278528, .credits_at = 0x379, .credits_base = 0xD2, .credits_bars = {1, 0},
+     .first_area = 1, .last_area = 3, .common_tiles_block = 203, .sky_file = "SKY.DAX", .horizon_block = 252,
+     .ecl_ops = &kSecretEcl,
+     .sky_colours = 0x0AA8, .start_area = 0, .start_script = 0,
+     .variant = {.unfinished = true, .tile_window = 40, .bars = {55, 52, 53, 54, 59, 56, 57, 58}},
+     .overland = nullptr,
+     .font_file = "8X8D5.DAX"},
 };
 
 } // namespace

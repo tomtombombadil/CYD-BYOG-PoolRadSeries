@@ -1,6 +1,7 @@
 #include "layout.h"
 
 #include <cstring>
+#include <initializer_list>
 
 namespace layout {
 
@@ -10,6 +11,7 @@ constexpr int kCols = pic::kScreenW / 8;    // 40
 
 void put(pic::Canvas& c, const Tiles& t, int n, int col, int row)
 {
+    n = t.slot(n);
     if (n < 0 || n >= t.count || !t.loaded) return;
     const uint8_t* s = t.px[n];
     for (int y = 0; y < 8; ++y) {
@@ -20,6 +22,38 @@ void put(pic::Canvas& c, const Tiles& t, int n, int col, int row)
             const uint8_t v = s[y * 8 + x];
             if (px >= 0 && px < c.w && v != kMask) c.set(px, py, v);
         }
+    }
+}
+
+// Secret's bars (secret_facts.md 3): a horizontal bar, full width
+void hbar(pic::Canvas& c, const Tables& tb, const Tiles& t, int row)
+{
+    for (int col = 0; col < kCols; ++col) put(c, t, tb.bars[0], col, row);
+}
+
+// A vertical between the bars at rows r0 and r1: a cap under the first, the
+// side, a cap over the second (caps false: the side all the way)
+void vbar(pic::Canvas& c, const Tables& tb, const Tiles& t, int col, int r0, int r1, bool caps = true)
+{
+    for (int row = r0 + 1; row < r1; ++row) {
+        int n = tb.bars[2];
+        if (caps && row == r0 + 1) n = tb.bars[1];
+        else if (caps && row == r1 - 1) n = tb.bars[3];
+        put(c, t, n, col, row);
+    }
+}
+
+// The 3D view's / a picture's 13 x 13 frame with its top-left at (col, row)
+void view_bars(pic::Canvas& c, const Tables& tb, const Tiles& t, int col, int row)
+{
+    for (int i = 0; i <= 12; ++i) {
+        put(c, t, tb.bars[4], col + i, row);
+        put(c, t, tb.bars[4], col + i, row + 12);
+    }
+    for (int i = 1; i <= 11; ++i) {
+        const int n = i == 1 ? tb.bars[5] : i == 11 ? tb.bars[7] : tb.bars[6];
+        put(c, t, n, col, row + i);
+        put(c, t, n, col + 12, row + i);
     }
 }
 
@@ -44,9 +78,10 @@ const char* status_text(Status s)
     return "?";
 }
 
-bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out)
+bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, uint8_t first)
 {
     out.loaded = false;
+    out.first = first < 20 ? 20 : first;
     const dax::Entry* e = idx.find(block);
     if (!e) return false;
     dax::RleReader r(src, idx, *e);
@@ -55,15 +90,22 @@ bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tile
     pic::Header h;
     if (!pic::parse_header(hdr, e->raw_size, h)) return false;
     if (h.height != 8 || h.width_cols != 1 || h.frames < 23) return false;
-    out.count = static_cast<uint8_t>(h.frames < kTiles ? h.frames : kTiles);
-    for (int n = 0; n < out.count; ++n) {
+    out.count = 0;
+    for (int n = 0; n < h.frames; ++n) {
         uint8_t packed[32];
         if (r.read(packed, sizeof packed) != sizeof packed) return false;
-        for (int i = 0; i < 32; ++i) {
-            out.px[n][i * 2] = packed[i] >> 4;
-            out.px[n][i * 2 + 1] = packed[i] & 15;
+        const int s = out.slot(n);
+        if (s < 0) {
+            if (n >= out.first) break;       // past the window: done
+            continue;
         }
+        for (int i = 0; i < 32; ++i) {
+            out.px[s][i * 2] = packed[i] >> 4;
+            out.px[s][i * 2 + 1] = packed[i] & 15;
+        }
+        out.count = static_cast<uint8_t>(s + 1);
     }
+    if (out.count < 23) return false;
     out.loaded = true;
     return true;
 }
@@ -71,9 +113,10 @@ bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tile
 Status load_tables(dax::ByteSource& program, const exepack::Info& info, const profile::Profile& p, Tables& out)
 {
     out.loaded = false;
-    if (p.variant.box[0]) {
-        // Pool: boxes, no tables to read
+    if (p.variant.box[0] || p.variant.bars[0]) {
+        // Pool: boxes; Secret: bars - no tables to read
         memcpy(out.box, p.variant.box, sizeof out.box);
+        memcpy(out.bars, p.variant.bars, sizeof out.bars);
         out.loaded = true;
         return Status::Ok;
     }
@@ -140,6 +183,14 @@ void box(pic::Canvas& c, const Tables& tb, const Tiles& t, int c0, int r0, int c
 
 void outer(pic::Canvas& c, const Tables& tb, const Tiles& t)
 {
+    if (tb.bars[0]) {
+        c.fill(8, 8, 38 * 8, 22 * 8, 0);
+        hbar(c, tb, t, 0);
+        hbar(c, tb, t, 23);
+        vbar(c, tb, t, 0, 0, 23);
+        vbar(c, tb, t, kCols - 1, 0, 23);
+        return;
+    }
     if (tb.box[0]) {
         c.fill(8, 8, 38 * 8, 22 * 8, 0);
         box(c, tb, t, 0, 0, kCols - 1, 23);
@@ -156,6 +207,15 @@ void outer(pic::Canvas& c, const Tables& tb, const Tiles& t)
 
 void bar(pic::Canvas& c, const Tables& tb, const Tiles& t, int row)
 {
+    if (tb.bars[0]) {
+        // (the outer verticals get their caps on each side of it)
+        hbar(c, tb, t, row);
+        for (int col : {0, kCols - 1}) {
+            put(c, t, tb.bars[3], col, row - 1);
+            put(c, t, tb.bars[1], col, row + 1);
+        }
+        return;
+    }
     if (tb.box[0]) {
         for (int col = 1; col < kCols - 1; ++col) put(c, t, tb.box[2], col, row);
         put(c, t, tb.box[0], 0, row);
@@ -169,6 +229,11 @@ void explore(pic::Canvas& c, const Tables& tb, const Tiles& t)
 {
     outer(c, tb, t);
     bar(c, tb, t, 16);
+    if (tb.bars[0]) {
+        vbar(c, tb, t, 16, 0, 16);
+        view_bars(c, tb, t, 2, 2);
+        return;
+    }
     if (tb.box[0]) {
         // Pool (screen_facts.md 3.2): the left box and the 3D view's own
         box(c, tb, t, 0, 0, 16, 16);
@@ -186,6 +251,10 @@ void explore(pic::Canvas& c, const Tables& tb, const Tiles& t)
 
 void picture_frame(pic::Canvas& c, const Tables& tb, const Tiles& t, int col, int row)
 {
+    if (tb.bars[0]) {
+        view_bars(c, tb, t, col, row);
+        return;
+    }
     if (tb.box[0]) {
         box(c, tb, t, col, row, col + 12, row + 12);
         return;
@@ -202,6 +271,14 @@ void picture_frame(pic::Canvas& c, const Tables& tb, const Tiles& t, int col, in
 void combat(pic::Canvas& c, const Tables& tb, const Tiles& t)
 {
     c.fill(0, 0, pic::kScreenW, 24 * 8, 0);
+    if (tb.bars[0]) {
+        // (Secret's fight screen not seen yet: bars at rows 0 and 22 and
+        // verticals at columns 0, 22 and 39, as Curse's)
+        for (int row : {0, 22})
+            for (int col = 0; col < kCols; ++col) put(c, t, tb.bars[0], col, row);
+        for (int col : {0, 22, kCols - 1}) vbar(c, tb, t, col, 0, 22);
+        return;
+    }
     if (tb.box[0]) {
         // Pool (screen_facts.md 7): the battlefield and the side panel
         box(c, tb, t, 0, 0, 22, 22);
@@ -219,6 +296,17 @@ void combat(pic::Canvas& c, const Tables& tb, const Tiles& t)
 
 void credits(pic::Canvas& c, const Tables& tb, const Tiles& t, const uint8_t rows[2])
 {
+    if (tb.bars[0]) {
+        // Secret (secret_facts.md 3): the title on row 0, a bar at rows[0]
+        // and row 23, the sides with no caps
+        c.fill(0, 0, pic::kScreenW, pic::kScreenH, 0);
+        hbar(c, tb, t, rows[0]);
+        hbar(c, tb, t, 23);
+        vbar(c, tb, t, 0, rows[0], 23, false);
+        vbar(c, tb, t, kCols - 1, rows[0], 23, false);
+        if (rows[1]) hbar(c, tb, t, rows[1]);
+        return;
+    }
     if (tb.box[0]) {
         // Pool (screen_facts.md 5): boxes down to row 24
         c.fill(0, 0, pic::kScreenW, pic::kScreenH, 0);

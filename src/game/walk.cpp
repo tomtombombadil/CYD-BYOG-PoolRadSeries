@@ -70,6 +70,17 @@ bool open_dax(const char* name, plat::File& f)
     return true;
 }
 
+// The font from a file of its own (Secret: 8X8D5.DAX; profile font_file)
+bool load_font_file(const char* name, dax::Index& idx, font::Font& out)
+{
+    plat::File f;
+    if (!open_file(name, f)) return false;
+    plat::FileSource src(f);
+    const bool ok = dax::read_index(src, idx) == dax::Status::Ok && font::load(src, idx, out);
+    f.close();
+    return ok;
+}
+
 void area_file(char* out, size_t cap, const char* stem, int area) { snprintf(out, cap, "%s%d.DAX", stem, area); }
 
 // Every map the area scripts load, with their wall sets
@@ -268,9 +279,11 @@ const char* open(const char* data_dir, games::Game g)
     bool ok = open_dax(d->prof->tiles_file, f);
     if (ok) {
         plat::FileSource src(f);
-        ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles) && font::load(src, d->idx, d->font) &&
+        ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, d->prof->variant.tile_window) &&
+             (d->prof->font_file || font::load(src, d->idx, d->font)) &&
              view3d::load_tiles(src, d->idx, d->prof->common_tiles_block, d->world.common);
         f.close();
+        if (ok && d->prof->font_file) ok = load_font_file(d->prof->font_file, d->idx, d->font);
     }
     if (!ok) {
         snprintf(msg, sizeof msg, "%s: the tiles or font didn't load.", d->prof->tiles_file);

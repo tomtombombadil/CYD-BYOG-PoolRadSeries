@@ -808,6 +808,49 @@ static void test_layout()
         CHECK(is(0, 24, 20) && is(39, 4, 20) && is(10, 4, 22) && is(10, 24, 22) && is(0, 10, 21));
     }
 
+    // Secret of the Silver Blades: 64 tiles, 0-19 and 40-59 kept; bars
+    // drawn with 55 / 52 53 54, the view frame 59 / 56 57 58
+    {
+        const Bytes f2 = make_dax({{202, make_picture(8, 1, 64, 0, 0)}});
+        dax::MemorySource s2(f2.data(), static_cast<uint32_t>(f2.size()));
+        static dax::Index i2;
+        CHECK(dax::read_index(s2, i2) == dax::Status::Ok);
+        static layout::Tiles st;
+        CHECK(layout::load_tiles(s2, i2, 202, st, 40) && st.count == 40 && st.first == 40);
+        CHECK(st.px[19][0] == 19 % 16 && st.px[20][0] == 40 % 16 && st.px[39][63] == (59 + 14) % 16);
+        CHECK(st.slot(5) == 5 && st.slot(25) == -1 && st.slot(52) == 32 && st.slot(60) == -1 && st.tile_of(32) == 52);
+        profile::Profile sp{};
+        const uint8_t sb[8] = {55, 52, 53, 54, 59, 56, 57, 58};
+        memcpy(sp.variant.bars, sb, sizeof sb);
+        static layout::Tables bt;
+        CHECK(layout::load_tables(e2, in, sp, bt) == layout::Status::Ok && bt.loaded && bt.bars[6] == 57 && !bt.box[0]);
+        auto is = [&](int col, int row, int n) { return at(col * 8 + 1, row * 8 + 2) == tp(n, 1, 2); };
+        c.clear(9);
+        layout::explore(c, bt, st);
+        CHECK(is(0, 0, 55) && is(16, 0, 55) && is(39, 0, 55) && is(20, 16, 55) && is(0, 23, 55) && is(16, 16, 55));
+        CHECK(is(0, 1, 52) && is(0, 2, 53) && is(0, 15, 54) && is(0, 17, 52) && is(0, 22, 54) && is(39, 15, 54));
+        CHECK(is(16, 1, 52) && is(16, 8, 53) && is(16, 15, 54) && is(39, 20, 53));
+        CHECK(is(2, 2, 59) && is(14, 14, 59) && is(8, 2, 59) && is(2, 3, 56) && is(14, 8, 57) && at(2 * 8 + 2, 13 * 8 + 2) == tp(58, 2, 2));
+        CHECK(at(1 * 8 + 1, 5 * 8 + 2) == 0 && at(8 * 8 + 1, 8 * 8 + 2) == 0);   // the gap and the view: black
+        c.clear(9);
+        layout::picture_frame(c, bt, st, 26, 1);
+        CHECK(is(26, 1, 59) && is(38, 13, 59) && is(26, 2, 56) && is(38, 7, 57) && at(26 * 8 + 2, 12 * 8 + 2) == tp(58, 2, 2));
+        c.clear(9);
+        const uint8_t rows[2] = {1, 0};
+        layout::credits(c, bt, st, rows);
+        CHECK(is(10, 1, 55) && is(10, 23, 55) && is(0, 2, 53) && is(39, 22, 53) && at(10 * 8 + 1, 2) == 0);
+        c.clear(9);
+        layout::combat(c, bt, st);
+        CHECK(is(10, 0, 55) && is(10, 22, 55) && is(22, 1, 52) && is(22, 10, 53) && is(39, 21, 54));
+        // Its profile: Curse's script opcodes but 0x3C (none) and 0x41 (2);
+        // the font in 8X8D5; still being built
+        const profile::Profile* sec = profile::find(games::Game::SecretOfTheSilverBlades, 72097, 79824);
+        CHECK(sec && sec->ecl_ops && sec->ecl_ops->sizes[0x41] == 2 && sec->ecl_ops->sizes[0x3C] == 0 &&
+              sec->ecl_ops->sizes[0x2E] == 5 && sec->ecl_ops->sizes[0x42] == ecl::kUnknown);
+        CHECK(sec && !strcmp(sec->font_file, "8X8D5.DAX") && sec->variant.tile_window == 40 && !sec->party.items);
+        CHECK(!profile::ready(games::Game::SecretOfTheSilverBlades));
+    }
+
     // The known release is found only by both sizes
     CHECK(profile::find(games::Game::CurseOfTheAzureBonds, 57789, 62432) != nullptr);
     CHECK(profile::find(games::Game::PoolOfRadiance, 65231, 68592) != nullptr);

@@ -229,9 +229,9 @@ void draw_still(pic::Canvas& c)
         c.clear(1);
         for (int n = 0; n < t.count; ++n) {
             const int col = 2 + (n % 10) * 3, row = 2 + (n / 10) * 4;
-            layout::tile(c, t, n, col, row);
+            layout::tile(c, t, t.tile_of(n), col, row);
             char num[4];
-            snprintf(num, sizeof num, "%d", n);
+            snprintf(num, sizeof num, "%d", t.tile_of(n));
             put_text(c, num, col, row + 1, 7);
         }
         if (tb.box[0]) {
@@ -239,6 +239,13 @@ void draw_still(pic::Canvas& c)
             snprintf(line, sizeof line, "TILES 0-%d (8X8D1 #202)", t.count - 1);
             put_text(c, line, 2, 20);
             snprintf(line, sizeof line, "BOXES: CORNER %d, SIDE %d, EDGE %d", tb.box[0], tb.box[1], tb.box[2]);
+            put_text(c, line, 2, 21, 7);
+        } else if (tb.bars[0]) {
+            char line[40];
+            snprintf(line, sizeof line, "TILES 0-19, %d-%d (8X8D1 #202)", t.first, t.tile_of(t.count - 1));
+            put_text(c, line, 2, 20);
+            snprintf(line, sizeof line, "BARS %d %d %d %d, VIEW %d %d %d %d", tb.bars[0], tb.bars[1], tb.bars[2],
+                     tb.bars[3], tb.bars[4], tb.bars[5], tb.bars[6], tb.bars[7]);
             put_text(c, line, 2, 21, 7);
         } else {
             put_text(c, "TILES 0-39 (8X8D1 #202)", 2, 20);
@@ -321,9 +328,19 @@ const char* open(const char* data_dir, games::Game g)
     }
     {
         plat::FileSource tsrc(f);
-        const bool ok = dax::read_index(tsrc, d->idx) == dax::Status::Ok &&
-                        layout::load_tiles(tsrc, d->idx, p->tiles_block, d->tiles) && font::load(tsrc, d->idx, d->font);
+        bool ok = dax::read_index(tsrc, d->idx) == dax::Status::Ok &&
+                  layout::load_tiles(tsrc, d->idx, p->tiles_block, d->tiles, p->variant.tile_window) &&
+                  (p->font_file || font::load(tsrc, d->idx, d->font));
         f.close();
+        if (ok && p->font_file) {
+            // (Secret: the font is in 8X8D5.DAX)
+            ok = open_file(data_dir, p->font_file, f);
+            if (ok) {
+                plat::FileSource fsrc(f);
+                ok = dax::read_index(fsrc, d->idx) == dax::Status::Ok && font::load(fsrc, d->idx, d->font);
+                f.close();
+            }
+        }
         if (!ok) {
             close();
             snprintf(msg, sizeof msg, "%s: the frame tiles or font didn't load.", p->tiles_file);

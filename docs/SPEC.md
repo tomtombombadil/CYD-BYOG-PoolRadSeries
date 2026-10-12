@@ -868,6 +868,29 @@ Steps (each pushed when it works; Curse stays as it is):
    troll it fells stays down and Pool's mummy takes a point more a die -
    the engine had left the kind out.
 
+## 6c. Secret of the Silver Blades (Tom, 2026-10-12: started)
+
+Facts in the Project's claude/secret_facts.md (from the player's files,
+the program and the original in DOSBox; nothing from the game in the
+repo). Built a chunk a commit, Play off the game page until it plays
+(`variant.unfinished`); the Play Test under Dev Tools says it isn't ready
+until the party menu is known (`party.items`).
+
+- **v0.92.0 - scripts, screens, maps.** The script interpreter (GAME.OVR
+  overlay 4) reads the same operand counts as Curse's but 0x3C (none) and
+  the new 0x41 (2): following every block from its entry points, every
+  instruction of all 22 blocks decodes. The frame is drawn by code, not
+  tables: bars of block 202's tiles 52-59 (`variant.bars`; `layout`'s
+  bars mode), so `layout::Tiles` keeps tiles 0-19 and a window of 20
+  (`variant.tile_window` 40) in its 40 slots - no more memory. The font is
+  8X8D5.DAX's block 201 (`Profile::font_file`). The title (5 TITLE.DAX
+  steps), the credits (32-byte print calls in GAME.OVR at 0x379) and the
+  version line as the original shows them; the sky colours at DS 0x0AA8.
+  Screen Test and Walk Test work (16 maps).
+- Next: the 439-byte character record and its saves (SAVGAMA.DAT,
+  CHRDATA, .SFX), the party menu, camp, items, shops; combat; sound
+  (SOUND.DAX), the sky and approaching monsters (SPRIT1); behaviour tests.
+
 ## 7. The journal (Tom, 2026-10-06)
 
 The games tell the player to "read journal entry N" from the printed

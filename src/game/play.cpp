@@ -408,6 +408,17 @@ bool open_dax(const char* name, plat::File& f)
     return true;
 }
 
+// The font from a file of its own (Secret: 8X8D5.DAX; profile font_file)
+bool load_font_file(const char* name, dax::Index& idx, font::Font& out)
+{
+    plat::File f;
+    if (!open_file(name, f)) return false;
+    plat::FileSource src(f);
+    const bool ok = dax::read_index(src, idx) == dax::Status::Ok && font::load(src, idx, out);
+    f.close();
+    return ok;
+}
+
 // GAME.OVR's words, and the program's (Pool keeps a few in START.EXE: the
 // profile marks those text::kInProgram) - text::read_pascal(src, at ...)
 class OvrWords : public dax::ByteSource {
@@ -8576,14 +8587,24 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
             close();
             return msg;
         }
+        if (!p->party.items) {
+            // (a game being built whose party menu isn't known yet: Secret's
+            // screens and maps only, in the Screen and Walk Tests)
+            snprintf(msg, sizeof msg, "The Play Test for %s isn't ready yet: try the Screen and Walk Tests.",
+                     games::title(g));
+            close();
+            return msg;
+        }
         d->prof = p;
     }
     bool ok = open_dax(d->prof->tiles_file, f);
     if (ok) {
         plat::FileSource src(f);
-        ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles) && font::load(src, d->idx, d->font) &&
+        ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, d->prof->variant.tile_window) &&
+             (d->prof->font_file || font::load(src, d->idx, d->font)) &&
              view3d::load_tiles(src, d->idx, d->prof->common_tiles_block, d->world.common);
         f.close();
+        if (ok && d->prof->font_file) ok = load_font_file(d->prof->font_file, d->idx, d->font);
         if (ok) {
             const int letters = font_wanted();     // (loads the alt font first)
             font::set_letters(d->font, letters, d->alt_font);

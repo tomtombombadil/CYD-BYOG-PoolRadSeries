@@ -459,9 +459,17 @@ struct Profile {
         // encounter pictures, bit 0 = the portrait on View Character
         // (Curse: Pics / Animation)
         bool     pics_portraits;
+        // Secret (secret_facts.md 3): the frame tiles past 39 - block 202's
+        // tiles 0-19 and 20 from this one are kept (0: 20); bars drawn by
+        // code with these tiles (layout::Tables::bars; 0: none)
+        uint8_t  tile_window = 0;
+        uint8_t  bars[8] = {};
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;
+    // The game's 8x8 font: block 201 of this file (nullptr: tiles_file's;
+    // Secret keeps it in 8X8D5.DAX)
+    const char* font_file = nullptr;
 };
 
 // The game's program file name (to look for it), or nullptr if no
