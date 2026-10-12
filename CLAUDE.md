@@ -88,7 +88,9 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   Right on the menu line; Up / Down too when there's no list; the party
   list beside a menu line is a list - `play::party_nav`, Tom); Select = a
   tap on the highlighted thing (`play::nav`, `play::nav_point`). New screens
-  with lists or menus must take part. 320x240 (Tom, v0.51.0): automatic
+  with lists or menus must take part. A turned page (Next / Prev): Up /
+  Down start on the page shown - Down its first line, Up its last (Tom,
+  v0.85.4: the spell lists jumped back to the first page). 320x240 (Tom, v0.51.0): automatic
   plus a switch - one row of 9: movement arrows + Menu Keys / Game / Esc
   while the party can move (`play::walking()`), else Left / Up / Select /
   Down / Right + Move Keys / Game / Esc; the switch lasts until walking

@@ -8630,13 +8630,32 @@ bool nav_list(int step, pic::Canvas& c)
     }
 #endif
     if (screen == Screen::SpellList && !sl.learning && sl.sel >= 0) {
+        const int rows = list_rows();
         int i = sl.sel;
+        if (i < sl.top || i >= sl.top + rows) {
+            // (Tom: the page was turned - the highlight starts on the page shown,
+            // its first line going down, its last going up)
+            const int last = std::min(sl.n, sl.top + rows) - 1;
+            int j = -1;
+            if (step > 0) {
+                for (int k = sl.top; k <= last && j < 0; ++k)
+                    if (sl.id[k]) j = k;
+            } else {
+                for (int k = last; k >= sl.top && j < 0; --k)
+                    if (sl.id[k]) j = k;
+            }
+            if (j >= 0) {
+                sl.sel = j;
+                draw_spells(c);
+                keep_menu_choice(keep, c);
+                return true;
+            }
+        }
         for (int k = 0; k < sl.n; ++k) {
             i = (i + step + sl.n) % sl.n;
             if (sl.id[i]) break;
         }
         sl.sel = i;
-        const int rows = list_rows();
         while (sl.sel < sl.top) sl.top = sl.top >= rows ? sl.top - rows : 0;
         while (sl.sel >= sl.top + rows) sl.top += rows;
         draw_spells(c);

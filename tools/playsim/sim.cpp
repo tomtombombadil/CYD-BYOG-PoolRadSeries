@@ -94,7 +94,7 @@ static void item_ops(const char* ops)
 // line, %n taps party row n at column 17, &n taps text row n, =n; types a
 // number, '#' prints the screen, '~' runs ticks for a minute of game time,
 // '?' the selected one's memorized list, '!' everyone's HP and effects, -n sets member n to 1 HP,
-// '[' gives the selected one a magic-user's scroll of 3 spells, ']' lists their items and spell book,
+// 'v' / '^' the cursor keys Down / Up, '[' gives the selected one a magic-user's scroll of 3 spells, ']' lists their items and spell book,
 // '{' a readied potion of healing, '}' a readied wand of magic missiles, '(' a readied bow and 20 arrows
 static void run_ops(const char* q)
 {
@@ -124,6 +124,10 @@ static void run_ops(const char* q)
         else if (*q == '-') { ++q; play::pt->m[*q - '0'].rec[0x1A4] = 1; }
         else if (*q == '!') { for (int i = 0; i < play::pt->count; ++i) { const party::Character& ch = play::pt->m[i]; char nm[20]; ch.name(nm, 20); printf("  %s HP %d/%d st %d fx:", nm, ch.hp(), ch.hp_max(), ch.health()); for (int k = 0; k < ch.n_affects; ++k) printf(" %02X/%d/%d", ch.affects[k][0], ch.affects[k][1] | ch.affects[k][2] << 8, ch.affects[k][3]); printf("\n"); } }
         else if (*q == '~') { for (int k = 0; k < 600; ++k) { g_now += 100; play::tick(g_now, C); } }
+        else if (*q == 'v' || *q == '^') {      // the cursor keys Down / Up (a list's highlight)
+            play::nav(*q == 'v' ? play::Nav::Down : play::Nav::Up, C);
+            printf("  %c: spell list sel %d top %d of %d\n", *q, play::sl.sel, play::sl.top, play::sl.n);
+        }
         else if (*q >= '0' && *q <= '9') play::plist.index = *q - '0';
         else tap_word(*q);
         g_now += 5000; play::tick(g_now, C);
