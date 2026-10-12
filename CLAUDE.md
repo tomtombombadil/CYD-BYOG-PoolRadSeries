@@ -321,6 +321,16 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   moves with invariant checks; MAREA / MBLOCK start it in a block). Build
   it with -fsanitize=address,undefined; give each run its own copy of the
   game folder (runs save over the slots).
+- `tools/qemu/` (Tom, 2026-10-11: "if worth it"): the REAL firmware in
+  Espressif's QEMU (qemu-system-xtensa, esp-develop-9.2.2; downloads from
+  GitHub work here) - `pio run -c tools/qemu/qemu.ini -e qemu28` (the 2.8"
+  ILI9341 build + -D CYD_QEMU: card over SD/MMC since QEMU has no
+  SD-over-SPI, no touch calibration, taps from the card's
+  /GOLDBOX/_QEMU/TAPS.TXT, heap printed), `run_qemu.py` makes the card
+  image and runs it. For the board's own limits (heap, largest block,
+  stack) the playsim can't show. No screen output (taps need known
+  coordinates). Board builds stay byte-for-byte (`#if CYD_QEMU` only;
+  the SD_MMC library lives in tools/qemu/lib so it never links there).
 - Game testing (Tom, 2026-10-10): "test the game" means BEHAVIOUR, not
   just crashes - every spell, item, monster ability, class / level,
   encounter and save field must do what the original does (a +1 long
