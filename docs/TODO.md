@@ -21,6 +21,10 @@ the Project as claude/TODO.md.
 - [ ] Send Logs goes to cyd.classic.games.logs@gmail.com (the Classic
       Games address) - keep it, or name another (one line in
       web/l/index.html).
+- [ ] Try the items with the ITEMTEST characters (sent 2026-10-12 as
+      ITEMTEST_characters.zip: Curse's six in its SAVE folder, Pool's five
+      beside its SAVGAMA.DAT; what each carries in ITEMTEST.txt) and
+      report what doesn't work as in the originals.
 - [ ] Keep play testing Pool of Radiance and Curse; report anything that
       plays differently from the originals. New in v0.89.0 for Pool:
       potions / wands / the Manual, Gauntlets of Ogre Power, the cloaks

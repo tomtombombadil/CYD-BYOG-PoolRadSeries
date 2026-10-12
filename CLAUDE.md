@@ -383,7 +383,11 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   every square), saveload (round trip) and monkey (random taps / keys /
   moves with invariant checks; MAREA / MBLOCK start it in a block). Build
   it with -fsanitize=address,undefined; give each run its own copy of the
-  game folder (runs save over the slots).
+  game folder (runs save over the slots). Mode `testchars` (2026-10-12,
+  Tom: characters to test items with) writes ITEMTEST1, 2 ... (files
+  ITEMTST<n>) with every magic item of the game, each with a class that
+  may use it; Pool's save-only items come from a scratch file (EXTRA=),
+  never from the repo; the characters go to Tom as a zip, never committed.
 - **DOSBox here** (2026-10-12): the ORIGINAL games run on Claude's side -
   `apt-get install dosbox xdotool x11-apps imagemagick`, a virtual display
   (`Xvfb :5`), `DISPLAY=:5 SDL_AUDIODRIVER=dummy dosbox -conf <conf>`

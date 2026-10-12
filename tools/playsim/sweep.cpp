@@ -16,6 +16,10 @@
 //   events [a]       every ECL block of area a (all without): its first run, then a
 //                    step from every square in every direction, menus answered at random
 //   saveload         save, load, save again: the files and the state must match
+//   testchars        ITEMTEST1, 2 ... carrying every magic item of the game (its
+//                    ITEM*/MON*ITM files, random treasure's rows, EXTRA= more
+//                    records), each with a class that may use it, written to the
+//                    save folder for Tom to add and try (LIST=1: the items only)
 //   monkey [seed [n]] n random taps, keys, moves and cursor keys anywhere, checking
 //                    the party's invariants and screens that can't be left
 //                    (MAREA / MBLOCK: start in that script block)
@@ -27,6 +31,7 @@
 #include "engine/rules.h"
 #include <cstdarg>
 #include <sys/stat.h>
+#include <algorithm>
 #include <random>
 #include <string>
 #include <vector>
@@ -484,6 +489,301 @@ static void sweep_monsters(int only)
             party_line("party");
         }
     }
+}
+
+// ---- testchars: characters carrying every magic item of the game, for
+// Tom to try them (Tom, 2026-10-12: "a couple characters for each game ...
+// that between them have all the items we need to test"). The items are
+// read from the player's own ITEM*.DAX / MON*ITM.DAX; each goes to a
+// character whose class may use it (and, for a keyed sword, with its
+// alignment); the characters (ITEMTEST1, 2 ...) are made as the game makes
+// them, trained to a high level, and written to its save folder.
+// Env LIST=1: only list the items. Nothing is stored in the repo.
+struct TestItem {
+    uint8_t rec[63];
+    std::string name;
+};
+static std::vector<TestItem> test_items()
+{
+    using namespace play;
+    std::vector<TestItem> out;
+    std::vector<std::string> seen;
+    const std::string folder = game_dir.substr(game_dir.rfind('/') + 1);
+    for (int pass = 0; pass < 2; ++pass)
+        for (int area = 1; area <= 9; ++area) {
+            char path[300];
+            snprintf(path, sizeof path, pass ? "/GOLDBOX/%s/MON%dITM.DAX" : "/GOLDBOX/%s/ITEM%d.DAX", folder.c_str(),
+                     area);
+            fs::File f = sd_fs().open(path, "r");
+            if (!f) continue;
+            library::FileSource src(f);
+            static dax::Index dir;
+            if (dax::read_index(src, dir) != dax::Status::Ok) {
+                f.close();
+                continue;
+            }
+            for (int i = 0; i < dir.count; ++i) {
+                std::vector<uint8_t> blk(dir.entries[i].raw_size + 64);
+                const uint32_t n = dax::load_block(src, dir, dir.entries[i], blk.data());
+                for (uint32_t o = 0; o + 63 <= n; o += 63) {
+                    TestItem t;
+                    memcpy(t.rec, blk.data() + o, 63);
+                    uint8_t* r = t.rec;
+                    const bool magic = static_cast<int8_t>(r[0x32]) != 0 || r[0x33] || r[0x36] || r[0x3D] || r[0x3E] ||
+                                       r[0x2E] == names->flask();
+                    if (!r[0x2E] || !magic) continue;
+                    r[0x34] = 0;                    // not readied
+                    r[0x35] = 0;                    // identified
+                    r[0x39] = r[0x39] ? r[0x39] : 0;
+                    char nm[64];
+                    names->name(items::Item{r}, nm, sizeof nm, true);
+                    char key[96];
+                    snprintf(key, sizeof key, "%s|%02X|%02X", nm, r[0x3D], r[0x3E]);
+                    bool dup = false;
+                    for (auto& k : seen) dup |= k == key;
+                    if (dup) continue;
+                    seen.push_back(key);
+                    t.name = nm;
+                    out.push_back(t);
+                }
+            }
+            f.close();
+        }
+    return out;
+}
+
+// Items the game files don't hold (Pool: some exist only in saves): EXTRA=
+// a scratch file of 63-byte item records (made from the player's own saves
+// or the facts, never in the repo)
+static void extra_items(std::vector<TestItem>& v)
+{
+    using namespace play;
+    const char* path = getenv("EXTRA");
+    FILE* in = path ? fopen(path, "rb") : nullptr;
+    if (!in) return;
+    TestItem t{};
+    while (fread(t.rec, 1, 63, in) == 63) {
+        t.rec[0x34] = t.rec[0x35] = 0;
+        char nm[64];
+        names->name(items::Item{t.rec}, nm, sizeof nm, true);
+        bool have = false;
+        for (auto& o : v) have |= o.name == nm;
+        if (have) continue;
+        t.name = nm;
+        v.push_back(t);
+    }
+    fclose(in);
+}
+
+static void sweep_testchars()
+{
+    using namespace play;
+    if (!boot()) {
+        problem("boot");
+        return;
+    }
+    const bool pool = pool_files();
+    std::vector<TestItem> list = test_items();
+    // Random treasure's ready-made items (potions, wands ... from the program's rows)
+    {
+        items::Ground g;
+        for (int k = 0; k < 40; ++k) {
+            g.clear();
+            host->random_items(20, g);
+            for (int i = 0; i < g.n; ++i) {
+                uint8_t* r = g.item[i];
+                if (!r[0x3D] && !r[0x3E]) continue;
+                r[0x35] = 0;
+                char chk[64];
+                names->name(items::Item{r}, chk, sizeof chk, true);
+                if (!strncmp(chk, "of ", 3)) continue;   // (Pool's javelin row read between rows: no item)
+                r[0x34] = 0;
+                char nm[64];
+                names->name(items::Item{r}, nm, sizeof nm, true);
+                bool have = false;
+                for (auto& o : list) have |= o.name == nm || (o.rec[0x2E] == r[0x2E] && o.rec[0x3D] == r[0x3D] &&
+                                                                  o.rec[0x3E] == r[0x3E] && o.rec[0x3D]);
+                if (have) continue;
+                TestItem t;
+                memcpy(t.rec, r, 63);
+                t.name = nm;
+                list.push_back(t);
+            }
+        }
+    }
+    extra_items(list);
+    // Plain enchanted gear (no effect, not cursed, not a scroll / potion / wand):
+    // one of each type, the highest plus
+    {
+        std::vector<TestItem> kept;
+        for (auto& t : list) {
+            const uint8_t* r = t.rec;
+            const bool plain = !r[0x36] && !r[0x3C] && !r[0x3D] && !r[0x3E] && r[0x2E] != names->flask();
+            if (!plain) {
+                // (the same item again - another count, charges or doses - once)
+                bool again = false;
+                const bool scroll = r[0x2E] == 0x3D || r[0x2E] == 0x3E;
+                for (auto& o : kept) {
+                    bool same = true;
+                    for (int b : {0x2E, 0x2F, 0x30, 0x31, 0x32, 0x36, 0x3D, 0x3E}) same &= o.rec[b] == r[b];
+                    if (scroll) same &= o.rec[0x3C] == r[0x3C];
+                    again |= same;
+                }
+                if (!again) kept.push_back(t);
+                continue;
+            }
+            bool better = false;
+            int at = -1;
+            for (size_t k = 0; k < kept.size(); ++k) {
+                const uint8_t* o = kept[k].rec;
+                if (o[0x2E] == r[0x2E] && !o[0x36] && !o[0x3C] && !o[0x3D] && !o[0x3E]) {
+                    at = static_cast<int>(k);
+                    better = static_cast<int8_t>(r[0x32]) > static_cast<int8_t>(o[0x32]);
+                }
+            }
+            if (at < 0) kept.push_back(t);
+            else if (better) kept[at] = t;
+        }
+        list.swap(kept);
+    }
+    // A few flasks of oil to throw
+    for (auto& t : list)
+        if (t.rec[0x2E] == names->flask()) t.rec[0x39] = 6;
+    // Specials first (they matter most), then the rest
+    std::stable_sort(list.begin(), list.end(), [](const TestItem& a, const TestItem& b) {
+        auto rank = [](const TestItem& t) { return t.rec[0x3E] >= 0x80 ? 0 : t.rec[0x3D] || t.rec[0x3C] ? 1 : 2; };
+        return rank(a) < rank(b);
+    });
+    for (auto& t : list) {
+        const items::TypeInfo& ti = names->type(t.rec[0x2E]);
+        printf("item %-36s type %3d classes %02X 3C %02X 3D %02X 3E %02X plus %d cursed %d\n", t.name.c_str(),
+               t.rec[0x2E], ti.classes, t.rec[0x3C], t.rec[0x3D], t.rec[0x3E], static_cast<int8_t>(t.rec[0x32]),
+               t.rec[0x36]);
+    }
+    printf("%zu items\n", list.size());
+    if (getenv("LIST")) return;
+
+    // The characters: human, single-classed, made as the game makes them
+    Making* mk2 = nullptr;
+    if (!load_rules(mk2)) {
+        problem("rules");
+        return;
+    }
+    static const int kClassesCurse[] = {create::Fighter, create::Cleric, create::MagicUser, create::Thief,
+                                        create::Paladin, create::Ranger};
+    static const int kClassesPool[] = {create::Fighter, create::Cleric, create::MagicUser, create::Thief};
+    const int* cls_list = pool ? kClassesPool : kClassesCurse;
+    const int n_cls = pool ? 4 : 6;
+    struct Made {
+        party::Character c;
+        int cls;
+    };
+    static std::vector<Made> made;
+    made.clear();
+    auto make = [&](int cls, int align) -> Made& {
+        Made m;
+        m.cls = cls;
+        party::Character& c = m.c;
+        int al[9];
+        const int na = create::alignments_for(mk2->tables, cls, al, 9);
+        int pick = na ? al[0] : 0;
+        for (int k = 0; k < na; ++k)
+            if (al[k] == align) pick = align;
+        create::begin(c, mk2->tables, mk2->facts, mk2->dice, 7, 0, cls, pick);
+        create::roll(c, mk2->tables, mk2->facts, mk2->dice);
+        char nm[16];
+        snprintf(nm, sizeof nm, "ITEMTEST%d", static_cast<int>(made.size()) + 1);
+        create::set_name(c, nm);
+        // Experience for the top levels, trained up as the halls would
+        c.rec[0x127] = 0x40;
+        c.rec[0x128] = 0x42;
+        c.rec[0x129] = 0x0F;
+        c.rec[0x12A] = 0x00;                        // (1,000,000)
+        for (int k = 0; k < 40 && create::train(c, mk2->tables, mk2->facts, mk2->dice, true); ++k) {}
+        c.rec[0x1A4] = c.rec[0x78];                 // all their hit points
+        made.push_back(m);
+        return made.back();
+    };
+    for (auto& t : list) {
+        const items::TypeInfo& ti = names->type(t.rec[0x2E]);
+        const items::Passive kind = items::passive(t.rec);
+        const bool keyed = kind == items::Passive::Alignment;
+        const int align = keyed ? (t.rec[0x3D] & 0x0F) : -1;
+        // (the thief-skill items to a thief, where they show)
+        const int want = kind == items::Passive::Thievery || kind == items::Passive::Dexterity ? create::Thief : -1;
+        Made* to = nullptr;
+        for (auto& m : made) {
+            if (m.c.n_items >= party::kMaxItems || !(m.c.rec[0x12B] & ti.classes)) continue;
+            if (keyed && m.c.alignment() != align) continue;
+            if (want >= 0 && m.cls != want) continue;
+            to = &m;
+            break;
+        }
+        if (!to) {
+            for (int k = 0; k < n_cls && !to; ++k) {
+                if (want >= 0 && cls_list[k] != want) continue;
+                Made& m = make(cls_list[k], keyed ? align : 0);
+                if ((m.c.rec[0x12B] & ti.classes) && (!keyed || m.c.alignment() == align)) {
+                    to = &m;
+                } else {
+                    made.pop_back();
+                }
+            }
+        }
+        if (!to) {
+            printf("  no class takes %s\n", t.name.c_str());
+            continue;
+        }
+        memcpy(to->c.items[to->c.n_items++], t.rec, items::kRecordSize);
+    }
+    for (size_t i = 0; i < made.size(); ++i) {
+        party::Character& c = made[i].c;
+        rules::recalc(c, *names, d->facts);
+        char nm[20], base[12];
+        c.name(nm, sizeof nm);
+        snprintf(base, sizeof base, "ITEMTST%d", static_cast<int>(i) + 1);
+        const bool ok = write_character(base, c);
+        printf("== %s (%s): class %d, alignment %d, levels %d %d %d %d %d %d %d, HP %d, %d items -> %s %s\n", nm,
+               base, made[i].cls, c.alignment(), c.level(0), c.level(2), c.level(3), c.level(4), c.level(5),
+               c.level(6), c.level(1), c.hp_max(), c.n_items, d->save_dir, ok ? "written" : "NOT WRITTEN");
+        for (int k = 0; k < c.n_items; ++k) {
+            char in[64];
+            names->name(items::Item{c.items[k]}, in, sizeof in, true);
+            printf("     %s\n", in);
+        }
+    }
+    delete mk2;
+    // Read back as Add Character finds them
+    find_guys(pool ? 'P' : 'C');
+    int found = 0;
+    for (int i = 0; i < d->guys; ++i)
+        if (!strncmp(d->guy_name[i], "ITEMTEST", 8)) {
+            ++found;
+            party::Character& ch = pt->m[pt->count];
+            ch = party::Character{};
+            fs::File f;
+            if (!open_save_file(d->guy_file[i], f)) continue;
+            {
+                library::FileSource src(f);
+                party::read_record(src, ch, rec_format());
+            }
+            f.close();
+            char base[16];
+            strncpy(base, d->guy_file[i], sizeof base - 1);
+            base[sizeof base - 1] = 0;
+            if (char* dot = strrchr(base, '.')) *dot = 0;
+            char fn[24];
+            snprintf(fn, sizeof fn, "%s%s", base, ext_items());
+            if (open_save_file(fn, f)) {
+                library::FileSource src(f);
+                party::read_items(src, ch);
+                f.close();
+            }
+            char nm[20];
+            ch.name(nm, sizeof nm);
+            printf("   read back %s (%s): %d items, level %d\n", nm, d->guy_file[i], ch.n_items, ch.rec[0xE5]);
+        }
+    if (found != static_cast<int>(made.size())) problem("not all the characters are listed by Add Character");
 }
 
 // ---- items
@@ -1173,6 +1473,7 @@ int main(int argc, char** argv)
     else if (mode == "campspells") sweep_campspells();
     else if (mode == "monsters") sweep_monsters(arg);
     else if (mode == "items") sweep_items(argc > 3 ? argv[3] : "items.bin");
+    else if (mode == "testchars") sweep_testchars();
     else if (mode == "classes") sweep_classes();
     else if (mode == "events") sweep_events(arg);
     else if (mode == "saveload") sweep_saveload();
