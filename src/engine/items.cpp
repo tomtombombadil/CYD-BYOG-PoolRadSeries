@@ -121,6 +121,43 @@ const Passive* g_passive = kCursePassive;
 
 void set_passive(const Passive* codes) { g_passive = codes ? codes : kCursePassive; }
 
+namespace {
+const FlameFix* g_flame = nullptr;
+bool g_flame_on = false;
+}
+
+void set_flame_fix(const FlameFix* f, bool on)
+{
+    g_flame = f && f->type ? f : nullptr;
+    g_flame_on = on;
+}
+
+bool flame_fix_on() { return g_flame && g_flame_on; }
+
+bool fix_item(uint8_t* r, bool original)
+{
+    const FlameFix* f = g_flame;
+    if (!f || r[0x2E] != f->type || r[0x2F] != f->word) return false;
+    const bool is_orig = r[0x30] == f->plus_word && r[0x32] == f->plus && r[0x3D] == f->spell && r[0x3E] == 0;
+    const bool is_fixed = r[0x30] == f->plus1_word && r[0x32] == 1 && r[0x3D] == f->effect && r[0x3E] == f->code;
+    const bool want_fixed = g_flame_on && !original;
+    if (want_fixed && is_orig) {
+        r[0x30] = f->plus1_word;            // (the name: "+1")
+        r[0x32] = 1;
+        r[0x3D] = f->effect;
+        r[0x3E] = f->code;
+        return true;
+    }
+    if (!want_fixed && is_fixed) {
+        r[0x30] = f->plus_word;
+        r[0x32] = f->plus;
+        r[0x3D] = f->spell;
+        r[0x3E] = 0;
+        return true;
+    }
+    return false;
+}
+
 Passive passive(const uint8_t* item)
 {
     if (item[0x3E] < 0x80) return Passive::None;

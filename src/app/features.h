@@ -92,6 +92,21 @@
 #define CYD_ICON_PORTRAIT 1
 #endif
 
+// The originals' item mistakes fixed (Tom, 2026-10-12, v0.90.0): Pool of
+// Radiance's "Long Sword +2 Flame Tongue" has no flame tongue in its record
+// (0x3D 0x16 - its Use casts Find Traps - and no effect code), so it is a
+// plain +2 sword whose blows aren't fire: a troll it fells gets back up.
+// Fixed it is the AD&D Flame Tongue, as Curse's: a Long Sword +1 Flame
+// Tongue, +2 against regenerating creatures, +3 against cold-using / avian
+// ones, +4 against undead, its blows fire. The files keep the original's
+// bytes (the fix is made as characters are read, items taken, the switch
+// turned). 0: as the original. Where: engine/items.* (fix_item),
+// rules.cpp (add_item, fix_items), play.cpp (character_read, set_options,
+// write_character_files), profile.cpp (Pool's items.flame).
+#ifndef CYD_ITEM_FIXES
+#define CYD_ITEM_FIXES 1
+#endif
+
 // Each comfort compiled in can also be switched off by the player: the
 // game's Settings page (Tom, 2026-10-11, v0.72.0; one set for all games,
 // settings.h comforts_off), also the in-game Game menu's Options tab.

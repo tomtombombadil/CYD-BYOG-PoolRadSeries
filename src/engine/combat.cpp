@@ -1751,12 +1751,14 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
     // +3; Dragon Slayer - dragons +2 to hit, its own damage (coab's facts,
     // behaviour_facts.md items). To the roll (not a 1) and the damage.
     int wbonus = 0;
-    bool slayer = false;
+    bool slayer = false, flame = false;
     if (b.fx) {
         const ItemFx& ix = b.fx->items;
         const int kind = tg.rec[0x11A];
-        if (ix.flame_tongue && at.has(ix.flame_tongue))
-            wbonus += kind == 10 ? 1 : (kind == 9 || kind == 12) ? 2 : kind == 4 ? 3 : 0;
+        // (the Flame Tongue's blows are fire and magic, 9 - both games' handler
+        // sets the damage kind: a troll it fells stays down)
+        flame = ix.flame_tongue && at.has(ix.flame_tongue);
+        if (flame) wbonus += kind == 10 ? 1 : (kind == 9 || kind == 12) ? 2 : kind == 4 ? 3 : 0;
         if (ix.frost_brand && at.has(ix.frost_brand) && kind == 8) wbonus += 3;
         if (ix.dragon_slayer && at.has(ix.dragon_slayer) && kind == 3) slayer = true;
         if (ix.vs_undead && at.has(ix.vs_undead) && kind == 4) wbonus += 2;
@@ -1832,6 +1834,8 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                 if (hasx(tg, m.silver_only) && !(item && (plus != 0 || silver))) dmg = 0;
                 if (hasx(tg, m.silver_half) && (!item || plus == 0)) dmg = silver ? dmg / 2 : 0;
                 if (hasx(tg, m.oil_bane) && item && m.oil_flask && item[0x2E] == m.oil_flask) dmg = d.roll(8, 3);
+                // (its handler: fire / magic blows a point more a die - the Flame Tongue's)
+                else if (hasx(tg, m.oil_bane) && flame) dmg += n;
                 // A blessed quarrel slays it outright
                 if (hasx(tg, m.blessed_bane) && item && item[0x2E] == b.quarrel && m.blessed_word &&
                     item[0x31] == m.blessed_word)
@@ -1844,7 +1848,8 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             // do fire damage" - the originals made it a plain 2d6 blow): its
             // blow is fire, so a troll it brings down stays down
             const bool oil = item && names && names->flask() && item[0x2E] == names->flask();
-            if (oil) g_kind = 1;
+            const int blow_kind = oil ? 1 : flame ? 9 : 0;
+            if (blow_kind) g_kind = blow_kind;
             if (bane) {
                 tg.rec[kHp] = 0;
                 tg.rec[kHealth] = party::Gone;
@@ -1853,7 +1858,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             } else if (damage(b, c, dmg)) {
                 out.down = true;
             }
-            if (oil) g_kind = 0;
+            if (blow_kind) g_kind = 0;
             out.hits[out.n++] = h;
             // A fire shield: one hitting it from next to it takes twice the blow (magic)
             if (b.fx && dmg > 0 && hasx(tg, b.fx->sp.zap) && at.up() && adjacent(b, a, c)) {

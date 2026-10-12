@@ -316,6 +316,13 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   key is **Game Font** - Original / Clear / Darkness (the player's own
   Pools of Darkness 8X8D0.DAX, only when that game is on the card);
   v0.84.0 (Tom) adds **Clear Caps** (Clear's capitals, no lower case).
+- Item Fixes (Tom, 2026-10-12, v0.90.0; `CYD_ITEM_FIXES`): items the
+  originals got wrong made as AD&D describes them, behind a switch (on by
+  default) - Pool's Flame Tongue becomes Curse's / AD&D's sword
+  (`items::fix_item`, the facts in `profile.items.flame`); the save files
+  always keep the original's bytes. A new fix of an original mistake goes
+  here too (Tom wants the originals' behaviour available).
+  The Settings switches page past 8 (arrows bottom right).
 - Icon Portrait (Tom, v0.84.0; `CYD_ICON_PORTRAIT`): View Character shows
   the combat icon x3 in a game-tile frame where Pool draws portraits
   (Curse: the 3D view's frame tiles, cols 26-38 rows 1-13); where the game

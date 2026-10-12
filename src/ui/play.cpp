@@ -954,8 +954,23 @@ void present_now()
 // A character's three files: the record, the items, the effects (Pool's
 // Strength and Charisma as its files keep them: rules::pool_stats_out)
 bool write_character_files(const char* dir, const char* rec_fn, const char* items_fn, const char* fx_fn,
-                           const party::Character& ch)
+                           const party::Character& who)
 {
+    // The files keep the original's items (a fixed item back as it was, its
+    // effect gone with it): a copy for the writing when one is fixed
+    const party::Character* src = &who;
+    party::Character* copy = nullptr;
+    for (int i = 0; i < who.n_items && !copy; ++i) {
+        uint8_t probe[items::kRecordSize];
+        memcpy(probe, who.items[i], sizeof probe);
+        if (!items::fix_item(probe, true)) continue;
+        copy = new (std::nothrow) party::Character(who);
+        if (copy) {
+            rules::fix_items(*copy, true);
+            src = copy;
+        }
+    }
+    const party::Character& ch = *src;
     uint8_t buf[party::kPoolRecordSize];
     uint8_t fx[party::kMaxAffects * party::kAffectSize];
     size_t n = 0;
@@ -968,6 +983,7 @@ bool write_character_files(const char* dir, const char* rec_fn, const char* item
     bool ok = write_file(dir, rec_fn, p, n);
     ok = ok && write_file(dir, items_fn, ch.items[0], static_cast<size_t>(ch.n_items) * party::kItemSize);
     ok = ok && write_file(dir, fx_fn, f, static_cast<size_t>(ch.n_affects) * party::kAffectSize);
+    delete copy;
     return ok;
 }
 
@@ -975,6 +991,7 @@ bool write_character_files(const char* dir, const char* rec_fn, const char* item
 void character_read(party::Character& ch)
 {
     if (pool_files()) rules::pool_stats_in(ch, d->facts);
+    rules::fix_items(ch);                   // (an item the original got wrong, fixed when wanted)
 }
 
 // Loads saved game `slot`: the game's memory, position and script, and
@@ -5850,6 +5867,7 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         d->facts.berserk_fx = pi.berserk;
         rules::set_berserk_fx(pi.berserk);
         items::set_passive(pi.passive);
+        items::set_flame_fix(&pi.flame, CYD_ITEM_FIXES && opts.item_fixes);
         rules::set_worn_facts(pi.effect_data, pi.stat_fx[1]);
         {
             const auto& pc = d->prof->create;
@@ -8396,6 +8414,10 @@ void set_options(const Options& o)
 {
     opts = o;
     if (!d) return;
+    // The items the originals got wrong: as now wanted, the party's too (mid-game)
+    items::set_flame_fix(&d->prof->items.flame, CYD_ITEM_FIXES && opts.item_fixes);
+    for (int i = 0; pt && i < pt->count; ++i)
+        if (rules::fix_items(pt->m[i]) && names) rules::recalc(pt->m[i], *names, d->facts);
     const int letters = font_wanted();
     if (d->font.letters == letters) return;
     // Mid-game (Tom, 2026-10-11): the text on the screen changes font too

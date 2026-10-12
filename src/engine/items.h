@@ -137,4 +137,26 @@ Passive passive(const uint8_t* item);
 extern const Passive kCursePassive[kPassiveCodes];
 extern const Passive kPoolPassive[kPassiveCodes];
 
+// ---- The originals' item mistakes, corrected when the player wants
+// (engine comfort CYD_ITEM_FIXES). Pool of Radiance's "Long Sword +2 Flame
+// Tongue" (Tom, 2026-10-12): its record has no flame tongue effect - its
+// 0x3D is 0x16 (Use: Find Traps) and 0x3E 0, where Curse's same sword has
+// the effect 0x06 with code 0x80 (poolrad_items_facts.md 7). Fixed it is
+// the AD&D sword, as Curse's: +1, and through the effect +2 against
+// regenerating creatures, +3 against cold-using / avian ones, +4 against
+// undead, its blows fire (a troll it fells stays down).
+struct FlameFix {
+    uint8_t type = 0, word = 0;        // the item type, its first name word ("Flame Tongue"); 0: no fix
+    uint8_t plus = 0, spell = 0;       // the original's plus and 0x3D
+    uint8_t effect = 0, code = 0x80;   // fixed: +1, 0x3D the flame tongue effect, 0x3E this code
+    uint8_t plus_word = 0, plus1_word = 0;   // the name's plus word (0x30): the original's ("+2"), +1's
+};
+// The game's sword (nullptr: none) and whether the fix is wanted
+void set_flame_fix(const FlameFix* f, bool on);
+bool flame_fix_on();
+// One record made as wanted (fixed, or back to the original's bytes);
+// `original` true: the original's bytes whatever is wanted (the files).
+// True when it changed.
+bool fix_item(uint8_t* rec, bool original = false);
+
 } // namespace items

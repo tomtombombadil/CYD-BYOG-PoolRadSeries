@@ -95,8 +95,14 @@ void share(party::Party& p, int money[7]);
 
 // True if the character can't take the item (16 items, or too heavy).
 bool too_heavy(party::Character& c, const uint8_t* item, const items::Names& names, const ItemFacts& f);
-// Adds an item to a character (false: no room).
+// Adds an item to a character (false: no room); an item the original got
+// wrong comes in fixed when that's wanted (items::fix_item)
 bool add_item(party::Character& c, const uint8_t* item);
+// Every item of the character made as wanted (items::fix_item; original:
+// the original's bytes, for the files) - a readied one put away and readied
+// again around the change, so its effect comes or goes. True: any changed
+// (recalc after).
+bool fix_items(party::Character& c, bool original = false);
 
 // A character's items (Items: Drop, Trade, Halve, Join)
 void remove_item(party::Character& c, int i);

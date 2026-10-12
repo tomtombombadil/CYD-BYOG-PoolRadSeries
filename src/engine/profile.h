@@ -299,6 +299,9 @@ struct Profile {
         // training's effects (0x04, 0x07), "starts to train", "is hardier"
         uint8_t     manual_fx[2] = {};
         uint32_t    manual_words[2] = {};
+        // An item the original got wrong, fixed when wanted (items::FlameFix:
+        // Pool's Flame Tongue; type 0 - nothing to fix)
+        items::FlameFix flame = {};
     } items;
 
     // Character rules (making and training characters): the rule tables in

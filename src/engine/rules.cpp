@@ -649,8 +649,26 @@ bool too_heavy(party::Character& c, const uint8_t* item, const items::Names& nam
 bool add_item(party::Character& c, const uint8_t* item)
 {
     if (c.n_items >= party::kMaxItems) return false;
-    memcpy(c.items[c.n_items++], item, items::kRecordSize);
+    uint8_t* r = c.items[c.n_items++];
+    memcpy(r, item, items::kRecordSize);
+    items::fix_item(r);
     return true;
+}
+
+bool fix_items(party::Character& c, bool original)
+{
+    bool any = false;
+    for (int i = 0; i < c.n_items; ++i) {
+        uint8_t probe[items::kRecordSize];
+        memcpy(probe, c.items[i], sizeof probe);
+        if (!items::fix_item(probe, original)) continue;
+        const bool on = c.items[i][0x34] != 0;
+        if (on) worn(c, i, false);
+        memcpy(c.items[i], probe, sizeof probe);
+        if (on) worn(c, i, true);
+        any = true;
+    }
+    return any;
 }
 
 int price(const uint8_t* item, int factor)

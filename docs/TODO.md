@@ -51,6 +51,10 @@ the Project as claude/TODO.md.
 
 ## Done
 
+- v0.90.0: Tom's questions on the Cloak of Elvenkind (95 in 100 is the
+  originals' own code - answered) and the Flame Tongue: the Item Fixes
+  switch (Pool's Flame Tongue as AD&D, files kept as the original's), the
+  Flame Tongue's blows fire in both games; Settings switches in pages.
 - v0.89.1: every item of both games tested (equip, the class / alignment
   / Strength rules, to hit, damage, AC, saves, stats, effects, use, fights;
   Curse 4069 checks, Pool 2738) plus the ITEMTEST characters themselves

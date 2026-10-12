@@ -2192,6 +2192,15 @@ static void behave_items()
         bm_cl = 3;
         bm_th = 5;
     }
+    // The records as the player gets them: an item the original got wrong
+    // fixed when that's on (CYD_ITEM_FIXES; Pool's Flame Tongue)
+    for (int k = 0; k < b_n_items; ++k)
+        if (items::fix_item(&b_items[static_cast<size_t>(k) * 63])) {
+            char what[96];
+            snprintf(what, sizeof what, "record %d %s: fixed as AD&D (+%d, effect %02X)", k, b_nm(b_rec(k)), b_rec(k)[0x32],
+                     b_rec(k)[0x3D]);
+            expect("items", what, b_rec(k)[0x32] == 1 && b_kind(b_rec(k)) == BEffect);
+        }
     // ---- A magic weapon's plus: +1 to hit AND +1 damage (the long sword, type 36)
     {
         const uint8_t* plain = b_plain_of_type(36);
@@ -2335,7 +2344,7 @@ static void behave_itemtest()
                 fprintf(rep, "  %-34s %s", nm, on ? "readied" : "NOT readied");
                 if (on) {
                     if (v1.hit != v0.hit) fprintf(rep, ", to hit %+d", v1.hit - v0.hit);
-                    if (v1.dmg != v0.dmg) fprintf(rep, ", damage %+d", v1.dmg - v0.dmg);
+                    if (v1.dmg != v0.dmg) fprintf(rep, ", damage %+d (%+d in all)", v1.dmg - v0.dmg, v1.dmg);
                     if (v1.dice != v0.dice || v1.sides != v0.sides) fprintf(rep, ", dice %dd%d", v1.dice, v1.sides);
                     if (v1.ac != v0.ac) fprintf(rep, ", AC %+d", -(v1.ac - v0.ac));
                     if (v1.save != v0.save) fprintf(rep, ", saves %+d", v1.save - v0.save);

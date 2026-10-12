@@ -24,7 +24,8 @@ struct Settings {
 // comforts_off bits (app/features.h)
 // game_font (CYD_CLEAR_FONT in app/features.h)
 constexpr uint8_t kFontGame = 0, kFontClear = 1, kFontDarkness = 2, kFontClearCaps = 3;   // (the stored values)
-constexpr uint8_t kOffGallery = 1, kOffBigIcon = 2, kOffDemoTap = 4, kOffJournal = 8, kOffMoreGuys = 16, kOffPortrait = 32;
+constexpr uint8_t kOffGallery = 1, kOffBigIcon = 2, kOffDemoTap = 4, kOffJournal = 8, kOffMoreGuys = 16, kOffPortrait = 32,
+                  kOffItemFixes = 64;
 
 
 constexpr uint8_t kMinBrightness = 20;

@@ -1263,6 +1263,37 @@ static void test_pool_items()
 {
     items::set_passive(items::kPoolPassive);
     rules::set_worn_facts(12, 0x26);
+    // The Flame Tongue fixed (CYD_ITEM_FIXES): the original's record (+2,
+    // 0x3D 0x16, no code) becomes +1 with the effect 0x06 (code 0x80); a
+    // readied one gets the effect; the files' form is the original's; a
+    // record not the sword stays as it is; off: back
+    {
+        static const items::FlameFix ff{0x24, 0xF1, 2, 0x16, 0x06, 0x80, 0xA3, 0xA2};
+        static party::Character k;
+        k = party::Character{};
+        uint8_t sw[items::kRecordSize] = {};
+        sw[0x2E] = 0x24; sw[0x2F] = 0xF1; sw[0x30] = 0xA3; sw[0x31] = 0x24; sw[0x32] = 2; sw[0x3D] = 0x16;
+        uint8_t plain[items::kRecordSize];
+        memcpy(plain, sw, sizeof plain);
+        plain[0x2F] = 0;                                   // (a Long Sword +2 with no such word)
+        items::set_flame_fix(&ff, true);
+        CHECK(rules::add_item(k, sw) && rules::add_item(k, plain));
+        CHECK(k.items[0][0x32] == 1 && k.items[0][0x30] == 0xA2 && k.items[0][0x3D] == 0x06 && k.items[0][0x3E] == 0x80);
+        CHECK(k.items[1][0x32] == 2 && k.items[1][0x3D] == 0x16 && k.items[1][0x3E] == 0);
+        CHECK(items::passive(k.items[0]) == items::Passive::Effect);
+        k.items[0][0x34] = 1;
+        rules::worn(k, 0, true);
+        CHECK(k.has_affect(0x06));
+        CHECK(rules::fix_items(k, true));                  // (the files)
+        CHECK(k.items[0][0x32] == 2 && k.items[0][0x30] == 0xA3 && k.items[0][0x3D] == 0x16 && k.items[0][0x3E] == 0 &&
+              !k.has_affect(0x06));
+        CHECK(rules::fix_items(k) && k.has_affect(0x06) && k.items[0][0x3D] == 0x06);
+        CHECK(!rules::fix_items(k));                       // (already so)
+        items::set_flame_fix(&ff, false);
+        CHECK(rules::fix_items(k) && k.items[0][0x32] == 2 && !k.has_affect(0x06));
+        items::set_flame_fix(nullptr, false);
+        CHECK(!rules::fix_items(k));
+    }
     rules::ItemFacts f{};
     f.giant_fx = 0x26;
     f.enlarge_fx = 0x0C;
@@ -3879,11 +3910,15 @@ static void test_item_combat()
     }
     rec[1][0xDE] = 1;
     // A flask of oil burns (Tom, 2026-10-12): a troll it brings down stays
-    // down; one a sword brings down gets up again
+    // down; one a sword brings down gets up again - unless the sword is a
+    // Flame Tongue (its effect 0x06 on the wielder: fire, 9)
     fx.mon.troll_death = 0x64;
     fx.mon.troll_up = 0x66;
-    for (int oil = 0; oil < 2; ++oil) {
-        hold(oil ? 86 : 36, oil ? 5 : 0, false, 0);
+    for (int oil = 0; oil < 3; ++oil) {
+        hold(oil == 1 ? 86 : 36, oil == 1 ? 5 : 0, false, 0);
+        naff[0] = oil == 2 ? 1 : 0;
+        memset(aff[0][0], 0, party::kAffectSize);
+        aff[0][0][0] = 0x06; aff[0][0][3] = 0xFF;
         bool done = false;
         for (int tries = 0; tries < 40 && !done; ++tries) {
             naff[1] = 1;
@@ -3896,10 +3931,11 @@ static void test_item_combat()
             const combat::Attack a = combat::attack(b, 0, 1, &names, d, false);
             if (!a.down) continue;
             done = true;
-            CHECK(b.f[1].has(0x66) == !oil);
+            CHECK(b.f[1].has(0x66) == (oil == 0));
         }
         CHECK(done);
     }
+    naff[0] = 0;
 }
 
 static void test_create()

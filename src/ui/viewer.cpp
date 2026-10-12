@@ -2129,7 +2129,8 @@ void tap_sounds(const ui::Tap& t)
 // One set for all games (settings.h comforts_off): the game's Settings page
 // and the in-game Game menu's Options tab show the same keys; a comfort
 // compiled out (app/features.h) isn't listed.
-enum Comfort { kCFont, kCGallery, kCBigIcon, kCJournal, kCDemoTap, kCMoreGuys, kCPortrait, kCSound, kComforts };
+enum Comfort { kCFont, kCGallery, kCBigIcon, kCJournal, kCDemoTap, kCMoreGuys, kCPortrait, kCItemFixes, kCSound,
+               kComforts };
 
 bool comfort_built(int c)
 {
@@ -2141,13 +2142,14 @@ bool comfort_built(int c)
     case kCDemoTap: return CYD_DEMO_TAP_STOPS;
     case kCMoreGuys: return CYD_MORE_CHARACTERS;
     case kCPortrait: return CYD_ICON_PORTRAIT;
+    case kCItemFixes: return CYD_ITEM_FIXES;
     default: return true;
     }
 }
 uint8_t comfort_bit(int c)
 {
     static const uint8_t kBits[kComforts] = {0, kOffGallery, kOffBigIcon, kOffJournal, kOffDemoTap, kOffMoreGuys,
-                                             kOffPortrait, 0};
+                                             kOffPortrait, kOffItemFixes, 0};
     return kBits[c];
 }
 bool comfort_on(int c)
@@ -2165,6 +2167,7 @@ void apply_options()
     o.demo_tap = comfort_on(kCDemoTap);
     o.more_guys = comfort_on(kCMoreGuys);
     o.portrait = comfort_on(kCPortrait);
+    o.item_fixes = comfort_on(kCItemFixes);
     o.font = comfort_on(kCFont) ? cfg->game_font : kFontGame;
     play::set_options(o);
 }
@@ -2195,7 +2198,54 @@ ui::Rect comfort_qmark(const ui::Rect& cell)
 }
 
 const char* const kComfortNames[kComforts] = {"Game Font",        "Icon Gallery",    "Large Icon",    "Journal Pop-Up",
-                                              "Tap to Stop Demo", "More Characters", "Icon Portrait", "Game Sound"};
+                                              "Tap to Stop Demo", "More Characters", "Icon Portrait", "Item Fixes",
+                                              "Game Sound"};
+
+// Pages of switches (8 a page) when there are more than fit, with arrows
+// bottom right as the board's Settings page
+constexpr int kComfortCells = 8;
+int comfort_page = 0;
+int comfort_pages()
+{
+    int list[kComforts];
+    return (comfort_list(list) + kComfortCells - 1) / kComfortCells;
+}
+ui::Rect comfort_arrow(int i)
+{
+    const int w = ui::key_h() * 5 / 4, gp = ui::gap();
+    return {ui::width() - gp - (2 - i) * (w + gp) + gp, ui::height() - ui::key_h() - gp, w, ui::key_h()};
+}
+// Bottom key i of n, left of the arrows when there are pages
+ui::Rect comfort_bottom(int i, int n)
+{
+    if (comfort_pages() <= 1) return ui::bottom_key(i, n);
+    const int gp = ui::gap(), right = comfort_arrow(0).x;
+    const int w = (right - gp * (n + 1)) / n;
+    return {gp + i * (w + gp), ui::height() - ui::key_h() - gp, w, ui::key_h()};
+}
+void draw_comfort_arrows()
+{
+    const int pages = comfort_pages();
+    if (pages <= 1) return;
+    if (comfort_page >= pages) comfort_page = pages - 1;
+    ui::key_arrow(comfort_arrow(0), ui::Arrow::Left, comfort_page > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+    ui::key_arrow(comfort_arrow(1), ui::Arrow::Right, comfort_page < pages - 1 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+}
+// True when an arrow was tapped (the page turned or not)
+bool tap_comfort_arrows(const ui::Tap& t)
+{
+    const int pages = comfort_pages();
+    if (pages <= 1) return false;
+    if (comfort_arrow(0).contains(t.x, t.y)) {
+        if (comfort_page > 0) --comfort_page;
+        return true;
+    }
+    if (comfort_arrow(1).contains(t.x, t.y)) {
+        if (comfort_page < pages - 1) ++comfort_page;
+        return true;
+    }
+    return false;
+}
 
 // The option whose help is up (-1: none); the next tap puts it away
 int8_t comfort_help = -1;
@@ -2203,9 +2253,12 @@ int8_t comfort_help = -1;
 void draw_comforts(const ui::Rect& a)
 {
     int list[kComforts];
-    const int n = comfort_list(list);
+    const int all = comfort_list(list);
+    if (comfort_page * kComfortCells >= all) comfort_page = 0;
+    const int first = comfort_page * kComfortCells;
+    const int n = all - first < kComfortCells ? all - first : kComfortCells;
     for (int i = 0; i < n; ++i) {
-        const int c = list[i];
+        const int c = list[first + i];
         const bool on = comfort_on(c);
         const char* sub = on ? "On" : "Off";
         if (c == kCSound) sub = cfg->sound == kSoundPc ? "PC Speaker" : cfg->sound == kSoundOff ? "Off" : "Tandy";
@@ -2254,6 +2307,12 @@ const char* comfort_help_text(int c)
                "own tiles, where a portrait would go. Where the game has a portrait (Pool of Radiance: every "
                "character) the portrait comes first: tap it to swap to the icon and back. Tap the icon for its "
                "action pose. Off: as the original.";
+    case kCItemFixes:
+        return "Items the original games got wrong, made as AD&D describes them. Pool of Radiance's Flame Tongue: "
+               "in the original it is a plain long sword +2 whose blows aren't fire, so a troll it fells gets back "
+               "up (and Use casts Find Traps). Fixed it is a long sword +1 Flame Tongue, as in Curse: +2 against "
+               "regenerating creatures such as trolls, +3 against cold-using and flying ones, +4 against undead, "
+               "and its blows are fire. Your files keep the original's item. Off: as the original.";
     case kCSound:
         return "The games' own sound effects. Tandy: the Tandy 1000's three voices and noise, the better of the "
                "two (the default). PC Speaker: the PC's one beeper. Off: silence. The volume is on the board's "
@@ -2367,11 +2426,14 @@ bool comfort_help_tap()
 // True when a switch was tapped (and changed), or its help opened
 bool tap_comforts(const ui::Rect& a, const ui::Tap& t)
 {
+    if (tap_comfort_arrows(t)) return true;
     int list[kComforts];
-    const int n = comfort_list(list);
+    const int all = comfort_list(list);
+    const int first = comfort_page * kComfortCells < all ? comfort_page * kComfortCells : 0;
+    const int n = all - first < kComfortCells ? all - first : kComfortCells;
     for (int i = 0; i < n; ++i) {
         if (!comfort_cell(a, i).contains(t.x, t.y)) continue;
-        const int c = list[i];
+        const int c = list[first + i];
         if (comfort_qmark(comfort_cell(a, i)).contains(t.x, t.y)) {
             comfort_help = static_cast<int8_t>(c);
             return true;
@@ -2412,7 +2474,8 @@ bool all_comforts_off()
 void toggle_original()
 {
     const bool on = all_comforts_off();
-    cfg->comforts_off = on ? 0 : (kOffGallery | kOffBigIcon | kOffDemoTap | kOffJournal | kOffMoreGuys | kOffPortrait);
+    cfg->comforts_off =
+        on ? 0 : (kOffGallery | kOffBigIcon | kOffDemoTap | kOffJournal | kOffMoreGuys | kOffPortrait | kOffItemFixes);
     if (!on) cfg->large_icons = 0;
     cfg->game_font = on ? kFontClear : kFontGame;
     settings_save(*cfg);
@@ -2435,8 +2498,9 @@ void draw_game_settings()
     ui::clear();
     ui::header("Settings", true);
     draw_comforts(game_settings_area());
-    ui::key(ui::bottom_key(0, 2), all_comforts_off() ? "All On" : "As Original");
-    ui::key(ui::bottom_key(1, 2), "Dev Tools");
+    ui::key(comfort_bottom(0, 2), all_comforts_off() ? "All On" : "As Original");
+    ui::key(comfort_bottom(1, 2), "Dev Tools");
+    draw_comfort_arrows();
 }
 
 void tap_game_settings(const ui::Tap& t)
@@ -2446,8 +2510,8 @@ void tap_game_settings(const ui::Tap& t)
         return;
     }
     if (ui::back_rect().contains(t.x, t.y)) { go(Screen::Files); return; }
-    if (ui::bottom_key(1, 2).contains(t.x, t.y)) { go(Screen::Dev); return; }
-    if (ui::bottom_key(0, 2).contains(t.x, t.y)) {
+    if (comfort_bottom(1, 2).contains(t.x, t.y)) { go(Screen::Dev); return; }
+    if (comfort_bottom(0, 2).contains(t.x, t.y)) {
         toggle_original();
         dirty = true;
         return;
@@ -2470,8 +2534,9 @@ void draw_game_menu()
             draw_comfort_help();
             return;
         }
-        ui::key(ui::bottom_key(0, 1), "Back to Game");
+        ui::key(comfort_bottom(0, 1), "Back to Game");
         draw_comforts({0, a.y, ui::width(), a.h});
+        draw_comfort_arrows();
         return;
     }
     const int pages = menu_tab == kTabPdf || menu_note[0] ? 1 : menu_pages();   // (a note: no list pages)
@@ -2558,7 +2623,7 @@ void tap_game_menu(const ui::Tap& t)
         return;
     }
     if (menu_tab == kTabOptions) {
-        if (bottom_hit(t, 1) == 0) {
+        if (comfort_bottom(0, 1).contains(t.x, t.y)) {
             leave_menu();
         } else {
             const ui::Rect a = journal_area();

@@ -360,7 +360,8 @@ can't get the memory says "Not enough memory to show this log."
    set for all games, saved with the engine's settings) holds the engine
    comforts' switches - Game Font (v0.73.0; Original / Clear / Darkness since v0.74.0, Clear Caps
    since v0.84.0), Icon Gallery, Large Icon, Journal Pop-Up, Tap to Stop Demo (v0.84.0; was Demo Tap
-   Stops), More Characters, Icon Portrait (v0.84.0) - and Game Sound (Tandy / PC Speaker / Off), each
+   Stops), More Characters, Icon Portrait (v0.84.0), Item Fixes (v0.90.0) - and Game Sound (Tandy /
+   PC Speaker / Off; more than 8 keys: pages, arrows bottom right since v0.90.0), each
    key lit when on, with a circled "?" at its right (Tom, v0.84.0) that opens what the option does
    (the next tap closes it; Game Font's shows a line in each font, the player's own fonts read from
    the card); below them **As Original** (every comfort off; then the
@@ -840,9 +841,16 @@ Steps (each pushed when it works; Curse stays as it is):
    **Cloak of Elvenkind** (effect 0x48, the same handler in both games:
    95 in 100 invisible at a fight's start and after each round, as the
    ring) now work; before, the sword was a plain +1 and the cloak did
-   nothing. Kept as the original: Pool's "Long Sword +2 Flame Tongue" is
-   a +2 long sword whose Use casts Find Traps (its record has no flame
-   tongue effect), and an item with no charges never runs out.
+   nothing. An item with no charges never runs out (as the originals).
+   v0.90.0 (Tom): Pool's "Long Sword +2 Flame Tongue" is, in the original,
+   a +2 long sword whose Use casts Find Traps (its record has 0x3D 0x16
+   and no effect code, where Curse's same sword has the effect 0x06 with
+   0x80) - no fire, so a troll it fells gets up again. The **Item Fixes**
+   comfort (section 11, on unless switched off) makes it the AD&D sword,
+   as Curse's: Long Sword +1 Flame Tongue. Also fixed in both games: the
+   Flame Tongue's blows are fire and magic (kind 9, its handler's), so a
+   troll it fells stays down and Pool's mummy takes a point more a die -
+   the engine had left the kind out.
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -1100,6 +1108,19 @@ a PC, PortMaster handhelds):
     the portrait again). An NPC from the monsters' files shows its CPIC
     picture, as in fights. Off: as the originals (Pool's portrait from the
     party menu only). Settings key **Icon Portrait**.
+  - `CYD_ITEM_FIXES` (v0.90.0, Tom: "an optional fix, making the Flame
+    Tongue match the AD&D description"): items the originals got wrong,
+    made as AD&D describes them. Pool's Flame Tongue (type 36, name word
+    "Flame Tongue", +2, 0x3D 0x16, no code) becomes a Long Sword +1 Flame
+    Tongue - Curse's record: +1 (its "+1" name word), effect 0x06 with
+    code 0x80 - so +2 against regenerating creatures (type 10, trolls), +3
+    against cold-using / avian ones (types 9 / 12), +4 against undead
+    (type 4), its blows fire (the AD&D 1e sword's figures). Made as
+    characters are read (`play::character_read`), items are taken
+    (`rules::add_item`) and the switch turns mid-game; the files keep the
+    original's bytes (`write_character_files` writes a copy put back, its
+    effect gone). Settings key **Item Fixes** (on by default; As Original
+    turns it off).
   - `CYD_ICON_GALLERY` (v0.71.0, Tom: making icons a value at a time is
     "one of the worst parts of the game"): the icon editor (Alter -> Icon,
     Create New Character) opens on a gallery - pages Icons (32 ready-made
@@ -1169,6 +1190,9 @@ the game's Settings (As Original: all of them).
   always hitting - the AD&D rule, Curse's code too; Pool's code was read as
   level / 2 (nothing at first level). All on one target, as both games.
 - **View Character's icon portrait** (switch `CYD_ICON_PORTRAIT`).
+- **Item Fixes** (switch `CYD_ITEM_FIXES`, Tom, v0.90.0): Pool's Flame
+  Tongue is the AD&D sword (Long Sword +1 Flame Tongue, as Curse's); the
+  original's is a plain +2 sword whose Use casts Find Traps.
 - **Pool's race checks** (Tom, v0.85.1): Pool's program never gives its
   scripts the character's race (they read a memory word nothing sets: 0),
   so two checks never matched. The engine gives the race, so they work as
