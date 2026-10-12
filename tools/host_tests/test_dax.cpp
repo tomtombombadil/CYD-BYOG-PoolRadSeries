@@ -3007,7 +3007,7 @@ static void test_party()
         static party::Character sc;
         party::from_secret(sec, sc);
         CHECK(sc.stat(0) == sec[0x11] && sc.stat_now(5) == sec[0x1A] && sc.str00() == sec[0x1C]);
-        CHECK(sc.race() == sec[0x6B] && sc.cls() == sec[0x6C] && sc.age() == (sec[0x6E] | sec[0x6F] << 8) &&
+        CHECK(sc.race() == party::race_from_secret(sec[0x6B]) && sc.cls() == sec[0x6C] && sc.age() == (sec[0x6E] | sec[0x6F] << 8) &&
               sc.hp_max() == sec[0x70] && sc.hp() == sec[0x1B5] && sc.movement() == sec[0x1B6]);
         CHECK(sc.rec[0x79] == sec[0x71] && sc.rec[0xDC] == sec[0xD4] && sc.ext[party::kExtBook] == sec[0xD5] &&
               sc.ext[party::kExtBook + 16] == sec[0xE5] && sc.rec[0xDD] == sec[0xE6] && sc.rec[0xDE] == sec[0xE7]);
@@ -3023,6 +3023,23 @@ static void test_party()
         uint8_t back[party::kSecretRecordSize];
         party::to_secret(sc, back);
         CHECK(memcmp(back, sec, sizeof sec) == 0);
+        // Races: Secret's human (6) is Curse's 7; a tribble (0) stays one; a
+        // changed race goes back in Secret's numbers
+        CHECK(party::race_from_secret(6) == 7 && party::race_from_secret(3) == 1 && party::race_to_secret(7) == 6 &&
+              party::race_to_secret(2) == 1);
+        {
+            static party::Character tc;
+            uint8_t t2[party::kSecretRecordSize];
+            memcpy(t2, sec, sizeof t2);
+            t2[0x6B] = 0;
+            party::from_secret(t2, tc);
+            uint8_t b2[party::kSecretRecordSize];
+            party::to_secret(tc, b2);
+            CHECK(tc.race() == 0 && b2[0x6B] == 0);
+            tc.rec[0x74] = 2;                                // made an elf
+            party::to_secret(tc, b2);
+            CHECK(b2[0x6B] == 1);
+        }
         // Spells memorized past its 75 places go into free ones (from the end)
         sc.rec[0x1E + 80] = 0x22;
         sc.n_items = 3;
@@ -3031,7 +3048,7 @@ static void test_party()
         dax::MemorySource ms(sec, sizeof sec);
         static party::Character rc;
         size_t n = 0;
-        CHECK(party::read_record(ms, rc, party::Format::Secret) && rc.race() == sec[0x6B] &&
+        CHECK(party::read_record(ms, rc, party::Format::Secret) && rc.race() == party::race_from_secret(sec[0x6B]) &&
               party::record_bytes(rc, party::Format::Secret, back, &n) == back && n == party::kSecretRecordSize &&
               memcmp(back, sec, n) == 0);
         // Items of 67 bytes (.STF): the first 63 kept

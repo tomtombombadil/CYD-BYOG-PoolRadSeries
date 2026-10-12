@@ -896,7 +896,11 @@ until the party menu is known (`party.items`).
   Its saves are Curse's without the script's bytes (5,469;
   `savegame::read / write` with `script` false); characters' items in
   .STF (67-byte records: Curse's 63 + 4 zero), effects .SFX, characters
-  saved alone .WHO (`variant.secret_files`).
+  saved alone .WHO (`variant.secret_files`). v0.93.1: its races are
+  numbered otherwise (0 tribble, elf, half-elf, dwarf, gnome, halfling,
+  human, 7 monster) - the record gets Curse's number
+  (`party::race_from_secret` / `race_to_secret`), Secret's own kept in
+  ext so a tribble comes back as one.
 - Next: the party menu, camp, items, shops (and importing Curse's
   characters: its Add Character offers "Secret Curse"); combat; sound
   (SOUND.DAX), the sky and approaching monsters (SPRIT1); behaviour tests.

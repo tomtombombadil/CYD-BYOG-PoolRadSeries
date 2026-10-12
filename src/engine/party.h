@@ -50,13 +50,14 @@ enum Health : uint8_t { Okay = 0, Animated, TempGone, Running, Unconscious, Dyin
 // 0x13E-0x146 (druid 6-7 and a group of 7 not known yet), the 6th / 7th
 // level magic-user slots, the bytes 0x6D, 0x15E (flags 2), 0x15F and 0x1A5
 // (magic resistance)
-constexpr size_t kExtSize = 34;
+constexpr size_t kExtSize = 35;
 enum Ext : uint8_t {
     kExtBook = 0,                       // spells 101-117 (17)
     kExtCleric67 = 17,                  // Secret 0x137-0x138
     kExtDruidMore = 19,                 // Secret 0x13E-0x146 (9)
     kExtMage67 = 28,                    // Secret 0x14C-0x14D
     kExt6D = 30, kExtFlags2 = 31, kExt15F = 32, kExtMagicRes = 33,
+    kExtRace = 34,                      // Secret's own race number (its races are numbered otherwise)
 };
 
 struct Character {
@@ -134,7 +135,12 @@ constexpr int    kPoolMemorized = 21;
 // Curse's layout field by field (75 memorized spells in place, spells
 // 1-100 of the book, levels 1-5 of the spell slots ...); what has no place
 // there is kept in Character::ext; its pointers are written as 0, its item
-// count from the items kept.
+// count from the items kept. Its races are numbered otherwise (0 tribble,
+// elf, half-elf, dwarf, gnome, halfling, human, 7 monster; Curse: 0
+// monster, dwarf, elf, gnome, half-elf, halfling, half-orc, 7 human): the
+// record gets Curse's number.
+uint8_t race_from_secret(uint8_t secret);
+uint8_t race_to_secret(uint8_t curse);
 constexpr size_t kSecretRecordSize = 0x1B7;
 constexpr int    kSecretMemorized = 75;
 constexpr size_t kSecretItemSize = 0x43;

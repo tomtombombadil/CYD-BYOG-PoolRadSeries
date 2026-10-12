@@ -53,7 +53,8 @@ the Project as claude/TODO.md.
       work plan in the Project's claude/secret_facts.md; SPEC 6c). Done:
       program layout, words, scripts, frame, font, title, Screen / Walk
       Test (v0.92.0); the 439-byte record and the saves (v0.93.0). Next, a
-      chunk a commit: (4) party menu, camp, items, shops (its version line's
+      chunk a commit: (4) party menu (the scripts read Secret's own
+      character offsets and race numbers: script_value for Secret), camp, items, shops (its version line's
       two-line look with it); (5) combat (its fight frame not seen yet:
       Curse's shape for now), spells, monsters; (6) sound, sky,
       approaching monsters; (7) behaviour tests.
@@ -62,6 +63,9 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.93.1: Secret's race numbers (human 6, Curse's 7) turned into Curse's
+  when read, back when written.
 
 - v0.93.0: Secret's characters and saves - its 439-byte record in and out
   of the engine's (Curse's) layout with an extension for what has no

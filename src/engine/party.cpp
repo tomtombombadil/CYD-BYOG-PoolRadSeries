@@ -49,6 +49,7 @@ constexpr uint16_t kSecretRuns[][3] = {
 constexpr uint16_t kSecretExt[][3] = {
     {0xD5, kExtBook, 17}, {0x137, kExtCleric67, 2}, {0x13E, kExtDruidMore, 9}, {0x14C, kExtMage67, 2},
     {0x6D, kExt6D, 1},    {0x15E, kExtFlags2, 1},   {0x15F, kExt15F, 1},       {0x1A5, kExtMagicRes, 1},
+    {0x6B, kExtRace, 1},
 };
 
 } // namespace
@@ -85,11 +86,24 @@ void to_pool(const Character& c, uint8_t* p)
     p[0xC7] = static_cast<uint8_t>(c.n_items);
 }
 
+uint8_t race_from_secret(uint8_t v)
+{
+    static const uint8_t kTo[8] = {0, 2, 4, 1, 3, 5, 7, 0};   // (tribble: as a monster)
+    return v < 8 ? kTo[v] : v;
+}
+
+uint8_t race_to_secret(uint8_t v)
+{
+    static const uint8_t kTo[8] = {7, 3, 1, 4, 2, 5, 6, 6};   // (half-orc: Secret has none - human)
+    return v < 8 ? kTo[v] : v;
+}
+
 void from_secret(const uint8_t* p, uint8_t* r)
 {
     memset(r, 0, kRecordSize);
     for (const auto& run : kSecretRuns) memcpy(r + run[1], p + run[0], run[2]);
     memcpy(r + kListAt, p + 0x1E, kSecretMemorized);       // the memorized spells, in place
+    r[0x74] = race_from_secret(p[0x6B]);
 }
 
 void from_secret(const uint8_t* p, Character& c)
@@ -104,6 +118,9 @@ void to_secret(const Character& c, uint8_t* p)
     memset(p, 0, kSecretRecordSize);
     for (const auto& run : kSecretRuns) memcpy(p + run[0], r + run[1], run[2]);
     for (const auto& run : kSecretExt) memcpy(p + run[0], c.ext + run[1], run[2]);
+    // The race: its own number when it still means the race the record has
+    // (a tribble stays one), else Curse's turned into Secret's
+    p[0x6B] = race_from_secret(c.ext[kExtRace]) == r[0x74] ? c.ext[kExtRace] : race_to_secret(r[0x74]);
     // The memorized spells: 75 places; any the engine put further on go
     // into its free places, from the end
     memcpy(p + 0x1E, r + kListAt, kSecretMemorized);
