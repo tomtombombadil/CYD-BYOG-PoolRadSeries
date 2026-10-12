@@ -3680,6 +3680,7 @@ static void test_item_combat()
     fx.haste = 0x27;
     fx.items.flame_tongue = 0x06; fx.items.dragon_slayer = 0x4B; fx.items.frost_brand = 0x4C;
     fx.items.displace = 0x59; fx.items.ring_invisible = 0x38;
+    fx.items.vs_undead = 0x03; fx.items.elvenkind = 0x48;     // (Pool's 0x03; 0x48 both games)
     b.fx = &fx;
     b.names = &names;
     b.arrow = 73;
@@ -3757,8 +3758,10 @@ static void test_item_combat()
     b.f[1].x = 11;
     combat::occupancy(b);
     struct W { uint8_t fx; int kind, bonus; bool slayer; };
+    // (and Pool's sword against undead, 0x03: the animated dead +2, nothing else)
     const W ws[] = {{6, 10, 1, false}, {6, 9, 2, false}, {6, 12, 2, false}, {6, 4, 3, false}, {6, 3, 0, false},
-                    {0x4C, 8, 3, false}, {0x4C, 10, 0, false}, {0x4B, 3, 2, true}, {0x4B, 8, 0, false}};
+                    {0x4C, 8, 3, false}, {0x4C, 10, 0, false}, {0x4B, 3, 2, true}, {0x4B, 8, 0, false},
+                    {0x03, 4, 2, false}, {0x03, 10, 0, false}};
     for (const W& w : ws) {
         naff[0] = 1;
         memset(aff[0][0], 0, party::kAffectSize);
@@ -3818,6 +3821,27 @@ static void test_item_combat()
     combat::tick(b);
     CHECK(b.f[0].has(0x19));
     naff[0] = 0;
+    // The elves' stealth (0x48: the Cloak of Elvenkind): invisible at the start
+    // and after each round on 95 or less of a d100
+    {
+        naff[0] = 1;
+        memset(aff[0][0], 0, party::kAffectSize);
+        aff[0][0][0] = 0x48; aff[0][0][3] = 12;
+        bool ok = true;
+        int seen = 0, unseen = 0;
+        for (int n = 0; n < 200; ++n) {
+            naff[0] = 1;                                     // (the invisibility off again)
+            create::Dice peek = d;
+            const bool want = peek.roll(100, 1) <= 95;
+            if (n % 2) combat::battle_start(b, &d);
+            else combat::tick(b);
+            if (b.f[0].has(0x19) != want) ok = false;
+            ++(want ? seen : unseen);
+        }
+        CHECK(ok);
+        CHECK(seen > 0 && unseen > 0);
+        naff[0] = 0;
+    }
     // Large targets: size byte over 0x80, or & 7 over 1 (0x80 itself is man-sized): the large dice
     rec[0][0x19E] = 1; rec[0][0x1A0] = 8; rec[0][0x199] = 100;
     for (int sz : {0x80, 0x81, 0x02, 0x01}) {

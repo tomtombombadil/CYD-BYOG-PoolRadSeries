@@ -1078,7 +1078,12 @@ int tick(Battle& b, Event* out, int cap)
                 helpless_now();
             }
         }
-        // The Ring of Invisibility: invisible again for the next round
+        // The elves' stealth (95 in 100) and the Ring of Invisibility:
+        // invisible again for the next round (the original's round-end
+        // list: 0x48 before 0x38)
+        if (b.fx->invisible && b.fx->items.elvenkind && hasx(f, b.fx->items.elvenkind) && !f.has(b.fx->invisible) &&
+            g_dice && g_dice->roll(100, 1) <= 95)
+            give_aff(f, b.fx->invisible, 1, 12, false);
         if (b.fx->items.ring_invisible && b.fx->invisible && hasx(f, b.fx->items.ring_invisible) &&
             !f.has(b.fx->invisible))
             give_aff(f, b.fx->invisible, 1, 12, false);
@@ -1143,10 +1148,11 @@ int tick(Battle& b, Event* out, int cap)
     return n;
 }
 
-void battle_start(Battle& b)
+void battle_start(Battle& b, create::Dice* d)
 {
     g_b = &b;
     g_fx = b.fx;
+    if (d) g_dice = d;
     if (!b.fx) return;
     for (int i = 0; i < b.n; ++i) {
         Fighter& f = b.f[i];
@@ -1155,7 +1161,11 @@ void battle_start(Battle& b)
         if (k >= 0) f.aff[k][3] &= 0x0F;
         if (!b.fx->invisible) continue;
         if (f.size && f.up() && hasx(f, b.fx->mon.start_invisible)) give_aff(f, b.fx->invisible, 255, 0xFF, false);
-        // The Ring of Invisibility: invisible (for the round; again at each round's end - tick)
+        // The elves' stealth (95 in 100) and the Ring of Invisibility:
+        // invisible (for the round; again at each round's end - tick)
+        if (b.fx->items.elvenkind && hasx(f, b.fx->items.elvenkind) && !f.has(b.fx->invisible) && g_dice &&
+            g_dice->roll(100, 1) <= 95)
+            give_aff(f, b.fx->invisible, 1, 12, false);
         if (b.fx->items.ring_invisible && hasx(f, b.fx->items.ring_invisible) && !f.has(b.fx->invisible))
             give_aff(f, b.fx->invisible, 1, 12, false);
     }
@@ -1749,6 +1759,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             wbonus += kind == 10 ? 1 : (kind == 9 || kind == 12) ? 2 : kind == 4 ? 3 : 0;
         if (ix.frost_brand && at.has(ix.frost_brand) && kind == 8) wbonus += 3;
         if (ix.dragon_slayer && at.has(ix.dragon_slayer) && kind == 3) slayer = true;
+        if (ix.vs_undead && at.has(ix.vs_undead) && kind == 4) wbonus += 2;
     }
     for (int slot = 1; slot >= 0; --slot) {
         while (at.attacks[slot] > 0 && tg.up() && out.n < 8) {

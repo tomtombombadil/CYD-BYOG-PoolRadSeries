@@ -79,6 +79,42 @@ static const char* b_nm(const uint8_t* r)
     return t;
 }
 
+// ---- The game: Curse (the sample party: 1 a paladin, 2 a dwarf fighter /
+// thief, 4 a cleric, 5 a magic-user) or Pool of Radiance (behaviour checks
+// with GAME=1: 0 a fighter, 3 a cleric, 4 a magic-user, 5 a thief)
+static bool b_pool = false;
+static int bm_mu = 5, bm_cl = 4, bm_th = 2;
+
+// What a readied item's code does in each game - from the facts
+// (curse_finish_facts.md 5.2, poolrad_combat_facts.md 2.2 /
+// poolrad_items_facts.md 2), not from the engine's table
+enum BKind { BNone, BEffect, BWiz, BDex, BAlign, BGirdle, BDwarf, BIoun, BHammer, BFumble, BThief, BStupid, BPowerless,
+             BOgre, BNeedGiant };
+static BKind b_kind(const uint8_t* r)
+{
+    if (r[0x3E] < 0x80) return BNone;
+    const int code = r[0x3E] & 0x7F;
+    static const BKind curse[14] = {BEffect, BWiz, BDex, BNone, BAlign, BGirdle, BDwarf, BNone,
+                                    BIoun, BHammer, BFumble, BThief, BStupid, BPowerless};
+    static const BKind pool[12] = {BEffect, BEffect, BEffect, BOgre, BAlign, BEffect,
+                                   BEffect, BNeedGiant, BEffect, BHammer, BEffect, BEffect};
+    if (b_pool) return code < 12 ? pool[code] : BNone;
+    return code < 14 ? curse[code] : BNone;
+}
+// The spell an item casts: its id (Pool: 0x17 less over 0x38 - poolrad_items_facts.md 1)
+static int b_spell(const uint8_t* r)
+{
+    const int s = r[0x3D] & 0x7F;
+    return b_pool && s > 0x38 ? s - 0x17 : s;
+}
+// What the character needs for the item's own rule: its alignment (a
+// keyed item), giant strength (the boulder)
+static void b_suit(party::Character& ch, const uint8_t* r)
+{
+    if (b_kind(r) == BAlign) ch.rec[0x11B] = static_cast<uint8_t>(r[0x3D] & 0x0F);
+    if (b_kind(r) == BNeedGiant) ch.rec[0x10] = ch.rec[0x11] = 19;
+}
+
 // ---- A test character: party member `who` as loaded, no items, no effects
 static party::Character b_saved[party::kMaxParty];
 
@@ -396,7 +432,8 @@ static void b_adnd_tables()
             ch.rec[0x16] = ch.rec[0x17] = 10;
             b_give(ch, ring3, true);
             rules::recalc(ch, *names, d->facts);
-            expect("items", "Ring of Prot. +3 alone: AC 7, saves +3", ch.ac() == 7 && static_cast<int8_t>(ch.rec[0x186]) == 3,
+            expect("items", "Ring of Prot. +3 alone: AC 7, saves its record's (0x33)",
+                   ch.ac() == 7 && static_cast<int8_t>(ch.rec[0x186]) == static_cast<int8_t>(ring3[0x33]),
                    "AC %d saves %+d", ch.ac(), static_cast<int8_t>(ch.rec[0x186]));
             b_give(ch, ring2, true);
             rules::recalc(ch, *names, d->facts);
@@ -408,8 +445,9 @@ static void b_adnd_tables()
             b_give(ch, magic, true);
             rules::recalc(ch, *names, d->facts);
             expect("items", "ring +3 with Chain Mail +1: the ring's AC doesn't count (AC 4)", ch.ac() == 4, "AC %d", ch.ac());
-            expect("items", "ring +3 with Chain Mail +1: the ring's saves still count (+3)",
-                   static_cast<int8_t>(ch.rec[0x186]) == 3, "saves %+d", static_cast<int8_t>(ch.rec[0x186]));
+            expect("items", "ring +3 with Chain Mail +1: the ring's saves still count (its 0x33)",
+                   static_cast<int8_t>(ch.rec[0x186]) == static_cast<int8_t>(ring3[0x33]), "saves %+d",
+                   static_cast<int8_t>(ch.rec[0x186]));
         }
     }
     // Bracers: as armour of AC (10 - plus) - the better of bracers and armour, never both
@@ -458,6 +496,7 @@ static void b_adnd_tables()
         const int allow = ov("str_enc", grp);
         const int loads[] = {allow + 0x200, allow + 0x201, allow + 0x300, allow + 0x301, allow + 0x400, allow + 0x401};
         const int want[] = {12, 9, 9, 6, 6, 3};
+        for (int m = 0; m < 7; ++m) ch.rec[0xFB + m * 2] = ch.rec[0xFC + m * 2] = 0;   // (no other coins)
         for (int j = 0; j < 6; ++j) {
             ch.rec[0xFB + 4 * 2] = static_cast<uint8_t>(loads[j]);
             ch.rec[0xFC + 4 * 2] = static_cast<uint8_t>(loads[j] >> 8);
@@ -507,6 +546,7 @@ static void b_ready_rules()
             if (cl == 1 || cl == 7) continue;           // (no druids or monks among the player's classes)
             party::Character& ch = b_fresh(1);
             ch.rec[0x12B] = static_cast<uint8_t>(ov("class_bits", cl));
+            b_suit(ch, r);
             const int i = b_give(ch, r, false);
             rules::recalc(ch, *names, d->facts);
             const bool may = (t.classes & ov("class_bits", cl)) != 0;
@@ -554,6 +594,7 @@ static void b_ready_rules()
         if (t.slot > 9 || (t.classes & 0x48) == 0) continue;
         party::Character& ch = b_fresh(1);
         ch.rec[0x12B] = 0xFF;
+        b_suit(ch, r);
         // the hands: a weapon and a shield may make 3 - keep to items of no hands for this
         const int a = b_give(ch, r, false), bb = b_give(ch, r, false), c3 = b_give(ch, r, false);
         rules::recalc(ch, *names, d->facts);
@@ -774,6 +815,11 @@ static void b_money()
                ch.items[1][0x39], ch.items[1][0x34]);
         // Join puts them back together
         rules::join(ch, 0);
+        if (r[0x3C] >= 2) {                     // (charges 2 or more: Join leaves them - ovr20 / Pool's ovr20+19B7)
+            snprintf(what, sizeof what, "record %d %s (%d charges): not joined again", k, b_nm(r), r[0x3C]);
+            expect("items", what, ch.n_items == 2, "%d piles", ch.n_items);
+            continue;
+        }
         snprintf(what, sizeof what, "record %d %s joined again: one pile of %d", k, b_nm(r), n);
         expect("items", what, ch.n_items == 1 && ch.items[0][0x39] == n, "%d piles, %d", ch.n_items, ch.items[0][0x39]);
     }
@@ -805,6 +851,11 @@ static void b_money()
         // A pile of potions with 3 doses each doesn't join (charges 2 or more)
         uint8_t pot[63];
         memcpy(pot, b_rec(96), 63);
+        for (int k = 0; k < b_n_items; ++k)
+            if (b_rec(k)[0x3C] >= 2 && b_rec(k)[0x3D] && b_rec(k)[0x3E] < 0x80 && names->type(b_rec(k)[0x2E]).slot > 9) {
+                memcpy(pot, b_rec(k), 63);      // (a potion of several doses, whichever the game has)
+                break;
+            }
         pot[0x39] = 2;
         ch = b_fresh(1);
         b_give(ch, pot, false);
@@ -1120,6 +1171,7 @@ static void b_fight_weapons()
         const uint8_t* fly = b_shot_item(ch, &found);
         const int before = fly ? fly[0x39] : 0;
         const int swings = b.f[kA].attacks[0];
+        fg->n_thrown = 0;                               // (the ground keeps 6: a clean start each)
         const int thrown0 = fg->n_thrown;
         const int n0 = ch.n_items;
         b_target(kT, 0x3C + 30);                        // nothing but a 20 hits
@@ -1163,23 +1215,23 @@ static void b_fight_weapons()
             if (!r) continue;
             bool want = false;
             for (int s : stab) want |= s == type;
-            party::Character& ch = b_fresh(2);                // the dwarf fighter / thief
+            party::Character& ch = b_fresh(bm_th);            // the thief
             b_give(ch, r, true);
             rules::recalc(ch, *names, d->facts);
-            b_sync(2);
-            b_place(2, kT, 1);
+            b_sync(bm_th);
+            b_place(bm_th, kT, 1);
             b_target(kT, 50);
             fg->b.f[kT].facing = 2;                            // its back to the thief
             fg->b.f[kT].received = 2;
-            const bool got = combat::can_backstab(fg->b, 2, kT, names);
+            const bool got = combat::can_backstab(fg->b, bm_th, kT, names);
             char what[80];
             snprintf(what, sizeof what, "%s: %s", b_nm(r), want ? "backstabs" : "no backstab");
             expect("items", what, got == want);
         }
-        party::Character& ch = b_fresh(2);
+        party::Character& ch = b_fresh(bm_th);
         rules::recalc(ch, *names, d->facts);
-        b_sync(2);
-        b_place(2, kT, 1);
+        b_sync(bm_th);
+        b_place(bm_th, kT, 1);
         for (int sz : {0x01, 0x81, 0x02, 0x09}) {
             b_target(kT, 50, sz);
             fg->b.f[kT].facing = 2;
@@ -1187,7 +1239,7 @@ static void b_fight_weapons()
             const bool want = (sz & 0x7F) <= 1;
             char what[64];
             snprintf(what, sizeof what, "backstab bare-handed, target size byte %02X: %s", sz, want ? "yes" : "no");
-            expect("items", what, combat::can_backstab(fg->b, 2, kT, names) == want);
+            expect("items", what, combat::can_backstab(fg->b, bm_th, kT, names) == want);
         }
     }
 }
@@ -1210,7 +1262,7 @@ static void b_fight_effects()
     // (records from the player's files: found by their effect byte)
     for (int k = 0; k < b_n_items; ++k) {
         const uint8_t* r = b_rec(k);
-        if (r[0x3E] != 0x80 || names->type(r[0x2E]).slot != 0) continue;
+        if (b_kind(r) != BEffect || names->type(r[0x2E]).slot != 0) continue;
         const int fx = r[0x3D];
         party::Character& ch = b_fresh(kA);
         const int i = b_give(ch, r, false, true);
@@ -1225,13 +1277,17 @@ static void b_fight_effects()
         for (int mtype = 0; mtype <= 20; ++mtype) {
             int bonus = 0;
             bool slayer = false;
+            // (Curse: 0x06 Flame Tongue, 0x4C Frost Brand, 0x4B Dragon Slayer;
+            // Pool: 0x06 the same, 0x03 +2 against undead - poolrad_combat_facts.md 2.2)
+            const bool known = fx == 6 || (b_pool ? fx == 3 : (fx == 0x4B || fx == 0x4C));
             if (fx == 6) bonus = mtype == 10 ? 1 : (mtype == 9 || mtype == 12) ? 2 : mtype == 4 ? 3 : 0;
-            if (fx == 0x4C) bonus = mtype == 8 ? 3 : 0;
-            if (fx == 0x4B && mtype == 3) {
+            if (b_pool && fx == 3) bonus = mtype == 4 ? 2 : 0;
+            if (!b_pool && fx == 0x4C) bonus = mtype == 8 ? 3 : 0;
+            if (!b_pool && fx == 0x4B && mtype == 3) {
                 bonus = 2;
                 slayer = true;
             }
-            if (fx != 6 && fx != 0x4B && fx != 0x4C) continue;
+            if (!known) continue;
             const int ac = e.hit + 10;
             b_place(kA, kT, 1);
             b_target(kT, ac, 1, mtype);
@@ -1249,7 +1305,7 @@ static void b_fight_effects()
     // Displacement: the first attack on the wearer each fight misses, even a 20
     for (int k = 0; k < b_n_items; ++k) {
         const uint8_t* r = b_rec(k);
-        if (r[0x3E] != 0x80 || r[0x3D] != 0x59) continue;
+        if (b_kind(r) != BEffect || r[0x3D] != 0x59) continue;
         party::Character& ch = b_fresh(kA);
         const int i = b_give(ch, r, false);
         rules::recalc(ch, *names, d->facts);
@@ -1269,7 +1325,7 @@ static void b_fight_effects()
     // Ring of Invisibility: invisible when the fight starts and again at each round's end
     for (int k = 0; k < b_n_items; ++k) {
         const uint8_t* r = b_rec(k);
-        if (r[0x3E] != 0x80 || r[0x3D] != 0x38) continue;
+        if (b_kind(r) != BEffect || r[0x3D] != 0x38) continue;
         party::Character& ch = b_fresh(kA);
         const int i = b_give(ch, r, false);
         rules::recalc(ch, *names, d->facts);
@@ -1289,6 +1345,37 @@ static void b_fight_effects()
         snprintf(what, sizeof what, "record %d %s: invisible at the start, not after attacking, again after the round", k,
                  b_nm(r));
         expect("items", what, at_start && !after_attack && next_round, "%d %d %d", at_start, after_attack, next_round);
+    }
+    // The elves' stealth (effect 0x48, both games' handler: Pool's Cloak of
+    // Elvenkind): invisible at the start and after each round on 95 or less
+    // of a d100, not on 96 or more
+    for (int k = 0; k < b_n_items; ++k) {
+        const uint8_t* r = b_rec(k);
+        if (b_kind(r) != BEffect || r[0x3D] != 0x48) continue;
+        party::Character& ch = b_fresh(kA);
+        const int i = b_give(ch, r, false);
+        rules::recalc(ch, *names, d->facts);
+        b_sync(kA);
+        b_ready(i);
+        b_sync(kA);
+        b_place(kA, kT, 1);
+        const uint8_t inv = b.fx ? b.fx->invisible : 0;
+        dice_faces({95});
+        combat::battle_start(b, &rng);
+        const bool on95 = ch.has_affect(inv);
+        b_target(kT, 50);
+        b_swing(kA, kT, {20, 1});
+        dice_faces({96});
+        combat::tick(b);
+        const bool on96 = ch.has_affect(inv);
+        dice_faces({95});
+        combat::tick(b);
+        const bool again = ch.has_affect(inv);
+        dice_usual();
+        char what[112];
+        snprintf(what, sizeof what, "record %d %s: invisible at the start on 95, not on 96 after attacking, again on 95", k,
+                 b_nm(r));
+        expect("items", what, on95 && !on96 && again, "%d %d %d", on95, on96, again);
     }
 }
 
@@ -1314,27 +1401,32 @@ static BStats b_stats_expect(const party::Character& c)
     int forced_int = -1;
     for (int i = 0; i < c.n_items; ++i) {
         const uint8_t* it = c.items[i];
-        if (it[0x3E] <= 0x80 || !it[0x34]) continue;
-        const int code = it[0x3E] & 0x7F, p = it[0x3D];
+        if (!it[0x34]) continue;
+        const BKind kind = b_kind(it);
+        const int p = it[0x3D];
         int b = 0, b00 = 0;
-        if (code == 5 && p <= 6) {
+        if (kind == BGirdle && p <= 6) {
             b = p == 0 ? 18 : 18 + p;
             b00 = p == 0 ? 100 : 0;
         }
-        if (code == 8 && p == 0 && own[0] < 18) b = own[0] + 1;
+        if (kind == BOgre) {                        // (Pool: 18/00 through its strength effect)
+            b = 18;
+            b00 = 100;
+        }
+        if (kind == BIoun && p == 0 && own[0] < 18) b = own[0] + 1;
         if (b > str || (b == 18 && b00 > s00)) {
             str = b;
             s00 = b00;
         }
-        if (code == 13) {
+        if (kind == BPowerless) {
             forced_str = 3;
             forced_int = 3;
         }
-        if (code == 12) forced_int = 7;             // (the last such item's counts)
-        if (code == 8 && p >= 1 && p <= 5 && own[p] < 18) ++v[p];
-        if (code == 2) v[3] += own[3] <= 6 ? 4 : own[3] <= 13 ? 2 : 1;
-        if (code == 10) v[3] -= 2;
-        if (code == 6) {
+        if (kind == BStupid) forced_int = 7;        // (the last such item's counts)
+        if (kind == BIoun && p >= 1 && p <= 5 && own[p] < 18) ++v[p];
+        if (kind == BDex) v[3] += own[3] <= 6 ? 4 : own[3] <= 13 ? 2 : 1;
+        if (kind == BFumble) v[3] -= 2;
+        if (kind == BDwarf) {
             ++v[4];
             --v[5];
         }
@@ -1359,7 +1451,10 @@ static void b_worn_items()
         const uint8_t* r = b_rec(k);
         if (r[0x3E] <= 0x80) continue;
         const int code = r[0x3E] & 0x7F;
-        if (code == 0 || code == 1 || code == 11) continue;
+        const BKind kind = b_kind(r);
+        // (the effect / wizardry / thievery items elsewhere; the keyed and the
+        // boulder's own rules: behave pool)
+        if (kind == BEffect || kind == BWiz || kind == BThief || kind == BAlign || kind == BNeedGiant || kind == BNone) continue;
         for (const Own& o : owns) {
             party::Character& ch = b_fresh(kA);
             uint8_t* q = ch.rec;
@@ -1405,8 +1500,8 @@ static void b_worn_items()
         const uint8_t* ioun = nullptr;
         const uint8_t* gaunt = nullptr;
         for (int k = 0; k < b_n_items; ++k) {
-            if (b_rec(k)[0x3E] == 0x88 && b_rec(k)[0x3D] == 3) ioun = b_rec(k);
-            if (b_rec(k)[0x3E] == 0x82) gaunt = b_rec(k);
+            if (b_kind(b_rec(k)) == BIoun && b_rec(k)[0x3D] == 3) ioun = b_rec(k);
+            if (b_kind(b_rec(k)) == BDex) gaunt = b_rec(k);
         }
         if (ioun && gaunt) {
             party::Character& ch = b_fresh(kA);
@@ -1422,19 +1517,20 @@ static void b_worn_items()
     // Effect items (code 0): the effect 0x3D while readied (data 0xFF, no time), gone when put away
     for (int k = 0; k < b_n_items; ++k) {
         const uint8_t* r = b_rec(k);
-        if (r[0x3E] != 0x80) continue;
+        if (b_kind(r) != BEffect) continue;
         party::Character& ch = b_fresh(kA);
         ch.rec[0x12B] = 0xFF;
         const int i = b_give(ch, r, false, true);
         rules::recalc(ch, *names, d->facts);
         b_ready(i);
         const int fx = r[0x3D];
+        const int data = b_pool ? 12 : 0xFF;        // (Pool's generic handler: data 12)
         int at = -1;
         for (int j = 0; j < ch.n_affects; ++j)
             if (ch.affects[j][0] == fx) at = j;
         char what[96];
-        snprintf(what, sizeof what, "record %d %s readied: effect %02X, data 0xFF, no time", k, b_nm(r), fx);
-        expect("items", what, at >= 0 && ch.affects[at][3] == 0xFF && ch.affects[at][1] == 0 && ch.affects[at][2] == 0,
+        snprintf(what, sizeof what, "record %d %s readied: effect %02X, data %02X, no time", k, b_nm(r), fx, data);
+        expect("items", what, at >= 0 && ch.affects[at][3] == data && ch.affects[at][1] == 0 && ch.affects[at][2] == 0,
                "found %d", at);
         const bool still = b_ready(i);
         bool gone = true;
@@ -1462,7 +1558,7 @@ static void b_worn_items()
         rules::apply_cure(ch, rules::kRemoveCurse, cf, rng);
         rules::recalc(ch, *names, d->facts);
         bool fx_gone = true;
-        if (r[0x3E] == 0x80)
+        if (b_kind(r) == BEffect)
             for (int j = 0; j < ch.n_affects; ++j)
                 if (ch.affects[j][0] == r[0x3D]) fx_gone = false;
         const bool stats = ch.rec[0x11] == s0[0] && ch.rec[0x13] == s0[1] && ch.rec[0x17] == s0[3];
@@ -1475,8 +1571,8 @@ static void b_worn_items()
     // away, rebuilt from the table, and the spells past them forgotten (later first)
     for (int k = 0; k < b_n_items; ++k) {
         const uint8_t* r = b_rec(k);
-        if (r[0x3E] != 0x81) continue;
-        party::Character& ch = b_fresh(5);                          // the magic-user
+        if (b_kind(r) != BWiz) continue;
+        party::Character& ch = b_fresh(bm_mu);                      // the magic-user
         uint8_t slots[5];
         memcpy(slots, &ch.rec[0x137], 5);
         const int i = b_give(ch, r, false);
@@ -1518,10 +1614,10 @@ static void b_worn_items()
     if (load_magic()) {
         for (int k = 0; k < b_n_items; ++k) {
             const uint8_t* r = b_rec(k);
-            const int code = r[0x3E] & 0x7F;
-            if (r[0x3E] < 0x80 || (code != 2 && code != 11)) continue;
+            const int code = b_kind(r) == BDex ? 2 : b_kind(r) == BThief ? 11 : 0;
+            if (!code) continue;
             for (int lvl : {1, 3, 4, 5, 6, 7, 9}) {
-                party::Character& ch = b_fresh(2);                  // the dwarf fighter / thief
+                party::Character& ch = b_fresh(bm_th);              // the thief
                 ch.rec[0x109 + 6] = static_cast<uint8_t>(lvl);
                 ch.rec[0x16] = ch.rec[0x17] = 12;                  // (Dex 12: gauntlets make it 14)
                 const int i = b_give(ch, r, false);
@@ -1618,13 +1714,13 @@ static void b_use_items()
         char what[96];
         snprintf(what, sizeof what, "record %d %s: %s", k, b_nm(r), scroll ? "a scroll" : usable ? "used: its spell" : "not used");
         expect("items", what,
-               magic::is_scroll(sc, r) == scroll && magic::usable(sc, r) == usable && (!usable || magic::item_spell(r) == (r[0x3D] & 0x7F)));
+               magic::is_scroll(sc, r) == scroll && magic::usable(sc, r) == usable && (!usable || magic::item_spell(r, b_pool) == b_spell(r)));
     }
     // (what the program's spell table says of each item's spell - for the report)
     for (int k = 0; k < b_n_items; ++k) {
         const uint8_t* r = b_rec(k);
         if (!magic::usable(sc, r)) continue;
-        const int s = magic::item_spell(r);
+        const int s = b_spell(r);
         const spells::Entry e = spells::entry(play::mrules->tables, s);
         printf("NOTE items: record %d %s: spell %02X class %d targets %d when %d affect %02X lasts %d+%d/level aim %d save %d/%d\n",
                k, b_nm(r), s, play::mrules->tables.spell_class(s), e.targets, e.when, e.affect, e.lasts, e.lasts_level, e.aim,
@@ -1635,8 +1731,8 @@ static void b_use_items()
     for (int k = 0; k < b_n_items; ++k) {
         const uint8_t* r = b_rec(k);
         if (!magic::usable(sc, r)) continue;
-        const int s = magic::item_spell(r);
-        for (int who : {kA, 4, 5}) {
+        const int s = b_spell(r);
+        for (int who : {kA, bm_cl, bm_mu}) {
             const party::Character& ch = b_saved[who];
             const bool casts = ch.level(classes::Cleric) || ch.level(classes::MagicUser) || ch.level(classes::Paladin) >= 9 ||
                                ch.level(classes::Ranger) >= 8;
@@ -1651,10 +1747,10 @@ static void b_use_items()
     for (int k = 0; k < b_n_items; ++k) {
         const uint8_t* r = b_rec(k);
         if (!magic::usable(sc, r)) continue;
-        const int s = magic::item_spell(r);
+        const int s = b_spell(r);
         const spells::Entry e = spells::entry(play::mrules->tables, s);
         const items::TypeInfo& t = names->type(r[0x2E]);
-        const int who = (t.classes & ov("class_bits", 2)) ? kA : 5;   // (a magic-user for the magic-users' wands)
+        const int who = (t.classes & ov("class_bits", 2)) ? kA : bm_mu;   // (a magic-user for the magic-users' wands)
         char what[128];
         // Not readied: "Must be Readied", nothing used
         {
@@ -1666,7 +1762,8 @@ static void b_use_items()
             expect("items", what, ch.n_items == 1 && memcmp(ch.items[0], r, 0x34) == 0 && ch.items[0][0x3C] == r[0x3C]);
         }
         party::Character& ch = b_fresh(who);
-        ch.rec[0x1A4] = static_cast<uint8_t>(ch.hp_max() > 20 ? ch.hp_max() - 20 : 1);
+        if (ch.hp_max() < 30) ch.rec[0x78] = 30;        // (room for a potion's healing: Pool's saved fighter has 7)
+        ch.rec[0x1A4] = static_cast<uint8_t>(ch.hp_max() - 20);
         const int hp0 = ch.hp();
         const int i = b_give(ch, r, false);
         rules::recalc(ch, *names, d->facts);
@@ -1743,6 +1840,14 @@ static void b_use_items()
             for (int m = 0; m < pt->count; ++m) pt->m[m].n_affects = 0;
             break;
         }
+        case 0x43:
+            if (b_pool) {                               // Pool's Manual of Bodily Health: "is Reading" for a day
+                snprintf(what, sizeof what, "record %d %s: reading for a day (effect %02X, 1440 minutes)", k, b_nm(r),
+                         e.affect);
+                expect("items", what, aff_time(ch, e.affect) == 1440, "time %d", aff_time(ch, e.affect));
+                break;
+            }
+            [[fallthrough]];
         default: {
             const int want = e.lasts + e.lasts_level * pw;
             snprintf(what, sizeof what, "record %d %s: effect %02X for %d minutes (the table at level %d)", k, b_nm(r), e.affect,
@@ -1754,7 +1859,7 @@ static void b_use_items()
     // Speed on the slowed: the slow is cured, nothing else
     for (int k = 0; k < b_n_items; ++k) {
         const uint8_t* r = b_rec(k);
-        if (!magic::usable(sc, r) || magic::item_spell(r) != 0x39) continue;
+        if (!magic::usable(sc, r) || b_spell(r) != 0x39) continue;
         party::Character& ch = b_fresh(kA);
         const uint8_t slow = d->prof->magic.facts.slow;
         spells::add_affect(ch, slow, 10, 0, true);
@@ -1771,7 +1876,7 @@ static void b_use_items()
     // Giant strength on someone already stronger than 21: no change
     for (int k = 0; k < b_n_items; ++k) {
         const uint8_t* r = b_rec(k);
-        if (!magic::usable(sc, r) || magic::item_spell(r) != 0x3B) continue;
+        if (!magic::usable(sc, r) || b_spell(r) != 0x3B) continue;
         party::Character& ch = b_fresh(kA);
         ch.rec[0x10] = ch.rec[0x11] = 22;
         const int i = b_give(ch, r, false);
@@ -1787,12 +1892,12 @@ static void b_use_items()
     // thief of 10th level on d100 75 or less; anyone else "oops!")
     {
         party::Character t = b_saved[kA];
-        expect("items", "a paladin of 5th level can't read a scroll", !magic::reads_scroll(t, 1));
-        t = b_saved[5];
+        if (!b_pool) expect("items", "a paladin of 5th level can't read a scroll", !magic::reads_scroll(t, 1));
+        t = b_saved[bm_mu];
         expect("items", "a magic-user reads scrolls", magic::reads_scroll(t, 100));
-        t = b_saved[4];
+        t = b_saved[bm_cl];
         expect("items", "a cleric reads scrolls", magic::reads_scroll(t, 100));
-        t = b_saved[2];
+        t = b_saved[bm_th];
         t.rec[0x10F] = 9;
         expect("items", "a 9th level thief can't", !magic::reads_scroll(t, 1));
         t.rec[0x10F] = 10;
@@ -1803,7 +1908,7 @@ static void b_use_items()
     for (int k = 0; k < b_n_items; ++k) {
         const uint8_t* r = b_rec(k);
         if (!magic::is_scroll(sc, r)) continue;
-        party::Character& ch = b_fresh(5);
+        party::Character& ch = b_fresh(bm_mu);
         int i = b_give(ch, r, true);
         ch.items[i][0x35] = 0;
         int n = 0;
@@ -1828,7 +1933,7 @@ static void b_use_items()
     for (int k = 0; k < b_n_items; ++k) {
         const uint8_t* r = b_rec(k);
         if (!magic::is_scroll(sc, r) || !r[0x35]) continue;
-        party::Character& ch = b_fresh(5);
+        party::Character& ch = b_fresh(bm_mu);
         b_give(ch, r, true);
         uint8_t ids[3];
         const int n = magic::scroll_list(ch, play::mrules->tables, sc, 0, ids, 3);
@@ -1839,7 +1944,7 @@ static void b_use_items()
     for (int k = 0; k < b_n_items; ++k) {
         const uint8_t* r = b_rec(k);
         if (!magic::is_scroll(sc, r) || names->type(r[0x2E]).slot != 12) continue;
-        party::Character& ch = b_fresh(4);
+        party::Character& ch = b_fresh(bm_cl);
         b_give(ch, r, true);
         ch.items[0][0x35] = 6;
         uint8_t ids[3];
@@ -1864,17 +1969,21 @@ static int b_fu_menu()
     combat::Fighter& f = fg->b.f[fg->cur];
     if (fg->cur != kA) return 0;                    // (the others go Quick)
     if (b_fu_stage == 0) {
+        // (everyone standing kept so: Pool's inn fight dies to one Fireball, and
+        // the user, in the blast of its own ball there, went down - the test over)
+        for (int i = 0; i < fg->b.n; ++i)
+            if (fg->b.f[i].up()) fg->b.f[i].rec[0x78] = fg->b.f[i].rec[0x1A4] = 200;
         for (int i = 0; i < fg->b.n; ++i) b_fu_hp[i] = fg->b.f[i].hp();
         b_fu_round = fg->b.round;
         b_fu_stage = 1;
         if (!load_magic()) return 0;
-        fight_use(b_fu_item, magic::item_spell(pt->m[kA].items[b_fu_item]), false, C);
+        fight_use(b_fu_item, magic::item_spell(pt->m[kA].items[b_fu_item], b_pool), false, C);
         return 1;
     }
     if (b_fu_stage == 1) {
         b_fu_stage = 2;
         const uint8_t* r = b_fu_rec;
-        const int s = r[0x3D] & 0x7F;
+        const int s = b_spell(r);
         party::Character& ch = pt->m[kA];
         char what[128];
         snprintf(what, sizeof what, "record %d %s used in a fight: the turn over at once (next turn a round later)",
@@ -1897,7 +2006,9 @@ static int b_fu_menu()
         bool down_ok = true;                         // (a monster may go down: its loss is then its HP)
         switch (s) {
         case 0x41: want_lo = 4; want_hi = 10; most = 1; break;          // 2d4 + 2, one target, no save
-        case 0x2F: case 0x33: want_lo = 3; want_hi = 36; break;         // 6d6 (level 6), half on a save
+        case 0x2F: want_lo = 3; want_hi = 36; break;                    // 6d6 (level 6), half on a save
+        case 0x33: want_lo = 3; want_hi = 72; break;                    // the same - twice for one the bolt's
+                                                                        // return leg hits again (curse_finish_facts 2.4)
         case 0x40: want_lo = 1; want_hi = 42; break;                    // 3, 5 or 7 d6, half on a save
         case 0x57: want_lo = 3; want_hi = 30; break;                    // 3d10
         case 0x62: want_lo = 0; want_hi = 0; most = 0; break;          // defoliation: only plants hurt
@@ -1935,7 +2046,7 @@ static void b_fight_use()
         const uint8_t* r = b_rec(k);
         if (!boot()) return;
         if (!load_magic()) return;
-        const int s = magic::item_spell(r);
+        const int s = b_spell(r);
         if (spells::entry(mrules->tables, s).targets != spells::kCombat) continue;   // (the self / party ones: as outside)
         party::Character& ch = pt->m[kA];
         ch.n_items = 0;
@@ -1982,7 +2093,7 @@ static void b_cursed_effects()
         const uint8_t* r = b_rec(k);
         if (r[0x3E] != 0x80 || r[0x3D] != 0x4A) continue;
         if (!load_magic()) return;
-        party::Character& ch = b_fresh(5);
+        party::Character& ch = b_fresh(bm_mu);
         const int i = b_give(ch, r, false, true);
         rules::recalc(ch, *names, d->facts);
         b_ready(i);
@@ -2075,6 +2186,12 @@ static void behave_items()
         return;
     }
     for (int m = 0; m < pt->count; ++m) b_saved[m] = pt->m[m];
+    b_pool = pool_files();
+    if (b_pool) {
+        bm_mu = 4;
+        bm_cl = 3;
+        bm_th = 5;
+    }
     // ---- A magic weapon's plus: +1 to hit AND +1 damage (the long sword, type 36)
     {
         const uint8_t* plain = b_plain_of_type(36);
@@ -2109,4 +2226,182 @@ static void behave_items()
     if (part("fight")) b_fight_weapons();
     if (part("effects")) b_fight_effects();
     for (int m = 0; pt && m < pt->count; ++m) pt->m[m] = b_saved[m];
+}
+
+// ---- 10. The ITEMTEST characters (sweep's testchars mode) as the player
+// takes them: read by Add Character, every item readied alone by its owner
+// (readied or the game's own refusal, the values and stats as the rules
+// make them), every usable one used (a use taken), then a fight with them
+// all, each with what they can ready. ITEMTEST_REPORT=file: a line an item.
+static void behave_itemtest()
+{
+    using namespace play;
+    if (!b_load_oracle()) {
+        expect("itemtest", "oracle", false, "no ORACLE_DIR/oracle_items.txt");
+        return;
+    }
+    if (!boot()) {
+        expect("itemtest", "boot", false);
+        return;
+    }
+    b_pool = pool_files();
+    if (b_pool) {
+        bm_mu = 4;
+        bm_cl = 3;
+        bm_th = 5;
+    }
+    FILE* rep = getenv("ITEMTEST_REPORT") ? fopen(getenv("ITEMTEST_REPORT"), "w") : nullptr;
+    find_guys();                                    // (the game's own characters, as its Add Character)
+    pt->clear();
+    int listed = 0;
+    for (int i = 0; i < d->guys; ++i) {
+        if (strncmp(d->guy_name[i], "ITEMTEST", 8)) continue;
+        ++listed;
+        const int n0 = pt->count;
+        add_character(i, C);
+        note_until = 0;
+        screen = Screen::Game;
+        char what[64];
+        snprintf(what, sizeof what, "%s (%s) added", d->guy_name[i], d->guy_file[i]);
+        expect("itemtest", what, pt->count == n0 + 1, "party %d", pt->count);
+    }
+    if (!expect("itemtest", "ITEMTEST characters on the card", listed > 0)) {
+        if (rep) fclose(rep);
+        return;
+    }
+    vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
+    if (!load_magic()) {
+        expect("itemtest", "the spell tables", false);
+        if (rep) fclose(rep);
+        return;
+    }
+    const magic::Scrolls sc = scroll_facts();
+    static party::Character base[party::kMaxParty];
+    for (int m = 0; m < pt->count; ++m) base[m] = pt->m[m];
+    int n_items = 0, n_used = 0;
+    for (int m = 0; m < pt->count; ++m) {
+        char who[20];
+        base[m].name(who, sizeof who);
+        if (rep) fprintf(rep, "== %s: %d items, Str %d/%d Dex %d Con %d, AC %d, THAC0-ish hit %d\n", who, base[m].n_items,
+                         base[m].rec[0x11], base[m].rec[0x1C], base[m].rec[0x17], base[m].rec[0x19], 60 - base[m].rec[0x19A],
+                         static_cast<int8_t>(base[m].rec[0x199]));
+        for (int j = 0; j < base[m].n_items; ++j) {
+            ++n_items;
+            pt->m[m] = base[m];
+            pt->selected = m;
+            party::Character& ch = pt->m[m];
+            for (int q = 0; q < ch.n_items; ++q) ch.items[q][0x34] = 0;
+            rules::recalc(ch, *names, d->facts);
+            const BVals v0 = b_engine(ch);
+            const int s0[6] = {ch.rec[0x11], ch.rec[0x13], ch.rec[0x15], ch.rec[0x17], ch.rec[0x19], ch.rec[0x1B]};
+            uint8_t r[63];
+            memcpy(r, ch.items[j], 63);
+            char nm[64];
+            names->name(items::Item{r}, nm, sizeof nm, true);
+            const items::TypeInfo& t = names->type(r[0x2E]);
+            const BKind kind = b_kind(r);
+            const bool classes_ok = (ch.rec[0x12B] & t.classes) != 0;
+            const bool giant_ok = kind != BNeedGiant || ch.rec[0x10] >= 19;
+            const bool align_ok = kind != BAlign || (r[0x3D] & 0x0F) == ch.alignment();
+            const bool want_on = classes_ok && giant_ok && align_ok;
+            const bool on = b_ready(j);
+            char what[160];
+            snprintf(what, sizeof what, "%s: %s %s", who, nm, want_on ? "readied" : "refused (the game's rule)");
+            expect("itemtest", what, on == want_on, "readied %d (classes %02X / %02X, Str %d, alignment %d)", on, ch.rec[0x12B],
+                   t.classes, ch.rec[0x10], ch.alignment());
+            if (on) {
+                snprintf(what, sizeof what, "%s: %s readied - to hit, damage, AC, move, weight, saves as the rules", who, nm);
+                b_values(what, ch);
+                if (kind != BEffect && kind != BWiz && kind != BThief && kind != BAlign && kind != BNeedGiant && kind != BNone) {
+                    const BStats e = b_stats_expect(ch);
+                    snprintf(what, sizeof what, "%s: %s readied - the stats in use", who, nm);
+                    expect("itemtest", what,
+                           ch.rec[0x11] == e.s[0] && ch.rec[0x1C] == e.str00 && ch.rec[0x13] == e.s[1] &&
+                               ch.rec[0x15] == e.s[2] && ch.rec[0x17] == e.s[3] && ch.rec[0x19] == e.s[4] &&
+                               ch.rec[0x1B] == e.s[5],
+                           "%d/%d %d %d %d %d %d, expected %d/%d %d %d %d %d %d", ch.rec[0x11], ch.rec[0x1C], ch.rec[0x13],
+                           ch.rec[0x15], ch.rec[0x17], ch.rec[0x19], ch.rec[0x1B], e.s[0], e.str00, e.s[1], e.s[2], e.s[3],
+                           e.s[4], e.s[5]);
+                }
+                if (kind == BEffect && r[0x3D]) {
+                    snprintf(what, sizeof what, "%s: %s readied - its effect %02X on", who, nm, r[0x3D]);
+                    expect("itemtest", what, ch.has_affect(r[0x3D]));
+                }
+            }
+            const BVals v1 = b_engine(ch);
+            const char* sn[6] = {"Str", "Int", "Wis", "Dex", "Con", "Cha"};
+            const int s1[6] = {ch.rec[0x11], ch.rec[0x13], ch.rec[0x15], ch.rec[0x17], ch.rec[0x19], ch.rec[0x1B]};
+            if (rep) {
+                fprintf(rep, "  %-34s %s", nm, on ? "readied" : "NOT readied");
+                if (on) {
+                    if (v1.hit != v0.hit) fprintf(rep, ", to hit %+d", v1.hit - v0.hit);
+                    if (v1.dmg != v0.dmg) fprintf(rep, ", damage %+d", v1.dmg - v0.dmg);
+                    if (v1.dice != v0.dice || v1.sides != v0.sides) fprintf(rep, ", dice %dd%d", v1.dice, v1.sides);
+                    if (v1.ac != v0.ac) fprintf(rep, ", AC %+d", -(v1.ac - v0.ac));
+                    if (v1.save != v0.save) fprintf(rep, ", saves %+d", v1.save - v0.save);
+                    if (v1.move != v0.move) fprintf(rep, ", move %d", v1.move);
+                    for (int s = 0; s < 6; ++s)
+                        if (s1[s] != s0[s]) fprintf(rep, ", %s %d -> %d", sn[s], s0[s], s1[s]);
+                    if (s1[0] == 18 && ch.rec[0x1C] != base[m].rec[0x1C]) fprintf(rep, " (18/%02d)", ch.rec[0x1C] % 100);
+                    for (int a = 0; a < ch.n_affects; ++a) fprintf(rep, ", effect %02X", ch.affects[a][0]);
+                }
+            }
+            // Used (readied; Yes to a fights-only item outside a fight): a use taken
+            if (on && magic::usable(sc, r)) {
+                ++n_used;
+                const int hp0 = ch.hp(), aff0 = ch.n_affects, n0 = ch.n_items, cnt = r[0x39], chg = r[0x3C];
+                // (room for healing)
+                if (ch.hp_max() > 1) ch.rec[0x1A4] = static_cast<uint8_t>(ch.hp_max() / 2 > 0 ? ch.hp_max() / 2 : 1);
+                const int hpu = ch.hp();
+                b_use(m, j, m, 'Y');
+                const int k = ch.n_items == n0 ? j : -1;    // (the list keeps its order; one gone: shorter)
+                const bool taken = (n0 == ch.n_items + 1 && k < 0) || (k >= 0 && cnt > 1 && ch.items[k][0x39] == cnt - 1) ||
+                                   (k >= 0 && chg > 1 && ch.items[k][0x3C] == chg - 1) || (k >= 0 && chg == 0);
+                snprintf(what, sizeof what, "%s: %s used (spell %02X): a use taken", who, nm, b_spell(r));
+                expect("itemtest", what, taken, "items %d -> %d, count %d charges %d", n0, ch.n_items, k >= 0 ? ch.items[k][0x39] : -1,
+                       k >= 0 ? ch.items[k][0x3C] : -1);
+                if (rep) {
+                    fprintf(rep, "; used: spell %02X", b_spell(r));
+                    if (ch.hp() != hpu) fprintf(rep, ", HP %d -> %d", hpu, ch.hp());
+                    for (int a = aff0; a < ch.n_affects; ++a)
+                        fprintf(rep, ", effect %02X for %d min", ch.affects[a][0], ch.affects[a][1] | ch.affects[a][2] << 8);
+                    for (int s = 0; s < 6; ++s) {
+                        const int now = ch.rec[0x11 + 2 * s];
+                        if (now != s1[s]) fprintf(rep, ", %s %d -> %d", sn[s], s1[s], now);
+                    }
+                    if (k < 0) fprintf(rep, ", gone");
+                    else if (cnt > 1) fprintf(rep, ", %d left", ch.items[k][0x39]);
+                    else if (chg) fprintf(rep, ", %d charges left", ch.items[k][0x3C]);
+                }
+                (void)hp0;
+            }
+            if (rep) fprintf(rep, "\n");
+        }
+        pt->m[m] = base[m];
+    }
+    char sum[64];
+    snprintf(sum, sizeof sum, "%d items readied one by one, %d used", n_items, n_used);
+    expect("itemtest", sum, true);
+    // A fight with them all: each readies what it can (the first that fits each slot)
+    for (int m = 0; m < pt->count; ++m) {
+        pt->m[m] = base[m];
+        pt->selected = m;
+        party::Character& ch = pt->m[m];
+        for (int j = 0; j < ch.n_items; ++j) {
+            const BKind kind = b_kind(ch.items[j]);
+            if (ch.items[j][0x36] || kind == BNeedGiant || kind == BAlign) continue;    // (no cursed, no refusals)
+            b_ready(j);
+        }
+    }
+    god = true;
+    if (!expect("itemtest", "a fight with the ITEMTEST party", start_fight())) {
+        god = false;
+        if (rep) fclose(rep);
+        return;
+    }
+    pump(800000);
+    god = false;
+    snprintf(sum, sizeof sum, "the ITEMTEST party's fight to its end");
+    expect("itemtest", sum, screen != Screen::Fight, "screen %d", static_cast<int>(screen));
+    if (rep) fclose(rep);
 }

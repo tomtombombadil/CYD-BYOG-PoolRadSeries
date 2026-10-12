@@ -119,7 +119,8 @@ static bool pump(int max_iter = 400000)
             printf("  [it %d round %d cur %d (%s team %d hp %d at %d,%d) st %d n %d]\n", it, fg->b.round, fg->cur,
                    (const char*)&cf.rec[0], cf.team(), cf.hp(), cf.x, cf.y, (int)fg->st, fg->b.n);
         }
-        if (getenv("STLOG") && fg && fg->b.round >= 20 && fg->b.round <= 21) {
+        const int st_from = getenv("STLOG") && getenv("STLOG")[0] == 'r' ? atoi(getenv("STLOG") + 1) : 20;   // (STLOG=r0: rounds 0-1)
+        if (getenv("STLOG") && fg && fg->b.round >= st_from && fg->b.round <= st_from + 1) {
             static int lc = -9, ls = -9, lp = -9;
             if (fg->cur != lc || (int)fg->st != ls || fg->pages != lp) {
                 lc = fg->cur;
@@ -531,7 +532,7 @@ static std::vector<TestItem> test_items()
                     uint8_t* r = t.rec;
                     const bool magic = static_cast<int8_t>(r[0x32]) != 0 || r[0x33] || r[0x36] || r[0x3D] || r[0x3E] ||
                                        r[0x2E] == names->flask();
-                    if (!r[0x2E] || !magic) continue;
+                    if (!r[0x2E] || (!magic && !getenv("ALLITEMS"))) continue;
                     r[0x34] = 0;                    // not readied
                     r[0x35] = 0;                    // identified
                     r[0x39] = r[0x39] ? r[0x39] : 0;
@@ -619,6 +620,10 @@ static void sweep_testchars()
         for (auto& t : list) {
             const uint8_t* r = t.rec;
             const bool plain = !r[0x36] && !r[0x3C] && !r[0x3D] && !r[0x3E] && r[0x2E] != names->flask();
+            if (getenv("ALLITEMS")) {
+                kept.push_back(t);
+                continue;
+            }
             if (!plain) {
                 // (the same item again - another count, charges or doses - once)
                 bool again = false;
@@ -661,6 +666,12 @@ static void sweep_testchars()
                t.rec[0x36]);
     }
     printf("%zu items\n", list.size());
+    if (const char* out = getenv("ITEMS_OUT")) {         // (the records, for behave items' ITEMS_BIN)
+        if (FILE* f = fopen(out, "wb")) {
+            for (auto& t : list) fwrite(t.rec, 1, 63, f);
+            fclose(f);
+        }
+    }
     if (getenv("LIST")) return;
 
     // The characters: human, single-classed, made as the game makes them
@@ -754,7 +765,7 @@ static void sweep_testchars()
     }
     delete mk2;
     // Read back as Add Character finds them
-    find_guys(pool ? 'P' : 'C');
+    find_guys();                                    // (the game's own Add Character list)
     int found = 0;
     for (int i = 0; i < d->guys; ++i)
         if (!strncmp(d->guy_name[i], "ITEMTEST", 8)) {
@@ -1493,6 +1504,7 @@ int main(int argc, char** argv)
 #endif
 #ifdef BEHAVE_ITEMS
         if (want("items")) behave_items();
+        if (only == "itemtest") behave_itemtest();         // (the ITEMTEST characters: only when asked)
 #endif
 #ifdef BEHAVE_SPELLS
         if (want("spells")) behave_spells();

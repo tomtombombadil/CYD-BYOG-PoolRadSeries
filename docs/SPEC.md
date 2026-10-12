@@ -834,6 +834,15 @@ Steps (each pushed when it works; Curse stays as it is):
    Constitution + 1 (20: an hour's healing, else the original's hit
    points); the Spiritual Hammer's item (code 0x89, "Spiritual Hammer"
    +1). Pool's files keep Strength and Charisma as the original's (SPEC 12).
+   v0.89.1 (every item of both games checked, sweep's `behave items` and
+   `behave itemtest`): Pool's **Two-Handed Sword +1 +3 vs Undead** (its
+   effect 0x03: +2 to hit and damage against monster type 4) and the
+   **Cloak of Elvenkind** (effect 0x48, the same handler in both games:
+   95 in 100 invisible at a fight's start and after each round, as the
+   ring) now work; before, the sword was a plain +1 and the cloak did
+   nothing. Kept as the original: Pool's "Long Sword +2 Flame Tongue" is
+   a +2 long sword whose Use casts Find Traps (its record has no flame
+   tongue effect), and an item with no charges never runs out.
 
 ## 7. The journal (Tom, 2026-10-06)
 

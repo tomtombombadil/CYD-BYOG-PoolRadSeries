@@ -180,9 +180,15 @@ struct SpellFx {
 // Displacement (the first attack on its wearer each fight misses), the Ring
 // of Invisibility (invisible at a fight's start and at each round's end);
 // the Robe of Vermin's effect - with it, or the Dragon Slayer's, no free
-// attack on one stepping away (listing ovr014:0B37-0B68)
+// attack on one stepping away (listing ovr014:0B37-0B68); Pool's sword
+// against undead (effect 0x03: +2 to hit and damage on monster type 4 -
+// its Two-Handed Sword +1 +3 vs Undead; poolrad_combat_facts.md 2.2); the
+// elves' stealth (0x48, both games: Pool's Cloak of Elvenkind and its 6th
+// level thieves - 95 in 100 invisible at a fight's start and each round's
+// end, as the ring)
 struct ItemFx {
     uint8_t flame_tongue, dragon_slayer, frost_brand, displace, ring_invisible, vermin;
+    uint8_t vs_undead, elvenkind;
 };
 
 // The effects the fights' rules look at (per game, from the profile)
@@ -398,10 +404,12 @@ struct Event {
     uint8_t x = 0, y = 0, pic = 0, frames = 0, delay = 0;
 };
 // Timed effects a round on (a minute); those run out go. Then the round's
-// end: regeneration (3 hit points), a troll's getting up (events)
+// end: regeneration (3 hit points), a troll's getting up (events); the
+// Ring of Invisibility and the elves' stealth (invisible for the next round)
 int tick(Battle& b, Event* out = nullptr, int cap = 0);
-// The fight's start: those invisible from the start become so
-void battle_start(Battle& b);
+// The fight's start: those invisible from the start become so (the dice:
+// the elves' stealth, 95 in 100; none - the fight's last dice)
+void battle_start(Battle& b, create::Dice* d = nullptr);
 
 // The footprint's squares: size 1 one, 2 one wide two tall, 3 two wide
 // one tall, 4 two by two

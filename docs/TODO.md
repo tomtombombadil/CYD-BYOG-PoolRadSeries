@@ -51,6 +51,12 @@ the Project as claude/TODO.md.
 
 ## Done
 
+- v0.89.1: every item of both games tested (equip, the class / alignment
+  / Strength rules, to hit, damage, AC, saves, stats, effects, use, fights;
+  Curse 4069 checks, Pool 2738) plus the ITEMTEST characters themselves
+  through Add Character (Curse 204, Pool 176 - each item readied alone,
+  each usable one used, a fight with them all): fixed Pool's sword +3 vs
+  undead and the Cloak of Elvenkind (both did nothing extra).
 - 2026-10-12: Secret's files checked with the engine's readers: every DAX
   block decodes, 16 colours; the differences listed in the Project's
   claude/secret_facts.md.

@@ -443,7 +443,12 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   Pool expectations: the Project's claude/poolrad_behaviour_facts.md.
   Pool's items and stat effects (item codes, item spells 0x17 higher,
   Strength in the record, the Manual): claude/poolrad_items_facts.md
-  (v0.89.0); `items::passive` is each game's code table.
+  (v0.89.0); `items::passive` is each game's code table. Item tests
+  (v0.89.1): sweep's `behave items` with ITEMS_BIN = every item of the
+  game (testchars mode's ALLITEMS=1 ITEMS_OUT=...; both games must stay
+  at 0 failures), and `behave itemtest` - the ITEMTEST characters read by
+  Add Character from the game folder (ITEMTEST_REPORT=file: a line an
+  item, for Tom).
 - Secret of the Silver Blades (next): first look in the Project's
   claude/secret_facts.md (439-byte records, its own save format, sound in
   SOUND.DAX, SKY / SPRIT1 files).
