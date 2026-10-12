@@ -44,8 +44,24 @@ constexpr int    kNameMax = 15;
 
 enum Health : uint8_t { Okay = 0, Animated, TempGone, Running, Unconscious, Dying, Dead, Stoned, Gone };
 
+// What Secret of the Silver Blades' 439-byte record has and Curse's
+// layout hasn't (party::from_secret keeps it here, to_secret writes it back):
+// spells 101-117 in the book, the 6th / 7th level cleric slots, Secret
+// 0x13E-0x146 (druid 6-7 and a group of 7 not known yet), the 6th / 7th
+// level magic-user slots, the bytes 0x6D, 0x15E (flags 2), 0x15F and 0x1A5
+// (magic resistance)
+constexpr size_t kExtSize = 34;
+enum Ext : uint8_t {
+    kExtBook = 0,                       // spells 101-117 (17)
+    kExtCleric67 = 17,                  // Secret 0x137-0x138
+    kExtDruidMore = 19,                 // Secret 0x13E-0x146 (9)
+    kExtMage67 = 28,                    // Secret 0x14C-0x14D
+    kExt6D = 30, kExtFlags2 = 31, kExt15F = 32, kExtMagicRes = 33,
+};
+
 struct Character {
     uint8_t rec[kRecordSize] = {};
+    uint8_t ext[kExtSize] = {};          // Secret's fields Curse has no place for (Ext)
     uint8_t items[kMaxItems][kItemSize] = {};
     int     n_items = 0;
     uint8_t affects[kMaxAffects][kAffectSize] = {};
@@ -112,12 +128,28 @@ void read_affects(dax::ByteSource& src, Character& out);
 // are written as 0, its item count from the items kept.
 constexpr size_t kPoolRecordSize = 0x11D;
 constexpr int    kPoolMemorized = 21;
-// Record format: Curse's or Pool's
-enum class Format : uint8_t { Curse, Pool };
+// Secret of the Silver Blades' characters (secret_facts.md 7): a 439-byte
+// record (.SAV / .WHO), items in .STF (67 bytes each: Curse's 63 and 4
+// more, zero), effects in .SFX (9 bytes, as Curse's .FX). Moved into
+// Curse's layout field by field (75 memorized spells in place, spells
+// 1-100 of the book, levels 1-5 of the spell slots ...); what has no place
+// there is kept in Character::ext; its pointers are written as 0, its item
+// count from the items kept.
+constexpr size_t kSecretRecordSize = 0x1B7;
+constexpr int    kSecretMemorized = 75;
+constexpr size_t kSecretItemSize = 0x43;
+// Record format: Curse's, Pool's or Secret's
+enum class Format : uint8_t { Curse, Pool, Secret };
 bool read_record(dax::ByteSource& src, Character& out, Format f);
 void from_pool(const uint8_t* pool, Character& out);              // out.rec only
 void from_pool(const uint8_t* pool, uint8_t* rec);                 // a record (kRecordSize bytes) of Curse's layout
 void to_pool(const Character& c, uint8_t out[kPoolRecordSize]);
+void from_secret(const uint8_t* secret, Character& out);          // out.rec and out.ext
+void from_secret(const uint8_t* secret, uint8_t* rec);             // a record of Curse's layout (no ext)
+void to_secret(const Character& c, uint8_t out[kSecretRecordSize]);
+// Items as a game's file holds them: `stride` bytes a record, the first
+// kItemSize kept (Secret's .STF: kSecretItemSize)
+void read_items(dax::ByteSource& src, Character& out, uint32_t stride);
 // The record as the game's file holds it (*n: its size)
 const uint8_t* record_bytes(const Character& c, Format f, uint8_t* buf, size_t* n);
 

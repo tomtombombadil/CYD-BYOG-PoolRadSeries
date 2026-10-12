@@ -2994,6 +2994,54 @@ static void test_geo_view()
 // scripts reading the selected character
 static void test_party()
 {
+    // Secret's 439-byte record into Curse's layout (+ ext) and back: every
+    // byte but the in-memory pointers and the item count comes back
+    {
+        uint8_t sec[party::kSecretRecordSize];
+        for (size_t i = 0; i < sizeof sec; ++i) sec[i] = static_cast<uint8_t>(i * 5 + 1);
+        auto zero = [&](size_t a, size_t b) { memset(sec + a, 0, b - a); };
+        zero(0xFB, 0xFF); zero(0x160, 0x199); zero(0x19D, 0x1A5);
+        sec[0] = 7;
+        memset(sec + 0x1E, 0, party::kSecretMemorized);
+        sec[0x1E] = 4; sec[0x1E + 74] = 0x6F;                // memorized
+        static party::Character sc;
+        party::from_secret(sec, sc);
+        CHECK(sc.stat(0) == sec[0x11] && sc.stat_now(5) == sec[0x1A] && sc.str00() == sec[0x1C]);
+        CHECK(sc.race() == sec[0x6B] && sc.cls() == sec[0x6C] && sc.age() == (sec[0x6E] | sec[0x6F] << 8) &&
+              sc.hp_max() == sec[0x70] && sc.hp() == sec[0x1B5] && sc.movement() == sec[0x1B6]);
+        CHECK(sc.rec[0x79] == sec[0x71] && sc.rec[0xDC] == sec[0xD4] && sc.ext[party::kExtBook] == sec[0xD5] &&
+              sc.ext[party::kExtBook + 16] == sec[0xE5] && sc.rec[0xDD] == sec[0xE6] && sc.rec[0xDE] == sec[0xE7]);
+        CHECK(sc.money(3) == (sec[0x109] | sec[0x10A] << 8) && sc.level(5) == sec[0x116] && sc.old_level(6) == sec[0x11E]);
+        CHECK(sc.sex() == sec[0x11F] && sc.alignment() == sec[0x120] && sc.rec[0x11A] == 0 && sc.rec[0x110] == 0);
+        CHECK(sc.exp() == (sec[0x12C] | sec[0x12D] << 8 | sec[0x12E] << 16 | (uint32_t)sec[0x12F] << 24));
+        CHECK(sc.rec[0x12D] == sec[0x132] && sc.rec[0x132] == sec[0x139] && sc.rec[0x137] == sec[0x147] &&
+              sc.ext[party::kExtCleric67] == sec[0x137] && sc.ext[party::kExtMage67 + 1] == sec[0x14D]);
+        CHECK(sc.rec[0x141] == sec[0x153] && sc.rec[0x14B] == sec[0x15D] && sc.ext[party::kExtFlags2] == sec[0x15E] &&
+              sc.ext[party::kExtMagicRes] == sec[0x1A5] && sc.ext[party::kExt6D] == sec[0x6D]);
+        CHECK(sc.encumbrance() == (sec[0x19B] | sec[0x19C] << 8) && sc.health() == sec[0x1A6] && sc.thac0() == 60 - sec[0x1AA]);
+        CHECK(sc.rec[0x1E] == 4 && sc.rec[0x1E + 74] == 0x6F && sc.rec[0x1E + 75] == 0);
+        uint8_t back[party::kSecretRecordSize];
+        party::to_secret(sc, back);
+        CHECK(memcmp(back, sec, sizeof sec) == 0);
+        // Spells memorized past its 75 places go into free ones (from the end)
+        sc.rec[0x1E + 80] = 0x22;
+        sc.n_items = 3;
+        party::to_secret(sc, back);
+        CHECK(back[0x1E + 73] == 0x22 && back[0x1E + 74] == 0x6F && back[0x160] == 3);
+        dax::MemorySource ms(sec, sizeof sec);
+        static party::Character rc;
+        size_t n = 0;
+        CHECK(party::read_record(ms, rc, party::Format::Secret) && rc.race() == sec[0x6B] &&
+              party::record_bytes(rc, party::Format::Secret, back, &n) == back && n == party::kSecretRecordSize &&
+              memcmp(back, sec, n) == 0);
+        // Items of 67 bytes (.STF): the first 63 kept
+        uint8_t stf[2 * party::kSecretItemSize];
+        for (size_t i = 0; i < sizeof stf; ++i) stf[i] = static_cast<uint8_t>(i);
+        dax::MemorySource is(stf, sizeof stf);
+        party::read_items(is, rc, party::kSecretItemSize);
+        CHECK(rc.n_items == 2 && rc.items[1][0] == party::kSecretItemSize && rc.items[1][62] == party::kSecretItemSize + 62);
+    }
+
     // Pool of Radiance's 285-byte record into Curse's layout and back: every
     // byte but the in-memory pointers and the item count comes back
     {
@@ -3191,6 +3239,21 @@ static void test_party()
         CHECK(!savegame::read(src, pg, ph, true));    // too short for Curse's
         VecSink ps_sink;
         CHECK(savegame::write(ps_sink, pg, ph, false) && ps_sink.v == ps);
+    }
+    // Secret's: no script bytes (0x1E00 fewer)
+    {
+        std::vector<uint8_t> ss(sv.begin(), sv.end());
+        const size_t code = 1 + 0x800 + 0x800 + 0x400;
+        ss.erase(ss.begin() + code, ss.begin() + code + 0x1E00);
+        CHECK(ss.size() == savegame::kSecretSize && savegame::kSecretSize == 5469);
+        static ecl::GameState sg;
+        savegame::Header sh;
+        dax::MemorySource src(ss.data(), static_cast<uint32_t>(ss.size()));
+        CHECK(savegame::read(src, sg, sh, true, false) && sg.code_len == 0);
+        CHECK(sg.x == 7 && sg.y == 13 && sh.count == 2 && strcmp(sh.names[1], "CHRDATA2") == 0);
+        CHECK(!savegame::read(src, sg, sh, true, true));    // too short for Curse's
+        VecSink ss_sink;
+        CHECK(savegame::write(ss_sink, sg, sh, true, false) && ss_sink.v == ss);
     }
 }
 

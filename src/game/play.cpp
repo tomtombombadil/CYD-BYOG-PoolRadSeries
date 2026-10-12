@@ -949,13 +949,23 @@ void load_journal_list(char slot);
 // The characters' files: Curse's 422-byte records (.SAV in a saved game,
 // NAME.GUY when removed), items .SWG, effects .FX; Pool of Radiance's
 // 285-byte records (NAME.CHA), items .ITM, effects .SPC
-// (profile variant.pool_files; party::from_pool / to_pool)
+// (profile variant.pool_files; party::from_pool / to_pool); Secret's
+// 439-byte records (NAME.WHO), items .STF (67 bytes each), effects .SFX
+// (variant.secret_files; party::from_secret / to_secret)
 bool pool_files() { return d->prof->variant.pool_files; }
-party::Format rec_format() { return pool_files() ? party::Format::Pool : party::Format::Curse; }
-const char* ext_guy() { return pool_files() ? ".CHA" : ".GUY"; }
-const char* ext_items() { return pool_files() ? ".ITM" : ".SWG"; }
-const char* ext_fx() { return pool_files() ? ".SPC" : ".FX"; }
-size_t rec_file_size() { return pool_files() ? party::kPoolRecordSize : party::kRecordSize; }
+bool secret_files() { return d->prof->variant.secret_files; }
+party::Format rec_format()
+{
+    return pool_files() ? party::Format::Pool : secret_files() ? party::Format::Secret : party::Format::Curse;
+}
+const char* ext_guy() { return pool_files() ? ".CHA" : secret_files() ? ".WHO" : ".GUY"; }
+const char* ext_items() { return pool_files() ? ".ITM" : secret_files() ? ".STF" : ".SWG"; }
+const char* ext_fx() { return pool_files() ? ".SPC" : secret_files() ? ".SFX" : ".FX"; }
+size_t rec_file_size()
+{
+    return pool_files() ? party::kPoolRecordSize : secret_files() ? party::kSecretRecordSize : party::kRecordSize;
+}
+uint32_t item_stride() { return secret_files() ? party::kSecretItemSize : party::kItemSize; }
 bool write_file(const char* dir, const char* name, const uint8_t* p, size_t n);
 void (*g_present_now)() = nullptr;
 void present_now()
@@ -983,7 +993,7 @@ bool write_character_files(const char* dir, const char* rec_fn, const char* item
         }
     }
     const party::Character& ch = *src;
-    uint8_t buf[party::kPoolRecordSize];
+    uint8_t buf[party::kSecretRecordSize];      // (the largest: Pool's or Secret's record)
     uint8_t fx[party::kMaxAffects * party::kAffectSize];
     size_t n = 0;
     const uint8_t* p = party::record_bytes(ch, rec_format(), buf, &n);
@@ -993,7 +1003,20 @@ bool write_character_files(const char* dir, const char* rec_fn, const char* item
         f = fx;
     }
     bool ok = write_file(dir, rec_fn, p, n);
-    ok = ok && write_file(dir, items_fn, ch.items[0], static_cast<size_t>(ch.n_items) * party::kItemSize);
+    if (item_stride() != party::kItemSize) {
+        // Secret's .STF: 67 bytes an item, the 4 after Curse's 63 zero
+        const size_t len = static_cast<size_t>(ch.n_items) * item_stride();
+        uint8_t* ib = len ? new (std::nothrow) uint8_t[len] : nullptr;
+        if (len && !ib) ok = false;
+        if (ib) {
+            memset(ib, 0, len);
+            for (int i = 0; i < ch.n_items; ++i) memcpy(ib + i * item_stride(), ch.items[i], party::kItemSize);
+        }
+        ok = ok && write_file(dir, items_fn, ib, len);
+        delete[] ib;
+    } else {
+        ok = ok && write_file(dir, items_fn, ch.items[0], static_cast<size_t>(ch.n_items) * party::kItemSize);
+    }
     ok = ok && write_file(dir, fx_fn, f, static_cast<size_t>(ch.n_affects) * party::kAffectSize);
     delete copy;
     return ok;
@@ -1023,7 +1046,7 @@ bool load_game(char slot)
     bool ok;
     {
         plat::FileSource src(f);
-        ok = savegame::read(src, d->gs, d->save, !pool_files());
+        ok = savegame::read(src, d->gs, d->save, !pool_files(), !secret_files());
     }
     f.close();
     // Whatever was going on is over now (a script's party menu, a wait)
@@ -1060,7 +1083,7 @@ bool load_game(char slot)
         snprintf(fn, sizeof fn, "%s%s", d->save.names[i], ext_items());
         if (open_save_file(fn, f)) {
             plat::FileSource src(f);
-            party::read_items(src, ch);
+            party::read_items(src, ch, item_stride());
             f.close();
         }
         snprintf(fn, sizeof fn, "%s%s", d->save.names[i], ext_fx());
@@ -1825,7 +1848,7 @@ bool save_game(char slot)
     bool ok;
     {
         FileSink sink(f);
-        ok = savegame::write(sink, d->gs, h, !pool_files());
+        ok = savegame::write(sink, d->gs, h, !pool_files(), !secret_files());
     }
     f.close();
     for (int i = 0; ok && i < pt->count; ++i) {
@@ -2312,7 +2335,7 @@ void add_character(int i, pic::Canvas& c)
     snprintf(fn, sizeof fn, "%s%s", base, ext_items());
     if (open_save_file(fn, f)) {
         plat::FileSource src(f);
-        party::read_items(src, ch);
+        party::read_items(src, ch, item_stride());
         f.close();
     }
     snprintf(fn, sizeof fn, "%s%s", base, ext_fx());

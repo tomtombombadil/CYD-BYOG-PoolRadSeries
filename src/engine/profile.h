@@ -464,6 +464,9 @@ struct Profile {
         // code with these tiles (layout::Tables::bars; 0: none)
         uint8_t  tile_window = 0;
         uint8_t  bars[8] = {};
+        // Secret's character files (439-byte records .SAV / .WHO, items .STF
+        // of 67 bytes, effects .SFX) and saves (no script bytes)
+        bool     secret_files = false;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

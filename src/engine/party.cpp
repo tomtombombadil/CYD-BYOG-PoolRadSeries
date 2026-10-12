@@ -37,6 +37,20 @@ constexpr uint16_t kPoolRuns[][3] = {
 };
 constexpr int kListAt = 0x1E, kListSize = 84;   // Curse's memorized list
 
+// Secret offset, Curse offset, length (secret_facts.md 7; pointers left out)
+constexpr uint16_t kSecretRuns[][3] = {
+    {0x00, 0x00, 0x1E},  {0x69, 0x72, 4},     {0x6E, 0x76, 3},     {0x71, 0x79, 100},   {0xE6, 0xDD, 2},
+    {0xE8, 0xDF, 6},     {0xEE, 0xE5, 5},     {0xF3, 0xEA, 8},     {0xFF, 0xF7, 0x12},  {0x111, 0x109, 7},
+    {0x118, 0x111, 7},   {0x11F, 0x119, 1},   {0x120, 0x11B, 9},   {0x129, 0x124, 9},   {0x132, 0x12D, 5},
+    {0x139, 0x132, 5},   {0x147, 0x137, 5},   {0x14E, 0x13C, 0x10}, {0x160, 0x14C, 1},   {0x199, 0x185, 4},
+    {0x1A6, 0x195, 0x11},
+};
+// Secret offset, Ext place, length
+constexpr uint16_t kSecretExt[][3] = {
+    {0xD5, kExtBook, 17}, {0x137, kExtCleric67, 2}, {0x13E, kExtDruidMore, 9}, {0x14C, kExtMage67, 2},
+    {0x6D, kExt6D, 1},    {0x15E, kExtFlags2, 1},   {0x15F, kExt15F, 1},       {0x1A5, kExtMagicRes, 1},
+};
+
 } // namespace
 
 void from_pool(const uint8_t* p, Character& c) { from_pool(p, c.rec); }
@@ -71,9 +85,48 @@ void to_pool(const Character& c, uint8_t* p)
     p[0xC7] = static_cast<uint8_t>(c.n_items);
 }
 
+void from_secret(const uint8_t* p, uint8_t* r)
+{
+    memset(r, 0, kRecordSize);
+    for (const auto& run : kSecretRuns) memcpy(r + run[1], p + run[0], run[2]);
+    memcpy(r + kListAt, p + 0x1E, kSecretMemorized);       // the memorized spells, in place
+}
+
+void from_secret(const uint8_t* p, Character& c)
+{
+    from_secret(p, c.rec);
+    for (const auto& run : kSecretExt) memcpy(c.ext + run[1], p + run[0], run[2]);
+}
+
+void to_secret(const Character& c, uint8_t* p)
+{
+    const uint8_t* r = c.rec;
+    memset(p, 0, kSecretRecordSize);
+    for (const auto& run : kSecretRuns) memcpy(p + run[0], r + run[1], run[2]);
+    for (const auto& run : kSecretExt) memcpy(p + run[0], c.ext + run[1], run[2]);
+    // The memorized spells: 75 places; any the engine put further on go
+    // into its free places, from the end
+    memcpy(p + 0x1E, r + kListAt, kSecretMemorized);
+    int free_at = kSecretMemorized - 1;
+    for (int i = kSecretMemorized; i < kListSize; ++i) {
+        if (!r[kListAt + i]) continue;
+        while (free_at >= 0 && p[0x1E + free_at]) --free_at;
+        if (free_at < 0) break;
+        p[0x1E + free_at] = r[kListAt + i];
+    }
+    p[0x160] = static_cast<uint8_t>(c.n_items);
+}
+
 bool read_record(dax::ByteSource& src, Character& out, Format f)
 {
     if (f == Format::Curse) return read_record(src, out);
+    if (f == Format::Secret) {
+        uint8_t sec[kSecretRecordSize];
+        out = Character{};
+        if (src.read_at(0, sec, kSecretRecordSize) != kSecretRecordSize) return false;
+        from_secret(sec, out);
+        return true;
+    }
     uint8_t pool[kPoolRecordSize];
     out = Character{};
     if (src.read_at(0, pool, kPoolRecordSize) != kPoolRecordSize) return false;
@@ -87,17 +140,25 @@ const uint8_t* record_bytes(const Character& c, Format f, uint8_t* buf, size_t* 
         *n = kRecordSize;
         return c.rec;
     }
+    if (f == Format::Secret) {
+        to_secret(c, buf);
+        *n = kSecretRecordSize;
+        return buf;
+    }
     to_pool(c, buf);
     *n = kPoolRecordSize;
     return buf;
 }
 
-void read_items(dax::ByteSource& src, Character& out)
+void read_items(dax::ByteSource& src, Character& out) { read_items(src, out, kItemSize); }
+
+void read_items(dax::ByteSource& src, Character& out, uint32_t stride)
 {
     out.n_items = 0;
-    const uint32_t n = src.size() / kItemSize;
+    if (stride < kItemSize) return;
+    const uint32_t n = src.size() / stride;
     for (uint32_t i = 0; i < n && out.n_items < kMaxItems; ++i)
-        if (src.read_at(i * kItemSize, out.items[out.n_items], kItemSize) == kItemSize) ++out.n_items;
+        if (src.read_at(i * stride, out.items[out.n_items], kItemSize) == kItemSize) ++out.n_items;
 }
 
 void read_affects(dax::ByteSource& src, Character& out)

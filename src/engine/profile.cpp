@@ -822,7 +822,7 @@ const Profile kProfiles[] = {
      .first_area = 1, .last_area = 3, .common_tiles_block = 203, .sky_file = "SKY.DAX", .horizon_block = 252,
      .ecl_ops = &kSecretEcl,
      .sky_colours = 0x0AA8, .start_area = 0, .start_script = 0,
-     .variant = {.unfinished = true, .tile_window = 40, .bars = {55, 52, 53, 54, 59, 56, 57, 58}},
+     .variant = {.unfinished = true, .tile_window = 40, .bars = {55, 52, 53, 54, 59, 56, 57, 58}, .secret_files = true},
      .overland = nullptr,
      .font_file = "8X8D5.DAX"},
 };

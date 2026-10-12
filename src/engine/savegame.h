@@ -30,6 +30,9 @@ constexpr uint32_t kSize = 1 + 0x800 + 0x800 + 0x400 + 0x1E00 + 5 + 2 + 12 + 1 +
 // Pool of Radiance's saves (poolrad_facts.md 3.2) are the same without the
 // wall sets (its scripts load them again): 13,137 bytes
 constexpr uint32_t kPoolSize = kSize - 12;
+// Secret of the Silver Blades' (secret_facts.md 7) are Curse's without the
+// script's bytes: 5,469 bytes
+constexpr uint32_t kSecretSize = kSize - 0x1E00;
 constexpr char kFirst = 'A', kLast = 'J';    // the games' ten save slots
 
 struct Header {
@@ -42,8 +45,9 @@ struct Header {
 
 // Reads a saved game into gs (memory, script, position) and h. False if
 // the file isn't one.
-// wall_sets = false: Pool's layout (no wall sets; h's stay 0).
-bool read(dax::ByteSource& src, ecl::GameState& gs, Header& h, bool wall_sets = true);
+// wall_sets = false: Pool's layout (no wall sets; h's stay 0); script =
+// false: Secret's (no script bytes; gs.code_len 0).
+bool read(dax::ByteSource& src, ecl::GameState& gs, Header& h, bool wall_sets = true, bool script = true);
 
 // Where write() puts the bytes (a file on the card, a buffer in tests)
 class Sink {
@@ -55,7 +59,7 @@ public:
 // Writes a saved game: gs (memory, script, position), h (game area,
 // states, wall sets, the party's file names). The characters' own files
 // are written by the caller (their records as kept, items, effects).
-bool write(Sink& out, const ecl::GameState& gs, const Header& h, bool wall_sets = true);
+bool write(Sink& out, const ecl::GameState& gs, const Header& h, bool wall_sets = true, bool script = true);
 
 // The save file's name for slot 'A'..'J' ("SAVGAMA.DAT"), and the n-th
 // character's (1 ..: "CHRDATA1", + ".SAV" / ".SWG" / ".FX").

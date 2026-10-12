@@ -5,9 +5,10 @@
 
 namespace savegame {
 
-bool read(dax::ByteSource& src, ecl::GameState& gs, Header& h, bool wall_sets)
+bool read(dax::ByteSource& src, ecl::GameState& gs, Header& h, bool wall_sets, bool script)
 {
-    if (src.size() < (wall_sets ? kSize : kPoolSize)) return false;
+    const uint32_t need = (wall_sets ? kSize : kPoolSize) - (script ? 0 : ecl::kCodeSize);
+    if (src.size() < need) return false;
     h = Header{};
     uint32_t p = 0;
     auto take = [&](uint8_t* out, size_t n) {
@@ -19,9 +20,10 @@ bool read(dax::ByteSource& src, ecl::GameState& gs, Header& h, bool wall_sets)
     if (!take(b, 1)) return false;
     h.game_area = b[0];
     if (!take(gs.area1, sizeof gs.area1) || !take(gs.area2, sizeof gs.area2) || !take(gs.table, sizeof gs.table) ||
-        !take(gs.code, sizeof gs.code))
+        (script && !take(gs.code, sizeof gs.code)))
         return false;
-    gs.code_len = ecl::kCodeSize;
+    // (Secret saves no script: it's loaded again from the area word 0x4BF2)
+    gs.code_len = script ? ecl::kCodeSize : 0;
     if (!take(b, 5)) return false;
     gs.x = b[0] & 15;
     gs.y = b[1] & 15;
@@ -55,12 +57,12 @@ bool read(dax::ByteSource& src, ecl::GameState& gs, Header& h, bool wall_sets)
     return true;
 }
 
-bool write(Sink& out, const ecl::GameState& gs, const Header& h, bool wall_sets)
+bool write(Sink& out, const ecl::GameState& gs, const Header& h, bool wall_sets, bool script)
 {
     uint8_t b[12];
     b[0] = h.game_area;
     if (!out.put(b, 1) || !out.put(gs.area1, sizeof gs.area1) || !out.put(gs.area2, sizeof gs.area2) ||
-        !out.put(gs.table, sizeof gs.table) || !out.put(gs.code, sizeof gs.code))
+        !out.put(gs.table, sizeof gs.table) || (script && !out.put(gs.code, sizeof gs.code)))
         return false;
     b[0] = static_cast<uint8_t>(gs.x);
     b[1] = static_cast<uint8_t>(gs.y);

@@ -887,8 +887,18 @@ until the party menu is known (`party.items`).
   steps), the credits (32-byte print calls in GAME.OVR at 0x379) and the
   version line as the original shows them; the sky colours at DS 0x0AA8.
   Screen Test and Walk Test work (16 maps).
-- Next: the 439-byte character record and its saves (SAVGAMA.DAT,
-  CHRDATA, .SFX), the party menu, camp, items, shops; combat; sound
+- **v0.93.0 - characters and saves.** Secret's 439-byte record is moved
+  into Curse's layout field by field (`party::from_secret` / `to_secret`,
+  `Format::Secret`; checked byte for byte on the GOG party - only the
+  in-memory pointers differ); what Curse's layout has no place for (spells
+  101-117 of the book, the 6th / 7th level slots, flags 2, magic
+  resistance ...) is kept in `Character::ext` (34 bytes) and written back.
+  Its saves are Curse's without the script's bytes (5,469;
+  `savegame::read / write` with `script` false); characters' items in
+  .STF (67-byte records: Curse's 63 + 4 zero), effects .SFX, characters
+  saved alone .WHO (`variant.secret_files`).
+- Next: the party menu, camp, items, shops (and importing Curse's
+  characters: its Add Character offers "Secret Curse"); combat; sound
   (SOUND.DAX), the sky and approaching monsters (SPRIT1); behaviour tests.
 
 ## 7. The journal (Tom, 2026-10-06)
