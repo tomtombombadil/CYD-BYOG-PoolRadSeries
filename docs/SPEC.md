@@ -256,6 +256,15 @@ stay in the session's scratch space, never in the repo.
 - WiFi and emailing the logs were in v0.21.0 and taken out in v0.22.0
   (Tom): WiFi took ~23 KB of RAM for good, and the games need every KB.
 
+**The memory log** (Tom, v0.85.7): Logs has a fourth tab, **Memory**
+(`_CYD/MEMORY.TXT`; the session before as MEMORY.OLD). One line a moment
+worth knowing - start-up, every screen change, each area's script, a
+fight's start and end, saves and loads, every "not enough memory", a line
+a minute while playing, and "LOW" when the largest free block drops under
+24 KB: "[h:mm:ss] what: free N KB, largest block N KB, lowest N KB"
+(largest block = the biggest single piece a load can get; lowest = the
+least free memory since the board started).
+
 ## 6. Milestones
 
 1. **Library and asset viewer** (v0.1.0, this build). Finds the games on the

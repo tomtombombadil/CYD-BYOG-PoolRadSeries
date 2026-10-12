@@ -21,6 +21,7 @@
 #include "engine/profile.h"
 #include "engine/text.h"
 #include "frame.h"
+#include "hal/memlog.h"
 #include "hal/panel_prefs.h"
 #include "hal/bigstack.h"
 #include "hal/sdcard.h"
@@ -108,8 +109,21 @@ void list_files();
 
 // The asset viewer's tables: made for Files / Blocks / View, gone anywhere
 // else (the game screens need the memory)
+const char* const kScreenNames[] = {"Home", "the game page", "Resource Test", "Resource Test blocks", "Resource Test picture",
+                                    "Screen Test", "Walk Test", "Play", "Journal", "Journal PDF", "the Game menu",
+                                    "Settings", "Logs", "Game Settings", "Dev Tools"};
 void go(Screen s)
 {
+    {
+        char t[48];
+        const int i = static_cast<int>(s);
+        snprintf(t, sizeof t, "to %s", i >= 0 && i < (int)(sizeof kScreenNames / sizeof *kScreenNames) ? kScreenNames[i] : "?");
+        memlog::note(t);
+    }
+#if defined(CYD_QEMU)
+    Serial.printf("[qemu] screen %d: heap free %u, largest block %u\n", static_cast<int>(s),
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+#endif
     const bool assets = s == Screen::Resources || s == Screen::Blocks || s == Screen::View;
     if (assets && !A) {
         A = new (std::nothrow) Assets;
@@ -3790,6 +3804,7 @@ void begin(const Env& env, Settings& settings)
             rf.close();
         }
     }
+    memlog::begin(env.version, BOARD_NAME);
     if (sd_begin() && library::load_library(game_dirs, library::kMaxGames, &n_games)) {
         scan_result = library::ScanResult::Ok;
         Serial.printf("[library] loaded: %d game folder(s)\n", n_games);
@@ -3801,6 +3816,7 @@ void begin(const Env& env, Settings& settings)
 
 void tick()
 {
+    memlog::tick(screen == Screen::Play);
     ui::Tap t;
     if (ui::poll_tap(t)) {
         ui::tap_flash(t);            // the tapped key lights up first (Tom, 2026-10-09)

@@ -17,8 +17,8 @@ inline std::string host_path(const char* p)
     if (!sim_root().empty() && strncmp(p, "/GOLDBOX", 8) == 0 && (p[8] == '/' || p[8] == 0)) return sim_root() + (p + 8);
     return p;
 }
-// The board's card mounts with 4 file slots: a fifth open file fails
-// there, so it fails here too (said on stderr)
+// The board's card mounts with 3 file slots (v0.85.7; 4 before): one more
+// open file fails there, so it fails here too (said on stderr)
 inline int& open_files() { static int n = 0; return n; }
 inline std::string* open_names() { static std::string n[64]; return n; }
 class File {
@@ -66,7 +66,8 @@ public:
         const char* path = hp.c_str();
         struct stat st;
         if ((!mode || mode[0] != 'w') && stat(path, &st) == 0 && S_ISDIR(st.st_mode)) return File(opendir(path), path);
-        if (open_files() >= 4) {
+        static const int slots = getenv("SLOTS") ? atoi(getenv("SLOTS")) : 3;    // (the board's: hal/sdcard.cpp)
+        if (open_files() >= slots) {
             fprintf(stderr, "[fs] no file slot left for %s (%d open:", card_path, open_files());
             for (int i = 0; i < 64; ++i) if (!open_names()[i].empty()) fprintf(stderr, " %s", open_names()[i].c_str());
             fprintf(stderr, ")\n");

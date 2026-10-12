@@ -58,7 +58,7 @@ void load()
 bool sd_begin()
 {
     if (mounted) return true;
-    mounted = SD_MMC.begin("/sd", true, false, 20000, 4);
+    mounted = SD_MMC.begin("/sd", true, false, 20000, 3);
     Serial.printf("[qemu] card %s\n", mounted ? "mounted (SD/MMC)" : "not mounted");
     return mounted;
 }
@@ -92,13 +92,11 @@ bool touch(int32_t* x, int32_t* y)
         next = now + s.wait;
         return false;
     }
-    // pressed for 150 ms (several polls agree), then released
-    if (phase == 0) {
-        phase = 1;
-        next = now + 150;
-        Serial.printf("[qemu] tap %d,%d\n", s.x, s.y);
-    }
-    if (phase == 1 && static_cast<int32_t>(now - next) < 0) {
+    // pressed for 4 polls (the filter wants 2 that agree; QEMU's polls can
+    // be far apart in time), then released
+    if (phase == 0) Serial.printf("[qemu] tap %d,%d\n", s.x, s.y);
+    if (phase < 4) {
+        ++phase;
         *x = s.x;
         *y = s.y;
         return true;

@@ -32,6 +32,7 @@
 #include "engine/text.h"
 #include "engine/view3d.h"
 #include "hal/audio.h"
+#include "hal/memlog.h"
 #include "hal/sdcard.h"
 
 namespace play {
@@ -566,8 +567,10 @@ void draw_overland(pic::Canvas& c)
     dirty_rows(1, 15);
 }
 
+bool world_parked = false;           // the 3D view's walls on the card during a fight (play_fight.inc)
 void draw_view(pic::Canvas& c)
 {
+    if (world_parked) return;
     if (bigpic >= 0) {
         // A big picture covers the screen: outdoors it stays (the wilderness
         // map); in a 3D area the exploring screen comes back
@@ -980,6 +983,11 @@ bool load_game(char slot)
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
     vm->set(0x7F12, d->gs.game_area);
     d->loaded = true;
+    {
+        char m[32];
+        snprintf(m, sizeof m, "loaded saved game %c", slot);
+        memlog::note(m);
+    }
     for (int i = 0; i < 3; ++i) {
         d->wall_block[i] = d->save.wall_block[i];
         d->wall_set[i] = d->save.wall_set[i];
@@ -1784,6 +1792,11 @@ void save_tap(int x, int y, pic::Canvas& c)
     dirty_rows(text::kMenuRow, text::kMenuRow);
     present_now();
     const bool ok = save_game(slot);
+    {
+        char m[32];
+        snprintf(m, sizeof m, "saved to slot %c", slot);
+        memlog::note(m);
+    }
     back_from_save(c);
     if (!ok) {
         char t[48];
@@ -5869,6 +5882,11 @@ struct Host : ecl::Host {
     {
         char name[24];
         area_file(name, sizeof name, "ECL");
+        {
+            char t[40];
+            snprintf(t, sizeof t, "area %d script %d", d->gs.game_area, block);
+            memlog::note(t);
+        }
         fs::File f;
         if (!open_dax(name, f)) return false;
         library::FileSource src(f);
@@ -8277,6 +8295,9 @@ const char* no_memory(const char* what)
              (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
              (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
     Serial.printf("[play] %s\n", msg);
+    char t[80];
+    snprintf(t, sizeof t, "NOT ENOUGH MEMORY for %s", what);
+    memlog::note(t);
     return msg;
 }
 

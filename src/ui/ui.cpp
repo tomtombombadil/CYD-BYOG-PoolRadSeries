@@ -135,6 +135,9 @@ bool poll_tap(Tap& out)
         }
         out.x = press_x;
         out.y = press_y;
+#if defined(CYD_QEMU)
+        Serial.printf("[qemu] tap seen at %d,%d\n", out.x, out.y);
+#endif
         return true;
     }
     return false;
@@ -211,6 +214,9 @@ void header(const char* title, bool back)
 
 void key(const Rect& r, const char* label, KeyStyle s)
 {
+#if defined(CYD_QEMU)
+    if (label && *label) Serial.printf("[qemu] key '%s' at %d,%d\n", label, r.x + r.w / 2, r.y + r.h / 2);
+#endif
     note_key(r, static_cast<uint8_t>(s));
     const uint16_t fill = s == KeyStyle::Lit ? style::kKeyLit : s == KeyStyle::Dim ? style::kKeyDim : style::kKey;
     const int rad = large() ? 6 : 4;
@@ -238,6 +244,9 @@ void key(const Rect& r, const char* label, KeyStyle s)
 
 void key_small(const Rect& r, const char* label, KeyStyle s)
 {
+#if defined(CYD_QEMU)
+    Serial.printf("[qemu] key '%s' at %d,%d\n", label, r.x + r.w / 2, r.y + r.h / 2);
+#endif
     key(r, "", s);
     const uint16_t col = s == KeyStyle::Dim ? style::kTextMuted : style::kText;
     const char* nl = strchr(label, '\n');
@@ -352,6 +361,9 @@ void key_help(const Rect& r)
 
 void key2(const Rect& r, const char* label, const char* sub, KeyStyle s, int left_inset)
 {
+#if defined(CYD_QEMU)
+    Serial.printf("[qemu] key '%s' at %d,%d\n", label, r.x + r.w / 2, r.y + r.h / 2);
+#endif
     note_key(r, static_cast<uint8_t>(s));
     const uint16_t fill = key_fill(s);
     const int rad = large() ? 6 : 4;
@@ -371,6 +383,9 @@ void key2(const Rect& r, const char* label, const char* sub, KeyStyle s, int lef
 
 void key_big(const Rect& r, const char* label, const char* sub, KeyStyle s)
 {
+#if defined(CYD_QEMU)
+    Serial.printf("[qemu] key '%s' at %d,%d\n", label, r.x + r.w / 2, r.y + r.h / 2);
+#endif
     note_key(r, static_cast<uint8_t>(s));
     const uint16_t fill = key_fill(s);
     const int rad = large() ? 8 : 6;

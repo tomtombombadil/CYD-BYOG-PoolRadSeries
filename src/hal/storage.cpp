@@ -9,6 +9,11 @@ bool storage_begin()
     static bool ok    = false;
     if (!tried) {
         tried = true;
+#if defined(CYD_QEMU)
+        // (the emulator build: no internal flash writes - QEMU panics when a
+        // flash erase / write disables the cache while the other core idles)
+        return false;
+#endif
         ok = LittleFS.begin(true);   // true = format if never formatted
         if (!ok) Serial.println("[storage] LittleFS mount failed - using defaults");
     }

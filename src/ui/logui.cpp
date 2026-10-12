@@ -9,9 +9,9 @@ namespace logui {
 
 namespace {
 
-constexpr int kLogs = 3;
-const char* const kLogFiles[kLogs] = {"SCAN.TXT", "RESTART.TXT", "ERRORS.TXT"};
-const char* const kTab[kLogs] = {"Card Scan", "Restarts", "Errors"};
+constexpr int kLogs = 4;
+const char* const kLogFiles[kLogs] = {"SCAN.TXT", "RESTART.TXT", "ERRORS.TXT", "MEMORY.TXT"};
+const char* const kTab[kLogs] = {"Card Scan", "Restarts", "Errors", "Memory"};
 
 bool after_scan_ = false;
 int  tab = 0;

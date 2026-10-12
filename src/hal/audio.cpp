@@ -83,6 +83,11 @@ void audio_task(void*)
 
 void audio_play(AudioFill fill, void* ctx)
 {
+#if defined(CYD_QEMU)
+    (void)fill;                     // (the emulator build: QEMU has no DAC DMA - no sound)
+    (void)ctx;
+    return;
+#endif
     if (task && ending)
         for (int i = 0; i < 100 && task; ++i) delay(2);     // (ending: start again after it)
     if (task || !fill) return;

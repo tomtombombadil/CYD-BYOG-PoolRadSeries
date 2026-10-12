@@ -57,11 +57,17 @@ cmd = [a.qemu, "-nographic", "-machine", "esp32",
        "-global", "driver=nvram.esp32.efuse,property=drive,value=efuse",
        "-drive", "file=%s,if=sd,format=raw" % card,
        "-serial", "file:%s" % log, "-monitor", "none"]
-try:
-    subprocess.run(cmd, timeout=a.seconds, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-except subprocess.TimeoutExpired:
-    pass
-text = open(log, "rb").read().decode("latin-1")
+# (Espressif's QEMU now and then panics at boot with a cache error before
+# the firmware's first line: tried again, 8 times at most)
+for attempt in range(8):
+    try:
+        subprocess.run(cmd, timeout=a.seconds, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        pass
+    text = open(log, "rb").read().decode("latin-1")
+    if "CYD BYOG" in text:
+        break
+    print("(boot panic in QEMU - again)")
 print(text)
 low = [l for l in text.splitlines() if "[qemu]" in l and "largest block" in l]
 if low:

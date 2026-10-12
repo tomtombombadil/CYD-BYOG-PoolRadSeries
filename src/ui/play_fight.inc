@@ -292,7 +292,12 @@ struct Fight {
     uint8_t* cursor = nullptr;          // COMSPR 0x19 (ready): the box under the one whose turn it is
     uint8_t* skull = nullptr;           // COMSPR 11 (attack)
     uint8_t* outline = nullptr;         // COMSPR 0x19 (attack): the box round a target being aimed at
-    char     w[profile::kFightWords][40];
+    // The fight's words, packed (v0.85.7: 161 x 40 fixed was 6.4 KB): word i
+    // at wbuf + woff[i]
+    static constexpr int kWordPool = 2400;
+    char     wbuf[kWordPool];
+    uint16_t woff[profile::kFightWords];
+    bool     tiles_in_world = false;    // the field's tiles in the 3D view's memory (parked to the card)
     FSt      st = FSt::Begin;
     FSt      after = FSt::Turn;         // where the pages go on to
     int      cur = -1;
@@ -352,8 +357,49 @@ Fight* make_fight()
 }
 
 // The field's pictures' blocks (false: no memory - those got are freed)
+// The 3D view's walls aren't drawn during a fight: they wait on the card
+// (_CYD/WORLD.TMP) and the field's 40 tiles use their memory (v0.85.7,
+// Tom's 3.2": 11.5 KB that a fight no longer has to find); back after
+// the fight (end_fight_art). False: the card couldn't take them.
+static_assert(kTiles * kTileBytes <= sizeof(view3d::World), "the field's tiles must fit in the 3D view's memory");
+void world_park_path(char* out, size_t cap) { snprintf(out, cap, "%s/_CYD/WORLD.TMP", games::kRootDir); }
+bool park_world()
+{
+    if (world_parked || !sd_begin()) return false;
+    char path[96];
+    world_park_path(path, sizeof path);
+    fs::File f = sd_fs().open(path, "w");
+    if (!f) return false;
+    const bool ok = f.write(reinterpret_cast<const uint8_t*>(&d->world), sizeof(view3d::World)) == sizeof(view3d::World);
+    f.close();
+    if (ok) world_parked = true;
+    return ok;
+}
+void unpark_world()
+{
+    if (!world_parked) return;
+    char path[96];
+    world_park_path(path, sizeof path);
+    fs::File f = sd_fs().open(path, "r");
+    const bool ok = f && f.read(reinterpret_cast<uint8_t*>(&d->world), sizeof(view3d::World)) == sizeof(view3d::World);
+    if (f) f.close();
+    world_parked = false;
+    if (!ok) {
+        // (the card lost it: the walls read again from the game's files)
+        log_error("The 3D view's walls couldn't be read back after a fight: reloaded.");
+        for (int i = 0; i < 3; ++i)
+            if (d->wall_block[i] >= 0 && d->wall_set[i] > 0) host->load_walls(d->wall_set[i], d->wall_block[i]);
+    }
+}
+
 bool alloc_tiles()
 {
+    if (!fg->tiles_in_world && park_world()) {
+        uint8_t* base = reinterpret_cast<uint8_t*>(&d->world);
+        for (int i = 0; i < kTiles; ++i) fg->tile[i] = base + i * kTileBytes;
+        fg->tiles_in_world = true;
+    }
+    if (fg->tiles_in_world) return true;
     for (uint8_t*& t : fg->tile)
         if (!t && !(t = static_cast<uint8_t*>(malloc(kTileBytes)))) {
             for (uint8_t*& u : fg->tile) {
@@ -365,15 +411,32 @@ bool alloc_tiles()
     return true;
 }
 
-const char* fw(int i) { return fg ? fg->w[i] : ""; }
+const char* fw(int i) { return fg ? fg->wbuf + fg->woff[i] : ""; }
 bool in_fight() { return fg != nullptr; }
 
 void load_fight_words()
 {
+    // Packed one after another (each read into a 40-byte scratch first);
+    // offset 0 is an empty word for those not read or past the pool
+    fg->wbuf[0] = 0;
+    int at = 1;
+    for (int i = 0; i < profile::kFightWords; ++i) fg->woff[i] = 0;
     OvrWords src;
     if (!src.open()) return;
-    for (int i = 0; i < profile::kFightWords; ++i)
-        if (d->prof->fight.words[i]) text::read_pascal(src, d->prof->fight.words[i], fg->w[i], sizeof fg->w[i]);
+    for (int i = 0; i < profile::kFightWords; ++i) {
+        if (!d->prof->fight.words[i]) continue;
+        char t[40];
+        t[0] = 0;
+        text::read_pascal(src, d->prof->fight.words[i], t, sizeof t);
+        const int n = static_cast<int>(strlen(t)) + 1;
+        if (at + n > Fight::kWordPool) {
+            log_error("Fight: the words don't all fit (kWordPool).");
+            break;
+        }
+        memcpy(fg->wbuf + at, t, n);
+        fg->woff[i] = static_cast<uint16_t>(at);
+        at += n;
+    }
 }
 
 bool load_fight_tables()
@@ -528,9 +591,14 @@ void end_fight_art()
 {
     if (!fg) return;
     for (uint8_t*& t : fg->tile) {
-        free(t);
+        if (!fg->tiles_in_world) free(t);
         t = nullptr;
     }
+    if (fg->tiles_in_world) {
+        fg->tiles_in_world = false;
+        unpark_world();
+    }
+    memlog::note("fight over");
     for (Pic4& p : fg->icon) free_pic(p);
     free(fg->cursor);
     free(fg->skull);
@@ -2471,7 +2539,7 @@ void fight_start(pic::Canvas& c)
     const bool tables = room && load_fight_tables();
     // Pool's two names gnomes dodge (its GAME.OVR words), as Pascal names
     for (int k = 0; tables && k < 2; ++k) {
-        const char* w = fg->w[profile::kDodge1 + k];
+        const char* w = fw(profile::kDodge1 + k);
         size_t n = strlen(w);
         if (n > 15) n = 15;
         fg->t.dodge_names[k][0] = static_cast<uint8_t>(n);
@@ -2584,6 +2652,10 @@ void fight_start(pic::Canvas& c)
     if (!fg->until) fg->until = 1;
     Serial.printf("[play] a fight: %d against %d (%s)\n", combat::standing(b, 0), combat::standing(b, 1),
                   b.indoors ? "indoors" : "outdoors");
+    char t[48];
+    snprintf(t, sizeof t, "fight start, %d against %d%s", combat::standing(b, 0), combat::standing(b, 1),
+             fg->tiles_in_world ? "" : " (walls not parked)");
+    memlog::note(t);
 }
 
 // Back to exploring after the fight (and its treasure)

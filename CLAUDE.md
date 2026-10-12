@@ -331,6 +331,12 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   stack) the playsim can't show. No screen output (taps need known
   coordinates). Board builds stay byte-for-byte (`#if CYD_QEMU` only;
   the SD_MMC library lives in tools/qemu/lib so it never links there).
+  The emulator build has no sound, no LittleFS (QEMU panics on internal
+  flash writes) and prints every key's centre ("[qemu] key 'Play' at
+  81,134") and each screen with its heap; taps are counted in polls
+  (QEMU's polls are slow). Open: it panics (cache error) inside
+  play::open and now and then at boot - run_qemu.py retries boots; the
+  Play Test isn't reached in it yet.
 - Game testing (Tom, 2026-10-10): "test the game" means BEHAVIOUR, not
   just crashes - every spell, item, monster ability, class / level,
   encounter and save field must do what the original does (a +1 long
@@ -379,9 +385,28 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   drive the RGB LED; Settings shows "no PSRAM"). loop() has Arduino's 8 KB
   stack; deep work (PNG / PDF / JPEG: the scan's icons and journals, the
   journal book, Home's icon decode) runs via `hal/bigstack.h` on a 16 KB
-  stack of its own only while it runs. The SD card mounts with 4 file
-  slots (~4 KB of RAM each): never more than 3 files open at once.
+  stack of its own only while it runs. The SD card mounts with 3 file
+  slots (~4 KB of RAM each; 4 until v0.85.7): never more than 3 files
+  open at once (the playsim's card has 3 too - SLOTS=n to try others).
   v0.22.0: static RAM 48 KB (v0.20.0 63 KB, v0.21.0 90 KB).
+- **Memory is the scarcest thing (Tom, 2026-10-11).** The budget on a
+  320x240 board: ~137 KB free at Home (after the 64 KB canvas); the Play
+  Test keeps ~82 KB (Data 21.6, Party 13.8, World 13.5, GameState 12.8,
+  Names 5.4, Ground 4, the VM, sound 3.6); a fight adds Fight ~10.5 KB +
+  Battle 14.6 KB + its monsters' records. Tom's 3.2" ran out at a fight's
+  start (free 12 KB). Rules: (1) **the memory log** - `hal/memlog.*`
+  writes `_CYD/MEMORY.TXT` (Settings - Logs - Memory; the last session's
+  as MEMORY.OLD): screen changes, areas, fights, saves / loads, every
+  "not enough memory", a line a minute while playing, LOW when the
+  largest block drops under 24 KB - new heavy features note themselves
+  there; (2) what a screen doesn't use waits on the card while a bigger
+  one runs (`frame::park` the canvas for the book; the 3D view's walls
+  park to `_CYD/WORLD.TMP` during a fight and the field's tiles use their
+  memory - `park_world`); (3) no fixed-size word tables (the fight's words
+  are packed: `wbuf` / `woff`); (4) before / after any change that adds a
+  long-lived block, measure: the playsim's `SIZES=1` (the big blocks'
+  sizes), sweep's `memloop` (one session, fight after fight: the heap in
+  use stays flat) and `HEAPLOG=1` on a monkey run.
 - Toolchain: pioarduino platform 55.03.312-1 (Arduino-ESP32 3.3.x), LovyanGFX
   1.2.x, huge_app.csv (no OTA - the web flasher is the update path).
 - Claude's local builds: PlatformIO in a venv; the proxy CA must be appended to

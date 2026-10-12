@@ -229,6 +229,14 @@ static void disasm()
     }
 }
 
+static uint32_t world_hash()
+{
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(&play::d->world);
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < sizeof(view3d::World); ++i) h = (h ^ p[i]) * 16777619u;
+    return h;
+}
+static uint32_t w0 = 0;              // the 3D view's walls before the fight (RUNAT)
 static void run_fight()
 {
 
@@ -360,12 +368,15 @@ static void run_fight()
                     ++turns;
                     tap_word('Q');
                 } else if (play::fg->st == play::FSt::Results || play::fg->st == play::FSt::Destroyed) {
+                    static bool told = false;
+                    if (!told) { told = true; printf("  the 3D view's walls at the results: %s\n", world_hash() == w0 ? "as before" : "CHANGED"); }
                     shot("fight_results");
                     printf("  fight over: result %d, each %d xp, round %d\n", play::vm->get(0x7EC7), play::fg->share, play::fg->b.round);
                     for (int i = 0; i < play::pt->count; ++i) { char nm[20]; play::pt->m[i].name(nm, 20); printf("   %s HP %d/%d status %d xp %u", nm, play::pt->m[i].hp(), play::pt->m[i].hp_max(), play::pt->m[i].health(), play::pt->m[i].exp()); for (int k = 0; k < play::pt->m[i].n_items; ++k) if (play::pt->m[i].items[k][0x3D]) printf(" [item %d: %d x spell %02X]", k, play::pt->m[i].items[k][0x3C], play::pt->m[i].items[k][0x3D]); else printf(" [type %d x%d]", play::pt->m[i].items[k][0x2E], play::pt->m[i].items[k][0x39]); printf("\n"); }
                     play::tap(2, 2, C);
                 }
             }
+            printf("  the 3D view's walls after the fight: %s\n", world_hash() == w0 ? "as before" : "CHANGED");
             printf("  after the fight: screen %d menu [%s%s] ground %d items, gold %d\n", (int)play::screen, play::menu.prompt, play::menu.s, play::ground->n, play::ground->money[3]);
             shot("after_fight");
         }
@@ -374,7 +385,12 @@ int main(int argc, char** argv)
 {
     setvbuf(stdout, nullptr, _IOLBF, 0);       // (lines out at once: a hang or a crash keeps them)
     // SIZES: the fight's blocks' sizes
-    if (getenv("SIZES")) { printf("Fight %zu Battle %zu Page %zu Monster %zu Data %zu World %zu GameState %zu Party %zu Names %zu Ground %zu\n", sizeof(play::Fight), sizeof(combat::Battle), sizeof(play::Page), sizeof(combat::Monster), sizeof(play::Data), sizeof(view3d::World), sizeof(ecl::GameState), sizeof(party::Party), sizeof(items::Names), sizeof(*play::ground)); return 0; }
+    if (getenv("SIZES")) { printf("Fight %zu Battle %zu Page %zu Monster %zu Data %zu World %zu GameState %zu Party %zu Names %zu Ground %zu\n", sizeof(play::Fight), sizeof(combat::Battle), sizeof(play::Page), sizeof(combat::Monster), sizeof(play::Data), sizeof(view3d::World), sizeof(ecl::GameState), sizeof(party::Party), sizeof(items::Names), sizeof(*play::ground));
+        printf("Fight: words %zu pages %zu icons %zu thrown %zu; Data: roster %zu guys %zu item words %zu; Battle fighters %zu (%zu each); Character %zu Vm %zu Making %zu\n",
+               sizeof(((play::Fight*)0)->wbuf), sizeof(((play::Fight*)0)->page), sizeof(((play::Fight*)0)->icon), sizeof(((play::Fight*)0)->thrown),
+               sizeof(((play::Data*)0)->roster), sizeof(((play::Data*)0)->guy_file) + sizeof(((play::Data*)0)->guy_name), sizeof(((play::Data*)0)->iw),
+               sizeof(((combat::Battle*)0)->f), sizeof(combat::Fighter), sizeof(party::Character), sizeof(ecl::Vm), sizeof(play::Making));
+        return 0; }
     // argv[1]: the game folder on the PC; its parent stands for /GOLDBOX
     std::string host = argv[1];
     while (host.size() > 1 && host.back() == '/') host.pop_back();
@@ -748,6 +764,7 @@ int main(int argc, char** argv)
             play::vm->set((uint16_t)(a + 2), 8);
         }
         play::then = play::Then::Idle;
+        w0 = world_hash();
         play::handle(play::vm->run((uint16_t)a));
         settle(0, 5000);
         printf("  screen %d, %d goods, menu [%s]\n", (int)play::screen, play::ground->n, play::menu.s);
