@@ -377,9 +377,9 @@ bool render_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle s
                                         static_cast<uint8_t>(px), static_cast<uint8_t>(px >> 8)};
                 if (d->out) d->out.write(hdr, sizeof hdr);
             }
-            if (draw) ui::gfx().startWrite();
+            if (draw) ui::card_draw_begin();
             ok = icon::render(src, fo, px, px, window, icon_row, d);
-            if (draw) ui::gfx().endWrite();
+            if (draw) ui::card_draw_end();
             if (!ok) *why = "it couldn't be decoded (or memory ran short)";
             if (d->out) {
                 d->out.close();
@@ -415,12 +415,12 @@ bool draw_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle st)
             d->y = y;
             d->draw = true;
             icon_colours(*d, st);
-            ui::gfx().startWrite();
+            ui::card_draw_begin();
             for (int r = 0; r < px && ok; ++r) {
                 ok = f.read(row, static_cast<size_t>(px) * 4) == static_cast<size_t>(px) * 4;
                 if (ok) icon_row(r, row, px, d);
             }
-            ui::gfx().endWrite();
+            ui::card_draw_end();
         } else {
             ok = false;
         }
@@ -2999,14 +2999,14 @@ void draw_journal()
             continue;
         }
         if (!pics) break;
-        g.startWrite();
+        ui::card_draw_begin();
         for (int y = 0; y < jv->out_h[i]; ++y) {
             const int sy = y0 + y - jv->top;
             if (sy < 0) continue;
             if (sy >= a.h) break;
             journal_draw_row(src, i, y, a.y + sy);
         }
-        g.endWrite();
+        ui::card_draw_end();
         y0 += jv->out_h[i];
         if (y0 - jv->top >= a.h) break;
     }

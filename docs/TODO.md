@@ -15,9 +15,11 @@ the Project as claude/TODO.md.
       (ESP32-S3)" from the web flasher (there since v0.88.0) and report
       what works - screen (colours: Settings has Invert / Swap Red/Blue),
       touch with the capacitive stylus, card, sound (Send Logs after).
-- [ ] Flash a C5 board with "2.8" ST7789 Resistive (ESP32-C5)" (v0.88.0)
-      and report the same (it asks for touch calibration at the first
-      start).
+- [ ] C5 boards (both: the yellow "MN-CYD-C5" and the "colorful" one):
+      flash v0.94.1 and try Home again - v0.91.1 booted and scanned on
+      both (Tom, 2026-10-12) but hung drawing the first game icon (fixed
+      in v0.94.1: the card is on the display's bus there); then touch,
+      colours, sound, a Play Test (Send Logs after).
 - [ ] Send Logs goes to cyd.classic.games.logs@gmail.com (the Classic
       Games address) - keep it, or name another (one line in
       web/l/index.html).
@@ -40,6 +42,9 @@ the Project as claude/TODO.md.
 - [ ] Memory, next cuts (measure each with heapprof): the party's unused
       member slots (1.7 KB each), Data's words read on demand, the spell
       names' 4 KB read buffer in pieces.
+- [ ] The plain C5's scan: "The Unlimited Adventures journal couldn't be
+      processed (card full, or not enough memory)" (the Companion's) - look
+      at why (8 MB free there, so the card or the file).
 - [ ] S3 / C5 follow-ups once Tom has run them: fix what his reports show
       (colours, touch direction, sound level - the codec's volume is
       0 dB); then the 8-bit canvas for the VGA games there.
@@ -66,6 +71,11 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.94.1: the C5 hung at Home drawing the first icon (Tom's logs, both
+  C5 boards): the drawing held the SPI bus the card shares there. Card
+  reads while drawing (icons, journal pictures, the PDF book) no longer
+  sit inside one display transaction on that board (`ui::card_draw_begin`).
 
 - v0.94.0: Secret's party menu, Load Saved Game and Begin (Priam's house
   at 3,3 S); script blocks found across ECL1-3; the Play Test opens under

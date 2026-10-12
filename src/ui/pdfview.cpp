@@ -234,11 +234,11 @@ Result draw(int page, const ui::Rect& r, Fit fit, int* vx, int* vy, ui::Rect* fi
         // The band: the shown rows one MCU row makes (small when scaled down)
         d->band_rows = static_cast<int>(((info.mcu_h >> d->c.s) * d->c.kd + 65535) / 65536) + 1;
         d->band = static_cast<lgfx::rgb888_t*>(malloc(sizeof(lgfx::rgb888_t) * d->band_rows * d->ow));
-        ui::gfx().startWrite();
+        ui::card_draw_begin();
         if (!jpeg::decode(*st->src, img.data_at, img.data_len, pool, want, block, d, nullptr, d->c.s))
             res = Result::BadData;
         flush(*d);
-        ui::gfx().endWrite();
+        ui::card_draw_end();
         free(d->band);
     }
     delete d;

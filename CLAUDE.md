@@ -253,7 +253,10 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   (BOARD_AUDIO_DAC / _ES8311 / _PDM). PSRAM: Arduino's malloc puts blocks
   over 4 KB there by itself; the memory figures then include it. The
   display object is made in setup() (the S3 panics on floating point in
-  static constructors). Their serial log is on native USB (CDC on boot).
+  static constructors). The C5's card shares the display's SPI bus: never
+  read the card inside a startWrite / endWrite - drawing that reads the
+  card as it goes uses `ui::card_draw_begin / card_draw_end` (Tom's C5s
+  hung at Home's first icon, v0.94.1). Their serial log is on native USB (CDC on boot).
 - `custom_board_tested = no` on a board until Tom has run THIS firmware on
   it. Tested: the five classic boards (Tom, 2026-10-09, v0.20.0); the S3
   and C5 boards not yet (v0.88.0); a new board starts

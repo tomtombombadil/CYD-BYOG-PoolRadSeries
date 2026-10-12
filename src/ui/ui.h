@@ -22,6 +22,23 @@ struct Tap { int x, y; };
 
 void begin(LGFX& gfx);
 LGFX& gfx();
+// A run of drawing that reads the card as it goes (icons, journal pictures,
+// the PDF book): one display transaction for it all, except where the card
+// is on the display's own SPI bus (BOARD_SD_SHARED_SPI, the 2.8" C5) - there
+// the transaction would hold the bus the card needs (Tom, v0.94.1: Home
+// hung at the first icon rows), so each drawing call takes the bus alone.
+inline void card_draw_begin()
+{
+#if !defined(BOARD_SD_SHARED_SPI)
+    gfx().startWrite();
+#endif
+}
+inline void card_draw_end()
+{
+#if !defined(BOARD_SD_SHARED_SPI)
+    gfx().endWrite();
+#endif
+}
 
 int width();
 int height();
