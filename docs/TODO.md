@@ -40,11 +40,16 @@ the Project as claude/TODO.md.
       into 16 colours (facts from the player's file), so Darkness plays on
       the classic boards as its own EGA mode shows it.
 - [ ] QEMU: the cache-error panic inside play::open (parked).
-- [ ] Before Secret: its files checked against Curse's formats (EGA,
-      same DAX formats; sizes like Curse's - see the survey).
+- [ ] Secret of the Silver Blades (next game): the work list in the
+      Project's claude/secret_facts.md - its program's layout, the
+      439-byte character record and save format, the ECL scripts against
+      Curse's decoder, SOUND.DAX / SKY.DAX / SPRIT1.DAX.
 
 ## Done
 
+- 2026-10-12: Secret's files checked with the engine's readers: every DAX
+  block decodes, 16 colours; the differences listed in the Project's
+  claude/secret_facts.md.
 - v0.89.0: Pool's items - its own item codes (generic effects, Ogre Power,
   the boulder, keyed swords), its item spells (0x17 higher: potions,
   wands, the javelin, the necklace now work), Enlarge / Strength / giant

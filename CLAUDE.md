@@ -437,6 +437,12 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   own tables + the facts' constants; never in the repo). The playsim's
   NEWGAME=1 starts a new game (the tour) with save A's party.
   Pool expectations: the Project's claude/poolrad_behaviour_facts.md.
+  Pool's items and stat effects (item codes, item spells 0x17 higher,
+  Strength in the record, the Manual): claude/poolrad_items_facts.md
+  (v0.89.0); `items::passive` is each game's code table.
+- Secret of the Silver Blades (next): first look in the Project's
+  claude/secret_facts.md (439-byte records, its own save format, sound in
+  SOUND.DAX, SKY / SPRIT1 files).
 - PortMaster ports are a stretch goal (Tom): keep everything portable.
 - Game screens (Walk Test, Play Test now, the games later): canvas 1:1 at the top left
   (`frame::set_left`), controls below it, on 480x320 the Companion strip on
