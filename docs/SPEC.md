@@ -1054,6 +1054,8 @@ the game's Settings (As Original: all of them).
   find its trap doors - 1 in 5 while searching, +1 in 5 for an elf or a
   half-elf (the original: elves and half-elves no better, and nobody finds
   them without searching).
+- **Saving a game** (Tom, v0.85.5): "Saving to slot A..." on the menu
+  line while the card is written (the originals: "Saving...Please Wait").
 - **Pool's training, a magic-user with no spell left to learn**: the
   original writes the "learnt" mark to spell 0's place, which is the
   record's maximum hit points (they become 1 before the level's gain); the

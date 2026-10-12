@@ -405,6 +405,8 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   screen's menu words, list lines and party menu lines turn to the
   highlight colour (`play::tap_highlight`); one already lit blinks off and
   on. New tappable things must take part.
+- Slow work inside a tap puts its message up first (`play::present_now`;
+  Tom, v0.85.5: saving shows "Saving to slot A...").
 - Errors stay on screen until tapped (Tom, 2026-10-09) - never timed. The
   games' own timed messages ("Not enough Money.") keep the games' timing.
 - Sounds: go easy - no sound on plain key presses.

@@ -939,6 +939,7 @@ bool darkness_dir(char* out, size_t cap)
     return false;
 }
 
+void present_play();
 void start_play()
 {
     if (frame::parked()) {
@@ -976,6 +977,7 @@ void start_play()
             break;
         }
     play_error = play::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game, frame::canvas(), cdir);
+    play::set_present_now(present_play);       // (a message up before slow work - "Saving to slot A...")
     go(Screen::Play);
 }
 

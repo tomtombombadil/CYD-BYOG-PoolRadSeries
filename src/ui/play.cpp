@@ -898,6 +898,12 @@ const char* ext_items() { return pool_files() ? ".ITM" : ".SWG"; }
 const char* ext_fx() { return pool_files() ? ".SPC" : ".FX"; }
 size_t rec_file_size() { return pool_files() ? party::kPoolRecordSize : party::kRecordSize; }
 bool write_file(const char* dir, const char* name, const uint8_t* p, size_t n);
+void (*g_present_now)() = nullptr;
+void present_now()
+{
+    if (g_present_now) g_present_now();
+}
+
 bool write_record(const char* dir, const char* fn, const party::Character& ch)
 {
     uint8_t buf[party::kPoolRecordSize];
@@ -1654,7 +1660,15 @@ bool write_file(const char* dir, const char* name, const uint8_t* p, size_t n)
         if (sd_fs().exists(path)) sd_fs().remove(path);
         return true;
     }
-    if (!sd_fs().exists(dir)) sd_fs().mkdir(dir);          // (a save folder the copy left out)
+    // (a save folder the copy left out; looked for once a folder - each
+    // look is a directory read on the card, and a save writes ~20 files)
+    static uint32_t checked = 0;                // (the folder's name, hashed: 4 bytes of static RAM)
+    uint32_t h = 2166136261u;
+    for (const char* q = dir; *q; ++q) h = (h ^ static_cast<uint8_t>(*q)) * 16777619u;
+    if (h != checked) {
+        if (!sd_fs().exists(dir)) sd_fs().mkdir(dir);
+        checked = h;
+    }
     fs::File f = sd_fs().open(path, "w");
     if (!f) return false;
     const bool ok = f.write(p, n) == n;
@@ -1753,9 +1767,15 @@ void save_tap(int x, int y, pic::Canvas& c)
     if (k < 0) return;
     menu.selected = k;
     clear_menu_line(c);
-    put(c, d->w_saving, 0, text::kMenuRow, 10);
-    dirty_rows(text::kMenuRow, text::kMenuRow);
     const char slot = text::key(menu, k);
+    // "Saving to slot A..." on the screen BEFORE the card's writes (Tom,
+    // v0.85.5; the original's "Saving...Please Wait" never showed: the
+    // screen only caught up after the tap)
+    char t[32];
+    snprintf(t, sizeof t, "Saving to slot %c...", slot);
+    put(c, t, 0, text::kMenuRow, 10);
+    dirty_rows(text::kMenuRow, text::kMenuRow);
+    present_now();
     const bool ok = save_game(slot);
     back_from_save(c);
     if (!ok) {
@@ -8771,6 +8791,8 @@ bool walking()
     if (screen == Screen::Fight) return fg && (fg->st == FSt::Move || (fg->st == FSt::Aim && fg->manual));
     return screen == Screen::Game && !waiting && then == Then::Idle && (vm->get(0x4BE6) != 0 || pool_overland());
 }
+
+void set_present_now(void (*fn)()) { g_present_now = fn; }
 
 bool walk_pending()
 {

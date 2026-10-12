@@ -130,6 +130,9 @@ bool journal_seen(int i, char* kind, int* number);
 
 // Canvas rows changed since the last call (y1 == 0: none).
 void take_dirty(int& y0, int& y1);
+// The viewer's "show the changed rows now" (for a message before slow work
+// inside a tap, e.g. saving); unset: nothing
+void set_present_now(void (*fn)());
 // True while a fight is on screen: colours 0 and 8 swap (the games' combat
 // palette)
 bool fight_colours();
