@@ -34,7 +34,8 @@ bool scaled() { return mode == Scale::OneAndHalf && ui::large() && !at_left; }
 bool begin()
 {
     if (pixels) return true;
-    pixels = static_cast<uint8_t*>(heap_caps_malloc(pic::kScreenW * pic::kScreenH, MALLOC_CAP_8BIT));
+    cv.bpp = 4;
+    pixels = static_cast<uint8_t*>(heap_caps_malloc(cv.bytes(), MALLOC_CAP_8BIT));
     if (!pixels) {
         Serial.printf("[frame] no memory for the canvas (largest block %u)\n",
                       (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
@@ -50,6 +51,26 @@ bool begin()
 
 pic::Canvas& canvas() { return cv; }
 
+bool set_depth(int bpp)
+{
+    bpp = bpp == 8 ? 8 : 4;
+    if (bpp == cv.bpp || !pixels) return pixels != nullptr;
+    heap_caps_free(pixels);
+    const uint8_t was = cv.bpp;
+    cv.bpp = static_cast<uint8_t>(bpp);
+    pixels = static_cast<uint8_t*>(heap_caps_malloc(cv.bytes(), MALLOC_CAP_8BIT));
+    if (!pixels) {
+        cv.bpp = was;                    // (the smaller one comes back: it was just freed)
+        pixels = static_cast<uint8_t*>(heap_caps_malloc(cv.bytes(), MALLOC_CAP_8BIT));
+        cv.px = pixels;
+        if (pixels) cv.clear(0);
+        return false;
+    }
+    cv.px = pixels;
+    cv.clear(0);
+    return true;
+}
+
 uint16_t colour(int index)
 {
     const uint16_t v = lut[index & 0xFF];
@@ -58,7 +79,6 @@ uint16_t colour(int index)
 
 namespace {
 bool is_parked = false;
-constexpr size_t kCanvasBytes = static_cast<size_t>(pic::kScreenW) * pic::kScreenH;
 }
 
 bool park(const char* path)
@@ -66,7 +86,7 @@ bool park(const char* path)
     if (!pixels || is_parked || !sd_begin()) return false;
     fs::File f = sd_fs().open(path, "w");
     if (!f) return false;
-    const bool ok = f.write(pixels, kCanvasBytes) == kCanvasBytes;
+    const bool ok = f.write(pixels, cv.bytes()) == cv.bytes();
     f.close();
     if (!ok) return false;
     heap_caps_free(pixels);
@@ -79,7 +99,7 @@ bool park(const char* path)
 bool unpark(const char* path)
 {
     if (!is_parked) return true;
-    uint8_t* p = static_cast<uint8_t*>(heap_caps_malloc(kCanvasBytes, MALLOC_CAP_8BIT));
+    uint8_t* p = static_cast<uint8_t*>(heap_caps_malloc(cv.bytes(), MALLOC_CAP_8BIT));
     if (!p) {
         Serial.printf("[frame] no memory to bring the canvas back (largest block %u)\n",
                       (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
@@ -88,10 +108,10 @@ bool unpark(const char* path)
     bool ok = sd_begin();
     if (ok) {
         fs::File f = sd_fs().open(path, "r");
-        ok = f && f.read(p, kCanvasBytes) == kCanvasBytes;
+        ok = f && f.read(p, cv.bytes()) == cv.bytes();
         if (f) f.close();
     }
-    if (!ok) memset(p, 0, kCanvasBytes);       // a blank screen rather than none; the game redraws
+    if (!ok) memset(p, 0, cv.bytes());       // a blank screen rather than none; the game redraws
     pixels = p;
     cv.px = p;
     is_parked = false;
@@ -139,9 +159,18 @@ void present_rows(int y0, int y1)
         for (int y = y0; y < y1; y += kBandRows) {
             const int rows = (y1 - y < kBandRows) ? y1 - y : kBandRows;
             for (int r = 0; r < rows; ++r) {
-                const uint8_t* src = pixels + (y + r) * pic::kScreenW;
                 uint16_t* dst = band + r * pic::kScreenW;
-                for (int x = 0; x < pic::kScreenW; ++x) dst[x] = lut[src[x]];
+                if (cv.bpp == 4) {
+                    const uint8_t* src = pixels + (y + r) * cv.stride();
+                    for (int x = 0; x < pic::kScreenW; x += 2) {
+                        const uint8_t b = src[x >> 1];
+                        dst[x] = lut[b >> 4];
+                        dst[x + 1] = lut[b & 0x0F];
+                    }
+                } else {
+                    const uint8_t* src = pixels + (y + r) * pic::kScreenW;
+                    for (int x = 0; x < pic::kScreenW; ++x) dst[x] = lut[src[x]];
+                }
             }
             g.pushImage(a.x, a.y + y, pic::kScreenW, rows, reinterpret_cast<const lgfx::swap565_t*>(band));
         }
@@ -151,9 +180,19 @@ void present_rows(int y0, int y1)
         for (int oy = oy0; oy < oy1; oy += kBandRows) {
             const int rows = (oy1 - oy < kBandRows) ? oy1 - oy : kBandRows;
             for (int r = 0; r < rows; ++r) {
-                const uint8_t* src = pixels + ((oy + r) * 2 / 3) * pic::kScreenW;
                 uint16_t* dst = band + r * 480;
-                for (int x = 0; x < 480; ++x) dst[x] = lut[src[xmap[x]]];
+                const int sy = (oy + r) * 2 / 3;
+                if (cv.bpp == 4) {
+                    const uint8_t* src = pixels + sy * cv.stride();
+                    for (int x = 0; x < 480; ++x) {
+                        const int sx = xmap[x];
+                        const uint8_t b = src[sx >> 1];
+                        dst[x] = lut[(sx & 1) ? b & 0x0F : b >> 4];
+                    }
+                } else {
+                    const uint8_t* src = pixels + sy * pic::kScreenW;
+                    for (int x = 0; x < 480; ++x) dst[x] = lut[src[xmap[x]]];
+                }
             }
             g.pushImage(a.x, a.y + oy, 480, rows, reinterpret_cast<const lgfx::swap565_t*>(band));
         }

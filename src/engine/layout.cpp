@@ -15,11 +15,10 @@ void put(pic::Canvas& c, const Tiles& t, int n, int col, int row)
     for (int y = 0; y < 8; ++y) {
         const int py = row * 8 + y;
         if (py < 0 || py >= c.h) continue;
-        uint8_t* line = c.px + py * c.w;
         for (int x = 0; x < 8; ++x) {
             const int px = col * 8 + x;
             const uint8_t v = s[y * 8 + x];
-            if (px >= 0 && px < c.w && v != kMask) line[px] = v;
+            if (px >= 0 && px < c.w && v != kMask) c.set(px, py, v);
         }
     }
 }

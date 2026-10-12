@@ -33,9 +33,34 @@ struct Rgb { uint8_t r, g, b; };
 // The standard 16-colour EGA palette (index -> RGB).
 extern const Rgb kEga[16];
 
+// A screen's pixels: palette indexes, a byte each (bpp 8) or two a byte
+// (bpp 4: the left pixel in the high nibble; EGA's 16 colours - v0.87.0,
+// Tom 2026-10-12 "focus on memory": the game screen in half the 64 KB).
+// Pixels go through get / set (the callers clip); px is the raw memory.
 struct Canvas {
-    uint8_t* px;          // w * h palette indexes
+    uint8_t* px;          // stride() * h bytes
     int w, h;
+    uint8_t bpp = 8;
+    int stride() const { return bpp == 4 ? (w + 1) >> 1 : w; }
+    size_t bytes() const { return static_cast<size_t>(stride()) * h; }
+    uint8_t get(int x, int y) const
+    {
+        if (bpp != 4) return px[y * w + x];
+        const uint8_t b = px[y * stride() + (x >> 1)];
+        return (x & 1) ? b & 0x0F : b >> 4;
+    }
+    void set(int x, int y, uint8_t c)
+    {
+        if (bpp != 4) {
+            px[y * w + x] = c;
+            return;
+        }
+        uint8_t& b = px[y * stride() + (x >> 1)];
+        b = (x & 1) ? static_cast<uint8_t>((b & 0xF0) | (c & 0x0F)) : static_cast<uint8_t>((b & 0x0F) | (c << 4));
+    }
+    // n pixels of row y from x, unpacked (a byte each), out / in
+    void get_row(int x, int y, int n, uint8_t* out) const;
+    void put_row(int x, int y, int n, const uint8_t* in);
     void clear(uint8_t c);
     void fill(int x, int y, int w, int h, uint8_t c);
 };

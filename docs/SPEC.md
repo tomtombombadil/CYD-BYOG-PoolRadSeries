@@ -277,6 +277,13 @@ log; while exploring with the largest block under 32 KB it does that by
 itself every 5 s. A sound in a fight with under 10 KB in one piece is left
 out ("a sound left out: memory low"); a sound or spell names that can't
 get memory say so in the log instead of failing quietly.
+v0.87.0: the game screen's canvas is 4 bits a pixel (EGA's 16 colours) -
+32 KB instead of 64 KB, the biggest single block the engine has; only the
+Resource Test's 256-colour pictures switch it to a byte a pixel for as
+long as they show. Checked: the playsim's snapshots of the title, demo,
+walking, a fight with its pictures in flight, View, the icon editor, the
+camp, Curse's ending and Pool's title / walking / wilderness are byte for
+byte the same as with the 8-bit canvas.
 
 **Send Logs** (Tom, 2026-10-12, v0.86.0: "a quick and easy way to send
 logs", as in CYD-Classic-Games): a key at the Logs screen's header right.
@@ -306,7 +313,7 @@ goes in the memory log.
 fifth tab, **Logs** (the tabs now in the small text), opening the Logs
 screen (Errors first) with Send Logs; its Back returns to the Game menu.
 While it's open the game screen waits on the card (`frame::park`, as for
-the journal book), so the logs and the QR code get its 64 KB. A log that
+the journal book), so the logs and the QR code get its memory. A log that
 can't get the memory says "Not enough memory to show this log."
 
 ## 6. Milestones

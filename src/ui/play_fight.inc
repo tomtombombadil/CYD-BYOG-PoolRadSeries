@@ -225,13 +225,12 @@ void blit4(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y, bool mi
     for (int j = 0; j < h; ++j) {
         const int yy = y + j;
         if (yy < cy0 || yy >= cy1) continue;
-        uint8_t* row = c.px + static_cast<size_t>(yy) * c.w;
         for (int i = 0; i < w; ++i) {
             const int xx = x + i;
             if (xx < cx0 || xx >= cx1) continue;
             const int v = nib(p, w, mirror ? w - 1 - i : i, j);
             if (see_through && v == 0) continue;
-            row[xx] = static_cast<uint8_t>(v);
+            c.set(xx, yy, static_cast<uint8_t>(v));
         }
     }
 }
@@ -853,7 +852,7 @@ void under_put(pic::Canvas& c)
         if (y < kViewY || y >= kViewY + kViewW) continue;
         for (int i = 0; i < kSq; ++i) {
             const int x = fg->under_x + i;
-            if (x >= kViewX && x < kViewX + kViewW) c.px[y * c.w + x] = fg->under[j * kSq + i];
+            if (x >= kViewX && x < kViewX + kViewW) c.set(x, y, fg->under[j * kSq + i]);
         }
     }
     dirty(fg->under_y, fg->under_y + kSq);
@@ -868,7 +867,7 @@ void under_save(pic::Canvas& c, int x, int y)
         for (int i = 0; i < kSq; ++i) {
             const int xx = x + i, yy = y + j;
             if (xx >= kViewX && xx < kViewX + kViewW && yy >= kViewY && yy < kViewY + kViewW)
-                fg->under[j * kSq + i] = c.px[yy * c.w + xx];
+                fg->under[j * kSq + i] = c.get(xx, yy);
         }
 }
 

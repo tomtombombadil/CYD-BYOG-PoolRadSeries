@@ -37,7 +37,7 @@ void put_packed(pic::Canvas& c, const uint8_t* px, int x0, int y0, uint8_t mask1
             const int pxx = x0 + x;
             const uint8_t b = px[y * 4 + x / 2];
             const uint8_t v = (x & 1) ? (b & 15) : (b >> 4);
-            if (v != mask1 && v != mask2 && pxx >= 0 && pxx < c.w) c.px[py * c.w + pxx] = v;
+            if (v != mask1 && v != mask2 && pxx >= 0 && pxx < c.w) c.set(pxx, py, v);
         }
     }
 }
@@ -48,7 +48,7 @@ void put_frame_tile(pic::Canvas& c, const layout::Tiles& t, int n, int x0, int y
     for (int y = 0; y < 8; ++y)
         for (int x = 0; x < 8; ++x) {
             const uint8_t v = t.px[n][y * 8 + x];
-            if (v != mask1 && v != mask2) c.px[(y0 + y) * c.w + x0 + x] = v;
+            if (v != mask1 && v != mask2) c.set(x0 + x, y0 + y, v);
         }
 }
 

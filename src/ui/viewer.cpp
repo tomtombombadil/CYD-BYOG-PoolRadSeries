@@ -125,6 +125,9 @@ void go(Screen s)
     Serial.printf("[qemu] screen %d: heap free %u, largest block %u\n", static_cast<int>(s),
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 #endif
+    // (the canvas is 4 bits a pixel except while the Resource Test shows a
+    // 256-colour picture: back to 4 anywhere else)
+    if (s != Screen::View) frame::set_depth(4);
     const bool assets = s == Screen::Resources || s == Screen::Blocks || s == Screen::View;
     if (assets && !A) {
         A = new (std::nothrow) Assets;
@@ -1260,6 +1263,7 @@ bool xor_frames()
 
 void draw_picture()
 {
+    frame::set_depth(A->is_vga[block_sel] ? 8 : 4);     // (256 colours need a byte a pixel)
     pic::Canvas& c = frame::canvas();
     c.clear(0);
     const pic::Header& h = A->pic_hdr[block_sel];

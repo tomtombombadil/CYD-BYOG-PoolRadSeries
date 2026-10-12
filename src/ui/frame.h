@@ -16,8 +16,13 @@ namespace frame {
 
 enum class Scale : uint8_t { One, OneAndHalf };
 
-// Allocates the canvas (64,000 bytes). False if memory is short.
+// Allocates the canvas: 4 bits a pixel (32,000 bytes - v0.87.0, Tom: "focus
+// on memory"; the games' EGA screens have 16 colours). False if memory is short.
 bool begin();
+// 8 bits a pixel (64,000 bytes) for a 256-colour picture (the Resource
+// Test's VGA blocks), or back to 4: the canvas is made again (blank).
+// False: no memory for it (the canvas stays as it was).
+bool set_depth(int bpp);
 
 pic::Canvas& canvas();
 
@@ -41,7 +46,7 @@ void present();
 void present_rows(int y0, int y1);
 
 // While the journal book is open the game screen waits on the card
-// (v0.52.0): park() writes the canvas to path and frees its 64,000 bytes
+// (v0.52.0): park() writes the canvas to path and frees its bytes
 // (false: nothing written, the canvas stays); unpark() reads it back
 // (false: no memory - the canvas has no pixels then; unreadable: blank).
 // Nothing may draw on the canvas while it is parked.

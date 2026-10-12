@@ -56,7 +56,8 @@ void redraw_text(pic::Canvas& c, const uint8_t (*old_bits)[8], const int* old_in
             int other = -1;
             bool ok = true;
             for (int y = 0; y < 8 && ok; ++y) {
-                const uint8_t* row = c.px + static_cast<size_t>(cy + y) * c.w + cx;
+                uint8_t row[8];
+                c.get_row(cx, cy + y, 8, row);
                 for (int x = 0; x < 8 && ok; ++x) {
                     if (row[x] == 0) continue;
                     if (other < 0) other = row[x];
@@ -68,7 +69,8 @@ void redraw_text(pic::Canvas& c, const uint8_t (*old_bits)[8], const int* old_in
                 // pass 0: ink = the colour on black; pass 1: ink = black on the colour
                 uint8_t pat[8];
                 for (int y = 0; y < 8; ++y) {
-                    const uint8_t* row = c.px + static_cast<size_t>(cy + y) * c.w + cx;
+                    uint8_t row[8];
+                    c.get_row(cx, cy + y, 8, row);
                     uint8_t b = 0;
                     for (int x = 0; x < 8; ++x)
                         if ((row[x] != 0) == (pass == 0)) b |= static_cast<uint8_t>(0x80 >> x);
@@ -133,12 +135,11 @@ void draw_glyph(pic::Canvas& c, const Font& f, int g, int x, int y, uint8_t fg, 
         const int py = y + row;
         if (py < 0 || py >= c.h) continue;
         const uint8_t bits = lower ? kClearLower[g - kGlyphs][row] : f.glyph[g][row];
-        uint8_t* line = c.px + py * c.w;
         for (int col = 0; col < 8; ++col) {
             const int px = x + col;
             if (px < 0 || px >= c.w) continue;
-            if (bits & (0x80 >> col)) line[px] = fg;
-            else if (bg >= 0) line[px] = static_cast<uint8_t>(bg);
+            if (bits & (0x80 >> col)) c.set(px, py, fg);
+            else if (bg >= 0) c.set(px, py, static_cast<uint8_t>(bg));
         }
     }
 }

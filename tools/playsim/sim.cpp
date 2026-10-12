@@ -50,8 +50,9 @@ static void save_wav()
 }
 uint32_t g_now = 1000;
 SerialT Serial;
-static std::vector<uint8_t> px(320 * 200);
-static pic::Canvas C{px.data(), 320, 200};
+static std::vector<uint8_t> px(getenv("CANVAS8") ? 320 * 200 : 320 * 200 / 2);   // (exactly the canvas: ASan sees an overrun)
+// (4 bits a pixel as on the board since v0.87.0; CANVAS8=1: a byte a pixel)
+static pic::Canvas C{px.data(), 320, 200, static_cast<uint8_t>(getenv("CANVAS8") ? 8 : 4)};
 static int shot_n = 0;
 static void shot(const char* tag)
 {
@@ -64,12 +65,14 @@ static void shot(const char* tag)
     // LCD: what the board's screen would show - only the rows the game
     // marked as changed reach it (play::take_dirty, as the viewer does)
     static std::vector<uint8_t> lcd(320 * 200, 0);
+    std::vector<uint8_t> all(320 * 200);
+    for (int y = 0; y < 200; ++y) C.get_row(0, y, 320, all.data() + y * 320);
     if (getenv("LCD")) {
         int y0, y1;
         play::take_dirty(y0, y1);
-        if (y1 > y0) memcpy(lcd.data() + y0 * 320, px.data() + y0 * 320, (size_t)(y1 - y0) * 320);
+        if (y1 > y0) memcpy(lcd.data() + y0 * 320, all.data() + y0 * 320, (size_t)(y1 - y0) * 320);
     }
-    for (uint8_t v : (getenv("LCD") ? lcd : px)) { int k = v & 15; if (swap && (k == 0 || k == 8)) k ^= 8; const pic::Rgb& c = pic::kEga[k]; fputc(c.r, f); fputc(c.g, f); fputc(c.b, f); }
+    for (uint8_t v : (getenv("LCD") ? lcd : all)) { int k = v & 15; if (swap && (k == 0 || k == 8)) k ^= 8; const pic::Rgb& c = pic::kEga[k]; fputc(c.r, f); fputc(c.g, f); fputc(c.b, f); }
     fclose(f);
 }
 // ITEMOPS on the items screen: a digit picks list line n, a letter taps

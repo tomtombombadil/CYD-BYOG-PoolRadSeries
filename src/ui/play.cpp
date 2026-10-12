@@ -525,7 +525,7 @@ void draw_overland(pic::Canvas& c)
             for (int k = 0; k < 24; ++k) {
                 uint8_t v = static_cast<uint8_t>(k & 1 ? px[r * 12 + k / 2] & 15 : px[r * 12 + k / 2] >> 4);
                 if (healed) v = overland::healed_colour(*d->ov, of, frame, v);
-                c.px[(y + r) * c.w + x + k] = v;
+                c.set(x + k, y + r, v);
             }
     };
     c.fill(8, 8, 120, 120, 0);
@@ -570,7 +570,7 @@ void draw_overland(pic::Canvas& c)
                     for (int k = 0; k < 24; ++k) {
                         const int sk = mirror ? 23 - k : k;
                         const uint8_t v = static_cast<uint8_t>(sk & 1 ? px[r2 * 12 + sk / 2] & 15 : px[r2 * 12 + sk / 2] >> 4);
-                        if (v) c.px[(pyl + r2) * c.w + pxl + k] = v;
+                        if (v) c.set(pxl + k, pyl + r2, v);
                     }
             }
         }
@@ -787,7 +787,7 @@ bool cursor_wanted()
 void cursor_hide()
 {
     if (!cursor_on) return;
-    for (int r = 0; r < 8; ++r) memcpy(cv->px + (cursor_py + r) * cv->w + cursor_px, cursor_under + r * 8, 8);
+    for (int r = 0; r < 8; ++r) cv->put_row(cursor_px, cursor_py + r, 8, cursor_under + r * 8);
     cursor_on = false;
     dirty(cursor_py, cursor_py + 8);
 }
@@ -799,7 +799,7 @@ void cursor_show()
     cursor_px = d->city_x[city] * 8;
     cursor_py = d->city_y[city] * 8;
     if (cursor_px < 0 || cursor_px + 8 > cv->w || cursor_py + 8 > cv->h) return;
-    for (int r = 0; r < 8; ++r) memcpy(cursor_under + r * 8, cv->px + (cursor_py + r) * cv->w + cursor_px, 8);
+    for (int r = 0; r < 8; ++r) cv->get_row(cursor_px, cursor_py + r, 8, cursor_under + r * 8);
     cv->fill(cursor_px, cursor_py, 8, 8, 15);
     cursor_on = true;
     dirty(cursor_py, cursor_py + 8);
@@ -7749,7 +7749,7 @@ void won_after_text(pic::Canvas& c)
         if (anim_start(wf.fade_pic)) {
             anim_stop();
             for (int y = 24; y < 112; ++y)
-                for (int x = 24; x < 112; ++x) c.px[y * c.w + x] = won->fade[c.px[y * c.w + x] & 15];
+                for (int x = 24; x < 112; ++x) c.set(x, y, won->fade[c.get(x, y) & 15]);
             dirty_rows(3, 13);
         }
         int speed = vm->get(0x4BFC) & 0xFF;
@@ -7996,8 +7996,8 @@ void won_key(pic::Canvas& c)
 // The fireworks: a pixel drawn over the big picture, what was under kept
 void fw_put(pic::Canvas& c, int x, int y, uint8_t col, uint8_t* under)
 {
-    *under = c.px[y * c.w + x];
-    c.px[y * c.w + x] = col;
+    *under = c.get(x, y);
+    c.set(x, y, col);
 }
 bool fw_on(int x, int y) { return x >= 8 && x < 312 && y >= 9 && y <= 64; }
 
@@ -8056,7 +8056,7 @@ void fireworks_step(pic::Canvas& c, uint32_t now)
         // The sparks: off their old pixels (last drawn first), on to the new
         for (int k = 119; k >= 0; --k) {
             WonRun::Spark& s = r.spark[k];
-            if (s.drawn) c.px[(s.y >> 5) * c.w + (s.x >> 5)] = s.under;
+            if (s.drawn) c.set(s.x >> 5, s.y >> 5, s.under);
             s.drawn = false;
         }
         if (++r.steps < 40) {
@@ -8072,7 +8072,7 @@ void fireworks_step(pic::Canvas& c, uint32_t now)
             }
         } else {
             // Over: the trail goes too
-            for (int k = r.n_trail - 1; k >= 0; --k) c.px[r.trail[k].y * c.w + r.trail[k].x] = r.trail[k].under;
+            for (int k = r.n_trail - 1; k >= 0; --k) c.set(r.trail[k].x, r.trail[k].y, r.trail[k].under);
             r.n_trail = 0;
             r.rocket = false;
             r.next_rocket = now + 200 + static_cast<uint32_t>(rng.roll(1000, 1));
@@ -9080,9 +9080,8 @@ void ink(pic::Canvas& c, uint8_t colour)
         return;
     }
     for (int j = 0; j < fl.h; ++j) {
-        uint8_t* p = c.px + static_cast<size_t>(fl.y0 + j) * c.w + fl.x0;
         const uint8_t* o = fl.orig + static_cast<size_t>(j) * fl.w;
-        for (int i = 0; i < fl.w; ++i) p[i] = o[i] ? colour : 0;
+        for (int i = 0; i < fl.w; ++i) c.set(fl.x0 + i, fl.y0 + j, o[i] ? colour : 0);
     }
 }
 
@@ -9102,8 +9101,7 @@ bool tap_highlight(int x, int y, pic::Canvas& c, int* y0, int* y1)
         else gal_box(i, &fl.x0, &fl.y0, &fl.w, &fl.h);
         fl.orig = static_cast<uint8_t*>(malloc(static_cast<size_t>(fl.w) * fl.h));
         if (!fl.orig) return false;
-        for (int j = 0; j < fl.h; ++j)
-            memcpy(fl.orig + static_cast<size_t>(j) * fl.w, c.px + static_cast<size_t>(fl.y0 + j) * c.w + fl.x0, fl.w);
+        for (int j = 0; j < fl.h; ++j) c.get_row(fl.x0, fl.y0 + j, fl.w, fl.orig + static_cast<size_t>(j) * fl.w);
         fl.box = true;
         *y0 = fl.y0;
         *y1 = fl.y0 + fl.h;
@@ -9131,8 +9129,8 @@ bool tap_highlight(int x, int y, pic::Canvas& c, int* y0, int* y1)
     if (!fl.orig) return false;
     bool lit = true, any = false;
     for (int j = 0; j < fl.h; ++j) {
-        const uint8_t* p = c.px + static_cast<size_t>(fl.y0 + j) * c.w + fl.x0;
-        memcpy(fl.orig + static_cast<size_t>(j) * fl.w, p, fl.w);
+        uint8_t* p = fl.orig + static_cast<size_t>(j) * fl.w;
+        c.get_row(fl.x0, fl.y0 + j, fl.w, p);
         for (int i = 0; i < fl.w; ++i)
             if (p[i]) {
                 any = true;
@@ -9172,8 +9170,7 @@ void tap_highlight_end(pic::Canvas& c)
 {
     if (!fl.orig) return;
     if (fb_y0 >= 0 && !fb_touched) {
-        for (int j = 0; j < fl.h; ++j)
-            memcpy(c.px + static_cast<size_t>(fl.y0 + j) * c.w + fl.x0, fl.orig + static_cast<size_t>(j) * fl.w, fl.w);
+        for (int j = 0; j < fl.h; ++j) c.put_row(fl.x0, fl.y0 + j, fl.w, fl.orig + static_cast<size_t>(j) * fl.w);
         const int a = fl.y0, b = fl.y0 + fl.h;
         fb_y0 = fb_y1 = -1;
         dirty(a, b);

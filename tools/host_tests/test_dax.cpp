@@ -1210,6 +1210,53 @@ static void fresh_battle(combat::Battle& b)
     b.cap = combat::kMaxFighters;
 }
 
+// The 4-bit canvas (v0.87.0): the same drawing as a byte-a-pixel one
+static void test_canvas4()
+{
+    static uint8_t p8[pic::kScreenW * pic::kScreenH], p4[pic::kScreenW * pic::kScreenH / 2];
+    pic::Canvas c8{p8, pic::kScreenW, pic::kScreenH};
+    pic::Canvas c4{p4, pic::kScreenW, pic::kScreenH, 4};
+    CHECK(c4.bytes() == 32000 && c8.bytes() == 64000);
+    std::mt19937 rng(9);
+    c8.clear(3);
+    c4.clear(3);
+    for (int k = 0; k < 300; ++k) {
+        const int x = int(rng() % 340) - 10, y = int(rng() % 220) - 10, w = int(rng() % 40), h = int(rng() % 30);
+        const uint8_t col = uint8_t(rng() % 16);
+        c8.fill(x, y, w, h, col);
+        c4.fill(x, y, w, h, col);
+        const int px = int(rng() % 320), py = int(rng() % 200);
+        c8.set(px, py, uint8_t(k & 15));
+        c4.set(px, py, uint8_t(k & 15));
+    }
+    // a picture (2 x 8 pixels a row, every colour, 5 is see-through)
+    std::vector<uint8_t> pix(4 * 8 * 3);
+    for (size_t i = 0; i < pix.size(); ++i) pix[i] = uint8_t(i * 37 + 11);
+    pic::Header h;
+    h.height = 3;
+    h.width_cols = 1;
+    h.frames = 1;
+    for (int at = 0; at < 4; ++at) {
+        pic::draw_pixels(pix.data(), h, c8, 33 + at, 17 + at * 5, 5, 7, 2);
+        pic::draw_pixels(pix.data(), h, c4, 33 + at, 17 + at * 5, 5, 7, 2);
+    }
+    uint8_t row[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0};
+    c8.put_row(101, 77, 16, row);
+    c4.put_row(101, 77, 16, row);
+    bool same = true;
+    for (int y = 0; y < pic::kScreenH && same; ++y)
+        for (int x = 0; x < pic::kScreenW; ++x)
+            if (c8.get(x, y) != c4.get(x, y)) {
+                same = false;
+                printf("  canvas4: %d,%d is %d, 8-bit %d\n", x, y, c4.get(x, y), c8.get(x, y));
+                break;
+            }
+    CHECK(same);
+    uint8_t back[16];
+    c4.get_row(101, 77, 16, back);
+    CHECK(memcmp(back, row, 16) == 0);
+}
+
 static void test_inflate()
 {
     static uint8_t window[inflate::kWindow];
@@ -6396,6 +6443,7 @@ int main()
     test_class_rules();
     test_item_combat();
     test_log_pack();
+    test_canvas4();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;

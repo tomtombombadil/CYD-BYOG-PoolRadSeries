@@ -12,7 +12,10 @@ const Rgb kEga[16] = {
     {0xFF, 0x55, 0x55}, {0xFF, 0x55, 0xFF}, {0xFF, 0xFF, 0x55}, {0xFF, 0xFF, 0xFF},
 };
 
-void Canvas::clear(uint8_t c) { memset(px, c, static_cast<size_t>(w) * h); }
+void Canvas::clear(uint8_t c)
+{
+    memset(px, bpp == 4 ? static_cast<uint8_t>((c & 0x0F) * 0x11) : c, bytes());
+}
 
 void Canvas::fill(int x, int y, int fw, int fh, uint8_t c)
 {
@@ -21,7 +24,35 @@ void Canvas::fill(int x, int y, int fw, int fh, uint8_t c)
     if (x + fw > w) fw = w - x;
     if (y + fh > h) fh = h - y;
     if (fw <= 0 || fh <= 0) return;
-    for (int row = 0; row < fh; ++row) memset(px + (y + row) * w + x, c, fw);
+    if (bpp != 4) {
+        for (int row = 0; row < fh; ++row) memset(px + (y + row) * w + x, c, fw);
+        return;
+    }
+    const uint8_t two = static_cast<uint8_t>((c & 0x0F) * 0x11);
+    for (int row = y; row < y + fh; ++row) {
+        int a = x, b = x + fw;              // [a, b)
+        if (a & 1) set(a++, row, c);
+        if ((b & 1) && b > a) set(--b, row, c);
+        if (b > a) memset(px + row * stride() + (a >> 1), two, static_cast<size_t>(b - a) >> 1);
+    }
+}
+
+void Canvas::get_row(int x, int y, int n, uint8_t* out) const
+{
+    if (bpp != 4) {
+        memcpy(out, px + y * w + x, static_cast<size_t>(n));
+        return;
+    }
+    for (int i = 0; i < n; ++i) out[i] = get(x + i, y);
+}
+
+void Canvas::put_row(int x, int y, int n, const uint8_t* in)
+{
+    if (bpp != 4) {
+        memcpy(px + y * w + x, in, static_cast<size_t>(n));
+        return;
+    }
+    for (int i = 0; i < n; ++i) set(x + i, y, in[i]);
 }
 
 bool parse_header(const uint8_t* p, uint32_t raw_size, Header& out, uint32_t* extra_bytes)
@@ -53,15 +84,14 @@ bool draw(dax::RleReader& r, const Header& h, int frame, Canvas& c, int x, int y
     for (int row = 0; row < h.height; ++row) {
         const int py = y + row;
         const bool row_in = py >= 0 && py < c.h;
-        uint8_t* line = row_in ? c.px + py * c.w : nullptr;
         for (int i = 0; i < row_bytes; ++i) {
             const int b = r.next();
             if (b < 0) return false;
             if (!row_in) continue;
             const int px = x + i * 2;
             const uint8_t hi = static_cast<uint8_t>(b >> 4), lo = static_cast<uint8_t>(b & 0x0F);
-            if (px >= 0 && px < c.w && hi != mask) line[px] = hi;
-            if (px + 1 >= 0 && px + 1 < c.w && lo != mask) line[px + 1] = lo;
+            if (px >= 0 && px < c.w && hi != mask) c.set(px, py, hi);
+            if (px + 1 >= 0 && px + 1 < c.w && lo != mask) c.set(px + 1, py, lo);
         }
     }
     return true;
@@ -73,13 +103,12 @@ void draw_pixels(const uint8_t* data, const Header& h, Canvas& c, int x, int y, 
     for (int row = 0; row < h.height; ++row) {
         const int py = y + row;
         if (py < 0 || py >= c.h) continue;
-        uint8_t* line = c.px + py * c.w;
         const uint8_t* src = data + row * row_bytes;
         for (int i = 0; i < row_bytes; ++i) {
             const int px = x + i * 2;
             const uint8_t hi = static_cast<uint8_t>(src[i] >> 4), lo = static_cast<uint8_t>(src[i] & 0x0F);
-            if (px >= 0 && px < c.w && hi != mask) line[px] = hi == from ? static_cast<uint8_t>(to) : hi;
-            if (px + 1 >= 0 && px + 1 < c.w && lo != mask) line[px + 1] = lo == from ? static_cast<uint8_t>(to) : lo;
+            if (px >= 0 && px < c.w && hi != mask) c.set(px, py, hi == from ? static_cast<uint8_t>(to) : hi);
+            if (px + 1 >= 0 && px + 1 < c.w && lo != mask) c.set(px + 1, py, lo == from ? static_cast<uint8_t>(to) : lo);
         }
     }
 }
@@ -179,12 +208,12 @@ bool draw_vga(dax::RleReader& r, const VgaHeader& h, int frame, Canvas& c, int x
     const int w = h.width_px();
     for (int row = 0; row < h.height; ++row) {
         const int py = y + row;
-        uint8_t* line = (py >= 0 && py < c.h) ? c.px + py * c.w : nullptr;
+        const bool line = py >= 0 && py < c.h;
         for (int i = 0; i < w; ++i) {
             const int b = r.next();
             if (b < 0) return false;
             const int px = x + i;
-            if (line && px >= 0 && px < c.w && b != mask) line[px] = static_cast<uint8_t>(b);
+            if (line && px >= 0 && px < c.w && b != mask) c.set(px, py, static_cast<uint8_t>(b));
         }
     }
     return true;

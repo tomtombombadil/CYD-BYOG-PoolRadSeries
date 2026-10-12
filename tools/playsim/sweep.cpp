@@ -40,8 +40,8 @@ void audio_stop() {}
 bool audio_running() { return false; }
 uint32_t g_now = 1000;
 SerialT Serial;
-static std::vector<uint8_t> px(320 * 200);
-static pic::Canvas C{px.data(), 320, 200};
+static std::vector<uint8_t> px(getenv("CANVAS8") ? 320 * 200 : 320 * 200 / 2);   // (exactly the canvas: ASan sees an overrun)
+static pic::Canvas C{px.data(), 320, 200, static_cast<uint8_t>(getenv("CANVAS8") ? 8 : 4)};
 static std::mt19937 rnd(12345);
 static int pick(int n) { return n > 0 ? static_cast<int>(rnd() % static_cast<unsigned>(n)) : 0; }
 static std::string game_dir;

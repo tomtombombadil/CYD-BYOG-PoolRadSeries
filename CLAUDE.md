@@ -222,6 +222,12 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
 - No LVGL: the games draw their own screens. `src/engine/` is plain C++ (no
   Arduino), host-tested in `tools/host_tests/`. `src/ui/frame.*` holds the one
   320x200 canvas (palette indexes) and presents it 1:1 or 1.5x (480x320).
+  Since v0.87.0 the canvas is **4 bits a pixel** (32,000 bytes; Tom
+  2026-10-12 "focus on memory": EGA's 16 colours) - pixels only through
+  `pic::Canvas::get / set / get_row / put_row / fill` (never `px[...]`);
+  `frame::set_depth(8)` only for the Resource Test's 256-colour VGA
+  pictures (back to 4 on any other screen). The playsim runs 4-bit too
+  (CANVAS8=1: a byte a pixel - its snapshots must be identical).
   `src/ui/ui.*` = keys, header, touch filter for the engine's own screens.
 - Facts that live in a game's program (START.EXE / GAME.EXE, EXEPACK-packed;
   e.g. the screen frame's tile tables) are read from the player's copy at
@@ -397,7 +403,8 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   open at once (the playsim's card has 3 too - SLOTS=n to try others).
   v0.22.0: static RAM 48 KB (v0.20.0 63 KB, v0.21.0 90 KB).
 - **Memory is the scarcest thing (Tom, 2026-10-11).** The budget on a
-  320x240 board: ~137 KB free at Home (after the 64 KB canvas); the Play
+  320x240 board: ~137 KB free at Home with the 64 KB canvas, ~169 KB
+  since v0.87.0's 32 KB one (QEMU: 173 KB, largest block 110 KB); the Play
   Test keeps ~82 KB (Data 21.6, Party 13.8, World 13.5, GameState 12.8,
   Names 5.4, Ground 4, the VM, sound 3.6); a fight adds Fight ~10.5 KB +
   Battle 14.6 KB + its monsters' records. Tom's 3.2" ran out at a fight's
