@@ -58,6 +58,10 @@ struct OpSet {
     // goes on after it (Pool); 3 kills the party (Curse; Pool's program
     // does nothing for it - its handler knows 0, 8 and 9 only)
     bool program_ends = true, program_kills = true;
+    // Secret: script blocks are numbered across ECL1-3 (and maps across
+    // GEO1-3) - the area is the file that holds the block, and 0x7F12 is
+    // plain memory (Curse: the area's number)
+    bool area_by_block = false;
 };
 
 // A script's memory address as the engine's machine (Curse's map) knows

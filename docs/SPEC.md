@@ -901,9 +901,24 @@ until the party menu is known (`party.items`).
   human, 7 monster) - the record gets Curse's number
   (`party::race_from_secret` / `race_to_secret`), Secret's own kept in
   ext so a tribble comes back as one.
-- Next: the party menu, camp, items, shops (and importing Curse's
-  characters: its Add Character offers "Secret Curse"); combat; sound
-  (SOUND.DAX), the sky and approaching monsters (SPRIT1); behaviour tests.
+- **v0.94.0 - the party menu, Load, Begin.** Its 13-entry party menu and
+  words (Initialize Mouse/Joystick left out - section 12), the party list,
+  Load Saved Game, View's name tables (its races put in Curse's order),
+  Begin: a save with no script running starts ECL1 block 16 - Priam's
+  house at 3,3 facing south, as the original. Its script blocks are
+  numbered across ECL1-3 (NEW ECL 33 after 0x7F12 = 2 is ECL1's 33): the
+  area is the file holding the block, 0x7F12 plain memory
+  (`OpSet::area_by_block`). The Play Test opens (Dev Tools); what isn't
+  known yet says so ("Spells and rules aren't in the engine for this game
+  yet", "Fights aren't ...").
+- Not yet: the opening texts before Priam's (the valley, the glacier -
+  the original's CALL 2DCB, a routine of its program), View Character's
+  own layout ("Experience:", "Hit Points", "Armor Class"), the items and
+  their words (Secret's item word table differs), Modify ("Add Subtract
+  Keep Exit"), Add Character's "Secret Curse" (importing Curse's
+  characters), the camp, the rules' tables, the scripts' view of a
+  character (Secret's own offsets and race numbers), combat, sound
+  (SOUND.DAX), the sky and approaching monsters (SPRIT1).
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -1233,6 +1248,10 @@ the originals is a bug. Engine comforts with a `features.h` switch are
 marked (switch); since v0.72.0 the player can also turn each one off in
 the game's Settings (As Original: all of them).
 
+- **Secret of the Silver Blades** (v0.94.0): its party menu's Initialize
+  Mouse/Joystick isn't shown (nothing to set up: taps are the mouse);
+  when BLADES.CFG's save folder (C:\SAVE\) isn't on the card, the saves
+  are the game folder's own (where GOG ships its sample party).
 - **Controls and screens**: taps on menu words, list lines and combat
   squares; on-screen keys (movement pad, cursor keys - Up / Down / Left /
   Right / Select - Game, Look, and on 320x240 Map: the area map over

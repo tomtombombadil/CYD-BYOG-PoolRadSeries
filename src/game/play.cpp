@@ -111,7 +111,7 @@ struct Data {
     int            cities = 0;
 
     // The party menu's words (from the program and GAME.OVR)
-    static constexpr int kItems = 12;
+    static constexpr int kItems = 13;        // (Secret: 13 with Initialize Mouse/Joystick)
     char           item[kItems][41] = {};
     bool           item_on[kItems] = {};   // the program's own starting flags
     int            items = 0;
@@ -866,6 +866,9 @@ void pm_flags(bool on[Data::kItems])
         case 'D': case 'M': case 'V': case 'R': case 'S':
             on[i] = pt->count > 0;
             break;
+        case 'I':                               // Secret's Initialize Mouse/Joystick: nothing to set up here
+            on[i] = false;
+            break;
         case 'T':                               // training: only where the game offers it
             on[i] = pt->count > 0 && (vm->get(0x7EA8) & 0xFF) != 0;
             break;
@@ -1096,7 +1099,7 @@ bool load_game(char slot)
         ++pt->count;
     }
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
-    vm->set(0x7F12, d->gs.game_area);
+    if (!d->prof->ecl_ops->area_by_block) vm->set(0x7F12, d->gs.game_area);
     d->loaded = true;
     {
         char m[32];
@@ -1837,7 +1840,7 @@ bool save_game(char slot)
     }
     h.count = pt->count;
     for (int i = 0; i < pt->count; ++i) savegame::char_file(slot, i + 1, h.names[i], sizeof h.names[i]);
-    vm->set(0x7F12, d->gs.game_area);
+    if (!d->prof->ecl_ops->area_by_block) vm->set(0x7F12, d->gs.game_area);
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
     char name[24], path[200];
     savegame::file_name(slot, name, sizeof name);
@@ -3712,6 +3715,7 @@ void end_magic()
 }
 
 bool load_magic();
+const char* magic_error();
 
 // Items that change class values as they're readied / put away
 // (curse_finish_facts.md 5): the Ring of Wizardry's spell slots, the
@@ -3726,6 +3730,13 @@ void item_class_values(party::Character& ch, int i)
     if (kind == items::Passive::Wizardry) classes::wizardry(ch, mrules->tables, ch.items[i][0x34] != 0);
     else if (ch.level(classes::Thief) > 0) classes::thief_skills(ch, mrules->tables);
     if (!had) end_magic();              // (loaded for this: the tables don't stay)
+}
+
+// Why load_magic failed: a game whose rule tables aren't known yet
+// (Secret, being built) or memory
+const char* magic_error()
+{
+    return d->prof->create.ds_image ? "Not enough memory." : "Spells and rules aren't in the engine for this game yet.";
 }
 
 // The rule tables and spell names (from the program), for the camp
@@ -3789,7 +3800,7 @@ void draw_magic_menu(pic::Canvas& c)
 void open_magic(pic::Canvas& c)
 {
     if (!load_magic()) {
-        error(c, "Not enough memory.");
+        error(c, magic_error());
         return;
     }
     screen = Screen::Magic;
@@ -4262,7 +4273,7 @@ void rest_menu(pic::Canvas& c)
 void open_rest(pic::Canvas& c, bool from_magic)
 {
     if (!load_magic()) {
-        error(c, "Not enough memory.");
+        error(c, magic_error());
         return;
     }
     int most = 0;
@@ -4428,7 +4439,7 @@ void fix_party(pic::Canvas& c)
 {
     if (spells::hp_lost(*pt) <= 0) return;
     if (!load_magic()) {
-        error(c, "Not enough memory.");
+        error(c, magic_error());
         return;
     }
     const auto& m = d->prof->magic;
@@ -4591,7 +4602,7 @@ void open_cast_exploring(pic::Canvas& c)
     if (!pt->sel() || pt->sel()->health() != party::Okay) return;
     if (!load_magic()) {
         end_magic();
-        error(c, "Not enough memory.");
+        error(c, magic_error());
         return;
     }
     open_cast(c, true);
@@ -5000,7 +5011,7 @@ void use_item(int i, pic::Canvas& c)
     if (!scroll && !magic::usable(sc, it)) return;
     if (!load_magic()) {
         end_magic();
-        error(c, "Not enough memory.");
+        error(c, magic_error());
         return;
     }
     if (!scroll) {
@@ -5968,6 +5979,13 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
             }
         }
         free(buf);
+        if (secret_files()) {
+            // Secret's races in its own order: put them in Curse's (the
+            // record's numbers; party::race_from_secret)
+            char tmp[8][10];
+            memcpy(tmp, d->race, sizeof tmp);
+            for (int i = 0; i < 8; ++i) memcpy(d->race[i], tmp[party::race_to_secret(static_cast<uint8_t>(i))], sizeof tmp[0]);
+        }
     }
     // (its files closed before the roster's words open theirs: the card
     // has 4 file slots, and Pool's words need START.EXE open too)
@@ -6059,12 +6077,30 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         if (sub[0]) games::path_of(d->data_dir, sub, d->save_dir, sizeof d->save_dir);
         else snprintf(d->save_dir, sizeof d->save_dir, "%s/%s", games::kRootDir, d->data_dir);
     }
+    // GOG's Secret: BLADES.CFG names C:\SAVE\, which isn't there - its
+    // sample party is beside the game's files: the saves go there too
+    if (!plat::exists(d->save_dir) && secret_files())
+        snprintf(d->save_dir, sizeof d->save_dir, "%s/%s", games::kRootDir, d->data_dir);
 }
 
 // ---- the script host ------------------------------------------------------------
 
 struct Host : ecl::Host {
     bool load_script(int block, uint8_t* code, uint32_t* len) override
+    {
+        if (load_script_in(block, code, len)) return true;
+        if (!d->prof->ecl_ops->area_by_block) return false;
+        // Secret: the block is in another area's file - that's the area now
+        const int was = d->gs.game_area;
+        for (int a = d->prof->first_area; a <= d->prof->last_area; ++a) {
+            if (a == was) continue;
+            d->gs.game_area = static_cast<uint8_t>(a);
+            if (load_script_in(block, code, len)) return true;
+        }
+        d->gs.game_area = static_cast<uint8_t>(was);
+        return false;
+    }
+    bool load_script_in(int block, uint8_t* code, uint32_t* len)
     {
         char name[24];
         area_file(name, sizeof name, "ECL");
@@ -8336,7 +8372,7 @@ void end_demo(pic::Canvas& c)
     then = Then::Idle;
     ecl::GameState& gs = d->gs;
     gs.game_area = d->prof->start_area;
-    vm->set(0x7F12, gs.game_area);
+    if (!d->prof->ecl_ops->area_by_block) vm->set(0x7F12, gs.game_area);
     vm->set(0x4BFC, 4);
     vm->set(0x7F70, 0);
     vm->set(0x7F71, 0);

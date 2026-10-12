@@ -474,8 +474,10 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   6c. Its GOG files: scratch /tmp/claude-0/games3/secret/...; game number
   3 (lwsim / playsim GAME=3). Its frame is code-drawn bars
   (`variant.bars`, tiles 52-59 through `variant.tile_window`), font in
-  8X8D5 (`font_file`), scripts = Curse's opcodes but 0x3C / 0x41. The
-  Play Test refuses it until `party.items` is known. Scratch tools:
+  8X8D5 (`font_file`), scripts = Curse's opcodes but 0x3C / 0x41, block
+  numbers unique across ECL1-3 (`area_by_block`: 0x7F12 is plain memory).
+  Records: `party::from_secret` (+ `Character::ext`, races renumbered).
+  The playsim's Secret run: `GAME=3 SAVE=A sim <copy of its folder>`. Scratch tools:
   /tmp/claude-0/secret (ops.py: the interpreter's operand counts,
   ecltrace: every block followed from its entry points, py/match.py:
   DOSBox screenshots matched against tiles, lw/lwsim.cpp: the Screen /

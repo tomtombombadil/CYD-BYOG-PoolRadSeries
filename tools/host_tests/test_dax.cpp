@@ -847,7 +847,8 @@ static void test_layout()
         const profile::Profile* sec = profile::find(games::Game::SecretOfTheSilverBlades, 72097, 79824);
         CHECK(sec && sec->ecl_ops && sec->ecl_ops->sizes[0x41] == 2 && sec->ecl_ops->sizes[0x3C] == 0 &&
               sec->ecl_ops->sizes[0x2E] == 5 && sec->ecl_ops->sizes[0x42] == ecl::kUnknown);
-        CHECK(sec && !strcmp(sec->font_file, "8X8D5.DAX") && sec->variant.tile_window == 40 && !sec->party.items);
+        CHECK(sec && !strcmp(sec->font_file, "8X8D5.DAX") && sec->variant.tile_window == 40 && sec->party.count == 13 &&
+              sec->ecl_ops->area_by_block && sec->start_script == 16);
         CHECK(!profile::ready(games::Game::SecretOfTheSilverBlades));
     }
 
@@ -2216,6 +2217,20 @@ static void test_vm_events_facts()
         b.push_back(0x0A); op_imm(b, 0);                     // LOAD CHARACTER 0
         b.push_back(0x13);                                    // RETURN
         CHECK(run(b, host, vp, vm) == ecl::Stop::Stopped && pa.selected == 2);
+    }
+    // 0x7F12: Curse's area number; Secret's plain memory (area_by_block)
+    {
+        gs = ecl::GameState{};
+        gs.game_area = 2;
+        ecl::Vm vm(gs, host, *p->ecl_ops);
+        CHECK(vm.get(0x7F12) == 2);
+        vm.set(0x7F12, 3);
+        CHECK(gs.game_area == 3);
+        ecl::OpSet sset = *p->ecl_ops;
+        sset.area_by_block = true;
+        ecl::Vm sv(gs, host, sset);
+        sv.set(0x7F12, 5);
+        CHECK(gs.game_area == 3 && sv.get(0x7F12) == 5);
     }
     // SURPRISE: 0x7ECB untouched
     {

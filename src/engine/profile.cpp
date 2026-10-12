@@ -523,7 +523,11 @@ constexpr ecl::OpSet kPoolEcl = [] {
 // - areas: ECL / GEO / WALLDEF / 8X8D 1-3, SKY.DAX as Curse's, its 16 sky
 //   colours at DS 0x0AA8 (the same bytes as Curse's);
 // - scripts: Curse's opcodes and operand counts (the interpreter's handlers
-//   read the same ones) but 0x3C reads none and 0x41 (new) reads 2.
+//   read the same ones) but 0x3C reads none and 0x41 (new) reads 2; block
+//   numbers are unique across ECL1-3 (NEW ECL 33 from ECL2 is ECL1's 33):
+//   the area is the file holding the block, 0x7F12 is plain memory;
+// - a saved game's Begin with no script running starts ECL1 block 16 (the
+//   party in Priam's house at 3,3 facing south, as the original).
 constexpr TitleStep kSecretTitle[] = {
     {1, 0, 0, true, 5000, 0},
     {2, 0, 0, true, 10000, 0},
@@ -537,6 +541,7 @@ constexpr ecl::OpSet kSecretEcl = [] {
     ecl::OpSet s = kCurseEcl;
     s.sizes[0x3C] = 0;
     s.sizes[0x41] = 2;
+    s.area_by_block = true;
     return s;
 }();
 
@@ -821,7 +826,20 @@ const Profile kProfiles[] = {
      .overlay = "GAME.OVR", .overlay_size = 278528, .credits_at = 0x379, .credits_base = 0xD2, .credits_bars = {1, 0},
      .first_area = 1, .last_area = 3, .common_tiles_block = 203, .sky_file = "SKY.DAX", .horizon_block = 252,
      .ecl_ops = &kSecretEcl,
-     .sky_colours = 0x0AA8, .start_area = 0, .start_script = 0,
+     .sky_colours = 0x0AA8, .start_area = 1, .start_script = 16,
+     .wild = {},
+     // The party menu: 13 entries (Initialize Mouse/Joystick the 12th),
+     // its words (the same strings as Curse's where noted in
+     // secret_facts.md 4); BLADES.CFG names the save folder
+     .party = {0xE4E0, 13, 42, 0x1D6B3, 0x2609A, 0x38909, 0x3890E, "BLADES.CFG", 0x26791, 0x267A3, 0x26859,
+               0xE1F7, 0, 0x1D0FF,
+               0, 0, 0x20A03, 0x20A15, 0x20A1A, 0x20A1D, 0x20A41, 0x20A5B, 0x24665, 0x24670, 0x1F8F2, 0x1F8F8,
+               0x1F903, 0x1F912, 0x1F91C, 0x1F927, 0x1F93B, 0x3120D,
+               0x1FB9B, 0x1FBCF, 0, 0x238F2, 0x24673},
+     // View Character's name tables (races in Secret's own order: the
+     // engine reorders them); its words where they are Curse's
+     .view = {{0xE9AB, 27, 18}, {0xEB91, 9, 8}, {0xEBD9, 17, 9}, {0xEC72, 7, 2}, {0xEC80, 11, 7}, {0xECCD, 13, 9},
+              0, 0, 0x27184, 0x27172, 0, 0, 0, 0, 0x278D0, 0x278E8, 0x278C4, 0x278D9, 0, 5},
      .variant = {.unfinished = true, .tile_window = 40, .bars = {55, 52, 53, 54, 59, 56, 57, 58}, .secret_files = true},
      .overland = nullptr,
      .font_file = "8X8D5.DAX"},

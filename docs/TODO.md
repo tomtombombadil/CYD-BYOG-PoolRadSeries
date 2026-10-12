@@ -52,9 +52,12 @@ the Project as claude/TODO.md.
 - [ ] **Secret of the Silver Blades** (started 2026-10-12; facts and the
       work plan in the Project's claude/secret_facts.md; SPEC 6c). Done:
       program layout, words, scripts, frame, font, title, Screen / Walk
-      Test (v0.92.0); the 439-byte record and the saves (v0.93.0). Next, a
-      chunk a commit: (4) party menu (the scripts read Secret's own
-      character offsets and race numbers: script_value for Secret), camp, items, shops (its version line's
+      Test (v0.92.0); the 439-byte record and the saves (v0.93.0); party
+      menu, Load, Begin into Priam's house (v0.94.0). Next, a chunk a
+      commit: (4b) the opening texts (CALL 2DCB), View Character's layout,
+      items and their words, Modify, Add from Curse, camp, the rules'
+      tables; the scripts' view of a character (Secret's own offsets and
+      race numbers: script_value); LOAD PIECES 127 in the 3rd set, camp, items, shops (its version line's
       two-line look with it); (5) combat (its fight frame not seen yet:
       Curse's shape for now), spells, monsters; (6) sound, sky,
       approaching monsters; (7) behaviour tests.
@@ -63,6 +66,10 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.94.0: Secret's party menu, Load Saved Game and Begin (Priam's house
+  at 3,3 S); script blocks found across ECL1-3; the Play Test opens under
+  Dev Tools.
 
 - v0.93.1: Secret's race numbers (human 6, Curse's 7) turned into Curse's
   when read, back when written.
