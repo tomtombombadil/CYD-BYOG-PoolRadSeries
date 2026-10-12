@@ -841,7 +841,12 @@ const Profile kProfiles[] = {
      // View Character's name tables (races in Secret's own order: the
      // engine reorders them); its words where they are Curse's
      .view = {{0xE9AB, 27, 18}, {0xEB91, 9, 8}, {0xEBD9, 17, 9}, {0xEC72, 7, 2}, {0xEC80, 11, 7}, {0xECCD, 13, 9},
-              0, 0, 0x27184, 0x27172, 0, 0, 0, 0, 0x278D0, 0x278E8, 0x278C4, 0x278D9, 0, 5},
+              // (its own words: "Status:", " years" after the age, "Level",
+              // "Experience:", "Armor Class", "Hit Points ", the View menu's "Exit")
+              0, 0x27169, 0x27184, 0x27172, 0x27178, 0x27161, 0x278B8, 0x278AC, 0x278D0, 0x278E8, 0x278C4,
+              0x278D9, 0x27E4B, 5},
+     // Items: only the menu word "Items" known so far
+     .items = {.title = 0x2846B},
      // Character rules (secret_facts.md 9): the tables in Secret's shapes
      // (classes::Layout secret: 7 classes, levels to 18, 119 spells, its
      // own race order), the rest of character making not known yet

@@ -103,6 +103,11 @@ void box(pic::Canvas& c, const Tables& tb, const Tiles& t, int c0, int r0, int c
 // tiles moved there (a game with frame tables), Pool's box otherwise. (The
 // engine's View Character portrait box, v0.84.0.)
 void picture_frame(pic::Canvas& c, const Tables& tb, const Tiles& t, int col, int row);
+// Secret's bars anywhere (bars mode; nothing otherwise): a full-width bar
+// at `row`; a vertical at `col` between the bars at rows r0 and r1 (caps:
+// the cap tiles next to them)
+void bars_row(pic::Canvas& c, const Tables& tb, const Tiles& t, int row);
+void bars_col(pic::Canvas& c, const Tables& tb, const Tiles& t, int col, int r0, int r1, bool caps = true);
 // The credits screen: the border and bars at `rows` (0: none); with boxes
 // (Pool) the border goes down to row 24
 void credits(pic::Canvas& c, const Tables& tb, const Tiles& t, const uint8_t rows[2]);

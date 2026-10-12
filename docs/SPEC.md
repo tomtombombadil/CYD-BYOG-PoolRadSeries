@@ -931,9 +931,16 @@ until the party menu is known (`party.items`).
   fields, the race in its own numbers, new ones (Charisma, HP max and now,
   gems, each class's level), the status in its numbers (0x100), the 75
   memorized spells; no 0xE4.
+- **v0.97.0 - View Character** in Secret's own layout (bars at rows 0,
+  8, 16, 20, 23 and a divider at column 19; name / status, sex and age,
+  Hit Points, alignment, race, class, Experience:, level, the stats,
+  Armor Class / THAC0 / Damage, Encumbrance / Movement; its own words) -
+  pixel for pixel the original's on the GOG party (DOSBox). Its menu: Items
+  (with items) and Exit; the paladin's Heal / Cure and the right middle
+  panel (empty for a party without items - what fills it to be seen) not
+  yet.
 - Not yet: the opening texts before Priam's (the valley, the glacier -
-  the original's CALL 2DCB, a routine of its program), View Character's
-  own layout ("Experience:", "Hit Points", "Armor Class"), the items and
+  the original's CALL 2DCB, a routine of its program), the items and
   their words (Secret's item word table differs), Modify ("Add Subtract
   Keep Exit"), Add Character's "Secret Curse" (importing Curse's
   characters), the camp (spell names, 6th / 7th level spells), the

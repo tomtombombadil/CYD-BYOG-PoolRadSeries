@@ -59,9 +59,10 @@ the Project as claude/TODO.md.
       program layout, words, scripts, frame, font, title, Screen / Walk
       Test (v0.92.0); the 439-byte record and the saves (v0.93.0); party
       menu, Load, Begin into Priam's house (v0.94.0); the rule tables,
-      areas (v0.95.0); the scripts' view of a character (v0.96.0). Next, a
-      chunk a commit: the opening texts (CALL 2DCB); View Character's
-      layout; items and their words (its own word table), shops; Modify
+      areas (v0.95.0); the scripts' view of a character (v0.96.0); View
+      Character (v0.97.0). Next, a chunk a commit: the opening texts (CALL
+      2DCB); View's right panel (with items) and a paladin's Heal / Cure;
+      items and their words (its own word table), shops; Modify
       ("Add Subtract Keep Exit"); Add from Curse; camp (spell names; 6th /
       7th level spells and 101-117 in magic); a dwarf's saves (the
       Constitution effect 0x61 kept in the record's saves?); combat (its
@@ -73,6 +74,9 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.97.0: Secret's View Character in its own layout, pixel for pixel
+  the original's (DOSBox, the GOG party).
 
 - v0.96.0: Secret's scripts read and write a character through its own
   field switch (race in its numbers, HP, levels, gems, status).

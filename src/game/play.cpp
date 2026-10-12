@@ -156,8 +156,8 @@ struct Data {
                    w_cursed[16] = {}, w_wrong[16] = {}, w_already[20] = {}, w_hands[24] = {}, w_s[4] = {},
                    w_weapon[8] = {}, w_armour[8] = {};
     char           iw[profile::kItemWords][44] = {};   // the items menu's words (profile item_words)
-    char           v_npc[8] = {}, v_age[8] = {}, v_stat[6][8] = {}, v_level[8] = {}, v_exp[8] = {}, v_status[8] = {},
-                   v_ac[8] = {}, v_hp[8] = {}, v_thac0[12] = {}, v_damage[20] = {}, v_enc[24] = {}, v_move[16] = {},
+    char           v_npc[8] = {}, v_age[8] = {}, v_stat[6][8] = {}, v_level[8] = {}, v_exp[12] = {}, v_status[8] = {},
+                   v_ac[12] = {}, v_hp[12] = {}, v_thac0[12] = {}, v_damage[20] = {}, v_enc[24] = {}, v_move[16] = {},
                    v_exit[8] = {};
 };
 
@@ -1186,9 +1186,16 @@ const party::Character* new_char = nullptr;   // the character being made (Creat
 void view_box(pic::Canvas& c, const party::Character& ch);
 bool view_box_tap(int x, int y, pic::Canvas& c);
 
+bool secret_files();
+void draw_character_secret(pic::Canvas& c, const party::Character& ch);
+
 void draw_character(pic::Canvas& c)
 {
     const party::Character* ch = new_char ? new_char : pt->sel();
+    if (ch && secret_files()) {
+        draw_character_secret(c, *ch);
+        return;
+    }
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
     dirty(0, pic::kScreenH);
@@ -1290,6 +1297,110 @@ void draw_character(pic::Canvas& c)
     // What the character can do: Items (when they have some), Exit
     char keys[40];
     snprintf(keys, sizeof keys, "%s%s%s", ch->n_items ? d->w_title : "", ch->n_items ? " " : "", d->v_exit);
+    text::build(menu, "", keys);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+// Secret's View Character (secret_facts.md 10, its own layout): bars at
+// rows 0, 8, 16, 20 and 23, a divider at column 19 from row 8 to 20; name
+// and status (row 1), sex and age, Hit Points (3), alignment, race (4),
+// class (5), Experience: (6), level and experience (7), the six stats from
+// row 9, AC / THAC0 / damage and encumbrance / movement (rows 17-19)
+void draw_character_secret(pic::Canvas& c, const party::Character& ch)
+{
+    c.clear(0);
+    dirty(0, pic::kScreenH);
+    const layout::Tables& tb = d->tables;
+    const layout::Tiles& tl = d->frame_tiles;
+    static const uint8_t kBars[] = {0, 8, 16, 20, 23};
+    for (int k = 0; k + 1 < 5; ++k)
+        for (int col : {0, 39}) layout::bars_col(c, tb, tl, col, kBars[k], kBars[k + 1]);
+    layout::bars_col(c, tb, tl, 19, 8, 20);
+    for (int r : kBars) layout::bars_row(c, tb, tl, r);
+    char t[48];
+    // A number with commas between the thousands
+    auto commas = [&](unsigned long v, char* out, size_t cap) {
+        char raw[16];
+        snprintf(raw, sizeof raw, "%lu", v);
+        const int n = static_cast<int>(strlen(raw));
+        size_t o = 0;
+        for (int i = 0; i < n && o + 2 < cap; ++i) {
+            if (i && (n - i) % 3 == 0) out[o++] = ',';
+            out[o++] = raw[i];
+        }
+        out[o] = 0;
+    };
+    auto right = [&](const char* s, int end_col, int row, uint8_t fg) {
+        put(c, s, end_col + 1 - static_cast<int>(strlen(s)), row, fg);
+    };
+    ch.name(t, sizeof t);
+    put(c, t, 1, 1, !ch.in_combat() ? 12 : ch.enemy() ? 14 : 11);
+    put(c, d->v_status, 20, 1, 15);
+    put(c, name_of(d->health[0], 13, 9, ch.health()), 27, 1, 10);
+    const char* sx = name_of(d->sex[0], 7, 2, ch.sex());
+    put(c, sx, 1, 3, 15);
+    snprintf(t, sizeof t, "%2d%s", ch.age(), d->v_age);
+    put(c, t, 8, 3, 15);
+    put(c, d->v_hp, 20, 3, 15);
+    snprintf(t, sizeof t, "%d/%d", ch.hp(), ch.hp_max());
+    put(c, t, 31, 3, ch.hp() < ch.hp_max() ? 14 : 10);
+    put(c, name_of(d->alignment[0], 17, 9, ch.alignment()), 1, 4, 15);
+    put(c, name_of(d->race[0], 10, 8, ch.race()), 20, 4, 15);
+    put(c, name_of(d->cls[0], 27, 18, ch.cls()), 1, 5, 15);
+    put(c, d->v_exp, 24, 6, 15);
+    put(c, d->v_level, 1, 7, 15);
+    {
+        int top = 0;
+        for (int k = 0; k < 8; ++k)
+            if (ch.level(k) > top) top = ch.level(k);
+        size_t o = 0;
+        t[0] = 0;
+        for (int k = 0; k < 8; ++k) {
+            const int lv = ch.level(k), old = ch.old_level(k);
+            if (lv > 0 || (old > 0 && old < top)) {
+                o += static_cast<size_t>(snprintf(t + o, sizeof t - o, "%s%d", o ? "/" : "", lv + old));
+                if (o >= sizeof t) break;
+            }
+        }
+        put(c, t, 7, 7, 15);
+    }
+    commas(static_cast<unsigned long>(ch.exp()), t, sizeof t);
+    right(t, 32, 7, 10);
+    for (int i = 0; i < 6; ++i) {
+        put(c, d->v_stat[i], 1, 9 + i, 10);
+        const int v = ch.stat(i);
+        if (i == 0 && v == 18 && ch.str00() > 0) {
+            if (ch.str00() == 100) snprintf(t, sizeof t, "18(00)");
+            else snprintf(t, sizeof t, "18(%02d)", ch.str00());
+        } else {
+            snprintf(t, sizeof t, "%d", v);
+        }
+        put(c, t, 5, 9 + i, 10);
+    }
+    put(c, d->v_ac, 1, 17, 15);
+    const int ac = ch.ac_raw();
+    snprintf(t, sizeof t, "%s%d", ac > 60 ? "-" : "", ac > 60 ? ac - 60 : 60 - ac);
+    right(t, 17, 17, 10);
+    put(c, d->v_thac0, 1, 18, 15);
+    snprintf(t, sizeof t, "%d", ch.thac0());
+    right(t, 17, 18, 10);
+    put(c, d->v_damage, 1, 19, 15);
+    const int b = ch.damage_bonus();
+    if (b) snprintf(t, sizeof t, "%dD%d%s%d", ch.dice(), ch.dice_sides(), b > 0 ? "+" : "-", b > 0 ? b : -b);
+    else snprintf(t, sizeof t, "%dD%d", ch.dice(), ch.dice_sides());
+    right(t, 17, 19, 10);
+    put(c, d->v_enc, 20, 17, 15);
+    snprintf(t, sizeof t, "%d", ch.encumbrance());
+    right(t, 37, 17, 10);
+    int mv = ch.movement();
+    if (ch.has_affect(0x2A)) mv *= 2;          // slow
+    if (ch.has_affect(0x27)) mv /= 2;          // haste
+    put(c, d->v_move, 20, 18, 15);
+    snprintf(t, sizeof t, "%d", mv);
+    right(t, 37, 18, 10);
+    char keys[40];
+    snprintf(keys, sizeof keys, "%s%s%s", ch.n_items ? d->w_title : "", ch.n_items ? " " : "", d->v_exit);
     text::build(menu, "", keys);
     menu.selected = 0;
     show_menu_line(c);

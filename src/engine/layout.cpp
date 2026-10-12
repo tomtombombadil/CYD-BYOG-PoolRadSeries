@@ -294,6 +294,16 @@ void combat(pic::Canvas& c, const Tables& tb, const Tiles& t)
     for (int col = 0; col < kCols; ++col) put(c, t, kFrameTile + tb.bottom[col], col, 22);
 }
 
+void bars_row(pic::Canvas& c, const Tables& tb, const Tiles& t, int row)
+{
+    if (tb.bars[0]) hbar(c, tb, t, row);
+}
+
+void bars_col(pic::Canvas& c, const Tables& tb, const Tiles& t, int col, int r0, int r1, bool caps)
+{
+    if (tb.bars[0]) vbar(c, tb, t, col, r0, r1, caps);
+}
+
 void credits(pic::Canvas& c, const Tables& tb, const Tiles& t, const uint8_t rows[2])
 {
     if (tb.bars[0]) {
