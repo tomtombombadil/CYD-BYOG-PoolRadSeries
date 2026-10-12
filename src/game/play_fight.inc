@@ -74,15 +74,15 @@ bool npc_join(int id)
     party::Character& ch = pt->m[pt->count];
     ch = party::Character{};
     char file[24];
-    snprintf(file, sizeof file, "MON%dCHA.DAX", d->gs.game_area);
+    area_fmt(file, sizeof file, "MON%dCHA.DAX");
     if (!read_record_block(file, id, ch.rec)) {
         plat::log("[play] ADD NPC: %s #%d not there\n", file, id);
         return false;
     }
-    snprintf(file, sizeof file, "MON%dITM.DAX", d->gs.game_area);
+    area_fmt(file, sizeof file, "MON%dITM.DAX");
     const int ni = read_block(file, id, &ch.items[0][0], sizeof ch.items);
     ch.n_items = ni > 0 ? ni / static_cast<int>(party::kItemSize) : 0;
-    snprintf(file, sizeof file, "MON%dSPC.DAX", d->gs.game_area);
+    area_fmt(file, sizeof file, "MON%dSPC.DAX");
     const int na = read_block(file, id, &ch.affects[0][0], sizeof ch.affects);
     ch.n_affects = na > 0 ? na / static_cast<int>(party::kAffectSize) : 0;
     ch.rec[0x126] = static_cast<uint8_t>(id);
@@ -110,7 +110,7 @@ void fight_load_monster(int id, int copies, int icon)
     uint8_t rec[party::kRecordSize];
     // MON<area>CHA.DAX
     char cha[24];
-    snprintf(cha, sizeof cha, "MON%dCHA.DAX", d->gs.game_area);
+    area_fmt(cha, sizeof cha, "MON%dCHA.DAX");
     if (!read_record_block(cha, id, rec)) {
         plat::log("[play] %s #%d: no monster\n", cha, id);
         return;
@@ -120,7 +120,7 @@ void fight_load_monster(int id, int copies, int icon)
     g.id = static_cast<uint8_t>(id);
     g.icon = static_cast<uint8_t>(icon);
     char itm[24];
-    snprintf(itm, sizeof itm, "MON%dITM.DAX", d->gs.game_area);
+    area_fmt(itm, sizeof itm, "MON%dITM.DAX");
     uint8_t buf[combat::kGroupItems * items::kRecordSize];
     const int ni = read_block(itm, id, buf, sizeof buf);
     if (ni > 0) {
@@ -129,7 +129,7 @@ void fight_load_monster(int id, int copies, int icon)
     }
     uint8_t aff[combat::kMonsterAffects * party::kAffectSize];
     char spc[24];
-    snprintf(spc, sizeof spc, "MON%dSPC.DAX", d->gs.game_area);
+    area_fmt(spc, sizeof spc, "MON%dSPC.DAX");
     const int na = read_block(spc, id, aff, sizeof aff);
     if (copies < 1) copies = 1;
     if (ml->n + copies > combat::kMaxMonsters) copies = combat::kMaxMonsters - ml->n;
@@ -582,7 +582,7 @@ void load_monster_icon(int slot, int block)
     Pic4& ic = fg->icon[slot];
     free_pic(ic);
     char file[16];
-    snprintf(file, sizeof file, "CPIC%d.DAX", d->gs.game_area);
+    area_fmt(file, sizeof file, "CPIC%d.DAX");
     for (int fr = 0; fr < 2; ++fr) {
         int w, h;
         uint8_t* p = load_pic4(file, block + fr * 0x80, 0, &w, &h);

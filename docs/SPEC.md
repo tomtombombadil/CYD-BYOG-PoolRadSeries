@@ -906,17 +906,32 @@ until the party menu is known (`party.items`).
   Load Saved Game, View's name tables (its races put in Curse's order),
   Begin: a save with no script running starts ECL1 block 16 - Priam's
   house at 3,3 facing south, as the original. Its script blocks are
-  numbered across ECL1-3 (NEW ECL 33 after 0x7F12 = 2 is ECL1's 33): the
-  area is the file holding the block, 0x7F12 plain memory
-  (`OpSet::area_by_block`). The Play Test opens (Dev Tools); what isn't
+  numbered across ECL1-3 (NEW ECL 33 after 0x7F12 = 2 is ECL1's 33;
+  `OpSet::area_by_block` - v0.95.0 has the whole picture). The Play Test opens (Dev Tools); what isn't
   known yet says so ("Spells and rules aren't in the engine for this game
   yet", "Fights aren't ...").
+- **v0.95.0 - the rule tables.** Secret's class / spell tables read from
+  its program in their own shapes (`classes::Layout::secret`: 7 classes,
+  levels to 18, 119 spells whose rows start with a byte of their own,
+  7 spell levels, race tables in its race order); `classes::Tables` holds
+  as many bytes as the game's tables are (on the heap). Checked: the GOG
+  party's THAC0, saves, thief skills, spell slots and books come out of
+  the tables as their files have them (but a dwarf's saves - his
+  Constitution effect, still to work out). Spell slots of the 6th / 7th
+  levels go to `Character::ext`; spells 101-117 to its book there.
+  Its areas, corrected: 0x7F12 IS the area (1-6; its interpreter's
+  set-area, as Curse's) and the areas share the numbered files two by two
+  (file (area + 1) / 2); block numbers are unique across a family's files,
+  so a block its area's file hasn't is found in the others
+  (`play::open_area_dax`); monsters and icons are MON1* / CPIC1 for every
+  area (`area_fmt`); LOAD PIECES 127 = no set.
 - Not yet: the opening texts before Priam's (the valley, the glacier -
   the original's CALL 2DCB, a routine of its program), View Character's
   own layout ("Experience:", "Hit Points", "Armor Class"), the items and
   their words (Secret's item word table differs), Modify ("Add Subtract
   Keep Exit"), Add Character's "Secret Curse" (importing Curse's
-  characters), the camp, the rules' tables, the scripts' view of a
+  characters), the camp (spell names, 6th / 7th level spells), the
+  scripts' view of a
   character (Secret's own offsets and race numbers), combat, sound
   (SOUND.DAX), the sky and approaching monsters (SPRIT1).
 

@@ -48,9 +48,9 @@ struct Out {
 Entry entry(const classes::Tables& t, int s)
 {
     Entry e;
-    const uint16_t at = static_cast<uint16_t>(t.lay.spells + s * 16);
+    const uint16_t at = t.spell_row(s);
     auto b = [&](int i) { return t.u8(static_cast<uint16_t>(at + i)); };
-    e.cls = b(0);
+    e.cls = t.lay.secret ? static_cast<uint8_t>(t.spell_class(s)) : b(0);
     e.level = b(1);
     e.range = static_cast<int8_t>(b(2));
     e.range_level = b(3);

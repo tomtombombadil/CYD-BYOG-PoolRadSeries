@@ -166,7 +166,7 @@ uint16_t Vm::get(uint16_t a) const
             return v;
         }
         if (a == 0x7D00) return 0;                         // "no character loaded"
-        if (a == 0x7F12 && !set_.area_by_block) return s_.game_area;
+        if (a == 0x7F12) return s_.game_area;
         return word_at(s_.area2, (a - 0x7C00u) * 2);
     }
     if (a >= kBase && a < kBase + kCodeSize) return s_.code[a - kBase];
@@ -201,7 +201,7 @@ void Vm::set(uint16_t a, uint16_t v)
         if (uint8_t* mr = sel_rec()) {
             if (a < 0x7EB0) party::script_set(mr, static_cast<uint16_t>(a - 0x7C00), v);
         } else if (party_ && a < 0x7EB0) party::script_set(*party_, static_cast<uint16_t>(a - 0x7C00), v);
-        if (a == 0x7F12 && !set_.area_by_block) s_.game_area = static_cast<uint8_t>(v);
+        if (a == 0x7F12) s_.game_area = static_cast<uint8_t>(v);
         if ((a == 0x7F22 || a == 0x7F24 || a == 0x7F26) && v > 0x80) h_.load_walls(1 + (a - 0x7F22) / 2, v & 0x7F);
         return;
     }

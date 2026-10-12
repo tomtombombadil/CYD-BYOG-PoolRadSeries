@@ -523,9 +523,10 @@ constexpr ecl::OpSet kPoolEcl = [] {
 // - areas: ECL / GEO / WALLDEF / 8X8D 1-3, SKY.DAX as Curse's, its 16 sky
 //   colours at DS 0x0AA8 (the same bytes as Curse's);
 // - scripts: Curse's opcodes and operand counts (the interpreter's handlers
-//   read the same ones) but 0x3C reads none and 0x41 (new) reads 2; block
-//   numbers are unique across ECL1-3 (NEW ECL 33 from ECL2 is ECL1's 33):
-//   the area is the file holding the block, 0x7F12 is plain memory;
+//   read the same ones) but 0x3C reads none and 0x41 (new) reads 2; its
+//   areas 1-6 (0x7F12, as Curse's) use the numbered files two by two
+//   ((area + 1) / 2) and block numbers are unique across a family's files
+//   (area 2's NEW ECL 33 is ECL1's) - ecl::OpSet::area_by_block;
 // - a saved game's Begin with no script running starts ECL1 block 16 (the
 //   party in Priam's house at 3,3 facing south, as the original).
 constexpr TitleStep kSecretTitle[] = {
@@ -840,6 +841,12 @@ const Profile kProfiles[] = {
      // engine reorders them); its words where they are Curse's
      .view = {{0xE9AB, 27, 18}, {0xEB91, 9, 8}, {0xEBD9, 17, 9}, {0xEC72, 7, 2}, {0xEC80, 11, 7}, {0xECCD, 13, 9},
               0, 0, 0x27184, 0x27172, 0, 0, 0, 0, 0x278D0, 0x278E8, 0x278C4, 0x278D9, 0, 5},
+     // Character rules (secret_facts.md 9): the tables in Secret's shapes
+     // (classes::Layout secret: 7 classes, levels to 18, 119 spells, its
+     // own race order), the rest of character making not known yet
+     .create = {.ds_image = 0xDE20,
+                .tables = {0x449C, 0x5810, 0x449C, 119, 0x4C0C, 0x4C92, 0x4C99, 0x4CA9, 0x4CAD, 0x4D3D, 0x4D48,
+                           0x4D9D, 0x4DFF, 0x4E45, 0x4EFF, 0x4F45, 0x4FAB, 0x506C, 0x5592, false, 0, 0, 0, true}},
      .variant = {.unfinished = true, .tile_window = 40, .bars = {55, 52, 53, 54, 59, 56, 57, 58}, .secret_files = true},
      .overland = nullptr,
      .font_file = "8X8D5.DAX"},

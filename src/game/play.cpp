@@ -458,7 +458,52 @@ private:
     text::Words*         w_ = nullptr;
 };
 
-void area_file(char* out, size_t cap, const char* stem) { snprintf(out, cap, "%s%d.DAX", stem, d->gs.game_area); }
+// The area's own file of a family (Secret: areas share them two by two)
+bool blocks_across() { return d->prof->ecl_ops && d->prof->ecl_ops->area_by_block; }
+int  area_file_no() { return blocks_across() ? (d->gs.game_area + 1) / 2 : d->gs.game_area; }
+void area_file(char* out, size_t cap, const char* stem) { snprintf(out, cap, "%s%d.DAX", stem, area_file_no()); }
+bool open_dax(const char* name, plat::File& f);
+bool open_file(const char* name, plat::File& f);
+// A file named by a pattern with the area's number in it ("MON%dCHA.DAX");
+// Secret: the first of the family that's there when the area's isn't (its
+// monsters and their icons are MON1* / CPIC1 for every area)
+void area_fmt(char* out, size_t cap, const char* fmt)
+{
+    snprintf(out, cap, fmt, area_file_no());
+    if (!blocks_across()) return;
+    char path[200];
+    games::path_of(d->data_dir, out, path, sizeof path);
+    if (plat::exists(path)) return;
+    for (int k = 1; k <= 9; ++k) {
+        snprintf(out, cap, fmt, k);
+        games::path_of(d->data_dir, out, path, sizeof path);
+        if (plat::exists(path)) return;
+    }
+    snprintf(out, cap, fmt, area_file_no());
+}
+// Opens the area's file of a family with its index read; Secret: the
+// family's file that holds `block` when the area's own hasn't it (name: the
+// file opened)
+bool open_area_dax(const char* stem, int block, plat::File& f, char* name, size_t cap)
+{
+    area_file(name, cap, stem);
+    if (open_dax(name, f)) {
+        if (!blocks_across() || block < 0 || d->idx.find(static_cast<uint8_t>(block))) return true;
+        f.close();
+    } else if (!blocks_across()) {
+        return false;
+    }
+    const int own = area_file_no();
+    for (int k = 1; k <= 9; ++k) {
+        if (k == own) continue;
+        snprintf(name, cap, "%s%d.DAX", stem, k);
+        if (!open_dax(name, f)) continue;
+        if (d->idx.find(static_cast<uint8_t>(block))) return true;
+        f.close();
+    }
+    area_file(name, cap, stem);
+    return false;
+}
 
 // ---- drawing ------------------------------------------------------------------
 
@@ -744,9 +789,8 @@ void idle_menu(pic::Canvas& c)
 bool draw_block(pic::Canvas& c, const char* stem, int block, int x, int y)
 {
     char name[24];
-    area_file(name, sizeof name, stem);
     plat::File f;
-    if (!open_dax(name, f)) return false;
+    if (!open_area_dax(stem, block, f, name, sizeof name)) return false;
     plat::FileSource src(f);
     bool ok = false;
     const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
@@ -791,6 +835,11 @@ bool anim_start(int id, const char* stem = "PIC", int x = 24, int y = 24)
     d->anim_y = static_cast<int16_t>(y);
     char name[24];
     area_file(name, sizeof name, stem);
+    if (blocks_across()) {
+        // (Secret: whichever of the family's files holds the picture)
+        plat::File probe;
+        if (open_area_dax(stem, id, probe, name, sizeof name)) probe.close();
+    }
     if (!open_file(name, d->anim_file)) return false;
     d->anim_idx = new (std::nothrow) dax::Index;
     if (!d->anim_idx) {
@@ -1099,7 +1148,7 @@ bool load_game(char slot)
         ++pt->count;
     }
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
-    if (!d->prof->ecl_ops->area_by_block) vm->set(0x7F12, d->gs.game_area);
+    vm->set(0x7F12, d->gs.game_area);
     d->loaded = true;
     {
         char m[32];
@@ -1840,7 +1889,7 @@ bool save_game(char slot)
     }
     h.count = pt->count;
     for (int i = 0; i < pt->count; ++i) savegame::char_file(slot, i + 1, h.names[i], sizeof h.names[i]);
-    if (!d->prof->ecl_ops->area_by_block) vm->set(0x7F12, d->gs.game_area);
+    vm->set(0x7F12, d->gs.game_area);
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
     char name[24], path[200];
     savegame::file_name(slot, name, sizeof name);
@@ -6088,29 +6137,17 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
 struct Host : ecl::Host {
     bool load_script(int block, uint8_t* code, uint32_t* len) override
     {
-        if (load_script_in(block, code, len)) return true;
-        if (!d->prof->ecl_ops->area_by_block) return false;
-        // Secret: the block is in another area's file - that's the area now
-        const int was = d->gs.game_area;
-        for (int a = d->prof->first_area; a <= d->prof->last_area; ++a) {
-            if (a == was) continue;
-            d->gs.game_area = static_cast<uint8_t>(a);
-            if (load_script_in(block, code, len)) return true;
-        }
-        d->gs.game_area = static_cast<uint8_t>(was);
-        return false;
-    }
-    bool load_script_in(int block, uint8_t* code, uint32_t* len)
-    {
         char name[24];
-        area_file(name, sizeof name, "ECL");
         {
             char t[40];
             snprintf(t, sizeof t, "area %d script %d", d->gs.game_area, block);
             memlog::note(t);
         }
         plat::File f;
-        if (!open_dax(name, f)) return false;
+        if (!open_area_dax("ECL", block, f, name, sizeof name)) {
+            plat::log("[play] script %d of %s: missing\n", block, name);
+            return false;
+        }
         plat::FileSource src(f);
         bool ok = false;
         const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
@@ -6130,10 +6167,9 @@ struct Host : ecl::Host {
     void load_map(int geo_block) override
     {
         char name[24];
-        area_file(name, sizeof name, "GEO");
         plat::File f;
         d->map.loaded = false;
-        if (open_dax(name, f)) {
+        if (open_area_dax("GEO", geo_block, f, name, sizeof name)) {
             plat::FileSource src(f);
             geo::load(src, d->idx, static_cast<uint8_t>(geo_block), d->map);
             f.close();
@@ -6144,6 +6180,7 @@ struct Host : ecl::Host {
     {
         view3d::World& wd = d->world;
         if (set < 1 || set > 3) return;
+        if (blocks_across() && block == 0x7F) block = -1;      // (Secret's LOAD PIECES: 127 = no set)
         d->wall_block[set - 1] = static_cast<int16_t>(block < 0 ? -1 : block);
         d->wall_set[set - 1] = static_cast<int16_t>(block < 0 ? -1 : set);
         if (block < 0) {
@@ -6154,8 +6191,7 @@ struct Host : ecl::Host {
         char name[24];
         int n = 0;
         plat::File f;
-        area_file(name, sizeof name, "WALLDEF");
-        if (open_dax(name, f)) {
+        if (open_area_dax("WALLDEF", block, f, name, sizeof name)) {
             plat::FileSource src(f);
             if (!view3d::load_walls(src, d->idx, set, static_cast<uint8_t>(block), wd, &n)) n = 0;
             f.close();
@@ -6166,8 +6202,7 @@ struct Host : ecl::Host {
         }
         // The later parts of a multi-part block fill the next sets
         for (int k = 1; k < n && set - 1 + k < 3; ++k) d->wall_block[set - 1 + k] = d->wall_set[set - 1 + k] = -1;
-        area_file(name, sizeof name, "8X8D");
-        if (open_dax(name, f)) {
+        if (open_area_dax("8X8D", view3d::tiles_block(static_cast<uint8_t>(block), n, 0), f, name, sizeof name)) {
             plat::FileSource src(f);
             for (int k = 0; k < n; ++k)
                 view3d::load_tiles(src, d->idx, static_cast<uint8_t>(view3d::tiles_block(static_cast<uint8_t>(block), n, k)),
@@ -6268,9 +6303,8 @@ struct Host : ecl::Host {
         area_view = false;
         draw_view(c);
         char name[24];
-        area_file(name, sizeof name, "SPRIT");
         plat::File f;
-        if (!open_dax(name, f)) return;
+        if (!open_area_dax("SPRIT", id, f, name, sizeof name)) return;
         plat::FileSource src(f);
         const dax::Entry* e = d->idx.find(static_cast<uint8_t>(id));
         if (e) {
@@ -6287,9 +6321,8 @@ struct Host : ecl::Host {
     void load_items(int block, items::Ground& g) override
     {
         char name[24];
-        area_file(name, sizeof name, "ITEM");
         plat::File f;
-        if (!open_dax(name, f)) return;
+        if (!open_area_dax("ITEM", block, f, name, sizeof name)) return;
         plat::FileSource src(f);
         const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
         if (e) {
@@ -7016,7 +7049,7 @@ void view_box(pic::Canvas& c, const party::Character& ch)
     Pic4 ic;
     if (ch.rec[0xF7] >= 0x80 && ch.rec[0x126] && !ch.rec[0x141] && !ch.rec[0x142]) {
         char file[16];
-        snprintf(file, sizeof file, "CPIC%d.DAX", d->gs.game_area);
+        area_fmt(file, sizeof file, "CPIC%d.DAX");
         for (int fr = 0; fr < 2; ++fr) {
             int w = 0, h = 0;
             ic.px[fr] = load_pic4(file, ch.rec[0x126] + fr * 0x80, 0, &w, &h);
@@ -8372,7 +8405,7 @@ void end_demo(pic::Canvas& c)
     then = Then::Idle;
     ecl::GameState& gs = d->gs;
     gs.game_area = d->prof->start_area;
-    if (!d->prof->ecl_ops->area_by_block) vm->set(0x7F12, gs.game_area);
+    vm->set(0x7F12, gs.game_area);
     vm->set(0x4BFC, 4);
     vm->set(0x7F70, 0);
     vm->set(0x7F71, 0);

@@ -58,9 +58,11 @@ struct OpSet {
     // goes on after it (Pool); 3 kills the party (Curse; Pool's program
     // does nothing for it - its handler knows 0, 8 and 9 only)
     bool program_ends = true, program_kills = true;
-    // Secret: script blocks are numbered across ECL1-3 (and maps across
-    // GEO1-3) - the area is the file that holds the block, and 0x7F12 is
-    // plain memory (Curse: the area's number)
+    // Secret: its areas 1-6 share the numbered files two by two (ECL1 for
+    // areas 1 and 2 ...: the file is (area + 1) / 2) and the blocks are
+    // numbered across a family's files (NEW ECL 33 in area 2: ECL1's) - a
+    // block is looked for in the family's other files when its area's
+    // hasn't it (Curse: the file is the area's own)
     bool area_by_block = false;
 };
 

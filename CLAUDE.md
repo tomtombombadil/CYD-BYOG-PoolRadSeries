@@ -478,7 +478,9 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   3 (lwsim / playsim GAME=3). Its frame is code-drawn bars
   (`variant.bars`, tiles 52-59 through `variant.tile_window`), font in
   8X8D5 (`font_file`), scripts = Curse's opcodes but 0x3C / 0x41, block
-  numbers unique across ECL1-3 (`area_by_block`: 0x7F12 is plain memory).
+  numbers unique across a family's files, areas 1-6 sharing them two by
+  two - file (area + 1) / 2 (`area_by_block`, `play::open_area_dax`,
+  `area_fmt`). Rule tables: `classes::Layout::secret` shapes.
   Records: `party::from_secret` (+ `Character::ext`, races renumbered).
   The playsim's Secret run: `GAME=3 SAVE=A sim <copy of its folder>`. Scratch tools:
   /tmp/claude-0/secret (ops.py: the interpreter's operand counts,

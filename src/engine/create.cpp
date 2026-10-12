@@ -188,7 +188,7 @@ int races(int* out, int cap)
 int classes_for(const classes::Tables& t, int race, int* out, int cap)
 {
     const int stride = t.lay.pool ? 12 : 14;
-    const uint16_t at = static_cast<uint16_t>(t.lay.race_classes + race * stride);
+    const uint16_t at = static_cast<uint16_t>(t.lay.race_classes + t.race_row(race) * stride);
     int n = t.u8(at);
     if (n > stride - 1) n = stride - 1;
     int k = 0;
@@ -287,7 +287,7 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
 
     // Age: the race's dice for the class; a fixed age for multi-classes
     auto age_entry = [&](int e, int* base, int* count, int* sides) {
-        const uint16_t at = static_cast<uint16_t>(t.lay.race_ages + race * 28 + e * 4);
+        const uint16_t at = static_cast<uint16_t>(t.lay.race_ages + t.race_row(race) * 28 + e * 4);
         *base = t.u16(at);
         *count = t.u8(static_cast<uint16_t>(at + 2));
         *sides = t.u8(static_cast<uint16_t>(at + 3));
@@ -335,11 +335,11 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
         {0, -1, -1, -1, 0},    // Con
         {0, 0, 0, 0, 0},       // Cha
     };
-    const uint16_t lim = static_cast<uint16_t>(t.lay.stat_limits + race * 16);
+    const uint16_t lim = static_cast<uint16_t>(t.lay.stat_limits + t.race_row(race) * 16);
     for (int i = 0; i < 6; ++i) {
         int v = stat_full(c, i);
         for (int b = 0; b < 5; ++b)
-            if (v > 0 && t.u16(static_cast<uint16_t>(t.lay.age_brackets + race * 10 + b * 2)) < age) v += kAgeEffect[i][b];
+            if (v > 0 && t.u16(static_cast<uint16_t>(t.lay.age_brackets + t.race_row(race) * 10 + b * 2)) < age) v += kAgeEffect[i][b];
         int lo, hi;
         if (i == 0) {
             lo = t.u8(static_cast<uint16_t>(lim + sex));
@@ -646,7 +646,7 @@ void from_pool(const uint8_t* p, party::Character& c, const classes::Tables& t)
     if (r[0] > 15) r[0] = 15;
     // The stats, held to the race's and sex's limits
     const int race = r[kRace], sex = r[kSex] ? 1 : 0;
-    const uint16_t lim = static_cast<uint16_t>(t.lay.stat_limits + race * 16);
+    const uint16_t lim = static_cast<uint16_t>(t.lay.stat_limits + t.race_row(race) * 16);
     for (int i = 0; i < 6; ++i) {
         int v = p[0x10 + i], lo, hi;
         if (i == 0) {
@@ -780,7 +780,7 @@ void modify_stat(party::Character& c, const classes::Tables& t, const Facts& f, 
 {
     if (i < 0 || i > 5 || !dir) return;
     const int race = c.race(), sex = c.sex() ? 1 : 0, cls = c.cls();
-    const uint16_t lim = static_cast<uint16_t>(t.lay.stat_limits + race * 16);
+    const uint16_t lim = static_cast<uint16_t>(t.lay.stat_limits + t.race_row(race) * 16);
     int lo, hi;
     if (i == 0) {
         lo = t.u8(static_cast<uint16_t>(lim + sex));

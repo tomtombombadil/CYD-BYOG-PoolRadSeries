@@ -2218,19 +2218,16 @@ static void test_vm_events_facts()
         b.push_back(0x13);                                    // RETURN
         CHECK(run(b, host, vp, vm) == ecl::Stop::Stopped && pa.selected == 2);
     }
-    // 0x7F12: Curse's area number; Secret's plain memory (area_by_block)
+    // 0x7F12: the area's number (Secret's too - its interpreter's set-area)
     {
         gs = ecl::GameState{};
         gs.game_area = 2;
-        ecl::Vm vm(gs, host, *p->ecl_ops);
-        CHECK(vm.get(0x7F12) == 2);
-        vm.set(0x7F12, 3);
-        CHECK(gs.game_area == 3);
         ecl::OpSet sset = *p->ecl_ops;
         sset.area_by_block = true;
         ecl::Vm sv(gs, host, sset);
+        CHECK(sv.get(0x7F12) == 2);
         sv.set(0x7F12, 5);
-        CHECK(gs.game_area == 3 && sv.get(0x7F12) == 5);
+        CHECK(gs.game_area == 5 && sv.get(0x7F12) == 5);
     }
     // SURPRISE: 0x7ECB untouched
     {
@@ -3590,6 +3587,51 @@ static void test_pool_outdoors()
         }
     }
     CHECK(streams > 75 && streams < 150);                 // 75% of the 150 stream fields
+}
+
+// Secret of the Silver Blades' table shapes (classes::Layout secret): made-up
+// tables at made-up places
+static void test_secret_rules()
+{
+    classes::Layout l{};
+    l.lo = 0x100; l.hi = 0x1300; l.secret = true;
+    l.spells = 0x100; l.spell_count = 119; l.thac0 = 0x900; l.saves = 0xA00; l.class_records = 0xD00;
+    l.thief_race = 0xC00;
+    std::vector<uint8_t> b(l.hi - l.lo, 0);
+    auto at = [&](int ds) -> uint8_t& { return b[ds - l.lo]; };
+    // spell 9: Secret's own byte, then class 3 (magic-user), level 1; spell 101: class 0 level 6
+    at(0x100 + 9 * 16) = 7; at(0x100 + 9 * 16 + 1) = 3; at(0x100 + 9 * 16 + 2) = 1; at(0x100 + 9 * 16 + 5) = 12;   // (its "lasts": Curse's byte 4, one on)
+    at(0x100 + 101 * 16 + 1) = 0; at(0x100 + 101 * 16 + 2) = 6;
+    at(0x100 + 50 * 16 + 1) = 4;                                       // the items' / monsters'
+    for (int lv = 0; lv < 19; ++lv) at(0x900 + 2 * 19 + lv) = static_cast<uint8_t>(40 + lv);   // fighter
+    at(0xA00 + 5 * 90 + 17 * 5 + 2) = 4;                              // magic-user level 17, rods
+    for (int i = 0; i < 17; ++i) {                                    // cleric: experience, slots
+        const int32_t e = 1000 * (i + 1);
+        for (int k = 0; k < 4; ++k) at(0xD00 + i * 4 + k) = static_cast<uint8_t>(e >> (8 * k));
+    }
+    at(0xD00 + 68 + (14 - 2) * 7 + 6) = 1;                            // cleric level 14: a 7th level slot
+    at(0xD00 + 187 + 0) = 0xFF; at(0xD00 + 187 + 1) = 0xFF; at(0xD00 + 187 + 2) = 0xFF; at(0xD00 + 187 + 3) = 0xFF;
+    at(0xC00 + 3 * 8 + 2) = 10;                                       // Secret's dwarf (3), open locks
+    static classes::Tables t;
+    CHECK(t.set(l, b.data(), b.size()));
+    CHECK(t.top_level() == 18 && t.classes() == 7 && t.record_size() == 187 && t.slot_levels() == 7);
+    CHECK(t.spell_class(9) == 2 && t.spell_level(9) == 1 && t.spell_class(101) == 0 && t.spell_level(101) == 6 &&
+          t.spell_class(50) == 3);
+    CHECK(spells::entry(t, 9).cls == 2 && spells::entry(t, 9).lasts == 12);
+    CHECK(t.thac0(2, 0) == 40 && t.thac0(2, 18) == 58 && t.thac0(2, 25) == 58 && t.thac0(7, 5) == 0);
+    CHECK(t.save(5, 17, 2) == 4 && t.save(7, 3, 0) == 20);
+    CHECK(t.exp_needed(0, 1) == 1000 && t.exp_needed(0, 17) == 17000 && t.exp_needed(0, 18) == -1 &&
+          t.exp_needed(1, 1) == -1 && t.slots_gained(0, 14, 6) == 1);
+    CHECK(t.race_row(1) == 3 && t.race_row(7) == 6 && t.s8(static_cast<uint16_t>(l.thief_race + t.race_row(1) * 8 + 2)) == 10);
+    // A copy keeps its own bytes
+    classes::Tables t2 = t;
+    CHECK(t2.thac0(2, 18) == 58 && t2.spell_class(9) == 2);
+    // Spell slots: a 14th level cleric's 7th level slot goes to the record's extension
+    static party::Character ch;
+    ch.rec[0x109] = 14;                                               // cleric level 14
+    ch.rec[0x74] = 7;
+    classes::spell_slots(ch, t);
+    CHECK(ch.ext[party::kExtCleric67 + 1] == 1 && ch.ext[party::kExtCleric67] == 0 && ch.rec[0x12D] == 1);
 }
 
 static void test_pool_rules()
@@ -6737,6 +6779,7 @@ int main()
     test_spells_batch3();
     test_create();
     test_pool_rules();
+    test_secret_rules();
     test_pool_outdoors();
     test_class_rules();
     test_item_combat();

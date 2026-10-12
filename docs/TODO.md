@@ -58,10 +58,12 @@ the Project as claude/TODO.md.
       work plan in the Project's claude/secret_facts.md; SPEC 6c). Done:
       program layout, words, scripts, frame, font, title, Screen / Walk
       Test (v0.92.0); the 439-byte record and the saves (v0.93.0); party
-      menu, Load, Begin into Priam's house (v0.94.0). Next, a chunk a
+      menu, Load, Begin into Priam's house (v0.94.0); the rule tables
+      (v0.95.0). Next, a chunk a
       commit: (4b) the opening texts (CALL 2DCB), View Character's layout,
-      items and their words, Modify, Add from Curse, camp, the rules'
-      tables; the scripts' view of a character (Secret's own offsets and
+      items and their words, Modify, Add from Curse, camp (spell names;
+      6th / 7th level spells and 101-117 in magic), a dwarf's saves (the
+      Constitution effect 0x61 kept in the record's saves?); the scripts' view of a character (Secret's own offsets and
       race numbers: script_value); LOAD PIECES 127 in the 3rd set, camp, items, shops (its version line's
       two-line look with it); (5) combat (its fight frame not seen yet:
       Curse's shape for now), spells, monsters; (6) sound, sky,
@@ -71,6 +73,11 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.95.0: Secret's rule tables in its own shapes (levels to 18, 7 spell
+  levels, 119 spells, its race order) - the GOG party's values come out
+  of them; a ranger learns only the druid spells of levels he has slots
+  for (Curse: the same, its druid spells are all 1st level).
 
 - v0.94.1: the C5 hung at Home drawing the first icon (Tom's logs, both
   C5 boards): the drawing held the SPI bus the card shares there. Card
