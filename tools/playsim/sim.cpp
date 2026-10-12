@@ -472,6 +472,7 @@ int main(int argc, char** argv)
             printf("  head %d body %d, screen %d menu [%s%s]\n", play::mk->ch.rec[0x13F], play::mk->ch.rec[0x140], (int)play::screen, play::menu.prompt, play::menu.s);
             if (play::screen == play::Screen::Icon) tap_word('D');      // the gallery's Done: "Is this icon ok?"
         }
+        if (play::screen == play::Screen::Icon) tap_word('D');       // (Curse: the icon gallery's Done)
         tap_word('Y');
         if (play::screen == play::Screen::YesNo) { printf("  ask [%s]\n", play::menu.prompt); tap_word('Y'); }
         printf("  screen %d\n", (int)play::screen);
@@ -542,6 +543,21 @@ int main(int argc, char** argv)
             tap_word('N');
             shot("not_dropped");
             g_now += 5000; play::tick(g_now, C);
+        }
+        if (getenv("ADDGUY")) {
+            // ADDGUY=NAME: the selected member (the first) removed, NAME (a made
+            // character, e.g. CREATE's) added from the Curse list
+            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+            play::tap(24, (12 + pm_line('R')) * 8 + 2, C);
+            if (play::screen == play::Screen::YesNo) tap_word('Y');
+            play::tap(24, (12 + pm_line('A')) * 8 + 2, C);
+            if (play::screen != play::Screen::AddList) tap_word('C');
+            for (int i = 0; i < play::d->guys; ++i) {
+                char t[48]; play::list_line(i, t, sizeof t);
+                if (strstr(t, getenv("ADDGUY"))) { play::add_character(i, C); printf("  added [%s]\n", t); break; }
+            }
+            tap_word('E');
+            for (int i = 0; i < play::pt->count; ++i) { char n[20]; play::pt->m[i].name(n, 20); printf("  %d: %-15s attacks byte %d\n", i, n, play::pt->m[i].rec[0x11C]); }
         }
         if (getenv("ITEMOPS")) {
             // ITEMOPS: the selected character's items: a digit picks list line n,
