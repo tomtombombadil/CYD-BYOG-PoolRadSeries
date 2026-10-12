@@ -27,8 +27,21 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   claude/other_games_facts.md - 16-colour: Pool, Curse, Secret,
   Champions, Death Knights, Gateway; 256-colour VGA: Treasures, Darkness,
   Dark Queen, Unlimited Adventures (the last two a newer TLB / GLB
-  engine). The VGA games don't fit the current boards' memory by
-  estimate - the board question is Tom's (TODO.md).
+  engine).
+- **Boards and games (Tom, 2026-10-12)**: the original series - Pool,
+  Curse, Secret, Darkness - must be complete and playable on a basic
+  (classic ESP32, no PSRAM) CYD. Darkness (and Treasures) run there in
+  **their own EGA mode**: their setup offers EGA / Tandy / VGA, and in
+  EGA the original turns the same VGA pictures into 16 dithered colours
+  (checked in DOSBox: Darkness with POOL4.CFG's graphics line E) - the
+  engine does what the original's EGA mode does (facts from the player's
+  EGA.DRV / program, never copied). Dark Queen and Unlimited Adventures:
+  NOT on the classic boards. **ESP32-S3 boards with PSRAM are added**
+  (Tom's first: the 4.0" ST7796 480x320 capacitive S3 board, arriving the
+  week of 2026-10-12 - Tom uses a capacitive stylus on it): there the
+  VGA games run in 256 colours. The ESP32-C5 2.8" ST7789 resistive board
+  (8 MB PSRAM; Tom has two) is a candidate too. Board facts: the
+  Project's claude/board_facts.md.
 - Tom plays with a Nintendo DS Lite stylus with firm presses - NOT a finger.
 - Refer to boards by size + display driver + touch type, never vendor codes.
 

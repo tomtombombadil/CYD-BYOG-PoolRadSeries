@@ -320,6 +320,23 @@ While it's open the game screen waits on the card (`frame::park`, as for
 the journal book), so the logs and the QR code get its memory. A log that
 can't get the memory says "Not enough memory to show this log."
 
+## 5d. Boards and games (Tom, 2026-10-12)
+
+- **Classic CYD boards** (ESP32, no PSRAM - the five boards now): the
+  original series complete and playable - Pool, Curse, Secret, Darkness.
+  Darkness (and Treasures, later) in **their own EGA mode**: their setup
+  offers EGA / Tandy / VGA, and the original in EGA shows the same VGA
+  pictures in 16 dithered colours (checked in DOSBox) - the engine does
+  what that mode does. Dark Queen / Unlimited Adventures: not on these.
+- **ESP32-S3 boards with PSRAM**: added; first the 4.0" ST7796 480x320
+  capacitive S3 board (8 MB PSRAM, SDMMC card, ES8311 codec + amplifier
+  + speaker). There the VGA games run in 256 colours, the big blocks in
+  PSRAM, sound through the codec (I2S).
+- **ESP32-C5 2.8" ST7789 resistive board** (8 MB PSRAM, speaker amplifier
+  on GPIO 26 - PWM sound): a candidate (Tom has two).
+- Board facts: the Project's claude/board_facts.md; the games' needs:
+  claude/other_games_facts.md.
+
 ## 6. Milestones
 
 1. **Library and asset viewer** (v0.1.0, this build). Finds the games on the
