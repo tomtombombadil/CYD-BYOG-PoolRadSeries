@@ -267,6 +267,16 @@ a minute while playing, and "LOW" when the largest free block drops under
 24 KB: "[h:mm:ss] what: free N KB, largest block N KB, lowest N KB"
 (largest block = the biggest single piece a load can get; lowest = the
 least free memory since the board started).
+v0.86.1 (Tom's 4.0" log: a fight left 24 KB, then 8 and 1 KB mid-fight;
+sounds, spell names and pictures failed): a fight takes ~12 KB less (the
+fighters as many as it has, the message pages' lines in one pool), its
+magic tables go when it ends, and when a load would fail the engine first
+drops what it can read again (the sound playing; while exploring, the
+healing words and magic tables) - "made room for X: dropped Y" in the
+log; while exploring with the largest block under 32 KB it does that by
+itself every 5 s. A sound in a fight with under 10 KB in one piece is left
+out ("a sound left out: memory low"); a sound or spell names that can't
+get memory say so in the log instead of failing quietly.
 
 **Send Logs** (Tom, 2026-10-12, v0.86.0: "a quick and easy way to send
 logs", as in CYD-Classic-Games): a key at the Logs screen's header right.

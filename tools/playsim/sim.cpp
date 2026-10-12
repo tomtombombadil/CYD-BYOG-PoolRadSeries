@@ -17,6 +17,10 @@
 #include <vector>
 #include <string>
 
+// HEAPPROF=1 with tools/playsim/heapprof.cpp linked in: the heap by call site
+void heapprof_mark(const char*) __attribute__((weak));
+static void heap_mark(const char* label) { if (heapprof_mark) heapprof_mark(label); }
+
 // The board's sound output, here: each sound rendered at once (SOUNDWAV=file
 // keeps them all in one WAV to listen to; SOUNDLOG prints them)
 static std::vector<uint8_t> g_wav;
@@ -245,6 +249,7 @@ static void run_fight()
             // taken), the results and treasure tapped through
             auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
             shot("fight_start");
+            heap_mark("fight start");
             if (getenv("FIGHTCHECK") && play::fg && play::fg->b.tables) {
                 // FIGHTCHECK: can each party fighter walk to an enemy (walls only)? how many show?
                 const combat::Battle& b = play::fg->b;
@@ -282,6 +287,13 @@ static void run_fight()
                 g_now += 50;
                 play::tick(g_now, C);
                 if (!play::fg) continue;
+                static int marked_round = -1;
+                if (play::fg->b.round != marked_round && play::fg->b.round % 3 == 2) {
+                    marked_round = play::fg->b.round;
+                    char lab[32];
+                    snprintf(lab, sizeof lab, "round %d", marked_round);
+                    heap_mark(lab);
+                }
                 static bool forced_item = false;
                 if (!forced_item && getenv("FORCEWEAPON")) {
                     // FORCEWEAPON=m:type: fighter m's readied weapon becomes that type (to try shots)

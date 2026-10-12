@@ -1197,6 +1197,19 @@ static void test_log_pack()
     CHECK(logpack::base43(work.data(), 3, out.data(), 6) == 5);
 }
 
+// A Battle with storage for the most fighters (the engine's Battle has
+// none of its own since v0.86.1: the fight gives it as many as it has)
+static combat::Fighter g_test_fighters[2][combat::kMaxFighters];
+static void fresh_battle(combat::Battle& b)
+{
+    static int which = 0;
+    b = combat::Battle{};
+    combat::Fighter* f = g_test_fighters[which ^= 1];
+    for (int i = 0; i < combat::kMaxFighters; ++i) f[i] = combat::Fighter{};
+    b.f = f;
+    b.cap = combat::kMaxFighters;
+}
+
 static void test_inflate()
 {
     static uint8_t window[inflate::kWindow];
@@ -3263,7 +3276,7 @@ static void test_pool_outdoors()
     static combat::Battle b;
     int streams = 0;
     for (uint32_t seed = 1; seed <= 300; ++seed) {
-        b = combat::Battle{};
+        fresh_battle(b);
         create::Dice d(seed);
         const int f = seed & 1 ? 0x10 : 0x48;             // a stream likely / woods, no stream
         combat::build_outdoors_pool(b, f, d);
@@ -3451,7 +3464,7 @@ static void test_class_rules()
     aff[0][0] = 0x61;
     rec[0x19] = 14;
     static combat::Battle b;
-    b = combat::Battle{};
+    fresh_battle(b);
     b.fx = &fx;
     b.f[0].rec = rec;
     b.f[0].aff = aff;
@@ -3487,7 +3500,7 @@ static void test_item_combat()
     memset(&t, 0, sizeof t);
     t.ground[0x37][0] = 1; t.ground[0x37][1] = 1;
     static combat::Battle b;
-    b = combat::Battle{};
+    fresh_battle(b);
     for (int y = 0; y < combat::kH; ++y)
         for (int x = 0; x < combat::kW; ++x) b.ground[y][x] = 0x37;
     static uint8_t rec[2][party::kRecordSize];
@@ -4457,7 +4470,7 @@ static void test_combat()
     for (int sh = 0; sh < 5; ++sh)
         for (int r = 0; r < 6; ++r) { t.shapes[sh][r][0] = 0; t.shapes[sh][r][1] = 10; }
     static combat::Battle b;
-    b = combat::Battle{};
+    fresh_battle(b);
     for (int y = 0; y < combat::kH; ++y)
         for (int x = 0; x < combat::kW; ++x) b.ground[y][x] = 0x37;
     static uint8_t rec[8][party::kRecordSize];
@@ -4587,7 +4600,7 @@ static void test_combat()
     memset(mrec, 0, sizeof mrec);
     memset(maff, 0, sizeof maff);
     static combat::Battle sb;
-    sb = combat::Battle{};
+    fresh_battle(sb);
     sb.fx = &fx;
     for (int y = 0; y < combat::kH; ++y)
         for (int x = 0; x < combat::kW; ++x) sb.ground[y][x] = 0x37;
@@ -5140,7 +5153,7 @@ static void test_pool_monsters()
     create::Dice d(23);
     // Fighters 0-2 the party, 3-5 monsters next to them; all hit but on a 1, never save but on a 20
     auto setup = [&]() {
-        b = combat::Battle{};
+        fresh_battle(b);
         b.fx = &fx;
         b.tables = &t;
         for (int y = 0; y < combat::kH; ++y)
@@ -5568,7 +5581,7 @@ static void test_monster_fx()
     create::Dice d(11);
     // Fighters 0-2 the party (west), 3-5 monsters; all hit but on a 1, never save but on a 20
     auto setup = [&]() {
-        b = combat::Battle{};
+        fresh_battle(b);
         b.fx = &fx;
         for (int y = 0; y < combat::kH; ++y)
             for (int x = 0; x < combat::kW; ++x) b.ground[y][x] = 0x37;
@@ -5763,7 +5776,7 @@ static void test_spell_rules()
     static combat::Battle b;
     create::Dice d(7);
     auto setup = [&]() {
-        b = combat::Battle{};
+        fresh_battle(b);
         b.fx = &fx;
         b.tables = &t;
         for (int y = 0; y < combat::kH; ++y)
@@ -5961,7 +5974,7 @@ static void test_spells_batch2()
     static combat::Battle b;
     create::Dice d(5);
     auto setup = [&]() {
-        b = combat::Battle{};
+        fresh_battle(b);
         b.fx = &fx;
         for (int y = 0; y < combat::kH; ++y)
             for (int x = 0; x < combat::kW; ++x) b.ground[y][x] = 0x37;
@@ -6159,7 +6172,7 @@ static void test_spells_batch3()
     static int naff[3];
     static combat::Battle b;
     create::Dice d(9);
-    b = combat::Battle{};
+    fresh_battle(b);
     b.fx = &fx;
     for (int y = 0; y < combat::kH; ++y)
         for (int x = 0; x < combat::kW; ++x) b.ground[y][x] = 0x37;

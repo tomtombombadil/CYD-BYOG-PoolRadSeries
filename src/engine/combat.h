@@ -289,7 +289,10 @@ enum Result : uint8_t { Won = 0, Lost = 0x80, Fled = 0x81 };
 struct Battle {
     uint8_t ground[kH][kW] = {};
     uint8_t who[kH][kW] = {};           // fighter + 1 on that square (0: none)
-    Fighter f[kMaxFighters];
+    // The fighters, as many as the fight has (the caller's storage, cap
+    // entries; v0.86.1: a fixed 71 took 11 KB - Tom's 4.0" ran out mid-fight)
+    Fighter* f = nullptr;
+    int     cap = 0;
     int     n = 0;
     int     party_size = 0;
     int     round = 0, no_action = 15;

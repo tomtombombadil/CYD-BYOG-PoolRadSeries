@@ -38,6 +38,9 @@
 namespace play {
 
 const char* no_memory(const char* what);   // (below: the message with the heap's numbers)
+bool make_room(unsigned kb, const char* what);   // (below: drops what reads again until kb KB fit)
+void tidy_memory();
+bool fighting();                                 // (below: a fight is on)
 
 namespace {
 
@@ -214,6 +217,16 @@ bool snd_fill(uint8_t* buf, int n, void* ctx)
 void sfx(int id)
 {
     if (!snd || !snd->ready() || (snd_mode != 1 && snd_mode != 2)) return;
+    // A sound needs ~7 KB while it plays (its task and DAC): not when that
+    // would leave the game short - in a fight nothing is dropped for it
+    if (!audio_running() && memlog::largest_kb() < 10 && (fighting() || !make_room(10, "a sound"))) {
+        static uint32_t noted = 0;
+        if (!noted || millis() - noted > 60000) {
+            noted = millis() | 1;
+            memlog::note("a sound left out: memory low");
+        }
+        return;
+    }
     snd->start(id, snd_mode == 2 ? sound::Device::PcSpeaker : sound::Device::Tandy);
     audio_play(snd_fill, snd);
 }
@@ -3566,6 +3579,7 @@ void item_class_values(party::Character& ch, int i)
 // The rule tables and spell names (from the program), for the camp
 bool load_magic()
 {
+    if (!mrules && !spn) make_room(12, "the magic tables");
     if (!mrules && !load_rules(mrules)) {
         end_magic();
         return false;
@@ -8305,6 +8319,61 @@ void set_pool_dir(const char* dir)
 }
 
 // "Not enough memory" with the numbers (for Tom's reports)
+// ---- Memory recovery (Tom, 2026-10-12: "not only memory management, but
+// also proactive methods of dealing with what the memory management finds,
+// ways to recover"). What can be read again from the game's files is
+// dropped when a load would otherwise fail, in this order: the sound
+// playing (its task and DAC, ~7 KB), the healing words, the magic tables
+// and spell names (~9 KB) - those two only while the party is exploring
+// (no fight, menu, cast or item use under way).
+// Each drop goes in the memory log. make_room(kb): true when the largest
+// free block has kb KB (after dropping what it had to).
+bool fighting() { return fg != nullptr; }
+
+// (the magic tables go only while the party is exploring - no fight, no
+// menu, no cast or item use under way: many screens and questions use them)
+bool magic_in_use()
+{
+    return fg || screen != Screen::Game || cr.stage != CastRun::None || cr.item >= 0;
+}
+
+bool make_room(unsigned kb, const char* what)
+{
+    if (memlog::largest_kb() >= kb) return true;
+    char line[120];
+    auto dropped = [&](const char* thing) {
+        snprintf(line, sizeof line, "made room for %s: dropped %s", what, thing);
+        memlog::note(line);
+        return memlog::largest_kb() >= kb;
+    };
+    if (audio_running()) {
+        audio_stop();
+        if (dropped("the sound playing")) return true;
+    }
+    if (hw && !fg && screen == Screen::Game) {
+        delete hw;
+        hw = nullptr;
+        if (dropped("the healing words")) return true;
+    }
+    if ((mrules || spn) && !magic_in_use()) {
+        end_magic();
+        if (dropped("the magic tables")) return true;
+    }
+    return memlog::largest_kb() >= kb;
+}
+
+// Called now and then while playing: when memory runs low outside a fight
+// and the magic tables / healing words aren't in use, they go (they read
+// again when needed) - so the next fight starts with the most room
+void tidy_memory()
+{
+    static uint32_t next = 0;
+    if (millis() < next) return;
+    next = millis() + 5000;
+    if (fg || memlog::largest_kb() >= 32) return;
+    make_room(32, "the next fight");
+}
+
 const char* no_memory(const char* what)
 {
     snprintf(msg, sizeof msg, "Not enough memory for %s (free %u KB, largest block %u KB).", what,
@@ -9246,6 +9315,7 @@ void tap(int x, int y, pic::Canvas& c)
 void tick(uint32_t now, pic::Canvas& c)
 {
     if (!d) return;
+    tidy_memory();
     // Effects run out as game time passes (walking, searching, scripts)
     if (vm && pt) {
         // Detect Magic on anyone: magic and cursed items' names get "* "

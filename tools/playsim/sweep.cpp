@@ -157,7 +157,7 @@ static bool pump(int max_iter = 400000)
                 last_n = fg->pages;
                 if (fg->at < fg->pages) {
                     printf("   r%d:", fg->b.round);
-                    for (int l = 0; l < fg->page[fg->at].lines; ++l) printf(" %s /", fg->page[fg->at].line[l]);
+                    for (int l = 0; l < fg->page[fg->at].lines; ++l) printf(" %s /", play::page_line(fg->page[fg->at], l));
                     printf("\n");
                 }
             }

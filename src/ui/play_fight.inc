@@ -258,8 +258,11 @@ struct Fx {
 
 constexpr int kPages = 24;            // a turn's messages at most (a fireball on a crowd: the rest dropped)
 
+// A page's lines are in the fight's text pool (v0.86.1: 24 x 5 x 48 fixed
+// took 5.8 KB; a turn's pages rarely fill a third of the pool)
+constexpr int kPageText = 2048;
 struct Page {
-    char    line[5][48];                // (the longest: "takes 100 points of damage from Electricity")
+    uint16_t line_at[5];                // where each line starts in Fight::ptext
     uint8_t colour[5];
     int     lines = 0;
     uint8_t sound = 0;                  // the game's sound effect as it shows (0: none)
@@ -283,11 +286,13 @@ struct Fight {
             t = nullptr;
         }
         delete &b;
+        delete[] fighters;
     }
     Fight(const Fight&) = delete;
     Fight& operator=(const Fight&) = delete;
     combat::Tables t;
     uint8_t* tile[kTiles] = {};         // the field's 40 pictures (each kTileBytes)
+    combat::Fighter* fighters = nullptr; // b.f's storage: the party and the monsters loaded
     Pic4     icon[8 + combat::kMaxGroups];
     uint8_t* cursor = nullptr;          // COMSPR 0x19 (ready): the box under the one whose turn it is
     uint8_t* skull = nullptr;           // COMSPR 11 (attack)
@@ -304,6 +309,8 @@ struct Fight {
     uint32_t until = 0;
     Page     page[kPages];
     int      pages = 0, at = 0;
+    char     ptext[kPageText];          // the pages' lines, one after another
+    int      ptext_used = 0;
     // Move: where the fighter started (Esc undoes the move)
     int      move_x = 0, move_y = 0, move_left = 0;
     // Aim: the candidates by distance, the one shown
@@ -598,6 +605,10 @@ void end_fight_art()
         fg->tiles_in_world = false;
         unpark_world();
     }
+    // (the magic tables a fight loaded aren't needed for walking: they read
+    // again for the treasure's Detect or the camp - Tom's 4.0" log: 10 KB
+    // stayed after each fight)
+    end_magic();
     memlog::note("fight over");
     for (Pic4& p : fg->icon) free_pic(p);
     free(fg->cursor);
@@ -764,7 +775,8 @@ void status_line(pic::Canvas& c, const char* t)
 // ---- Messages: pages in the panel from row 10, a game delay each
 void add_page(int who, const char* a, const char* b2 = nullptr, int whom = -1, const char* c2 = nullptr)
 {
-    fg->page_dropped = fg->pages >= kPages;
+    // (dropped when the pages or their text pool are full: 5 longest lines' room)
+    fg->page_dropped = fg->pages >= kPages || fg->ptext_used > kPageText - 5 * 48;
     if (fg->page_dropped) return;
     Page& p = fg->page[fg->pages++];
     p.lines = 0;
@@ -772,7 +784,10 @@ void add_page(int who, const char* a, const char* b2 = nullptr, int whom = -1, c
     p.fx[0] = p.fx[1] = Fx{};
     auto line = [&](const char* s, uint8_t col) {
         if (p.lines < 5 && s) {
-            snprintf(p.line[p.lines], sizeof p.line[0], "%s", s);
+            char* at = fg->ptext + fg->ptext_used;
+            const int n = snprintf(at, 48, "%s", s);
+            p.line_at[p.lines] = static_cast<uint16_t>(fg->ptext_used);
+            fg->ptext_used += (n < 47 ? n : 47) + 1;
             p.colour[p.lines++] = col;
         }
     };
@@ -789,6 +804,8 @@ void add_page(int who, const char* a, const char* b2 = nullptr, int whom = -1, c
     line(b2, 10);
     line(c2, 10);
 }
+
+const char* page_line(const Page& p, int k) { return fg->ptext + p.line_at[k]; }
 
 // The sound the last page queued makes as it shows
 void page_sound(int id)
@@ -1002,12 +1019,12 @@ void show_page(pic::Canvas& c)
 {
     page_over(c);
     const Page& p = fg->page[fg->at++];
-    if (log_pages) Serial.printf("[page] %s %s %s\n", p.lines > 0 ? p.line[0] : "", p.lines > 1 ? p.line[1] : "",
-                                 p.lines > 2 ? p.line[2] : "");
+    if (log_pages) Serial.printf("[page] %s %s %s\n", p.lines > 0 ? page_line(p, 0) : "", p.lines > 1 ? page_line(p, 1) : "",
+                                 p.lines > 2 ? page_line(p, 2) : "");
     if (p.sound) sfx(p.sound);
     clear_panel(c, 10, 21);
     int row = 10;
-    for (int k = 0; k < p.lines; ++k) row = panel_text(c, p.line[k], row, p.colour[k]);
+    for (int k = 0; k < p.lines; ++k) row = panel_text(c, page_line(p, k), row, p.colour[k]);
     fg->fx_at = 0;
     page_fx(c);
 }
@@ -2514,6 +2531,7 @@ void fight_start(pic::Canvas& c)
         resume_after_note = true;
         return;
     }
+    make_room(16, "the fight");
     if (!fg) fg = make_fight();
     if (!fg || !ml || !pt->count) {
         error(c, ml && pt->count ? no_memory("the fight") : "Not enough memory.");
@@ -2535,7 +2553,11 @@ void fight_start(pic::Canvas& c)
         end_magic();
     }
     load_fight_words();
-    const bool room = alloc_tiles();
+    // The fighters' blocks: as many as this fight has
+    delete[] fg->fighters;
+    const int n_fighters = pt->count + ml->n;
+    fg->fighters = new (std::nothrow) combat::Fighter[n_fighters];
+    const bool room = fg->fighters && alloc_tiles();
     const bool tables = room && load_fight_tables();
     // Pool's two names gnomes dodge (its GAME.OVR words), as Pascal names
     for (int k = 0; tables && k < 2; ++k) {
@@ -2557,7 +2579,9 @@ void fight_start(pic::Canvas& c)
     }
     combat::Battle& b = fg->b;
     b.~Battle();
-    new (&b) combat::Battle();         // (in place: a temporary would take 10 KB of stack)
+    new (&b) combat::Battle();         // (in place: a temporary would take a lot of stack)
+    b.f = fg->fighters;
+    b.cap = n_fighters;
     b.tables = &fg->t;
     memcpy(b.level_exp, level_exp, sizeof level_exp);
     b.indoors = vm->get(0x4BE6) != 0;
@@ -2601,7 +2625,7 @@ void fight_start(pic::Canvas& c)
         }
         delete tmp;
     }
-    for (int k = 0; k < ml->n && b.n < combat::kMaxFighters; ++k) {
+    for (int k = 0; k < ml->n && b.n < b.cap; ++k) {
         combat::Monster& m = ml->m[k];
         combat::Fighter& f = b.f[b.n++];
         f.rec = m.rec;
@@ -2841,6 +2865,7 @@ void fight_treasure_only(pic::Canvas& c)
         handle(vm->resume());
         return;
     }
+    make_room(16, "the fight");
     if (!fg) fg = make_fight();
     if (!fg) {
         open_treasure(c);
@@ -2904,6 +2929,7 @@ void fight_tick(uint32_t now, pic::Canvas& c)
         }
         page_over(c);
         fg->pages = fg->at = 0;
+        fg->ptext_used = 0;
         clear_panel(c, 10, 21);
         if (fg->cur >= 0) draw_panel_for(c, fg->cur);
         switch (fg->after) {

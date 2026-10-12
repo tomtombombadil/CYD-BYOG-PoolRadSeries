@@ -413,7 +413,22 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   are packed: `wbuf` / `woff`); (4) before / after any change that adds a
   long-lived block, measure: the playsim's `SIZES=1` (the big blocks'
   sizes), sweep's `memloop` (one session, fight after fight: the heap in
-  use stays flat) and `HEAPLOG=1` on a monkey run.
+  use stays flat) and `HEAPLOG=1` on a monkey run; (5) **the heap by
+  call site**: link `tools/playsim/heapprof.cpp` into the playsim
+  (`-fno-omit-frame-pointer ... -Wl,--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc -ldl`)
+  and run with HEAPPROF=1 - each fight's start, every third round and the
+  highest point, biggest first (addr2line the sites); (6) **recovery**
+  (Tom, 2026-10-12: "proactive methods ... ways to recover"):
+  `play::make_room(kb, what)` before a big load drops what reads again -
+  the sound playing, then (only while exploring) the healing words and
+  the magic tables - each drop a memory-log line; `tidy_memory()` does it
+  every 5 s while exploring when the largest block is under 32 KB; a
+  fight ends with the magic tables dropped; a sound in a fight is left
+  out (logged) when the largest block is under 10 KB. The playsim's
+  LOWMEM=kb pretends memory is that low (every drop path runs). Tom's
+  4.0" log (v0.85.7): Play 78 KB, a fight's start left 24 KB, mid-fight
+  8 then 1 KB; v0.86.1 cut a fight ~12 KB (fighters as many as the fight
+  has, not 71; the pages' lines in one 2 KB pool).
 - Toolchain: pioarduino platform 55.03.312-1 (Arduino-ESP32 3.3.x), LovyanGFX
   1.2.x, huge_app.csv (no OTA - the web flasher is the update path).
 - Claude's local builds: PlatformIO in a venv; the proxy CA must be appended to
