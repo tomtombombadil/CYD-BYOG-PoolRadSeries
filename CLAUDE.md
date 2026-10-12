@@ -17,6 +17,18 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   `python -m pip install`, never bare `pip install`.
 - He does not want to repeat instructions. Anything decided goes in this file,
   `docs/SPEC.md`, or `THIRD_PARTY_NOTICES.md`.
+- **The task list** (Tom, 2026-10-12: "start keeping a list of tasks we
+  need to do - both you and me"): `docs/TODO.md` - Tom's and Claude's open
+  items. Add anything either of us must do (questions for Tom, checks
+  Claude wants, follow-ups) the moment it comes up; tick it off with the
+  version that did it; sync it to the Project (claude/TODO.md) with every
+  push, like SPEC. Never ask Tom the same thing twice: it's on the list.
+- The other games (survey 2026-10-12): the Project's
+  claude/other_games_facts.md - 16-colour: Pool, Curse, Secret,
+  Champions, Death Knights, Gateway; 256-colour VGA: Treasures, Darkness,
+  Dark Queen, Unlimited Adventures (the last two a newer TLB / GLB
+  engine). The VGA games don't fit the current boards' memory by
+  estimate - the board question is Tom's (TODO.md).
 - Tom plays with a Nintendo DS Lite stylus with firm presses - NOT a finger.
 - Refer to boards by size + display driver + touch type, never vendor codes.
 
