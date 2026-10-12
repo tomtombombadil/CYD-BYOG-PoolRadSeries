@@ -1,0 +1,7 @@
+{
+  "name": "qemu_hal",
+  "version": "0.1.0",
+  "description": "The emulator build's card and input (tools/qemu; never in a board build)",
+  "frameworks": "arduino",
+  "platforms": "espressif32"
+}

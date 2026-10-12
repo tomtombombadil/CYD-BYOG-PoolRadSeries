@@ -4,6 +4,7 @@
 
 #include <Arduino.h>
 #include <cstdlib>
+#include "hal/qemu.h"
 
 namespace ui {
 
@@ -92,7 +93,11 @@ bool poll_tap(Tap& out)
     next_poll = now + kPollMs;
 
     int32_t x, y;
+#if defined(CYD_QEMU)
+    const bool touched = qemu::touch(&x, &y);       // (the emulator build: scripted taps)
+#else
     const bool touched = g->getTouch(&x, &y);
+#endif
     if (touched) {
         empty = 0;
         if (std::abs(x - last_x) <= kAgreePx && std::abs(y - last_y) <= kAgreePx) {

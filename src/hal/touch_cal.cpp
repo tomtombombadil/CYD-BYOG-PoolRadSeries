@@ -81,7 +81,9 @@ void touch_cal_run(LGFX& gfx)
 
 void touch_cal_begin(LGFX& gfx)
 {
-#if BOARD_TOUCH_RESISTIVE
+#if defined(CYD_QEMU)
+    (void)gfx;   // (the emulator build: scripted taps, no calibration)
+#elif BOARD_TOUCH_RESISTIVE
     uint16_t params[8];
     if (!boot_button_held() && load(params)) {
         gfx.setTouchCalibrate(params);

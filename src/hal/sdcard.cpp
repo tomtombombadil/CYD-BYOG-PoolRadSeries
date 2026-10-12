@@ -3,7 +3,16 @@
 #include <Arduino.h>
 #include "boards/board_select.h"
 
-#if BOARD_SD_USABLE
+#if defined(CYD_QEMU)
+
+// The emulator build: SD/MMC (hal/qemu.h)
+#include "hal/qemu.h"
+
+bool sd_begin() { return qemu::sd_begin(); }
+fs::FS& sd_fs() { return qemu::sd_fs(); }
+void sd_lost() { qemu::sd_end(); }
+
+#elif BOARD_SD_USABLE
 
 #include <SD.h>
 #include <SPI.h>
