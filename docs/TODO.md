@@ -49,10 +49,15 @@ the Project as claude/TODO.md.
       into 16 colours (facts from the player's file), so Darkness plays on
       the classic boards as its own EGA mode shows it.
 - [ ] QEMU: the cache-error panic inside play::open (parked).
-- [ ] Secret of the Silver Blades (next game): the work list in the
-      Project's claude/secret_facts.md - its program's layout, the
-      439-byte character record and save format, the ECL scripts against
-      Curse's decoder, SOUND.DAX / SKY.DAX / SPRIT1.DAX.
+- [ ] **Secret of the Silver Blades** (started 2026-10-12; facts and the
+      work plan in the Project's claude/secret_facts.md). Done: program
+      layout (DS 0xDE20, 37 overlays), font in 8X8D5, 220 of Curse's words
+      found in its GAME.OVR, the screen seen in DOSBox. Next, a chunk a
+      commit: (1) its script opcodes 0x41+ from the program's interpreter;
+      (2) the profile entry (Play off) - Screen / Walk Test; (3) the
+      439-byte record and the saves; (4) party menu, camp, items, shops;
+      (5) combat, spells, monsters; (6) sound, sky, approaching monsters;
+      (7) behaviour tests.
 
 ## Done
 
