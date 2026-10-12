@@ -10,7 +10,9 @@
 ## Copied from Tom's own projects (MIT)
 - From CYD-Classic-Games: `src/games/common/inflate.*` (raw DEFLATE
   decoder) is the base of `src/engine/inflate.*`, changed to stream through
-  a 32 KB window.
+  a 32 KB window. `src/ui/log_pack.*` (Send Log's packer) is
+  `src/engine/log_pack.*` here, only its URL changed, and `web/l/index.html`
+  is adapted from its page of the same name.
 - From CYD-Classic-Games: `src/boards/*` (board files), `src/hal/storage.*`,
   `sdcard.*`, `touch_cal.*`, `panel_prefs.*`, `tools/version.py`,
   `tools/make_site.py`, `web/index.html`, `.github/workflows/build.yml` (adapted).
@@ -23,6 +25,11 @@
   personal, non-profit or commercial products UNDER YOUR RESPONSIBILITY.
   Redistributions of source code must retain the above copyright notice."
   Our changes are marked "CYD BYOG" (an MCU skip callback, C++ casts).
+
+- **QR Code generator library (C)**, Copyright (c) Project Nayuki, MIT
+  License, https://www.nayuki.io/page/qr-code-generator-library -
+  `src/engine/third_party/qrcodegen.*`, unchanged (from
+  github.com/nayuki/QR-Code-generator, commit 3c6d0b3). Send Logs' QR code.
 
 ## Loaded by the web pages (not copied into the repo)
 - **ESP Web Tools** (Apache License 2.0) - the installer page loads it from unpkg.

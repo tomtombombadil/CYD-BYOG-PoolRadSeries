@@ -3575,23 +3575,39 @@ bool load_magic()
     if (!spn) return false;
     memset(spn, 0, sizeof *spn);
     const profile::NameTable& nt = d->prof->magic.names;
+    if (!nt.at) return true;
+    // (v0.86.1: a failed read was kept - the spell lists stayed blank, only
+    // their level headings, until the Play Test closed - Tom, Curse's Fire
+    // Knives fight on the 3.2". Now it's dropped, logged and tried again)
+    bool named = false, opened = false;
     fs::File f;
-    if (!nt.at || !open_file(d->prof->program, f)) return true;
-    library::FileSource src(f);
-    exepack::Info info;
-    if (exepack::parse(src, info) == exepack::Status::Ok) {
-        const size_t n = static_cast<size_t>(nt.stride) * nt.count;
-        uint8_t* buf = static_cast<uint8_t*>(malloc(n));
-        if (buf && exepack::read(src, info, nt.at, buf, n) == exepack::Status::Ok)
-            for (int i = 0; i < nt.count && i < 101; ++i) {
-                const uint8_t* e = buf + static_cast<size_t>(i) * nt.stride;
-                const int len = e[0] < 23 ? e[0] : 23;
-                memcpy(spn->name[i], e + 1, len);
-                spn->name[i][len] = 0;
+    if (open_file(d->prof->program, f)) {
+        opened = true;
+        library::FileSource src(f);
+        exepack::Info info;
+        if (exepack::parse(src, info) == exepack::Status::Ok) {
+            const size_t n = static_cast<size_t>(nt.stride) * nt.count;
+            uint8_t* buf = static_cast<uint8_t*>(malloc(n));
+            if (buf && exepack::read(src, info, nt.at, buf, n) == exepack::Status::Ok) {
+                for (int i = 0; i < nt.count && i < 101; ++i) {
+                    const uint8_t* e = buf + static_cast<size_t>(i) * nt.stride;
+                    const int len = e[0] < 23 ? e[0] : 23;
+                    memcpy(spn->name[i], e + 1, len);
+                    spn->name[i][len] = 0;
+                }
+                named = true;
             }
-        free(buf);
+            free(buf);
+        }
+        f.close();
     }
-    f.close();
+    if (!named) {
+        delete spn;
+        spn = nullptr;
+        log_error(opened ? no_memory("the spell names")
+                         : "The spell names couldn't be read: the game's program file didn't open.");
+        return false;
+    }
     return true;
 }
 

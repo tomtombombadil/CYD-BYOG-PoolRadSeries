@@ -119,7 +119,9 @@ The games draw a 320x200 screen. The canvas is presented:
     taps do): the menu line's word, the list menu's line, the party menu's
     line, "press a key". Under the Companion map, stacked: **Game** (was
     "Menu": the engine's Menu, renamed so it isn't confused with the cursor
-    keys), **Look**, **Esc**. The map is tighter: no "Map" heading, the
+    keys), **Look** (v0.86.0, Tom: no **Esc** in the game - a stray tap
+    left it; Exit Game is in the Game menu only, as on 320x240; Game and
+    Look share the height). The map is tighter: no "Map" heading, the
     area / script / map and position lines small at the top (for
     troubleshooting), one legend line under it. The Walk Test has the
     movement pad and Area / Next Map / Esc, no cursor pad.
@@ -252,7 +254,8 @@ stay in the session's scratch space, never in the repo.
   `_CYD/ERRORS.TXT` (Errors: every error the Play Test showed, with the
   time since power-on) in a scrolling box: a tap in its top half goes up a
   page, bottom half down a page, dragging scrolls; long lines wrap; the
-  last 32 KB of a longer file. They come off the board on the card.
+  last 32 KB of a longer file. They come off the board on the card, or
+  by Send Logs (below).
 - WiFi and emailing the logs were in v0.21.0 and taken out in v0.22.0
   (Tom): WiFi took ~23 KB of RAM for good, and the games need every KB.
 
@@ -264,6 +267,37 @@ a minute while playing, and "LOW" when the largest free block drops under
 24 KB: "[h:mm:ss] what: free N KB, largest block N KB, lowest N KB"
 (largest block = the biggest single piece a load can get; lowest = the
 least free memory since the board started).
+
+**Send Logs** (Tom, 2026-10-12, v0.86.0: "a quick and easy way to send
+logs", as in CYD-Classic-Games): a key at the Logs screen's header right.
+It packs the newest lines of Errors, Memory, the session before's Memory,
+Restarts and Card Scan (shares 25 / 25 / 20 / 10 / 20 %, what one doesn't
+need goes to the next) under a header (board, firmware, memory now) into
+one QR code: `engine/log_pack.*` (from CYD-Classic-Games: raw DEFLATE,
+fixed Huffman, 4 KB window, then base43 - QR's alphanumeric set minus
+space and %), the code = byte segment
+`https://tomtombombadil.github.io/CYD-BYOG-PoolRadSeries/l/#` +
+alphanumeric segment, ECC L, Nayuki's qrcodegen
+(`engine/third_party/qrcodegen.*`, MIT). The code fills the screen's
+height at the left (modules 2 px at least, a 3-module white edge: version
+24 on 320x240 - about 5 KB of log text -, 34 on 480x320 - about 11 KB);
+the most text that fits is found by trying (all of it, else a search).
+Beside it: "Point your phone's camera at the QR code to get a link that
+sends the logs to the developer." (Tom's words from Classic Games), how
+much went in, Back. The page `web/l/index.html` unpacks it in the browser
+(DecompressionStream "deflate-raw") and offers Email the Logs (mailto
+cyd.classic.games.logs@gmail.com, subject from the Board / Firmware
+lines), Copy, Download logs.txt, with a "what were you doing" box. Its
+buffers (about 25 KB + DEFLATE's 16 KB) are on the heap only while it
+packs; the code itself (~1.6 / 2.9 KB) while it's shown. A Send Logs line
+goes in the memory log.
+
+**Logs in the game** (Tom, 2026-10-12, v0.86.0): the Game menu has a
+fifth tab, **Logs** (the tabs now in the small text), opening the Logs
+screen (Errors first) with Send Logs; its Back returns to the Game menu.
+While it's open the game screen waits on the card (`frame::park`, as for
+the journal book), so the logs and the QR code get its 64 KB. A log that
+can't get the memory says "Not enough memory to show this log."
 
 ## 6. Milestones
 

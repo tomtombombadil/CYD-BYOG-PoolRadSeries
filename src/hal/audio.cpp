@@ -4,6 +4,7 @@
 #include <driver/dac_continuous.h>
 
 #include "boards/board_select.h"
+#include "hal/memlog.h"
 
 namespace {
 
@@ -14,6 +15,9 @@ constexpr int kRamp = 256;              // samples to move between 0 V and the m
 TaskHandle_t task = nullptr;
 volatile bool stop_wanted = false;
 volatile bool ending = false;           // the task is on its way out
+volatile bool dac_failed = false;       // noted in the memory log by the next audio_play
+// (v0.86.1: Tom's 4.0" memory log showed sounds needing ~7 KB each time,
+// mid-fight with 8 KB free: they failed without a word)
 AudioFill fill_fn = nullptr;
 void* fill_ctx = nullptr;
 
@@ -40,6 +44,7 @@ void audio_task(void*)
     uint8_t* buf = static_cast<uint8_t*>(malloc(kBuf));
     if (!buf || dac_continuous_new_channels(&cfg, &h) != ESP_OK || dac_continuous_enable(h) != ESP_OK) {
         Serial.println("[audio] the DAC didn't start");
+        dac_failed = true;
         if (h) dac_continuous_del_channels(h);
         free(buf);
         task = nullptr;
@@ -88,6 +93,10 @@ void audio_play(AudioFill fill, void* ctx)
     (void)ctx;
     return;
 #endif
+    if (dac_failed) {
+        dac_failed = false;
+        memlog::note("NOT ENOUGH MEMORY for a sound (the DAC didn't start)");
+    }
     if (task && ending)
         for (int i = 0; i < 100 && task; ++i) delay(2);     // (ending: start again after it)
     if (task || !fill) return;
@@ -98,6 +107,11 @@ void audio_play(AudioFill fill, void* ctx)
     if (xTaskCreatePinnedToCore(audio_task, "audio", 3072, nullptr, 4, &task, 0) != pdPASS) {
         task = nullptr;
         Serial.println("[audio] no memory for the sound task");
+        static uint32_t last_note = 0;          // (once a minute at most: sounds come often)
+        if (!last_note || millis() - last_note > 60000) {
+            last_note = millis() | 1;
+            memlog::note("NOT ENOUGH MEMORY for a sound (its task)");
+        }
     }
 }
 

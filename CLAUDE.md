@@ -68,7 +68,12 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   scrolling log until Continue; Settings has a brightness slider, Swap
   Red/Blue with red / green / blue blocks, a Logs key (Card Scan, Restarts,
   Errors), pages with arrows bottom right when keys don't fit. Logs come
-  off the board on the card (`/GOLDBOX/_CYD/*.TXT`). NO WiFi / email (Tom,
+  off the board on the card (`/GOLDBOX/_CYD/*.TXT`) or by **Send Logs**
+  (Tom, 2026-10-12, v0.86.0, as CYD-Classic-Games: a QR code a phone opens
+  as `web/l/index.html`, which emails them to
+  cyd.classic.games.logs@gmail.com; `ui/sendlog.*`, `engine/log_pack.*`,
+  Nayuki qrcodegen in `engine/third_party/`; SPEC 5c). The Game menu has
+  a Logs tab (the canvas parks to the card while it's open). NO WiFi / email (Tom,
   v0.22.0: tried in v0.21.0, ~23 KB of RAM for good - every KB goes to the
   games). Don't link WiFi, BT or other networking libraries.
 - Engine Menu (Tom, 2026-10-09): the Play Test's Area key became a Menu
@@ -83,7 +88,9 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
 - Cursor keys (Tom, 2026-10-10; SPEC section 4): the games' menus are small
   for a stylus, so 480x320 has a cursor pad (up / left / Select / right /
   down) beside a 3 x 2 movement pad (Turn Around between the side-steps),
-  and Game / Look / Esc under the Companion map (no big "Map" heading; the
+  and Game / Look under the Companion map - NO Esc key in the Play Test on
+  either size (Tom, 2026-10-12: a stray tap left the game; Exit Game is
+  in the Game menu only) - (no big "Map" heading; the
   area / script / map lines small). Up / Down: a list's highlight (Left /
   Right on the menu line; Up / Down too when there's no list; the party
   list beside a menu line is a list - `play::party_nav`, Tom); Select = a

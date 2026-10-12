@@ -28,6 +28,7 @@
 #include "engine/png.h"
 #include "inflate_vectors.h"
 #include "engine/layout.h"
+#include "engine/log_pack.h"
 #include "engine/items.h"
 #include "engine/magic.h"
 #include "engine/party.h"
@@ -1145,6 +1146,56 @@ struct VecOut : inflate::Output {
     Bytes v; size_t limit = 1 << 20;
     bool put(uint8_t b) override { v.push_back(b); return v.size() < limit; }
 };
+
+// Send Logs: pack() = format byte + raw DEFLATE, as base43; our own
+// inflate and a base43 decoder (as web/l/index.html does it) get it back
+static void test_log_pack()
+{
+    std::string text = "CYD BYOG Gold Box logs\nBoard: 3.2\" ST7789 Resistive\nFirmware: 0.86.0\n";
+    std::mt19937 rng(7);
+    for (int i = 0; i < 400; ++i) {
+        char line[120];
+        snprintf(line, sizeof line, "[0:%02d:%02d] area %d script %d: free %u KB, largest block %u KB, lowest %u KB\n",
+                 i / 60 % 60, i % 60, int(rng() % 5), int(rng() % 40), unsigned(60 + rng() % 40),
+                 unsigned(20 + rng() % 30), unsigned(10 + rng() % 9));
+        text += line;
+    }
+    for (int k = 0; k < 300; ++k) text += char(32 + rng() % 95);     // something that doesn't repeat
+    const size_t n = text.size();
+    std::vector<uint8_t> work(n + 64);
+    std::vector<char> out((n + 64) * 3 / 2 + 4);
+    const size_t len = logpack::pack(text.c_str(), n, work.data(), work.size(), out.data(), out.size());
+    CHECK(len > 0 && len < n / 2);
+    CHECK(strlen(out.data()) == len);
+    // only the 43 characters
+    bool alnum = true;
+    for (size_t k = 0; k < len; ++k) alnum &= strchr(logpack::kAlphabet, out[k]) != nullptr;
+    CHECK(alnum);
+    // base43 back to bytes
+    auto val = [](char c) { return int(strchr(logpack::kAlphabet, c) - logpack::kAlphabet); };
+    Bytes bytes;
+    size_t k = 0;
+    for (; k + 3 <= len; k += 3) {
+        const int v = val(out[k]) + 43 * val(out[k + 1]) + 1849 * val(out[k + 2]);
+        CHECK(v <= 0xFFFF);
+        bytes.push_back(uint8_t(v >> 8));
+        bytes.push_back(uint8_t(v));
+    }
+    if (len - k == 2) bytes.push_back(uint8_t(val(out[k]) + 43 * val(out[k + 1])));
+    CHECK(len - k == 0 || len - k == 2);
+    CHECK(!bytes.empty() && bytes[0] == logpack::kFormat);
+    static uint8_t window[inflate::kWindow];
+    MemIn in(bytes.data() + 1, bytes.size() - 1);
+    VecOut got;
+    CHECK(inflate::raw(in, got, window));
+    CHECK(std::string(got.v.begin(), got.v.end()) == text);
+    // too little room: 0, never an overrun
+    std::vector<uint8_t> small(200);
+    CHECK(logpack::pack(text.c_str(), n, small.data(), small.size(), out.data(), out.size()) == 0);
+    CHECK(logpack::base43(work.data(), 100, out.data(), 150) == 0);
+    CHECK(logpack::base43(work.data(), 100, out.data(), 151) == 150);
+    CHECK(logpack::base43(work.data(), 3, out.data(), 6) == 5);
+}
 
 static void test_inflate()
 {
@@ -6331,6 +6382,7 @@ int main()
     test_pool_outdoors();
     test_class_rules();
     test_item_combat();
+    test_log_pack();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;

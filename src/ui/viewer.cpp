@@ -27,6 +27,7 @@
 #include "hal/sdcard.h"
 #include "look.h"
 #include "logui.h"
+#include "sendlog.h"
 #include "pdfview.h"
 #include "play.h"
 #include "walk.h"
@@ -1481,7 +1482,8 @@ void tap_look(const ui::Tap& t)
 // a cursor pad (Up, Left, Select, Right, Down - small words, so they don't
 // look like the movement arrows: the highlighted thing on the game screen,
 // menus and lists); beside them, under the Companion map, Game (the
-// engine's Menu) / Look / Esc stacked. 320x240: one row - the Walk Test's
+// engine's Menu) / Look / Esc stacked (the Play Test: Game / Look only -
+// Tom, 2026-10-12: no Esc in the game, Exit Game is in the Game menu). 320x240: one row - the Walk Test's
 // 8 keys; the Play Test's 9 slots showing either the movement keys (Side-
 // step Left, Turn Left, Forward, Turn Right, Side-step Right, Turn Around,
 // Menu Keys, Map, Game) or the cursor keys (Up, Down, Select - two slots
@@ -1572,7 +1574,12 @@ ui::Rect walk_key(int k)
     const int cx0 = gp * 2 + pad_w;
     auto cur = [&](int col, int r) { return ui::Rect{cx0 + col * (kw + gp), top + r * (ch + gp), kw, ch}; };
     const int sx = pic::kScreenW + gp, sw = ui::width() - sx - gp;
-    auto side = [&](int r) { return ui::Rect{sx, top + r * (ch + gp), sw, ch}; };
+    // The Play Test: Game and Look only, each half the height - no Esc (Tom,
+    // 2026-10-12: a stray tap left the game; Exit Game is in the Game menu).
+    // The Walk Test (a Dev Tool) keeps its Esc.
+    const bool play_side = screen == Screen::Play;
+    const int sh = play_side ? (h_all - gp) / 2 : ch;
+    auto side = [&](int r) { return ui::Rect{sx, top + r * (sh + gp), sw, sh}; };
     switch (k) {
     case kWTurnL:  return move(0, 0);
     case kWFwd:    return move(1, 0);
@@ -1587,7 +1594,7 @@ ui::Rect walk_key(int k)
     case kWDown:   return cur(1, 2);
     case kWArea:   return side(0);
     case kWNext:   return side(1);
-    case kWEsc:    return side(2);
+    case kWEsc:    return play_side ? ui::Rect{} : side(2);
     }
     return ui::Rect{};
 }
@@ -1958,7 +1965,7 @@ bool tap_keyboard(const ui::Tap& t)
 // Journal PDF (the book). More tabs as the engine grows. Back to Game at
 // the bottom.
 
-enum MenuTab { kTabJournal, kTabPdf, kTabSounds, kTabOptions, kTabs };
+enum MenuTab { kTabJournal, kTabPdf, kTabSounds, kTabOptions, kTabLogs, kTabs };
 int  menu_tab = kTabJournal;
 int  menu_page = 0;
 bool from_menu = false;       // the journal / PDF screens go back to the Menu
@@ -1968,7 +1975,7 @@ char menu_note[160] = {};
 // 320x240's Esc): out of the Play Test, back to the game's page
 ui::Rect menu_esc_rect()
 {
-    const int gp = ui::gap(), w = ui::large() ? 110 : 62;
+    const int gp = ui::gap(), w = ui::large() ? 100 : 62;
     return {ui::width() - gp - w, 2, w, ui::header_h() - 4};
 }
 
@@ -1982,12 +1989,13 @@ ui::Rect tab_rect(int i)
 
 void draw_tabs(int active)
 {
-    // (four tabs and Exit Game - 320x240's book tab is "PDF")
-    static const char* const kNames[kTabs] = {"Journal", "Journal PDF", "Sounds", "Options"};
-    static const char* const kShort[kTabs] = {"Journal", "PDF", "Sounds", "Options"};
+    // (five tabs and Exit Game, in the small text - 320x240's book tab is
+    // "PDF"; Logs since v0.86.0, Tom: to look at the logs in the game)
+    static const char* const kNames[kTabs] = {"Journal", "Journal PDF", "Sounds", "Options", "Logs"};
+    static const char* const kShort[kTabs] = {"Journal", "PDF", "Sounds", "Options", "Logs"};
     ui::gfx().fillRect(0, 0, ui::width(), ui::header_h(), style::kHeader);
     for (int i = 0; i < kTabs; ++i)
-        ui::key(tab_rect(i), ui::large() ? kNames[i] : kShort[i], i == active ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+        ui::key_small(tab_rect(i), ui::large() ? kNames[i] : kShort[i], i == active ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
     if (ui::large()) ui::key(menu_esc_rect(), "Exit Game");
     else ui::key_small(menu_esc_rect(), "Exit Game");
 }
@@ -2521,6 +2529,17 @@ void tap_game_menu(const ui::Tap& t)
                     sizeof menu_note);
             dirty = true;
         }
+        return;
+    }
+    if (tab == kTabLogs) {
+        // The Logs screen, its Back returns here. The game screen waits on
+        // the card meanwhile (as for the book): the logs and Send Logs' QR
+        // code get its 64 KB
+        char cpath[96];
+        canvas_park_path(cpath, sizeof cpath);
+        frame::park(cpath);                  // false: the canvas stays (less memory for the logs)
+        logui::open_from_game();
+        go(Screen::Logs);
         return;
     }
     if (tab == kTabJournal || tab == kTabSounds || tab == kTabOptions) {
@@ -3479,11 +3498,6 @@ void tap_play(const ui::Tap& t)
     for (int k = 0; k < kWKeys; ++k) {
         const ui::Rect r = walk_key(k);
         if (r.w == 0 || !r.contains(t.x, t.y)) continue;
-        if (k == kWEsc) {
-            if (play::back(frame::canvas())) present_play();
-            else leave_play();
-            return;
-        }
         if (k == kWArea) {          // the Game key: the engine's Menu
             kb_shown = false;
             open_menu();
@@ -3805,6 +3819,7 @@ void begin(const Env& env, Settings& settings)
         }
     }
     memlog::begin(env.version, BOARD_NAME);
+    sendlog::set_build(env.version, env.build);
     if (sd_begin() && library::load_library(game_dirs, library::kMaxGames, &n_games)) {
         scan_result = library::ScanResult::Ok;
         Serial.printf("[library] loaded: %d game folder(s)\n", n_games);
@@ -3836,7 +3851,14 @@ void tick()
         case Screen::GameSettings: tap_game_settings(t); break;
         case Screen::Dev:      tap_dev(t); break;
         case Screen::Logs:
-            if (!logui::tap(t)) go(logui::from_scan() ? Screen::Home : Screen::Settings);
+            if (!logui::tap(t)) {
+                if (logui::from_game()) {
+                    close_book();            // (the game screen back from the card)
+                    go(Screen::GameMenu);
+                } else {
+                    go(logui::from_scan() ? Screen::Home : Screen::Settings);
+                }
+            }
             break;
         }
         ui::tap_unflash();           // back as it was, unless the screen changed

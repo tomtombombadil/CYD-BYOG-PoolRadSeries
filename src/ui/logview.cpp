@@ -23,6 +23,7 @@ bool     at_end_ = false;
 int      drag_px = 0;          // drag movement not yet turned into lines
 ui::Rect area_{};
 bool     wrapped = false;      // lines_ made for area_'s width
+bool     no_memory = false;    // the last open_file couldn't get the memory
 
 int lh() { return ui::line_h(ui::Font::Small) + 2; }
 int rows() { return area_.h > 0 ? (area_.h - 4) / lh() : 1; }
@@ -115,6 +116,7 @@ bool open_file(const char* path, bool at_end)
 {
     close();
     at_end_ = at_end;
+    no_memory = false;
     fs::File f = sd_fs().open(path, "r");
     if (!f) return false;
     size_t n = f.size();
@@ -128,6 +130,7 @@ bool open_file(const char* path, bool at_end)
     text_ = static_cast<char*>(malloc(n + pre + 1));
     if (!text_) {
         f.close();
+        no_memory = true;
         return false;
     }
     f.seek(skip);
@@ -161,7 +164,7 @@ void draw()
     g.fillRect(area_.x, area_.y, area_.w, area_.h, style::kBackground);
     g.drawRect(area_.x, area_.y, area_.w, area_.h, style::kKeyEdge);
     if (!text_ || n_lines == 0) {
-        ui::text(area_.x + 6, area_.y + 4, text_ ? "(empty)" : "(not on the card)", style::kTextMuted, ui::Font::Small);
+        ui::text(area_.x + 6, area_.y + 4, text_ ? "(empty)" : no_memory ? "Not enough memory to show this log." : "(not on the card)", style::kTextMuted, ui::Font::Small);
         return;
     }
     if (top_ > max_top()) top_ = max_top();
