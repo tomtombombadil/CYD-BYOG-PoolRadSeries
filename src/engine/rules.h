@@ -23,6 +23,7 @@ struct ItemFacts {
     uint8_t friends_max = 0;            // Friends' Charisma at most this (Pool 25; 0: no limit)
     // Spiritual Hammer: its effect, the item's type and name words
     uint8_t hammer_fx = 0, hammer_type = 0, hammer_word = 0, hammer_word2 = 0;
+    uint8_t hammer_code = 0;            // its byte 0x3E (Curse 0xA0, Pool 0x89; 0: 0xA0)
     // Constitution: the healing effect at 20 and up (0: none), and each
     // class's last level with a hit die (the program's table) - a change of
     // Constitution in use rebuilds the hit points with them
@@ -99,15 +100,35 @@ bool add_item(party::Character& c, const uint8_t* item);
 
 // A character's items (Items: Drop, Trade, Halve, Join)
 void remove_item(party::Character& c, int i);
-// An item that works while readied (its effect byte 0x3E 0x80 and up),
-// readied (`on`) or put away: 0x80 - the effect in 0x3D is theirs while
-// readied (for good: no time); 0x84 - keyed to an alignment (0x3D & 0x0F):
-// the wrong one can't ready it (put away again) and takes 0x3D >> 4
-// damage. False when the item didn't stay readied. (The others - stats,
-// a ring of wizardry ... - are to come.)
-bool worn(party::Character& c, int i, bool on);
+// An item that works while readied (its effect byte 0x3E 0x80 and up;
+// items::passive says what each code does in this game), readied (`on`)
+// or put away: Effect - the effect in 0x3D is theirs while readied (for
+// good: no time); Alignment - keyed to an alignment (0x3D & 0x0F): the
+// wrong one can't ready it (put away again) and takes 0x3D >> 4 damage;
+// OgrePower (Pool) - Strength 18/00 through the strength effect while
+// readied ("is stronger" when it's more); NeedGiant (Pool, the boulder) -
+// put away again below Strength 19 ("Must have Giant Strength"). The stat
+// items work through stats(). False when the item didn't stay readied;
+// `says` what to tell the player.
+enum class WornSays : uint8_t { Nothing, Stronger, NeedGiant };
+bool worn(party::Character& c, int i, bool on, WornSays* says = nullptr);
+// Pool of Radiance keeps a character's Strength and Charisma as they stand
+// in the record, and in a strength effect's data the Strength it replaced
+// (poolrad_combat_facts.md 3.2: the one in force; the others, data + 0x80,
+// the Strength they'd give) and in Friends' the Charisma it replaced. The
+// engine keeps the character's own values and each effect's gift (as
+// Curse's): pool_stats_in turns a Pool character just read (record,
+// effects) into that, pool_stats_out the other way for writing - the
+// record's Strength 18/xx and Charisma (`pool`, a Pool record from
+// party::to_pool) and the effects (`fx`, n_affects x kAffectSize bytes).
+void pool_stats_in(party::Character& c, const ItemFacts& f);
+void pool_stats_out(const party::Character& c, const ItemFacts& f, uint8_t* pool, uint8_t* fx);
 // The game's berserk effect for worn() (0: none; set as the game opens)
 void set_berserk_fx(uint8_t type);
+// The game's rules for worn(): the data of an item's effect (Curse 0xFF:
+// Dispel Magic leaves it; Pool 12), the strength effect Ogre Power gives
+// (Pool 0x26; 0: none)
+void set_worn_facts(uint8_t effect_data, uint8_t strength_fx);
 // Spiritual Hammer (spell_facts.md 0x1C): while they have its effect, the
 // hammer is in their items, readied (a new one when it's gone and there's
 // room: +1, "Gains an item" - true); without it, the hammer goes
@@ -166,6 +187,19 @@ struct RotStep {
     bool dies = false;
 };
 RotStep rot_clock(party::Character& c, int minutes, uint8_t rot, uint8_t clock);
+// Pool's Manual of Bodily Health (poolrad_combat_facts.md 3.2, handlers
+// 0x04 / 0x07) as `minutes` pass: the reading running out "starts to train"
+// - 30 days of training (its effect); that running out "is hardier":
+// Constitution + 1; at 20 and up the healing every hour (f.con_regen_fx),
+// else the original's hit points (ovr13+0233: the hit points over the
+// rolled ones shared out by the levels - a fighter's (Con - 15) a level,
+// others' 2 over 15, 1 at 15 -, added to the most and the current; none at
+// 17 and up for those without fighter levels). Call before
+// magic::tick_affects, as poison_clock.
+struct ManualStep {
+    bool trains = false, hardier = false;
+};
+ManualStep manual_clock(party::Character& c, int minutes, uint8_t reading, uint8_t training, const ItemFacts& f);
 // Whether the cure does anything for them (else the temple asks "cast cure
 // anyway?"; wounds always do)
 bool needs_cure(const party::Character& c, Cure cure, const CureFacts& f);

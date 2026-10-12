@@ -808,9 +808,32 @@ Steps (each pushed when it works; Curse stays as it is):
    arrival entry (places, random encounters) even when the step was
    blocked. Menu "Cast View Encamp Search Look" (no Area); the status line
    gives the map's column; pictures put the 3D view's frame over the map;
-   fights outdoors as step 5. Open (a DOSBox test): whether mountains
-   stop the party in the original (its program's check doesn't, its
-   scripts' check reads an undefined value - taken as never).
+   fights outdoors as step 5. Mountains don't stop the party (checked in
+   DOSBox, 2026-10-12: the original walks into them, 12 hours a step).
+8. v0.89.0: **items and the stats they change** (poolrad_combat_facts.md
+   2.2 / 3.2): what a readied item's code (byte 0x3E 0x80 + n) does is
+   the game's own table (`items::passive`: Curse's codes 0-13, Pool's
+   0x80-0x82 / 0x85 / 0x86 / 0x88 / 0x8A / 0x8B the effect in 0x3D with
+   data 12, 0x83 Ogre Power - Strength 18/00 through effect 0x26, "is
+   stronger" -, 0x84 keyed to an alignment, 0x87 the boulder - "Must have
+   Giant Strength" below 19 -, 0x89 the Spiritual Hammer); before, Pool's
+   Ring of Fire Resistance doubled spell slots, its Cloak of Elvenkind
+   counted as a Girdle of the Dwarves and the Cloak of Displacement did
+   nothing. **Item spells**: Pool keeps those over 0x38 0x17 higher (the
+   Potion of Healing's 0x55 is spell 0x3E) and takes it off as it uses
+   them (ovr20+1B28) - Pool's potions, wands, the javelin and the necklace
+   cast their spells (before: nothing). Enlarge / Strength / the giant
+   strength potion give their Strength through effects 0x0C / 0x26 (the
+   most of them counts; Enlarge and Strength put the effect on either
+   way, "is stronger" when it's more; Strength: d4 a magic-user, d6 a
+   cleric or thief, d8 a fighter, over 18 a fighter's 18/xx + 10 a point);
+   the potion lasts (d4 x 10) + 40 minutes; Keoghtum's Ointment (0x3A)
+   takes the poison and Slow Poison away from the poisoned (nothing said)
+   and heals d4 + 8 otherwise; the **Manual of Bodily Health** (0x43): "is
+   Reading" for a day, "starts to train" for 30 days, "is hardier" -
+   Constitution + 1 (20: an hour's healing, else the original's hit
+   points); the Spiritual Hammer's item (code 0x89, "Spiritual Hammer"
+   +1). Pool's files keep Strength and Charisma as the original's (SPEC 12).
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -1195,5 +1218,18 @@ the game's Settings (As Original: all of them).
 - **Thief skills**: the original adds to every skill a value it never sets
   (whatever was on the stack - the GOG sample party's thief has +7 on all
   eight); the engine adds nothing (the table's skills).
+- **Pool's Strength effects** (v0.89.0): the original keeps the Strength in
+  the record and, in the effect in force, the Strength it replaced (the
+  others wait with their own); the engine keeps the character's own
+  Strength and what each effect gives, and the Strength in use is the
+  most of them - so when the effect in force ends while a weaker one is
+  still running, the original drops to the weaker one (even below their
+  own) and the engine keeps their own. Its files are written the
+  original's way (the same for Friends' Charisma). Putting Gauntlets of
+  Ogre Power away takes off a strength effect giving 18/00 (the
+  gauntlets' own first); the original takes the first strength effect
+  when the Strength in use is 18/00 (it can be a spell's). Dispel Magic
+  on these effects reads the engine's data (the original's holds the old
+  Strength).
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.

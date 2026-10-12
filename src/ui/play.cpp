@@ -951,12 +951,30 @@ void present_now()
     if (g_present_now) g_present_now();
 }
 
-bool write_record(const char* dir, const char* fn, const party::Character& ch)
+// A character's three files: the record, the items, the effects (Pool's
+// Strength and Charisma as its files keep them: rules::pool_stats_out)
+bool write_character_files(const char* dir, const char* rec_fn, const char* items_fn, const char* fx_fn,
+                           const party::Character& ch)
 {
     uint8_t buf[party::kPoolRecordSize];
+    uint8_t fx[party::kMaxAffects * party::kAffectSize];
     size_t n = 0;
     const uint8_t* p = party::record_bytes(ch, rec_format(), buf, &n);
-    return write_file(dir, fn, p, n);
+    const uint8_t* f = ch.affects[0];
+    if (pool_files()) {
+        rules::pool_stats_out(ch, d->facts, buf, fx);
+        f = fx;
+    }
+    bool ok = write_file(dir, rec_fn, p, n);
+    ok = ok && write_file(dir, items_fn, ch.items[0], static_cast<size_t>(ch.n_items) * party::kItemSize);
+    ok = ok && write_file(dir, fx_fn, f, static_cast<size_t>(ch.n_affects) * party::kAffectSize);
+    return ok;
+}
+
+// After reading a character's files: Pool's Strength and Charisma as the engine keeps them
+void character_read(party::Character& ch)
+{
+    if (pool_files()) rules::pool_stats_in(ch, d->facts);
 }
 
 // Loads saved game `slot`: the game's memory, position and script, and
@@ -1022,6 +1040,7 @@ bool load_game(char slot)
             party::read_affects(src, ch);
             f.close();
         }
+        character_read(ch);
         ++pt->count;
     }
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
@@ -1440,6 +1459,7 @@ void open_items(pic::Canvas& c)
 
 // Ready / unready an item, with the games' checks
 void item_class_values(party::Character& ch, int i);
+void ow(uint32_t at, char* out, size_t cap);
 
 void ready_item(int i, pic::Canvas& c)
 {
@@ -1487,7 +1507,24 @@ void ready_item(int i, pic::Canvas& c)
             return;
         }
         r[0x34] = 1;
-        rules::worn(ch, i, true);                   // (an item keyed to another alignment hurts and won't stay)
+        rules::WornSays says = rules::WornSays::Nothing;
+        rules::worn(ch, i, true, &says);            // (an item keyed to another alignment hurts and won't stay)
+        rules::recalc(ch, *names, d->facts);
+        item_class_values(ch, i);
+        draw_items(c);
+        // Pool: "NAME is stronger" (Ogre Power), "Must have Giant Strength" (the boulder)
+        const uint32_t w = says == rules::WornSays::Stronger    ? d->prof->items.stronger
+                           : says == rules::WornSays::NeedGiant ? d->prof->items.need_giant
+                                                                : 0;
+        if (w) {
+            char word[32], nm[20];
+            ow(w, word, sizeof word);
+            ch.name(nm, sizeof nm);
+            if (says == rules::WornSays::Stronger) snprintf(t, sizeof t, "%s %s", nm, word);
+            else snprintf(t, sizeof t, "%s", word);
+            note(c, t);
+        }
+        return;
     }
     rules::recalc(ch, *names, d->facts);
     item_class_values(ch, i);
@@ -1765,12 +1802,11 @@ bool save_game(char slot)
     for (int i = 0; ok && i < pt->count; ++i) {
         const party::Character& ch = pt->m[i];
         char fn[48];
+        char fi[48], ff[48];
         snprintf(fn, sizeof fn, "%s.SAV", h.names[i]);
-        ok = write_record(d->save_dir, fn, ch);
-        snprintf(fn, sizeof fn, "%s%s", h.names[i], ext_items());
-        ok = ok && write_file(d->save_dir, fn, ch.items[0], static_cast<size_t>(ch.n_items) * party::kItemSize);
-        snprintf(fn, sizeof fn, "%s%s", h.names[i], ext_fx());
-        ok = ok && write_file(d->save_dir, fn, ch.affects[0], static_cast<size_t>(ch.n_affects) * party::kAffectSize);
+        snprintf(fi, sizeof fi, "%s%s", h.names[i], ext_items());
+        snprintf(ff, sizeof ff, "%s%s", h.names[i], ext_fx());
+        ok = write_character_files(d->save_dir, fn, fi, ff, ch);
     }
     // The journal entries met (the engine's own, beside the save)
     if (ok && d->cache_dir[0]) {
@@ -1955,14 +1991,11 @@ void guy_base(const party::Character& ch, char* out, size_t cap)
 
 bool write_character(const char* base, const party::Character& ch)
 {
-    char fn[24];
+    char fn[24], fi[24], ff[24];
     snprintf(fn, sizeof fn, "%s%s", base, ext_guy());
-    bool ok = write_record(d->save_dir, fn, ch);
-    snprintf(fn, sizeof fn, "%s%s", base, ext_items());
-    ok = ok && write_file(d->save_dir, fn, ch.items[0], static_cast<size_t>(ch.n_items) * party::kItemSize);
-    snprintf(fn, sizeof fn, "%s%s", base, ext_fx());
-    ok = ok && write_file(d->save_dir, fn, ch.affects[0], static_cast<size_t>(ch.n_affects) * party::kAffectSize);
-    return ok;
+    snprintf(fi, sizeof fi, "%s%s", base, ext_items());
+    snprintf(ff, sizeof ff, "%s%s", base, ext_fx());
+    return write_character_files(d->save_dir, fn, fi, ff, ch);
 }
 
 void delete_character(const char* base)
@@ -2259,6 +2292,7 @@ void add_character(int i, pic::Canvas& c)
         party::read_affects(src, ch);
         f.close();
     }
+    character_read(ch);
     add_checked(i, ch, c);
 }
 
@@ -3632,12 +3666,12 @@ bool load_magic();
 // thief-skill items
 void item_class_values(party::Character& ch, int i)
 {
-    if (i < 0 || i >= ch.n_items || ch.items[i][0x3E] < 0x80) return;
-    const int code = ch.items[i][0x3E] & 0x7F;
-    if (code != 1 && code != 2 && code != 11) return;
+    if (i < 0 || i >= ch.n_items) return;
+    const items::Passive kind = items::passive(ch.items[i]);
+    if (kind != items::Passive::Wizardry && kind != items::Passive::Dexterity && kind != items::Passive::Thievery) return;
     const bool had = mrules != nullptr;
     if (!load_magic()) return;
-    if (code == 1) classes::wizardry(ch, mrules->tables, ch.items[i][0x34] != 0);
+    if (kind == items::Passive::Wizardry) classes::wizardry(ch, mrules->tables, ch.items[i][0x34] != 0);
     else if (ch.level(classes::Thief) > 0) classes::thief_skills(ch, mrules->tables);
     if (!had) end_magic();              // (loaded for this: the tables don't stay)
 }
@@ -4918,7 +4952,7 @@ void use_item(int i, pic::Canvas& c)
         return;
     }
     if (!scroll) {
-        use_spell(i, magic::item_spell(it), false, c);
+        use_spell(i, magic::item_spell(it, pool_files()), false, c);
         return;
     }
     uint8_t ids[3];
@@ -5815,6 +5849,8 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         d->facts.con_regen_fx = pi.stat_fx[5];
         d->facts.berserk_fx = pi.berserk;
         rules::set_berserk_fx(pi.berserk);
+        items::set_passive(pi.passive);
+        rules::set_worn_facts(pi.effect_data, pi.stat_fx[1]);
         {
             const auto& pc = d->prof->create;
             if (pc.ds_image && pc.tables.max_hit_dice &&
@@ -5823,6 +5859,7 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
                 memset(d->facts.max_hd, 0, sizeof d->facts.max_hd);
         }
         d->facts.hammer_fx = pi.hammer[0];
+        d->facts.hammer_code = pi.hammer_code;
         d->facts.hammer_type = pi.hammer[1];
         d->facts.hammer_word = pi.hammer[2];
         d->facts.hammer_word2 = pi.hammer[3];
@@ -9445,6 +9482,20 @@ void effects_clock(int m, pic::Canvas& c)
                     char nm[20], w[24], t[48];
                     pt->m[i].name(nm, sizeof nm);
                     ow(d->prof->fight.words[k < rs.rots ? profile::kRotsW : profile::kRotsAway], w, sizeof w);
+                    snprintf(t, sizeof t, "%s %s", nm, w);
+                    cv = &c;
+                    note(c, t);
+                }
+            }
+            {
+                // Pool's Manual of Bodily Health: "NAME starts to train", "NAME is hardier"
+                const auto& pi = d->prof->items;
+                const rules::ManualStep ms = rules::manual_clock(pt->m[i], m, pi.manual_fx[0], pi.manual_fx[1], d->facts);
+                for (int k = 0; k < 2; ++k) {
+                    if (!(k == 0 ? ms.trains : ms.hardier) || !pi.manual_words[k]) continue;
+                    char nm[20], w[24], t[48];
+                    pt->m[i].name(nm, sizeof nm);
+                    ow(pi.manual_words[k], w, sizeof w);
                     snprintf(t, sizeof t, "%s %s", nm, w);
                     cv = &c;
                     note(c, t);

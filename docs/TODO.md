@@ -22,16 +22,12 @@ the Project as claude/TODO.md.
       Games address) - keep it, or name another (one line in
       web/l/index.html).
 - [ ] Keep play testing Pool of Radiance and Curse; report anything that
-      plays differently from the originals.
+      plays differently from the originals. New in v0.89.0 for Pool:
+      potions / wands / the Manual, Gauntlets of Ogre Power, the cloaks
+      and rings - worth a look.
 
 ## Claude
 
-- [ ] Pool items: the 0x80+ item effect codes (generic 0x80-0x82, 0x85,
-      0x86, 0x88, 0x8A, 0x8B; Gauntlets of Ogre Power 0x83 = Str 18/00;
-      0x87 the Giant Strength check) from GBC's Pool item list as facts;
-      the Manual of Bodily Health (0x43); Pool's Strength values for
-      Enlarge / Strength; the 0x3A poisoned case; the magic-user's spell
-      pick at training made compulsory.
 - [ ] Memory, next cuts (measure each with heapprof): the party's unused
       member slots (1.7 KB each), Data's words read on demand, the spell
       names' 4 KB read buffer in pieces.
@@ -49,6 +45,12 @@ the Project as claude/TODO.md.
 
 ## Done
 
+- v0.89.0: Pool's items - its own item codes (generic effects, Ogre Power,
+  the boulder, keyed swords), its item spells (0x17 higher: potions,
+  wands, the javelin, the necklace now work), Enlarge / Strength / giant
+  strength, Keoghtum's Ointment, the Manual of Bodily Health, the
+  Spiritual Hammer's item, Strength / Charisma in Pool's files. The
+  magic-user's spell pick at training was already compulsory (no Exit).
 - 2026-10-12: README.md's board table has the S3 and C5 rows (after Tom's
   README edits); its Logs paragraph mentions Send Logs.
 - v0.88.0: ESP32-S3 4.0" capacitive and ESP32-C5 2.8" resistive builds on

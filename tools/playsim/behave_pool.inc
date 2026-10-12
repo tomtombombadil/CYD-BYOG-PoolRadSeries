@@ -1188,6 +1188,248 @@ void fights()
 }
 #endif
 
+// ---- Items and the stats they change (v0.89.0; poolrad_combat_facts.md 2.2,
+// 3.2: the handlers 0x80-0x8B, 0x0C / 0x26, 0x3A, 0x3B, 0x43, 0x04, 0x07 -
+// the expectations are the handlers' rules written out, not the engine's)
+#ifdef BEHAVE_SPELLS
+int fx_at(const party::Character& c, int id, int from = 0)
+{
+    for (int j = from; j < c.n_affects; ++j)
+        if (c.affects[j][0] == id) return j;
+    return -1;
+}
+int fx_count(const party::Character& c, int id)
+{
+    int n = 0;
+    for (int j = 0; j < c.n_affects; ++j) n += c.affects[j][0] == id;
+    return n;
+}
+uint8_t* give_item(party::Character& c, int code, int v3d)
+{
+    uint8_t* it = c.items[c.n_items++];
+    memset(it, 0, items::kRecordSize);
+    it[0x2E] = 0x42;                    // (a ring's type; only the codes matter here)
+    it[0x3D] = static_cast<uint8_t>(v3d);
+    it[0x3E] = static_cast<uint8_t>(code);
+    return it;
+}
+void reset_member(party::Character& c, int str, int str00 = 0)
+{
+    c.n_items = 0;
+    c.n_affects = 0;
+    for (int i = 0; i < 6; ++i) set_stat(c, i, 12);
+    set_stat(c, 0, str);
+    c.rec[0x1C] = c.rec[0x1D] = static_cast<uint8_t>(str00);
+}
+void items_and_stats()
+{
+    using namespace play;
+    char w[120];
+    if (!load_magic() || !names) {
+        expect(P, "items: the magic tables", false);
+        return;
+    }
+    party::Character& c = sp_member(1);
+    sp_member(1, 2, 3);                                  // a fighter
+    auto recalc = [&]() { rules::recalc(c, *names, d->facts); };
+    auto ready = [&](int i, bool on, rules::WornSays* says = nullptr) {
+        c.items[i][0x34] = on ? 1 : 0;
+        const bool kept = rules::worn(c, i, on, says);
+        recalc();
+        return kept;
+    };
+
+    // The generic codes: the effect in 0x3D while readied (time 0, data 12), gone when put away
+    for (int code : {0x80, 0x81, 0x82, 0x85, 0x86, 0x88, 0x8A, 0x8B}) {
+        reset_member(c, 12);
+        give_item(c, code, 0x3D);
+        ready(0, true);
+        const int k = fx_at(c, 0x3D);
+        const bool on = k >= 0 && c.affects[k][3] == 12 && !c.affects[k][1] && !c.affects[k][2];
+        ready(0, false);
+        snprintf(w, sizeof w, "item code 0x%02X: its effect while readied (data 12), gone when put away", code);
+        expect(P, w, on && fx_at(c, 0x3D) < 0);
+    }
+    // ... and nothing else: 0x81 no ring of wizardry, 0x86 / 0x88 no stats
+    {
+        reset_member(c, 12);
+        give_item(c, 0x86, 0x48);
+        give_item(c, 0x88, 0x03);
+        ready(0, true);
+        ready(1, true);
+        expect(P, "item codes 0x86 / 0x88 leave the stats alone (Curse's girdle / ioun stone codes)",
+               c.stat(3) == 12 && c.stat(4) == 12 && c.stat(5) == 12);
+    }
+    // 0x83 Ogre Power: Strength 18/00 through effect 0x26 for good, "is stronger"; put away, back
+    {
+        reset_member(c, 12);
+        give_item(c, 0x83, 0x26);
+        rules::WornSays says;
+        ready(0, true, &says);
+        const int k = fx_at(c, 0x26);
+        const bool on = c.stat(0) == 18 && c.str00() == 100 && k >= 0 && c.affects[k][3] == 101 &&
+                        says == rules::WornSays::Stronger;
+        ready(0, false);
+        expect(P, "Gauntlets of Ogre Power (0x83): 18/00 while readied (effect 0x26), \"is stronger\"; 12 again put away",
+               on && c.stat(0) == 12 && fx_at(c, 0x26) < 0, "Str %d/%d", c.stat(0), c.str00());
+        reset_member(c, 18, 100);
+        give_item(c, 0x83, 0x26);
+        ready(0, true, &says);
+        expect(P, "Ogre Power on 18/00 already: nothing said", says == rules::WornSays::Nothing && c.stat(0) == 18);
+    }
+    // 0x87 the boulder: put away again below 19, "Must have Giant Strength"
+    {
+        reset_member(c, 18, 100);
+        give_item(c, 0x87, 0);
+        rules::WornSays says;
+        const bool kept = ready(0, true, &says);
+        expect(P, "the boulder (0x87) at 18/00: not readied, \"Must have Giant Strength\"",
+               !kept && !c.items[0][0x34] && says == rules::WornSays::NeedGiant);
+        reset_member(c, 19);
+        give_item(c, 0x87, 0);
+        expect(P, "the boulder at 19: readied", ready(0, true) && c.items[0][0x34]);
+    }
+    // 0x84 keyed to an alignment: the wrong one takes 0x3D >> 4 and it won't stay
+    {
+        reset_member(c, 12);
+        c.rec[0x1A4] = 50;
+        const int al = c.alignment();
+        give_item(c, 0x84, 0x50 | ((al + 1) % 9));
+        const bool kept = ready(0, true);
+        expect(P, "a keyed sword (0x84) for another alignment: put away, 5 damage", !kept && c.hp() == 45,
+               "HP %d", c.hp());
+    }
+    // Item spells: Pool keeps those over 0x38 0x17 higher (ovr20+1B28)
+    {
+        uint8_t it[items::kRecordSize] = {};
+        it[0x3D] = 0x55;
+        const bool a = magic::item_spell(it, true) == 0x3E;
+        it[0x3D] = 0x33;
+        const bool b = magic::item_spell(it, true) == 0x33;
+        it[0x3D] = 0x5A;
+        expect(P, "item spells: 0x55 -> 0x3E (Potion of Healing), 0x33 stays, 0x5A -> 0x43 (the Manual)",
+               a && b && magic::item_spell(it, true) == 0x43);
+    }
+    // The files: Strength in the record, the replaced Strength in the effect in force
+    {
+        reset_member(c, 18, 100);                       // (as read: the record's 18/00 both ways)
+        c.n_affects = 2;
+        memset(c.affects, 0, sizeof c.affects);
+        c.affects[0][0] = 0x26;
+        c.affects[0][3] = 112;                          // in force, replaced 12
+        c.affects[1][0] = 0x0C;
+        c.affects[1][3] = 0x80 | 52;                    // waiting: would give 18/51
+        rules::pool_stats_in(c, d->facts);
+        recalc();
+        const bool in = c.rec[0x10] == 12 && c.stat(0) == 18 && c.str00() == 100 && c.affects[0][3] == 101 &&
+                        c.affects[1][3] == 52;
+        uint8_t pool[party::kPoolRecordSize] = {}, fx[party::kMaxAffects * party::kAffectSize] = {};
+        party::to_pool(c, pool);
+        rules::pool_stats_out(c, d->facts, pool, fx);
+        const bool out = pool[0x10] == 18 && pool[0x16] == 100 && fx[3] == 112 && fx[party::kAffectSize + 3] == (0x80 | 52);
+        expect(P, "Pool's files: Strength in the record, the one replaced in the effect in force (read and written)",
+               in && out, "in %d out %d", in, out);
+        // the gift no more than their own: none in force, all waiting
+        reset_member(c, 17);
+        c.n_affects = 1;
+        c.affects[0][0] = 0x0C;
+        c.affects[0][3] = 0x80 | 1;                     // would give 18 (the 17 stays the record's)
+        rules::pool_stats_in(c, d->facts);
+        recalc();
+        party::to_pool(c, pool);
+        rules::pool_stats_out(c, d->facts, pool, fx);
+        expect(P, "... an Enlarge giving 18 over 17 in force when read", c.stat(0) == 18 && pool[0x10] == 18);
+        // Friends: the record's Charisma, the effect the one it replaced
+        reset_member(c, 12);
+        set_stat(c, 5, 15);
+        c.n_affects = 1;
+        memset(c.affects, 0, sizeof c.affects);
+        c.affects[0][0] = 0x0E;
+        c.affects[0][3] = 11;
+        rules::pool_stats_in(c, d->facts);
+        recalc();
+        party::to_pool(c, pool);
+        rules::pool_stats_out(c, d->facts, pool, fx);
+        expect(P, "Pool's files: Friends - the record's Charisma, the replaced one in the effect",
+               c.rec[0x1A] == 11 && c.stat(5) == 15 && pool[0x15] == 15 && fx[3] == 11, "own %d now %d", c.rec[0x1A],
+               c.stat(5));
+    }
+    // Spells: Enlarge / Strength / the potion give their Strength (most of them counts)
+    {
+        sp_member(0, 5, 4);                             // a 4th level magic-user casts Enlarge on 1
+        reset_member(c, 12);
+        sp_dice(1);
+        sp_ccast(0, 1, 0x0C);
+        recalc();
+        expect(P, "Enlarge at 4th level: 18/76 (ovr23+12A5)", c.stat(0) == 18 && c.str00() == 76, "%d/%d", c.stat(0),
+               c.str00());
+        reset_member(c, 18, 90);
+        sp_ccast(0, 1, 0x0C);
+        recalc();
+        expect(P, "Enlarge 18/76 on 18/90: nothing said, the effect waits, Strength stays",
+               sp_csaid(1, spells::Said::Unaffected) == 0 && fx_at(c, 0x0C) >= 0 && c.str00() == 90);
+        // Strength: a fighter d8 (dice high: 8); over 18: 18, + 10 a point
+        sp_member(0, 0, 5);                             // a cleric casts
+        reset_member(c, 16);
+        sp_ccast(0, 1, 0x23);
+        recalc();
+        expect(P, "Strength on a 16 fighter, d8 = 8: 18/60", c.stat(0) == 18 && c.str00() == 60, "%d/%d", c.stat(0),
+               c.str00());
+        // the giant strength potion (0x3B): 21
+        reset_member(c, 12);
+        sp_ccast(1, 1, 0x3B);
+        recalc();
+        int mins = 0;
+        const int k = fx_at(c, 0x26);
+        if (k >= 0) mins = c.affects[k][1] | c.affects[k][2] << 8;
+        expect(P, "the giant strength potion: 21 for (d4 x 10) + 40 minutes", c.stat(0) == 21 && mins == 80, "%d, %d min",
+               c.stat(0), mins);
+    }
+    // 0x3A (Keoghtum's Ointment): poisoned - the poison and Slow Poison go; else d4 + 8
+    {
+        reset_member(c, 12);
+        c.rec[0x1A4] = 10;
+        c.n_affects = 2;
+        memset(c.affects, 0, sizeof c.affects);
+        c.affects[0][0] = 0x37;
+        c.affects[1][0] = 0x16;
+        c.affects[1][1] = 30;
+        sp_ccast(1, 1, 0x3A);
+        expect(P, "0x3A on the poisoned: the poison and Slow Poison gone, no healing",
+               fx_at(c, 0x37) < 0 && fx_at(c, 0x16) < 0 && c.hp() == 10, "HP %d", c.hp());
+        sp_ccast(1, 1, 0x3A);
+        expect(P, "0x3A otherwise: d4 + 8 (dice high: 12)", c.hp() == 22, "HP %d", c.hp());
+    }
+    // The Manual of Bodily Health: reading a day, training 30 days, then Con + 1
+    {
+        reset_member(c, 12);
+        set_stat(c, 4, 16);
+        sp_member(1, 2, 5, 60);                         // (resets levels: a 5th level fighter, 60 HP)
+        c.rec[0x12C] = 40;                              // rolled hit points: 20 over them
+        c.rec[0x78] = c.rec[0x1A4] = 60;
+        sp_ccast(1, 1, 0x43);
+        const int k = fx_at(c, 0x04);
+        const int t = k >= 0 ? (c.affects[k][1] | c.affects[k][2] << 8) : 0;
+        expect(P, "the Manual: \"is Reading\", effect 0x04 for 1440 minutes", t == 1440, "%d", t);
+        const auto& pi = d->prof->items;
+        rules::ManualStep ms = rules::manual_clock(c, 1440, pi.manual_fx[0], pi.manual_fx[1], d->facts);
+        magic::tick_affects(c, 1440);
+        const int k7 = fx_at(c, 0x07);
+        const int t7 = k7 >= 0 ? (c.affects[k7][1] | c.affects[k7][2] << 8) : 0;
+        expect(P, "... a day on: \"starts to train\", 30 days of 0x07", ms.trains && t7 == 43200 && fx_at(c, 0x04) < 0,
+               "%d", t7);
+        ms = rules::manual_clock(c, 43200, pi.manual_fx[0], pi.manual_fx[1], d->facts);
+        magic::tick_affects(c, 43200);
+        recalc();
+        // Con 17 now; HP over the rolled 20 shared by the fighter's 5 x (17 - 15) = 10: + 2
+        expect(P, "... 30 days on: \"is hardier\", Con 17, hit points + (20 / 10)",
+               ms.hardier && c.stat(4) == 17 && c.hp_max() == 62 && c.hp() == 62, "Con %d HP %d/%d", c.stat(4),
+               c.hp(), c.hp_max());
+    }
+    create::g_die_hook = nullptr;
+}
+#endif
+
 } // namespace bpool
 
 static void behave_pool()
@@ -1218,5 +1460,6 @@ static void behave_pool()
 #ifdef BEHAVE_SPELLS
     if (want("spells")) spells_in_fights();
     if (want("fights")) fights();
+    if (want("items")) items_and_stats();
 #endif
 }

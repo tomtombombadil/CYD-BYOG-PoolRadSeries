@@ -187,10 +187,12 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
     case Does::GiantStrength: {
         // Strength 21 when that's more than their own ("is stronger"); the
         // effect goes on either way (then with their own Strength - the
-        // original leaves its data unset there)
-        const int own = me.rec[0x10], own00 = me.rec[0x1D];
+        // original leaves its data unset there). Pool (ovr23+2EE5): 21
+        // against the Strength in use, the effect's gift 21 either way
+        const bool pool = t.lay.pool;
+        const int own = me.rec[pool ? 0x11 : 0x10], own00 = me.rec[pool ? 0x1C : 0x1D];
         const bool more = 21 > own;
-        const int data = more ? 121 : own == 18 ? own00 + 1 : own + 100;
+        const int data = more || pool ? 121 : own == 18 ? own00 + 1 : own + 100;
         if (f.giant) give(me, f.giant, minutes, data, true);
         if (more && cs.word) o.say(caster, Said::Word);
         break;
@@ -299,6 +301,12 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
         for (int k = 0; k < n; ++k) {
             party::Character& c = p.m[who[k]];
             const bool more = data && (str > c.stat(0) || (str == 18 && c.stat(0) == 18 && str00 > c.str00()));
+            if (t.lay.pool) {
+                // Pool (ovr23+12A5): the effect either way, "is stronger" when it's more
+                give(c, e.affect, minutes, data, true);
+                if (more && cs.word) o.say(who[k], Said::Word);
+                continue;
+            }
             if (!more) {
                 o.say(who[k], Said::Unaffected);
                 continue;
@@ -348,6 +356,21 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
         for (int k = 0; k < n; ++k)
             if (create::restore(p.m[who[k]], t) && cs.word) o.say(who[k], Said::Word);
         break;
+    case Does::HealOrUnpoison:
+        for (int k = 0; k < n; ++k) {
+            party::Character& c = p.m[who[k]];
+            if (cure(c, cures.poisoned)) {          // (ovr23+2E4D: the poison and Slow Poison go, nothing said)
+                cure(c, cures.slow_poison);
+                continue;
+            }
+            if (rules::heal(c, d.roll(cs.sides, cs.n) + cs.plus))
+                o.say(who[k], cs.word ? Said::Word : c.hp() >= c.hp_max() ? Said::Fully : Said::Partly);
+        }
+        break;
+    case Does::Reading:
+        give(me, e.affect, minutes, 0xFF, true);
+        if (cs.word) o.say(caster, Said::Word);
+        break;
     case Does::Friends:
         give(me, e.affect, minutes, d.roll(4, 2), false);
         if (cs.word) o.say(caster, Said::Word);
@@ -355,6 +378,29 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
     case Does::Strength:
         for (int k = 0; k < n; ++k) {
             party::Character& c = p.m[who[k]];
+            if (t.lay.pool) {
+                // Pool (ovr23+1F41): d4 a magic-user, d6 a cleric or thief, d8 a
+                // fighter (the last that fits); over 18: 18, a fighter's 18/xx +
+                // 10 a point (at most 18/00); the effect gives that whether or not
+                // it's more ("is stronger" when it is)
+                int die = 0;
+                if (c.level(classes::MagicUser) > 0) die = 4;
+                if (c.level(classes::Cleric) > 0 || c.level(classes::Thief) > 0) die = 6;
+                if (c.level(classes::Fighter) > 0) die = 8;
+                if (!die) continue;
+                int str = c.stat(0) + d.roll(die, 1), str00 = 0;
+                if (str > 18) {
+                    if (c.level(classes::Fighter) > 0) {
+                        str00 = c.str00() + (str - 18) * 10;
+                        if (str00 > 100) str00 = 100;
+                    }
+                    str = 18;
+                }
+                const bool more = str > c.stat(0) || (str == 18 && c.stat(0) == 18 && str00 > c.str00());
+                give(c, e.affect, minutes, str == 18 ? str00 + 1 : str + 100, true);
+                if (more && cs.word) o.say(who[k], Said::Word);
+                continue;
+            }
             auto had = [&](int cl) { return c.level(cl) > 0 || c.old_level(cl) > 0; };
             int die = 0;
             if (had(classes::MagicUser)) die = 4;

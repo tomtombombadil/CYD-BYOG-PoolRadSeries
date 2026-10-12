@@ -1,5 +1,7 @@
 #include "classes.h"
 
+#include "items.h"
+
 #include <cstring>
 #include <initializer_list>
 
@@ -134,9 +136,9 @@ void spell_slots(party::Character& c, const Tables& t)
             break;
         }
     }
-    // Rings of Wizardry readied (item effect 0x81): magic-user levels 1-3 doubled, each
+    // Rings of Wizardry readied (Curse's item effect 0x81): magic-user levels 1-3 doubled, each
     for (int i = 0; i < c.n_items; ++i)
-        if (c.items[i][0x34] && c.items[i][0x3E] == 0x81)
+        if (c.items[i][0x34] && items::passive(c.items[i]) == items::Passive::Wizardry)
             for (int k = 0; k < 3; ++k) cast(c, 2, k) = static_cast<uint8_t>(cast(c, 2, k) * 2);
 }
 
@@ -175,9 +177,9 @@ void saving_throws(party::Character& c, const Tables& t)
     // the poison number, as the games do); everyone with Con 19+
     const int con = c.rec[kConFull];
     int add = 0;
-    bool girdle = false;                        // (a readied Girdle of the Dwarves, item effect 0x86: as a dwarf)
+    bool girdle = false;                        // (a readied Girdle of the Dwarves, Curse's item effect 0x86: as a dwarf)
     for (int i = 0; i < c.n_items; ++i)
-        if (c.items[i][0x34] && c.items[i][0x3E] == 0x86) girdle = true;
+        if (c.items[i][0x34] && items::passive(c.items[i]) == items::Passive::Dwarves) girdle = true;
     if (c.race() == 1 || c.race() == 5 || girdle) {
         if (con >= 4 && con <= 6) add = 1;
         else if (con >= 7 && con <= 10) add = 2;
@@ -202,8 +204,12 @@ void thief_skills(party::Character& c, const Tables& t)
     // The first readied Gauntlets of Dexterity (item effect 0x82) or Gloves
     // of Thievery (0x8B; curse_finish_facts.md 5.4)
     int code = 0;
-    for (int i = 0; i < c.n_items && !code; ++i)
-        if (c.items[i][0x34] && (c.items[i][0x3E] == 0x82 || c.items[i][0x3E] == 0x8B)) code = c.items[i][0x3E] & 0x7F;
+    for (int i = 0; i < c.n_items && !code; ++i) {
+        if (!c.items[i][0x34]) continue;
+        const items::Passive k = items::passive(c.items[i]);
+        if (k == items::Passive::Dexterity) code = 2;
+        else if (k == items::Passive::Thievery) code = 11;
+    }
     // The gauntlets: below 4th level the skills of 4th, else +10 on each
     // (added last, even to a skill the race made 0); the gloves: skill 1 at
     // 5th level when below it (no bonus), else +5, skill 2 the same at 7th;

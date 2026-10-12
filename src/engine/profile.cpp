@@ -288,7 +288,8 @@ constexpr combat::FightSpell kPoolFight[] = {
     {0x38, SpellDoes::Restore, 0, 0, 0, 0, 0, 0x29C4F},
     // The items' own spells
     {0x39, SpellDoes::Haste, 5, 4, 0, 0, 0, 0x29E10, 0x2BF62},
-    {0x3A, SpellDoes::Heal, 1, 4, 8, 0, 0, 0x29E5B},        // Pool's: d4 + 8, "is Healed"
+    {0x3A, SpellDoes::Heal, 1, 4, 8, 0, 1, 0x29E5B},        // Pool's: the poison taken away (kind 1), else d4 + 8, "is Healed"
+    {0x3B, SpellDoes::GiantStrength, 1, 4, 4, 4, 0, 0x29EF1},   // giant strength: "is stronger", (d4 + 4) x 10
     {0x3C, SpellDoes::Bolt, 1, 6, 20, 0, 4, 0, 0, 0, 3},
     {0x3D, SpellDoes::Theirs, 5, 4, 0, 0, 0, 0x29FA4},
     {0x3E, SpellDoes::Heal, 2, 4, 2, 0, 0, 0x29E5B},
@@ -332,9 +333,11 @@ constexpr spells::CampSpell kPoolCamp[] = {
     {0x36, Does::Affect, 0, 0, 0, 0x2812E},
     {0x38, Does::Restore, 0, 0, 0, 0x29C4F},
     {0x39, Does::Haste, 0, 0, 0, 0x29E10},
-    {0x3A, Does::Heal, 1, 4, 8, 0x29E5B},          // Pool's: d4 + 8
+    {0x3A, Does::HealOrUnpoison, 1, 4, 8, 0x29E5B}, // Pool's: the poison taken away, else d4 + 8 "is Healed"
+    {0x3B, Does::GiantStrength, 0, 0, 0, 0x29EF1},  // giant strength: "is stronger" (ovr23+2EE5)
     {0x3E, Does::Heal, 2, 4, 2, 0x29E5B},
     {0x3F, Does::Affect, 0, 0, 0, 0x28A21},
+    {0x43, Does::Reading, 0, 0, 0, 0x2A0AF},        // the Manual of Bodily Health: "is Reading" (ovr23+30A5)
 };
 
 // Random treasure (Curse): item types, name words, weights, values per
@@ -657,7 +660,13 @@ const Profile kProfiles[] = {
      .items = {{0xD87C, 21, 255}, "ITEMS", 73, 28, 9, 86, 0, 0xB1, {41, 42, 43, 44, 37, 36},
                0x6CF8, 0x6D00, 0x2D657, 0x2D65D, 0x2D663, 0x716F, 0x7148, 0x7023, 0x22763,
                0x21EEC, 0x21EF2, 0x21EBD, kP | 0x0FCD, kP | 0x0FD4, 0x224CE, 0x224DA, 0x224E6, 0x224F5, kP | 0x23B3,
-               0x21070, 0x21077, {}, {}, {}, 0},
+               0x21070, 0x21077,
+               // (poolrad_combat_facts.md 2.2 / 3.2: Strength in the record with
+               // 0x26 Ogre Power / Strength / giant strength and 0x0C Enlarge, both
+               // giving the most of them; Friends 0x0E; Constitution 20's 0x3E. The
+               // Spiritual Hammer: effect 0x17, type 20, words "Hammer" / "Spiritual")
+               {0, 0x26, 0x0C, 0x0E, 0, 0x3E}, {0x17, 20, 20, 243}, {}, 0,
+               items::kPoolPassive, 12, 0x89, 0x11BA6, 0x11D77, {0x04, 0x07}, {0xEDCA, 0xEE83}},
      // Character rules (create_facts.md): the tables' shapes are Pool's
      // (classes::Layout pool); flags / masks at DS 0x5D6 / 0x5DE
      .create = {0xC7C0,
@@ -695,8 +704,9 @@ const Profile kProfiles[] = {
                 0x29227, 0, 0, 0x29536, 0, 0x187D0, 0x27026, 0x23995, 0, 0x18300, 0x18318, 0x18334, 0x18357, 0x182EA,
                 0x18376, 0x17B8A, 0x247A7, 0x239A0, 0x2702D, 0x27BEA, 0x27BF4, 0x27C0D, 0x22AB1, 0x22ABE, 0, 0x2398B, 0},
                kPoolCamp, sizeof kPoolCamp / sizeof kPoolCamp[0],
-               {2, 0x2A, {0x22, 0x2B, 0x32}, {{0, 0}, {0x2C, 0x1F}, {0x39, 0}}, 0x0C, 0x17, 0, 0, 0, 0,
-                {{0x28, 1, 6, 0, 10}, {0x39, 5, 4, 0, 1}, {0x3D, 5, 4, 0, 1}, {0x3F, 1, 10, 10, 10}}},
+               {2, 0x2A, {0x22, 0x2B, 0x32}, {{0, 0}, {0x2C, 0x1F}, {0x39, 0}}, 0x0C, 0x17, 0, 0, 0, 0x26,
+                {{0x28, 1, 6, 0, 10}, {0x39, 5, 4, 0, 1}, {0x3D, 5, 4, 0, 1}, {0x3F, 1, 10, 10, 10},
+                 {0x3B, 1, 4, 4, 10}, {0x43, 0, 0, 1440, 1}}},
                nullptr, 0, nullptr, 0, 0xD2, 0x10},
      .alter = {0xCD1A, 0xCD44, 0xCD6D,
                {0x19441, 0x18F71, 0x18F9F, 0x19261, 0x1926F, 0x19286, 0x1928E, 0x19296, 0x1929C, 0x190B6, 0x190C3,

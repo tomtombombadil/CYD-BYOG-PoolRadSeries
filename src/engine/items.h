@@ -108,4 +108,33 @@ struct Ground {
 // index in the list, or -1.
 int readied_in(const uint8_t (*recs)[kRecordSize], int n, const Names& names, uint8_t slot);
 
+// ---- What a readied item does (item byte 0x3E = 0x80 + code, 0x3D its
+// value). The codes mean different things in each game
+// (curse_finish_facts.md 5, poolrad_combat_facts.md 2.2): the game's table
+// says which, by code.
+enum class Passive : uint8_t {
+    None,           // nothing (also: byte 0x3E under 0x80)
+    Effect,         // while readied: effect 0x3D (Curse 0x80; Pool 0x80-0x82, 0x85, 0x86, 0x88, 0x8A, 0x8B)
+    Wizardry,       // magic-user spell levels 1-3 doubled (Curse 0x81)
+    Dexterity,      // Gauntlets of Dexterity (Curse 0x82)
+    Alignment,      // keyed to alignment 0x3D & 0x0F, else (0x3D >> 4) damage (Curse / Pool 0x84)
+    GiantGirdle,    // Strength by 0x3D: 18/00, 19 ... 24 (Curse 0x85)
+    Dwarves,        // Constitution +1, Charisma -1, the dwarves' poison saves (Curse 0x86)
+    Ioun,           // +1 to stat 0x3D under 18 (Curse 0x88)
+    HammerOff,      // put away: the Spiritual Hammer's effect ends (Curse / Pool 0x89)
+    Fumbling,       // Dexterity -2 (Curse 0x8A)
+    Thievery,       // Gloves of Thievery (Curse 0x8B)
+    Stupidity,      // Intelligence 7 (Curse 0x8C)
+    Powerless,      // Strength and Intelligence 3 (Curse 0x8D)
+    OgrePower,      // Strength 18/00 through the strength effect, "is stronger" (Pool 0x83)
+    NeedGiant,      // only with giant strength (19+): "Must have Giant Strength" (Pool 0x87, the boulder)
+};
+constexpr int kPassiveCodes = 16;
+// The game's table (16 codes; nullptr: Curse's) - set as a game opens
+void set_passive(const Passive* codes);
+Passive passive(const uint8_t* item);
+// Curse's and Pool of Radiance's tables
+extern const Passive kCursePassive[kPassiveCodes];
+extern const Passive kPoolPassive[kPassiveCodes];
+
 } // namespace items

@@ -2376,7 +2376,7 @@ void ai_step(pic::Canvas& c)
             if (k >= 0) {
                 fg->use_item = k;
                 fg->use_scroll = false;
-                fg->spell = magic::item_spell(f.items[k]);
+                fg->spell = magic::item_spell(f.items[k], pool_files());
                 fg->sp_n = nt;
                 for (int j = 0; j < nt; ++j) fg->sp_t[j] = tg[j];
                 draw_fight(c);

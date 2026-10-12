@@ -1,5 +1,7 @@
 #include "combat.h"
 
+#include "magic.h"
+
 #include <cstring>
 
 namespace combat {
@@ -2804,6 +2806,17 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
     case SpellDoes::Heal:
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
+            if (fs.kind == 1 && b.fx && b.fx->mon.poisoned) {
+                // Pool's 0x3A (ovr23+2E4D): the poisoned lose the poison and Slow
+                // Poison instead, nothing said
+                const int at = find_aff(f, b.fx->mon.poisoned);
+                if (at >= 0) {
+                    drop_aff(f, at);
+                    const int sp = b.fx->sp.slow_poison ? find_aff(f, b.fx->sp.slow_poison) : -1;
+                    if (sp >= 0) drop_aff(f, sp);
+                    continue;
+                }
+            }
             const int st2 = f.status();
             if (st2 != party::Okay && st2 != party::Animated && st2 != party::Unconscious && st2 != party::Dying) continue;
             const int amount = (fs.n && fs.sides ? d.roll(fs.sides, fs.n) : 0) + fs.plus;
@@ -3107,10 +3120,12 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         break;
     case SpellDoes::GiantStrength: {
         // Strength 21 when more than their own ("is stronger"); the effect
-        // either way (then their own Strength: the original leaves it unset)
-        const int own = me.rec[0x10], own00 = me.rec[0x1D];
+        // either way (then their own Strength: the original leaves it unset).
+        // Pool: against the Strength in use, the gift 21 either way
+        const bool pool = st.lay.pool;
+        const int own = me.rec[pool ? 0x11 : 0x10], own00 = me.rec[pool ? 0x1C : 0x1D];
         const bool more = 21 > own;
-        const int data = more ? 121 : own == 18 ? own00 + 1 : own + 100;
+        const int data = more || pool ? 121 : own == 18 ? own00 + 1 : own + 100;
         if (b.fx && b.fx->sp.giant) give_aff(me, b.fx->sp.giant, minutes, data, true);
         if (more) say(caster, Did::Word, 0);
         break;
@@ -3147,7 +3162,14 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             Fighter& f = b.f[who[k]];
             if (!f.up()) continue;
             const int now = f.rec[0x11], now00 = f.rec[0x1C];
-            if (!data || !(str > now || (str == 18 && now == 18 && str00 > now00))) {
+            const bool more = data && (str > now || (str == 18 && now == 18 && str00 > now00));
+            if (st.lay.pool) {
+                // Pool (ovr23+12A5): the effect either way, "is stronger" when it's more
+                if (b.fx && b.fx->sp.enlarge) give_aff(f, b.fx->sp.enlarge, minutes, data, true);
+                if (more) say(who[k], Did::Word, 0);
+                continue;
+            }
+            if (!more) {
                 say(who[k], Did::Unaffected, 0);
                 continue;
             }
@@ -3178,7 +3200,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             // Else the first cursed item comes off (still cursed); a monster's are its group's: not
             for (int j = 0; f.member >= 0 && f.items && j < f.n_items; ++j)
                 if (f.items[j][0x36]) {
-                    if (f.items[j][0x34] && f.items[j][0x3E] == 0x80 && f.items[j][0x3D]) {
+                    if (f.items[j][0x34] && items::passive(f.items[j]) == items::Passive::Effect && f.items[j][0x3D]) {
                         const int fx = find_aff(f, f.items[j][0x3D]);     // its effect comes off too
                         if (fx >= 0) drop_aff(f, fx);
                     }
@@ -3588,7 +3610,9 @@ int choose_item(Battle& b, const Tables& t, const classes::Tables& st, int i, co
             const uint8_t* it = f.items[k];
             const int slot = names.type(it[0x2E]).slot;
             if (!it[0x34] || (slot >= 11 && slot <= 13) || it[0x3E] >= 0x80 || !it[0x3D]) continue;
-            const int sp = it[0x3D] & 0x7F;
+            // (Pool: the spell is the id less 0x17 over 0x38, and judged so - ovr10+04CB;
+            // Curse: the id itself, judged by the row 0x17 back)
+            const int sp = magic::item_spell(it, st.lay.pool);
             const FightSpell* fs = fight_spell(table, n_table, sp);
             if (!fs || fs->does == SpellDoes::NotYet) continue;
             const int judge = sp > 0x38 ? sp - 0x17 : sp;

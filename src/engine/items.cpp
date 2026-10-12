@@ -96,4 +96,36 @@ int readied_in(const uint8_t (*recs)[kRecordSize], int n, const Names& names, ui
     return -1;
 }
 
+// ---- Passive codes --------------------------------------------------------
+
+const Passive kCursePassive[kPassiveCodes] = {
+    Passive::Effect, Passive::Wizardry, Passive::Dexterity, Passive::None,
+    Passive::Alignment, Passive::GiantGirdle, Passive::Dwarves, Passive::None,
+    Passive::Ioun, Passive::HammerOff, Passive::Fumbling, Passive::Thievery,
+    Passive::Stupidity, Passive::Powerless, Passive::None, Passive::None,
+};
+// (Pool's handlers 0x80-0x8B, poolrad_combat_facts.md 2.2; its items:
+// 0x81 Ring of Fire Resistance, 0x83 Gauntlets of Ogre Power, 0x84 the
+// keyed long swords, 0x85 Cloak of Displacement, 0x86 Cloak of Elvenkind,
+// 0x87 the boulder, 0x88 the sword +3 against undead - GBC's item list)
+const Passive kPoolPassive[kPassiveCodes] = {
+    Passive::Effect, Passive::Effect, Passive::Effect, Passive::OgrePower,
+    Passive::Alignment, Passive::Effect, Passive::Effect, Passive::NeedGiant,
+    Passive::Effect, Passive::HammerOff, Passive::Effect, Passive::Effect,
+    Passive::None, Passive::None, Passive::None, Passive::None,
+};
+
+namespace {
+const Passive* g_passive = kCursePassive;
+}
+
+void set_passive(const Passive* codes) { g_passive = codes ? codes : kCursePassive; }
+
+Passive passive(const uint8_t* item)
+{
+    if (item[0x3E] < 0x80) return Passive::None;
+    const int code = item[0x3E] & 0x7F;
+    return code < kPassiveCodes ? g_passive[code] : Passive::None;
+}
+
 } // namespace items

@@ -288,6 +288,17 @@ struct Profile {
         uint8_t     hammer[4];                     // Spiritual Hammer: its effect, the item type, its two words
         uint8_t     detect[4];                     // Detect Magic: its effect, the spells that give it (treasure's Detect)
         uint8_t     berserk = 0;                   // the berserk effect an item gives (the Berserker sword)
+        // What readied items' codes (byte 0x3E 0x80 + code) do in this game
+        // (nullptr: Curse's), their effects' data (Curse 0xFF, Pool 12), the
+        // Spiritual Hammer's code (Curse 0xA0, Pool 0x89)
+        const items::Passive* passive = nullptr;
+        uint8_t     effect_data = 0xFF, hammer_code = 0xA0;
+        // GAME.OVR: "is stronger" (Pool's Ogre Power), "Must have Giant Strength" (Pool's boulder)
+        uint32_t    stronger = 0, need_giant = 0;
+        // Pool's Manual of Bodily Health (rules::manual_clock): reading's and
+        // training's effects (0x04, 0x07), "starts to train", "is hardier"
+        uint8_t     manual_fx[2] = {};
+        uint32_t    manual_words[2] = {};
     } items;
 
     // Character rules (making and training characters): the rule tables in

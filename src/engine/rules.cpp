@@ -217,42 +217,45 @@ void stats(party::Character& c, const ItemFacts& f)
         int str00 = r[0x1D];
         for (int i = 0; i < c.n_items; ++i) {
             const uint8_t* it = c.items[i];
-            if (it[0x3E] <= 0x80 || !it[0x34]) continue;
-            const int code = it[0x3E] & 0x7F, a2 = it[0x3D];
+            if (!it[0x34]) continue;
+            const items::Passive kind = items::passive(it);
+            const int a2 = it[0x3D];
+            using items::Passive;
+            const bool ioun = kind == Passive::Ioun && own < 18 && a2 == s;
             switch (s) {
             case 0: {
                 int b = 0, b00 = 0;
-                if (code == 5 && a2 <= 6) {
+                if (kind == Passive::GiantGirdle && a2 <= 6) {
                     b = a2 == 0 ? 18 : 18 + a2;
                     b00 = a2 == 0 ? 100 : 0;
-                } else if (code == 8 && own < 18 && a2 == 0) {
+                } else if (ioun) {
                     b = own + 1;
-                } else if (code == 13) {
+                } else if (kind == Passive::Powerless) {
                     set = 3;
                 }
                 max_strength(&v, &str00, b, b00);
                 break;
             }
             case 1:
-                if (code == 8 && own < 18 && a2 == 1) ++v;
-                else if (code == 12) set = 7;
-                else if (code == 13) set = 3;
+                if (ioun) ++v;
+                else if (kind == Passive::Stupidity) set = 7;
+                else if (kind == Passive::Powerless) set = 3;
                 break;
             case 2:
-                if (code == 8 && own < 18 && a2 == 2) ++v;
+                if (ioun) ++v;
                 break;
             case 3:
-                if (code == 2) v += own <= 6 ? 4 : own <= 13 ? 2 : 1;
-                else if (code == 8 && own < 18 && a2 == 3) ++v;
-                else if (code == 10) v -= 2;
+                if (kind == Passive::Dexterity) v += own <= 6 ? 4 : own <= 13 ? 2 : 1;
+                else if (ioun) ++v;
+                else if (kind == Passive::Fumbling) v -= 2;
                 break;
             case 4:
-                if (code == 6) ++v;
-                else if (code == 8 && own < 18 && a2 == 4) ++v;
+                if (kind == Passive::Dwarves) ++v;
+                else if (ioun) ++v;
                 break;
             case 5:
-                if (code == 6) --v;
-                else if (code == 8 && own < 18 && a2 == 5) ++v;
+                if (kind == Passive::Dwarves) --v;
+                else if (ioun) ++v;
                 break;
             }
         }
@@ -277,14 +280,15 @@ void stats(party::Character& c, const ItemFacts& f)
                 }
                 max_strength(&v, &str00, b, b00);
             }
+            // (all of them: Pool can have several - Ogre Power and the spells)
             const uint8_t more[2] = {f.giant_fx, f.enlarge_fx};
-            for (uint8_t t : more) {
-                k = find_effect(c, t);
-                if (k < 0) continue;
-                int b, b00;
-                decode_strength(c.affects[k][3], &b, &b00);
-                max_strength(&v, &str00, b, b00);
-            }
+            for (uint8_t t : more)
+                for (int j = 0; t && j < c.n_affects; ++j) {
+                    if (c.affects[j][0] != t) continue;
+                    int b, b00;
+                    decode_strength(c.affects[j][3], &b, &b00);
+                    max_strength(&v, &str00, b, b00);
+                }
             if (set != 0xFF) {
                 r[0x11] = static_cast<uint8_t>(set);
                 r[0x1C] = 0;
@@ -691,7 +695,7 @@ bool keep_hammer(party::Character& c, const items::Names& names, const ItemFacts
     it[0x32] = 1;                           // +1
     it[0x34] = 1;                           // readied
     it[0x3D] = f.hammer_fx;
-    it[0x3E] = 0xA0;
+    it[0x3E] = f.hammer_code ? f.hammer_code : 0xA0;     // (Curse 0xA0, Pool 0x89)
     return true;
 }
 
@@ -717,13 +721,85 @@ void berserk(party::Character& c, int type, bool on)
 
 void set_berserk_fx(uint8_t type) { g_berserk_fx = type; }
 
-bool worn(party::Character& c, int i, bool on)
+namespace {
+uint8_t g_item_data = 0xFF, g_item_strength = 0;
+}
+
+void set_worn_facts(uint8_t effect_data, uint8_t strength_fx)
 {
+    g_item_data = effect_data;
+    g_item_strength = strength_fx;
+}
+
+namespace {
+int encode_strength(int str, int str00) { return str == 18 ? str00 + 1 : str + 100; }
+bool strength_fx(const ItemFacts& f, uint8_t id) { return id && (id == f.giant_fx || id == f.enlarge_fx); }
+} // namespace
+
+void pool_stats_in(party::Character& c, const ItemFacts& f)
+{
+    uint8_t* r = c.rec;
+    const int cur = r[0x11], cur00 = r[0x1C];      // (party::from_pool: own = in use = the record's)
+    int holder = -1;
+    for (int j = 0; j < c.n_affects; ++j) {
+        uint8_t* a = c.affects[j];
+        if (!strength_fx(f, a[0])) continue;
+        if (a[3] < 0x80 && holder < 0) holder = j;
+        else a[3] &= 0x7F;
+    }
+    if (holder >= 0) {
+        int str, str00;
+        decode_strength(c.affects[holder][3], &str, &str00);
+        r[0x10] = static_cast<uint8_t>(str);
+        r[0x1D] = static_cast<uint8_t>(str00);
+        c.affects[holder][3] = static_cast<uint8_t>(encode_strength(cur, cur00));
+    }
+    if (f.friends_fx)
+        for (int j = 0; j < c.n_affects; ++j) {
+            uint8_t* a = c.affects[j];
+            if (a[0] != f.friends_fx) continue;
+            const int old = a[3], now = r[0x1B];
+            r[0x1A] = static_cast<uint8_t>(old);
+            a[3] = static_cast<uint8_t>(now > old ? now - old : 0);
+            break;
+        }
+}
+
+void pool_stats_out(const party::Character& c, const ItemFacts& f, uint8_t* pool, uint8_t* fx)
+{
+    const uint8_t* r = c.rec;
+    memcpy(fx, c.affects, static_cast<size_t>(c.n_affects) * party::kAffectSize);
+    pool[0x10] = r[0x11];                           // Strength and 18/xx in use
+    pool[0x16] = r[0x1C];
+    pool[0x15] = r[0x1B];                           // Charisma in use
+    const int own = r[0x10], own00 = r[0x1D], now = r[0x11], now00 = r[0x1C];
+    const bool more = now > own || (now == 18 && own == 18 && now00 > own00);
+    bool held = false;
+    for (int j = 0; j < c.n_affects; ++j) {
+        uint8_t* a = fx + j * party::kAffectSize;
+        if (strength_fx(f, a[0])) {
+            int str, str00;
+            decode_strength(a[3], &str, &str00);
+            if (more && !held && str == now && str00 == now00) {
+                held = true;                        // the one in force: what it replaced
+                a[3] = static_cast<uint8_t>(encode_strength(own, own00));
+            } else {
+                a[3] = static_cast<uint8_t>((a[3] & 0x7F) | 0x80);
+            }
+        } else if (f.friends_fx && a[0] == f.friends_fx) {
+            a[3] = r[0x1A];                         // the Charisma it replaced
+        }
+    }
+}
+
+bool worn(party::Character& c, int i, bool on, WornSays* says)
+{
+    if (says) *says = WornSays::Nothing;
     if (i < 0 || i >= c.n_items) return true;
     uint8_t* it = c.items[i];
-    if (it[0x3E] < 0x80) return true;
-    const int code = it[0x3E] & 0x7F, v = it[0x3D];
-    if (code == 0 && v) {
+    const items::Passive kind = items::passive(it);
+    const int v = it[0x3D];
+    if (kind == items::Passive::Effect && v) {
         int k = -1;
         for (int j = 0; j < c.n_affects; ++j)
             if (c.affects[j][0] == v) k = j;
@@ -731,7 +807,7 @@ bool worn(party::Character& c, int i, bool on)
             uint8_t* a = c.affects[c.n_affects++];
             memset(a, 0, party::kAffectSize);
             a[0] = static_cast<uint8_t>(v);
-            a[3] = 0xFF;                    // (data 0xFF: Dispel Magic leaves it; the handler on)
+            a[3] = g_item_data;             // (Curse 0xFF: Dispel Magic leaves it; the handler on)
             a[4] = 1;
             berserk(c, v, true);
         } else if (!on && k >= 0) {
@@ -742,7 +818,7 @@ bool worn(party::Character& c, int i, bool on)
         }
         return true;
     }
-    if (code == 4 && on && (v & 0x0F) != c.alignment()) {
+    if (kind == items::Passive::Alignment && on && (v & 0x0F) != c.alignment()) {
         it[0x34] = 0;
         const int hp = c.hp() - (v >> 4);
         c.rec[0x1A4] = static_cast<uint8_t>(hp > 0 ? hp : 0);
@@ -750,6 +826,43 @@ bool worn(party::Character& c, int i, bool on)
             c.rec[0x195] = hp <= -10 ? party::Dead : hp < 0 ? party::Dying : party::Unconscious;
             c.rec[0x196] = 0;
         }
+        return false;
+    }
+    if (kind == items::Passive::OgrePower && g_item_strength) {
+        // Pool's handler 0x83 (poolrad_combat_facts.md 2.2): readied, the
+        // strength effect for good with 18/00 (the effect's data: the
+        // Strength it gives - SPEC 12), "is stronger" when that's more than
+        // the Strength in use; put away, one strength effect giving 18/00 goes
+        constexpr uint8_t k1800 = 101;
+        if (on) {
+            const bool more = c.rec[0x11] < 18 || (c.rec[0x11] == 18 && c.rec[0x1C] < 100);
+            if (c.n_affects < party::kMaxAffects) {
+                uint8_t* a = c.affects[c.n_affects++];
+                memset(a, 0, party::kAffectSize);
+                a[0] = g_item_strength;
+                a[3] = k1800;
+                a[4] = 1;
+            }
+            if (more && says) *says = WornSays::Stronger;
+        } else {
+            int k = -1;
+            for (int j = 0; j < c.n_affects; ++j)
+                if (c.affects[j][0] == g_item_strength && (c.affects[j][3] & 0x7F) == k1800) {
+                    k = j;
+                    if (!c.affects[j][1] && !c.affects[j][2]) break;     // (the one for good first)
+                }
+            if (k >= 0) {
+                for (int j = k; j + 1 < c.n_affects; ++j) memcpy(c.affects[j], c.affects[j + 1], party::kAffectSize);
+                --c.n_affects;
+                memset(c.affects[c.n_affects], 0, party::kAffectSize);
+            }
+        }
+        return true;
+    }
+    if (kind == items::Passive::NeedGiant && on && c.rec[0x11] < 19) {
+        // Pool's handler 0x87: the Strength in use under 19 - put away again
+        it[0x34] = 0;
+        if (says) *says = WornSays::NeedGiant;
         return false;
     }
     return true;
@@ -942,6 +1055,71 @@ RotStep rot_clock(party::Character& c, int minutes, uint8_t rot, uint8_t clock)
             c.rec[0x1A4] = 0;
         }
         break;
+    }
+    return out;
+}
+
+ManualStep manual_clock(party::Character& c, int minutes, uint8_t reading, uint8_t training, const ItemFacts& f)
+{
+    ManualStep out;
+    if (minutes <= 0 || !reading || !training) return out;
+    // (expiry: the effect's minutes left all used up now; magic::tick_affects
+    // takes `minutes` off after this - the new times allow for that)
+    auto runs_out = [&](uint8_t* a, int* over) {
+        const int left = a[1] | a[2] << 8;
+        if (left <= 0 || minutes < left) return false;
+        *over = minutes - left;
+        return true;
+    };
+    int k = find_effect(c, reading), over = 0;
+    if (k >= 0 && runs_out(c.affects[k], &over)) {
+        // "starts to train": training for 30 days, from when the reading ended
+        uint8_t* a = c.affects[k];
+        int t = 43200 - over;
+        if (t < 1) t = 1;
+        t += minutes;
+        a[0] = training;
+        a[1] = static_cast<uint8_t>(t);
+        a[2] = static_cast<uint8_t>(t >> 8);
+        a[3] = 0xFF;
+        a[4] = 1;
+        out.trains = true;
+    }
+    k = find_effect(c, training);
+    if (k >= 0 && runs_out(c.affects[k], &over)) {
+        out.hardier = true;
+        remove_affects(c, training);
+        uint8_t* r = c.rec;
+        const int con = r[0x18] + 1;                        // (its own Constitution)
+        r[0x18] = static_cast<uint8_t>(con);
+        r[0x19] = static_cast<uint8_t>(r[0x19] + 1);
+        if (con >= 20) {
+            if (f.con_regen_fx && find_effect(c, f.con_regen_fx) < 0 && c.n_affects < party::kMaxAffects) {
+                uint8_t* a = c.affects[c.n_affects++];
+                memset(a, 0, party::kAffectSize);
+                a[0] = f.con_regen_fx;
+                a[1] = 60;
+                a[3] = 0xFF;
+                a[4] = 1;
+            }
+        } else if (con >= 15) {
+            const uint8_t extra = static_cast<uint8_t>(r[kHpMax] - r[0x12C]);
+            uint8_t per = 0;
+            for (int cls = 0; cls < 8; ++cls) {
+                const int lv = r[0x109 + cls];
+                if (lv <= 0 || lv >= 0x80) continue;
+                if (cls == 2) per = static_cast<uint8_t>(per + lv * (con - 15));
+                else if (con > 15) per = static_cast<uint8_t>(per + lv * 2);
+                else per = static_cast<uint8_t>(per + lv);
+            }
+            if (!per) per = 1;
+            const uint8_t add = static_cast<uint8_t>(extra / per);
+            const int fighter = r[0x109 + 2];
+            if (con < 17 || (fighter > 0 && fighter < 0x80)) {
+                r[kHpMax] = static_cast<uint8_t>(r[kHpMax] + add);
+                r[kHp] = static_cast<uint8_t>(r[kHp] + add);
+            }
+        }
     }
     return out;
 }

@@ -79,7 +79,13 @@ void scribed(party::Character& c, const Scrolls& sc, int item, int slot);
 // effect byte (0x3D, & 0x7F), the third under 0x80 (0x80 and up: it works
 // while readied instead); the first (0x3C) its charges, 0: it never runs out
 bool usable(const Scrolls& sc, const uint8_t* item);
-inline int item_spell(const uint8_t* item) { return item[0x3D] & 0x7F; }
+// (Pool keeps its items' own spells 0x17 higher - 0x50 the Potion of Speed
+// for spell 0x39 ...: its item use takes 0x17 off ids over 0x38, ovr20+1B28)
+inline int item_spell(const uint8_t* item, bool pool = false)
+{
+    const int s = item[0x3D] & 0x7F;
+    return pool && s > 0x38 ? s - 0x17 : s;
+}
 // A use taken off the item: one of the stack (count 0x39 over 1), else a
 // charge; true when it's used up
 bool use_charge(uint8_t* item);

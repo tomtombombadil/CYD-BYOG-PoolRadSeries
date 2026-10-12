@@ -1258,6 +1258,66 @@ static void test_canvas4()
 }
 
 // Fighters joining a fight: the spare slots, then none
+// Pool's item codes and its files' Strength (v0.89.0; synthetic records)
+static void test_pool_items()
+{
+    items::set_passive(items::kPoolPassive);
+    rules::set_worn_facts(12, 0x26);
+    rules::ItemFacts f{};
+    f.giant_fx = 0x26;
+    f.enlarge_fx = 0x0C;
+    f.friends_fx = 0x0E;
+    static party::Character c;
+    c = party::Character{};
+    for (int i = 0; i < 6; ++i) c.rec[0x10 + i * 2] = c.rec[0x11 + i * 2] = 12;
+    auto item = [&](int code, int v) {
+        uint8_t* it = c.items[c.n_items++];
+        memset(it, 0, items::kRecordSize);
+        it[0x3D] = static_cast<uint8_t>(v);
+        it[0x3E] = static_cast<uint8_t>(code);
+        it[0x34] = 1;
+        return c.n_items - 1;
+    };
+    // 0x81 / 0x86: an effect, not a ring of wizardry / girdle
+    CHECK(items::passive(c.items[item(0x81, 0x3D)]) == items::Passive::Effect);
+    rules::worn(c, 0, true);
+    CHECK(c.n_affects == 1 && c.affects[0][0] == 0x3D && c.affects[0][3] == 12);
+    rules::worn(c, 0, false);
+    CHECK(c.n_affects == 0);
+    // Ogre Power: 18/00 through 0x26
+    const int og = item(0x83, 0x26);
+    rules::WornSays says;
+    rules::worn(c, og, true, &says);
+    rules::stats(c, f);
+    CHECK(says == rules::WornSays::Stronger && c.rec[0x11] == 18 && c.rec[0x1C] == 100);
+    // written Pool's way: the record 18/00, the effect in force holding 12
+    uint8_t pool[party::kPoolRecordSize] = {}, fx[party::kMaxAffects * party::kAffectSize] = {};
+    party::to_pool(c, pool);
+    rules::pool_stats_out(c, f, pool, fx);
+    CHECK(pool[0x10] == 18 && pool[0x16] == 100 && fx[0] == 0x26 && fx[3] == 112);
+    // read back: own 12, the gift 18/00
+    static party::Character r;
+    r = party::Character{};
+    party::from_pool(pool, r);
+    r.n_affects = 1;
+    memcpy(r.affects[0], fx, party::kAffectSize);
+    rules::pool_stats_in(r, f);
+    CHECK(r.rec[0x10] == 12 && r.affects[0][3] == 101);
+    rules::worn(c, og, false);
+    c.items[og][0x34] = 0;
+    rules::stats(c, f);
+    CHECK(c.rec[0x11] == 12 && c.n_affects == 0);
+    // the boulder
+    const int bo = item(0x87, 0);
+    CHECK(!rules::worn(c, bo, true, &says) && says == rules::WornSays::NeedGiant && !c.items[bo][0x34]);
+    // item spells
+    uint8_t it[items::kRecordSize] = {};
+    it[0x3D] = 0x55;
+    CHECK(magic::item_spell(it, true) == 0x3E && magic::item_spell(it, false) == 0x55);
+    items::set_passive(nullptr);
+    rules::set_worn_facts(0xFF, 0);
+}
+
 static void test_add_fighter()
 {
     static combat::Battle b;
@@ -6485,6 +6545,7 @@ int main()
     test_log_pack();
     test_canvas4();
     test_add_fighter();
+    test_pool_items();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;

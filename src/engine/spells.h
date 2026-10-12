@@ -58,16 +58,20 @@ enum class Does : uint8_t {
     Haste,          // ... slowed members cured instead; at most `power` members
     Heal,           // n dice of `sides` + plus hit points
     CureBlind, CureDisease, Neutralize, SlowPoison, RemoveCurse, Raise,
-    Enlarge,        // Strength by the caster's level, if more than theirs (word; else "is unaffected")
+    Enlarge,        // Strength by the caster's level, if more than theirs (word; else "is unaffected" -
+                    // Pool: the effect anyway, nothing said)
     Reduce,         // a failed save takes Enlarge away (word); else nothing at all
     Friends,        // the caster's Charisma + 2d4 (word)
-    Strength,       // + d4 / d6 / d8 by class (no word); fighters over 18: 18/xx
+    Strength,       // + d4 / d6 / d8 by class (no word; Pool: word when more, the effect anyway); fighters
+                    // over 18: 18/xx
     Hammer,         // Spiritual Hammer: its effect on the caster (word; the caller hands over the hammer:
                     // rules::keep_hammer)
     Dispel,         // Dispel Magic: each of the target's effects (but data 0xFF) by level against level (word)
     Restore,        // Restoration: a lost level back (word; else nothing)
     FireShield,     // the caster's flame (`flame` 1 hot: word; 2 cold: nothing said) and the zap
     GiantStrength,  // the potion: Strength 21 (word) when more than their own; the effect either way
+    HealOrUnpoison, // Pool's 0x3A: the poisoned lose the poison (and Slow Poison; nothing said), else Heal
+    Reading,        // Pool's 0x43, the Manual of Bodily Health: its effect (data 0xFF; word) - rules::manual_clock
 };
 struct CampSpell {
     uint8_t  spell;
