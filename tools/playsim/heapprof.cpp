@@ -7,7 +7,7 @@
 // the blocks in use by site, biggest first; at exit the breakdown at the
 // highest point the heap reached is printed. Turn the addresses into
 // file:line with addr2line -f -C -e playsim (the sites are printed with
-// the binary's load offset taken off).
+// the binary's load offset taken off). BUDGET=kb fails the run past it.
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -17,6 +17,7 @@
 #include <link.h>
 #include <map>
 #include <new>
+#include <unistd.h>
 #include <unordered_map>
 #include <vector>
 
@@ -101,8 +102,19 @@ void print(const char* label, const std::map<std::vector<void*>, std::pair<size_
     }
 }
 
+// BUDGET=kb: the run fails (exit status 3) when the heap's highest point
+// went over it - a fight scenario's budget catches a change that grows it
 struct AtExit {
-    ~AtExit() { if (getenv("HEAPPROF")) print("the highest point", peak_sites, peak); }
+    ~AtExit()
+    {
+        if (getenv("HEAPPROF")) print("the highest point", peak_sites, peak);
+        if (getenv("BUDGET")) {
+            const size_t budget = static_cast<size_t>(atoi(getenv("BUDGET"))) * 1024;
+            fprintf(stderr, "[heap] highest point %zu bytes, budget %zu: %s\n", peak, budget,
+                    peak <= budget ? "within" : "OVER");
+            if (peak > budget) _exit(3);
+        }
+    }
 } at_exit;
 
 } // namespace

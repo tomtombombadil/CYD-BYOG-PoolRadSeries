@@ -64,7 +64,11 @@ struct Host;
 // heap is in pieces and no one piece has room for all of it (v0.21.1)
 struct Data {
     Data(view3d::World& w, ecl::GameState& g) : world(w), gs(g) {}
-    ~Data() { delete ov; }
+    ~Data()
+    {
+        delete ov;
+        delete anim_idx;
+    }
     Data(const Data&) = delete;
     Data& operator=(const Data&) = delete;
     layout::Tiles  frame_tiles;
@@ -92,7 +96,7 @@ struct Data {
     pic::Anim      anim;
     fs::File       anim_file;
     int16_t        anim_x = 24, anim_y = 24;   // where it's drawn (the view; Pool's ending: elsewhere)
-    dax::Index     anim_idx;
+    dax::Index*    anim_idx = nullptr;      // the PIC file's index while a picture animates (3 KB)
 
     // A monster's sprite in the 3D view (SPRITn)
     pic::Anim      sprite;
@@ -730,18 +734,22 @@ bool draw_block(pic::Canvas& c, const char* stem, int block, int x, int y)
     return ok;
 }
 
+void log_error(const char* t);
+
 void anim_stop()
 {
     anim_block = -1;
     if (d->anim_file) d->anim_file.close();
+    delete d->anim_idx;
+    d->anim_idx = nullptr;
 }
 
 void anim_draw(int frame)
 {
     if (anim_block < 0) return;
     library::FileSource src(d->anim_file);
-    const dax::Entry* e = d->anim_idx.find(static_cast<uint8_t>(anim_block));
-    if (e) pic::draw_anim(src, d->anim_idx, *e, d->anim, frame, true, *cv, d->anim_x, d->anim_y);
+    const dax::Entry* e = d->anim_idx ? d->anim_idx->find(static_cast<uint8_t>(anim_block)) : nullptr;
+    if (e) pic::draw_anim(src, *d->anim_idx, *e, d->anim, frame, true, *cv, d->anim_x, d->anim_y);
     dirty_rows(d->anim_y / 8, (d->anim_y + 88) / 8);
 }
 
@@ -757,11 +765,17 @@ bool anim_start(int id, const char* stem = "PIC", int x = 24, int y = 24)
     char name[24];
     area_file(name, sizeof name, stem);
     if (!open_file(name, d->anim_file)) return false;
+    d->anim_idx = new (std::nothrow) dax::Index;
+    if (!d->anim_idx) {
+        log_error(no_memory("the picture"));
+        d->anim_file.close();
+        return false;
+    }
     library::FileSource src(d->anim_file);
     const dax::Entry* e = nullptr;
-    if (dax::read_index(src, d->anim_idx) == dax::Status::Ok) e = d->anim_idx.find(static_cast<uint8_t>(id));
+    if (dax::read_index(src, *d->anim_idx) == dax::Status::Ok) e = d->anim_idx->find(static_cast<uint8_t>(id));
     if (e) {
-        dax::RleReader r(src, d->anim_idx, *e);
+        dax::RleReader r(src, *d->anim_idx, *e);
         if (pic::parse_anim(r, e->raw_size, d->anim) && d->anim.frames > 0) {
             anim_block = id;
             anim_frame = 0;
@@ -773,6 +787,8 @@ bool anim_start(int id, const char* stem = "PIC", int x = 24, int y = 24)
         }
     }
     d->anim_file.close();
+    delete d->anim_idx;
+    d->anim_idx = nullptr;
     return false;
 }
 
@@ -2367,6 +2383,50 @@ void end_create(pic::Canvas& c)
 }
 
 // The rule tables and facts, read from the program for the occasion
+// The class / spell rule tables alone (from the program's data segment)
+bool read_rule_tables(library::FileSource& src, exepack::Info& info, classes::Tables& t)
+{
+    const auto& pc = d->prof->create;
+    const size_t n = pc.tables.hi - pc.tables.lo;
+    uint8_t* buf = static_cast<uint8_t*>(malloc(n));
+    // (Pool: the class flags / masks elsewhere in the data segment)
+    uint8_t buf2[32];
+    const size_t n2 = pc.tables.hi2 > pc.tables.lo2 ? pc.tables.hi2 - pc.tables.lo2 : 0;
+    const bool ok = buf && exepack::read(src, info, pc.ds_image + pc.tables.lo, buf, n) == exepack::Status::Ok &&
+                    (!n2 || (n2 <= sizeof buf2 &&
+                             exepack::read(src, info, pc.ds_image + pc.tables.lo2, buf2, n2) == exepack::Status::Ok)) &&
+                    t.set(pc.tables, buf, n, buf2, n2);
+    free(buf);
+    return ok;
+}
+
+// The magic's rule tables (spells, slots, class values) without the rest of
+// character making (v0.87.1: Making's 6.9 KB stayed through fights for
+// these 4.7 KB)
+struct MagicRules {
+    classes::Tables tables;
+};
+
+bool load_rules(MagicRules*& m)
+{
+    if (!d->prof->create.ds_image) return false;
+    m = new (std::nothrow) MagicRules;
+    if (!m) return false;
+    fs::File f;
+    bool ok = false;
+    if (open_file(d->prof->program, f)) {
+        library::FileSource src(f);
+        exepack::Info info;
+        ok = exepack::parse(src, info) == exepack::Status::Ok && read_rule_tables(src, info, m->tables);
+        f.close();
+    }
+    if (!ok) {
+        delete m;
+        m = nullptr;
+    }
+    return ok;
+}
+
 bool load_rules(Making*& m)
 {
     const auto& pc = d->prof->create;
@@ -2381,16 +2441,7 @@ bool load_rules(Making*& m)
         library::FileSource src(f);
         exepack::Info info;
         if (exepack::parse(src, info) == exepack::Status::Ok) {
-            const size_t n = pc.tables.hi - pc.tables.lo;
-            uint8_t* buf = static_cast<uint8_t*>(malloc(n));
-            // (Pool: the class flags / masks elsewhere in the data segment)
-            uint8_t buf2[32];
-            const size_t n2 = pc.tables.hi2 > pc.tables.lo2 ? pc.tables.hi2 - pc.tables.lo2 : 0;
-            ok = buf && exepack::read(src, info, pc.ds_image + pc.tables.lo, buf, n) == exepack::Status::Ok &&
-                 (!n2 || (n2 <= sizeof buf2 &&
-                          exepack::read(src, info, pc.ds_image + pc.tables.lo2, buf2, n2) == exepack::Status::Ok)) &&
-                 m->tables.set(pc.tables, buf, n, buf2, n2);
-            free(buf);
+            ok = read_rule_tables(src, info, m->tables);
             uint8_t hp[16];
             ok = ok && exepack::read(src, info, pc.ds_image + pc.hp_count, hp, 8) == exepack::Status::Ok &&
                  exepack::read(src, info, pc.ds_image + pc.hp_dice, hp + 8, 8) == exepack::Status::Ok &&
@@ -3533,7 +3584,7 @@ void back_from_view(pic::Canvas& c);
 // the area's camp-interrupted script runs); a tap asks "Stop Resting?".
 
 
-Making* mrules = nullptr;           // the rule tables while camping
+MagicRules* mrules = nullptr;       // the rule tables while camping / casting
 struct SpellNames {
     char name[101][24];
 };

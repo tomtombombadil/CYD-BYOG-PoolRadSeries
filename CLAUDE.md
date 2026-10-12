@@ -435,7 +435,14 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   LOWMEM=kb pretends memory is that low (every drop path runs). Tom's
   4.0" log (v0.85.7): Play 78 KB, a fight's start left 24 KB, mid-fight
   8 then 1 KB; v0.86.1 cut a fight ~12 KB (fighters as many as the fight
-  has, not 71; the pages' lines in one 2 KB pool).
+  has, not 71; the pages' lines in one 2 KB pool). (7) **the budget**:
+  the playsim's fights `SAVE=A RUNAT=8AC2 FIGHT=1` (Curse) and `GAME=1
+  SAVE=A RUNAT=85F9 FIGHT=1` (Pool) with heapprof linked and BUDGET=150
+  must stay within 150 KB at their highest point (the 32 KB canvas
+  included; v0.87.1: 145 / 143 KB, was 195 at v0.85.7) - raise it only
+  with a reason. Also since v0.87.1: the picture animation's DAX index
+  (3 KB) only while a picture animates; the magic tables load alone
+  (`MagicRules`, 4.7 KB) instead of in character making's 6.9 KB block.
 - Toolchain: pioarduino platform 55.03.312-1 (Arduino-ESP32 3.3.x), LovyanGFX
   1.2.x, huge_app.csv (no OTA - the web flasher is the update path).
 - Claude's local builds: PlatformIO in a venv; the proxy CA must be appended to
