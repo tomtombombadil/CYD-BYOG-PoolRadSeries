@@ -38,6 +38,14 @@
 - **coab** - Curse of the Azure Bonds reimplementation in C# by Simeon Pilgrim,
   https://github.com/simeonpilgrim/coab. No license file, so all rights
   reserved: used only to learn the DAX, picture, GEO and ECL formats.
+- **Espressif's es8311 codec driver** (Apache License 2.0, (C) Espressif
+  Systems) - its register settings, with the ES8311 datasheet, as facts
+  for our own `src/hal/es8311.*` (the ESP32-S3 board's sound); no code
+  copied.
+- **The boards' makers' tutorials** (the ESP32-S3 4.0" board's: CC BY-NC-SA;
+  the ESP32-C5 2.8" board's README / setups) - pin facts only for
+  `src/boards/esp32s3_40_cap.hpp` and `src/boards/esp32c5_28_res.hpp`; no
+  code copied.
 
 ## Game data
 None. The player supplies their own original game files on the SD card.

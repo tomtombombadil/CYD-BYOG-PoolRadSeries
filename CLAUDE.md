@@ -35,13 +35,20 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   EGA the original turns the same VGA pictures into 16 dithered colours
   (checked in DOSBox: Darkness with POOL4.CFG's graphics line E) - the
   engine does what the original's EGA mode does (facts from the player's
-  EGA.DRV / program, never copied). Dark Queen and Unlimited Adventures:
-  NOT on the classic boards. **ESP32-S3 boards with PSRAM are added**
-  (Tom's first: the 4.0" ST7796 480x320 capacitive S3 board, arriving the
-  week of 2026-10-12 - Tom uses a capacitive stylus on it): there the
-  VGA games run in 256 colours. The ESP32-C5 2.8" ST7789 resistive board
-  (8 MB PSRAM; Tom has two) is a candidate too. Board facts: the
-  Project's claude/board_facts.md.
+  EGA.DRV / program, never copied). Unlimited Adventures: NOT on the
+  classic boards. **Dark Queen** (Tom, 2026-10-12: "not completely wipe
+  Dark Queen off the basic CYD builds just yet"): it has an EGA choice
+  at install - try it there in its EGA mode when we get to it. **ESP32-S3
+  and ESP32-C5 boards with PSRAM are added (v0.88.0)**: the 4.0" ST7796
+  480x320 capacitive S3 board (env `cyd40s3_st7796_cap`; Tom's arrives the
+  week of 2026-10-12 - he uses a capacitive stylus on it) and the 2.8"
+  ST7789 resistive C5 board (`cyd28c5_st7789_res`; Tom has two). There
+  the VGA games run in 256 colours. Board facts: the Project's
+  claude/board_facts.md; SPEC 5d.
+- **The repo can change under you** (Tom, 2026-10-12: he edits README.md
+  on GitHub): `git fetch` and merge origin/main before every push, and
+  never push over his edits (no force pushes; check README.md's changes
+  before touching it).
 - Tom plays with a Nintendo DS Lite stylus with firm presses - NOT a finger.
 - Refer to boards by size + display driver + touch type, never vendor codes.
 
@@ -234,11 +241,22 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
 ## Architecture
 - One PlatformIO env per board, each sets exactly one `CYD_BOARD_*` flag;
   `src/boards/board_select.h` is the only file that tests them. Env options
-  `custom_firmware_name` (`TTB-CYD-PRS_<size>in_<DRIVER>_<touch>`),
-  `custom_board_title`, `custom_board_hint`, `custom_board_tested` drive CI,
+  `custom_firmware_name` (`TTB-CYD-PRS_<size>in_<DRIVER>_<touch>`, plus
+  `_ESP32-S3` / `_ESP32-C5` for the newer chips),
+  `custom_board_title`, `custom_board_hint`, `custom_board_tested`,
+  `custom_chip_family` (the flasher's chip, ESP32 when not given) drive CI,
   releases and the flasher - platformio.ini is the single source of truth.
+- Newer chips (v0.88.0): the card by SD/MMC 4-bit (S3) or on the display's
+  SPI bus (C5, Arduino's `SPI`); sound by I2S to the S3's ES8311 codec
+  (`hal/es8311.*`, set up over the touch's I2C through LovyanGFX's i2c)
+  or I2S PDM on the C5's GPIO 26 - `hal/audio.cpp` has the three outputs
+  (BOARD_AUDIO_DAC / _ES8311 / _PDM). PSRAM: Arduino's malloc puts blocks
+  over 4 KB there by itself; the memory figures then include it. The
+  display object is made in setup() (the S3 panics on floating point in
+  static constructors). Their serial log is on native USB (CDC on boot).
 - `custom_board_tested = no` on a board until Tom has run THIS firmware on
-  it. Tested: all five boards (Tom, 2026-10-09, v0.20.0); a new board starts
+  it. Tested: the five classic boards (Tom, 2026-10-09, v0.20.0); the S3
+  and C5 boards not yet (v0.88.0); a new board starts
   at `no`.
 - 2.8" ESP32-2432S028: touch is bit-banged (`touch_xpt2046_soft.hpp`, an
   `lgfx::ITouch`) so the SD card can have VSPI. Keep it that way - the engine

@@ -33,6 +33,7 @@
 #define BOARD_SD_USABLE         1    // SD has VSPI to itself here
 #define BOARD_PIN_AUDIO_EN      4    // low = amplifier on
 #define BOARD_PIN_SPEAKER     26   // speaker connector (through the amp)
+#define BOARD_AUDIO_DAC         1    // sound from the DAC on GPIO 26
 #define BOARD_PIN_BATTERY_ADC   34
 
 // kRgbOrder: LovyanGFX rgb_order (false = BGR, true = RGB)

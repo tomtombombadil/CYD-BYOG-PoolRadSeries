@@ -327,13 +327,19 @@ can't get the memory says "Not enough memory to show this log."
   Darkness (and Treasures, later) in **their own EGA mode**: their setup
   offers EGA / Tandy / VGA, and the original in EGA shows the same VGA
   pictures in 16 dithered colours (checked in DOSBox) - the engine does
-  what that mode does. Dark Queen / Unlimited Adventures: not on these.
-- **ESP32-S3 boards with PSRAM**: added; first the 4.0" ST7796 480x320
-  capacitive S3 board (8 MB PSRAM, SDMMC card, ES8311 codec + amplifier
-  + speaker). There the VGA games run in 256 colours, the big blocks in
-  PSRAM, sound through the codec (I2S).
-- **ESP32-C5 2.8" ST7789 resistive board** (8 MB PSRAM, speaker amplifier
-  on GPIO 26 - PWM sound): a candidate (Tom has two).
+  what that mode does. Unlimited Adventures: not on these. Dark Queen
+  (Tom, 2026-10-12): to be tried in its own EGA mode (an install choice).
+- **ESP32-S3 / ESP32-C5 boards with PSRAM (v0.88.0, untested until Tom
+  runs them)**: the 4.0" ST7796 480x320 capacitive S3 board
+  (`cyd40s3_st7796_cap`: ESP32-S3R8, 8 MB PSRAM; FT6336 touch - no
+  calibration, Settings has no Recalibrate Touch; SD/MMC 4-bit card;
+  sound by I2S to its ES8311 codec + amplifier, enable GPIO 1) and the
+  2.8" ST7789 resistive C5 board (`cyd28c5_st7789_res`: ESP32-C5, 8 MB
+  PSRAM; display, touch and card share one SPI bus; sound as I2S PDM on
+  GPIO 26 into the amplifier's filter - the C5 has no DAC). Blocks over
+  4 KB go to PSRAM by themselves (Arduino's malloc); later the VGA games
+  run there in 256 colours (the 8-bit canvas). Flasher entries carry the
+  chip (ESP Web Tools' chipFamily).
 - Board facts: the Project's claude/board_facts.md; the games' needs:
   claude/other_games_facts.md.
 

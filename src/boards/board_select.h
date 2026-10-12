@@ -16,6 +16,13 @@
 //   BOARD_PORTRAIT_W                        panel width in portrait: 240 or 320
 // Optional: BOARD_PIN_LED_*, BOARD_LED_ACTIVE_LOW, BOARD_PIN_LDR, BOARD_PIN_SPEAKER,
 //           BOARD_PIN_SD_CS/SCK/MISO/MOSI, BOARD_PIN_AUDIO_EN, BOARD_PIN_BATTERY_ADC
+// The card (hal/sdcard.cpp): SPI on a bus of its own (VSPI, the classic
+//   boards), BOARD_SD_SHARED_SPI (on the display's bus, Arduino's SPI) or
+//   BOARD_SD_MMC (SD/MMC 4-bit, BOARD_PIN_SD_CLK / CMD / D0-D3).
+// Sound (hal/audio.cpp), one of: BOARD_AUDIO_DAC (the ESP32's DAC on 26),
+//   BOARD_AUDIO_ES8311 (I2S to the codec, BOARD_PIN_I2S_*, set up over
+//   BOARD_I2C_PORT / BOARD_PIN_I2C_*), BOARD_AUDIO_PDM (I2S PDM on
+//   BOARD_PIN_SPEAKER into the amplifier's filter). None = no sound.
 //
 // Colors: each board's default inversion is a best guess. If a particular
 // unit shows a negative image or swapped red/blue, fix it on the device
@@ -61,6 +68,21 @@
   #define BOARD_PORTRAIT_W 320
   // Confirmed on hardware with these defaults
   class LGFX : public LGFX_Esp32_32E<lgfx::Panel_ST7796, 320, 480, false, false> {};
+
+// ---- ESP32-S3 / ESP32-C5 boards (8 MB PSRAM) ----------------------------------
+#elif defined(CYD_BOARD_40_ST7796_CAP_S3)
+  #include "esp32s3_40_cap.hpp"
+  #define BOARD_NAME "4.0\" ST7796 Capacitive (ESP32-S3)"
+  #define BOARD_PORTRAIT_W 320
+  // Not yet tested on hardware
+  class LGFX : public LGFX_S3_40_Cap {};
+
+#elif defined(CYD_BOARD_28_ST7789_RES_C5)
+  #include "esp32c5_28_res.hpp"
+  #define BOARD_NAME "2.8\" ST7789 Resistive (ESP32-C5)"
+  #define BOARD_PORTRAIT_W 240
+  // Not yet tested on hardware
+  class LGFX : public LGFX_C5_28_Res {};
 
 #else
   #error "No CYD_BOARD_* flag set. Build one of the [env:...] targets in platformio.ini."

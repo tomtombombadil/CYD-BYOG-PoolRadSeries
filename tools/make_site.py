@@ -36,6 +36,7 @@ def boards_from_ini():
             "title": env.get("custom_board_title", name),
             "hint": env.get("custom_board_hint", ""),
             "tested": env.get("custom_board_tested", "yes").strip().lower() != "no",
+            "chip": env.get("custom_chip_family", "ESP32").strip(),
         })
     return boards
 
@@ -68,7 +69,7 @@ def main():
             "version": args.version,
             "new_install_prompt_erase": True,
             "builds": [{
-                "chipFamily": "ESP32",
+                "chipFamily": b["chip"],
                 # Merged factory image: bootloader + partitions + app, from 0x0
                 "parts": [{"path": f"../firmware/{b['file']}", "offset": 0}],
             }],

@@ -6,6 +6,7 @@
 // game engine is built on top.
 #include <Arduino.h>
 #include <esp_heap_caps.h>
+#include <new>
 
 #include "app/settings.h"
 #include "boards/board_select.h"
@@ -25,7 +26,12 @@
 
 namespace {
 
-LGFX     gfx;
+// The display is made at the start of setup(), not as a static object:
+// its constructor works out the touch calibration in floating point, and
+// the ESP32-S3 panics on the FPU before the scheduler runs (seen in QEMU,
+// v0.88.0)
+alignas(LGFX) uint8_t gfx_mem[sizeof(LGFX)];
+LGFX&    gfx = *reinterpret_cast<LGFX*>(gfx_mem);
 Settings cfg;
 
 // Landscape: the games are 320x200 screens. 1 = USB on the right for the
@@ -44,6 +50,12 @@ void quiet_peripherals()
 #ifdef BOARD_PIN_AUDIO_EN
     pinMode(BOARD_PIN_AUDIO_EN, OUTPUT);
     digitalWrite(BOARD_PIN_AUDIO_EN, HIGH);   // high = amplifier off
+#endif
+#if defined(BOARD_SD_SHARED_SPI)
+    // The card shares the display's bus: its chip select high (idle) before
+    // the display talks, so the card never listens in
+    pinMode(BOARD_PIN_SD_CS, OUTPUT);
+    digitalWrite(BOARD_PIN_SD_CS, HIGH);
 #endif
 }
 
@@ -70,6 +82,7 @@ void setup()
     Serial.println("\nCYD BYOG Pool of Radiance Series " BYOG_VERSION " (" BYOG_BUILD ") - " BOARD_NAME);
     quiet_peripherals();
 
+    new (gfx_mem) LGFX();
     if (!gfx.init()) {
         Serial.println("Display init failed - halting");
         while (true) delay(1000);

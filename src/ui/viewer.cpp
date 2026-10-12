@@ -3563,8 +3563,15 @@ void tap_play(const ui::Tap& t)
 // default) or a PC speaker, or Off; Volume a slider like Brightness.
 enum SetItem { kBright, kInvert, kSwap, kRotate, kCalibrate, kScale, kLogs, kSound, kVolume };
 
+// (Recalibrate Touch only with a resistive screen: capacitive ones come
+// calibrated)
+#if BOARD_TOUCH_RESISTIVE
 const SetItem kSetLarge[] = {kBright, kLogs, kSound, kVolume, kInvert, kSwap, kRotate, kCalibrate, kScale};
 const SetItem kSetSmall[] = {kBright, kLogs, kSound, kVolume, kInvert, kSwap, kRotate, kCalibrate};
+#else
+const SetItem kSetLarge[] = {kBright, kLogs, kSound, kVolume, kInvert, kSwap, kRotate, kScale};
+const SetItem kSetSmall[] = {kBright, kLogs, kSound, kVolume, kInvert, kSwap, kRotate};
+#endif
 int set_page = 0;
 
 int set_rows() { return ui::large() ? 4 : 3; }

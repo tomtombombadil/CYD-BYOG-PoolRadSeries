@@ -5,7 +5,9 @@
 // when audio_hold keeps it (asleep, the DAC off) between sounds so Hit and
 // Miss always play (Tom, 2026-10-12: "Prioritize the hit and miss sounds").
 // Boards with an amplifier enable pin (the ESP32-32E ones: GPIO 4, low =
-// on) switch it on only while something sounds.
+// on) switch it on only while something sounds. The ESP32-S3 board (no
+// DAC) sends the samples as I2S to its ES8311 codec; the ESP32-C5 board
+// (no DAC) as I2S PDM on GPIO 26 into its amplifier's filter (v0.88.0).
 #pragma once
 
 #include <cstdint>

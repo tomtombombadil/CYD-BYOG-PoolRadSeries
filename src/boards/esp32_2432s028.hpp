@@ -27,6 +27,7 @@
 #define BOARD_LED_ACTIVE_LOW  1
 #define BOARD_PIN_LDR         34
 #define BOARD_PIN_SPEAKER     26   // speaker connector (through the amp)
+#define BOARD_AUDIO_DAC       1    // sound from the DAC on GPIO 26
 #define BOARD_PIN_SD_CS       5
 #define BOARD_PIN_SD_SCK      18
 #define BOARD_PIN_SD_MISO     19
