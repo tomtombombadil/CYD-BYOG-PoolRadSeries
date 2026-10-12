@@ -1819,6 +1819,11 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             h.damage = dmg;
             out.any = true;
             if (slot == 0) ++hits1;
+            // A flask of oil burns (Tom, 2026-10-12: "the flasks of oil should
+            // do fire damage" - the originals made it a plain 2d6 blow): its
+            // blow is fire, so a troll it brings down stays down
+            const bool oil = item && names && names->flask() && item[0x2E] == names->flask();
+            if (oil) g_kind = 1;
             if (bane) {
                 tg.rec[kHp] = 0;
                 tg.rec[kHealth] = party::Gone;
@@ -1827,6 +1832,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             } else if (damage(b, c, dmg)) {
                 out.down = true;
             }
+            if (oil) g_kind = 0;
             out.hits[out.n++] = h;
             // A fire shield: one hitting it from next to it takes twice the blow (magic)
             if (b.fx && dmg > 0 && hasx(tg, b.fx->sp.zap) && at.up() && adjacent(b, a, c)) {

@@ -76,6 +76,7 @@ public:
     // stops that, and the flask of oil
     struct Plural { uint8_t arrow, quarrel, dart, flask, keep1, keep2; };
     void set_plural(const Plural& p) { plural_ = p; }
+    int flask() const { return plural_.flask; }      // the flask of oil's item type
 
     // The item's name as the games print it ("Long Sword", "3 Arrows",
     // "Long Sword +1"), with the count in front when there is one.

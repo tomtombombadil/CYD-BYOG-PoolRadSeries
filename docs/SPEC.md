@@ -1081,7 +1081,7 @@ the game's Settings (As Original: all of them).
 
 - **Controls and screens**: taps on menu words, list lines and combat
   squares; on-screen keys (movement pad, cursor keys - Up / Down / Left /
-  Right / Select - Game, Look, Esc, and on 320x240 Map: the area map over
+  Right / Select - Game, Look, and on 320x240 Map: the area map over
   the game screen until the next tap; Tom confirmed Map 2026-10-10); a
   fight's own keys while a fighter moves or aims by hand (the 8 directions
   and Select); the 480x320 Companion strip (map - black, walls 1 px, doors
@@ -1089,7 +1089,7 @@ the game's Settings (As Original: all of them).
   secret doors an S on the wall line, the party a bright green arrow -
   Tom, v0.84.0); while the 320x240 Map is up the movement keys move the
   party and the map follows (Tom, v0.84.0; a step that starts a message,
-  menu or fight brings the game screen back); the Game menu (Journal, Journal PDF, Sounds, Options, Exit Game);
+  menu or fight brings the game screen back); the Game menu (Journal, Journal PDF, Sounds, Options, Logs, Exit Game - no Esc key in the game, Tom 2026-10-12);
   a tap on the 3D view toggles 3D / Area; in Pool's wilderness the
   movement pad's Forward / Side-step Left / Side-step Right / Turn Around
   are its arrow keys (north / west / east / south; the turn keys do
@@ -1101,6 +1101,11 @@ the game's Settings (As Original: all of them).
   type at least four times as often solid as open on that map - to be a
   secret door (the 3D view shows a plain wall there). Most maps have a
   handful; it's a guess from the data, not the games' own notion.
+- **Flasks of oil burn** (Tom, 2026-10-12: "the flasks of oil should do
+  fire damage"): the originals make a thrown flask a plain 2d6 blow
+  (ITEMS row 86); here its blow counts as fire, so a troll it brings down
+  stays down (as one killed by a fire spell) - v0.87.2. Two throws a
+  round and no splash, as the originals (Tom: no splash in either game).
 - **Magic Missile** (Tom, 2026-10-11): (level + 1) / 2 missiles of 1d4 + 1,
   always hitting - the AD&D rule, Curse's code too; Pool's code was read as
   level / 2 (nothing at first level). All on one target, as both games.

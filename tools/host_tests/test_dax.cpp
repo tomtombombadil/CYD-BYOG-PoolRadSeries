@@ -3594,6 +3594,7 @@ static void test_item_combat()
     def(9, 1, 1, 3, 6, 6, 0x1A, 1, 2);
     def(47, 1, 1, 4, 2, 21, 0x0A, 1, 6);
     def(36, 1, 1, 8, 0, 0, 0x04, 1, 12);
+    def(86, 1, 2, 6, 2, 4, 0x1A, 2, 6);                      // a flask of oil (thrown, 2d6)
     ty[2 + 73 * 16] = 10;                                    // arrows: slot 10
     dax::MemorySource src(ty.data(), static_cast<uint32_t>(ty.size()));
     CHECK(names.read_types(src));
@@ -3775,6 +3776,29 @@ static void test_item_combat()
         b.f[1].received = 2;
         b.f[1].facing = 2;                                   // its back to the thief (west of it)
         CHECK(combat::can_backstab(b, 0, 1, nullptr) == ((sz & 0x7F) <= 1));
+    }
+    rec[1][0xDE] = 1;
+    // A flask of oil burns (Tom, 2026-10-12): a troll it brings down stays
+    // down; one a sword brings down gets up again
+    fx.mon.troll_death = 0x64;
+    fx.mon.troll_up = 0x66;
+    for (int oil = 0; oil < 2; ++oil) {
+        hold(oil ? 86 : 36, oil ? 5 : 0, false, 0);
+        bool done = false;
+        for (int tries = 0; tries < 40 && !done; ++tries) {
+            naff[1] = 1;
+            memset(aff[1], 0, sizeof aff[1]);
+            aff[1][0][0] = 0x64;
+            b.f[1].attacks[0] = b.f[1].attacks[1] = 0;
+            b.f[0].attacks[0] = 1; b.f[0].attacks[1] = 0;
+            b.f[1].received = 0;
+            rec[1][0x1A4] = 1; rec[1][0x195] = 0; rec[1][0x196] = 1;
+            const combat::Attack a = combat::attack(b, 0, 1, &names, d, false);
+            if (!a.down) continue;
+            done = true;
+            CHECK(b.f[1].has(0x66) == !oil);
+        }
+        CHECK(done);
     }
 }
 
