@@ -825,6 +825,16 @@ int main(int argc, char** argv)
         const bool ok = play::act(a, C);
         printf("%c -> %s at %d,%d %s  then=%d waiting=%d\n", *m, ok ? "ok" : "refused", play::pos_x(), play::pos_y(),
                geo::dir_name(play::dir()), (int)play::then, (int)play::waiting);
+        if (getenv("WALKTICKS")) {
+            // WALKTICKS: ticks (20 ms each) while the step finishes quietly (the map can stay up)
+            int k = 0;
+            const bool pend = play::walk_pending();
+            while (play::walk_pending() && k < 500) { g_now += 20; play::tick(g_now, C); ++k; }
+            printf("   pending %d after the step\n", (int)pend);
+            printf("   walking %d after %d ticks (then %d waiting %d screen %d)\n", (int)play::walking(), k, (int)play::then,
+                   (int)play::waiting, (int)play::screen);
+            printf("   wait kind %d menu [%s%s] page_prompt %d\n", (int)play::vm->wait(), play::menu.prompt, play::menu.s, (int)play::page_prompt);
+        }
         if (play::then == play::Then::Door) {
             // DOOR=letters: the "Locked." menu's choices to tap in turn (B, P, K, E); else a key (Exit)
             printf("  LOCKED [%s%s]\n", play::menu.prompt, play::menu.s);

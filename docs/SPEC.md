@@ -701,6 +701,10 @@ Steps (each pushed when it works; Curse stays as it is):
    new game: the 3D view empty after the tour): Pool's LOAD PIECES 0x7F
    loads block 0 into set 1 (WALLDEF3 block 0, three parts - area 3's
    scripts all use it); the engine took 0x7F as "no walls" (Curse's).
+   v0.85.3 (Tom, 3.2"): **the Map stays up while walking in Pool** - its
+   step scripts clear the text with an empty PRINTCLEAR and finish a tick
+   later, which closed the map at once; now the map waits for them
+   (`play::walk_pending`) and closes only for something to read or answer.
 7. v0.83.0: **the wilderness** (areas 25-27 while their area word 0x4BE6 is
    0; the Project's claude/poolrad_overland_facts.md, `engine/overland.*`):
    the program's 44 x 36 map of icon numbers (the three areas windows on

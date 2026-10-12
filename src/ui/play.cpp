@@ -8753,6 +8753,16 @@ bool walking()
     return screen == Screen::Game && !waiting && then == Then::Idle && (vm->get(0x4BE6) != 0 || pool_overland());
 }
 
+bool walk_pending()
+{
+    if (!d || input_mode != Input::None || screen != Screen::Game || page_prompt) return false;
+    if (!waiting) return then != Then::Idle && then != Then::Door;
+    if (vm->wait() != ecl::Wait::Print) return false;
+    for (const char* t = vm->text(); *t; ++t)
+        if (*t != ' ' && *t != '\n') return false;
+    return true;
+}
+
 bool nav_point(int* x, int* y)
 {
     if (!d || input_mode != Input::None) return false;

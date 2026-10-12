@@ -3434,11 +3434,15 @@ void tap_play(const ui::Tap& t)
         // after each step (Tom, v0.84.0: no jumping back to the 3D view);
         // a step that starts something (a message, a menu, a fight) brings
         // the game screen back
+        // (Pool's step scripts clear the text with an empty PRINTCLEAR and
+        // run on over a few ticks: the map stays while they do - loop())
         for (int k = kWTurnL; k <= kWAround; ++k) {
             const ui::Rect r = walk_key(k);
-            if (r.w == 0 || !r.contains(t.x, t.y) || !play::walking() || play::fight_pad()) continue;
+            if (r.w == 0 || !r.contains(t.x, t.y) || play::fight_pad()) continue;
+            if (play::walk_pending()) return;          // (the last step still finishing)
+            if (!play::walking()) continue;
             play::act(kActs[k], frame::canvas());
-            if (play::walking() && play::map()) {
+            if ((play::walking() || play::walk_pending()) && play::map()) {
                 int y0, y1;
                 play::take_dirty(y0, y1);           // (shown when the map closes)
                 draw_map_page();
@@ -3828,6 +3832,22 @@ void tick()
         int index = 0;
         const int colour = look::flash(index);
         show_flash(index, colour);
+    }
+    if (screen == Screen::Play && !play_error && !dirty && map_shown && play::walk_pending()) {
+        // The map up while a step's scripts finish: ticks, the map redrawn
+        // once the party can walk again; anything for the player brings the
+        // game screen back
+        play::tick(millis(), frame::canvas());
+        if (play::walking() && play::map()) {
+            int y0, y1;
+            play::take_dirty(y0, y1);
+            draw_map_page();
+        } else if (!play::walk_pending()) {
+            map_shown = false;
+            frame::present();
+            redraw_side_keys();
+            present_play();
+        }
     }
     if (screen == Screen::Play && !play_error && !dirty && !map_shown) {
         play::tick(millis(), frame::canvas());

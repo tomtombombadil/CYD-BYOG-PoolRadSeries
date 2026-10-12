@@ -79,6 +79,10 @@ bool nav_point(int* x, int* y);
 // moving / aiming by hand); otherwise the cursor keys (320x240's row
 // shows one set or the other - Tom, 2026-10-10)
 bool walking();
+// A step's scripts still running with nothing for the player yet (a script
+// between its waits, an empty PRINTCLEAR being shown): the map over the
+// game screen can stay up while ticks finish it
+bool walk_pending();
 // A fight wants the direction keys (Tom, 2026-10-10: a fight's own keys -
 // the 8 ways and Select): a fighter moving or aiming by hand
 bool fight_pad();
