@@ -60,7 +60,10 @@ the Project as claude/TODO.md.
       Test (v0.92.0); the 439-byte record and the saves (v0.93.0); party
       menu, Load, Begin into Priam's house (v0.94.0); the rule tables,
       areas (v0.95.0); the scripts' view of a character (v0.96.0); View
-      Character (v0.97.0). Next, a chunk a commit: the opening texts (CALL
+      Character (v0.97.0); item names (v0.98.0). Next, a chunk a commit:
+      the treasure screen (View Take Pool Share Exit, the 3D layout - the
+      engine shows Curse's, with no words); how Secret renames an item it
+      identifies / halves / joins; the opening texts (CALL
       2DCB); View's right panel (with items) and a paladin's Heal / Cure;
       items and their words (its own word table), shops; Modify
       ("Add Subtract Keep Exit"); Add from Curse; camp (spell names; 6th /
@@ -74,6 +77,9 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.98.0: Secret's item names (the records' own) and its word table /
+  types.
 
 - v0.97.0: Secret's View Character in its own layout, pixel for pixel
   the original's (DOSBox, the GOG party).

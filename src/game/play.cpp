@@ -6060,6 +6060,7 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
             names->set_words(buf, pi.words.count, pi.words.stride);
         free(buf);
         names->set_plural(items::Names::Plural{pi.arrow, pi.quarrel, pi.dart, pi.flask, pi.keep1, pi.keep2});
+        names->stored_names = secret_files();
         d->facts.arrow = pi.arrow;
         d->facts.quarrel = pi.quarrel;
         memcpy(d->facts.elf_bonus, pi.elf_bonus, sizeof d->facts.elf_bonus);

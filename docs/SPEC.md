@@ -939,6 +939,12 @@ until the party menu is known (`party.items`).
   (with items) and Exit; the paladin's Heal / Cure and the right middle
   panel (empty for a party without items - what fills it to be seen) not
   yet.
+- **v0.98.0 - item names.** Its 124 name words (21 bytes each) and ITEMS
+  type file are read; its item types are its words' numbers (arrows 30,
+  quarrels 12, darts 5; the elves' bows and swords 22-25, 18, 19). An
+  item's name is the one its record keeps (`items::Names::stored_names`:
+  "Two-Handed Sword of Giant Slaying" isn't made of its words). Not yet:
+  how it renames an item it identifies or splits.
 - Not yet: the opening texts before Priam's (the valley, the glacier -
   the original's CALL 2DCB, a routine of its program), the items and
   their words (Secret's item word table differs), Modify ("Add Subtract

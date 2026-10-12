@@ -3661,6 +3661,26 @@ static void test_secret_rules()
     CHECK(ch.ext[party::kExtCleric67 + 1] == 1 && ch.ext[party::kExtCleric67] == 0 && ch.rec[0x12D] == 1);
 }
 
+// Secret's item names: the records' own
+static void test_secret_items()
+{
+    static items::Names nm;
+    nm.stored_names = true;
+    uint8_t r[items::kRecordSize] = {};
+    const char* txt = "Two-Handed Sword of Giant Slaying";
+    r[0] = static_cast<uint8_t>(strlen(txt));
+    memcpy(r + 1, txt, strlen(txt));
+    r[0x2E] = 20; r[0x2F] = 84; r[0x30] = 90; r[0x31] = 20; r[0x32] = 2;
+    char out[64];
+    nm.name(items::Item{r}, out, sizeof out);
+    CHECK(strcmp(out, txt) == 0);
+    nm.detect = true;
+    nm.name(items::Item{r}, out, sizeof out);
+    CHECK(strcmp(out, "* Two-Handed Sword of Giant Slaying") == 0);
+    nm.name(items::Item{r}, out, 8);
+    CHECK(strlen(out) == 7);
+}
+
 static void test_pool_rules()
 {
     static classes::Tables t;
@@ -6807,6 +6827,7 @@ int main()
     test_create();
     test_pool_rules();
     test_secret_rules();
+    test_secret_items();
     test_pool_outdoors();
     test_class_rules();
     test_item_combat();

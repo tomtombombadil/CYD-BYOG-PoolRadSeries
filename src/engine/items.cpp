@@ -57,6 +57,12 @@ void Names::name(const Item& it, char* out, size_t cap, bool all_words) const
     out[0] = 0;
     if (detect && (static_cast<int8_t>(it.r[0x32]) > 0 || static_cast<int8_t>(it.r[0x33]) > 0 || it.r[0x36]))
         add("* ");
+    if (stored_names) {
+        const int n = it.r[0] < 0x2D ? it.r[0] : 0x2D;
+        for (int i = 0; i < n && o + 1 < cap; ++i) out[o++] = static_cast<char>(it.r[1 + i]);
+        out[o] = 0;
+        return;
+    }
     if (it.count() > 0) {
         char n[8];
         snprintf(n, sizeof n, "%d ", it.count());

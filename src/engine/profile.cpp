@@ -845,8 +845,12 @@ const Profile kProfiles[] = {
               // "Experience:", "Armor Class", "Hit Points ", the View menu's "Exit")
               0, 0x27169, 0x27184, 0x27172, 0x27178, 0x27161, 0x278B8, 0x278AC, 0x278D0, 0x278E8, 0x278C4,
               0x278D9, 0x27E4B, 5},
-     // Items: only the menu word "Items" known so far
-     .items = {.title = 0x2846B},
+     // Items (secret_facts.md 11): 124 name words of 21 bytes (its names
+     // are the records' own - items::Names::stored_names), the ITEMS type
+     // file; arrows 30, quarrels 12, darts 5; the elves' bows and swords
+     // 22-25, 18, 19 (its types are its words' numbers); the menu word
+     .items = {.words = {0xED42, 21, 124}, .types_file = "ITEMS", .arrow = 30, .quarrel = 12, .dart = 5,
+               .elf_bonus = {22, 23, 24, 25, 18, 19}, .title = 0x2846B},
      // Character rules (secret_facts.md 9): the tables in Secret's shapes
      // (classes::Layout secret: 7 classes, levels to 18, 119 spells, its
      // own race order), the rest of character making not known yet

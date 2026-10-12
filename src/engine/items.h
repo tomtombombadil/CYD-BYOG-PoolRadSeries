@@ -76,6 +76,10 @@ public:
     // stops that, and the flask of oil
     struct Plural { uint8_t arrow, quarrel, dart, flask, keep1, keep2; };
     void set_plural(const Plural& p) { plural_ = p; }
+    // Secret of the Silver Blades: an item's name is the one its record
+    // keeps (a Pascal string at 0x00, as its files have it: count, words
+    // and all - "Two-Handed Sword of Giant Slaying" isn't made of its words)
+    bool stored_names = false;
     int flask() const { return plural_.flask; }      // the flask of oil's item type
 
     // The item's name as the games print it ("Long Sword", "3 Arrows",
