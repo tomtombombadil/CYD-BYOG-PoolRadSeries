@@ -1,24 +1,27 @@
-# CYD BYOG Pool of Radiance Series Engine
+# Gold Box Game Engine for Cheap Yellow Displays
+**I really need to change the name of this repo to "CYD-GoldBoxGameEngine"
 
-Play SSI's Gold Box games - **Pool of Radiance**, **Curse of the Azure Bonds**,
-**Secret of the Silver Blades** and **Pools of Darkness** - on an ESP32 "Cheap
-Yellow Display", from your own copy of the games.
+Play SSI's Gold Box games - **Pool of Radiance**, **Curse of the Azure Bonds**, **Secret of the Silver Blades** and **Pools of Darkness** (and maybe MORE!) on an ESP32 "Cheap Yellow Display". Your own legitimate copy of each game is required!
 
-**Bring your own game:** this is an engine only. Nothing from the original games
-is included; you copy the original DOS game files to a microSD card and the board
-reads them from there.
+**Bring your own game:** this is a game engine only. Nothing from the original games is included; you copy the original DOS game files to a microSD card and the board reads them and runs the game from them.
 
-> **Early development.** The viewer's Play Test runs Curse of the Azure
-> Bonds from its own scripts: the party menu (load the sample party GOG
-> includes, or make your own characters and add them), walking, events,
-> text, pictures, shops, the temple, training, camp (memorizing, resting
-> and casting spells), fights (moving, attacking, casting, turning undead;
-> using potions, wands and scrolls; the monsters cast spells and can flee
-> or surrender), saving, the journal, and the games' sound effects
-> (Tandy 1000 sound by default, or the PC speaker, in Settings - plug a
-> small speaker into the board's speaker socket; the boards don't come
-> with one). Roadmap:
+> **Early development.** This repo is in early development and testing stages.
+> Currently Curse and PoolRad are working and being tested.
+> Roadmap:
 > [docs/SPEC.md](docs/SPEC.md).
+
+A stretch goal of this repo is to include all of the Gold Box games that were based on the same Pool of Radiance game engine. That includes:
+ - Pool of Radiance (currently runs, but is in testing)
+ - Curse of the Azure Bonds (currently runs, but is in testing)
+ - Secret of the Silver Blades
+ - Pools of Darkness
+ - Champions of Krynn
+ - Death Knights of Krynn
+ - The Dark Queen of Krynn
+ - Gateway to the Savage Frontier
+ - Treasures of the Savage Frontier
+
+Unlimited Adventures is not on the menu because of the very tight memory constraints of the original ESP32 (most base CYD models). The ESP32-S3 and ESP32-C5 models might be able to support it. As it is: VGA modes are not supported on the base CYD models. The original ESP32 just doesn't have enough available SRAM for VGA. Frankly it's a miracle we have these games working with only about 320KB of sram available.
 
 ## Install
 
@@ -35,100 +38,38 @@ or Edge on a computer - pick your board, click Install.
 
 All five boards are tested with this firmware.
 
+**Testing and development for ESP32-S3 and NM-CYD-C5 boards is under way!**
+
 ## Your games on the SD card
 
 1. Format a microSD card as FAT32.
-2. Make a folder `GOLDBOX` at the top of the card.
-3. Copy each game's whole GOG install folder into it, as it is:
-   `GOLDBOX/Pool of Radiance`, `GOLDBOX/Curse of the Azure Bonds`,
-   `GOLDBOX/Secret of the Silver Blades`, `GOLDBOX/Pools of Darkness`.
-   (Any folder name containing the game's name works.)
+2. Make a folder `GOLDBOX` at the root of the card.
+3. Copy each game's whole GOG install folder into it, as it is: `GOLDBOX/Pool of Radiance`, `GOLDBOX/Curse of the Azure Bonds`, `GOLDBOX/Secret of the Silver Blades`, `GOLDBOX/Pools of Darkness`. (Any folder name containing the game's name works.) NOTE: It doesn't HAVE to be the GOG version of the game, but that is what we are using in development and testing. The Steam versions of the game should work just fine as well. Also, other Gold Box games are planned, so you may as well copy over Champions of Krynn, Death Knights of Krynn, The Dark Queen of Krynn, Gateway to the Savage Frontier, and Treasures of the Savage Frontier game folders as well. The games are relatively small (less than 400MB all totaled) so you don't even need a big SD card.
+4. Remove the SD card and put it in your CYD and apply power.
+5. When the CYD boots, it will scan the SD card for the games, letting you know what it finds. It will also process the Adventurer's Journal PDFs from the games so the game can show the journal entries as they are referenced in-game. It will also pull the game icon art from the GOG .dll files and display it in the game chooser interface on the CYD. Without those GOG files, the games would just show by title (no art).
+6. Once your SD card is scanned and processed, you'll be in the game chooser where you navigate left and right to select which Gold Box game you want to play.
 
-**Game icons (optional):** the DOS games have no icons of their own; GOG's
-install folder holds each game's icon in a `goggame-<number>.ico` or
-`goggame-<number>.dll` file. Copy that file into the game's folder on the card (for Pool of Radiance it
-sits one folder above the game files)
-and the library shows the icon next to the game's name. (GOG's `Support.ico`
-is the same generic GOG icon for every game, so it is ignored.)
-
-The other Gold Box games are recognised too (folders `CHAMPIONS`, `DEATH`,
-`QUEEN`, `GATEWAY`, `TREASURE`, `UNLIMIT`, or their full names), so their files
-can be looked at; they're planned after the four. The Dark Queen of Krynn and
-Unlimited Adventures use a newer file format the viewer can't read yet.
-
-## Using the asset viewer
-
-The games aren't playable yet; this build shows what is inside their files.
-
-1. **Library** (the firmware version is in its title bar): one game a page,
-   with its icon if you copied it; `<` / `>` go through the games. Tap the
-   game to open it. The card is scanned once - the first time the board
-   starts with it - and a list shows what is found. What the board makes
-   from your files (icons at the screen's size, the scan log `SCAN.TXT`
-   you can read on a PC) goes in `GOLDBOX/_CYD`. After you add or change
-   games, tap **Rescan Card**.
-2. **Files**: the game's DAX archives. Tap one. For Curse of the Azure Bonds
-   the middle key, **Screen Test**, shows the game's own look, drawn from your
-   files (`START.EXE`, `GAME.OVR`, `TITLE.DAX`, `8X8D1.DAX`): the title
-   sequence and credits (tap = next picture), a text window printing and the
-   menu line (tap to go on; tap a menu word to choose it), the screen frames
-   and their tiles. `< Prev` / `Next >` step through the pages.
-   **Walk Test** walks the game's 3D areas (every map the game's area
-   scripts load, with their own walls): the arrow keys turn, step forward,
-   side-step and turn around; **Area** shows the game's area map; tap the
-   party panel (or **Next** on the menu line) for the next map. To get
-   past walls: in the **Area** view tap a square to move there (the map
-   window follows you, so far squares take a few taps); on 480x320 tap a
-   square on the map beside the game screen. On 480x320
-   the whole map is drawn beside the game screen. No events yet - only
-   walls and doors (for testing, locked doors let you through and say so).
-   **Play Test** starts a new game of Curse run by the game's own scripts:
-   the opening, then events as you walk - text (tap, or any key, to go
-   on), menus (tap a word on the menu line, or a line of a list), pictures
-   and the clock. The game's own menu line works too: **Area**, **Search**
-   (on / off), **Look**. Event pictures animate while the game waits for
-   you; when the game asks for a word or a number, a keyboard comes up (the
-   typing shows on the menu line; Enter answers). Travel works too: the
-   wilderness map, with a blinking square where the party is, and the areas
-   you go into. The game starts at its party menu: **Load Saved Game**
-   (GOG's sample party is saved game A) or **Create New Character**, then
-   **Add Character to Party**, then **BEGIN Adventuring**. Fights are
-   played on the game's battlefield: tap a menu word (Move, Aim, Cast,
-   Turn, Quick, Done), tap a square next to your fighter to step or attack,
-   or tap a fighter to aim at them. When the game says "record it in
-   journal entry 31" the entry comes up on screen (from the journal PDF in
-   the game's folder - see below); on 480x320 **Look** is also a
-   key beside the pad and the map shows beside the game screen.
-3. **Blocks**: each piece inside the file. **Gold keys are pictures** (size and
-   frame count shown); navy keys are other data. Tap one.
-4. **Picture**: `< Prev` / `Next >` step through the frames, then the next
-   block. Tapping the left / right third of the picture does the same; the
-   middle shows the block's details. `Back` returns to the list.
-   Other data shows as a hex dump.
-
-Good files to try in Curse: `TITLE.DAX` (title screens, blocks 1-4),
-`8X8D1.DAX` block #201 (the game's own font, from v0.2.0),
-`PICn.DAX` / `BIGPICn.DAX` (event pictures), `HEAD*.DAX` / `BODY*.DAX`
-(portraits), `SKY.DAX`, `COMSPR.DAX` (combat figures). Pools of Darkness's
-256-colour pictures show too (from v0.1.3), except its animations (`PIC1`,
-`SPRIT1`) and wall tiles (`8X8D1`), which are still to be worked out.
 
 ## Settings and logs
 
-**Settings** (from the library): a brightness slider, colour fixes (Swap
+**Settings** (from the library): a brightness slider, color fixes (Swap
 Red/Blue shows red, green and blue blocks - if they don't match their
 names, tap it), Rotate 180, touch calibration and **Logs**. The card scan
 ends on its log; read it (tap the top / bottom half of the box, or drag),
 then tap Continue. **Logs** shows the scan log, restarts and errors; to
 send them, take the card to a PC - they're text files in `GOLDBOX/_CYD`.
 
-## Building
+## The Adventurer's Journal
+
+The original games referred to numbered entries in a printed journal. The GOG and Steam releases of these games put those printed docs into PDFs, including the Adventurer's Journal for each game. When you copy the entire GOG or Steam game's folder to the GOLBOX\ folder of your SD card, that includes the PDF docs. The SD card scan that runs on the CYD digests each journal PDF and pulls each entry out so that it can be shown in-game at the right time. The firmware knows only where each entry sits on the pages of the PDF - no journal text or pictures are in the firmware or this repository.
+
+## BUILDING
 
 VS Code + PlatformIO: open the folder, pick the board's env in the status bar,
 Build / Upload. Host tests of the file-format code run in CI
 (`tools/host_tests/`).
 
-## Credits
+## CREDITS
 
 - Board support, CI and web flasher from
   [CYD-Classic-Games](https://github.com/tomtombombadil/CYD-Classic-Games).
@@ -136,19 +77,7 @@ Build / Upload. Host tests of the file-format code run in CI
   reimplementation of Curse of the Azure Bonds (no code copied).
 - Graphics: [LovyanGFX](https://github.com/lovyan03/LovyanGFX) (FreeBSD license).
 
-Pool of Radiance, Curse of the Azure Bonds, Secret of the Silver Blades and
-Pools of Darkness are the property of their owners. This project is not
-affiliated with them and includes none of their files.
+Pool of Radiance, Curse of the Azure Bonds, Secret of the Silver Blades, Pools of Darkness, Champions of Krynn, Death Knights of Krynn, The Dark Queen of Krynn, Gateway to the Savage Frontier, and Treasures of the Savage Frontier are the property of their owners. This project is not affiliated with them and includes none of their files or copyrighted material.
 
+## LICENSE
 MIT license.
-
-## The Adventurer's Journal
-
-The games refer to numbered entries in the printed journal. Copy the
-journal PDF from your GOG game (e.g. `Adventurers Journal.pdf`) into the
-game's folder on the card. The card scan cuts every entry out of your PDF
-(Curse of the Azure Bonds: about 15 MB in `GOLDBOX/_CYD/Curse of the Azure Bonds/JOURNAL.DAT`,
-a few minutes, once) and the board shows an entry when the game mentions it.
-The firmware knows only where each entry sits on the pages of the GOG PDF -
-no journal text or pictures are in the firmware or this repository. A PDF it
-doesn't know is reported in the scan log (`GOLDBOX/_CYD/SCAN.TXT`).
