@@ -3,7 +3,7 @@
 
 Play SSI's Gold Box games - **Pool of Radiance**, **Curse of the Azure Bonds**, **Secret of the Silver Blades** and **Pools of Darkness** (and maybe MORE!) on an ESP32 "Cheap Yellow Display". Your own legitimate copy of each game is required!
 
-**Bring your own game (BYOG):** this is a game engine only. Nothing from the original games is included; you copy the original DOS game files to a microSD card and the board reads them and runs the game from them.
+**Bring Your Own Game (BYOG):** this is a game engine only. Nothing from the original games is included; you copy the original DOS game files to a microSD card and the board reads them and runs the game from them.
 
 > **Early development.** This repo is in early development and testing stages.
 > Currently Curse and PoolRad are working and being tested.
