@@ -24,10 +24,6 @@ the Project as claude/TODO.md.
 
 ## Claude
 
-- [ ] DOSBox: do the mountains north of Phlan stop the party in Pool's
-      wilderness? (poolrad_overland_facts.md 9: the scripts' terrain check
-      reads an undefined value.) Make a save in the wilderness with the
-      engine, load it in the original, walk north.
 - [ ] Pool items: the 0x80+ item effect codes (generic 0x80-0x82, 0x85,
       0x86, 0x88, 0x8A, 0x8B; Gauntlets of Ogre Power 0x83 = Str 18/00;
       0x87 the Giant Strength check) from GBC's Pool item list as facts;
@@ -43,6 +39,10 @@ the Project as claude/TODO.md.
 
 ## Done
 
+- 2026-10-12: DOSBox - the mountains in Pool's wilderness don't stop the
+  party in the original (12 hours a step, as in the engine, which already
+  matched): poolrad_overland_facts.md 7.4.
+- 2026-10-12: the other games surveyed (Project: other_games_facts.md).
 - v0.87.3: room for fighters joining mid-fight; Hit / Miss always sound.
 - v0.87.2: flasks of oil burn.
 - v0.87.0-v0.87.1: 4-bit screen (32 KB), lighter fights, heap budget.
