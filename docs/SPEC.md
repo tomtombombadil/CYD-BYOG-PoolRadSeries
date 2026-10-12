@@ -277,6 +277,10 @@ log; while exploring with the largest block under 32 KB it does that by
 itself every 5 s. A sound in a fight with under 10 KB in one piece is left
 out ("a sound left out: memory low"); a sound or spell names that can't
 get memory say so in the log instead of failing quietly.
+v0.87.3 (Tom): a fight keeps room for 8 more fighters to join (summons,
+allies arriving in stages - none in Curse or Pool, likely later); a fight
+holds the sound output from start to end so Hit and Miss always play, and
+outside fights a sound left out for memory is never Hit or Miss.
 v0.87.0: the game screen's canvas is 4 bits a pixel (EGA's 16 colours) -
 32 KB instead of 64 KB, the biggest single block the engine has; only the
 Resource Test's 256-colour pictures switch it to a byte a pixel for as

@@ -218,12 +218,27 @@ bool snd_fill(uint8_t* buf, int n, void* ctx)
     return static_cast<sound::Player*>(ctx)->render(buf, n, kAudioHz, snd_volume);
 }
 
+// A fight holds the sound output from its start to its end (Hit / Miss)
+void sound_hold(bool on)
+{
+    if (!on) {
+        audio_hold(false, nullptr, nullptr);
+        return;
+    }
+    if (!snd || !snd->ready() || (snd_mode != 1 && snd_mode != 2)) return;
+    audio_hold(true, snd_fill, snd);
+    if (!audio_held()) memlog::note("NOT ENOUGH MEMORY to hold the sound for the fight");
+}
+
 void sfx(int id)
 {
     if (!snd || !snd->ready() || (snd_mode != 1 && snd_mode != 2)) return;
     // A sound needs ~7 KB while it plays (its task and DAC): not when that
     // would leave the game short - in a fight nothing is dropped for it
-    if (!audio_running() && memlog::largest_kb() < 10 && (fighting() || !make_room(10, "a sound"))) {
+    // (Hit and Miss are never left out - Tom, 2026-10-12: they tell a hit
+    // from a miss; in a fight the output is held for them anyway)
+    const bool vital = id == sound::kHit || id == sound::kMiss;
+    if (!vital && !audio_running() && memlog::largest_kb() < 10 && (fighting() || !make_room(10, "a sound"))) {
         static uint32_t noted = 0;
         if (!noted || millis() - noted > 60000) {
             noted = millis() | 1;
@@ -8397,7 +8412,7 @@ bool make_room(unsigned kb, const char* what)
         memlog::note(line);
         return memlog::largest_kb() >= kb;
     };
-    if (audio_running()) {
+    if (audio_running() && !audio_held()) {         // (a fight's held output stays: Hit / Miss)
         audio_stop();
         if (dropped("the sound playing")) return true;
     }

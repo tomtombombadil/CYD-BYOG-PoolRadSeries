@@ -228,6 +228,13 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   `frame::set_depth(8)` only for the Resource Test's 256-colour VGA
   pictures (back to 4 on any other screen). The playsim runs 4-bit too
   (CANVAS8=1: a byte a pixel - its snapshots must be identical).
+  **The VGA games need the 8-bit canvas back** (Tom, 2026-10-12): Pools of
+  Darkness (checked: its GOG PIC / BIGPIC / CPIC blocks are 256-colour
+  VGA pictures, 479 of them), The Dark Queen of Krynn, Unlimited
+  Adventures (Treasures of the Savage Frontier: check its files when we
+  get there). The depth will be the game profile's choice
+  (`frame::set_depth` already does it); for those games the memory
+  budget is 32 KB tighter - plan their memory with that.
   `src/ui/ui.*` = keys, header, touch filter for the engine's own screens.
 - Facts that live in a game's program (START.EXE / GAME.EXE, EXEPACK-packed;
   e.g. the screen frame's tile tables) are read from the player's copy at
@@ -334,6 +341,15 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   moves with invariant checks; MAREA / MBLOCK start it in a block). Build
   it with -fsanitize=address,undefined; give each run its own copy of the
   game folder (runs save over the slots).
+- **DOSBox here** (2026-10-12): the ORIGINAL games run on Claude's side -
+  `apt-get install dosbox xdotool x11-apps imagemagick`, a virtual display
+  (`Xvfb :5`), `DISPLAY=:5 SDL_AUDIODRIVER=dummy dosbox -conf <conf>`
+  (autoexec: mount the game folder copy, start), keys with `xdotool`,
+  screenshots with `xwd -root | convert` - for questions only the
+  original can answer (what it shows / does somewhere). The DOS files
+  from the Project's zips are all it needs (GOG's Linux builds are the
+  same DOS games in DOSBox). Screenshots stay in scratch. Don't kill
+  processes with `pkill -f` patterns that match the shell's own command.
 - `tools/qemu/` (Tom, 2026-10-11: "if worth it"): the REAL firmware in
   Espressif's QEMU (qemu-system-xtensa, esp-develop-9.2.2; downloads from
   GitHub work here) - `pio run -c tools/qemu/qemu.ini -e qemu28` (the 2.8"
@@ -443,6 +459,17 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   with a reason. Also since v0.87.1: the picture animation's DAX index
   (3 KB) only while a picture animates; the magic tables load alone
   (`MagicRules`, 4.7 KB) instead of in character making's 6.9 KB block.
+  (8) **careful cuts** (Tom, 2026-10-12): a reduction must not take away
+  what a later game needs - the fighters are the fight's own plus
+  `combat::kSpareFighters` (8) for any that join mid-fight (summons,
+  allies in stages - Curse / Pool have none: coab's LOAD MONSTERs all come
+  before the fight), taken with `combat::add_fighter` (nullptr: full).
+  (9) **sound** (Tom: "Prioritize the hit and miss sounds"): the sounds
+  are synthesised from the player's own driver byte code (3.6 KB - nothing
+  to compress); what costs is the output (task + DAC ~7 KB). A fight holds
+  it from start to end (`audio_hold`, `play::sound_hold`; the memory log
+  says if it couldn't) and make_room never drops a held output; outside
+  that, a sound may be left out when memory is low, but never Hit or Miss.
 - Toolchain: pioarduino platform 55.03.312-1 (Arduino-ESP32 3.3.x), LovyanGFX
   1.2.x, huge_app.csv (no OTA - the web flasher is the update path).
 - Claude's local builds: PlatformIO in a venv; the proxy CA must be appended to

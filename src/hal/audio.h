@@ -1,8 +1,11 @@
 // The game's sound out of the board's speaker socket: 8-bit samples to the
 // DAC (GPIO 26) through the board's little amplifier, fed by DMA from a task
 // of its own that runs only while something sounds (Tom: every KB for the
-// games - ~5 KB while it plays, nothing otherwise). Boards with an amplifier
-// enable pin (the ESP32-32E ones: GPIO 4, low = on) switch it on only then.
+// games - ~7 KB while it plays, nothing otherwise) - except during a fight,
+// when audio_hold keeps it (asleep, the DAC off) between sounds so Hit and
+// Miss always play (Tom, 2026-10-12: "Prioritize the hit and miss sounds").
+// Boards with an amplifier enable pin (the ESP32-32E ones: GPIO 4, low =
+// on) switch it on only while something sounds.
 #pragma once
 
 #include <cstdint>
@@ -19,3 +22,7 @@ void audio_play(AudioFill fill, void* ctx);
 // data goes away)
 void audio_stop();
 bool audio_running();
+// on: the output's task and DAC made now and kept between sounds until the
+// hold ends (a fight) - false from audio_held() when there was no memory
+void audio_hold(bool on, AudioFill fill, void* ctx);
+bool audio_held();

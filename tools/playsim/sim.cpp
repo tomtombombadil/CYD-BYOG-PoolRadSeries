@@ -34,6 +34,9 @@ void audio_play(AudioFill fill, void* ctx)
 }
 void audio_stop() {}
 bool audio_running() { return false; }
+static bool g_held = false;             // (a fight's hold on the sound output: counted, nothing else)
+void audio_hold(bool on, AudioFill, void*) { if (on != g_held && getenv("SOUNDLOG")) printf("  [audio] hold %s\n", on ? "on" : "off"); g_held = on; }
+bool audio_held() { return g_held; }
 static void save_wav()
 {
     const char* fn = getenv("SOUNDWAV");

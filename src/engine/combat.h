@@ -33,6 +33,11 @@ namespace combat {
 constexpr int kW = 50, kH = 25;
 constexpr int kMaxMonsters = 63;
 constexpr int kMaxFighters = party::kMaxParty + kMaxMonsters;
+// Room kept in every fight for fighters who join once it has started
+// (summoned, called in): Curse and Pool have none - coab's LOAD MONSTERs
+// all come before the fight, staged fights are fights of their own - but
+// Secret / Darkness may (1.3 KB a fight)
+constexpr int kSpareFighters = 8;
 constexpr int kGroundValues = 0x43;
 constexpr int kMaxGroups = 8;           // monster kinds a fight (icon slots 8 ...)
 constexpr int kGroupItems = 8;
@@ -289,8 +294,10 @@ enum Result : uint8_t { Won = 0, Lost = 0x80, Fled = 0x81 };
 struct Battle {
     uint8_t ground[kH][kW] = {};
     uint8_t who[kH][kW] = {};           // fighter + 1 on that square (0: none)
-    // The fighters, as many as the fight has (the caller's storage, cap
-    // entries; v0.86.1: a fixed 71 took 11 KB - Tom's 4.0" ran out mid-fight)
+    // The fighters (the caller's storage, cap entries; v0.86.1: a fixed 71
+    // took 11 KB - Tom's 4.0" ran out mid-fight). The fight's own plus
+    // kSpareFighters for any that join while it's on (Tom, 2026-10-12: later
+    // games summon and bring allies in stages) - add_fighter takes one.
     Fighter* f = nullptr;
     int     cap = 0;
     int     n = 0;
@@ -333,6 +340,9 @@ struct Battle {
 
 // Effects on a fighter
 bool helpless(const Battle& b, const Fighter& f);
+// A fighter joining the fight: the next free slot, cleared, n counted
+// (nullptr: no room left - kSpareFighters used up; the caller says so)
+Fighter* add_fighter(Battle& b);
 // Whether `viewer` can't see `target`: invisible (unless it sees the
 // invisible), or blinking once it has acted this round
 bool hidden(const Battle& b, int viewer, int target);

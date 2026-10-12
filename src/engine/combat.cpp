@@ -680,6 +680,14 @@ bool hidden(const Battle& b, int viewer, int target)
     return !sees;
 }
 
+Fighter* add_fighter(Battle& b)
+{
+    if (!b.f || b.n >= b.cap) return nullptr;
+    Fighter& f = b.f[b.n++];
+    f = Fighter{};
+    return &f;
+}
+
 bool helpless(const Battle& b, const Fighter& f)
 {
     if (!b.fx) return false;

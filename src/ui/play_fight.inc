@@ -608,6 +608,7 @@ void end_fight_art()
     // again for the treasure's Detect or the camp - Tom's 4.0" log: 10 KB
     // stayed after each fight)
     end_magic();
+    sound_hold(false);
     memlog::note("fight over");
     for (Pic4& p : fg->icon) free_pic(p);
     free(fg->cursor);
@@ -2552,9 +2553,11 @@ void fight_start(pic::Canvas& c)
         end_magic();
     }
     load_fight_words();
-    // The fighters' blocks: as many as this fight has
+    // The fighters' blocks: as many as this fight has, and room for some to
+    // join (combat::kSpareFighters)
     delete[] fg->fighters;
-    const int n_fighters = pt->count + ml->n;
+    int n_fighters = pt->count + ml->n + combat::kSpareFighters;
+    if (n_fighters > combat::kMaxFighters) n_fighters = combat::kMaxFighters;
     fg->fighters = new (std::nothrow) combat::Fighter[n_fighters];
     const bool room = fg->fighters && alloc_tiles();
     const bool tables = room && load_fight_tables();
@@ -2675,6 +2678,7 @@ void fight_start(pic::Canvas& c)
     if (!fg->until) fg->until = 1;
     Serial.printf("[play] a fight: %d against %d (%s)\n", combat::standing(b, 0), combat::standing(b, 1),
                   b.indoors ? "indoors" : "outdoors");
+    sound_hold(true);                        // (Hit / Miss: the output ready all fight)
     char t[48];
     snprintf(t, sizeof t, "fight start, %d against %d%s", combat::standing(b, 0), combat::standing(b, 1),
              fg->tiles_in_world ? "" : " (walls not parked)");

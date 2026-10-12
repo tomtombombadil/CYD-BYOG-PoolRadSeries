@@ -1257,6 +1257,22 @@ static void test_canvas4()
     CHECK(memcmp(back, row, 16) == 0);
 }
 
+// Fighters joining a fight: the spare slots, then none
+static void test_add_fighter()
+{
+    static combat::Battle b;
+    b = combat::Battle{};
+    combat::Fighter store[3];
+    b.f = store;
+    b.cap = 3;
+    b.n = 1;
+    store[1].x = 9;
+    combat::Fighter* a = combat::add_fighter(b);
+    CHECK(a == &store[1] && a->x == 0 && b.n == 2);
+    CHECK(combat::add_fighter(b) == &store[2] && b.n == 3);
+    CHECK(combat::add_fighter(b) == nullptr && b.n == 3);
+}
+
 static void test_inflate()
 {
     static uint8_t window[inflate::kWindow];
@@ -6468,6 +6484,7 @@ int main()
     test_item_combat();
     test_log_pack();
     test_canvas4();
+    test_add_fighter();
     if (failures) {
         printf("%d check(s) failed\n", failures);
         return 1;
