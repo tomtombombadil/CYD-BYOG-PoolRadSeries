@@ -374,7 +374,7 @@ int main(int argc, char** argv)
 {
     setvbuf(stdout, nullptr, _IOLBF, 0);       // (lines out at once: a hang or a crash keeps them)
     // SIZES: the fight's blocks' sizes
-    if (getenv("SIZES")) { printf("Fight %zu Battle %zu Page %zu Monster %zu\n", sizeof(play::Fight), sizeof(combat::Battle), sizeof(play::Page), sizeof(combat::Monster)); return 0; }
+    if (getenv("SIZES")) { printf("Fight %zu Battle %zu Page %zu Monster %zu Data %zu World %zu GameState %zu Party %zu Names %zu Ground %zu\n", sizeof(play::Fight), sizeof(combat::Battle), sizeof(play::Page), sizeof(combat::Monster), sizeof(play::Data), sizeof(view3d::World), sizeof(ecl::GameState), sizeof(party::Party), sizeof(items::Names), sizeof(*play::ground)); return 0; }
     // argv[1]: the game folder on the PC; its parent stands for /GOLDBOX
     std::string host = argv[1];
     while (host.size() > 1 && host.back() == '/') host.pop_back();

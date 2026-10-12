@@ -1993,6 +1993,10 @@ void aim_menu(pic::Canvas& c)
     fg->st = FSt::Aim;                  // (also back from "Abort Spell?" - No / Esc)
     combat::Battle& b = fg->b;
     const int t = fg->manual ? (b.who[fg->my][fg->mx] ? b.who[fg->my][fg->mx] - 1 : -1) : fg->cand[fg->ci];
+    if (!fg->outline) {
+        int w, h;
+        fg->outline = load_pic4("COMSPR.DAX", 0x19 + 0x80, 0, &w, &h);     // (another try)
+    }
     if (t >= 0 || fg->manual) {
         if (t >= 0) focus(t, 2);
         draw_fight(c);
@@ -2565,6 +2569,9 @@ void fight_start(pic::Canvas& c)
     fg->cursor = load_pic4("COMSPR.DAX", 0x19, 0, &w, &h);
     fg->skull = load_pic4("COMSPR.DAX", 11 + 0x80, 0, &w, &h);
     fg->outline = load_pic4("COMSPR.DAX", 0x19 + 0x80, 0, &w, &h);
+    // (Tom, 3.2", v0.85.5: Aim's box once didn't show - a picture that
+    // couldn't be loaded goes in the Errors log)
+    if (!fg->cursor || !fg->outline || !fg->skull) log_error(no_memory("the fight's cursor / target box"));
     focus(0, 0xFF);
     screen = Screen::Fight;
     palette_fight(true);

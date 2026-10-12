@@ -138,6 +138,7 @@ int dy(int dir) { return dir >= 0 && dir <= 8 ? kDy[dir] : 0; }
 
 bool read_tables(Tables& t, const TableAt& at, ReadDs read, void* ctx)
 {
+    t.by_name = false;                  // (Curse: the class bits - was left unset, read as whatever was there)
     return read(ctx, at.ground, &t.ground[0][0], sizeof t.ground) &&
            read(ctx, at.fallback, &t.fallback[0][0], sizeof t.fallback) &&
            read(ctx, at.formation, &t.formation[0][0], sizeof t.formation) &&

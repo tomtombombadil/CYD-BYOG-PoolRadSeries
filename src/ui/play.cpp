@@ -1170,12 +1170,10 @@ void note(pic::Canvas& c, const char* t)
 // An error (or "not in the engine yet") on the menu line: it stays until
 // the player taps (Tom, 2026-10-09: errors mustn't vanish before they're
 // read). Also noted in /GOLDBOX/_CYD/ERRORS.TXT (Settings - Logs).
-void error(pic::Canvas& c, const char* t)
+// A line in /GOLDBOX/_CYD/ERRORS.TXT only (nothing on the screen): what
+// went wrong quietly, for the player's log
+void log_error(const char* t)
 {
-    clear_menu_line(c);
-    put(c, t, 0, text::kMenuRow, 12);
-    note_until = 1;
-    note_held = true;
     Serial.printf("[play] error: %s\n", t);
     char path[96];
     snprintf(path, sizeof path, "%s/_CYD/ERRORS.TXT", games::kRootDir);
@@ -1188,6 +1186,15 @@ void error(pic::Canvas& c, const char* t)
         f.write(reinterpret_cast<const uint8_t*>(line), n > 0 && n < (int)sizeof line ? n : 0);
         f.close();
     }
+}
+
+void error(pic::Canvas& c, const char* t)
+{
+    clear_menu_line(c);
+    put(c, t, 0, text::kMenuRow, 12);
+    note_until = 1;
+    note_held = true;
+    log_error(t);
 }
 
 void pick_line(int i, char* out, size_t cap);     // Create New Character's lists

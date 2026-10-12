@@ -22,6 +22,7 @@
 // Env: GAME=n (games::Game: 1 Pool of Radiance), BLOCK (events: one block), FIGHTLOG / PAGELOG / TURNLOG / STLOG (a fight's
 // progress), AIMLOG, ENTRIES, ONLY. Each run saves over the slots: give each
 // its own copy of the game folder.
+#include <malloc.h>
 #include "ui/play.cpp"
 #include "engine/rules.h"
 #include <cstdarg>
@@ -1044,8 +1045,48 @@ static void sweep_monkey(int rounds)
             printf("  monkey %d: now in area %d\n", r, last_area);
         }
         if (r % 1000 == 0) printf("  monkey %d: screen %d party %d area %d script %d\n", r, (int)screen, pt->count, d->gs.game_area, d->gs.script);
+        if (getenv("HEAPLOG") && play::walking() && r % 200 == 0) printf("  heap %d: %zu in use (boot %d)\n", r, mallinfo2().uordblks, boots);
     }
     printf("  %d boots, %d fights\n", boots, fights_seen);
+}
+
+// ---- memloop (v0.85.5, Tom's 3.2": after a long session the fight's pictures
+// stopped loading): ONE session, fight after fight (MON swaps of every area
+// file's monsters), the party healed between; the heap in use (mallinfo2)
+// printed when back to walking after each - it should stay flat
+static size_t heap_in_use() { return mallinfo2().uordblks; }
+static void sweep_memloop(int rounds)
+{
+    using namespace play;
+    if (!boot()) return;
+    size_t first = 0, last = 0;
+    for (int r = 0; r < (rounds > 0 ? rounds : 60); ++r) {
+        if (!d || !pt || pt->count == 0) {
+            problem("party gone");
+            return;
+        }
+        for (int i = 0; i < pt->count; ++i) {             // healed, back on their feet
+            party::Character& m = pt->m[i];
+            m.rec[0x1A4] = m.rec[0x78];
+            m.rec[0x195] = party::Okay;
+            m.rec[0x196] = 1;
+        }
+        const int area = 1 + r % 9, id = 1 + (r * 7) % 40;
+        if (!start_fight(area, id, 3)) {
+            pump(20000);
+            continue;
+        }
+        pump();
+        for (int k = 0; k < 200 && !play::walking(); ++k) {     // (treasure, results: tapped through)
+            play::tap(2, 2, C);
+            pump(2000);
+        }
+        const size_t h = heap_in_use();
+        if (!first) first = h;
+        last = h;
+        printf("  memloop %d: MON%d #%d, heap in use %zu (%+ld since the first)\n", r, area, id, h, (long)h - (long)first);
+    }
+    printf("  memloop: grew %ld bytes over the run\n", (long)last - (long)first);
 }
 
 // ---- behaviour checks (CLAUDE.md "Game testing"): what each thing DOES,
@@ -1132,6 +1173,7 @@ int main(int argc, char** argv)
     else if (mode == "classes") sweep_classes();
     else if (mode == "events") sweep_events(arg);
     else if (mode == "saveload") sweep_saveload();
+    else if (mode == "memloop") sweep_memloop(arg);
     else if (mode == "monkey") {
         rnd.seed(static_cast<unsigned>(arg ? arg : 1));
         sweep_monkey(argc > 4 ? atoi(argv[4]) : 20000);
