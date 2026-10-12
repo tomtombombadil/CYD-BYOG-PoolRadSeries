@@ -477,5 +477,7 @@ bool ready(games::Game g);
 
 // The profile matching a program, or nullptr.
 const Profile* find(games::Game g, uint32_t program_size, uint32_t image_size);
+// Whether any release of the game has items the engine can fix (items::FlameFix)
+bool has_item_fixes(games::Game g);
 
 } // namespace profile

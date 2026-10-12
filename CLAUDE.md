@@ -180,16 +180,16 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   1d4 + 1, always hitting - the AD&D rule, every game (Pool's code was read
   as level / 2; not followed). All on one target as the originals (Tom,
   2026-10-11: keep it; separate targets maybe later, as an option).
-- Settings help (Tom, v0.84.0): every switch on the Settings page / Game
-  menu Options tab has a circled "?" at its right (`ui::key_help`) opening
+- Settings help (Tom, v0.84.0): every switch on the Settings screen has
+  a circled "?" at its right (`ui::key_help`) opening
   what it does (`comfort_help_text`; Game Font's shows each font); a new
   switch needs its help text too. Key renamed: "Tap to Stop Demo".
 - Engine comforts (Tom, 2026-10-10): anything the original games didn't do,
   added for the small screens, goes behind a switch in
   `src/app/features.h` (documented there and in SPEC section 11) so forks
   for bigger screens can turn it off. First: `CYD_BIG_ICON_PREVIEW`, the
-  icon editor's big preview (480x320 always; 320x240 via Game menu ->
-  Options -> Large Icons).
+  icon editor's big preview (480x320 always; 320x240 via Settings ->
+  Large Icon).
   `CYD_ICON_GALLERY` (Tom, 2026-10-11, v0.71.0): the icon editor opens on
   a gallery of ready-made icons / heads / weapons / colour schemes (the
   player's own parts; the combinations are `engine/icon_looks.*`, ours);
@@ -305,11 +305,21 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   for ALL games (settings.h `comforts_off`; per-game only if a need shows
   up), As Original / All On, and **Dev Tools** at the bottom (the three
   tests). New comforts get a features.h switch AND a Settings key.
+  **One Settings screen everywhere** (Tom, 2026-10-12, v0.91.0: "the
+  chooser's settings and the game settings ... should be the same (except
+  the game specific settings)"): Home, a game's page and the in-game Game
+  menu's **Settings** tab (was Options) show the same keys - the board's
+  (Brightness, Volume, Game Sound, Invert, Swap Red/Blue, Rotate 180,
+  Recalibrate Touch, Asset Viewer 1.5x on 480x320 outside the game,
+  Logs, the version / board / memory lines) then the comforts; a game's
+  own keys (Item Fixes, for a game with fixes) only with a game in hand;
+  bottom: As Original, + Dev Tools (game page) or Back to Game (in game);
+  2 x 4 a page, arrows bottom right (viewer.cpp `set_entries`, SetFrom).
 - Clear font (Tom, 2026-10-11, v0.73.0): the engine's OWN 8x8 font
   (`tools/fonts/clear8.txt` -> `make_font.py` -> `engine/font_clear.cpp`),
   bold upright capitals + real lower case, a comfort (`CYD_CLEAR_FONT`,
   Settings key) - OFF by default (Tom: the original font stays the
-  default), switchable mid-game from the Game menu's Options tab (the
+  default), switchable mid-game from the Game menu's Settings tab (the
   text on screen changes with it). Third-party fonts (the Gold Box Companion's
   have no license and are the game's own glyphs retouched) are only looked
   at, never copied; edit the .txt art and regenerate. v0.74.0 (Tom): the

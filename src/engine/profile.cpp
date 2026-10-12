@@ -808,4 +808,11 @@ const Profile* find(games::Game g, uint32_t program_size, uint32_t image_size)
     return nullptr;
 }
 
+bool has_item_fixes(games::Game g)
+{
+    for (const Profile& p : kProfiles)
+        if (p.game == g && p.items.flame.type) return true;
+    return false;
+}
+
 } // namespace profile

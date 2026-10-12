@@ -239,6 +239,21 @@ stay in the session's scratch space, never in the repo.
 
 ## 5c. Settings and logs (Tom, 2026-10-09)
 
+- **One Settings screen** (Tom, 2026-10-12, v0.91.0: "the chooser's
+  settings and the game settings ... should be the same (except the game
+  specific settings). A player playing a game should be able to adjust
+  the brightness and volume, etc, as well as adjust the game tweaks"):
+  Home's Settings, a game's page's Settings and the Game menu's
+  **Settings** tab (was Options) are one screen with the same keys, 2 x 4
+  a page with arrows bottom right: Brightness, Volume, Game Sound, Invert
+  Colors, Swap Red/Blue, Rotate 180, Recalibrate Touch (resistive
+  screens), Asset Viewer 1:1 / 1.5x (480x320, not in the game - the game
+  is always 1:1), Logs (in the game: the Logs tab's screen), then the
+  engine comforts (all games), then the game's own keys where a game is
+  in hand - Item Fixes for a game with fixes (Pool) - and the version,
+  board and memory lines. Every switch has its "?". Bottom: As Original /
+  All On (the comforts), and Dev Tools (a game's page) or Back to Game (in
+  the game). The keys before v0.91.0, kept below for their history:
 - Settings keys (2 columns; 3 rows on 320x240, 4 on 480x320; more than fit
   go on further pages, arrow keys bottom right): Brightness (a slider in
   one key's space, "Brightness nn%" in small text above it; tap a point or
@@ -367,7 +382,8 @@ can't get the memory says "Not enough memory to show this log."
    the card); below them **As Original** (every comfort off; then the
    key reads All On) and **Dev Tools** (Resource Test, Screen Test, Walk
    Test; their Back returns there). The in-game Game menu's Options tab
-   shows the same switches. A game the engine can't play yet: its note
+   shows the same switches. v0.91.0 (Tom, 2026-10-12): **one Settings
+   screen** everywhere - section 5c. A game the engine can't play yet: its note
    and Settings (its files under Dev Tools).
 2. **The game's look**: its font (v0.2.0), screen frame (v0.3.0, Curse - the
    viewer's Screen Test), title sequence + credits, text windows and the menu
@@ -1063,7 +1079,7 @@ a PC, PortMaster handhelds):
   bigger screens can drop them with a build flag (Tom, 2026-10-10):
   - `CYD_BIG_ICON_PREVIEW` (v0.59.0): the icon editor's big preview of the
     new combat icon - 480x320 always, in the Companion strip; 320x240 with
-    Game menu -> Options -> Large Icons, in the editor's empty right side;
+    Settings -> Large Icon, in the editor's empty right side;
     a tap flips ready / action.
   - `CYD_DEMO_TAP_STOPS` (v0.64.0, Tom): a tap or key stops the title's
     Demo (the title comes back); the original's demo can't be stopped.

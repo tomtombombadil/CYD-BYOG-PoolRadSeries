@@ -32,6 +32,17 @@ the Project as claude/TODO.md.
 
 ## Claude
 
+- [ ] **Platform layer** (Tom, 2026-10-12: keep it portable, PortMaster):
+      the game's own flow (`ui/play.cpp`, `play_fight.inc`, `look`,
+      `walk`: ~15k lines) draws only into the canvas and takes keys / taps
+      through its API, but still calls Arduino's Serial / millis, the
+      Arduino SD library's fs::File / sd_fs() and heap_caps directly
+      (the playsim imitates those to run it on Linux). Put them behind one
+      small platform interface (time, log, files, memory, sound) with an
+      ESP32 and a host implementation; move play / look / walk out of
+      src/ui into the platform-free side; the engine's own screens
+      (Settings, journal viewer, library) drawn through ui:: primitives a
+      port can supply.
 - [ ] Memory, next cuts (measure each with heapprof): the party's unused
       member slots (1.7 KB each), Data's words read on demand, the spell
       names' 4 KB read buffer in pieces.
@@ -51,6 +62,8 @@ the Project as claude/TODO.md.
 
 ## Done
 
+- v0.91.0: one Settings screen everywhere (Home, the game's page, the
+  Game menu's Settings tab): board keys + comforts + the game's own.
 - v0.90.0: Tom's questions on the Cloak of Elvenkind (95 in 100 is the
   originals' own code - answered) and the Flame Tongue: the Item Fixes
   switch (Pool's Flame Tongue as AD&D, files kept as the original's), the
