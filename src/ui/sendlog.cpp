@@ -7,7 +7,7 @@
 #include "app/library.h"
 #include "engine/log_pack.h"
 #include "engine/third_party/qrcodegen.h"
-#include "hal/memlog.h"
+#include "platform/memlog.h"
 #include "hal/sdcard.h"
 
 namespace sendlog {

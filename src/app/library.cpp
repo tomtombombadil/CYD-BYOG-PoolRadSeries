@@ -363,7 +363,7 @@ bool gbc_path(const GameDir& g, const char* file, char* out, size_t cap)
 
 void path_of(const char* data_dir, const char* file, char* out, size_t cap)
 {
-    snprintf(out, cap, "%s/%s/%s", games::kRootDir, data_dir, file);
+    games::path_of(data_dir, file, out, cap);
 }
 
 FileSource::FileSource(fs::File f) : f_(f), size_(static_cast<uint32_t>(f.size())) {}

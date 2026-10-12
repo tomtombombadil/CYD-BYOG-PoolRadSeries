@@ -1,7 +1,7 @@
-// Play Test simulator: runs src/ui/play.cpp on the PC against a game folder
-// (the player's own files, outside the repo), answers menus, takes canvas
-// snapshots (out/*.ppm). Build from the repo root:
-//   g++ -std=c++17 -O1 -g -Itools/playsim/shim -Isrc -o playsim tools/playsim/sim.cpp src/engine/*.cpp
+// Play Test simulator: runs src/game/play.cpp on the PC (the platform layer:
+// tools/host) against a game folder (the player's own files, outside the
+// repo), answers menus, takes canvas snapshots (out/*.ppm). Build from the repo root:
+//   g++ -std=c++17 -O1 -g -Itools/host -Isrc -o playsim tools/playsim/sim.cpp src/engine/*.cpp tools/host/*.cpp
 // Run: playsim <game folder> [moves: F L R B A K]; env: SAVE=A (load saved
 // game A at the party menu first; otherwise BEGIN with no party; VIEW=n then
 // views character n), AREA / BLOCK (start
@@ -12,7 +12,8 @@
 // (fighter m's weapon becomes that type), FXSHOTS=n (snapshots of the pages'
 // pictures in flight), PAGELOG (each fight page's lines), MONSWAP=area:id[:copies[:icon]]
 // (the LOAD MONSTER at RUNAT loads that monster; its picture: CPIC block icon, else id). Needs an out/ folder.
-#include "ui/play.cpp"
+#include "game/play.cpp"
+#include "host.h"
 #include "engine/rules.h"
 #include <vector>
 #include <string>
@@ -52,7 +53,6 @@ static void save_wav()
     printf("  %d sounds, %.1f s in %s\n", g_sounds, len / (double)hz, fn);
 }
 uint32_t g_now = 1000;
-SerialT Serial;
 static std::vector<uint8_t> px(getenv("CANVAS8") ? 320 * 200 : 320 * 200 / 2);   // (exactly the canvas: ASan sees an overrun)
 // (4 bits a pixel as on the board since v0.87.0; CANVAS8=1: a byte a pixel)
 static pic::Canvas C{px.data(), 320, 200, static_cast<uint8_t>(getenv("CANVAS8") ? 8 : 4)};
@@ -413,7 +413,7 @@ int main(int argc, char** argv)
     std::string host = argv[1];
     while (host.size() > 1 && host.back() == '/') host.pop_back();
     const size_t slash = host.rfind('/');
-    fs::sim_root() = slash == std::string::npos ? "." : host.substr(0, slash);
+    pc::card_root() = slash == std::string::npos ? "." : host.substr(0, slash);
     const std::string folder = slash == std::string::npos ? host : host.substr(slash + 1);
     const char* dir = folder.c_str();
     // GAME=n: another game (games::Game's number: 1 Pool of Radiance)

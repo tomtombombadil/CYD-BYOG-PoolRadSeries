@@ -41,9 +41,9 @@ void fight_clear_monsters()
 // Reads DAX block `block` of a file (raw bytes), up to cap; its size or -1
 int read_block(const char* file, int block, uint8_t* out, int cap)
 {
-    fs::File f;
+    plat::File f;
     if (!open_dax(file, f)) return -1;
-    library::FileSource src(f);
+    plat::FileSource src(f);
     int n = -1;
     const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
     if (e) {
@@ -76,7 +76,7 @@ bool npc_join(int id)
     char file[24];
     snprintf(file, sizeof file, "MON%dCHA.DAX", d->gs.game_area);
     if (!read_record_block(file, id, ch.rec)) {
-        Serial.printf("[play] ADD NPC: %s #%d not there\n", file, id);
+        plat::log("[play] ADD NPC: %s #%d not there\n", file, id);
         return false;
     }
     snprintf(file, sizeof file, "MON%dITM.DAX", d->gs.game_area);
@@ -99,7 +99,7 @@ bool npc_join(int id)
     pt->selected = pt->count++;
     char nm[20];
     ch.name(nm, sizeof nm);
-    Serial.printf("[play] ADD NPC %d: %s joins\n", id, nm);
+    plat::log("[play] ADD NPC %d: %s joins\n", id, nm);
     return true;
 }
 
@@ -112,7 +112,7 @@ void fight_load_monster(int id, int copies, int icon)
     char cha[24];
     snprintf(cha, sizeof cha, "MON%dCHA.DAX", d->gs.game_area);
     if (!read_record_block(cha, id, rec)) {
-        Serial.printf("[play] %s #%d: no monster\n", cha, id);
+        plat::log("[play] %s #%d: no monster\n", cha, id);
         return;
     }
     combat::Group& g = ml->g[ml->groups];
@@ -137,7 +137,7 @@ void fight_load_monster(int id, int copies, int icon)
         const int cap = ml->n + copies;
         void* p = realloc(ml->m, static_cast<size_t>(cap) * sizeof(combat::Monster));
         if (!p) {
-            Serial.println("[play] LOAD MONSTER: not enough memory");
+            plat::log("[play] LOAD MONSTER: not enough memory\n");
             return;
         }
         ml->m = static_cast<combat::Monster*>(p);
@@ -152,7 +152,7 @@ void fight_load_monster(int id, int copies, int icon)
         m.group = static_cast<uint8_t>(ml->groups);
     }
     ++ml->groups;
-    Serial.printf("[play] LOAD MONSTER %d x%d (icon %d): %d monsters\n", id, copies, icon, ml->n);
+    plat::log("[play] LOAD MONSTER %d x%d (icon %d): %d monsters\n", id, copies, icon, ml->n);
 }
 
 // The k-th loaded monster's own record (LOAD CHARACTER past the party: the
@@ -179,9 +179,9 @@ void free_pic(Pic4& p)
 // Frame `frame` of a picture block into 4-bit rows (malloc'd); w, h
 uint8_t* load_pic4(const char* file, int block, int frame, int* w, int* h)
 {
-    fs::File f;
+    plat::File f;
     if (!open_dax(file, f)) return nullptr;
-    library::FileSource src(f);
+    plat::FileSource src(f);
     uint8_t* out = nullptr;
     const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
     if (e) {
@@ -371,10 +371,10 @@ static_assert(kTiles * kTileBytes <= sizeof(view3d::World), "the field's tiles m
 void world_park_path(char* out, size_t cap) { snprintf(out, cap, "%s/_CYD/WORLD.TMP", games::kRootDir); }
 bool park_world()
 {
-    if (world_parked || !sd_begin()) return false;
+    if (world_parked || !plat::card_ready()) return false;
     char path[96];
     world_park_path(path, sizeof path);
-    fs::File f = sd_fs().open(path, "w");
+    plat::File f = plat::open(path, "w");
     if (!f) return false;
     const bool ok = f.write(reinterpret_cast<const uint8_t*>(&d->world), sizeof(view3d::World)) == sizeof(view3d::World);
     f.close();
@@ -386,7 +386,7 @@ void unpark_world()
     if (!world_parked) return;
     char path[96];
     world_park_path(path, sizeof path);
-    fs::File f = sd_fs().open(path, "r");
+    plat::File f = plat::open(path, "r");
     const bool ok = f && f.read(reinterpret_cast<uint8_t*>(&d->world), sizeof(view3d::World)) == sizeof(view3d::World);
     if (f) f.close();
     world_parked = false;
@@ -447,12 +447,12 @@ void load_fight_words()
 
 bool load_fight_tables()
 {
-    fs::File f;
+    plat::File f;
     if (!open_file(d->prof->program, f)) return false;
-    library::FileSource src(f);
+    plat::FileSource src(f);
     exepack::Info info;
     struct Ctx {
-        library::FileSource* src;
+        plat::FileSource* src;
         exepack::Info* info;
         uint32_t base;
     } ctx{&src, &info, d->prof->create.ds_image};
@@ -471,9 +471,9 @@ bool load_fight_tables()
 // Frames first .. first + n - 1 of a 24 x 24 picture block into the tiles
 void load_frames(const char* file, int at, int n)
 {
-    fs::File f;
+    plat::File f;
     if (!open_dax(file, f)) return;
-    library::FileSource src(f);
+    plat::FileSource src(f);
     const dax::Entry* e = d->idx.find(1);
     if (e) {
         dax::RleReader r(src, d->idx, *e);
@@ -836,7 +836,7 @@ bool fx_load(int pic)
     fg->fx_pic[0] = load_pic4("COMSPR.DAX", pic, 0, &w, &h);
     fg->fx_pic[1] = load_pic4("COMSPR.DAX", pic + 0x80, 0, &w2, &h2);
     if (!fg->fx_pic[0] || w != kSq || h != kSq || (fg->fx_pic[1] && (w2 != kSq || h2 != kSq))) {
-        Serial.printf("[fight] COMSPR %d: no 24 x 24 picture (%d x %d)\n", pic, w, h);
+        plat::log("[fight] COMSPR %d: no 24 x 24 picture (%d x %d)\n", pic, w, h);
         fx_free();
         return false;
     }
@@ -905,7 +905,7 @@ bool fx_step(pic::Canvas& c)
         const int x = kViewX + (fg->path.x - fg->b.vx * 3) * 8, y = kViewY + (fg->path.y - fg->b.vy * 3) * 8;
         under_save(c, x, y);
         fx_draw(c, x, y, e.fl.slot[e.fl.frames ? k % e.fl.frames : 0]);
-        fg->until = millis() + (e.fl.delay ? e.fl.delay : 1);
+        fg->until = plat::now_ms() + (e.fl.delay ? e.fl.delay : 1);
         return true;
     }
     case Fx::Burst: {
@@ -915,7 +915,7 @@ bool fx_step(pic::Canvas& c)
         const int x = sq_x(f.x), y = sq_y(f.y);
         under_save(c, x, y);
         fx_draw(c, x, y, e.fl.slot[k & 3]);
-        fg->until = millis() + 70;
+        fg->until = plat::now_ms() + 70;
         return true;
     }
     case Fx::Skull: {
@@ -930,7 +930,7 @@ bool fx_step(pic::Canvas& c)
             dirty(y, y + kSq);
         }
         fg->fx_redraw = true;
-        fg->until = millis() + 10;
+        fg->until = plat::now_ms() + 10;
         return true;
     }
     default: return false;
@@ -991,7 +991,7 @@ void page_fx(pic::Canvas& c)
         if (fx_begin(c, p.fx[fg->fx_at])) return;
         ++fg->fx_at;
     }
-    fg->until = millis() + game_delay_ms() * 2;
+    fg->until = plat::now_ms() + game_delay_ms() * 2;
     if (!fg->until) fg->until = 1;
 }
 
@@ -1019,7 +1019,7 @@ void show_page(pic::Canvas& c)
 {
     page_over(c);
     const Page& p = fg->page[fg->at++];
-    if (log_pages) Serial.printf("[page] %s %s %s\n", p.lines > 0 ? page_line(p, 0) : "", p.lines > 1 ? page_line(p, 1) : "",
+    if (log_pages) plat::log("[page] %s %s %s\n", p.lines > 0 ? page_line(p, 0) : "", p.lines > 1 ? page_line(p, 1) : "",
                                  p.lines > 2 ? page_line(p, 2) : "");
     if (p.sound) sfx(p.sound);
     clear_panel(c, 10, 21);
@@ -1429,7 +1429,7 @@ void after_attack(pic::Canvas& c)
     if (left && target_down) {
         if (f.quick || f.team()) {
             fg->st = FSt::Ai;
-            fg->until = millis() + 100;
+            fg->until = plat::now_ms() + 100;
         } else {
             fight_menu(c);
         }
@@ -1490,7 +1490,7 @@ void melee(pic::Canvas& c, int a, int t)
         return;
     }
     f.swept = true;
-    Serial.printf("[play] fighter %d sweeps %d\n", a, n);
+    plat::log("[play] fighter %d sweeps %d\n", a, n);
     add_page(a, fw(profile::kSweeps));
     for (int k = 0; k < n && f.up(); ++k) {
         if (!b.f[sw[k]].up()) continue;
@@ -1756,7 +1756,7 @@ void start_turn(pic::Canvas& c)
     }
     if (f.quick || f.team() || f.rec[0xF7] >= 0x80) {
         fg->st = FSt::Ai;
-        fg->until = millis() + game_delay_ms();
+        fg->until = plat::now_ms() + game_delay_ms();
         if (!fg->until) fg->until = 1;
         clear_menu_line(c);
         return;
@@ -1834,7 +1834,7 @@ void round_clouds(pic::Canvas& c)
         clear_menu_line(c);
         put(c, fw(profile::kAirClears), 0, text::kMenuRow, 10);
         fg->st = FSt::RoundRest;
-        fg->until = millis() + game_delay_ms();
+        fg->until = plat::now_ms() + game_delay_ms();
         if (!fg->until) fg->until = 1;
         return;
     }
@@ -1861,7 +1861,7 @@ void round_rest(pic::Canvas& c)
         clear_menu_line(c);
         put(c, fw(profile::kTeammateDying), 0, text::kMenuRow, 15);
         fg->st = FSt::Begin;            // a pause, then the next round
-        fg->until = millis() + game_delay_ms() * 3;
+        fg->until = plat::now_ms() + game_delay_ms() * 3;
         if (!fg->until) fg->until = 1;
         return;
     }
@@ -2461,7 +2461,7 @@ void ai_step(pic::Canvas& c)
             return;
         }
         fg->st = FSt::Ai;
-        fg->until = millis() + (on_screen(i) ? 150 : 1);
+        fg->until = plat::now_ms() + (on_screen(i) ? 150 : 1);
         return;
     }
     case combat::Act::Guard:
@@ -2503,9 +2503,9 @@ int pool_place_flags()
     const int x = (vm->get(0x4BC3) & 0xFF) + 13 * (d->gs.script - d->prof->variant.overland_area);
     if (x < 0 || x >= 44 || y < 0) return 0;
     uint8_t place = 0;
-    fs::File f;
+    plat::File f;
     if (open_file(d->prof->program, f)) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         exepack::Info info;
         if (exepack::parse(src, info) != exepack::Status::Ok ||
             exepack::read(src, info, d->prof->create.ds_image + d->prof->variant.overland_map + y * 44 + x, &place, 1) !=
@@ -2674,9 +2674,9 @@ void fight_start(pic::Canvas& c)
     clear_menu_line(c);
     put(c, fw(profile::kBattleBegins), 0, text::kMenuRow, 10);
     fg->st = FSt::Begin;
-    fg->until = millis() + game_delay_ms() * 3;
+    fg->until = plat::now_ms() + game_delay_ms() * 3;
     if (!fg->until) fg->until = 1;
-    Serial.printf("[play] a fight: %d against %d (%s)\n", combat::standing(b, 0), combat::standing(b, 1),
+    plat::log("[play] a fight: %d against %d (%s)\n", combat::standing(b, 0), combat::standing(b, 1),
                   b.indoors ? "indoors" : "outdoors");
     sound_hold(true);                        // (Hit / Miss: the output ready all fight)
     char t[48];
@@ -2880,10 +2880,22 @@ void fight_treasure_only(pic::Canvas& c)
         const int plus = static_cast<int8_t>(ground->item[k][0x32]);
         if (plus > 0) total += 400 * plus;
     }
-    // (no fighters: the party shares as the games do - the survivors)
+    // (no fighters: the party shares as the games do - the survivors).
+    // The party's fighter blocks (since v0.86.1 a fight's fighters are its
+    // own block: a fresh Battle has none - the treasure step crashed on it)
+    delete[] fg->fighters;
+    fg->fighters = new (std::nothrow) combat::Fighter[pt->count > 0 ? pt->count : 1];
+    if (!fg->fighters) {
+        delete fg;
+        fg = nullptr;
+        open_treasure(c);
+        return;
+    }
     combat::Battle& b = fg->b;
     b.~Battle();
     new (&b) combat::Battle();         // (in place: a temporary would take 10 KB of stack)
+    b.f = fg->fighters;
+    b.cap = pt->count > 0 ? pt->count : 1;
     for (int i = 0; i < pt->count; ++i) {
         b.f[i].rec = pt->m[i].rec;
         b.f[i].member = i;
@@ -3513,7 +3525,7 @@ void fight_tap(int x, int y, pic::Canvas& c)
         case 'Q':
             f.quick = true;
             fg->st = FSt::Ai;
-            fg->until = millis() + 200;
+            fg->until = plat::now_ms() + 200;
             clear_menu_line(c);
             break;
         case 'D': done_menu(c); break;

@@ -354,7 +354,7 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   scan above). Icons come from the
   player's goggame-<id>.ico / .dll on the card (`engine/icon.*`), never from
   the repo.
-- Play Test (`src/ui/play.*`, v0.8.0): the script machine is
+- Play Test (`src/game/play.*`, v0.8.0): the script machine is
   `engine/ecl_vm.*` (plain C++, host-tested with synthetic scripts); the
   front end only shows what it asks for (Wait: Print, Menu, ListMenu,
   Number, String, Pause) and answers. Things that need a party are logged
@@ -370,7 +370,7 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   animate only while a menu waits (as in the games).
 - Combat (v0.32.0): `engine/combat.*` (battlefield, placement, rounds,
   attacks, the computer's turns, experience; host-tested) and
-  `src/ui/play_fight.inc` (the fight's screen and menus, the treasure step -
+  `src/game/play_fight.inc` (the fight's screen and menus, the treasure step -
   included by play.cpp inside its anonymous namespace, not compiled on its
   own). Facts from coab: the Project's claude/combat_setup_facts.md and
   claude/combat_rules_facts.md, claude/combat_fx_facts.md (pictures in
@@ -385,7 +385,8 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   there, e.g. 1:53 the black dragon, 4:40 the beholder; `FORCESPELL` /
   `FORCEWEAPON` / `FXSHOTS` to try spells, shots and their pictures).
 - `tools/playsim/` (Claude's side, Linux): runs the Play Test on the PC
-  against the game files in scratch space (shims for Arduino / SD); use it
+  against the game files in scratch space (the PC platform layer,
+  `tools/host`); use it
   to check script behaviour and take canvas snapshots before pushing.
   Its card is like the board's: `/GOLDBOX/...` paths map to the game
   folder's parent, and `library::path_of` adds `/GOLDBOX` as on the board
@@ -427,9 +428,10 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   The emulator build has no sound, no LittleFS (QEMU panics on internal
   flash writes) and prints every key's centre ("[qemu] key 'Play' at
   81,134") and each screen with its heap; taps are counted in polls
-  (QEMU's polls are slow). Open: it panics (cache error) inside
-  play::open and now and then at boot - run_qemu.py retries boots; the
-  Play Test isn't reached in it yet.
+  (QEMU's polls are slow). It panics (cache error) now and then at boot
+  - run_qemu.py retries boots; since 2026-10-12 the Play Test opens in it
+  (Pool: Home, the game's page, Play - free 96.9 KB, largest block 80 KB
+  at the title; the same before and after the platform layer).
 - Game testing (Tom, 2026-10-10): "test the game" means BEHAVIOUR, not
   just crashes - every spell, item, monster ability, class / level,
   encounter and save field must do what the original does (a +1 long
@@ -477,6 +479,19 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
 - Portability (SPEC section 11): game logic takes key events like the
   original (letters, arrows / keypad, Enter, Esc); the CYD front end turns
   taps into keys. Nothing platform-specific in `src/engine/`.
+  **The platform layer** (Tom, 2026-10-12, v0.91.1: "Separating the game
+  logic from the hardware its running on is an important part"):
+  `src/game/` (play.cpp, play_fight.inc, look, walk) and `src/engine/`
+  use ONLY `src/platform/*.h` for the machine - `plat::now_ms / log /
+  free_heap / largest_block`, `plat::File / open / exists / remove /
+  mkdir / card_ready / FileSource`, `audio_*` (platform/audio.h),
+  `memlog::` (platform/memlog.h). Never Arduino.h, Serial, millis,
+  fs::File, sd_fs(), heap_caps or board headers there (CI compiles
+  src/game with only -Isrc). Boards: `hal/platform_esp32.cpp` (+ audio,
+  memlog); PC: `tools/host/` (the playsim / sweep build with
+  `-Itools/host -Isrc ... tools/host/*.cpp`; `pc::card_root()` is the
+  folder standing for /GOLDBOX; the driver owns `g_now`).
+  `tools/host_tests/test_platform.cpp` tests the PC side.
 - Stream DAX blocks (`dax::RleReader`) instead of loading whole blocks where
   possible; RAM is tight (largest free block ~75-110 KB). Static RAM counts
   too: the heap block right after .bss shrinks with every static byte

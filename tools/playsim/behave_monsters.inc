@@ -59,9 +59,9 @@ std::vector<int> ids(int area)
     std::vector<int> out;
     char path[300];
     snprintf(path, sizeof path, "/GOLDBOX/%s/MON%dCHA.DAX", game_dir.substr(game_dir.rfind('/') + 1).c_str(), area);
-    fs::File f = sd_fs().open(path, "r");
+    plat::File f = plat::open(path, "r");
     if (!f) return out;
-    library::FileSource src(f);
+    plat::FileSource src(f);
     static dax::Index dir;
     if (dax::read_index(src, dir) == dax::Status::Ok)
         for (int i = 0; i < dir.count; ++i) out.push_back(dir.entries[i].id);

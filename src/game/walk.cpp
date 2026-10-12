@@ -1,11 +1,14 @@
 #include "walk.h"
 
-#include <Arduino.h>
+#include "platform/platform.h"
+
+#include <cstdlib>
+#include <initializer_list>
 #include <cstdio>
 #include <cstring>
 #include <new>
 
-#include "app/library.h"
+#include "platform/file.h"
 #include "engine/ecl.h"
 #include "engine/exepack.h"
 #include "engine/font.h"
@@ -13,7 +16,6 @@
 #include "engine/profile.h"
 #include "engine/text.h"
 #include "engine/view3d.h"
-#include "hal/sdcard.h"
 
 namespace walk {
 
@@ -48,19 +50,19 @@ bool area_view = false;
 const char* note = "";        // a word in the text area ("Blocked.")
 text::Menu menu;
 
-bool open_file(const char* name, fs::File& f)
+bool open_file(const char* name, plat::File& f)
 {
     char path[160];
-    library::path_of(d->data_dir, name, path, sizeof path);
-    f = sd_fs().open(path, "r");
+    games::path_of(d->data_dir, name, path, sizeof path);
+    f = plat::open(path, "r");
     return static_cast<bool>(f);
 }
 
 // Opens <name> and reads its index into d->idx
-bool open_dax(const char* name, fs::File& f)
+bool open_dax(const char* name, plat::File& f)
 {
     if (!open_file(name, f)) return false;
-    library::FileSource src(f);
+    plat::FileSource src(f);
     if (dax::read_index(src, d->idx) != dax::Status::Ok) {
         f.close();
         return false;
@@ -77,9 +79,9 @@ void find_maps()
     for (int a = d->prof->first_area; a <= d->prof->last_area && d->n_maps < kMaxMaps; ++a) {
         char name[24];
         area_file(name, sizeof name, "ECL", a);
-        fs::File f;
+        plat::File f;
         if (!open_dax(name, f)) continue;
-        library::FileSource src(f);
+        plat::FileSource src(f);
         for (int e = 0; e < d->idx.count && d->n_maps < kMaxMaps; ++e) {
             const dax::Entry& en = d->idx.entries[e];
             uint8_t* blk = static_cast<uint8_t*>(malloc(en.raw_size));
@@ -120,7 +122,7 @@ void find_maps()
         }
         d->maps[out++] = d->maps[best];
     }
-    Serial.printf("[walk] %d scripts load a 3D map: %d maps\n", d->n_maps, out);
+    plat::log("[walk] %d scripts load a 3D map: %d maps\n", d->n_maps, out);
     d->n_maps = out;
 }
 
@@ -158,10 +160,10 @@ bool select_map(int i)
     d->map.loaded = false;
 
     char name[24];
-    fs::File f;
+    plat::File f;
     area_file(name, sizeof name, "GEO", r.area);
     if (open_dax(name, f)) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         geo::load(src, d->idx, r.load.geo, d->map);
         f.close();
     }
@@ -171,7 +173,7 @@ bool select_map(int i)
     bool filled[3] = {false, false, false};
     area_file(name, sizeof name, "WALLDEF", r.area);
     if (open_dax(name, f)) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         for (int s = 0; s < 3; ++s) {
             if (r.load.walls[s] == ecl::kNone || filled[s]) continue;
             int n = 0;
@@ -184,14 +186,14 @@ bool select_map(int i)
     }
     area_file(name, sizeof name, "8X8D", r.area);
     if (open_dax(name, f)) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         for (int s = 0; s < 3; ++s)
             for (int k = 0; k < parts[s]; ++k)
                 view3d::load_tiles(src, d->idx, static_cast<uint8_t>(view3d::tiles_block(r.load.walls[s], parts[s], k)),
                                    w.sets[s + k]);
         f.close();
     }
-    Serial.printf("[walk] map %d: area %d script %d GEO %d walls %d %d %d, geo %s\n", i, r.area, r.script, r.load.geo,
+    plat::log("[walk] map %d: area %d script %d GEO %d walls %d %d %d, geo %s\n", i, r.area, r.script, r.load.geo,
                   r.load.walls[0], r.load.walls[1], r.load.walls[2], d->map.loaded ? "ok" : "missing");
     pick_start();
     note = d->map.loaded ? "" : "This map's GEO block is missing.";
@@ -237,19 +239,19 @@ const char* open(const char* data_dir, games::Game g)
         snprintf(msg, sizeof msg, "No walk test for %s yet.", games::title(g));
         return msg;
     }
-    if (!sd_begin()) return "No SD card found.";
+    if (!plat::card_ready()) return "No SD card found.";
     d = new (std::nothrow) Data;
     if (!d) return "Not enough memory.";
     strncpy(d->data_dir, data_dir, sizeof d->data_dir - 1);
 
-    fs::File f;
+    plat::File f;
     if (!open_file(prog, f)) {
         close();
         snprintf(msg, sizeof msg, "%s is missing from the game folder.", prog);
         return msg;
     }
     {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         exepack::Info info;
         const profile::Profile* p = nullptr;
         if (exepack::parse(src, info) == exepack::Status::Ok) p = profile::find(g, src.size(), info.image_size);
@@ -265,7 +267,7 @@ const char* open(const char* data_dir, games::Game g)
     // Frame tiles, font and the common wall tiles: 8X8D1
     bool ok = open_dax(d->prof->tiles_file, f);
     if (ok) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles) && font::load(src, d->idx, d->font) &&
              view3d::load_tiles(src, d->idx, d->prof->common_tiles_block, d->world.common);
         f.close();
@@ -277,7 +279,7 @@ const char* open(const char* data_dir, games::Game g)
     }
     d->world.frame = &d->frame_tiles;
     if (d->prof->sky_file && open_dax(d->prof->sky_file, f)) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         view3d::load_horizon(src, d->idx, d->prof->horizon_block, d->world);
         f.close();
     }

@@ -1,11 +1,14 @@
 #include "look.h"
 
-#include <Arduino.h>
+#include "platform/platform.h"
+
+#include <cstdlib>
+#include <initializer_list>
 #include <cstdio>
 #include <cstring>
 #include <new>
 
-#include "app/library.h"
+#include "platform/file.h"
 #include "engine/exepack.h"
 #include "engine/font.h"
 #include "engine/layout.h"
@@ -13,7 +16,6 @@
 #include "engine/lightning.h"
 #include "engine/profile.h"
 #include "engine/text.h"
-#include "hal/sdcard.h"
 
 namespace look {
 
@@ -52,11 +54,11 @@ const char* const kDemo =
 
 // ---- helpers ---------------------------------------------------------------
 
-bool open_file(const char* dir, const char* name, fs::File& f)
+bool open_file(const char* dir, const char* name, plat::File& f)
 {
     char path[160];
-    library::path_of(dir, name, path, sizeof path);
-    f = sd_fs().open(path, "r");
+    games::path_of(dir, name, path, sizeof path);
+    f = plat::open(path, "r");
     return static_cast<bool>(f);
 }
 
@@ -83,9 +85,9 @@ bool     t_timed = false;    // t_since set
 
 bool draw_title_picture(pic::Canvas& c, int block, int row, int col)
 {
-    fs::File f;
+    plat::File f;
     if (!open_file(d->data_dir, d->prof->title_file, f)) return false;
-    library::FileSource src(f);
+    plat::FileSource src(f);
     bool ok = false;
     if (dax::read_index(src, d->idx) == dax::Status::Ok) {
         const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
@@ -265,20 +267,20 @@ const char* open(const char* data_dir, games::Game g)
         snprintf(msg, sizeof msg, "No screen test for %s yet.", games::title(g));
         return msg;
     }
-    if (!sd_begin()) return "No SD card found.";
+    if (!plat::card_ready()) return "No SD card found.";
 
     d = new (std::nothrow) Data;
     if (!d) return "Not enough memory.";
     strncpy(d->data_dir, data_dir, sizeof d->data_dir - 1);
 
     // The frame layout and strings, from the game's own program
-    fs::File f;
+    plat::File f;
     if (!open_file(data_dir, prog, f)) {
         close();
         snprintf(msg, sizeof msg, "%s is missing from the game folder.", prog);
         return msg;
     }
-    library::FileSource fsrc(f);
+    plat::FileSource fsrc(f);
     exepack::Info info;
     const exepack::Status st = exepack::parse(fsrc, info);
     if (st != exepack::Status::Ok) {
@@ -297,12 +299,12 @@ const char* open(const char* data_dir, games::Game g)
         return msg;
     }
     d->prof = p;
-    const uint32_t t0 = millis();
+    const uint32_t t0 = plat::now_ms();
     const layout::Status ls = layout::load_tables(fsrc, info, *p, d->tables);
     if (!text::read_pascal(fsrc, info, p->press_any_key, d->press_key, sizeof d->press_key))
         strcpy(d->press_key, "Tap to go on");
-    Serial.printf("[look] %s: frame tables %s, prompt \"%s\" (%lu ms)\n", prog, layout::status_text(ls), d->press_key,
-                  (unsigned long)(millis() - t0));
+    plat::log("[look] %s: frame tables %s, prompt \"%s\" (%lu ms)\n", prog, layout::status_text(ls), d->press_key,
+                  (unsigned long)(plat::now_ms() - t0));
     f.close();
     if (ls != layout::Status::Ok) {
         close();
@@ -318,7 +320,7 @@ const char* open(const char* data_dir, games::Game g)
         return msg;
     }
     {
-        library::FileSource tsrc(f);
+        plat::FileSource tsrc(f);
         const bool ok = dax::read_index(tsrc, d->idx) == dax::Status::Ok &&
                         layout::load_tiles(tsrc, d->idx, p->tiles_block, d->tiles) && font::load(tsrc, d->idx, d->font);
         f.close();
@@ -331,13 +333,13 @@ const char* open(const char* data_dir, games::Game g)
 
     // The credits, from GAME.OVR (the title sequence skips them without it)
     if (open_file(data_dir, p->overlay, f)) {
-        library::FileSource osrc(f);
+        plat::FileSource osrc(f);
         if (osrc.size() == p->overlay_size)
             d->n_credits = printcalls::read(osrc, p->credits_at, p->credits_base, d->credits, kMaxCredits,
                                              p->variant.credits_stride ? p->variant.credits_stride : printcalls::kBlock);
         f.close();
     }
-    Serial.printf("[look] %s: %d credit lines\n", p->overlay, d->n_credits);
+    plat::log("[look] %s: %d credit lines\n", p->overlay, d->n_credits);
     return nullptr;
 }
 

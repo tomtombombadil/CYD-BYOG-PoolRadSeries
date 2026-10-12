@@ -1,14 +1,16 @@
 #include "play.h"
 
-#include <Arduino.h>
-#include <esp_heap_caps.h>
+#include "platform/platform.h"
+
+#include <cstdlib>
+#include <initializer_list>
 #include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <new>
 
 #include "app/features.h"
-#include "app/library.h"
+#include "platform/file.h"
 #include "engine/ecl.h"
 #include "engine/ecl_vm.h"
 #include "engine/exepack.h"
@@ -31,9 +33,8 @@
 #include "engine/sound.h"
 #include "engine/text.h"
 #include "engine/view3d.h"
-#include "hal/audio.h"
-#include "hal/memlog.h"
-#include "hal/sdcard.h"
+#include "platform/audio.h"
+#include "platform/memlog.h"
 
 namespace play {
 
@@ -94,7 +95,7 @@ struct Data {
 
     // The event picture (a PIC animation): its file stays open while shown
     pic::Anim      anim;
-    fs::File       anim_file;
+    plat::File       anim_file;
     int16_t        anim_x = 24, anim_y = 24;   // where it's drawn (the view; Pool's ending: elsewhere)
     dax::Index*    anim_idx = nullptr;      // the PIC file's index while a picture animates (3 KB)
 
@@ -240,8 +241,8 @@ void sfx(int id)
     const bool vital = id == sound::kHit || id == sound::kMiss;
     if (!vital && !audio_running() && memlog::largest_kb() < 10 && (fighting() || !make_room(10, "a sound"))) {
         static uint32_t noted = 0;
-        if (!noted || millis() - noted > 60000) {
-            noted = millis() | 1;
+        if (!noted || plat::now_ms() - noted > 60000) {
+            noted = plat::now_ms() | 1;
             memlog::note("a sound left out: memory low");
         }
         return;
@@ -388,18 +389,18 @@ void dirty_rows(int r0, int r1) { dirty(r0 * 8, (r1 + 1) * 8); }
 
 // ---- files --------------------------------------------------------------------
 
-bool open_file(const char* name, fs::File& f)
+bool open_file(const char* name, plat::File& f)
 {
     char path[160];
-    library::path_of(d->data_dir, name, path, sizeof path);
-    f = sd_fs().open(path, "r");
+    games::path_of(d->data_dir, name, path, sizeof path);
+    f = plat::open(path, "r");
     return static_cast<bool>(f);
 }
 
-bool open_dax(const char* name, fs::File& f)
+bool open_dax(const char* name, plat::File& f)
 {
     if (!open_file(name, f)) return false;
-    library::FileSource src(f);
+    plat::FileSource src(f);
     if (dax::read_index(src, d->idx) != dax::Status::Ok) {
         f.close();
         return false;
@@ -419,14 +420,14 @@ public:
     }
     bool open()
     {
-        fs::File f;
+        plat::File f;
         if (!open_file(d->prof->overlay, f)) return false;
-        ovr_ = new (std::nothrow) library::FileSource(f);
+        ovr_ = new (std::nothrow) plat::FileSource(f);
         if (!ovr_) return false;
         if (d->prof->variant.program_words) {
-            fs::File x;
+            plat::File x;
             if (open_file(d->prof->program, x)) {
-                exe_ = new (std::nothrow) library::FileSource(x);
+                exe_ = new (std::nothrow) plat::FileSource(x);
                 if (exe_ && exepack::parse(*exe_, info_) != exepack::Status::Ok) {
                     delete exe_;
                     exe_ = nullptr;
@@ -440,8 +441,8 @@ public:
     uint32_t size() const override { return ovr_ ? ovr_->size() : 0; }
 
 private:
-    library::FileSource* ovr_ = nullptr;
-    library::FileSource* exe_ = nullptr;
+    plat::FileSource* ovr_ = nullptr;
+    plat::FileSource* exe_ = nullptr;
     exepack::Info        info_;
     text::Words*         w_ = nullptr;
 };
@@ -484,13 +485,13 @@ bool ov_load()
     if (d->ov) return true;
     d->ov = new (std::nothrow) overland::Data;
     if (!d->ov) return false;
-    fs::File f;
+    plat::File f;
     bool ok = false;
     if (open_file(d->prof->program, f)) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         exepack::Info info;
         struct Ctx {
-            library::FileSource* src;
+            plat::FileSource* src;
             exepack::Info* info;
             uint32_t base;
         } ctx{&src, &info, d->prof->create.ds_image};
@@ -548,9 +549,9 @@ void draw_overland(pic::Canvas& c)
             }
     };
     c.fill(8, 8, 120, 120, 0);
-    fs::File f;
+    plat::File f;
     if (open_dax("SQRPACI.DAX", f)) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         for (int blk = 1; blk <= 2; ++blk) {
             // One pass through the block: each frame wanted drawn as it goes by
             int last = -1;
@@ -575,7 +576,7 @@ void draw_overland(pic::Canvas& c)
     // The rider
     static const uint8_t kRider[6] = {0, 128, 1, 129, 2, 130};
     if (open_dax("ICON.DAX", f)) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         const dax::Entry* e = d->idx.find(kRider[d->gallop % 6]);
         uint8_t hdr[pic::kHeaderSize];
         pic::Header h;
@@ -733,9 +734,9 @@ bool draw_block(pic::Canvas& c, const char* stem, int block, int x, int y)
 {
     char name[24];
     area_file(name, sizeof name, stem);
-    fs::File f;
+    plat::File f;
     if (!open_dax(name, f)) return false;
-    library::FileSource src(f);
+    plat::FileSource src(f);
     bool ok = false;
     const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
     if (e) {
@@ -762,7 +763,7 @@ void anim_stop()
 void anim_draw(int frame)
 {
     if (anim_block < 0) return;
-    library::FileSource src(d->anim_file);
+    plat::FileSource src(d->anim_file);
     const dax::Entry* e = d->anim_idx ? d->anim_idx->find(static_cast<uint8_t>(anim_block)) : nullptr;
     if (e) pic::draw_anim(src, *d->anim_idx, *e, d->anim, frame, true, *cv, d->anim_x, d->anim_y);
     dirty_rows(d->anim_y / 8, (d->anim_y + 88) / 8);
@@ -786,7 +787,7 @@ bool anim_start(int id, const char* stem = "PIC", int x = 24, int y = 24)
         d->anim_file.close();
         return false;
     }
-    library::FileSource src(d->anim_file);
+    plat::FileSource src(d->anim_file);
     const dax::Entry* e = nullptr;
     if (dax::read_index(src, *d->anim_idx) == dax::Status::Ok) e = d->anim_idx->find(static_cast<uint8_t>(id));
     if (e) {
@@ -794,7 +795,7 @@ bool anim_start(int id, const char* stem = "PIC", int x = 24, int y = 24)
         if (pic::parse_anim(r, e->raw_size, d->anim) && d->anim.frames > 0) {
             anim_block = id;
             anim_frame = 0;
-            anim_at = millis();
+            anim_at = plat::now_ms();
             last_pic = id;
             anim_draw(0);
             if (!animation_on()) anim_stop();       // Alter Pics: Animation off - the first frame only
@@ -915,7 +916,7 @@ void find_saves()
         char name[24], path[160];
         savegame::file_name(s, name, sizeof name);
         save_path(name, path, sizeof path);
-        fs::File f = sd_fs().open(path, "r");
+        plat::File f = plat::open(path, "r");
         if (f) {
             pm_saves[n++] = s;
             f.close();
@@ -924,11 +925,11 @@ void find_saves()
     pm_saves[n] = 0;
 }
 
-bool open_save_file(const char* name, fs::File& f)
+bool open_save_file(const char* name, plat::File& f)
 {
     char path[160];
     save_path(name, path, sizeof path);
-    f = sd_fs().open(path, "r");
+    f = plat::open(path, "r");
     return static_cast<bool>(f);
 }
 
@@ -1003,14 +1004,14 @@ bool load_game(char slot)
     load_problem = nullptr;
     char name[24];
     savegame::file_name(slot, name, sizeof name);
-    fs::File f;
+    plat::File f;
     if (!open_save_file(name, f)) {
         load_problem = "That saved game couldn't be opened.";
         return false;
     }
     bool ok;
     {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         ok = savegame::read(src, d->gs, d->save, !pool_files());
     }
     f.close();
@@ -1020,7 +1021,7 @@ bool load_game(char slot)
     then = Then::Idle;
     if (!ok) {
         // (read part-way: what was in memory isn't a game any more)
-        Serial.printf("[play] %s isn't a saved game\n", name);
+        plat::log("[play] %s isn't a saved game\n", name);
         load_problem = "That saved game couldn't be read (damaged or short).";
         d->loaded = false;
         pt->clear();
@@ -1032,12 +1033,12 @@ bool load_game(char slot)
         char fn[48];
         snprintf(fn, sizeof fn, "%s.SAV", d->save.names[i]);
         if (!open_save_file(fn, f)) {
-            Serial.printf("[play] %s missing\n", fn);
+            plat::log("[play] %s missing\n", fn);
             load_problem = "A character of that saved game is missing from the save folder.";
             continue;
         }
         {
-            library::FileSource src(f);
+            plat::FileSource src(f);
             ok = party::read_record(src, ch, rec_format());
         }
         f.close();
@@ -1047,13 +1048,13 @@ bool load_game(char slot)
         }
         snprintf(fn, sizeof fn, "%s%s", d->save.names[i], ext_items());
         if (open_save_file(fn, f)) {
-            library::FileSource src(f);
+            plat::FileSource src(f);
             party::read_items(src, ch);
             f.close();
         }
         snprintf(fn, sizeof fn, "%s%s", d->save.names[i], ext_fx());
         if (open_save_file(fn, f)) {
-            library::FileSource src(f);
+            plat::FileSource src(f);
             party::read_affects(src, ch);
             f.close();
         }
@@ -1073,7 +1074,7 @@ bool load_game(char slot)
         d->wall_set[i] = d->save.wall_set[i];
     }
     load_journal_list(slot);
-    Serial.printf("[play] loaded %s: area %d, %d,%d, script %d, %d characters\n", name, d->gs.game_area, d->gs.x,
+    plat::log("[play] loaded %s: area %d, %d,%d, script %d, %d characters\n", name, d->gs.game_area, d->gs.x,
                   d->gs.y, vm->get(0x4BF2), pt->count);
     return true;
 }
@@ -1251,7 +1252,7 @@ void note(pic::Canvas& c, const char* t)
     put(c, t, 0, text::kMenuRow, 10);
     int speed = vm->get(0x4BFC) & 0xFF;
     if (speed == 0) speed = 4;
-    note_until = millis() + static_cast<uint32_t>(speed) * 300;
+    note_until = plat::now_ms() + static_cast<uint32_t>(speed) * 300;
     if (!note_until) note_until = 1;
 }
 
@@ -1262,12 +1263,12 @@ void note(pic::Canvas& c, const char* t)
 // went wrong quietly, for the player's log
 void log_error(const char* t)
 {
-    Serial.printf("[play] error: %s\n", t);
+    plat::log("[play] error: %s\n", t);
     char path[96];
     snprintf(path, sizeof path, "%s/_CYD/ERRORS.TXT", games::kRootDir);
-    fs::File f = sd_fs().open(path, "a");
+    plat::File f = plat::open(path, "a");
     if (f) {
-        const uint32_t s = millis() / 1000;
+        const uint32_t s = plat::now_ms() / 1000;
         char line[128];
         const int n = snprintf(line, sizeof line, "[%u:%02u:%02u] %s\n", (unsigned)(s / 3600), (unsigned)(s / 60 % 60),
                                (unsigned)(s % 60), t);
@@ -1760,8 +1761,8 @@ bool items_yes_no(Ask what, char k, pic::Canvas& c)
 // camp...", "Camp: Save View Magic Rest Alter Fix Exit".
 
 struct FileSink : savegame::Sink {
-    fs::File& f;
-    explicit FileSink(fs::File& file) : f(file) {}
+    plat::File& f;
+    explicit FileSink(plat::File& file) : f(file) {}
     bool put(const uint8_t* p, size_t n) override { return f.write(p, n) == n; }
 };
 
@@ -1770,7 +1771,7 @@ bool write_file(const char* dir, const char* name, const uint8_t* p, size_t n)
     char path[200];
     snprintf(path, sizeof path, "%s/%s", dir, name);      // dir: a full card path
     if (!n) {
-        if (sd_fs().exists(path)) sd_fs().remove(path);
+        if (plat::exists(path)) plat::remove(path);
         return true;
     }
     // (a save folder the copy left out; looked for once a folder - each
@@ -1779,10 +1780,10 @@ bool write_file(const char* dir, const char* name, const uint8_t* p, size_t n)
     uint32_t h = 2166136261u;
     for (const char* q = dir; *q; ++q) h = (h ^ static_cast<uint8_t>(*q)) * 16777619u;
     if (h != checked) {
-        if (!sd_fs().exists(dir)) sd_fs().mkdir(dir);
+        if (!plat::exists(dir)) plat::mkdir(dir);
         checked = h;
     }
-    fs::File f = sd_fs().open(path, "w");
+    plat::File f = plat::open(path, "w");
     if (!f) return false;
     const bool ok = f.write(p, n) == n;
     f.close();
@@ -1807,8 +1808,8 @@ bool save_game(char slot)
     char name[24], path[200];
     savegame::file_name(slot, name, sizeof name);
     save_path(name, path, sizeof path);
-    if (!sd_fs().exists(d->save_dir)) sd_fs().mkdir(d->save_dir);
-    fs::File f = sd_fs().open(path, "w");
+    if (!plat::exists(d->save_dir)) plat::mkdir(d->save_dir);
+    plat::File f = plat::open(path, "w");
     if (!f) return false;
     bool ok;
     {
@@ -1835,7 +1836,7 @@ bool save_game(char slot)
         snprintf(name, sizeof name, "SAVGAM%c.JNL", slot);
         write_file(d->cache_dir, name, buf, static_cast<size_t>(n_seen) * 2);
     }
-    Serial.printf("[play] saved game %c: %s\n", slot, ok ? "ok" : "FAILED");
+    plat::log("[play] saved game %c: %s\n", slot, ok ? "ok" : "FAILED");
     return ok;
 }
 
@@ -1846,7 +1847,7 @@ void load_journal_list(char slot)
     char name[24], path[200];
     snprintf(name, sizeof name, "SAVGAM%c.JNL", slot);
     snprintf(path, sizeof path, "%s/%s", d->cache_dir, name);   // cache_dir: a full card path
-    fs::File f = sd_fs().open(path, "r");
+    plat::File f = plat::open(path, "r");
     if (!f) return;
     uint8_t b[2];
     while (n_seen < kMaxSeen && f.read(b, 2) == 2) note_seen(static_cast<char>(b[0]), b[1]);
@@ -2060,7 +2061,7 @@ void remove_character(pic::Canvas& c, bool overwrite_ok)
     snprintf(fn, sizeof fn, "%s%s", base, ext_guy());
     save_path(fn, path, sizeof path);
     if (!d->prof->party.overwrite) overwrite_ok = true;       // (Pool doesn't ask)
-    if (!overwrite_ok && sd_fs().exists(path)) {
+    if (!overwrite_ok && plat::exists(path)) {
         char t[60];
         snprintf(t, sizeof t, "%s%s%s", rw(Data::kOverwrite), base, rw(Data::kQmark));
         ask_yes_no(c, Ask::Overwrite, t);
@@ -2165,9 +2166,9 @@ void find_pool_guys(const char* where, uint8_t src)
 {
     if (!where[0]) return;
     for (int pass = 0; pass < 2; ++pass) {
-        fs::File dir = sd_fs().open(where, "r");
+        plat::File dir = plat::open(where, "r");
         if (!dir || !dir.isDirectory()) return;
-        for (fs::File f = dir.openNextFile(); f && d->guys < Data::kMaxGuys; f = dir.openNextFile()) {
+        for (plat::File f = dir.openNextFile(); f && d->guys < Data::kMaxGuys; f = dir.openNextFile()) {
             const char* nm = f.name();
             const char* slash = strrchr(nm, '/');
             if (slash) nm = slash + 1;
@@ -2201,9 +2202,9 @@ void find_guys(char from = 'C')
             find_pool_guys(pool_dir, 2);
         return;
     }
-    fs::File dir = sd_fs().open(d->save_dir, "r");
+    plat::File dir = plat::open(d->save_dir, "r");
     if (!dir || !dir.isDirectory()) return;
-    for (fs::File f = dir.openNextFile(); f && d->guys < Data::kMaxGuys; f = dir.openNextFile()) {
+    for (plat::File f = dir.openNextFile(); f && d->guys < Data::kMaxGuys; f = dir.openNextFile()) {
         const char* nm = f.name();
         const char* slash = strrchr(nm, '/');
         if (slash) nm = slash + 1;
@@ -2287,11 +2288,11 @@ void add_character(int i, pic::Canvas& c)
     base[sizeof base - 1] = 0;
     char* dot = strrchr(base, '.');
     if (dot) *dot = 0;
-    fs::File f;
+    plat::File f;
     if (!open_save_file(d->guy_file[i], f)) return;
     bool ok;
     {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         ok = party::read_record(src, ch, rec_format());
     }
     f.close();
@@ -2299,13 +2300,13 @@ void add_character(int i, pic::Canvas& c)
     char fn[24];
     snprintf(fn, sizeof fn, "%s%s", base, ext_items());
     if (open_save_file(fn, f)) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         party::read_items(src, ch);
         f.close();
     }
     snprintf(fn, sizeof fn, "%s%s", base, ext_fx());
     if (open_save_file(fn, f)) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         party::read_affects(src, ch);
         f.close();
     }
@@ -2450,7 +2451,7 @@ void end_create(pic::Canvas& c)
 
 // The rule tables and facts, read from the program for the occasion
 // The class / spell rule tables alone (from the program's data segment)
-bool read_rule_tables(library::FileSource& src, exepack::Info& info, classes::Tables& t)
+bool read_rule_tables(plat::FileSource& src, exepack::Info& info, classes::Tables& t)
 {
     const auto& pc = d->prof->create;
     const size_t n = pc.tables.hi - pc.tables.lo;
@@ -2478,10 +2479,10 @@ bool load_rules(MagicRules*& m)
     if (!d->prof->create.ds_image) return false;
     m = new (std::nothrow) MagicRules;
     if (!m) return false;
-    fs::File f;
+    plat::File f;
     bool ok = false;
     if (open_file(d->prof->program, f)) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         exepack::Info info;
         ok = exepack::parse(src, info) == exepack::Status::Ok && read_rule_tables(src, info, m->tables);
         f.close();
@@ -2499,12 +2500,12 @@ bool load_rules(Making*& m)
     if (!pc.ds_image) return false;
     m = new (std::nothrow) Making;
     if (!m) return false;
-    m->dice = create::Dice(static_cast<uint32_t>(millis()) * 2654435761u + 1);
-    fs::File f;
+    m->dice = create::Dice(static_cast<uint32_t>(plat::now_ms()) * 2654435761u + 1);
+    plat::File f;
     if (!open_file(d->prof->program, f)) return false;
     bool ok = false;
     {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         exepack::Info info;
         if (exepack::parse(src, info) == exepack::Status::Ok) {
             ok = read_rule_tables(src, info, m->tables);
@@ -2563,7 +2564,7 @@ bool load_pool_guy(int i, party::Character& ch)
     char path[200];
     const char* where = d->guy_src[i] == 2 ? pool_dir : d->save_dir;
     snprintf(path, sizeof path, "%s/%s", where, d->guy_file[i]);
-    fs::File f = sd_fs().open(path, "r");
+    plat::File f = plat::open(path, "r");
     if (!f) return false;
     uint8_t rec[create::kPoolRecordSize];
     const bool ok = f.read(rec, sizeof rec) == sizeof rec;
@@ -2585,7 +2586,7 @@ bool load_pool_guy(int i, party::Character& ch)
     if (dot && strcasecmp(dot, ".CHA") == 0) {
         *dot = 0;
         snprintf(path, sizeof path, "%s/%s.SPC", where, base);
-        fs::File s = sd_fs().open(path, "r");
+        plat::File s = plat::open(path, "r");
         if (s) {
             uint8_t a[party::kAffectSize];
             while (ch.n_affects < party::kMaxAffects && s.read(a, sizeof a) == sizeof a)
@@ -2798,7 +2799,7 @@ void add_to_charlist(const party::Character& ch)
     char* buf = static_cast<char*>(malloc(kCap));
     if (!buf) return;
     size_t n = 0;
-    fs::File f = sd_fs().open(path, "r");
+    plat::File f = plat::open(path, "r");
     if (f) {
         const int got = f.read(reinterpret_cast<uint8_t*>(buf), kCap - 40);
         f.close();
@@ -2832,7 +2833,7 @@ void save_new(pic::Canvas& c, bool overwrite_ok)
     if (new_base[0]) snprintf(base, sizeof base, "%s", new_base);       // the name typed (Overwrite -> No)
     snprintf(fn, sizeof fn, "%s%s", base, ext_guy());
     save_path(fn, path, sizeof path);
-    if (!overwrite_ok && sd_fs().exists(path)) {
+    if (!overwrite_ok && plat::exists(path)) {
         char t[60];
         snprintf(t, sizeof t, "%s%s%s", rw(Data::kOverwrite), base, rw(Data::kQmark));
         ask_yes_no(c, Ask::OverwriteNew, t);
@@ -3074,7 +3075,7 @@ void buy(int i, pic::Canvas& c)
     rules::recalc(*ch, *names, d->facts);
     char nm[48];
     names->name(items::Item{it}, nm, sizeof nm);
-    Serial.printf("[play] bought %s for %d\n", nm, cost);
+    plat::log("[play] bought %s for %d\n", nm, cost);
     draw_buy(c);
 }
 
@@ -3711,10 +3712,10 @@ bool load_magic()
     // their level headings, until the Play Test closed - Tom, Curse's Fire
     // Knives fight on the 3.2". Now it's dropped, logged and tried again)
     bool named = false, opened = false;
-    fs::File f;
+    plat::File f;
     if (open_file(d->prof->program, f)) {
         opened = true;
-        library::FileSource src(f);
+        plat::FileSource src(f);
         exepack::Info info;
         if (exepack::parse(src, info) == exepack::Status::Ok) {
             const size_t n = static_cast<size_t>(nt.stride) * nt.count;
@@ -4711,7 +4712,7 @@ void next_line(pic::Canvas& c)
     }
     say_line(c, l.who, t);
     if (cr.on_camp) draw_party(c, 17);
-    cr.until = millis() + game_delay_ms();
+    cr.until = plat::now_ms() + game_delay_ms();
     if (!cr.until) cr.until = 1;
 }
 
@@ -4758,7 +4759,7 @@ void choose_spell(int spell, pic::Canvas& c)
         cr.stage = CastRun::Saying;
         cr.n = cr.at = 0;
     }
-    cr.until = millis() + game_delay_ms();
+    cr.until = plat::now_ms() + game_delay_ms();
     if (!cr.until) cr.until = 1;
 }
 
@@ -4933,7 +4934,7 @@ void use_spell(int i, int sp, bool scroll, pic::Canvas& c)
     put(c, it, 1, 22, 10);
     dirty_rows(21, 22);
     cr.stage = CastRun::Casts;
-    cr.until = millis() + game_delay_ms();
+    cr.until = plat::now_ms() + game_delay_ms();
     if (!cr.until) cr.until = 1;
 }
 
@@ -5881,9 +5882,9 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
         d->facts.hammer_type = pi.hammer[1];
         d->facts.hammer_word = pi.hammer[2];
         d->facts.hammer_word2 = pi.hammer[3];
-        fs::File tf;
+        plat::File tf;
         if (pi.types_file && open_file(pi.types_file, tf)) {
-            library::FileSource src(tf);
+            plat::FileSource src(tf);
             names->read_types(src);
             tf.close();
         }
@@ -6006,7 +6007,7 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
     }
     if (!d->w_slots[0]) strcpy(d->w_slots, "A B C D E F G H I J");
     char sub[64] = "SAVE";
-    fs::File f;
+    plat::File f;
     if (pp.cfg && open_file(pp.cfg, f)) {
         char cfg[256];
         const int n = f.read(reinterpret_cast<uint8_t*>(cfg), sizeof cfg);
@@ -6017,11 +6018,11 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
             if (got[0]) strcpy(sub, got);
         }
     }
-    library::path_of(d->data_dir, sub, d->save_dir, sizeof d->save_dir);
+    games::path_of(d->data_dir, sub, d->save_dir, sizeof d->save_dir);
     // Steam / SNEG: C: is the folder above the game's ("C:\CURSE\SAVE\");
     // GOG's Pool: "C:\POOLRAD\" - the game's own folder
-    if (!sd_fs().exists(d->save_dir) && savegame::drop_own_folder(d->data_dir, sub)) {
-        if (sub[0]) library::path_of(d->data_dir, sub, d->save_dir, sizeof d->save_dir);
+    if (!plat::exists(d->save_dir) && savegame::drop_own_folder(d->data_dir, sub)) {
+        if (sub[0]) games::path_of(d->data_dir, sub, d->save_dir, sizeof d->save_dir);
         else snprintf(d->save_dir, sizeof d->save_dir, "%s/%s", games::kRootDir, d->data_dir);
     }
 }
@@ -6038,9 +6039,9 @@ struct Host : ecl::Host {
             snprintf(t, sizeof t, "area %d script %d", d->gs.game_area, block);
             memlog::note(t);
         }
-        fs::File f;
+        plat::File f;
         if (!open_dax(name, f)) return false;
-        library::FileSource src(f);
+        plat::FileSource src(f);
         bool ok = false;
         const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
         if (e && e->raw_size >= 2 && static_cast<uint32_t>(e->raw_size) - 2 <= ecl::kCodeSize) {
@@ -6053,21 +6054,21 @@ struct Host : ecl::Host {
             free(tmp);
         }
         f.close();
-        Serial.printf("[play] script %d of %s: %s\n", block, name, ok ? "loaded" : "missing");
+        plat::log("[play] script %d of %s: %s\n", block, name, ok ? "loaded" : "missing");
         return ok;
     }
     void load_map(int geo_block) override
     {
         char name[24];
         area_file(name, sizeof name, "GEO");
-        fs::File f;
+        plat::File f;
         d->map.loaded = false;
         if (open_dax(name, f)) {
-            library::FileSource src(f);
+            plat::FileSource src(f);
             geo::load(src, d->idx, static_cast<uint8_t>(geo_block), d->map);
             f.close();
         }
-        Serial.printf("[play] map %s #%d: %s\n", name, geo_block, d->map.loaded ? "ok" : "missing");
+        plat::log("[play] map %s #%d: %s\n", name, geo_block, d->map.loaded ? "ok" : "missing");
     }
     void load_walls(int set, int block) override
     {
@@ -6082,22 +6083,22 @@ struct Host : ecl::Host {
         }
         char name[24];
         int n = 0;
-        fs::File f;
+        plat::File f;
         area_file(name, sizeof name, "WALLDEF");
         if (open_dax(name, f)) {
-            library::FileSource src(f);
+            plat::FileSource src(f);
             if (!view3d::load_walls(src, d->idx, set, static_cast<uint8_t>(block), wd, &n)) n = 0;
             f.close();
         }
         if (n == 0) {
-            Serial.printf("[play] wall set %d: block %d not loaded\n", set, block);
+            plat::log("[play] wall set %d: block %d not loaded\n", set, block);
             return;
         }
         // The later parts of a multi-part block fill the next sets
         for (int k = 1; k < n && set - 1 + k < 3; ++k) d->wall_block[set - 1 + k] = d->wall_set[set - 1 + k] = -1;
         area_file(name, sizeof name, "8X8D");
         if (open_dax(name, f)) {
-            library::FileSource src(f);
+            plat::FileSource src(f);
             for (int k = 0; k < n; ++k)
                 view3d::load_tiles(src, d->idx, static_cast<uint8_t>(view3d::tiles_block(static_cast<uint8_t>(block), n, k)),
                                    wd.sets[set - 1 + k]);
@@ -6152,7 +6153,7 @@ struct Host : ecl::Host {
         if (anim_block < 0) return;
         anim_draw(anim_frame);
         anim_frame = (anim_frame + 1) % d->anim.frames;
-        anim_at = millis();
+        anim_at = plat::now_ms();
     }
     void redraw() override
     {
@@ -6198,9 +6199,9 @@ struct Host : ecl::Host {
         draw_view(c);
         char name[24];
         area_file(name, sizeof name, "SPRIT");
-        fs::File f;
+        plat::File f;
         if (!open_dax(name, f)) return;
-        library::FileSource src(f);
+        plat::FileSource src(f);
         const dax::Entry* e = d->idx.find(static_cast<uint8_t>(id));
         if (e) {
             dax::RleReader r(src, d->idx, *e);
@@ -6217,16 +6218,16 @@ struct Host : ecl::Host {
     {
         char name[24];
         area_file(name, sizeof name, "ITEM");
-        fs::File f;
+        plat::File f;
         if (!open_dax(name, f)) return;
-        library::FileSource src(f);
+        plat::FileSource src(f);
         const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
         if (e) {
             dax::RleReader r(src, d->idx, *e);
             while (g.n < items::kMaxGround && r.read(g.item[g.n], items::kRecordSize) == items::kRecordSize) ++g.n;
         }
         f.close();
-        Serial.printf("[play] %s #%d: %d items\n", name, block, g.n);
+        plat::log("[play] %s #%d: %d items\n", name, block, g.n);
     }
     void random_items(int n, items::Ground& g) override
     {
@@ -6235,10 +6236,10 @@ struct Host : ecl::Host {
         if (!p->random_items || !p->random_rows) return;
         // (the program's array of words: its first row starts at word 1)
         treasure::Rows rows{};
-        fs::File f;
+        plat::File f;
         bool ok = false;
         if (open_file(p->program, f)) {
-            library::FileSource src(f);
+            plat::FileSource src(f);
             exepack::Info info;
             ok = exepack::parse(src, info) == exepack::Status::Ok &&
                  exepack::read(src, info, p->create.ds_image + p->random_rows - 2, reinterpret_cast<uint8_t*>(rows.w),
@@ -6256,7 +6257,7 @@ struct Host : ecl::Host {
         uint8_t last = 0;
         for (int k = 0; k < n && g.n < items::kMaxGround; ++k)
             treasure::make(g.item[g.n++], *p->random_items, rows, rng, &last);
-        Serial.printf("[play] TREASURE: %d random items (%d on the ground)\n", n, g.n);
+        plat::log("[play] TREASURE: %d random items (%d on the ground)\n", n, g.n);
     }
     void load_monster(int id, int copies, int icon) override { fight_load_monster(id, copies, icon); }
     void clear_monsters() override { fight_clear_monsters(); }
@@ -6269,7 +6270,7 @@ struct Host : ecl::Host {
     }
     void party_killed() override { party_dead = true; }
     void sound(int id) override { sfx(id); }
-    void log(const char* what) override { Serial.printf("[ecl %d:%04X] %s\n", d->gs.script, vm->pc() + 0x8000, what); }
+    void log(const char* what) override { plat::log("[ecl %d:%04X] %s\n", d->gs.script, vm->pc() + 0x8000, what); }
 };
 
 // ---- running scripts -------------------------------------------------------------
@@ -6361,7 +6362,7 @@ void begin_wait(pic::Canvas& c)
         draw_input(c);
         break;
     case ecl::Wait::Pause:
-        pause_until = millis() + vm->pause_ms();
+        pause_until = plat::now_ms() + vm->pause_ms();
         break;
     case ecl::Wait::Who: {
         // "<prompt> Select" over the party list (a tap on a line picks them)
@@ -6658,7 +6659,7 @@ void handle(ecl::Stop r)
             run_entry(0, Then::Move);
             return;
         }
-        Serial.println("[play] outdoor scripts idle; waiting for the player");
+        plat::log("[play] outdoor scripts idle; waiting for the player\n");
     }
     journal_ready();
     idle_menu(c);
@@ -6820,7 +6821,7 @@ void load_icon_picks()
     if (!d->cache_dir[0]) return;
     char path[200];
     snprintf(path, sizeof path, "%s/ICONS.TXT", d->cache_dir);
-    fs::File f = sd_fs().open(path, "r");
+    plat::File f = plat::open(path, "r");
     if (!f) return;
     char buf[700];
     const int n = f.read(reinterpret_cast<uint8_t*>(buf), sizeof buf);
@@ -6841,10 +6842,10 @@ uint8_t* load_gbc_icon(int k)
 {
     char path[96];
     snprintf(path, sizeof path, "%s/%s/%03d.bmp", games::kRootDir, gbc_icons::kFolder, k);
-    fs::File f = sd_fs().open(path, "r");
+    plat::File f = plat::open(path, "r");
     if (!f) return nullptr;
     uint8_t* p = static_cast<uint8_t*>(malloc(gbc_icons::kPicBytes));
-    library::FileSource src(f);
+    plat::FileSource src(f);
     if (p && !gbc_icons::bmp_to_pic4(src, p)) {
         free(p);
         p = nullptr;
@@ -6861,7 +6862,7 @@ int gbc_pairs()
     for (; n < gbc_icons::kMaxPairs; ++n) {
         char path[96];
         snprintf(path, sizeof path, "%s/%s/%03d.bmp", games::kRootDir, gbc_icons::kFolder, 2 * n + 2);
-        if (!sd_fs().exists(path)) break;
+        if (!plat::exists(path)) break;
     }
     d->gbc_pairs = n;
     return n;
@@ -6917,9 +6918,9 @@ void view_box(pic::Canvas& c, const party::Character& ch)
         if (!d->maps_read) {
             d->maps_read = true;
             const auto& pc = d->prof->create;
-            fs::File f;
+            plat::File f;
             if (open_file(d->prof->program, f)) {
-                library::FileSource src(f);
+                plat::FileSource src(f);
                 exepack::Info info;
                 if (exepack::parse(src, info) != exepack::Status::Ok ||
                     exepack::read(src, info, pc.ds_image + pc.head_blocks, d->head_map, sizeof d->head_map) !=
@@ -7115,9 +7116,9 @@ void start_icon(pic::Canvas& c, Screen from)
     ie->ch = ch;
     ie->from = from;
     const auto& pa = d->prof->alter;
-    fs::File f;
+    plat::File f;
     if (open_file(d->prof->program, f)) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         exepack::Info info;
         if (exepack::parse(src, info) == exepack::Status::Ok)
             for (int i = 0; i < 5; ++i)
@@ -7413,9 +7414,9 @@ bool gal_load(uint8_t** parts, int n, const char* file, int add)
     bool need = false;
     for (int i = 0; i < n; ++i) need |= parts[i] == nullptr;
     if (!need) return true;
-    fs::File f;
+    plat::File f;
     if (!open_dax(file, f)) return false;
-    library::FileSource src(f);
+    plat::FileSource src(f);
     bool ok = true;
     for (int i = 0; i < n && ok; ++i) {
         if (parts[i]) continue;
@@ -7633,10 +7634,10 @@ void load_sound()
     const size_t n = l.hi - l.lo;
     uint8_t* buf = static_cast<uint8_t*>(malloc(n));
     snd = new (std::nothrow) sound::Player;
-    fs::File f;
+    plat::File f;
     bool ok = false;
     if (buf && snd && open_file(d->prof->program, f)) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         exepack::Info info;
         ok = exepack::parse(src, info) == exepack::Status::Ok &&
              exepack::read(src, info, l.segment_image + l.lo, buf, n) == exepack::Status::Ok && snd->set_data(l, buf, n);
@@ -7644,7 +7645,7 @@ void load_sound()
     }
     free(buf);
     if (!ok) {
-        Serial.println("[play] the sound driver's data didn't read: no sound");
+        plat::log("[play] the sound driver's data didn't read: no sound\n");
         delete snd;
         snd = nullptr;
     }
@@ -7672,9 +7673,9 @@ TitleRun* title_run = nullptr;
 
 bool title_picture(pic::Canvas& c, int block, int row, int col)
 {
-    fs::File f;
+    plat::File f;
     if (!open_dax(d->prof->title_file, f)) return false;
-    library::FileSource src(f);
+    plat::FileSource src(f);
     bool ok = false;
     const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
     if (e) {
@@ -7713,7 +7714,7 @@ void title_show(int from, pic::Canvas& c)
         title_run->step = s;
         if (st.wait_ms > 0) break;
     }
-    title_run->since = millis();
+    title_run->since = plat::now_ms();
     dirty_rows(0, 24);
     if (!shown) title_prompt(c);        // (nothing left to show: the version line's Play / Demo)
 }
@@ -7741,7 +7742,7 @@ void title_prompt(pic::Canvas& c)
     text::build(menu, title_run->version, title_run->words);
     menu.selected = 0;
     show_menu_line(c);
-    title_run->since = millis();
+    title_run->since = plat::now_ms();
 }
 
 void start_demo(pic::Canvas& c);
@@ -7857,7 +7858,7 @@ void won_after_text(pic::Canvas& c)
         c.fill(24, 24, 88, 88, 0);
         if (anim_start(wf.anim[won->page - 1]) && anim_block >= 0 && d->anim.frames > 1) {
             won->stage = WonRun::Anim;
-            won->at = millis();
+            won->at = plat::now_ms();
             return;
         }
         anim_stop();
@@ -7876,12 +7877,12 @@ void won_after_text(pic::Canvas& c)
         int speed = vm->get(0x4BFC) & 0xFF;
         if (speed > 9) speed = 9;
         won->stage = WonRun::Hold;
-        won->at = millis() + static_cast<uint32_t>((10 - speed) * 2) * 250;
+        won->at = plat::now_ms() + static_cast<uint32_t>((10 - speed) * 2) * 250;
         return;
     }
     case 5:
         won->stage = WonRun::Fireworks;
-        won->next_rocket = millis() + 300;
+        won->next_rocket = plat::now_ms() + 300;
         return;
     default:
         won_prompt(c);
@@ -7965,11 +7966,11 @@ void pool_end_anim(int block, int x, int y, int loops)
     won->stage = WonRun::Anim;
     won->loops = loops < 1 ? 1 : loops;
     won->loop = 0;
-    won->at = millis();
+    won->at = plat::now_ms();
     if (!anim_start(block, "FINAL", x, y) || d->anim.frames < 1) {
         // (no animation: on at once)
         won->stage = WonRun::Hold;
-        won->at = millis();
+        won->at = plat::now_ms();
         return;
     }
     if (anim_block < 0) {
@@ -7977,7 +7978,7 @@ void pool_end_anim(int block, int x, int y, int loops)
         uint32_t t = 0;
         for (int k = 0; k < d->anim.frames; ++k) t += d->anim.delay[k];
         won->stage = WonRun::Hold;
-        won->at = millis() + t * static_cast<uint32_t>(pool_speed() + 3) * 10u * static_cast<uint32_t>(won->loops);
+        won->at = plat::now_ms() + t * static_cast<uint32_t>(pool_speed() + 3) * 10u * static_cast<uint32_t>(won->loops);
     }
 }
 
@@ -8010,7 +8011,7 @@ void pool_end_step(pic::Canvas& c)
     case 3:
         anim_stop();
         won->stage = WonRun::Hold;
-        won->at = millis() + static_cast<uint32_t>(3 * speed * 225);
+        won->at = plat::now_ms() + static_cast<uint32_t>(3 * speed * 225);
         return;
     default: {
         // The screen back, the script on
@@ -8077,9 +8078,9 @@ void start_won(pic::Canvas& c)
     }
     // The fade's table (the program's data)
     for (int k = 0; k < 16; ++k) won->fade[k] = static_cast<uint8_t>(k);
-    fs::File f;
+    plat::File f;
     if (open_file(d->prof->program, f)) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         exepack::Info info;
         if (exepack::parse(src, info) == exepack::Status::Ok)
             exepack::read(src, info, d->prof->data_base + d->prof->won.fade_table, won->fade, sizeof won->fade);
@@ -8255,7 +8256,7 @@ void start_demo(pic::Canvas& c)
     c.clear(0);
     screen = Screen::Game;
     if (!host->load_script(gs.script, gs.code, &gs.code_len) || !vm->init_script(false)) {
-        Serial.println("[play] the demo's script didn't load");
+        plat::log("[play] the demo's script didn't load\n");
         end_demo(c);
         return;
     }
@@ -8326,9 +8327,9 @@ bool start_title(pic::Canvas& c, uint32_t timeout_ms)
     title_run = new (std::nothrow) TitleRun;
     if (!title_run) return false;
     title_run->timeout_ms = timeout_ms;
-    fs::File f;
+    plat::File f;
     if ((p.title_version || p.title_menu) && open_file(p.program, f)) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         exepack::Info info;
         if (exepack::parse(src, info) == exepack::Status::Ok) {
             if (p.title_version) text::read_pascal(src, info, p.title_version, title_run->version, sizeof title_run->version);
@@ -8337,7 +8338,7 @@ bool start_title(pic::Canvas& c, uint32_t timeout_ms)
         f.close();
     }
     if (open_file(p.overlay, f)) {
-        library::FileSource osrc(f);
+        plat::FileSource osrc(f);
         if (osrc.size() == p.overlay_size)
             title_run->n_credits = printcalls::read(osrc, p.credits_at, p.credits_base, title_run->credits, kTitleCredits,
                                                          p.variant.credits_stride ? p.variant.credits_stride : printcalls::kBlock);
@@ -8395,10 +8396,10 @@ int font_wanted()
         d->alt_tried = true;
         char path[160];
         snprintf(path, sizeof path, "%s/8X8D0.DAX", darkness_dir);
-        fs::File f = sd_fs().open(path, "r");
+        plat::File f = plat::open(path, "r");
         font::Font* af = f ? new (std::nothrow) font::Font : nullptr;
         if (af) {
-            library::FileSource src(f);
+            plat::FileSource src(f);
             dax::Index* idx = new (std::nothrow) dax::Index;
             const bool ok = idx && dax::read_index(src, *idx) == dax::Status::Ok && font::load(src, *idx, *af);
             delete idx;
@@ -8493,8 +8494,8 @@ bool make_room(unsigned kb, const char* what)
 void tidy_memory()
 {
     static uint32_t next = 0;
-    if (millis() < next) return;
-    next = millis() + 5000;
+    if (plat::now_ms() < next) return;
+    next = plat::now_ms() + 5000;
     if (fg || memlog::largest_kb() >= 32) return;
     make_room(32, "the next fight");
 }
@@ -8502,9 +8503,9 @@ void tidy_memory()
 const char* no_memory(const char* what)
 {
     snprintf(msg, sizeof msg, "Not enough memory for %s (free %u KB, largest block %u KB).", what,
-             (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
-             (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
-    Serial.printf("[play] %s\n", msg);
+             (unsigned)(plat::free_heap() / 1024),
+             (unsigned)(plat::largest_block() / 1024));
+    plat::log("[play] %s\n", msg);
     char t[80];
     snprintf(t, sizeof t, "NOT ENOUGH MEMORY for %s", what);
     memlog::note(t);
@@ -8531,7 +8532,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
         snprintf(msg, sizeof msg, "No play test for %s yet.", games::title(g));
         return msg;
     }
-    if (!sd_begin()) return "No SD card found.";
+    if (!plat::card_ready()) return "No SD card found.";
     {
         view3d::World* w = new (std::nothrow) view3d::World;
         ecl::GameState* g = new (std::nothrow) ecl::GameState;
@@ -8546,14 +8547,14 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     if (cache_dir) strncpy(d->cache_dir, cache_dir, sizeof d->cache_dir - 1);
     load_icon_picks();
 
-    fs::File f;
+    plat::File f;
     if (!open_file(prog, f)) {
         snprintf(msg, sizeof msg, "%s is missing from the game folder.", prog);
         close();
         return msg;
     }
     {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         exepack::Info info;
         const profile::Profile* p = nullptr;
         if (exepack::parse(src, info) == exepack::Status::Ok) p = profile::find(g, src.size(), info.image_size);
@@ -8579,7 +8580,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     }
     bool ok = open_dax(d->prof->tiles_file, f);
     if (ok) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles) && font::load(src, d->idx, d->font) &&
              view3d::load_tiles(src, d->idx, d->prof->common_tiles_block, d->world.common);
         f.close();
@@ -8595,7 +8596,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     }
     d->world.frame = &d->frame_tiles;
     if (d->prof->sky_file && open_dax(d->prof->sky_file, f)) {
-        library::FileSource src(f);
+        plat::FileSource src(f);
         view3d::load_horizon(src, d->idx, d->prof->horizon_block, d->world);
         f.close();
     }
@@ -9328,7 +9329,7 @@ void tap(int x, int y, pic::Canvas& c)
                 text::next_page(w, c);
                 dirty_rows(17, 22);
                 page_prompt = false;
-                t_last = millis();
+                t_last = plat::now_ms();
             } else if (vm->wait() == ecl::Wait::ListMenu && list_wait) {
                 const int i = row - list_row0;
                 if (row >= text::kTextArea.y0 && row <= text::kTextArea.y1 && i >= 0 && i < vm->items()) {

@@ -32,17 +32,11 @@ the Project as claude/TODO.md.
 
 ## Claude
 
-- [ ] **Platform layer** (Tom, 2026-10-12: keep it portable, PortMaster):
-      the game's own flow (`ui/play.cpp`, `play_fight.inc`, `look`,
-      `walk`: ~15k lines) draws only into the canvas and takes keys / taps
-      through its API, but still calls Arduino's Serial / millis, the
-      Arduino SD library's fs::File / sd_fs() and heap_caps directly
-      (the playsim imitates those to run it on Linux). Put them behind one
-      small platform interface (time, log, files, memory, sound) with an
-      ESP32 and a host implementation; move play / look / walk out of
-      src/ui into the platform-free side; the engine's own screens
-      (Settings, journal viewer, library) drawn through ui:: primitives a
-      port can supply.
+- [ ] **Engine screens for ports**: the platform layer is done
+      (v0.91.1: src/game + src/engine use only src/platform/*.h); still
+      CYD-only are the engine's own screens (Settings, journal viewer,
+      library, logs - `ui/viewer.cpp` etc. draw with LovyanGFX). For a
+      PortMaster port: draw them through ui:: primitives a port supplies.
 - [ ] Memory, next cuts (measure each with heapprof): the party's unused
       member slots (1.7 KB each), Data's words read on demand, the spell
       names' 4 KB read buffer in pieces.
@@ -62,6 +56,14 @@ the Project as claude/TODO.md.
 
 ## Done
 
+- v0.91.1: the platform layer - the game code (src/game: play, fights,
+  Screen / Walk Tests) and the engine use only src/platform/*.h (time,
+  log, memory, files, sound, memory log); boards: hal/platform_esp32.cpp;
+  PC: tools/host (the playsim and sweeps run on it; CI builds the game
+  code with no board headers and tests the PC side).
+  Found by its tests and fixed: a script's treasure with no fight (COMBAT
+  with no monsters - Curse ECL1 block 80) crashed since v0.86.1 (the
+  fight's fighter blocks weren't made for the party).
 - v0.91.0: one Settings screen everywhere (Home, the game's page, the
   Game menu's Settings tab): board keys + comforts + the game's own.
 - v0.90.0: Tom's questions on the Cloak of Elvenkind (95 in 100 is the

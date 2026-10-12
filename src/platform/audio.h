@@ -1,4 +1,6 @@
-// The game's sound out of the board's speaker socket: 8-bit samples to the
+// Sound out - part of the platform layer (platform/platform.h): the game
+// code hands over a filler of 8-bit samples at kAudioHz; the platform plays
+// them. On the CYD boards (hal/audio.cpp): 8-bit samples to the
 // DAC (GPIO 26) through the board's little amplifier, fed by DMA from a task
 // of its own that runs only while something sounds (Tom: every KB for the
 // games - ~7 KB while it plays, nothing otherwise) - except during a fight,

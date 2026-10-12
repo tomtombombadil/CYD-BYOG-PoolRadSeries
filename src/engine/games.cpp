@@ -1,6 +1,7 @@
 #include "games.h"
 
 #include <cctype>
+#include <cstdio>
 #include <cstring>
 
 namespace games {
@@ -77,6 +78,11 @@ Game from_folder_name(const char* name)
     if (has(s, "CURSE") || has(s, "AZURE") || has(s, "COTAB") || has(s, "BONDS")) return Game::CurseOfTheAzureBonds;
     if (has(s, "RADIANCE") || has(s, "POOLRAD") || has(s, "POR")) return Game::PoolOfRadiance;
     return Game::Unknown;
+}
+
+void path_of(const char* data_dir, const char* file, char* out, size_t cap)
+{
+    snprintf(out, cap, "%s/%s/%s", kRootDir, data_dir, file);
 }
 
 } // namespace games

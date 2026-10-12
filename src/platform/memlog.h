@@ -1,3 +1,5 @@
+// Part of the platform layer (platform/platform.h; the boards'
+// implementation: hal/memlog.cpp; a PC's: tools/host).
 // The memory log (Tom, 2026-10-11, v0.85.7: "we have to be VERY aware of
 // the state of the memory in use"): /GOLDBOX/_CYD/MEMORY.TXT, one line a
 // moment worth knowing - "[h:mm:ss] what: free N KB, largest block N KB,

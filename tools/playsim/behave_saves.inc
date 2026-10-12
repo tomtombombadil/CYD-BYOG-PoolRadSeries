@@ -20,7 +20,7 @@ bool start(char slot, bool begin)
     play::close();
     const std::string& host = game_dir;
     const size_t s = host.rfind('/');
-    fs::sim_root() = host.substr(0, s);
+    pc::card_root() = host.substr(0, s);
     static std::string folder, cache;
     folder = host.substr(s + 1);
     cache = "/GOLDBOX/_CYD/" + folder;

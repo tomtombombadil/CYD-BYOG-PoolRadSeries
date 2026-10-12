@@ -1,9 +1,9 @@
-#include "audio.h"
+#include "platform/audio.h"
 
 #include <Arduino.h>
 
 #include "boards/board_select.h"
-#include "hal/memlog.h"
+#include "platform/memlog.h"
 
 #if defined(BOARD_AUDIO_DAC)
 #include <driver/dac_continuous.h>

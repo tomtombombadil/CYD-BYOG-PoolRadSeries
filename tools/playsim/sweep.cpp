@@ -3,8 +3,9 @@
 // to find crashes (build with -fsanitize=address,undefined), hangs and
 // wrong results. Nothing from the games is stored: reports go to stdout.
 // Build from the repo root:
-//   g++ -std=c++17 -O1 -g -fsanitize=address,undefined -Itools/playsim/shim -Isrc
-//       -o sweep tools/playsim/sweep.cpp src/engine/*.cpp
+//   g++ -std=c++17 -O1 -g -fsanitize=address,undefined -Itools/host -Isrc
+//       -o sweep tools/playsim/sweep.cpp src/engine/*.cpp tools/host/*.cpp
+// (the game code on the PC's platform layer, tools/host)
 // Run: sweep <game folder> <mode> [args]; modes:
 //   spells           every fight spell cast by a party member at 8AC2's fight (save A)
 //   campspells       every camp spell cast while exploring
@@ -27,7 +28,8 @@
 // progress), AIMLOG, ENTRIES, ONLY. Each run saves over the slots: give each
 // its own copy of the game folder.
 #include <malloc.h>
-#include "ui/play.cpp"
+#include "game/play.cpp"
+#include "host.h"
 #include "engine/rules.h"
 #include <cstdarg>
 #include <sys/stat.h>
@@ -47,7 +49,6 @@ static bool g_held = false;             // (a fight's hold on the sound output: 
 void audio_hold(bool on, AudioFill, void*) { g_held = on; }
 bool audio_held() { return g_held; }
 uint32_t g_now = 1000;
-SerialT Serial;
 static std::vector<uint8_t> px(getenv("CANVAS8") ? 320 * 200 : 320 * 200 / 2);   // (exactly the canvas: ASan sees an overrun)
 static pic::Canvas C{px.data(), 320, 200, static_cast<uint8_t>(getenv("CANVAS8") ? 8 : 4)};
 static std::mt19937 rnd(12345);
@@ -310,7 +311,7 @@ static bool boot(char slot = 'A')
     play::close();
     const std::string& host = game_dir;
     const size_t s = host.rfind('/');
-    fs::sim_root() = host.substr(0, s);
+    pc::card_root() = host.substr(0, s);
     static std::string folder;
     folder = host.substr(s + 1);
     // GAME=n: another game (games::Game's number: 1 Pool of Radiance)
@@ -464,12 +465,12 @@ static void sweep_monsters(int only)
         char path[300];
         snprintf(path, sizeof path, "%s/MON%dCHA.DAX", game_dir.c_str(), area);
         snprintf(path, sizeof path, "/GOLDBOX/%s/MON%dCHA.DAX", game_dir.substr(game_dir.rfind('/') + 1).c_str(), area);
-        fs::File f = sd_fs().open(path, "r");
+        plat::File f = plat::open(path, "r");
         if (!f) {
             printf("no %s\n", path);
             continue;
         }
-        library::FileSource src(f);
+        plat::FileSource src(f);
         static dax::Index dir;
         std::vector<int> ids;
         if (dax::read_index(src, dir) == dax::Status::Ok)
@@ -515,9 +516,9 @@ static std::vector<TestItem> test_items()
             char path[300];
             snprintf(path, sizeof path, pass ? "/GOLDBOX/%s/MON%dITM.DAX" : "/GOLDBOX/%s/ITEM%d.DAX", folder.c_str(),
                      area);
-            fs::File f = sd_fs().open(path, "r");
+            plat::File f = plat::open(path, "r");
             if (!f) continue;
-            library::FileSource src(f);
+            plat::FileSource src(f);
             static dax::Index dir;
             if (dax::read_index(src, dir) != dax::Status::Ok) {
                 f.close();
@@ -772,10 +773,10 @@ static void sweep_testchars()
             ++found;
             party::Character& ch = pt->m[pt->count];
             ch = party::Character{};
-            fs::File f;
+            plat::File f;
             if (!open_save_file(d->guy_file[i], f)) continue;
             {
-                library::FileSource src(f);
+                plat::FileSource src(f);
                 party::read_record(src, ch, rec_format());
             }
             f.close();
@@ -786,7 +787,7 @@ static void sweep_testchars()
             char fn[24];
             snprintf(fn, sizeof fn, "%s%s", base, ext_items());
             if (open_save_file(fn, f)) {
-                library::FileSource src(f);
+                plat::FileSource src(f);
                 party::read_items(src, ch);
                 f.close();
             }
@@ -932,9 +933,9 @@ static void sweep_events(int only)
         if (only && area != only) continue;
         char path[300];
         snprintf(path, sizeof path, "/GOLDBOX/%s/ECL%d.DAX", game_dir.substr(game_dir.rfind('/') + 1).c_str(), area);
-        fs::File f = sd_fs().open(path, "r");
+        plat::File f = plat::open(path, "r");
         if (!f) continue;
-        library::FileSource src(f);
+        plat::FileSource src(f);
         static dax::Index dir;
         std::vector<int> ids;
         if (dax::read_index(src, dir) == dax::Status::Ok)
@@ -1477,7 +1478,7 @@ int main(int argc, char** argv)
     }
     game_dir = argv[1];
     while (game_dir.size() > 1 && game_dir.back() == '/') game_dir.pop_back();
-    fs::sim_root() = game_dir.substr(0, game_dir.rfind('/'));
+    pc::card_root() = game_dir.substr(0, game_dir.rfind('/'));
     const std::string mode = argv[2];
     const int arg = argc > 3 ? atoi(argv[3]) : 0;
     if (mode == "spells") sweep_spells();

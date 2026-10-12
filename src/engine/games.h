@@ -16,6 +16,8 @@
 // files can be looked at, and come later (SPEC section 9).
 #pragma once
 
+#include <cstddef>
+
 #include <cstdint>
 
 namespace games {
@@ -39,6 +41,8 @@ constexpr int kGameCount = 11;   // including Unknown
 enum class Series : uint8_t { Unknown, PoolOfRadiance, Krynn, SavageFrontier, Unlimited };
 
 constexpr const char* kRootDir = "/GOLDBOX";
+// A game file's path on the card: "/GOLDBOX/<data_dir>/<file>"
+void path_of(const char* data_dir, const char* file, char* out, size_t cap);
 
 const char* title(Game g);
 const char* short_title(Game g);      // fits a narrow key
