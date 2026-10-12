@@ -157,12 +157,15 @@ uint16_t Vm::get(uint16_t a) const
             not_found_ = false;                            // LOAD CHARACTER found no one
             return 0;
         }
+        const uint16_t off = static_cast<uint16_t>(a - 0x7C00);
         if (const uint8_t* mr = sel_rec()) {
             // a loaded monster LOAD CHARACTER chose (its place: after the party)
-            if (party::script_value(mr, (party_ ? party_->count : 0) + sel_mon_, static_cast<uint16_t>(a - 0x7C00), &v,
-                                    set_.pool_map))
+            const int at = (party_ ? party_->count : 0) + sel_mon_;
+            if (set_.secret_fields ? party::script_value_secret(mr, nullptr, at, off, &v)
+                                   : party::script_value(mr, at, off, &v, set_.pool_map))
                 return v;
-        } else if (party_ && party::script_value(*party_, static_cast<uint16_t>(a - 0x7C00), &v, set_.pool_map)) {
+        } else if (party_ && (set_.secret_fields ? party::script_value_secret(*party_, off, &v)
+                                                 : party::script_value(*party_, off, &v, set_.pool_map))) {
             return v;
         }
         if (a == 0x7D00) return 0;                         // "no character loaded"
@@ -198,9 +201,16 @@ void Vm::set(uint16_t a, uint16_t v)
         word_to(s_.area2, (a - 0x7C00u) * 2, v);
         if (a == 0x7C00 && v == 0) cleared_name_ = true;
         if (a == 0x7D00 && v == 0) cleared_status_ = true;
+        const uint16_t off = static_cast<uint16_t>(a - 0x7C00);
         if (uint8_t* mr = sel_rec()) {
-            if (a < 0x7EB0) party::script_set(mr, static_cast<uint16_t>(a - 0x7C00), v);
-        } else if (party_ && a < 0x7EB0) party::script_set(*party_, static_cast<uint16_t>(a - 0x7C00), v);
+            if (a < 0x7EB0) {
+                if (set_.secret_fields) party::script_set_secret(mr, off, v);
+                else party::script_set(mr, off, v);
+            }
+        } else if (party_ && a < 0x7EB0) {
+            if (set_.secret_fields) party::script_set_secret(*party_, off, v);
+            else party::script_set(*party_, off, v);
+        }
         if (a == 0x7F12) s_.game_area = static_cast<uint8_t>(v);
         if ((a == 0x7F22 || a == 0x7F24 || a == 0x7F26) && v > 0x80) h_.load_walls(1 + (a - 0x7F22) / 2, v & 0x7F);
         return;

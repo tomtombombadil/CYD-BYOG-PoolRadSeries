@@ -58,21 +58,24 @@ the Project as claude/TODO.md.
       work plan in the Project's claude/secret_facts.md; SPEC 6c). Done:
       program layout, words, scripts, frame, font, title, Screen / Walk
       Test (v0.92.0); the 439-byte record and the saves (v0.93.0); party
-      menu, Load, Begin into Priam's house (v0.94.0); the rule tables
-      (v0.95.0). Next, a chunk a
-      commit: (4b) the opening texts (CALL 2DCB), View Character's layout,
-      items and their words, Modify, Add from Curse, camp (spell names;
-      6th / 7th level spells and 101-117 in magic), a dwarf's saves (the
-      Constitution effect 0x61 kept in the record's saves?); the scripts' view of a character (Secret's own offsets and
-      race numbers: script_value); LOAD PIECES 127 in the 3rd set, camp, items, shops (its version line's
-      two-line look with it); (5) combat (its fight frame not seen yet:
-      Curse's shape for now), spells, monsters; (6) sound, sky,
-      approaching monsters; (7) behaviour tests.
+      menu, Load, Begin into Priam's house (v0.94.0); the rule tables,
+      areas (v0.95.0); the scripts' view of a character (v0.96.0). Next, a
+      chunk a commit: the opening texts (CALL 2DCB); View Character's
+      layout; items and their words (its own word table), shops; Modify
+      ("Add Subtract Keep Exit"); Add from Curse; camp (spell names; 6th /
+      7th level spells and 101-117 in magic); a dwarf's saves (the
+      Constitution effect 0x61 kept in the record's saves?); combat (its
+      monsters' 439-byte records, its fight frame not seen yet), spells,
+      monsters; sound, sky, approaching monsters; the version line's
+      two-line look; behaviour tests.
 - [ ] Tom: when you have a moment, Secret's Screen Test and Walk Test
       (Settings - Dev Tools on its page) on a board - the frame, title,
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.96.0: Secret's scripts read and write a character through its own
+  field switch (race in its numbers, HP, levels, gems, status).
 
 - v0.95.0: Secret's rule tables in its own shapes (levels to 18, 7 spell
   levels, 119 spells, its race order) - the GOG party's values come out

@@ -64,6 +64,8 @@ struct OpSet {
     // block is looked for in the family's other files when its area's
     // hasn't it (Curse: the file is the area's own)
     bool area_by_block = false;
+    // Secret: the scripts' view of a character (party::script_value_secret)
+    bool secret_fields = false;
 };
 
 // A script's memory address as the engine's machine (Curse's map) knows

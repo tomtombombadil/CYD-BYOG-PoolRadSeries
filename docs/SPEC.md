@@ -925,6 +925,12 @@ until the party menu is known (`party.items`).
   so a block its area's file hasn't is found in the others
   (`play::open_area_dax`); monsters and icons are MON1* / CPIC1 for every
   area (`area_fmt`); LOAD PIECES 127 = no set.
+- **v0.96.0 - the scripts' view of a character.** Secret's interpreter
+  has its own field switch (`party::script_value_secret` /
+  `script_set_secret`, `OpSet::secret_fields`): Curse's codes on Secret's
+  fields, the race in its own numbers, new ones (Charisma, HP max and now,
+  gems, each class's level), the status in its numbers (0x100), the 75
+  memorized spells; no 0xE4.
 - Not yet: the opening texts before Priam's (the valley, the glacier -
   the original's CALL 2DCB, a routine of its program), View Character's
   own layout ("Experience:", "Hit Points", "Armor Class"), the items and

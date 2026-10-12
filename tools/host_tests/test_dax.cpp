@@ -3171,6 +3171,33 @@ static void test_party()
     CHECK(!party::script_value(pt, 0x15, &v, true) && party::script_value(pt, 0x18, &v, true));   // Pool's program: Int is the scripts' memory
     CHECK(party::script_value(pt, 0x72, &v, true) && v == pt.sel()->race());   // race: given (Pool's bug corrected, v0.85.1)
     CHECK(!party::script_value(pt, 0x2C9, &v));
+    // Secret's scripts: race in its numbers (an elf: 1), its own fields
+    {
+        const party::Character keep = pt.m[1];
+        party::Character& sc = pt.m[1];
+        sc.ext[party::kExtRace] = 0;                   // (not the record's race: worked out)
+        CHECK(party::script_value_secret(pt, 0x72, &v) && v == 1);
+        sc.rec[0x74] = 7;                              // human
+        sc.ext[party::kExtRace] = 6;
+        CHECK(party::script_value_secret(pt, 0x72, &v) && v == 6);
+        sc.rec[0x78] = 40; sc.rec[0x1A4] = 33; sc.rec[0x1B] = 16; sc.rec[0x105] = 7;
+        CHECK(party::script_value_secret(pt, 0x76, &v) && v == 40 && party::script_value_secret(pt, 0x119, &v) && v == 33);
+        CHECK(party::script_value_secret(pt, 0x19, &v) && v == 16 && party::script_value_secret(pt, 0xC5, &v) && v == 7);
+        sc.rec[0x10B] = 5;                             // fighter 5
+        CHECK(party::script_value_secret(pt, 0xCC, &v) && v == 5);
+        sc.rec[0x195] = 6;                             // dead: the scripts' 3
+        CHECK(party::script_value_secret(pt, 0x100, &v) && v == 3);
+        CHECK(!party::script_value_secret(pt, 0xE4, &v) && party::script_value_secret(pt, 0x2CF, &v) && v == 50);
+        party::script_set_secret(pt, 0x100, 1);
+        CHECK(sc.rec[0x195] == 0 && sc.rec[0x196] == 1);
+        party::script_set_secret(pt, 0x1B + 74, 0x2A);
+        party::script_set_secret(pt, 0xC5, 300);
+        party::script_set_secret(pt, 0x119, 12);
+        CHECK(sc.rec[0x1E + 74] == 0x2A && sc.rec[0x105] == 44 && sc.rec[0x106] == 1 && sc.hp() == 12);
+        CHECK(party::script_value_secret(sc.rec, nullptr, 3, 0x72, &v) && v == 6 &&
+              party::script_value_secret(sc.rec, nullptr, 3, 0x2B1, &v) && v == 3);
+        pt.m[1] = keep;
+    }
 
     // A saved game
     std::vector<uint8_t> sv(savegame::kSize, 0);

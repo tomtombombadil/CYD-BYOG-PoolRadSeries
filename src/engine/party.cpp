@@ -299,6 +299,101 @@ void script_set(uint8_t* r, uint16_t off, uint16_t v)
     }
 }
 
+bool script_value_secret(const Party& p, uint16_t off, uint16_t* out)
+{
+    const Character* c = p.sel();
+    if (!c) return false;
+    return script_value_secret(c->rec, c->ext, p.selected, off, out);
+}
+
+bool script_value_secret(const uint8_t* r, const uint8_t* ext, int index, uint16_t off, uint16_t* out)
+{
+    auto u16 = [r](int o) { return static_cast<uint16_t>(r[o] | r[o + 1] << 8); };
+    // A level: its own, + the old one for a human whose new class passed it
+    auto level = [&](int cls) {
+        int cur = 0;
+        for (int k = 0; k < 7 && !cur; ++k) cur = r[0x109 + k];
+        return static_cast<uint16_t>(r[0x109 + cls] + (r[0x74] == 7 && cur > r[0xE6] ? r[0x111 + cls] : 0));
+    };
+    if (off >= 0xA5 && off <= 0xAC) {           // thief skills
+        *out = r[0xEA + (off - 0xA5)];
+        return true;
+    }
+    switch (off) {
+    case 0x15:  *out = r[0x13]; return true;    // Int
+    case 0x18:  *out = r[0x19]; return true;    // Con
+    case 0x19:  *out = r[0x1B]; return true;    // Cha
+    case 0x72:                                  // race, in Secret's numbers
+        *out = ext && race_from_secret(ext[kExtRace]) == r[0x74] ? ext[kExtRace] : race_to_secret(r[0x74]);
+        return true;
+    case 0x73:  *out = r[0x75]; return true;    // class
+    case 0x76:  *out = r[0x78]; return true;    // HP max
+    case 0x9B:  *out = r[0xE0]; return true;    // saving throw: petrification
+    case 0xA0:  *out = r[0xE5]; return true;    // hit dice
+    case 0xB8:  *out = r[0xF7]; return true;    // control
+    case 0xBB:  *out = u16(0xFB); return true;  // copper ... platinum, gems
+    case 0xBD:  *out = u16(0xFD); return true;
+    case 0xBF:  *out = u16(0xFF); return true;
+    case 0xC1:  *out = u16(0x101); return true;
+    case 0xC3:  *out = u16(0x103); return true;
+    case 0xC5:  *out = u16(0x105); return true;
+    case 0xC9:  *out = level(5); return true;   // magic-user
+    case 0xCA:  *out = level(0); return true;   // cleric
+    case 0xCB:  *out = level(6); return true;   // thief
+    case 0xCC:  *out = level(2); return true;   // fighter
+    case 0xCF:  *out = level(3); return true;   // paladin
+    case 0xD0:  *out = level(4); return true;   // ranger
+    case 0xD6:  *out = r[0x119]; return true;   // sex
+    case 0xD8:  *out = r[0x11B]; return true;   // alignment
+    case 0xF7:  *out = u16(0x13C); return true;
+    case 0xF9:  *out = r[0x13E]; return true;
+    case 0x100: {                               // the status, in the scripts' numbers
+        static const uint8_t kTo[9] = {1, 0, 0, 6, 5, 4, 3, 7, 2};
+        *out = r[0x195] < 9 ? kTo[r[0x195]] : 0;
+        return true;
+    }
+    case 0x10C: *out = r[0x197] == 1 ? 0x81 : r[0x197] == 0 && r[0x198] ? 0x80 : 0; return true;   // side
+    case 0x119: *out = r[0x1A4]; return true;   // HP now
+    case 0x11B: *out = r[0x1A5]; return true;   // movement
+    case 0x2B1:
+    case 0x2B4: *out = static_cast<uint16_t>(index); return true;
+    case 0x2CF: return script_value(r, index, off, out);   // Charisma's percentage: as Curse's
+    default:
+        return false;
+    }
+}
+
+void script_set_secret(Party& p, uint16_t off, uint16_t v)
+{
+    Character* c = p.sel();
+    if (c) script_set_secret(c->rec, off, v);
+}
+
+void script_set_secret(uint8_t* r, uint16_t off, uint16_t v)
+{
+    if (off >= 0x1B && off <= 0x65) {           // the memorized spells
+        r[0x1E + (off - 0x1B)] = static_cast<uint8_t>(v);
+        return;
+    }
+    switch (off) {
+    case 0xB8: case 0xBB: case 0xBD: case 0xBF: case 0xC1: case 0xC3: case 0xF7: case 0xF9: case 0x10C:
+        script_set(r, off, v);                  // as Curse's
+        break;
+    case 0xC5:                                  // gems
+        r[0x105] = static_cast<uint8_t>(v);
+        r[0x106] = static_cast<uint8_t>(v >> 8);
+        break;
+    case 0x100:                                 // 1: back to okay, in the fight
+        if (v == 1) {
+            r[0x195] = 0;
+            r[0x196] = 1;
+        }
+        break;
+    case 0x119: r[0x1A4] = static_cast<uint8_t>(v); break;   // HP now
+    default: break;
+    }
+}
+
 void remove(Party& p, int i)
 {
     if (i < 0 || i >= p.count) return;

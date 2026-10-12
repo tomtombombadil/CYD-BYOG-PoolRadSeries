@@ -174,6 +174,17 @@ bool script_value(const uint8_t* rec, int index, uint16_t off, uint16_t* out, bo
 // stoned), 0x7D0C the side (0, 0x80 the computer's, 0x81 the enemy's).
 void script_set(Party& p, uint16_t off, uint16_t v);
 void script_set(uint8_t* rec, uint16_t off, uint16_t v);
+// Secret of the Silver Blades' scripts (secret_facts.md 8: its
+// interpreter's field switch): Curse's codes and some of its own (0x19
+// Charisma, 0x76 HP max, 0x119 HP now, 0xC5 gems, the levels 0xCA-0xD0),
+// race in Secret's numbers, 0x100 the status turned into its numbers, no
+// 0xE4; writes: the 75 memorized spells at 0x1B-0x65, 0x100 = 1 back to
+// okay, 0x119 HP. `ext`: the character's (its own race number), or null
+// (a monster's record)
+bool script_value_secret(const uint8_t* rec, const uint8_t* ext, int index, uint16_t off, uint16_t* out);
+bool script_value_secret(const Party& p, uint16_t off, uint16_t* out);
+void script_set_secret(uint8_t* rec, uint16_t off, uint16_t v);
+void script_set_secret(Party& p, uint16_t off, uint16_t v);
 // A member leaves (NPCs, DUMP, a script's removal): the one before is selected
 void remove(Party& p, int i);
 
