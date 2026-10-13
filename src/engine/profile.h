@@ -166,6 +166,7 @@ enum FightWord {
     kIsDrained, kDrainLevel, kNLevels, kDeadForever, kIsDiseased, kSucksBlood, kHeldFast, kRakes, kGazesCharm,
     kIsCharmedG, kBreathesB, kGaseous, kFearParalyzed, kFearWeakened, kRotsW, kRotsAway,
     kDodge1, kDodge2,                                                            // Pool: "BUGBEAR", "GNOLL" (gnomes -4)
+    kFoundTreasure2,                                                             // Secret: "treasure!" after "The party has found "
     kFightWords
 };
 
@@ -467,6 +468,13 @@ struct Profile {
         // Secret's character files (439-byte records .SAV / .WHO, items .STF
         // of 67 bytes, effects .SFX) and saves (no script bytes)
         bool     secret_files = false;
+        // PICTURE ids from here up are big pictures (BIGPIC; 0: Curse's 0x78 -
+        // Secret's are blocks 112-119)
+        uint8_t  bigpic_from = 0;
+        // The treasure screen's picture (a PIC block; 0: none - the 3D view)
+        uint8_t  treasure_pic = 0;
+        // The camp's picture (a PIC block; 0: none - the 3D view stays)
+        uint8_t  camp_pic = 0;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

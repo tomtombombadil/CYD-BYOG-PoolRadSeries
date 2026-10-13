@@ -2930,8 +2930,14 @@ void fight_treasure_only(pic::Canvas& c)
     screen = Screen::Fight;
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
-    put(c, fw(profile::kFoundTreasure), 1, 3, 10);
     char t[48];
+    if (fw(profile::kFoundTreasure2)[0]) {
+        // Secret: the experience first, "The party has found " "treasure!" under it
+        snprintf(t, sizeof t, "%s%s", fw(profile::kFoundTreasure), fw(profile::kFoundTreasure2));
+        put(c, t, 1, 10, 10);
+    } else {
+        put(c, fw(profile::kFoundTreasure), 1, 3, 10);
+    }
     snprintf(t, sizeof t, "%s%d", fw(profile::kEachReceives), fg->share);
     put(c, t, 1, 5, 10);
     put(c, fw(profile::kExpPoints), 1, 7, 10);
@@ -3988,6 +3994,7 @@ void open_treasure(pic::Canvas& c)
     screen = Screen::Shop;
     text::clear(c, text::kTextArea);
     dirty_rows(17, 22);
+    if (d->prof->variant.treasure_pic) draw_treasure_pic();
     if (pt->count) draw_party(c, 17);
     treasure_menu(c);
 }

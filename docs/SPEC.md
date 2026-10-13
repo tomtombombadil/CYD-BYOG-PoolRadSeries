@@ -970,9 +970,20 @@ until the party menu is known (`party.items`).
   piercing / cutting 0x42, immune to fear 0x5C) not yet. CALL 2DCB, after
   the scripts move the party (0xC04B-D), is its 3D view redrawn (Curse's
   CALL 2E10).
-- Not yet: the opening texts before Priam's (the valley, the glacier -
-  not the script's CALL 2DCB, which redraws the 3D view; where the
-  original shows them from is still to find), the items and
+- **v0.100.0 - the start, the walls, treasure and camp.** A new game
+  begins with ECL2's block 17 (the shared one), as the original: the four
+  opening texts over BIGPIC 119, then 0x7F12 = 1 and NEW ECL 16 (Priam's
+  house). Secret's big pictures are PICTURE 112 and up
+  (`variant.bigpic_from`; Curse 120). LOAD PIECES 127 loads nothing and
+  leaves the set as it is (v0.95.0 cleared it: block 21's three parts in
+  sets 1-3 lost set 3, and Priam's house had no walls). The treasure
+  screen shows its picture (PIC 60, `variant.treasure_pic`) and "Each
+  character receives ... / The party has found treasure!" in its order
+  (the program's two words). The camp shows its picture (PIC 59,
+  `variant.camp_pic`), "The party makes camp..." and " CAMPING" after the
+  time on the position line (both games' programs print it: Curse's camp
+  says it now too). All checked against the original in DOSBox.
+- Not yet: the items and
   their words (Secret's item word table differs), Modify ("Add Subtract
   Keep Exit"), Add Character's "Secret Curse" (importing Curse's
   characters), the camp (spell names, 6th / 7th level spells), the

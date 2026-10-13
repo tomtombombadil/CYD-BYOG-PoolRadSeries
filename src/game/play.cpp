@@ -196,6 +196,7 @@ uint32_t note_until = 0;
 bool     note_held = false;      // an error: stays until a tap (Tom, 2026-10-09)
 bool     resume_after_note = false;  // the script goes on once that error is tapped away
 int last_pic_id = -1, last_pic_head = 0xFF;   // the script's picture (shops come back to it)
+bool camping = false;              // the camp is open (the position line says so)
 int  pm_item[Data::kItems];   // the menu item on each list line
 int  pm_lines = 0;
 int  pm_sel = 0;              // the party menu line the cursor keys highlight
@@ -700,7 +701,7 @@ void draw_position(pic::Canvas& c)
     if (pool_overland() && ov_load()) ov_square(&x, &y);        // (the wilderness: its global column, its row)
     if (vm->get(0x4BFB) == 0)
         snprintf(line, sizeof line, "%d,%d %s %02d:%d%d%s", x, y, geo::dir_name(g.dir), hours, tens, ones,
-                 (vm->get(0x7ECA) & 1) ? " SEARCH" : "");
+                 camping ? " CAMPING" : (vm->get(0x7ECA) & 1) ? " SEARCH" : "");
     else
         snprintf(line, sizeof line, "%s %02d:%d%d", geo::dir_name(g.dir), hours, tens, ones);
     put(c, line, 17, 15, 10);
@@ -2118,15 +2119,20 @@ void save_tap(int x, int y, pic::Canvas& c)
     }
 }
 
+void draw_own_pic(int id);
+
 void draw_camp(pic::Canvas& c)
 {
-    // The exploring screen; the party's camp in the text window
+    // The exploring screen; the party's camp in the text window (Secret:
+    // its camp picture in the view)
     anim_stop();
     pic_shown = false;
     head_shown = body_shown = -1;
+    camping = true;
     if (bigpic < 0) {
         draw_frame(c);
         draw_view(c);
+        if (d->prof->variant.camp_pic) draw_own_pic(d->prof->variant.camp_pic);
         draw_panel(c);
     }
     text::clear(c, text::kTextArea);
@@ -2159,6 +2165,12 @@ void leave_camp(pic::Canvas& c)
     }
     end_magic();
     screen = Screen::Game;
+    camping = false;
+    if (d->prof->variant.camp_pic && pic_shown) {
+        anim_stop();
+        pic_shown = false;
+        draw_view(c);
+    }
     text::clear(c, text::kTextArea);
     dirty_rows(17, 22);
     draw_position(c);
@@ -3190,6 +3202,17 @@ void shop_menu(pic::Canvas& c)
     show_menu_line(c);
 }
 
+// A screen's own picture (Secret's treasure PIC 60, camp PIC 59), the
+// script's picture kept to come back to
+void draw_own_pic(int id)
+{
+    const int keep = last_pic_id, keep_head = last_pic_head;
+    host_picture(id, 0xFF);
+    last_pic_id = keep;
+    last_pic_head = keep_head;
+}
+void draw_treasure_pic() { draw_own_pic(d->prof->variant.treasure_pic); }
+
 void draw_shop(pic::Canvas& c)
 {
     // The exploring screen with the shop's picture, as the script left it
@@ -3198,7 +3221,8 @@ void draw_shop(pic::Canvas& c)
     pic_shown = false;
     head_shown = body_shown = -1;
     draw_frame(c);
-    if (last_pic_id >= 0 && !treasure_on()) host_picture(last_pic_id, last_pic_head);
+    if (treasure_on() && d->prof->variant.treasure_pic) draw_treasure_pic();
+    else if (last_pic_id >= 0 && !treasure_on()) host_picture(last_pic_id, last_pic_head);
     else draw_view(c);
     draw_panel(c);
     shop_menu(c);
@@ -3251,6 +3275,11 @@ void leave_shop(pic::Canvas& c, bool asked)
     if (treasure_on()) {
         treasure_off();
         ground->clear();            // what's left behind is lost
+        // (Secret: its treasure picture gives way to the script's, or the 3D view)
+        if (d->prof->variant.treasure_pic) {
+            if (last_pic_id >= 0) host_picture(last_pic_id, last_pic_head);
+            else host_picture(0xFF, 0);
+        }
     }
     screen = Screen::Game;
     clear_menu_line(c);
@@ -6310,7 +6339,9 @@ struct Host : ecl::Host {
     {
         view3d::World& wd = d->world;
         if (set < 1 || set > 3) return;
-        if (blocks_across() && block == 0x7F) block = -1;      // (Secret's LOAD PIECES: 127 = no set)
+        // (Secret's LOAD PIECES: 127 = nothing loaded there - the set keeps
+        // what it has: a 3-part block in set 1 fills sets 2 and 3)
+        if (blocks_across() && block == 0x7F) return;
         d->wall_block[set - 1] = static_cast<int16_t>(block < 0 ? -1 : block);
         d->wall_set[set - 1] = static_cast<int16_t>(block < 0 ? -1 : set);
         if (block < 0) {
@@ -6355,7 +6386,8 @@ struct Host : ecl::Host {
             }
             return;
         }
-        if (head == 0xFF && id >= 0x78) {
+        const int big = d->prof->variant.bigpic_from ? d->prof->variant.bigpic_from : 0x78;
+        if (head == 0xFF && id >= big) {
             anim_stop();
             bigpic = id;
             // Big picture: the frame with a bar at row 16, the picture inside
@@ -7005,6 +7037,7 @@ void begin_adventuring()
         return;
     }
     ecl::GameState& gs = d->gs;
+    camping = false;
     const int last = vm->get(0x4BF2) & 0xFF;
     const bool resume = d->loaded && last != 0;
     const bool dungeon = !d->loaded || vm->get(0x4BE6) != 0;
