@@ -34,11 +34,7 @@ void clear_slots(party::Character& c, const Tables& t)
             for (int lvl = 5; lvl < t.slot_levels(); ++lvl) cast(c, cls, lvl) = 0;
 }
 
-void learn(party::Character& c, int spell)
-{
-    if (spell >= 1 && spell <= 100) c.rec[kSpellBook + spell - 1] = 1;
-    else if (spell > 100 && spell <= 117) c.ext[party::kExtBook + spell - 101] = 1;   // (Secret's)
-}
+void learn(party::Character& c, int spell) { to_book(c, spell); }
 
 // A cleric's extra spells for wisdom
 void wisdom_spells(party::Character& c)
@@ -334,6 +330,26 @@ void class_bonuses(party::Character& c, const Tables& t)
     (void)kStrFull;
     (void)kLevels;
     (void)kOldLevels;
+}
+
+
+int slots(const party::Character& c, int cls, int level)
+{
+    if (cls < 0 || cls > 2 || level < 1 || level > 7) return 0;
+    return cast(const_cast<party::Character&>(c), cls, level - 1);
+}
+
+bool in_book(const party::Character& c, int spell)
+{
+    if (spell >= 1 && spell <= 100) return c.rec[kSpellBook + spell - 1] != 0;
+    if (spell > 100 && spell <= 117) return c.ext[party::kExtBook + spell - 101] != 0;   // (Secret's)
+    return false;
+}
+
+void to_book(party::Character& c, int spell)
+{
+    if (spell >= 1 && spell <= 100) c.rec[kSpellBook + spell - 1] = 1;
+    else if (spell > 100 && spell <= 117) c.ext[party::kExtBook + spell - 101] = 1;   // (Secret's)
 }
 
 } // namespace classes

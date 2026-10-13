@@ -983,6 +983,20 @@ until the party menu is known (`party.items`).
   `variant.camp_pic`), "The party makes camp..." and " CAMPING" after the
   time on the position line (both games' programs print it: Curse's camp
   says it now too). All checked against the original in DOSBox.
+- **v0.101.0 - camp magic.** Its menu, the level names ("1st".."7th" +
+  " Level", `magic.level_word`), 119 spell names (35 bytes each), its
+  words; Memorize / Cast / Scribe / Display / Rest as Curse's, with 7
+  spell levels: slots 6 and 7 and spells 101-117 kept in the record's
+  extension (`classes::slots`, `in_book`, `to_book`; magic.cpp works to
+  the tables' `slot_levels()`); no "NAME can memorize:" line (the kinds'
+  counts from row 18); the confirmation "Memorize" / "Scribe" + " these
+  spells?" (`magic.these_spells`); Display names an effect by Secret's
+  own table, an entry an effect number (`magic.effect_names`; no name:
+  left out, as the original). Checked against DOSBox (Dominic's
+  grimoire, the counts, Display). The items' list words (Next / Prev /
+  Exit, "'s" ...) mapped too. Not yet: the spells' result words in camp
+  ("is Blessed" - Secret's are worded otherwise), Heal (6th level) and
+  the new spells' camp effects.
 - Not yet: the items and
   their words (Secret's item word table differs), Modify ("Add Subtract
   Keep Exit"), Add Character's "Secret Curse" (importing Curse's

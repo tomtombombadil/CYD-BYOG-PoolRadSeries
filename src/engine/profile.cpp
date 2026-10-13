@@ -109,6 +109,66 @@ constexpr spells::CampSpell kCurseCamp[] = {
     {0x61, Does::Affect, 0, 0, 0, 0},              // invisibility
     {0x59, Does::RemoveCurse, 0, 0, 0, 0},
 };
+
+// Secret of the Silver Blades: Curse's spells in camp (the same numbers);
+// its words where its GAME.OVR has the same text (its results are worded
+// otherwise - most say nothing yet)
+constexpr spells::CampSpell kSecretCamp[] = {
+    {0x01, Does::Affect, 0, 0, 0, 0},        // Bless: "is Blessed"
+    {0x03, Does::Heal, 1, 8, 0, 0},                // Cure Light Wounds
+    {0x05, Does::Affect, 0, 0, 0, 0},        // Detect Magic: "is affected"
+    {0x06, Does::Affect, 0, 0, 0, 0},        // Protection from Evil: "is protected"
+    {0x07, Does::Affect, 0, 0, 0, 0},
+    {0x08, Does::Affect, 0, 0, 0, 0},        // Resist Cold: "is cold-resistant"
+    {0x0B, Does::Affect, 0, 0, 0, 0},
+    {0x0C, Does::Enlarge, 0, 0, 0, 0},       // Enlarge: "is stronger" (spell_facts.md)
+    {0x0D, Does::Reduce, 0, 0, 0, 0x2E930},        // Reduce: "has been reduced"
+    {0x0E, Does::Friends, 0, 0, 0, 0},       // Friends: "is friendly"
+    {0x10, Does::Affect, 0, 0, 0, 0},
+    {0x11, Does::Affect, 0, 0, 0, 0},
+    {0x12, Does::Affect, 0, 0, 0, 0},        // Read Magic
+    {0x13, Does::Affect, 0, 0, 0, 0},        // Shield: "is shielded"
+    {0x16, Does::Affect, 0, 0, 0, 0},        // Find Traps
+    {0x18, Does::Affect, 0, 0, 0, 0},        // Resist Fire: "is fire resistant"
+    {0x1A, Does::SlowPoison, 0, 0, 0, 0},
+    {0x1C, Does::Hammer, 0, 0, 0, 0},        // Spiritual Hammer: "Gains an item"
+    {0x1D, Does::Affect, 0, 0, 0, 0},        // Detect Invisibility
+    {0x1E, Does::Affect, 0, 0, 0, 0},        // Invisibility: "is invisible"
+    {0x20, Does::Mirror, 0, 0, 0, 0},        // Mirror Image: "is duplicated"
+    {0x23, Does::Strength, 0, 0, 0, 0},            // Strength (no word)
+    {0x25, Does::CureBlind, 0, 0, 0, 0},
+    {0x27, Does::CureDisease, 0, 0, 0, 0},
+    {0x29, Does::Dispel, 0, 0, 0, 0},        // Dispel Magic: "is affected"
+    {0x2A, Does::Prayer, 0, 0, 0, 0},        // Prayer: "is praying"
+    {0x2B, Does::RemoveCurse, 0, 0, 0, 0},
+    {0x2E, Does::Dispel, 0, 0, 0, 0},
+    {0x30, Does::Haste, 0, 0, 0, 0},         // Haste: "is Hasted"
+    {0x32, Does::Affect, 0, 0, 0, 0},        // Invisibility 10' Radius
+    {0x34, Does::Affect, 0, 0, 0, 0},
+    {0x35, Does::Affect, 0, 0, 0, 0},
+    {0x36, Does::Affect, 0, 0, 0, 0},        // Protection from Normal Missiles
+    {0x38, Does::Restore, 0, 0, 0, 0},       // Restoration: "is restored"
+    {0x3A, Does::Heal, 2, 8, 1, 0},                // Cure Serious Wounds
+    {0x3E, Does::Heal, 2, 4, 2, 0},          // the items' healing: "is Healed"
+    {0x63, Does::Heal, 2, 4, 2, 0},
+    {0x43, Does::Neutralize, 0, 0, 0, 0},
+    {0x45, Does::Affect, 0, 0, 0, 0},
+    {0x47, Does::Heal, 3, 8, 3, 0},                // Cure Critical Wounds
+    {0x4B, Does::Raise, 0, 0, 0, 0},
+    {0x4D, Does::Affect, 0, 0, 0, 0},
+    {0x50, Does::Affect, 0, 0, 0, 0},        // Invisibility to Animals: "is invisible" (spell_facts.md)
+    {0x55, Does::FireShield, 0, 0, 0, 0},    // Fire Shield: "flame type: Hot Cold"; hot "is protected"
+    {0x58, Does::Affect, 0, 0, 0, 0},        // Minor Globe of Invulnerability
+    // The items' own spells (curse_finish_facts.md 10)
+    {0x39, Does::Haste, 0, 0, 0, 0},         // speed: a slowed one cured, else "is Speedy"
+    {0x3B, Does::GiantStrength, 0, 0, 0, 0}, // giant strength: "is stronger"
+    {0x3F, Does::Affect, 0, 0, 0, 0},        // the party invisible: "is invisible"
+    {0x5F, Does::Affect, 0, 0, 0, 0},              // protection from dragon breath (nothing said)
+    {0x60, Does::Affect, 0, 0, 0, 0},              // ... from paralysis
+    {0x61, Does::Affect, 0, 0, 0, 0},              // invisibility
+    {0x59, Does::RemoveCurse, 0, 0, 0, 0},
+};
+
 constexpr uint8_t kCurseSpellNamed[] = {
     0x01, 0x02, 0x05, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0E, 0x10, 0x11, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19,
     0x1C, 0x1D, 0x20, 0x21, 0x22, 0x24, 0x25, 0x26, 0x27, 0x29, 0x2A, 0x2D, 0x2E, 0x31, 0x33, 0x34, 0x35,
@@ -962,13 +1022,38 @@ const Profile kProfiles[] = {
      // file; arrows 30, quarrels 12, darts 5; the elves' bows and swords
      // 22-25, 18, 19 (its types are its words' numbers); the menu word
      .items = {.words = {0xED42, 21, 124}, .types_file = "ITEMS", .arrow = 30, .quarrel = 12, .dart = 5,
-               .elf_bonus = {22, 23, 24, 25, 18, 19}, .title = 0x2846B},
+               .elf_bonus = {22, 23, 24, 25, 18, 19},
+               // (its GAME.OVR words where Curse's are; no "Weapon" / "Armor")
+               .buy_items = 0x8532, .buy = 0x853A, .list_next = 0x3E5AF, .list_prev = 0x3E5B5,
+               .list_exit = 0x3E5BB, .shop_menu = 0x8C6C, .shop_menu_money = 0x8C45, .no_money = 0x8962,
+               .overloaded = 0x28FAD, .title = 0x2846B, .heading = 0x28471, .ready = 0x28433, .yes = 0x38574,
+               .no = 0x3857B, .cursed = 0x28D33, .wrong_class = 0x28D40, .already = 0x28D4C,
+               .hands_full = 0x28D5B, .plural_s = 0x399AA},
      // Character rules (secret_facts.md 9): the tables in Secret's shapes
      // (classes::Layout secret: 7 classes, levels to 18, 119 spells, its
      // own race order), the rest of character making not known yet
      .create = {.ds_image = 0xDE20,
                 .tables = {0x449C, 0x5810, 0x449C, 119, 0x4C0C, 0x4C92, 0x4C99, 0x4CA9, 0x4CAD, 0x4D3D, 0x4D48,
                            0x4D9D, 0x4DFF, 0x4E45, 0x4EFF, 0x4F45, 0x4FAB, 0x506C, 0x5592, false, 0, 0, 0, true}},
+     // Camp magic (secret_facts.md 13): its menu, level names "1st".."7th" +
+     // " Level", 119 spell names of 35 bytes, its words; effect names by
+     // number (its View's table); the confirmations "Memorize" + " these
+     // spells?"; the effects its cures and timed spells use in its numbers
+     .magic = {.menu = 0xE220, .levels = {0xE805, 4, 7}, .names = {0x112AB, 35, 119},
+               .words = {0x2ACB3, 0x2AC5E, 0x2AC68, 0x2AC9D, 0x2C821, 0x2C7EB, 0, 0, 0, 0x1AAEF, 0x1AB02,
+                         0x1AB15, 0, 0x1A8B7, 0x1A8DE, 0x2BC18, 0x2BD1C, 0x2C3C3, 0x2BE99, 0x2BF60, 0x2C3D2},
+               .rest_period = 0x7ED2, .rest_chance = 0x7ED3,
+               .cast_words = {0x1A8CE, 0x1AA1E, 0x2C7E6, 0x2DA2C, 0x2D9C0, 0x2D9D6, 0x2D88B, 0x3ABA2, 0x3ABB2, 0, 0,
+                              0x2F808, 0, 0, 0, 0x2FDA0, 0x1B5DB, 0x2C7F4, 0x2AC88, 0x2ACA9, 0x1B095, 0x1B0AD,
+                              0x1B0C9, 0x1B0ED, 0, 0, 0x1A8EE, 0x2C024, 0x2AC93, 0x2C7FB, 0x2D9E0, 0x2DA0A,
+                              0x2DA23, 0x298FE, 0x2990B, 0x29911, 0x2AC74, 0},
+               .camp = kSecretCamp, .n_camp = sizeof kSecretCamp / sizeof kSecretCamp[0],
+               .facts = {2, 0x2A, {0x22, 0x2B, 0}, {{0, 0}, {0x2C, 0x1F}, {0, 0}}, 0x0C, 0x17, 0x32, 0x36, 0x70, 0x71,
+                         {{0x28, 1, 6, 0, 10}, {0x39, 5, 4, 0, 1}, {0x3D, 5, 4, 0, 1}, {0x3B, 1, 4, 4, 10},
+                          {0x3F, 1, 10, 10, 10}, {0x43, 0, 0, 1440, 1}}},
+               .spell_named = nullptr, .n_spell_named = 0, .named = nullptr, .n_named = 0,
+               .scroll_one_spell = 100, .read_magic = 0x10,
+               .level_word = 0xE7FA, .effect_names = {0x10047, 38, 0x75}, .these_spells = 0xE1E8},
      // Fights (secret_facts.md 12): Curse's tables at Secret's places, no
      // terrain table, its turn undead table not found yet (no Turn); the
      // words where they are found; the effects by Secret's numbers (GBC's

@@ -151,6 +151,13 @@ int skill_level(const party::Character& c, int cls);
 // that change these - protection scrolls, rings - are applied elsewhere.)
 void class_bonuses(party::Character& c, const Tables& t);
 
+// Spell slots of a kind (0 cleric, 1 druid, 2 magic-user) and spell level
+// (1-5 in the record, Secret's 6 and 7 in its extension)
+int slots(const party::Character& c, int cls, int level);
+// The spell book: spells 1-100 in the record, Secret's 101-117 in its extension
+bool in_book(const party::Character& c, int spell);
+void to_book(party::Character& c, int spell);
+
 // Parts of it, for training and creation
 void spell_slots(party::Character& c, const Tables& t);
 // A Ring of Wizardry readied (on: magic-user levels 1-3 doubled) or put

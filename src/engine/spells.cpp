@@ -470,8 +470,8 @@ FixPlan fix_plan(const party::Party& p, const classes::Tables& t, const CampSpel
         for (int j = 0; j < n_camp; ++j) {
             if (camp[j].does != Does::Heal) continue;
             const int cls = t.spell_class(camp[j].spell), lv = t.spell_level(camp[j].spell);
-            if (cls < 0 || cls > 2 || lv < 1 || lv > 5) continue;
-            const int slots = c.rec[0x12D + cls * 5 + lv - 1];
+            if (cls < 0 || cls > 2 || lv < 1 || lv > t.slot_levels()) continue;
+            const int slots = classes::slots(c, cls, lv);
             if (!slots) continue;
             for (int k = 0; k < slots; ++k) f.heal += d.roll(camp[j].sides, camp[j].n) + camp[j].plus;
             time += slots * lv * 15;

@@ -372,6 +372,15 @@ struct Profile {
         uint8_t                   n_named;
         // Scrolls: the item word "With 1 Spell", Read Magic's effect
         uint8_t                   scroll_one_spell, read_magic;
+        // Secret: the level names are "1st".."7th" (levels) and this word
+        // after them (" Level", program image; 0: levels are whole names)
+        uint32_t                  level_word = 0;
+        // Secret: the effects' names, a name an effect number (program
+        // image; at = effect 0) - in place of spell_named / named
+        NameTable                 effect_names = {};
+        // Secret: the confirmations are "Memorize" / "Scribe" + this (" these
+        // spells?", program image; 0: the words kMemorizeThese ...)
+        uint32_t                  these_spells = 0;
     } magic;
 
     // The camp's Alter: its menu ("Order Drop Speed Icon Pics Exit"), the

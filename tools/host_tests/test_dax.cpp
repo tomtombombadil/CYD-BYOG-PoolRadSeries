@@ -3659,6 +3659,18 @@ static void test_secret_rules()
     ch.rec[0x74] = 7;
     classes::spell_slots(ch, t);
     CHECK(ch.ext[party::kExtCleric67 + 1] == 1 && ch.ext[party::kExtCleric67] == 0 && ch.rec[0x12D] == 1);
+    // Magic past 5th level: slots 6 / 7 and spells 101-117 in the extension
+    CHECK(classes::slots(ch, 0, 7) == 1 && classes::slots(ch, 0, 6) == 0 && classes::slots(ch, 0, 1) == 1);
+    ch.rec[0x15] = 15;                                                // Wisdom
+    CHECK(!magic::add(ch, t, 101));                                   // (6th level: no slot)
+    ch.ext[party::kExtCleric67] = 1;
+    CHECK(magic::room(ch, t, 0, 6) == 1 && magic::add(ch, t, 101) && magic::room(ch, t, 0, 6) == 0);
+    CHECK(!classes::in_book(ch, 101));
+    classes::to_book(ch, 101);
+    uint8_t ids[120];
+    const int nk = magic::known(ch, t, ids, 120);
+    CHECK(classes::in_book(ch, 101) && ch.ext[party::kExtBook] == 1 && nk >= 1 && ids[nk - 1] == 101);
+    magic::cancel(ch);
 }
 
 // Secret's item names: the records' own

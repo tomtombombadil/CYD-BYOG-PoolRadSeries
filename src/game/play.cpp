@@ -140,7 +140,8 @@ struct Data {
     char           guy_letter[kMaxGuys] = {};   // a Pool saved game's letter (CHRDAT<letter>n.SAV)
     char           guy_from = 'C';              // the list's source: C(urse) / P(ool)
     int            guys = 0;
-    char           w_magic[44] = {}, w_level[5][12] = {};    // the magic menu, "1st Level" ...
+    char           w_magic[44] = {}, w_level[7][12] = {};    // the magic menu, "1st Level" ... (Secret: 7)
+    char           w_these[16] = {};                        // Secret: " these spells?" after Memorize / Scribe
     char           w_alter[36] = {}, w_select[14] = {}, w_place[14] = {};   // Alter's menus
     char           w_save_which[24] = {}, w_slots[24] = {}, w_saving[24] = {}, w_camp_menu[40] = {},
                    w_camp[8] = {}, w_makes_camp[28] = {};
@@ -3897,7 +3898,7 @@ void back_from_view(pic::Canvas& c);
 
 MagicRules* mrules = nullptr;       // the rule tables while camping / casting
 struct SpellNames {
-    char name[101][24];
+    char name[120][24];             // (Curse 1-100, Secret 1-118)
 };
 SpellNames* spn = nullptr;
 
@@ -3973,9 +3974,9 @@ bool load_magic()
             const size_t n = static_cast<size_t>(nt.stride) * nt.count;
             uint8_t* buf = static_cast<uint8_t*>(malloc(n));
             if (buf && exepack::read(src, info, nt.at, buf, n) == exepack::Status::Ok) {
-                for (int i = 0; i < nt.count && i < 101; ++i) {
+                for (int i = 0; i < nt.count && i < 120; ++i) {
                     const uint8_t* e = buf + static_cast<size_t>(i) * nt.stride;
-                    const int len = e[0] < 23 ? e[0] : 23;
+                    const int len = e[0] >= nt.stride ? 0 : e[0] < 23 ? e[0] : 23;    // (Secret's entry 0 isn't a name)
                     memcpy(spn->name[i], e + 1, len);
                     spn->name[i][len] = 0;
                 }
@@ -3995,7 +3996,7 @@ bool load_magic()
     return true;
 }
 
-const char* spell_name(int s) { return spn && s >= 0 && s <= 100 ? spn->name[s] : ""; }
+const char* spell_name(int s) { return spn && s >= 0 && s < 120 ? spn->name[s] : ""; }
 
 void draw_magic_menu(pic::Canvas& c)
 {
@@ -4041,8 +4042,8 @@ void open_effects(pic::Canvas& c);
 
 // ---- the spell list
 struct SpellLines {
-    uint8_t id[60];                 // 0: a level heading (level in lvl)
-    uint8_t lvl[60];
+    uint8_t id[128];                // 0: a level heading (level in lvl; Secret's grimoire: up to 117 + 7)
+    uint8_t lvl[128];
     int     n = 0;
     int     top = 0, sel = -1;
     bool    learning = false;       // "to Memorize" (else the grimoire)
@@ -4068,7 +4069,7 @@ void build_lines(const uint8_t* ids, int n)
     sl.n = 0;
     int last = 0;
     const classes::Tables& t = mrules->tables;
-    for (int i = 0; i < n && sl.n < 59; ++i) {
+    for (int i = 0; i < n && sl.n < 127; ++i) {
         const int lv = t.spell_level(ids[i]);
         if (lv != last) {
             sl.id[sl.n] = 0;
@@ -4101,18 +4102,22 @@ void draw_counts(pic::Canvas& c)
     c.fill(8, 17 * 8, 38 * 8, 6 * 8, 0);
     char w1[24];
     mw(profile::kCanMemorize, w1, sizeof w1);
-    say_status(c, w1, 19);
-    int row = 20;
+    // (Secret: no "NAME can memorize:" - the kinds from row 18)
+    int row = 18;
+    if (w1[0]) {
+        say_status(c, w1, 19);
+        row = 20;
+    }
     static const int kKind[3] = {profile::kClericSpells, profile::kDruidSpells, profile::kMuSpells};
     for (int k = 0; k < 3; ++k) {
         bool any = false;
-        for (int lv = 1; lv <= 5; ++lv)
-            if (ch.rec[0x12D + k * 5 + lv - 1]) any = true;
+        for (int lv = 1; lv <= t.slot_levels(); ++lv)
+            if (classes::slots(ch, k, lv)) any = true;
         if (!any || row > 22) continue;
         mw(kKind[k], w1, sizeof w1);
         put(c, w1, 1, row, 10);
-        for (int lv = 1; lv <= 5; ++lv) {
-            if (!ch.rec[0x12D + k * 5 + lv - 1]) continue;
+        for (int lv = 1; lv <= t.slot_levels(); ++lv) {
+            if (!classes::slots(ch, k, lv)) continue;
             char n[4];
             snprintf(n, sizeof n, "%d", magic::room(ch, t, k, lv));
             put(c, n, 20 + (lv - 1) * 3, row, 10);
@@ -4187,15 +4192,22 @@ void confirm_memorize(pic::Canvas& c, int word)
     build_lines(ids, n);
     screen = Screen::SpellList;
     draw_spells(c);
-    char q[28];
-    mw(word, q, sizeof q);
+    char q[40];
+    if (d->w_these[0]) {
+        // Secret: "Memorize" + " these spells?"
+        char k[16];
+        mw(profile::kMemorizeKey, k, sizeof k);
+        snprintf(q, sizeof q, "%s%s", k, d->w_these);
+    } else {
+        mw(word, q, sizeof q);
+    }
     ask_yes_no(c, Ask::MemorizeThese, q);
 }
 
 void show_grimoire(pic::Canvas& c)
 {
-    uint8_t ids[100];
-    const int n = magic::known(*pt->sel(), mrules->tables, ids, 100);
+    uint8_t ids[120];
+    const int n = magic::known(*pt->sel(), mrules->tables, ids, 120);
     sl.learning = false;
     sl.casting = false;
     sl.scrolls = false;
@@ -4228,8 +4240,15 @@ void confirm_scribe(pic::Canvas& c, int word, Ask what)
     build_lines(ids, n);
     screen = Screen::SpellList;
     draw_spells(c);
-    char q[28];
-    cw(word, q, sizeof q);
+    char q[40];
+    if (d->w_these[0]) {
+        // Secret: "Scribe" + " these spells?"
+        char k[16];
+        cw(profile::kScribeKey, k, sizeof k);
+        snprintf(q, sizeof q, "%s%s", k, d->w_these);
+    } else {
+        cw(word, q, sizeof q);
+    }
     ask_yes_no(c, what, q);
 }
 
@@ -5278,6 +5297,12 @@ void effect_name(int type, char* out, size_t cap)
 {
     out[0] = 0;
     const auto& m = d->prof->magic;
+    if (m.effect_names.at) {
+        // Secret: its own name for each effect number (none: left out)
+        if (type < m.effect_names.count)
+            ow(text::kInProgram | (m.effect_names.at + static_cast<uint32_t>(type) * m.effect_names.stride), out, cap);
+        return;
+    }
     for (int i = 0; i < m.n_spell_named; ++i)
         if (m.spell_named[i] == type) {
             for (int s = 1; s <= 0x38; ++s)
@@ -6246,9 +6271,17 @@ void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
     if (pa.menu) text::read_pascal(exe, info, pa.menu, d->w_alter, sizeof d->w_alter);
     if (pa.select) text::read_pascal(exe, info, pa.select, d->w_select, sizeof d->w_select);
     if (pa.place) text::read_pascal(exe, info, pa.place, d->w_place, sizeof d->w_place);
-    for (int i = 0; i < 5 && pm.levels.at; ++i)
+    for (int i = 0; i < 7 && i < pm.levels.count && pm.levels.at; ++i)
         text::read_pascal(exe, info, pm.levels.at + static_cast<uint32_t>(i) * pm.levels.stride, d->w_level[i],
                           sizeof d->w_level[i]);
+    if (pm.these_spells) text::read_pascal(exe, info, pm.these_spells, d->w_these, sizeof d->w_these);
+    if (pm.level_word) {
+        // Secret: "1st" + " Level"
+        char lw[12];
+        if (text::read_pascal(exe, info, pm.level_word, lw, sizeof lw))
+            for (int i = 0; i < 7; ++i)
+                snprintf(d->w_level[i] + strlen(d->w_level[i]), sizeof d->w_level[i] - strlen(d->w_level[i]), "%s", lw);
+    }
     {
         const uint32_t at[Data::kRosterWords] = {pp.add_from, pp.add_sources, pp.add_prompt, pp.add, pp.added,
                                                  pp.paladin_evil, pp.rangers, pp.no_evil, pp.overwrite, pp.qmark,

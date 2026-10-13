@@ -57,9 +57,10 @@ the Project as claude/TODO.md.
       areas (v0.95.0); the scripts' view of a character (v0.96.0); View
       Character (v0.97.0); item names (v0.98.0); fights (v0.99.0: tables,
       monsters, effects, most words). Next, a chunk a commit:
-      camp magic (its spell names DS 0x34AE, 35 bytes a name, 119;
-      level names "1st".."9th" + " Level" at image 0xE804 / 0xE7FA; 7
-      levels, spells 101-117 in ext); how Secret renames an item it
+      the camp spells' result words (Bless's "is Blessed" ... aren't in
+      Secret's files: see in DOSBox how it words them), Heal and the
+      spells past 100 in camp; Alter ("Order Drop Speed Icon Level
+      Exit" - its Level); how Secret renames an item it
       identifies / halves / joins; the exploring menu's "Move" (the
       original's first word); fights still to do: the turn undead table
       (not found: Curse's code reads its DS 0x369 at ovr 0x14684, Secret's
@@ -81,6 +82,9 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.101.0: Secret's camp magic - 7 spell levels, spells 101-117,
+  its names, words, counts and Display as the original's.
 
 - v0.100.0: Secret's start (the opening texts, block 17), the walls of
   Priam's house (LOAD PIECES 127 kept the set), the treasure and camp

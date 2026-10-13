@@ -8,18 +8,18 @@ namespace magic {
 
 namespace {
 
-constexpr int kCastAt = 0x12D;      // [3][5] spells a day: cleric, druid, magic-user
-constexpr int kBookAt = 0x79;       // known spells, 1-100
 constexpr int kInt = 0x13, kWis = 0x15;
 
-int cast_count(const party::Character& c, int cls, int level)
+// Spell slots (levels 1-5; Secret's 6-7 too)
+int cast_count(const party::Character& c, const classes::Tables& t, int cls, int level)
 {
-    return cls >= 0 && cls < 3 && level >= 1 && level <= 5 ? c.rec[kCastAt + cls * 5 + level - 1] : 0;
+    return level <= t.slot_levels() ? classes::slots(c, cls, level) : 0;
 }
 
 bool usable(const classes::Tables& t, int s)
 {
-    return s >= 1 && s < t.lay.spell_count && t.spell_class(s) < 3 && t.spell_level(s) >= 1 && t.spell_level(s) <= 5;
+    return s >= 1 && s < t.lay.spell_count && t.spell_class(s) < 3 && t.spell_level(s) >= 1 &&
+           t.spell_level(s) <= t.slot_levels();
 }
 
 void sort_by_level(const classes::Tables& t, uint8_t* ids, int n)
@@ -69,16 +69,15 @@ int held(const party::Character& c, const classes::Tables& t, int cls, int level
 
 int room(const party::Character& c, const classes::Tables& t, int cls, int level)
 {
-    const int r = cast_count(c, cls, level) - held(c, t, cls, level);
+    const int r = cast_count(c, t, cls, level) - held(c, t, cls, level);
     return r > 0 ? r : 0;
 }
 
 bool any_room(const party::Character& c, const classes::Tables& t)
 {
-    (void)t;
     for (int cls = 0; cls < 3; ++cls)
-        for (int lv = 1; lv <= 5; ++lv)
-            if (cast_count(c, cls, lv) > 0) return true;
+        for (int lv = 1; lv <= t.slot_levels(); ++lv)
+            if (cast_count(c, t, cls, lv) > 0) return true;
     return false;
 }
 
@@ -98,8 +97,8 @@ int in_memory(const party::Character& c, const classes::Tables& t, bool learning
 int known(const party::Character& c, const classes::Tables& t, uint8_t* ids, int cap)
 {
     int n = 0;
-    for (int s = 1; s < t.lay.spell_count && s <= 100 && n < cap; ++s)
-        if (c.rec[kBookAt + s - 1] && can_use(c, t, s)) ids[n++] = static_cast<uint8_t>(s);
+    for (int s = 1; s < t.lay.spell_count && n < cap; ++s)
+        if (classes::in_book(c, s) && can_use(c, t, s)) ids[n++] = static_cast<uint8_t>(s);
     sort_by_level(t, ids, n);
     return n;
 }
@@ -107,18 +106,15 @@ int known(const party::Character& c, const classes::Tables& t, uint8_t* ids, int
 int learnable(const party::Character& c, const classes::Tables& t, uint8_t* ids, int cap)
 {
     int n = 0;
-    for (int s = 1; s < t.lay.spell_count && s <= 100 && n < cap; ++s)
-        if (usable(t, s) && cast_count(c, t.spell_class(s), t.spell_level(s)) > 0 && can_use(c, t, s) &&
-            !c.rec[kBookAt + s - 1])
+    for (int s = 1; s < t.lay.spell_count && n < cap; ++s)
+        if (usable(t, s) && cast_count(c, t, t.spell_class(s), t.spell_level(s)) > 0 && can_use(c, t, s) &&
+            !classes::in_book(c, s))
             ids[n++] = static_cast<uint8_t>(s);
     sort_by_level(t, ids, n);
     return n;
 }
 
-void learn(party::Character& c, int s)
-{
-    if (s >= 1 && s <= 100) c.rec[kBookAt + s - 1] = 1;
-}
+void learn(party::Character& c, int s) { classes::to_book(c, s); }
 
 bool add(party::Character& c, const classes::Tables& t, int s)
 {
@@ -179,12 +175,12 @@ int scroll_spells(party::Character& c, const classes::Tables& t, const Scrolls& 
 
 Scribe scribe(party::Character& c, const classes::Tables& t, const Scrolls& sc, int s)
 {
-    if (s >= 1 && s <= 100 && c.rec[kBookAt + s - 1]) return Scribe::Known;
+    if (classes::in_book(c, s)) return Scribe::Known;
     for (int i = 0; i < c.n_items; ++i)
         if (is_scroll(sc, c.items[i]))
             for (int k = 0; k < 3; ++k)
                 if (c.items[i][kScrollAt + k] == (s | 0x80)) return Scribe::Already;
-    if (cast_count(c, t.spell_class(s), t.spell_level(s)) <= 0) return Scribe::Cannot;
+    if (cast_count(c, t, t.spell_class(s), t.spell_level(s)) <= 0) return Scribe::Cannot;
     for (int i = 0; i < c.n_items; ++i)
         if (is_scroll(sc, c.items[i]))
             for (int k = 0; k < 3; ++k)
@@ -215,8 +211,7 @@ void scribed(party::Character& c, const Scrolls& sc, int i, int k)
 {
     if (i < 0 || i >= c.n_items || k < 0 || k > 2) return;
     uint8_t* it = c.items[i];
-    const int s = it[kScrollAt + k] & 0x7F;
-    if (s >= 1 && s <= 100) c.rec[kBookAt + s - 1] = 1;
+    classes::to_book(c, it[kScrollAt + k] & 0x7F);
     it[kScrollAt + k] = 0;
     it[0x30] = static_cast<uint8_t>(it[0x30] - 1);
     if (it[0x30] < sc.one_spell) {

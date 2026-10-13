@@ -43,10 +43,7 @@ void add_affect(party::Character& c, uint8_t type)
     a[3] = 0xFF;                 // its value (the games pass 0xFF for these)
 }
 
-void learn(party::Character& c, int spell)
-{
-    if (spell >= 1 && spell <= 100) c.rec[kSpellBook + spell - 1] = 1;
-}
+void learn(party::Character& c, int spell) { classes::to_book(c, spell); }
 
 // The experience a new character starts with: 25,000 for one class, 12,500
 // for two, 8,333 for three - and for the magic-user / thief, as the
