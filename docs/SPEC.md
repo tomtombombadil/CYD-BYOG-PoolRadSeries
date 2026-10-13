@@ -945,14 +945,41 @@ until the party menu is known (`party.items`).
   item's name is the one its record keeps (`items::Names::stored_names`:
   "Two-Handed Sword of Giant Slaying" isn't made of its words). Not yet:
   how it renames an item it identifies or splits.
+- **v0.99.0 - fights.** Its battlefield tables are Curse's at its own
+  places (DS 0x1A9E ground, 0x350-0x384 the placing tables; no terrain
+  table); its monsters' 439-byte records are moved into Curse's layout
+  as the party's (an NPC who joins keeps his extension); a monster's
+  items have no name of their own in MON1ITM (left-over bytes), so the
+  name is made from its words. The effects are its own numbers (GBC's
+  lists and its own View names, its MON1SPC): what Curse's numbers mean
+  there is often something else - those are Secret's number for the same
+  thing (deadly poison 0x40 / -2 0x56, paralysis on a hit 0x58, immune to
+  nonmagical weapons 0x67, to fire 0x5D, cold 0x62, electricity 0x06,
+  the iron golem's spell immunity 0x4F as Curse's immunity to spells,
+  the gazes 0x3A / 0x3B, breath 0x5A / 0x53 / 0x50, frightened 0x6F,
+  berserk 0x6B, its fire shield 0x70) or nothing; 0x51 and 0x60 (unnamed
+  in Secret, used by its monsters) taken as Curse's (half damage, the
+  hug). The effects a fight's end takes away: its DS 0x0A9A list. Words:
+  Curse's where Secret's GAME.OVR has the same text (most of the menu,
+  hits, results, treasure); the spells' results are worded otherwise
+  there ("unaffected", "flees in terror") and say nothing yet. Turn
+  Undead: its table isn't found yet - no Turn on the fight menu
+  (`Tables::turn_known`; section 12). Its new monster abilities
+  (petrifying touch 0x41, the pyrohydra's breath 0x43, the confusion
+  gaze 0x46, +4d6 fire 0x68, +3 weapons to hit 0x3C, half damage from
+  piercing / cutting 0x42, immune to fear 0x5C) not yet. CALL 2DCB, after
+  the scripts move the party (0xC04B-D), is its 3D view redrawn (Curse's
+  CALL 2E10).
 - Not yet: the opening texts before Priam's (the valley, the glacier -
-  the original's CALL 2DCB, a routine of its program), the items and
+  not the script's CALL 2DCB, which redraws the 3D view; where the
+  original shows them from is still to find), the items and
   their words (Secret's item word table differs), Modify ("Add Subtract
   Keep Exit"), Add Character's "Secret Curse" (importing Curse's
   characters), the camp (spell names, 6th / 7th level spells), the
   scripts' view of a
-  character (Secret's own offsets and race numbers), combat, sound
-  (SOUND.DAX), the sky and approaching monsters (SPRIT1).
+  character (Secret's own offsets and race numbers), the spells' words
+  and its new monster abilities in fights, sound (SOUND.DAX), the sky and
+  approaching monsters (SPRIT1).
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -1286,6 +1313,10 @@ the game's Settings (As Original: all of them).
   Mouse/Joystick isn't shown (nothing to set up: taps are the mouse);
   when BLADES.CFG's save folder (C:\SAVE\) isn't on the card, the saves
   are the game folder's own (where GOG ships its sample party).
+  While it's being built (v0.99.0): no Turn on the fight menu (its turn
+  undead table not found yet), its spells' results in fights say nothing,
+  and its new monster abilities (petrifying touch, confusion gaze, the
+  pyrohydra's breath ...) do nothing yet.
 - **Controls and screens**: taps on menu words, list lines and combat
   squares; on-screen keys (movement pad, cursor keys - Up / Down / Left /
   Right / Select - Game, Look, and on 320x240 Map: the area map over

@@ -57,8 +57,31 @@ int read_block(const char* file, int block, uint8_t* out, int cap)
 
 // A character / monster record (MON<area>CHA block) into rec, Curse's
 // layout (Pool's 285-byte records moved into it)
-bool read_record_block(const char* file, int block, uint8_t* rec)
+bool read_record_block(const char* file, int block, uint8_t* rec, uint8_t* ext = nullptr)
 {
+    if (secret_files()) {
+        // Secret's 439-byte records (party::from_secret; an NPC keeps its extension)
+        uint8_t* sec = static_cast<uint8_t*>(malloc(party::kSecretRecordSize));
+        const bool ok = sec && read_block(file, block, sec, party::kSecretRecordSize) ==
+                                   static_cast<int>(party::kSecretRecordSize);
+        if (ok) {
+            if (ext) {
+                party::Character* tmp = new (std::nothrow) party::Character;
+                if (tmp) {
+                    party::from_secret(sec, *tmp);
+                    memcpy(rec, tmp->rec, party::kRecordSize);
+                    memcpy(ext, tmp->ext, party::kExtSize);
+                    delete tmp;
+                } else {
+                    party::from_secret(sec, rec);
+                }
+            } else {
+                party::from_secret(sec, rec);
+            }
+        }
+        free(sec);
+        return ok;
+    }
     if (!pool_files()) return read_block(file, block, rec, party::kRecordSize) == static_cast<int>(party::kRecordSize);
     uint8_t pool[party::kPoolRecordSize];
     if (read_block(file, block, pool, sizeof pool) != static_cast<int>(sizeof pool)) return false;
@@ -75,7 +98,7 @@ bool npc_join(int id)
     ch = party::Character{};
     char file[24];
     area_fmt(file, sizeof file, "MON%dCHA.DAX");
-    if (!read_record_block(file, id, ch.rec)) {
+    if (!read_record_block(file, id, ch.rec, ch.ext)) {
         plat::log("[play] ADD NPC: %s #%d not there\n", file, id);
         return false;
     }
@@ -126,6 +149,7 @@ void fight_load_monster(int id, int copies, int icon)
     if (ni > 0) {
         g.n_items = static_cast<uint8_t>(ni / items::kRecordSize);
         memcpy(g.item, buf, static_cast<size_t>(g.n_items) * items::kRecordSize);
+        for (int k = 0; k < g.n_items; ++k) name_from_words(g.item[k]);
     }
     uint8_t aff[combat::kMonsterAffects * party::kAffectSize];
     char spc[24];
@@ -1890,7 +1914,7 @@ void fight_menu(pic::Canvas& c)
     for (int k = 0; k < magic::kListSize; ++k)
         if (f.rec[magic::kListAt + k] && !(f.rec[magic::kListAt + k] & 0x80)) spells = true;
     if (spells && f.can_cast) strcat(words, fw(profile::kFCast));
-    if (f.rec[0x109] > 0 && !f.turned_undead) strcat(words, fw(profile::kFTurn));
+    if (f.rec[0x109] > 0 && !f.turned_undead && fg->t.turn_known) strcat(words, fw(profile::kFTurn));
     strcat(words, fw(profile::kFQuickDone));
     fg->st = FSt::Menu;
     text::build(menu, "", words);

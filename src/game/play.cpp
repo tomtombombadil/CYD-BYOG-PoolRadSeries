@@ -1018,6 +1018,24 @@ size_t rec_file_size()
     return pool_files() ? party::kPoolRecordSize : secret_files() ? party::kSecretRecordSize : party::kRecordSize;
 }
 uint32_t item_stride() { return secret_files() ? party::kSecretItemSize : party::kItemSize; }
+// Secret's monsters' items (MON<n>ITM) have no name of their own (the
+// bytes are left over from the editor): the name is made from the words
+void name_from_words(uint8_t* r)
+{
+    if (!secret_files() || !names) return;
+    const bool det = names->detect;
+    names->stored_names = false;
+    names->detect = false;
+    char t[48];
+    names->name(items::Item{r}, t, sizeof t);
+    names->stored_names = true;
+    names->detect = det;
+    size_t n = strlen(t);
+    if (n > 0x2D) n = 0x2D;
+    r[0] = static_cast<uint8_t>(n);
+    memcpy(r + 1, t, n);
+    memset(r + 1 + n, 0, 0x2D - n);
+}
 bool write_file(const char* dir, const char* name, const uint8_t* p, size_t n);
 void (*g_present_now)() = nullptr;
 void present_now()

@@ -5096,6 +5096,10 @@ static void test_combat()
     t.turn[2 * 10 + 3] = 1;                                        // type 2: turned
     mrec[0][0x109] = 3;
     int turned[8];
+    t.turn_known = false;                                          // (no table found: nothing turns - Secret's)
+    CHECK(combat::turn_undead(sb, t, 0, d, turned, 8) == 0);
+    sb.f[0].turned_undead = false;
+    t.turn_known = true;
     n = combat::turn_undead(sb, t, 0, d, turned, 8);
     CHECK(n >= 1 && turned[0] == 1003 && sb.f[3].status() == party::Gone);
     if (n > 1) CHECK(turned[1] == 1 && sb.f[1].fleeing);

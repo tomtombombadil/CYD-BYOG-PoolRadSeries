@@ -59,6 +59,7 @@ struct Tables {
     uint8_t shapes[5][6][2];            // allowed columns (min, max) a row; [4] = the fallback shape
     uint8_t terrain[33];                // outdoors: terrain flags a place (city)
     uint8_t turn[13 * 10 + 11];         // turn undead: [undead type * 10 + column]
+    bool    turn_known;                 // the turn table was found (Secret's not yet: no Turn)
     // Pool: the races' foes by name (poolrad_combat_facts.md 2.2; Pascal
     // names 16 bytes apart: 4 the gnomes' foes, 8 the dwarves', 8 the
     // giants the dwarves and gnomes dodge - the last 3 the turn table's

@@ -148,7 +148,7 @@ bool read_tables(Tables& t, const TableAt& at, ReadDs read, void* ctx)
            read(ctx, at.start_y, t.start_y, sizeof t.start_y) &&
            read(ctx, at.shapes, &t.shapes[0][0][0], sizeof t.shapes) &&
            (!at.terrain || read(ctx, at.terrain, t.terrain, sizeof t.terrain)) &&     // (Pool: none)
-           read(ctx, at.turn, t.turn, sizeof t.turn) &&
+           ((t.turn_known = at.turn != 0) ? read(ctx, at.turn, t.turn, sizeof t.turn) : true) &&
            (!at.race_names || (t.by_name = read(ctx, at.race_names, &t.foe_names[0][0], sizeof t.foe_names)));
 }
 
@@ -3669,6 +3669,7 @@ int turn_undead(Battle& b, const Tables& t, int cleric, create::Dice& d, int* ou
 {
     Fighter& me = b.f[cleric];
     me.turned_undead = true;
+    if (!t.turn_known) return 0;
     const int lv = me.rec[0x109];
     const int col = lv >= 1 && lv <= 8 ? lv : lv <= 13 ? 9 : 10;
     int count = d.roll(12, 1);
