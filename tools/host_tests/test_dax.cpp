@@ -848,7 +848,7 @@ static void test_layout()
         CHECK(sec && sec->ecl_ops && sec->ecl_ops->sizes[0x41] == 2 && sec->ecl_ops->sizes[0x3C] == 0 &&
               sec->ecl_ops->sizes[0x2E] == 5 && sec->ecl_ops->sizes[0x42] == ecl::kUnknown);
         CHECK(sec && !strcmp(sec->font_file, "8X8D5.DAX") && sec->variant.tile_window == 40 && sec->party.count == 13 &&
-              sec->ecl_ops->area_by_block && sec->start_script == 16);
+              sec->ecl_ops->area_by_block && sec->start_script == 17 && sec->variant.bigpic_from == 0x70);
         CHECK(!profile::ready(games::Game::SecretOfTheSilverBlades));
     }
 
