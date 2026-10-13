@@ -15,11 +15,6 @@ the Project as claude/TODO.md.
       (ESP32-S3)" from the web flasher (there since v0.88.0) and report
       what works - screen (colours: Settings has Invert / Swap Red/Blue),
       touch with the capacitive stylus, card, sound (Send Logs after).
-- [ ] C5 boards (both: the yellow "MN-CYD-C5" and the "colorful" one):
-      flash v0.94.1 and try Home again - v0.91.1 booted and scanned on
-      both (Tom, 2026-10-12) but hung drawing the first game icon (fixed
-      in v0.94.1: the card is on the display's bus there); then touch,
-      colours, sound, a Play Test (Send Logs after).
 - [ ] Send Logs goes to cyd.classic.games.logs@gmail.com (the Classic
       Games address) - keep it, or name another (one line in
       web/l/index.html).
@@ -77,6 +72,9 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- 2026-10-12 (Tom): the C5 boards work with v0.94.1 (Home, the scan, a
+  Secret Play Test) - marked tested.
 
 - v0.98.0: Secret's item names (the records' own) and its word table /
   types.

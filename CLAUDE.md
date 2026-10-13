@@ -258,9 +258,10 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   card as it goes uses `ui::card_draw_begin / card_draw_end` (Tom's C5s
   hung at Home's first icon, v0.94.1). Their serial log is on native USB (CDC on boot).
 - `custom_board_tested = no` on a board until Tom has run THIS firmware on
-  it. Tested: the five classic boards (Tom, 2026-10-09, v0.20.0); the S3
-  and C5 boards not yet (v0.88.0); a new board starts
-  at `no`.
+  it. Tested: the five classic boards (Tom, 2026-10-09, v0.20.0); the 2.8"
+  ST7789 resistive C5 (Tom, 2026-10-12, v0.94.1: both of his - the yellow
+  and the "colorful" one - Home, scan and a Secret Play Test); the S3 not
+  yet (v0.88.0); a new board starts at `no`.
 - 2.8" ESP32-2432S028: touch is bit-banged (`touch_xpt2046_soft.hpp`, an
   `lgfx::ITouch`) so the SD card can have VSPI. Keep it that way - the engine
   needs the card.
