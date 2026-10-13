@@ -77,9 +77,12 @@ the Project as claude/TODO.md.
       Constitution effect 0x61 kept in the record's saves?); the fight
       frame (not compared with DOSBox yet); sound, sky, approaching monsters; the version line's
       two-line look; behaviour tests.
-- [ ] Tom: copy the SNEG Launcher folder to /GOLDBOX/Launcher, tap Rescan
-      Card and check the box art pages on a board (both screen sizes if
-      you can) - where the name sits, how it reads (v0.102.0).
+- [ ] Tom: pick the library page's layout from the mockups (2026-10-12):
+      the whole picture between left / right arrow strips (wide or slim),
+      with Rescan and Settings small in the header; or today's cover
+      layout with Curse, Champions, Death Knights, Dark Queen, UA (and
+      maybe Pool) top-justified. Tom's notes so far: names look great;
+      those games lose heads when centred.
 - [ ] Tom: when you have a moment, Secret's Screen Test and Walk Test
       (Settings - Dev Tools on its page) on a board - the frame, title,
       credits and maps should look like the original's.
