@@ -77,11 +77,17 @@ the Project as claude/TODO.md.
       Constitution effect 0x61 kept in the record's saves?); the fight
       frame (not compared with DOSBox yet); sound, sky, approaching monsters; the version line's
       two-line look; behaviour tests.
+- [ ] Tom: copy the SNEG Launcher folder to /GOLDBOX/Launcher, tap Rescan
+      Card and check the box art pages on a board (both screen sizes if
+      you can) - where the name sits, how it reads (v0.102.0).
 - [ ] Tom: when you have a moment, Secret's Screen Test and Walk Test
       (Settings - Dev Tools on its page) on a board - the frame, title,
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.102.0: the SNEG Launcher's box art on the library pages (Tom), the
+  game's name centred over it.
 
 - v0.101.0: Secret's camp magic - 7 spell levels, spells 101-117,
   its names, words, counts and Display as the original's.

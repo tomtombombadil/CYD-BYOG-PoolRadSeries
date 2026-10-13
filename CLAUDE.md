@@ -358,6 +358,18 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   scan above). Icons come from the
   player's goggame-<id>.ico / .dll on the card (`engine/icon.*`), never from
   the repo.
+  **Box art** (Tom, 2026-10-12, v0.102.0): the Steam / SNEG collection's
+  `Launcher` folder copied into /GOLDBOX (beside the game folders; not
+  listed as a game) has each game's box art in
+  `Launcher/Sprites/Backgrounds/Back-NNN.jpg` (`games::box_art_file`, Tom's
+  list). When it's there the library page shows it in place of the icon,
+  filling the whole card (centred, the overflow cut off) with the game's
+  name centred over it (outlined). Same rules as the icons: the scan makes
+  it once at the page's size (`_CYD/<folder>/BOX<w>x<h>.BIN`, RGB565 rows),
+  the page draws that file; a board of another size makes its own on
+  first show. The JPEGs are 2016 px progressive: `engine/jpeg_thumb.*`
+  reads them at 1/4 size from their first scans only (our own decoder),
+  `jthumb::Fit` scales.
 - Play Test (`src/game/play.*`, v0.8.0): the script machine is
   `engine/ecl_vm.*` (plain C++, host-tested with synthetic scripts); the
   front end only shows what it asks for (Wait: Print, Menu, ListMenu,

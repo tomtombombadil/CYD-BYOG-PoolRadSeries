@@ -364,6 +364,14 @@ can't get the memory says "Not enough memory to show this log."
    card, lists DAX files and blocks, draws EGA pictures (all frames), hex-dumps
    the rest. Proves: SD on every board (incl. the 2.8" with software touch),
    the DAX and picture decoders on Tom's real files, 1:1 vs 1.5x on 480x320.
+   Box art (Tom, 2026-10-12, v0.102.0): with the Steam / SNEG Launcher
+   folder on the card (/GOLDBOX/Launcher), a game's page shows its box art
+   (`Launcher/Sprites/Backgrounds/Back-NNN.jpg`) filling the card, the
+   name centred over it; made once by the scan at the page's size, as the
+   icons (`engine/jpeg_thumb.*`: the progressive JPEGs read at 1/4 size from
+   their DC and first luma AC scans - a block's four 4 x 4 quarters come
+   from coefficients 0, 1, 2 and 4; the chroma from its DC, blended; then
+   scaled to cover the card).
    The chooser (a game tapped in the library; Tom, 2026-10-10, v0.53.0):
    four big keys filling the screen under the title bar - **Resource
    Test** (the game's DAX files a page at a time, then their blocks: what

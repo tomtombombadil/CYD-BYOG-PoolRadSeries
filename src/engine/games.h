@@ -46,6 +46,11 @@ void path_of(const char* data_dir, const char* file, char* out, size_t cap);
 
 const char* title(Game g);
 const char* short_title(Game g);      // fits a narrow key
+// The Steam / SNEG collection's Launcher keeps each game's box art as
+// /GOLDBOX/Launcher/Sprites/Backgrounds/<this> (Tom's list, 2026-10-12;
+// nullptr: none). The library shows it in place of the icon.
+const char* box_art_file(Game g);
+constexpr const char* kLauncherArt = "Launcher/Sprites/Backgrounds";
 // The GOG install folder's name ("Curse of the Azure Bonds"); "" for Unknown.
 const char* folder_hint(Game g);
 Series series(Game g);

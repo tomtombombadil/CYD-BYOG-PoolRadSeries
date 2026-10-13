@@ -54,6 +54,22 @@ const Info& info(Game g)
 
 const char* title(Game g) { return info(g).title; }
 const char* short_title(Game g) { return info(g).short_title; }
+const char* box_art_file(Game g)
+{
+    switch (g) {
+    case Game::PoolOfRadiance: return "Back-008.jpg";
+    case Game::CurseOfTheAzureBonds: return "Back-004+.jpg";
+    case Game::SecretOfTheSilverBlades: return "Back-009.jpg";
+    case Game::PoolsOfDarkness: return "Back-007.jpg";
+    case Game::ChampionsOfKrynn: return "Back-014.jpg";
+    case Game::DeathKnightsOfKrynn: return "Back-015+.jpg";
+    case Game::DarkQueenOfKrynn: return "Back-016+.jpg";
+    case Game::GatewayToTheSavageFrontier: return "Back-005.jpg";
+    case Game::TreasuresOfTheSavageFrontier: return "Back-010.jpg";
+    case Game::UnlimitedAdventures: return "Back-011+.jpg";
+    default: return nullptr;
+    }
+}
 const char* folder_hint(Game g) { return info(g).folder; }
 Series series(Game g) { return info(g).series; }
 bool main_series(Game g) { return series(g) == Series::PoolOfRadiance; }

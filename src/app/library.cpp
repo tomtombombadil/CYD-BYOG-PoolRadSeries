@@ -175,7 +175,8 @@ ScanResult scan(GameDir* out, int max, int* n, Progress progress, void* ctx)
     }
 
     for (fs::File d = root.openNextFile(); d && *n < max; d = root.openNextFile()) {
-        if (d.isDirectory() && strcasecmp(base_name(d.name()), kCacheDir) != 0) {
+        if (d.isDirectory() && strcasecmp(base_name(d.name()), kCacheDir) != 0 &&
+            strcasecmp(base_name(d.name()), "Launcher") != 0) {     // (the SNEG Launcher: its box art, below)
             say(progress, ctx, false, "Looking in %s...", base_name(d.name()));
             GameDir& g = out[*n];
             strlcpy(g.folder, base_name(d.name()), sizeof g.folder);
@@ -249,6 +250,20 @@ ScanResult scan(GameDir* out, int max, int* n, Progress progress, void* ctx)
     }
     root.close();
     say(progress, ctx, false, "Found %d game%s.", *n, *n == 1 ? "" : "s");
+
+    // The Steam / SNEG collection's Launcher folder (copied into /GOLDBOX as
+    // the game folders are): its box art, a picture a game
+    for (int i = 0; i < *n; ++i) {
+        GameDir& g = out[i];
+        g.box[0] = 0;
+        const char* file = games::box_art_file(g.game);
+        if (!file) continue;
+        char path[160];
+        snprintf(path, sizeof path, "%s/%s/%s", games::kRootDir, games::kLauncherArt, file);
+        if (!fs.exists(path)) continue;
+        snprintf(g.box, sizeof g.box, "%s/%s", games::kLauncherArt, file);
+        say(progress, ctx, false, "Found the %s box art in the Launcher folder", games::short_title(g.game));
+    }
 
     // Insertion sort: list order (Unknown last), then folder name
     auto key = [](const GameDir& g) { return games::list_order(g.game); };

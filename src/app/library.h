@@ -35,6 +35,9 @@ struct GameDir {
     char         gbc[48];         // the Steam / SNEG releases' Gold Box Companion: its folder
                                   // for this game in <folder>/GBC/Games/ ("02. Curse of the
                                   // Azure Bonds"; "" = none) - Game.dat has the journal's text
+    char         box[64];         // the Steam / SNEG Launcher's box art for it, relative to
+                                  // /GOLDBOX ("" = none; games::box_art_file): shown in place
+                                  // of the icon (Tom, 2026-10-12)
 };
 
 constexpr int kMaxGames = 16;

@@ -14,6 +14,7 @@
 #include "engine/font.h"
 #include "engine/games.h"
 #include "engine/icon.h"
+#include "engine/jpeg_thumb.h"
 #include "engine/inflate.h"
 #include "engine/journal.h"
 #include "engine/pdf.h"
@@ -444,6 +445,183 @@ bool draw_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle st)
     return job.ok;
 }
 
+// ---- The Launcher's box art (Tom, 2026-10-12): the Steam / SNEG
+// collection's Launcher folder on the card holds each game's box art
+// (2016 px JPEGs); the scan makes a picture of each at the library page's
+// size (BOX<w>x<h>.BIN in the game's _CYD folder: RGB565 rows, as the
+// icons are made once) and the page shows it in place of the icon, the
+// game's name over it. A card in a board of another size gets its own on
+// first show.
+void box_file(const library::GameDir& g, int w, int h, char* out, size_t cap)
+{
+    char name[24];
+    snprintf(name, sizeof name, "BOX%dx%d.BIN", w, h);
+    library::cache_path(g, name, out, cap);
+}
+
+struct BoxMake {
+    int       x = 0, y = 0;
+    bool      draw = false;
+    fs::File  out;
+    bool      write_ok = true;
+    uint16_t  line[480];
+};
+
+bool box_row(int y, const uint8_t* rgb, int w, void* ctx)
+{
+    BoxMake& b = *static_cast<BoxMake*>(ctx);
+    if (w > 480) w = 480;
+    for (int x = 0; x < w; ++x) {
+        const uint8_t* p = rgb + x * 3;
+        b.line[x] = static_cast<uint16_t>((p[0] >> 3) << 11 | (p[1] >> 2) << 5 | (p[2] >> 3));
+    }
+    if (b.out && b.out.write(reinterpret_cast<const uint8_t*>(b.line), static_cast<size_t>(w) * 2) !=
+                     static_cast<size_t>(w) * 2)
+        b.write_ok = false;
+    if (b.draw) ui::gfx().pushImage(b.x, b.y + y, w, 1, reinterpret_cast<const lgfx::rgb565_t*>(b.line));
+    return true;
+}
+
+// Makes the box art picture w x h from the player's Launcher file: saved
+// as the box file when save, drawn at (x, y) when draw
+bool make_box(const library::GameDir& g, int x, int y, int w, int h, bool draw, bool save, const char** why = nullptr)
+{
+    const char* dummy;
+    if (!why) why = &dummy;
+    *why = "";
+    if (!g.box[0] || w <= 0 || h <= 0 || w > 480) return false;
+    char path[160];
+    snprintf(path, sizeof path, "%s/%s", games::kRootDir, g.box);
+    fs::File f = sd_fs().open(path, "r");
+    if (!f) {
+        *why = "its file couldn't be opened";
+        return false;
+    }
+    const uint32_t t0 = millis();
+    library::FileSource src(f);
+    jthumb::Info in;
+    bool ok = jthumb::probe(src, in);
+    if (!ok) *why = "not a JPEG this board reads";
+    BoxMake* b = ok ? new (std::nothrow) BoxMake : nullptr;
+    jthumb::Fit* fit = ok ? new (std::nothrow) jthumb::Fit : nullptr;
+    char cache[160];
+    box_file(g, w, h, cache, sizeof cache);
+    if (ok) {
+        ok = b && fit && fit->begin(in.out_w, in.out_h, w, h, box_row, b);
+        if (!ok) *why = "not enough memory just now";
+    }
+    if (ok) {
+        b->x = x;
+        b->y = y;
+        b->draw = draw;
+        if (save && library::make_cache_dirs(g)) {
+            b->out = sd_fs().open(cache, "w");
+            const uint8_t hdr[8] = {'B', 'O', 'X', '1', static_cast<uint8_t>(w), static_cast<uint8_t>(w >> 8),
+                                    static_cast<uint8_t>(h), static_cast<uint8_t>(h >> 8)};
+            if (b->out) b->out.write(hdr, sizeof hdr);
+        }
+        if (draw) ui::card_draw_begin();
+        ok = jthumb::decode(
+                 src, [](int, const uint8_t* rgb, int, void* ctx) { return static_cast<jthumb::Fit*>(ctx)->add(rgb); },
+                 fit, &in) &&
+             fit->finish();
+        if (draw) ui::card_draw_end();
+        if (!ok) *why = "it couldn't be decoded (or memory ran short)";
+        if (b->out) {
+            b->out.close();
+            if (!ok || !b->write_ok) sd_fs().remove(cache);
+        }
+    }
+    delete fit;
+    delete b;
+    f.close();
+    Serial.printf("[library] box art %s: %dx%d -> %dx%d, %s, %lu ms\n", path, in.width, in.height, w, h,
+                  ok ? "ok" : "failed", (unsigned long)(millis() - t0));
+    return ok;
+}
+
+// Draws the box art filling the card: from its box file, else made from the
+// Launcher's file (and saved for next time)
+bool draw_box(const library::GameDir& g, const ui::Rect& r)
+{
+    if (!g.box[0]) return false;
+    char cache[160];
+    box_file(g, r.w, r.h, cache, sizeof cache);
+    fs::File f = sd_fs().open(cache, "r");
+    if (f) {
+        uint8_t hdr[8];
+        bool ok = f.read(hdr, 8) == 8 && memcmp(hdr, "BOX1", 4) == 0 && (hdr[4] | hdr[5] << 8) == r.w &&
+                  (hdr[6] | hdr[7] << 8) == r.h && f.size() == 8u + static_cast<size_t>(r.w) * r.h * 2;
+        uint16_t* row = ok ? static_cast<uint16_t*>(malloc(static_cast<size_t>(r.w) * 2)) : nullptr;
+        if (row) {
+            ui::card_draw_begin();
+            for (int y = 0; y < r.h && ok; ++y) {
+                ok = f.read(reinterpret_cast<uint8_t*>(row), static_cast<size_t>(r.w) * 2) ==
+                     static_cast<size_t>(r.w) * 2;
+                if (ok) ui::gfx().pushImage(r.x, r.y + y, r.w, 1, reinterpret_cast<const lgfx::rgb565_t*>(row));
+            }
+            ui::card_draw_end();
+        } else {
+            ok = false;
+        }
+        free(row);
+        f.close();
+        if (ok) return true;
+    }
+    struct Job {
+        const library::GameDir* g;
+        ui::Rect                r;
+        bool                    ok;
+    } job{&g, r, false};
+    run_on_big_stack(
+        [](void* p) {
+            auto* j = static_cast<Job*>(p);
+            j->ok = make_box(*j->g, j->r.x, j->r.y, j->r.w, j->r.h, true, true);
+        },
+        &job);
+    return job.ok;
+}
+
+// The game's name over its box art (Tom: centred), each line outlined in
+// black so it reads on any picture
+void box_title(const ui::Rect& r, const char* title, uint16_t col)
+{
+    const ui::Font f = ui::Font::Large;
+    const int maxw = r.w - ui::gap() * 6, lh = ui::line_h(f);
+    char lines[4][48];
+    int n = 0;
+    const char* p = title;
+    while (*p && n < 4) {
+        while (*p == ' ') ++p;
+        char cur[48] = "";
+        const char* q = p;
+        const char* end = p;
+        while (*q) {
+            const char* w = q;
+            while (*w && *w != ' ') ++w;
+            char trial[48];
+            snprintf(trial, sizeof trial, "%.*s", static_cast<int>(w - p), p);
+            if (cur[0] && ui::text_width(trial, f) > maxw) break;
+            snprintf(cur, sizeof cur, "%s", trial);
+            end = w;
+            q = w;
+            while (*q == ' ') ++q;
+        }
+        if (end == p) break;
+        snprintf(lines[n++], sizeof lines[0], "%s", cur);
+        p = end;
+    }
+    const int o = ui::large() ? 2 : 1;
+    int y = r.y + (r.h - n * lh) / 2;
+    for (int i = 0; i < n; ++i, y += lh) {
+        const int x = r.x + (r.w - ui::text_width(lines[i], f)) / 2;
+        for (int dy = -o; dy <= o; ++dy)
+            for (int dx = -o; dx <= o; ++dx)
+                if (dx || dy) ui::text(x + dx, y + dy, lines[i], 0x0000, f);
+        ui::text(x, y, lines[i], col, f);
+    }
+}
+
 // Prints text word-wrapped into width w from (x, y); returns the y after it.
 // max_lines 0 = no limit; with draw false it only measures.
 int wrap_text(int x, int y, int w, const char* s, ui::Font font, uint16_t col, bool draw, int max_lines)
@@ -775,7 +953,7 @@ void prepare_made(void*)
     const int px = icon_size(home_card());
     for (int i = 0; i < n_games; ++i) {
         const library::GameDir& g = game_dirs[i];
-        if (!g.icon[0] || !px) continue;
+        if (!g.icon[0] || !px || g.box[0]) continue;      // (the box art stands in for it)
         scan_say("Preparing the game icon...", false, nullptr);
         char line[160];
         const char* why = "";
@@ -786,6 +964,21 @@ void prepare_made(void*)
             snprintf(line, sizeof line, "The %s icon wasn't prepared: %s (free %u KB, largest block %u KB). The library tries again when it shows it.",
                      games::short_title(g.game), why, (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
                      (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
+        scan_say(line, true, nullptr);
+    }
+    // The Launcher's box art, at the library page's size
+    const ui::Rect card = home_card();
+    for (int i = 0; i < n_games; ++i) {
+        const library::GameDir& g = game_dirs[i];
+        if (!g.box[0]) continue;
+        scan_say("Preparing the box art...", false, nullptr);
+        char line[160];
+        const char* why = "";
+        if (make_box(g, 0, 0, card.w, card.h, false, true, &why))
+            snprintf(line, sizeof line, "Prepared the %s box art", games::short_title(g.game));
+        else
+            snprintf(line, sizeof line, "The %s box art wasn't prepared: %s. The library tries again when it shows it.",
+                     games::short_title(g.game), why);
         scan_say(line, true, nullptr);
     }
     for (int i = 0; i < n_games; ++i)
@@ -877,31 +1070,36 @@ void draw_home()
         const library::GameDir& g = game_dirs[home_page];
         const ui::Rect card = home_card();
         const bool hlib = g.format == library::Format::Hlib;
-        const ui::KeyStyle st = hlib ? ui::KeyStyle::Dim : ui::KeyStyle::Normal;
-        const int gp = ui::gap();
-        const int ipx = g.icon[0] ? icon_size(card) : 0;
-        const int ix = card.x + gp * 2, iy = card.y + (card.h - ipx) / 2;
-        const int tx = ipx ? ix + ipx + gp * 3 : card.x + gp * 4;
-        const int tw = card.x + card.w - gp * 2 - tx;      // text stays inside this box
+        // The Launcher's box art: the whole card, the name over it
+        if (g.box[0] && draw_box(g, card)) {
+            box_title(card, games::title(g.game), hlib ? style::kTextMuted : style::kGold);
+        } else {
+            const ui::KeyStyle st = hlib ? ui::KeyStyle::Dim : ui::KeyStyle::Normal;
+            const int gp = ui::gap();
+            const int ipx = g.icon[0] ? icon_size(card) : 0;
+            const int ix = card.x + gp * 2, iy = card.y + (card.h - ipx) / 2;
+            const int tx = ipx ? ix + ipx + gp * 3 : card.x + gp * 4;
+            const int tw = card.x + card.w - gp * 2 - tx;      // text stays inside this box
 
-        // The text block, centred top to bottom; every line wraps
-        char l1[48], l2[48], l3[48];
-        snprintf(l1, sizeof l1, "Folder: %s", g.folder);
-        if (hlib) snprintf(l2, sizeof l2, "Newer format");
-        else snprintf(l2, sizeof l2, "%d game files", g.dax_files);
-        snprintf(l3, sizeof l3, "Game %d of %d", home_page + 1, n_games);
-        const uint16_t tcol = hlib ? style::kTextMuted : style::kText;
-        const ui::Font sf = ui::Font::Small;
-        const int title_h = wrap_text(tx, 0, tw, games::title(g.game), ui::Font::Large, tcol, false, 4);
-        const int sub_h = wrap_text(tx, 0, tw, l1, sf, 0, false) + wrap_text(tx, 0, tw, l2, sf, 0, false) +
-                          wrap_text(tx, 0, tw, l3, sf, 0, false);
-        int y = card.y + (card.h - (title_h + gp * 2 + sub_h + gp * 2)) / 2;
-        if (y < card.y) y = card.y;
-        y = wrap_text(tx, y, tw, games::title(g.game), ui::Font::Large, tcol, true, 4) + gp * 2;
-        y = wrap_text(tx, y, tw, l1, sf, style::kTextMuted, true) + gp;
-        y = wrap_text(tx, y, tw, l2, sf, style::kTextMuted, true) + gp;
-        wrap_text(tx, y, tw, l3, sf, style::kTextMuted, true);
-        if (ipx) draw_icon(g, ix, iy, ipx, st);
+            // The text block, centred top to bottom; every line wraps
+            char l1[48], l2[48], l3[48];
+            snprintf(l1, sizeof l1, "Folder: %s", g.folder);
+            if (hlib) snprintf(l2, sizeof l2, "Newer format");
+            else snprintf(l2, sizeof l2, "%d game files", g.dax_files);
+            snprintf(l3, sizeof l3, "Game %d of %d", home_page + 1, n_games);
+            const uint16_t tcol = hlib ? style::kTextMuted : style::kText;
+            const ui::Font sf = ui::Font::Small;
+            const int title_h = wrap_text(tx, 0, tw, games::title(g.game), ui::Font::Large, tcol, false, 4);
+            const int sub_h = wrap_text(tx, 0, tw, l1, sf, 0, false) + wrap_text(tx, 0, tw, l2, sf, 0, false) +
+                              wrap_text(tx, 0, tw, l3, sf, 0, false);
+            int y = card.y + (card.h - (title_h + gp * 2 + sub_h + gp * 2)) / 2;
+            if (y < card.y) y = card.y;
+            y = wrap_text(tx, y, tw, games::title(g.game), ui::Font::Large, tcol, true, 4) + gp * 2;
+            y = wrap_text(tx, y, tw, l1, sf, style::kTextMuted, true) + gp;
+            y = wrap_text(tx, y, tw, l2, sf, style::kTextMuted, true) + gp;
+            wrap_text(tx, y, tw, l3, sf, style::kTextMuted, true);
+            if (ipx) draw_icon(g, ix, iy, ipx, st);
+        }
     }
     const bool more = n_games > 1;
     ui::key(ui::bottom_key(0, more ? 4 : 2), "Rescan\nCard");

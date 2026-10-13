@@ -25,6 +25,8 @@
 #include "engine/jpeg.h"
 #include "engine/pdf.h"
 #include "jpeg_vectors.h"
+#include "thumb_vectors.h"
+#include "engine/jpeg_thumb.h"
 #include "engine/png.h"
 #include "inflate_vectors.h"
 #include "engine/layout.h"
@@ -6795,9 +6797,93 @@ static void test_spells_batch3()
     CHECK(rc.rec[0x137] == 4 && rc.rec[0x138] == 2 && rc.rec[0x139] == 0 && rc.rec[0x13A] == 1);
 }
 
+// The box art's thumbnails: a JPEG at a quarter of its size from its
+// blocks' low coefficients (progressive: the first scans; baseline), then
+// scaled to fill a rectangle
+struct ThumbOut {
+    uint8_t px[(kThumbW / 4) * (kThumbH / 4) * 3];
+    int     rows = 0;
+    bool    in_order = true;
+};
+static void thumb_check(const uint8_t* data, size_t n, bool progressive)
+{
+    dax::MemorySource src(data, static_cast<uint32_t>(n));
+    jthumb::Info in;
+    CHECK(jthumb::probe(src, in) && in.width == kThumbW && in.height == kThumbH && in.progressive == progressive);
+    static ThumbOut o;
+    o = ThumbOut{};
+    const bool ok = jthumb::decode(
+        src,
+        [](int y, const uint8_t* rgb, int w, void* ctx) {
+            ThumbOut& t = *static_cast<ThumbOut*>(ctx);
+            if (y != t.rows || w != kThumbW / 4) t.in_order = false;
+            if (y < kThumbH / 4) memcpy(t.px + y * w * 3, rgb, static_cast<size_t>(w) * 3);
+            ++t.rows;
+            return true;
+        },
+        &o, &in);
+    CHECK(ok && in.out_w == kThumbW / 4 && in.out_h == kThumbH / 4 && in.shape && o.in_order && o.rows == kThumbH / 4);
+    // The luma close (its quarters come from the blocks' own coefficients);
+    // the colours looser (the chroma is the blocks' averages, blended)
+    long sum = 0, ysum = 0;
+    for (size_t i = 0; i < sizeof o.px; ++i) sum += std::abs(static_cast<int>(o.px[i]) - kThumbQuarter[i]);
+    for (size_t i = 0; i + 2 < sizeof o.px; i += 3) {
+        const int ya = (77 * o.px[i] + 150 * o.px[i + 1] + 29 * o.px[i + 2]) >> 8;
+        const int yb = (77 * kThumbQuarter[i] + 150 * kThumbQuarter[i + 1] + 29 * kThumbQuarter[i + 2]) >> 8;
+        ysum += std::abs(ya - yb);
+    }
+    const double mean = static_cast<double>(sum) / sizeof o.px, ymean = static_cast<double>(ysum) * 3 / sizeof o.px;
+    CHECK(ymean < 3.0 && mean < 15.0);
+    if (!(ymean < 3.0 && mean < 15.0))
+        printf("  thumb %s: luma %.2f, all %.2f\n", progressive ? "progressive" : "baseline", ymean, mean);
+}
+
+struct FitOut {
+    int rows = 0, w = 0;
+    bool flat = true, in_order = true;
+};
+static void test_thumb()
+{
+    thumb_check(kThumbProg, sizeof kThumbProg, true);
+    thumb_check(kThumbBase, sizeof kThumbBase, false);
+    // Not a JPEG
+    const uint8_t junk[16] = {1, 2, 3};
+    dax::MemorySource js(junk, sizeof junk);
+    jthumb::Info ji;
+    CHECK(!jthumb::probe(js, ji));
+    // Fit: a flat picture stays flat, every row comes once, in order (up and down)
+    for (int pass = 0; pass < 2; ++pass) {
+        const int sw = 50, sh = 30, tw = pass ? 31 : 120, th = pass ? 11 : 90;
+        static jthumb::Fit fit;
+        static FitOut fo;
+        fo = FitOut{};
+        CHECK(fit.begin(sw, sh, tw, th,
+                        [](int y, const uint8_t* rgb, int w, void* ctx) {
+                            FitOut& f = *static_cast<FitOut*>(ctx);
+                            if (y != f.rows) f.in_order = false;
+                            ++f.rows;
+                            f.w = w;
+                            for (int i = 0; i < w; ++i)
+                                if (rgb[i * 3] != 90 || rgb[i * 3 + 1] != 160 || rgb[i * 3 + 2] != 30) f.flat = false;
+                            return true;
+                        },
+                        &fo));
+        uint8_t line[50 * 3];
+        for (int i = 0; i < sw; ++i) {
+            line[i * 3] = 90;
+            line[i * 3 + 1] = 160;
+            line[i * 3 + 2] = 30;
+        }
+        for (int y = 0; y < sh; ++y) CHECK(fit.add(line));
+        CHECK(fit.finish());
+        CHECK(fo.rows == th && fo.w == tw && fo.flat && fo.in_order);
+    }
+}
+
 int main()
 {
     test_rle_known_bytes();
+    test_thumb();
     test_round_trip();
     test_bad_files();
     test_picture();
