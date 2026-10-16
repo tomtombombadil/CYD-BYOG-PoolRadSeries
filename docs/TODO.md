@@ -11,10 +11,8 @@ the Project as claude/TODO.md.
       and the 3.2"; then Send Logs. What to look for: room left in fights
       (MEMORY.TXT), Hit / Miss sounds all through a fight, whether drawing
       feels slower with the 4-bit screen (v0.87.0).
-- [ ] When the 4.0" S3 board arrives: flash "4.0" ST7796 Capacitive
-      (ESP32-S3)" from the web flasher (there since v0.88.0) and report
-      what works - screen (colours: Settings has Invert / Swap Red/Blue),
-      touch with the capacitive stylus, card, sound (Send Logs after).
+- [ ] The 4.0" S3: does sound play (the codec, v0.103.1)? (Send Logs
+      after a fight.)
 - [ ] Send Logs goes to cyd.classic.games.logs@gmail.com (the Classic
       Games address) - keep it, or name another (one line in
       web/l/index.html).
@@ -77,12 +75,12 @@ the Project as claude/TODO.md.
       Constitution effect 0x61 kept in the record's saves?); the fight
       frame (not compared with DOSBox yet); sound, sky, approaching monsters; the version line's
       two-line look; behaviour tests.
-- [ ] Tom: flash v0.103.3 on the 4.0" ST7796 Capacitive (ESP32-S3) and
-      try Play (Pool, Curse, Secret), then Send Logs. v0.103.0-v0.103.2
-      crashed at Play: loop()'s stack ran out (the crash line in the
-      Restarts log showed a wrecked stack; QEMU then showed under 200
-      bytes left there) - fixed in v0.103.3. The memory log's lines now
-      end "stack left N". Then the board gets custom_board_tested = yes.
+- [ ] Tom: flash v0.103.4 on the 4.0" S3 and try the touch (light taps,
+      finger and stylus; accuracy on small keys). Then the yellow tint:
+      the display's set-up is the same as the maker's (same gamma and
+      voltages), so please try Settings - Brightness all the way up, and
+      say which firmware looked right (Freenove's demos?) - the tint may
+      be the backlight at 78% (our default) or the engine's own colours.
 - [ ] Claude: decode any crash line in Tom's S3 logs (CI's
       elf-cyd40s3_st7796_cap for that build, xtensa-esp32s3-elf-addr2line).
 - [ ] Claude: watch "stack left" in Tom's classic-board memory logs (QEMU:
@@ -96,6 +94,11 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.103.4: the S3's touch polled every time (its INT pin no longer
+  gates it) and reset as the maker does; a capacitive press starts on
+  its first reading; the S3 marked tested (Tom: Pool, Curse, Secret
+  play on it).
 
 - v0.103.3: the crash at Play on the S3 (and Secret's): loop()'s stack
   ran out - play::open split into steps (the classic boards had under

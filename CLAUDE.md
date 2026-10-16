@@ -271,6 +271,14 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   writes into PSRAM go through a 2 KB internal bounce
   (`platform_esp32.cpp`), the engine's own fs::File reads use internal
   buffers (`heap_caps_malloc(..., MALLOC_CAP_INTERNAL)`).
+  S3 touch (v0.103.4, Tom: heavy taps needed, inaccurate): the FT6336 is
+  polled over I2C every time (`pin_int = -1` - with INT given, LovyanGFX
+  reports no touch whenever INT isn't low at that moment) and reset by
+  main.cpp as the maker does (`BOARD_PIN_TOUCH_RST`: 10 ms low, then
+  ~300 ms to start - LovyanGFX's own reset is 1 ms); ui::poll_tap starts
+  a capacitive press on its first reading (resistive: two that agree).
+  The display's set-up matches the maker's (TFT_eSPI's ST7796 sequence:
+  same gamma, VCOM, power) - for colour questions look elsewhere.
 - **Crash lines** (v0.103.1): a panic leaves a core dump in the flash's
   coredump partition; the next boot puts its summary in the Restarts log
   (`hal/crashinfo.*`: task, PC, cause, backtrace - RISC-V: ra, sp and
@@ -281,8 +289,9 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
 - `custom_board_tested = no` on a board until Tom has run THIS firmware on
   it. Tested: the five classic boards (Tom, 2026-10-09, v0.20.0); the 2.8"
   ST7789 resistive C5 (Tom, 2026-10-12, v0.94.1: both of his - the yellow
-  and the "colorful" one - Home, scan and a Secret Play Test); the S3 not
-  yet (v0.88.0); a new board starts at `no`.
+  and the "colorful" one - Home, scan and a Secret Play Test); the 4.0"
+  ST7796 capacitive S3 (Tom, 2026-10-16, v0.103.3: Pool, Curse, Secret
+  play); a new board starts at `no`.
 - 2.8" ESP32-2432S028: touch is bit-banged (`touch_xpt2046_soft.hpp`, an
   `lgfx::ITouch`) so the SD card can have VSPI. Keep it that way - the engine
   needs the card.

@@ -51,6 +51,15 @@ void quiet_peripherals()
     pinMode(BOARD_PIN_AUDIO_EN, OUTPUT);
     digitalWrite(BOARD_PIN_AUDIO_EN, HIGH);   // high = amplifier off
 #endif
+#ifdef BOARD_PIN_TOUCH_RST
+    // The capacitive touch chip: reset as its maker does (low 10 ms, then
+    // it needs ~300 ms before it answers - the display's set-up that
+    // follows takes about that, and LovyanGFX retries until it answers)
+    pinMode(BOARD_PIN_TOUCH_RST, OUTPUT);
+    digitalWrite(BOARD_PIN_TOUCH_RST, LOW);
+    delay(10);
+    digitalWrite(BOARD_PIN_TOUCH_RST, HIGH);
+#endif
 #if defined(BOARD_SD_SHARED_SPI)
     // The card shares the display's bus: its chip select high (idle) before
     // the display talks, so the card never listens in

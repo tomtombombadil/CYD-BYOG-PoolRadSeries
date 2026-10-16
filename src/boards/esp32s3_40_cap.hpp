@@ -41,6 +41,7 @@
 #define BOARD_PIN_I2C_SDA       16
 #define BOARD_PIN_I2C_SCL       15
 #define BOARD_PIN_AUDIO_EN      1    // low = amplifier on
+#define BOARD_PIN_TOUCH_RST     18   // reset at power-up by main.cpp, as the maker does
 
 class LGFX_S3_40_Cap : public lgfx::LGFX_Device
 {
@@ -96,14 +97,20 @@ public:
             _light.config(cfg);
             _panel.setLight(&_light);
         }
-        {   // Capacitive touch: reports the panel's own portrait pixels
+        {   // Capacitive touch: reports the panel's own portrait pixels.
+            // v0.103.4 (Tom: touches had to be heavy and missed): polled
+            // over I2C every time, as the maker's library does - with its
+            // INT pin given, LovyanGFX reads only while INT happens to be
+            // low and reports no touch otherwise; and the reset is
+            // main.cpp's (10 ms low, then time to start up - LovyanGFX
+            // holds it low 1 ms and talks to the chip at once)
             auto cfg = _touch.config();
             cfg.x_min           = 0;
             cfg.x_max           = 319;
             cfg.y_min           = 0;
             cfg.y_max           = 479;
-            cfg.pin_int         = 17;
-            cfg.pin_rst         = 18;
+            cfg.pin_int         = -1;    // (INT is GPIO 17: not used)
+            cfg.pin_rst         = -1;    // (RST is GPIO 18: main.cpp)
             cfg.bus_shared      = false;
             cfg.offset_rotation = 0;
             cfg.i2c_port        = BOARD_I2C_PORT;

@@ -107,7 +107,11 @@ bool poll_tap(Tap& out)
         }
         last_x = x;
         last_y = y;
-        if (!down && agree >= 1) {
+        // A press starts on two readings that agree - a resistive panel's
+        // first reading of a press is often wrong; a capacitive one's is
+        // good, and waiting cost Tom's S3 light taps (v0.103.4)
+        constexpr int kStart = BOARD_TOUCH_RESISTIVE ? 1 : 0;
+        if (!down && agree >= kStart) {
             down = true;
             press_x = cur_x = x;
             press_y = cur_y = y;

@@ -38,8 +38,8 @@ or Edge on a computer - pick your board, click Install.
 | 4.0" ESP32-S3, 480x320 capacitive touch (FNK0104, ST7796 model) | `TTB-CYD-PRS_4.0in_ST7796_Capacitive_ESP32-S3` |
 | 2.8" ESP32-C5, two USB-C (NM-CYD-C5) | `TTB-CYD-PRS_2.8in_ST7789_Resistive_ESP32-C5` |
 
-The five ESP32 boards and the ESP32-C5 board are tested with this
-firmware. The ESP32-S3 build is new and not tested on its board yet.
+The five ESP32 boards, the ESP32-C5 board and the ESP32-S3 board are
+tested with this firmware.
 
 **Testing and development for ESP32-S3 and NM-CYD-C5 boards is under way!**
 
