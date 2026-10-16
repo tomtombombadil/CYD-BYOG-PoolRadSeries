@@ -42,6 +42,7 @@
 #define BOARD_PIN_I2C_SCL       15
 #define BOARD_PIN_AUDIO_EN      1    // low = amplifier on
 #define BOARD_PIN_TOUCH_RST     18   // reset at power-up by main.cpp, as the maker does
+#define BOARD_TOUCH_FT6336_ADDR 0x38 // ui.cpp keeps it in its active mode (no monitor mode)
 
 class LGFX_S3_40_Cap : public lgfx::LGFX_Device
 {

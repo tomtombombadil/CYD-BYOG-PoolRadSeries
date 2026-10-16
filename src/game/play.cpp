@@ -8965,6 +8965,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     vm->set_words(d->script_words);
     vm->set(0x4BFF, 3);                     // Pics and Animation on, as the game starts (a save says its own)
     load_sound();
+    if (snd && (snd_mode == 1 || snd_mode == 2)) audio_prepare();    // (the S3's codec and amplifier awake before the first sound)
     note_until = 0;
     last_pic_id = -1;
     ecl::GameState& gs = d->gs;

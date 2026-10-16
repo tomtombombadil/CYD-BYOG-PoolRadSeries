@@ -48,6 +48,7 @@ void amp(bool on)
 #if defined(BOARD_AUDIO_DAC)
 
 constexpr bool kRamps = true;
+constexpr bool kKeep = false;
 constexpr int kTail = 1;                // silent buffers before the output stops
 dac_continuous_handle_t h = nullptr;
 
@@ -86,9 +87,19 @@ void out_close()
 constexpr int kTail = kBufs;            // (the queued samples play out before it stops)
 #if defined(BOARD_AUDIO_ES8311)
 constexpr bool kRamps = false;
+// The codec's output stays open, its clocks running and the amplifier on
+// from the first sound on (v0.103.6, Tom: on the S3 the step sound didn't
+// play at all and Hit was cut short): the FM8002E amplifier takes 100 ms
+// to wake (its datasheet), so switching it on with each sound ate the
+// first 100 ms of every sound, and switching it off as the last samples
+// were still queued ate the end; the codec too came back with each restart
+// of its clocks. With nothing written the I2S sends silence (auto_clear).
+constexpr bool kKeep = true;
 bool codec_tried = false;
+bool enabled = false;
 void codec_setup();
 #else
+constexpr bool kKeep = false;
 constexpr bool kRamps = true;
 #endif
 i2s_chan_handle_t h = nullptr;
@@ -96,6 +107,7 @@ int16_t* wide = nullptr;                // the samples as 16 bits
 
 bool out_open()
 {
+    if (kKeep && h) return true;             // (kept open)
     wide = static_cast<int16_t*>(malloc(kBuf * sizeof(int16_t)));
     if (!wide) return false;
     i2s_chan_config_t cc = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
@@ -138,7 +150,16 @@ bool out_open()
     wide = nullptr;
     return false;
 }
-bool out_enable() { return i2s_channel_enable(h) == ESP_OK; }
+bool out_enable()
+{
+#if defined(BOARD_AUDIO_ES8311)
+    if (enabled) return true;
+    enabled = i2s_channel_enable(h) == ESP_OK;
+    return enabled;
+#else
+    return i2s_channel_enable(h) == ESP_OK;
+#endif
+}
 void out_write(const uint8_t* buf, int n)
 {
     for (int i = 0; i < n; ++i) wide[i] = static_cast<int16_t>((static_cast<int>(buf[i]) - 128) * 256);
@@ -169,8 +190,13 @@ void codec_setup()
         ok = out_enable() &&
              es8311::begin(BOARD_I2C_PORT, BOARD_PIN_I2C_SDA, BOARD_PIN_I2C_SCL, kAudioHz);
         i2c_unlock();
-        i2s_channel_disable(h);
-        out_close();
+        if (ok) {
+            amp(true);       // (awake by the time the sound's first samples arrive)
+        } else {
+            if (enabled) i2s_channel_disable(h);
+            enabled = false;
+            out_close();
+        }
     }
     if (!ok) memlog::note("sound: the ES8311 codec didn't answer - no sound");
 }
@@ -179,6 +205,7 @@ void codec_setup()
 #else   // no sound on this board
 
 constexpr bool kRamps = false;
+constexpr bool kKeep = false;
 constexpr int kTail = 1;
 bool out_open() { return false; }
 bool out_enable() { return false; }
@@ -203,10 +230,10 @@ void audio_task(void*)
     for (;;) {
         // A burst of sound: the output on, from 0 V up to the middle, the amplifier on
         if (!out_enable()) break;
+        amp(true);           // (waking while the first buffer - the ramp - plays)
         for (int i = 0; i < kBuf; ++i)
             buf[i] = static_cast<uint8_t>(kRamps && i < kRamp ? i * 128 / kRamp : 128);
         out_write(buf, kBuf);
-        amp(true);
         int quiet = 0;
         for (;;) {
             while (!stop_wanted && quiet < 4) {
@@ -222,21 +249,31 @@ void audio_task(void*)
             quiet = 0;
             out_write(buf, kBuf);
         }
-        // Down to 0 V again, amplifier off, the output off (the queued
-        // buffers played out first)
-        amp(false);
+        if (kKeep) {
+            // (the output stays on: the queued samples play out, then the
+            // I2S sends silence by itself)
+            if (stop_wanted || !held) break;
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            if (stop_wanted || !held) break;
+            continue;
+        }
+        // Down to 0 V again, the queued buffers played out, then the
+        // amplifier off and the output off (v0.103.6: the amplifier went
+        // off before the last ~90 ms had played - the sounds' ends lost)
         for (int i = 0; i < kBuf; ++i)
             buf[i] = static_cast<uint8_t>(!kRamps ? 128 : i < kRamp ? 128 - i * 128 / kRamp : 0);
         out_write(buf, kBuf);
         if (kRamps) memset(buf, 0, kBuf);
         for (int i = 0; i < kTail; ++i) out_write(buf, kBuf);
+        vTaskDelay(pdMS_TO_TICKS(kBufs * kBuf * 1000 / kAudioHz + 5));
+        amp(false);
         out_disable();
         if (stop_wanted || !held) break;
         // Held (a fight): asleep until the next sound - or the hold's end
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         if (stop_wanted || !held) break;
     }
-    out_close();
+    if (!kKeep) out_close();
     free(buf);
     task = nullptr;
     vTaskDelete(nullptr);
@@ -316,6 +353,13 @@ void audio_hold(bool on, AudioFill fill, void* ctx)
 }
 
 bool audio_held() { return held && task != nullptr; }
+
+void audio_prepare()
+{
+#if defined(BOARD_AUDIO_ES8311) && !defined(CYD_QEMU)
+    codec_setup();
+#endif
+}
 
 void audio_stop()
 {

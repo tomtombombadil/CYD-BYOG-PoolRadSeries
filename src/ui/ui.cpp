@@ -121,7 +121,23 @@ void sampler(void*)
 {
     bool sdown = false;
     int  empties = 0, lx = 0, ly = 0;
+#ifdef BOARD_TOUCH_FT6336_ADDR
+    // The FT6336 drops to its monitor mode after a moment without a touch:
+    // 25 scans a second, "most algorithms stopped" (its datasheet), and a
+    // touch has to wake it before it reports anything - the first tap after
+    // a pause came late or not at all (v0.103.6, Tom: "delayed"). Register
+    // 0x86 (ID_G_CTRL) = 0 keeps it in its active mode (60 scans a second).
+    bool active_set = false;
+#endif
     for (;;) {
+#ifdef BOARD_TOUCH_FT6336_ADDR
+        if (!active_set) {
+            i2c_lock();
+            active_set = lgfx::i2c::writeRegister8(BOARD_I2C_PORT, BOARD_TOUCH_FT6336_ADDR, 0x86, 0x00, 0, 400000)
+                             .has_value();
+            i2c_unlock();
+        }
+#endif
         int32_t x = 0, y = 0;
         i2c_lock();
         const bool t = g->getTouch(&x, &y);

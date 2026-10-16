@@ -283,7 +283,18 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   (press point, drags) as before; the I2C it shares with the codec is
   guarded by `hal/i2c_lock.*` (codec set-up, touch calibration hold it).
   Recalibrate Touch is on every board's Settings now; a capacitive
-  board uses a calibration only when the player made one.
+  board uses a calibration only when the player made one. v0.103.6
+  (Tom: "delayed"): the FT6336 kept in its active mode (register 0x86 =
+  0, written by the touch task until it takes) - by itself it drops to a
+  25-scans-a-second monitor mode, I2C closed, after a moment untouched.
+  S3 sound (v0.103.6, Tom: the step sound silent, Hit cut short, Pool
+  seemingly silent): the FM8002E amplifier takes 100 ms to wake (its
+  datasheet), so the codec's output, its clocks and the amplifier stay
+  on from the first sound (`kKeep`; `audio_prepare()` at Play's start
+  wakes them before the first sound; the I2S sends silence by itself).
+  Every board: the amplifier goes off only after the queued samples have
+  played (it went off ~90 ms early - the 3.2" / 3.5" / 4.0" ESP32-32E
+  boards' amplifier pin too).
   The display's set-up matches the maker's (TFT_eSPI's ST7796 sequence:
   same gamma, VCOM, power) - for colour questions look elsewhere.
 - **Crash lines** (v0.103.1): a panic leaves a core dump in the flash's

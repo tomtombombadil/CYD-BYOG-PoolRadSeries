@@ -75,8 +75,11 @@ the Project as claude/TODO.md.
       Constitution effect 0x61 kept in the record's saves?); the fight
       frame (not compared with DOSBox yet); sound, sky, approaching monsters; the version line's
       two-line look; behaviour tests.
-- [ ] Tom: flash v0.103.5 on the 4.0" S3 and try the touch (light taps,
-      finger and stylus; accuracy on small keys). If taps still land off
+- [ ] Tom: flash v0.103.6 on the 4.0" S3: the touch (light taps after a
+      pause, finger and stylus; small keys) and the sounds (Settings'
+      sound test - Step, Hit; Pool's steps and fights). Still delayed?
+      A possible next step: light the key as the stylus touches (not as
+      it lifts) - your call, it changes how every board feels. If taps still land off
       the mark, Settings - Recalibrate Touch (new on this board: tap
       each arrow tip) and say whether it helped. Then the yellow tint:
       the display's set-up is the same as the maker's (same gamma and
@@ -96,6 +99,10 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.103.6: the S3's touch kept in its active mode; its sound output and
+  amplifier stay awake (the amplifier's 100 ms wake-up ate short sounds);
+  every board's amplifier off only after the sound's end has played.
 
 - v0.103.5: the S3's touch read by a task of its own every 10 ms (quick
   light taps were missed while the loop worked); Recalibrate Touch on

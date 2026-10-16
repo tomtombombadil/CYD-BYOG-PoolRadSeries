@@ -48,6 +48,7 @@ bool audio_running() { return false; }
 static bool g_held = false;             // (a fight's hold on the sound output: counted, nothing else)
 void audio_hold(bool on, AudioFill, void*) { g_held = on; }
 bool audio_held() { return g_held; }
+void audio_prepare() {}
 uint32_t g_now = 1000;
 static std::vector<uint8_t> px(getenv("CANVAS8") ? 320 * 200 : 320 * 200 / 2);   // (exactly the canvas: ASan sees an overrun)
 static pic::Canvas C{px.data(), 320, 200, static_cast<uint8_t>(getenv("CANVAS8") ? 8 : 4)};
