@@ -6119,7 +6119,7 @@ void pm_tap(int x, int y, pic::Canvas& c)
 
 // Reads the menu's words from the program (and GAME.OVR) and the save
 // folder from the game's configuration file
-void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
+__attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepack::Info& info)
 {
     const auto& pp = d->prof->party;
     // Item names: the words in the program, the types in ITEMS
@@ -8822,6 +8822,97 @@ uint8_t sound_mode() { return snd_mode; }
 
 void sound_test(int id) { sfx(id); }
 
+// play::open's steps, each with its own file buffers on the stack only
+// while it runs (v0.103.3: open's frame was 2 KB, and the loop task's 8 KB
+// stack had under 200 bytes left at Play's start - Tom's S3, whose card
+// driver goes deeper, crashed there)
+namespace {
+
+// The program: which release, its tables and words. False: not one the
+// engine knows (msg set)
+__attribute__((noinline)) bool open_program(games::Game g, const char* prog)
+{
+    plat::File f;
+    if (!open_file(prog, f)) {
+        snprintf(msg, sizeof msg, "%s is missing from the game folder.", prog);
+        return false;
+    }
+    plat::FileSource src(f);
+    exepack::Info info;
+    const profile::Profile* p = nullptr;
+    if (exepack::parse(src, info) == exepack::Status::Ok) p = profile::find(g, src.size(), info.image_size);
+    if (p && layout::load_tables(src, info, *p, d->tables) != layout::Status::Ok) p = nullptr;
+    if (p) {
+        exepack::read(src, info, p->data_base + p->sky_colours, d->sky, sizeof d->sky);
+        if (p->wild.bigpic && p->wild.count <= sizeof d->city_x &&
+            exepack::read(src, info, p->data_base + p->wild.xs, d->city_x, p->wild.count) == exepack::Status::Ok &&
+            exepack::read(src, info, p->data_base + p->wild.ys, d->city_y, p->wild.count) == exepack::Status::Ok)
+            d->cities = p->wild.count;
+        if (!text::read_pascal(src, info, p->press_any_key, d->press_key, sizeof d->press_key))
+            strcpy(d->press_key, "Tap to go on");
+        d->prof = p;
+        load_party_text(src, info);
+    }
+    f.close();
+    if (!p || !p->ecl_ops) {
+        snprintf(msg, sizeof msg, "This %s is a release the engine doesn't know yet.", prog);
+        return false;
+    }
+    if (!p->party.items) {
+        // (a game being built whose party menu isn't known yet: Secret's
+        // screens and maps only, in the Screen and Walk Tests)
+        snprintf(msg, sizeof msg, "The Play Test for %s isn't ready yet: try the Screen and Walk Tests.",
+                 games::title(g));
+        return false;
+    }
+    d->prof = p;
+    return true;
+}
+
+// The frame's tiles, the font, the 3D view's common tiles
+__attribute__((noinline)) bool open_tiles()
+{
+    plat::File f;
+    bool ok = open_dax(d->prof->tiles_file, f);
+    if (ok) {
+        plat::FileSource src(f);
+        ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, d->prof->variant.tile_window) &&
+             (d->prof->font_file || font::load(src, d->idx, d->font)) &&
+             view3d::load_tiles(src, d->idx, d->prof->common_tiles_block, d->world.common);
+        f.close();
+    }
+    if (ok && d->prof->font_file) ok = load_font_file(d->prof->font_file, d->idx, d->font);
+    if (ok) {
+        const int letters = font_wanted();     // (loads the alt font first)
+        font::set_letters(d->font, letters, d->alt_font);
+    }
+    return ok;
+}
+
+__attribute__((noinline)) void open_sky()
+{
+    plat::File f;
+    if (d->prof->sky_file && open_dax(d->prof->sky_file, f)) {
+        plat::FileSource src(f);
+        view3d::load_horizon(src, d->idx, d->prof->horizon_block, d->world);
+        f.close();
+    }
+}
+
+// The script machine's own words
+__attribute__((noinline)) void open_script_words()
+{
+    OvrWords src;
+    const bool ok = src.open();
+    for (int i = 0; i < ecl::kScriptWords; ++i) {
+        if (ok && d->prof->script_words[i])
+            text::read_pascal(src, d->prof->script_words[i], d->script_word[i], sizeof d->script_word[i]);
+        d->script_words[i] = d->script_word[i];
+    }
+}
+
+} // namespace
+
 const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char* cache_dir)
 {
     close();
@@ -8846,69 +8937,17 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     if (cache_dir) strncpy(d->cache_dir, cache_dir, sizeof d->cache_dir - 1);
     load_icon_picks();
 
-    plat::File f;
-    if (!open_file(prog, f)) {
-        snprintf(msg, sizeof msg, "%s is missing from the game folder.", prog);
+    if (!open_program(g, prog)) {
         close();
         return msg;
     }
-    {
-        plat::FileSource src(f);
-        exepack::Info info;
-        const profile::Profile* p = nullptr;
-        if (exepack::parse(src, info) == exepack::Status::Ok) p = profile::find(g, src.size(), info.image_size);
-        if (p && layout::load_tables(src, info, *p, d->tables) != layout::Status::Ok) p = nullptr;
-        if (p) {
-            exepack::read(src, info, p->data_base + p->sky_colours, d->sky, sizeof d->sky);
-            if (p->wild.bigpic && p->wild.count <= sizeof d->city_x &&
-                exepack::read(src, info, p->data_base + p->wild.xs, d->city_x, p->wild.count) == exepack::Status::Ok &&
-                exepack::read(src, info, p->data_base + p->wild.ys, d->city_y, p->wild.count) == exepack::Status::Ok)
-                d->cities = p->wild.count;
-            if (!text::read_pascal(src, info, p->press_any_key, d->press_key, sizeof d->press_key))
-                strcpy(d->press_key, "Tap to go on");
-            d->prof = p;
-            load_party_text(src, info);
-        }
-        f.close();
-        if (!p || !p->ecl_ops) {
-            snprintf(msg, sizeof msg, "This %s is a release the engine doesn't know yet.", prog);
-            close();
-            return msg;
-        }
-        if (!p->party.items) {
-            // (a game being built whose party menu isn't known yet: Secret's
-            // screens and maps only, in the Screen and Walk Tests)
-            snprintf(msg, sizeof msg, "The Play Test for %s isn't ready yet: try the Screen and Walk Tests.",
-                     games::title(g));
-            close();
-            return msg;
-        }
-        d->prof = p;
-    }
-    bool ok = open_dax(d->prof->tiles_file, f);
-    if (ok) {
-        plat::FileSource src(f);
-        ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, d->prof->variant.tile_window) &&
-             (d->prof->font_file || font::load(src, d->idx, d->font)) &&
-             view3d::load_tiles(src, d->idx, d->prof->common_tiles_block, d->world.common);
-        f.close();
-        if (ok && d->prof->font_file) ok = load_font_file(d->prof->font_file, d->idx, d->font);
-        if (ok) {
-            const int letters = font_wanted();     // (loads the alt font first)
-            font::set_letters(d->font, letters, d->alt_font);
-        }
-    }
-    if (!ok) {
+    if (!open_tiles()) {
         snprintf(msg, sizeof msg, "%s: the tiles or font didn't load.", d->prof->tiles_file);
         close();
         return msg;
     }
     d->world.frame = &d->frame_tiles;
-    if (d->prof->sky_file && open_dax(d->prof->sky_file, f)) {
-        plat::FileSource src(f);
-        view3d::load_horizon(src, d->idx, d->prof->horizon_block, d->world);
-        f.close();
-    }
+    open_sky();
 
     // The party menu first, as the games begin
     host = new (std::nothrow) Host;
@@ -8922,16 +8961,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     vm->set_party(pt);
     vm->set_ground(ground);
     vm->set_move_affects(d->prof->fight.facts.haste, d->prof->fight.facts.slow);
-    {
-        // The script machine's own words
-        OvrWords src;
-        const bool ok = src.open();
-        for (int i = 0; i < ecl::kScriptWords; ++i) {
-            if (ok && d->prof->script_words[i])
-                text::read_pascal(src, d->prof->script_words[i], d->script_word[i], sizeof d->script_word[i]);
-            d->script_words[i] = d->script_word[i];
-        }
-    }
+    open_script_words();
     vm->set_words(d->script_words);
     vm->set(0x4BFF, 3);                     // Pics and Animation on, as the game starts (a save says its own)
     load_sound();

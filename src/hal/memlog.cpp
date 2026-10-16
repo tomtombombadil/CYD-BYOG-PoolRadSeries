@@ -13,6 +13,7 @@ constexpr unsigned kLowKb = 24;     // a fight wants about this in one piece
 bool     ready = false;
 bool     was_low = false;
 uint32_t next_minute = 0;
+TaskHandle_t loop_task = nullptr;   // (the stack that matters: loop()'s - v0.103.3)
 
 void path(char* out, size_t cap, const char* file) { library::cache_path(file, out, cap); }
 } // namespace
@@ -22,6 +23,7 @@ unsigned largest_kb() { return static_cast<unsigned>(heap_caps_get_largest_free_
 
 void begin(const char* version, const char* board)
 {
+    loop_task = xTaskGetCurrentTaskHandle();     // (called from setup(): the loop task)
     if (!sd_begin()) return;
     char now[96], old[96];
     path(now, sizeof now, "MEMORY.TXT");
@@ -39,9 +41,13 @@ void note(const char* what)
     const unsigned fr = free_kb(), lg = largest_kb();
     const unsigned lo = static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT) / 1024);
     const uint32_t s = millis() / 1000;
-    char line[160];
-    const int n = snprintf(line, sizeof line, "[%u:%02u:%02u] %s: free %u KB, largest block %u KB, lowest %u KB\n",
-                           (unsigned)(s / 3600), (unsigned)(s / 60 % 60), (unsigned)(s % 60), what, fr, lg, lo);
+    // The loop task's stack never used so far (bytes): under ~1 KB is a
+    // crash waiting (v0.103.3: under 200 at Play's start, and the S3 crashed)
+    const unsigned st = loop_task ? static_cast<unsigned>(uxTaskGetStackHighWaterMark(loop_task)) : 0;
+    char line[192];
+    const int n = snprintf(line, sizeof line,
+                           "[%u:%02u:%02u] %s: free %u KB, largest block %u KB, lowest %u KB, stack left %u\n",
+                           (unsigned)(s / 3600), (unsigned)(s / 60 % 60), (unsigned)(s % 60), what, fr, lg, lo, st);
     Serial.print(line);
     if (!ready || n <= 0) return;
     char p[96];

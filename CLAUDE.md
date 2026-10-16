@@ -572,7 +572,18 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   (DRAM .bss) before / after any change that links a new library.
   The boards have NO PSRAM (GPIO 16 / 17, the original ESP32's PSRAM pins,
   drive the RGB LED; Settings shows "no PSRAM"). loop() has Arduino's 8 KB
-  stack; deep work (PNG / PDF / JPEG: the scan's icons and journals, the
+  stack on the classic boards, 16 KB on the S3 / C5 (main.cpp; v0.103.3:
+  Play's start left under 200 bytes of the 8 KB and Tom's S3, whose
+  SD/MMC driver goes deeper, crashed there - PC 0xfffffffe, backtrace
+  corrupted). **Stack is watched like the heap**: every memory-log line
+  ends "stack left N" (loop()'s, never used so far; QEMU's mem lines too);
+  under ~1 KB is a crash waiting. Keep 0.5 KB locals (a `plat::FileSource`
+  is 512 bytes of buffer) out of deep chains - split them into
+  `__attribute__((noinline))` steps as play::open's (`open_program`,
+  `open_tiles`, `open_sky`, `open_script_words`, `load_party_text`); check
+  frames with `PLATFORMIO_BUILD_FLAGS=-fstack-usage` (.su files). QEMU
+  (v0.103.3): classic 2.1 KB left at Play, 1.5 KB at a fight's start;
+  deep work (PNG / PDF / JPEG: the scan's icons and journals, the
   journal book, Home's icon decode) runs via `hal/bigstack.h` on a 16 KB
   stack of its own only while it runs. The SD card mounts with 3 file
   slots (~4 KB of RAM each; 4 until v0.85.7): never more than 3 files

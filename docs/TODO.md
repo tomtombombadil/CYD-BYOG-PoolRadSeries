@@ -77,17 +77,18 @@ the Project as claude/TODO.md.
       Constitution effect 0x61 kept in the record's saves?); the fight
       frame (not compared with DOSBox yet); sound, sky, approaching monsters; the version line's
       two-line look; behaviour tests.
-- [ ] Tom: flash v0.103.1 on the 4.0" ST7796 Capacitive (ESP32-S3) and
-      try Play (Pool, Curse) again, then Send Logs. v0.103.0 crashed at
-      Play (twice); v0.103.1 fixes what could be found without the board
-      (the codec was set up from the sound task, sharing the touch's I2C;
-      the card's DMA into PSRAM) - if it still crashes, the Restarts log
-      now names where. Also (v0.103.2): the first start makes the
-      library's pictures for the S3's screen once ("Preparing Pictures"),
-      then every page should come up at once. Then the board gets
-      custom_board_tested = yes.
+- [ ] Tom: flash v0.103.3 on the 4.0" ST7796 Capacitive (ESP32-S3) and
+      try Play (Pool, Curse, Secret), then Send Logs. v0.103.0-v0.103.2
+      crashed at Play: loop()'s stack ran out (the crash line in the
+      Restarts log showed a wrecked stack; QEMU then showed under 200
+      bytes left there) - fixed in v0.103.3. The memory log's lines now
+      end "stack left N". Then the board gets custom_board_tested = yes.
 - [ ] Claude: decode any crash line in Tom's S3 logs (CI's
       elf-cyd40s3_st7796_cap for that build, xtensa-esp32s3-elf-addr2line).
+- [ ] Claude: watch "stack left" in Tom's classic-board memory logs (QEMU:
+      1.5 KB at a fight's start); slim the deepest frames if it drops
+      under ~1 KB (fight_load_monster 1.2 KB, draw_overland 1.4 KB,
+      load_party_text 1.3 KB, save_game 1.1 KB).
 - [ ] Tom: try the new library page (v0.103.0) on a board - the art,
       the header keys, the thirds and the triangles.
 - [ ] Tom: when you have a moment, Secret's Screen Test and Walk Test
@@ -95,6 +96,11 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.103.3: the crash at Play on the S3 (and Secret's): loop()'s stack
+  ran out - play::open split into steps (the classic boards had under
+  200 bytes to spare there too; now 2.1 KB), 16 KB of loop stack on the
+  S3 / C5; the memory log shows the stack left.
 
 - v0.103.2: the library's pictures only from the files the scan made
   (Tom) - a start without them for this screen makes the missing ones

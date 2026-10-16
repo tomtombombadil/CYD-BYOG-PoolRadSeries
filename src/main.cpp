@@ -71,9 +71,15 @@ void recalibrate()
 
 } // namespace
 
-// loop() keeps Arduino's 8 KB of stack: the deep PDF / JPEG work runs on a
-// stack of its own while it runs (hal/bigstack.h; v0.19.1-v0.21.1 gave
-// loop() 16 KB all the time)
+// loop() keeps Arduino's 8 KB of stack on the classic boards: the deep PDF /
+// JPEG work runs on a stack of its own while it runs (hal/bigstack.h;
+// v0.19.1-v0.21.1 gave loop() 16 KB all the time). The ESP32-S3 / C5 boards
+// (512 / 384 KB of RAM besides the PSRAM) give it 16 KB: their card drivers
+// go deeper (v0.103.3: Tom's S3 crashed as Play started - the 8 KB stack
+// had under 200 bytes left there even before the card driver)
+#if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32C5)
+SET_LOOP_TASK_STACK_SIZE(16 * 1024);
+#endif
 
 void setup()
 {
