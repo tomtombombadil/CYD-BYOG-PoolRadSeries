@@ -393,19 +393,13 @@ int icon_size(const ui::Rect& card)
     return sz < 16 ? 0 : sz;
 }
 
-// A press on the panel just now (two readings agreeing): checked between
-// rows of slow drawing so a tap needn't wait for it
-bool touch_now()
+// A picture file made by the scan: its header says this kind and size and
+// it's all there (bpp bytes a pixel)
+bool pic_file_ok(fs::File& f, const char* magic, int w, int h, int bpp)
 {
-    ui::card_draw_end();
-    int32_t x, y;
-    bool t = ui::gfx().getTouch(&x, &y);
-    if (t) {
-        delay(2);
-        t = ui::gfx().getTouch(&x, &y);
-    }
-    ui::card_draw_begin();
-    return t;
+    uint8_t hdr[8];
+    return f.read(hdr, 8) == 8 && memcmp(hdr, magic, 4) == 0 && (hdr[4] | hdr[5] << 8) == w &&
+           (hdr[6] | hdr[7] << 8) == h && f.size() == 8u + static_cast<size_t>(w) * h * bpp;
 }
 
 // The library's notes about its picture files in the memory log, each once
@@ -527,54 +521,41 @@ bool render_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle s
     return ok;
 }
 
-// Draws the game's icon at (x, y), px square: from its icon file when there
-// is one for this size, else decoded from the GOG file (and the icon file
-// made, for next time - a card moved to a board with another screen size)
+// Draws the game's icon at (x, y), px square, from the icon file the scan
+// made (Tom, v0.103.1: never decoded while the page shows - the scan, or
+// the start after a card / size without them, makes the files); false
+// when there's none
 bool draw_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle st)
 {
     if (!g.icon[0]) return false;
     char cache[160];
     icon_file(g, px, cache, sizeof cache);
     fs::File f = sd_fs().open(cache, "r");
-    if (f) {
-        uint8_t hdr[8];
-        bool ok = f.read(hdr, 8) == 8 && memcmp(hdr, "ICN1", 4) == 0 && (hdr[4] | hdr[5] << 8) == px &&
-                  (hdr[6] | hdr[7] << 8) == px && f.size() == 8u + static_cast<size_t>(px) * px * 4;
-        if (!ok) cache_note("not a picture file of this size (made again):", cache);
-        IconDraw* d = ok ? new (std::nothrow) IconDraw : nullptr;
-        uint8_t* row = ok ? static_cast<uint8_t*>(malloc(static_cast<size_t>(px) * 4)) : nullptr;
-        if (d && row) {
-            d->x = x;
-            d->y = y;
-            d->draw = true;
-            icon_colours(*d, st);
-            ui::card_draw_begin();
-            for (int r = 0; r < px && ok; ++r) {
-                ok = f.read(row, static_cast<size_t>(px) * 4) == static_cast<size_t>(px) * 4;
-                if (ok) icon_row(r, row, px, d);
-            }
-            ui::card_draw_end();
-        } else {
-            ok = false;
+    if (!f) return false;
+    bool ok = pic_file_ok(f, "ICN1", px, px, 4);
+    if (!ok) cache_note("not a picture file of this size:", cache);
+    IconDraw* d = ok ? new (std::nothrow) IconDraw : nullptr;
+    uint8_t* row = ok ? static_cast<uint8_t*>(heap_caps_malloc(static_cast<size_t>(px) * 4,
+                                                                  MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT))
+                      : nullptr;
+    if (d && row) {
+        d->x = x;
+        d->y = y;
+        d->draw = true;
+        icon_colours(*d, st);
+        ui::card_draw_begin();
+        for (int r = 0; r < px && ok; ++r) {
+            ok = f.read(row, static_cast<size_t>(px) * 4) == static_cast<size_t>(px) * 4;
+            if (ok) icon_row(r, row, px, d);
         }
-        free(row);
-        delete d;
-        f.close();
-        if (ok) return true;
+        ui::card_draw_end();
+    } else {
+        ok = false;
     }
-    struct Job {
-        const library::GameDir* g;
-        int                     x, y, px;
-        ui::KeyStyle            st;
-        bool                    ok;
-    } job{&g, x, y, px, st, false};
-    run_on_big_stack(
-        [](void* p) {
-            auto* j = static_cast<Job*>(p);
-            j->ok = render_icon(*j->g, j->x, j->y, j->px, j->st, true, true);
-        },
-        &job);
-    return job.ok;
+    free(row);
+    delete d;
+    f.close();
+    return ok;
 }
 
 // ---- The Launcher's box art (Tom, 2026-10-12): the Steam / SNEG
@@ -594,8 +575,6 @@ void box_file(const library::GameDir& g, int w, int h, char* out, size_t cap)
 struct BoxMake {
     int       x = 0, y = 0;
     bool      draw = false;
-    bool      stop_on_tap = false;      // drawn as it's made: a tap stops it (the next page at once)
-    bool      stopped = false;
     fs::File  out;
     bool      write_ok = true;
     uint16_t  line[480];
@@ -615,18 +594,13 @@ bool box_row(int y, const uint8_t* rgb, int w, void* ctx)
     if (b.draw) {
         hints_blend(b.line, y, w);
         ui::gfx().pushImage(b.x, b.y + y, w, 1, reinterpret_cast<const lgfx::rgb565_t*>(b.line));
-        if (b.stop_on_tap && (y & 7) == 7 && touch_now()) {
-            b.stopped = true;
-            return false;
-        }
     }
     return true;
 }
 
 // Makes the box art picture w x h from the player's Launcher file: saved
 // as the box file when save, drawn at (x, y) when draw
-bool make_box(const library::GameDir& g, int x, int y, int w, int h, bool draw, bool save, const char** why = nullptr,
-              bool* stopped = nullptr)
+bool make_box(const library::GameDir& g, int x, int y, int w, int h, bool draw, bool save, const char** why = nullptr)
 {
     const char* dummy;
     if (!why) why = &dummy;
@@ -656,7 +630,6 @@ bool make_box(const library::GameDir& g, int x, int y, int w, int h, bool draw, 
         b->x = x;
         b->y = y;
         b->draw = draw;
-        b->stop_on_tap = stopped != nullptr;
         if (save) {
             if (!library::make_cache_dirs(g)) cache_note("couldn't make the folder for", cache);
             else {
@@ -673,8 +646,7 @@ bool make_box(const library::GameDir& g, int x, int y, int w, int h, bool draw, 
                  fit, &in) &&
              fit->finish();
         if (draw) ui::card_draw_end();
-        if (!ok) *why = b->stopped ? "stopped by a tap" : "it couldn't be decoded (or memory ran short)";
-        if (stopped) *stopped = b->stopped;
+        if (!ok) *why = "it couldn't be decoded (or memory ran short)";
         if (b->out) {
             b->out.close();
             if (ok && !b->write_ok) cache_note("a write fell short (card full?):", cache);
@@ -689,61 +661,45 @@ bool make_box(const library::GameDir& g, int x, int y, int w, int h, bool draw, 
     return ok;
 }
 
-// Draws the box art filling the card: from its box file, else made from the
-// Launcher's file (and saved for next time). 1 drawn, 0 none, -1 a tap
-// stopped the making (the page turns at once - Tom, v0.103.0)
-int draw_box(const library::GameDir& g, const ui::Rect& r)
+// Draws the box art filling the card from the picture file the scan made
+// (Tom, v0.103.1: never made while the page shows); false when there's none
+bool draw_box(const library::GameDir& g, const ui::Rect& r)
 {
-    if (!g.box[0]) return 0;
+    if (!g.box[0]) return false;
     char cache[160];
     box_file(g, r.w, r.h, cache, sizeof cache);
     fs::File f = sd_fs().open(cache, "r");
-    if (f) {
-        const size_t row_bytes = static_cast<size_t>(r.w) * 2;
-        uint8_t hdr[8];
-        bool ok = f.read(hdr, 8) == 8 && memcmp(hdr, "BOX1", 4) == 0 && (hdr[4] | hdr[5] << 8) == r.w &&
-                  (hdr[6] | hdr[7] << 8) == r.h && f.size() == 8u + row_bytes * r.h;
-        if (!ok) cache_note("not a picture file of this size (made again):", cache);
-        // Several rows a read when there's room (the card's reads are the slow part)
-        // (internal RAM: on the S3 a big block would be in the PSRAM - the
-        // card's reads stay out of there)
-        int rows = 8;
-        uint16_t* buf = nullptr;
-        while (ok && rows > 1 &&
-               !(buf = static_cast<uint16_t*>(heap_caps_malloc(row_bytes * rows, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT))))
-            rows /= 2;
-        if (ok && !buf) buf = static_cast<uint16_t*>(heap_caps_malloc(row_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-        if (buf) {
-            ui::card_draw_begin();
-            for (int y = 0; y < r.h && ok; y += rows) {
-                const int n = r.h - y < rows ? r.h - y : rows;
-                ok = f.read(reinterpret_cast<uint8_t*>(buf), row_bytes * n) == row_bytes * n;
-                if (ok) {
-                    for (int k = 0; k < n; ++k) hints_blend(buf + k * r.w, y + k, r.w);
-                    ui::gfx().pushImage(r.x, r.y + y, r.w, n, reinterpret_cast<const lgfx::rgb565_t*>(buf));
-                }
+    if (!f) return false;
+    const size_t row_bytes = static_cast<size_t>(r.w) * 2;
+    bool ok = pic_file_ok(f, "BOX1", r.w, r.h, 2);
+    if (!ok) cache_note("not a picture file of this size:", cache);
+    // Several rows a read (the card's reads are the slow part), in internal
+    // RAM: on the S3 a big block would be in the PSRAM, where the card's
+    // DMA isn't trusted
+    int rows = 8;
+    uint16_t* buf = nullptr;
+    while (ok && rows > 1 &&
+           !(buf = static_cast<uint16_t*>(heap_caps_malloc(row_bytes * rows, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT))))
+        rows /= 2;
+    if (ok && !buf) buf = static_cast<uint16_t*>(heap_caps_malloc(row_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    if (buf) {
+        ui::card_draw_begin();
+        for (int y = 0; y < r.h && ok; y += rows) {
+            const int n = r.h - y < rows ? r.h - y : rows;
+            ok = f.read(reinterpret_cast<uint8_t*>(buf), row_bytes * n) == row_bytes * n;
+            if (ok) {
+                for (int k = 0; k < n; ++k) hints_blend(buf + k * r.w, y + k, r.w);
+                ui::gfx().pushImage(r.x, r.y + y, r.w, n, reinterpret_cast<const lgfx::rgb565_t*>(buf));
             }
-            ui::card_draw_end();
-            if (!ok) cache_note("couldn't be read (made again):", cache);
-        } else {
-            ok = false;
         }
-        free(buf);
-        f.close();
-        if (ok) return 1;
+        ui::card_draw_end();
+        if (!ok) cache_note("couldn't be read:", cache);
+    } else {
+        ok = false;
     }
-    struct Job {
-        const library::GameDir* g;
-        ui::Rect                r;
-        bool                    ok, stopped;
-    } job{&g, r, false, false};
-    run_on_big_stack(
-        [](void* p) {
-            auto* j = static_cast<Job*>(p);
-            j->ok = make_box(*j->g, j->r.x, j->r.y, j->r.w, j->r.h, true, true, nullptr, &j->stopped);
-        },
-        &job);
-    return job.ok ? 1 : job.stopped ? -1 : 0;
+    free(buf);
+    f.close();
+    return ok;
 }
 
 // The game's name over its box art (Tom: centred), each line outlined in
@@ -1112,12 +1068,41 @@ void prepare_journal_now(const library::GameDir& g)
 
 // The scan's second part: the icons at this screen's size, the journals
 // (deep decoding: run_on_big_stack)
-void prepare_made(void*)
+// Whether the game's library picture for this screen size is on the card
+// (its box art, else its icon; true when it has neither)
+bool picture_ready(const library::GameDir& g)
 {
+    char path[160];
+    fs::File f;
+    bool ok = true;
+    if (g.box[0]) {
+        const ui::Rect card = home_card();
+        box_file(g, card.w, card.h, path, sizeof path);
+        f = sd_fs().open(path, "r");
+        ok = f && pic_file_ok(f, "BOX1", card.w, card.h, 2);
+    } else if (g.icon[0]) {
+        const int px = icon_size(home_inner());
+        if (!px) return true;
+        icon_file(g, px, path, sizeof path);
+        f = sd_fs().open(path, "r");
+        ok = f && pic_file_ok(f, "ICN1", px, px, 4);
+    }
+    if (f) f.close();
+    return ok;
+}
+
+// The library page's pictures for this screen size: the icons and the
+// Launcher's box art (only_missing: those without a good file yet).
+// The count that couldn't be made.
+int prepare_pictures(bool only_missing)
+{
+    int failed = 0;
     const int px = icon_size(home_inner());
+    const ui::Rect card = home_card();
     for (int i = 0; i < n_games; ++i) {
         const library::GameDir& g = game_dirs[i];
         if (!g.icon[0] || !px || g.box[0]) continue;      // (the box art stands in for it)
+        if (only_missing && picture_ready(g)) continue;
         scan_say("Preparing the game icon...", false, nullptr);
         char line[160];
         const char* why = "";
@@ -1125,31 +1110,40 @@ void prepare_made(void*)
         if (ok)
             snprintf(line, sizeof line, "Prepared the %s icon", games::short_title(g.game));
         else
-            snprintf(line, sizeof line, "The %s icon wasn't prepared: %s (free %u KB, largest block %u KB). The library tries again when it shows it.",
+            snprintf(line, sizeof line, "The %s icon wasn't prepared: %s (free %u KB, largest block %u KB). The next start tries again.",
                      games::short_title(g.game), why, (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
                      (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
+        if (!ok) ++failed;
         scan_say(line, true, nullptr);
     }
     // The Launcher's box art, at the library page's size
-    const ui::Rect card = home_card();
     for (int i = 0; i < n_games; ++i) {
         const library::GameDir& g = game_dirs[i];
         if (!g.box[0]) continue;
+        if (only_missing && picture_ready(g)) continue;
         scan_say("Preparing the box art...", false, nullptr);
         char line[160];
         const char* why = "";
         char cache[160];
         box_file(g, card.w, card.h, cache, sizeof cache);
-        if (make_box(g, 0, 0, card.w, card.h, false, true, &why) && !sd_fs().exists(cache))
+        const bool made = make_box(g, 0, 0, card.w, card.h, false, true, &why);
+        if (made && !sd_fs().exists(cache))
             snprintf(line, sizeof line, "The %s box art was made but couldn't be saved on the card (see Memory log).",
                      games::short_title(g.game));
-        else if (why[0] == 0)
+        else if (made)
             snprintf(line, sizeof line, "Prepared the %s box art", games::short_title(g.game));
         else
-            snprintf(line, sizeof line, "The %s box art wasn't prepared: %s. The library tries again when it shows it.",
+            snprintf(line, sizeof line, "The %s box art wasn't prepared: %s. The next start tries again.",
                      games::short_title(g.game), why);
+        if (!made || !sd_fs().exists(cache)) ++failed;
         scan_say(line, true, nullptr);
     }
+    return failed;
+}
+
+void prepare_made(void*)
+{
+    prepare_pictures(false);
     for (int i = 0; i < n_games; ++i)
         if (game_dirs[i].journal[0] || game_dirs[i].gbc[0]) prepare_journal(game_dirs[i]);
 }
@@ -1215,6 +1209,44 @@ void rescan()
     go(Screen::Logs);
 }
 
+// The start after a card without this screen's pictures (a card scanned
+// by an older version, or in a board of another size): the scan's picture
+// step for the missing ones, its lines shown and added to the scan log -
+// the library page itself only ever shows the files (Tom, v0.103.1)
+void make_missing_pictures()
+{
+    scr = new (std::nothrow) ScanScreen;
+    ui::clear();
+    ui::header("Preparing Pictures", false);
+    if (scr) {
+        char path[160];
+        library::cache_path("SCAN.TXT", path, sizeof path);
+        scr->log = sd_fs().open(path, "a");
+        if (scr->log)
+            scr->log.printf("\nCYD BYOG Gold Box Engine %s (%s), %s - the library's pictures for %dx%d\n\n", env_.version,
+                            env_.build, BOARD_NAME, ui::width(), ui::height());
+    }
+    scan_say("Making the library's pictures for this screen (once)...", false, nullptr);
+    struct Job {
+        int failed;
+    } job{-1};
+    if (!run_on_big_stack([](void* p) { static_cast<Job*>(p)->failed = prepare_pictures(true); }, &job))
+        scan_say("Not enough memory to make the pictures now: the next start tries again.", false, nullptr);
+    if (scr) {
+        scan_flush_log();
+        if (scr->log) scr->log.close();
+    }
+    delete scr;
+    scr = nullptr;
+    if (job.failed != 0) {
+        // (a problem stays up until tapped: the scan log, Continue)
+        logui::open(true, nullptr);
+        go(Screen::Logs);
+    } else {
+        go(Screen::Home);
+    }
+}
+
 void draw_home()
 {
     ui::clear();
@@ -1263,9 +1295,8 @@ void draw_home()
         const int rx = card.w - m;
         ui::gfx().drawTriangle(rx + w / 2, cy, rx - w / 2, cy - s / 2, rx - w / 2, cy + s / 2, style::kTextMuted);
     }
-    // The Launcher's box art: the whole page, the name over it (also when a
-    // tap stopped its making: the tap turns the page next)
-    if (g.box[0] && draw_box(g, card) != 0) {
+    // The Launcher's box art: the whole page, the name over it
+    if (g.box[0] && draw_box(g, card)) {
         box_title({card.x + pad, card.y, card.w - pad * 2, card.h}, games::title(g.game),
                   hlib ? style::kTextMuted : style::kGold);
         return;
@@ -4361,7 +4392,13 @@ void begin(const Env& env, Settings& settings)
         char line[64];
         snprintf(line, sizeof line, "library: %d game folder(s) from the last scan", n_games);
         memlog::note(line);
-        go(Screen::Home);
+        // The pictures the scan makes, for this screen: made now if they're
+        // missing (never while the library page shows - Tom, v0.103.1)
+        int missing = 0;
+        for (int i = 0; i < n_games; ++i)
+            if (!picture_ready(game_dirs[i])) ++missing;
+        if (missing) make_missing_pictures();
+        else go(Screen::Home);
     } else {
         rescan();            // ends at its log (Continue -> the library)
     }

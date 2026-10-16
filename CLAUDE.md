@@ -204,8 +204,14 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   check the card for changes on its own. Everything the board makes from
   the player's files goes in `/GOLDBOX/_CYD/` (per game a sub-folder):
   the scan log (also readable text: games, PDFs, icons found, problems),
-  icons decoded once at the screen's size (a card in a board of another
-  size gets its own icon files when first shown), the journal entries.
+  icons decoded once at the screen's size, the journal entries.
+  **The library's pictures (icons, box art) are made by the scan and
+  saved; the library page only draws those files - never decoding or
+  resizing on the fly** (Tom, 2026-10-16). A start whose card lacks this
+  screen's pictures (scanned by an older version, or in a board of
+  another size) runs the scan's picture step for the missing ones first
+  ("Preparing Pictures", lines added to SCAN.TXT; `make_missing_pictures`,
+  `picture_ready`); a page without its file shows the name without it.
   The scan shows a scrolling list of what it does ("Searching for Gold Box
   games...", "Found Curse of the Azure Bonds", "Processing Pools of
   Darkness Adventurer's Journal...") - it can take minutes.
@@ -381,8 +387,8 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   filling the whole card (centred, the overflow cut off) with the game's
   name centred over it (outlined). Same rules as the icons: the scan makes
   it once at the page's size (`_CYD/<folder>/BOX<w>x<h>.BIN`, RGB565 rows),
-  the page draws that file; a board of another size makes its own on
-  first show. The JPEGs are 2016 px progressive: `engine/jpeg_thumb.*`
+  the page draws that file; a board of another size makes its own at
+  the start (above) - never on the page. The JPEGs are 2016 px progressive: `engine/jpeg_thumb.*`
   reads them at 1/4 size from their first scans only (our own decoder),
   `jthumb::Fit` scales.
   **The page since v0.103.0** (Tom, 2026-10-12, from mockups): the art the

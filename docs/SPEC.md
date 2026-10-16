@@ -379,10 +379,13 @@ can't get the memory says "Not enough memory to show this log."
    on 320x240, 40 on 480x320); the page's left / right thirds page through
    the games round, the middle opens one; faint triangles at the sides.
    v0.103.1 (Tom, S3: the triangles came only with the picture): the
-   triangles are drawn first; a picture being made (no file for this size
-   yet) stops at a tap, so paging never waits for it (the page made again
-   the next time it stays up); a picture file that can't be saved or read
-   is noted in the Memory log.
+   triangles are drawn first; a picture file that can't be saved or read
+   is noted in the Memory log. v0.103.2 (Tom: "They're to be made and
+   saved to the SD card for near-instant access"): the page never makes a
+   picture - the scan makes them, and a start whose card lacks this
+   screen's (an older scan, a board of another size) makes the missing
+   ones first ("Preparing Pictures", added to the scan log; a failure
+   stays up as the scan log); a page without its file shows the name.
    The chooser (a game tapped in the library; Tom, 2026-10-10, v0.53.0):
    four big keys filling the screen under the title bar - **Resource
    Test** (the game's DAX files a page at a time, then their blocks: what

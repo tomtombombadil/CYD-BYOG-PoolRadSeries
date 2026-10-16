@@ -82,9 +82,10 @@ the Project as claude/TODO.md.
       Play (twice); v0.103.1 fixes what could be found without the board
       (the codec was set up from the sound task, sharing the touch's I2C;
       the card's DMA into PSRAM) - if it still crashes, the Restarts log
-      now names where. Also: is the library page fast on the second look
-      at each game (the Memory log says if a picture file couldn't be
-      saved or read)? Then the board gets custom_board_tested = yes.
+      now names where. Also (v0.103.2): the first start makes the
+      library's pictures for the S3's screen once ("Preparing Pictures"),
+      then every page should come up at once. Then the board gets
+      custom_board_tested = yes.
 - [ ] Claude: decode any crash line in Tom's S3 logs (CI's
       elf-cyd40s3_st7796_cap for that build, xtensa-esp32s3-elf-addr2line).
 - [ ] Tom: try the new library page (v0.103.0) on a board - the art,
@@ -95,11 +96,14 @@ the Project as claude/TODO.md.
 
 ## Done
 
+- v0.103.2: the library's pictures only from the files the scan made
+  (Tom) - a start without them for this screen makes the missing ones
+  first; the page never decodes.
+
 - v0.103.1: S3 fixes from Tom's first run - the codec set up from the
   main task, the card's DMA kept out of the PSRAM, crash lines in the
-  Restarts log; the library page's triangles come first and a tap stops
-  a picture being made (the page turns at once); the picture files'
-  problems noted in the Memory log; the S3 in QEMU (`qemus3`).
+  Restarts log; the library page's triangles come first; the picture
+  files' problems noted in the Memory log; the S3 in QEMU (`qemus3`).
 
 - v0.103.0: the library page as Tom picked it - full-width art,
   top-justified, Rescan / Settings in the header, tap thirds (round),
