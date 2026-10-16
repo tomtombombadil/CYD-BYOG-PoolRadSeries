@@ -265,7 +265,10 @@ stay in the session's scratch space, never in the repo.
   speaker or not (Tom, v0.40.1: v0.40.0's first-start question "Is a
   speaker plugged in?" hung the 3.2" board and is gone). The bottom line: version, board,
   free memory, largest block, PSRAM ("no PSRAM" on all five boards).
-- Logs: `_CYD/SCAN.TXT` (Card Scan), `_CYD/RESTART.TXT` (Restarts),
+- Logs: `_CYD/SCAN.TXT` (Card Scan), `_CYD/RESTART.TXT` (Restarts; since
+  v0.103.1 a crash's line names where it happened - the task, the program
+  counter and the backtrace from the core dump, for decoding with the
+  build's .elf),
   `_CYD/ERRORS.TXT` (Errors: every error the Play Test showed, with the
   time since power-on) in a scrolling box: a tap in its top half goes up a
   page, bottom half down a page, dragging scrolls; long lines wrap; the
@@ -375,6 +378,11 @@ can't get the memory says "Not enough memory to show this log."
    full width, top-justified, under a header with Rescan / Settings (36 px
    on 320x240, 40 on 480x320); the page's left / right thirds page through
    the games round, the middle opens one; faint triangles at the sides.
+   v0.103.1 (Tom, S3: the triangles came only with the picture): the
+   triangles are drawn first; a picture being made (no file for this size
+   yet) stops at a tap, so paging never waits for it (the page made again
+   the next time it stays up); a picture file that can't be saved or read
+   is noted in the Memory log.
    The chooser (a game tapped in the library; Tom, 2026-10-10, v0.53.0):
    four big keys filling the screen under the title bar - **Resource
    Test** (the game's DAX files a page at a time, then their blocks: what

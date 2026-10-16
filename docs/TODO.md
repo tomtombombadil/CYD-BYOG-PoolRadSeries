@@ -77,10 +77,16 @@ the Project as claude/TODO.md.
       Constitution effect 0x61 kept in the record's saves?); the fight
       frame (not compared with DOSBox yet); sound, sky, approaching monsters; the version line's
       two-line look; behaviour tests.
-- [ ] Tom: flash the 4.0" ST7796 Capacitive (ESP32-S3) entry onto the new
-      board (arrived 2026-10-16) and send logs - first run of that build
-      on real hardware (Home, the scan, Play, sound, touch); then it gets
-      custom_board_tested = yes.
+- [ ] Tom: flash v0.103.1 on the 4.0" ST7796 Capacitive (ESP32-S3) and
+      try Play (Pool, Curse) again, then Send Logs. v0.103.0 crashed at
+      Play (twice); v0.103.1 fixes what could be found without the board
+      (the codec was set up from the sound task, sharing the touch's I2C;
+      the card's DMA into PSRAM) - if it still crashes, the Restarts log
+      now names where. Also: is the library page fast on the second look
+      at each game (the Memory log says if a picture file couldn't be
+      saved or read)? Then the board gets custom_board_tested = yes.
+- [ ] Claude: decode any crash line in Tom's S3 logs (CI's
+      elf-cyd40s3_st7796_cap for that build, xtensa-esp32s3-elf-addr2line).
 - [ ] Tom: try the new library page (v0.103.0) on a board - the art,
       the header keys, the thirds and the triangles.
 - [ ] Tom: when you have a moment, Secret's Screen Test and Walk Test
@@ -88,6 +94,12 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.103.1: S3 fixes from Tom's first run - the codec set up from the
+  main task, the card's DMA kept out of the PSRAM, crash lines in the
+  Restarts log; the library page's triangles come first and a tap stops
+  a picture being made (the page turns at once); the picture files'
+  problems noted in the Memory log; the S3 in QEMU (`qemus3`).
 
 - v0.103.0: the library page as Tom picked it - full-width art,
   top-justified, Rescan / Settings in the header, tap thirds (round),

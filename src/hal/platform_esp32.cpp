@@ -9,7 +9,11 @@
 #include <cstdarg>
 #include <cstdio>
 
+#include "boards/board_select.h"
 #include "hal/sdcard.h"
+#if defined(BOARD_SD_MMC)
+#include <esp_memory_utils.h>
+#endif
 
 namespace plat {
 
@@ -45,6 +49,39 @@ size_t largest_block() { return heap_caps_get_largest_free_block(MALLOC_CAP_8BIT
 
 namespace {
 
+#if defined(BOARD_SD_MMC)
+// The SD/MMC boards (the ESP32-S3's): the card's DMA isn't trusted with
+// the PSRAM (v0.103.1: Tom's S3 crashed as Play loaded the game, the
+// first big reads into PSRAM blocks - the library's small reads, through
+// internal buffers, were fine), so those go through internal RAM
+uint8_t bounce[2048];
+size_t bounced_read(fs::File& f, uint8_t* buf, size_t n)
+{
+    size_t got = 0;
+    while (got < n) {
+        const size_t want = n - got < sizeof bounce ? n - got : sizeof bounce;
+        const size_t r = f.read(bounce, want);
+        memcpy(buf + got, bounce, r);
+        got += r;
+        if (r < want) break;
+    }
+    return got;
+}
+size_t bounced_write(fs::File& f, const uint8_t* buf, size_t n)
+{
+    size_t put = 0;
+    while (put < n) {
+        const size_t want = n - put < sizeof bounce ? n - put : sizeof bounce;
+        memcpy(bounce, buf + put, want);
+        const size_t w = f.write(bounce, want);
+        put += w;
+        if (w < want) break;
+    }
+    return put;
+}
+inline bool external(const void* p) { return esp_ptr_external_ram(p); }
+#endif
+
 // A file of the SD library
 class SdFile : public FileImpl {
 public:
@@ -52,8 +89,19 @@ public:
     bool ok() const override { return static_cast<bool>(const_cast<fs::File&>(f_)); }
     size_t size() override { return f_.size(); }
     bool seek(uint32_t pos) override { return f_.seek(pos); }
+#if defined(BOARD_SD_MMC)
+    int read(uint8_t* buf, size_t n) override
+    {
+        return static_cast<int>(external(buf) ? bounced_read(f_, buf, n) : f_.read(buf, n));
+    }
+    size_t write(const uint8_t* buf, size_t n) override
+    {
+        return external(buf) ? bounced_write(f_, buf, n) : f_.write(buf, n);
+    }
+#else
     int read(uint8_t* buf, size_t n) override { return static_cast<int>(f_.read(buf, n)); }
     size_t write(const uint8_t* buf, size_t n) override { return f_.write(buf, n); }
+#endif
     void close() override { f_.close(); }
     bool is_dir() const override { return const_cast<fs::File&>(f_).isDirectory(); }
     const char* name() const override { return const_cast<fs::File&>(f_).name(); }

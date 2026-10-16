@@ -257,6 +257,21 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   read the card inside a startWrite / endWrite - drawing that reads the
   card as it goes uses `ui::card_draw_begin / card_draw_end` (Tom's C5s
   hung at Home's first icon, v0.94.1). Their serial log is on native USB (CDC on boot).
+  S3 rules (v0.103.1, Tom's S3 crashed at Play): the codec is set up
+  from the main task only (`audio.cpp` codec_setup - its I2C is the
+  touch's, and LovyanGFX's i2c isn't safe from two tasks; the sound
+  task never touches I2C; I2S boards' sound task has 5 KB of stack);
+  the card's SD/MMC DMA never gets a PSRAM buffer - `plat::File` reads /
+  writes into PSRAM go through a 2 KB internal bounce
+  (`platform_esp32.cpp`), the engine's own fs::File reads use internal
+  buffers (`heap_caps_malloc(..., MALLOC_CAP_INTERNAL)`).
+- **Crash lines** (v0.103.1): a panic leaves a core dump in the flash's
+  coredump partition; the next boot puts its summary in the Restarts log
+  (`hal/crashinfo.*`: task, PC, cause, backtrace - RISC-V: ra, sp and
+  the stack's code addresses) and erases it. Decode with the CI artifact
+  `elf-<env>` of that build (the version line's hash) and
+  `xtensa-esp32s3-elf-addr2line -pfiaC -e <elf> <addresses>` (the
+  toolchain's xtensa-esp32- / riscv32-esp- for the other chips).
 - `custom_board_tested = no` on a board until Tom has run THIS firmware on
   it. Tested: the five classic boards (Tom, 2026-10-09, v0.20.0); the 2.8"
   ST7789 resistive C5 (Tom, 2026-10-12, v0.94.1: both of his - the yellow
@@ -460,6 +475,13 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   - run_qemu.py retries boots; since 2026-10-12 the Play Test opens in it
   (Pool: Home, the game's page, Play - free 96.9 KB, largest block 80 KB
   at the title; the same before and after the platform layer).
+  **The S3 in QEMU** (v0.103.1): `-e qemus3` (the S3 board's firmware,
+  -D CYD_QEMU_FLASHCARD) and `run_qemu.py --s3`: QEMU's ESP32-S3 with
+  8 MB octal PSRAM, the card a READ-ONLY FAT image in the flash's
+  "card" partition (`tools/qemu/qemu_s3.csv`; QEMU's S3 has no SD/MMC,
+  I2C or I2S - no touch, codec or saving there), DIO flash (QEMU's S3
+  reads QIO flash 2 bytes late outside the cache). TAPS.TXT's `panic`
+  crashes on purpose (the crash line's check). Pool's Play runs there.
 - Game testing (Tom, 2026-10-10): "test the game" means BEHAVIOUR, not
   just crashes - every spell, item, monster ability, class / level,
   encounter and save field must do what the original does (a +1 long

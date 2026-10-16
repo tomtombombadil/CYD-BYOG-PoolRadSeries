@@ -26,6 +26,7 @@
 #include "platform/memlog.h"
 #include "hal/panel_prefs.h"
 #include "hal/bigstack.h"
+#include "hal/crashinfo.h"
 #include "hal/sdcard.h"
 #include "game/look.h"
 #include "logui.h"
@@ -392,6 +393,40 @@ int icon_size(const ui::Rect& card)
     return sz < 16 ? 0 : sz;
 }
 
+// A press on the panel just now (two readings agreeing): checked between
+// rows of slow drawing so a tap needn't wait for it
+bool touch_now()
+{
+    ui::card_draw_end();
+    int32_t x, y;
+    bool t = ui::gfx().getTouch(&x, &y);
+    if (t) {
+        delay(2);
+        t = ui::gfx().getTouch(&x, &y);
+    }
+    ui::card_draw_begin();
+    return t;
+}
+
+// The library's notes about its picture files in the memory log, each once
+// a session (S3, v0.103.0: Tom saw the box art made again at every page)
+void cache_note(const char* what, const char* path)
+{
+    static uint32_t noted[8];
+    uint32_t h = 2166136261u;
+    for (const char* p = what; *p; ++p) h = (h ^ static_cast<uint8_t>(*p)) * 16777619u;
+    for (const char* p = path; *p; ++p) h = (h ^ static_cast<uint8_t>(*p)) * 16777619u;
+    for (uint32_t n : noted)
+        if (n == h) return;
+    static int next = 0;
+    noted[next] = h;
+    next = (next + 1) % 8;
+    char line[200];
+    snprintf(line, sizeof line, "library: %s %s", what, path);
+    memlog::note(line);
+    Serial.printf("[library] %s %s\n", what, path);
+}
+
 // The icon, a row at a time, blended onto the card's colour; and / or
 // written to the icon file in /GOLDBOX/_CYD/<folder>/ (made once, at the
 // screen's size - Tom: decoding GOG's .dll every time was slow)
@@ -472,6 +507,7 @@ bool render_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle s
                 const uint8_t hdr[8] = {'I', 'C', 'N', '1', static_cast<uint8_t>(px), static_cast<uint8_t>(px >> 8),
                                         static_cast<uint8_t>(px), static_cast<uint8_t>(px >> 8)};
                 if (d->out) d->out.write(hdr, sizeof hdr);
+                else cache_note("couldn't open for writing:", cache);
             }
             if (draw) ui::card_draw_begin();
             ok = icon::render(src, fo, px, px, window, icon_row, d);
@@ -504,6 +540,7 @@ bool draw_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle st)
         uint8_t hdr[8];
         bool ok = f.read(hdr, 8) == 8 && memcmp(hdr, "ICN1", 4) == 0 && (hdr[4] | hdr[5] << 8) == px &&
                   (hdr[6] | hdr[7] << 8) == px && f.size() == 8u + static_cast<size_t>(px) * px * 4;
+        if (!ok) cache_note("not a picture file of this size (made again):", cache);
         IconDraw* d = ok ? new (std::nothrow) IconDraw : nullptr;
         uint8_t* row = ok ? static_cast<uint8_t*>(malloc(static_cast<size_t>(px) * 4)) : nullptr;
         if (d && row) {
@@ -557,6 +594,8 @@ void box_file(const library::GameDir& g, int w, int h, char* out, size_t cap)
 struct BoxMake {
     int       x = 0, y = 0;
     bool      draw = false;
+    bool      stop_on_tap = false;      // drawn as it's made: a tap stops it (the next page at once)
+    bool      stopped = false;
     fs::File  out;
     bool      write_ok = true;
     uint16_t  line[480];
@@ -576,13 +615,18 @@ bool box_row(int y, const uint8_t* rgb, int w, void* ctx)
     if (b.draw) {
         hints_blend(b.line, y, w);
         ui::gfx().pushImage(b.x, b.y + y, w, 1, reinterpret_cast<const lgfx::rgb565_t*>(b.line));
+        if (b.stop_on_tap && (y & 7) == 7 && touch_now()) {
+            b.stopped = true;
+            return false;
+        }
     }
     return true;
 }
 
 // Makes the box art picture w x h from the player's Launcher file: saved
 // as the box file when save, drawn at (x, y) when draw
-bool make_box(const library::GameDir& g, int x, int y, int w, int h, bool draw, bool save, const char** why = nullptr)
+bool make_box(const library::GameDir& g, int x, int y, int w, int h, bool draw, bool save, const char** why = nullptr,
+              bool* stopped = nullptr)
 {
     const char* dummy;
     if (!why) why = &dummy;
@@ -612,11 +656,16 @@ bool make_box(const library::GameDir& g, int x, int y, int w, int h, bool draw, 
         b->x = x;
         b->y = y;
         b->draw = draw;
-        if (save && library::make_cache_dirs(g)) {
-            b->out = sd_fs().open(cache, "w");
-            const uint8_t hdr[8] = {'B', 'O', 'X', '1', static_cast<uint8_t>(w), static_cast<uint8_t>(w >> 8),
-                                    static_cast<uint8_t>(h), static_cast<uint8_t>(h >> 8)};
-            if (b->out) b->out.write(hdr, sizeof hdr);
+        b->stop_on_tap = stopped != nullptr;
+        if (save) {
+            if (!library::make_cache_dirs(g)) cache_note("couldn't make the folder for", cache);
+            else {
+                b->out = sd_fs().open(cache, "w");
+                const uint8_t hdr[8] = {'B', 'O', 'X', '1', static_cast<uint8_t>(w), static_cast<uint8_t>(w >> 8),
+                                        static_cast<uint8_t>(h), static_cast<uint8_t>(h >> 8)};
+                if (!b->out) cache_note("couldn't open for writing:", cache);
+                else if (b->out.write(hdr, sizeof hdr) != sizeof hdr) b->write_ok = false;
+            }
         }
         if (draw) ui::card_draw_begin();
         ok = jthumb::decode(
@@ -624,9 +673,11 @@ bool make_box(const library::GameDir& g, int x, int y, int w, int h, bool draw, 
                  fit, &in) &&
              fit->finish();
         if (draw) ui::card_draw_end();
-        if (!ok) *why = "it couldn't be decoded (or memory ran short)";
+        if (!ok) *why = b->stopped ? "stopped by a tap" : "it couldn't be decoded (or memory ran short)";
+        if (stopped) *stopped = b->stopped;
         if (b->out) {
             b->out.close();
+            if (ok && !b->write_ok) cache_note("a write fell short (card full?):", cache);
             if (!ok || !b->write_ok) sd_fs().remove(cache);
         }
     }
@@ -639,48 +690,60 @@ bool make_box(const library::GameDir& g, int x, int y, int w, int h, bool draw, 
 }
 
 // Draws the box art filling the card: from its box file, else made from the
-// Launcher's file (and saved for next time)
-bool draw_box(const library::GameDir& g, const ui::Rect& r)
+// Launcher's file (and saved for next time). 1 drawn, 0 none, -1 a tap
+// stopped the making (the page turns at once - Tom, v0.103.0)
+int draw_box(const library::GameDir& g, const ui::Rect& r)
 {
-    if (!g.box[0]) return false;
+    if (!g.box[0]) return 0;
     char cache[160];
     box_file(g, r.w, r.h, cache, sizeof cache);
     fs::File f = sd_fs().open(cache, "r");
     if (f) {
+        const size_t row_bytes = static_cast<size_t>(r.w) * 2;
         uint8_t hdr[8];
         bool ok = f.read(hdr, 8) == 8 && memcmp(hdr, "BOX1", 4) == 0 && (hdr[4] | hdr[5] << 8) == r.w &&
-                  (hdr[6] | hdr[7] << 8) == r.h && f.size() == 8u + static_cast<size_t>(r.w) * r.h * 2;
-        uint16_t* row = ok ? static_cast<uint16_t*>(malloc(static_cast<size_t>(r.w) * 2)) : nullptr;
-        if (row) {
+                  (hdr[6] | hdr[7] << 8) == r.h && f.size() == 8u + row_bytes * r.h;
+        if (!ok) cache_note("not a picture file of this size (made again):", cache);
+        // Several rows a read when there's room (the card's reads are the slow part)
+        // (internal RAM: on the S3 a big block would be in the PSRAM - the
+        // card's reads stay out of there)
+        int rows = 8;
+        uint16_t* buf = nullptr;
+        while (ok && rows > 1 &&
+               !(buf = static_cast<uint16_t*>(heap_caps_malloc(row_bytes * rows, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT))))
+            rows /= 2;
+        if (ok && !buf) buf = static_cast<uint16_t*>(heap_caps_malloc(row_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        if (buf) {
             ui::card_draw_begin();
-            for (int y = 0; y < r.h && ok; ++y) {
-                ok = f.read(reinterpret_cast<uint8_t*>(row), static_cast<size_t>(r.w) * 2) ==
-                     static_cast<size_t>(r.w) * 2;
+            for (int y = 0; y < r.h && ok; y += rows) {
+                const int n = r.h - y < rows ? r.h - y : rows;
+                ok = f.read(reinterpret_cast<uint8_t*>(buf), row_bytes * n) == row_bytes * n;
                 if (ok) {
-                    hints_blend(row, y, r.w);
-                    ui::gfx().pushImage(r.x, r.y + y, r.w, 1, reinterpret_cast<const lgfx::rgb565_t*>(row));
+                    for (int k = 0; k < n; ++k) hints_blend(buf + k * r.w, y + k, r.w);
+                    ui::gfx().pushImage(r.x, r.y + y, r.w, n, reinterpret_cast<const lgfx::rgb565_t*>(buf));
                 }
             }
             ui::card_draw_end();
+            if (!ok) cache_note("couldn't be read (made again):", cache);
         } else {
             ok = false;
         }
-        free(row);
+        free(buf);
         f.close();
-        if (ok) return true;
+        if (ok) return 1;
     }
     struct Job {
         const library::GameDir* g;
         ui::Rect                r;
-        bool                    ok;
-    } job{&g, r, false};
+        bool                    ok, stopped;
+    } job{&g, r, false, false};
     run_on_big_stack(
         [](void* p) {
             auto* j = static_cast<Job*>(p);
-            j->ok = make_box(*j->g, j->r.x, j->r.y, j->r.w, j->r.h, true, true);
+            j->ok = make_box(*j->g, j->r.x, j->r.y, j->r.w, j->r.h, true, true, nullptr, &j->stopped);
         },
         &job);
-    return job.ok;
+    return job.ok ? 1 : job.stopped ? -1 : 0;
 }
 
 // The game's name over its box art (Tom: centred), each line outlined in
@@ -1075,7 +1138,12 @@ void prepare_made(void*)
         scan_say("Preparing the box art...", false, nullptr);
         char line[160];
         const char* why = "";
-        if (make_box(g, 0, 0, card.w, card.h, false, true, &why))
+        char cache[160];
+        box_file(g, card.w, card.h, cache, sizeof cache);
+        if (make_box(g, 0, 0, card.w, card.h, false, true, &why) && !sd_fs().exists(cache))
+            snprintf(line, sizeof line, "The %s box art was made but couldn't be saved on the card (see Memory log).",
+                     games::short_title(g.game));
+        else if (why[0] == 0)
             snprintf(line, sizeof line, "Prepared the %s box art", games::short_title(g.game));
         else
             snprintf(line, sizeof line, "The %s box art wasn't prepared: %s. The library tries again when it shows it.",
@@ -1099,6 +1167,7 @@ void rescan()
         if (sd_fs().exists(games::kRootDir) && (sd_fs().exists(path) || sd_fs().mkdir(path))) {
             library::cache_path("SCAN.TXT", path, sizeof path);
             scr->log = sd_fs().open(path, "w");
+            if (!scr->log) cache_note("couldn't open for writing:", path);
             if (scr->log) scr->log.printf("CYD BYOG Gold Box Engine %s (%s), %s - card scan\n\n", env_.version, env_.build, BOARD_NAME);
         }
     }
@@ -1108,8 +1177,10 @@ void rescan()
     // The library first: whatever happens while the icons and journals are
     // made, the board doesn't scan again on its own
     if (scan_result == library::ScanResult::Ok) {
-        scan_say(library::save_library(game_dirs, n_games) ? "Saved the library: the board won't scan again until you tap Rescan."
-                                                           : "The library couldn't be saved on the card.",
+        const bool saved = library::save_library(game_dirs, n_games);
+        if (!saved) memlog::note("library: LIBRARY.BIN couldn't be saved - the board scans again at every start");
+        scan_say(saved ? "Saved the library: the board won't scan again until you tap Rescan."
+                       : "The library couldn't be saved on the card.",
                  false, nullptr);
     }
     // What the board makes from the player's files, once (icons, journals:
@@ -1184,8 +1255,17 @@ void draw_home()
         delete hints;
         hints = nullptr;
     }
-    // The Launcher's box art: the whole page, the name over it
-    if (g.box[0] && draw_box(g, card)) {
+    // The triangles first, on black (Tom, v0.103.0: they came only with the
+    // picture); a picture blends its own in as it's drawn
+    if (n_games > 1) {
+        const int s = hint_size(), m = hint_margin(), cy = card.y + card.h / 2, w = s * 55 / 100;
+        ui::gfx().drawTriangle(m - w / 2, cy, m + w / 2, cy - s / 2, m + w / 2, cy + s / 2, style::kTextMuted);
+        const int rx = card.w - m;
+        ui::gfx().drawTriangle(rx + w / 2, cy, rx - w / 2, cy - s / 2, rx - w / 2, cy + s / 2, style::kTextMuted);
+    }
+    // The Launcher's box art: the whole page, the name over it (also when a
+    // tap stopped its making: the tap turns the page next)
+    if (g.box[0] && draw_box(g, card) != 0) {
         box_title({card.x + pad, card.y, card.w - pad * 2, card.h}, games::title(g.game),
                   hlib ? style::kTextMuted : style::kGold);
         return;
@@ -1215,13 +1295,6 @@ void draw_home()
     y = wrap_text(tx, y, tw, l2, sf, style::kTextMuted, true) + gp;
     wrap_text(tx, y, tw, l3, sf, style::kTextMuted, true);
     if (ipx) draw_icon(g, ix, iy, ipx, st);
-    // The triangles, on black
-    if (n_games > 1) {
-        const int s = hint_size(), m = hint_margin(), cy = card.y + card.h / 2, w = s * 55 / 100;
-        ui::gfx().drawTriangle(m - w / 2, cy, m + w / 2, cy - s / 2, m + w / 2, cy + s / 2, style::kTextMuted);
-        const int rx = card.w - m;
-        ui::gfx().drawTriangle(rx + w / 2, cy, rx - w / 2, cy - s / 2, rx - w / 2, cy + s / 2, style::kTextMuted);
-    }
 }
 
 void tap_home(const ui::Tap& t)
@@ -4261,20 +4334,33 @@ void begin(const Env& env, Settings& settings)
                          : why == ESP_RST_BROWNOUT  ? "a brownout (the power supply dipped)"
                                                     : nullptr;
     if (why_text) Serial.printf("[boot] the last restart was %s\n", why_text);
+    // A crash's core dump: where it happened (S3, v0.103.1 - decoded on the
+    // PC with the build's .elf)
+    char* crash = why_text ? static_cast<char*>(malloc(400)) : nullptr;
+    if (crash && !crash_summary(crash, 400)) {
+        free(crash);
+        crash = nullptr;
+    }
+    if (crash) Serial.printf("[boot] %s\n", crash);
     if (sd_begin() && why_text && sd_fs().exists(games::kRootDir)) {
         char path[96];
         library::cache_path("RESTART.TXT", path, sizeof path);
         fs::File rf = sd_fs().open(path, "a");
         if (rf) {
             rf.printf("%s (%s): the board restarted after %s\n", env.version, env.build, why_text);
+            if (crash) rf.printf("  %s\n", crash);
             rf.close();
         }
     }
+    free(crash);
     memlog::begin(env.version, BOARD_NAME);
     sendlog::set_build(env.version, env.build);
     if (sd_begin() && library::load_library(game_dirs, library::kMaxGames, &n_games)) {
         scan_result = library::ScanResult::Ok;
         Serial.printf("[library] loaded: %d game folder(s)\n", n_games);
+        char line[64];
+        snprintf(line, sizeof line, "library: %d game folder(s) from the last scan", n_games);
+        memlog::note(line);
         go(Screen::Home);
     } else {
         rescan();            // ends at its log (Continue -> the library)

@@ -86,6 +86,7 @@ constexpr int kTail = kBufs;            // (the queued samples play out before i
 #if defined(BOARD_AUDIO_ES8311)
 constexpr bool kRamps = false;
 bool codec_tried = false;
+void codec_setup();
 #else
 constexpr bool kRamps = true;
 #endif
@@ -136,19 +137,7 @@ bool out_open()
     wide = nullptr;
     return false;
 }
-bool out_enable()
-{
-    if (i2s_channel_enable(h) != ESP_OK) return false;
-#if defined(BOARD_AUDIO_ES8311)
-    // The codec once, with its clocks running (they come from the I2S)
-    if (!codec_tried) {
-        codec_tried = true;
-        if (!es8311::begin(BOARD_I2C_PORT, BOARD_PIN_I2C_SDA, BOARD_PIN_I2C_SCL, kAudioHz))
-            memlog::note("sound: the ES8311 codec didn't answer - no sound");
-    }
-#endif
-    return true;
-}
+bool out_enable() { return i2s_channel_enable(h) == ESP_OK; }
 void out_write(const uint8_t* buf, int n)
 {
     for (int i = 0; i < n; ++i) wide[i] = static_cast<int16_t>((static_cast<int>(buf[i]) - 128) * 256);
@@ -163,6 +152,26 @@ void out_close()
     free(wide);
     wide = nullptr;
 }
+#if defined(BOARD_AUDIO_ES8311)
+// The codec, once, from the caller's task - the touch's: they share the
+// I2C, which isn't safe from two tasks (v0.103.1: it was set up from the
+// sound task on the other core, with Serial output on its small stack, and
+// the S3 crashed as a game's title played its first sound). Its clocks
+// run meanwhile (they come from the I2S).
+void codec_setup()
+{
+    if (codec_tried) return;
+    codec_tried = true;
+    bool ok = out_open();
+    if (ok) {
+        ok = out_enable() &&
+             es8311::begin(BOARD_I2C_PORT, BOARD_PIN_I2C_SDA, BOARD_PIN_I2C_SCL, kAudioHz);
+        i2s_channel_disable(h);
+        out_close();
+    }
+    if (!ok) memlog::note("sound: the ES8311 codec didn't answer - no sound");
+}
+#endif
 
 #else   // no sound on this board
 
@@ -234,7 +243,15 @@ bool start_task()
 {
     ending = false;
     stop_wanted = false;
-    if (xTaskCreatePinnedToCore(audio_task, "audio", 3072, nullptr, 4, &task, 0) == pdPASS) return true;
+#if defined(BOARD_AUDIO_ES8311)
+    codec_setup();
+#endif
+#if defined(BOARD_AUDIO_DAC)
+    constexpr uint32_t kStack = 3072;
+#else
+    constexpr uint32_t kStack = 5120;      // (the I2S driver's calls go deeper - and the S3's windowed stack)
+#endif
+    if (xTaskCreatePinnedToCore(audio_task, "audio", kStack, nullptr, 4, &task, 0) == pdPASS) return true;
     task = nullptr;
     Serial.println("[audio] no memory for the sound task");
     static uint32_t last_note = 0;          // (once a minute at most: sounds come often)

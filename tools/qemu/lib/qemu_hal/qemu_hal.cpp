@@ -3,8 +3,23 @@
 #include "hal/qemu.h"
 
 #include <Arduino.h>
-#include <SD_MMC.h>
 #include <esp_heap_caps.h>
+#if defined(CYD_QEMU_FLASHCARD)
+// The S3 build: the card is a read-only FAT partition ("card") in the flash
+#include <esp_partition.h>
+#include <esp_vfs_fat.h>
+#include <vfs_api.h>
+namespace {
+struct FlashCard : fs::FS {
+    FlashCard() : fs::FS(fs::FSImplPtr(new VFSImpl())) {}
+    void at(const char* mp) { _impl->mountpoint(mp); }
+} card;
+}
+#define CARD card
+#else
+#include <SD_MMC.h>
+#define CARD SD_MMC
+#endif
 
 namespace qemu {
 
@@ -30,7 +45,7 @@ void mem(const char* why)
 void load()
 {
     n_steps = 0;
-    File f = SD_MMC.open("/GOLDBOX/_QEMU/TAPS.TXT", "r");
+    File f = CARD.open("/GOLDBOX/_QEMU/TAPS.TXT", "r");
     if (!f) {
         Serial.println("[qemu] no TAPS.TXT");
         return;
@@ -42,7 +57,9 @@ void load()
         if (line[0] == '#' || !line[0]) continue;
         int x, y;
         unsigned w = 1000;
-        if (!strncmp(line, "mem", 3)) {
+        if (!strncmp(line, "panic", 5)) {             // (a crash on purpose: the Restarts log's crash line)
+            steps[n_steps++] = Step{-2, -2, 0};
+        } else if (!strncmp(line, "mem", 3)) {
             sscanf(line + 3, "%u", &w);
             steps[n_steps++] = Step{-1, -1, w};
         } else if (sscanf(line, "%d %d %u", &x, &y, &w) >= 2) {
@@ -58,18 +75,42 @@ void load()
 bool sd_begin()
 {
     if (mounted) return true;
+#if defined(CYD_QEMU_FLASHCARD)
+    static bool tried = false;          // (mounted once; never unmounted)
+    if (tried) return false;
+    tried = true;
+    esp_vfs_fat_mount_config_t mc = {};
+    mc.max_files = 3;
+    mc.format_if_mount_failed = false;
+    const esp_err_t e = esp_vfs_fat_spiflash_mount_ro("/sd", "card", &mc);
+    mounted = e == ESP_OK;
+    if (mounted) card.at("/sd");
+    else {
+        Serial.printf("[qemu] flash card: %s\n", esp_err_to_name(e));
+        const esp_partition_t* pt = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "card");
+        uint8_t b[512];
+        if (pt && esp_partition_read(pt, 0, b, sizeof b) == ESP_OK)
+            Serial.printf("[qemu] card partition at 0x%lx: %02x %02x %02x .. %02x %02x\n", (unsigned long)pt->address,
+                          b[0], b[1], b[2], b[510], b[511]);
+        else Serial.println("[qemu] no card partition");
+    }
+    Serial.printf("[qemu] card %s\n", mounted ? "mounted (flash FAT, read-only)" : "not mounted");
+#else
     mounted = SD_MMC.begin("/sd", true, false, 20000, 3);
     Serial.printf("[qemu] card %s\n", mounted ? "mounted (SD/MMC)" : "not mounted");
+#endif
     return mounted;
 }
 
-fs::FS& sd_fs() { return SD_MMC; }
+fs::FS& sd_fs() { return CARD; }
 
 void sd_end()
 {
+#if !defined(CYD_QEMU_FLASHCARD)
     if (!mounted) return;
     SD_MMC.end();
     mounted = false;
+#endif
 }
 
 bool touch(int32_t* x, int32_t* y)
@@ -86,6 +127,10 @@ bool touch(int32_t* x, int32_t* y)
     }
     if (static_cast<int32_t>(now - next) < 0) return false;
     const Step& s = steps[at];
+    if (s.x == -2) {
+        Serial.println("[qemu] crashing on purpose");
+        *reinterpret_cast<volatile int*>(4) = 1;
+    }
     if (s.x < 0) {
         mem("mem");
         ++at;
