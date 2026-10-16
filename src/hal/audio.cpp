@@ -11,6 +11,7 @@
 #include <driver/i2s_std.h>
 #include <driver/i2s_pdm.h>
 #include "hal/es8311.h"
+#include "hal/i2c_lock.h"
 #endif
 
 namespace {
@@ -164,8 +165,10 @@ void codec_setup()
     codec_tried = true;
     bool ok = out_open();
     if (ok) {
+        i2c_lock();          // (the touch's task reads the same bus)
         ok = out_enable() &&
              es8311::begin(BOARD_I2C_PORT, BOARD_PIN_I2C_SDA, BOARD_PIN_I2C_SCL, kAudioHz);
+        i2c_unlock();
         i2s_channel_disable(h);
         out_close();
     }

@@ -275,8 +275,15 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   polled over I2C every time (`pin_int = -1` - with INT given, LovyanGFX
   reports no touch whenever INT isn't low at that moment) and reset by
   main.cpp as the maker does (`BOARD_PIN_TOUCH_RST`: 10 ms low, then
-  ~300 ms to start - LovyanGFX's own reset is 1 ms); ui::poll_tap starts
-  a capacitive press on its first reading (resistive: two that agree).
+  ~300 ms to start - LovyanGFX's own reset is 1 ms). v0.103.5 (Tom:
+  "improved, but still pretty bad"): a capacitive panel is read by a
+  task of its own every 10 ms (ui.cpp `cap::sampler`, core 0) that
+  queues Down / Move / Up - the loop only looked between its work, so
+  quick light taps came and went unseen - and poll_tap plays the queue
+  (press point, drags) as before; the I2C it shares with the codec is
+  guarded by `hal/i2c_lock.*` (codec set-up, touch calibration hold it).
+  Recalibrate Touch is on every board's Settings now; a capacitive
+  board uses a calibration only when the player made one.
   The display's set-up matches the maker's (TFT_eSPI's ST7796 sequence:
   same gamma, VCOM, power) - for colour questions look elsewhere.
 - **Crash lines** (v0.103.1): a panic leaves a core dump in the flash's

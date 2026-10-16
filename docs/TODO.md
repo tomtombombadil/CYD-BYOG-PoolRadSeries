@@ -75,8 +75,10 @@ the Project as claude/TODO.md.
       Constitution effect 0x61 kept in the record's saves?); the fight
       frame (not compared with DOSBox yet); sound, sky, approaching monsters; the version line's
       two-line look; behaviour tests.
-- [ ] Tom: flash v0.103.4 on the 4.0" S3 and try the touch (light taps,
-      finger and stylus; accuracy on small keys). Then the yellow tint:
+- [ ] Tom: flash v0.103.5 on the 4.0" S3 and try the touch (light taps,
+      finger and stylus; accuracy on small keys). If taps still land off
+      the mark, Settings - Recalibrate Touch (new on this board: tap
+      each arrow tip) and say whether it helped. Then the yellow tint:
       the display's set-up is the same as the maker's (same gamma and
       voltages), so please try Settings - Brightness all the way up, and
       say which firmware looked right (Freenove's demos?) - the tint may
@@ -94,6 +96,10 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.103.5: the S3's touch read by a task of its own every 10 ms (quick
+  light taps were missed while the loop worked); Recalibrate Touch on
+  the S3 too.
 
 - v0.103.4: the S3's touch polled every time (its INT pin no longer
   gates it) and reset as the maker does; a capacitive press starts on

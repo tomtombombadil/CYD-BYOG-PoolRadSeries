@@ -5,6 +5,9 @@
 #include <Arduino.h>
 #include <cstdlib>
 #include "hal/qemu.h"
+#include "hal/i2c_lock.h"
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 namespace ui {
 
@@ -14,11 +17,11 @@ LGFX* g = nullptr;
 
 // Touch filter state
 bool     down = false;          // a press is in progress
-int      agree = 0;             // readings in a row that agreed
-int      empty = 0;             // empty readings in a row
-int      last_x = 0, last_y = 0;
+[[maybe_unused]] int agree = 0;             // readings in a row that agreed
+[[maybe_unused]] int empty = 0;             // empty readings in a row
+[[maybe_unused]] int last_x = 0, last_y = 0;
 int      press_x = 0, press_y = 0;
-uint32_t next_poll = 0;
+[[maybe_unused]] uint32_t next_poll = 0;
 
 // Dragging (screens that scroll or have a slider)
 bool     drag_ok = false;       // this screen takes drags
@@ -86,6 +89,115 @@ int header_h() { return large() ? 40 : 28; }
 int key_h() { return large() ? 56 : 38; }
 int gap() { return large() ? 6 : 4; }
 
+#if !BOARD_TOUCH_RESISTIVE && !defined(CYD_QEMU)
+// ---- Capacitive touch: read by a task of its own (v0.103.5, Tom's S3:
+// light taps were missed). The main loop only looks for taps between its
+// work - a game step, a picture drawn - so a light, quick tap could start
+// and end unseen; the task reads the panel every 10 ms whatever the loop
+// is doing and queues what happened: a press (where it began), moves,
+// the lift. poll_tap then plays the queue through the same rules.
+namespace cap {
+
+enum class Ev : uint8_t { Down, Move, Up };
+struct Event {
+    Ev      ev;
+    int16_t x, y;
+};
+constexpr int kQueue = 32;
+Event         queue[kQueue];
+volatile int  head = 0, tail = 0;      // (one writer - the task; one reader - the loop)
+TaskHandle_t  task = nullptr;
+
+void push(Ev ev, int x, int y)
+{
+    const int next = (head + 1) % kQueue;
+    if (next == tail) return;                               // full: dropped
+    if (ev == Ev::Move && (head - tail + kQueue) % kQueue > kQueue - 8) return;   // (moves give way)
+    queue[head] = {ev, static_cast<int16_t>(x), static_cast<int16_t>(y)};
+    head = next;
+}
+
+void sampler(void*)
+{
+    bool sdown = false;
+    int  empties = 0, lx = 0, ly = 0;
+    for (;;) {
+        int32_t x = 0, y = 0;
+        i2c_lock();
+        const bool t = g->getTouch(&x, &y);
+        i2c_unlock();
+        if (t) {
+            empties = 0;
+            if (!sdown) {
+                sdown = true;
+                push(Ev::Down, x, y);
+                lx = x;
+                ly = y;
+            } else if (std::abs(x - lx) >= 2 || std::abs(y - ly) >= 2) {
+                push(Ev::Move, x, y);
+                lx = x;
+                ly = y;
+            }
+        } else if (sdown && ++empties >= 2) {          // (a lone empty reading isn't a lift)
+            sdown = false;
+            push(Ev::Up, lx, ly);
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+void start()
+{
+    if (task) return;
+    xTaskCreatePinnedToCore(sampler, "touch", 3072, nullptr, 2, &task, 0);
+}
+
+} // namespace cap
+
+bool poll_tap(Tap& out)
+{
+    cap::start();
+    while (cap::tail != cap::head) {
+        const cap::Event e = cap::queue[cap::tail];
+        cap::tail = (cap::tail + 1) % cap::kQueue;
+        switch (e.ev) {
+        case cap::Ev::Down:
+            down = true;
+            press_x = cur_x = e.x;
+            press_y = cur_y = e.y;
+            dragging = false;
+            break;
+        case cap::Ev::Move:
+            if (!down) break;
+            {
+                const int px = large() ? 14 : 10;      // a press that moves this far is a drag
+                if (drag_ok && !dragging && (std::abs(e.x - press_x) > px || std::abs(e.y - press_y) > px))
+                    dragging = true;
+                if (dragging) {
+                    moved_x += e.x - cur_x;
+                    moved_y += e.y - cur_y;
+                }
+                cur_x = e.x;
+                cur_y = e.y;
+            }
+            break;
+        case cap::Ev::Up:
+            if (!down) break;
+            down = false;
+            if (dragging) {
+                dragging = false;
+                break;
+            }
+            out.x = press_x;
+            out.y = press_y;
+            return true;                               // (the rest waits for the next call)
+        }
+    }
+    return false;
+}
+
+#else
+
 bool poll_tap(Tap& out)
 {
     const uint32_t now = millis();
@@ -107,11 +219,9 @@ bool poll_tap(Tap& out)
         }
         last_x = x;
         last_y = y;
-        // A press starts on two readings that agree - a resistive panel's
-        // first reading of a press is often wrong; a capacitive one's is
-        // good, and waiting cost Tom's S3 light taps (v0.103.4)
-        constexpr int kStart = BOARD_TOUCH_RESISTIVE ? 1 : 0;
-        if (!down && agree >= kStart) {
+        // A press starts on two readings that agree (a resistive panel's
+        // first reading of a press is often wrong)
+        if (!down && agree >= 1) {
             down = true;
             press_x = cur_x = x;
             press_y = cur_y = y;
@@ -146,6 +256,8 @@ bool poll_tap(Tap& out)
     }
     return false;
 }
+
+#endif
 
 bool pressed() { return down; }
 

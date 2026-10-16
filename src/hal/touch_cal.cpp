@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #include "storage.h"
+#include "hal/i2c_lock.h"
 
 namespace {
 
@@ -73,7 +74,13 @@ void touch_cal_run(LGFX& gfx)
     gfx.setFont(&fonts::Font2);
     gfx.drawString("Touch calibration", gfx.width() / 2, gfx.height() / 2 - 12);
     gfx.drawString("Tap each arrow tip precisely", gfx.width() / 2, gfx.height() / 2 + 12);
+#if !BOARD_TOUCH_RESISTIVE
+    i2c_lock();          // (the touch's own task waits meanwhile - ui.cpp)
+#endif
     gfx.calibrateTouch(params, TFT_WHITE, TFT_BLACK, 15);
+#if !BOARD_TOUCH_RESISTIVE
+    i2c_unlock();
+#endif
     save(params);
     gfx.fillScreen(TFT_BLACK);
     Serial.println("[touch_cal] new calibration saved");
@@ -92,6 +99,12 @@ void touch_cal_begin(LGFX& gfx)
     }
     touch_cal_run(gfx);
 #else
-    (void)gfx;   // capacitive touch is factory-calibrated
+    // Capacitive: calibrated at the factory - a calibration of the
+    // player's own (Settings - Recalibrate Touch) only when they made one
+    uint16_t params[8];
+    if (load(params)) {
+        gfx.setTouchCalibrate(params);
+        Serial.println("[touch_cal] loaded saved calibration");
+    }
 #endif
 }

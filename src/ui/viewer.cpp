@@ -3962,8 +3962,9 @@ void tap_play(const ui::Tap& t)
 // key's space; Swap Red/Blue shows red, green and blue blocks to check the
 // colours by; Game Sound (Tom, 2026-10-09): the games' effects as on a
 // Tandy 1000 (the default) or a PC speaker, or Off; Logs; the board and
-// memory line. Recalibrate Touch only with a resistive screen (capacitive
-// ones come calibrated); Asset Viewer's scale only on 480x320, not in the
+// memory line. Recalibrate Touch on every board (v0.103.5: a capacitive
+// screen comes calibrated, but Tom's S3 may sit a little off - its own
+// calibration, when made, wins); Asset Viewer's scale only on 480x320, not in the
 // game (the game is always 1:1).
 int set_page = 0;
 constexpr int kSetMax = 24;
@@ -3983,9 +3984,7 @@ int set_entries(SetEntry* out)
     add(false, kInvert);
     add(false, kSwap);
     add(false, kRotate);
-#if BOARD_TOUCH_RESISTIVE
     add(false, kCalibrate);
-#endif
     if (ui::large() && set_from != SetFrom::InGame) add(false, kScale);
     add(false, kLogs);
     for (int c = 0; c < kComforts; ++c)
