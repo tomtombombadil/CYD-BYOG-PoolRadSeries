@@ -77,17 +77,17 @@ the Project as claude/TODO.md.
       Constitution effect 0x61 kept in the record's saves?); the fight
       frame (not compared with DOSBox yet); sound, sky, approaching monsters; the version line's
       two-line look; behaviour tests.
-- [ ] Tom: pick the library page's layout from the mockups (2026-10-12):
-      the whole picture between left / right arrow strips (wide or slim),
-      with Rescan and Settings small in the header; or today's cover
-      layout with Curse, Champions, Death Knights, Dark Queen, UA (and
-      maybe Pool) top-justified. Tom's notes so far: names look great;
-      those games lose heads when centred.
+- [ ] Tom: try the new library page (v0.103.0) on a board - the art,
+      the header keys, the thirds and the triangles.
 - [ ] Tom: when you have a moment, Secret's Screen Test and Walk Test
       (Settings - Dev Tools on its page) on a board - the frame, title,
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.103.0: the library page as Tom picked it - full-width art,
+  top-justified, Rescan / Settings in the header, tap thirds (round),
+  faint triangles.
 
 - v0.102.0: the SNEG Launcher's box art on the library pages (Tom), the
   game's name centred over it.

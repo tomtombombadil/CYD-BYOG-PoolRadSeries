@@ -354,8 +354,8 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   between header and bottom keys - its GOG icon as big as fits (scaled from
   the 256 px PNG: ~154 px on 320x240, ~194 px on 480x320), the title and
   info lines wrapped inside the space beside it; < > page through games;
-  "Rescan / Card" on two lines; the scan shows its scrolling list (Card
-  scan above). Icons come from the
+  (v0.103.0: Rescan / Settings in the header, below); the scan shows its
+  scrolling list (Card scan above). Icons come from the
   player's goggame-<id>.ico / .dll on the card (`engine/icon.*`), never from
   the repo.
   **Box art** (Tom, 2026-10-12, v0.102.0): the Steam / SNEG collection's
@@ -370,6 +370,18 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   first show. The JPEGs are 2016 px progressive: `engine/jpeg_thumb.*`
   reads them at 1/4 size from their first scans only (our own decoder),
   `jthumb::Fit` scales.
+  **The page since v0.103.0** (Tom, 2026-10-12, from mockups): the art the
+  full screen width, top-justified (`ART<w>x<h>.BIN`), under Home's own
+  header - 36 px on 320x240 so the art (320 x 204) fills the rest, 40 on
+  480x320 (the art's bottom cut) - with **Rescan** (was "Rescan Card")
+  and **Settings** as small keys right-justified in it; no bottom keys.
+  Invisible tap zones: left third = the game before, right third = the
+  next one, ROUND (Pool's left goes to the last game, the last's right to
+  the first), middle third = open the game. Faint hollow triangles at
+  the sides as the clue (`hints_blend`: a 1 px cream line over a fainter
+  dark one, blended into the art's rows) - not arrows, not keys; the
+  attention goes to the art and the name. Icon pages (no box art) keep
+  the icon + lines inside the same strips, triangles on black.
 - Play Test (`src/game/play.*`, v0.8.0): the script machine is
   `engine/ecl_vm.*` (plain C++, host-tested with synthetic scripts); the
   front end only shows what it asks for (Wait: Print, Menu, ListMenu,

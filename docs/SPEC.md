@@ -371,7 +371,10 @@ can't get the memory says "Not enough memory to show this log."
    icons (`engine/jpeg_thumb.*`: the progressive JPEGs read at 1/4 size from
    their DC and first luma AC scans - a block's four 4 x 4 quarters come
    from coefficients 0, 1, 2 and 4; the chroma from its DC, blended; then
-   scaled to cover the card).
+   scaled to cover the card). v0.103.0 (Tom's pick from mockups): the art
+   full width, top-justified, under a header with Rescan / Settings (36 px
+   on 320x240, 40 on 480x320); the page's left / right thirds page through
+   the games round, the middle opens one; faint triangles at the sides.
    The chooser (a game tapped in the library; Tom, 2026-10-10, v0.53.0):
    four big keys filling the screen under the title bar - **Resource
    Test** (the game's DAX files a page at a time, then their blocks: what

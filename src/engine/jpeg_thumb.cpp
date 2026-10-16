@@ -626,7 +626,7 @@ Fit::~Fit()
     free(slot_row_);
 }
 
-bool Fit::begin(int src_w, int src_h, int tw, int th, OutFn out, void* ctx)
+bool Fit::begin(int src_w, int src_h, int tw, int th, OutFn out, void* ctx, bool top)
 {
     if (src_w <= 0 || src_h <= 0 || tw <= 0 || th <= 0) return false;
     src_w_ = src_w;
@@ -638,7 +638,7 @@ bool Fit::begin(int src_w, int src_h, int tw, int th, OutFn out, void* ctx)
     const float sx = static_cast<float>(tw) / src_w, sy = static_cast<float>(th) / src_h;
     scale_ = sx > sy ? sx : sy;
     ox_ = (src_w * scale_ - tw) / 2.0f;
-    oy_ = (src_h * scale_ - th) / 2.0f;
+    oy_ = top ? 0.0f : (src_h * scale_ - th) / 2.0f;
     radius_ = scale_ < 1.0f ? 1.0f / scale_ : 1.0f;
     slots_ = static_cast<int>(std::ceil(2.0f * radius_ * scale_)) + 2;
     next_src_ = next_out_ = 0;

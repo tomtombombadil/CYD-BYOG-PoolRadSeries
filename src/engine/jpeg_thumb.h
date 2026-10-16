@@ -40,7 +40,8 @@ bool probe(dax::ByteSource& src, Info& info);
 bool decode(dax::ByteSource& src, RowFn row, void* ctx, Info* info = nullptr);
 
 // Scales a picture coming a row at a time (src_w x src_h) to fill tw x th:
-// as big as it must be to cover it, centred, what's over cut off. Rows out:
+// as big as it must be to cover it, centred (or its top kept), what's over
+// cut off. Rows out:
 // out(y, rgb, tw, ctx) top to bottom. A triangle filter (bilinear going
 // up, averaging going down).
 class Fit {
@@ -50,7 +51,8 @@ public:
     ~Fit();
     Fit(const Fit&) = delete;
     Fit& operator=(const Fit&) = delete;
-    bool begin(int src_w, int src_h, int tw, int th, OutFn out, void* ctx);
+    // top: the picture's top kept (what's over cut off the bottom), else centred
+    bool begin(int src_w, int src_h, int tw, int th, OutFn out, void* ctx, bool top = false);
     bool add(const uint8_t* rgb);           // the next source row
     bool finish();                          // rows still open (the bottom edge)
 

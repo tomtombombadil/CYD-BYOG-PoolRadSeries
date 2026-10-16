@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -277,14 +278,108 @@ bool pager_tap(const ui::Tap& t, Pager& p, int* page, bool has_middle = false, b
 
 // One game a page (Tom: names are long, icons should be big): its GOG icon
 // as large as fits (GOG's 256 px PNG scaled to 128 px on 320x240, 192 px on
-// 480x320), the full title and its folder beside it. < > go through games.
+// 480x320), the full title and its folder beside it - or the Launcher's box
+// art filling the page, the name over it (Tom, 2026-10-12, v0.103.0).
+// Rescan and Settings small in the header; the page's left third goes to
+// the game before, the right third to the next (round from the last to the
+// first), the middle opens the game; faint triangles at the sides say so.
 
-// The whole space between the header and the bottom keys (Tom: no key
-// look - one game a page, so use all of it)
+// Home's header: taller on 320x240 (36), so the box art (2016 x 1284: 320 x
+// 204) fills the rest exactly; 480x320 keeps 40 and the art's bottom is cut
+int home_header_h() { return ui::large() ? 40 : 36; }
+ui::Rect home_key(int i)                        // 0 Rescan, 1 Settings: right-justified in the header
+{
+    static const char* kLabel[2] = {"Rescan", "Settings"};
+    const int gp = ui::gap(), pad = ui::large() ? 20 : 12;
+    const int h = home_header_h() - gp * 2;
+    const int w1 = ui::text_width(kLabel[1], ui::Font::Small) + pad;
+    const int w0 = ui::text_width(kLabel[0], ui::Font::Small) + pad;
+    const int x1 = ui::width() - gp - w1;
+    return i == 1 ? ui::Rect{x1, gp, w1, h} : ui::Rect{x1 - gp - w0, gp, w0, h};
+}
+// Everything under the header
 ui::Rect home_card()
 {
-    const int top = ui::header_h() + ui::gap();
-    return {0, top, ui::width(), ui::height() - ui::key_h() - ui::gap() * 2 - top};
+    const int top = home_header_h();
+    return {0, top, ui::width(), ui::height() - top};
+}
+
+// The faint triangles at the page's sides (Tom: a clue, not a key - the
+// eye goes to the picture): a hollow triangle a side, a 1 px cream line
+// over a fainter dark one, blended into the picture's rows as they're drawn
+struct Hints {
+    static constexpr int kW = 22, kH = 34;
+    int     x[2] = {}, y = 0;                   // the boxes' top left (card coordinates)
+    uint8_t cream[2][kH][kW], dark[2][kH][kW];  // alpha 0-255
+    int     h = 0;
+} *hints = nullptr;
+
+int hint_size() { return ui::large() ? 26 : 20; }
+int hint_margin() { return (ui::large() ? 10 : 7) + hint_size() * 3 / 10; }      // the centre's distance from the edge
+// The page less the triangles' strips (the icon and the name stay inside)
+int home_pad() { return hint_margin() + hint_size() * 3 / 10 + ui::gap(); }
+ui::Rect home_inner()
+{
+    const ui::Rect c = home_card();
+    return {c.x + home_pad(), c.y, c.w - home_pad() * 2, c.h};
+}
+
+float seg_dist(float px, float py, float ax, float ay, float bx, float by)
+{
+    const float vx = bx - ax, vy = by - ay, wx = px - ax, wy = py - ay;
+    float t = (vx * wx + vy * wy) / (vx * vx + vy * vy);
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const float dx = wx - t * vx, dy = wy - t * vy;
+    return sqrtf(dx * dx + dy * dy);
+}
+
+void hints_setup(const ui::Rect& card)
+{
+    if (!hints) hints = new (std::nothrow) Hints;
+    if (!hints) return;
+    const int s = hint_size(), m = hint_margin();
+    const float w = s * 0.55f;
+    hints->h = Hints::kH;
+    hints->y = card.h / 2 - Hints::kH / 2;
+    for (int k = 0; k < 2; ++k) {
+        const float cx = k == 0 ? m : card.w - m, cy = card.h / 2.0f, dir = k == 0 ? -1.0f : 1.0f;
+        const float ax = cx + dir * w / 2, ay = cy;                 // the point
+        const float bx = cx - dir * w / 2, by = cy - s / 2.0f, ccx = bx, ccy = cy + s / 2.0f;
+        hints->x[k] = static_cast<int>(cx) - Hints::kW / 2;
+        for (int yy = 0; yy < Hints::kH; ++yy)
+            for (int xx = 0; xx < Hints::kW; ++xx) {
+                const float px = hints->x[k] + xx + 0.5f, py = hints->y + yy + 0.5f;
+                float d = seg_dist(px, py, ax, ay, bx, by);
+                const float d2 = seg_dist(px, py, bx, by, ccx, ccy), d3 = seg_dist(px, py, ccx, ccy, ax, ay);
+                if (d2 < d) d = d2;
+                if (d3 < d) d = d3;
+                const float c = 1.0f - d, k2 = 2.0f - d;
+                hints->cream[k][yy][xx] = static_cast<uint8_t>(c > 0 ? (c > 1 ? 1 : c) * 160 : 0);
+                hints->dark[k][yy][xx] = static_cast<uint8_t>(k2 > 0 ? (k2 > 1 ? 1 : k2) * 90 : 0);
+            }
+    }
+}
+
+inline uint16_t blend565(uint16_t p, int r, int g, int b, int a)
+{
+    const int pr = (p >> 11) & 31, pg = (p >> 5) & 63, pb = p & 31;
+    const int nr = (pr * (255 - a) + (r >> 3) * a) / 255, ng = (pg * (255 - a) + (g >> 2) * a) / 255,
+              nb = (pb * (255 - a) + (b >> 3) * a) / 255;
+    return static_cast<uint16_t>(nr << 11 | ng << 5 | nb);
+}
+
+// The triangles into row y (card coordinates) of the picture
+void hints_blend(uint16_t* row, int y, int w)
+{
+    if (!hints || y < hints->y || y >= hints->y + hints->h) return;
+    const int yy = y - hints->y;
+    for (int k = 0; k < 2; ++k)
+        for (int xx = 0; xx < Hints::kW; ++xx) {
+            const int x = hints->x[k] + xx;
+            if (x < 0 || x >= w) continue;
+            if (hints->dark[k][yy][xx]) row[x] = blend565(row[x], 0, 0, 0, hints->dark[k][yy][xx]);
+            if (hints->cream[k][yy][xx]) row[x] = blend565(row[x], 240, 230, 200, hints->cream[k][yy][xx]);
+        }
 }
 
 // As big as fits (Tom: bigger is better): the card's height, at most half
@@ -455,7 +550,7 @@ bool draw_icon(const library::GameDir& g, int x, int y, int px, ui::KeyStyle st)
 void box_file(const library::GameDir& g, int w, int h, char* out, size_t cap)
 {
     char name[24];
-    snprintf(name, sizeof name, "BOX%dx%d.BIN", w, h);
+    snprintf(name, sizeof name, "ART%dx%d.BIN", w, h);   // (v0.103.0: top-justified; the BOX files were centred)
     library::cache_path(g, name, out, cap);
 }
 
@@ -478,7 +573,10 @@ bool box_row(int y, const uint8_t* rgb, int w, void* ctx)
     if (b.out && b.out.write(reinterpret_cast<const uint8_t*>(b.line), static_cast<size_t>(w) * 2) !=
                      static_cast<size_t>(w) * 2)
         b.write_ok = false;
-    if (b.draw) ui::gfx().pushImage(b.x, b.y + y, w, 1, reinterpret_cast<const lgfx::rgb565_t*>(b.line));
+    if (b.draw) {
+        hints_blend(b.line, y, w);
+        ui::gfx().pushImage(b.x, b.y + y, w, 1, reinterpret_cast<const lgfx::rgb565_t*>(b.line));
+    }
     return true;
 }
 
@@ -507,7 +605,7 @@ bool make_box(const library::GameDir& g, int x, int y, int w, int h, bool draw, 
     char cache[160];
     box_file(g, w, h, cache, sizeof cache);
     if (ok) {
-        ok = b && fit && fit->begin(in.out_w, in.out_h, w, h, box_row, b);
+        ok = b && fit && fit->begin(in.out_w, in.out_h, w, h, box_row, b, true);     // (Tom: top-justified)
         if (!ok) *why = "not enough memory just now";
     }
     if (ok) {
@@ -558,7 +656,10 @@ bool draw_box(const library::GameDir& g, const ui::Rect& r)
             for (int y = 0; y < r.h && ok; ++y) {
                 ok = f.read(reinterpret_cast<uint8_t*>(row), static_cast<size_t>(r.w) * 2) ==
                      static_cast<size_t>(r.w) * 2;
-                if (ok) ui::gfx().pushImage(r.x, r.y + y, r.w, 1, reinterpret_cast<const lgfx::rgb565_t*>(row));
+                if (ok) {
+                    hints_blend(row, y, r.w);
+                    ui::gfx().pushImage(r.x, r.y + y, r.w, 1, reinterpret_cast<const lgfx::rgb565_t*>(row));
+                }
             }
             ui::card_draw_end();
         } else {
@@ -773,7 +874,7 @@ void prepare_journal(const library::GameDir& g)
         sd_fs().remove(try_path);
         char line[200];
         snprintf(line, sizeof line,
-                 "The board restarted while reading the %s journal last time: skipped this time (Rescan Card tries "
+                 "The board restarted while reading the %s journal last time: skipped this time (Rescan tries "
                  "again)", games::title(g.game));
         scan_say(line, false, nullptr);
         return;
@@ -950,7 +1051,7 @@ void prepare_journal_now(const library::GameDir& g)
 // (deep decoding: run_on_big_stack)
 void prepare_made(void*)
 {
-    const int px = icon_size(home_card());
+    const int px = icon_size(home_inner());
     for (int i = 0; i < n_games; ++i) {
         const library::GameDir& g = game_dirs[i];
         if (!g.icon[0] || !px || g.box[0]) continue;      // (the box art stands in for it)
@@ -1007,14 +1108,14 @@ void rescan()
     // The library first: whatever happens while the icons and journals are
     // made, the board doesn't scan again on its own
     if (scan_result == library::ScanResult::Ok) {
-        scan_say(library::save_library(game_dirs, n_games) ? "Saved the library: the board won't scan again until you tap Rescan Card."
+        scan_say(library::save_library(game_dirs, n_games) ? "Saved the library: the board won't scan again until you tap Rescan."
                                                            : "The library couldn't be saved on the card.",
                  false, nullptr);
     }
     // What the board makes from the player's files, once (icons, journals:
     // PNG / PDF / JPEG decoding, on a stack of its own)
     if (!run_on_big_stack(prepare_made, nullptr))
-        scan_say("Not enough memory to make the icons and journal pictures now: tap Rescan Card to try again.", false,
+        scan_say("Not enough memory to make the icons and journal pictures now: tap Rescan to try again.", false,
                  nullptr);
     scan_say("Done. Look through the list, then tap Continue.", false, nullptr);
     // The list stays up to be read (Tom, 2026-10-09): the whole log,
@@ -1046,12 +1147,19 @@ void rescan()
 void draw_home()
 {
     ui::clear();
+    // The header: title left, Rescan and Settings small at the right
+    const int hh = home_header_h(), gp = ui::gap();
+    ui::gfx().fillRect(0, 0, ui::width(), hh, style::kHeader);
+    ui::gfx().drawFastHLine(0, hh - 1, ui::width(), style::kKeyEdge);
     char title[48];
     snprintf(title, sizeof title, "Gold Box Library  %s", env_.version);
-    ui::header(title, false);
+    ui::text(gp * 2, (hh - ui::line_h()) / 2, title, style::kText);
+    ui::key_small(home_key(0), "Rescan");
+    ui::key_small(home_key(1), "Settings");
+    const ui::Rect card = home_card();
     if (scan_result != library::ScanResult::Ok || n_games == 0) {
-        const int x = ui::gap() * 3;
-        int y = ui::header_h() + ui::gap() * 3;
+        const int x = gp * 3;
+        int y = card.y + gp * 3;
         const int lh = ui::line_h() + 4;
         const char* first = scan_result == library::ScanResult::NoCard ? "No SD card found."
                           : scan_result == library::ScanResult::NoRootFolder ? "No GOLDBOX folder on the card."
@@ -1064,62 +1172,78 @@ void draw_home()
         y += lh / 2;
         ui::text(x, y, "/GOLDBOX/Curse of the Azure Bonds", style::kGold);
         y += lh * 3 / 2;
-        ui::text(x, y, "then tap Rescan Card.", style::kText);
-    } else {
-        if (home_page >= n_games) home_page = n_games - 1;
-        const library::GameDir& g = game_dirs[home_page];
-        const ui::Rect card = home_card();
-        const bool hlib = g.format == library::Format::Hlib;
-        // The Launcher's box art: the whole card, the name over it
-        if (g.box[0] && draw_box(g, card)) {
-            box_title(card, games::title(g.game), hlib ? style::kTextMuted : style::kGold);
-        } else {
-            const ui::KeyStyle st = hlib ? ui::KeyStyle::Dim : ui::KeyStyle::Normal;
-            const int gp = ui::gap();
-            const int ipx = g.icon[0] ? icon_size(card) : 0;
-            const int ix = card.x + gp * 2, iy = card.y + (card.h - ipx) / 2;
-            const int tx = ipx ? ix + ipx + gp * 3 : card.x + gp * 4;
-            const int tw = card.x + card.w - gp * 2 - tx;      // text stays inside this box
-
-            // The text block, centred top to bottom; every line wraps
-            char l1[48], l2[48], l3[48];
-            snprintf(l1, sizeof l1, "Folder: %s", g.folder);
-            if (hlib) snprintf(l2, sizeof l2, "Newer format");
-            else snprintf(l2, sizeof l2, "%d game files", g.dax_files);
-            snprintf(l3, sizeof l3, "Game %d of %d", home_page + 1, n_games);
-            const uint16_t tcol = hlib ? style::kTextMuted : style::kText;
-            const ui::Font sf = ui::Font::Small;
-            const int title_h = wrap_text(tx, 0, tw, games::title(g.game), ui::Font::Large, tcol, false, 4);
-            const int sub_h = wrap_text(tx, 0, tw, l1, sf, 0, false) + wrap_text(tx, 0, tw, l2, sf, 0, false) +
-                              wrap_text(tx, 0, tw, l3, sf, 0, false);
-            int y = card.y + (card.h - (title_h + gp * 2 + sub_h + gp * 2)) / 2;
-            if (y < card.y) y = card.y;
-            y = wrap_text(tx, y, tw, games::title(g.game), ui::Font::Large, tcol, true, 4) + gp * 2;
-            y = wrap_text(tx, y, tw, l1, sf, style::kTextMuted, true) + gp;
-            y = wrap_text(tx, y, tw, l2, sf, style::kTextMuted, true) + gp;
-            wrap_text(tx, y, tw, l3, sf, style::kTextMuted, true);
-            if (ipx) draw_icon(g, ix, iy, ipx, st);
-        }
+        ui::text(x, y, "then tap Rescan.", style::kText);
+        return;
     }
-    const bool more = n_games > 1;
-    ui::key(ui::bottom_key(0, more ? 4 : 2), "Rescan\nCard");
-    ui::key(ui::bottom_key(1, more ? 4 : 2), "Settings");
-    if (more) {
-        ui::key(ui::bottom_key(2, 4), "<", home_page > 0 ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
-        ui::key(ui::bottom_key(3, 4), ">", home_page + 1 < n_games ? ui::KeyStyle::Normal : ui::KeyStyle::Dim);
+    if (home_page >= n_games) home_page = n_games - 1;
+    const library::GameDir& g = game_dirs[home_page];
+    const bool hlib = g.format == library::Format::Hlib;
+    const int pad = home_pad();                 // (the text keeps clear of the triangles)
+    if (n_games > 1) hints_setup(card);
+    else {
+        delete hints;
+        hints = nullptr;
+    }
+    // The Launcher's box art: the whole page, the name over it
+    if (g.box[0] && draw_box(g, card)) {
+        box_title({card.x + pad, card.y, card.w - pad * 2, card.h}, games::title(g.game),
+                  hlib ? style::kTextMuted : style::kGold);
+        return;
+    }
+    // The icon and the lines beside it
+    const ui::KeyStyle st = hlib ? ui::KeyStyle::Dim : ui::KeyStyle::Normal;
+    const ui::Rect inner = home_inner();
+    const int ipx = g.icon[0] ? icon_size(inner) : 0;
+    const int ix = inner.x, iy = inner.y + (inner.h - ipx) / 2;
+    const int tx = ipx ? ix + ipx + gp * 3 : inner.x + gp * 2;
+    const int tw = inner.x + inner.w - tx;      // text stays inside this box
+    // The text block, centred top to bottom; every line wraps
+    char l1[48], l2[48], l3[48];
+    snprintf(l1, sizeof l1, "Folder: %s", g.folder);
+    if (hlib) snprintf(l2, sizeof l2, "Newer format");
+    else snprintf(l2, sizeof l2, "%d game files", g.dax_files);
+    snprintf(l3, sizeof l3, "Game %d of %d", home_page + 1, n_games);
+    const uint16_t tcol = hlib ? style::kTextMuted : style::kText;
+    const ui::Font sf = ui::Font::Small;
+    const int title_h = wrap_text(tx, 0, tw, games::title(g.game), ui::Font::Large, tcol, false, 4);
+    const int sub_h = wrap_text(tx, 0, tw, l1, sf, 0, false) + wrap_text(tx, 0, tw, l2, sf, 0, false) +
+                      wrap_text(tx, 0, tw, l3, sf, 0, false);
+    int y = card.y + (card.h - (title_h + gp * 2 + sub_h + gp * 2)) / 2;
+    if (y < card.y) y = card.y;
+    y = wrap_text(tx, y, tw, games::title(g.game), ui::Font::Large, tcol, true, 4) + gp * 2;
+    y = wrap_text(tx, y, tw, l1, sf, style::kTextMuted, true) + gp;
+    y = wrap_text(tx, y, tw, l2, sf, style::kTextMuted, true) + gp;
+    wrap_text(tx, y, tw, l3, sf, style::kTextMuted, true);
+    if (ipx) draw_icon(g, ix, iy, ipx, st);
+    // The triangles, on black
+    if (n_games > 1) {
+        const int s = hint_size(), m = hint_margin(), cy = card.y + card.h / 2, w = s * 55 / 100;
+        ui::gfx().drawTriangle(m - w / 2, cy, m + w / 2, cy - s / 2, m + w / 2, cy + s / 2, style::kTextMuted);
+        const int rx = card.w - m;
+        ui::gfx().drawTriangle(rx + w / 2, cy, rx - w / 2, cy - s / 2, rx - w / 2, cy + s / 2, style::kTextMuted);
     }
 }
 
 void tap_home(const ui::Tap& t)
 {
-    const bool more = n_games > 1;
-    const int k = bottom_hit(t, more ? 4 : 2);
-    if (k == 0) { rescan(); return; }
-    if (k == 1) { go(Screen::Settings); return; }
-    if (k == 2 && home_page > 0) { --home_page; dirty = true; return; }
-    if (k == 3 && home_page + 1 < n_games) { ++home_page; dirty = true; return; }
+    if (home_key(0).contains(t.x, t.y)) { rescan(); return; }
+    if (home_key(1).contains(t.x, t.y)) { go(Screen::Settings); return; }
     if (scan_result != library::ScanResult::Ok || n_games == 0) return;
-    if (home_card().contains(t.x, t.y)) {
+    const ui::Rect card = home_card();
+    if (!card.contains(t.x, t.y)) return;
+    // The thirds: the game before, the game, the next one (round - Tom)
+    const int third = card.w / 3;
+    if (t.x < card.x + third) {
+        if (n_games > 1) {
+            home_page = (home_page + n_games - 1) % n_games;
+            dirty = true;
+        }
+    } else if (t.x >= card.x + card.w - third) {
+        if (n_games > 1) {
+            home_page = (home_page + 1) % n_games;
+            dirty = true;
+        }
+    } else {
         game_sel = home_page;
         file_page = 0;
         go(Screen::Files);                 // the game's page: Play, Settings
@@ -2715,7 +2839,7 @@ void tap_game_menu(const ui::Tap& t)
                     : game_dirs[game_sel].journal[0]
                         ? "The journal PDF couldn't be read as a book of scanned pages."
                         : "There is no journal PDF in this game's folder. GOG's install folder has one: copy the "
-                          "whole folder to the card, then Rescan Card.",
+                          "whole folder to the card, then Rescan.",
                     sizeof menu_note);
             dirty = true;
         }
