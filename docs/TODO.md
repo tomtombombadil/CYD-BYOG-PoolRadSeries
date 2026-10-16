@@ -77,6 +77,10 @@ the Project as claude/TODO.md.
       Constitution effect 0x61 kept in the record's saves?); the fight
       frame (not compared with DOSBox yet); sound, sky, approaching monsters; the version line's
       two-line look; behaviour tests.
+- [ ] Tom: flash the 4.0" ST7796 Capacitive (ESP32-S3) entry onto the new
+      board (arrived 2026-10-16) and send logs - first run of that build
+      on real hardware (Home, the scan, Play, sound, touch); then it gets
+      custom_board_tested = yes.
 - [ ] Tom: try the new library page (v0.103.0) on a board - the art,
       the header keys, the thirds and the triangles.
 - [ ] Tom: when you have a moment, Secret's Screen Test and Walk Test
