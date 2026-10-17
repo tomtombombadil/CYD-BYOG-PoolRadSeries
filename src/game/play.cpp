@@ -1499,7 +1499,7 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
         put(c, t, 1, 22, 10);
     }
     // The money in the panel right of the stats (rows 9-15): copper first,
-    // the number to column 38 (GAME.OVR 0x2779B)
+    // the number ending at column 37 (GAME.OVR 0x2779B: column 38 - its length)
     {
         int row = 9;
         for (int coin = 0; coin < 7 && row <= 15; ++coin) {
@@ -1507,7 +1507,7 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
             if (n <= 0) continue;
             put(c, name_of(d->money[0], 11, 7, coin), 20, row, 10);
             snprintf(t, sizeof t, "%d", n);
-            right(t, 38, row, 10);
+            right(t, 37, row, 10);
             ++row;
         }
     }
@@ -3779,9 +3779,17 @@ int  take_mode = 0, take_to = -1, view_by = -1;
 
 int coins_there(int k) { return take_mode ? pt->m[view_by].money(k) : ground->money[k]; }
 
+bool secret_coin_panel() { return take_mode && secret_files(); }
+
 void list_coins()
 {
     take_n = 0;
+    if (secret_coin_panel()) {
+        // (Secret's View: its money panel's order, copper first)
+        for (int k = 0; k < 7; ++k)
+            if (coins_there(k) > 0) take_kind[take_n++] = k;
+        return;
+    }
     for (int k = 6; k >= 0; --k)
         if (coins_there(k) > 0) take_kind[take_n++] = k;
 }
@@ -3793,18 +3801,35 @@ void take_line(int i, char* out, size_t cap)
         return;
     }
     const int k = take_kind[i];
+    if (secret_coin_panel()) {
+        // (the panel's line: the name at column 20, the number ending at 37)
+        char n[12];
+        snprintf(n, sizeof n, "%d", coins_there(k));
+        const int w = 18 - static_cast<int>(strlen(n));
+        snprintf(out, cap, "%-*.*s%s", w, w, d->money[k], n);
+        return;
+    }
     snprintf(out, cap, "%s %d", d->money[k], coins_there(k));
 }
 
 void draw_take(pic::Canvas& c)
 {
-    c.clear(0);
-    layout::outer(c, d->tables, d->frame_tiles);
-    // (Secret's - its frame of bars - from row 1, column 1: secret_facts_2.md 16)
-    const bool top = d->tables.bars[0] != 0;
-    plist.row0 = top ? 1 : 2;
-    plist.row1 = top ? 8 : 9;
-    plist.col0 = top ? 1 : 2;
+    if (secret_coin_panel()) {
+        // Secret's View (Trade / Drop / Deposit): the coin is picked on the
+        // character's money panel (rows 9-15, columns 20-37), the screen kept
+        draw_character_secret(c, pt->m[view_by]);
+        plist.row0 = 9;
+        plist.row1 = 15;
+        plist.col0 = 20;
+    } else {
+        c.clear(0);
+        layout::outer(c, d->tables, d->frame_tiles);
+        // (Secret's - its frame of bars - from row 1, column 1: secret_facts_2.md 16)
+        const bool top = d->tables.bars[0] != 0;
+        plist.row0 = top ? 1 : 2;
+        plist.row1 = top ? 8 : 9;
+        plist.col0 = top ? 1 : 2;
+    }
     plist.n = take_n;
     char prompt[28], sel[12];
     if (take_mode) {

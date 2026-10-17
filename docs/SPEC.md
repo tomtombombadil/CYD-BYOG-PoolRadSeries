@@ -1055,6 +1055,11 @@ until the party menu is known (`party.items`).
   "is swallowed whole", "stares blankly". The original has no Turn Undead
   (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
   has lost" - the engine already matched.
+- **v0.115.2 - Secret's View coin choice** (Trade / Drop / Deposit): on
+  the character's own screen, the coins picked on its money panel (copper
+  first, the line lit from column 20 to 37) as the original; the panel's
+  numbers end at column 37 (its code: column 38 - the length; they were a
+  column right).
 - **v0.115.1 - Secret's item names are made from their words** when
   shown, as every game's (DOSBox, secret_facts_2.md 25): its records' own
   names are left-overs of a list line (the original writes " No   Mace +1 "
