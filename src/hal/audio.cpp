@@ -78,6 +78,9 @@ void out_close()
 {
     dac_continuous_del_channels(h);
     h = nullptr;
+    // (the amplifier stays on: its input held at 0 V, not left floating)
+    pinMode(26, OUTPUT);
+    digitalWrite(26, LOW);
 }
 
 #elif defined(BOARD_AUDIO_ES8311) || defined(BOARD_AUDIO_PDM)
@@ -257,16 +260,17 @@ void audio_task(void*)
             if (stop_wanted || !held) break;
             continue;
         }
-        // Down to 0 V again, the queued buffers played out, then the
-        // amplifier off and the output off (v0.103.6: the amplifier went
-        // off before the last ~90 ms had played - the sounds' ends lost)
+        // Down to 0 V again, the queued buffers played out, then the output
+        // off. The amplifier stays on (v0.104.1, Tom's 3.5": Step and Hit
+        // were "a microsecond" - like the S3's, these boards' amplifier
+        // takes ~100 ms to wake, longer than those sounds; switched on and
+        // off with each sound it ate them)
         for (int i = 0; i < kBuf; ++i)
             buf[i] = static_cast<uint8_t>(!kRamps ? 128 : i < kRamp ? 128 - i * 128 / kRamp : 0);
         out_write(buf, kBuf);
         if (kRamps) memset(buf, 0, kBuf);
         for (int i = 0; i < kTail; ++i) out_write(buf, kBuf);
         vTaskDelay(pdMS_TO_TICKS(kBufs * kBuf * 1000 / kAudioHz + 5));
-        amp(false);
         out_disable();
         if (stop_wanted || !held) break;
         // Held (a fight): asleep until the next sound - or the hold's end
@@ -358,6 +362,8 @@ void audio_prepare()
 {
 #if defined(BOARD_AUDIO_ES8311) && !defined(CYD_QEMU)
     codec_setup();
+#else
+    amp(true);          // (awake long before the first sound; it stays on)
 #endif
 }
 

@@ -79,7 +79,9 @@ the Project as claude/TODO.md.
       the stylus touches; light taps after a pause, finger and stylus;
       small keys) and the sounds (Settings' sound test - Step, Hit; Pool's
       steps and fights). Also on a resistive board: keys light on touch
-      there too. If taps still land off
+      there too. On the 3.5" (v0.104.1): Step and Hit in both Tandy and
+      PC speaker modes - and any hum or hiss between sounds now that its
+      amplifier stays on? If taps still land off
       the mark, Settings - Recalibrate Touch (new on this board: tap
       each arrow tip) and say whether it helped. Then the yellow tint:
       the display's set-up is the same as the maker's (same gamma and
@@ -99,6 +101,9 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.104.1: the ESP32-32E boards' amplifier stays on from Play's start
+  (its ~100 ms wake-up ate Step and Hit on Tom's 3.5").
 
 - v0.104.0: keys and game-screen words light up as the stylus touches,
   not as it lifts (Tom); the tap still acts on the lift.

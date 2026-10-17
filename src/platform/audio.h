@@ -30,7 +30,8 @@ bool audio_running();
 // hold ends (a fight) - false from audio_held() when there was no memory
 void audio_hold(bool on, AudioFill fill, void* ctx);
 bool audio_held();
-// Gets the output ready ahead of the first sound where that takes time (the
-// ESP32-S3 board: its codec set up, its amplifier woken - 100 ms - so the
-// first sound isn't cut); nothing elsewhere
+// Gets the output ready ahead of the first sound where that takes time:
+// the amplifier woken (~100 ms on the boards with an enable pin - the S3's,
+// the ESP32-32E ones') and the S3's codec set up, so the first sound isn't
+// cut. The amplifier then stays on.
 void audio_prepare();

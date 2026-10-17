@@ -292,9 +292,12 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   datasheet), so the codec's output, its clocks and the amplifier stay
   on from the first sound (`kKeep`; `audio_prepare()` at Play's start
   wakes them before the first sound; the I2S sends silence by itself).
-  Every board: the amplifier goes off only after the queued samples have
-  played (it went off ~90 ms early - the 3.2" / 3.5" / 4.0" ESP32-32E
-  boards' amplifier pin too).
+  The ESP32-32E boards (3.2" / 3.5" / 4.0", amplifier enable GPIO 4) the
+  same (v0.104.1, Tom's 3.5": Step and Hit "a microsecond", the long
+  sounds fine): their amplifier also takes ~100 ms to wake, so it is
+  switched on by `audio_prepare()` at Play's start and stays on (the DAC
+  pin held at 0 V between sounds, not floating); only the DAC and the
+  sound task come and go with the sounds.
   The display's set-up matches the maker's (TFT_eSPI's ST7796 sequence:
   same gamma, VCOM, power) - for colour questions look elsewhere.
 - **Crash lines** (v0.103.1): a panic leaves a core dump in the flash's
