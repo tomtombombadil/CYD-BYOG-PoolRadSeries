@@ -143,6 +143,16 @@ void fight_load_monster(int id, int copies, int icon)
         plat::log("[play] %s #%d: no monster\n", cha, id);
         return;
     }
+    // Secret's Level (GAME.OVR 0x101A): the other side's (record 0x197 = 1)
+    // hit points and maximum x (level + 2) / 4 - Novice half, Squire three
+    // quarters, Veteran as they are, Adept 5/4, Champion 3/2 - kept in a
+    // byte as the original's; both 1 when either comes to 0
+    const int level = secret_files() ? vm->get(0x4CF4) : 2;
+    if (rec[0x197] == 1 && level < 5 && level != 2) {
+        rec[0x1A4] = static_cast<uint8_t>(rec[0x1A4] * (level + 2) / 4);
+        rec[0x78] = static_cast<uint8_t>(rec[0x78] * (level + 2) / 4);
+        if (rec[0x1A4] == 0 || rec[0x78] == 0) rec[0x1A4] = rec[0x78] = 1;
+    }
     combat::Group& g = ml->g[ml->groups];
     g = combat::Group{};
     g.id = static_cast<uint8_t>(id);

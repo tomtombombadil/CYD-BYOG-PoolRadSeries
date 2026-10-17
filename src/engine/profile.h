@@ -409,6 +409,9 @@ struct Profile {
         // Exit", Next Prev Keep Exit) and its words (GAME.OVR)
         uint32_t icon_menu[5];
         uint32_t icon_words[kIconWords];
+        // Secret: Level's choices ("Novice Squire Veteran Adept Champion",
+        // program image; 0: no Level) - the difficulty, area word 0x4CF4
+        uint32_t level_menu = 0;
     } alter;
 
     // Combat: the program's tables, the words, the effects that end with

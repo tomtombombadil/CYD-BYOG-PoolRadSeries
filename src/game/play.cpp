@@ -6040,7 +6040,7 @@ void effects_tap(int x, int y, pic::Canvas& c)
 // Faster Slower Exit" (the area word 0x4BFC). Pics: on / off, Animation on
 // / off. Icon: the combat icon editor (with Create New Character too).
 
-enum class AlterMode : uint8_t { Menu, Select, Place, Speed, Pics };
+enum class AlterMode : uint8_t { Menu, Select, Place, Speed, Pics, Level };
 AlterMode alter_mode = AlterMode::Menu;
 
 void aw(int i, char* out, size_t cap) { ow(d->prof->alter.words[i], out, cap); }
@@ -6092,6 +6092,22 @@ void pics_menu(pic::Canvas& c)
     strlcat(words, a, sizeof words);
     text::build(menu, "", words);
     menu.selected = 0;
+    show_menu_line(c);
+}
+
+// Secret's Level (its difficulty; GAME.OVR 0x1BE15): "Novice Squire Veteran
+// Adept Champion", the current one lit (area word 0x4CF4 = 0-4; a new game
+// and the GOG save: 2, Veteran); a choice sets it and Alter's menu comes
+// back. A fight's monsters on the other side are loaded with their hit
+// points x (level + 2) / 4 (fight_load_monster).
+void level_menu(pic::Canvas& c)
+{
+    alter_mode = AlterMode::Level;
+    char words[48];
+    ow(d->prof->alter.level_menu, words, sizeof words);
+    text::build(menu, "", words);
+    const int level = vm->get(0x4CF4);
+    menu.selected = level >= 0 && level < menu.count ? level : 0;
     show_menu_line(c);
 }
 
@@ -6210,6 +6226,9 @@ void alter_tap(int x, int y, pic::Canvas& c)
         case 'D': alter_drop(c); break;
         case 'S': draw_speed(c); break;
         case 'P': pics_menu(c); break;
+        case 'L':
+            if (d->prof->alter.level_menu) level_menu(c);
+            break;
         case 'I': start_icon(c, Screen::Alter); break;
         case 'E':
             screen = Screen::Camp;
@@ -6228,6 +6247,12 @@ void alter_tap(int x, int y, pic::Canvas& c)
             return;
         }
         pics_menu(c);
+        return;
+    }
+    case AlterMode::Level: {
+        const int w = text::hit(menu, col);
+        if (w >= 0 && w < 5) vm->set(0x4CF4, static_cast<uint16_t>(w));
+        alter_menu(c);
         return;
     }
     case AlterMode::Select:

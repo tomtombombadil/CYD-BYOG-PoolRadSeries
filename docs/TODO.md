@@ -60,9 +60,8 @@ the Project as claude/TODO.md.
       Secret's View panel. v0.106.0: its monsters' abilities
       (no Turn in the original). v0.105.0: the spells' words (fight
       and camp), Heal / Harm / the Elixir of Youth / the druids' spells,
-      item words. v0.113.0: the exploring menu's Move. Next, a chunk a commit:
-      Alter ("Order Drop Speed Icon Level
-      Exit" - its Level); how Secret renames an item it
+      item words. v0.113.0: the exploring menu's Move. v0.114.0: Alter and its Level. Next, a chunk a commit:
+      how Secret renames an item it
       identifies / halves / joins; fights still to do: the remorhaz's after-swallow
       ("belches in satisfaction" / "is digested instantly": when?); Deposit (the vault, VAULT.DAT);
       items' plural names when shown ("30 ARROWS +1"); Delayed Blast

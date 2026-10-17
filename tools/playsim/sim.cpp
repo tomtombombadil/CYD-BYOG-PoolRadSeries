@@ -287,7 +287,7 @@ static void run_fight()
                 if (getenv("FIGHTCHECK")[0] == 'q') { play::close(); exit(0); }
             }
             play::log_pages = getenv("PAGELOG") != nullptr;
-            if (play::fg) for (int i = 0; i < play::fg->b.n; ++i) { const auto& f = play::fg->b.f[i]; printf("  fighter %d [%.15s] at %d,%d size %d icon %d px %p up %d rec141 %d 142 %d 144 %d\n", i, (const char*)f.rec + 1, f.x, f.y, f.size, f.icon, (void*)play::fg->icon[f.icon].px[0], f.up(), f.rec[0x141], f.rec[0x142], f.rec[0x144]); }
+            if (play::fg) for (int i = 0; i < play::fg->b.n; ++i) { const auto& f = play::fg->b.f[i]; printf("  fighter %d [%.15s] at %d,%d size %d icon %d px %p up %d rec141 %d 142 %d 144 %d hp %d/%d\n", i, (const char*)f.rec + 1, f.x, f.y, f.size, f.icon, (void*)play::fg->icon[f.icon].px[0], f.up(), f.rec[0x141], f.rec[0x142], f.rec[0x144], f.rec[0x1A4], f.rec[0x78]); }
             int turns = 0, n = 0;
             const char* fops = getenv("FIGHTOPS");      // taps while the fight waits: letters, &rr rows; then Quick
             for (int k = 0; k < 200000 && (play::screen == play::Screen::Fight || play::screen == play::Screen::SpellList || play::screen == play::Screen::Items); ++k) {
@@ -830,6 +830,13 @@ int main(int argc, char** argv)
         // Run the script from an address (e.g. a shop), then BUY=n,n,...
         // buys those goods for character 0, READY=i readies their item i
         unsigned a; sscanf(getenv("RUNAT"), "%x", &a);
+        if (getenv("SETVAR") && !getenv("AREA"))      // (SETVAR without AREA: here)
+            for (const char* q = getenv("SETVAR"); q && *q;) {
+                unsigned sa, v;
+                if (sscanf(q, "%x=%u", &sa, &v) == 2) play::vm->set((uint16_t)sa, (uint16_t)v);
+                q = strchr(q, ',');
+                if (q) ++q;
+            }
         if (getenv("MONSWAP")) {
             // MONSWAP=area:id[:copies[:icon]]: the LOAD MONSTER there loads that monster (MON<area>) instead
             unsigned area = 0, id = 0, copies = 0, icon = 0;

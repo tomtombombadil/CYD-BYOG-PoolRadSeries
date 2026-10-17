@@ -1054,6 +1054,11 @@ until the party menu is known (`party.items`).
   "is swallowed whole", "stares blankly". The original has no Turn Undead
   (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
   has lost" - the engine already matched.
+- **v0.114.0 - Secret's Alter** (secret_facts_2.md 23): "Order Drop Speed
+  Icon Level Exit" with no prompt, its own words (and the icon editor's
+  menus - they were empty for Secret); **Level** - "Novice Squire Veteran
+  Adept Champion" (area word 0x4CF4, Veteran at the start): the other
+  side's monsters come into a fight with hit points x (level + 2) / 4.
 - **v0.113.0 - Secret's exploring menu**: "Move Area Cast View Encamp
   Search Look" (GAME.OVR 0x198E3); Move switches the menu line to "Exit"
   as the original's move mode, a script or Exit ends it (SPEC 12: the
