@@ -716,7 +716,10 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
 - Semantic versioning from `VERSION` (started 0.1.0, 2026-10-06). Bump it in
   every push to main that changes the firmware (fix = Z, feature = Y).
 - Every push to main: CI runs host tests, builds every board, redeploys the
-  web flasher. Tom tests by flashing from there.
+  web flasher. Tom tests by flashing from there. The flasher's manifest
+  and firmware URLs carry `?v=<version>` (2026-10-16: GitHub Pages lets a
+  browser keep a file 10 minutes, and a board flashed again within that
+  got the previous build while the page showed the new version).
 - **Don't publish a release unless Tom asks for one.** Releases: Actions ->
   Build -> Run workflow with `release_tag` = `v` + VERSION (API
   workflow_dispatch; Claude can't push tags).

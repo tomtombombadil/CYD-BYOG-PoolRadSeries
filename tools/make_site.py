@@ -71,7 +71,10 @@ def main():
             "builds": [{
                 "chipFamily": b["chip"],
                 # Merged factory image: bootloader + partitions + app, from 0x0
-                "parts": [{"path": f"../firmware/{b['file']}", "offset": 0}],
+                # (?v=: GitHub Pages lets browsers keep a file 10 minutes - a
+                # board flashed again within that got the build before; Tom,
+                # 2026-10-16: the page said v0.104.1, the board v0.104.0)
+                "parts": [{"path": f"../firmware/{b['file']}?v={args.version}", "offset": 0}],
             }],
         }
         (out / "manifests" / f"{b['name']}.json").write_text(
