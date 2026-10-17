@@ -56,10 +56,16 @@ uint32_t start_exp(int cls)
 
 // The games' race / class level limits for training (the original's
 // train_player: a half-elf magic-user's by Intelligence, as an elf's)
-bool race_limited(const party::Character& c, int cls, int lvl, bool pool = false)
+bool race_limited(const party::Character& c, int cls, int lvl, bool pool = false, bool secret = false)
 {
     const int str = c.stat(0), intel = c.stat(1);
     if (pool && cls == MagicUser) return false;         // (Pool's train_player: none for magic-users)
+    // Secret's training also stops demihuman clerics (secret_facts_2.md 18):
+    // dwarves at 8, elves and gnomes at 7 (half-elves at 5, as Curse's)
+    if (secret && cls == Cleric) {
+        const int r = c.race();
+        if ((r == 1 && lvl >= 8) || ((r == 2 || r == 3) && lvl >= 7)) return true;
+    }
     switch (c.race()) {
     case 1:                                     // dwarf
         return cls == Fighter && (lvl == 9 || (lvl == 8 && str == 17) || (lvl == 7 && str < 17));
@@ -427,7 +433,7 @@ int trainable(const party::Character& c, const classes::Tables& t)
     const uint32_t xp = c.exp();
     for (int k = 0; k < classes::kClasses; ++k) {
         const int lv = c.level(k);
-        if (lv <= 0 || lv >= t.top_level() || race_limited(c, k, lv, t.lay.pool)) continue;
+        if (lv <= 0 || lv >= t.top_level() || race_limited(c, k, lv, t.lay.pool, t.lay.secret)) continue;
         const int32_t need = t.exp_needed(k, lv);
         if (need > 0 && static_cast<uint32_t>(need) <= xp) mask |= t.u8(static_cast<uint16_t>(t.lay.class_masks + k));
     }
@@ -445,7 +451,7 @@ int train_pick(const party::Character& c, const classes::Tables& t, uint32_t* ex
         const int lv = c.level(k);
         if (lv <= 0) continue;
         last = lv;
-        if (race_limited(c, k, lv, t.lay.pool)) continue;
+        if (race_limited(c, k, lv, t.lay.pool, t.lay.secret)) continue;
         const int32_t need = need_at(k, lv);
         if (need <= 0 || static_cast<uint32_t>(need) > xp) continue;
         ready |= t.u8(static_cast<uint16_t>(t.lay.class_masks + k));

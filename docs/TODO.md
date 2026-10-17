@@ -68,7 +68,8 @@ the Project as claude/TODO.md.
       ("belches in satisfaction" / "is digested instantly": when?); Deposit (the vault, VAULT.DAT);
       Take's coin list layout (row 1, col 1); items' plural names when
       shown ("30 ARROWS +1"); the training hall (Train Character /
-      Human Change Classes - its costs); Modify
+      Human Change Classes: v0.108.1 free, its hit dice, its race limits
+      - its Human Change still to check); Modify
       ("Add Subtract Keep Exit"); Add from Curse; camp (spell names; 6th /
       7th level spells and 101-117 in magic); a dwarf's saves (the
       Constitution effect 0x61 kept in the record's saves?); the fight
@@ -109,6 +110,9 @@ the Project as claude/TODO.md.
       (the engine: its own Constitution, HP rebuilt; SPEC 12)?
 
 ## Done
+
+- v0.108.1: Secret's training - free, its own hit dice, demihuman
+  clerics' limits; the temple's list with the shop's bar.
 
 - v0.108.0: Secret's temple - free, each cure at once with its own words
   ("can see!", "is ressurected" ...); its shops' Take / Appraise words,

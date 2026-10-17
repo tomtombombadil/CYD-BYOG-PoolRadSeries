@@ -1054,6 +1054,12 @@ until the party menu is known (`party.items`).
   "is swallowed whole", "stares blankly". The original has no Turn Undead
   (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
   has lost" - the engine already matched.
+- **v0.108.1 - Secret's training hall** (secret_facts_2.md 18): free (its
+  program has no price and no "Training costs" word); the hit points a
+  level from its own tables (DS 0x9B0 the count at level 1, 0x9B7 the
+  sides - 7 classes; the better of two rolls, as Curse); its demihuman
+  limits also stop clerics (dwarves at 8th level, elves and gnomes at
+  7th). The temple's list keeps the shop's bar at row 16, as the original.
 - **v0.108.0 - Secret's temple, shops' words, Appraise** (secret_facts_2.md
   17): the temple's menus ("Heal View Pool Appraise Exit", "Heal Exit",
   "NAME, how can we help you?") and the cures' names (START.EXE's data);

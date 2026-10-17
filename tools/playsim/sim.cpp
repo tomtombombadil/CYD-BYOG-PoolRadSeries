@@ -418,6 +418,7 @@ static void shop_run(const char* ops)
             char t[16]; snprintf(t, 16, "shoprun%d", n++); shot(t);
         } else if (*q == '%') { ++q; play::tap(17 * 8 + 2, (4 + (*q - '0')) * 8 + 2, C); }
         else if (*q == '^') { ++q; play::tap(24, (12 + pm_line_of(*q)) * 8 + 2, C); }   // a party menu line
+        else if (*q == '*') { party::Character& w = *play::pt->sel(); w.rec[0x127] = 0x40; w.rec[0x128] = 0x42; w.rec[0x129] = 0x0F; }   // 1000000 xp (a test)
         else if (*q == '&') { party::Character& w = *play::pt->sel(); w.rec[0x127] = 0xA0; w.rec[0x128] = 0x86; w.rec[0x129] = 0x01; }   // 100000 xp (a test)
         else if (*q == '?') { for (int k = 0; k < 8; ++k) printf(" %d", play::pt->sel()->level(k)); printf(" levels, xp %u, HP %d/%d\n", play::pt->sel()->exp(), play::pt->sel()->hp(), play::pt->sel()->hp_max()); }
         else if (*q == '!') { ++q; play::tap(16, (4 + (*q - '0')) * 8 + 2, C); }       // party menu: select row n

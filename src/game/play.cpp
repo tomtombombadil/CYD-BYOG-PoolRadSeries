@@ -3425,6 +3425,7 @@ void draw_heal(pic::Canvas& c)
 {
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
+    if (d->tables.bars[0]) layout::bar(c, d->tables, d->frame_tiles, 16);     // (Secret: the shop's bar stays)
     char t[48], nm[20];
     pt->sel()->name(nm, sizeof nm);
     snprintf(t, sizeof t, "%s%s", nm, hw->help);
@@ -6161,6 +6162,7 @@ void train_note(int word, pic::Canvas& c)
 {
     char t[48];
     sw(word, t, sizeof t);
+    plat::log("[play] training: %s\n", t);
     draw_party_menu(c);
     note(c, t);
 }
@@ -6174,7 +6176,9 @@ void train_character(pic::Canvas& c)
         train_note(profile::kTrainConscious, c);
         return;
     }
-    if (!game_won && rules::gold_worth(ch, pool_files()) < 1000) {      // (free once the game is won; Pool rounds)
+    // (free once the game is won; Pool rounds; Secret's halls are free - no
+    // "Training costs" word: secret_facts_2.md 18)
+    if (!game_won && d->prof->shop_words[profile::kTrainCost] && rules::gold_worth(ch, pool_files()) < 1000) {
         train_note(profile::kTrainCost, c);
         return;
     }
@@ -6232,7 +6236,7 @@ bool train_yes_no(Ask what, char k, pic::Canvas& c)
     screen = Screen::PartyMenu;
     party::Character* ch = pt->sel();
     if (k == 'Y' && ch && trainer && train_mask) {
-        if (!game_won) rules::pay(*ch, 1000);
+        if (!game_won && d->prof->shop_words[profile::kTrainCost]) rules::pay(*ch, 1000);
         const int mu = ch->level(classes::MagicUser);
         create::train_classes(*ch, trainer->tables, trainer->facts, trainer->dice, train_mask, false);
         rules::recalc(*ch, *names, d->facts);

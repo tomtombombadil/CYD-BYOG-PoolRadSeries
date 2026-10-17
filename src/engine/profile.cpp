@@ -1094,7 +1094,10 @@ const Profile kProfiles[] = {
      // own race order), the rest of character making not known yet
      .create = {.ds_image = 0xDE20,
                 .tables = {0x449C, 0x5810, 0x449C, 119, 0x4C0C, 0x4C92, 0x4C99, 0x4CA9, 0x4CAD, 0x4D3D, 0x4D48,
-                           0x4D9D, 0x4DFF, 0x4E45, 0x4EFF, 0x4F45, 0x4FAB, 0x506C, 0x5592, false, 0, 0, 0, true}},
+                           0x4D9D, 0x4DFF, 0x4E45, 0x4EFF, 0x4F45, 0x4FAB, 0x506C, 0x5592, false, 0, 0, 0, true},
+                // the hit dice: level 1's count, the sides (7 classes; its
+                // training's roll - the better of two - as Curse's)
+                .hp_count = 0x9B0, .hp_dice = 0x9B7},
      // Items' words (the same text as Curse's; the shop's Id price words not
      // found - its shops: later)
      .item_words = {0x28439, 0x2843E, 0x2844E, 0x28454, 0x2845B, 0x28461, 0x28467, 0x281AC, 0x2847C, 0x29078,
