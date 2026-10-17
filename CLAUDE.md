@@ -570,7 +570,14 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   two - file (area + 1) / 2 (`area_by_block`, `play::open_area_dax`,
   `area_fmt`). Rule tables: `classes::Layout::secret` shapes.
   Records: `party::from_secret` (+ `Character::ext`, races renumbered).
-  The playsim's Secret run: `GAME=3 SAVE=A sim <copy of its folder>`. Scratch tools:
+  The playsim's Secret run: `GAME=3 SAVE=A sim <copy of its folder>`.
+  Its behaviour checks: sweep's `behave secret` (-DCYD_TEST_HOOKS
+  -DBEHAVE_SECRET, GAME=3; ONLY= values, train, level, vault), oracle
+  /tmp/claude-0/bt/oracle_secret.txt from scratch `secret_oracle.py`
+  (Secret's own tables + the facts' constants; never in the repo). The
+  playsim's SEED=n (the game's dice), FIGHTTYPE (typed when a fight asks
+  a number), SAVECHECK (stored saves against the tables), GROUNDS (the
+  field's ground values). Scratch tools:
   /tmp/claude-0/secret (ops.py: the interpreter's operand counts,
   ecltrace: every block followed from its entry points, py/match.py:
   DOSBox screenshots matched against tiles, lw/lwsim.cpp: the Screen /

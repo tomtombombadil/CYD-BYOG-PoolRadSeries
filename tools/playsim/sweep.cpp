@@ -1409,7 +1409,8 @@ static void sweep_memloop(int rounds)
 // against what the original does (the rules, the program's tables, the
 // coab facts - claude/behaviour_facts.md), never against our own code.
 // Build with -DCYD_TEST_HOOKS (the die hook) and -DBEHAVE_<PART> for the
-// parts wanted: CLASSES, ITEMS, SPELLS, MONSTERS, EVENTS, SAVES, POOL (GAME=1).
+// parts wanted: CLASSES, ITEMS, SPELLS, MONSTERS, EVENTS, SAVES, POOL (GAME=1),
+// SECRET (GAME=3).
 #ifdef CYD_TEST_HOOKS
 static int b_pass = 0, b_fail = 0;
 // One check: "PASS part: what - detail" / "FAIL ..."; a failure counts as a problem
@@ -1470,6 +1471,9 @@ static void dice_faces(std::initializer_list<int> f) { dice_usual(); b_faces.ass
 #ifdef BEHAVE_POOL
 #include "behave_pool.inc"
 #endif
+#ifdef BEHAVE_SECRET
+#include "behave_secret.inc"
+#endif
 
 int main(int argc, char** argv)
 {
@@ -1522,6 +1526,9 @@ int main(int argc, char** argv)
 #endif
 #ifdef BEHAVE_POOL
         if (want("pool")) behave_pool();
+#endif
+#ifdef BEHAVE_SECRET
+        if (want("secret")) behave_secret();
 #endif
         create::g_die_hook = nullptr;
         printf("== behaviour: %d passed, %d failed\n", b_pass, b_fail);

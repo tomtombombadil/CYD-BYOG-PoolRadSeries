@@ -67,7 +67,11 @@ the Project as claude/TODO.md.
       dwarf F/T) kept his lower saves through a training in DOSBox -
       unexplained (secret_facts_2.md 28); approaching monsters (SPRIT1:
       sprites drawn as Curse's, not compared with DOSBox; the sky checked
-      at the vault's door, v0.116.1); behaviour tests.
+      at the vault's door, v0.116.1); more behaviour tests (sweep's
+      `behave secret` has THAC0, saves, training's hit points, the Level,
+      the vault - 221 checks, 0 failed, 2026-10-17; still to add: its new
+      spells and monsters in fights); then Tom: is Secret playable (Play
+      on the game page: `variant.unfinished` off)?
 - [ ] Tom: flash v0.104.0 on the 4.0" S3: the touch (keys now light as
       the stylus touches; light taps after a pause, finger and stylus;
       small keys) and the sounds (Settings' sound test - Step, Hit; Pool's
