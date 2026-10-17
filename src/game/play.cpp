@@ -771,10 +771,19 @@ void clear_menu_line(pic::Canvas& c)
     dirty_rows(text::kMenuRow, text::kMenuRow);
 }
 
-// The game's own menu while exploring
+// The game's own menu while exploring. Secret's starts with Move (GAME.OVR
+// 0x198E3: "Move Area Cast View Encamp Search Look"): its move mode, with
+// only "Exit" on the menu line - the original's arrows move the party only
+// there; the engine's movement keys move it either way (SPEC 12)
+bool moving = false;
+bool secret_files();
 void idle_menu(pic::Canvas& c)
 {
-    if (pool_overland()) {
+    if (secret_files() && vm->get(0x4BE6)) {
+        text::build(menu, "", moving ? "Exit" : "Move Area Cast View Encamp Search Look");
+        menu.selected = 0;
+        show_menu_line(c);
+    } else if (pool_overland()) {
         // Pool's wilderness: no Area (its program's words)
         text::build(menu, "", "Cast View Encamp Search Look");
         menu.selected = 0;
@@ -7388,6 +7397,7 @@ void begin_wait(pic::Canvas& c)
 
 void run_entry(int i, Then next)
 {
+    moving = false;                         // (a script: Secret's move mode ends)
     then = next;
     handle(vm->run(vm->entry(i)));
 }
@@ -10429,9 +10439,16 @@ void tap(int x, int y, pic::Canvas& c)
         draw_party(c, 17);
         return;
     }
-    // The exploring menu: Area Cast View Encamp Search Look
+    // The exploring menu: Area Cast View Encamp Search Look (Secret: Move first)
     if (y >= text::kMenuTapTop && (vm->get(0x4BE6) || pool_overland())) {
-        switch (text::key(menu, text::hit(menu, col))) {
+        const char k = text::key(menu, text::hit(menu, col));
+        if (moving || (k == 'M' && secret_files())) {
+            if (moving && k != 'E') return;
+            moving = !moving;
+            idle_menu(c);
+            return;
+        }
+        switch (k) {
         case 'A': act(Act::Area, c); break;
         case 'L': act(Act::Look, c); break;
         case 'S':

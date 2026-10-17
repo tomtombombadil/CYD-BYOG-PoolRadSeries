@@ -1054,6 +1054,10 @@ until the party menu is known (`party.items`).
   "is swallowed whole", "stares blankly". The original has no Turn Undead
   (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
   has lost" - the engine already matched.
+- **v0.113.0 - Secret's exploring menu**: "Move Area Cast View Encamp
+  Search Look" (GAME.OVR 0x198E3); Move switches the menu line to "Exit"
+  as the original's move mode, a script or Exit ends it (SPEC 12: the
+  movement keys move either way).
 - **v0.112.0 - Secret's sound** (secret_facts_2.md 22): its START.EXE
   keeps Curse's sound driver (segment 0x7E4) with 13 sounds - Curse's
   byte code but the magic missile's - so Tandy and the PC speaker play as
@@ -1599,5 +1603,9 @@ the game's Settings (As Original: all of them).
   when the Strength in use is 18/00 (it can be a spell's). Dispel Magic
   on these effects reads the engine's data (the original's holds the old
   Strength).
+- **Secret's Move** (v0.113.0): its exploring menu starts with Move, and
+  only in that mode (the menu line just "Exit") do the original's arrow
+  keys move the party; the engine shows the same menu and mode, but its
+  movement keys move the party in either (the cursor keys work the menu).
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.
