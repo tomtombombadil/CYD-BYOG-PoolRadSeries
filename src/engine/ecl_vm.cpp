@@ -981,7 +981,11 @@ Stop Vm::step()
         ++pc_;
         if (!monsters_) {
             // No monsters: a shop or temple the script opened, or the
-            // treasure after a fight
+            // treasure after a fight (Secret: first its vault)
+            if (set_.vault_word && get(set_.vault_word) == 1) {
+                set(set_.vault_word, 0);
+                return wait_for(Wait::Vault);
+            }
             if (get(0x7F6C) == 1) {
                 set(0x7F6C, 0);
                 return wait_for(Wait::Shop);

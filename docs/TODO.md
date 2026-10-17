@@ -60,10 +60,12 @@ the Project as claude/TODO.md.
       Secret's View panel. v0.106.0: its monsters' abilities
       (no Turn in the original). v0.105.0: the spells' words (fight
       and camp), Heal / Harm / the Elixir of Youth / the druids' spells,
-      item words. v0.113.0: the exploring menu's Move. v0.114.0: Alter and its Level. Next, a chunk a commit:
+      item words. v0.113.0: the exploring menu's Move. v0.114.0: Alter and its Level. v0.115.0: the vault. Next, a chunk a commit:
       how Secret renames an item it
       identifies / halves / joins; fights still to do: the remorhaz's after-swallow
-      ("belches in satisfaction" / "is digested instantly": when?); Deposit (the vault, VAULT.DAT);
+      ("belches in satisfaction" / "is digested instantly": when?); View's coin
+      choice (Trade / Drop / Deposit) on Secret's own money panel, copper
+      first, as the original (the engine: its own list page, highest first);
       items' plural names when shown ("30 ARROWS +1"); Delayed Blast
       Fireball's delay (v0.109.0 at once); a dwarf's saves (the
       Constitution effect 0x61 kept in the record's saves?); the fight

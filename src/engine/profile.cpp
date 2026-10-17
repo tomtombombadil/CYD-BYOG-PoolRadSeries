@@ -799,6 +799,7 @@ constexpr ecl::OpSet kSecretEcl = [] {
     s.sizes[0x41] = 2;
     s.area_by_block = true;
     s.secret_fields = true;
+    s.vault_word = 0x4CFC;          // (secret_facts_2.md 24)
     // CALL 2DCB follows the scripts' moves of the party (SAVE x, y, facing
     // to 0xC04B-D, then the call), as Curse's CALL 2E10: the 3D view again
     s.redraw_call = 0x2DCB;
@@ -1144,7 +1145,7 @@ const Profile kProfiles[] = {
      // found - its shops: later)
      .item_words = {0x28439, 0x2843E, 0x2844E, 0x28454, 0x2845B, 0x28461, 0x28467, 0x281AC, 0x2847C, 0x29078,
                     0x2848C, 0x284AC, 0x284C1, 0x28F9C, 0x29C21, 0x29C30, 0x2A139, 0x29CCE, 0x29D12, 0, 0x2A159,
-                    0x2A17F, 0x2A148, 0x22A97},
+                    0x2A17F, 0x2A148, 0x22A97, 0x28445},
      // The shop's Take / Appraise and the temple (secret_facts_2.md 17; its
      // temple overlay GAME.OVR 0x5AFE): menus, the cures' names (START.EXE's
      // data, 41 bytes each), no prices, each cure's own words; the
@@ -1261,7 +1262,9 @@ const Profile kProfiles[] = {
                  .bigpic_from = 0x70, .treasure_pic = 60, .camp_pic = 59, .appraise_div = 2},
      .overland = nullptr,
      .font_file = "8X8D5.DAX",
-     .joined = kSecretJoined, .n_joined = sizeof kSecretJoined / sizeof kSecretJoined[0]},
+     .joined = kSecretJoined, .n_joined = sizeof kSecretJoined / sizeof kSecretJoined[0],
+     // The vault: its overlay's "vault.dat" and menu words (GAME.OVR 0x50B2)
+     .vault = {"VAULT.DAT", 0x50BC, 0x50C1, 0x50C7}},
 };
 
 } // namespace
@@ -1279,7 +1282,7 @@ const ViewFacts& view_facts(games::Game g)
                                     0, 0};
     static const ViewFacts kSecret = {{0x27E21, 0x27E29, 0x27E30, 0x27E39, 0x27E3F, 0x27E45, 0x2A3AC, 0x2A3B8,
                                        0x2A3D5, 0x2A3DF, 0x2A767, 0x2AEF8, 0x2AF04, 0x2AF12, 0x2B004, 0x2B010,
-                                       0x2B020, 0x2B02E},
+                                       0x2B020, 0x2B02E, 0x2A754},
                                       0x6D, 0x6E};
     static const ViewFacts kNone = {};
     switch (g) {

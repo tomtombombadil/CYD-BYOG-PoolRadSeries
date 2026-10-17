@@ -66,6 +66,9 @@ struct OpSet {
     bool area_by_block = false;
     // Secret: the scripts' view of a character (party::script_value_secret)
     bool secret_fields = false;
+    // Secret: COMBAT with no monsters and this area word 1 (cleared) opens
+    // the vault (GAME.OVR 0x269D; its scripts' Deposit / Withdraw); 0: none
+    uint16_t vault_word = 0;
 };
 
 // A script's memory address as the engine's machine (Curse's map) knows

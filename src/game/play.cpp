@@ -1219,6 +1219,10 @@ bool view_box_tap(int x, int y, pic::Canvas& c);
 
 bool secret_files();
 void draw_character_secret(pic::Canvas& c, const party::Character& ch);
+bool vault_on();
+bool vault_write();
+void open_vault(pic::Canvas& c);
+void deposit_item(int i, pic::Canvas& c);
 
 // ---- View Character's menu (coab ovr020; the games' own words,
 // profile::view_facts): Items (some), Spells (some in memory - only looked
@@ -1226,7 +1230,7 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch);
 // treasure or in a shop onto the counter, else gone), a paladin's Heal
 // (twice the paladin level, once a day: its effect) and Cure (the
 // diseases; its cures a week - the record's 0x191). In a fight: Items and
-// Exit, as before. Secret's Deposit (its vault): not yet.
+// Exit, as before. Secret's vault: Deposit in Drop's place (play_fight.inc).
 const char* vword(int i) { return d->vw[i]; }
 bool any_money(const party::Character& ch)
 {
@@ -1266,7 +1270,7 @@ void view_keys(const party::Character& ch, char* keys, size_t cap)
         if (any_memorized(ch)) add(vword(profile::kVwSpells));
         const bool money = any_money(ch);
         if (money) add(vword(profile::kVwTrade));
-        if (money) add(vword(profile::kVwDrop));
+        if (money) add(vword(vault_on() ? profile::kVwDeposit : profile::kVwDrop));
         if (can_heal(ch)) add(vword(profile::kVwHeal));
         if (can_cure(ch)) add(vword(profile::kVwCure));
     }
@@ -1707,7 +1711,9 @@ void run_entry(int i, Then next);
 const char* iw(int i) { return d->iw[i]; }
 int  item_at = -1;                 // the item an offer / question is about
 int  trade_from = -1;              // Trade: whose item (pt->selected picks who gets it)
-bool in_shop_items() { return view_from == Screen::Shop; }
+bool vault_on();
+// (Secret's vault isn't a shop: Trade, Deposit in Drop's place, no Sell / Id)
+bool in_shop_items() { return view_from == Screen::Shop && !vault_on(); }
 
 // The menu for the items screen (as the games build it)
 // Use is offered to one who's up and about where the area allows it
@@ -1719,7 +1725,8 @@ void items_keys(char* out, size_t cap)
     const party::Character* ch = pt->sel();
     const bool exploring = view_from == Screen::Game || view_from == Screen::Camp || view_from == Screen::Fight;
     snprintf(out, cap, "%s%s%s%s%s%s%s%s", d->w_ready, exploring && can_use_items(*ch) ? iw(profile::kUse) : "",
-             !ch->npc() && !in_shop_items() && view_from != Screen::Fight ? iw(profile::kTrade) : "", iw(profile::kDrop),
+             !ch->npc() && !in_shop_items() && view_from != Screen::Fight ? iw(profile::kTrade) : "",
+             iw(vault_on() ? profile::kDeposit : profile::kDrop),
              ch->n_items < party::kMaxItems ? iw(profile::kHalve) : "", iw(profile::kJoin),
              in_shop_items() && !ch->npc() ? iw(profile::kSell) : "", in_shop_items() ? iw(profile::kId) : "");
 }
@@ -3427,8 +3434,8 @@ void draw_shop(pic::Canvas& c)
     pic_shown = false;
     head_shown = body_shown = -1;
     draw_frame(c);
-    if (treasure_on() && d->prof->variant.treasure_pic) draw_treasure_pic();
-    else if (last_pic_id >= 0 && !treasure_on()) host_picture(last_pic_id, last_pic_head);
+    if (treasure_on() && !vault_on() && d->prof->variant.treasure_pic) draw_treasure_pic();
+    else if (last_pic_id >= 0 && (!treasure_on() || vault_on())) host_picture(last_pic_id, last_pic_head);
     else draw_view(c);
     draw_panel(c);
     shop_menu(c);
@@ -3471,6 +3478,13 @@ void treasure_off();
 
 void leave_shop(pic::Canvas& c, bool asked)
 {
+    if (vault_on()) {
+        // Secret's vault: what's in it kept in its file
+        if (!vault_write()) plat::log("[play] the vault: %s not written\n", d->prof->vault.file);
+        ground->clear();
+        treasure_off();
+        asked = true;
+    }
     if (!asked && (ground->any_money() || (treasure_on() && ground->n))) {
         ask_leave(c);
         return;
@@ -3821,7 +3835,7 @@ void ask_take(int i, pic::Canvas& c)
     char a[16], b[20];
     if (take_mode) {
         snprintf(a, sizeof a, "%s", vword(profile::kVwHowMuch));
-        snprintf(b, sizeof b, "%s", vword(take_mode == 1 ? profile::kVwWillTrade : profile::kVwWillDrop));
+        snprintf(b, sizeof b, "%s", vword(take_mode == 1 ? profile::kVwWillTrade : vault_on() ? profile::kVwWillDeposit : profile::kVwWillDrop));
     } else {
         sw(profile::kHowMuch, a, sizeof a);
         sw(profile::kWillTake, b, sizeof b);
@@ -4418,7 +4432,10 @@ void list_tap(int x, int y, pic::Canvas& c)
         case 'R': ready_item(l.index, c); break;
         case 'U': use_item(l.index, c); break;
         case 'T': trade_item(l.index, c); break;
-        case 'D': drop_item(l.index, c); break;
+        case 'D':
+            if (vault_on()) deposit_item(l.index, c);
+            else drop_item(l.index, c);
+            break;
         case 'H': halve_item(l.index, c); break;
         case 'J': join_item(l.index, c); break;
         case 'S': sell_item(l.index, c); break;
@@ -7407,6 +7424,10 @@ void begin_wait(pic::Canvas& c)
         break;
     case ecl::Wait::Treasure:
         fight_treasure_only(c);
+        break;
+    case ecl::Wait::Vault:              // Secret's vault (Deposit / Withdraw)
+        temple = false;
+        open_vault(c);
         break;
     case ecl::Wait::PartyMenu:          // PROGRAM 0: the party menu, BEGIN goes on
         in_game_menu = true;

@@ -3902,8 +3902,10 @@ void fight_after_view(pic::Canvas& c)
 // leaving with treasure left: "There is still treasure left.  Do you want to
 // go back and claim your treasure?" Yes No - what's left is lost)
 bool treasure = false;                  // the shop screen is the treasure's
+bool vault = false;                     // ... and Secret's vault (below)
 bool treasure_on() { return treasure; }
-void treasure_off() { treasure = false; }
+bool vault_on() { return vault; }
+void treasure_off() { treasure = vault = false; }
 
 // A treasure word (GAME.OVR, read when shown)
 const char* tw(int i)
@@ -4021,6 +4023,21 @@ void treasure_menu(pic::Canvas& c)
 {
     char words[48];
     char a[32], b2[16];
+    if (vault) {
+        // "View Take Pool Exit" (Take with something there)
+        const auto& v = d->prof->vault;
+        ow(v.view, words, sizeof words);
+        if (ground->any_money() || ground->n) {
+            ow(v.take, a, sizeof a);
+            strlcat(words, a, sizeof words);
+        }
+        ow(v.pool_exit, a, sizeof a);
+        strlcat(words, a, sizeof words);
+        text::build(menu, "", words);
+        menu.selected = 0;
+        show_menu_line(c);
+        return;
+    }
     if (ground->any_money() || ground->n) {
         snprintf(a, sizeof a, "%s", tw(ground->any_money() ? profile::kViewTakePoolShare : profile::kViewTakePool));
         // " Detect Exit" with items there and a Detect Magic memorized by the one selected
@@ -4041,7 +4058,105 @@ void open_treasure(pic::Canvas& c)
     screen = Screen::Shop;
     text::clear(c, text::kTextArea);
     dirty_rows(17, 22);
-    if (d->prof->variant.treasure_pic) draw_treasure_pic();
+    if (d->prof->variant.treasure_pic && !vault) draw_treasure_pic();
     if (pt->count) draw_party(c, 17);
     treasure_menu(c);
+}
+
+// ---- Secret's vault (secret_facts_2.md 24; GAME.OVR 0x50B2): the scripts'
+// Deposit / Withdraw set the area word 0x4CFC and COMBAT opens it - the
+// treasure's screen ("View Take Pool Exit", under the script's picture)
+// over what VAULT.DAT in the save folder keeps (one vault for every saved
+// game): 7 coin counts (4 bytes each: copper ... jewellery), then the
+// items, 67 bytes each (Secret's .STF). View's Deposit (in Drop's place)
+// puts coins or an item in it, Take takes them out, Pool puts the party's
+// coins in; leaving writes the file. The engine keeps up to kMaxGround
+// items there (the original: as many as its memory takes).
+void vault_read()
+{
+    ground->clear();
+    char path[200];
+    save_path(d->prof->vault.file, path, sizeof path);
+    plat::File f = plat::open(path, "r");
+    if (!f) return;
+    uint8_t b[party::kSecretItemSize];
+    if (f.read(b, 28) == 28)
+        for (int m = 0; m < 7; ++m) {
+            const uint32_t v = b[m * 4] | b[m * 4 + 1] << 8 | b[m * 4 + 2] << 16 | static_cast<uint32_t>(b[m * 4 + 3]) << 24;
+            ground->money[m] = v > 0x7FFFFFFF ? 0x7FFFFFFF : static_cast<int>(v);
+        }
+    while (f.read(b, sizeof b) == static_cast<int>(sizeof b)) {
+        // (an item of type 0x49 is followed by as many records as its
+        // count, 0x39 - the original's loader reads them; none in the game)
+        if (b[0x2E] == 0x49)
+            for (int k = 0; k < b[0x39]; ++k) {
+                uint8_t skip[party::kSecretItemSize];
+                f.read(skip, sizeof skip);
+            }
+        if (ground->n >= items::kMaxGround) continue;
+        memcpy(ground->item[ground->n], b, items::kRecordSize);
+        items::fix_item(ground->item[ground->n]);
+        name_from_words(ground->item[ground->n]);
+        ++ground->n;
+    }
+    f.close();
+    // The file's first item is the list's first line: the ground's last
+    for (int i = 0, j = ground->n - 1; i < j; ++i, --j) {
+        uint8_t t[items::kRecordSize];
+        memcpy(t, ground->item[i], sizeof t);
+        memcpy(ground->item[i], ground->item[j], sizeof t);
+        memcpy(ground->item[j], t, sizeof t);
+    }
+}
+
+bool vault_write()
+{
+    char path[200];
+    save_path(d->prof->vault.file, path, sizeof path);
+    if (!plat::exists(d->save_dir)) plat::mkdir(d->save_dir);
+    plat::File f = plat::open(path, "w");
+    if (!f) return false;
+    uint8_t b[party::kSecretItemSize] = {};
+    for (int m = 0; m < 7; ++m) {
+        const uint32_t v = ground->money[m] > 0 ? static_cast<uint32_t>(ground->money[m]) : 0;
+        for (int k = 0; k < 4; ++k) b[m * 4 + k] = static_cast<uint8_t>(v >> (8 * k));
+    }
+    bool ok = f.write(b, 28) == 28;
+    for (int i = ground->n - 1; ok && i >= 0; --i) {        // (the list's order)
+        memset(b, 0, sizeof b);
+        memcpy(b, ground->item[i], items::kRecordSize);
+        items::fix_item(b, true);                   // (the original's bytes in the files)
+        ok = f.write(b, sizeof b) == sizeof b;
+    }
+    f.close();
+    return ok;
+}
+
+void open_vault(pic::Canvas& c)
+{
+    vault_read();
+    vault = true;
+    open_treasure(c);
+}
+
+bool can_part_with(int i, pic::Canvas& c);
+void back_to_items(pic::Canvas& c);
+
+// Secret's vault: an item put in it (View - Items - Deposit, the item put
+// away first; no question)
+void deposit_item(int i, pic::Canvas& c)
+{
+    party::Character& ch = *pt->sel();
+    if (!can_part_with(i, c)) return;
+    if (ground->n >= items::kMaxGround) {
+        note(c, d->w_over);
+        return;
+    }
+    // (the list's last line: the ground's first)
+    memmove(ground->item[1], ground->item[0], static_cast<size_t>(ground->n) * items::kRecordSize);
+    memcpy(ground->item[0], ch.items[i], items::kRecordSize);
+    ++ground->n;
+    rules::remove_item(ch, i);
+    rules::recalc(ch, *names, d->facts);
+    back_to_items(c);
 }

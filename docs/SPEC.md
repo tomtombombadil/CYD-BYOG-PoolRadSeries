@@ -1054,6 +1054,17 @@ until the party menu is known (`party.items`).
   "is swallowed whole", "stares blankly". The original has no Turn Undead
   (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
   has lost" - the engine already matched.
+- **v0.115.0 - Secret's vault** (secret_facts_2.md 24): the bank's
+  Deposit / Withdraw (its script sets the area word 0x4CFC, then COMBAT)
+  open the vault - the treasure's screen under the script's picture,
+  "View Take Pool Exit" (Take only with something there): Take its coins
+  and items, Pool the party's coins into it, View with **Deposit** in
+  Drop's place (coins: "How much X will you deposit? "; items: at once,
+  put away first; the items menu "Ready Trade Deposit Halve Join Exit"),
+  leaving writes `VAULT.DAT` in the save folder as the original's (7 coin
+  counts of 4 bytes, then 67-byte items in the list's order) - one vault
+  for all saved games, as the original's. Checked in DOSBox with a save
+  made by the engine at the vault's door.
 - **v0.114.0 - Secret's Alter** (secret_facts_2.md 23): "Order Drop Speed
   Icon Level Exit" with no prompt, its own words (and the icon editor's
   menus - they were empty for Secret); **Level** - "Novice Squire Veteran
@@ -1608,6 +1619,10 @@ the game's Settings (As Original: all of them).
   when the Strength in use is 18/00 (it can be a spell's). Dispel Magic
   on these effects reads the engine's data (the original's holds the old
   Strength).
+- **Secret's vault** (v0.115.0) keeps up to 64 items (the treasure's
+  list); the original's holds as many as its memory takes. A vault item
+  of type 0x49 (none in the game) is followed in the file by as many
+  records as its count: the engine reads past them and doesn't keep them.
 - **Secret's Move** (v0.113.0): its exploring menu starts with Move, and
   only in that mode (the menu line just "Exit") do the original's arrow
   keys move the party; the engine shows the same menu and mode, but its

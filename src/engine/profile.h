@@ -71,6 +71,7 @@ enum ItemWord {
     kGiveYou, kGoldFor, kDeal, kSold, kOverloadPool,         // the shop's Sell
     kIdentify, kNothingNew, kSortOf, kNoMoney,               // the shop's Id
     kSelect,                                                 // "Select" (picking a character)
+    kDeposit,                                                // Secret's " Deposit" (its vault: in Drop's place)
     kItemWords
 };
 
@@ -514,6 +515,12 @@ struct Profile {
     // Words made of two (text::kJoined | index)
     const JoinedWord* joined = nullptr;
     uint8_t           n_joined = 0;
+    // Secret's vault (secret_facts_2.md 24): its file in the save folder
+    // (nullptr: no vault) and its menu's words ("View", " Take", " Pool Exit")
+    struct {
+        const char* file = nullptr;
+        uint32_t    view = 0, take = 0, pool_exit = 0;
+    } vault;
 };
 
 // The game's program file name (to look for it), or nullptr if no
@@ -529,6 +536,7 @@ enum ViewWord {
     kVwHealWhom, kVwFeelsBetter, kVwUnaffected,                       // "Heal whom? ", " feels better", " is unaffected"
     kVwCureWhom, kVwNotDiseased, kVwCureAnyway, kVwIsCured,          // "Cure whom? ", "is not diseased", "cure anyway: ",
                                                                       // " is cured"
+    kVwWillDeposit,                                                   // Secret's "will you deposit? " (its vault)
     kViewWords
 };
 struct ViewFacts {
