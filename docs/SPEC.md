@@ -1209,7 +1209,10 @@ First look at Tom's GOG files with `dax_inspect` (2026-10-07):
   edge, gold inside); on the game screen a menu line word, a list line or
   a party menu line has its letters drawn in the highlight colour (15). A
   key or word already lit blinks off (70 ms) and on. Afterwards it is put
-  back as it was unless the screen was redrawn there.
+  back as it was unless the screen was redrawn there. Since v0.104.0 (Tom,
+  2026-10-17) it lights up as the stylus TOUCHES (ui::poll_press), not
+  as it lifts; the tap still acts on the lift, at the press point; a press
+  that ends without a tap (a drag) puts it back.
 - No "are you sure" confirmations. Title Case on keys and headings.
 - Layout always from the panel size, never fixed for one board.
 - Colours of the engine's own screens from `src/ui/style.h` (dark: black, navy

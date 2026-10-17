@@ -17,6 +17,8 @@ LGFX* g = nullptr;
 
 // Touch filter state
 bool     down = false;          // a press is in progress
+bool     pending_press = false; // a press started, not yet taken by poll_press
+bool     pending_tap = false;   // a tap ended, not yet taken by poll_tap
 [[maybe_unused]] int agree = 0;             // readings in a row that agreed
 [[maybe_unused]] int empty = 0;             // empty readings in a row
 [[maybe_unused]] int last_x = 0, last_y = 0;
@@ -170,10 +172,12 @@ void start()
 
 } // namespace cap
 
-bool poll_tap(Tap& out)
+// Plays the queue until a press starts or a tap ends (pending_press /
+// pending_tap), or it's empty
+void pump()
 {
     cap::start();
-    while (cap::tail != cap::head) {
+    while (!pending_press && !pending_tap && cap::tail != cap::head) {
         const cap::Event e = cap::queue[cap::tail];
         cap::tail = (cap::tail + 1) % cap::kQueue;
         switch (e.ev) {
@@ -182,6 +186,7 @@ bool poll_tap(Tap& out)
             press_x = cur_x = e.x;
             press_y = cur_y = e.y;
             dragging = false;
+            pending_press = true;
             break;
         case cap::Ev::Move:
             if (!down) break;
@@ -204,20 +209,19 @@ bool poll_tap(Tap& out)
                 dragging = false;
                 break;
             }
-            out.x = press_x;
-            out.y = press_y;
-            return true;                               // (the rest waits for the next call)
+            pending_tap = true;                        // (the rest waits for the next call)
+            break;
         }
     }
-    return false;
 }
 
 #else
 
-bool poll_tap(Tap& out)
+void pump()
 {
+    if (pending_press || pending_tap) return;
     const uint32_t now = millis();
-    if (static_cast<int32_t>(now - next_poll) < 0) return false;
+    if (static_cast<int32_t>(now - next_poll) < 0) return;
     next_poll = now + kPollMs;
 
     int32_t x, y;
@@ -242,6 +246,7 @@ bool poll_tap(Tap& out)
             press_x = cur_x = x;
             press_y = cur_y = y;
             dragging = false;
+            pending_press = true;
         } else if (down && agree >= 1) {
             const int px = large() ? 14 : 10;      // a press that moves this far is a drag
             if (drag_ok && !dragging && (std::abs(x - press_x) > px || std::abs(y - press_y) > px)) dragging = true;
@@ -252,7 +257,7 @@ bool poll_tap(Tap& out)
             cur_x = x;
             cur_y = y;
         }
-        return false;
+        return;
     }
     agree = 0;
     last_x = last_y = -100;
@@ -261,19 +266,40 @@ bool poll_tap(Tap& out)
         empty = 0;
         if (dragging) {
             dragging = false;
-            return false;
+            return;
         }
-        out.x = press_x;
-        out.y = press_y;
 #if defined(CYD_QEMU)
-        Serial.printf("[qemu] tap seen at %d,%d\n", out.x, out.y);
+        Serial.printf("[qemu] tap seen at %d,%d\n", press_x, press_y);
 #endif
-        return true;
+        pending_tap = true;
     }
-    return false;
 }
 
 #endif
+
+// A press that has just started (Tom, 2026-10-17: what it will act on
+// lights up as the stylus touches, not as it lifts); then poll_tap gives
+// the tap when it lifts - at the press point, as before
+bool poll_press(Tap& out)
+{
+    pump();
+    if (!pending_press) return false;
+    pending_press = false;
+    out.x = press_x;
+    out.y = press_y;
+    return true;
+}
+
+bool poll_tap(Tap& out)
+{
+    pump();
+    if (pending_press) return false;          // (poll_press first)
+    if (!pending_tap) return false;
+    pending_tap = false;
+    out.x = press_x;
+    out.y = press_y;
+    return true;
+}
 
 bool pressed() { return down; }
 

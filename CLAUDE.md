@@ -686,7 +686,9 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   Page; Zoom cycles levels (whole / width / full size), the key names the
   level shown.
 - Tap highlight (Tom, 2026-10-09): what a tap acts on lights up FIRST,
-  before any slow work - engine keys get a bright ring (`ui::tap_flash`,
+  before any slow work - AS THE STYLUS TOUCHES (Tom, 2026-10-17,
+  v0.104.0: `ui::poll_press` then `ui::poll_tap`; the tap still acts on
+  release at the press point; a drag puts it back) - engine keys get a bright ring (`ui::tap_flash`,
   every key drawn with ui::key / key2 / key_arrow is known), the game
   screen's menu words, list lines and party menu lines turn to the
   highlight colour (`play::tap_highlight`); one already lit blinks off and

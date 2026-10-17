@@ -3830,12 +3830,22 @@ bool play_journal()
     return true;
 }
 
+// What a press will act on lit up as the stylus touched (Tom, 2026-10-17):
+// a key (ui::tap_flash) or a thing on the game screen (play::tap_highlight);
+// the tap then doesn't light it again, and a press that ends without a tap
+// (a drag) puts it back
+bool press_key_lit = false;
+bool press_canvas_lit = false;
+int  press_y0 = 0, press_y1 = 0;
+
 // A tap on the game screen (or Select at the highlighted thing): what it
 // acts on lights up first (Tom, 2026-10-09), then the game takes it
 void play_canvas_tap(int cx, int cy)
 {
     int y0, y1;
-    if (play::tap_highlight(cx, cy, frame::canvas(), &y0, &y1)) {
+    if (press_canvas_lit) {
+        press_canvas_lit = false;              // (lit as the stylus touched)
+    } else if (play::tap_highlight(cx, cy, frame::canvas(), &y0, &y1)) {
         frame::present_rows(y0, y1);
         if (play::tap_highlight_blink(frame::canvas())) {
             delay(70);
@@ -4403,12 +4413,37 @@ void begin(const Env& env, Settings& settings)
     }
 }
 
+// A press has started: light what it will act on at once
+void press_feedback(const ui::Tap& p)
+{
+    if (ui::tap_flash(p) >= 0) {
+        press_key_lit = true;
+        return;
+    }
+    if (screen != Screen::Play || play_error || kb_shown || map_shown || dirty) return;
+    if (big_icon_on() && big_icon_area().contains(p.x, p.y)) return;
+    int cx, cy;
+    if (!frame::to_canvas(p.x, p.y, cx, cy)) return;
+    int y0, y1;
+    if (!play::tap_highlight(cx, cy, frame::canvas(), &y0, &y1)) return;
+    frame::present_rows(y0, y1);
+    if (play::tap_highlight_blink(frame::canvas())) {
+        delay(70);
+        frame::present_rows(y0, y1);
+    }
+    press_canvas_lit = true;
+    press_y0 = y0;
+    press_y1 = y1;
+}
+
 void tick()
 {
     memlog::tick(screen == Screen::Play);
     ui::Tap t;
+    if (ui::poll_press(t)) press_feedback(t);
     if (ui::poll_tap(t)) {
-        ui::tap_flash(t);            // the tapped key lights up first (Tom, 2026-10-09)
+        if (!press_key_lit) ui::tap_flash(t);    // the tapped key lights up first (Tom, 2026-10-09)
+        press_key_lit = false;
         switch (screen) {
         case Screen::Home:     tap_home(t); break;
         case Screen::Files:    tap_files(t); break;
@@ -4438,6 +4473,21 @@ void tick()
             break;
         }
         ui::tap_unflash();           // back as it was, unless the screen changed
+        if (press_canvas_lit) {      // (lit, but the tap went elsewhere - a journal entry, the keyboard)
+            press_canvas_lit = false;
+            if (screen == Screen::Play) {
+                play::tap_highlight_end(frame::canvas());
+                frame::present_rows(press_y0, press_y1);
+            }
+        }
+    } else if (!ui::pressed() && (press_key_lit || press_canvas_lit)) {
+        // A press that ended without a tap (a drag): put it back
+        if (press_key_lit) ui::tap_unflash();
+        if (press_canvas_lit && screen == Screen::Play) {
+            play::tap_highlight_end(frame::canvas());
+            frame::present_rows(press_y0, press_y1);
+        }
+        press_key_lit = press_canvas_lit = false;
     }
     if (screen == Screen::Logs && !dirty) logui::tick();
     if ((screen == Screen::Settings || screen == Screen::GameSettings ||

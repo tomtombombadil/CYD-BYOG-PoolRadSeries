@@ -54,6 +54,10 @@ int gap();             // space between keys
 // readings (filters the XPT2046's stray samples).
 // Call often (every loop); returns true once per tap.
 bool poll_tap(Tap& out);
+// A press that has just started (its point): call before poll_tap - the
+// key it will act on lights up at once (ui::tap_flash), the tap comes
+// from poll_tap when the stylus lifts
+bool poll_press(Tap& out);
 // True while the panel is being pressed (after the filter).
 bool pressed();
 // Dragging (Tom, 2026-10-09: scrolling lists, the brightness slider): on a
