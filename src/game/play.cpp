@@ -1036,12 +1036,12 @@ uint32_t item_stride() { return secret_files() ? party::kSecretItemSize : party:
 void name_from_words(uint8_t* r)
 {
     if (!secret_files() || !names) return;
-    const bool det = names->detect;
+    const bool det = names->detect, stored = names->stored_names;
     names->stored_names = false;
     names->detect = false;
     char t[48];
     names->name(items::Item{r}, t, sizeof t);
-    names->stored_names = true;
+    names->stored_names = stored;
     names->detect = det;
     size_t n = strlen(t);
     if (n > 0x2D) n = 0x2D;
@@ -6853,7 +6853,11 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             names->set_words(buf, pi.words.count, pi.words.stride);
         free(buf);
         names->set_plural(items::Names::Plural{pi.arrow, pi.quarrel, pi.dart, pi.flask, pi.keep1, pi.keep2});
-        names->stored_names = secret_files();
+        // (every game's names are made from the item's words when shown -
+        // Secret's too: its records' own names are a list line's left-overs,
+        // "Two-Handed Sword of Giant Slaying" shows as "Two-Handed Sword of
+        // vs Giants" - DOSBox; secret_facts_2.md 25)
+        names->stored_names = false;
         d->facts.arrow = pi.arrow;
         d->facts.quarrel = pi.quarrel;
         memcpy(d->facts.elf_bonus, pi.elf_bonus, sizeof d->facts.elf_bonus);

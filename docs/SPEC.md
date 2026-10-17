@@ -971,7 +971,8 @@ until the party menu is known (`party.items`).
   quarrels 12, darts 5; the elves' bows and swords 22-25, 18, 19). An
   item's name is the one its record keeps (`items::Names::stored_names`:
   "Two-Handed Sword of Giant Slaying" isn't made of its words). Not yet:
-  how it renames an item it identifies or splits.
+  how it renames an item it identifies or splits. (v0.115.1: wrong - its
+  names are made from the words, as Curse's.)
 - **v0.99.0 - fights.** Its battlefield tables are Curse's at its own
   places (DS 0x1A9E ground, 0x350-0x384 the placing tables; no terrain
   table); its monsters' 439-byte records are moved into Curse's layout
@@ -1054,6 +1055,13 @@ until the party menu is known (`party.items`).
   "is swallowed whole", "stares blankly". The original has no Turn Undead
   (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
   has lost" - the engine already matched.
+- **v0.115.1 - Secret's item names are made from their words** when
+  shown, as every game's (DOSBox, secret_facts_2.md 25): its records' own
+  names are left-overs of a list line (the original writes " No   Mace +1 "
+  there), so "Two-Handed Sword of Giant Slaying" shows as "Two-Handed
+  Sword of vs Giants" and "6 Arrow +1" as "6 Arrows +1"; identified,
+  halved and joined items are named by Curse's rules (the hidden words,
+  0x35, as Curse's).
 - **v0.115.0 - Secret's vault** (secret_facts_2.md 24): the bank's
   Deposit / Withdraw (its script sets the area word 0x4CFC, then COMBAT)
   open the vault - the treasure's screen under the script's picture,
