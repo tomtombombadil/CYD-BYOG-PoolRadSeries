@@ -1596,7 +1596,7 @@ void after_hit(Battle& b, int a, int c, int slot, int roll, int hits1, create::D
     // against petrification or stoned; the remorhaz swallows its victim
     // whole on a natural 20
     auto gone = [&](int status, Ev said) {
-        add_event(out, c, said);
+        add_event(out, c, said, a);             // (to: the one that did it)
         tg.rec[kHp] = 0;
         tg.rec[kHealth] = static_cast<uint8_t>(status);
         fall(b, c);

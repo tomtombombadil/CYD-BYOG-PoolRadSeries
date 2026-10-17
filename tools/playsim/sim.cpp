@@ -466,6 +466,7 @@ static void shop_run(const char* ops)
 int main(int argc, char** argv)
 {
     setvbuf(stdout, nullptr, _IOLBF, 0);       // (lines out at once: a hang or a crash keeps them)
+    if (getenv("SEED")) play::rng = create::Dice(static_cast<uint32_t>(strtoul(getenv("SEED"), nullptr, 10)));   // SEED=n: the game's dice
     // SIZES: the fight's blocks' sizes
     if (getenv("SIZES")) { printf("Fight %zu Battle %zu Page %zu Monster %zu Data %zu World %zu GameState %zu Party %zu Names %zu Ground %zu\n", sizeof(play::Fight), sizeof(combat::Battle), sizeof(play::Page), sizeof(combat::Monster), sizeof(play::Data), sizeof(view3d::World), sizeof(ecl::GameState), sizeof(party::Party), sizeof(items::Names), sizeof(*play::ground));
         printf("Fight: words %zu pages %zu icons %zu thrown %zu; Data: roster %zu guys %zu item words %zu; Battle fighters %zu (%zu each); Character %zu Vm %zu Making %zu\n",
@@ -615,7 +616,19 @@ int main(int argc, char** argv)
         printf("  saves [%s] menu [%s%s]\n", play::pm_saves, play::menu.prompt, play::menu.s);
         const int k = (int)(strchr(play::pm_saves, save[0]) - play::pm_saves);
         play::tap(((int)strlen(play::menu.prompt) + play::menu.start[k]) * 8 + 2, text::kMenuRow * 8 + 2, C);
-        for (int i = 0; i < play::pt->count; ++i) { char n[20]; play::pt->m[i].name(n, 20); printf("  %d: %-15s AC %d HP %d/%d race %d class %d\n", i, n, play::pt->m[i].ac(), play::pt->m[i].hp(), play::pt->m[i].hp_max(), play::pt->m[i].race(), play::pt->m[i].cls()); }
+        for (int i = 0; i < play::pt->count; ++i) { char n[20]; play::pt->m[i].name(n, 20); printf("  %d: %-15s AC %d HP %d/%d race %d class %d saves %d %d %d %d %d levels %d %d %d %d %d %d %d\n", i, n, play::pt->m[i].ac(), play::pt->m[i].hp(), play::pt->m[i].hp_max(), play::pt->m[i].race(), play::pt->m[i].cls(), play::pt->m[i].rec[0xDF], play::pt->m[i].rec[0xE0], play::pt->m[i].rec[0xE1], play::pt->m[i].rec[0xE2], play::pt->m[i].rec[0xE3], play::pt->m[i].rec[0x109], play::pt->m[i].rec[0x10A], play::pt->m[i].rec[0x10B], play::pt->m[i].rec[0x10C], play::pt->m[i].rec[0x10D], play::pt->m[i].rec[0x10E], play::pt->m[i].rec[0x10F]); }
+        if (getenv("SAVECHECK")) {      // SAVECHECK: each member's saves as the class tables make them
+            play::MagicRules* mr = nullptr;
+            if (play::load_rules(mr))
+                for (int i = 0; i < play::pt->count; ++i) {
+                    party::Character* cc = new party::Character(play::pt->m[i]);
+                    classes::class_bonuses(*cc, mr->tables);
+                    printf("  tables: %d saves %d %d %d %d %d\n", i, cc->rec[0xDF], cc->rec[0xE0], cc->rec[0xE1], cc->rec[0xE2], cc->rec[0xE3]);
+                    delete cc;
+                }
+            if (mr) for (int cls = 0; cls < 7; ++cls) { printf("  table class %d:", cls); for (int lv = 1; lv <= 12; ++lv) { printf(" ["); for (int k = 0; k < 5; ++k) printf("%d%s", mr->tables.save(cls, lv, k), k < 4 ? "," : ""); printf("]"); } printf("\n"); }
+            delete mr;
+        }
         printf("party menu:");
         for (int i = 0; i < play::pm_lines; ++i) printf(" [%s]", play::d->item[play::pm_item[i]]);
         printf("\n");

@@ -1283,7 +1283,17 @@ void event_page(const combat::Event& e)
     case combat::Ev::SpitsMisses: said(profile::kSpitsMisses); break;
     case combat::Ev::Gazes: said(profile::kGazes); break;
     case combat::Ev::BreathesCold: said(profile::kBreathesCold); break;
-    case combat::Ev::Swallowed: fallen(profile::kSwallowed); break;
+    case combat::Ev::Swallowed:
+        fallen(profile::kSwallowed);
+        // Secret's remorhaz (GAME.OVR 0x128F1): then "NAME is killed", and
+        // half the time "REMORHAZ belches in satisfaction", else "NAME is
+        // digested instantly"
+        if (fw(profile::kBelches)[0]) {
+            said(profile::kIsKilled);
+            if (e.to >= 0 && rng.roll(100, 1) <= 50) add_page(e.to, fw(profile::kBelches));
+            else said(profile::kDigested);
+        }
+        break;
     case combat::Ev::StaresBlankly: said(profile::kStaresBlankly); break;
     case combat::Ev::RayDisintegrate: said(profile::kRayDisint); break;
     case combat::Ev::RayStone: said(profile::kRayStone); break;
@@ -1461,7 +1471,10 @@ void attack_pages(int a, int t, const combat::Attack& at, bool behind, bool shot
         if (shot) page_fx_set(0, fly);
         else page_sound(sound::kMiss);
     }
-    if (at.down) down_page(t);
+    // (swallowed whole: its own pages said it - "is killed" among them)
+    bool swallowed = false;
+    for (int j = 0; j < at.n_ev; ++j) swallowed = swallowed || at.ev[j].ev == combat::Ev::Swallowed;
+    if (at.down && !swallowed) down_page(t);
 }
 
 // After an attack's pages: the turn ends unless attacks are left and the

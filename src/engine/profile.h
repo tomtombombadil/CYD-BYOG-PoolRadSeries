@@ -175,6 +175,8 @@ enum FightWord {
                                                                                  // "stares blankly"
     kBlastDelay, kSetsBlast, kBlastGoesOff,                                      // Secret's Delayed Blast Fireball: "Blast Delay in
                                                                                  // segments (1-50)? " ... "... goes off"
+    kBelches, kDigested,                                                         // Secret's remorhaz after a swallow: "belches in
+                                                                                 // satisfaction", "is digested instantly"
     kFightWords
 };
 

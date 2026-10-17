@@ -1055,6 +1055,10 @@ until the party menu is known (`party.items`).
   "is swallowed whole", "stares blankly". The original has no Turn Undead
   (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
   has lost" - the engine already matched.
+- **v0.116.3 - the remorhaz's swallow** (GAME.OVR 0x128F1): after "NAME
+  is swallowed whole" come "NAME is killed" and, half the time, "REMORHAZ
+  belches in satisfaction", else "NAME is digested instantly" (no second
+  "is killed").
 - **v0.116.2 - Secret's fight colours** (DOSBox, the assassins' room at
   15,12 of New Verdigris): its fight pictures already have dark grey where
   Curse's have black (DUNGCOM's 30 frames: the plain floor all colour 8),
