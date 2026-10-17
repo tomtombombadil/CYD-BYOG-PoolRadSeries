@@ -3662,9 +3662,11 @@ void draw_take(pic::Canvas& c)
 {
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
-    plist.row0 = 2;
-    plist.row1 = 9;
-    plist.col0 = 2;
+    // (Secret's - its frame of bars - from row 1, column 1: secret_facts_2.md 16)
+    const bool top = d->tables.bars[0] != 0;
+    plist.row0 = top ? 1 : 2;
+    plist.row1 = top ? 8 : 9;
+    plist.col0 = top ? 1 : 2;
     plist.n = take_n;
     char prompt[28], sel[12];
     if (take_mode) {
