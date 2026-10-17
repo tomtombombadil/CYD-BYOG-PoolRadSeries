@@ -3109,6 +3109,7 @@ void fight_cast_menu(pic::Canvas& c)
     sl.learning = sl.scrolls = sl.choosing = false;
     sl.casting = true;
     sl.fighting = true;
+    sl.viewing = false;
     build_lines(ids, n);
     screen = Screen::SpellList;
     draw_spells(c);

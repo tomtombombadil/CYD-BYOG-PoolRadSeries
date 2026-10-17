@@ -44,11 +44,12 @@ constexpr uint16_t kSecretRuns[][3] = {
     {0x118, 0x111, 7},   {0x11F, 0x119, 1},   {0x120, 0x11B, 9},   {0x129, 0x124, 9},   {0x132, 0x12D, 5},
     {0x139, 0x132, 5},   {0x147, 0x137, 5},   {0x14E, 0x13C, 0x10}, {0x160, 0x14C, 1},   {0x199, 0x185, 4},
     {0x1A6, 0x195, 0x11},
+    {0x6D, 0x191, 1},                   // the paladin's cures left (Curse's place; secret_facts_2.md 16)
 };
 // Secret offset, Ext place, length
 constexpr uint16_t kSecretExt[][3] = {
     {0xD5, kExtBook, 17}, {0x137, kExtCleric67, 2}, {0x13E, kExtDruidMore, 9}, {0x14C, kExtMage67, 2},
-    {0x6D, kExt6D, 1},    {0x15E, kExtFlags2, 1},   {0x15F, kExt15F, 1},       {0x1A5, kExtMagicRes, 1},
+    {0x15E, kExtFlags2, 1},   {0x15F, kExt15F, 1},       {0x1A5, kExtMagicRes, 1},
     {0x6B, kExtRace, 1},
 };
 

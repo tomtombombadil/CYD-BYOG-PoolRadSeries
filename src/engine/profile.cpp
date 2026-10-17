@@ -1190,6 +1190,30 @@ const Profile kProfiles[] = {
 
 } // namespace
 
+const ViewFacts& view_facts(games::Game g)
+{
+    // (secret_facts_2.md 16; Curse's words at the same places coab's View
+    // prints them; Pool has no paladin's powers)
+    static const ViewFacts kCurse = {{0x27B87, 0x27B8F, 0, 0x27B96, 0x27B9C, 0x27BA2, 0x29C57, 0x29C63, 0x29C80,
+                                      0x29C8A, 0x29FE4, 0x2A70B, 0x2A717, 0x2A725, 0x2A815, 0x2A821, 0x2A831,
+                                      0x2A83F},
+                                     0x8C, 0x8D};
+    static const ViewFacts kPool = {{0x21AAD, 0x21AB5, 0, 0x21ABC, 0, 0, 0x23154, 0x23160, 0x23175, 0x2317F,
+                                     0x234D1, 0, 0, 0, 0, 0, 0, 0},
+                                    0, 0};
+    static const ViewFacts kSecret = {{0x27E21, 0x27E29, 0x27E30, 0x27E39, 0x27E3F, 0x27E45, 0x2A3AC, 0x2A3B8,
+                                       0x2A3D5, 0x2A3DF, 0x2A767, 0x2AEF8, 0x2AF04, 0x2AF12, 0x2B004, 0x2B010,
+                                       0x2B020, 0x2B02E},
+                                      0x6D, 0x6E};
+    static const ViewFacts kNone = {};
+    switch (g) {
+    case games::Game::CurseOfTheAzureBonds: return kCurse;
+    case games::Game::PoolOfRadiance: return kPool;
+    case games::Game::SecretOfTheSilverBlades: return kSecret;
+    default: return kNone;
+    }
+}
+
 const char* program_name(games::Game g)
 {
     for (const Profile& p : kProfiles)

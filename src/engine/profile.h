@@ -508,6 +508,26 @@ struct Profile {
 // release of that game is known yet.
 const char* program_name(games::Game g);
 
+// View Character's menu beyond Items / Exit (the originals': Items Spells
+// Trade Drop Heal Cure Exit - Secret: Deposit before Drop; coab's ovr020
+// for the rules, the games' own words in GAME.OVR), in this order
+enum ViewWord {
+    kVwSpells, kVwTrade, kVwDeposit, kVwDrop, kVwHeal, kVwCure,       // "Spells " ... "Cure "
+    kVwTradeTo, kVwCoinType, kVwHowMuch, kVwWillTrade, kVwWillDrop,   // "Trade to?", "Select type of coin " ...
+    kVwHealWhom, kVwFeelsBetter, kVwUnaffected,                       // "Heal whom? ", " feels better", " is unaffected"
+    kVwCureWhom, kVwNotDiseased, kVwCureAnyway, kVwIsCured,          // "Cure whom? ", "is not diseased", "cure anyway: ",
+                                                                      // " is cured"
+    kViewWords
+};
+struct ViewFacts {
+    uint32_t words[kViewWords];
+    // The paladin's heal (once a day: its effect) and cure of disease (the
+    // record's 0x191 a week - its effect gives them back when it ends)
+    uint8_t  paladin_heal, paladin_cure;
+};
+// The game's (all zero: none of it)
+const ViewFacts& view_facts(games::Game g);
+
 // Whether title step `step` is the one with the lightning (the last
 // picture, when the profile has variant.title_flash)
 bool title_flash_step(const Profile& p, int step);

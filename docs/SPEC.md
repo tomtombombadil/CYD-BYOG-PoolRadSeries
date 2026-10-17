@@ -1054,6 +1054,20 @@ until the party menu is known (`party.items`).
   "is swallowed whole", "stares blankly". The original has no Turn Undead
   (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
   has lost" - the engine already matched.
+- **v0.107.0 - View Character's menu** (all three games; coab's ovr020
+  rules, each game's own words - `profile::view_facts`): Spells (the
+  memorized ones, only looked at), Trade (coins to another member: "Trade
+  to?", "Select type of coin ", "How much X will you trade? " - too heavy:
+  "Overloaded"), Drop (coins; at a treasure or in a shop onto the
+  counter), a paladin's Heal (twice the paladin level, once a day: its
+  effect - "NAME feels better" / "is unaffected") and Cure (the diseases,
+  "is not diseased" + "cure anyway: Yes No"; the week's cures in the
+  record's 0x191 - Secret's 0x6D, mapped there -, given back when its
+  effect ends: `magic::tick_affects`); Pool has no paladin's powers. In a
+  fight View keeps Items and Exit. Secret's View shows its money panel
+  (copper first, rows 9-15) and the readied weapon / armour at rows 21-22,
+  as the original (secret_facts_2.md 16). Not yet: Secret's Deposit (its
+  vault).
 - Not yet: the items and
   their words (Secret's item word table differs), Modify ("Add Subtract
   Keep Exit"), Add Character's "Secret Curse" (importing Curse's

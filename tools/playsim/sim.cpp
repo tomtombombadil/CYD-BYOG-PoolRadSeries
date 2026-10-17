@@ -696,6 +696,21 @@ int main(int argc, char** argv)
                 play::tap(33 * 8, 6 * 8, C);
                 shot("view_box");
             }
+            // VIEWOPS: View's menu (v0.107.0) - letters tap that menu word, digits a
+            // party / list line (row 4 + n, a list's row 2 + n with '+'), =123; types a
+            // number, # a snapshot
+            if (const char* q = getenv("VIEWOPS")) {
+                auto vtap = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); };
+                for (; *q; ++q) {
+                    if (*q == '#') { shot("viewop"); continue; }
+                    if (*q == '=') { ++q; while (*q && *q != ';') play::input_key(*q++, C); play::input_key('\n', C); if (!*q) break; continue; }
+                    if (*q == '+') { ++q; play::tap(3 * 8, (2 + *q - '0') * 8 + 2, C); continue; }
+                    if (*q >= '0' && *q <= '7') play::tap(16, (4 + *q - '0') * 8 + 2, C);
+                    else vtap(*q);
+                    for (int t = 0; t < 40; ++t) { g_now += 50; play::tick(g_now, C); }
+                    printf("  [viewop %c: screen %d menu %s%s]\n", *q, (int)play::screen, play::menu.prompt, play::menu.s);
+                }
+            }
             play::tap(2, text::kMenuRow * 8 + 2, C);
             shot("view_back");
         }

@@ -3032,7 +3032,7 @@ static void test_party()
         CHECK(sc.rec[0x12D] == sec[0x132] && sc.rec[0x132] == sec[0x139] && sc.rec[0x137] == sec[0x147] &&
               sc.ext[party::kExtCleric67] == sec[0x137] && sc.ext[party::kExtMage67 + 1] == sec[0x14D]);
         CHECK(sc.rec[0x141] == sec[0x153] && sc.rec[0x14B] == sec[0x15D] && sc.ext[party::kExtFlags2] == sec[0x15E] &&
-              sc.ext[party::kExtMagicRes] == sec[0x1A5] && sc.ext[party::kExt6D] == sec[0x6D]);
+              sc.ext[party::kExtMagicRes] == sec[0x1A5] && sc.rec[0x191] == sec[0x6D]);
         CHECK(sc.encumbrance() == (sec[0x19B] | sec[0x19C] << 8) && sc.health() == sec[0x1A6] && sc.thac0() == 60 - sec[0x1AA]);
         CHECK(sc.rec[0x1E] == 4 && sc.rec[0x1E + 74] == 0x6F && sc.rec[0x1E + 75] == 0);
         uint8_t back[party::kSecretRecordSize];

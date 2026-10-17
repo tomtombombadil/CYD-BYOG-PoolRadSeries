@@ -54,7 +54,8 @@ the Project as claude/TODO.md.
       menu, Load, Begin into Priam's house (v0.94.0); the rule tables,
       areas (v0.95.0); the scripts' view of a character (v0.96.0); View
       Character (v0.97.0); item names (v0.98.0); fights (v0.99.0: tables,
-      monsters, effects, most words). v0.106.0: its monsters' abilities
+      monsters, effects, most words). v0.107.0: View's menu (all games) and
+      Secret's View panel. v0.106.0: its monsters' abilities
       (no Turn in the original). v0.105.0: the spells' words (fight
       and camp), Heal / Harm / the Elixir of Youth / the druids' spells,
       item words. Next, a chunk a commit:
@@ -62,8 +63,10 @@ the Project as claude/TODO.md.
       Exit" - its Level); how Secret renames an item it
       identifies / halves / joins; the exploring menu's "Move" (the
       original's first word); fights still to do: the remorhaz's after-swallow
-      ("belches in satisfaction" / "is digested instantly": when?); View's right panel (with items) and a paladin's Heal / Cure;
-      items and their words (its own word table), shops; Modify
+      ("belches in satisfaction" / "is digested instantly": when?); Deposit (the vault, VAULT.DAT);
+      Take's coin list layout (row 1, col 1); items' plural names when
+      shown ("30 ARROWS +1"); its shops and temple (its own temple: cures
+      by spell name, "is not blind" / "can see!" ...); Modify
       ("Add Subtract Keep Exit"); Add from Curse; camp (spell names; 6th /
       7th level spells and 101-117 in magic); a dwarf's saves (the
       Constitution effect 0x61 kept in the record's saves?); the fight
@@ -100,6 +103,10 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.107.0: View Character's menu in every game - Spells, Trade, Drop,
+  the paladin's Heal and Cure (they weren't in the engine); Secret's View
+  shows its money and the readied weapon / armour.
 
 - v0.106.0: Secret's monsters - iron golem, cockatrice, remorhaz,
   pyrohydra, umber hulk, the dragons' breaths, the giant slug's spit, the

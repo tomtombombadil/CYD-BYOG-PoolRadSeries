@@ -107,6 +107,7 @@ int rest_minutes(party::Character& c, const classes::Tables& t, const Scrolls& s
 
 // ---- A rest, five minutes a step
 struct Rest {
+    uint8_t paladin_cure = 0;       // the paladin's weekly cure effect (its end gives the cures back)
     int  steps = 0;                 // since the last healing (a day: 288 steps)
     int  hour = 0;                  // steps in this hour (12)
     int  wait[party::kMaxParty] = {};   // steps until the next spell
@@ -127,7 +128,9 @@ void begin(Rest& r);
 Step step(Rest& r, party::Party& p, const classes::Tables& t, const Scrolls& sc = Scrolls{}, bool tick = true);
 
 // Effects running out: `minutes` off each timed one (those at 0 last);
-// how many ended
-int tick_affects(party::Character& c, int minutes);
+// how many ended. `paladin_cure`: when that effect ends a paladin has
+// (paladin level - 1) / 5 + 1 cures of disease again (the record's 0x191;
+// coab's PaladinCastCureRefresh)
+int tick_affects(party::Character& c, int minutes, uint8_t paladin_cure = 0);
 
 } // namespace magic

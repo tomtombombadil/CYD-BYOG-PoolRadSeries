@@ -157,6 +157,7 @@ struct Data {
                    w_cursed[16] = {}, w_wrong[16] = {}, w_already[20] = {}, w_hands[24] = {}, w_s[4] = {},
                    w_weapon[8] = {}, w_armour[8] = {};
     char           iw[profile::kItemWords][44] = {};   // the items menu's words (profile item_words)
+    char           vw[profile::kViewWords][28] = {};   // View's menu and its questions (profile::view_facts)
     char           v_npc[8] = {}, v_age[8] = {}, v_stat[6][8] = {}, v_level[8] = {}, v_exp[12] = {}, v_status[8] = {},
                    v_ac[12] = {}, v_hp[12] = {}, v_thac0[12] = {}, v_damage[20] = {}, v_enc[24] = {}, v_move[16] = {},
                    v_exit[8] = {};
@@ -178,7 +179,7 @@ pic::Canvas* cv = nullptr;
 enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich, AddFrom,
                                AddList, YesNo, CreatePick, CreateName, TradeWho, Heal, Take, Appraise, Magic,
                                SpellList, Rest, Cast, Effects, Alter, Fight, Loot, Modify, Title, Icon, Won,
-                               Portrait };
+                               Portrait, ViewWho };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
 Screen save_from = Screen::PartyMenu;   // where Save Which Game goes back to
@@ -1209,6 +1210,59 @@ bool view_box_tap(int x, int y, pic::Canvas& c);
 bool secret_files();
 void draw_character_secret(pic::Canvas& c, const party::Character& ch);
 
+// ---- View Character's menu (coab ovr020; the games' own words,
+// profile::view_facts): Items (some), Spells (some in memory - only looked
+// at), Trade (money, out of fights: to another member), Drop (money: at a
+// treasure or in a shop onto the counter, else gone), a paladin's Heal
+// (twice the paladin level, once a day: its effect) and Cure (the
+// diseases; its cures a week - the record's 0x191). In a fight: Items and
+// Exit, as before. Secret's Deposit (its vault): not yet.
+const char* vword(int i) { return d->vw[i]; }
+bool any_money(const party::Character& ch)
+{
+    for (int k = 0; k < 7; ++k)
+        if (ch.money(k) > 0) return true;
+    return false;
+}
+bool any_memorized(const party::Character& ch)
+{
+    for (int i = 0; i < 84; ++i)
+        if (ch.rec[0x1E + i]) return true;
+    return false;
+}
+bool in_fight();
+bool can_paladin(const party::Character& ch, uint8_t fx, int word)
+{
+    return fx && vword(word)[0] && ch.level(3) > 0 && !in_fight() && ch.health() == party::Okay && !new_char;
+}
+bool can_heal(const party::Character& ch)
+{
+    const uint8_t fx = profile::view_facts(d->prof->game).paladin_heal;
+    return can_paladin(ch, fx, profile::kVwHeal) && !ch.has_affect(fx);
+}
+bool can_cure(const party::Character& ch)
+{
+    return can_paladin(ch, profile::view_facts(d->prof->game).paladin_cure, profile::kVwCure) && ch.rec[0x191] > 0;
+}
+void view_keys(const party::Character& ch, char* keys, size_t cap)
+{
+    keys[0] = 0;
+    auto add = [&](const char* w) { strncat(keys, w, cap - strlen(keys) - 1); };
+    if (ch.n_items) {
+        add(d->w_title);
+        add(" ");
+    }
+    if (!in_fight() && !new_char) {
+        if (any_memorized(ch)) add(vword(profile::kVwSpells));
+        const bool money = any_money(ch);
+        if (money) add(vword(profile::kVwTrade));
+        if (money) add(vword(profile::kVwDrop));
+        if (can_heal(ch)) add(vword(profile::kVwHeal));
+        if (can_cure(ch)) add(vword(profile::kVwCure));
+    }
+    add(d->v_exit);
+}
+
 void draw_character(pic::Canvas& c)
 {
     const party::Character* ch = new_char ? new_char : pt->sel();
@@ -1315,8 +1369,8 @@ void draw_character(pic::Canvas& c)
     put(c, d->v_status, 1, 22, 15);
     put(c, name_of(d->health[0], 13, 9, ch->health()), 8, 22, 10);
     // What the character can do: Items (when they have some), Exit
-    char keys[40];
-    snprintf(keys, sizeof keys, "%s%s%s", ch->n_items ? d->w_title : "", ch->n_items ? " " : "", d->v_exit);
+    char keys[80];
+    view_keys(*ch, keys, sizeof keys);
     text::build(menu, "", keys);
     menu.selected = 0;
     show_menu_line(c);
@@ -1419,8 +1473,32 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
     put(c, d->v_move, 20, 18, 15);
     snprintf(t, sizeof t, "%d", mv);
     right(t, 37, 18, 10);
-    char keys[40];
-    snprintf(keys, sizeof keys, "%s%s%s", ch.n_items ? d->w_title : "", ch.n_items ? " " : "", d->v_exit);
+    // The readied weapon and body armour (rows 21-22, as the original)
+    const int wi = items::readied_in(ch.items, ch.n_items, *names, items::kSlotWeapon);
+    const int ai = items::readied_in(ch.items, ch.n_items, *names, items::kSlotArmour);
+    if (wi >= 0) {
+        names->name(items::Item{ch.items[wi]}, t, sizeof t);
+        put(c, t, 1, 21, 10);
+    }
+    if (ai >= 0) {
+        names->name(items::Item{ch.items[ai]}, t, sizeof t);
+        put(c, t, 1, 22, 10);
+    }
+    // The money in the panel right of the stats (rows 9-15): copper first,
+    // the number to column 38 (GAME.OVR 0x2779B)
+    {
+        int row = 9;
+        for (int coin = 0; coin < 7 && row <= 15; ++coin) {
+            const int n = ch.money(coin);
+            if (n <= 0) continue;
+            put(c, name_of(d->money[0], 11, 7, coin), 20, row, 10);
+            snprintf(t, sizeof t, "%d", n);
+            right(t, 38, row, 10);
+            ++row;
+        }
+    }
+    char keys[80];
+    view_keys(ch, keys, sizeof keys);
     text::build(menu, "", keys);
     menu.selected = 0;
     show_menu_line(c);
@@ -1596,8 +1674,9 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
 
 enum class Ask : uint8_t { None, Overwrite, Drop, DropSure, Reroll, SaveNew, OverwriteNew, DropItem, SellDeal, IdDeal,
                           LeaveCoins, CureAnyway, PayCure, Train, MemorizeThese, StopRest, LoseIt, AlterDrop, QuitDos,
-                          ScribeThese, ScribeThese2, UseIt };
+                          ScribeThese, ScribeThese2, UseIt, PaladinCure };
 void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt);
+bool view_yes_no(Ask what, char k, pic::Canvas& c);
 
 bool shop_yes_no(Ask what, char k, pic::Canvas& c);
 bool train_yes_no(Ask what, char k, pic::Canvas& c);
@@ -2326,6 +2405,7 @@ void yes_no_key(char k, pic::Canvas& c)
     const Ask what = ask;
     ask = Ask::None;
     if (create_yes_no(what, k, c)) return;
+    if (view_yes_no(what, k, c)) return;
     if (items_yes_no(what, k, c)) return;
     if (shop_yes_no(what, k, c)) return;
     if (train_yes_no(what, k, c)) return;
@@ -3427,12 +3507,17 @@ int  take_kind[7];
 int  take_n = 0;
 int  take_coin = -1;
 char take_prompt[48];
+// View Character's coins (view_menu): 0 the counter's (Take), 1 Trade (to
+// take_to), 2 Drop - the coins of view_by
+int  take_mode = 0, take_to = -1, view_by = -1;
+
+int coins_there(int k) { return take_mode ? pt->m[view_by].money(k) : ground->money[k]; }
 
 void list_coins()
 {
     take_n = 0;
     for (int k = 6; k >= 0; --k)
-        if (ground->money[k] > 0) take_kind[take_n++] = k;
+        if (coins_there(k) > 0) take_kind[take_n++] = k;
 }
 
 void take_line(int i, char* out, size_t cap)
@@ -3442,7 +3527,7 @@ void take_line(int i, char* out, size_t cap)
         return;
     }
     const int k = take_kind[i];
-    snprintf(out, cap, "%s %d", d->money[k], ground->money[k]);
+    snprintf(out, cap, "%s %d", d->money[k], coins_there(k));
 }
 
 void draw_take(pic::Canvas& c)
@@ -3454,8 +3539,15 @@ void draw_take(pic::Canvas& c)
     plist.col0 = 2;
     plist.n = take_n;
     char prompt[28], sel[12];
-    sw(profile::kCoinType, prompt, sizeof prompt);
-    sw(profile::kSelectWord, sel, sizeof sel);
+    if (take_mode) {
+        // (View's Trade / Drop: its words)
+        snprintf(prompt, sizeof prompt, "%s", vword(profile::kVwCoinType));
+        snprintf(sel, sizeof sel, "%s", iw(profile::kSelect));
+    } else {
+        sw(profile::kCoinType, prompt, sizeof prompt);
+        sw(profile::kSelectWord, sel, sizeof sel);
+    }
+    if (prompt[0] && prompt[strlen(prompt) - 1] != ' ' && strlen(prompt) + 1 < sizeof prompt) strcat(prompt, " ");
     draw_list(c, prompt, sel);
 }
 
@@ -3473,8 +3565,13 @@ void ask_take(int i, pic::Canvas& c)
     if (i < 0 || i >= take_n) return;
     take_coin = take_kind[i];
     char a[16], b[20];
-    sw(profile::kHowMuch, a, sizeof a);
-    sw(profile::kWillTake, b, sizeof b);
+    if (take_mode) {
+        snprintf(a, sizeof a, "%s", vword(profile::kVwHowMuch));
+        snprintf(b, sizeof b, "%s", vword(take_mode == 1 ? profile::kVwWillTrade : profile::kVwWillDrop));
+    } else {
+        sw(profile::kHowMuch, a, sizeof a);
+        sw(profile::kWillTake, b, sizeof b);
+    }
     snprintf(take_prompt, sizeof take_prompt, "%s%s %s", a, d->money[take_coin], b);
     input_engine = true;
     engine_ask = EngineAsk::Coins;
@@ -3486,8 +3583,15 @@ void ask_take(int i, pic::Canvas& c)
     draw_input(c);
 }
 
+void view_coins_done(pic::Canvas& c);
+void view_coins(int n, pic::Canvas& c);
+
 void take_coins(int n, pic::Canvas& c)
 {
+    if (take_mode) {
+        view_coins(n, c);
+        return;
+    }
     party::Character& ch = *pt->sel();
     rules::recalc(ch, *names, d->facts);
     if (take_coin >= 0 && n > 0) {
@@ -3509,6 +3613,206 @@ void take_coins(int n, pic::Canvas& c)
         return;
     }
     draw_take(c);
+}
+
+// View's Trade / Heal / Cure: who it's for ("Trade to?", "Heal whom? ",
+// "Cure whom? " over the party list, Select Exit)
+char view_act = 0;
+int  cure_for = -1;                 // "is not diseased" / "cure anyway: " - whom
+
+void back_to_view(pic::Canvas& c)
+{
+    if (view_by >= 0) pt->selected = view_by;
+    take_mode = 0;
+    screen = Screen::View;
+    draw_character(c);
+}
+
+void draw_view_who(pic::Canvas& c)
+{
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    draw_party(c, 1);
+    char keys[24], prompt[28];
+    snprintf(keys, sizeof keys, "%s%s", iw(profile::kSelect), d->w_exit);
+    snprintf(prompt, sizeof prompt, "%s",
+             vword(view_act == 'T' ? profile::kVwTradeTo : view_act == 'H' ? profile::kVwHealWhom : profile::kVwCureWhom));
+    if (prompt[0] && prompt[strlen(prompt) - 1] != ' ' && strlen(prompt) + 1 < sizeof prompt) strcat(prompt, " ");
+    text::build(menu, prompt, keys);
+    menu.selected = 0;
+    show_menu_line(c);
+    dirty(0, pic::kScreenH);
+}
+
+void open_coins(pic::Canvas& c);
+
+// The paladin's Cure on one of the party: the diseases go, one of the
+// week's cures (its effect starts the week when none runs), "NAME is cured"
+void paladin_cure(int to, pic::Canvas& c)
+{
+    party::Character& me = pt->m[view_by];
+    party::Character& tg = pt->m[to];
+    for (uint8_t dz : d->prof->cures.disease)
+        if (dz) rules::remove_affects(tg, dz);
+    if (me.rec[0x191] > 0) --me.rec[0x191];
+    const uint8_t fx = profile::view_facts(d->prof->game).paladin_cure;
+    if (!me.has_affect(fx)) spells::add_affect(me, fx, 0x2760, 0, true);
+    if (names) rules::recalc(tg, *names, d->facts);
+    char nm[20], t[48];
+    tg.name(nm, sizeof nm);
+    snprintf(t, sizeof t, "%s%s", nm, vword(profile::kVwIsCured));
+    back_to_view(c);
+    note(c, t);
+}
+
+bool view_yes_no(Ask what, char k, pic::Canvas& c)
+{
+    if (what != Ask::PaladinCure) return false;
+    if (k == 'Y' && cure_for >= 0) paladin_cure(cure_for, c);
+    else back_to_view(c);
+    cure_for = -1;
+    return true;
+}
+
+void view_who_tap(int x, int y, pic::Canvas& c)
+{
+    const int row = y / 8, col = x / 8;
+    if (y < text::kMenuTapTop) {
+        if (row >= 4 && row < 4 + pt->count && col >= 1) {
+            pt->selected = row - 4;
+            draw_party(c, 1);
+        }
+        return;
+    }
+    const char k = text::key(menu, text::hit(menu, col));
+    if (k == 'E') {
+        back_to_view(c);
+        return;
+    }
+    if (k != 'S') return;
+    const int to = pt->selected;
+    pt->selected = view_by;
+    party::Character& me = pt->m[view_by];
+    party::Character& tg = pt->m[to];
+    char nm[20], t[48];
+    tg.name(nm, sizeof nm);
+    if (view_act == 'T') {
+        if (to == view_by) {
+            back_to_view(c);
+            return;
+        }
+        take_mode = 1;
+        take_to = to;
+        open_coins(c);
+        return;
+    }
+    if (view_act == 'H') {
+        // Twice the paladin level, once a day (coab's PaladinHeal)
+        const bool better = rules::heal(tg, me.level(3) * 2);
+        spells::add_affect(me, profile::view_facts(d->prof->game).paladin_heal, 1440, 0, false);
+        snprintf(t, sizeof t, "%s%s", nm, vword(better ? profile::kVwFeelsBetter : profile::kVwUnaffected));
+        back_to_view(c);
+        note(c, t);
+        return;
+    }
+    // Cure: one with no disease - "is not diseased", "cure anyway: " Yes No
+    bool ill = false;
+    for (uint8_t dz : d->prof->cures.disease)
+        if (dz && tg.has_affect(dz)) ill = true;
+    if (!ill) {
+        cure_for = to;
+        char line[48];
+        snprintf(line, sizeof line, "%s %s", nm, vword(profile::kVwNotDiseased));
+        put(c, line, 1, 19, 10);           // (on the party list: coab's DisplayPlayerStatusString)
+        dirty_rows(19, 19);
+        ask_yes_no(c, Ask::PaladinCure, vword(profile::kVwCureAnyway));
+        return;
+    }
+    paladin_cure(to, c);
+}
+
+// Trade / Drop: the coins of view_by (take_mode 1 / 2)
+void open_coins(pic::Canvas& c)
+{
+    list_coins();
+    if (!take_n) {
+        back_to_view(c);
+        return;
+    }
+    screen = Screen::Take;
+    plist = PickList{};
+    draw_take(c);
+}
+
+void view_coins_done(pic::Canvas& c) { back_to_view(c); }
+
+void view_coins(int n, pic::Canvas& c)
+{
+    party::Character& me = pt->m[view_by];
+    if (take_coin >= 0 && n > 0) {
+        if (n > me.money(take_coin)) n = me.money(take_coin);       // (no more than they have)
+        if (take_mode == 1) {
+            // Trade: too heavy for the other - "Overloaded" (coab trade_money)
+            party::Character& to = pt->m[take_to];
+            if (names) rules::recalc(to, *names, d->facts);
+            if (to.encumbrance() + n > rules::max_load(to)) {
+                draw_take(c);
+                note(c, d->w_over);
+                return;
+            }
+            add_coins(to, take_coin, n);
+            if (names) rules::recalc(to, *names, d->facts);
+        } else if (ground && (view_from == Screen::Shop || view_from == Screen::Loot)) {
+            ground->money[take_coin] += n;          // (dropped at a treasure / in a shop: onto the counter)
+        }
+        add_coins(me, take_coin, -n);
+        if (names) rules::recalc(me, *names, d->facts);
+    }
+    // More coins: the list again (coab: until no money is left)
+    list_coins();
+    if (!take_n) {
+        back_to_view(c);
+        return;
+    }
+    draw_take(c);
+}
+
+void view_spells(pic::Canvas& c);
+
+// The View menu's own words: true when one was acted on
+bool view_menu(char k, pic::Canvas& c)
+{
+    if (in_fight() || new_char || !pt->sel()) return false;
+    party::Character& ch = *pt->sel();
+    view_by = pt->selected;
+    switch (k) {
+    case 'S':
+        if (!any_memorized(ch)) return false;
+        view_spells(c);
+        return true;
+    case 'T':
+        if (!any_money(ch)) return false;
+        view_act = 'T';
+        break;
+    case 'H':
+        if (!can_heal(ch)) return false;
+        view_act = 'H';
+        break;
+    case 'C':
+        if (!can_cure(ch)) return false;
+        view_act = 'C';
+        break;
+    case 'D':
+        if (!any_money(ch)) return false;
+        take_mode = 2;
+        take_to = -1;
+        open_coins(c);
+        return true;
+    default: return false;
+    }
+    screen = Screen::ViewWho;
+    draw_view_who(c);
+    return true;
 }
 
 // ---- Appraise: gems and jewellery --------------------------------------------------
@@ -3818,6 +4122,8 @@ void list_tap(int x, int y, pic::Canvas& c)
     } else if (screen == Screen::Take && (k == 'S' || k == 'E')) {
         if (k == 'S') {
             ask_take(l.index, c);
+        } else if (take_mode) {
+            view_coins_done(c);
         } else {
             screen = Screen::Shop;
             draw_shop(c);
@@ -4053,6 +4359,7 @@ struct SpellLines {
     bool    choosing = false;       // training's new spell: "to Choose", Learn (no Exit)
     bool    fighting = false;       // "in Memory" in a fight: the chosen one is cast there
     int     reading = -1;           // a scroll's spells (the item): "on Scroll", Cast reads one (Use)
+    bool    viewing = false;        // View Character's Spells: "in Memory", only looked at
 } sl;
 
 // The scrolls' facts for the magic rules
@@ -4140,7 +4447,8 @@ void draw_spells(pic::Canvas& c)
     if (sl.choosing) cw(profile::kToChoose, b, sizeof b);
     else if (sl.reading >= 0) cw(profile::kOnScroll, b, sizeof b);
     else if (sl.scrolls) cw(sl.learning ? profile::kToScribe : profile::kOnScrolls, b, sizeof b);
-    else mw(sl.learning ? profile::kToMemorize : sl.casting ? profile::kInMemory : profile::kInGrimoire, b, sizeof b);
+    else mw(sl.learning ? profile::kToMemorize : sl.casting || sl.viewing ? profile::kInMemory : profile::kInGrimoire, b,
+            sizeof b);
     snprintf(t, sizeof t, "%s%s", a, b);
     put(c, t, static_cast<int>(strlen(nm)) + 4, 1, 10);
     const int rows = list_rows();
@@ -4160,14 +4468,15 @@ void draw_spells(pic::Canvas& c)
             put(c, line, 1, row, 10);
         }
     }
-    if (!sl.learning && !sl.casting && !sl.scrolls && !sl.choosing && sl.reading < 0) draw_counts(c);
+    if (!sl.learning && !sl.casting && !sl.scrolls && !sl.choosing && !sl.viewing && sl.reading < 0) draw_counts(c);
     // The menu
     char keys[40], prompt[20], k1[12];
     keys[0] = 0;
     prompt[0] = 0;
     if (!sl.learning) {
         mw(profile::kChooseSpell, prompt, sizeof prompt);
-        if (sl.casting || sl.reading >= 0) cw(profile::kCastKey, k1, sizeof k1);
+        if (sl.viewing) k1[0] = 0;
+        else if (sl.casting || sl.reading >= 0) cw(profile::kCastKey, k1, sizeof k1);
         else if (sl.scrolls) cw(profile::kScribeKey, k1, sizeof k1);
         else if (sl.choosing) cw(profile::kLearnKey, k1, sizeof k1);
         else mw(profile::kMemorizeKey, k1, sizeof k1);
@@ -4190,6 +4499,7 @@ void confirm_memorize(pic::Canvas& c, int word)
     sl.scrolls = false;
     sl.choosing = false;
     sl.fighting = false;
+    sl.viewing = false;
     build_lines(ids, n);
     screen = Screen::SpellList;
     draw_spells(c);
@@ -4214,6 +4524,7 @@ void show_grimoire(pic::Canvas& c)
     sl.scrolls = false;
     sl.choosing = false;
     sl.fighting = false;
+    sl.viewing = false;
     build_lines(ids, n);
     screen = Screen::SpellList;
     draw_spells(c);
@@ -4238,6 +4549,7 @@ void confirm_scribe(pic::Canvas& c, int word, Ask what)
     sl.scrolls = true;
     sl.choosing = false;
     sl.fighting = false;
+    sl.viewing = false;
     build_lines(ids, n);
     screen = Screen::SpellList;
     draw_spells(c);
@@ -4270,6 +4582,7 @@ void show_scrolls(pic::Canvas& c)
     sl.scrolls = true;
     sl.choosing = false;
     sl.fighting = false;
+    sl.viewing = false;
     build_lines(ids, n);
     for (int i = 0; keep && i < sl.n; ++i)
         if (sl.id[i] == keep) {
@@ -4295,6 +4608,7 @@ void open_scribe(pic::Canvas& c)
     sl.scrolls = false;
     sl.choosing = false;
     sl.fighting = false;
+    sl.viewing = false;
     if (magic::scribing(ch, scroll_facts())) {
         confirm_scribe(c, profile::kScribeThese, Ask::ScribeThese);
         return;
@@ -4322,6 +4636,7 @@ bool open_learn(pic::Canvas& c)
     sl.learning = sl.casting = sl.scrolls = false;
     sl.choosing = true;
     sl.fighting = false;
+    sl.viewing = false;
     build_lines(ids, n);
     screen = Screen::SpellList;
     draw_spells(c);
@@ -4334,6 +4649,7 @@ void learn_tap(char k, pic::Canvas& c)
         magic::learn(*pt->sel(), sl.id[sl.sel]);
         sl.choosing = false;
     sl.fighting = false;
+    sl.viewing = false;
         end_magic();
         screen = Screen::PartyMenu;
         train_note(profile::kCongrats, c);
@@ -4393,6 +4709,24 @@ void memorize(pic::Canvas& c)
     show_grimoire(c);
 }
 
+// View Character's Spells: those in memory, only looked at
+void view_spells(pic::Canvas& c)
+{
+    if (!load_magic()) {
+        end_magic();
+        error(c, magic_error());
+        return;
+    }
+    uint8_t ids[84];
+    const int n = magic::in_memory(*pt->sel(), mrules->tables, false, ids, 84);
+    sl.learning = sl.casting = sl.scrolls = sl.choosing = sl.fighting = false;
+    sl.reading = -1;
+    sl.viewing = true;
+    build_lines(ids, n);
+    screen = Screen::SpellList;
+    draw_spells(c);
+}
+
 void spells_tap(int x, int y, pic::Canvas& c)
 {
     const int row = y / 8;
@@ -4411,6 +4745,22 @@ void spells_tap(int x, int y, pic::Canvas& c)
     const char k = text::key(menu, text::hit(menu, x / 8));
     if (sl.reading >= 0) {
         reading_tap(k, c);
+        return;
+    }
+    if (sl.viewing) {
+        // View Character's Spells: only paged through
+        if (k == 'N' && sl.top + list_rows() < sl.n) sl.top += list_rows();
+        else if (k == 'P' && sl.top > 0) sl.top = sl.top > list_rows() ? sl.top - list_rows() : 0;
+        else if (k == 'E') {
+            sl.viewing = false;
+            end_magic();
+            screen = Screen::View;
+            draw_character(c);
+            return;
+        } else {
+            return;
+        }
+        draw_spells(c);
         return;
     }
     if (sl.fighting) {
@@ -4558,6 +4908,7 @@ void rest_tap(int x, int y, pic::Canvas& c)
         if (rest.left <= 0) break;
         rest.running = true;
         magic::begin(rest.r);
+        rest.r.paladin_cure = profile::view_facts(d->prof->game).paladin_cure;
         clear_menu_line(c);
         draw_rest_time(c);
         break;
@@ -4681,6 +5032,7 @@ void fix_party(pic::Canvas& c)
     dirty_rows(17, 22);
     rest.running = true;
     magic::begin(rest.r);
+    rest.r.paladin_cure = profile::view_facts(d->prof->game).paladin_cure;
     clear_menu_line(c);
     draw_rest_time(c);
 }
@@ -4897,6 +5249,7 @@ void show_memory(pic::Canvas& c)
     sl.scrolls = false;
     sl.choosing = false;
     sl.fighting = false;
+    sl.viewing = false;
     build_lines(ids, n);
     for (int i = 0; keep && i < sl.n; ++i)
         if (sl.id[i] == keep) {
@@ -6023,11 +6376,22 @@ void pm_tap(int x, int y, pic::Canvas& c)
         return;
     }
     if (screen == Screen::View) {
-        // The portrait box swaps portrait / icon; Items on the menu line
-        // opens the list; anything else is Exit
+        // The portrait box swaps portrait / icon; the menu line's words
+        // (Items, Spells, Trade, Drop, Heal, Cure); anything else is Exit
         if (view_box_tap(x, y, c)) return;
-        if (y >= text::kMenuTapTop && text::key(menu, text::hit(menu, col)) == 'I') open_items(c);
-        else back_from_view(c);
+        if (y >= text::kMenuTapTop) {
+            const char k = text::key(menu, text::hit(menu, col));
+            if (k == 'I') {
+                open_items(c);
+                return;
+            }
+            if (view_menu(k, c)) return;
+        }
+        back_from_view(c);
+        return;
+    }
+    if (screen == Screen::ViewWho) {
+        view_who_tap(x, y, c);
         return;
     }
     if (screen == Screen::CreatePick) {
@@ -6273,6 +6637,11 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             if (wd.at) text::read_pascal(src, wd.at, wd.out, wd.cap);
         for (int i = 0; i < profile::kItemWords; ++i)
             if (d->prof->item_words[i]) text::read_pascal(src, d->prof->item_words[i], d->iw[i], sizeof d->iw[i]);
+        {
+            const profile::ViewFacts& vf = profile::view_facts(d->prof->game);
+            for (int i = 0; i < profile::kViewWords; ++i)
+                if (vf.words[i]) text::read_pascal(src, vf.words[i], d->vw[i], sizeof d->vw[i]);
+        }
         for (int i = 0; i < 6 && pv.stats; ++i)
             text::read_pascal(src, pv.stats + static_cast<uint32_t>(i) * pv.stats_stride, d->v_stat[i], sizeof d->v_stat[i]);
         text::read_pascal(src, pp.choose, d->choose, sizeof d->choose);
@@ -9895,7 +10264,7 @@ void effects_clock(int m, pic::Canvas& c)
                 cv = &c;
                 note(c, t);
             }
-            magic::tick_affects(pt->m[i], m);
+            magic::tick_affects(pt->m[i], m, profile::view_facts(d->prof->game).paladin_cure);
             if (pt->m[i].n_affects != before && names) {    // one ran out
                 rules::keep_hammer(pt->m[i], *names, d->facts);
                 rules::recalc(pt->m[i], *names, d->facts);
@@ -10103,10 +10472,15 @@ bool back(pic::Canvas& c)
     if (screen == Screen::YesNo && !mk) {
         const Ask what = ask;
         ask = Ask::None;
-        if (items_yes_no(what, 'N', c) || shop_yes_no(what, 'N', c) || train_yes_no(what, 'N', c) ||
+        if (view_yes_no(what, 'N', c) || items_yes_no(what, 'N', c) || shop_yes_no(what, 'N', c) ||
+            train_yes_no(what, 'N', c) ||
             magic_yes_no(what, 'N', c) || alter_yes_no(what, 'N', c))
             return true;
         ask = what;
+    }
+    if (screen == Screen::ViewWho) {
+        back_to_view(c);
+        return true;
     }
     if (screen == Screen::TradeWho) {
         back_to_items(c);

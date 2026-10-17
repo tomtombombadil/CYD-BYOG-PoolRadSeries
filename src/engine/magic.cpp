@@ -331,7 +331,7 @@ int rest_minutes(party::Character& c, const classes::Tables& t, const Scrolls& s
 
 void begin(Rest& r) { r = Rest{}; }
 
-int tick_affects(party::Character& c, int minutes)
+int tick_affects(party::Character& c, int minutes, uint8_t paladin_cure)
 {
     int ended = 0;
     for (int i = 0; i < c.n_affects;) {
@@ -348,6 +348,8 @@ int tick_affects(party::Character& c, int minutes)
             ++i;
             continue;
         }
+        if (paladin_cure && a[0] == paladin_cure && c.level(3) > 0)
+            c.rec[0x191] = static_cast<uint8_t>((c.level(3) - 1) / 5 + 1);
         for (int k = i; k + 1 < c.n_affects; ++k) memcpy(c.affects[k], c.affects[k + 1], party::kAffectSize);
         --c.n_affects;
         memset(c.affects[c.n_affects], 0, party::kAffectSize);
@@ -405,7 +407,7 @@ Step step(Rest& r, party::Party& p, const classes::Tables& t, const Scrolls& sc,
             if (c.rec[kToLearnAt] > 0 && --c.rec[kToLearnAt] == 0) r.wait[i] = next_level(c, t, sc) * 2;
         }
     }
-    for (int i = 0; tick && i < p.count; ++i) tick_affects(p.m[i], 5);
+    for (int i = 0; tick && i < p.count; ++i) tick_affects(p.m[i], 5, r.paladin_cure);
     return st;
 }
 
