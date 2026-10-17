@@ -1055,6 +1055,13 @@ until the party menu is known (`party.items`).
   "is swallowed whole", "stares blankly". The original has no Turn Undead
   (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
   has lost" - the engine already matched.
+- **v0.116.2 - Secret's fight colours** (DOSBox, the assassins' room at
+  15,12 of New Verdigris): its fight pictures already have dark grey where
+  Curse's have black (DUNGCOM's 30 frames: the plain floor all colour 8),
+  so its fights and icon editor don't swap colours 0 and 8 as Curse's
+  palette does, and the field's empty squares are dark grey
+  (`variant.fight_unswapped`) - the floor was black, the editor's
+  background grey. The fight screen then matches the original's.
 - **v0.116.1 - Secret's version screen**: as the original's (START.EXE
   0x1E9) - "Secret of the Silver Blades" (row 22) over "Version 1.30 ...
   May 18,1990" (row 23), black on a green bar, and "Play Demo" under them

@@ -508,6 +508,11 @@ struct Profile {
         // Appraise: gems and jewels worth Curse's divided by this (0: 1;
         // Secret 2 - secret_facts_2.md 17)
         uint8_t  appraise_div = 0;
+        // Secret: its fight pictures already have dark grey where Curse's
+        // have black (DUNGCOM's floor), so its fights don't swap colours
+        // 0 and 8 (Curse's palette while fighting) and the field's empty
+        // squares are dark grey (DOSBox)
+        bool     fight_unswapped = false;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

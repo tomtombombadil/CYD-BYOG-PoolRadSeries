@@ -669,7 +669,7 @@ bool fight_palette_on = false;
 
 void palette_fight(bool on)
 {
-    fight_palette_on = on;
+    fight_palette_on = on && !d->prof->variant.fight_unswapped;
     dirty(0, pic::kScreenH);
 }
 
@@ -697,7 +697,8 @@ void draw_square(pic::Canvas& c, int x, int y)
     const int sx = kViewX + (x - fg->b.vx) * kSq, sy = kViewY + (y - fg->b.vy) * kSq;
     const uint8_t* g = combat::tile(fg->b, fg->t, x, y);
     const int pic_no = x >= 0 && x < combat::kW && y >= 0 && y < combat::kH && fg->b.ground[y][x] ? g[3] : -1;
-    if (pic_no < 0 || pic_no >= kTiles || !fg->tile[pic_no]) c.fill(sx, sy, kSq, kSq, 0);
+    if (pic_no < 0 || pic_no >= kTiles || !fg->tile[pic_no])
+        c.fill(sx, sy, kSq, kSq, d->prof->variant.fight_unswapped ? 8 : 0);     // (shown dark grey either way)
     else blit4(c, fg->tile[pic_no], kSq, kSq, sx, sy, false, false, 0, 0, pic::kScreenW, pic::kScreenH);
 }
 

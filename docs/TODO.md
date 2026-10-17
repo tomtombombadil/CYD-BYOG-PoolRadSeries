@@ -60,12 +60,11 @@ the Project as claude/TODO.md.
       Secret's View panel. v0.106.0: its monsters' abilities
       (no Turn in the original). v0.105.0: the spells' words (fight
       and camp), Heal / Harm / the Elixir of Youth / the druids' spells,
-      item words. v0.113.0: the exploring menu's Move. v0.114.0: Alter and its Level. v0.115.0: the vault. v0.115.1: item names from their words. v0.115.2: View's coin choice on its panel. v0.116.0: Delayed Blast Fireball's delay. v0.116.1: the version screen. Next, a chunk a commit:
+      item words. v0.113.0: the exploring menu's Move. v0.114.0: Alter and its Level. v0.115.0: the vault. v0.115.1: item names from their words. v0.115.2: View's coin choice on its panel. v0.116.0: Delayed Blast Fireball's delay. v0.116.1: the version screen. v0.116.2: the fight's colours (compared with DOSBox). Next, a chunk a commit:
       fights still to do: the remorhaz's after-swallow
       ("belches in satisfaction" / "is digested instantly": when?);
       a dwarf's saves (the
-      Constitution effect 0x61 kept in the record's saves?); the fight
-      frame (not compared with DOSBox yet); approaching monsters (SPRIT1:
+      Constitution effect 0x61 kept in the record's saves?); approaching monsters (SPRIT1:
       sprites drawn as Curse's, not compared with DOSBox; the sky checked
       at the vault's door, v0.116.1); behaviour tests.
 - [ ] Tom: flash v0.104.0 on the 4.0" S3: the touch (keys now light as

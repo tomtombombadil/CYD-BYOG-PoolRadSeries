@@ -287,6 +287,14 @@ static void run_fight()
                 if (getenv("FIGHTCHECK")[0] == 'q') { play::close(); exit(0); }
             }
             play::log_pages = getenv("PAGELOG") != nullptr;
+            if (getenv("GROUNDS") && play::fg) {        // GROUNDS: the field's ground values round the party
+                const auto& b = play::fg->b;
+                for (int t = 20; t < 25; ++t) printf("  tile %d: %02X %02X %02X\n", t, play::fg->tile[t] ? play::fg->tile[t][0] : 0xEE, play::fg->tile[t] ? play::fg->tile[t][100] : 0xEE, play::fg->tile[t] ? play::fg->tile[t][287] : 0xEE);
+                for (int y = b.f[0].y - 4; y <= b.f[0].y + 4; ++y) {
+                    for (int x = b.f[0].x - 8; x <= b.f[0].x + 8; ++x) printf("%3d", (x >= 0 && y >= 0 && x < combat::kW && y < combat::kH) ? b.ground[y][x] : -1);
+                    printf("\n");
+                }
+            }
             if (play::fg) for (int i = 0; i < play::fg->b.n; ++i) { const auto& f = play::fg->b.f[i]; printf("  fighter %d [%.15s] at %d,%d size %d icon %d px %p up %d rec141 %d 142 %d 144 %d hp %d/%d\n", i, (const char*)f.rec + 1, f.x, f.y, f.size, f.icon, (void*)play::fg->icon[f.icon].px[0], f.up(), f.rec[0x141], f.rec[0x142], f.rec[0x144], f.rec[0x1A4], f.rec[0x78]); }
             int turns = 0, n = 0;
             const char* fops = getenv("FIGHTOPS");      // taps while the fight waits: letters, &rr rows; then Quick
