@@ -69,8 +69,9 @@ the Project as claude/TODO.md.
       sprites drawn as Curse's, not compared with DOSBox; the sky checked
       at the vault's door, v0.116.1); more behaviour tests (sweep's
       `behave secret` has THAC0, saves, training's hit points, the Level,
-      the vault, the spells past 100 - 234 checks, 0 failed, 2026-10-17;
-      still to add: its monsters' abilities in fights); then Tom: is Secret playable (Play
+      the vault, the spells past 100, the cockatrice / remorhaz / iron
+      golem - 239 checks, 0 failed, 2026-10-17; more of its monsters'
+      abilities to add); then Tom: is Secret playable (Play
       on the game page: `variant.unfinished` off)?
 - [ ] Tom: flash v0.104.0 on the 4.0" S3: the touch (keys now light as
       the stylus touches; light taps after a pause, finger and stylus;

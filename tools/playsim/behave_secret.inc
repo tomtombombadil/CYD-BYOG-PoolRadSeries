@@ -4,7 +4,7 @@
 // vault's file, training's hit points - against the oracle (Secret's tables, read from the
 // player's program by a scratch script, and the constants of the
 // Project's claude/secret_facts.md / secret_facts_2.md), never against the
-// engine's own code. ONLY= values, train, level, vault, spells.
+// engine's own code. ONLY= values, train, level, vault, spells, monsters.
 #include "behave_oracle.inc"
 
 namespace bsecret {
@@ -366,6 +366,75 @@ void spells_past_100()
     create::g_die_hook = nullptr;
 }
 
+// ---- Its monsters' abilities (secret_facts_2.md 15): a blow by a monster
+// with its effect, the d20 set
+void give(int i, int type)
+{
+    combat::Fighter& f = F(i);
+    if (!f.n_aff || *f.n_aff >= f.max_aff) return;
+    uint8_t* a = f.aff[(*f.n_aff)++];
+    memset(a, 0, party::kAffectSize);
+    a[0] = static_cast<uint8_t>(type);
+    a[1] = a[2] = 0xFF;
+}
+int hit_with(int a, int c, int d20)
+{
+    // one blow of 1d4 (to hit 45 against AC 50: a 19 or 20 hits)
+    combat::Fighter& f = F(a);
+    f.attacks[0] = 1;
+    f.attacks[1] = 0;
+    f.rec[0x199] = 45;
+    f.rec[0x19E] = 1;
+    f.rec[0x1A0] = 4;
+    f.rec[0x1A2] = 0;
+    F(c).received = 0;
+    F(c).turns = 0;
+    s_dice(1, d20);
+    const combat::Attack r = combat::attack(fg->b, a, c, names, rng, false);
+    create::g_die_hook = nullptr;
+    int hits = 0;
+    for (int k = 0; k < r.n; ++k) hits += r.hits[k].hit;
+    return hits;
+}
+void monster_abilities()
+{
+    if (!new_fight()) {
+        expect(P, "a fight", false);
+        return;
+    }
+    const auto& mf = d->prof->fight.facts.mon;
+    const int a = 6, t = 0;
+    char w[100];
+    // The cockatrice (0x41): its hit - a save against petrification or stoned
+    for (int save : {20, 2}) {
+        put(a, 1, 10, 10, 40, 5);
+        give(a, mf.petrify_hit);
+        put(t, 0, 11, 10, 60);
+        for (int k = 0; k < 5; ++k) F(t).rec[0xDF + k] = static_cast<uint8_t>(save);
+        const int hits = hit_with(a, t, 19);
+        const int want = save == 20 ? party::Stoned : party::Okay;
+        snprintf(w, sizeof w, "the cockatrice's hit, the save %s", save == 20 ? "failed" : "made");
+        expect(P, w, hits > 0 && F(t).status() == want, "%d hits, status %d, the original's %d", hits, F(t).status(), want);
+    }
+    // The remorhaz (0x42): a natural 20 swallows whole (dead), a 19 doesn't
+    for (int roll : {20, 19}) {
+        put(a, 1, 10, 10, 60, 7);
+        give(a, mf.swallow);
+        put(t, 0, 11, 10, 120);
+        hit_with(a, t, roll);
+        const bool dead = F(t).status() == party::Dead;
+        snprintf(w, sizeof w, "the remorhaz's d20 %d", roll);
+        expect(P, w, dead == (roll == 20), "status %d", F(t).status());
+    }
+    // The iron golem (0x3C): a blow without a +3 weapon does nothing
+    put(t, 1, 11, 10, 80, 18);
+    give(t, mf.need_plus3);
+    put(a, 0, 10, 10, 60);
+    F(a).n_items = 0;
+    const int hits = hit_with(a, t, 19);
+    expect(P, "the iron golem: a blow with no weapon does nothing", F(t).hp() == 80, "%d hits, HP %d", hits, F(t).hp());
+}
+
 } // namespace bsecret
 
 static void behave_secret()
@@ -392,4 +461,5 @@ static void behave_secret()
     if (want("level")) level();
     if (want("vault")) vault_file();
     if (want("spells")) spells_past_100();
+    if (want("monsters")) monster_abilities();
 }
