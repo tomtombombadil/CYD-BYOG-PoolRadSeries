@@ -136,7 +136,8 @@ struct Data {
     // Add from Pool (import_facts.md): a Pool of Radiance record (285
     // bytes) - in the save folder (as the original) or in the player's
     // Pool of Radiance folder on the card (the engine's convenience)
-    uint8_t        guy_src[kMaxGuys] = {};      // 0 the save folder's .GUY, 1 a Pool file there, 2 one in Pool's folder
+    uint8_t        guy_src[kMaxGuys] = {};      // 0 the save folder's .GUY, 1 a Pool file there, 2 one in Pool's folder,
+                                                // 3 a Curse .GUY in Secret's folder, 4 one in Curse's
     char           guy_letter[kMaxGuys] = {};   // a Pool saved game's letter (CHRDAT<letter>n.SAV)
     char           guy_from = 'C';              // the list's source: C(urse) / P(ool)
     int            guys = 0;
@@ -2454,7 +2455,9 @@ void yes_no_key(char k, pic::Canvas& c)
 }
 
 // The .GUY files in the save folder not already in the party
-char pool_dir[128] = {};        // the player's Pool of Radiance folder on the card ("" if none)
+// The earlier game's save folder on the card (its characters can be added:
+// Curse's Pool, Secret's Curse; "" if none)
+char import_dir[128] = {};
 char darkness_dir[128] = {};    // the player's Pools of Darkness folder ("" if none): its font
 Options opts;                   // the engine comforts switched on (Settings)
 
@@ -2501,14 +2504,55 @@ void find_pool_guys(const char* where, uint8_t src)
     }
 }
 
+// Curse's characters for Secret (its "Curse": *.guy in its save folder,
+// GAME.OVR 0x23C7A; and - more characters - Curse's own folder on the card,
+// .GUY and the saved games' members)
+void sort_guys();
+void find_curse_guys(const char* where, uint8_t src, bool members)
+{
+    if (!where[0]) return;
+    plat::File dir = plat::open(where, "r");
+    if (!dir || !dir.isDirectory()) return;
+    for (plat::File f = dir.openNextFile(); f && d->guys < Data::kMaxGuys; f = dir.openNextFile()) {
+        const char* nm = f.name();
+        const char* slash = strrchr(nm, '/');
+        if (slash) nm = slash + 1;
+        const size_t n = strlen(nm);
+        const bool guy = n >= 5 && n <= 12 && strcasecmp(nm + n - 4, ".GUY") == 0;
+        const bool member = members && n == 12 && strncasecmp(nm, "CHRDAT", 6) == 0 && strcasecmp(nm + 8, ".SAV") == 0;
+        if (f.isDirectory() || (!guy && !member) || f.size() != party::kRecordSize) continue;
+        uint8_t rec[0x100];
+        if (f.read(rec, 0xF8) != 0xF8 || rec[0xF7] > 0x7F) continue;      // NPCs aren't listed
+        char name[16];
+        const size_t len = rec[0] > 15 ? 15 : rec[0];
+        memcpy(name, rec + 1, len);
+        name[len] = 0;
+        if (in_party(name)) continue;
+        strncpy(d->guy_file[d->guys], nm, sizeof d->guy_file[0] - 1);
+        strcpy(d->guy_name[d->guys], name);
+        d->guy_added[d->guys] = false;
+        d->guy_src[d->guys] = src;
+        d->guy_letter[d->guys] = member ? static_cast<char>(toupper(nm[6])) : 0;
+        ++d->guys;
+    }
+    dir.close();
+}
+
 void find_guys(char from = 'C')
 {
     d->guys = 0;
     d->guy_from = from;
+    if (from == 'C' && secret_files()) {
+        const bool more = CYD_MORE_CHARACTERS && opts.more_guys;
+        find_curse_guys(d->save_dir, 3, false);
+        if (more && import_dir[0] && strcasecmp(import_dir, d->save_dir) != 0) find_curse_guys(import_dir, 4, true);
+        sort_guys();
+        return;
+    }
     if (from == 'P') {
         find_pool_guys(d->save_dir, 1);
-        if (CYD_MORE_CHARACTERS && opts.more_guys && pool_dir[0] && strcasecmp(pool_dir, d->save_dir) != 0)
-            find_pool_guys(pool_dir, 2);
+        if (CYD_MORE_CHARACTERS && opts.more_guys && import_dir[0] && strcasecmp(import_dir, d->save_dir) != 0)
+            find_pool_guys(import_dir, 2);
         return;
     }
     plat::File dir = plat::open(d->save_dir, "r");
@@ -2547,8 +2591,13 @@ void find_guys(char from = 'C')
         ++d->guys;
     }
     dir.close();
-    // In order: the .GUY characters by name, then each saved game's members
-    // (game A first, in party order)
+    sort_guys();
+}
+
+// In order: the .GUY characters by name, then each saved game's members
+// (game A first, in party order)
+void sort_guys()
+{
     auto before = [](int a, int b) {
         if ((d->guy_letter[a] != 0) != (d->guy_letter[b] != 0)) return d->guy_letter[a] == 0;
         return d->guy_letter[a] ? strcasecmp(d->guy_file[a], d->guy_file[b]) < 0
@@ -2560,10 +2609,12 @@ void find_guys(char from = 'C')
             memcpy(f, d->guy_file[j], 13); memcpy(d->guy_file[j], d->guy_file[j - 1], 13); memcpy(d->guy_file[j - 1], f, 13);
             memcpy(nm2, d->guy_name[j], 16); memcpy(d->guy_name[j], d->guy_name[j - 1], 16); memcpy(d->guy_name[j - 1], nm2, 16);
             const char l = d->guy_letter[j]; d->guy_letter[j] = d->guy_letter[j - 1]; d->guy_letter[j - 1] = l;
+            const uint8_t sr = d->guy_src[j]; d->guy_src[j] = d->guy_src[j - 1]; d->guy_src[j - 1] = sr;
         }
 }
 
 bool load_pool_guy(int i, party::Character& ch);
+bool load_curse_guy(int i, party::Character& ch);
 
 void draw_add_list(pic::Canvas& c)
 {
@@ -2587,6 +2638,11 @@ void add_character(int i, pic::Canvas& c)
 {
     if (i < 0 || i >= d->guys || d->guy_added[i] || pt->count >= party::kMaxParty) return;
     party::Character& ch = pt->m[pt->count];
+    if (d->guy_src[i] == 3 || d->guy_src[i] == 4) {
+        if (!load_curse_guy(i, ch)) return;
+        add_checked(i, ch, c);
+        return;
+    }
     if (d->guy_src[i] != 0) {
         if (!load_pool_guy(i, ch)) return;
         add_checked(i, ch, c);
@@ -2683,9 +2739,26 @@ void add_from_tap(int x, int y, pic::Canvas& c)
         return;
     }
     if (y < text::kMenuTapTop) return;
-    switch (text::key(menu, text::hit(menu, x / 8))) {
-    case 'C':
-        find_guys();
+    // (the first source is the game's own: Curse's "Curse Pool Hillsfar",
+    // Secret's "Secret Curse" - its C is Curse's characters)
+    char k = text::key(menu, text::hit(menu, x / 8));
+    const char own = static_cast<char>(toupper(static_cast<unsigned char>(rw(Data::kAddSources)[0])));
+    if (secret_files() && k == 'C') {
+        find_guys('C');
+        if (!d->guys) {
+            screen = Screen::PartyMenu;
+            draw_party_menu(c);
+            return;
+        }
+        screen = Screen::AddList;
+        plist = PickList{};
+        draw_add_list(c);
+        return;
+    }
+    if (k == own) k = 'O';
+    switch (k) {
+    case 'O':
+        find_guys('O');
         if (!d->guys) {
             screen = Screen::PartyMenu;
             draw_party_menu(c);
@@ -2867,11 +2940,50 @@ bool load_rules(Making*& m)
 
 bool load_making() { return load_rules(mk); }
 
+// A Curse character into ch as Secret takes one in (GAME.OVR 0x23C7A on,
+// its conversion 0x24CB0 - secret_facts_2.md 20): the record (Curse's,
+// the engine's own layout), no items, money or effects (it reads NAME.sfx,
+// which Curse doesn't make), no spells in memory, the spell book without
+// the spells Secret numbers otherwise (36 56 63 90 96 98 100); a paladin's
+// cure of disease (1) and Protection from Evil, a ranger's giant-class
+// bonus effect (data 0xFF); the class values again
+bool load_curse_guy(int i, party::Character& ch)
+{
+    char path[200];
+    snprintf(path, sizeof path, "%s/%s", d->guy_src[i] == 4 ? import_dir : d->save_dir, d->guy_file[i]);
+    plat::File f = plat::open(path, "r");
+    if (!f) return false;
+    bool ok;
+    {
+        plat::FileSource src(f);
+        ok = party::read_record(src, ch, party::Format::Curse);
+    }
+    f.close();
+    if (!ok) return false;
+    ch.n_items = 0;
+    ch.n_affects = 0;
+    memset(ch.ext, 0, sizeof ch.ext);
+    memset(ch.rec + 0xFB, 0, 14);                   // money
+    memset(ch.rec + 0x1E, 0, 84);                   // spells in memory
+    static const uint8_t kRenumbered[] = {0x24, 0x38, 0x3F, 0x5A, 0x60, 0x62, 0x64};
+    for (uint8_t sp : kRenumbered) ch.rec[0x78 + sp] = 0;
+    const auto& pc = d->prof->create;
+    if (ch.level(classes::Paladin) > 0) {
+        ch.rec[0x191] = 1;
+        if (pc.prot_evil) spells::add_affect(ch, pc.prot_evil, 0, 0xFF, false);
+    }
+    if (ch.level(classes::Ranger) > 0 && pc.ranger_giant) spells::add_affect(ch, pc.ranger_giant, 0, 0xFF, false);
+    MagicRules* mr = nullptr;
+    if (load_rules(mr)) classes::class_bonuses(ch, mr->tables);
+    delete mr;
+    return true;
+}
+
 // A Pool character into ch (false: unreadable, or no rule tables)
 bool load_pool_guy(int i, party::Character& ch)
 {
     char path[200];
-    const char* where = d->guy_src[i] == 2 ? pool_dir : d->save_dir;
+    const char* where = d->guy_src[i] == 2 ? import_dir : d->save_dir;
     snprintf(path, sizeof path, "%s/%s", where, d->guy_file[i]);
     plat::File f = plat::open(path, "r");
     if (!f) return false;
@@ -9262,10 +9374,10 @@ void set_darkness_dir(const char* dir)
     darkness_dir[sizeof darkness_dir - 1] = 0;
 }
 
-void set_pool_dir(const char* dir)
+void set_import_dir(const char* dir)
 {
-    strncpy(pool_dir, dir ? dir : "", sizeof pool_dir - 1);
-    pool_dir[sizeof pool_dir - 1] = 0;
+    strncpy(import_dir, dir ? dir : "", sizeof import_dir - 1);
+    import_dir[sizeof import_dir - 1] = 0;
 }
 
 // "Not enough memory" with the numbers (for Tom's reports)

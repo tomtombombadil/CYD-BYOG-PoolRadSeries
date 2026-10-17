@@ -92,9 +92,9 @@ bool fight_dir(int dir, pic::Canvas& c);
 // Select in a fight: Move - the move ends (as a tap on the menu line);
 // Manual aim - Target when it's offered
 bool fight_select(pic::Canvas& c);
-// The player's Pool of Radiance folder on the card (Add Character -> Pool
-// lists its characters too); "" or nullptr: none
-void set_pool_dir(const char* dir);
+// The earlier game's save folder on the card (Add Character lists its
+// characters too: Curse's Pool, Secret's Curse); "" or nullptr: none
+void set_import_dir(const char* dir);
 // The player's Pools of Darkness folder on the card (its 8X8D0.DAX: the
 // third font choice, Options::font 2); "" or nullptr: none
 void set_darkness_dir(const char* dir);

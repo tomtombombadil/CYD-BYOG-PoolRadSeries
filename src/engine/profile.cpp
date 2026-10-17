@@ -1083,7 +1083,8 @@ const Profile kProfiles[] = {
      // secret_facts.md 4); BLADES.CFG names the save folder
      .party = {0xE4E0, 13, 42, 0x1D6B3, 0x2609A, 0x38909, 0x3890E, "BLADES.CFG", 0x26791, 0x267A3, 0x26859,
                0xE1F7, 0, 0x1D0FB,
-               0, 0, 0x20A03, 0x20A15, 0x20A1A, 0x20A1D, 0x20A41, 0x20A5B, 0x24665, 0x24670, 0x1F8F2, 0x1F8F8,
+               // ("Add from where? ", "Secret Curse Exit" ...)
+               0x209E0, 0x209F1, 0x20A03, 0x20A15, 0x20A1A, 0x20A1D, 0x20A41, 0x20A5B, 0x24665, 0x24670, 0x1F8F2, 0x1F8F8,
                0x1F903, 0x1F912, 0x1F91C, 0x1F927, 0x1F93B, 0x3120D,
                0x1FB9B, 0x1FBCF, 0, 0x238F2, 0x24673},
      // View Character's name tables (races in Secret's own order: the
@@ -1113,7 +1114,10 @@ const Profile kProfiles[] = {
                            0x4D9D, 0x4DFF, 0x4E45, 0x4EFF, 0x4F45, 0x4FAB, 0x506C, 0x5592, false, 0, 0, 0, true},
                 // the hit dice: level 1's count, the sides (7 classes; its
                 // training's roll - the better of two - as Curse's)
-                .hp_count = 0x9B0, .hp_dice = 0x9B7},
+                .hp_count = 0x9B0, .hp_dice = 0x9B7,
+                // a paladin's Protection from Evil, a ranger's giant-class bonus (its Add's
+                // Curse characters, GAME.OVR 0x2580D - secret_facts_2.md 20)
+                .prot_evil = 0x08, .ranger_giant = 0x69},
      // Items' words (the same text as Curse's; the shop's Id price words not
      // found - its shops: later)
      .item_words = {0x28439, 0x2843E, 0x2844E, 0x28454, 0x2845B, 0x28461, 0x28467, 0x281AC, 0x2847C, 0x29078,

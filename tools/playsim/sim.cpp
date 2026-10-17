@@ -563,7 +563,7 @@ int main(int argc, char** argv)
     if (getenv("ADDPOOL")) {
         // ADDPOOL=i,j...: Add Character -> Pool (POOLDIR: Pool's folder as /GOLDBOX/...; ADDFROM=C:
         // Curse's list instead), add those lines
-        if (getenv("POOLDIR")) play::set_pool_dir(getenv("POOLDIR"));
+        if (getenv("POOLDIR")) play::set_import_dir(getenv("POOLDIR"));
         auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
         play::tap(24, (12 + pm_line('A')) * 8 + 2, C);
         printf("  add menu [%s%s]\n", play::menu.prompt, play::menu.s);

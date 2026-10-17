@@ -1442,16 +1442,22 @@ void start_play()
     darkness_dir(dd, sizeof dd);
     play::set_darkness_dir(dd);
     apply_options();
-    // Pool of Radiance's folder on the card: its characters can be added
-    play::set_pool_dir("");
-    for (int g = 0; g < n_games; ++g)
-        if (game_dirs[g].game == games::Game::PoolOfRadiance && game_dirs[g].format == library::Format::Dax) {
+    // The earlier game's folder on the card: its characters can be added
+    // (Curse takes Pool's, Secret Curse's)
+    play::set_import_dir("");
+    const games::Game here = game_dirs[game_sel].game;
+    const games::Game earlier = here == games::Game::CurseOfTheAzureBonds     ? games::Game::PoolOfRadiance
+                              : here == games::Game::SecretOfTheSilverBlades ? games::Game::CurseOfTheAzureBonds
+                                                                              : here;
+    for (int g = 0; earlier != here && g < n_games; ++g)
+        if (game_dirs[g].game == earlier && game_dirs[g].format == library::Format::Dax) {
             char pd[160], sv[170];
             snprintf(pd, sizeof pd, "%s/%s", games::kRootDir, game_dirs[g].data_dir);
-            // Steam / SNEG: its saves are in the game folder's SAVE (POOL.CFG
-            // "C:\POOLRAD\SAVE\"); GOG: the game folder itself
+            // Its saves: the game folder's SAVE (Steam / SNEG's POOL.CFG
+            // "C:\POOLRAD\SAVE\", Curse's "C:\SAVE\"); GOG's Pool: the
+            // game folder itself
             snprintf(sv, sizeof sv, "%s/SAVE", pd);
-            play::set_pool_dir(sd_fs().exists(sv) ? sv : pd);
+            play::set_import_dir(sd_fs().exists(sv) ? sv : pd);
             break;
         }
     play_error = play::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game, frame::canvas(), cdir);

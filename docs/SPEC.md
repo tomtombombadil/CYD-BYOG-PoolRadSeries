@@ -1054,6 +1054,17 @@ until the party menu is known (`party.items`).
   "is swallowed whole", "stares blankly". The original has no Turn Undead
   (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
   has lost" - the engine already matched.
+- **v0.110.0 - Secret's Add Character: "Add from where? Secret Curse
+  Exit"** (secret_facts_2.md 20): Secret its own characters (.WHO and the
+  saved games' members); Curse - the .GUY files in Secret's save folder (as
+  the original) and, with Add Characters (more characters), Curse's own
+  save folder on the card (its .GUY files and saved games' members). A
+  Curse character comes as Secret takes one in: its record, but no items,
+  money or effects, no spells in memory, the spell book without the spells
+  Secret numbers otherwise (36 56 63 90 96 98 100); a paladin gets one
+  cure of disease and Protection from Evil, a ranger the giant-class bonus
+  (also made with Secret's new paladins / rangers now). The earlier
+  game's folder is the selected game's: Curse - Pool, Secret - Curse.
 - **v0.109.0 - Secret's spells past 100** (secret_facts_2.md 19): Death
   Spell (2 x 4d20 points spent by Hit Dice - 0 1, 1 2, 2-3 8, 4-5 16, 6 16
   or 20 over 51 HP, 7-8 20, more never; no save) "drops dead";
