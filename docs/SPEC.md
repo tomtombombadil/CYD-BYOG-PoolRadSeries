@@ -1209,6 +1209,22 @@ until the party menu is known (`party.items`).
   and its new monster abilities in fights, sound (SOUND.DAX), the sky and
   approaching monsters (SPRIT1).
 
+## 6d. Pools of Darkness (Tom, 2026-10-17: started after Secret)
+
+Facts in the Project's claude/darkness_facts.md (from the player's GOG
+files; nothing copied). Its own program generation: GAME.EXE (EXEPACK,
+data segment at image 0x9E70) + GAME.OVR (the same overlay stubs as
+Secret's), one file a kind (ECL1 with all 56 scripts, GEO1, WALLDEF1,
+8X8D1 VGA tile sets, PIC1 ...), 510-byte records, saves .PTY / .SAV /
+.THG / .EFX, a vault a save slot (VAULTx.DAT), VGA pictures (256
+colours: the S3 / C5 boards; the classic boards in its EGA mode, as
+EGA.DRV does). Its scripts are Curse's opcodes with ten operand counts
+changed (darkness_facts.md 2): 55 of 56 blocks decode with them.
+The plan, a chunk a commit: the profile and the scan (variant.unfinished
+on), the title, the record and the party menu / Load, the VGA pictures
+and their EGA colours, the 3D view (WALLDEF1 / 8X8D1 / BACK1 / SKYGRND),
+the scripts' changed ops, the rule tables, fights, the rest.
+
 ## 7. The journal (Tom, 2026-10-06)
 
 The games tell the player to "read journal entry N" from the printed

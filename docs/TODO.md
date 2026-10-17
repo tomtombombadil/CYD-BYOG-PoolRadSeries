@@ -73,6 +73,13 @@ the Project as claude/TODO.md.
       golem - 239 checks, 0 failed, 2026-10-17; more of its monsters'
       abilities to add); then Tom: is Secret playable (Play
       on the game page: `variant.unfinished` off)?
+- [ ] **Pools of Darkness** (started 2026-10-17; facts: the Project's
+      claude/darkness_facts.md; SPEC 6d). Done: the survey (program and
+      overlay layout, files, saves, the scripts' operand counts). Next, a
+      chunk a commit: the profile + scan (Play off: variant.unfinished),
+      title, record + party menu / Load, VGA pictures (EGA colours on the
+      classic boards), 3D view, the scripts' changed ops, rule tables,
+      fights.
 - [ ] Tom: flash v0.104.0 on the 4.0" S3: the touch (keys now light as
       the stylus touches; light taps after a pause, finger and stylus;
       small keys) and the sounds (Settings' sound test - Step, Hit; Pool's
