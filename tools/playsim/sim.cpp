@@ -400,6 +400,53 @@ static void run_fight()
             shot("after_fight");
         }
 
+static int pm_line_of(char k) { for (int i = 0; i < play::pm_lines; ++i) if (play::pm_key(play::pm_item[i]) == k) return i; return -1; }
+
+// SHOPRUN / AFTERSHOP: shop / temple steps (see below)
+static void shop_run(const char* ops)
+{
+    // SHOPRUN: letters tap menu words, digits pick a list line, %n taps
+    // party row n (the shop's list at column 17), =n; types a number
+    // and Enter, '#' shows the screen and menu, @rr taps row rr
+    auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+    int n = 0;
+    for (const char* q = ops; *q; ++q) {
+        const party::Character& ch = *play::pt->sel();
+        if (*q == '#') {
+            char nm[20]; ch.name(nm, 20);
+            printf("  screen %d temple %d menu [%s%s] %s HP %d/%d gold worth %d counter %d %d %d %d %d gems %d jewels %d items %d\n", (int)play::screen, (int)play::temple, play::menu.prompt, play::menu.s, nm, ch.hp(), ch.hp_max(), rules::gold_worth(ch), play::ground->money[0], play::ground->money[1], play::ground->money[2], play::ground->money[3], play::ground->money[4], ch.money(5), ch.money(6), ch.n_items);
+            char t[16]; snprintf(t, 16, "shoprun%d", n++); shot(t);
+        } else if (*q == '%') { ++q; play::tap(17 * 8 + 2, (4 + (*q - '0')) * 8 + 2, C); }
+        else if (*q == '^') { ++q; play::tap(24, (12 + pm_line_of(*q)) * 8 + 2, C); }   // a party menu line
+        else if (*q == '&') { party::Character& w = *play::pt->sel(); w.rec[0x127] = 0xA0; w.rec[0x128] = 0x86; w.rec[0x129] = 0x01; }   // 100000 xp (a test)
+        else if (*q == '?') { for (int k = 0; k < 8; ++k) printf(" %d", play::pt->sel()->level(k)); printf(" levels, xp %u, HP %d/%d\n", play::pt->sel()->exp(), play::pt->sel()->hp(), play::pt->sel()->hp_max()); }
+        else if (*q == '!') { ++q; play::tap(16, (4 + (*q - '0')) * 8 + 2, C); }       // party menu: select row n
+        else if (*q == '$') { party::Character& w = *play::pt->sel(); w.rec[0xFB + 10] = 3; w.rec[0xFB + 12] = 2; }   // 3 gems, 2 jewels (a test)
+        else if (*q == '@') { int r = (q[1] - '0') * 10 + (q[2] - '0'); q += 2; play::tap(4 * 8 + 2, r * 8 + 2, C); }   // @rr taps text row rr
+        else if (*q == '~') {
+            // ~x: the selected character made x for a test - b blind, d dead, w wounded
+            // (1 HP), s stoned, p poisoned, c cursed (the effect), i diseased, f full HP
+            party::Character& w = *play::pt->sel();
+            const rules::CureFacts& f = play::d->prof->cures;
+            switch (*++q) {
+            case 'b': spells::add_affect(w, f.blinded, 1440, 0, false); break;
+            case 'd': w.rec[0x195] = party::Dead; w.rec[0x1A4] = 0; break;
+            case 'w': w.rec[0x1A4] = 1; break;
+            case 's': w.rec[0x195] = party::Stoned; break;
+            case 'p': spells::add_affect(w, f.poisoned, 1440, 0, false); break;
+            case 'c': spells::add_affect(w, f.curse, 1440, 0, false); break;
+            case 'i': spells::add_affect(w, f.disease[1] ? f.disease[1] : f.disease[0], 1440, 0, false); break;
+            case 'f': w.rec[0x1A4] = w.rec[0x78]; break;
+            }
+            printf("  test: %c - health %d HP %d/%d Con %d/%d effects %d\n", *q, w.health(), w.hp(), w.hp_max(), w.rec[0x18], w.rec[0x19], w.n_affects);
+        }
+        else if (*q == '=') { ++q; while (*q && *q != ';') play::input_key(*q++, C); play::input_key('\n', C); }
+        else if (*q >= '0' && *q <= '9') play::plist.index = *q - '0';
+        else tap_word(*q);
+        g_now += 5000; play::tick(g_now, C);
+    }
+}
+
 int main(int argc, char** argv)
 {
     setvbuf(stdout, nullptr, _IOLBF, 0);       // (lines out at once: a hang or a crash keeps them)
@@ -822,29 +869,7 @@ int main(int argc, char** argv)
         }
         if (play::screen == play::Screen::Fight && getenv("FIGHT")) run_fight();
         if ((play::screen == play::Screen::Shop || play::screen == play::Screen::PartyMenu) && getenv("SHOPRUN")) {
-            // SHOPRUN: letters tap menu words, digits pick a list line, %n taps
-            // party row n (the shop's list at column 17), =n; types a number
-            // and Enter, '#' shows the screen and menu, @rr taps row rr
-            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
-            int n = 0;
-            for (const char* q = getenv("SHOPRUN"); *q; ++q) {
-                const party::Character& ch = *play::pt->sel();
-                if (*q == '#') {
-                    char nm[20]; ch.name(nm, 20);
-                    printf("  screen %d temple %d menu [%s%s] %s HP %d/%d gold worth %d counter %d %d %d %d %d gems %d jewels %d items %d\n", (int)play::screen, (int)play::temple, play::menu.prompt, play::menu.s, nm, ch.hp(), ch.hp_max(), rules::gold_worth(ch), play::ground->money[0], play::ground->money[1], play::ground->money[2], play::ground->money[3], play::ground->money[4], ch.money(5), ch.money(6), ch.n_items);
-                    char t[16]; snprintf(t, 16, "shoprun%d", n++); shot(t);
-                } else if (*q == '%') { ++q; play::tap(17 * 8 + 2, (4 + (*q - '0')) * 8 + 2, C); }
-                else if (*q == '^') { ++q; play::tap(24, (12 + pm_line(*q)) * 8 + 2, C); }   // a party menu line
-                else if (*q == '&') { party::Character& w = *play::pt->sel(); w.rec[0x127] = 0xA0; w.rec[0x128] = 0x86; w.rec[0x129] = 0x01; }   // 100000 xp (a test)
-                else if (*q == '?') { for (int k = 0; k < 8; ++k) printf(" %d", play::pt->sel()->level(k)); printf(" levels, xp %u, HP %d/%d\n", play::pt->sel()->exp(), play::pt->sel()->hp(), play::pt->sel()->hp_max()); }
-                else if (*q == '!') { ++q; play::tap(16, (4 + (*q - '0')) * 8 + 2, C); }       // party menu: select row n
-                else if (*q == '$') { party::Character& w = *play::pt->sel(); w.rec[0xFB + 10] = 3; w.rec[0xFB + 12] = 2; }   // 3 gems, 2 jewels (a test)
-                else if (*q == '@') { int r = (q[1] - '0') * 10 + (q[2] - '0'); q += 2; play::tap(4 * 8 + 2, r * 8 + 2, C); }   // @rr taps text row rr
-                else if (*q == '=') { ++q; while (*q && *q != ';') play::input_key(*q++, C); play::input_key('\n', C); }
-                else if (*q >= '0' && *q <= '9') play::plist.index = *q - '0';
-                else tap_word(*q);
-                g_now += 5000; play::tick(g_now, C);
-            }
+            shop_run(getenv("SHOPRUN"));
         } else if (play::screen == play::Screen::Shop) {
             shot("shop");
             auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
@@ -923,6 +948,8 @@ int main(int argc, char** argv)
         printf("   now %d,%d %s | %s | %s\n", play::pos_x(), play::pos_y(), geo::dir_name(play::dir()), l1, l2);
     }
     if (play::screen == play::Screen::Fight && getenv("FIGHT")) run_fight();
+    // AFTERSHOP: SHOPRUN's steps once the moves are done (a shop or temple walked into)
+    if (getenv("AFTERSHOP")) shop_run(getenv("AFTERSHOP"));
     if (getenv("SAVESLOT")) {
         // Encamp, Save to that slot
         auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };

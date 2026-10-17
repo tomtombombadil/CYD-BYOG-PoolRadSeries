@@ -1054,6 +1054,27 @@ until the party menu is known (`party.items`).
   "is swallowed whole", "stares blankly". The original has no Turn Undead
   (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
   has lost" - the engine already matched.
+- **v0.108.0 - Secret's temple, shops' words, Appraise** (secret_facts_2.md
+  17): the temple's menus ("Heal View Pool Appraise Exit", "Heal Exit",
+  "NAME, how can we help you?") and the cures' names (START.EXE's data);
+  **no prices** - a cure is done at once and says what it did (its own
+  overlay, GAME.OVR 0x5AFE): Cure Blindness "can see!" / "is not blind";
+  Cure Disease (0x1F 0x22 0x2B 0x2C) "is cured" / "is not Diseased"; the
+  wound cures 1d8, 2d8+1, 3d8+3 and Heal (to all but 1d4 - a byte, so near
+  full it heals all; and blindness, feeblemind, the diseases: "is cured",
+  then "is fully healed") - "is healed", "has no need of healing", the
+  dead "must be raised from dead", the stoned "can only be healed by a
+  stonemason", the gone "is not here"; Neutralize Poison (0 HP -> 1, okay
+  again) "is no longer poisoned" / "is not poisoned"; Raise Dead (not
+  elves: "cannot be raised"; a point of Constitution, 1 HP) "is
+  ressurected" / "is not dead yet"; Remove Curse "rejoices.  The curse
+  has been lifted!" / "is not cursed"; Stone to Flesh "is turned to
+  flesh" / "is not petrified". The priest's / shopkeeper's coins words,
+  Take's words (its " will you take? " has its own space), Appraise's
+  words and values - Curse's halved (gems 5 / 25 / 50 / 250 / 500 /
+  2500; jewels' ranges and bases halved: `variant.appraise_div`), a kept
+  gem / jewel item type 47, words 122 / 123; the training hall's words
+  (its training itself: still to check).
 - **v0.107.0 - View Character's menu** (all three games; coab's ovr020
   rules, each game's own words - `profile::view_facts`): Spells (the
   memorized ones, only looked at), Trade (coins to another member: "Trade
@@ -1412,6 +1433,12 @@ the game's Settings (As Original: all of them).
   Mouse/Joystick isn't shown (nothing to set up: taps are the mouse);
   when BLADES.CFG's save folder (C:\SAVE\) isn't on the card, the saves
   are the game folder's own (where GOG ships its sample party).
+  v0.108.0: its temple's Raise Dead takes a point of the character's
+  own Constitution and the hit points follow it as the girdle's change
+  does (the original lowers the Constitution in use and takes its own
+  smaller sum off the maximum - which the next recalculation may undo:
+  not checked in DOSBox); Heal's two lines show together (rows 21-22),
+  the original one after the other.
 - **Controls and screens**: taps on menu words, list lines and combat
   squares; on-screen keys (movement pad, cursor keys - Up / Down / Left /
   Right / Select - Game, Look, and on 320x240 Map: the area map over

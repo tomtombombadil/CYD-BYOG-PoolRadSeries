@@ -3476,8 +3476,135 @@ void offer_cure(pic::Canvas& c)
     ask_yes_no(c, Ask::PayCure, a);
 }
 
+// Secret's temple (its overlay, GAME.OVR 0x5AFE; secret_facts_2.md 17): no
+// prices, no "cure anyway" - a cure is done at once and says what it did
+// ("NAME can see!", "NAME is not blind" ...; Heal's cures first "NAME is
+// cured", then "NAME is fully healed")
+bool free_temple() { return d->prof->shop_words[profile::kTResurrected] != 0; }
+
+void secret_cure(int i, pic::Canvas& c)
+{
+    party::Character& ch = *pt->sel();
+    const rules::CureFacts& f = d->prof->cures;
+    const int h = ch.health();
+    int said = -1, first = -1;
+    auto diseases = [&]() {
+        int n = 0;
+        for (uint8_t t : f.disease)
+            if (t) n += rules::remove_affects(ch, t);
+        return n;
+    };
+    switch (i) {
+    case rules::kCureBlindness:
+        said = rules::remove_affects(ch, f.blinded) ? profile::kTCanSee : profile::kNotBlind;
+        break;
+    case rules::kCureDisease: said = diseases() ? profile::kCured : profile::kNotDiseased; break;
+    case rules::kCureLight:
+    case rules::kCureSerious:
+    case rules::kCureCritical:
+    case rules::kHealCure: {
+        // the dead, stoned and gone aren't healed; full HP: no need (Heal's
+        // cures still done)
+        bool can = true;
+        said = profile::kTIsHealed;
+        if (h == party::Dead) can = false, said = profile::kTMustRaise;
+        if (h == party::Stoned) can = false, said = profile::kTStonemason;
+        if (h == party::Gone) can = false, said = profile::kTNotHere;
+        const bool full = ch.hp() == ch.hp_max();
+        if (full) said = profile::kTNoNeed;
+        if (!can) break;
+        int amount = 0;
+        if (i == rules::kCureLight) amount = rng.roll(8, 1);
+        else if (i == rules::kCureSerious) amount = rng.roll(8, 2) + 1;
+        else if (i == rules::kCureCritical) amount = rng.roll(8, 3) + 3;
+        else amount = (ch.hp_max() - ch.hp() - rng.roll(4, 1)) & 0xFF;      // (a byte: near full, all)
+        if (i == rules::kHealCure) {
+            int n = rules::remove_affects(ch, f.blinded) + rules::remove_affects(ch, f.feeblemind);
+            n += diseases();
+            if (n) {
+                first = profile::kCured;
+                if (!full) said = profile::kTFullyHealed;
+            }
+        }
+        if (!full) rules::heal(ch, amount);
+        break;
+    }
+    case rules::kNeutralizePoison:
+        if (!ch.has_affect(f.poisoned)) {
+            said = profile::kNotPoisoned;
+            break;
+        }
+        if (ch.hp() == 0) ch.rec[0x1A4] = 1;
+        rules::remove_affects(ch, f.poisoned);
+        rules::remove_affects(ch, f.slow_poison);
+        rules::remove_affects(ch, f.poison_damage);
+        ch.rec[0x195] = party::Okay;
+        ch.rec[0x196] = 1;
+        said = profile::kTNoLongerPoisoned;
+        break;
+    case rules::kRaiseDead:
+        if (h != party::Dead) {
+            said = profile::kNotDead;
+        } else if (ch.rec[0x74] == 2) {
+            said = profile::kTCantRaise;                         // (elves)
+        } else {
+            // a point of Constitution (its own; the hit points follow it -
+            // rules::recalc), then 1 HP
+            rules::remove_affects(ch, f.poisoned);
+            if (ch.rec[0x18] > 0) --ch.rec[0x18];
+            rules::recalc(ch, *names, d->facts);
+            ch.rec[0x1A4] = 1;
+            ch.rec[0x195] = party::Okay;
+            ch.rec[0x196] = 1;
+            said = profile::kTResurrected;
+        }
+        break;
+    case rules::kRemoveCurse:
+        if (rules::needs_cure(ch, rules::kRemoveCurse, f)) {
+            rules::apply_cure(ch, rules::kRemoveCurse, f, rng);
+            said = profile::kTCurseLifted;
+        } else {
+            said = profile::kNotCursed;
+        }
+        break;
+    case rules::kStoneToFlesh:
+        if (h == party::Stoned) {
+            rules::apply_cure(ch, rules::kStoneToFlesh, f, rng);
+            said = profile::kTTurnedFlesh;
+        } else {
+            said = profile::kNotStoned;
+        }
+        break;
+    default: break;
+    }
+    rules::recalc(ch, *names, d->facts);
+    draw_heal(c);
+    char nm[20], w[48], t[72] = "";
+    ch.name(nm, sizeof nm);
+    for (size_t n = strlen(nm); n > 0 && nm[n - 1] == ' '; --n) nm[n - 1] = 0;
+    c.fill(8, 21 * 8, 38 * 8, 16, 0);
+    int row = 21;
+    const int lines[2] = {first, said};
+    for (int k : lines) {
+        if (k < 0) continue;
+        sw(k, w, sizeof w);
+        snprintf(t, sizeof t, "%s %s", nm, w);
+        if (row == 21 && first < 0) {
+            say_item(c, t, 10);                 // (two rows when it's long)
+            break;
+        }
+        put(c, t, 1, row++, 10);
+    }
+    dirty_rows(21, 22);
+    plat::log("[play] temple: cure %d - %s\n", i, t);
+}
+
 void heal_pick(int i, pic::Canvas& c)
 {
+    if (free_temple()) {
+        secret_cure(i, c);
+        return;
+    }
     cure_at = i;
     const rules::Cure cure = static_cast<rules::Cure>(i);
     if (!rules::needs_cure(*pt->sel(), cure, d->prof->cures)) {
@@ -3572,7 +3699,7 @@ void ask_take(int i, pic::Canvas& c)
         sw(profile::kHowMuch, a, sizeof a);
         sw(profile::kWillTake, b, sizeof b);
     }
-    snprintf(take_prompt, sizeof take_prompt, "%s%s %s", a, d->money[take_coin], b);
+    snprintf(take_prompt, sizeof take_prompt, "%s%s%s%s", a, d->money[take_coin], b[0] == ' ' ? "" : " ", b);
     input_engine = true;
     engine_ask = EngineAsk::Coins;
     input_prompt = take_prompt;
@@ -3942,7 +4069,8 @@ void appraise_key(char k, pic::Canvas& c)
         appraised_jewel = k == 'J';
         add_coins(ch, appraised_jewel ? 6 : 5, -1);
         const int r = rng.roll(100, 1);
-        appraised = appraised_jewel ? rules::jewel_value(r, rng) : rules::gem_value(r);
+        const int div = d->prof->variant.appraise_div;
+        appraised = appraised_jewel ? rules::jewel_value(r, rng, div) : rules::gem_value(r, div);
         if (appraised <= 0) appraised = 1;
         rules::recalc(ch, *names, d->facts);
         draw_appraise(c);

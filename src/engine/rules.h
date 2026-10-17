@@ -219,9 +219,11 @@ void apply_cure(party::Character& c, Cure cure, const CureFacts& f, create::Dice
 // fight again). False if they can't be healed (dead, stoned ...).
 bool heal(party::Character& c, int amount);
 
-// ---- Appraising gems and jewellery (the games' tables; gold)
-int gem_value(int d100);
-int jewel_value(int d100, create::Dice& d);
+// ---- Appraising gems and jewellery (the games' tables; gold). Secret's
+// are Curse's halved (div 2: its gems 5 ... 2500, its jewels' ranges and
+// bases halved - secret_facts_2.md 17)
+int gem_value(int d100, int div = 1);
+int jewel_value(int d100, create::Dice& d, int div = 1);
 
 // A shop's price for an item: its value moved by the shop's price factor
 // (script word 0x7F6D: 1 = 1/16 ... 0x10 normal ... 0x80 = x8)

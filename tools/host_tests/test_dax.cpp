@@ -4517,6 +4517,13 @@ static void test_temple()
         const int v = rules::jewel_value(r, d);
         CHECK(v >= 100 && v < 12000);
     }
+    // Secret's: halved (gems 5 / 25 / 50 / 250 / 500 / 2500; jewels 1-10: 50-499)
+    CHECK(rules::gem_value(1, 2) == 5 && rules::gem_value(26, 2) == 25 && rules::gem_value(71, 2) == 250 &&
+          rules::gem_value(99, 2) == 500 && rules::gem_value(100, 2) == 2500);
+    for (int i = 0; i < 50; ++i) {
+        const int v = rules::jewel_value(5, d, 2);
+        CHECK(v >= 50 && v < 500);
+    }
 }
 
 static void test_magic()

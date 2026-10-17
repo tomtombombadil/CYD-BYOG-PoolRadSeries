@@ -1100,12 +1100,31 @@ const Profile kProfiles[] = {
      .item_words = {0x28439, 0x2843E, 0x2844E, 0x28454, 0x2845B, 0x28461, 0x28467, 0x281AC, 0x2847C, 0x29078,
                     0x2848C, 0x284AC, 0x284C1, 0x28F9C, 0x29C21, 0x29C30, 0x2A139, 0x29CCE, 0x29D12, 0, 0x2A159,
                     0x2A17F, 0x2A148, 0x22A97},
-     // The effects cures take away, in Secret's numbers (its temple's prices:
-     // not read yet - 0, no temple): blindness 0x21, diseases 0x22 0x2B 0x2C,
-     // feeblemind 0x44, poison 0x37, Slow Poison 0x16, poison's damage 0x0F,
-     // Bestow Curse 0x24; the disease's course 0x22 / 0x2B / 0x2C, helpless 0x1F
+     // The shop's Take / Appraise and the temple (secret_facts_2.md 17; its
+     // temple overlay GAME.OVR 0x5AFE): menus, the cures' names (START.EXE's
+     // data, 41 bytes each), no prices, each cure's own words; the
+     // shopkeeper's / priest's coins words; Appraise; Take (" will you
+     // take? " with its own space); the training hall's
+     .shop_words = {0x66BD, 0x66E5, 0x64A1, 0x64B9,
+                    kP | 0xDF6C, kP | 0xDF95, kP | 0xDFBE, kP | 0xDFE7, kP | 0xE010, kP | 0xE039, kP | 0xE062,
+                    kP | 0xE08B, kP | 0xE0B4, kP | 0xE0DD,
+                    0, 0, 0, 0, 0, kP | 0xDF62,
+                    0x5AFE, 0x5B91, 0x5F95, 0x6220, 0x6336, 0x6405,
+                    0x670C, 0x6757, 0x8C91, 0x8CE4,
+                    0x35324, 0x35343, 0x3534A, 0x35354, 0x3535A, 0x35366, 0x3537C, 0x35381, 0x35386, 0x35390,
+                    0x3539B, 0x352E1, 0x352F4, 0x352F9, 0x352FF, 0x35311,
+                    0x34724, 0x34739, 0x3475B, 0x3474A, 0x33BD0,
+                    0x21F82, 0, 0x21FA1, 0x21FC0, 0x21FD6, 0x21FE4, 0x21FF3, 0x22000, 0x22017,
+                    0x5B0B, 0x5C86, 0x5C90, 0x5CA9, 0x5CCC, 0x5CD8, 0x5CEF, 0x5FA5, 0x5FB6, 0x620A, 0x6310, 0x6416},
+     // The effects cures take away, in Secret's numbers (its temple is
+     // free): blindness 0x21, diseases 0x1F 0x22 0x2B 0x2C (its temple's
+     // list), feeblemind 0x44, poison 0x37, Slow Poison 0x16, poison's
+     // damage 0x0F, Bestow Curse 0x24; the disease's course 0x22 / 0x2B /
+     // 0x2C, helpless 0x1F
      .cures = {{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-               0x21, {0x22, 0x2B, 0x2C, 0, 0, 0}, 0x44, 0x37, 0x16, 0x0F, 0, 0x24, 0x22, 0x2B, 0x2C, 0x1F},
+               0x21, {0x1F, 0x22, 0x2B, 0x2C, 0, 0}, 0x44, 0x37, 0x16, 0x0F, 0, 0x24, 0x22, 0x2B, 0x2C, 0x1F},
+     // A kept gem / jewel: type 47, words 122 / 123 (its Appraise's)
+     .gem_type = 47, .gem_word = 0x7A, .jewel_word = 0x7B,
      // Camp magic (secret_facts.md 13): its menu, level names "1st".."7th" +
      // " Level", 119 spell names of 35 bytes, its words; effect names by
      // number (its View's table); the confirmations "Memorize" + " these
@@ -1182,7 +1201,7 @@ const Profile kProfiles[] = {
                 .berserk = 0x6B},
                kSecretFight, sizeof kSecretFight / sizeof kSecretFight[0]},
      .variant = {.unfinished = true, .program_words = true, .tile_window = 40, .bars = {55, 52, 53, 54, 59, 56, 57, 58}, .secret_files = true,
-                 .bigpic_from = 0x70, .treasure_pic = 60, .camp_pic = 59},
+                 .bigpic_from = 0x70, .treasure_pic = 60, .camp_pic = 59, .appraise_div = 2},
      .overland = nullptr,
      .font_file = "8X8D5.DAX",
      .joined = kSecretJoined, .n_joined = sizeof kSecretJoined / sizeof kSecretJoined[0]},

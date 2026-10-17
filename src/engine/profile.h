@@ -87,6 +87,9 @@ enum ShopWord {
     kCoinType, kSelectWord, kHowMuch, kWillTake, kOverPool,     // Take
     kTrainConscious, kTrainCost, kTrainClass, kTrainExp,        // a training hall (Train Character)
     kWillBecome, kALevel, kAndALevel, kWishTrain, kCongrats,
+    // Secret's temple (free; each cure says what it did - secret_facts_2.md 17)
+    kTCanSee, kTIsHealed, kTMustRaise, kTStonemason, kTNotHere, kTNoNeed, kTFullyHealed,
+    kTCantRaise, kTResurrected, kTNoLongerPoisoned, kTCurseLifted, kTTurnedFlesh,
     kShopWords
 };
 
@@ -493,6 +496,9 @@ struct Profile {
         uint8_t  treasure_pic = 0;
         // The camp's picture (a PIC block; 0: none - the 3D view stays)
         uint8_t  camp_pic = 0;
+        // Appraise: gems and jewels worth Curse's divided by this (0: 1;
+        // Secret 2 - secret_facts_2.md 17)
+        uint8_t  appraise_div = 0;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

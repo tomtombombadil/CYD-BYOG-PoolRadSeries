@@ -1292,21 +1292,23 @@ void apply_cure(party::Character& c, Cure cure, const CureFacts& f, create::Dice
     (void)kHpMax;
 }
 
-int gem_value(int r)
+int gem_value(int r, int div)
 {
-    return r <= 25 ? 10 : r <= 50 ? 50 : r <= 70 ? 100 : r <= 90 ? 500 : r <= 99 ? 1000 : r == 100 ? 5000 : 0;
+    if (div < 1) div = 1;
+    return (r <= 25 ? 10 : r <= 50 ? 50 : r <= 70 ? 100 : r <= 90 ? 500 : r <= 99 ? 1000 : r == 100 ? 5000 : 0) / div;
 }
 
-int jewel_value(int r, create::Dice& d)
+int jewel_value(int r, create::Dice& d, int div)
 {
+    if (div < 1) div = 1;
     if (r < 1 || r > 100) return 0;
-    if (r <= 10) return d.random(900) + 100;
-    if (r <= 20) return d.random(1000) + 200;
-    if (r <= 40) return d.random(1500) + 300;
-    if (r <= 50) return d.random(2500) + 500;
-    if (r <= 70) return d.random(5000) + 1000;
-    if (r <= 90) return d.random(6000) + 2000;
-    return d.random(10000) + 2000;
+    if (r <= 10) return d.random(900 / div) + 100 / div;
+    if (r <= 20) return d.random(1000 / div) + 200 / div;
+    if (r <= 40) return d.random(1500 / div) + 300 / div;
+    if (r <= 50) return d.random(2500 / div) + 500 / div;
+    if (r <= 70) return d.random(5000 / div) + 1000 / div;
+    if (r <= 90) return d.random(6000 / div) + 2000 / div;
+    return d.random(10000 / div) + 2000 / div;
 }
 
 } // namespace rules
