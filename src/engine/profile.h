@@ -170,6 +170,13 @@ enum FightWord {
     kFightWords
 };
 
+// A word made of two (Secret: "is " + an effect's name - "is Blessed";
+// either part GAME.OVR or text::kInProgram); a word's offset
+// text::kJoined | i is the profile's joined[i]
+struct JoinedWord {
+    uint32_t first, second;
+};
+
 // An effect's name in the effects list (Display): a GAME.OVR string
 struct EffectName {
     uint8_t  type;
@@ -490,6 +497,9 @@ struct Profile {
     // The game's 8x8 font: block 201 of this file (nullptr: tiles_file's;
     // Secret keeps it in 8X8D5.DAX)
     const char* font_file = nullptr;
+    // Words made of two (text::kJoined | index)
+    const JoinedWord* joined = nullptr;
+    uint8_t           n_joined = 0;
 };
 
 // The game's program file name (to look for it), or nullptr if no

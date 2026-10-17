@@ -23,6 +23,10 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   Claude wants, follow-ups) the moment it comes up; tick it off with the
   version that did it; sync it to the Project (claude/TODO.md) with every
   push, like SPEC. Never ask Tom the same thing twice: it's on the list.
+- **Game order** (Tom, 2026-10-17): the original series first -
+  Secret, then Pools of Darkness - then the Savage Frontier (Gateway,
+  Treasures), the Krynn games last (Dark Queen's TLB / GLB format is the
+  only new storage; Darkness and Treasures are DAX with VGA pictures).
 - The other games (survey 2026-10-12): the Project's
   claude/other_games_facts.md - 16-colour: Pool, Curse, Secret,
   Champions, Death Knights, Gateway; 256-colour VGA: Treasures, Darkness,
@@ -556,7 +560,8 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   item, for Tom).
 - Secret of the Silver Blades (Tom, 2026-10-12: implementing now, in
   discrete chunks a commit each - his usage is limited, nothing may be
-  lost): facts and the plan in the Project's claude/secret_facts.md, SPEC
+  lost): facts and the plan in the Project's claude/secret_facts.md
+  (sections 1-13) and claude/secret_facts_2.md (14 on), SPEC
   6c. Its GOG files: scratch /tmp/claude-0/games3/secret/...; game number
   3 (lwsim / playsim GAME=3). Its frame is code-drawn bars
   (`variant.bars`, tiles 52-59 through `variant.tile_window`), font in

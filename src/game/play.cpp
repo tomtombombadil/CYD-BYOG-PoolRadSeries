@@ -4773,6 +4773,16 @@ void cw(int i, char* out, size_t cap)
 void ow(uint32_t at, char* out, size_t cap)
 {
     out[0] = 0;
+    if (at & text::kJoined) {
+        // Two words as one (Secret's "is " + an effect's name)
+        const uint32_t i = at & 0xFFFF;
+        if (!d->prof->joined || i >= d->prof->n_joined) return;
+        const profile::JoinedWord& j = d->prof->joined[i];
+        ow(j.first, out, cap);
+        const size_t n = strlen(out);
+        if (n + 1 < cap) ow(j.second, out + n, cap - n);
+        return;
+    }
     OvrWords src;
     if (!at || !src.open()) return;
     text::read_pascal(src, at, out, cap);
@@ -4980,6 +4990,9 @@ void next_line(pic::Canvas& c)
     case spells::Said::Raised: cw(profile::kRaised, t, sizeof t); break;
     case spells::Said::Uncursed: cw(profile::kUncursed, t, sizeof t); break;
     case spells::Said::ItemUncursed: cw(profile::kItemUncursed, t, sizeof t); break;
+    case spells::Said::Word2: ow(cr.cs->word2, t, sizeof t); break;
+    case spells::Said::Word3: ow(cr.cs->word3, t, sizeof t); break;
+    case spells::Said::Word4: ow(cr.cs->word4, t, sizeof t); break;
     }
     say_line(c, l.who, t);
     if (cr.on_camp) draw_party(c, 17);

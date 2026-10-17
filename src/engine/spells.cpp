@@ -234,7 +234,7 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
     case Does::CureBlind:
         for (int k = 0; k < n; ++k)
             if (cure(p.m[who[k]], cures.blinded)) {
-                o.say(who[k], Said::Cured);
+                if (!t.lay.secret) o.say(who[k], Said::Cured);      // (Secret: "can see" alone - 0x2F7DB)
                 o.say(who[k], Said::CanSee);
             }
         break;
@@ -365,6 +365,36 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
             }
             if (rules::heal(c, d.roll(cs.sides, cs.n) + cs.plus))
                 o.say(who[k], cs.word ? Said::Word : c.hp() >= c.hp_max() ? Said::Fully : Said::Partly);
+        }
+        break;
+    case Does::FullHeal:
+        // Secret's Heal (GAME.OVR 0x2F699): disease, blindness, feeblemind
+        // cured, then the most hit points less n dice; the spell table's
+        // effect too (its Barkskin runs this routine)
+        for (int k = 0; k < n; ++k) {
+            party::Character& c = p.m[who[k]];
+            if (e.affect) give(c, e.affect, minutes, pw, false);
+            bool ill = false;
+            for (uint8_t dz : cures.disease)
+                if (dz && cure(c, dz)) ill = true;
+            if (ill && cs.word3) o.say(who[k], Said::Word3);
+            if (cures.blinded && cure(c, cures.blinded) && cs.word2) o.say(who[k], Said::Word2);
+            if (cures.feeblemind && cure(c, cures.feeblemind) && cs.word4) o.say(who[k], Said::Word4);
+            const int target = c.hp_max() - d.roll(cs.sides, cs.n);
+            if (target > c.hp() && rules::heal(c, target - c.hp()) && cs.word) o.say(who[k], Said::Word);
+        }
+        break;
+    case Does::Youth:
+        // The Elixir of Youth (GAME.OVR 0x30813): the age down by the dice,
+        // at least 18 ("is now 18 years old"), else "becomes younger"
+        for (int k = 0; k < n; ++k) {
+            party::Character& c = p.m[who[k]];
+            int age = c.age() - (d.roll(cs.sides, cs.n) + cs.plus);
+            const bool floor = age < 18;
+            if (floor) age = 18;
+            c.rec[0x76] = static_cast<uint8_t>(age);
+            c.rec[0x77] = static_cast<uint8_t>(age >> 8);
+            o.say(who[k], floor ? Said::Word2 : Said::Word);
         }
         break;
     case Does::Reading:

@@ -1024,6 +1024,24 @@ until the party menu is known (`party.items`).
   Exit, "'s" ...) mapped too. Not yet: the spells' result words in camp
   ("is Blessed" - Secret's are worded otherwise), Heal (6th level) and
   the new spells' camp effects.
+- **v0.105.0 - the spells' words.** Secret's spell routines (its
+  handler table: DS 0x8A8E + 4 x spell, set at run time;
+  secret_facts_2.md 14) say "is " + a word: mostly the effect's own name from its effects
+  list ("is Blessed", "is Held", "is Hastened", "falls Asleep"), else
+  "Healed" / "Affected" / "Unaffected" / "Protected" or a word in the
+  routine's code ("is invisible", "is un-cursed"). The profile's joined
+  words (`Profile::joined`, `text::kJoined`) put the two together; both
+  its fight and camp tables say them. Its renumbered spells: 36 is Heal
+  (Curse: Animate Dead) - disease, blindness, feeblemind cured, then the
+  most hit points less 1d4 (`FullHeal`); 56 Harm (Curse: Restoration) -
+  diseased, hit points down to 1d4 (`HarmTouch`); 63 the Elixir of Youth
+  (Curse: the party invisible) - 1d4 + 1 years younger, at least 18
+  (`Youth`); 96 the druids' Charm Person or Mammal (as Charm Person: the
+  engine doesn't tell mammals apart); 98 the druids' Cure Light Wounds;
+  90 Barkskin runs Heal's routine in the original (and gives its effect)
+  - kept so (section 12). Its item words (Use ... Id, Select) mapped by
+  their text; its cures' effect numbers (blindness 0x21, diseases, 0x44
+  feeblemind ...). Cure Blindness says "can see" alone, as its routine.
 - Not yet: the items and
   their words (Secret's item word table differs), Modify ("Add Subtract
   Keep Exit"), Add Character's "Secret Curse" (importing Curse's
@@ -1368,9 +1386,11 @@ the game's Settings (As Original: all of them).
   Mouse/Joystick isn't shown (nothing to set up: taps are the mouse);
   when BLADES.CFG's save folder (C:\SAVE\) isn't on the card, the saves
   are the game folder's own (where GOG ships its sample party).
+  Its Barkskin heals as Heal does (and gives its AC effect): the
+  original's spell table runs Heal's routine for it (v0.105.0) - kept as
+  the original; Tom to decide whether to fix it (TODO).
   While it's being built (v0.99.0): no Turn on the fight menu (its turn
-  undead table not found yet), its spells' results in fights say nothing,
-  and its new monster abilities (petrifying touch, confusion gaze, the
+  undead table not found yet), and its new monster abilities (petrifying touch, confusion gaze, the
   pyrohydra's breath ...) do nothing yet.
 - **Controls and screens**: taps on menu words, list lines and combat
   squares; on-screen keys (movement pad, cursor keys - Up / Down / Left /

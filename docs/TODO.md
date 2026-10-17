@@ -54,16 +54,15 @@ the Project as claude/TODO.md.
       menu, Load, Begin into Priam's house (v0.94.0); the rule tables,
       areas (v0.95.0); the scripts' view of a character (v0.96.0); View
       Character (v0.97.0); item names (v0.98.0); fights (v0.99.0: tables,
-      monsters, effects, most words). Next, a chunk a commit:
-      the camp spells' result words (Bless's "is Blessed" ... aren't in
-      Secret's files: see in DOSBox how it words them), Heal and the
-      spells past 100 in camp; Alter ("Order Drop Speed Icon Level
+      monsters, effects, most words). v0.105.0: the spells' words (fight
+      and camp), Heal / Harm / the Elixir of Youth / the druids' spells,
+      item words. Next, a chunk a commit:
+      the spells past 100 (camp and fights); Alter ("Order Drop Speed Icon Level
       Exit" - its Level); how Secret renames an item it
       identifies / halves / joins; the exploring menu's "Move" (the
       original's first word); fights still to do: the turn undead table
       (not found: Curse's code reads its DS 0x369 at ovr 0x14684, Secret's
-      routine not found), the spells' result words ("is Blessed" isn't in
-      Secret's files - how it words them, in DOSBox), "The party has
+      routine not found), "The party has
       lost" / "has found treasure!" / "Turn " (not found as Pascal text),
       its new monster abilities (0x41 petrify, 0x43 pyrohydra breath, 0x46
       confusion gaze, 0x68 +4d6 fire, 0x3C +3 weapons, 0x42 half from
@@ -96,6 +95,9 @@ the Project as claude/TODO.md.
       load_party_text 1.3 KB, save_game 1.1 KB).
 - [ ] Tom: v0.104.2 - Pool's walls round Phlan's gateway / the
       temples, and Center in a fight (Aim, Manual, an empty square).
+- [ ] Tom: Secret's Barkskin - the original runs Heal's routine for it
+      (the AC effect AND nearly full hit points; v0.105.0 does the same).
+      Keep it as the original, or fix it (AC only) behind Item Fixes?
 - [ ] Tom: try the new library page (v0.103.0) on a board - the art,
       the header keys, the thirds and the triangles.
 - [ ] Tom: when you have a moment, Secret's Screen Test and Walk Test
@@ -103,6 +105,11 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.105.0: Secret's spells say its own words ("is Blessed", "falls
+  Asleep", "is Hastened" ...) in fights and camp; its Heal, Harm, Elixir
+  of Youth and the druids' Charm Person or Mammal / Cure Light Wounds;
+  its item words (Use ... Select).
 
 - v0.104.2: Pool's area 3 walls (the "unsettled areas" round Phlan,
   the Temple of Tyr) from their own tiles - they were drawn from other

@@ -72,6 +72,9 @@ enum class Does : uint8_t {
     GiantStrength,  // the potion: Strength 21 (word) when more than their own; the effect either way
     HealOrUnpoison, // Pool's 0x3A: the poisoned lose the poison (and Slow Poison; nothing said), else Heal
     Reading,        // Pool's 0x43, the Manual of Bodily Health: its effect (data 0xFF; word) - rules::manual_clock
+    FullHeal,       // Secret's Heal: disease (word3), blindness (word2), feeblemind (word4) cured, then the most
+                    // hit points less n dice (word); the table's effect too (its Barkskin goes here)
+    Youth,          // the Elixir of Youth: the age down by n dice + plus, at least 18 (word; word2 at 18)
 };
 struct CampSpell {
     uint8_t  spell;
@@ -79,10 +82,12 @@ struct CampSpell {
     uint8_t  n, sides, plus;            // Heal's dice
     uint32_t word;                      // what's said ("is Blessed"; GAME.OVR offset, 0: nothing;
                                         // Heal: "is Healed" instead of fully / partly healed)
+    uint32_t word2 = 0, word3 = 0, word4 = 0;   // more (FullHeal, Youth)
 };
 
 // What is said about a target, in order ("NAME is Blessed")
-enum class Said : uint8_t { Word, Unaffected, Fully, Partly, Cured, CanSee, Unpoisoned, Raised, Uncursed, ItemUncursed };
+enum class Said : uint8_t { Word, Unaffected, Fully, Partly, Cured, CanSee, Unpoisoned, Raised, Uncursed, ItemUncursed,
+                            Word2, Word3, Word4 };
 struct Line {
     uint8_t who;                        // party member
     Said    what;

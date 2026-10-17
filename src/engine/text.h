@@ -45,6 +45,9 @@ bool read_pascal(dax::ByteSource& exe, const exepack::Info& info, uint32_t pos, 
 // in the program's unpacked image (read_at unpacks 256 bytes there once,
 // so read_pascal's two reads cost one unpacking); others are GAME.OVR's
 constexpr uint32_t kInProgram = 0x80000000u;
+// A word made of two: the game profile's joined[at & 0xFFFF] (Secret's "is "
+// + an effect's name) - the front end puts the two together
+constexpr uint32_t kJoined = 0x40000000u;
 class Words : public dax::ByteSource {
 public:
     Words(dax::ByteSource& ovr, dax::ByteSource* exe, const exepack::Info* info) : ovr_(ovr), exe_(exe), info_(info) {}

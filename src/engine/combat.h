@@ -671,6 +671,12 @@ enum class SpellDoes : uint8_t {
                                         // the rest as when saved (the spell table's)
     Slow,                               // as Haste for the other side: at most the caster's level of them, a hasted
                                         // one cured of it instead (word2 "is Cured")
+    // Secret of the Silver Blades (secret_facts_2.md 14)
+    FullHeal,                           // Secret's Heal: disease cured (word3), blindness (word2), feeblemind (word4),
+                                        // then to the most hit points less the dice (word); the table's effect too
+    HarmTouch,                          // Harm: diseased (word), the hit points down to the dice
+    Youth,                              // the Elixir of Youth: the age down by the dice + plus, at least 18 (word;
+                                        // word2 when it stops at 18)
 };
 struct FightSpell {
     uint8_t   spell;
@@ -684,10 +690,11 @@ struct FightSpell {
     uint32_t  word2 = 0;                // ... when they saved (clouds: "starts to cough")
     uint32_t  word3 = 0;                // a third ("has an item un-cursed")
     uint8_t   reach = 0;                // Bolt: its length (squares; the original's bolt with the square aimed at)
+    uint32_t  word4 = 0;                // a fourth (Secret's Heal: "regains intellect")
 };
 // What happened to each target, in order
 // Fallen: the skull, no words; Risen: "gets back up" / "stands up and grins"
-enum class Did : uint8_t { Word, Damage, Unaffected, Misses, Healed, Down, Word2, Fallen, Word3, Risen, LostImage };
+enum class Did : uint8_t { Word, Damage, Unaffected, Misses, Healed, Down, Word2, Fallen, Word3, Risen, LostImage, Word4 };
 struct SpellLine {
     uint8_t who;
     Did     did;

@@ -3328,6 +3328,77 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         }
         break;
     }
+    case SpellDoes::FullHeal:
+        // Secret's Heal (GAME.OVR 0x2F699; its Barkskin runs it too):
+        // disease, blindness, feeblemind cured, then the most hit points
+        // less the dice; the spell table's effect
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            const int st2 = f.status();
+            if (st2 != party::Okay && st2 != party::Animated && st2 != party::Unconscious && st2 != party::Dying) continue;
+            if (e.affect) give_aff(f, e.affect, minutes, pw, false);
+            if (b.fx) {
+                bool ill = false;
+                const uint8_t ills[3] = {b.fx->sp.ill, b.fx->sp.weak, b.fx->sp.sick};
+                for (uint8_t dz : ills) {
+                    const int at = dz ? find_aff(f, dz) : -1;
+                    if (at >= 0) {
+                        drop_aff(f, at);
+                        ill = true;
+                    }
+                }
+                if (ill && fs.word3) say(who[k], Did::Word3, 0);
+                int at = b.fx->blinded ? find_aff(f, b.fx->blinded) : -1;
+                if (at >= 0) {
+                    drop_aff(f, at);
+                    if (fs.word2) say(who[k], Did::Word2, 0);
+                }
+                at = b.fx->feeble ? find_aff(f, b.fx->feeble) : -1;
+                if (at >= 0) {
+                    drop_aff(f, at);
+                    if (fs.word4) say(who[k], Did::Word4, 0);
+                }
+            }
+            const int target = f.hp_max() - d.roll(fs.sides, fs.n);
+            if (target <= f.hp()) continue;
+            f.rec[kHp] = static_cast<uint8_t>(target);
+            if (st2 == party::Dying) {
+                f.rec[kHealth] = party::Unconscious;
+                f.bleeding = 0;
+            }
+            say(who[k], fs.word ? Did::Word : Did::Healed, target);
+        }
+        break;
+    case SpellDoes::HarmTouch:
+        // Harm (GAME.OVR 0x3054D): diseased, then the hit points down to the dice
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up()) continue;
+            if (resisted(k, e.affect)) continue;
+            if (b.fx && b.fx->sp.ill) give_aff(f, b.fx->sp.ill, 0, 0, false);
+            if (fs.word) say(who[k], Did::Word, 0);
+            const int left = d.roll(fs.sides, fs.n);
+            if (f.hp() <= left) continue;
+            Harm h = hs;
+            h.dice = fs.n;
+            bool dn = false;
+            const int done = harm(b, who[k], f.hp() - left, h, d, &dn);
+            if (done > 0) say(who[k], Did::Damage, done);
+            if (dn) say(who[k], Did::Down, 0);
+        }
+        break;
+    case SpellDoes::Youth:
+        // The Elixir of Youth (GAME.OVR 0x30813)
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            int age = (f.rec[0x76] | f.rec[0x77] << 8) - (d.roll(fs.sides, fs.n) + fs.plus);
+            const bool floor = age < 18;
+            if (floor) age = 18;
+            f.rec[0x76] = static_cast<uint8_t>(age);
+            f.rec[0x77] = static_cast<uint8_t>(age >> 8);
+            say(who[k], floor ? Did::Word2 : Did::Word, 0);
+        }
+        break;
     case SpellDoes::Restore:
         // (the level itself: the caller, create::restore)
         for (int k = 0; k < m; ++k)
@@ -3495,8 +3566,9 @@ bool spell_targets(Battle& b, const Tables& t, const classes::Tables& st, int i,
     int reach = e.range == -1 ? 1 : e.range + e.range_level * pw;
     if (reach < 1) reach = 1;
     const int aim = e.aim & 0x0F;
+    if (fs.does == SpellDoes::Youth) return false;      // (never the computer's)
     // For their own good
-    if (fs.does == SpellDoes::Heal) {
+    if (fs.does == SpellDoes::Heal || fs.does == SpellDoes::FullHeal) {
         if (f.hp() * 2 >= f.hp_max()) return false;
         targets[(*n_targets)++] = i;
         return true;

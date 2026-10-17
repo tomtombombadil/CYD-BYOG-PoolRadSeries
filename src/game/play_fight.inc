@@ -3294,11 +3294,19 @@ void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::Fi
         case combat::Did::Unaffected: add_page(l[k].who, fw(profile::kIsUnaffectedS)); break;
         case combat::Did::Word2:
             ow(fs.word2, t, sizeof t);
+            if (!t[0]) break;           // (no word for it: nothing said)
             add_page(l[k].who, t);
             page_fx_set(1, hit_fx(l[k].who, true));
             break;
         case combat::Did::Word3:
             ow(fs.word3, t, sizeof t);
+            if (!t[0]) break;           // (no word for it: nothing said)
+            add_page(l[k].who, t);
+            page_fx_set(1, hit_fx(l[k].who, true));
+            break;
+        case combat::Did::Word4:
+            ow(fs.word4, t, sizeof t);
+            if (!t[0]) break;           // (no word for it: nothing said)
             add_page(l[k].who, t);
             page_fx_set(1, hit_fx(l[k].who, true));
             break;
