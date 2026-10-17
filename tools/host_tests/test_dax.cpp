@@ -2960,6 +2960,7 @@ static void test_geo_view()
     CHECK(view3d::load_walls(ts, idx, 1, 7, w, &n) && n == 2 && w.walls[0].loaded && w.walls[1].loaded);
     CHECK(w.walls[1].id[0][0] == 46);                              // part 2 numbers its own tiles already
     CHECK(view3d::tiles_block(7, 1, 0) == 7 && view3d::tiles_block(14, 2, 1) == 142);
+    CHECK(view3d::tiles_block(0, 3, 0) == 101 && view3d::tiles_block(0, 3, 2) == 103 && view3d::tiles_block(0, 1, 0) == 0);
 
     static uint8_t px[pic::kScreenW * pic::kScreenH];
     pic::Canvas c{px, pic::kScreenW, pic::kScreenH};

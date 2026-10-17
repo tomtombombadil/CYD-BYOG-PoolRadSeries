@@ -79,9 +79,9 @@ the Project as claude/TODO.md.
       the stylus touches; light taps after a pause, finger and stylus;
       small keys) and the sounds (Settings' sound test - Step, Hit; Pool's
       steps and fights). Also on a resistive board: keys light on touch
-      there too. On the 3.5" (v0.104.1): Step and Hit in both Tandy and
-      PC speaker modes - and any hum or hiss between sounds now that its
-      amplifier stays on? If taps still land off
+      there too. Sounds: Step and the others work now (Tom, 2026-10-16) -
+      still to say: any hum or hiss between sounds on the 3.5" now that
+      its amplifier stays on? If taps still land off
       the mark, Settings - Recalibrate Touch (new on this board: tap
       each arrow tip) and say whether it helped. Then the yellow tint:
       the display's set-up is the same as the maker's (same gamma and
@@ -94,6 +94,8 @@ the Project as claude/TODO.md.
       1.5 KB at a fight's start); slim the deepest frames if it drops
       under ~1 KB (fight_load_monster 1.2 KB, draw_overland 1.4 KB,
       load_party_text 1.3 KB, save_game 1.1 KB).
+- [ ] Tom: v0.104.2 - Pool's walls round Phlan's gateway / the
+      temples, and Center in a fight (Aim, Manual, an empty square).
 - [ ] Tom: try the new library page (v0.103.0) on a board - the art,
       the header keys, the thirds and the triangles.
 - [ ] Tom: when you have a moment, Secret's Screen Test and Walk Test
@@ -101,6 +103,12 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.104.2: Pool's area 3 walls (the "unsettled areas" round Phlan,
+  the Temple of Tyr) from their own tiles - they were drawn from other
+  areas' tiles since v0.85.2 (Tom: "made up of tiny icons"); Center in
+  fights centres the view on what's aimed at, Manual's empty squares too,
+  and the Manual square keeps the view with it (Tom).
 
 - v0.104.1: the ESP32-32E boards' amplifier stays on from Play's start
   (its ~100 ms wake-up ate Step and Hit on Tom's 3.5").

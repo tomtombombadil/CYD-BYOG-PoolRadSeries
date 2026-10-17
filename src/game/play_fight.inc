@@ -742,19 +742,25 @@ void draw_panel_for(pic::Canvas& c, int i)
 
 // The view brought to fighter i (radius r: moved only when further than
 // that from the centre)
-void focus(int i, int r)
+// The view moved so square (x, y) is within r of its middle (0: in the
+// middle - as far as the field's edges let it)
+void focus_at(int x, int y, int r)
 {
     combat::Battle& b = fg->b;
-    const combat::Fighter& f = b.f[i];
     int cx = b.vx + 3, cy = b.vy + 3;
-    if (f.x - cx > r || cx - f.x > r || r == 0xFF) cx = f.x;
-    if (f.y - cy > r || cy - f.y > r || r == 0xFF) cy = f.y;
+    if (x - cx > r || cx - x > r || r == 0xFF) cx = x;
+    if (y - cy > r || cy - y > r || r == 0xFF) cy = y;
     if (cx < 3) cx = 3;
     if (cx > combat::kW - 4) cx = combat::kW - 4;
     if (cy < 3) cy = 3;
     if (cy > combat::kH - 4) cy = combat::kH - 4;
     b.vx = cx - 3;
     b.vy = cy - 3;
+}
+
+void focus(int i, int r)
+{
+    focus_at(fg->b.f[i].x, fg->b.f[i].y, r);
 }
 
 bool on_screen(int i)
@@ -2107,7 +2113,10 @@ void aim_menu(pic::Canvas& c)
         fg->outline = load_pic4("COMSPR.DAX", 0x19 + 0x80, 0, &w, &h);     // (another try)
     }
     if (t >= 0 || fg->manual) {
-        if (t >= 0) focus(t, 2);
+        // (the Manual square keeps the view with it - empty or not: Tom,
+        // v0.104.2, the cursor went off the view)
+        if (fg->manual) focus_at(fg->mx, fg->my, 2);
+        else focus(t, 2);
         draw_fight(c);
         mark(c, fg->cur);
         if (t >= 0) draw_panel_for(c, t);
@@ -2196,7 +2205,12 @@ void aim_tap(int x, int y, pic::Canvas& c)
         fg->mx = t >= 0 ? b.f[t].x : b.f[fg->cur].x;
         fg->my = t >= 0 ? b.f[t].y : b.f[fg->cur].y;
         break;
-    case 'C': break;                    // (the view comes to it)
+    case 'C':
+        // Center: the aimed square in the middle of the view (a fighter or,
+        // in Manual, any square - Tom, v0.104.2: it did nothing)
+        if (fg->manual) focus_at(fg->mx, fg->my, 0);
+        else if (t >= 0) focus(t, 0);
+        break;
     case 'T':
         if (fg->spell) {
             spell_target(c, t);

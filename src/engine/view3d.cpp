@@ -176,7 +176,10 @@ bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tile
 
 int tiles_block(uint8_t walldef_block, int n, int i)
 {
-    return n == 1 ? walldef_block : walldef_block * 10 + i + 1;
+    // (Pool's loader: a multi-part block 0 counts as 10 - Phlan's area 3,
+    // WALLDEF3 block 0's tiles are 8X8D3 101-103; v0.104.2)
+    if (n == 1) return walldef_block;
+    return (walldef_block == 0 ? 10 : walldef_block) * 10 + i + 1;
 }
 
 bool load_walls(dax::ByteSource& src, const dax::Index& idx, int set, uint8_t block, World& w, int* count)

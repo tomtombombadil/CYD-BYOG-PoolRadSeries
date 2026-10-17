@@ -66,7 +66,8 @@ bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tile
 bool load_walls(dax::ByteSource& src, const dax::Index& idx, int set, uint8_t block, World& w, int* count);
 
 // The 8X8Dn block holding the tiles for part i of a WALLDEF block of n
-// parts: the same number when n = 1, else block * 10 + i + 1.
+// parts: the same number when n = 1, else block * 10 + i + 1 - block 0
+// counting as 10 (101, 102, ...: Pool's program).
 int tiles_block(uint8_t walldef_block, int n, int i);
 
 bool load_horizon(dax::ByteSource& src, const dax::Index& idx, uint8_t block, World& w);
