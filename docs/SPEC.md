@@ -1054,6 +1054,20 @@ until the party menu is known (`party.items`).
   "is swallowed whole", "stares blankly". The original has no Turn Undead
   (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
   has lost" - the engine already matched.
+- **v0.111.0 - Secret's Create New Character and Modify** (secret_facts_2.md
+  21; checked against a magic-user made in DOSBox - the same record but
+  the rolls): its words ("Pick Race" ...), its race order (Elf, Half-Elf,
+  Dwarf, Gnome, Halfling, Human), each roll with its races' adjustments
+  (dwarves Con +1 Cha -1, elves Dex +1 Con -1, halflings Str -1 Dex +1),
+  200,000 experience (two classes 100,000; three, and magic-user /
+  thief, 66,667) trained silently to its level (a magic-user to 9th), no
+  money, its races' effects (gnomes without the giants' one), a new
+  magic-user's Detect Magic / Read Magic / Shield / Sleep and the lists
+  its silent training teaches at magic-user levels 6-9, the default icon
+  colours. Modify: its "Add Subtract Keep Exit" (Add / Subtract = the
+  arrows), the stats at rows 9-14 and the hit points at row 3 as its View,
+  a character with its own starting experience. Human Change's new
+  magic-user spells as Curse's.
 - **v0.110.0 - Secret's Add Character: "Add from where? Secret Curse
   Exit"** (secret_facts_2.md 20): Secret its own characters (.WHO and the
   saved games' members); Curse - the .GUY files in Secret's save folder (as

@@ -2924,6 +2924,9 @@ bool load_rules(Making*& m)
     fa.mu_level4 = pc.mu_level4;
     fa.mu_level5 = pc.mu_level5;
     memcpy(fa.mu_change, pc.mu_change, 4);
+    fa.mu_by_level = pc.mu_by_level;
+    fa.mu_by_level_from = pc.mu_by_level_from;
+    fa.mu_by_level_n = pc.mu_by_level_n;
     const uint32_t at[9] = {pc.pick_race, pc.pick_gender, pc.pick_class, pc.pick_alignment, pc.select,
                             pc.reroll,    pc.char_name,   pc.save_q,     pc.qmark};
     const uint32_t ch_at[5] = {pc.pick_new, pc.no_qualify, pc.change_select, pc.now_first, pc.dot};
@@ -3106,7 +3109,7 @@ void pick_stage(int stage, pic::Canvas& c)
 {
     mk->stage = stage;
     switch (stage) {
-    case 0: mk->n_opt = create::races(mk->opt, 17); break;
+    case 0: mk->n_opt = create::races(mk->opt, 17, secret_files()); break;
     case 1:
         mk->opt[0] = 0;
         mk->opt[1] = 1;
@@ -6386,6 +6389,33 @@ void draw_modify(pic::Canvas& c)
     if (!ch) return;
     draw_character(c);
     char t[24];
+    if (secret_files()) {
+        // Secret's View: the stats from row 9 (the number at column 5), the
+        // hit points "95/95" at row 3, column 31; its menu "Add Subtract
+        // Keep Exit" (Add / Subtract: the arrows' up / down)
+        if (mod_item < 6) {
+            const int v = ch->stat(mod_item);
+            c.fill(5 * 8, (9 + mod_item) * 8, 7 * 8, 8, 0);
+            if (mod_item == 0 && v == 18 && ch->str00() > 0) {
+                if (ch->str00() == 100) snprintf(t, sizeof t, "18(00)");
+                else snprintf(t, sizeof t, "18(%02d)", ch->str00());
+            } else {
+                snprintf(t, sizeof t, "%d", v);
+            }
+            put(c, t, 5, 9 + mod_item, 13);
+        } else if (mod_item == 6) {
+            c.fill(31 * 8, 3 * 8, 8 * 8, 8, 0);
+            snprintf(t, sizeof t, "%d/%d", ch->hp(), ch->hp_max());
+            put(c, t, 31, 3, 13);
+        } else {
+            ch->name(t, sizeof t);
+            put(c, t, 1, 1, 13);
+        }
+        text::build(menu, rw(Data::kModify), rw(Data::kKeepExit));
+        menu.selected = 0;
+        show_menu_line(c);
+        return;
+    }
     if (mod_item < 6) {
         const int v = ch->stat(mod_item);
         c.fill(5 * 8, (7 + mod_item) * 8, 6 * 8, 8, 0);
@@ -6431,7 +6461,7 @@ void start_modify(pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
     if (!ch) return;
-    if (!create::can_modify(*ch, d->prof->variant.pool_files)) {
+    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files())) {
         char t[60], nm[20];
         ch->name(nm, sizeof nm);
         snprintf(t, sizeof t, "%s%s", nm, rw(Data::kCantModify));
@@ -6477,6 +6507,12 @@ void modify_name(pic::Canvas& c)
 // The item a tap at (row, col) picks (-1: none)
 int modify_item_at(int row, int col)
 {
+    if (secret_files()) {
+        if (row >= 9 && row <= 14 && col >= 1 && col <= 12) return row - 9;
+        if (row == 3 && col >= 20 && col <= 38) return 6;
+        if (row == 1 && col >= 1 && col <= 16) return 7;
+        return -1;
+    }
     if (row >= 7 && row <= 12 && col >= 1 && col <= 10) return row - 7;
     if (row == 18 && col >= 1 && col <= 6) return 6;
     if (row == 1 && col >= 1 && col <= 16) return 7;
@@ -6491,6 +6527,8 @@ void modify_tap(int x, int y, pic::Canvas& c)
         switch (text::key(menu, text::hit(menu, col))) {
         case 'K': end_modify(c, true); break;
         case 'E': end_modify(c, false); break;
+        case 'A': modify_step(1, c); break;            // (Secret's Add / Subtract)
+        case 'S': modify_step(-1, c); break;
         default: break;
         }
         return;

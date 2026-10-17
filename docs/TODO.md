@@ -66,13 +66,8 @@ the Project as claude/TODO.md.
       identifies / halves / joins; the exploring menu's "Move" (the
       original's first word); fights still to do: the remorhaz's after-swallow
       ("belches in satisfaction" / "is digested instantly": when?); Deposit (the vault, VAULT.DAT);
-      Take's coin list layout (row 1, col 1); items' plural names when
-      shown ("30 ARROWS +1"); the training hall (Train Character /
-      Human Change Classes: v0.108.1 free, its hit dice, its race limits
-      - its Human Change still to check); Delayed Blast Fireball's delay
-      (v0.109.0 at once); Modify
-      ("Add Subtract Keep Exit"); camp (spell names; 6th /
-      7th level spells and 101-117 in magic); a dwarf's saves (the
+      items' plural names when shown ("30 ARROWS +1"); Delayed Blast
+      Fireball's delay (v0.109.0 at once); a dwarf's saves (the
       Constitution effect 0x61 kept in the record's saves?); the fight
       frame (not compared with DOSBox yet); sound, sky, approaching monsters; the version line's
       two-line look; behaviour tests.
@@ -111,6 +106,9 @@ the Project as claude/TODO.md.
       (the engine: its own Constitution, HP rebuilt; SPEC 12)?
 
 ## Done
+
+- v0.111.0: Secret's Create New Character (its words, races, rolls, 200,000
+  experience, silent training's spells) and Modify (Add / Subtract).
 
 - v0.110.0: Secret's Add Character - its own characters and Curse's
   (without items or money, as the original takes them in).

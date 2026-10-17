@@ -48,10 +48,12 @@ void learn(party::Character& c, int spell) { classes::to_book(c, spell); }
 // The experience a new character starts with: 25,000 for one class, 12,500
 // for two, 8,333 for three - and for the magic-user / thief, as the
 // original gives it (its createPlayer: 8,333 for C/F/MU, F/MU/T and MU/T)
-uint32_t start_exp(int cls)
+uint32_t start_exp(int cls, bool secret = false)
 {
-    if (cls < ClericFighter) return 25000u;
-    return cls == ClericFighterMU || cls == FighterMUThief || cls == MUThief ? 8333u : 12500u;
+    // (Secret's: 200,000, 100,000, 66,667 - secret_facts_2.md 21)
+    if (cls < ClericFighter) return secret ? 200000u : 25000u;
+    if (cls == ClericFighterMU || cls == FighterMUThief || cls == MUThief) return secret ? 66667u : 8333u;
+    return secret ? 100000u : 12500u;
 }
 
 // The games' race / class level limits for training (the original's
@@ -179,11 +181,13 @@ int Dice::roll(int sides, int count)
     return t;
 }
 
-int races(int* out, int cap)
+int races(int* out, int cap, bool secret)
 {
+    // (Secret lists its own order: elf, half-elf, dwarf, gnome, halfling, human)
     static const int kRaces[] = {1, 2, 3, 4, 5, 7};
+    static const int kSecretRaces[] = {2, 4, 1, 3, 5, 7};
     int n = 0;
-    for (int r : kRaces)
+    for (int r : secret ? kSecretRaces : kRaces)
         if (n < cap) out[n++] = r;
     return n;
 }
@@ -265,7 +269,7 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
     case 3:
         add_affect(c, f.con_save);
         add_affect(c, f.gnome_giant);
-        add_affect(c, f.giants);
+        if (!t.lay.secret) add_affect(c, f.giants);     // (Secret's gnomes: 0x30, 0x07, 0x61 only)
         add_affect(c, f.gnome_extra);
         break;
     case 2: add_affect(c, f.elf_sleep); break;
@@ -279,7 +283,7 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
     const uint8_t lv = cls >= 0 && cls < 17 ? kStartLevels[cls] : 0;
     for (int k = 0; k < 8; ++k)
         if (lv & (1 << k)) r[kLevels + k] = 1;
-    put32(r, kExp, t.lay.pool ? 0 : start_exp(cls));
+    put32(r, kExp, t.lay.pool ? 0 : start_exp(cls, t.lay.secret));
     if (r[kLevels + classes::Paladin]) {
         r[kCures] = 1;
         add_affect(c, f.prot_evil);
@@ -320,12 +324,23 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
     memset(r + kSpellBook, 0, 100);
     memset(r + kMoney, 0, 14);
     const bool pool = t.lay.pool;
-    put32(r, kExp, pool ? 0 : start_exp(cls));
+    put32(r, kExp, pool ? 0 : start_exp(cls, t.lay.secret));
 
+    // Secret adds its races' adjustments to each roll (GAME.OVR 0x1EA28):
+    // dwarves Con +1 Cha -1, elves Dex +1 Con -1, halflings Str -1 Dex +1
+    auto race_adj = [&](int i) {
+        if (!t.lay.secret) return 0;
+        switch (race) {
+        case 1: return i == 4 ? 1 : i == 5 ? -1 : 0;
+        case 2: return i == 3 ? 1 : i == 4 ? -1 : 0;
+        case 5: return i == 0 ? -1 : i == 3 ? 1 : 0;
+        default: return 0;
+        }
+    };
     for (int i = 0; i < 7; ++i) set_stat(c, i, 0);
     for (int k = 0; k < 6; ++k)
         for (int i = 0; i < 6; ++i) {
-            const int v = d.roll(6, 3) + (pool ? 0 : 1);       // (Pool: no +1)
+            const int v = d.roll(6, 3) + (pool ? 0 : 1) + race_adj(i);     // (Pool: no +1)
             if (v > stat_full(c, i)) set_stat(c, i, v);
         }
     // The age's effects (the program's: per stat, for each age bracket the
@@ -397,8 +412,8 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
                 ++n;
             }
         put16(r, kMoney + 3 * 2, n ? (sum & 0xFF) * 10 / n : 0);
-    } else {
-        put16(r, kMoney + 4 * 2, 300);          // 300 platinum
+    } else if (!t.lay.secret) {
+        put16(r, kMoney + 4 * 2, 300);          // 300 platinum (Secret's start with none)
     }
 
     const int rolled = hp_roll(c, t, f, d, 0xFF);
@@ -512,6 +527,11 @@ void train_classes(party::Character& c, const classes::Tables& t, const Facts& f
         case 5: learn(c, f.mu_level5); break;
         default: break;
         }
+        // Secret's: whole lists at levels 6-9 (GAME.OVR 0x22921)
+        const int lv = c.level(classes::MagicUser) - f.mu_by_level_from;
+        if (f.mu_by_level && lv >= 0 && lv < f.mu_by_level_n)
+            for (uint8_t s : f.mu_by_level[lv])
+                if (s) learn(c, s);
     }
     if (r[kHitDice] <= r[kMultiLevel]) return;
     const int gain = hp_roll(c, t, f, d, mask);
@@ -714,10 +734,12 @@ int class_con_bonus(int con, int cls)
 }
 } // namespace
 
-bool can_modify(const party::Character& c, bool pool)
+bool can_modify(const party::Character& c, bool pool, bool secret)
 {
     const uint32_t e = c.exp();
     if (pool) return e == 0;
+    // (Secret's: its own starting experience - GAME.OVR 0x1FBF0)
+    if (secret) return (e == 0 || e == 66667 || e == 100000 || e == 200000) && c.rec[kMultiLevel] == 0;
     return (e == 0 || e == 8333 || e == 12500 || e == 25000) && c.rec[kMultiLevel] == 0;
 }
 

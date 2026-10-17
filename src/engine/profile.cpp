@@ -701,6 +701,16 @@ constexpr ecl::OpSet kPoolEcl = [] {
 // or a word in the routine's code (GAME.OVR). Index = kJ | i.
 constexpr uint32_t kSxIs = kP | 0xF96D;
 constexpr uint32_t sx_effect(int n) { return kP | (0x10047u + 38u * static_cast<uint32_t>(n)); }
+// Secret's silent training (a new character trained to its experience):
+// a magic-user's spells at levels 6-9 (GAME.OVR 0x22921; its level 6 list
+// has Cure Light Wounds, as the original's)
+constexpr uint8_t kSecretMuLevels[4][8] = {
+    {0x0C, 0x0F, 0x1E, 0x03, 0x22, 0x2F, 0x33, 0x36},
+    {0x0E, 0x10, 0x1D, 0x23, 0x2D, 0x30, 0x51, 0},
+    {0x0A, 0x09, 0x20, 0x37, 0x55, 0, 0, 0},
+    {0x32, 0x34, 0x52, 0x58, 0x5E, 0, 0, 0},
+};
+
 constexpr profile::JoinedWord kSecretJoined[] = {
     {kSxIs, sx_effect(1)},          //  0 is Blessed
     {kSxIs, sx_effect(2)},          //  1 is Cursed
@@ -1086,7 +1096,7 @@ const Profile kProfiles[] = {
                // ("Add from where? ", "Secret Curse Exit" ...)
                0x209E0, 0x209F1, 0x20A03, 0x20A15, 0x20A1A, 0x20A1D, 0x20A41, 0x20A5B, 0x24665, 0x24670, 0x1F8F2, 0x1F8F8,
                0x1F903, 0x1F912, 0x1F91C, 0x1F927, 0x1F93B, 0x3120D,
-               0x1FB9B, 0x1FBCF, 0, 0x238F2, 0x24673},
+               0x1FB9B, 0x1FBCF, 0x1FBD8, 0x238F2, 0x24673},   // (Modify: "Add Subtract Keep Exit")
      // View Character's name tables (races in Secret's own order: the
      // engine reorders them); its words where they are Curse's
      .view = {{0xE9AB, 27, 18}, {0xEB91, 9, 8}, {0xEBD9, 17, 9}, {0xEC72, 7, 2}, {0xEC80, 11, 7}, {0xECCD, 13, 9},
@@ -1115,9 +1125,21 @@ const Profile kProfiles[] = {
                 // the hit dice: level 1's count, the sides (7 classes; its
                 // training's roll - the better of two - as Curse's)
                 .hp_count = 0x9B0, .hp_dice = 0x9B7,
-                // a paladin's Protection from Evil, a ranger's giant-class bonus (its Add's
-                // Curse characters, GAME.OVR 0x2580D - secret_facts_2.md 20)
-                .prot_evil = 0x08, .ranger_giant = 0x69},
+                .icon_colours = 0x4CB0,
+                // the races' effects (GAME.OVR 0x1DF40 - secret_facts_2.md 21): halflings,
+                // dwarves and gnomes 0x61, dwarves 0x1A 0x2F, gnomes 0x07 0x30 (not 0x2F), elves
+                // 0x5F, half-elves 0x12; a paladin's Protection from Evil, a ranger's giant-class
+                // bonus (also its Add's Curse characters, GAME.OVR 0x2580D - 20)
+                .con_save = 0x61, .dwarf_orc = 0x1A, .giants = 0x2F, .gnome_giant = 0x07, .gnome_extra = 0x30,
+                .elf_sleep = 0x5F, .halfelf = 0x12, .prot_evil = 0x08, .ranger_giant = 0x69,
+                // a new magic-user's Detect Magic, Read Magic, Shield, Sleep
+                .mu_first = {0x0B, 0x12, 0x13, 0x15},
+                .pick_race = 0x1DCDC, .pick_gender = 0x1DCF1, .pick_class = 0x1DCFD, .pick_alignment = 0x1DD08,
+                .select = 0x1DCEA, .reroll = 0x1DD39, .char_name = 0x1DD48, .save_q = 0x1DD59, .qmark = 0x1DD5F,
+                .mu_change = {0x0B, 0x12, 0x0C, 0x15},          // (Human Change's, GAME.OVR 0x3D081)
+                .pick_new = 0x3CD66, .no_qualify = 0x3CD54, .change_select = 0x3CD76, .now_first = 0x3CD7D,
+                .dot = 0x3CD92,
+                .mu_by_level = kSecretMuLevels, .mu_by_level_from = 6, .mu_by_level_n = 4},
      // Items' words (the same text as Curse's; the shop's Id price words not
      // found - its shops: later)
      .item_words = {0x28439, 0x2843E, 0x2844E, 0x28454, 0x2845B, 0x28461, 0x28467, 0x281AC, 0x2847C, 0x29078,

@@ -348,6 +348,9 @@ struct Profile {
         uint32_t        portrait_menu;
         uint16_t        head_blocks, body_blocks;
         const char*     charlist;
+        // Secret: silent training's spells by magic-user level (create::Facts)
+        const uint8_t (*mu_by_level)[8];
+        uint8_t         mu_by_level_from, mu_by_level_n;
     } create;
 
     // Items: Use Trade Drop Halve Join Sell Id and their words (ItemWord order)

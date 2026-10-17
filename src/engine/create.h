@@ -42,7 +42,7 @@ enum ClassId {
 
 // The races a new character can be (Curse: dwarf, elf, gnome, half-elf,
 // halfling, human - half-orcs aren't offered)
-int races(int* out, int cap);
+int races(int* out, int cap, bool secret = false);
 // The classes a race allows, the alignments a class allows (from the tables)
 int classes_for(const classes::Tables& t, int race, int* out, int cap);
 int alignments_for(const classes::Tables& t, int cls, int* out, int cap);
@@ -58,6 +58,10 @@ struct Facts {
     uint8_t  mu_first[4], mu_level2, mu_level3[2], mu_level4, mu_level5;
     uint8_t  mu_change[4];              // a human turned magic-user learns these
     uint8_t  poison_save;               // Pool: dwarves and halflings get this effect too (0: none)
+    // Secret: silent training's spells by magic-user level, from level
+    // mu_by_level_from (n levels, up to 8 spells each, 0 ends)
+    const uint8_t (*mu_by_level)[8] = nullptr;
+    uint8_t  mu_by_level_from = 0, mu_by_level_n = 0;
 };
 
 // Starts a character: race, sex, class, alignment chosen. Sets the
@@ -142,7 +146,7 @@ void change_class(party::Character& c, const classes::Tables& t, const Facts& f,
 // who hasn't adventured (experience as made: 0, 8333, 12500 or 25000) and
 // has no former class
 // Pool (pool = true; poolrad_create_facts.md 5): experience 0 only.
-bool can_modify(const party::Character& c, bool pool = false);
+bool can_modify(const party::Character& c, bool pool = false, bool secret = false);
 // A stat (0 Str ... 5 Cha) a step up (dir > 0) or down: within the race's
 // and sex's limits, down no lower than the class's minimums; a fighter,
 // ranger or paladin at Strength 18 goes on into 18/01 ... 18/00 (and back

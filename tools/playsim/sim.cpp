@@ -722,13 +722,14 @@ int main(int argc, char** argv)
                 case '>': play::act(play::Act::StepRight, C); break;
                 case 'u': play::act(play::Act::Forward, C); break;
                 case 'd': play::act(play::Act::TurnAround, C); break;
-                case 'h': play::tap(2 * 8 + 2, 18 * 8 + 2, C); break;
+                case 'h': if (play::secret_files()) play::tap(31 * 8 + 2, 3 * 8 + 2, C); else play::tap(2 * 8 + 2, 18 * 8 + 2, C); break;
+                case 'A': case 'S': tap_word(*q); break;          // (Secret's Add / Subtract)
                 case 'n': play::tap(2 * 8 + 2, 1 * 8 + 2, C);
                     if (play::input_mode != play::Input::None && getenv("TYPE")) { for (const char* t = getenv("TYPE"); *t; ++t) play::input_key(*t, C); play::input_key('\n', C); }
                     break;
                 case '#': shot("modify"); break;
                 case 'K': case 'E': tap_word(*q); break;
-                default: if (*q >= '0' && *q <= '5') play::tap(2 * 8 + 2, (7 + *q - '0') * 8 + 2, C); break;
+                default: if (*q >= '0' && *q <= '5') play::tap(2 * 8 + 2, ((play::secret_files() ? 9 : 7) + *q - '0') * 8 + 2, C); break;
                 }
             }
             show("after");
