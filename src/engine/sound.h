@@ -29,6 +29,10 @@ struct Layout {
     uint16_t pc_table, tandy_table;     // per sound, 4 words: each voice's start (0: left alone)
     uint8_t  sounds;            // entries in each table
     uint8_t  fireball_spell, lightning_spell;   // the spells with sounds of their own (the rest: kSpell)
+    // A second part to read (0: none) - Secret's Tandy byte code sits
+    // further on in the segment, past the driver's own code
+    uint16_t lo2 = 0, hi2 = 0;
+    size_t   size() const { return static_cast<size_t>(hi - lo) + (hi2 > lo2 ? hi2 - lo2 : 0); }
 };
 
 // The games' sound numbers (PlaySound): 0 stop, 2..0x0E the effects
@@ -39,8 +43,9 @@ enum Id : uint8_t {
 
 class Player {
 public:
-    // The driver's bytes [lo, hi) of its segment (copied); false when they
-    // don't look like the driver's tables
+    // The driver's bytes [lo, hi) of its segment, then [lo2, hi2) when
+    // there's a second part (copied); false when they don't look like the
+    // driver's tables
     bool set_data(const Layout& l, const uint8_t* bytes, size_t n);
     bool ready() const { return data_ != nullptr; }
     ~Player();

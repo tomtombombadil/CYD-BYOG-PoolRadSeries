@@ -1880,6 +1880,31 @@ static void test_sound()
     bool more = true;
     for (int k = 0; k < 20 && more; ++k) more = p.render(buf.data(), 512, 22050, 255);
     CHECK(!more && buf[511] == 128);
+    // A second part (Secret's Tandy byte code past the driver's code): the
+    // Tandy voice's bytes moved to 0x400, read after the first part
+    {
+        std::vector<uint8_t> two(seg);
+        two.resize(0x100 + 0x40);
+        for (int k = 0; k < 0x40; ++k) two[0x100 + k] = seg[0x60 + k];        // (0x160-0x19F at 0x400-0x43F)
+        auto t16 = [&](int off, int v) { two[off - 0x100] = static_cast<uint8_t>(v); two[off - 0x100 + 1] = static_cast<uint8_t>(v >> 8); };
+        t16(0x110 + 8, 0x400);
+        t16(0x110 + 8 + 6, 0x420);
+        two[0x100 + 0x10 + 2] = 0x0C;                   // (the loop's target 0x16C -> 0x40C)
+        two[0x100 + 0x10 + 3] = 0x04;
+        sound::Layout l2 = lay;
+        l2.lo2 = 0x400;
+        l2.hi2 = 0x440;
+        sound::Player p2;
+        CHECK(l2.size() == 0x140 && p2.set_data(l2, two.data(), two.size()));
+        p2.start(2, sound::Device::Tandy);
+        p2.tick();
+        int on2 = 0;
+        for (int k = 0; k < 10; ++k) {
+            p2.tick();
+            if (p2.out().atten[0] == 0 && p2.out().tone[0] == 64) ++on2;
+        }
+        CHECK(on2 == 5 && !p2.busy());
+    }
     // A bad pointer in a table: refused
     w16(0x100 + 8, 0x300);
     sound::Player bad;

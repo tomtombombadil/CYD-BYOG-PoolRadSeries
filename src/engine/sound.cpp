@@ -47,9 +47,9 @@ bool Player::set_data(const Layout& l, const uint8_t* bytes, size_t n)
 {
     free(data_);
     data_ = nullptr;
-    if (!bytes || l.hi <= l.lo || n < static_cast<size_t>(l.hi - l.lo)) return false;
+    if (!bytes || l.hi <= l.lo || n < l.size()) return false;
     lay_ = l;
-    n_ = l.hi - l.lo;
+    n_ = l.size();
     data_ = static_cast<uint8_t*>(malloc(n_));
     if (!data_) return false;
     memcpy(data_, bytes, n_);
@@ -63,7 +63,7 @@ bool Player::set_data(const Layout& l, const uint8_t* bytes, size_t n)
         }
         for (int k = 0; k < l.sounds * 4; ++k) {
             const uint16_t p = word(table + k * 2u);
-            if (p && (p < l.lo || p >= l.hi)) {
+            if (p && (p < l.lo || p >= l.hi) && (p < l.lo2 || p >= l.hi2)) {
                 free(data_);
                 data_ = nullptr;
                 return false;
@@ -77,7 +77,10 @@ bool Player::set_data(const Layout& l, const uint8_t* bytes, size_t n)
 
 uint8_t Player::byte(uint32_t off) const
 {
-    return data_ && off >= lay_.lo && off < lay_.hi ? data_[off - lay_.lo] : 0;
+    if (!data_) return 0;
+    if (off >= lay_.lo && off < lay_.hi) return data_[off - lay_.lo];
+    if (off >= lay_.lo2 && off < lay_.hi2) return data_[(lay_.hi - lay_.lo) + (off - lay_.lo2)];
+    return 0;
 }
 
 uint16_t Player::word(uint32_t off) const { return static_cast<uint16_t>(byte(off) | byte(off + 1) << 8); }

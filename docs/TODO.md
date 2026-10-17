@@ -69,7 +69,7 @@ the Project as claude/TODO.md.
       items' plural names when shown ("30 ARROWS +1"); Delayed Blast
       Fireball's delay (v0.109.0 at once); a dwarf's saves (the
       Constitution effect 0x61 kept in the record's saves?); the fight
-      frame (not compared with DOSBox yet); sound, sky, approaching monsters; the version line's
+      frame (not compared with DOSBox yet); sky, approaching monsters; the version line's
       two-line look; behaviour tests.
 - [ ] Tom: flash v0.104.0 on the 4.0" S3: the touch (keys now light as
       the stylus touches; light taps after a pause, finger and stylus;
@@ -106,6 +106,9 @@ the Project as claude/TODO.md.
       (the engine: its own Constitution, HP rebuilt; SPEC 12)?
 
 ## Done
+
+- v0.112.0: Secret's sound effects (Tandy / PC speaker) from its program's
+  driver, as Curse's.
 
 - v0.111.0: Secret's Create New Character (its words, races, rolls, 200,000
   experience, silent training's spells) and Modify (Add / Subtract).

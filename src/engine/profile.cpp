@@ -1245,6 +1245,10 @@ const Profile kProfiles[] = {
                 .items = {.displace = 0x59, .ring_invisible = 0x38},
                 .berserk = 0x6B},
                kSecretFight, sizeof kSecretFight / sizeof kSecretFight[0]},
+     // The sound driver: Curse's in START.EXE (segment 0x7E4), 13 sounds
+     // (the same byte code but the missile's), its Tandy byte code past
+     // the driver's code (secret_facts_2.md 22)
+     .sound = {0x7E40, 0x04A0, 0x1090, 0x04A0, 0x0508, 13, 0x2F, 0x33, 0x302C, 0x3400},
      .variant = {.unfinished = true, .program_words = true, .tile_window = 40, .bars = {55, 52, 53, 54, 59, 56, 57, 58}, .secret_files = true,
                  .bigpic_from = 0x70, .treasure_pic = 60, .camp_pic = 59, .appraise_div = 2},
      .overland = nullptr,

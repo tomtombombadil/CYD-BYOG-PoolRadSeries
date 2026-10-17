@@ -8605,7 +8605,7 @@ void load_sound()
 {
     const sound::Layout& l = d->prof->sound;
     if (!l.hi || l.hi <= l.lo) return;
-    const size_t n = l.hi - l.lo;
+    const size_t n = l.size(), n1 = l.hi - l.lo;
     uint8_t* buf = static_cast<uint8_t*>(malloc(n));
     snd = new (std::nothrow) sound::Player;
     plat::File f;
@@ -8614,7 +8614,9 @@ void load_sound()
         plat::FileSource src(f);
         exepack::Info info;
         ok = exepack::parse(src, info) == exepack::Status::Ok &&
-             exepack::read(src, info, l.segment_image + l.lo, buf, n) == exepack::Status::Ok && snd->set_data(l, buf, n);
+             exepack::read(src, info, l.segment_image + l.lo, buf, n1) == exepack::Status::Ok &&
+             (n == n1 || exepack::read(src, info, l.segment_image + l.lo2, buf + n1, n - n1) == exepack::Status::Ok) &&
+             snd->set_data(l, buf, n);
         f.close();
     }
     free(buf);

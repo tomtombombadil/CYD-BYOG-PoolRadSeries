@@ -1054,6 +1054,13 @@ until the party menu is known (`party.items`).
   "is swallowed whole", "stares blankly". The original has no Turn Undead
   (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
   has lost" - the engine already matched.
+- **v0.112.0 - Secret's sound** (secret_facts_2.md 22): its START.EXE
+  keeps Curse's sound driver (segment 0x7E4) with 13 sounds - Curse's
+  byte code but the magic missile's - so Tandy and the PC speaker play as
+  in Curse; its Tandy byte code lies past the driver's own code, so the
+  engine reads two parts of the segment (`sound::Layout` lo2 / hi2; ~4 KB
+  in all). SOUND.DAX (a second driver - AdLib, Innovation, Covox, Tandy,
+  speaker - and a "GLBR" parts file) isn't used.
 - **v0.111.0 - Secret's Create New Character and Modify** (secret_facts_2.md
   21; checked against a magic-user made in DOSBox - the same record but
   the rolls): its words ("Pick Race" ...), its race order (Elf, Half-Elf,
