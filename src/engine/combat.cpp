@@ -1590,6 +1590,18 @@ void after_hit(Battle& b, int a, int c, int slot, int roll, int hits1, create::D
         if (hasx(at, m.fire_touch)) touch(d.roll(10, 2), 9);
         pool_hit();
     }
+    // Secret's (secret_facts_2.md 15): the cockatrice's touch - a save
+    // against petrification or stoned; the remorhaz swallows its victim
+    // whole on a natural 20
+    auto gone = [&](int status, Ev said) {
+        add_event(out, c, said);
+        tg.rec[kHp] = 0;
+        tg.rec[kHealth] = static_cast<uint8_t>(status);
+        fall(b, c);
+        out.down = true;
+    };
+    if (hasx(at, m.petrify_hit) && tg.up() && !saving_throw(tg, 1, 0, d)) gone(party::Stoned, Ev::Stoned);
+    if (hasx(at, m.swallow) && tg.up() && roll == 20) gone(party::Dead, Ev::Swallowed);
 }
 
 } // namespace
@@ -1825,6 +1837,8 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                     else if (plus <= 2) dmg /= 2;
                 }
                 if (hasx(tg, m.half)) dmg /= 2;
+                // Secret's iron golem: a +3 weapon or better, else nothing (even a monster's blow)
+                if (hasx(tg, m.need_plus3) && (!item || plus < 3)) dmg = 0;
                 if (hasx(tg, m.pierce_one) && item && names && names->type(item[0x2E]).blow == 1) dmg = 1;
                 // Pool's undead: only magic (any plus) or silver hurts the
                 // wight; the wraith takes half from +0 silver, nothing from
@@ -2087,6 +2101,9 @@ bool resists(Battle& b, int c, int effect, const Harm& h, create::Dice& d)
     if (hasx(f, m.no_cold) && (h.kind & 2)) return true;
     if (hasx(f, m.no_fire) && (h.kind & 1)) return true;
     if (hasx(f, m.mind) && (sleep_charm || paralysis || (effect > 0 && m.poisoned && effect == m.poisoned))) return true;
+    // Secret's: immune to fear; to poison and paralysis
+    if (hasx(f, m.no_fear) && effect > 0 && fx.fear && effect == fx.fear) return true;
+    if (hasx(f, m.no_poison) && (paralysis || (effect > 0 && m.poisoned && effect == m.poisoned))) return true;
     if (hasx(f, fx.race.halfelf) && sleep_charm && d.roll(100, 1) <= 30) return true;      // half-elves: 30%
     if (hasx(f, m.globe) && h.spell > 0 && h.spell_level < 4) return true;
     if (hasx(f, m.no_magic) && magic) return true;
@@ -2607,6 +2624,7 @@ bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
     // Immune to poison, paralysis and death magic: every such save made
     // (the effect works on the roll after the natural 1 / 20: a 1 still fails)
     if (g_fx && type == 0 && hasx(f, g_fx->mon.mind)) return true;
+    if (g_fx && type == 0 && hasx(f, g_fx->mon.no_poison)) return true;     // (Secret's dreadlord)
     if (g_fx) {
         const Facts& fx = *g_fx;
         if (fx.bestow && f.has(fx.bestow)) bonus -= 4;
@@ -4477,7 +4495,21 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
     }
     // The giant slug's acid: 30% of its turns at one within 6 squares
     // (its maximum hit points, a save for half); it fights on
-    if (hasx(f, m.slug_spit)) {
+    if (hasx(f, m.slug_spit) && m.slug_secret) {
+        // Secret's (GAME.OVR 0x13587): a chance of (11 - squares) x 10%,
+        // 4d8 acid, a breath save for half (its 10% for round 0 never
+        // happens in a fight: its round count starts at 1)
+        const int tg = special_target(b, t, i, 12, false, d);
+        const int sq = tg >= 0 ? squares_to(b, t, i, tg) : 99;
+        const int chance = sq > 11 ? 0 : (11 - sq) * 10;
+        if (chance > 0 && d.roll(100, 1) <= chance) {
+            ev(i, Ev::SpitsAcid);
+            fly(i, b.f[tg].x, b.f[tg].y, 10, 1, 30);
+            Harm h = breath;
+            h.kind = 0x10;
+            hurt(tg, d.roll(8, 4), h);
+        }
+    } else if (hasx(f, m.slug_spit)) {
         const int tg = special_target(b, t, i, 12, false, d);
         const int roll = d.roll(100, 1);
         if (tg >= 0 && squares_to(b, t, i, tg) < 7) {
@@ -4572,6 +4604,52 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
             --*left;
             *ends_turn = true;
             return n;
+        }
+    }
+    // Secret's cold breath (the white dragons; GAME.OVR 0x327F9): as the
+    // fire breath, 3 lines of 7 squares
+    if (hasx(f, m.cold_breath)) {
+        uint8_t* left = breaths(m.cold_breath);
+        const int tg = left && *left ? special_target(b, t, i, 6, true, d) : -1;
+        if (tg >= 0) {
+            int on[kMaxFighters];
+            const int k = cone(b, t, i, b.f[tg].x, b.f[tg].y, 7, 3, on, kMaxFighters);
+            ev(i, Ev::BreathesCold);
+            fly(i, b.f[tg].x, b.f[tg].y, 5, 1, 30);
+            Harm h = breath;
+            h.kind = 0x22;
+            const int amount = f.hp_max();
+            for (int j = 0; j < k; ++j) hurt(on[j], amount, h);
+            --*left;
+            *ends_turn = true;
+            return n;
+        }
+    }
+    // Secret's pyrohydra (GAME.OVR 0x12D5F): while the round is within its
+    // attacks byte, at one next to it: "Breathes Fire", 8 (a save for half)
+    if (hasx(f, m.pyro_fire) && f.rec[0x11C] >= b.round + 1) {     // (its round count starts at 1)
+        const int tg = special_target(b, t, i, 12, false, d);
+        if (tg >= 0 && squares_to(b, t, i, tg) < 2) {
+            ev(i, Ev::HoundFire);
+            fly(i, b.f[tg].x, b.f[tg].y, 10, 1, 30);
+            Harm h = breath;
+            h.kind = 1;
+            hurt(tg, 8, h);
+        }
+    }
+    // Secret's umber hulk (GAME.OVR 0x12FAF): its gaze at one next to it -
+    // a save against spells or confused 1d10 + 2 rounds ("stares blankly")
+    if (hasx(f, m.confuse_gaze) && b.fx->sp.confuse) {
+        const int tg = special_target(b, t, i, 12, false, d);
+        if (tg >= 0 && squares_to(b, t, i, tg) < 2) {
+            ev(i, Ev::Gazes);
+            fly(i, b.f[tg].x, b.f[tg].y, 0x2D, 4, 45);
+            Fighter& v = b.f[tg];
+            if (!saving_throw(v, 4, 0, d)) {
+                give_aff(v, b.fx->sp.confuse, d.roll(10, 1) + 2, f.rec[kTeam], false);
+                ev(tg, Ev::StaresBlankly);
+            }
+            if (!f.up()) return n;
         }
     }
     // The hell hound: half its turns, next to its pick: 7 fire (a save for half)

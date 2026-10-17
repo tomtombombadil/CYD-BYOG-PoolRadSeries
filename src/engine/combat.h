@@ -150,6 +150,20 @@ struct MonFx {
     uint8_t mr_low;
     // Poison at +4 / +2 (as poison; no Curse monster has them)
     uint8_t poison_p4, poison_p2;
+    // Secret of the Silver Blades' own (secret_facts_2.md 15; 0: none).
+    // A blow on it: none but a +3 weapon's or better (the iron golem); its
+    // hit: a save against petrification or stoned (the cockatrice), a
+    // natural 20 swallows the victim whole (the remorhaz); its turn: fire
+    // at one next to it, 8 points (a breath save for half) while the round
+    // is within its attacks byte (the pyrohydra), the confusing gaze at one
+    // next to it (a save against spells or confused 1d10 + 2 rounds - the
+    // umber hulk), cold breath (3 a fight, 3 lines of 7 squares, its
+    // maximum hit points, a save for half - the white dragons); immune to
+    // fear, to poison and paralysis (their saves made); the slug's spit by
+    // Secret's rule (a chance of (11 - squares) x 10%, 4d8 acid, a save for
+    // half)
+    uint8_t need_plus3, petrify_hit, swallow, pyro_fire, confuse_gaze, cold_breath, no_fear, no_poison;
+    bool    slug_secret;
 };
 
 // More spells' effects (spell_facts.md 2): Enlarge, Confusion (and going
@@ -394,6 +408,8 @@ enum class Ev : uint8_t {
     // "is paralyzed with fear", "is weakened by fear"
     Drained, DeadForever, Diseased, SucksBlood, HeldFast, Rakes, CharmGaze, Charmed, Breathes, FearParalyzed,
     FearWeakened,
+    // Secret's: "breathes cold", "is swallowed whole", "stares blankly"
+    BreathesCold, Swallowed, StaresBlankly,
 };
 struct Event {
     uint8_t who = 0;

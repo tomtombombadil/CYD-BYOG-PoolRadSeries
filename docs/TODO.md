@@ -54,20 +54,15 @@ the Project as claude/TODO.md.
       menu, Load, Begin into Priam's house (v0.94.0); the rule tables,
       areas (v0.95.0); the scripts' view of a character (v0.96.0); View
       Character (v0.97.0); item names (v0.98.0); fights (v0.99.0: tables,
-      monsters, effects, most words). v0.105.0: the spells' words (fight
+      monsters, effects, most words). v0.106.0: its monsters' abilities
+      (no Turn in the original). v0.105.0: the spells' words (fight
       and camp), Heal / Harm / the Elixir of Youth / the druids' spells,
       item words. Next, a chunk a commit:
       the spells past 100 (camp and fights); Alter ("Order Drop Speed Icon Level
       Exit" - its Level); how Secret renames an item it
       identifies / halves / joins; the exploring menu's "Move" (the
-      original's first word); fights still to do: the turn undead table
-      (not found: Curse's code reads its DS 0x369 at ovr 0x14684, Secret's
-      routine not found), "The party has
-      lost" / "has found treasure!" / "Turn " (not found as Pascal text),
-      its new monster abilities (0x41 petrify, 0x43 pyrohydra breath, 0x46
-      confusion gaze, 0x68 +4d6 fire, 0x3C +3 weapons, 0x42 half from
-      pierce / cut, 0x5C no fear; what 0x51, 0x60, 0x63 are - taken as
-      Curse's), Secret's monster exp rule; View's right panel (with items) and a paladin's Heal / Cure;
+      original's first word); fights still to do: the remorhaz's after-swallow
+      ("belches in satisfaction" / "is digested instantly": when?); View's right panel (with items) and a paladin's Heal / Cure;
       items and their words (its own word table), shops; Modify
       ("Add Subtract Keep Exit"); Add from Curse; camp (spell names; 6th /
       7th level spells and 101-117 in magic); a dwarf's saves (the
@@ -105,6 +100,10 @@ the Project as claude/TODO.md.
       credits and maps should look like the original's.
 
 ## Done
+
+- v0.106.0: Secret's monsters - iron golem, cockatrice, remorhaz,
+  pyrohydra, umber hulk, the dragons' breaths, the giant slug's spit, the
+  dreadlord's immunities.
 
 - v0.105.0: Secret's spells say its own words ("is Blessed", "falls
   Asleep", "is Hastened" ...) in fights and camp; its Heal, Harm, Elixir

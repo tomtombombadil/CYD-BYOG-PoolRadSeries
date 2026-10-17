@@ -1695,6 +1695,7 @@ void open_items(pic::Canvas& c)
 // Ready / unready an item, with the games' checks
 void item_class_values(party::Character& ch, int i);
 void ow(uint32_t at, char* out, size_t cap);
+void read_word(dax::ByteSource& src, uint32_t at, char* out, size_t cap);
 
 void ready_item(int i, pic::Canvas& c)
 {
@@ -4770,22 +4771,30 @@ void cw(int i, char* out, size_t cap)
 }
 
 // A GAME.OVR word by its offset
-void ow(uint32_t at, char* out, size_t cap)
+// A word from words already open (GAME.OVR / the program); a joined word
+// (text::kJoined - Secret's "is " + an effect's name) is its two put together
+void read_word(dax::ByteSource& src, uint32_t at, char* out, size_t cap)
 {
     out[0] = 0;
+    if (!at) return;
     if (at & text::kJoined) {
-        // Two words as one (Secret's "is " + an effect's name)
         const uint32_t i = at & 0xFFFF;
         if (!d->prof->joined || i >= d->prof->n_joined) return;
         const profile::JoinedWord& j = d->prof->joined[i];
-        ow(j.first, out, cap);
+        read_word(src, j.first, out, cap);
         const size_t n = strlen(out);
-        if (n + 1 < cap) ow(j.second, out + n, cap - n);
+        if (n + 1 < cap) read_word(src, j.second, out + n, cap - n);
         return;
     }
+    text::read_pascal(src, at, out, cap);
+}
+
+void ow(uint32_t at, char* out, size_t cap)
+{
+    out[0] = 0;
     OvrWords src;
     if (!at || !src.open()) return;
-    text::read_pascal(src, at, out, cap);
+    read_word(src, at, out, cap);
 }
 
 uint32_t game_delay_ms()

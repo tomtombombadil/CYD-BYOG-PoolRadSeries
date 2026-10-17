@@ -167,6 +167,8 @@ enum FightWord {
     kIsCharmedG, kBreathesB, kGaseous, kFearParalyzed, kFearWeakened, kRotsW, kRotsAway,
     kDodge1, kDodge2,                                                            // Pool: "BUGBEAR", "GNOLL" (gnomes -4)
     kFoundTreasure2,                                                             // Secret: "treasure!" after "The party has found "
+    kBreathesCold, kSwallowed, kStaresBlankly,                                   // Secret: "breathes cold", "is swallowed whole",
+                                                                                 // "stares blankly"
     kFightWords
 };
 

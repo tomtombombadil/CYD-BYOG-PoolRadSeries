@@ -457,7 +457,7 @@ void load_fight_words()
         if (!d->prof->fight.words[i]) continue;
         char t[40];
         t[0] = 0;
-        text::read_pascal(src, d->prof->fight.words[i], t, sizeof t);
+        read_word(src, d->prof->fight.words[i], t, sizeof t);
         const int n = static_cast<int>(strlen(t)) + 1;
         if (at + n > Fight::kWordPool) {
             log_error("Fight: the words don't all fit (kWordPool).");
@@ -1261,6 +1261,9 @@ void event_page(const combat::Event& e)
     case combat::Ev::SpitsAcid: said(profile::kSpitsAcid); break;
     case combat::Ev::SpitsMisses: said(profile::kSpitsMisses); break;
     case combat::Ev::Gazes: said(profile::kGazes); break;
+    case combat::Ev::BreathesCold: said(profile::kBreathesCold); break;
+    case combat::Ev::Swallowed: fallen(profile::kSwallowed); break;
+    case combat::Ev::StaresBlankly: said(profile::kStaresBlankly); break;
     case combat::Ev::RayDisintegrate: said(profile::kRayDisint); break;
     case combat::Ev::RayStone: said(profile::kRayStone); break;
     case combat::Ev::RayDeath: said(profile::kRayDeath); break;

@@ -1042,6 +1042,18 @@ until the party menu is known (`party.items`).
   - kept so (section 12). Its item words (Use ... Id, Select) mapped by
   their text; its cures' effect numbers (blindness 0x21, diseases, 0x44
   feeblemind ...). Cure Blindness says "can see" alone, as its routine.
+- **v0.106.0 - its monsters.** Its effect handlers (DS 0x87EA + 4 x
+  (effect - 1); secret_facts_2.md 15) give its new abilities
+  (`MonFx` Secret fields): the iron golem only hurt by +3 weapons, the
+  cockatrice's stoning touch, the remorhaz swallowing on a natural 20, the
+  pyrohydra's fire (8, every turn), the umber hulk's confusing gaze, the
+  white dragons' cold breath (3 lines of 7) - its red dragons' fire is
+  0x68, not 0x53 -, the giant slug's spit by its rule (0x51 - not Curse's
+  half damage), the dreadlord's immunities (fear; charm and sleep; poison
+  and paralysis). New words "breathes cold" / "breathes Fire" (joined),
+  "is swallowed whole", "stares blankly". The original has no Turn Undead
+  (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
+  has lost" - the engine already matched.
 - Not yet: the items and
   their words (Secret's item word table differs), Modify ("Add Subtract
   Keep Exit"), Add Character's "Secret Curse" (importing Curse's
@@ -1386,12 +1398,6 @@ the game's Settings (As Original: all of them).
   Mouse/Joystick isn't shown (nothing to set up: taps are the mouse);
   when BLADES.CFG's save folder (C:\SAVE\) isn't on the card, the saves
   are the game folder's own (where GOG ships its sample party).
-  Its Barkskin heals as Heal does (and gives its AC effect): the
-  original's spell table runs Heal's routine for it (v0.105.0) - kept as
-  the original; Tom to decide whether to fix it (TODO).
-  While it's being built (v0.99.0): no Turn on the fight menu (its turn
-  undead table not found yet), and its new monster abilities (petrifying touch, confusion gaze, the
-  pyrohydra's breath ...) do nothing yet.
 - **Controls and screens**: taps on menu words, list lines and combat
   squares; on-screen keys (movement pad, cursor keys - Up / Down / Left /
   Right / Select - Game, Look, and on 320x240 Map: the area map over
