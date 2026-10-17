@@ -3687,10 +3687,12 @@ void secret_cure(int i, pic::Canvas& c)
         } else if (ch.rec[0x74] == 2) {
             said = profile::kTCantRaise;                         // (elves)
         } else {
-            // a point of Constitution (its own; the hit points follow it -
-            // rules::recalc), then 1 HP
+            // a point of Constitution (its own and the one in use: the
+            // maximum hit points stay - DOSBox, Guy 95 at Con 18 -> 17
+            // keeps 95), then 1 HP
             rules::remove_affects(ch, f.poisoned);
             if (ch.rec[0x18] > 0) --ch.rec[0x18];
+            if (ch.rec[0x19] > 0) --ch.rec[0x19];
             rules::recalc(ch, *names, d->facts);
             ch.rec[0x1A4] = 1;
             ch.rec[0x195] = party::Okay;

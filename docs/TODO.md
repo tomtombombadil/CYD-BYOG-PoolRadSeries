@@ -103,12 +103,10 @@ the Project as claude/TODO.md.
       (Settings - Dev Tools on its page) on a board - the frame, title,
       credits and maps should look like the original's.
 
-- [ ] Claude: DOSBox check of Secret's temple Raise Dead - is the
-      Constitution point lost for good, and how much maximum HP goes
-      (the engine: its own Constitution, HP rebuilt; SPEC 12)?
-
 ## Done
 
+- v0.116.4: Secret's temple Raise Dead checked in DOSBox (Con - 1, own
+  and in use; the maximum HP kept) and made so.
 - v0.112.0: Secret's sound effects (Tandy / PC speaker) from its program's
   driver, as Curse's.
 

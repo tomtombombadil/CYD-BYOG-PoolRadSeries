@@ -1055,6 +1055,10 @@ until the party menu is known (`party.items`).
   "is swallowed whole", "stares blankly". The original has no Turn Undead
   (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
   has lost" - the engine already matched.
+- **v0.116.4 - Secret's temple Raise Dead** (DOSBox: Guy, Con 18, 95
+  maximum HP, raised: Con 17, 1 / 95): a point of Constitution, its own
+  and the one in use, the maximum hit points kept (the engine rebuilt
+  them for the lower Constitution: 87).
 - **v0.116.3 - the remorhaz's swallow** (GAME.OVR 0x128F1): after "NAME
   is swallowed whole" come "NAME is killed" and, half the time, "REMORHAZ
   belches in satisfaction", else "NAME is digested instantly" (no second
@@ -1540,14 +1544,11 @@ the game's Settings (As Original: all of them).
   Mouse/Joystick isn't shown (nothing to set up: taps are the mouse);
   when BLADES.CFG's save folder (C:\SAVE\) isn't on the card, the saves
   are the game folder's own (where GOG ships its sample party).
-  v0.108.0: its temple's Raise Dead takes a point of the character's
-  own Constitution and the hit points follow it as the girdle's change
-  does (the original lowers the Constitution in use and takes its own
-  smaller sum off the maximum - which the next recalculation may undo:
-  not checked in DOSBox); Heal's two lines show together (rows 21-22),
-  the original one after the other. v0.109.0: its Delayed Blast
-  Fireball goes off at once (the original asks "Blast Delay in segments
-  (1-50)?" and can leave the blast on its square for a few rounds).
+  Its temple's Raise Dead: as the original since v0.116.4 (a point of
+  Constitution, own and in use, the maximum hit points kept - DOSBox).
+  Heal's two lines show together (rows 21-22), the original one after the
+  other. (v0.109.0's Delayed Blast Fireball at once: as the original
+  since v0.116.0.)
 - **Controls and screens**: taps on menu words, list lines and combat
   squares; on-screen keys (movement pad, cursor keys - Up / Down / Left /
   Right / Select - Game, Look, and on 320x240 Map: the area map over
