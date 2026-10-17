@@ -523,6 +523,11 @@ struct Profile {
         const char* file = nullptr;
         uint32_t    view = 0, take = 0, pool_exit = 0;
     } vault;
+    // Secret's version screen: the game's name (row 22) over the version
+    // line (row 23), black on a green bar, and the menu's own prompt (its
+    // spaces) on row 24 - program image strings (0: Curse's one line,
+    // title_version as the menu's prompt)
+    uint32_t title_name = 0, title_prompt = 0;
 };
 
 // The game's program file name (to look for it), or nullptr if no

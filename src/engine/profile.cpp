@@ -1265,7 +1265,11 @@ const Profile kProfiles[] = {
      .font_file = "8X8D5.DAX",
      .joined = kSecretJoined, .n_joined = sizeof kSecretJoined / sizeof kSecretJoined[0],
      // The vault: its overlay's "vault.dat" and menu words (GAME.OVR 0x50B2)
-     .vault = {"VAULT.DAT", 0x50BC, 0x50C1, 0x50C7}},
+     .vault = {"VAULT.DAT", 0x50BC, 0x50C1, 0x50C7},
+     // The version screen (START.EXE's first code segment: 0x1E9 prints
+     // the name at row 22 and the version at 23, colour 0 on 10, then the
+     // menu with the prompt at 0x55)
+     .title_name = 0x05, .title_prompt = 0x55},
 };
 
 } // namespace

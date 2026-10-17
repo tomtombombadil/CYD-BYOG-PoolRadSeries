@@ -1055,6 +1055,10 @@ until the party menu is known (`party.items`).
   "is swallowed whole", "stares blankly". The original has no Turn Undead
   (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
   has lost" - the engine already matched.
+- **v0.116.1 - Secret's version screen**: as the original's (START.EXE
+  0x1E9) - "Secret of the Silver Blades" (row 22) over "Version 1.30 ...
+  May 18,1990" (row 23), black on a green bar, and "Play Demo" under them
+  after its own prompt (the menu was pushed off the line by the version).
 - **v0.116.0 - Delayed Blast Fireball's delay** (secret_facts_2.md 26):
   "Blast Delay in segments (1-50)? " after the square is picked; (n + 5)
   / 10 rounds - none: at once as before; else "NAME Sets a delayed blast

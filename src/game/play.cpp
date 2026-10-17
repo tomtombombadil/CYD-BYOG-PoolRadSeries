@@ -8727,6 +8727,7 @@ struct TitleRun {
     uint32_t timeout_ms = 30000;        // the version line picks Demo after this (10 s after a demo)
     char     version[48] = {};
     char     words[24] = {};
+    char     name[42] = {}, menu_prompt[20] = {};    // (Secret's two-line version screen)
     lightning::State lt;                // Pool: lightning on the last picture
     int      flash = -1;
 };
@@ -8800,7 +8801,15 @@ void title_prompt(pic::Canvas& c)
         end_title(c);
         return;
     }
-    text::build(menu, title_run->version, title_run->words);
+    if (title_run->name[0]) {
+        // Secret: the name and the version black on a green bar (rows 22,
+        // 23), the menu under them after its own prompt
+        font::draw_text(c, d->font, title_run->name, 0, 22, 0, 10);
+        font::draw_text(c, d->font, title_run->version, 0, 23, 0, 10);
+        text::build(menu, title_run->menu_prompt, title_run->words);
+    } else {
+        text::build(menu, title_run->version, title_run->words);
+    }
     menu.selected = 0;
     show_menu_line(c);
     title_run->since = plat::now_ms();
@@ -9395,6 +9404,8 @@ bool start_title(pic::Canvas& c, uint32_t timeout_ms)
         if (exepack::parse(src, info) == exepack::Status::Ok) {
             if (p.title_version) text::read_pascal(src, info, p.title_version, title_run->version, sizeof title_run->version);
             if (p.title_menu) text::read_pascal(src, info, p.title_menu, title_run->words, sizeof title_run->words);
+            if (p.title_name) text::read_pascal(src, info, p.title_name, title_run->name, sizeof title_run->name);
+            if (p.title_prompt) text::read_pascal(src, info, p.title_prompt, title_run->menu_prompt, sizeof title_run->menu_prompt);
         }
         f.close();
     }
