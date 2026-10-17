@@ -1054,6 +1054,21 @@ until the party menu is known (`party.items`).
   "is swallowed whole", "stares blankly". The original has no Turn Undead
   (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
   has lost" - the engine already matched.
+- **v0.109.0 - Secret's spells past 100** (secret_facts_2.md 19): Death
+  Spell (2 x 4d20 points spent by Hit Dice - 0 1, 1 2, 2-3 8, 4-5 16, 6 16
+  or 20 over 51 HP, 7-8 20, more never; no save) "drops dead";
+  Disintegrate (magic resistance, a save or dead) "disintegrates"; Globe
+  of Invulnerability "is Protected"; Stone to Flesh (fights and camp: the
+  stoned back up with 1 HP, "is no longer a statue" / "is not stoned.");
+  Flesh to Stone (a save or stoned) "is turned to stone"; Delayed Blast
+  Fireball (level d6 + level, fire and magic, the fireball's area);
+  Mass Invisibility (the caster's side, "is Invisible (spell)"; camp too);
+  Power Word Stun (no save: 1-30 HP 4d4 rounds, 31-60 2d4, 61-90 1d4 of
+  effect 0x6A - its turns lost) "is STUNNED". 101-109 have no workings
+  (the original's empty routine). Its monsters keep their record's magic
+  resistance (0x1A5: the drider 15, the lizard king 20 - by the caster's
+  level as Curse's) and flags 2 (0x15E: 8 = the iron golem, dreadlord,
+  otyughs - Slay Living and the Death Spell leave them be).
 - **v0.108.1 - Secret's training hall** (secret_facts_2.md 18): free (its
   program has no price and no "Training costs" word); the hit points a
   level from its own tables (DS 0x9B0 the count at level 1, 0x9B7 the
@@ -1444,7 +1459,9 @@ the game's Settings (As Original: all of them).
   does (the original lowers the Constitution in use and takes its own
   smaller sum off the maximum - which the next recalculation may undo:
   not checked in DOSBox); Heal's two lines show together (rows 21-22),
-  the original one after the other.
+  the original one after the other. v0.109.0: its Delayed Blast
+  Fireball goes off at once (the original asks "Blast Delay in segments
+  (1-50)?" and can leave the blast on its square for a few rounds).
 - **Controls and screens**: taps on menu words, list lines and combat
   squares; on-screen keys (movement pad, cursor keys - Up / Down / Left /
   Right / Select - Game, Look, and on 320x240 Map: the area map over

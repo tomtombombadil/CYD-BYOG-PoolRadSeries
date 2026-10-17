@@ -61,7 +61,7 @@ the Project as claude/TODO.md.
       (no Turn in the original). v0.105.0: the spells' words (fight
       and camp), Heal / Harm / the Elixir of Youth / the druids' spells,
       item words. Next, a chunk a commit:
-      the spells past 100 (camp and fights); Alter ("Order Drop Speed Icon Level
+      Alter ("Order Drop Speed Icon Level
       Exit" - its Level); how Secret renames an item it
       identifies / halves / joins; the exploring menu's "Move" (the
       original's first word); fights still to do: the remorhaz's after-swallow
@@ -69,7 +69,8 @@ the Project as claude/TODO.md.
       Take's coin list layout (row 1, col 1); items' plural names when
       shown ("30 ARROWS +1"); the training hall (Train Character /
       Human Change Classes: v0.108.1 free, its hit dice, its race limits
-      - its Human Change still to check); Modify
+      - its Human Change still to check); Delayed Blast Fireball's delay
+      (v0.109.0 at once); Modify
       ("Add Subtract Keep Exit"); Add from Curse; camp (spell names; 6th /
       7th level spells and 101-117 in magic); a dwarf's saves (the
       Constitution effect 0x61 kept in the record's saves?); the fight
@@ -110,6 +111,10 @@ the Project as claude/TODO.md.
       (the engine: its own Constitution, HP rebuilt; SPEC 12)?
 
 ## Done
+
+- v0.109.0: Secret's spells past 100 - Death Spell, Disintegrate, Globe,
+  Stone to Flesh, Flesh to Stone, Delayed Blast Fireball, Mass
+  Invisibility, Power Word Stun; its monsters' magic resistance.
 
 - v0.108.1: Secret's training - free, its own hit dice, demihuman
   clerics' limits; the temple's list with the shop's bar.

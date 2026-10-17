@@ -75,6 +75,7 @@ enum class Does : uint8_t {
     FullHeal,       // Secret's Heal: disease (word3), blindness (word2), feeblemind (word4) cured, then the most
                     // hit points less n dice (word); the table's effect too (its Barkskin goes here)
     Youth,          // the Elixir of Youth: the age down by n dice + plus, at least 18 (word; word2 at 18)
+    Unstone,        // Secret's Stone to Flesh: the stoned okay with 1 HP (word); else "is not stoned." (word2)
 };
 struct CampSpell {
     uint8_t  spell;

@@ -185,6 +185,8 @@ struct SpellFx {
     // in use - 1, "is weakened"; at 3 helpless) and sickness (10 minutes,
     // renewing: 1 point of damage while over 1 HP, else helpless)
     uint8_t ill, weak, sick;
+    // Secret's Power Word Stun's effect (0x6A): its turns lost while it lasts
+    uint8_t stun = 0;
 };
 
 // The effects magic items give while readied (item 0x3E = 0x80: the effect
@@ -268,6 +270,7 @@ struct Monster {
     uint8_t aff[kMonsterAffects][party::kAffectSize] = {};
     int     n_aff = 0;
     uint8_t group = 0;
+    uint8_t flags2 = 0, magic_res = 0;  // Secret's record 0x15E, 0x1A5 (no Curse place; Fighter)
 };
 
 // ---- A fighter: a party member or a monster
@@ -302,6 +305,10 @@ struct Fighter {
     int     spell = 0;                  // a spell being cast (it goes off at its delay)
     int     spell_n = 0;                // the computer's targets for it
     uint8_t spell_t[24] = {};
+    // Secret's record bytes with no Curse place (secret_facts_2.md 19): flags
+    // 2 (0x15E: 8 = unharmed by Slay Living and the Death Spell) and magic
+    // resistance (0x1A5, % - by the caster's level as Curse's effects)
+    uint8_t flags2 = 0, magic_res = 0;
     int     team() const { return rec[0x197]; }
     bool    up() const { return rec[0x196] != 0; }          // able to fight
     int     hp() const { return rec[0x1A4]; }
@@ -361,6 +368,8 @@ struct Battle {
 
 // Effects on a fighter
 bool helpless(const Battle& b, const Fighter& f);
+// Secret's Power Word Stun: its turns lost (SpellFx stun)
+bool stunned(const Battle& b, const Fighter& f);
 // A fighter joining the fight: the next free slot, cleared, n counted
 // (nullptr: no room left - kSpareFighters used up; the caller says so)
 Fighter* add_fighter(Battle& b);
@@ -693,6 +702,13 @@ enum class SpellDoes : uint8_t {
     HarmTouch,                          // Harm: diseased (word), the hit points down to the dice
     Youth,                              // the Elixir of Youth: the age down by the dice + plus, at least 18 (word;
                                         // word2 when it stops at 18)
+    DeathSpell,                         // 2 x 4d20 points spent on those in the area by Hit Dice (no save; flags 2's 8
+                                        // unharmed): dead (word)
+    Disintegrate,                       // a save or dead (word); saved: nothing
+    Petrify,                            // Flesh to Stone: a save or stoned (word)
+    Unstone,                            // Stone to Flesh: the stoned back up with 1 HP (word); else unaffected
+    Stun,                               // Power Word Stun: by the hit points left (1-30 4d4, 31-60 2d4, 61-90 1d4
+                                        // rounds) the table's effect - turns lost (word)
 };
 struct FightSpell {
     uint8_t   spell;

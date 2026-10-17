@@ -698,6 +698,8 @@ bool helpless(const Battle& b, const Fighter& f)
     return false;
 }
 
+bool stunned(const Battle& b, const Fighter& f) { return b.fx && b.fx->sp.stun && f.has(b.fx->sp.stun); }
+
 namespace {
 
 int find_aff(const Fighter& f, uint8_t type)
@@ -1295,7 +1297,7 @@ int start_round(Battle& b, create::Dice& d, Event* out, int cap)
         if (b.surprise & (f.team() + 1)) delay -= 6;       // (the word: 1 our side, 2 the enemies - the listing's sub_3E000)
         if (delay < 0 || delay > 20) delay = 0;
         f.delay = delay;
-        if (helpless(b, f)) f.delay = 0;
+        if (helpless(b, f) || stunned(b, f)) f.delay = 0;
         int mv = f.rec[kMove];
         if (mv < 1 || mv > 96) mv = 1;
         f.moves = mv * 2;
@@ -1371,7 +1373,7 @@ int next(Battle& b, create::Dice& d)
     int best = -1, best_delay = 0, best_roll = -1;
     for (int i = 0; i < b.n; ++i) {
         const Fighter& f = b.f[i];
-        if (f.delay <= 0 || !f.up() || !f.size || helpless(b, f)) continue;      // the held lose their turns
+        if (f.delay <= 0 || !f.up() || !f.size || helpless(b, f) || stunned(b, f)) continue;  // the held lose their turns
         const int r = d.roll(100, 1);
         if (f.delay > best_delay) {
             best = i;
@@ -2093,6 +2095,8 @@ bool resists(Battle& b, int c, int effect, const Harm& h, create::Dice& d)
         return d.roll(100, 1) <= v;
     };
     if (chance(m.mr50, 50) || chance(m.mr15, 15)) return true;
+    // Secret's: the record's own magic resistance (GAME.OVR 0x35FCA)
+    if (magic && f.magic_res && d.roll(100, 1) <= ((f.magic_res + (11 - h.level) * 5) & 0xFF)) return true;
     const bool sleep_charm = effect > 0 && ((m.sleep && effect == m.sleep) || (fx.charm && effect == fx.charm));
     const bool paralysis = effect > 0 && m.paralyzed && effect == m.paralyzed;
     if (hasx(f, m.elf_sleep) && sleep_charm && d.roll(100, 1) <= 90) return true;
@@ -2749,7 +2753,9 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
     // A fireball outdoors: those within 2 squares of the square aimed at
     // (indoors the spell's area, 3; coab's facts: the fireball's routine
     // rebuilds its targets when the area isn't a dungeon)
-    if ((spell == 0x2F || spell == 0x40) && fs.does == SpellDoes::Damage && !b.indoors && b.tables && b.aim_x >= 0)
+    // (Secret's Delayed Blast Fireball, 0x73, the same routine)
+    if ((spell == 0x2F || spell == 0x40 || spell == 0x73) && fs.does == SpellDoes::Damage && !b.indoors && b.tables &&
+        b.aim_x >= 0)
         m = in_area(b, *b.tables, b.aim_x, b.aim_y, 2, who, kMaxFighters);
     if (m == 0) return 0;
     b.no_action = b.round + 15;
@@ -3009,6 +3015,10 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             Fighter& f = b.f[who[k]];
             if (!f.up()) continue;
             if (resisted(k, 0)) continue;
+            if (f.flags2 & 8) {                             // (Secret's: the unliving - GAME.OVR 0x30D9B)
+                say(who[k], Did::Unaffected, 0);
+                continue;
+            }
             if (!saving_throw(f, e.save, 0, d)) {
                 say(who[k], Did::Word, 0);
                 damage(b, who[k], f.hp() + 10);
@@ -3417,6 +3427,71 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             say(who[k], floor ? Did::Word2 : Did::Word, 0);
         }
         break;
+    case SpellDoes::DeathSpell: {
+        // Secret's (GAME.OVR 0x31F30): 2 x 4d20 points spent in the targets'
+        // order, by Hit Dice - 0 1, 1 2, 2-3 8, 4-5 16, 6 16 (max HP over 51:
+        // 20), 7-8 20, more never; no save; flags 2's 8 unharmed
+        int points = d.roll(20, 4) * 2;
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up()) continue;
+            const int hd = f.rec[0xE5];
+            const int cost = hd == 0 ? 1 : hd == 1 ? 2 : hd <= 3 ? 8 : hd <= 5 ? 16 : hd == 6 ? (f.hp_max() > 0x33 ? 20 : 16)
+                           : hd <= 8 ? 20 : 0xA2;
+            if ((f.flags2 & 8) || points < cost) continue;
+            points -= cost;
+            say(who[k], Did::Word, 0);
+            damage(b, who[k], f.hp() + 10);
+            f.rec[kHealth] = party::Dead;
+            say(who[k], Did::Fallen, 0);
+        }
+        break;
+    }
+    case SpellDoes::Disintegrate:
+    case SpellDoes::Petrify:
+        // Secret's (GAME.OVR 0x3205C, 0x32323): magic resistance, a save
+        // against spells, else dead / stoned
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up() || resisted(k, 0) || saving_throw(f, e.save, 0, d)) continue;
+            say(who[k], Did::Word, 0);
+            damage(b, who[k], f.hp() + 10);
+            f.rec[kHealth] = fs.does == SpellDoes::Petrify ? party::Stoned : party::Dead;
+            say(who[k], Did::Fallen, 0);
+        }
+        break;
+    case SpellDoes::Unstone:
+        // Secret's Stone to Flesh in a fight (GAME.OVR 0x32120): back up, 1 HP
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (f.status() != party::Stoned) {
+                say(who[k], Did::Unaffected, 0);
+                continue;
+            }
+            f.rec[kHealth] = party::Dead;                   // (stand_up won't lift the stoned)
+            if (!stand_up(b, who[k], false)) {
+                f.rec[kHealth] = party::Stoned;
+                say(who[k], Did::Unaffected, 0);
+                continue;
+            }
+            f.rec[kHp] = 1;
+            say(who[k], Did::Risen, 0);
+            say(who[k], Did::Word, 0);
+        }
+        break;
+    case SpellDoes::Stun:
+        // Secret's Power Word Stun (GAME.OVR 0x32739): no save; rounds by the
+        // hit points left
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up()) continue;
+            const int hp = f.hp();
+            const int rounds = hp >= 1 && hp <= 30 ? d.roll(4, 4) : hp >= 31 && hp <= 60 ? d.roll(4, 2)
+                             : hp >= 61 && hp <= 90 ? d.roll(4, 1) : 0;
+            if (rounds > 0 && e.affect) give_aff(f, e.affect, rounds, 0, false);
+            say(who[k], Did::Word, 0);
+        }
+        break;
     case SpellDoes::Restore:
         // (the level itself: the caller, create::restore)
         for (int k = 0; k < m; ++k)
@@ -3584,7 +3659,7 @@ bool spell_targets(Battle& b, const Tables& t, const classes::Tables& st, int i,
     int reach = e.range == -1 ? 1 : e.range + e.range_level * pw;
     if (reach < 1) reach = 1;
     const int aim = e.aim & 0x0F;
-    if (fs.does == SpellDoes::Youth) return false;      // (never the computer's)
+    if (fs.does == SpellDoes::Youth || fs.does == SpellDoes::Unstone) return false;      // (never the computer's)
     // For their own good
     if (fs.does == SpellDoes::Heal || fs.does == SpellDoes::FullHeal) {
         if (f.hp() * 2 >= f.hp_max()) return false;

@@ -466,6 +466,20 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
             o.say(who[k], Said::Raised);
         }
         break;
+    case Does::Unstone:
+        // Secret's Stone to Flesh (GAME.OVR 0x32120)
+        for (int k = 0; k < n; ++k) {
+            party::Character& c = p.m[who[k]];
+            if (c.health() != party::Stoned) {
+                o.say(who[k], Said::Word2);
+                continue;
+            }
+            c.rec[kHealth] = party::Okay;
+            c.rec[kInCombat] = 1;
+            c.rec[kHp] = 1;
+            o.say(who[k], Said::Word);
+        }
+        break;
     }
     return o.n;
 }

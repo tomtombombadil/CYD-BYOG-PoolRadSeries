@@ -170,6 +170,9 @@ constexpr spells::CampSpell kSecretCamp[] = {
     {0x24, Does::FullHeal, 1, 4, 0, kJ | 25, kJ | 36, kJ | 35, 0x2F687},   // Heal
     {0x5A, Does::FullHeal, 1, 4, 0, kJ | 25, kJ | 36, kJ | 35, 0x2F687},   // Barkskin (the original: Heal's routine)
     {0x62, Does::Heal, 1, 8, 0, 0},                                        // the druids' Cure Light Wounds
+    {0x70, Does::Affect, 0, 0, 0, kJ | 3},                                 // Globe of Invulnerability
+    {0x71, Does::Unstone, 0, 0, 0, kJ | 43, kJ | 46},                      // Stone to Flesh
+    {0x74, Does::Affect, 0, 0, 0, kJ | 29},                                // Mass Invisibility
 };
 
 constexpr uint8_t kCurseSpellNamed[] = {
@@ -404,6 +407,15 @@ constexpr combat::FightSpell kSecretFight[] = {
                                                             // Charmed" (persons; mammals not told apart)
     {0x61, SpellDoes::Affect, 0, 0, 0, 0, 0, 0},            // invisibility
     {0x62, SpellDoes::Heal, 1, 8, 0, 0, 0, 0},              // the druids' Cure Light Wounds
+    // Its 6th / 7th level spells past 100 (secret_facts_2.md 19; 101-109 have no workings)
+    {0x6E, SpellDoes::DeathSpell, 0, 0, 0, 0, 8, 0x31F25},  // Death Spell: "drops dead"
+    {0x6F, SpellDoes::Disintegrate, 0, 0, 0, 0, 8, 0x3204E},    // Disintegrate: "disintegrates"
+    {0x70, SpellDoes::Affect, 0, 0, 0, 0, 0, kJ | 3},       // Globe of Invulnerability: "is Protected"
+    {0x71, SpellDoes::Unstone, 0, 0, 0, 0, 0, kJ | 43},     // Stone to Flesh: "is no longer a statue"
+    {0x72, SpellDoes::Petrify, 0, 0, 0, 0, 8, kJ | 44},     // Flesh to Stone: "is turned to stone"
+    {0x73, SpellDoes::Damage, 0, 6, 0, 6, 9, 0},            // Delayed Blast Fireball: level d6 + level (at once)
+    {0x74, SpellDoes::Ours, 0, 0, 0, 0, 0, kJ | 29},        // Mass Invisibility: "is Invisible (spell)"
+    {0x75, SpellDoes::Stun, 0, 0, 0, 0, 0, kJ | 45},        // Power Word Stun: "is STUNNED"
 };
 
 // Pool's spells in fights and in camp (poolrad_combat_facts.md 3; the
@@ -733,6 +745,10 @@ constexpr profile::JoinedWord kSecretJoined[] = {
     {0x31D45, sx_effect(11)},       // 40 (not Charmed)
     {0x327EF, 0x327E5},             // 41 breathes cold (the dragons' breath, GAME.OVR 0x327F9)
     {0x327EF, 0x327EA},             // 42 breathes Fire
+    {kSxIs, 0x32100},               // 43 is no longer a statue
+    {kSxIs, 0x32313},               // 44 is turned to stone
+    {kSxIs, sx_effect(106)},        // 45 is STUNNED
+    {kSxIs, 0x32113},               // 46 is not stoned.
 };
 
 // Secret of the Silver Blades, GOG release (secret_facts.md; facts only):
@@ -1198,7 +1214,7 @@ const Profile kProfiles[] = {
                 .sp = {.enlarge = 0x0C, .confuse = 0x23, .berserk = 0x4D, .evil_ward = 0x04, .evil_bane = 0x20,
                        .hot = 0x32, .cold = 0x36, .zap = 0x70, .slow_poison = 0x16, .poison_damage = 0x0F,
                        .hammer = 0x17, .animated = 0, .con_regen = 0x3E, .giant = 0x71, .shield = 0x11,
-                       .enfeeble = 0x1D, .ill = 0x22, .weak = 0x2B, .sick = 0x2C},
+                       .enfeeble = 0x1D, .ill = 0x22, .weak = 0x2B, .sick = 0x2C, .stun = 0x6A},
                 .race = {0x61, 0x12, 0x1A, 0x07, 0x2F, 0x30, 0x69},
                 .items = {.displace = 0x59, .ring_invisible = 0x38},
                 .berserk = 0x6B},

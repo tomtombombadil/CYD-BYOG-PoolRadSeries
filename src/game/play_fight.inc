@@ -57,13 +57,18 @@ int read_block(const char* file, int block, uint8_t* out, int cap)
 
 // A character / monster record (MON<area>CHA block) into rec, Curse's
 // layout (Pool's 285-byte records moved into it)
-bool read_record_block(const char* file, int block, uint8_t* rec, uint8_t* ext = nullptr)
+bool read_record_block(const char* file, int block, uint8_t* rec, uint8_t* ext = nullptr, uint8_t* sx = nullptr)
 {
     if (secret_files()) {
-        // Secret's 439-byte records (party::from_secret; an NPC keeps its extension)
+        // Secret's 439-byte records (party::from_secret; an NPC keeps its
+        // extension; a monster its flags 2 and magic resistance: sx)
         uint8_t* sec = static_cast<uint8_t*>(malloc(party::kSecretRecordSize));
         const bool ok = sec && read_block(file, block, sec, party::kSecretRecordSize) ==
                                    static_cast<int>(party::kSecretRecordSize);
+        if (ok && sx) {
+            sx[0] = sec[0x15E];
+            sx[1] = sec[0x1A5];
+        }
         if (ok) {
             if (ext) {
                 party::Character* tmp = new (std::nothrow) party::Character;
@@ -130,11 +135,11 @@ void fight_load_monster(int id, int copies, int icon)
 {
     if (!ml) ml = new (std::nothrow) MonsterLoad;
     if (!ml || ml->groups >= combat::kMaxGroups || ml->n >= combat::kMaxMonsters) return;
-    uint8_t rec[party::kRecordSize];
+    uint8_t rec[party::kRecordSize], sx[2] = {};
     // MON<area>CHA.DAX
     char cha[24];
     area_fmt(cha, sizeof cha, "MON%dCHA.DAX");
-    if (!read_record_block(cha, id, rec)) {
+    if (!read_record_block(cha, id, rec, nullptr, sx)) {
         plat::log("[play] %s #%d: no monster\n", cha, id);
         return;
     }
@@ -171,6 +176,8 @@ void fight_load_monster(int id, int copies, int icon)
         combat::Monster& m = ml->m[ml->n++];
         memset(&m, 0, sizeof m);
         memcpy(m.rec, rec, sizeof rec);
+        m.flags2 = sx[0];
+        m.magic_res = sx[1];
         m.n_aff = na > 0 ? na / static_cast<int>(party::kAffectSize) : 0;
         memcpy(m.aff, aff, static_cast<size_t>(m.n_aff) * party::kAffectSize);
         m.group = static_cast<uint8_t>(ml->groups);
@@ -2648,6 +2655,8 @@ void fight_start(pic::Canvas& c)
         f.icon = i;
         f.quick = false;
         f.max_aff = party::kMaxAffects;
+        f.flags2 = ch.ext[party::kExtFlags2];
+        f.magic_res = ch.ext[party::kExtMagicRes];
     }
     b.party_size = pt->count;
     // The original recalculates every combatant's values at the battle's
@@ -2680,6 +2689,8 @@ void fight_start(pic::Canvas& c)
         f.icon = 8 + m.group;
         f.quick = true;
         f.max_aff = combat::kMonsterAffects;
+        f.flags2 = m.flags2;
+        f.magic_res = m.magic_res;
     }
     b.fx = &d->prof->fight.facts;
     b.names = names;

@@ -5238,6 +5238,41 @@ static void test_combat()
         n = combat::cast(sb, st, 0, 4, poison, &one2, 1, d, sline, 16);
         CHECK(n == 0 || (n == 2 && sline[0].did == combat::Did::Word && sline[1].did == combat::Did::Down &&
                          sb.f[1].status() == party::Dead));
+        // Secret's (secret_facts_2.md 19): Slay Living leaves the unliving (flags 2's 8) alone
+        fresh(1);
+        sb.f[1].flags2 = 8;
+        n = combat::cast(sb, st, 0, 4, slay, &one2, 1, d, sline, 16);
+        CHECK(n == 1 && sline[0].did == combat::Did::Unaffected && sb.f[1].up());
+        // The Death Spell: 2 x 4d20 points (8-160) by Hit Dice - a 1 HD one costs 2;
+        // 9+ Hit Dice never; no save
+        sb.f[1].flags2 = 0;
+        fresh(1);
+        fresh(2);
+        mrec[2][0xE5] = 9;
+        const combat::FightSpell death{4, combat::SpellDoes::DeathSpell, 0, 0, 0, 0, 8, 0x1212};
+        int both[2] = {1, 2};
+        n = combat::cast(sb, st, 0, 4, death, both, 2, d, sline, 16);
+        CHECK(n == 2 && sline[0].did == combat::Did::Word && sline[0].who == 1 && sline[1].did == combat::Did::Fallen);
+        CHECK(sb.f[1].status() == party::Dead && sb.f[2].up());
+        // Disintegrate / Flesh to Stone: a save or dead / stoned
+        fresh(1);
+        const combat::FightSpell petrify{4, combat::SpellDoes::Petrify, 0, 0, 0, 0, 8, 0x1313};
+        n = combat::cast(sb, st, 0, 4, petrify, &one2, 1, d, sline, 16);
+        CHECK(n == 0 || (n == 2 && sline[0].did == combat::Did::Word && sb.f[1].status() == party::Stoned));
+        // Stone to Flesh: the stoned back up with 1 HP
+        if (n == 2) {
+            const combat::FightSpell unstone{4, combat::SpellDoes::Unstone, 0, 0, 0, 0, 0, 0x1414};
+            n = combat::cast(sb, st, 0, 4, unstone, &one2, 1, d, sline, 16);
+            CHECK(n == 0 || (sb.f[1].status() == party::Okay && sb.f[1].hp() == 1));
+        }
+        // Power Word Stun: by the hit points left, its turns lost
+        fresh(1);
+        fx.sp.stun = static_cast<uint8_t>(spells::entry(st, 4).affect);
+        const combat::FightSpell stun{4, combat::SpellDoes::Stun, 0, 0, 0, 0, 0, 0x1515};
+        n = combat::cast(sb, st, 0, 4, stun, &one2, 1, d, sline, 16);
+        CHECK(n == 1 && sline[0].did == combat::Did::Word);
+        if (fx.sp.stun) CHECK(combat::stunned(sb, sb.f[1]));
+        fx.sp.stun = 0;
         // Fumble: clumsy (its moves and attacks gone) or slowed, then clumsy again or unaffected
         fresh(1);
         fx.fumbling = 0x1B; fx.slow = 0x2A;
