@@ -370,6 +370,9 @@ struct Fight {
     // Thrown weapons used up (a dagger, a spear, darts): onto the treasure after the fight
     uint8_t  thrown[6][items::kRecordSize];
     int      n_thrown = 0;
+    // Secret's Delayed Blast Fireballs set to go off (secret_facts_2.md 26)
+    struct Blast { int8_t caster = -1; uint8_t x = 0, y = 0, area = 0, rounds = 0, pw = 0; };
+    Blast    blast[4];
     bool     ai_checked = false;        // this turn's morale and spell choice done
     bool     fx_done = false;           // this turn's start effects (turn_effects) done
     bool     continuing = false;        // "Continue Battle": Yes - the party's turns with no enemies left
@@ -1558,6 +1561,9 @@ void aim_exit(pic::Canvas& c);
 void strike(pic::Canvas& c, int t);
 void begin_targeting(pic::Canvas& c, int sp);
 void cast_now(pic::Canvas& c, bool forgotten = false);
+bool blast_asked(int sp);
+void ask_blast_delay(pic::Canvas& c);
+void blast_off(Fight::Blast& bl);
 const combat::FightSpell* fight_spell(int sp);
 
 // A monster's item gone: off its group's list (the copies share it)
@@ -1867,6 +1873,9 @@ void round_end(pic::Canvas& c)
         const combat::Fighter& f = fg->b.f[k];
         if (f.up() && f.size && combat::in_poison(fg->b, f.x, f.y) && combat::breathe_poison(fg->b, k, rng)) poison_page(k);
     }
+    // A delayed blast fireball whose time has come
+    for (auto& bl : fg->blast)
+        if (bl.caster >= 0 && bl.rounds && --bl.rounds == 0) blast_off(bl);
     if (fg->pages) {
         draw_fight(c);
         say(c, FSt::Clouds);                // (then on with the round's end)
@@ -3276,6 +3285,10 @@ void spell_target(pic::Canvas& c, int t)
         fg->sp_n = 0;
         for (int k = 0; k < n; ++k) fg->sp_t[fg->sp_n++] = in[k];
         if (!fg->sp_n) fg->sp_t[fg->sp_n++] = t >= 0 ? t : fg->cur;     // (an empty square: no one)
+        if (blast_asked(fg->spell)) {
+            ask_blast_delay(c);                 // (Secret's Delayed Blast Fireball: when)
+            return;
+        }
         cast_now(c);
         return;
     }
@@ -3391,6 +3404,95 @@ void fight_hammer(int i)
     if (gained || ch.n_items != before) rules::recalc(ch, *names, d->facts);
     f.items = ch.items;
     f.n_items = ch.n_items;
+}
+
+// ---- Secret's Delayed Blast Fireball (secret_facts_2.md 26): the caster
+// is asked "Blast Delay in segments (1-50)? "; (n + 5) / 10 rounds, 0 at
+// once; else "Sets a delayed blast fireball." and when the rounds are past
+// (the end of a round) "Delayed Blast Fireball goes off" at the square
+// aimed at: those in its area then, the caster's level d6 + level
+bool blast_asked(int sp)
+{
+    return secret_files() && sp == 0x73 && fg->use_item < 0 && fw(profile::kBlastDelay)[0];
+}
+
+void ask_blast_delay(pic::Canvas& c)
+{
+    snprintf(take_prompt, sizeof take_prompt, "%s", fw(profile::kBlastDelay));
+    input_engine = true;
+    engine_ask = EngineAsk::BlastDelay;
+    input_prompt = take_prompt;
+    input_max = 2;
+    input_len = 0;
+    input_buf[0] = 0;
+    input_mode = Input::Number;
+    draw_input(c);
+}
+
+void blast_delay(int n, pic::Canvas& c)
+{
+    if (n < 0) n = 0;
+    if (n > 50) n = 50;
+    const int rounds = (n + 5) / 10;
+    combat::Battle& b = fg->b;
+    int slot = -1;
+    for (int k = 0; k < 4; ++k)
+        if (fg->blast[k].caster < 0) slot = k;
+    if (rounds == 0 || slot < 0 || fg->aim_x < 0) {
+        cast_now(c);
+        return;
+    }
+    const int i = fg->cur;
+    combat::Fighter& f = b.f[i];
+    const int sp = fg->spell;
+    fg->spell = 0;
+    forget_spell(f, sp);
+    char t[40];
+    snprintf(t, sizeof t, "%s%s", fw(profile::kSpellColon), spell_name(sp));
+    status_line(c, t);
+    draw_fight(c);
+    add_page(i, fw(profile::kCastsASpell));
+    add_page(i, fw(profile::kSetsBlast));
+    auto& bl = fg->blast[slot];
+    bl.caster = static_cast<int8_t>(i);
+    bl.x = static_cast<uint8_t>(fg->aim_x);
+    bl.y = static_cast<uint8_t>(fg->aim_y);
+    bl.area = static_cast<uint8_t>(fg->sp_area > 0 ? fg->sp_area : 0);
+    bl.rounds = static_cast<uint8_t>(rounds);
+    bl.pw = static_cast<uint8_t>(combat::power_of(f.rec, mrules->tables, sp, false));
+    fg->aim_x = fg->aim_y = -1;
+    f.attacks[0] = f.attacks[1] = 0;
+    say(c, FSt::Next);
+}
+
+void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::FightSpell& fs, bool each);
+
+void blast_off(Fight::Blast& bl)
+{
+    combat::Battle& b = fg->b;
+    const combat::FightSpell* fs = fight_spell(0x73);
+    const int caster = bl.caster;
+    bl.caster = -1;
+    if (!fs || caster >= b.n) return;
+    int who[combat::kMaxFighters];
+    const int n = combat::in_area(b, fg->t, bl.x, bl.y, bl.area, who, combat::kMaxFighters);
+    const int first = fg->pages;
+    add_page(-1, fw(profile::kBlastGoesOff));
+    combat::SpellLine lines[24];
+    b.aim_x = bl.x;
+    b.aim_y = bl.y;
+    const int m = n ? combat::cast(b, mrules->tables, caster, 0x73, *fs, who, n, rng, lines, 24, bl.pw) : 0;
+    b.aim_x = b.aim_y = -1;
+    spell_pages(caster, lines, m, *fs, false);
+    if (fg->pages > first) {
+        Fx e;
+        e.kind = Fx::Fly;
+        e.fl = combat::spell_flight(5, 30);
+        e.x0 = e.x1 = bl.x;
+        e.y0 = e.y1 = bl.y;
+        e.sound = sound::kFireball;
+        fg->page[first].fx[0] = e;
+    }
 }
 
 void cast_now(pic::Canvas& c, bool forgotten)

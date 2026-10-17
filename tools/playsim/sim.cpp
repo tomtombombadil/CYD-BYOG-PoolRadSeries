@@ -332,6 +332,13 @@ static void run_fight()
                     if (play::fg->st == play::FSt::Menu) play::fight_menu(C);
                     printf("  forced spells: fighter %d (of %d), list %02X %02X\n", m, play::fg->b.n, play::fg->b.f[m].rec[magic::kListAt], play::fg->b.f[m].rec[magic::kListAt + 1]);
                 }
+                if (play::input_mode != play::Input::None && getenv("FIGHTTYPE")) {
+                    // FIGHTTYPE=text: typed (then Enter) when the fight asks for a number or a word
+                    printf("  [typed %s]\n", getenv("FIGHTTYPE"));
+                    for (const char* q = getenv("FIGHTTYPE"); *q; ++q) play::input_key(*q, C);
+                    play::input_key('\n', C);
+                    continue;
+                }
                 const bool asks = play::screen == play::Screen::SpellList || play::screen == play::Screen::Items ||
                                   (play::fg->st == play::FSt::Menu || play::fg->st == play::FSt::Aim || play::fg->st == play::FSt::DoneMenu ||
                                    (play::fg->st == play::FSt::Move && fops && (*fops == '>' || *fops == '.' || *fops == '!' || *fops == '#')));

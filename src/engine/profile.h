@@ -173,6 +173,8 @@ enum FightWord {
     kFoundTreasure2,                                                             // Secret: "treasure!" after "The party has found "
     kBreathesCold, kSwallowed, kStaresBlankly,                                   // Secret: "breathes cold", "is swallowed whole",
                                                                                  // "stares blankly"
+    kBlastDelay, kSetsBlast, kBlastGoesOff,                                      // Secret's Delayed Blast Fireball: "Blast Delay in
+                                                                                 // segments (1-50)? " ... "... goes off"
     kFightWords
 };
 

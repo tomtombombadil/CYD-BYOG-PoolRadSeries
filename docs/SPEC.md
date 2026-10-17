@@ -1055,6 +1055,12 @@ until the party menu is known (`party.items`).
   "is swallowed whole", "stares blankly". The original has no Turn Undead
   (its fight menu: Move View Aim Use Cast Quick Done) and no "The party
   has lost" - the engine already matched.
+- **v0.116.0 - Delayed Blast Fireball's delay** (secret_facts_2.md 26):
+  "Blast Delay in segments (1-50)? " after the square is picked; (n + 5)
+  / 10 rounds - none: at once as before; else "NAME Sets a delayed blast
+  fireball." and at the end of that round "Delayed Blast Fireball goes
+  off" at the square: those in its area then take the caster's level d6
+  + level (fire, a save for half), the fireball's picture there.
 - **v0.115.2 - Secret's View coin choice** (Trade / Drop / Deposit): on
   the character's own screen, the coins picked on its money panel (copper
   first, the line lit from column 20 to 37) as the original; the panel's
@@ -1632,6 +1638,11 @@ the game's Settings (As Original: all of them).
   when the Strength in use is 18/00 (it can be a spell's). Dispel Magic
   on these effects reads the engine's data (the original's holds the old
   Strength).
+- **Secret's Delayed Blast Fireball** (v0.116.0): the original keeps the
+  blast as an effect on the caster (0x64, its rounds) that sets it off
+  when it ends - shown in View's effects; the engine keeps the blast with
+  the fight and shows no effect. The computer's casters set it off at
+  once (the original's choice for them not checked).
 - **Secret's vault** (v0.115.0) keeps up to 64 items (the treasure's
   list); the original's holds as many as its memory takes. A vault item
   of type 0x49 (none in the game) is followed in the file by as many

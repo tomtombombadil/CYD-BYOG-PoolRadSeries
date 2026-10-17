@@ -362,7 +362,7 @@ void journal_ready()
 // Typing (INPUT NUMBER / STRING) on the menu line
 Input        input_mode = Input::None;
 bool         input_engine = false;   // the engine asks (a new character's name, coins to take), not a script
-enum class EngineAsk : uint8_t { Name, Coins, ModName, FileName };
+enum class EngineAsk : uint8_t { Name, Coins, ModName, FileName, BlastDelay };
 char new_base[12] = {};             // Remove: the file name typed instead (Overwrite -> No)
 bool name_for_new = false;          // ... for a new character (Create's save), not Remove
 EngineAsk    engine_ask = EngineAsk::Name;
@@ -10979,6 +10979,11 @@ void input_key(char k, pic::Canvas& c)
         if (engine_ask == EngineAsk::Coins) {
             engine_ask = EngineAsk::Name;
             take_coins(atoi(input_buf), c);
+            return;
+        }
+        if (engine_ask == EngineAsk::BlastDelay) {
+            engine_ask = EngineAsk::Name;
+            blast_delay(atoi(input_buf), c);
             return;
         }
         if (engine_ask == EngineAsk::ModName) {
