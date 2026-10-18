@@ -1291,6 +1291,14 @@ the scripts' changed ops, the rule tables, fights, the rest.
   The area map's frames: walls 0-15, arrows 16-19. The Walk Test at the
   docks (GEO 16, look 1, 11,2 S) matches the original's EGA view in all
   7,744 pixels.
+- **v0.121.0 - the party menu, Load, Save.** Its files (`variant.
+  darkness_files`: .SAV / .PC records, .THG items, .EFX effects,
+  SAVGAMx.PTY; POOL4.CFG's first folder), its party menu (13 entries from
+  DS 0x11B9, at column 9 all green - `variant.party_menu_col`), Load's
+  "Load from where? Pools Secret Exit" first (Pools: its own saved games;
+  Secret: not yet), View's name tables (its races renumbered, its three
+  coins in Curse's places 4-6). The GOG party loads (HP, levels, saves as
+  the original shows them). Begin: with the scripts' memory (next).
 
 ## 7. The journal (Tom, 2026-10-06)
 
