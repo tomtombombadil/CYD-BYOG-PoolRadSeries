@@ -2114,9 +2114,12 @@ bool resists(Battle& b, int c, int effect, const Harm& h, create::Dice& d)
     if (hasx(f, m.no_poison) && (paralysis || (effect > 0 && m.poisoned && effect == m.poisoned))) return true;
     if (hasx(f, fx.race.halfelf) && sleep_charm && d.roll(100, 1) <= 30) return true;      // half-elves: 30%
     if (hasx(f, m.globe) && h.spell > 0 && h.spell_level < 4) return true;
+    // Secret's Globe of Invulnerability (0x39, GAME.OVR 0x123D3): up to the 4th level
+    if (hasx(f, fx.globe_major) && h.spell > 0 && h.spell_level <= 4) return true;
     if (hasx(f, m.no_magic) && magic) return true;
     return false;
 }
+
 
 int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* down, bool* resisted)
 {
@@ -2177,6 +2180,7 @@ int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* dow
         if (hasx(f, m.death_ward) && (h.kind & 0x40)) safe = true;
         if (hasx(f, m.no_elec) && (h.kind & 4)) safe = true;
         if (hasx(f, m.globe) && h.spell > 0 && h.spell_level < 4) safe = true;
+        if (b.fx && hasx(f, b.fx->globe_major) && h.spell > 0 && h.spell_level <= 4) safe = true;
         if (safe) {
             dmg = 0;
             if (resisted) *resisted = true;
