@@ -1210,6 +1210,21 @@ full behaviour checks (every spell, monster, class, item, situation).
   and its new monster abilities in fights, sound (SOUND.DAX), the sky and
   approaching monsters (SPRIT1).
 
+- **v0.120.1 - its monsters checked** (Tom, 2026-10-18: every monster,
+  ability, spell, item, situation): sweep's `behave secret` ONLY=allmonsters
+  - all 70 MON1CHA records as a fight loads them (and the Level), every
+  effect its monsters use against its handler, their own turns, the
+  fight's end (2,289 checks). Fixed: the giant slug (0x5A: blunt weapons
+  do nothing - not Curse's acid breath), the dragons' breath immunity
+  (0x49) and their breath held when a friend is in the way, the iron
+  golem (0x4F: magical fire heals it, electricity slows it 3 rounds,
+  nothing else hurts), the hell hound (breathes every turn, adjacent, then
+  fights), the pyrohydra (none in the first round), the stone gaze's
+  range 6 and its reflection (0x48), the umber hulk and slug's reach,
+  the phase spider's poison and the dreadlord's paralysis on attack 1
+  (10 rounds), the weapon's +1 for type 26 too; two of Secret's own
+  mistakes go with Item Fixes (SPEC 12). secret_facts_2.md 29.
+
 ## 6d. Pools of Darkness (Tom, 2026-10-17: started after Secret)
 
 Facts in the Project's claude/darkness_facts.md (from the player's GOG
@@ -1735,5 +1750,11 @@ the game's Settings (As Original: all of them).
   only in that mode (the menu line just "Exit") do the original's arrow
   keys move the party; the engine shows the same menu and mode, but its
   movement keys move the party in either (the cursor keys work the menu).
+- **Secret's own mistakes, fixed with Item Fixes on** (v0.120.1;
+  `rules::fixes()` - Item Fixes off plays them as the original):
+  the +1 to hit with bows and short / long swords goes to elves only
+  (Secret's program gives it to every race); a cleric's +10% experience
+  needs Wisdom 16 (Secret's: 15). More to come from the spells / items /
+  situations checks.
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.
