@@ -78,6 +78,10 @@ struct Index {
 // Reads and checks the index. Every entry is checked to lie inside the file.
 Status read_index(ByteSource& src, Index& out);
 
+// One block's entry without the whole index (Index is 3 KB): false when the
+// file has no block `id` (or isn't a DAX file); data_start as Index's
+bool find_entry(ByteSource& src, uint8_t id, Entry& e, uint32_t& data_start);
+
 // Streams one block's decompressed bytes. Buffered: reads the source in
 // chunks of kChunk bytes.
 class RleReader {
@@ -85,6 +89,7 @@ public:
     static constexpr size_t kChunk = 256;
 
     RleReader(ByteSource& src, const Index& index, const Entry& e);
+    RleReader(ByteSource& src, uint32_t data_start, const Entry& e);
 
     // Next decompressed byte, or -1 at the end of the block (raw_size bytes
     // given, or input exhausted, or a read error - see error()).

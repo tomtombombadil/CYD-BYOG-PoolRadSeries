@@ -122,6 +122,9 @@ public:
     // A sound effect (the games' sound numbers; CALL B200 - a step, or the
     // fireball's roar when the script set 0x03DE to 10)
     virtual void sound(int id) { (void)id; }
+    // Darkness's SOUND v (op 0x2C): effect v in the game's own numbering
+    // (2-14 asked; the game plays 2-12)
+    virtual void game_sound(int v) { sound(v); }
     // Darkness: LOAD FILES' look (WALLDEF1 / 8X8D1 / BACK1 block n at once),
     // JOURNAL n (the engine shows entry n when wanted), SHOP n's goods (DS
     // tables of ITEM0 rows) and TREASURE's items (an ITEM0 row: 0xFF a

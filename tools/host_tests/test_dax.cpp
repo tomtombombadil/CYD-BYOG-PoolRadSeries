@@ -2074,6 +2074,81 @@ static void test_sound()
     CHECK(!bad.set_data(lay, seg.data(), seg.size()) && !bad.ready());
 }
 
+// Digitised effects (Darkness's kind): made-up samples in a made-up DAX
+// file, the PC speaker driver's treatment, the player's queue of one
+static void test_clips()
+{
+    // A block read alone (its entry found without the whole index)
+    Bytes raw1 = {1, 2, 3, 4, 5};
+    Bytes raw5;
+    for (int k = 0; k < 300; ++k) raw5.push_back(static_cast<uint8_t>(k < 100 ? 0x80 : k));
+    const Bytes file = make_dax({{1, raw1}, {5, raw5}});
+    dax::MemorySource src(file.data(), static_cast<uint32_t>(file.size()));
+    dax::Entry e{};
+    uint32_t start = 0;
+    CHECK(dax::find_entry(src, 5, e, start) && e.raw_size == 300 && e.comp_size < 300 && start == 2 + 18);
+    CHECK(!dax::find_entry(src, 2, e, start));
+    uint32_t n = 99;
+    uint8_t* p = sound::load_clip(src, 5, &n);
+    CHECK(p && n == 300 && memcmp(p, raw5.data(), 300) == 0);
+    free(p);
+    CHECK(!sound::load_clip(src, 2, &n) && n == 0);
+    const Bytes junk = {1, 2, 3};
+    dax::MemorySource bad(junk.data(), 3);
+    CHECK(!sound::load_clip(bad, 1, &n));
+
+    // The PC speaker's widths: byte / 4 + 1, at most 52; a piece of 2,048
+    // stretched to 0-255 when its range is 40 or more (0-255 whole: the
+    // driver's 8-bit range is 0 - left alone)
+    auto levels = [](Bytes b) { sound::pc_speaker_levels(b.data(), static_cast<uint32_t>(b.size())); return b; };
+    CHECK((levels({0x80, 0x84, 0x90, 0x88}) == Bytes{33, 34, 37, 35}));
+    CHECK((levels({100, 150, 199}) == Bytes{1, 33, 52}));
+    CHECK((levels({0, 255, 0x80}) == Bytes{1, 52, 33}));
+    Bytes two(2048, 0x80);
+    two.push_back(100);
+    two.push_back(150);
+    two.push_back(199);
+    two = levels(two);
+    CHECK(two[0] == 33 && two[2047] == 33 && two[2048] == 1 && two[2049] == 33 && two[2050] == 52);
+
+    // The player: the samples in straight lines between them, then silence
+    auto clip = [](Bytes b) {
+        uint8_t* q = static_cast<uint8_t*>(malloc(b.size()));
+        memcpy(q, b.data(), b.size());
+        return q;
+    };
+    std::vector<uint8_t> out(64);
+    sound::ClipPlayer cp;
+    cp.start(clip({128, 192, 64, 128}), 4, 11025, sound::Device::Tandy);
+    CHECK(cp.render(out.data(), 16, 22050, 255));
+    CHECK((Bytes(out.begin(), out.begin() + 9) == Bytes{128, 160, 192, 128, 64, 96, 128, 128, 128}));
+    CHECK(!cp.render(out.data(), 16, 22050, 255) && out[15] == 128);
+    // One waits at most: the newest takes its place; the one playing goes on
+    cp.start(clip({128, 192, 64, 128}), 4, 11025, sound::Device::Tandy);
+    CHECK(cp.render(out.data(), 1, 11025, 255) && out[0] == 128);
+    cp.start(clip({255, 255}), 2, 11025, sound::Device::Tandy);
+    cp.start(clip({0, 0}), 2, 11025, sound::Device::Tandy);
+    CHECK(cp.render(out.data(), 32, 11025, 255));
+    CHECK(out[0] == 192 && out[1] == 64 && out[2] == 128 && out[3] == 0 && out[4] == 0 && out[5] == 128);
+    for (int i = 0; i < 32; ++i) CHECK(out[i] != 255);
+    // The speaker: a silent sample is half the pulse; the widest +73 of 127
+    cp.start(clip({0x80, 0x90, 0x90}), 3, 11025, sound::Device::PcSpeaker);
+    CHECK(cp.render(out.data(), 8, 11025, 255));
+    CHECK(out[0] == 128 && out[1] == 128 + 4 * 127 / 33 && out[3] == 128);
+    cp.start(clip({0x80, 0xFF}), 2, 11025, sound::Device::PcSpeaker);     // (stretched: 1 and 52)
+    CHECK(cp.render(out.data(), 8, 11025, 255));
+    CHECK(out[0] == 128 - 32 * 127 / 33 && out[1] == 128 + 19 * 127 / 33);
+    // Volume; dropped unplayed (LeakSanitizer: nothing left behind)
+    cp.start(clip({255, 255}), 2, 11025, sound::Device::Tandy);
+    cp.render(out.data(), 2, 11025, 0);
+    CHECK(out[0] == 128 && out[1] == 128);
+    cp.start(clip({1, 2}), 2, 11025, sound::Device::Tandy);
+    cp.start(nullptr, 2, 11025, sound::Device::Tandy);
+    cp.start(clip({1}), 0, 11025, sound::Device::Tandy);
+    cp.clear();
+    CHECK(!cp.render(out.data(), 8, 11025, 255));
+}
+
 // Random treasure: a thousand items made with the Curse facts and made-up
 // ready-made rows; each is one of the kinds, with its words, plus and weight
 static void test_treasure()
@@ -7332,6 +7407,7 @@ int main()
     test_treasure();
     test_treasure_pool();
     test_sound();
+    test_clips();
     test_journal();
     test_journal_gbc();
     test_icon_looks();

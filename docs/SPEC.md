@@ -1397,6 +1397,20 @@ the scripts' changed ops, the rule tables, fights, the rest.
   (`party::from_darkness` / `to_darkness`). Memorize, Cast and Display
   match DOSBox (Dominic, the GOG party). What spells do in camp: not yet
   ("Can't be cast here...").
+- **v0.129.0 - the sound effects.** Not Curse's byte-code driver: digitised samples
+  played by DigPak drivers (SND.COM, the one STARTUP.EXE chose; POOL4.CFG
+  line 1: 1 Sound Blaster - GOG -, 2 AdLib, 3 / 4 Tandy EX-TX / SL-TL, 5
+  PC speaker). SOUND v (op 0x2C; 2-12 - 13 / 14 play nothing; 0x80 + n
+  music, not yet) and the program's own calls play ZOUNDS.DAX block v - 1
+  - whole, its 8SVX header included - at 9,000 Hz
+  (`sound::Clips`, the profile's `clips`; `sound::ClipPlayer`; each block
+  read from the card as it sounds, `sound::load_clip` - up to 5 KB while
+  it plays, `dax::find_entry` instead of the 3 KB index). Tandy: the
+  samples; PC speaker: as IBMSND.COM makes them (`pc_speaker_levels`).
+  Curse's sound numbers stay the engine's; the profile's `clips.ids` turn
+  them into Darkness's (the magic hit with stars 6, without 9, sling /
+  flask 9, no title sound); turning is silent (`clips.quiet_turns`).
+  Facts: the Project's claude/darkness_sound_facts.md.
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -1817,6 +1831,13 @@ the game's Settings (As Original: all of them).
   picked too (kept by name in the engine's ICONS.TXT, not in the save).
 - **Sound**: Tandy (default), PC speaker or off, with a volume slider in
   the engine's Settings.
+  Pools of Darkness (its effects are samples, ZOUNDS.DAX): Tandy is the
+  Tandy 1000 SL / TL's DAC (the samples as they are - the Sound Blaster's
+  too, the GOG setting); the EX / TX driver's 16 chip volumes (TANEXTX.COM)
+  aren't offered. A new effect waits for the one sounding, as the
+  original's, but the game goes on meanwhile (the original stops until
+  the earlier one has ended - and with the PC speaker, whose driver plays
+  in the foreground, during every effect); one waits at most.
 - **Saving**: the GOG files' save folder on the card, as the game.
 - **Monsters of one kind share one item list** (a group's): one archer's
   arrows, a wand's charges are the group's (the original gives each copy

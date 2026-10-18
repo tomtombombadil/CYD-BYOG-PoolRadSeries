@@ -68,8 +68,33 @@ Status read_index(ByteSource& src, Index& out)
     return Status::Ok;
 }
 
+bool find_entry(ByteSource& src, uint8_t id, Entry& e, uint32_t& data_start)
+{
+    uint8_t hdr[2];
+    if (src.read_at(0, hdr, 2) != 2) return false;
+    const uint32_t index_bytes = le16(hdr);
+    if (index_bytes == 0 || index_bytes % 9 != 0 || 2 + index_bytes > src.size()) return false;
+    data_start = 2 + index_bytes;
+    uint8_t rec[9];
+    for (uint32_t at = 2; at < data_start; at += 9) {
+        if (src.read_at(at, rec, 9) != 9) return false;
+        if (rec[0] != id) continue;
+        e.id = rec[0];
+        e.offset = le32(rec + 1);
+        e.raw_size = le16(rec + 5);
+        e.comp_size = le16(rec + 7);
+        return static_cast<uint64_t>(data_start) + e.offset + e.comp_size <= src.size();
+    }
+    return false;
+}
+
 RleReader::RleReader(ByteSource& src, const Index& index, const Entry& e)
-    : src_(src), in_pos_(index.data_start + e.offset), in_left_(e.comp_size), raw_size_(e.raw_size)
+    : RleReader(src, index.data_start, e)
+{
+}
+
+RleReader::RleReader(ByteSource& src, uint32_t data_start, const Entry& e)
+    : src_(src), in_pos_(data_start + e.offset), in_left_(e.comp_size), raw_size_(e.raw_size)
 {
 }
 

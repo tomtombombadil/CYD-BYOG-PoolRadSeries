@@ -220,11 +220,31 @@ bool in_game_menu = false;          // the party menu a script opened (PROGRAM 0
 // Combat (play_fight.inc)
 // ---- Sound: the game's own effects (engine/sound), Tandy or PC speaker
 sound::Player* snd = nullptr;
+// Darkness: its effects are digitised samples (ZOUNDS.DAX), each read from
+// the card as it sounds (profile clips)
+sound::ClipPlayer* clips = nullptr;
 uint8_t snd_mode = 1, snd_volume = 230;     // (Settings: 1 Tandy, 2 PC speaker, 3 Off)
 
 bool snd_fill(uint8_t* buf, int n, void* ctx)
 {
     return static_cast<sound::Player*>(ctx)->render(buf, n, kAudioHz, snd_volume);
+}
+
+bool clip_fill(uint8_t* buf, int n, void* ctx)
+{
+    return static_cast<sound::ClipPlayer*>(ctx)->render(buf, n, kAudioHz, snd_volume);
+}
+
+bool sound_on()
+{
+    return ((snd && snd->ready()) || clips) && (snd_mode == 1 || snd_mode == 2);
+}
+sound::Device sound_device() { return snd_mode == 2 ? sound::Device::PcSpeaker : sound::Device::Tandy; }
+
+void start_output()
+{
+    if (clips) audio_play(clip_fill, clips);
+    else audio_play(snd_fill, snd);
 }
 
 // A fight holds the sound output from its start to its end (Hit / Miss)
@@ -234,20 +254,56 @@ void sound_hold(bool on)
         audio_hold(false, nullptr, nullptr);
         return;
     }
-    if (!snd || !snd->ready() || (snd_mode != 1 && snd_mode != 2)) return;
-    audio_hold(true, snd_fill, snd);
+    if (!sound_on()) return;
+    if (clips) audio_hold(true, clip_fill, clips);
+    else audio_hold(true, snd_fill, snd);
     if (!audio_held()) memlog::note("NOT ENOUGH MEMORY to hold the sound for the fight");
 }
 
-void sfx(int id)
+bool open_file(const char* name, plat::File& f);
+
+// A digitised effect (the game's own number): its block read from the card
+// now (the reader and its file buffer on the heap - a sound starts deep in
+// a fight), handed to the player - it sounds once the one playing ends
+__attribute__((noinline)) void play_clip(int v)
 {
-    if (!snd || !snd->ready() || (snd_mode != 1 && snd_mode != 2)) return;
+    const sound::Clips& cl = d->prof->clips;
+    if (v < cl.first || v > cl.last) return;            // (13 / 14: the game plays nothing)
+    plat::File f;
+    if (!open_file(cl.file, f)) return;
+    plat::FileSource* src = new (std::nothrow) plat::FileSource(f);
+    uint32_t n = 0;
+    uint8_t* pcm = src ? sound::load_clip(*src, v - 1, &n) : nullptr;
+    delete src;
+    f.close();
+    if (!pcm) {
+        static uint32_t noted = 0;
+        if (!noted || plat::now_ms() - noted > 60000) {
+            noted = plat::now_ms() | 1;
+            memlog::note("a sound left out: it didn't read (memory low?)");
+        }
+        return;
+    }
+    clips->start(pcm, n, cl.hz, sound_device());
+    start_output();
+}
+
+// A sound by the engine's number (sound::Id - Curse's), `game`: the game's
+// own number (Darkness's SOUND v)
+void sfx(int id, bool game = false)
+{
+    if (!sound_on()) return;
+    if (clips && !game) id = id >= 0 && id < 16 ? d->prof->clips.ids[id] : 0;
+    if (clips && !id) return;
     // A sound needs ~7 KB while it plays (its task and DAC): not when that
     // would leave the game short - in a fight nothing is dropped for it
     // (Hit and Miss are never left out - Tom, 2026-10-12: they tell a hit
-    // from a miss; in a fight the output is held for them anyway)
-    const bool vital = id == sound::kHit || id == sound::kMiss;
-    if (!vital && !audio_running() && memlog::largest_kb() < 10 && (fighting() || !make_room(10, "a sound"))) {
+    // from a miss; in a fight the output is held for them anyway).
+    // Darkness: its samples too (up to 5 KB, while they play)
+    const bool vital = clips ? !game && (id == d->prof->clips.ids[sound::kHit] || id == d->prof->clips.ids[sound::kMiss])
+                             : id == sound::kHit || id == sound::kMiss;
+    const unsigned need = clips ? 15 : 10;
+    if (!vital && !audio_running() && memlog::largest_kb() < need && (fighting() || !make_room(need, "a sound"))) {
         static uint32_t noted = 0;
         if (!noted || plat::now_ms() - noted > 60000) {
             noted = plat::now_ms() | 1;
@@ -255,8 +311,19 @@ void sfx(int id)
         }
         return;
     }
-    snd->start(id, snd_mode == 2 ? sound::Device::PcSpeaker : sound::Device::Tandy);
-    audio_play(snd_fill, snd);
+    if (clips) {
+        play_clip(id);
+        return;
+    }
+    snd->start(id, sound_device());
+    start_output();
+}
+
+// Turning left / right in the 3D view: Curse's step sound; Darkness's turns
+// are silent (its 3D view's keys - darkness_sound_facts.md 4)
+void turn_sound()
+{
+    if (!d->prof->clips.quiet_turns) sfx(sound::kStep);
 }
 
 void fight_load_monster(int id, int copies, int icon);
@@ -7703,6 +7770,7 @@ struct Host : ecl::Host {
     }
     void party_killed() override { party_dead = true; }
     void sound(int id) override { sfx(id); }
+    void game_sound(int v) override { sfx(v, true); }
     void log(const char* what) override { plat::log("[ecl %d:%04X] %s\n", d->gs.script, vm->pc() + 0x8000, what); }
 };
 
@@ -9072,6 +9140,16 @@ void gal_step(int step, pic::Canvas& c)
 // The sound driver's tables and byte code, from the player's program
 void load_sound()
 {
+    if (d->prof->clips.file) {
+        // Darkness: nothing held - each effect is read as it sounds
+        plat::File f;
+        if (open_file(d->prof->clips.file, f)) {
+            f.close();
+            clips = new (std::nothrow) sound::ClipPlayer;
+        }
+        if (!clips) plat::log("[play] no %s: no sound\n", d->prof->clips.file);
+        return;
+    }
     const sound::Layout& l = d->prof->sound;
     if (!l.hi || l.hi <= l.lo) return;
     const size_t n = l.size(), n1 = l.hi - l.lo;
@@ -9981,7 +10059,7 @@ void set_sound(uint8_t mode, uint8_t volume)
 
 uint8_t sound_mode() { return snd_mode; }
 
-void sound_test(int id) { sfx(id); }
+void sound_test(int id, bool game) { sfx(id, game); }
 
 // play::open's steps, each with its own file buffers on the stack only
 // while it runs (v0.103.3: open's frame was 2 KB, and the loop task's 8 KB
@@ -10141,7 +10219,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     vm->set_words(d->script_words);
     vm->set(0x4BFF, 3);                     // Pics and Animation on, as the game starts (a save says its own)
     load_sound();
-    if (snd && (snd_mode == 1 || snd_mode == 2)) audio_prepare();    // (the S3's codec and amplifier awake before the first sound)
+    if (sound_on()) audio_prepare();    // (the S3's codec and amplifier awake before the first sound)
     note_until = 0;
     last_pic_id = -1;
     ecl::GameState& gs = d->gs;
@@ -10179,6 +10257,8 @@ void close()
     audio_stop();
     delete snd;
     snd = nullptr;
+    delete clips;
+    clips = nullptr;
     if (d) anim_stop();
     input_mode = Input::None;
     if (vm) {
@@ -10288,8 +10368,8 @@ bool act(Act a, pic::Canvas& c)
         if (dir == -1) return false;
     }
     switch (a) {
-    case Act::TurnLeft:   g.dir = (g.dir + 6) & 7; sfx(sound::kStep); break;
-    case Act::TurnRight:  g.dir = (g.dir + 2) & 7; sfx(sound::kStep); break;
+    case Act::TurnLeft:   g.dir = (g.dir + 6) & 7; turn_sound(); break;
+    case Act::TurnRight:  g.dir = (g.dir + 2) & 7; turn_sound(); break;
     case Act::TurnAround: g.dir = (g.dir + 4) & 7; break;
     case Act::Forward:    step(g.dir); return true;
     case Act::StepLeft:   step((g.dir + 6) & 7); return true;     // Tom: the same checks as a step that way

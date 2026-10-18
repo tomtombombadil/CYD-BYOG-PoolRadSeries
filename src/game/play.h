@@ -143,7 +143,8 @@ bool fight_colours();
 // games' numbers, engine/sound.h)
 void set_sound(uint8_t mode, uint8_t volume);
 uint8_t sound_mode();
-void sound_test(int id);
+// (game: the game's own number - Darkness's SOUND v)
+void sound_test(int id, bool game = false);
 
 // For the companion panel
 const geo::Map* map();

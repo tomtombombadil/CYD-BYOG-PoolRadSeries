@@ -30,8 +30,10 @@ void audio_play(AudioFill fill, void* ctx)
 {
     ++g_sounds;
     uint8_t b[512];
-    for (int k = 0; k < 400 && fill(b, 512, ctx); ++k)
+    int k = 0;
+    for (; k < 400 && fill(b, 512, ctx); ++k)
         if (getenv("SOUNDWAV")) g_wav.insert(g_wav.end(), b, b + 512);
+    if (getenv("SOUNDLOG")) printf("  [audio] a sound: %d x 512 samples\n", k);
 }
 void audio_stop() {}
 bool audio_running() { return false; }
@@ -483,8 +485,21 @@ int main(int argc, char** argv)
     const char* dir = folder.c_str();
     // GAME=n: another game (games::Game's number: 1 Pool of Radiance)
     const games::Game game = getenv("GAME") ? (games::Game)atoi(getenv("GAME")) : games::Game::CurseOfTheAzureBonds;
+    // SOUNDMODE=2: the PC speaker's sounds (1 Tandy, the default)
+    if (getenv("SOUNDMODE")) play::set_sound(static_cast<uint8_t>(atoi(getenv("SOUNDMODE"))), 230);
     const char* e = play::open(dir, game, C, getenv("CACHE"));
     if (e) { printf("open: %s\n", e); return 1; }
+    // SOUNDTEST=a-b: the game's own effects a to b, one after another, then out
+    if (const char* st = getenv("SOUNDTEST")) {
+        int a = 2, z = 14;
+        sscanf(st, "%d-%d", &a, &z);
+        for (int v = a; v <= z; ++v) {
+            printf("SOUNDTEST %d\n", v);
+            play::sound_test(v, true);
+        }
+        save_wav();
+        return 0;
+    }
     // The title sequence (v0.53.0): a tap through each step (TITLESHOTS:
     // a snapshot of each), then Play on the version line
     for (int guard = 0; play::screen == play::Screen::Title && guard < 20; ++guard) {

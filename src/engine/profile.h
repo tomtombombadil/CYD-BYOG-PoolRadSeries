@@ -462,6 +462,8 @@ struct Profile {
 
     // The sound driver's tables and byte code (its segment in the program)
     sound::Layout sound;
+    // Or the effects as digitised samples in a file of their own (Darkness)
+    sound::Clips clips;
 
     // Locked doors (door_facts.md): "Bash", " Pick", " Knock", " Exit",
     // "Locked. " (GAME.OVR) and the Knock spell's number
