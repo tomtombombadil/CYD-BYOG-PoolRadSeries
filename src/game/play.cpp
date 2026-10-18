@@ -1970,7 +1970,7 @@ void halve_item(int i, pic::Canvas& c)
 
 void join_item(int i, pic::Canvas& c)
 {
-    rules::join(*pt->sel(), i);
+    rules::join(*pt->sel(), i, secret_files());
     rules::recalc(*pt->sel(), *names, d->facts);
     draw_items(c);
 }
@@ -6896,6 +6896,10 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         d->facts.feeble_fx = pi.stat_fx[4];
         d->facts.con_regen_fx = pi.stat_fx[5];
         d->facts.berserk_fx = pi.berserk;
+        d->facts.bonus_all_races = pi.bonus_all_races;
+        d->facts.light_magic_armour = pi.light_magic_armour;
+        d->facts.speed_fx = pi.speed_fx;
+        d->facts.sell_secret = pi.sell_secret;
         rules::set_berserk_fx(pi.berserk);
         items::set_passive(pi.passive);
         items::set_flame_fix(&pi.flame, CYD_ITEM_FIXES && opts.item_fixes);

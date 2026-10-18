@@ -1110,13 +1110,19 @@ const Profile kProfiles[] = {
      // file; arrows 30, quarrels 12, darts 5; the elves' bows and swords
      // 22-25, 18, 19 (its types are its words' numbers); the menu word
      .items = {.words = {0xED42, 21, 124}, .types_file = "ITEMS", .arrow = 30, .quarrel = 12, .dart = 5,
-               .elf_bonus = {22, 23, 24, 25, 18, 19},
+               .elf_bonus = {22, 23, 24, 25, 26, 18, 19},     // (and 26: GAME.OVR 0x382C6 - types 22-26)
                // (its GAME.OVR words where Curse's are; no "Weapon" / "Armor")
                .buy_items = 0x8532, .buy = 0x853A, .list_next = 0x3E5AF, .list_prev = 0x3E5B5,
                .list_exit = 0x3E5BB, .shop_menu = 0x8C6C, .shop_menu_money = 0x8C45, .no_money = 0x8962,
                .overloaded = 0x28FAD, .title = 0x2846B, .heading = 0x28471, .ready = 0x28433, .yes = 0x38574,
                .no = 0x3857B, .cursed = 0x28D33, .wrong_class = 0x28D40, .already = 0x28D4C,
-               .hands_full = 0x28D5B, .plural_s = 0x399AA},
+               .hands_full = 0x28D5B, .plural_s = 0x399AA,
+               // (its effects in the stats: Strength 0x26, giant strength 0x71,
+               // Enlarge 0x0C - as the fights' facts; the readied items' codes:
+               // items::kSecretPassive; the Boots of Speed's 0x4A)
+               .stat_fx = {0x26, 0x71, 0x0C, 0x0E, 0x44, 0x3E},
+               .passive = items::kSecretPassive,
+               .bonus_all_races = true, .light_magic_armour = true, .speed_fx = 0x4A, .sell_secret = true},
      // Character rules (secret_facts.md 9): the tables in Secret's shapes
      // (classes::Layout secret: 7 classes, levels to 18, 119 spells, its
      // own race order), the rest of character making not known yet

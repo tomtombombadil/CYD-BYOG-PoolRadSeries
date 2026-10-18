@@ -176,14 +176,15 @@ void spell_slots(party::Character& c, const Tables& t)
     }
     // Rings of Wizardry readied (Curse's item effect 0x81): magic-user levels 1-3 doubled, each
     for (int i = 0; i < c.n_items; ++i)
-        if (c.items[i][0x34] && items::passive(c.items[i]) == items::Passive::Wizardry)
-            for (int k = 0; k < 3; ++k) cast(c, 2, k) = static_cast<uint8_t>(cast(c, 2, k) * 2);
+        if (c.items[i][0x34] && items::passive(c.items[i]) == items::Passive::Wizardry) wizardry(c, t, true);
 }
 
 void wizardry(party::Character& c, const Tables& t, bool on)
 {
     if (on) {
-        for (int k = 0; k < 3; ++k) cast(c, 2, k) = static_cast<uint8_t>(cast(c, 2, k) * 2);
+        // (Secret's ready routine, GAME.OVR 0x28BDD: the 5th level's alone - record 0x14B)
+        const int from = t.lay.secret ? 4 : 0, to = t.lay.secret ? 5 : 3;
+        for (int k = from; k < to; ++k) cast(c, 2, k) = static_cast<uint8_t>(cast(c, 2, k) * 2);
         return;
     }
     // Off: the slots as they are without it; magic-user spells past them forgotten (the later first)

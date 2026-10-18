@@ -121,6 +121,18 @@ const Passive kPoolPassive[kPassiveCodes] = {
     Passive::None, Passive::None, Passive::None, Passive::None,
 };
 
+// Secret's (its ready routine GAME.OVR 0x28B84 and the stats routine
+// 0x374A8): Curse's codes, but 3 is Strength 18/00 in the stats (its
+// Gauntlets of Ogre Power, 0x83), and its ring of wizardry (1) doubles the
+// 5th level's spells (classes::spell_slots); 4 (keyed to an alignment) does
+// nothing in its ready routine
+const Passive kSecretPassive[kPassiveCodes] = {
+    Passive::Effect, Passive::Wizardry, Passive::Dexterity, Passive::Ogre1800,
+    Passive::None, Passive::GiantGirdle, Passive::Dwarves, Passive::None,
+    Passive::Ioun, Passive::HammerOff, Passive::Fumbling, Passive::Thievery,
+    Passive::Stupidity, Passive::Powerless, Passive::None, Passive::None,
+};
+
 namespace {
 const Passive* g_passive = kCursePassive;
 }
