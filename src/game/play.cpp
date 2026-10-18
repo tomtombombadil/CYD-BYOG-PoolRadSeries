@@ -663,6 +663,28 @@ void draw_overland(pic::Canvas& c)
 }
 
 bool world_parked = false;           // the 3D view's walls on the card during a fight (play_fight.inc)
+// Darkness's background (darkness_facts.md 7.3): indoors (the square's
+// flags 0x80) BACK1's picture of the look; outdoors SKYGRND - with the gold
+// frame (style 0 / 4) night from hour 14 (2), overcast with game byte 0x3A
+// (3), else day (1); the other styles the red sky (4)
+void dk_background()
+{
+    const uint8_t* gb = d->gs.area1;
+    const bool in = geo::flags(d->map, d->gs.x, d->gs.y) >= 0x80;
+    int block;
+    if (in) block = d->save.look;
+    else if (gb[0x39] == 0 || gb[0x39] == 4) block = gb[0x07] >= 14 ? 2 : gb[0x3A] ? 3 : 1;
+    else block = 4;
+    const uint8_t id = static_cast<uint8_t>((in ? 0x10 : 0x20) | (block & 15));
+    if (d->world.back && d->world.back_id == id) return;
+    plat::File f;
+    if (block > 0 && open_dax(in ? "BACK1.DAX" : "SKYGRND.DAX", f)) {
+        plat::FileSource src(f);
+        view3d::load_back(src, d->idx, static_cast<uint8_t>(block), id, d->world);
+        f.close();
+    }
+}
+
 void draw_view(pic::Canvas& c)
 {
     if (world_parked) return;
@@ -690,6 +712,7 @@ void draw_view(pic::Canvas& c)
             view3d::draw(c, d->world, d->map, d->gs.x, d->gs.y, d->gs.dir,
                          view3d::pool_bands(sky_colour(), vm->view_byte(0), vm->view_byte(1)));
         } else {
+            if (d->world.dk) dk_background();
             view3d::draw(c, d->world, d->map, d->gs.x, d->gs.y, d->gs.dir, sky_colour());
         }
     }
@@ -7232,6 +7255,43 @@ struct Host : ecl::Host {
             f.close();
         }
     }
+    // Darkness: LOAD FILES' look - WALLDEF1's three parts and 8X8D1's
+    // tiles of that number (darkness_facts.md 7.3); kept for saving
+    void load_look(int look) override
+    {
+        view3d::World& wd = d->world;
+        plat::File f;
+        int n = 0;
+        if (open_dax("WALLDEF1.DAX", f)) {
+            plat::FileSource src(f);
+            if (!view3d::load_walls(src, d->idx, 1, static_cast<uint8_t>(look), wd, &n)) n = 0;
+            f.close();
+        }
+        bool tiles = false;
+        if (open_dax("8X8D1.DAX", f)) {
+            plat::FileSource src(f);
+            tiles = view3d::load_vga_tiles(src, d->idx, static_cast<uint8_t>(look), wd);
+            f.close();
+        }
+        d->save.look = static_cast<uint16_t>(look);
+        d->save.look_slot = 1;
+        plat::log("[play] look %d: %d wall sets, tiles %s\n", look, n, tiles ? "ok" : "missing");
+    }
+    // Darkness: the frame's style (BORDERS block 0-3), the screen's frame again
+    void style(int v) override
+    {
+        plat::File f;
+        if (open_dax("BORDERS.DAX", f)) {
+            plat::FileSource src(f);
+            layout::load_vga_tiles(src, d->idx, static_cast<uint8_t>(v), d->frame_tiles, 20, 11, cv->bpp == 4);
+            f.close();
+        }
+        if (screen == Screen::Game) {
+            draw_frame(*cv);
+            draw_panel(*cv);
+            draw_view(*cv);
+        }
+    }
     void picture(int id, int head) override
     {
         pic::Canvas& c = *cv;
@@ -7931,6 +7991,10 @@ void begin_adventuring()
                 for (int i = 0; i < 3; ++i)
                     if (ml.walls[i] != ecl::kNone) host->load_walls(i + 1, ml.walls[i]);
             }
+        } else if (dungeon && darkness_files()) {
+            // (Darkness: its map and its look again - darkness_facts.md S8)
+            host->load_map(vm->get(0x4BC5) & 0xFF);
+            if (d->save.look) host->load_look(d->save.look);
         } else if (dungeon) {
             if (d->save.wall_block[0] > 0) host->load_map(vm->get(0x4BC5) & 0xFF);
             for (int i = 0; i < 3; ++i)

@@ -185,6 +185,9 @@ void to_darkness(const Character& c, uint8_t out[kDarknessRecordSize]);
 // money, alignment, AC base, magic resistance, status (and "enabled" with
 // it), hostile, HP now. False: not one of them.
 bool darkness_script_set(Character& c, uint16_t off, uint8_t v);
+// Byte `off` of a record as Darkness's file would hold it (to_darkness's,
+// one byte): rec Curse's layout, ext its Ext (null: a monster's - none)
+uint8_t darkness_byte(const uint8_t* rec, const uint8_t* ext, int n_items, uint16_t off);
 // Items as a game's file holds them: `stride` bytes a record, the first
 // kItemSize kept (Secret's .STF: kSecretItemSize)
 void read_items(dax::ByteSource& src, Character& out, uint32_t stride);

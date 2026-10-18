@@ -832,6 +832,8 @@ constexpr ecl::OpSet kDarknessEcl = [] {
     s.load_pieces = 0xFF;           // (none: 0x37 is FIND NPC)
     s.end_op = 0x23;
     s.files_look = true;
+    s.byte_map = true;
+    s.vault_word = 0x31;            // (COMBAT with no monsters: game byte 0x31 the vault)
     return s;
 }();
 
@@ -1333,6 +1335,7 @@ const Profile kProfiles[] = {
      .overlay = "GAME.OVR", .overlay_size = 264086,
      .first_area = 1, .last_area = 1,
      .ecl_ops = &kDarknessEcl,
+     .start_area = 1, .start_script = 16,           // (a new game: block 16, Phlan's docks)
      // The party menu (darkness_facts.md 34): 13 entries of 42 at DS
      // 0x11B9; its words mostly in the program's data (kP: image =
      // 0x9E70 + DS) - "Select", "load which game: ", the list's headings
@@ -1353,6 +1356,9 @@ const Profile kProfiles[] = {
      .view = {{0xACC7, 27, 18}, {0xAEAD, 9, 7}, {0xAEEC, 17, 9}, {0xAF85, 7, 2}, {0xAF93, 11, 3}, {0xAFB4, 13, 9},
               0, 0x23899, 0x238B4, 0x238A2, 0x238A8, 0x23891, 0x23FEB, 0x23FDF, 0x24003, 0x2401B, 0x23FF7,
               0x2400C, 0, 5},
+     // The script machine's words (darkness_facts.md S10): DAMAGE's lines,
+     // PRESS KEY's prompt, JOURNAL's sentence, WHAT MENU's question, "Yes No"
+     .script_words = {0, 0, 0x7B42, 0x7B4A, 0x7B57, 0x19C2, kP | 0xAC82, 0x261D, 0x2640, 0x1212, kP | 0xC9D4},
      .variant = {.unfinished = true, .program_words = true, .vga = true, .darkness_files = true, .party_menu_col = 9},
      .font_file = "8X8D0.DAX"},
 };
