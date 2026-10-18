@@ -332,6 +332,631 @@ void every_monster(bool fixes_on)
     rules::set_fixes(true);
 }
 
+// ---- A2: the Level (GAME.OVR 0x101A) on every monster: the other side's
+// hit points and maximum x (level + 2) / 4 kept in a byte, both 1 when
+// either comes to 0; the party's side as it is
+void every_level()
+{
+    using namespace play;
+    if (!boot()) return;
+    for (int id : ids()) {
+        Raw r;
+        if (!raw(id, r)) continue;
+        for (int L = 0; L < 5; ++L) {
+            vm->set(0x4CF4, static_cast<uint16_t>(L));
+            fight_clear_monsters();
+            fight_load_monster(id, 1, id);
+            const int f = ot("m_level_mul", L);
+            int want = r.s[0x1B5], want_max = r.s[0x70];
+            if (r.s[0x1A8] == 1) {
+                want = r.s[0x1B5] * f / 4 & 0xFF;
+                want_max = r.s[0x70] * f / 4 & 0xFF;
+                if (!want || !want_max) want = want_max = 1;
+            }
+            const bool ok = ml && ml->n == 1 && ml->m[0].rec[0x1A4] == want && ml->m[0].rec[0x78] == want_max;
+            char w[80];
+            snprintf(w, sizeof w, "the Level %d: #%d %s's hit points", L, id, r.name);
+            expect(Q, w, ok, "%d / %d, the original's %d / %d", ml && ml->n ? ml->m[0].rec[0x1A4] : -1,
+                   ml && ml->n ? ml->m[0].rec[0x78] : -1, want, want_max);
+        }
+    }
+    fight_clear_monsters();
+    vm->set(0x4CF4, 2);
+}
+
+// ---- B: each effect Secret's monsters use (MON1SPC: 06 18 25 38 3A 3B 3C
+// 40 41 42 43 46 49 4F 50 51 53 56 58 5A 5C 5D 60 62 63 67 68), its handler
+// in GAME.OVR (the effect overlay 0x10CCB; table at 0x14637) against the
+// engine's code path, plain creatures in the fire knives' fight
+// The dice: a queue of (sides, face) taken when the sides match, else the
+// highest (or lowest) face
+std::vector<std::pair<int, int>> dq;
+bool d_low = false;
+int q_die(int n)
+{
+    for (size_t k = 0; k < dq.size(); ++k)
+        if (dq[k].first == n) {
+            const int v = dq[k].second;
+            dq.erase(dq.begin() + static_cast<long>(k));
+            return v - 1;
+        }
+    return d_low ? 0 : n - 1;
+}
+void dice(std::initializer_list<std::pair<int, int>> q, bool low = false)
+{
+    dq.assign(q.begin(), q.end());
+    d_low = low;
+    create::g_die_hook = q_die;
+}
+void no_dice()
+{
+    dq.clear();
+    create::g_die_hook = nullptr;
+}
+// Plain items for blows (synthetic: type, plus, readied)
+uint8_t wpn[2][items::kRecordSize];
+void arm(int i, int type, int plus)
+{
+    memset(wpn[i & 1], 0, sizeof wpn[0]);
+    wpn[i & 1][0x2E] = static_cast<uint8_t>(type);
+    wpn[i & 1][0x32] = static_cast<uint8_t>(plus);
+    wpn[i & 1][0x34] = 1;
+    F(i).items = wpn + (i & 1);
+    F(i).n_items = 1;
+}
+void unarm(int i)
+{
+    F(i).items = nullptr;
+    F(i).n_items = 0;
+}
+// One blow from a to c (the slot: 0 attack 1, 1 attack 2) - 1d4, to-hit
+// 45 against AC 50, the d20 as asked (then the rest of the queue)
+combat::Attack blow(int a, int c, int slot, int d20, std::initializer_list<std::pair<int, int>> rest = {})
+{
+    combat::Fighter& f = F(a);
+    f.attacks[0] = slot == 0 ? 1 : 0;
+    f.attacks[1] = slot == 1 ? 1 : 0;
+    f.rec[0x199] = 45;
+    f.rec[0x19E] = f.rec[0x19F] = 1;
+    f.rec[0x1A0] = f.rec[0x1A1] = 4;
+    f.rec[0x1A2] = f.rec[0x1A3] = 0;
+    f.target = c;
+    F(c).received = 0;
+    F(c).turns = 0;
+    F(c).rec[0x19A] = 50;
+    std::vector<std::pair<int, int>> q{{20, d20}};
+    q.insert(q.end(), rest.begin(), rest.end());
+    dq = q;
+    d_low = false;
+    create::g_die_hook = q_die;
+    const combat::Attack r = combat::attack(fg->b, a, c, names, rng, false);
+    no_dice();
+    return r;
+}
+int dmg_of(const combat::Attack& r)
+{
+    int n = 0;
+    for (int k = 0; k < r.n; ++k)
+        if (r.hits[k].hit) n += r.hits[k].damage;
+    return n;
+}
+bool hits(const combat::Attack& r)
+{
+    for (int k = 0; k < r.n; ++k)
+        if (r.hits[k].hit) return true;
+    return false;
+}
+void saves(int i, int v)
+{
+    for (int k = 0; k < 5; ++k) F(i).rec[0xDF + k] = static_cast<uint8_t>(v);
+}
+int harm_of(int c, int amount, int kind, int level = 0)
+{
+    combat::Harm h;
+    h.kind = kind;
+    h.level = level;
+    return combat::harm(fg->b, c, amount, h, rng, nullptr);
+}
+combat::Event evs[32];
+int nev = 0;
+bool ends = false;
+int special(int i)
+{
+    g_now += 0;
+    nev = combat::special(fg->b, fg->t, i, rng, evs, 32, &ends);
+    return nev;
+}
+bool said(combat::Ev e, int who = -1)
+{
+    for (int k = 0; k < nev; ++k)
+        if (evs[k].ev == e && (who < 0 || evs[k].who == who)) return true;
+    return false;
+}
+void show()
+{
+    if (!getenv("MDEBUG")) return;
+    for (int k = 0; k < nev; ++k) printf("   ev %d who %d amount %d kind %d\n", static_cast<int>(evs[k].ev), evs[k].who, evs[k].amount, evs[k].kind);
+}
+int damage_to(int who)
+{
+    show();
+    int n = 0;
+    for (int k = 0; k < nev; ++k)
+        if (evs[k].ev == combat::Ev::Damage && evs[k].who == who) n += evs[k].amount;
+    return n;
+}
+int combat_find(int i, int type)
+{
+    for (int k = 0; F(i).n_aff && k < *F(i).n_aff; ++k)
+        if (F(i).aff[k][0] == type) return k;
+    return -1;
+}
+// Everyone off the field but these (the others' size 0)
+void only(std::initializer_list<int> keep)
+{
+    combat::Battle& b = fg->b;
+    for (int i = 0; i < b.n; ++i) {
+        bool k = false;
+        for (int j : keep) k = k || j == i;
+        if (!k) b.f[i].size = 0;
+        if (b.f[i].n_aff) *b.f[i].n_aff = 0;
+    }
+    // (the fallen leave their bodies on the ground: plain floor again)
+    const int floor = b.ground[0][0];
+    for (int y = 0; y < combat::kH; ++y)
+        for (int x = 0; x < combat::kW; ++x) b.ground[y][x] = static_cast<uint8_t>(floor);
+    b.round = 0;
+    combat::occupancy(b);
+}
+
+void effects()
+{
+    using namespace play;
+    char w[120];
+    if (!new_fight()) {
+        expect(Q, "a fight", false);
+        return;
+    }
+    combat::Battle& b = fg->b;
+    const int m = 6, p = 0, p2 = 1, m2 = 7;
+    // 06 / 5D / 62 (GAME.OVR 0x11082 / 0x13B99 / 0x13D10, its phase 6 - the
+    // damage routine's): damage of kind & 4 / 1 / 2 none (breath's 0x21 /
+    // 0x22 too), other kinds as they come
+    const struct { int fx, kind, other; const char* what; } imm[] = {
+        {0x06, 4, 1, "electricity"}, {0x5D, 1, 2, "fire"}, {0x5D, 0x21, 0x10, "fire breath"}, {0x62, 2, 4, "cold"},
+        {0x62, 0x22, 8, "cold breath"}};
+    for (const auto& c : imm) {
+        only({m});
+        put(m, 1, 10, 10, 100, 10);
+        give(m, c.fx);
+        dice({});
+        const int a = harm_of(m, 20, c.kind), o = harm_of(m, 20, c.other);
+        no_dice();
+        snprintf(w, sizeof w, "effect %02X: no %s damage, other kinds whole", c.fx, c.what);
+        expect(Q, w, a == 0 && o == 20 && F(m).hp() == 80, "%d / %d, HP %d", a, o, F(m).hp());
+    }
+    // 49 (0x1310F, phase 6): damage of kind & 0x20 (breath) none
+    only({m});
+    put(m, 1, 10, 10, 100, 10);
+    give(m, 0x49);
+    dice({});
+    {
+        const int a = harm_of(m, 30, 0x21), c = harm_of(m, 30, 0x22), o = harm_of(m, 30, 1);
+        no_dice();
+        expect(Q, "effect 49 (the dragons): no breath damage, a fire spell whole", a == 0 && c == 0 && o == 30, "%d %d %d", a,
+               c, o);
+    }
+    // 4F (0x13354, phases 6 and 9 - the iron golem): fire and magic heals by
+    // the damage (to its maximum), electricity slows it 3 rounds; nothing
+    // else hurts it; a spell's effect never takes
+    {
+        only({m});
+        put(m, 1, 10, 10, 80, 18);
+        F(m).rec[0x1A4] = 50;
+        give(m, 0x4F);
+        dice({});
+        const int fire = harm_of(m, 20, 9, 10);
+        expect(Q, "effect 4F: fire and magic heals by the damage", fire == 0 && F(m).hp() == 70, "%d, HP %d", fire, F(m).hp());
+        harm_of(m, 40, 9, 10);
+        expect(Q, "effect 4F: healed to its maximum", F(m).hp() == 80, "HP %d", F(m).hp());
+        const int el = harm_of(m, 30, 0x0C, 10);
+        expect(Q, "effect 4F: electricity slows it 3 rounds, no damage", el == 0 && aff_time(m, d->prof->fight.facts.slow) == 3 &&
+                                                                           F(m).hp() == 80,
+               "%d, slowed %d, HP %d", el, aff_time(m, d->prof->fight.facts.slow), F(m).hp());
+        const int ac = harm_of(m, 30, 0x10), br = harm_of(m, 30, 0x21), mg = harm_of(m, 30, 8, 10), none = harm_of(m, 30, 0);
+        expect(Q, "effect 4F: acid, fire breath, magic, plain damage nothing", ac == 0 && br == 0 && mg == 0 && none == 0 &&
+                                                                                F(m).hp() == 80,
+               "%d %d %d %d", ac, br, mg, none);
+        combat::Harm h;
+        h.level = 12;
+        expect(Q, "effect 4F: a spell's effect (charm) resisted", combat::resists(b, m, d->prof->fight.facts.charm, h, rng));
+        no_dice();
+    }
+    // 3C (0x125FB, phase 5 - a weapon's blow on it): none but a +3 weapon or better's
+    for (int plus : {0, 2, 3}) {
+        only({m, p});
+        put(m, 1, 11, 10, 80, 18);
+        give(m, 0x3C);
+        put(p, 0, 10, 10, 60);
+        arm(p, 18, plus);
+        const combat::Attack r = blow(p, m, 0, 19);
+        snprintf(w, sizeof w, "effect 3C (the iron golem): a +%d long sword's hit", plus);
+        expect(Q, w, hits(r) && (plus >= 3 ? F(m).hp() < 80 : F(m).hp() == 80), "HP %d", F(m).hp());
+        unarm(p);
+    }
+    // 5A (0x138B2, phase 5 - the giant slug): a blunt weapon's blow (its
+    // type's byte 7 & 0x80: the mace) nothing; an edged one's and an empty
+    // hand's whole
+    {
+        const struct { int type; bool hurts; const char* what; } bl[] = {{9, false, "a mace (blunt)"}, {18, true, "a long sword"}, {0, true, "no weapon"}};
+        for (const auto& c : bl) {
+            only({m, p});
+            put(m, 1, 11, 10, 80, 12);
+            give(m, 0x5A);
+            put(p, 0, 10, 10, 60);
+            if (c.type) arm(p, c.type, 0);
+            else unarm(p);
+            const combat::Attack r = blow(p, m, 0, 19);
+            snprintf(w, sizeof w, "effect 5A (the giant slug): %s's hit %s", c.what, c.hurts ? "hurts" : "does nothing");
+            expect(Q, w, hits(r) && (F(m).hp() < 80) == c.hurts, "HP %d (blow byte %02X)", F(m).hp(),
+                   names->type(c.type).blow);
+            unarm(p);
+        }
+        // and it never breathes acid (Curse's 0x5A was the black dragon's breath)
+        only({m, p});
+        put(m, 1, 10, 10, 54, 12);
+        give(m, 0x5A);
+        put(p, 0, 12, 10, 60);
+        dice({});
+        special(m);
+        no_dice();
+        expect(Q, "effect 5A: no breath of any kind", !said(combat::Ev::BreathesAcid) && damage_to(p) == 0, "%d events", nev);
+    }
+    // 67 (0x1421E, phase 5): a blow with no weapon or a +0 one does nothing
+    // when the attacker is of a player race (1-6), or a monster under 4 Hit
+    // Dice; a magic weapon always hurts
+    {
+        const struct { int race, hd, type, plus; bool hurts; const char* what; } nm[] = {
+            {7, 1, 18, 0, false, "a human, a +0 sword"}, {7, 1, 18, 1, true, "a human, a +1 sword"},
+            {7, 9, 0, 0, false, "a human of 9 HD, no weapon"}, {0, 4, 0, 0, true, "a monster of 4 HD, no weapon"},
+            {0, 3, 0, 0, false, "a monster of 3 HD, no weapon"}, {0, 3, 18, 1, true, "a monster of 3 HD, a +1 sword"}};
+        for (const auto& c : nm) {
+            only({m, p});
+            put(m, 1, 11, 10, 80, 6);
+            give(m, 0x67);
+            put(p, 0, 10, 10, 60, c.hd);
+            F(p).rec[0x74] = static_cast<uint8_t>(c.race);
+            if (c.type) arm(p, c.type, c.plus);
+            else unarm(p);
+            const combat::Attack r = blow(p, m, 0, 19);
+            snprintf(w, sizeof w, "effect 67: %s %s", c.what, c.hurts ? "hurts" : "does nothing");
+            expect(Q, w, hits(r) && (F(m).hp() < 80) == c.hurts, "HP %d", F(m).hp());
+            unarm(p);
+            F(p).rec[0x74] = 7;
+        }
+    }
+    // 40 (0x12814): only after attack 2's hit (its list 3 - not attack 1's,
+    // list 2: 0x41 0x56 0x58), the target saves against poison or dies; 56
+    // (0x13821) the same at -2, after either attack; 58 (0x1383E -> 0x10CDF)
+    // after either attack: a save against poison or paralysed 10 rounds
+    {
+        const int poisoned = d->prof->fight.facts.mon.poisoned, para = d->prof->fight.facts.mon.paralyzed;
+        const struct { int fx, slot, save, d20; int status; bool para; const char* what; } ps[] = {
+            {0x40, 1, 12, 11, party::Dead, false, "40 on attack 2, the save failed: dead"},
+            {0x40, 1, 12, 12, party::Okay, false, "40 on attack 2, the save made"},
+            {0x40, 0, 12, 11, party::Okay, false, "40 on attack 1: nothing"},
+            {0x56, 0, 12, 13, party::Dead, false, "56 on attack 1, 13 against 12 at -2: dead"},
+            {0x56, 1, 12, 14, party::Okay, false, "56 on attack 2, 14 against 12 at -2: made"},
+            {0x58, 0, 12, 11, party::Okay, true, "58 on attack 1, the save failed: paralysed"},
+            {0x58, 1, 12, 11, party::Okay, true, "58 on attack 2, the save failed: paralysed"},
+            {0x58, 0, 12, 12, party::Okay, false, "58, the save made"}};
+        for (const auto& c : ps) {
+            only({m, p});
+            put(m, 1, 11, 10, 60, 5);
+            give(m, c.fx);
+            put(p, 0, 10, 10, 60);
+            saves(p, c.save);
+            unarm(m);
+            const combat::Attack r = blow(m, p, c.slot, 19, {{20, c.d20}});
+            const int pt_ = aff_time(p, para);
+            snprintf(w, sizeof w, "effect %s", c.what);
+            expect(Q, w, hits(r) && F(p).status() == c.status && (c.para ? pt_ == 10 : pt_ < 0),
+                   "status %d, paralysed %d, poisoned %d", F(p).status(), pt_, aff_time(p, poisoned));
+        }
+    }
+    // 41 (0x12844, after either attack): a save against petrification or stoned
+    for (int slot : {0, 1})
+        for (int d20 : {11, 12}) {
+            only({m, p});
+            put(m, 1, 11, 10, 60, 5);
+            give(m, 0x41);
+            put(p, 0, 10, 10, 60);
+            saves(p, 12);
+            const combat::Attack r = blow(m, p, slot, 19, {{20, d20}});
+            snprintf(w, sizeof w, "effect 41 (the cockatrice) on attack %d, the save d20 %d against 12", slot + 1, d20);
+            expect(Q, w, hits(r) && F(p).status() == (d20 < 12 ? party::Stoned : party::Okay), "status %d", F(p).status());
+        }
+    // 42 (0x128F1, phase 4 - its damage): a natural 20 swallows whole, either attack
+    for (int slot : {0, 1})
+        for (int d20 : {20, 19}) {
+            only({m, p});
+            put(m, 1, 11, 10, 60, 14);
+            give(m, 0x42);
+            put(p, 0, 10, 10, 120);
+            blow(m, p, slot, d20);
+            snprintf(w, sizeof w, "effect 42 (the remorhaz) on attack %d, d20 %d", slot + 1, d20);
+            expect(Q, w, (F(p).status() == party::Dead) == (d20 == 20), "status %d", F(p).status());
+        }
+    // 25 (0x11C9D, phases 1 and 15 - blink): once it has acted this round
+    // (its delay 0) blows miss it
+    for (int delay : {0, 5}) {
+        only({m, p});
+        put(m, 1, 11, 10, 60, 5);
+        give(m, 0x25);
+        F(m).delay = delay;
+        put(p, 0, 10, 10, 60);
+        const combat::Attack r = blow(p, m, 0, 19);
+        snprintf(w, sizeof w, "effect 25 (the phase spider), its delay %d", delay);
+        expect(Q, w, hits(r) == (delay != 0), "hit %d", hits(r));
+    }
+    // 38 (0x12387, phases 8 - the fight's start - and 19 - the round's end):
+    // invisible (0x19) for the round, again each round
+    {
+        const int inv = d->prof->fight.facts.invisible;
+        only({m});
+        put(m, 1, 11, 10, 60, 5);
+        give(m, 0x38);
+        combat::battle_start(b, &rng);
+        const bool at_start = aff_time(m, inv) >= 0;
+        for (int k = 0; F(m).n_aff && k < *F(m).n_aff; ++k)
+            if (F(m).aff[k][0] == inv) F(m).aff[k][0] = 0x7F;      // (seen: gone)
+        combat::tick(b);
+        expect(Q, "effect 38 (the dreadlord): invisible at the start and again at a round's end", at_start && aff_time(m, inv) >= 0,
+               "start %d, after the round %d", at_start, aff_time(m, inv));
+        // 18 (no handler; looked for by 0x19's, 0x116EA): it sees the invisible - no -4 to hit them
+        only({m, p});
+        put(m, 1, 11, 10, 60, 5);
+        put(p, 0, 10, 10, 60);
+        give(p, inv);
+        F(m).rec[0x199] = 45;
+        const combat::Attack r1 = blow(m, p, 0, 5);          // 5 + 45 = 50: hits AC 50 unless -4
+        give(m, 0x18);
+        const combat::Attack r2 = blow(m, p, 0, 5);
+        expect(Q, "effect 18: an invisible target -4, not for one with 18", !hits(r1) && hits(r2), "%d %d", hits(r1), hits(r2));
+    }
+    // 5C / 60 / 63 (0x13B81 / 0x13C70 / 0x13D31, phase 9): no fear (6F); no
+    // charm (0B) or sleep (35); no poison (37) or paralysis (34), saves
+    // against poison always made
+    {
+        const auto& fx = d->prof->fight.facts;
+        combat::Harm h;
+        h.level = 12;
+        const struct { int fx, effect; const char* what; } mr[] = {
+            {0x5C, fx.fear, "5C: fear"}, {0x60, fx.charm, "60: charm"}, {0x60, fx.mon.sleep, "60: sleep"},
+            {0x63, fx.mon.poisoned, "63: poison"}, {0x63, fx.mon.paralyzed, "63: paralysis"}};
+        for (const auto& c : mr) {
+            only({m});
+            put(m, 1, 11, 10, 60, 5);
+            const bool before = combat::resists(b, m, c.effect, h, rng);
+            give(m, c.fx);
+            const bool after = combat::resists(b, m, c.effect, h, rng);
+            snprintf(w, sizeof w, "effect %s resisted", c.what);
+            expect(Q, w, !before && after, "%d %d", before, after);
+        }
+        only({m});
+        put(m, 1, 11, 10, 60, 5);
+        give(m, 0x63);
+        saves(m, 20);
+        dice({{20, 2}});
+        const bool made = combat::saving_throw(F(m), 0, 0, rng);
+        no_dice();
+        expect(Q, "effect 63: a save against poison made on a 2", made);
+    }
+    no_dice();
+}
+
+// ---- C: the monsters' own turns (phase 14: 3A 43 46 50 51 53 68 6B -
+// each handler at its turn's start)
+void turns()
+{
+    using namespace play;
+    char w[120];
+    if (!new_fight()) {
+        expect(Q, "a fight", false);
+        return;
+    }
+    combat::Battle& b = fg->b;
+    const int m = 6, p = 0, p2 = 1, m2 = 7;
+    // 3A (0x1242D): its pick within its pseudo-spell 0x3D's reach (6
+    // squares): "gazes...", a save against petrification (kind 1) or
+    // stoned; one with 0x48 sends it back when the gazer has 0x3B
+    for (int dist : {6, 7}) {
+        only({m, p});
+        put(m, 1, 10, 10, 40, 6);
+        give(m, 0x3A);
+        put(p, 0, 10 + dist, 10, 60);
+        saves(p, 12);
+        dice({{20, 5}});
+        special(m);
+        no_dice();
+        snprintf(w, sizeof w, "effect 3A: the gaze at %d squares, the save failed", dist);
+        expect(Q, w, (F(p).status() == party::Stoned) == (dist <= 6) && !ends, "status %d, gazed %d", F(p).status(),
+               said(combat::Ev::Gazes));
+    }
+    for (int mirror : {0, 1}) {
+        only({m, p});
+        put(m, 1, 10, 10, 40, 6);
+        give(m, 0x3B);
+        give(m, 0x3A);
+        saves(m, 12);
+        put(p, 0, 12, 10, 60);
+        saves(p, 12);
+        if (mirror) give(p, 0x48);
+        dice({{20, 5}});
+        special(m);
+        no_dice();
+        snprintf(w, sizeof w, "effects 3A + 3B: the gaze at one %s 0x48", mirror ? "with" : "without");
+        expect(Q, w, mirror ? F(m).status() == party::Stoned && F(p).status() == party::Okay
+                            : F(p).status() == party::Stoned && F(m).status() == party::Okay,
+               "gazer %d, target %d", F(m).status(), F(p).status());
+    }
+    // 43 (0x12D5F): the round count 1 to its attacks byte (0x121), its own
+    // target next to it: 8, fire and breath (0x21), a breath save for half; it fights on
+    {
+        const struct { int round, half, dist; int want; const char* what; } py[] = {
+            {0, 24, 1, 0, "the first round (count 0): nothing"}, {1, 24, 1, 8, "round 2 next to it: 8"},
+            {24, 24, 1, 8, "count 24 of 24: 8"}, {25, 24, 1, 0, "count 25 of 24: nothing"},
+            {3, 24, 2, 0, "two squares away: nothing"}};
+        for (const auto& c : py) {
+            only({m, p});
+            put(m, 1, 10, 10, 54, 12);
+            give(m, 0x43);
+            F(m).rec[0x11C] = static_cast<uint8_t>(c.half);
+            put(p, 0, 10 + c.dist, 10, 60);
+            saves(p, 12);
+            F(m).target = p;
+            b.round = c.round;
+            dice({{20, 5}});
+            special(m);
+            no_dice();
+            snprintf(w, sizeof w, "effect 43 (the pyrohydra): %s", c.what);
+            expect(Q, w, damage_to(p) == c.want && !ends, "%d", damage_to(p));
+        }
+        // the save made: half; its target someone else (not next to it): nothing
+        only({m, p, p2});
+        put(m, 1, 10, 10, 54, 12);
+        give(m, 0x43);
+        F(m).rec[0x11C] = 24;
+        put(p, 0, 11, 10, 60);
+        put(p2, 0, 14, 10, 60);
+        saves(p, 12);
+        b.round = 2;
+        F(m).target = p;
+        dice({{20, 15}});
+        special(m);
+        no_dice();
+        expect(Q, "effect 43: the save made, half (4)", damage_to(p) == 4, "%d", damage_to(p));
+        F(m).target = p2;
+        dice({{20, 5}});
+        special(m);
+        no_dice();
+        expect(Q, "effect 43: at its own target only (not next to it: nothing)", damage_to(p) == 0 && damage_to(p2) == 0);
+    }
+    // 46 (0x12FAF): one next to it (its pseudo-spell 0x44's reach): a save
+    // against spells or confused (23) 1d10 + 2 rounds
+    for (int dist : {1, 2}) {
+        only({m, p});
+        put(m, 1, 10, 10, 56, 10);
+        give(m, 0x46);
+        put(p, 0, 10 + dist, 10, 60);
+        saves(p, 12);
+        dice({{20, 5}, {10, 7}});
+        special(m);
+        no_dice();
+        const int conf = aff_time(p, d->prof->fight.facts.sp.confuse);
+        snprintf(w, sizeof w, "effect 46 (the umber hulk) at %d squares, the save failed", dist);
+        expect(Q, w, dist == 1 ? conf == 9 : conf < 0, "confused %d", conf);
+    }
+    // 50 (0x13457): every turn (no roll), one next to it: 7, fire and
+    // breath, a breath save for half; it fights on
+    for (int dist : {1, 2}) {
+        only({m, p});
+        put(m, 1, 10, 10, 32, 7);
+        give(m, 0x50);
+        put(p, 0, 10 + dist, 10, 60);
+        saves(p, 12);
+        dice({{100, 100}, {20, 5}});
+        special(m);
+        no_dice();
+        snprintf(w, sizeof w, "effect 50 (the hell hound) at %d squares, d100 100", dist);
+        expect(Q, w, damage_to(p) == (dist == 1 ? 7 : 0) && !ends, "%d, ends %d", damage_to(p), ends);
+    }
+    // 51 (0x13587): its pick within 6 (pseudo-spell 0x3D); (11 - squares) x
+    // 10% - 10% when the count is 0 - 4d8 acid (0x10), a breath save for
+    // half; else "Spits and misses"
+    {
+        const struct { int round, dist, d100; bool spits, misses; const char* what; } sl[] = {
+            {0, 3, 10, true, false, "the first round, d100 10 of 10%"}, {0, 3, 11, false, true, "the first round, d100 11"},
+            {1, 3, 80, true, false, "3 squares, d100 80 of 80%"}, {1, 3, 81, false, true, "3 squares, d100 81"},
+            {1, 7, 1, false, false, "7 squares: past its reach"}};
+        for (const auto& c : sl) {
+            only({m, p});
+            put(m, 1, 10, 10, 54, 12);
+            give(m, 0x51);
+            put(p, 0, 10 + c.dist, 10, 200);
+            saves(p, 12);
+            b.round = c.round;
+            dice({{100, c.d100}, {20, 5}});
+            special(m);
+            no_dice();
+            snprintf(w, sizeof w, "effect 51 (the giant slug): %s", c.what);
+            expect(Q, w, (damage_to(p) == 32) == c.spits && said(combat::Ev::SpitsMisses) == c.misses && !ends,
+                   "%d, misses %d", damage_to(p), said(combat::Ev::SpitsMisses));
+        }
+    }
+    // 53 / 68 (0x327F9): 3 a fight (the effect's data: 3 when the count is
+    // 0 or over 3), its pick within 6, 3 lines of 7 / 9: its maximum hit
+    // points, cold / fire and breath, a breath save for half; never with
+    // one of its side on the path; its turn ends
+    for (int fx : {0x53, 0x68}) {
+        const int kind = fx == 0x53 ? 0x22 : 0x21;
+        only({m, p, p2, m2});
+        put(m, 1, 10, 10, 44, 11);
+        give(m, fx);
+        put(p, 0, 13, 10, 200);
+        put(p2, 0, 14, 10, 200);
+        saves(p, 12);
+        saves(p2, 12);
+        put(m2, 1, 3, 3, 30);
+        b.round = 0;
+        dice({{20, 5}, {20, 15}});
+        special(m);
+        no_dice();
+        snprintf(w, sizeof w, "effect %02X: breath at 3 squares - its maximum HP, half on a save", fx);
+        expect(Q, w, damage_to(p) == 44 && damage_to(p2) == 22 && ends, "%d %d, ends %d", damage_to(p), damage_to(p2), ends);
+        // two more, then none
+        int n_breaths = 1;
+        for (int k = 0; k < 3; ++k) {
+            F(p).rec[0x1A4] = F(p2).rec[0x1A4] = 200;
+            b.round = 1 + k;
+            dice({});
+            special(m);
+            no_dice();
+            if (damage_to(p) > 0) ++n_breaths;
+        }
+        snprintf(w, sizeof w, "effect %02X: 3 breaths a fight", fx);
+        expect(Q, w, n_breaths == 3, "%d", n_breaths);
+        // a friend on its path: no breath
+        only({m, p, m2});
+        put(m, 1, 10, 10, 44, 11);
+        give(m, fx);
+        put(p, 0, 13, 10, 200);
+        put(m2, 1, 12, 10, 30);
+        b.round = 0;
+        dice({});
+        special(m);
+        no_dice();
+        snprintf(w, sizeof w, "effect %02X: one of its side on the path - no breath", fx);
+        expect(Q, w, damage_to(p) == 0 && damage_to(m2) == 0 && !ends, "%d %d", damage_to(p), damage_to(m2));
+        // its count over 3 later in the fight: 3 again
+        only({m, p});
+        put(m, 1, 10, 10, 44, 11);
+        give(m, fx);
+        F(m).aff[combat_find(m, fx)][3] = 0xFF;         // (as the file's)
+        put(p, 0, 13, 10, 200);
+        saves(p, 12);
+        b.round = 4;
+        dice({{20, 5}});
+        special(m);
+        no_dice();
+        const int k = combat_find(m, fx);
+        snprintf(w, sizeof w, "effect %02X: a first breath in round 5 - 3 then 2 left", fx);
+        expect(Q, w, damage_to(p) == 44 && k >= 0 && F(m).aff[k][3] == 2, "%d, left %d", damage_to(p), k >= 0 ? F(m).aff[k][3] : -1);
+        (void)kind;
+    }
+    b.round = 0;
+}
+
 } // namespace mons
 
 void all_monsters()
@@ -340,5 +965,9 @@ void all_monsters()
     if (mons::part("a")) {
         mons::every_monster(false);         // the original's
         mons::every_monster(true);          // the Item Fixes on (the default)
+        mons::every_level();
     }
+    if (mons::part("b")) mons::effects();
+    if (mons::part("c")) mons::turns();
+    mons::no_dice();
 }

@@ -1544,6 +1544,15 @@ void after_hit(Battle& b, int a, int c, int slot, int roll, int hits1, create::D
             add_event(out, c, Ev::ParalyzedLow);
         }
         if (hasx(at, m.chill)) touch(d.roll(8, 2), 0x0A);
+        // Secret's: the -2 poison and the paralysis after attack 1's hits
+        // too (its list after attack 1: 0x41 0x56 0x58 - GAME.OVR 0x36289)
+        if (m.secret_ways) {
+            if (hasx(at, m.poison_m2)) poison(-2);
+            if (hasx(at, m.kreen_bite) && m.paralyzed && tg.up() && !saving_throw(tg, 0, 0, d)) {
+                give_aff(tg, m.paralyzed, m.para_rounds ? m.para_rounds : d.roll(8, 2), 12, false);
+                add_event(out, c, Ev::Paralyzed);
+            }
+        }
         // Dispel Evil's blow: the evil dispelled (the caster's Dispel Evil goes with it)
         const SpellFx& sx = b.fx->sp;
         if (hasx(at, sx.evil_bane) && tg.up()) {
@@ -1585,7 +1594,8 @@ void after_hit(Battle& b, int a, int c, int slot, int roll, int hits1, create::D
         if (hasx(at, m.poison_p4)) poison(4);
         if (hasx(at, m.poison_p2)) poison(2);
         if (hasx(at, m.kreen_bite) && m.paralyzed && tg.up() && !saving_throw(tg, 0, 0, d)) {
-            give_aff(tg, m.paralyzed, d.roll(8, 2), 12, false);
+            // (Secret's: 10 rounds - GAME.OVR 0x10CDF)
+            give_aff(tg, m.paralyzed, m.para_rounds ? m.para_rounds : d.roll(8, 2), 12, false);
             add_event(out, c, Ev::Paralyzed);
         }
         if (hasx(at, m.poison_m2)) poison(-2);
@@ -1841,6 +1851,8 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                 if (hasx(tg, m.half)) dmg /= 2;
                 // Secret's iron golem: a +3 weapon or better, else nothing (even a monster's blow)
                 if (hasx(tg, m.need_plus3) && (!item || plus < 3)) dmg = 0;
+                // Secret's giant slug: a blunt weapon's blow (its type's byte 7 & 0x80) nothing
+                if (hasx(tg, m.blunt_proof) && item && names && (names->type(item[0x2E]).blow & 0x80)) dmg = 0;
                 if (hasx(tg, m.pierce_one) && item && names && names->type(item[0x2E]).blow == 1) dmg = 1;
                 // Pool's undead: only magic (any plus) or silver hurts the
                 // wight; the wraith takes half from +0 silver, nothing from
@@ -2169,6 +2181,20 @@ int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* dow
             d.roll(8, 1);                       // (rolled, not used)
             f.rec[kHp] = static_cast<uint8_t>(f.rec[kHp] + 8);
         }
+        // Secret's iron golem (GAME.OVR 0x13354): fire and magic heals it by
+        // the damage (to its maximum), electricity slows it 3 rounds; no
+        // damage of any kind
+        if (hasx(f, m.golem)) {
+            if ((h.kind & 1) && (h.kind & 8)) {
+                const int hp = f.hp() + dmg;
+                f.rec[kHp] = static_cast<uint8_t>(hp > f.hp_max() ? f.hp_max() : hp);
+            } else if ((h.kind & 4) && b.fx->slow) {
+                give_aff(f, b.fx->slow, 3, 0xFF, false);
+            }
+            safe = true;
+        }
+        // Secret's dragons: no damage from breath (GAME.OVR 0x1310F)
+        if (hasx(f, m.no_breath) && (h.kind & 0x20)) safe = true;
         if (hasx(f, m.no_magic) && (h.kind & 8)) safe = true;
         if (hasx(f, m.death_ward) && (h.kind & 0x40)) safe = true;
         if (hasx(f, m.no_elec) && (h.kind & 4)) safe = true;
@@ -4476,21 +4502,31 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
     auto breaths = [&](uint8_t type) -> uint8_t* {
         const int k = find_aff(f, type);
         if (k < 0) return nullptr;
-        if (b.round == 0) f.aff[k][3] = 3;
+        if (b.round == 0 || (m.secret_ways && f.aff[k][3] > 3)) f.aff[k][3] = 3;   // (Secret: over 3 too)
         return &f.aff[k][3];
     };
     Harm breath;
     breath.save = 3;
     breath.on_save = 2;
+    // Secret's pseudo-spells' reaches (0: Curse's for each)
+    const int reach_far = m.far_reach, reach_near = m.near_reach;
+    // (Secret: a breath not with one of its own side on its path)
+    auto friend_on = [&](const int* on, int k) {
+        for (int j = 0; j < k; ++j)
+            if (b.f[on[j]].team() == f.team()) return true;
+        return false;
+    };
 
     // The stone gaze (the hooded medusa): a save against petrification or
     // stoned; a readied mirror sends it back at the medusa
     if (hasx(f, m.stone_gaze)) {
-        int tg = special_target(b, t, i, 12, false, d);
+        int tg = special_target(b, t, i, reach_far ? reach_far : 12, false, d);
         if (tg >= 0) {
             ev(i, Ev::Gazes);
             fly(i, b.f[tg].x, b.f[tg].y, 5, 4, 45);
-            if (hasx(f, m.mirror_gaze) && m.mirror_word && readied_word(b.f[tg], m.mirror_word)) {
+            // (Secret's: sent back by its target's effect 0x48 - GAME.OVR 0x1250A)
+            if (hasx(f, m.mirror_gaze) && ((m.mirror_word && readied_word(b.f[tg], m.mirror_word)) ||
+                                           (m.reflect && hasx(b.f[tg], m.reflect)))) {
                 ev(tg, Ev::Reflects);
                 fly(tg, f.x, f.y, 5, 4, 45);
                 tg = i;
@@ -4571,18 +4607,21 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
     // The giant slug's acid: 30% of its turns at one within 6 squares
     // (its maximum hit points, a save for half); it fights on
     if (hasx(f, m.slug_spit) && m.slug_secret) {
-        // Secret's (GAME.OVR 0x13587): a chance of (11 - squares) x 10%,
-        // 4d8 acid, a breath save for half (its 10% for round 0 never
-        // happens in a fight: its round count starts at 1)
-        const int tg = special_target(b, t, i, 12, false, d);
+        // Secret's (GAME.OVR 0x13587): its pick within its pseudo-spell
+        // 0x3D's reach; a chance of (11 - squares) x 10% - 10% in the first
+        // round (its round count 0) - 4d8 acid, a breath save for half;
+        // missed: "Spits and misses"
+        const int tg = special_target(b, t, i, reach_far ? reach_far : 12, false, d);
         const int sq = tg >= 0 ? squares_to(b, t, i, tg) : 99;
-        const int chance = sq > 11 ? 0 : (11 - sq) * 10;
+        const int chance = tg < 0 || sq > 11 ? 0 : b.round == 0 ? 10 : (11 - sq) * 10;
         if (chance > 0 && d.roll(100, 1) <= chance) {
             ev(i, Ev::SpitsAcid);
             fly(i, b.f[tg].x, b.f[tg].y, 10, 1, 30);
             Harm h = breath;
             h.kind = 0x10;
             hurt(tg, d.roll(8, 4), h);
+        } else if (chance > 0) {
+            ev(i, Ev::SpitsMisses);
         }
     } else if (hasx(f, m.slug_spit)) {
         const int tg = special_target(b, t, i, 12, false, d);
@@ -4647,9 +4686,7 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
         if (tg >= 0) {
             int on[kMaxFighters];
             const int k = cone(b, t, i, b.f[tg].x, b.f[tg].y, 6, 1, on, kMaxFighters);
-            bool friend_on = false;
-            for (int j = 0; j < k; ++j) friend_on = friend_on || b.f[on[j]].team() == f.team();
-            if (k && !friend_on) {
+            if (k && !friend_on(on, k)) {
                 ev(i, Ev::BreathesAcid);
                 fly(i, b.f[tg].x, b.f[tg].y, 5, 1, 30);
                 Harm h = breath;
@@ -4670,15 +4707,18 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
         if (tg >= 0) {
             int on[kMaxFighters];
             const int k = cone(b, t, i, b.f[tg].x, b.f[tg].y, 9, 3, on, kMaxFighters);
-            ev(i, Ev::BreathesFire);
-            fly(i, b.f[tg].x, b.f[tg].y, 5, 1, 30);
-            Harm h = breath;
-            h.kind = 0x21;
-            const int amount = f.hp_max();
-            for (int j = 0; j < k; ++j) hurt(on[j], amount, h);
-            --*left;
-            *ends_turn = true;
-            return n;
+            // (Secret's: none on its path, or one of its own side - no breath; GAME.OVR 0x328D5)
+            if (!m.secret_ways || (k && !friend_on(on, k))) {
+                ev(i, Ev::BreathesFire);
+                fly(i, b.f[tg].x, b.f[tg].y, 5, 1, 30);
+                Harm h = breath;
+                h.kind = 0x21;
+                const int amount = f.hp_max();
+                for (int j = 0; j < k; ++j) hurt(on[j], amount, h);
+                --*left;
+                *ends_turn = true;
+                return n;
+            }
         }
     }
     // Secret's cold breath (the white dragons; GAME.OVR 0x327F9): as the
@@ -4689,21 +4729,27 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
         if (tg >= 0) {
             int on[kMaxFighters];
             const int k = cone(b, t, i, b.f[tg].x, b.f[tg].y, 7, 3, on, kMaxFighters);
-            ev(i, Ev::BreathesCold);
-            fly(i, b.f[tg].x, b.f[tg].y, 5, 1, 30);
-            Harm h = breath;
-            h.kind = 0x22;
-            const int amount = f.hp_max();
-            for (int j = 0; j < k; ++j) hurt(on[j], amount, h);
-            --*left;
-            *ends_turn = true;
-            return n;
+            // (Secret's: none on its path, or one of its own side - no breath; GAME.OVR 0x328D5)
+            if (!m.secret_ways || (k && !friend_on(on, k))) {
+                ev(i, Ev::BreathesCold);
+                fly(i, b.f[tg].x, b.f[tg].y, 5, 1, 30);
+                Harm h = breath;
+                h.kind = 0x22;
+                const int amount = f.hp_max();
+                for (int j = 0; j < k; ++j) hurt(on[j], amount, h);
+                --*left;
+                *ends_turn = true;
+                return n;
+            }
         }
     }
     // Secret's pyrohydra (GAME.OVR 0x12D5F): while the round is within its
     // attacks byte, at one next to it: "Breathes Fire", 8 (a save for half)
-    if (hasx(f, m.pyro_fire) && f.rec[0x11C] >= b.round + 1) {     // (its round count starts at 1)
-        const int tg = special_target(b, t, i, 12, false, d);
+    // - its round count 0 in the first round (set at the fight's setup,
+    // GAME.OVR 0x10095, + 1 after each round): nothing then; its target the
+    // one it last aimed at (its fight data's target, 0x12D97)
+    if (hasx(f, m.pyro_fire) && b.round >= 1 && f.rec[0x11C] >= b.round) {
+        const int tg = f.target >= 0 && f.target < b.n && b.f[f.target].up() && b.f[f.target].team() != f.team() ? f.target : -1;
         if (tg >= 0 && squares_to(b, t, i, tg) < 2) {
             ev(i, Ev::HoundFire);
             fly(i, b.f[tg].x, b.f[tg].y, 10, 1, 30);
@@ -4715,7 +4761,7 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
     // Secret's umber hulk (GAME.OVR 0x12FAF): its gaze at one next to it -
     // a save against spells or confused 1d10 + 2 rounds ("stares blankly")
     if (hasx(f, m.confuse_gaze) && b.fx->sp.confuse) {
-        const int tg = special_target(b, t, i, 12, false, d);
+        const int tg = special_target(b, t, i, reach_near ? reach_near : 12, false, d);
         if (tg >= 0 && squares_to(b, t, i, tg) < 2) {
             ev(i, Ev::Gazes);
             fly(i, b.f[tg].x, b.f[tg].y, 0x2D, 4, 45);
@@ -4728,17 +4774,19 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
         }
     }
     // The hell hound: half its turns, next to its pick: 7 fire (a save for half)
+    // (Secret's, GAME.OVR 0x13457: every turn at one next to it (its
+    // pseudo-spell 0x44's reach), 7 fire and breath; it fights on)
     if (hasx(f, m.hound_fire)) {
-        const int tg = special_target(b, t, i, 12, false, d);
-        const int roll = d.roll(100, 1);
+        const int tg = special_target(b, t, i, reach_near ? reach_near : 12, false, d);
+        const int roll = m.secret_ways ? 1 : d.roll(100, 1);
         if (roll <= 50 && tg >= 0 && squares_to(b, t, i, tg) < 2) {
-            *ends_turn = true;
+            *ends_turn = !m.secret_ways;
             ev(i, Ev::HoundFire);
             fly(i, b.f[tg].x, b.f[tg].y, 10, 1, 30);
             Harm h = breath;
-            h.kind = 1;
+            h.kind = m.secret_ways ? 0x21 : 1;
             hurt(tg, 7, h);
-            return n;
+            if (!m.secret_ways) return n;
         }
     }
     // Thrown lightning (Tyranthraxus): the first 4 rounds, 16d6 to the one

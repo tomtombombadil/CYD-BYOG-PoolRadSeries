@@ -1232,14 +1232,14 @@ const Profile kProfiles[] = {
                 .faerie = 0, .blinded = 0x21, .animals_blind = 0x45, .feeble = 0x44,
                 // Its monsters' effects (MON1SPC): deadly poison 0x40 / -2 0x56, paralysis on a hit
                 // 0x58, immune to nonmagical weapons 0x67, fire 0x5D, cold 0x62, electricity 0x06,
-                // the iron golem's spell immunity 0x4F, the gazes 0x3A / 0x3B, breath 0x5A / 0x53 /
-                // 0x50; 0x51 and 0x60 unnamed in Secret - taken as Curse's (half damage, the hug)
+                // the iron golem's spell immunity 0x4F, the gazes 0x3A / 0x3B, breath 0x68 / 0x53 /
+                // 0x50, the slug's spit 0x51, charm and sleep 0x60
                 .mon = {.poison = 0x40, .poison_m2 = 0x56, .kreen_bite = 0x58, .heat_proof = {0x14, 0x36, 0x3D},
                         .need_magic = 0x67,
                         .no_fire = 0x5D, .no_cold = 0x62, .no_elec = 0x06,
                         .no_magic = 0x4F, .globe = 0x3F, .elf_sleep = 0x5F, .charm_sleep = 0x60,
                         .detect = 0x18, .prot_evil_near = 0x2D,
-                        .acid_breath = 0x5A, .fire_breath = 0x68, .hound_fire = 0x50, .slug_spit = 0x51, .stone_gaze = 0x3A,
+                        .fire_breath = 0x68, .hound_fire = 0x50, .slug_spit = 0x51, .stone_gaze = 0x3A,
                         .mirror_gaze = 0x3B,
                         .paralyzed = 0x34, .poisoned = 0x37, .sleep = 0x35,
                         // Secret's own (secret_facts_2.md 15): the iron golem, cockatrice,
@@ -1247,7 +1247,13 @@ const Profile kProfiles[] = {
                         // dreadlord's immunities (fear; charm and sleep; poison and paralysis)
                         .need_plus3 = 0x3C, .petrify_hit = 0x41, .swallow = 0x42, .pyro_fire = 0x43,
                         .confuse_gaze = 0x46, .cold_breath = 0x53, .no_fear = 0x5C, .no_poison = 0x63,
-                        .slug_secret = true},
+                        .slug_secret = true,
+                        // (secret_facts_2.md 29.monsters: 0x5A is the slug's blunt-weapon
+                        // immunity, not an acid breath; 0x49 the dragons' breath immunity;
+                        // the iron golem's damage rule; the gaze's mirror effect 0x48;
+                        // the pseudo-spells 0x3D / 0x44's reaches; paralysis 10 rounds)
+                        .blunt_proof = 0x5A, .no_breath = 0x49, .golem = 0x4F, .reflect = 0x48,
+                        .far_reach = 6, .near_reach = 1, .para_rounds = 10, .secret_ways = true},
                 .sp = {.enlarge = 0x0C, .confuse = 0x23, .berserk = 0x4D, .evil_ward = 0x04, .evil_bane = 0x20,
                        .hot = 0x32, .cold = 0x36, .zap = 0x70, .slow_poison = 0x16, .poison_damage = 0x0F,
                        .hammer = 0x17, .animated = 0, .con_regen = 0x3E, .giant = 0x71, .shield = 0x11,
