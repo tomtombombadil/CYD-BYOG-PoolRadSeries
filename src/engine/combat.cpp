@@ -1723,6 +1723,11 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                 for (const uint8_t* nm : tt.dodge_names)
                     if (nm[0] && nm[0] < 16 && !memcmp(at.rec, nm, nm[0] + 1)) side -= 4;
             }
+        } else if (fx.race.secret_flags) {
+            // Secret's (GAME.OVR 0x11703 / 0x110A1, the attacker's phase):
+            // dwarves +1 against flags 1 & 0x80, gnomes against flags 2 & 4
+            if (hasx(at, fx.race.dwarf_orc) && (tg.rec[0x14B] & 0x80)) ++side;
+            if (hasx(at, fx.race.gnome_foe) && (tg.flags2 & 4)) ++side;
         } else {
             if (hasx(at, fx.race.dwarf_orc) && (tg.rec[0x14B] & 4)) ++side;
             if (hasx(at, fx.race.gnome_foe) && (tg.rec[0x14B] & 2)) ++side;
@@ -1810,7 +1815,10 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             dmg += wbonus;
             if (slayer) dmg = d.roll(12, 1) * 3 + 4 + rules::strength_damage(at.rec);
             // A ranger against giants: their ranger level more
-            if (b.fx && hasx(at, b.fx->race.ranger_giant) && (tg.rec[0x14B] & 8)) dmg += at.rec[0x10D];
+            // (Secret's only next to it: GAME.OVR 0x1427D, the distance at most 1)
+            if (b.fx && hasx(at, b.fx->race.ranger_giant) && (tg.rec[0x14B] & 8) &&
+                (!b.fx->race.secret_flags || adjacent(b, a, c)))
+                dmg += at.rec[0x10D];
             bool bane = false;
             if (b.fx) {
                 const MonFx& m = b.fx->mon;

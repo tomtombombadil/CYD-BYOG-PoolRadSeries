@@ -1251,7 +1251,10 @@ const Profile kProfiles[] = {
                        .hot = 0x32, .cold = 0x36, .zap = 0x70, .slow_poison = 0x16, .poison_damage = 0x0F,
                        .hammer = 0x17, .animated = 0, .con_regen = 0x3E, .giant = 0x71, .shield = 0x11,
                        .enfeeble = 0x1D, .ill = 0x22, .weak = 0x2B, .sick = 0x2C, .stun = 0x6A},
-                .race = {0x61, 0x12, 0x1A, 0x07, 0x2F, 0x30, 0x69},
+                // the races (GAME.OVR 0x10CCB's handlers by its effect phases, 0x3624E):
+                // 0x61 (Constitution) is in no phase - never applied; 0x2F / 0x30 change the
+                // d20 before it's rolled (phase 0xB) or at a turn's start (0xF) - nothing
+                .race = {0, 0x12, 0x1A, 0x07, 0, 0, 0x69, true},
                 .items = {.displace = 0x59, .ring_invisible = 0x38},
                 .berserk = 0x6B},
                kSecretFight, sizeof kSecretFight / sizeof kSecretFight[0]},
