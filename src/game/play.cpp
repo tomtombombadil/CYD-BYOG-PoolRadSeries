@@ -6899,6 +6899,7 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         rules::set_berserk_fx(pi.berserk);
         items::set_passive(pi.passive);
         items::set_flame_fix(&pi.flame, CYD_ITEM_FIXES && opts.item_fixes);
+        rules::set_fixes(CYD_ITEM_FIXES && opts.item_fixes);
         rules::set_worn_facts(pi.effect_data, pi.stat_fx[1]);
         {
             const auto& pc = d->prof->create;
@@ -9491,6 +9492,7 @@ void set_options(const Options& o)
     if (!d) return;
     // The items the originals got wrong: as now wanted, the party's too (mid-game)
     items::set_flame_fix(&d->prof->items.flame, CYD_ITEM_FIXES && opts.item_fixes);
+    rules::set_fixes(CYD_ITEM_FIXES && opts.item_fixes);
     for (int i = 0; pt && i < pt->count; ++i)
         if (rules::fix_items(pt->m[i]) && names) rules::recalc(pt->m[i], *names, d->facts);
     const int letters = font_wanted();
