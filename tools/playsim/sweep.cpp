@@ -397,7 +397,7 @@ static int cast_spell_menu()
 
 static void sweep_spells()
 {
-    for (int sp = 1; sp <= 0x64; ++sp) {
+    for (int sp = 1; sp <= 0x7F; ++sp) {             // (Secret's go to 118)
         if (getenv("ONLY") && sp != static_cast<int>(strtol(getenv("ONLY"), nullptr, 16))) continue;
         bool known = false;
         if (!boot()) {

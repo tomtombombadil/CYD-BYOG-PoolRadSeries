@@ -4,7 +4,8 @@
 // vault's file, training's hit points - against the oracle (Secret's tables, read from the
 // player's program by a scratch script, and the constants of the
 // Project's claude/secret_facts.md / secret_facts_2.md), never against the
-// engine's own code. ONLY= values, train, level, vault, spells, monsters.
+// engine's own code. ONLY= values, train, level, vault, spells, monsters,
+// allspells, allmonsters, allitems, allsituations.
 #include "behave_oracle.inc"
 
 namespace bsecret {
@@ -435,6 +436,13 @@ void monster_abilities()
     expect(P, "the iron golem: a blow with no weapon does nothing", F(t).hp() == 80, "%d hits, HP %d", hits, F(t).hp());
 }
 
+// Every spell, monster, item and the rest (2026-10-18: Secret playable -
+// the full checks; a file each)
+#include "behave_secret_spells.inc"
+#include "behave_secret_monsters.inc"
+#include "behave_secret_items.inc"
+#include "behave_secret_situations.inc"
+
 } // namespace bsecret
 
 static void behave_secret()
@@ -462,4 +470,8 @@ static void behave_secret()
     if (want("vault")) vault_file();
     if (want("spells")) spells_past_100();
     if (want("monsters")) monster_abilities();
+    if (want("allspells")) all_spells();
+    if (want("allmonsters")) all_monsters();
+    if (want("allitems")) all_items();
+    if (want("allsituations")) all_situations();
 }
