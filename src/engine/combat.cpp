@@ -2939,7 +2939,9 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
                 say(who[k], Did::Unaffected, 0);
                 continue;
             }
-            if (fs.kind != 1 && (sec ? f.rec[0x74] == 0 && !(f.flags2 & 2) : f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) {
+            // (Charm Person or Mammal, 0x60 - GAME.OVR 0x31D6B: or flags 1, record 0x15D (here 0x14B), & 2)
+            const bool person = f.rec[0x74] != 0 || (spell == 0x60 ? (f.rec[0x14B] & 2) : (f.flags2 & 2));
+            if (fs.kind != 1 && (sec ? !person : f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) {
                 say(who[k], Did::Word2, 0);
                 continue;
             }
@@ -3134,7 +3136,27 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             Fighter& f = b.f[who[k]];
             if (!f.up() || resisted(k, b.fx ? b.fx->feeble : 0)) continue;
             // This save only: a cleric -1, a magic-user +4, others +2 on the number needed
-            const int adj = f.rec[0x75] == 0 ? -1 : f.rec[0x75] == 5 ? 4 : 2;
+            int adj = f.rec[0x75] == 0 ? -1 : f.rec[0x75] == 5 ? 4 : 2;
+            if (b.fx && b.fx->secret) {
+                // Secret's (GAME.OVR 0x31B94) by the class byte: clerics (C/F, C/T) -1;
+                // rangers +1 at 8 Hit Dice, +2 from 9; paladins +4 from 9; magic-users
+                // (F/MU, F/MU/T, MU/T) +4 a human, else +2; C/F/MU, C/R, C/MU +2; any
+                // other class (fighters, thieves - most monsters) "is unaffected"
+                const int hd = f.rec[0xE5];
+                bool can = true;
+                switch (f.rec[0x75]) {
+                case 0: case 8: case 12: adj = -1; break;
+                case 4: adj = hd == 8 ? 1 : hd >= 9 ? 2 : 0; break;
+                case 3: adj = hd >= 9 ? 4 : 0; break;
+                case 5: case 13: case 15: case 16: adj = f.rec[0x74] == 7 ? 4 : 2; break;
+                case 9: case 10: case 11: adj = 2; break;
+                default: can = false; break;
+                }
+                if (!can) {
+                    say(who[k], Did::Unaffected, 0);
+                    continue;
+                }
+            }
             const uint8_t was = f.rec[0xE3];
             f.rec[0xE3] = static_cast<uint8_t>(was + adj);
             const bool saved = saving_throw(f, 4, 0, d);
