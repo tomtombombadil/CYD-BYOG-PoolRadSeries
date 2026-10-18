@@ -7312,6 +7312,14 @@ struct Host : ecl::Host {
                 const uint8_t* b = reinterpret_cast<const uint8_t*>(&rows.w[k]);
                 rows.w[k] = static_cast<uint16_t>(b[0] | b[1] << 8);       // (little-endian, as read)
             }
+            // Secret: its scrolls' spells, a level's table at a time
+            if (const treasure::SecretFacts* sf = p->random_items->secret)
+                for (int k = 0; ok && k < 2; ++k)
+                    for (int lv = 0; ok && lv < 7; ++lv)
+                        ok = exepack::read(src, info,
+                                           p->create.ds_image + (k ? sf->cleric_spells : sf->mu_spells) +
+                                               lv * (k ? sf->cleric_stride : sf->mu_stride),
+                                           rows.spells[k][lv], sizeof rows.spells[k][lv]) == exepack::Status::Ok;
             f.close();
         }
         if (!ok) {

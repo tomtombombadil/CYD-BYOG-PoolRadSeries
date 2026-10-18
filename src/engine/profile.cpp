@@ -562,6 +562,56 @@ constexpr treasure::Facts kCurseRandom = {
     {{8, 0}, {7, 21}, {8, 36}, {5, 65}, {6, 70}},
 };
 
+// Random treasure (Secret; the facts in tools: GAME.OVR 0x2BD8, its
+// create_item 0x34AB3, the rows at DS 0x0A2A, the scrolls' spells DS 0x585C
+// / 0x580C): the kind by nested dice, names, weights and values by type
+using treasure::Roll;
+constexpr treasure::RollTable kSecretRolls[] = {
+    {100, 7, {{31, 0, 1}, {62, 0x27, 0}, {70, 0x28, 0}, {80, 0x25, 0}, {85, 0x3B, 0}, {95, 0, 6}, {100, 0, 7}}},
+    {100, 4, {{20, 0, 2}, {44, 0, 3}, {60, 0, 4}, {100, 0, 5}}},
+    {10, 5, {{2, 0x06, 0}, {6, 0x08, 0}, {8, 0x46, 0}, {9, 0x0F, 0}, {10, 0x1D, 0}}},
+    {3, 3, {{1, 0x05, 0}, {2, 0x0C, 0}, {3, 0x1E, 0}}},
+    {20, 7, {{3, 0x07, 0}, {6, 0x18, 0}, {9, 0x16, 0}, {12, 0x19, 0}, {14, 0x17, 0}, {17, 0x1C, 0}, {20, 0x0F, 0}}},
+    {4, 2, {{3, 0, 8}, {4, 0, 9}}},
+    {20, 6, {{3, 0x1F, 0}, {11, 0x23, 0}, {16, 0x24, 0}, {17, 0x20, 0}, {18, 0x21, 0}, {20, 0x22, 0}}},
+    {6, 4, {{2, 0x32, 0}, {4, 0x2F, 0}, {5, 0x34, 0}, {6, 0x35, 0}}},
+    {20, 6, {{8, 0x12, 0}, {13, 0x11, 0}, {14, 0x0D, 0}, {15, 0x10, 0}, {18, 0x13, 0}, {20, 0x14, 0}}},
+    {8, 6, {{1, 0x01, 0}, {3, 0x04, 0}, {5, 0x09, 0}, {6, 0x0A, 0}, {7, 0x0E, 0}, {8, 0x47, 0}}},
+};
+constexpr treasure::NameRule kSecretNames[] = {
+    {0x1D, 0x1D, 0x1C, 4, 0, 0, 0},                // Staff Sling +n
+    {0x1F, 0, 0x30, 4, 0, 0, 0},                   // Leather Armor +n
+    {0x20, 0, 0x2F, 4, 0, 0, 0}, {0x21, 0, 0x2F, 4, 0, 0, 0}, {0x22, 0, 0x2F, 4, 0, 0, 0},
+    {0x23, 0, 0x2F, 4, 0, 0, 0}, {0x24, 0, 0x2F, 4, 0, 0, 0},   // Ring / Scale / Chain / Banded / Plate Mail +n
+    {0x32, 0, 0x5A, 6, 4, 0x6B, 0},                // Bracers of AC 6 (+4)
+    {0x3B, 0x2E, 0x31, 6, 1, 0, 1},                // Ring Of Prot +1 (1 against saves)
+};
+constexpr uint8_t kSecretWeightType[] = {0x01, 0x11, 0x06, 0x0E, 0x0F, 0x17, 0x19, 0x25, 0x1D, 0x09, 0x08,
+                                         0x10, 0x18, 0x46, 0x1F, 0x47, 0x04, 0x32, 0x05, 0x0A, 0x12, 0x16,
+                                         0x07, 0x0D, 0x13, 0x14, 0x20, 0x21, 0x22, 0x23, 0x24, 0x1C, 0x3B};
+constexpr uint16_t kSecretWeight[] = {75, 75, 50, 50, 50, 50, 50, 50, 50, 125, 100, 100, 100, 150, 150, 175, 10,
+                                      10, 5, 60, 60, 80, 20, 40, 35, 250, 250, 400, 300, 350, 450, 1, 1};
+static_assert(sizeof kSecretWeightType == sizeof kSecretWeight / 2, "weights");
+constexpr uint8_t kSecretValueType[] = {0x0C, 0x05, 0x1E, 0x25, 0x20, 0x21, 0x22, 0x23, 0x24, 0x32};
+constexpr uint16_t kSecretValue[] = {50, 50, 50, 1250, 1500, 1500, 1750, 2000, 2500, 1500};
+constexpr treasure::SecretFacts kSecretMake = {
+    kSecretRolls, sizeof kSecretRolls / sizeof kSecretRolls[0],
+    0x01, 0x25, {0x32, 0x46, 0x47, 0x3B},
+    10, {6, 9}, 0x6E,
+    kSecretNames, sizeof kSecretNames / sizeof kSecretNames[0],
+    {kSecretWeightType, kSecretWeight, sizeof kSecretWeightType, 4}, {0x05},
+    {kSecretValueType, kSecretValue, sizeof kSecretValueType, 1000},
+    0x27, 0x28, 3, 0x63, 0x27, 0x28, 0x26, 25, 150, 7, 6, 4, 0,
+    {10, 7, 11, 10, 4, 5, 3}, {8, 7, 8, 6, 6, 2, 0},
+    0x2F, {0, 0, 2, 2, 3, 3, 5, 5}, 0x34, 4, 0x35, 1, 0x07, 6,
+    0x585C, 0x580C, 11, 10,
+};
+constexpr treasure::Facts kSecretRandom = [] {
+    treasure::Facts f{};
+    f.secret = &kSecretMake;
+    return f;
+}();
+
 // Random treasure (Pool; poolrad_combat_facts.md 6, its ovr4 / ovr22 code):
 // Curse's types, words, weights and values; 3 scroll bands of its own; a
 // 20 makes +3 (bracers AC 2); 93-98 a d16 of its kinds, 99-100 type 0x45,
@@ -1266,6 +1316,9 @@ const Profile kProfiles[] = {
                           .scrolls = {39, 40}},
                 .berserk = 0x6B},
                kSecretFight, sizeof kSecretFight / sizeof kSecretFight[0]},
+     // Random treasure (TREASURE 0x80 + n): Secret's own making (kSecretMake),
+     // its rows of ready-made items at DS 0x0A2A (row r: word 1 + 8 r of DS 0x0A28)
+     .random_items = &kSecretRandom, .random_rows = 0x0A2A,
      // The sound driver: Curse's in START.EXE (segment 0x7E4), 13 sounds
      // (the same byte code but the missile's), its Tandy byte code past
      // the driver's code (secret_facts_2.md 22)

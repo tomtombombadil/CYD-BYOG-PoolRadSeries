@@ -126,10 +126,95 @@ void create(uint8_t* r, int type, const Facts& f, const Rows& rows, create::Dice
     if (type == f.javelin && d.roll(5, 1) == 5) from_row(r, f.javelin_start ? &rows.w[f.javelin_start] : rows.row(6));
 }
 
+int secret_roll(const SecretFacts& s, int t, create::Dice& d)
+{
+    for (int depth = 0; depth < 4 && t < s.n_tables; ++depth) {
+        const RollTable& rt = s.tables[t];
+        const int k = d.roll(rt.die, 1);
+        int pick = -1;
+        for (int i = 0; i < rt.n && pick < 0; ++i)
+            if (k <= rt.r[i].hi) pick = i;
+        if (pick < 0) return 0;
+        if (rt.r[pick].type) return rt.r[pick].type;
+        t = rt.r[pick].sub;
+    }
+    return 0;
+}
+
+void secret_create(uint8_t* r, int type, const SecretFacts& s, const Rows& rows, create::Dice& d)
+{
+    memset(r, 0, items::kRecordSize);
+    r[0x2E] = static_cast<uint8_t>(type);
+    r[0x35] = 6;
+    int row = -1;
+    if ((type >= s.plus_lo && type <= s.plus_hi) || type == s.plus_more[0] || type == s.plus_more[1] ||
+        type == s.plus_more[2] || type == s.plus_more[3]) {
+        const int p = d.roll(s.plus_die, 1);
+        int plus = p <= s.plus_band[0] ? 1 : p <= s.plus_band[1] ? 2 : 3;
+        if (type == s.javelin && d.roll(5, 1) == 5) row = s.javelin_row;
+        const NameRule* nr = nullptr;
+        for (int k = 0; k < s.n_names; ++k)
+            if (s.names[k].type == type) nr = &s.names[k];
+        if (nr && nr->plus) plus = nr->plus;
+        const uint8_t pw = static_cast<uint8_t>(s.plus_word + plus);
+        if (nr) {
+            r[0x31] = nr->w3 ? nr->w3 : static_cast<uint8_t>(type);
+            r[0x30] = nr->w2 ? nr->w2 : pw;
+            r[0x2F] = nr->w1 ? nr->w1 : nr->w2 ? pw : 0;
+            r[0x35] = nr->hidden;
+            r[0x33] = nr->saves;
+        } else {
+            r[0x31] = static_cast<uint8_t>(type);
+            r[0x30] = pw;
+        }
+        r[0x32] = static_cast<uint8_t>(plus);
+        const uint16_t w = s.weight.of(type);
+        set16(r, 0x37, w);
+        if (w == s.weight.other || type == s.twenty[0]) r[0x39] = 20;
+        set16(r, 0x3A, plus * s.value.of(type));
+    } else if (type == s.mu_scroll || type == s.cleric_scroll) {
+        const bool mu = type == s.mu_scroll;
+        const int n = d.roll(s.spells_die, 1);
+        r[0x2F] = static_cast<uint8_t>(s.count_word + n);
+        r[0x30] = s.scroll_word;
+        r[0x31] = mu ? s.mu_word : s.cleric_word;
+        r[0x32] = 1;
+        set16(r, 0x37, s.scroll_weight);
+        int value = 0;
+        for (int i = 0; i < n; ++i) {
+            if (mu) r[0x35] = s.mu_hidden;
+            else r[0x35] = s.cleric_hidden;
+            const int lv = d.roll(mu ? s.mu_levels : s.cleric_levels, 1);
+            const int k = d.roll((mu ? s.mu_dice : s.cleric_dice)[lv - 1], 1);
+            r[0x3C + i] = k < 11 ? rows.spells[mu ? 0 : 1][lv - 1][k]
+                                 : lv < 7 ? rows.spells[mu ? 0 : 1][lv][0] : 0;     // (11: the next level's [0])
+            value += s.scroll_value * lv;
+        }
+        set16(r, 0x3A, value);
+        return;
+    } else if (type == s.potion) {
+        row = s.potion_rows[d.roll(8, 1) - 1];
+    } else if (type == s.wand) {
+        row = s.wand_row;
+    } else if (type == s.giant) {
+        row = s.giant_row;
+    }
+    if (row >= 0) {
+        from_row(r, rows.row(row));
+        r[0x33] = 0;                               // (Secret's: nothing against saves)
+    }
+}
+
 } // namespace
 
 void make(uint8_t* rec, const Facts& f, const Rows& rows, create::Dice& d, uint8_t* last)
 {
+    if (f.secret) {
+        const int type = secret_roll(*f.secret, 0, d);
+        if (last) *last = static_cast<uint8_t>(type);
+        secret_create(rec, type, *f.secret, rows, d);
+        return;
+    }
     const int k = d.roll(100, 1);
     int type;
     if (k <= 60) {
