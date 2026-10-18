@@ -1449,6 +1449,12 @@ void attack_pages(int a, int t, const combat::Attack& at, bool behind, bool shot
         hit_page();
     }
     for (int k = 0; k < at.n && !at.slain; ++k) {
+        if (at.image[k]) {
+            // Secret: a mirror image took the blow - "lost an image"
+            add_page(t, fw(profile::kLostImage));
+            first = false;
+            continue;
+        }
         if (at.avoided[k]) {
             // A missile dodged: "Avoids it"
             add_page(t, fw(profile::kAvoidsIt));

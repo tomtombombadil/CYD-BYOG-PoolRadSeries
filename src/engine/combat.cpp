@@ -716,6 +716,24 @@ void drop_aff(Fighter& f, int i)
     memset(f.aff[*f.n_aff], 0, party::kAffectSize);
 }
 
+// An image of Mirror Image taken (effect k): Curse's whole data byte counts
+// down, gone at 0; Secret's images (data >> 4) one fewer, gone at none
+// (its handler GAME.OVR 0x117CE)
+// The clouds' ground values (the game's, else Curse's)
+static uint8_t cloud_g(const Battle& b) { return b.fx && b.fx->cloud_ground ? b.fx->cloud_ground : kCloudGround; }
+static uint8_t poison_g(const Battle& b) { return b.fx && b.fx->poison_ground ? b.fx->poison_ground : kPoisonGround; }
+
+static void lose_image(Battle& b, Fighter& f, int k)
+{
+    if (b.fx && b.fx->secret) {
+        const int images = (f.aff[k][3] >> 4) - 1;
+        if (images <= 0) drop_aff(f, k);
+        else f.aff[k][3] = static_cast<uint8_t>(images << 4 | (f.aff[k][3] & 0x0F));
+        return;
+    }
+    if (--f.aff[k][3] == 0) drop_aff(f, k);
+}
+
 void give_aff(Fighter& f, int type, int minutes, int data, bool call)
 {
     if (!f.n_aff) return;
@@ -1832,6 +1850,18 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                 if (hasx(at, m.heat) && !hasx(tg, m.heat_proof[0]) && !hasx(tg, m.heat_proof[1]) &&
                     !hasx(tg, m.heat_proof[2]))
                     dmg += d.roll(6, 1);
+                // Secret: Mirror Image takes weapon blows too (its handler 0x11751 is
+                // in the blow's damage phase 5, GAME.OVR 0x15098) - d(images + 1) over 1
+                if (b.fx->secret && b.fx->mirror) {
+                    const int mi = find_aff(tg, b.fx->mirror);
+                    if (mi >= 0 && d.roll((tg.aff[mi][3] >> 4) + 1, 1) > 1) {
+                        lose_image(b, tg, mi);
+                        out.image[out.n] = true;
+                        h.hit = false;
+                        out.hits[out.n++] = h;
+                        continue;
+                    }
+                }
                 // The target's defences against a blow: missiles dodged
                 const bool far = !adjacent(b, a, c);
                 bool dodged = false;
@@ -2150,7 +2180,7 @@ int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* dow
         const int images = mi < 0 ? 0 : b.fx->mirror_plain ? f.aff[mi][3] : f.aff[mi][3] >> 4;
         if (mi >= 0 && d.roll(images + 1, 1) > 1) {
             b.lost_image = c;
-            if (--f.aff[mi][3] == 0) drop_aff(f, mi);
+            lose_image(b, f, mi);
             return 0;
         }
         // Shield: Magic Missile stopped
@@ -2552,8 +2582,8 @@ Plan think(Battle& b, const Tables& t, int i, create::Dice& d)
         if (cost == 0xFF || cost > f.moves) continue;
         // Not further away than now
         const int nx = f.x + kDx[dir], ny = f.y + kDy[dir];
-        if (b.ground[ny][nx] == kCloudGround && !saving_throw(f, 0, 0, d)) continue;   // a cloud: only after a test save
-        if (b.ground[ny][nx] == kPoisonGround && f.rec[0xE5] < 7) continue;            // poison: never (below 7 Hit Dice)
+        if (b.ground[ny][nx] == cloud_g(b) && !saving_throw(f, 0, 0, d)) continue;   // a cloud: only after a test save
+        if (b.ground[ny][nx] == poison_g(b) && f.rec[0xE5] < 7) continue;            // poison: never (below 7 Hit Dice)
         int best = 9999;
         for (int j = 0; j < n0; ++j) {
             const int ddx = tg.x + ox[j] - nx, ddy = tg.y + oy[j] - ny;
@@ -4146,7 +4176,7 @@ int sq_dy(bool poison, int k) { return poison ? kDy[(k + 8) % 9] : kCloudDy[k]; 
 int ground_under(const Battle& b, int x, int y)
 {
     const int g = b.ground[y][x];
-    if (g != kCloudGround && g != kPoisonGround) return g;
+    if (g != cloud_g(b) && g != poison_g(b)) return g;
     for (int c = 0; c < b.n_clouds; ++c) {
         const Battle::Cloud& cl = b.clouds[c];
         for (int k = 0; k < cloud_squares(cl.poison); ++k)
@@ -4157,8 +4187,8 @@ int ground_under(const Battle& b, int x, int y)
 }
 } // namespace
 
-bool in_cloud(const Battle& b, int x, int y) { return on_field(x, y) && b.ground[y][x] == kCloudGround; }
-bool in_poison(const Battle& b, int x, int y) { return on_field(x, y) && b.ground[y][x] == kPoisonGround; }
+bool in_cloud(const Battle& b, int x, int y) { return on_field(x, y) && b.ground[y][x] == cloud_g(b); }
+bool in_poison(const Battle& b, int x, int y) { return on_field(x, y) && b.ground[y][x] == poison_g(b); }
 
 int cloud_fighters(const Battle& b, int x, int y, int* out, int cap, bool poison)
 {
@@ -4191,7 +4221,7 @@ bool lay_cloud(Battle& b, const Tables& t, int x, int y, int rounds, bool poison
         cl.present = static_cast<uint16_t>(cl.present | 1 << k);
     }
     for (int k = 0; k < cloud_squares(poison); ++k)
-        if (cl.present >> k & 1) b.ground[y + sq_dy(poison, k)][x + sq_dx(poison, k)] = poison ? kPoisonGround : kCloudGround;
+        if (cl.present >> k & 1) b.ground[y + sq_dy(poison, k)][x + sq_dx(poison, k)] = poison ? poison_g(b) : cloud_g(b);
     ++b.n_clouds;
     return true;
 }
@@ -4200,11 +4230,17 @@ Did breathe_cloud(Battle& b, int i, create::Dice& d)
 {
     Fighter& f = b.f[i];
     if (!f.up() || helpless(b, f)) return Did::Unaffected;
+    // Secret (GAME.OVR 0x36A3A): the undead (record 0xF2, here 0xE9), those
+    // immune to poison (0x63) and the unliving (flags 2 & 8) breathe nothing;
+    // its effects can't be dispelled (data 0xFF)
+    const bool sec = b.fx && b.fx->secret;
+    if (sec && (f.rec[0xE9] || hasx(f, b.fx->mon.no_poison) || (f.flags2 & 8))) return Did::Unaffected;
+    const int data = sec ? 0xFF : 0;
     if (saving_throw(f, 0, 0, d)) {
-        if (b.fx && b.fx->cough) give_aff(f, b.fx->cough, 1, 0, false);      // coughing for a round
+        if (b.fx && b.fx->cough) give_aff(f, b.fx->cough, 1, data, false);      // coughing for a round
         return Did::Word2;
     }
-    if (b.fx) give_aff(f, b.fx->held[3], d.roll(4, 1) + 1, 0, false);
+    if (b.fx) give_aff(f, b.fx->held[3], d.roll(4, 1) + 1, data, false);
     return Did::Word;
 }
 
@@ -4260,7 +4296,7 @@ int clouds_round(Battle& b)
         const Battle::Cloud& cl = b.clouds[c];
         for (int k = 0; k < cloud_squares(cl.poison); ++k)
             if (cl.present >> k & 1)
-                b.ground[cl.y + sq_dy(cl.poison, k)][cl.x + sq_dx(cl.poison, k)] = cl.poison ? kPoisonGround : kCloudGround;
+                b.ground[cl.y + sq_dy(cl.poison, k)][cl.x + sq_dx(cl.poison, k)] = cl.poison ? poison_g(b) : cloud_g(b);
     }
     return gone;
 }

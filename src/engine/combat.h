@@ -530,6 +530,7 @@ struct Attack {
     bool slain = false;                 // a helpless target: "slays helpless ... with one cruel blow"
     bool backstab = false;              // "-Backstabs-"
     bool avoided[8] = {};               // a hit dodged ("Avoids it"; counted a miss)
+    bool image[8] = {};                 // a hit taken by a mirror image ("lost an image"; Secret)
     Event ev[8];                        // the extras after hits (poison, paralysis, a touch's damage, engulfing ...)
     int  n_ev = 0;
     int  shots = 0;                     // the weapon's (slot 1) attacks made: a shot uses one missile each
