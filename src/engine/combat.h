@@ -256,6 +256,17 @@ struct Facts {
     // level / 4 + 2 (Curse: (level - 1) / 4 + 2)
     uint8_t backstab_armour = 0;
     bool    backstab_plain = false;
+    // Secret's spell rules (secret_facts_2.md 29.spells): its "persons" by
+    // race (Charm Person: Secret's race under 7 or flags 2 & 2; Hold Person:
+    // never its races 0 / 7), no size or type rule for Faerie Fire and Charm
+    // Monsters, Faerie Fire making the AC 2 worse (easier to hit), Sleep's 5
+    // Hit Dice costing 20, its snakes by flags 1 & 0x10, Enlarge's 23 from
+    // 12th level, Harm's byte damage, the Globe of Invulnerability
+    bool    secret = false;
+    uint8_t globe_major = 0;            // its Globe of Invulnerability's effect: spells up to the 4th level
+    // The clouds' ground values (0: Curse's 0x1E / 0x1C - kCloudGround, kPoisonGround;
+    // Secret's 0x1D / 0x1B, its ground table's pictures 28 / 26 - GAME.OVR 0x2F39F, 0x31A43)
+    uint8_t cloud_ground = 0, poison_ground = 0;
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a

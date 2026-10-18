@@ -1735,7 +1735,11 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
         if (fx.sp.shield && tg.has(fx.sp.shield) && ac < 0x39) ac = 0x39;   // Shield: AC 3 at worst
         // Faerie Fire: the stored AC + 2 (to AC 0 at most) - the original's
         // own rule, which makes the target harder to hit
-        if (fx.faerie && tg.has(fx.faerie)) ac = ac < 58 ? ac + 2 : 60;
+        if (fx.faerie && tg.has(fx.faerie)) {
+            // (Secret's handler, GAME.OVR 0x130DA: the target's AC 2 worse - easier to hit)
+            if (fx.secret) ac -= 2;
+            else ac = ac < 58 ? ac + 2 : 60;
+        }
         // (protection from evil / good: the original's -2 to hit comes before
         // the roll and is lost; only the saves count)
         // Attacking makes them seen
@@ -2796,8 +2800,12 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         if (fs.does == SpellDoes::Hold) bonus = m == 1 ? (spell == 0x17 ? -2 : -3) : m == 2 ? -1 : 0;
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
-            // The hold spells take persons only (but Hold Monsters)
-            if (fs.does == SpellDoes::Hold && spell != 0x5E && (f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) {
+            // The hold spells take persons only (but Hold Monsters). Secret
+            // (GAME.OVR 0x2E42C): Hold Person never holds its races 0 and 7 (the
+            // engine's race 0), saying nothing; no size rule
+            if (fs.does == SpellDoes::Hold && b.fx && b.fx->secret) {
+                if ((spell == 0x17 || spell == 0x31) && f.rec[0x74] == 0) continue;
+            } else if (fs.does == SpellDoes::Hold && spell != 0x5E && (f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) {
                 say(who[k], Did::Unaffected, 0);
                 continue;
             }
@@ -2880,11 +2888,15 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             if (!f.up()) continue;
             // Charm Monsters (kind 1): the last one picked is unaffected, and
             // (the original's rule) so are non-persons and large ones
-            if (fs.kind == 1 && (k == m - 1 || f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) {
+            // Secret (GAME.OVR 0x2E313): only the last one picked for Charm
+            // Monsters; Charm Person (0x2E73D) takes its races under 7 (the
+            // engine's races but 0) or flags 2 & 2 - no size rule
+            const bool sec = b.fx && b.fx->secret;
+            if (fs.kind == 1 && (k == m - 1 || (!sec && (f.rec[0x11A] > 1 || f.rec[0xDE] > 1)))) {
                 say(who[k], Did::Unaffected, 0);
                 continue;
             }
-            if (fs.kind != 1 && (f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) {
+            if (fs.kind != 1 && (sec ? f.rec[0x74] == 0 && !(f.flags2 & 2) : f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) {
                 say(who[k], Did::Word2, 0);
                 continue;
             }
@@ -3115,7 +3127,9 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
             if (!f.up()) continue;
-            if (k == m - 1 || f.rec[0x11A] > 1 || f.rec[0xDE] > 1 || saving_throw(f, e.save, 0, d)) {
+            // (Secret, GAME.OVR 0x2E313: the last one picked, else a save - no size or type rule)
+            const bool sec = b.fx && b.fx->secret;
+            if (k == m - 1 || (!sec && (f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) || saving_throw(f, e.save, 0, d)) {
                 say(who[k], Did::Unaffected, 0);
                 continue;
             }

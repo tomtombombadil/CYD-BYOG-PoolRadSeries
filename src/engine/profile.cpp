@@ -1230,7 +1230,7 @@ const Profile kProfiles[] = {
                 .shot_pointed = {5, 7, 0, 12, 14, 30}, .shot_spinning = {2, 3, 6}, .shot_flask = {0, 0},
                 .shot_sling = {28, 0, 29},
                 .bestow = 0x24, .blink = 0x25, .fumbling = 0x1B, .silence = 0x15, .entangle = 0, .sticks = 0x03,
-                .faerie = 0, .blinded = 0x21, .animals_blind = 0x45, .feeble = 0x44,
+                .faerie = 0x47, .blinded = 0x21, .animals_blind = 0x45, .feeble = 0x44,
                 // Its monsters' effects (MON1SPC): deadly poison 0x40 / -2 0x56, paralysis on a hit
                 // 0x58, immune to nonmagical weapons 0x67, fire 0x5D, cold 0x62, electricity 0x06,
                 // the iron golem's spell immunity 0x4F, the gazes 0x3A / 0x3B, breath 0x5A / 0x53 /
@@ -1255,7 +1255,8 @@ const Profile kProfiles[] = {
                        .enfeeble = 0x1D, .ill = 0x22, .weak = 0x2B, .sick = 0x2C, .stun = 0x6A},
                 .race = {0x61, 0x12, 0x1A, 0x07, 0x2F, 0x30, 0x69},
                 .items = {.displace = 0x59, .ring_invisible = 0x38},
-                .berserk = 0x6B},
+                .berserk = 0x6B, .secret = true, .globe_major = 0x39,
+                .cloud_ground = 0x1D, .poison_ground = 0x1B},
                kSecretFight, sizeof kSecretFight / sizeof kSecretFight[0]},
      // The sound driver: Curse's in START.EXE (segment 0x7E4), 13 sounds
      // (the same byte code but the missile's), its Tandy byte code past
