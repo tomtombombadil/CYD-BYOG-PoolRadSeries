@@ -84,12 +84,15 @@ int power(const party::Character& c, const classes::Tables& t, int s)
 {
     if (s <= 0) return 0;
     using classes::skill_level;
-    if (c.level(classes::Cleric) == 0 && c.level(classes::MagicUser) == 0 && c.level(classes::Paladin) < 9 &&
-        c.level(classes::Ranger) < 8)
+    // Secret's (GAME.OVR 0x3AFD7) has no paladin in either test - a paladin
+    // casts at 6th level; AD&D's (Curse's) paladin - 8 with rules::fixes()
+    const bool pal_rule = !t.lay.secret || rules::fixes();
+    if (c.level(classes::Cleric) == 0 && c.level(classes::MagicUser) == 0 &&
+        (!pal_rule || c.level(classes::Paladin) < 9) && c.level(classes::Ranger) < 8)
         return 6;
     auto most = [](int a, int b) { return a > b ? a : b; };
     switch (t.spell_class(s)) {
-    case 0: return most(skill_level(c, classes::Cleric), skill_level(c, classes::Paladin) - 8);
+    case 0: return most(skill_level(c, classes::Cleric), skill_level(c, classes::Paladin) - (pal_rule ? 8 : 0));
     case 1: return most(skill_level(c, classes::Ranger) - 7, 0);
     case 2: return most(skill_level(c, classes::MagicUser), skill_level(c, classes::Ranger) - 8);
     case 3: return 12;

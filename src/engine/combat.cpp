@@ -2680,7 +2680,9 @@ int power_of(const uint8_t* r, const classes::Tables& st, int s, bool item)
 {
     if (item && st.spell_class(s) != 3) return 6;
     const int cl = r[0x109], pa = r[0x10C], ra = r[0x10D], mu = r[0x10E];
-    if (cl == 0 && mu == 0 && pa < 9 && ra < 8) return 6;
+    // (Secret, GAME.OVR 0x3AFD7: no paladin in either test - spells::power)
+    const bool pal_rule = !st.lay.secret || rules::fixes();
+    if (cl == 0 && mu == 0 && (!pal_rule || pa < 9) && ra < 8) return 6;
     auto most = [](int a, int b) { return a > b ? a : b; };
     // The levels that count (classes::skill_level): a human who changed
     // class adds the old class's levels once the new class has passed them
@@ -2690,7 +2692,7 @@ int power_of(const uint8_t* r, const classes::Tables& st, int s, bool item)
     const bool past = r[0x74] == 7 && r[0x109 + k] > r[0xE6];
     auto skill = [&](int cls) { return r[0x109 + cls] + (past ? r[0x111 + cls] : 0); };
     switch (st.spell_class(s)) {
-    case 0: return most(skill(0), skill(3) - 8);
+    case 0: return most(skill(0), skill(3) - (pal_rule ? 8 : 0));
     case 1: return most(skill(4) - 7, 0);
     case 2: return most(skill(5), skill(4) - 8);
     case 3: return 12;
