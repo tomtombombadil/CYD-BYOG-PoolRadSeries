@@ -3430,19 +3430,23 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             if (b.fx && b.fx->sp.ill) give_aff(f, b.fx->sp.ill, 0, 0, false);
             if (fs.word) say(who[k], Did::Word, 0);
             const int left = d.roll(fs.sides, fs.n);
-            if (f.hp() <= left) continue;
+            // (the original, GAME.OVR 0x305DB: the damage HP - 1d4 as a byte - under
+            // the roll it wraps round to over 250: dead. AD&D's - nothing then -
+            // with rules::fixes())
+            if (f.hp() == left || (f.hp() < left && rules::fixes())) continue;
             Harm h = hs;
             h.dice = fs.n;
             bool dn = false;
-            const int done = harm(b, who[k], f.hp() - left, h, d, &dn);
+            const int done = harm(b, who[k], (f.hp() - left) & 0xFF, h, d, &dn);
             if (done > 0) say(who[k], Did::Damage, done);
             if (dn) say(who[k], Did::Down, 0);
         }
         break;
     case SpellDoes::Youth:
-        // The Elixir of Youth (GAME.OVR 0x30813)
-        for (int k = 0; k < m; ++k) {
-            Fighter& f = b.f[who[k]];
+        // The Elixir of Youth (GAME.OVR 0x30813): its user only (0x7D38)
+        for (int k = 0; k < 1; ++k) {
+            Fighter& f = me;
+            who[k] = caster;
             int age = (f.rec[0x76] | f.rec[0x77] << 8) - (d.roll(fs.sides, fs.n) + fs.plus);
             const bool floor = age < 18;
             if (floor) age = 18;

@@ -393,10 +393,12 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
         }
         break;
     case Does::Youth:
-        // The Elixir of Youth (GAME.OVR 0x30813): the age down by the dice,
-        // at least 18 ("is now 18 years old"), else "becomes younger"
-        for (int k = 0; k < n; ++k) {
-            party::Character& c = p.m[who[k]];
+        // The Elixir of Youth (GAME.OVR 0x30813): its user's age (0x7D38 - not
+        // the targets) down by the dice, at least 18 ("is now 18 years old"),
+        // else "becomes younger"
+        for (int k = 0; k < 1; ++k) {
+            party::Character& c = me;
+            who[k] = caster;
             int age = c.age() - (d.roll(cs.sides, cs.n) + cs.plus);
             const bool floor = age < 18;
             if (floor) age = 18;
