@@ -136,12 +136,13 @@ bool draw_anim(dax::ByteSource& src, const dax::Index& idx, const dax::Entry& e,
 //   u8  height        pixel rows
 //   u8  width         in 8-pixel columns
 //   u16 x, u16 y      (zero so far)
-//   u8  frames
-//   u8  unknown
+//   u16 frames        (8X8D0 block 202: 20 tiles; 8X8D1's wall sets 256)
 //   u8  first         first palette index the picture sets
 //   u8  count - 1     palette entries it sets
 //   count x 3 bytes   palette, 6-bit VGA values (0-63)
-//   (count + 1) / 2   one nibble per entry: its EGA colour (for EGA cards)
+//   (count + 1) / 2   one nibble per entry: its EGA colour (for EGA cards -
+//                     the original's EGA mode draws exactly these: TITLE.DAX
+//                     in DOSBox, 2026-10-18; high nibble first)
 //   4 bytes           unknown (zero so far)
 //   frames x height x width bytes: one palette index per pixel
 constexpr size_t kVgaHeaderSize = 10;
@@ -149,7 +150,7 @@ constexpr size_t kVgaHeaderSize = 10;
 struct VgaHeader {
     uint8_t  height = 0;
     uint8_t  width_cols = 0;
-    uint8_t  frames = 0;
+    uint16_t frames = 0;
     uint8_t  first = 0;
     uint16_t count = 0;            // palette entries
     uint32_t pixels_at = 0;        // offset of the first frame's pixels
@@ -165,8 +166,22 @@ bool parse_vga_header(const uint8_t* p, uint32_t raw_size, VgaHeader& out);
 // header) into rgb[first .. first + count - 1] as 8-bit RGB.
 bool read_vga_palette(dax::RleReader& r, const VgaHeader& h, Rgb* rgb256);
 
+// Reads the EGA nibbles from r (positioned just after the palette) into
+// ega[first .. first + count - 1] (0-15)
+bool read_vga_ega(dax::RleReader& r, const VgaHeader& h, uint8_t* ega256);
+
 // Draws frame `frame`; r positioned at the block start. Pixels equal to mask
-// (0-255) are left out; -1 draws all.
-bool draw_vga(dax::RleReader& r, const VgaHeader& h, int frame, Canvas& c, int x, int y, int mask = -1);
+// (0-255) are left out; -1 draws all. map (256 entries; nullptr: none) turns
+// each pixel into the colour drawn - an EGA screen's colours (read_vga_ega).
+bool draw_vga(dax::RleReader& r, const VgaHeader& h, int frame, Canvas& c, int x, int y, int mask = -1,
+              const uint8_t* map = nullptr);
+
+// A whole VGA block drawn as the game's screen shows it: on a 4-bit canvas
+// in its EGA colours (the original's EGA mode - Pools of Darkness on the
+// classic boards), on an 8-bit one its palette indexes, the palette entries
+// it sets written to rgb256 (nullptr: not wanted). False: not a VGA picture
+// block or short data.
+bool draw_vga_block(dax::ByteSource& src, const dax::Index& idx, const dax::Entry& e, int frame, Canvas& c, int x,
+                    int y, int mask = -1, Rgb* rgb256 = nullptr);
 
 } // namespace pic

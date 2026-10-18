@@ -385,6 +385,31 @@ static void test_vga()
         for (int col = 0; col < 8; ++col)
             if (px[(20 + row) * pic::kScreenW + 10 + col] != 40 + (row * 8 + col + 1) % 4) ok = false;
     CHECK(ok);
+    // On a 4-bit canvas (the classic boards: Darkness's EGA mode) each
+    // pixel is its entry's EGA nibble (high nibble first); on an 8-bit one
+    // the index, the palette handed back
+    {
+        static uint8_t px4[pic::kScreenW * pic::kScreenH / 2];
+        pic::Canvas c4{px4, pic::kScreenW, pic::kScreenH, 4};
+        c4.clear(0);
+        CHECK(pic::draw_vga_block(src, idx, e, 0, c4, 16, 8));
+        bool ok4 = true;
+        for (int row = 0; row < 3; ++row)
+            for (int col = 0; col < 8; ++col)
+                if (c4.get(16 + col, 8 + row) != 1 + (row * 8 + col) % 4) ok4 = false;
+        CHECK(ok4 && c4.get(15, 8) == 0 && c4.get(24, 8) == 0);
+        static pic::Rgb rgb2[256];
+        c.clear(0);
+        CHECK(pic::draw_vga_block(src, idx, e, 1, c, 0, 0, -1, rgb2));
+        CHECK(px[0] == 41 && rgb2[41].g == 255 && rgb2[40].r == 255);
+    }
+    // The frame count is a u16 (Darkness's wall sets: 256 tiles)
+    {
+        Bytes big = {1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0x12, 0, 0, 0, 0};
+        big.resize(big.size() + 256 * 8, 0);
+        pic::VgaHeader bh;
+        CHECK(pic::parse_vga_header(big.data(), static_cast<uint32_t>(big.size()), bh) && bh.frames == 256);
+    }
 }
 
 // Font block: 177 glyphs; glyph g's rows are made-up patterns
@@ -852,6 +877,14 @@ static void test_layout()
         CHECK(sec && !strcmp(sec->font_file, "8X8D5.DAX") && sec->variant.tile_window == 40 && sec->party.count == 13 &&
               sec->ecl_ops->area_by_block && sec->start_script == 17 && sec->variant.bigpic_from == 0x70);
         CHECK(profile::ready(games::Game::SecretOfTheSilverBlades));
+        // Pools of Darkness: being built; GAME.EXE; its scripts' operand
+        // counts (darkness_facts.md 2); VGA pictures
+        const profile::Profile* dk = profile::find(games::Game::PoolsOfDarkness, 64203, 72784);
+        CHECK(dk && !strcmp(dk->program, "GAME.EXE") && dk->data_base == 0x9E70 && dk->variant.vga &&
+              !profile::ready(games::Game::PoolsOfDarkness));
+        CHECK(dk && dk->ecl_ops->sizes[0x0C] == 4 && dk->ecl_ops->sizes[0x1D] == 0 && dk->ecl_ops->sizes[0x27] == 4 &&
+              dk->ecl_ops->sizes[0x21] == 2 && dk->ecl_ops->sizes[0x37] == 2 && dk->ecl_ops->sizes[0x41] == 2 &&
+              dk->ecl_ops->sizes[0x2E] == 5);
     }
 
     // The known release is found only by both sizes

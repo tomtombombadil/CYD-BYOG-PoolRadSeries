@@ -1226,6 +1226,21 @@ on), the title, the record and the party menu / Load, the VGA pictures
 and their EGA colours, the 3D view (WALLDEF1 / 8X8D1 / BACK1 / SKYGRND),
 the scripts' changed ops, the rule tables, fights, the rest.
 
+- **v0.118.0 - the profile, scripts, title.** GAME.EXE (64,203 / 72,784
+  bytes) is recognised: Play off its page (`variant.unfinished`), the
+  Dev Tools' tests on. Its scripts' operand counts (`kDarknessEcl`). Its
+  pictures are VGA blocks (`variant.vga`): on the 4-bit canvas each pixel
+  is drawn in its palette entry's EGA nibble (`pic::draw_vga_block`) -
+  exactly what the original's EGA mode shows (DOSBox: TITLE.DAX's three
+  pictures match pixel for pixel, the standard 16 colours, no palette
+  programming, no dither; values below a picture's first entry are EGA
+  colours themselves); on an 8-bit canvas the indexes and the palette
+  (the S3 / C5 boards: later). A VGA block's frame count is a u16 (the
+  wall sets have 256 tiles). The title: TITLE 1 (Forgotten Realms), 2 (the
+  game's), 3 (the credits - a picture: no print calls), then "POOLS OF
+  DARKNESS 1.10" / "Play Demo"; its font 8X8D0's block 201. Not yet: the
+  frame (BORDERS.DAX's four styles), the Walk Test (says "not yet").
+
 ## 7. The journal (Tom, 2026-10-06)
 
 The games tell the player to "read journal entry N" from the printed
