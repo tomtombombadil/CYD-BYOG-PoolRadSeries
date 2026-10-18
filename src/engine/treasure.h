@@ -62,6 +62,59 @@ struct Facts {
     uint8_t     n_picks;
     uint8_t     javelin_start;              // the javelin of lightning's first word (0: Curse's row 6)
     uint8_t     plus2_start;                // the row made +2 (Pool's 0x61)
+    // Secret of the Silver Blades makes its items another way (below; null: the above)
+    const struct SecretFacts* secret = nullptr;
+};
+
+// Secret of the Silver Blades' random items (its TREASURE: GAME.OVR
+// 0x2BD8 - the kind by dice tables; its create_item 0x34AB3): each item a
+// kind roll through nested tables, then made by its type - a weapon, armour,
+// a shield, a ring or bracers with a plus (d10), named by rules per type, a
+// weight and a value a plus by type; a mage's or clerics' scroll of d3
+// spells (a level die, then that level's spell from the program's tables);
+// potions, the wand, the javelin of lightning from the program's rows (plus
+// 1, nothing against saves)
+struct Roll {
+    uint8_t hi;                             // up to this roll ...
+    uint8_t type;                           // ... the item type (0: table `sub`)
+    uint8_t sub;
+};
+struct RollTable {
+    uint8_t die, n;
+    Roll    r[10];
+};
+struct NameRule {
+    uint8_t type;
+    uint8_t w3, w2;                         // words 3 and 2 (w2 0: the plus word there)
+    uint8_t hidden;                         // the hidden-word bits (6 for the rest)
+    uint8_t plus;                           // a fixed plus (0: the rolled one)
+    uint8_t w1;                             // word 1 (0: the plus word when w2 isn't it)
+    uint8_t saves;                          // plus against saves
+};
+struct SecretFacts {
+    const RollTable* tables;                // [0] the d100 kind
+    uint8_t          n_tables;
+    uint8_t          plus_lo, plus_hi, plus_more[4];   // the types with a plus
+    uint8_t          plus_die, plus_band[2];           // d10: up to band 0 +1, band 1 +2, else +3
+    uint8_t          plus_word;                        // "+1" = plus_word + 1
+    const NameRule*  names;
+    uint8_t          n_names;
+    ByType           weight;                // by type; `other`: the rest (in twenties)
+    uint8_t          twenty[1];             // also in twenties (the dart)
+    ByType           value;                 // a plus
+    // Scrolls: the types (mage's, clerics'), the spells die, word 1 = count_word + n,
+    // word 2, word 3 (mage's / clerics'), weight, value a spell level, the level
+    // dice, the hidden bits; the spells per level: the program's tables (Rows::spells)
+    uint8_t          mu_scroll, cleric_scroll, spells_die, count_word, scroll_word, mu_word, cleric_word;
+    uint8_t          scroll_weight, scroll_value, mu_levels, cleric_levels, mu_hidden, cleric_hidden;
+    uint8_t          mu_dice[7], cleric_dice[7];
+    // The program's rows: a potion by d8 (its rows), the wand, the giant
+    // strength potion, the javelin (d5 = 5)
+    uint8_t          potion, potion_rows[8], wand, wand_row, giant, giant_row, javelin, javelin_row;
+    // The spells' tables in the program's data segment (a level's [0] first)
+    // and their strides
+    uint16_t         mu_spells, cleric_spells;
+    uint8_t          mu_stride, cleric_stride;
 };
 
 // The program's ready-made items as its array of words (w[1 + 8r] the
@@ -72,6 +125,9 @@ constexpr int kRowWords = 160;
 struct Rows {
     uint16_t w[kRowWords];
     const uint16_t* row(int r) const { return &w[1 + 8 * r]; }
+    // Secret: its scrolls' spells (the program's tables, 11 bytes a level:
+    // [0] mage's, [1] clerics'; spell = spells[k][level - 1][roll])
+    uint8_t spells[2][7][11] = {};
 };
 
 // One random item into rec (kRecordSize bytes). last: the type rolled

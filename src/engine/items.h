@@ -132,14 +132,16 @@ enum class Passive : uint8_t {
     Powerless,      // Strength and Intelligence 3 (Curse 0x8D)
     OgrePower,      // Strength 18/00 through the strength effect, "is stronger" (Pool 0x83)
     NeedGiant,      // only with giant strength (19+): "Must have Giant Strength" (Pool 0x87, the boulder)
+    Ogre1800,       // Strength 18/00 in the stats (Secret 0x83, its Gauntlets of Ogre Power: GAME.OVR 0x37525)
 };
 constexpr int kPassiveCodes = 16;
 // The game's table (16 codes; nullptr: Curse's) - set as a game opens
 void set_passive(const Passive* codes);
 Passive passive(const uint8_t* item);
-// Curse's and Pool of Radiance's tables
+// Curse's, Pool of Radiance's and Secret of the Silver Blades' tables
 extern const Passive kCursePassive[kPassiveCodes];
 extern const Passive kPoolPassive[kPassiveCodes];
+extern const Passive kSecretPassive[kPassiveCodes];
 
 // ---- The originals' item mistakes, corrected when the player wants
 // (engine comfort CYD_ITEM_FIXES). Pool of Radiance's "Long Sword +2 Flame

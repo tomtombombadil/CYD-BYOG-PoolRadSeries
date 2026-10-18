@@ -221,9 +221,24 @@ struct SpellFx {
 // elves' stealth (0x48, both games: Pool's Cloak of Elvenkind and its 6th
 // level thieves - 95 in 100 invisible at a fight's start and each round's
 // end, as the ring)
+// Secret of the Silver Blades' (its effect phases, GAME.OVR 0x3624E;
+// handlers DS 0x87EA + 4 x (effect - 1)): giant slaying (0x4B, at the roll
+// and the damage: against a creature with flags 2 & 1 the d20 + 1 and the
+// damage 6d6 + Strength's - 0x13162), the luck stone (0x4E, at a save: + 1 -
+// 0x1333F), the ring of fire resistance (0x3D, at the damage and the save:
+// fire without magic does nothing, magic fire 2 a die less - at least 1 a
+// die - and saves against it + 4 - 0x1263F), the Boots of Speed (0x4A,
+// before an attack on its wearer: AC 2 better - 0x13130), (a mirror's 0x48, the stone
+// gaze sent back, is MonFx::reflect); and two its program never applies
+// (rules::fixes() on: as AD&D) - displacement's handler (0x1385F, only at
+// its wearer's own turn) never makes an attack miss, the Periapt of
+// Health's immunity to disease (0x4C) has an empty handler (0x131C2)
 struct ItemFx {
     uint8_t flame_tongue, dragon_slayer, frost_brand, displace, ring_invisible, vermin;
     uint8_t vs_undead, elvenkind;
+    uint8_t giant_slayer = 0, luck = 0, fire_ring = 0, boots = 0, no_disease = 0;
+    bool    displace_unused = false;        // Secret: displacement only with rules::fixes()
+    uint8_t scrolls[2] = {};                // Secret's scrolls are these types (not slots 11-13)
 };
 
 // The effects the fights' rules look at (per game, from the profile)

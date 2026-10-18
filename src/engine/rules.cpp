@@ -228,6 +228,9 @@ void stats(party::Character& c, const ItemFacts& f)
                 if (kind == Passive::GiantGirdle && a2 <= 6) {
                     b = a2 == 0 ? 18 : 18 + a2;
                     b00 = a2 == 0 ? 100 : 0;
+                } else if (kind == Passive::Ogre1800) {
+                    b = 18;                     // (Secret's code 3: 18/00, as the girdle's 0)
+                    b00 = 100;
                 } else if (ioun) {
                     b = own + 1;
                 } else if (kind == Passive::Powerless) {
@@ -486,7 +489,9 @@ void recalc_values(party::Character& c, const items::Names& names, const ItemFac
         if (t.slot == items::kSlotArmour) {
             const int w = it.weight();
             move = w <= 150 ? r[kBaseMove] : w <= 399 ? 9 : 6;
-            if (move != 0 && move <= 9) move += 3;
+            // (+3 for magic armour only in Secret's routine, GAME.OVR
+            // 0x38399 - Curse's own listing tests the plus too, ovr025:027B)
+            if (move != 0 && move <= 9 && (!f.light_magic_armour || it.plus() != 0)) move += 3;
         }
         // AC from armour, shields, rings and the like
         if (t.ac > 0x7F) {
@@ -513,6 +518,9 @@ void recalc_values(party::Character& c, const items::Names& names, const ItemFac
     if (over < 0) over = 0;
     const int can = over <= 0x200 ? move : over <= 0x300 ? 9 : over <= 0x400 ? 6 : 3;
     if (can < move) move = can;
+    // Secret's Boots of Speed (effect 0x4A): twice the movement (its
+    // movement routine GAME.OVR 0x3A7FC, after haste and slow)
+    if (f.speed_fx && c.has_affect(f.speed_fx)) move *= 2;
 
     if (bonus[4] < ac) bonus[4] = ac;
     ac = 0;
@@ -924,12 +932,26 @@ bool same_pile(const uint8_t* a, const uint8_t* b)
 
 } // namespace
 
-int join(party::Character& c, int i)
+// Secret's Join (GAME.OVR 0x2971B): the item picked must be counted; the
+// others the same in words, type, plus, saves and cursed with 0x3C under 2
+// (its compare of the effects and 0x3C takes the other item's own - always
+// the same - and the weight isn't looked at); one with no count joins too
+// (nothing added, the item gone - with rules::fixes() it's left be)
+static bool secret_pile(const uint8_t* a, const uint8_t* b)
+{
+    if (a[0x39] == 0 || (b[0x39] == 0 && fixes())) return false;
+    static const int kSame[] = {0x2E, 0x2F, 0x30, 0x31, 0x32, 0x33, 0x36};
+    for (int o : kSame)
+        if (a[o] != b[o]) return false;
+    return b[0x3C] < 2;
+}
+
+int join(party::Character& c, int i, bool secret)
 {
     if (i < 0 || i >= c.n_items) return 0;
     int joined = 0;
     for (int k = 0; k < c.n_items;) {
-        if (k == i || !same_pile(c.items[i], c.items[k])) {
+        if (k == i || !(secret ? secret_pile(c.items[i], c.items[k]) : same_pile(c.items[i], c.items[k]))) {
             ++k;
             continue;
         }
@@ -953,7 +975,13 @@ int sell_value(const uint8_t* item, const ItemFacts& f)
 {
     const items::Item it{item};
     int v = it.value() > 0 ? it.value() / 2 : 0;
-    if (it.count() > 1) {
+    if (it.count() > 1 && f.sell_secret) {
+        // Secret (GAME.OVR 0x29D61): arrows and quarrels the count / 20, the
+        // other piles the count - the other way round from Curse's (its
+        // arrows' value is a bundle of 20's); 16-bit products
+        if (it.type() == f.arrow || it.type() == f.quarrel) v = ((it.count() * v) & 0xFFFF) / 20;
+        else v = (it.count() * v) & 0xFFFF;
+    } else if (it.count() > 1) {
         if (it.type() != f.arrow && it.type() != f.quarrel) v = it.count() * v / 20;
         else v *= it.count();
     }

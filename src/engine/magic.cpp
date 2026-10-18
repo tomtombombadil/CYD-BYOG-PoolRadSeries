@@ -152,8 +152,24 @@ bool remove(party::Character& c, int s)
     return false;
 }
 
+bool reads_spell(const party::Character& c, const classes::Tables& t, int s)
+{
+    if (!usable(t, s)) return false;
+    using classes::skill_level;
+    switch (t.spell_class(s)) {
+    case Cleric:
+        return c.rec[kWis] > 8 && (skill_level(c, classes::Cleric) > 0 || skill_level(c, classes::Paladin) > 8);
+    case Druid: return c.rec[kWis] > 8 && skill_level(c, classes::Ranger) > 6;
+    case MagicUser:
+        return c.rec[kInt] > 8 && (skill_level(c, classes::MagicUser) > 0 || skill_level(c, classes::Ranger) > 8 ||
+                                   skill_level(c, classes::Thief) > 10);
+    default: return false;
+    }
+}
+
 bool is_scroll(const Scrolls& sc, const uint8_t* it)
 {
+    if (sc.types[0]) return it[0x2E] == sc.types[0] || it[0x2E] == sc.types[1];
     if (!sc.names) return false;
     const int slot = sc.names->type(it[0x2E]).slot;
     return slot >= 11 && slot <= 13;
@@ -172,6 +188,7 @@ int scroll_spells(party::Character& c, const classes::Tables& t, const Scrolls& 
         if (it[0x35]) continue;
         for (int k = 0; k < 3 && n < cap; ++k) {
             const uint8_t v = it[kScrollAt + k];
+            if (sc.readers && !reads_spell(c, t, v & 0x7F)) continue;
             if (scribing ? v > 0x80 : v > 0) ids[n++] = v & 0x7F;
         }
     }
@@ -219,8 +236,8 @@ void scribed(party::Character& c, const Scrolls& sc, int i, int k)
     uint8_t* it = c.items[i];
     classes::to_book(c, it[kScrollAt + k] & 0x7F);
     it[kScrollAt + k] = 0;
-    it[0x30] = static_cast<uint8_t>(it[0x30] - 1);
-    if (it[0x30] < sc.one_spell) {
+    it[sc.count_at] = static_cast<uint8_t>(it[sc.count_at] - 1);
+    if (it[sc.count_at] < sc.one_spell) {
         // Used up
         for (int j = i; j + 1 < c.n_items; ++j) memcpy(c.items[j], c.items[j + 1], party::kItemSize);
         --c.n_items;
@@ -269,7 +286,8 @@ int scroll_list(party::Character& c, const classes::Tables& t, const Scrolls& sc
     if (it[0x35]) return 0;
     int n = 0;
     for (int k = 0; k < 3 && n < cap; ++k)
-        if (it[kScrollAt + k] & 0x7F) ids[n++] = it[kScrollAt + k] & 0x7F;
+        if ((it[kScrollAt + k] & 0x7F) && (!sc.readers || reads_spell(c, t, it[kScrollAt + k] & 0x7F)))
+            ids[n++] = it[kScrollAt + k] & 0x7F;
     sort_by_level(t, ids, n);
     return n;
 }
@@ -291,8 +309,8 @@ void scroll_used(party::Character& c, const Scrolls& sc, int i, int spell)
         if ((it[kScrollAt + k] & 0x7F) == spell) line = k;
     if (line < 0) return;
     it[kScrollAt + line] = 0;
-    it[0x30] = static_cast<uint8_t>(it[0x30] - 1);
-    if (it[0x30] < sc.one_spell) remove_at(c, i);
+    it[sc.count_at] = static_cast<uint8_t>(it[sc.count_at] - 1);
+    if (it[sc.count_at] < sc.one_spell) remove_at(c, i);
 }
 
 // The next spell to scribe (item, slot) in the games' order, or false

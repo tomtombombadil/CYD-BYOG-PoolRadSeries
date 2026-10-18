@@ -37,6 +37,12 @@ struct ItemFacts {
     // wearer computer-run (quick) and control 0xB3 (an NPC's 0xB2); taken
     // away, control 0xB3 back to 0 and the party's side
     uint8_t berserk_fx = 0;
+    // Secret of the Silver Blades: the +1 to hit with elf_bonus's weapons
+    // for every race (the original's; AD&D's elves alone when fixes()),
+    // armour's +3 movement only for magic armour, and the Boots of Speed's
+    // effect doubling the movement
+    bool    light_magic_armour = false, sell_secret = false;
+    uint8_t speed_fx = 0;
 };
 
 // The stats as they stand (the games' recalculation; spell_facts.md and
@@ -148,7 +154,7 @@ bool keep_hammer(party::Character& c, const items::Names& names, const ItemFacts
 bool halve(party::Character& c, int i);
 // Join: the same items in other piles go onto pile i (255 a pile at most);
 // how many piles were joined in
-int join(party::Character& c, int i);
+int join(party::Character& c, int i, bool secret = false);
 // Sell (a shop): what the shop gives, in gold - half the value; piles of
 // arrows / quarrels count each one, other piles count / 20 of each
 int sell_value(const uint8_t* item, const ItemFacts& f);

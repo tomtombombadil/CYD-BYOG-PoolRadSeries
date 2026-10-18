@@ -2058,7 +2058,7 @@ void halve_item(int i, pic::Canvas& c)
 
 void join_item(int i, pic::Canvas& c)
 {
-    rules::join(*pt->sel(), i);
+    rules::join(*pt->sel(), i, secret_files());
     rules::recalc(*pt->sel(), *names, d->facts);
     draw_items(c);
 }
@@ -2682,7 +2682,7 @@ void find_guys(char from = 'C')
                             strcasecmp(nm + 8, ".SAV") == 0;
         if (f.isDirectory() || (!guy && !member) || f.size() != rec_file_size()) continue;
         uint8_t rec[0x100];
-        const int ctl = pool_files() ? 0x84 : 0xF7;
+        const int ctl = pool_files() ? 0x84 : secret_files() ? 0xFF : 0xF7;     // (Secret's record: 0xFF)
         if (f.read(rec, ctl + 1) != ctl + 1 || rec[ctl] > 0x7F) continue;     // NPCs aren't listed
         char name[16];
         size_t len = rec[0] > 15 ? 15 : rec[0];
@@ -4764,6 +4764,10 @@ magic::Scrolls scroll_facts()
     sc.names = names;
     sc.one_spell = d->prof->magic.scroll_one_spell;
     sc.read_magic = d->prof->magic.read_magic;
+    sc.types[0] = d->prof->magic.scroll_types[0];
+    sc.types[1] = d->prof->magic.scroll_types[1];
+    sc.count_at = d->prof->magic.scroll_count_at;
+    sc.readers = d->prof->magic.scroll_readers;
     return sc;
 }
 
@@ -7019,6 +7023,9 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         d->facts.feeble_fx = pi.stat_fx[4];
         d->facts.con_regen_fx = pi.stat_fx[5];
         d->facts.berserk_fx = pi.berserk;
+        d->facts.light_magic_armour = pi.light_magic_armour;
+        d->facts.speed_fx = pi.speed_fx;
+        d->facts.sell_secret = pi.sell_secret;
         rules::set_berserk_fx(pi.berserk);
         items::set_passive(pi.passive);
         items::set_flame_fix(&pi.flame, CYD_ITEM_FIXES && opts.item_fixes);
@@ -7481,6 +7488,14 @@ struct Host : ecl::Host {
                 const uint8_t* b = reinterpret_cast<const uint8_t*>(&rows.w[k]);
                 rows.w[k] = static_cast<uint16_t>(b[0] | b[1] << 8);       // (little-endian, as read)
             }
+            // Secret: its scrolls' spells, a level's table at a time
+            if (const treasure::SecretFacts* sf = p->random_items->secret)
+                for (int k = 0; ok && k < 2; ++k)
+                    for (int lv = 0; ok && lv < 7; ++lv)
+                        ok = exepack::read(src, info,
+                                           p->create.ds_image + (k ? sf->cleric_spells : sf->mu_spells) +
+                                               lv * (k ? sf->cleric_stride : sf->mu_stride),
+                                           rows.spells[k][lv], sizeof rows.spells[k][lv]) == exepack::Status::Ok;
             f.close();
         }
         if (!ok) {

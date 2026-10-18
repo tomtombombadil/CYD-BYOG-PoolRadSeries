@@ -322,6 +322,11 @@ struct Profile {
         // An item the original got wrong, fixed when wanted (items::FlameFix:
         // Pool's Flame Tongue; type 0 - nothing to fix)
         items::FlameFix flame = {};
+        // Secret (rules::ItemFacts): the weapons' +1 for every race, armour's
+        // +3 movement for magic armour only, the Boots of Speed's effect
+        bool        light_magic_armour = false;
+        uint8_t     speed_fx = 0;
+        bool        sell_secret = false;           // a pile's price: Secret's rule (rules::sell_value)
     } items;
 
     // Character rules (making and training characters): the rule tables in
@@ -403,6 +408,12 @@ struct Profile {
         // Secret: the confirmations are "Memorize" / "Scribe" + this (" these
         // spells?", program image; 0: the words kMemorizeThese ...)
         uint32_t                  these_spells = 0;
+        // Secret: its scrolls by item type (mage's, clerics'), their spell
+        // count in name word 1 (0x2F), only the spells the reader could cast
+        // shown (magic::Scrolls)
+        uint8_t                   scroll_types[2] = {};
+        uint8_t                   scroll_count_at = 0x30;
+        bool                      scroll_readers = false;
     } magic;
 
     // The camp's Alter: its menu ("Order Drop Speed Icon Pics Exit"), the
