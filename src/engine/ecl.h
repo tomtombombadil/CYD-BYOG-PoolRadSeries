@@ -41,8 +41,9 @@ enum ScriptWord {
 constexpr int kMaxOps = 24;
 
 // Operand counts: >= 0 fixed; kCount3 = 3, then as many as the 3rd says;
-// kCount2 = 2, then as many as the 2nd says; kUnknown = not an opcode.
-constexpr int8_t kCount3 = -1, kCount2 = -2, kUnknown = -128;
+// kCount2 = 2, then as many as the 2nd says; kCount4 = 4, then as many as
+// the 4th says (Darkness's TREASURE); kUnknown = not an opcode.
+constexpr int8_t kCount3 = -1, kCount2 = -2, kCount4 = -3, kUnknown = -128;
 
 struct OpSet {
     int8_t  sizes[256];
@@ -76,6 +77,10 @@ struct OpSet {
     // 0x43FF): its 2nd operand's experience to everyone (1st operand not 0)
     // or the selected member (0), each its share by the classes held
     bool xp_award = false;
+    // Darkness: one more opcode that ends an instruction stream (its END,
+    // 0x23: the text window cleared, the view back, EXIT; 0: none - EXIT
+    // itself)
+    uint8_t end_op = 0;
 };
 
 // A script's memory address as the engine's machine (Curse's map) knows

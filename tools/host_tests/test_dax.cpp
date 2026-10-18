@@ -385,6 +385,31 @@ static void test_vga()
         for (int col = 0; col < 8; ++col)
             if (px[(20 + row) * pic::kScreenW + 10 + col] != 40 + (row * 8 + col + 1) % 4) ok = false;
     CHECK(ok);
+    // On a 4-bit canvas (the classic boards: Darkness's EGA mode) each
+    // pixel is its entry's EGA nibble (high nibble first); on an 8-bit one
+    // the index, the palette handed back
+    {
+        static uint8_t px4[pic::kScreenW * pic::kScreenH / 2];
+        pic::Canvas c4{px4, pic::kScreenW, pic::kScreenH, 4};
+        c4.clear(0);
+        CHECK(pic::draw_vga_block(src, idx, e, 0, c4, 16, 8));
+        bool ok4 = true;
+        for (int row = 0; row < 3; ++row)
+            for (int col = 0; col < 8; ++col)
+                if (c4.get(16 + col, 8 + row) != 1 + (row * 8 + col) % 4) ok4 = false;
+        CHECK(ok4 && c4.get(15, 8) == 0 && c4.get(24, 8) == 0);
+        static pic::Rgb rgb2[256];
+        c.clear(0);
+        CHECK(pic::draw_vga_block(src, idx, e, 1, c, 0, 0, -1, rgb2));
+        CHECK(px[0] == 41 && rgb2[41].g == 255 && rgb2[40].r == 255);
+    }
+    // The frame count is a u16 (Darkness's wall sets: 256 tiles)
+    {
+        Bytes big = {1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0x12, 0, 0, 0, 0};
+        big.resize(big.size() + 256 * 8, 0);
+        pic::VgaHeader bh;
+        CHECK(pic::parse_vga_header(big.data(), static_cast<uint32_t>(big.size()), bh) && bh.frames == 256);
+    }
 }
 
 // Font block: 177 glyphs; glyph g's rows are made-up patterns
@@ -852,6 +877,24 @@ static void test_layout()
         CHECK(sec && !strcmp(sec->font_file, "8X8D5.DAX") && sec->variant.tile_window == 40 && sec->party.count == 13 &&
               sec->ecl_ops->area_by_block && sec->start_script == 17 && sec->variant.bigpic_from == 0x70);
         CHECK(profile::ready(games::Game::SecretOfTheSilverBlades));
+        // Pools of Darkness: being built; GAME.EXE; its scripts' operand
+        // counts (darkness_facts.md 2); VGA pictures
+        const profile::Profile* dk = profile::find(games::Game::PoolsOfDarkness, 64203, 72784);
+        CHECK(dk && !strcmp(dk->program, "GAME.EXE") && dk->data_base == 0x9E70 && dk->variant.vga &&
+              !profile::ready(games::Game::PoolsOfDarkness));
+        CHECK(dk && dk->ecl_ops->sizes[0x0C] == 4 && dk->ecl_ops->sizes[0x1D] == 0 &&
+              dk->ecl_ops->sizes[0x27] == ecl::kCount4 && dk->ecl_ops->sizes[0x31] == ecl::kCount2 &&
+              dk->ecl_ops->end_op == 0x23 && dk->ecl_ops->sizes[0x22] == 0 &&
+              dk->ecl_ops->sizes[0x21] == 2 && dk->ecl_ops->sizes[0x37] == 2 && dk->ecl_ops->sizes[0x41] == 2 &&
+              dk->ecl_ops->sizes[0x2E] == 5);
+        // kCount4: 4 operands, then as many as the 4th says (Darkness's
+        // TREASURE: 3 coins, 2 items 0xFF and 7)
+        if (dk) {
+            const uint8_t code[] = {0x27, 0, 5, 0, 6, 0, 7, 0, 2, 0, 0xFF, 0, 7, 0x00};
+            ecl::Insn in;
+            CHECK(ecl::decode(code, sizeof code, 0, *dk->ecl_ops, in) && in.count == 6 && in.ops[5].low == 7 &&
+                  in.next == 13);
+        }
     }
 
     // The known release is found only by both sizes
@@ -3034,6 +3077,37 @@ static void test_geo_view()
 // scripts reading the selected character
 static void test_party()
 {
+    // Darkness's 510-byte record (darkness_facts.md 30) into Curse's layout
+    // (+ ext) and back: every byte but the pointers and the item count
+    {
+        uint8_t dk[party::kDarknessRecordSize];
+        for (size_t i = 0; i < sizeof dk; ++i) dk[i] = static_cast<uint8_t>(i * 7 + 3);
+        auto zero = [&](size_t a, size_t b) { memset(dk + a, 0, b - a); };
+        zero(0x143, 0x147); zero(0x1A6, 0x1DF); zero(0x1E3, 0x1EB);
+        dk[0] = 9;
+        dk[0xAD] = 5;                                       // human
+        static party::Character dc;
+        party::from_darkness(dk, dc);
+        CHECK(dc.race() == 7 && dc.cls() == dk[0xAE] && dc.age() == (dk[0xB0] | dk[0xB1] << 8) && dc.hp_max() == dk[0xB2]);
+        CHECK(dc.rec[0x79] == dk[0xB3] && dc.ext[party::kExtBook] == dk[0x117] && dc.ext[party::kExtBook2 + 8] == dk[0x130]);
+        CHECK(dc.money(4) == (dk[0x14B] | dk[0x14C] << 8) && dc.level(0) == dk[0x151] && dc.old_level(6) == dk[0x15E]);
+        CHECK(dc.exp() == (dk[0x172] | dk[0x173] << 8 | dk[0x174] << 16 | (uint32_t)dk[0x175] << 24));
+        CHECK(dc.rec[0x12D] == dk[0x17D] && dc.ext[party::kExtCleric89 + 1] == dk[0x185] && dc.rec[0x137] == dk[0x18F] &&
+              dc.ext[party::kExtMage67] == dk[0x194] && dc.ext[party::kExtMemorized + 56] == dk[0xAA]);
+        CHECK(dc.health() == dk[0x1ED] && dc.hp() == dk[0x1FC] && dc.rec[0x191] == dk[0xAF] &&
+              dc.ext[party::kExtMagicRes] == dk[0x1EB] && dc.ext[party::kExtTrain] == dk[0x1EC]);
+        uint8_t back[party::kDarknessRecordSize];
+        party::to_darkness(dc, back);
+        CHECK(memcmp(back, dk, sizeof dk) == 0);
+        CHECK(party::race_from_darkness(0) == 2 && party::race_from_darkness(2) == 1 && party::race_to_darkness(4) == 1 &&
+              party::race_to_darkness(0) == 6);
+        // The scripts write only their program's fields; status sets "enabled"
+        CHECK(party::darkness_script_set(dc, 0x1FC, 33) && dc.hp() == 33);
+        CHECK(party::darkness_script_set(dc, 0x1ED, 0) && dc.rec[0x195] == 0 && dc.rec[0x196] == 1);
+        CHECK(party::darkness_script_set(dc, 0x1EB, 40) && dc.ext[party::kExtMagicRes] == 40);
+        CHECK(party::darkness_script_set(dc, 0xA0, 7) && dc.ext[party::kExtMemorized + 0xA0 - 0x72] == 7);
+        CHECK(!party::darkness_script_set(dc, 0xB2, 1) && dc.hp_max() == dk[0xB2]);
+    }
     // Secret's 439-byte record into Curse's layout (+ ext) and back: every
     // byte but the in-memory pointers and the item count comes back
     {
@@ -3290,6 +3364,33 @@ static void test_party()
     CHECK(strcmp(dir, "GAMES/CURSE/SAVES") == 0);
     savegame::save_dir("E\nP\n", 4, dir, sizeof dir);
     CHECK(dir[0] == 0);
+    // Darkness's POOL4.CFG: its own save folder first, then Secret's
+    const char cfg4[] = "1\r\nV\r\nM\r\nC:\\SAVE\\\r\nC:\\SECRET\\SAVE\\\r\nF\r\n0\r\n";
+    savegame::save_dir(cfg4, sizeof cfg4 - 1, dir, sizeof dir, 0);
+    CHECK(strcmp(dir, "SAVE") == 0);
+    savegame::save_dir(cfg4, sizeof cfg4 - 1, dir, sizeof dir, 1);
+    CHECK(strcmp(dir, "SECRET/SAVE") == 0);
+    // Darkness's .PTY (1,364 bytes): the game block, position, modes, look,
+    // names - read and written back the same
+    {
+        std::vector<uint8_t> pty(savegame::kDarknessSize, 0);
+        for (uint32_t i = 0; i < savegame::kDarknessBlock; ++i) pty[i] = static_cast<uint8_t>(i * 3);
+        const uint8_t pos[11] = {7, 13, 2, 5, 0x81, 4, 4, 3, 0, 1, 0};
+        memcpy(pty.data() + savegame::kDarknessBlock, pos, sizeof pos);
+        pty[savegame::kDarknessBlock + 11] = 2;
+        memcpy(pty.data() + savegame::kDarknessBlock + 12, "\x08" "CHRDATA1", 9);
+        memcpy(pty.data() + savegame::kDarknessBlock + 12 + 41, "\x08" "CHRDATA2", 9);
+        dax::MemorySource ps(pty.data(), static_cast<uint32_t>(pty.size()));
+        static ecl::GameState dgs;
+        savegame::Header dh;
+        CHECK(savegame::read_darkness(ps, dgs, dh));
+        CHECK(dgs.area1[5] == 15 && dgs.x == 7 && dgs.y == 13 && dgs.dir == 2 && dgs.roof == 0x81 && dh.state == 4 &&
+              dh.look == 3 && dh.look_slot == 1 && dh.count == 2 && !strcmp(dh.names[1], "CHRDATA2"));
+        VecSink ds;
+        CHECK(savegame::write_darkness(ds, dgs, dh) && ds.v == pty);
+        savegame::file_name_darkness('B', name2, sizeof name2);
+        CHECK(strcmp(name2, "SAVGAMB.PTY") == 0);
+    }
     // Steam / SNEG: "C:\CURSE\SAVE\" with the files in <folder>/GAME/CURSE
     char sub[32] = "CURSE/SAVE";
     CHECK(savegame::drop_own_folder("CURSE/GAME/CURSE", sub) && strcmp(sub, "SAVE") == 0);

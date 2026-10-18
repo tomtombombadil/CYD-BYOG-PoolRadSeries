@@ -76,7 +76,10 @@ the Project as claude/TODO.md.
       class, item and situation - and the ITEMTEST characters for Tom.
 - [ ] **Pools of Darkness** (started 2026-10-17; facts: the Project's
       claude/darkness_facts.md; SPEC 6d). Done: the survey (program and
-      overlay layout, files, saves, the scripts' operand counts). Next, a
+      overlay layout, files, saves, the scripts' operand counts);
+      v0.118.0 the profile (Play off), scripts' counts, the title in its
+      EGA colours. Surveys running (2026-10-18): screens, characters,
+      scripts. Next, a
       chunk a commit: the profile + scan (Play off: variant.unfinished),
       title, record + party menu / Load, VGA pictures (EGA colours on the
       classic boards), 3D view, the scripts' changed ops, rule tables,

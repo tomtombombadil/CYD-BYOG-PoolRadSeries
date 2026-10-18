@@ -515,6 +515,9 @@ struct Profile {
         // 0 and 8 (Curse's palette while fighting) and the field's empty
         // squares are dark grey (DOSBox)
         bool     fight_unswapped = false;
+        // Pools of Darkness: its pictures are VGA blocks (picture.h; the EGA
+        // colours of each on a 4-bit canvas - the original's EGA mode)
+        bool     vga = false;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

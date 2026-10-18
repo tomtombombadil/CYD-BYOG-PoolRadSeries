@@ -50,14 +50,27 @@ enum Health : uint8_t { Okay = 0, Animated, TempGone, Running, Unconscious, Dyin
 // 0x13E-0x146 (druid 6-7 and a group of 7 not known yet), the 6th / 7th
 // level magic-user slots, the bytes 0x6D, 0x15E (flags 2), 0x15F and 0x1A5
 // (magic resistance)
-constexpr size_t kExtSize = 35;
+// Pools of Darkness's 510-byte record (darkness_facts.md 30) keeps the same
+// things in the same places (spells 101-117, the 6th / 7th level slots,
+// flags 2, magic resistance, its own race) and more after them: spells
+// 118-126, the 8th / 9th level slots, memorized places 85-141, the best
+// levels / experience / HP before a drain, "able to train".
+constexpr size_t kExtSize = 123;
 enum Ext : uint8_t {
     kExtBook = 0,                       // spells 101-117 (17)
-    kExtCleric67 = 17,                  // Secret 0x137-0x138
-    kExtDruidMore = 19,                 // Secret 0x13E-0x146 (9)
-    kExtMage67 = 28,                    // Secret 0x14C-0x14D
+    kExtCleric67 = 17,                  // Secret 0x137-0x138 (Darkness 0x182-0x183)
+    kExtDruidMore = 19,                 // Secret 0x13E-0x146 (9; Darkness: druid 6-7 in the first two)
+    kExtMage67 = 28,                    // Secret 0x14C-0x14D (Darkness 0x194-0x195)
     kExt6D = 30, kExtFlags2 = 31, kExt15F = 32, kExtMagicRes = 33,
-    kExtRace = 34,                      // Secret's own race number (its races are numbered otherwise)
+    kExtRace = 34,                      // the game's own race number (its races are numbered otherwise)
+    // Darkness only
+    kExtBook2 = 35,                     // spells 118-126 (9)
+    kExtCleric89 = 44, kExtDruid89 = 46, kExtMage89 = 48,   // the 8th / 9th level slots (2 each)
+    kExtMemorized = 50,                 // memorized places 85-141 (57)
+    kExtBestLevels = 107,               // best levels before a drain (7)
+    kExtBestXp = 114,                   // best experience before a drain (4)
+    kExtBestHp = 118,
+    kExtTrain = 119,                    // able to train (0x1EC)
 };
 
 struct Character {
@@ -144,8 +157,17 @@ uint8_t race_to_secret(uint8_t curse);
 constexpr size_t kSecretRecordSize = 0x1B7;
 constexpr int    kSecretMemorized = 75;
 constexpr size_t kSecretItemSize = 0x43;
-// Record format: Curse's, Pool's or Secret's
-enum class Format : uint8_t { Curse, Pool, Secret };
+// Pools of Darkness's characters (darkness_facts.md 30-33): a 510-byte
+// record (.SAV / .PC), items .THG (63 bytes, Curse's), effects .EFX (9).
+// Moved into Curse's layout as Secret's are (84 of its 141 memorized places,
+// spells 1-100, slots 1-5 in place; the rest in Character::ext); its races
+// 0 elf, half-elf, dwarf, gnome, halfling, human, 6 monster
+uint8_t race_from_darkness(uint8_t dk);
+uint8_t race_to_darkness(uint8_t curse);
+constexpr size_t kDarknessRecordSize = 0x1FE;
+constexpr int    kDarknessMemorized = 141;
+// Record format: Curse's, Pool's, Secret's or Darkness's
+enum class Format : uint8_t { Curse, Pool, Secret, Darkness };
 bool read_record(dax::ByteSource& src, Character& out, Format f);
 void from_pool(const uint8_t* pool, Character& out);              // out.rec only
 void from_pool(const uint8_t* pool, uint8_t* rec);                 // a record (kRecordSize bytes) of Curse's layout
@@ -153,6 +175,16 @@ void to_pool(const Character& c, uint8_t out[kPoolRecordSize]);
 void from_secret(const uint8_t* secret, Character& out);          // out.rec and out.ext
 void from_secret(const uint8_t* secret, uint8_t* rec);             // a record of Curse's layout (no ext)
 void to_secret(const Character& c, uint8_t out[kSecretRecordSize]);
+void from_darkness(const uint8_t* dk, Character& out);           // out.rec and out.ext
+void from_darkness(const uint8_t* dk, uint8_t* rec);              // a record of Curse's layout (no ext)
+void to_darkness(const Character& c, uint8_t out[kDarknessRecordSize]);
+// Darkness's scripts write the selected character's record itself
+// (darkness_facts.md S3): byte `off` of its 510 made `v` - kept where
+// from_darkness keeps that byte (Curse's place or ext). Only the fields
+// its program lets scripts write: the memorized spells, age, movement,
+// money, alignment, AC base, magic resistance, status (and "enabled" with
+// it), hostile, HP now. False: not one of them.
+bool darkness_script_set(Character& c, uint16_t off, uint8_t v);
 // Items as a game's file holds them: `stride` bytes a record, the first
 // kItemSize kept (Secret's .STF: kSecretItemSize)
 void read_items(dax::ByteSource& src, Character& out, uint32_t stride);
