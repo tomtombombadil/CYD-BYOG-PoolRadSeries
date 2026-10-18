@@ -3114,7 +3114,9 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         }
         break;
     case SpellDoes::Entangle:
-        if (b.indoors) break;                       // outdoors only
+        // outdoors only; a game with no entangling effect (Secret: its routine
+        // GAME.OVR 0x30E46 is empty) - nothing at all
+        if (b.indoors || !b.fx || !b.fx->entangle) break;
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
             if (!f.up() || !b.fx || resisted(k, b.fx->entangle)) continue;
@@ -3157,7 +3159,8 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             // attacks left this round - they go down by those, else gone;
             // either way its actions this round are gone
             const int att = f.attacks[0] + f.attacks[1];
-            say(who[k], Did::Word, 0);
+            // (Secret, GAME.OVR 0x30AE6: the caster "turns sticks into snakes")
+            say(b.fx->secret ? caster : who[k], Did::Word, 0);
             if (pw > att) give_aff(f, b.fx->sticks, minutes, pw - att, false);
             f.moves = f.attacks[0] = f.attacks[1] = 0;
         }

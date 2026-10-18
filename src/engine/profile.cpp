@@ -360,8 +360,8 @@ constexpr combat::FightSpell kSecretFight[] = {
     {0x2C, SpellDoes::Theirs, 0, 0, 0, 0, 0, 0x2FEBB},      // Bestow Curse: "has been cursed!" (a touch)
     {0x2D, SpellDoes::Affect, 0, 0, 0, 0, 0, kJ | 21},      // Blink: "is blinking"
     {0x44, SpellDoes::Kill, 0, 0, 0, 0, 0, 0x36A24},        // Poison: "is Poisoned", then "is killed"
-    {0x46, SpellDoes::Snakes, 0, 0, 0, 0, 0, 0xFFAB, 0x30AB7},   // Sticks to Snakes: "is fighting with snakes" /
-                                                            // "smashes them flat"
+    {0x46, SpellDoes::Snakes, 0, 0, 0, 0, 0, 0x30A9D, 0x30AB7},  // Sticks to Snakes: the caster "turns sticks into
+                                                            // snakes" / "smashes them flat"
     {0x4C, SpellDoes::Slay, 2, 8, 1, 0, 8, kJ | 27},        // Slay Living: "is slain"; saved 2d8 + 1
     {0x4E, SpellDoes::Entangle, 0, 0, 0, 0, 0, 0},    // Entangle: "is entangled" (outdoors)
     {0x4F, SpellDoes::Faerie, 0, 0, 0, 0, 0, kJ | 28},      // Faerie Fire: "is highlighted"
