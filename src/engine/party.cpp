@@ -53,6 +53,26 @@ constexpr uint16_t kSecretExt[][3] = {
     {0x6B, kExtRace, 1},
 };
 
+// Darkness offset, Curse offset, length (darkness_facts.md 30, 38; pointers
+// left out)
+constexpr uint16_t kDarknessRuns[][3] = {
+    {0x00, 0x00, 0x1E},  {0xAB, 0x72, 4},     {0xB0, 0x76, 3},     {0xB3, 0x79, 100},   {0x131, 0xDE, 1},
+    {0x132, 0xDF, 6},    {0x138, 0xE5, 2},    {0x13A, 0xE9, 9},    {0x147, 0xF7, 4},    {0x14B, 0x103, 6},
+    {0x151, 0x109, 7},   {0x158, 0x111, 7},   {0x166, 0x119, 1},   {0x167, 0x11B, 9},   {0x170, 0x124, 1},
+    {0x171, 0x126, 5},   {0x17B, 0x12B, 2},   {0x17D, 0x12D, 5},   {0x186, 0x132, 5},   {0x18F, 0x137, 5},
+    {0x198, 0x13C, 2},   {0x19A, 0x141, 11},  {0x1A6, 0x14C, 1},   {0x1DF, 0x185, 4},   {0x1ED, 0x195, 0x11},
+    {0xAF, 0x191, 1},                   // the paladin's cures left (as Secret's 0x6D)
+    {0x1E, kListAt, kListSize},         // the first 84 memorized places, in place
+};
+// Darkness offset, Ext place, length
+constexpr uint16_t kDarknessExt[][3] = {
+    {0x117, kExtBook, 17},    {0x128, kExtBook2, 9},     {0x182, kExtCleric67, 2}, {0x184, kExtCleric89, 2},
+    {0x18B, kExtDruidMore, 2}, {0x18D, kExtDruid89, 2},  {0x194, kExtMage67, 2},   {0x196, kExtMage89, 2},
+    {0x1E + kListSize, kExtMemorized, kDarknessMemorized - kListSize},
+    {0x15F, kExtBestLevels, 7}, {0x176, kExtBestXp, 4},  {0x17A, kExtBestHp, 1},
+    {0x1A5, kExtFlags2, 1},   {0x1EB, kExtMagicRes, 1},  {0x1EC, kExtTrain, 1},    {0xAD, kExtRace, 1},
+};
+
 } // namespace
 
 void from_pool(const uint8_t* p, Character& c) { from_pool(p, c.rec); }
@@ -135,9 +155,70 @@ void to_secret(const Character& c, uint8_t* p)
     p[0x160] = static_cast<uint8_t>(c.n_items);
 }
 
+uint8_t race_from_darkness(uint8_t v)
+{
+    static const uint8_t kTo[7] = {2, 4, 1, 3, 5, 7, 0};
+    return v < 7 ? kTo[v] : v;
+}
+
+uint8_t race_to_darkness(uint8_t v)
+{
+    static const uint8_t kTo[8] = {6, 2, 0, 3, 1, 4, 5, 5};   // (half-orc: Darkness has none - human)
+    return v < 8 ? kTo[v] : v;
+}
+
+void from_darkness(const uint8_t* p, uint8_t* r)
+{
+    memset(r, 0, kRecordSize);
+    for (const auto& run : kDarknessRuns) memcpy(r + run[1], p + run[0], run[2]);
+    r[0x74] = race_from_darkness(p[0xAD]);
+}
+
+void from_darkness(const uint8_t* p, Character& c)
+{
+    from_darkness(p, c.rec);
+    for (const auto& run : kDarknessExt) memcpy(c.ext + run[1], p + run[0], run[2]);
+}
+
+void to_darkness(const Character& c, uint8_t* p)
+{
+    const uint8_t* r = c.rec;
+    memset(p, 0, kDarknessRecordSize);
+    for (const auto& run : kDarknessRuns) memcpy(p + run[0], r + run[1], run[2]);
+    for (const auto& run : kDarknessExt) memcpy(p + run[0], c.ext + run[1], run[2]);
+    // The race: its own number while it still means the race the record has
+    p[0xAD] = race_from_darkness(c.ext[kExtRace]) == r[0x74] ? c.ext[kExtRace] : race_to_darkness(r[0x74]);
+    p[0x1A6] = static_cast<uint8_t>(c.n_items);
+}
+
+bool darkness_script_set(Character& c, uint16_t off, uint8_t v)
+{
+    // (its program's list: GAME.OVR 0x6C40 - darkness_facts.md 30)
+    const bool ok = (off >= 0x1E && off <= 0xAA) || off == 0xB0 || off == 0xB1 || off == 0x137 ||
+                    (off >= 0x14B && off <= 0x150) || off == 0x167 || off == 0x170 || off == 0x1EB ||
+                    off == 0x1ED || off == 0x1EF || off == 0x1FC;
+    if (!ok) return false;
+    auto put = [&](uint16_t o, uint8_t b) {
+        for (const auto& run : kDarknessRuns)
+            if (o >= run[0] && o < run[0] + run[2]) c.rec[run[1] + o - run[0]] = b;
+        for (const auto& run : kDarknessExt)
+            if (o >= run[0] && o < run[0] + run[2]) c.ext[run[1] + o - run[0]] = b;
+    };
+    put(off, v);
+    if (off == 0x1ED) put(0x1EE, v == 0 ? 1 : 0);      // "enabled" goes with the status
+    return true;
+}
+
 bool read_record(dax::ByteSource& src, Character& out, Format f)
 {
     if (f == Format::Curse) return read_record(src, out);
+    if (f == Format::Darkness) {
+        uint8_t dk[kDarknessRecordSize];
+        out = Character{};
+        if (src.read_at(0, dk, kDarknessRecordSize) != kDarknessRecordSize) return false;
+        from_darkness(dk, out);
+        return true;
+    }
     if (f == Format::Secret) {
         uint8_t sec[kSecretRecordSize];
         out = Character{};
@@ -157,6 +238,11 @@ const uint8_t* record_bytes(const Character& c, Format f, uint8_t* buf, size_t* 
     if (f == Format::Curse) {
         *n = kRecordSize;
         return c.rec;
+    }
+    if (f == Format::Darkness) {
+        to_darkness(c, buf);
+        *n = kDarknessRecordSize;
+        return buf;
     }
     if (f == Format::Secret) {
         to_secret(c, buf);

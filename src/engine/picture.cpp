@@ -178,7 +178,7 @@ bool parse_vga_header(const uint8_t* p, uint32_t raw_size, VgaHeader& out)
     if (raw_size < kVgaHeaderSize) return false;
     out.height = p[0];
     out.width_cols = p[1];
-    out.frames = p[6];
+    out.frames = static_cast<uint16_t>(p[6] | p[7] << 8);
     out.first = p[8];
     out.count = static_cast<uint16_t>(p[9] + 1);
     if (out.height == 0 || out.width_cols == 0 || out.width_cols > kScreenW / 8 || out.frames == 0) return false;
@@ -200,7 +200,35 @@ bool read_vga_palette(dax::RleReader& r, const VgaHeader& h, Rgb* rgb256)
     return true;
 }
 
-bool draw_vga(dax::RleReader& r, const VgaHeader& h, int frame, Canvas& c, int x, int y, int mask)
+bool read_vga_ega(dax::RleReader& r, const VgaHeader& h, uint8_t* ega256)
+{
+    for (int i = 0; i < h.count; i += 2) {
+        const int b = r.next();
+        if (b < 0) return false;
+        ega256[h.first + i] = static_cast<uint8_t>(b >> 4);
+        if (i + 1 < h.count) ega256[h.first + i + 1] = static_cast<uint8_t>(b & 0x0F);
+    }
+    return true;
+}
+
+bool draw_vga_block(dax::ByteSource& src, const dax::Index& idx, const dax::Entry& e, int frame, Canvas& c, int x,
+                    int y, int mask, Rgb* rgb256)
+{
+    uint8_t hdr[kVgaHeaderSize];
+    VgaHeader h;
+    uint8_t map[256];
+    {
+        dax::RleReader r(src, idx, e);
+        if (r.read(hdr, sizeof hdr) != sizeof hdr || !parse_vga_header(hdr, e.raw_size, h)) return false;
+        if (rgb256 ? !read_vga_palette(r, h, rgb256) : r.skip(h.count * 3u) != h.count * 3u) return false;
+        for (int i = 0; i < 256; ++i) map[i] = static_cast<uint8_t>(i & 0x0F);
+        if (!read_vga_ega(r, h, map)) return false;
+    }
+    dax::RleReader r(src, idx, e);
+    return draw_vga(r, h, frame, c, x, y, mask, c.bpp == 4 ? map : nullptr);
+}
+
+bool draw_vga(dax::RleReader& r, const VgaHeader& h, int frame, Canvas& c, int x, int y, int mask, const uint8_t* map)
 {
     if (frame < 0 || frame >= h.frames) return false;
     const uint32_t skip = h.pixels_at + static_cast<uint32_t>(frame) * h.frame_bytes();
@@ -213,7 +241,7 @@ bool draw_vga(dax::RleReader& r, const VgaHeader& h, int frame, Canvas& c, int x
             const int b = r.next();
             if (b < 0) return false;
             const int px = x + i;
-            if (line && px >= 0 && px < c.w && b != mask) c.set(px, py, static_cast<uint8_t>(b));
+            if (line && px >= 0 && px < c.w && b != mask) c.set(px, py, map ? map[b] : static_cast<uint8_t>(b));
         }
     }
     return true;

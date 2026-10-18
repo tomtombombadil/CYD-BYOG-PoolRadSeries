@@ -806,6 +806,40 @@ constexpr ecl::OpSet kSecretEcl = [] {
     return s;
 }();
 
+// Pools of Darkness (darkness_facts.md 5; its interpreter, GAME.OVR overlay
+// at 0x246): Curse's operand counts but 0x0C 4 (SETUP MONSTER's sides),
+// 0x1D none (PRESS KEY), 0x1F 1 (JOURNAL n), 0x21 2 (LOAD FILES: map,
+// look), 0x22 none (YES NO), 0x23 none (END - it ends the stream), 0x27
+// 4 then as many as the 4th says (TREASURE), 0x29 none, 0x2C 1 (SOUND),
+// 0x31 2 then as many as the 2nd (WHAT MENU), 0x37 2 (FIND NPC - no LOAD
+// PIECES), 0x41 2 (EXPERIENCE): every one of its 56 blocks decodes
+constexpr ecl::OpSet kDarknessEcl = [] {
+    ecl::OpSet s = kCurseEcl;
+    s.sizes[0x0C] = 4;
+    s.sizes[0x1D] = 0;
+    s.sizes[0x1F] = 1;
+    s.sizes[0x21] = 2;
+    s.sizes[0x22] = 0;
+    s.sizes[0x23] = 0;
+    s.sizes[0x27] = ecl::kCount4;
+    s.sizes[0x29] = 0;
+    s.sizes[0x2C] = 1;
+    s.sizes[0x31] = K2;
+    s.sizes[0x37] = 2;
+    s.sizes[0x41] = 2;
+    s.load_pieces = 0xFF;           // (none: 0x37 is FIND NPC)
+    s.end_op = 0x23;
+    return s;
+}();
+
+// Darkness's title: TITLE.DAX's three VGA pictures - the Forgotten Realms
+// one, the game's, the credits (a picture of its own: no print calls)
+constexpr TitleStep kDarknessTitle[] = {
+    {1, 0, 0, true, 5000, 0},
+    {2, 0, 0, true, 5000, 0},
+    {3, 0, 0, true, 10000, 0},
+};
+
 const Profile kProfiles[] = {
     {games::Game::CurseOfTheAzureBonds, "GOG", "START.EXE", 57789, 62432, 0x48D0,
      {0x6E60, 0x6E88, 0x6EB0, 0x6EF2, 0x6F1B, 0x6F0A, 0x6ED6, 0x6EE3, 0x6F31, 0x6F3E, 0x6F4D, 0x6F64, 0x6F7B},
@@ -1277,6 +1311,24 @@ const Profile kProfiles[] = {
      // the name at row 22 and the version at 23, colour 0 on 10, then the
      // menu with the prompt at 0x55)
      .title_name = 0x05, .title_prompt = 0x55},
+    // Pools of Darkness, GOG release (darkness_facts.md; being built -
+    // Tom, 2026-10-17): GAME.EXE 64,203 bytes, EXEPACK, unpacked 72,784; its
+    // data segment at image 0x9E70; one file a kind (ECL1, GEO1 ...); VGA
+    // pictures (their EGA colours on the classic boards); the font in
+    // 8X8D0.DAX; the version line "POOLS OF DARKNESS 1.10 " and "Play Demo"
+    // (image 0xC625 / 0xC9AB)
+    {.game = games::Game::PoolsOfDarkness, .release = "GOG", .program = "GAME.EXE",
+     .program_size = 64203, .image_size = 72784, .data_base = 0x9E70,
+     .frame = {},
+     .tiles_file = "8X8D0.DAX", .tiles_block = 202,
+     .press_any_key = 0xAC82,
+     .title_file = "TITLE.DAX", .title = kDarknessTitle, .title_steps = sizeof kDarknessTitle / sizeof kDarknessTitle[0],
+     .title_version = 0xC625, .title_menu = 0xC9AB,
+     .overlay = "GAME.OVR", .overlay_size = 264086,
+     .first_area = 1, .last_area = 1,
+     .ecl_ops = &kDarknessEcl,
+     .variant = {.unfinished = true, .vga = true},
+     .font_file = "8X8D0.DAX"},
 };
 
 } // namespace
