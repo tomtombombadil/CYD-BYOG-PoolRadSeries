@@ -56,7 +56,16 @@ struct World {
     uint8_t     horizon[48 * 44];    // 88 x 48 pixels, packed
     bool        has_horizon = false;
     const layout::Tiles* frame = nullptr;   // tiles 256-295 (arrows, map pieces)
+    // Pools of Darkness (darkness_facts.md 7.3): one 8X8D1 block of 256
+    // tiles numbered as the walls use them (1-45 in `common`, 46-255 in the
+    // sets - no moves), its area map's frames walls 0-15 then arrows 16-19,
+    // and an 88 x 88 background (BACK1 indoors, SKYGRND outdoors; 4-bit
+    // packed, on the heap: back_free)
+    bool     dk = false;
+    uint8_t* back = nullptr;
+    uint8_t  back_id = 0;                    // which background `back` holds (file kind << 4 | block; 0 none)
 };
+void back_free(World& w);
 
 // An 8x8 tile block (a picture block 8 high, 1 column, N frames).
 bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, TileSet& out);
@@ -71,6 +80,14 @@ bool load_walls(dax::ByteSource& src, const dax::Index& idx, int set, uint8_t bl
 int tiles_block(uint8_t walldef_block, int n, int i);
 
 bool load_horizon(dax::ByteSource& src, const dax::Index& idx, uint8_t block, World& w);
+
+// Darkness: 8X8D1 block `block` (VGA, 256 tiles) into w's tile sets, in
+// their EGA colours; w.dk set
+bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, World& w);
+// Darkness: a background picture (BACK1 / SKYGRND, 88 x 88 VGA) into
+// w.back in its EGA colours, remembered as `id` (not read again while
+// it's the one held)
+bool load_back(dax::ByteSource& src, const dax::Index& idx, uint8_t block, uint8_t id, World& w);
 
 // Draws tile number `id` at view cell (row, col) (0-10), colour 13 not drawn.
 void draw_tile(pic::Canvas& c, const World& w, int id, int row, int col);
