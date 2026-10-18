@@ -72,8 +72,14 @@ the Project as claude/TODO.md.
       the vault, the spells past 100, the cockatrice / remorhaz / iron
       golem - 239 checks, 0 failed, 2026-10-17; more of its monsters'
       abilities to add). v0.117.0: playable (Tom, 2026-10-18: Play on
-      its game page); now the full checks - every spell, monster,
-      class, item and situation - and the ITEMTEST characters for Tom.
+      its game page). Done: the full checks - monsters (v0.120.1),
+      spells (v0.121.1), items and situations (v0.124.0): 5,412 checks,
+      0 failed; the ITEMTEST characters sent to Tom (2026-10-18).
+      Still open: scroll bundles (Join on scrolls - not in the engine);
+      Buy / Id prices, Share / Take / Pool, Look, the training hall's
+      screens, the whole party dying, importing Pool (.WHO) characters -
+      not checked yet; the unsure points in secret_facts_2.md 29.items.3
+      / 29.situations.0b.
 - [ ] **Pools of Darkness** (started 2026-10-17; facts: the Project's
       claude/darkness_facts.md; SPEC 6d). Done: the survey (program and
       overlay layout, files, saves, the scripts' operand counts);
@@ -106,6 +112,13 @@ the Project as claude/TODO.md.
       load_party_text 1.3 KB, save_game 1.1 KB).
 - [ ] Tom: v0.104.2 - Pool's walls round Phlan's gateway / the
       temples, and Center in a fight (Aim, Manual, an empty square).
+- [ ] Tom: Secret test characters (2026-10-18, secret_itemtest.zip):
+      its files into Secret's folder on the card beside SAVGAMA.DAT
+      (README inside), then Add Character -> Secret -> ITEMTEST1 ... 6
+      (every magic item of the game between them); say what looks wrong.
+- [ ] Tom: the Settings key "Item Fixes" now also switches Secret's
+      rules mistakes (SPEC 12) - keep the name, or rename it "Game
+      Fixes"?
 - [ ] Tom: Secret's Barkskin - the original runs Heal's routine for it
       (the AC effect AND nearly full hit points; v0.105.0 does the same).
       Keep it as the original, or fix it (AC only) behind Item Fixes?

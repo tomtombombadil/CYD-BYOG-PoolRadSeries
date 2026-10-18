@@ -65,6 +65,21 @@ bool Tables::set(const Layout& l, const uint8_t* bytes, size_t n, const uint8_t*
     return true;
 }
 
+bool Tables::adopt(const Layout& l, uint8_t* owned, size_t n, const uint8_t* bytes2, size_t n2)
+{
+    const size_t m2 = l.hi2 > l.lo2 ? static_cast<size_t>(l.hi2 - l.lo2) : 0;
+    if (!owned || l.hi <= l.lo || static_cast<size_t>(l.hi - l.lo) > 8192 || n < static_cast<size_t>(l.hi - l.lo) ||
+        m2 > sizeof data2_ || (m2 && (!bytes2 || n2 < m2))) {
+        delete[] owned;
+        return false;
+    }
+    delete[] data_;
+    data_ = owned;
+    lay = l;
+    if (m2) memcpy(data2_, bytes2, m2);
+    return true;
+}
+
 Tables& Tables::operator=(const Tables& o)
 {
     if (this == &o) return *this;

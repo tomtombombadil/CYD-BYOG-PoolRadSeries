@@ -1235,6 +1235,24 @@ full behaviour checks (every spell, monster, class, item, situation).
   takes blows, Barkskin heals as Heal, the Elixir its user only, Slow
   Poison's revival and time, Entangle nothing; the clouds' ground values
   0x1D / 0x1B; words. Four of Secret's mistakes with Item Fixes (SPEC 12).
+- **v0.124.0 - its items and situations checked** (5,412 Secret checks,
+  0 failed). Items (every one of its 273 item records): the Gauntlets of
+  Ogre Power (18/00 by Secret's code table, `items::kSecretPassive`), the
+  stat effects (Giant Strength 21, Strength, Enlarge, Friends,
+  Feeblemind), the Ring of Wizardry (doubles 5th level only), armour's
+  +3 movement only for armour with a plus, its scrolls, its items'
+  effects in fights, its random treasure (TREASURE 0x80 + n), Add
+  Character's NPC test. Situations: the races' and ranger's fight effects
+  by Secret's own handlers, spell slots and books (spell 36 Heal; 4
+  attacks past 12th level, rangers 14th), creation's and training's hit
+  points, ages and a thief's 2d6 gold, op 0x41 (EXPERIENCE, 26 uses
+  ignored until now) and its words, a day's rest across Rests, Modify's
+  hit point limits, Sell's bundle prices and its platinum-first payment.
+  The original reads the engine's saves (DOSBox). The ITEMTEST
+  characters for Tom (sweep `testchars`, GAME=3). secret_facts_2.md
+  29.items / 29.situations. The Item Fixes key shows on Secret's
+  Settings (its own help text); the magic tables are read straight into
+  their block (no 4.5 KB copy at a fight's peak).
 
 ## 6d. Pools of Darkness (Tom, 2026-10-17: started after Secret)
 
@@ -1803,7 +1821,17 @@ the game's Settings (As Original: all of them).
   250+ damage when HP is under the roll); Invisibility's -4, Blink's
   miss and Dispel Evil's -7 count at the attack roll (Secret's phases
   run them before it - they never do); the Strength spell gives a
-  paladin 18/xx (Secret's: none). More to come from the items /
-  situations checks.
+  paladin 18/xx (Secret's: none). v0.124.0: Displacement (and its
+  cloak) makes the first attack miss (Secret's handler runs only at its
+  wearer's turn - never); the Periapt of Health keeps disease off
+  (Secret's handler is empty); the Constitution save bonus of dwarves,
+  gnomes and halflings counts (effect 0x61 is in no phase of Secret's);
+  a dwarf's or gnome's -4 when giants attack counts (Secret's is set
+  before the roll, which overwrites it); Constitution's hit points are
+  signed (Secret's unsigned division turns a multi-class's penalty into
+  a large gain) and a level gives at least 1; Sell's overload test
+  weighs the coins it pays (Secret's weighs the price in gold); a pile
+  with no count joins nothing (Secret's swallows it). Not in the engine
+  yet: Secret's scroll bundles (Join on scrolls, up to 10).
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.

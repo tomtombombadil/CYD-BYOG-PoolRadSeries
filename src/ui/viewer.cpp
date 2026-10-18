@@ -2706,6 +2706,14 @@ const char* comfort_help_text(int c)
                "character) the portrait comes first: tap it to swap to the icon and back. Tap the icon for its "
                "action pose. Off: as the original.";
     case kCItemFixes:
+        // (the game in hand's own fixes: the whole list doesn't fit a 320x240 screen)
+        if (game_dirs[game_sel].game == games::Game::SecretOfTheSilverBlades)
+            return "The original game's rules mistakes made as AD&D has them: the elves' +1 to hit with their "
+                   "weapons for elves alone; a dwarf's or gnome's -4 when giants attack, and the Constitution "
+                   "save bonus; Invisibility, Blink, Displacement and Dispel Evil when a monster rolls to hit; "
+                   "a paladin's spells and Strength; a cleric's experience bonus from Wisdom 16; Harm; the "
+                   "Periapt of Health; a multi-class character's hit points; Sell's weight of coins. "
+                   "Off: as the original.";
         return "Items the original games got wrong, made as AD&D describes them. Pool of Radiance's Flame Tongue: "
                "in the original it is a plain long sword +2 whose blows aren't fire, so a troll it fells gets back "
                "up (and Use casts Find Traps). Fixed it is a long sword +1 Flame Tongue, as in Curse: +2 against "

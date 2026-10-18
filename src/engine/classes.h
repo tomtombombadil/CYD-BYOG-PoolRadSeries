@@ -71,6 +71,9 @@ public:
     ~Tables() { delete[] data_; }
     // ds_lo..ds_hi of the data segment (and lo2..hi2: second)
     bool set(const Layout& l, const uint8_t* bytes, size_t n, const uint8_t* bytes2 = nullptr, size_t n2 = 0);
+    // The same, taking over `owned` (new[]'d, hi - lo bytes) instead of a
+    // copy - no second block while the tables load (deleted when false)
+    bool adopt(const Layout& l, uint8_t* owned, size_t n, const uint8_t* bytes2 = nullptr, size_t n2 = 0);
     uint8_t  u8(uint16_t ds) const
     {
         if (data_ && ds >= lay.lo && ds < lay.hi) return data_[ds - lay.lo];

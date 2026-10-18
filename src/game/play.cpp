@@ -2976,16 +2976,19 @@ bool read_rule_tables(plat::FileSource& src, exepack::Info& info, classes::Table
 {
     const auto& pc = d->prof->create;
     const size_t n = pc.tables.hi - pc.tables.lo;
-    uint8_t* buf = static_cast<uint8_t*>(malloc(n));
+    // (read straight into the tables' own block: no copy at a fight's peak)
+    uint8_t* buf = new (std::nothrow) uint8_t[n];
     // (Pool: the class flags / masks elsewhere in the data segment)
     uint8_t buf2[32];
     const size_t n2 = pc.tables.hi2 > pc.tables.lo2 ? pc.tables.hi2 - pc.tables.lo2 : 0;
     const bool ok = buf && exepack::read(src, info, pc.ds_image + pc.tables.lo, buf, n) == exepack::Status::Ok &&
                     (!n2 || (n2 <= sizeof buf2 &&
-                             exepack::read(src, info, pc.ds_image + pc.tables.lo2, buf2, n2) == exepack::Status::Ok)) &&
-                    t.set(pc.tables, buf, n, buf2, n2);
-    free(buf);
-    return ok;
+                             exepack::read(src, info, pc.ds_image + pc.tables.lo2, buf2, n2) == exepack::Status::Ok));
+    if (!ok) {
+        delete[] buf;
+        return false;
+    }
+    return t.adopt(pc.tables, buf, n, buf2, n2);
 }
 
 // The magic's rule tables (spells, slots, class values) without the rest of

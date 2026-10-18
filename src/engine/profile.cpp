@@ -1497,7 +1497,7 @@ const Profile* find(games::Game g, uint32_t program_size, uint32_t image_size)
 bool has_item_fixes(games::Game g)
 {
     for (const Profile& p : kProfiles)
-        if (p.game == g && p.items.flame.type) return true;
+        if (p.game == g && (p.items.flame.type || p.variant.secret_files)) return true;   // (Secret: rules::fixes)
     return false;
 }
 
