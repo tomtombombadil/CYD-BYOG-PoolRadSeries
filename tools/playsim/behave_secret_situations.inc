@@ -1089,6 +1089,66 @@ void add_curse()
     }
 }
 
+// ---- Save and load (SAVGAMx.DAT 5,469 bytes, CHRDATx.SAV 439, .STF
+// 67-byte items, .SFX 9-byte effects): a party changed in every way the
+// files keep, saved to slot C and loaded back - the same
+void save_round_trip()
+{
+    if (!boot()) {
+        expect(P, "boot for saving", false);
+        return;
+    }
+    for (int i = 0; i < pt->count; ++i) {
+        party::Character& ch = pt->m[i];
+        ch.rec[0x1A4] = static_cast<uint8_t>(ch.hp_max() - i);
+        for (int k = 0; k < 7; ++k) ch.rec[0xFB + k * 2] = static_cast<uint8_t>(10 * i + k);
+        ch.rec[0x1E] = 0x0B;                        // a spell in memory
+        ch.ext[party::kExtBook + 9] = 1;           // spell 110 in the book
+        ch.ext[party::kExtMage67] = static_cast<uint8_t>(i);
+        ch.n_items = 2;
+        for (int t = 0; t < 2; ++t) {
+            memset(ch.items[t], 0, party::kItemSize);
+            ch.items[t][0x2E] = static_cast<uint8_t>(18 + t);
+            ch.items[t][0x2F] = 18;
+            ch.items[t][0x32] = static_cast<uint8_t>(t + 1);
+            ch.items[t][0x39] = 1;
+            ch.items[t][0x3A] = static_cast<uint8_t>(50 + i);
+        }
+        spells::add_affect(ch, 0x01, 30 + i, 0x10, false);    // a timed Bless
+        rules::recalc(ch, *names, d->facts);
+    }
+    vm->set(0x4C10, 0x1234);
+    static party::Party keep;
+    keep = *pt;
+    const bool saved = save_game('C');
+    expect(P, "saved to slot C", saved);
+    if (!boot('C')) {
+        expect(P, "slot C loads", false);
+        return;
+    }
+    bool same = pt->count == keep.count;
+    std::string why;
+    for (int i = 0; same && i < pt->count; ++i) {
+        const party::Character& a = keep.m[i];
+        const party::Character& b = pt->m[i];
+        for (int o = 0; o < static_cast<int>(party::kRecordSize); ++o)
+            if (a.rec[o] != b.rec[o] && o != 0x14C && !(o >= 0x14D && o < 0x185) && !(o >= 0x18D && o < 0x195)) {   // (pointers; the count the files write from the list)
+                why += " member " + std::to_string(i) + " rec " + std::to_string(o) + " " + std::to_string(a.rec[o]) + "/" + std::to_string(b.rec[o]);
+                same = false;
+                break;
+            }
+        if (memcmp(a.ext, b.ext, sizeof a.ext)) why += " ext", same = false;
+        if (a.n_items != b.n_items) why += " items", same = false;
+        for (int t = 0; same && t < a.n_items; ++t)
+            if (memcmp(a.items[t] + 0x2A + 4, b.items[t] + 0x2A + 4, party::kItemSize - 0x2E)) why += " item bytes", same = false;
+        if (a.n_affects != b.n_affects) why += " effects", same = false;
+        for (int t = 0; same && t < a.n_affects; ++t)
+            if (memcmp(a.affects[t], b.affects[t], 4)) why += " effect bytes", same = false;
+    }
+    expect(P, "save and load: the party the same (record, extension, items, effects)", same, "%s", why.c_str());
+    expect(P, "save and load: a game word (0x4C10)", vm->get(0x4C10) == 0x1234, "%04X", vm->get(0x4C10));
+}
+
 void all_situations()
 {
     if (const char* e = getenv("ENDLESS")) {
@@ -1107,4 +1167,5 @@ void all_situations()
     shop_sell();
     script_fields();
     add_curse();
+    save_round_trip();
 }
