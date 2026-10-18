@@ -1,5 +1,7 @@
 #include "create.h"
 
+#include "rules.h"
+
 #include <cstring>
 
 namespace create {
@@ -139,6 +141,52 @@ int hp_roll(const party::Character& c, const classes::Tables& t, const Facts& f,
 }
 
 int stat_full(const party::Character& c, int i) { return c.rec[kStats + i * 2 + 1]; }
+
+// Secret's hit points (GAME.OVR 0x21DDC - creation and training): for each
+// class in `mask` below its last hit die the better of two rolls of its
+// dice (level 1: DS 0x9B0's count) and its Constitution figure (0x21A99:
+// the table by the Constitution in use, fighters / paladins / rangers more
+// from 17 - by the class being rolled) times that count; past the hit dice
+// 3 / 2 / 1 (the last such class's, as Curse's). The rolls and the
+// Constitution are each divided by the classes held (the rolls at least
+// 1); the Constitution's byte is divided unsigned - a multi-class's
+// penalty comes out a large gain (with the rules fixes: signed)
+void secret_hp(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, int mask, int held)
+{
+    uint8_t* r = c.rec;
+    int rolled = 0, con = 0;
+    const int cv = stat_full(c, 4);
+    for (int k = 0; k < 7; ++k) {
+        const int lv = c.level(k);
+        if (lv <= 0 || !(t.u8(static_cast<uint16_t>(t.lay.class_masks + k)) & mask)) continue;
+        if (lv < t.max_hit_dice(k)) {
+            const int n = lv > 1 ? 1 : f.hp_count[k];
+            const int a = d.roll(f.hp_dice[k], n), b = d.roll(f.hp_dice[k], n);
+            rolled += a > b ? a : b;
+            int cb = cv >= 0 && cv < 26 ? kConHp[cv] : 0;
+            if (k == 2 || k == 3 || k == 4)
+                cb += cv == 17 ? 1 : cv == 18 ? 2 : cv == 19 || cv == 20 ? 3 : cv >= 21 && cv <= 23 ? 4 : cv >= 24 && cv <= 25 ? 5 : 0;
+            con += cb * n;
+        } else if (k == 2 || k == 3) {
+            rolled = 3;
+        } else if (k == 4 || k == 0 || k == 6) {
+            rolled = 2;
+        } else if (k == 5) {
+            rolled = 1;
+        }
+    }
+    if (held < 1) held = 1;
+    int inc = (rolled & 0xFF) / held;
+    if (inc < 1) inc = 1;
+    r[kHpRolled] = static_cast<uint8_t>(r[kHpRolled] + inc);
+    int cp = rules::fixes() ? static_cast<int8_t>(con & 0xFF) / held : (con & 0xFF) / held;
+    // (the original's gain can be below 1 - Constitution 3: none or less;
+    // AD&D's at least 1 a level with the rules fixes)
+    if (rules::fixes() && inc + cp < 1) cp = 1 - inc;
+    const int lost = (r[kHpMax] - r[kHp]) & 0xFF;
+    r[kHpMax] = static_cast<uint8_t>(r[kHpMax] + inc + cp);
+    r[kHp] = static_cast<uint8_t>(r[kHpMax] - lost);
+}
 void set_stat(party::Character& c, int i, int v)
 {
     if (v < 0) v = 0;
@@ -304,8 +352,9 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
         age_entry(cls, &base, &count, &sides);
         put16(r, kAge, d.roll(sides, count) + base);
     } else {
-        // (the entry: Curse's thief one for the magic-users, Pool's magic-user one)
-        const int mu = t.lay.pool ? 5 : 6;
+        // (the entry: Curse's thief one for the magic-users, Pool's and Secret's
+        // magic-user one - Secret's GAME.OVR 0x1E8F5: DS 0x4E59 = entry 5)
+        const int mu = t.lay.pool || t.lay.secret ? 5 : 6;
         const int e = cls == FighterThief ? 2 : (cls == FighterMU || cls == FighterMUThief || cls == MUThief) ? mu : 0;
         age_entry(e, &base, &count, &sides);
         put16(r, kAge, base + count * sides);
@@ -356,8 +405,16 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
     const uint16_t lim = static_cast<uint16_t>(t.lay.stat_limits + t.race_row(race) * 16);
     for (int i = 0; i < 6; ++i) {
         int v = stat_full(c, i);
-        for (int b = 0; b < 5; ++b)
-            if (v > 0 && t.u16(static_cast<uint16_t>(t.lay.age_brackets + t.race_row(race) * 10 + b * 2)) < age) v += kAgeEffect[i][b];
+        for (int b = 0; b < 5; ++b) {
+            const bool past = t.u16(static_cast<uint16_t>(t.lay.age_brackets + t.race_row(race) * 10 + b * 2)) < age;
+            // Secret's Wisdom: -1 while NOT past the first bracket - the young
+            // (GAME.OVR 0x1EEB9: the decrement skipped when the bracket < age)
+            if (t.lay.secret && i == 2 && b == 0) {
+                if (!past) --v;
+                continue;
+            }
+            if (v > 0 && past) v += kAgeEffect[i][b];
+        }
         int lo, hi;
         if (i == 0) {
             lo = t.u8(static_cast<uint16_t>(lim + sex));
@@ -399,6 +456,10 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
         } else if (k == classes::MagicUser) {
             r[kCastCount + 10] = 1;
             for (uint8_t s : f.mu_first) learn(c, s);
+        } else if (k == classes::Thief && t.lay.secret) {
+            // Secret's thieves start with 2d6 gold (GAME.OVR 0x1F589, record
+            // 0x109; DOSBox: a new human thief with GOLD 7)
+            put16(r, kMoney + 3 * 2, d.roll(6, 2));
         }
     }
     if (pool) {
@@ -416,6 +477,15 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
         put16(r, kMoney + 4 * 2, 300);          // 300 platinum (Secret's start with none)
     }
 
+    if (t.lay.secret) {
+        // Secret's creation: its hit point routine on nothing (GAME.OVR 0x1F5B4)
+        r[kHpMax] = r[kHp] = r[kHpRolled] = 0;
+        secret_hp(c, t, f, d, 0xFF, held);
+        classes::class_bonuses(c, t);
+        while (train(c, t, f, d, true)) {
+        }
+        return;
+    }
     const int rolled = hp_roll(c, t, f, d, 0xFF);
     int hp = rolled;
     const int adj = con_hp_adj(c, t);
@@ -534,6 +604,10 @@ void train_classes(party::Character& c, const classes::Tables& t, const Facts& f
                 if (s) learn(c, s);
     }
     if (r[kHitDice] <= r[kMultiLevel]) return;
+    if (t.lay.secret) {
+        secret_hp(c, t, f, d, mask, held);
+        return;
+    }
     const int gain = hp_roll(c, t, f, d, mask);
     if (held < 1) held = 1;
     int inc = gain / held;

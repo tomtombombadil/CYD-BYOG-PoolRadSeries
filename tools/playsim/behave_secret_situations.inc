@@ -371,6 +371,299 @@ void class_tables()
     expect(P, w, nth_bad == 0, "%d wrong", nth_bad);
 }
 
+// ---- Hit points (GAME.OVR 0x21DDC, training and creation): for each class
+// trained below its last hit die the better of two rolls (level 1 the
+// count DS 0x9B0) and Constitution (DS 0x5052, + fighters' extra 17+) x
+// that count; past it 3 / 2 / 1; rolls / held (at least 1) and
+// Constitution / held each - the Constitution's byte unsigned (the rules
+// fixes: signed)
+const int kMultiBits[17] = {0x01, 0, 0x04, 0x08, 0x10, 0x20, 0x40, 0, 0x05, 0x25, 0x11, 0x21, 0x41, 0x24, 0x44, 0x64, 0x60};
+int con_fig(int con, int k)
+{
+    const auto& r = b_rows("sit_conhp");
+    int v = r.empty() || con < 0 || con > 25 ? 0 : r[0][con];
+    if (k == 2 || k == 3 || k == 4)
+        v += con == 17 ? 1 : con == 18 ? 2 : con == 19 || con == 20 ? 3 : con >= 21 && con <= 23 ? 4 : con >= 24 && con <= 25 ? 5 : 0;
+    return v;
+}
+// The gain for classes `mask` (levels already raised); *inc the rolled part
+int want_gain(const int lv[8], int mask, int con, bool high, int held, int* inc)
+{
+    int rolled = 0, cs = 0;
+    for (int k = 0; k < 7; ++k) {
+        if (lv[k] <= 0 || !(sval("sit_classmask", k) & mask)) continue;
+        if (lv[k] < sval("sit_maxhd", k)) {
+            const int n = lv[k] > 1 ? 1 : sval("sit_hpcount", k);
+            rolled += high ? n * sval("sit_hpdice", k) : n;
+            cs += con_fig(con, k) * n;
+        } else {
+            rolled = k == 2 || k == 3 ? 3 : k == 4 || k == 0 || k == 6 ? 2 : 1;
+        }
+    }
+    int i = (rolled & 0xFF) / held;
+    if (i < 1) i = 1;
+    *inc = i;
+    int cp = rules::fixes() ? static_cast<int8_t>(cs & 0xFF) / held : (cs & 0xFF) / held;
+    if (rules::fixes() && i + cp < 1) cp = 1 - i;       // (AD&D: at least 1 a level)
+    return i + cp;
+}
+void hit_points()
+{
+    static party::Character c;
+    char w[140];
+    int n = 0, bad = 0;
+    for (int fix = 0; fix < 2; ++fix)
+        for (int cls = 0; cls < 17; ++cls) {
+            if (!kMultiBits[cls]) continue;
+            int held = 0;
+            for (int k = 0; k < 7; ++k) held += (kMultiBits[cls] >> k) & 1;
+            for (int con : {3, 6, 9, 15, 16, 17, 18, 19, 20, 21, 24})
+                for (int high = 0; high < 2; ++high)
+                    for (int k = 0; k < 7; ++k) {
+                        if (!((kMultiBits[cls] >> k) & 1)) continue;
+                        for (int L = 1; L < 18 && L < top_level(k); ++L) {
+                            rules::set_fixes(fix);
+                            bare(c, 7, cls < 8 ? cls : 2);
+                            c.rec[0x75] = static_cast<uint8_t>(cls);
+                            int lv[8] = {};
+                            for (int j = 0; j < 7; ++j)
+                                if ((kMultiBits[cls] >> j) & 1) lv[j] = j == k ? L : 1;
+                            levels(c, lv);
+                            set_stat(c, 4, con);
+                            classes::class_bonuses(c, m->tables);
+                            c.rec[0x78] = 100;
+                            c.rec[0x1A4] = 90;
+                            c.rec[0x12C] = 40;
+                            const int mask = sval("sit_classmask", k);
+                            if (high) dice_high();
+                            else dice_low();
+                            create::train_classes(c, m->tables, m->facts, m->dice, mask, false);
+                            dice_usual();
+                            ++lv[k];
+                            int inc = 0;
+                            const int g = want_gain(lv, mask, con, high, held, &inc);
+                            const int wmax = (100 + g) & 0xFF, wnow = (wmax - 10) & 0xFF;
+                            ++n;
+                            if (c.hp_max() != wmax || c.hp() != wnow || c.rec[0x12C] != ((40 + inc) & 0xFF)) {
+                                ++bad;
+                                snprintf(w, sizeof w, "class %d training %d to %d (class %d), Con %d, dice %s, fixes %d: hit points", cls, L,
+                                         L + 1, k, con, high ? "high" : "low", fix);
+                                if (bad <= 20)
+                                    expect(P, w, false, "max %d now %d rolled %d, the original's %d %d %d", c.hp_max(), c.hp(), c.rec[0x12C], wmax,
+                                           wnow, (40 + inc) & 0xFF);
+                            }
+                        }
+                    }
+        }
+    rules::set_fixes(true);
+    snprintf(w, sizeof w, "training's hit points: %d class / level / Constitution / dice cases", n);
+    expect(P, w, bad == 0, "%d wrong", bad);
+}
+
+// ---- Create New Character (GAME.OVR 0x1D6BE): every race, class,
+// alignment and sex with the dice all high and all low - experience,
+// levels after silent training, age, stats, 18/xx, hit points, effects,
+// money, the spell book
+bool race_stops(int sr, int k, int L, int str, int in)
+{
+    // (training's limits, GAME.OVR 0x220E4: Secret's race numbers)
+    switch (sr) {
+    case 3: return (k == 2 && (L == 9 || (L == 8 && str == 17) || (L == 7 && str < 17))) || (k == 0 && L >= 8);
+    case 1:
+        return (k == 2 && (L == 7 || (L == 6 && str == 17) || (L == 5 && str < 17))) ||
+               (k == 5 && (L == 11 || (L == 9 && in < 17) || (L == 10 && in == 17))) || (k == 0 && L >= 7);
+    case 4: return (k == 2 && (L == 6 || (L == 5 && str < 18))) || (k == 0 && L >= 7);
+    case 2:
+        return (k == 0 && L == 5) || ((k == 2 || k == 4) && (L == 8 || (L == 7 && str == 17) || (L == 6 && str < 17))) ||
+               (k == 5 && (L == 8 || (L == 7 && in == 17) || (L == 6 && in < 17)));
+    case 5: return k == 2 && (L == 6 || (L == 5 && str == 17) || (L == 4 && str < 17));
+    default: return false;
+    }
+}
+int32_t xp_need(int k, int L)
+{
+    const auto* r = b_row("xp", k);
+    return r && L >= 1 && L < static_cast<int>(r->size()) ? (*r)[L] : -1;
+}
+void creation()
+{
+    static party::Character c;
+    char w[160];
+    int ncase = 0, nbad = 0;
+    for (int sr = 1; sr <= 6; ++sr) {
+        const auto* rc = srow("sit_raceclasses", sr);
+        const auto* lim = srow("sit_racelim", sr);
+        const auto* br = srow("sit_agebr", sr);
+        const auto* ages = srow("sit_raceage", sr);
+        if (!rc || !lim || !br || !ages) {
+            expect(P, "the race rows", false);
+            return;
+        }
+        const int race = kSecretToCurseRace[sr];
+        for (size_t ci = 1; ci < rc->size(); ++ci) {
+            const int cls = (*rc)[ci];
+            const auto* al = srow("sit_classalign", cls);
+            const auto* mn = srow("sit_classmin", cls);
+            for (size_t ai = 1; al && ai < al->size(); ++ai)
+                for (int sex = 0; sex < 2; ++sex)
+                    for (int high = 0; high < 2; ++high) {
+                        if (high) dice_high();
+                        else dice_low();
+                        create::begin(c, m->tables, m->facts, m->dice, race, sex, cls, (*al)[ai]);
+                        create::roll(c, m->tables, m->facts, m->dice);
+                        dice_usual();
+                        ++ncase;
+                        char tag[64];
+                        snprintf(tag, sizeof tag, "race %d class %d align %d sex %d dice %s", sr, cls, (*al)[ai], sex, high ? "high" : "low");
+                        std::string why;
+                        // Age (0x1E82F)
+                        auto entry = [&](int e, bool most) {
+                            const int base = (*ages)[1 + e * 3], cnt = (*ages)[2 + e * 3], sd = (*ages)[3 + e * 3];
+                            return base + (most ? cnt * sd : high ? cnt * sd : cnt);
+                        };
+                        int age = 0;
+                        if (cls <= 6) age = entry(cls, false);
+                        else if (cls == 8 || cls == 9 || cls == 10 || cls == 11) age = entry(0, true);
+                        else if (cls == 13 || cls == 15 || cls == 16) age = entry(5, true);
+                        else if (cls == 14) age = entry(2, true);
+                        if (c.age() != age) why += " age " + std::to_string(c.age()) + "/" + std::to_string(age);
+                        // Stats (0x1EA17 on)
+                        const auto* adj = srow("sit_raceadj", sr);
+                        int want[6];
+                        for (int i = 0; i < 6; ++i) {
+                            int v = (high ? 19 : 4) + (adj ? (*adj)[1 + i] : 0);
+                            auto past = [&](int b) { return age > (*br)[1 + b]; };
+                            switch (i) {
+                            case 0:
+                                if (v > 0 && past(0)) v += 1;
+                                if (v > 0 && past(1)) v -= 1;
+                                if (v > 0 && past(2)) v -= 2;
+                                if (v > 0 && past(3)) v -= 1;
+                                break;
+                            case 1:
+                                if (past(1)) v += 1;
+                                if (past(3)) v += 1;
+                                break;
+                            case 2:
+                                if (!past(0)) v -= 1;
+                                if (past(1)) v += 1;
+                                if (past(2)) v += 1;
+                                if (past(3)) v += 1;
+                                break;
+                            case 3:
+                                if (past(2)) v -= 2;
+                                if (past(3)) v -= 1;
+                                break;
+                            case 4:
+                                if (past(1)) v -= 1;
+                                if (past(2)) v -= 1;
+                                if (past(3)) v -= 1;
+                                break;
+                            default: break;
+                            }
+                            const int lo = i == 0 ? (*lim)[1 + sex] : (*lim)[1 + 4 + i * 2];
+                            const int hi = i == 0 ? (*lim)[3 + sex] : (*lim)[1 + 5 + i * 2];
+                            if (v < lo) v = lo;
+                            if (v > hi) v = hi;
+                            if (mn && v < (*mn)[1 + i]) v = (*mn)[1 + i];
+                            if (i == 2 && v < 13 && cls >= 8 && cls <= 12) v = 13;
+                            want[i] = v;
+                            if (c.stat(i) != v || c.stat_now(i) != v)
+                                why += " stat" + std::to_string(i) + " " + std::to_string(c.stat(i)) + "/" + std::to_string(v);
+                        }
+                        const int bits = kMultiBits[cls];
+                        int e = 0;
+                        if (want[0] == 18 && (bits & 0x1C)) e = std::min(high ? 100 : 1, (*lim)[5 + sex]);
+                        if (c.rec[0x1D] != e || c.rec[0x1C] != e) why += " 18/" + std::to_string(c.rec[0x1D]) + " vs " + std::to_string(e);
+                        // Experience and silent training (0x2202A with [0x67F7] set)
+                        int held = 0;
+                        for (int k = 0; k < 7; ++k) held += (bits >> k) & 1;
+                        const int32_t xp = held == 1 ? 200000 : (cls == 9 || cls == 15 || cls == 16) ? 66667 : 100000;
+                        if (static_cast<int32_t>(c.exp()) != xp) why += " xp " + std::to_string(c.exp());
+                        int lv[8] = {};
+                        for (int k = 0; k < 7; ++k)
+                            if ((bits >> k) & 1) lv[k] = 1;
+                        int hpmax = 0, rolled = 0, inc = 0;
+                        hpmax = want_gain(lv, 0xFF, want[4], high, held, &inc);
+                        rolled = inc;
+                        for (int round = 0; round < 30; ++round) {
+                            int mask = 0;
+                            for (int k = 0; k < 7; ++k) {
+                                if (!lv[k] || race_stops(sr, k, lv[k], want[0], want[1])) continue;
+                                const int32_t need = xp_need(k, lv[k]);
+                                if (need > 0 && need <= xp) mask |= sval("sit_classmask", k);
+                            }
+                            if (!mask) break;
+                            for (int k = 0; k < 7; ++k)
+                                if (lv[k] && (sval("sit_classmask", k) & mask)) ++lv[k];
+                            int hd = 0;
+                            for (int k = 0; k < 7; ++k) hd = std::max(hd, lv[k]);
+                            hpmax = (hpmax + want_gain(lv, mask, want[4], high, held, &inc)) & 0xFF;
+                            rolled = (rolled + inc) & 0xFF;
+                        }
+                        for (int k = 0; k < 7; ++k)
+                            if (c.level(k) != lv[k]) why += " level" + std::to_string(k) + " " + std::to_string(c.level(k)) + "/" + std::to_string(lv[k]);
+                        if (c.hp_max() != hpmax || c.hp() != hpmax || c.rec[0x12C] != rolled)
+                            why += " hp " + std::to_string(c.hp_max()) + "/" + std::to_string(c.hp()) + " rolled " + std::to_string(c.rec[0x12C]) +
+                                   " vs " + std::to_string(hpmax) + " " + std::to_string(rolled);
+                        // Effects: the race's (0x1DF40), a paladin's 0x08, a ranger's 0x69
+                        std::vector<int> fx;
+                        if (const auto* rf = srow("sit_racefx", sr)) fx.assign(rf->begin() + 1, rf->end());
+                        if (bits & 0x08) fx.push_back(d->prof->create.prot_evil);
+                        if (bits & 0x10) fx.push_back(d->prof->create.ranger_giant);
+                        bool fok = static_cast<int>(fx.size()) == c.n_affects;
+                        for (int t : fx) fok = fok && c.has_affect(static_cast<uint8_t>(t));
+                        if (!fok) why += " effects (" + std::to_string(c.n_affects) + ")";
+                        // Money: none, but a thief's 2d6 gold (0x1F589)
+                        for (int i = 0; i < 7; ++i) {
+                            const int wm = i == 3 && (bits & 0x40) ? (high ? 12 : 2) : 0;
+                            if (c.money(i) != wm) why += " money" + std::to_string(i) + " " + std::to_string(c.money(i)) + "/" + std::to_string(wm);
+                        }
+                        // The book: a magic-user's four and silent training's lists; a
+                        // cleric's 1-8 and every cleric spell of a level with slots
+                        std::vector<int> book;
+                        if (bits & 0x20) {
+                            for (const auto& r : b_rows("sit_mufirst")) book.insert(book.end(), r.begin(), r.end());
+                            for (const auto& r : b_rows("sit_musilent"))
+                                if (r[0] <= lv[5]) book.insert(book.end(), r.begin() + 1, r.end());
+                        }
+                        if (bits & 0x01)
+                            for (const auto& r : b_rows("sit_clericfirst")) book.insert(book.end(), r.begin(), r.end());
+                        int sl[3][7] = {};
+                        for (int k = 0; k < 7; ++k) {
+                            if (!lv[k]) continue;
+                            int one[3][7];
+                            want_slots(k, lv[k], want[2], want[1], one);
+                            for (int a = 0; a < 3; ++a)
+                                for (int b2 = 0; b2 < 7; ++b2) sl[a][b2] += one[a][b2];
+                        }
+                        for (int sp = 1; sp <= 117; ++sp) {
+                            const auto* r = srow("sit_spell", sp);
+                            if (!r || (*r)[2] < 1 || (*r)[2] > 7) continue;
+                            const int code = (*r)[1], l = (*r)[2] - 1;
+                            if (((bits & 0x09) && code == 0 && sl[0][l] > 0) || ((bits & 0x10) && code == 1 && sl[1][l] > 0) ||
+                                ((bits & 0x10) && code == 3 && sl[2][l] > 0))
+                                book.push_back(sp);
+                        }
+                        for (int sp = 1; sp <= 117; ++sp) {
+                            const bool wb = std::find(book.begin(), book.end(), sp) != book.end();
+                            if (classes::in_book(c, sp) != wb) {
+                                why += " book spell " + std::to_string(sp) + (wb ? " missing" : " extra");
+                                break;
+                            }
+                        }
+                        if (!why.empty()) {
+                            ++nbad;
+                            snprintf(w, sizeof w, "creation %s:", tag);
+                            if (nbad <= 40 || getenv("ALLCREATE")) expect(P, w, false, "%s", why.c_str());
+                        }
+                    }
+        }
+    }
+    snprintf(w, sizeof w, "Create New Character: %d race / class / alignment / sex / dice cases", ncase);
+    expect(P, w, nbad == 0, "%d wrong", nbad);
+}
+
 void all_situations()
 {
     if (const char* e = getenv("ENDLESS")) {
@@ -380,4 +673,6 @@ void all_situations()
     b_oracle_load("secret_situations");
     race_effects();
     class_tables();
+    hit_points();
+    creation();
 }
