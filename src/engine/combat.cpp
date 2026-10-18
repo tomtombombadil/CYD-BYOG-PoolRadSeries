@@ -3381,17 +3381,17 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         break;
     }
     case SpellDoes::FullHeal:
-        // Secret's Heal (GAME.OVR 0x2F699; its Barkskin runs it too):
-        // disease, blindness, feeblemind cured, then the most hit points
-        // less the dice; the spell table's effect
+        // Secret's Heal (GAME.OVR 0x2F699; its Barkskin runs it too - the
+        // handler table's entry for both - and gives no effect): disease (its
+        // list DS 0x1B3E: helpless and the three of the disease's course),
+        // blindness, feeblemind cured, then the most hit points less the dice
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
             const int st2 = f.status();
             if (st2 != party::Okay && st2 != party::Animated && st2 != party::Unconscious && st2 != party::Dying) continue;
-            if (e.affect) give_aff(f, e.affect, minutes, pw, false);
             if (b.fx) {
                 bool ill = false;
-                const uint8_t ills[3] = {b.fx->sp.ill, b.fx->sp.weak, b.fx->sp.sick};
+                const uint8_t ills[4] = {b.fx->held[3], b.fx->sp.ill, b.fx->sp.weak, b.fx->sp.sick};
                 for (uint8_t dz : ills) {
                     const int at = dz ? find_aff(f, dz) : -1;
                     if (at >= 0) {

@@ -378,11 +378,10 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
         break;
     case Does::FullHeal:
         // Secret's Heal (GAME.OVR 0x2F699): disease, blindness, feeblemind
-        // cured, then the most hit points less n dice; the spell table's
-        // effect too (its Barkskin runs this routine)
+        // cured, then the most hit points less n dice (its Barkskin runs this
+        // routine - the handler table's entry - and gives no effect)
         for (int k = 0; k < n; ++k) {
             party::Character& c = p.m[who[k]];
-            if (e.affect) give(c, e.affect, minutes, pw, false);
             bool ill = false;
             for (uint8_t dz : cures.disease)
                 if (dz && cure(c, dz)) ill = true;
