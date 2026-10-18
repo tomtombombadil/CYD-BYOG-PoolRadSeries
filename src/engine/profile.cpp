@@ -1452,8 +1452,11 @@ const Profile kProfiles[] = {
      // The effects (darkness_sound_facts.md 2-4): ZOUNDS.DAX's blocks 1-11 as
      // effects 2-12, at 9,000 Hz; Curse's sound numbers here mostly the same
      // - the magic hit with stars 6, without 9, sling / flask 9, no title
-     // sound; turning is silent
-     .clips = {.file = "ZOUNDS.DAX", .hz = 9000, .first = 2, .last = 12,
+     // sound; turning is silent. A spell's own sound as Curse's: Fireball
+     // (0x2F) 11, Lightning Bolt (0x33) 8, the rest 2 (its overlay at
+     // GAME.OVR 0x29D34, +0x1407)
+     .sound = {.fireball_spell = 0x2F, .lightning_spell = 0x33},
+     .clips ={.file = "ZOUNDS.DAX", .hz = 9000, .first = 2, .last = 12,
                .ids = {0, 0, 2, 9, 6, 5, 9, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .quiet_turns = true},
      .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .camp_pic = 128, .vga = true, .darkness_files = true,
                  .party_menu_col = 9},
