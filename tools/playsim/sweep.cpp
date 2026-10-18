@@ -631,7 +631,8 @@ static void sweep_testchars()
             if (!plain) {
                 // (the same item again - another count, charges or doses - once)
                 bool again = false;
-                const bool scroll = r[0x2E] == 0x3D || r[0x2E] == 0x3E;
+                const magic::Scrolls sc = scroll_facts();
+                const bool scroll = sc.types[0] ? magic::is_scroll(sc, r) : r[0x2E] == 0x3D || r[0x2E] == 0x3E;
                 for (auto& o : kept) {
                     bool same = true;
                     for (int b : {0x2E, 0x2F, 0x30, 0x31, 0x32, 0x36, 0x3D, 0x3E}) same &= o.rec[b] == r[b];
@@ -710,11 +711,15 @@ static void sweep_testchars()
         snprintf(nm, sizeof nm, "ITEMTEST%d", static_cast<int>(made.size()) + 1);
         create::set_name(c, nm);
         // Experience for the top levels, trained up as the halls would
-        c.rec[0x127] = 0x40;
-        c.rec[0x128] = 0x42;
-        c.rec[0x129] = 0x0F;
-        c.rec[0x12A] = 0x00;                        // (1,000,000)
-        for (int k = 0; k < 40 && create::train(c, mk2->tables, mk2->facts, mk2->dice, true); ++k) {}
+        // (Secret: as it makes a character - its start experience, trained
+        // up silently by create::roll - so the original takes them as its own)
+        if (!secret_files()) {
+            c.rec[0x127] = 0x40;
+            c.rec[0x128] = 0x42;
+            c.rec[0x129] = 0x0F;
+            c.rec[0x12A] = 0x00;                    // (1,000,000)
+            for (int k = 0; k < 40 && create::train(c, mk2->tables, mk2->facts, mk2->dice, true); ++k) {}
+        }
         c.rec[0x1A4] = c.rec[0x78];                 // all their hit points
         made.push_back(m);
         return made.back();
@@ -769,7 +774,7 @@ static void sweep_testchars()
     }
     delete mk2;
     // Read back as Add Character finds them
-    find_guys();                                    // (the game's own Add Character list)
+    find_guys(secret_files() ? 'S' : 'C');          // (the game's own Add Character list; Secret's: its own)
     int found = 0;
     for (int i = 0; i < d->guys; ++i)
         if (!strncmp(d->guy_name[i], "ITEMTEST", 8)) {
@@ -791,7 +796,7 @@ static void sweep_testchars()
             snprintf(fn, sizeof fn, "%s%s", base, ext_items());
             if (open_save_file(fn, f)) {
                 plat::FileSource src(f);
-                party::read_items(src, ch);
+                party::read_items(src, ch, item_stride());
                 f.close();
             }
             char nm[20];
