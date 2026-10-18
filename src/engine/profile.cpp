@@ -1261,7 +1261,9 @@ const Profile kProfiles[] = {
                        .hammer = 0x17, .animated = 0, .con_regen = 0x3E, .giant = 0x71, .shield = 0x11,
                        .enfeeble = 0x1D, .ill = 0x22, .weak = 0x2B, .sick = 0x2C, .stun = 0x6A},
                 .race = {0x61, 0x12, 0x1A, 0x07, 0x2F, 0x30, 0x69},
-                .items = {.displace = 0x59, .ring_invisible = 0x38},
+                .items = {.displace = 0x59, .ring_invisible = 0x38, .giant_slayer = 0x4B, .luck = 0x4E, .fire_ring = 0x3D,
+                          .boots = 0x4A, .reflect = 0x48, .no_disease = 0x4C, .displace_unused = true,
+                          .scrolls = {39, 40}},
                 .berserk = 0x6B},
                kSecretFight, sizeof kSecretFight / sizeof kSecretFight[0]},
      // The sound driver: Curse's in START.EXE (segment 0x7E4), 13 sounds

@@ -1645,6 +1645,9 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
     out.behind = behind && !stab;
     out.backstab = stab;
     int ac = tg.rec[behind ? kAcBehind : kAc];
+    // Secret's Boots of Speed: AC 2 better against each attack (its phase
+    // 0xB handler adds to the record's AC - SPEC 12)
+    if (b.fx && b.fx->items.boots && hasx(tg, b.fx->items.boots)) ac += 2;
     // Coughing (a stinking cloud): its rear AC 2 worse (AC 10 at most worse;
     // worse than 10 becomes 10 - the original's), from any side
     const bool coughing = b.fx && hasx(tg, b.fx->cough);
@@ -1765,7 +1768,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
     // +3; Dragon Slayer - dragons +2 to hit, its own damage (coab's facts,
     // behaviour_facts.md items). To the roll (not a 1) and the damage.
     int wbonus = 0;
-    bool slayer = false, flame = false;
+    bool slayer = false, flame = false, giant = false;
     if (b.fx) {
         const ItemFx& ix = b.fx->items;
         const int kind = tg.rec[0x11A];
@@ -1775,6 +1778,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
         if (flame) wbonus += kind == 10 ? 1 : (kind == 9 || kind == 12) ? 2 : kind == 4 ? 3 : 0;
         if (ix.frost_brand && at.has(ix.frost_brand) && kind == 8) wbonus += 3;
         if (ix.dragon_slayer && at.has(ix.dragon_slayer) && kind == 3) slayer = true;
+        if (ix.giant_slayer && at.has(ix.giant_slayer) && (tg.flags2 & 1)) giant = true;
         if (ix.vs_undead && at.has(ix.vs_undead) && kind == 4) wbonus += 2;
     }
     for (int slot = 1; slot >= 0; --slot) {
@@ -1782,12 +1786,12 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             --at.attacks[slot];
             if (slot == 0) ++out.shots;
             const int roll = d.roll(20, 1);
-            const int extra = roll > 1 ? wbonus + (slayer ? 2 : 0) : 0;
+            const int extra = roll > 1 ? wbonus + (slayer ? 2 : 0) + (giant ? 1 : 0) : 0;
             bool hit = roll == 20 || (roll != 1 && roll + static_cast<int8_t>(at.rec[kHit]) + side + extra >= ac);
             // Blinking, once it has acted this round: not there to be hit
             if (b.fx && b.fx->blink && tg.has(b.fx->blink) && tg.delay == 0) hit = false;
             // Displacement: the first attack (past a 1) on it this fight misses, even a 20
-            if (b.fx && b.fx->items.displace && roll > 1) {
+            if (b.fx && b.fx->items.displace && roll > 1 && !(b.fx->items.displace_unused && !rules::fixes())) {
                 const int k = find_aff(tg, b.fx->items.displace);
                 if (k >= 0 && !(tg.aff[k][3] & 0x10)) {
                     tg.aff[k][3] |= 0x10;
@@ -1809,6 +1813,8 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             // The magic weapon's own damage (a dragon slayer's: 3 x d12 + 4 + Strength's)
             dmg += wbonus;
             if (slayer) dmg = d.roll(12, 1) * 3 + 4 + rules::strength_damage(at.rec);
+            // Secret's giant slaying: 6d6 + Strength's (GAME.OVR 0x13162)
+            if (giant) dmg = d.roll(6, 6) + rules::strength_damage(at.rec);
             // A ranger against giants: their ranger level more
             if (b.fx && hasx(at, b.fx->race.ranger_giant) && (tg.rec[0x14B] & 8)) dmg += at.rec[0x10D];
             bool bane = false;
@@ -2101,6 +2107,11 @@ bool resists(Battle& b, int c, int effect, const Harm& h, create::Dice& d)
     const bool paralysis = effect > 0 && m.paralyzed && effect == m.paralyzed;
     if (hasx(f, m.elf_sleep) && sleep_charm && d.roll(100, 1) <= 90) return true;
     if (hasx(f, m.charm_sleep) && sleep_charm) return true;
+    // Secret's Periapt of Health: immune to disease (AD&D's; its program's
+    // handler does nothing - with rules::fixes() only)
+    if (rules::fixes() && fx.items.no_disease && hasx(f, fx.items.no_disease) && effect > 0 &&
+        (effect == fx.sp.ill || effect == fx.sp.weak || effect == fx.sp.sick))
+        return true;
     if (hasx(f, m.no_paralyze) && paralysis) return true;
     if (hasx(f, m.no_cold) && (h.kind & 2)) return true;
     if (hasx(f, m.no_fire) && (h.kind & 1)) return true;
@@ -2148,6 +2159,17 @@ int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* dow
         }
         if (hasx(f, m.resist_cold) && (h.kind & 2)) dmg /= 2;
         if (hasx(f, m.resist_fire) && (h.kind & 1)) dmg /= 2;
+        // Secret's ring of fire resistance: fire without magic does nothing,
+        // magic fire 2 a die less, at least 1 a die
+        const uint8_t ring = b.fx->items.fire_ring;
+        if (ring && hasx(f, ring) && (h.kind & 1)) {
+            if (!(h.kind & 8)) safe = true;
+            else {
+                const int n = h.dice > 0 ? h.dice : 1;
+                dmg -= 2 * n;
+                if (dmg < n) dmg = n;
+            }
+        }
         if (hasx(f, m.oil_bane) && (h.kind & 9)) dmg += h.dice;    // (Pool's mummy: a point more a die)
         auto chance = [&](uint8_t type, int base) {
             if (!(h.kind & 8) || !hasx(f, type)) return false;
@@ -2652,6 +2674,8 @@ bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
         }
         if ((g_kind & 2) && hasx(f, fx.mon.resist_cold)) bonus += 3;
         if ((g_kind & 1) && hasx(f, fx.mon.resist_fire)) bonus += 3;
+        if ((g_kind & 1) && hasx(f, fx.items.fire_ring)) bonus += 4;      // (Secret's ring of fire resistance)
+        if (hasx(f, fx.items.luck)) ++bonus;                              // (Secret's luck stone)
         if ((g_kind & 2) && hasx(f, fx.sp.hot)) bonus += 2;           // the fire shields
         if ((g_kind & 1) && hasx(f, fx.sp.cold)) bonus += 2;
         // Protection from evil / good: +2 when the one acting is evil / good
@@ -3790,7 +3814,10 @@ int choose_item(Battle& b, const Tables& t, const classes::Tables& st, int i, co
         for (int k = 0; k < f.n_items; ++k) {
             const uint8_t* it = f.items[k];
             const int slot = names.type(it[0x2E]).slot;
-            if (!it[0x34] || (slot >= 11 && slot <= 13) || it[0x3E] >= 0x80 || !it[0x3D]) continue;
+            const bool scroll = (slot >= 11 && slot <= 13) ||
+                                (b.fx && b.fx->items.scrolls[0] &&
+                                 (it[0x2E] == b.fx->items.scrolls[0] || it[0x2E] == b.fx->items.scrolls[1]));
+            if (!it[0x34] || scroll || it[0x3E] >= 0x80 || !it[0x3D]) continue;
             // (Pool: the spell is the id less 0x17 over 0x38, and judged so - ovr10+04CB;
             // Curse: the id itself, judged by the row 0x17 back)
             const int sp = magic::item_spell(it, st.lay.pool);
@@ -4490,7 +4517,8 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
         if (tg >= 0) {
             ev(i, Ev::Gazes);
             fly(i, b.f[tg].x, b.f[tg].y, 5, 4, 45);
-            if (hasx(f, m.mirror_gaze) && m.mirror_word && readied_word(b.f[tg], m.mirror_word)) {
+            if (hasx(f, m.mirror_gaze) && ((m.mirror_word && readied_word(b.f[tg], m.mirror_word)) ||
+                                           (b.fx->items.reflect && hasx(b.f[tg], b.fx->items.reflect)))) {
                 ev(tg, Ev::Reflects);
                 fly(tg, f.x, f.y, 5, 4, 45);
                 tg = i;
