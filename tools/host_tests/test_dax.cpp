@@ -3077,6 +3077,37 @@ static void test_geo_view()
 // scripts reading the selected character
 static void test_party()
 {
+    // Darkness's 510-byte record (darkness_facts.md 30) into Curse's layout
+    // (+ ext) and back: every byte but the pointers and the item count
+    {
+        uint8_t dk[party::kDarknessRecordSize];
+        for (size_t i = 0; i < sizeof dk; ++i) dk[i] = static_cast<uint8_t>(i * 7 + 3);
+        auto zero = [&](size_t a, size_t b) { memset(dk + a, 0, b - a); };
+        zero(0x143, 0x147); zero(0x1A6, 0x1DF); zero(0x1E3, 0x1EB);
+        dk[0] = 9;
+        dk[0xAD] = 5;                                       // human
+        static party::Character dc;
+        party::from_darkness(dk, dc);
+        CHECK(dc.race() == 7 && dc.cls() == dk[0xAE] && dc.age() == (dk[0xB0] | dk[0xB1] << 8) && dc.hp_max() == dk[0xB2]);
+        CHECK(dc.rec[0x79] == dk[0xB3] && dc.ext[party::kExtBook] == dk[0x117] && dc.ext[party::kExtBook2 + 8] == dk[0x130]);
+        CHECK(dc.money(4) == (dk[0x14B] | dk[0x14C] << 8) && dc.level(0) == dk[0x151] && dc.old_level(6) == dk[0x15E]);
+        CHECK(dc.exp() == (dk[0x172] | dk[0x173] << 8 | dk[0x174] << 16 | (uint32_t)dk[0x175] << 24));
+        CHECK(dc.rec[0x12D] == dk[0x17D] && dc.ext[party::kExtCleric89 + 1] == dk[0x185] && dc.rec[0x137] == dk[0x18F] &&
+              dc.ext[party::kExtMage67] == dk[0x194] && dc.ext[party::kExtMemorized + 56] == dk[0xAA]);
+        CHECK(dc.health() == dk[0x1ED] && dc.hp() == dk[0x1FC] && dc.rec[0x191] == dk[0xAF] &&
+              dc.ext[party::kExtMagicRes] == dk[0x1EB] && dc.ext[party::kExtTrain] == dk[0x1EC]);
+        uint8_t back[party::kDarknessRecordSize];
+        party::to_darkness(dc, back);
+        CHECK(memcmp(back, dk, sizeof dk) == 0);
+        CHECK(party::race_from_darkness(0) == 2 && party::race_from_darkness(2) == 1 && party::race_to_darkness(4) == 1 &&
+              party::race_to_darkness(0) == 6);
+        // The scripts write only their program's fields; status sets "enabled"
+        CHECK(party::darkness_script_set(dc, 0x1FC, 33) && dc.hp() == 33);
+        CHECK(party::darkness_script_set(dc, 0x1ED, 0) && dc.rec[0x195] == 0 && dc.rec[0x196] == 1);
+        CHECK(party::darkness_script_set(dc, 0x1EB, 40) && dc.ext[party::kExtMagicRes] == 40);
+        CHECK(party::darkness_script_set(dc, 0xA0, 7) && dc.ext[party::kExtMemorized + 0xA0 - 0x72] == 7);
+        CHECK(!party::darkness_script_set(dc, 0xB2, 1) && dc.hp_max() == dk[0xB2]);
+    }
     // Secret's 439-byte record into Curse's layout (+ ext) and back: every
     // byte but the in-memory pointers and the item count comes back
     {
@@ -3333,6 +3364,33 @@ static void test_party()
     CHECK(strcmp(dir, "GAMES/CURSE/SAVES") == 0);
     savegame::save_dir("E\nP\n", 4, dir, sizeof dir);
     CHECK(dir[0] == 0);
+    // Darkness's POOL4.CFG: its own save folder first, then Secret's
+    const char cfg4[] = "1\r\nV\r\nM\r\nC:\\SAVE\\\r\nC:\\SECRET\\SAVE\\\r\nF\r\n0\r\n";
+    savegame::save_dir(cfg4, sizeof cfg4 - 1, dir, sizeof dir, 0);
+    CHECK(strcmp(dir, "SAVE") == 0);
+    savegame::save_dir(cfg4, sizeof cfg4 - 1, dir, sizeof dir, 1);
+    CHECK(strcmp(dir, "SECRET/SAVE") == 0);
+    // Darkness's .PTY (1,364 bytes): the game block, position, modes, look,
+    // names - read and written back the same
+    {
+        std::vector<uint8_t> pty(savegame::kDarknessSize, 0);
+        for (uint32_t i = 0; i < savegame::kDarknessBlock; ++i) pty[i] = static_cast<uint8_t>(i * 3);
+        const uint8_t pos[11] = {7, 13, 2, 5, 0x81, 4, 4, 3, 0, 1, 0};
+        memcpy(pty.data() + savegame::kDarknessBlock, pos, sizeof pos);
+        pty[savegame::kDarknessBlock + 11] = 2;
+        memcpy(pty.data() + savegame::kDarknessBlock + 12, "\x08" "CHRDATA1", 9);
+        memcpy(pty.data() + savegame::kDarknessBlock + 12 + 41, "\x08" "CHRDATA2", 9);
+        dax::MemorySource ps(pty.data(), static_cast<uint32_t>(pty.size()));
+        static ecl::GameState dgs;
+        savegame::Header dh;
+        CHECK(savegame::read_darkness(ps, dgs, dh));
+        CHECK(dgs.area1[5] == 15 && dgs.x == 7 && dgs.y == 13 && dgs.dir == 2 && dgs.roof == 0x81 && dh.state == 4 &&
+              dh.look == 3 && dh.look_slot == 1 && dh.count == 2 && !strcmp(dh.names[1], "CHRDATA2"));
+        VecSink ds;
+        CHECK(savegame::write_darkness(ds, dgs, dh) && ds.v == pty);
+        savegame::file_name_darkness('B', name2, sizeof name2);
+        CHECK(strcmp(name2, "SAVGAMB.PTY") == 0);
+    }
     // Steam / SNEG: "C:\CURSE\SAVE\" with the files in <folder>/GAME/CURSE
     char sub[32] = "CURSE/SAVE";
     CHECK(savegame::drop_own_folder("CURSE/GAME/CURSE", sub) && strcmp(sub, "SAVE") == 0);

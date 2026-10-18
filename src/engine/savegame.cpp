@@ -91,6 +91,73 @@ bool write(Sink& out, const ecl::GameState& gs, const Header& h, bool wall_sets,
     return out.put(names, sizeof names);
 }
 
+namespace {
+bool names_in(dax::ByteSource& src, uint32_t p, Header& h)
+{
+    uint8_t b;
+    if (src.read_at(p, &b, 1) != 1) return false;
+    int n = b;
+    if (n > party::kMaxParty) n = party::kMaxParty;
+    for (int i = 0; i < n; ++i) {
+        uint8_t s[41];
+        if (src.read_at(p + 1 + i * 41u, s, sizeof s) != sizeof s) return false;
+        size_t len = s[0];
+        if (len > 40) len = 40;
+        memcpy(h.names[i], s + 1, len);
+        h.names[i][len] = 0;
+    }
+    h.count = n;
+    return true;
+}
+bool names_out(Sink& out, const Header& h)
+{
+    uint8_t b = static_cast<uint8_t>(h.count);
+    if (!out.put(&b, 1)) return false;
+    uint8_t names[8 * 41] = {};
+    for (int i = 0; i < h.count && i < 8; ++i) {
+        const size_t n = strnlen(h.names[i], 40);
+        names[i * 41] = static_cast<uint8_t>(n);
+        memcpy(names + i * 41 + 1, h.names[i], n);
+    }
+    return out.put(names, sizeof names);
+}
+} // namespace
+
+bool read_darkness(dax::ByteSource& src, ecl::GameState& gs, Header& h)
+{
+    if (src.size() < kDarknessSize) return false;
+    h = Header{};
+    if (src.read_at(0, gs.area1, kDarknessBlock) != kDarknessBlock) return false;
+    uint8_t b[11];
+    if (src.read_at(kDarknessBlock, b, sizeof b) != sizeof b) return false;
+    gs.x = b[0] & 15;
+    gs.y = b[1] & 15;
+    gs.dir = b[2] & 7;
+    gs.wall_ahead = b[3];
+    gs.roof = b[4];
+    h.last_state = b[5];
+    h.state = b[6];
+    h.look = static_cast<uint16_t>(b[7] | b[8] << 8);
+    h.look_slot = static_cast<uint16_t>(b[9] | b[10] << 8);
+    gs.code_len = 0;
+    gs.moved = false;
+    return names_in(src, kDarknessBlock + 11, h);
+}
+
+bool write_darkness(Sink& out, const ecl::GameState& gs, const Header& h)
+{
+    const uint8_t b[11] = {static_cast<uint8_t>(gs.x), static_cast<uint8_t>(gs.y), static_cast<uint8_t>(gs.dir),
+                           gs.wall_ahead, gs.roof, h.last_state, h.state, static_cast<uint8_t>(h.look),
+                           static_cast<uint8_t>(h.look >> 8), static_cast<uint8_t>(h.look_slot),
+                           static_cast<uint8_t>(h.look_slot >> 8)};
+    return out.put(gs.area1, kDarknessBlock) && out.put(b, sizeof b) && names_out(out, h);
+}
+
+void file_name_darkness(char slot, char* out, size_t cap)
+{
+    snprintf(out, cap, "SAVGAM%c.PTY", slot);
+}
+
 void char_file(char slot, int n, char* out, size_t cap)
 {
     snprintf(out, cap, "CHRDAT%c%d", slot, n);
@@ -101,10 +168,11 @@ void file_name(char slot, char* out, size_t cap)
     snprintf(out, cap, "SAVGAM%c.DAT", slot);
 }
 
-void save_dir(const char* cfg, size_t len, char* out, size_t cap)
+void save_dir(const char* cfg, size_t len, char* out, size_t cap, int nth)
 {
     if (!cap) return;
     out[0] = 0;
+    int found = 0;
     size_t i = 0;
     while (i < len) {
         size_t e = i;
@@ -112,7 +180,7 @@ void save_dir(const char* cfg, size_t len, char* out, size_t cap)
         // A line naming a folder: has a backslash
         const char* line = cfg + i;
         const size_t n = e - i;
-        if (memchr(line, '\\', n)) {
+        if (memchr(line, '\\', n) && (nth < 0 || found++ == nth)) {
             size_t s = 0;
             if (n >= 2 && line[1] == ':') s = 2;
             while (s < n && (line[s] == '\\' || line[s] == '/')) ++s;

@@ -1250,6 +1250,12 @@ the scripts' changed ops, the rule tables, fights, the rest.
   1-3, tiles, background, combat ground at once); CALL takes 1 / 2 / 3.
   The record and the saves (.PTY = the game block + position + file
   names), the rule tables' places.
+- **v0.118.2 - the record and the saves.** `party::from_darkness` /
+  `to_darkness` (Format::Darkness; Character::ext grows to 123 bytes for
+  what Curse's layout has no place for - shared with Secret's where it
+  means the same), `darkness_script_set` (the fields its scripts may
+  write), `savegame::read_darkness` / `write_darkness` (SAVGAMx.PTY),
+  POOL4.CFG's first folder. The GOG party round-trips byte for byte.
 
 ## 7. The journal (Tom, 2026-10-06)
 

@@ -1076,7 +1076,7 @@ bool write_character_files(const char* dir, const char* rec_fn, const char* item
         }
     }
     const party::Character& ch = *src;
-    uint8_t buf[party::kSecretRecordSize];      // (the largest: Pool's or Secret's record)
+    uint8_t buf[party::kDarknessRecordSize];    // (the largest: Darkness's record)
     uint8_t fx[party::kMaxAffects * party::kAffectSize];
     size_t n = 0;
     const uint8_t* p = party::record_bytes(ch, rec_format(), buf, &n);
