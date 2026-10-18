@@ -867,6 +867,103 @@ void camp_own()
     }
 }
 
+// =====================================================================
+// 10. Damage: every damage spell's dice and kind (its handler's call of
+// 0x145:0x48 / the general routine's damage and kind), the save the row
+// gives (none / nothing / half) - dice all highest, the caster at 9th
+// level (12: the items' spells); a plain target with 200 HP
+struct Dmg {
+    int s, n, sides, plus;
+    int per;                    // 0 fixed, 1: + level, 2: (level + 1) / 2 missiles 1d4 + 1, 3: level dice, 4: level alone
+};
+const Dmg kDmg[] = {
+    {4, 1, 8, 0, 0},  {9, 0, 0, 0, 4},    {15, 0, 4, 0, 2}, {20, 1, 8, 0, 1},  {47, 0, 6, 0, 3}, {51, 0, 6, 0, 3},
+    {65, 2, 4, 2, 0}, {66, 2, 8, 1, 0},   {72, 3, 8, 3, 0}, {74, 6, 8, 0, 0},  {87, 3, 10, 0, 0},
+};
+int dmg_want(const Dmg& x, int L, bool saved)
+{
+    int dmg = 0;
+    switch (x.per) {
+    case 0: dmg = x.n * x.sides + x.plus; break;
+    case 1: dmg = x.n * x.sides + L; break;
+    case 2: {
+        const int m = (L + 1) / 2;
+        dmg = m * 4 + m;
+        break;
+    }
+    case 3: dmg = L * x.sides; break;
+    case 4: dmg = L; break;
+    }
+    const int on_save = orow(x.s, OOnSave);
+    if (saved && on_save == 1) return 0;
+    if (saved && on_save == 2) return dmg / 2;
+    return dmg;
+}
+void damage_spells()
+{
+    if (!new_fight()) return;
+    for (const Dmg& x : kDmg)
+        for (int saved = 0; saved < 2; ++saved) {
+            const int t = setup_cast(x.s, 200);
+            const int tg = t ? t : 6;
+            dice(1, saved ? 20 : 3);
+            fg->b.aim_x = F(tg).x;
+            fg->b.aim_y = F(tg).y;
+            cast(0, x.s, {tg});
+            fg->b.aim_x = fg->b.aim_y = -1;
+            dice_off();
+            const int L = flevel(x.s);
+            const int want = dmg_want(x, L, saved);
+            const int got = 200 - F(tg).hp();
+            snprintf(w, sizeof w, "spell %d's damage at level %d (save %s)", x.s, L, saved ? "made" : "failed");
+            expect(S, w, got == want, "%d, the original's %d", got, want);
+        }
+}
+
+// 11. Feeblemind (GAME.OVR 0x31B94): who can be (the class byte 0x6C):
+// clerics (and C/F, C/T) save at -1 the number; rangers +1 at 8 Hit Dice,
+// +2 from 9; paladins +4 from 9 Hit Dice; magic-users (and F/MU, F/MU/T,
+// MU/T) +4 a human, +2 others; C/F/MU, C/R, C/MU +2; any other class
+// (fighters, thieves - most monsters) "is unaffected"
+void feeblemind()
+{
+    if (!new_fight()) return;
+    struct C {
+        int cls, hd, race;
+        bool affected;
+    } cs[] = {{2, 9, 7, false}, {6, 12, 6, false}, {5, 10, 6, true}, {13, 8, 7, true}, {9, 8, 6, true}, {4, 9, 6, true}};
+    for (const C& x : cs) {
+        setup_cast(93);
+        F(6).rec[0x75] = static_cast<uint8_t>(x.cls);
+        F(6).rec[0xE5] = static_cast<uint8_t>(x.hd);
+        race_of(6, x.race);
+        dice(1, 3);
+        cast(0, 93, {6});
+        dice_off();
+        const bool got = faff(6, 0x44) >= 0;
+        snprintf(w, sizeof w, "Feeblemind on class %d (HD %d)", x.cls, x.hd);
+        expect(S, w, got == x.affected, "feebleminded %d", got);
+    }
+}
+
+// 12. Charm Person or Mammal (96, GAME.OVR 0x31D4A): a person (race under 7)
+// or a mammal (flags 1 - record 0x15D - & 2); else "is not Charmed"
+void charm_mammal()
+{
+    if (!new_fight()) return;
+    for (int k = 0; k < 3; ++k) {
+        setup_cast(96);
+        race_of(6, k == 0 ? 6 : 7);
+        F(6).rec[0x14B] = k == 1 ? 0x42 : 0;          // (the worg's flags)
+        dice(1, 3);
+        cast(0, 96, {6});
+        dice_off();
+        const bool got = faff(6, 0x0B) >= 0;
+        snprintf(w, sizeof w, "Charm Person or Mammal on a %s", k == 0 ? "human" : k == 1 ? "mammal" : "monster");
+        expect(S, w, got == (k < 2), "charmed %d", got);
+    }
+}
+
 } // namespace sspells
 
 void all_spells()
@@ -890,4 +987,7 @@ void all_spells()
     general_effects();
     own_routines();
     camp_own();
+    damage_spells();
+    feeblemind();
+    charm_mammal();
 }
