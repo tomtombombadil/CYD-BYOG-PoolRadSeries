@@ -1256,6 +1256,16 @@ the scripts' changed ops, the rule tables, fights, the rest.
   means the same), `darkness_script_set` (the fields its scripts may
   write), `savegame::read_darkness` / `write_darkness` (SAVGAMx.PTY),
   POOL4.CFG's first folder. The GOG party round-trips byte for byte.
+- **v0.119.0 - the frame; the Screen Test.** Its frame is drawn by its bar
+  routine (`layout::Tables::chain`): BORDERS.DAX's 11 pieces (0-3
+  corners, 4 / 5 bars, 6 / 7 junctions, 9 the row-16 bar's left end) in
+  tile slots 20-30, the area map's 20 tiles (8X8D0 block 202) in 0-19
+  (`layout::load_vga_tiles`, their EGA colours); the outer frame, the
+  row-16 bar, the column-16 divider and the 3D view's box, the fight's
+  frame (darkness_facts.md 7.1). The Screen Test's exploring frame
+  matches the original's EGA screen in all 225 frame cells (the GOG
+  start at the docks). The style the scripts choose (game byte 0x39:
+  0 gold, 1 red knots, 2 green, 3 skulls; 4 = gold): with the Play Test.
 
 ## 7. The journal (Tom, 2026-10-06)
 

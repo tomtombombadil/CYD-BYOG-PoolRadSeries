@@ -78,6 +78,33 @@ const char* status_text(Status s)
     return "?";
 }
 
+bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, int slot0, int n, bool ega)
+{
+    const dax::Entry* e = idx.find(block);
+    if (!e) return false;
+    uint8_t hdr[pic::kVgaHeaderSize];
+    pic::VgaHeader h;
+    uint8_t map[256];
+    for (int i = 0; i < 256; ++i) map[i] = static_cast<uint8_t>(ega ? i & 15 : i);
+    dax::RleReader r(src, idx, *e);
+    if (r.read(hdr, sizeof hdr) != sizeof hdr || !pic::parse_vga_header(hdr, e->raw_size, h) || h.height != 8 ||
+        h.width_cols != 1 || r.skip(h.count * 3u) != h.count * 3u)
+        return false;
+    if (ega && !pic::read_vga_ega(r, h, map)) return false;
+    if (!ega && r.skip((h.count + 1) / 2u) != (h.count + 1) / 2u) return false;
+    if (r.skip(4) != 4) return false;
+    int k = 0;
+    for (; k < h.frames && k < n && slot0 + k < kTiles; ++k) {
+        uint8_t px[64];
+        if (r.read(px, sizeof px) != sizeof px) return false;
+        for (int i = 0; i < 64; ++i) out.px[slot0 + k][i] = map[px[i]];
+    }
+    if (slot0 + k > out.count) out.count = static_cast<uint8_t>(slot0 + k);
+    out.first = 20;
+    out.loaded = true;
+    return k > 0;
+}
+
 bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, uint8_t first)
 {
     out.loaded = false;
@@ -114,10 +141,11 @@ Status load_tables(dax::ByteSource& program, const exepack::Info& info, const pr
 {
     out.loaded = false;
     if (p.variant.box[0] || p.variant.bars[0] || p.variant.vga) {
-        // Pool: boxes; Secret: bars; Darkness: its own (not drawn yet) - no
-        // tables to read
+        // Pool: boxes; Secret: bars; Darkness: its bar routine - no tables
+        // to read
         memcpy(out.box, p.variant.box, sizeof out.box);
         memcpy(out.bars, p.variant.bars, sizeof out.bars);
+        out.chain = p.variant.vga;
         out.loaded = true;
         return Status::Ok;
     }
@@ -164,9 +192,48 @@ Status load_tables(dax::ByteSource& program, const exepack::Info& info, const pr
 
 void tile(pic::Canvas& c, const Tiles& t, int n, int col, int row) { put(c, t, n, col, row); }
 
+namespace {
+// Darkness's bar routine (darkness_facts.md 7.1): the start piece, the bar
+// between, the end piece - across when the rows are the same, else down
+constexpr int kPiece = 20;          // BORDERS' piece 0 in the tiles
+void chain_bar(pic::Canvas& c, const Tiles& t, int c1, int r1, int c2, int r2, int sp, int ep)
+{
+    if (r1 == r2) {
+        put(c, t, kPiece + sp, c1, r1);
+        for (int col = c1 + 1; col < c2; ++col) put(c, t, kPiece + 4, col, r1);
+        put(c, t, kPiece + ep, c2, r1);
+    } else {
+        put(c, t, kPiece + sp, c1, r1);
+        for (int row = r1 + 1; row < r2; ++row) put(c, t, kPiece + 5, c1, row);
+        put(c, t, kPiece + ep, c1, r2);
+    }
+}
+// Its tables (DS 0x0DAA outer, 0x0DE4 fights; 0x0DC4 the divider and the
+// box): rows of col1 row1 col2 row2 start end
+void chain_rows(pic::Canvas& c, const Tiles& t, const uint8_t (*rows)[6], int n)
+{
+    for (int i = 0; i < n; ++i) chain_bar(c, t, rows[i][0], rows[i][1], rows[i][2], rows[i][3], rows[i][4], rows[i][5]);
+}
+constexpr uint8_t kChainOuter[][6] = {{0, 0, 39, 0, 0, 1}, {0, 0, 0, 23, 0, 2}, {39, 0, 39, 23, 1, 3}, {0, 23, 39, 23, 2, 3}};
+constexpr uint8_t kChainFight[][6] = {{0, 0, 39, 0, 0, 1}, {0, 0, 0, 22, 0, 2}, {39, 0, 39, 22, 1, 3},
+                                      {0, 22, 39, 22, 2, 3}, {22, 0, 22, 22, 6, 7}};
+void chain_box(pic::Canvas& c, const Tiles& t, int c0, int r0, int c1, int r1)
+{
+    const uint8_t rows[][6] = {{uint8_t(c0), uint8_t(r0), uint8_t(c1), uint8_t(r0), 0, 1},
+                               {uint8_t(c0), uint8_t(r1), uint8_t(c1), uint8_t(r1), 2, 3},
+                               {uint8_t(c0), uint8_t(r0), uint8_t(c0), uint8_t(r1), 0, 2},
+                               {uint8_t(c1), uint8_t(r0), uint8_t(c1), uint8_t(r1), 1, 3}};
+    chain_rows(c, t, rows, 4);
+}
+} // namespace
+
 // Pool: the border of a box whose corners are cells (c0, r0) and (c1, r1)
 void box(pic::Canvas& c, const Tables& tb, const Tiles& t, int c0, int r0, int c1, int r1)
 {
+    if (tb.chain) {
+        chain_box(c, t, c0, r0, c1, r1);
+        return;
+    }
     if (!tb.box[0]) return;
     for (int col = c0 + 1; col < c1; ++col) {
         put(c, t, tb.box[2], col, r0);
@@ -184,6 +251,11 @@ void box(pic::Canvas& c, const Tables& tb, const Tiles& t, int c0, int r0, int c
 
 void outer(pic::Canvas& c, const Tables& tb, const Tiles& t)
 {
+    if (tb.chain) {
+        c.fill(8, 8, 38 * 8, 22 * 8, 0);
+        chain_rows(c, t, kChainOuter, 4);
+        return;
+    }
     if (tb.bars[0]) {
         c.fill(8, 8, 38 * 8, 22 * 8, 0);
         hbar(c, tb, t, 0);
@@ -208,6 +280,10 @@ void outer(pic::Canvas& c, const Tables& tb, const Tiles& t)
 
 void bar(pic::Canvas& c, const Tables& tb, const Tiles& t, int row)
 {
+    if (tb.chain) {
+        chain_bar(c, t, 0, row, kCols - 1, row, 9, 7);      // (img 0x1519: pieces 9 and 7)
+        return;
+    }
     if (tb.bars[0]) {
         // (the outer verticals get their caps on each side of it)
         hbar(c, tb, t, row);
@@ -230,6 +306,11 @@ void explore(pic::Canvas& c, const Tables& tb, const Tiles& t)
 {
     outer(c, tb, t);
     bar(c, tb, t, 16);
+    if (tb.chain) {
+        chain_bar(c, t, 16, 0, 16, 16, 6, 7);
+        chain_box(c, t, 2, 2, 14, 14);
+        return;
+    }
     if (tb.bars[0]) {
         vbar(c, tb, t, 16, 0, 16);
         view_bars(c, tb, t, 2, 2);
@@ -252,6 +333,10 @@ void explore(pic::Canvas& c, const Tables& tb, const Tiles& t)
 
 void picture_frame(pic::Canvas& c, const Tables& tb, const Tiles& t, int col, int row)
 {
+    if (tb.chain) {
+        chain_box(c, t, col, row, col + 12, row + 12);
+        return;
+    }
     if (tb.bars[0]) {
         view_bars(c, tb, t, col, row);
         return;
@@ -272,6 +357,10 @@ void picture_frame(pic::Canvas& c, const Tables& tb, const Tiles& t, int col, in
 void combat(pic::Canvas& c, const Tables& tb, const Tiles& t)
 {
     c.fill(0, 0, pic::kScreenW, 24 * 8, 0);
+    if (tb.chain) {
+        chain_rows(c, t, kChainFight, 5);
+        return;
+    }
     if (tb.bars[0]) {
         // (Secret's fight screen not seen yet: bars at rows 0 and 22 and
         // verticals at columns 0, 22 and 39, as Curse's)
