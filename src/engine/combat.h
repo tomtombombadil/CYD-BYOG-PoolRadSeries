@@ -272,8 +272,16 @@ struct Facts {
     // foes (0x14B & 2), -4 to be hit by giants / trolls (dwarves, gnomes)
     // and by kobold-kind (gnomes: type 1) of size 2, rangers' level as
     // extra damage against giants (0x14B & 8)
+    // Secret (secret_flags): its handlers test the creatures' flag bytes -
+    // the dwarf's +1 against flags 1 (0x14B) & 0x80, the gnome's against
+    // flags 2 (Fighter::flags2) & 4, the ranger's level only next to the
+    // giant; its program never applies con_save (in no effect phase) or
+    // giants / gnome_extra (-4 against an attacker's flags 1 & 4 / & 0x20:
+    // set before the d20 is rolled) - the engine does only with
+    // rules::fixes() (an original's mistake, SPEC 12)
     struct RaceFx {
         uint8_t con_save, halfelf, dwarf_orc, gnome_foe, giants, gnome_extra, ranger_giant;
+        bool    secret_flags = false;
     } race{};
     ItemFx  items;
     // Berserk (the Berserker sword's effect, the listing's spl_berzerk): at

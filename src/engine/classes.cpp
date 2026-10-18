@@ -315,6 +315,8 @@ void class_bonuses(party::Character& c, const Tables& t)
         if (c.level(Fighter) > 0) c.rec[kAttacks] = c.level(Fighter) > 6 ? 3 : 2;
     } else if (c.level(Fighter) >= 7 || c.level(Paladin) >= 7 || c.level(Ranger) >= 8) {
         c.rec[kAttacks] = 3;
+        // Secret's levels go on: 2 a round past 12th (rangers 14th) - GAME.OVR 0x3C249
+        if (t.lay.secret && (c.level(Fighter) > 12 || c.level(Paladin) > 12 || c.level(Ranger) > 14)) c.rec[kAttacks] = 4;
     }
     spell_slots(c, t);
     saving_throws(c, t);
@@ -337,6 +339,8 @@ void class_bonuses(party::Character& c, const Tables& t)
                 if (v > c.rec[kThac0]) c.rec[kThac0] = static_cast<uint8_t>(v);
             }
             if (c.old_level(Fighter) > 6 || c.old_level(Paladin) > 6 || c.old_level(Ranger) > 7) c.rec[kAttacks] = 3;
+            if (t.lay.secret && (c.old_level(Fighter) > 12 || c.old_level(Paladin) > 12 || c.old_level(Ranger) > 14))
+                c.rec[kAttacks] = 4;            // (Secret's GAME.OVR 0x3C3CE)
             if (c.old_level(Thief) > 0) thief_skills(c, t);
         }
     }

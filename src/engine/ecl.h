@@ -34,6 +34,9 @@ enum ScriptWord {
     // Darkness (darkness_facts.md S10): PRESS KEY's prompt, JOURNAL's
     // sentence (two parts), WHAT MENU's question, YES NO's menu
     kWDkPressKey, kWDkJournal, kWDkJournalEnd, kWDkWhatDo, kWDkYesNo,
+    // Secret's experience award (op 0x41): "Congratulations the party gains
+    // experience!", "Congratulations " + NAME + " gains experience!"
+    kWPartyGainsXp, kWCongrats, kWGainsXp,
     kScriptWords
 };
 
@@ -73,6 +76,10 @@ struct OpSet {
     // Secret: COMBAT with no monsters and this area word 1 (cleared) opens
     // the vault (GAME.OVR 0x269D; its scripts' Deposit / Withdraw); 0: none
     uint16_t vault_word = 0;
+    // Secret: op 0x41 is an experience award (GAME.OVR ovr4 0x37F4 = file
+    // 0x43FF): its 2nd operand's experience to everyone (1st operand not 0)
+    // or the selected member (0), each its share by the classes held
+    bool xp_award = false;
     // Darkness: one more opcode that ends an instruction stream (its END,
     // 0x23: the text window cleared, the view back, EXIT; 0: none - EXIT
     // itself)

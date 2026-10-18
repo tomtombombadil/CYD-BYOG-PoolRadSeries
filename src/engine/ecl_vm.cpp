@@ -640,6 +640,11 @@ Stop Vm::resume()
         const Stop r = damage_step();
         if (r != Stop::Running) return r;
     }
+    if (xp_pause_) {
+        xp_pause_ = false;
+        pause_ms_ = game_delay();
+        return wait_for(Wait::Pause);
+    }
     if (dk_then_ != Wait::None) {
         const Wait w = dk_then_;
         dk_then_ = Wait::None;
@@ -1757,6 +1762,41 @@ Stop Vm::step()
         h_.party_changed();
         return Stop::Running;
     }
+    case 0x41:                                  // Secret: EXPERIENCE (GAME.OVR 0x43FF)
+        if (set_.xp_award) {
+            if (!need(2)) return Stop::Error;
+            const bool all = (value(o[0]) & 0xFF) != 0;
+            const uint16_t amount = value(o[1]);
+            // Each its share: the amount / the classes it has a level in, to
+            // those whose record 0x1A7 (Curse's 0x196) is set
+            auto award = [&](party::Character& c) {
+                int n = 0;
+                for (int k = 0; k < 7; ++k) n += c.level(k) > 0;
+                if (!n || !c.rec[0x196]) return;
+                const uint32_t e = c.exp() + amount / n;
+                for (int i = 0; i < 4; ++i) c.rec[0x127 + i] = static_cast<uint8_t>(e >> (8 * i));
+            };
+            if (party_ && party_->count) {
+                if (all) {
+                    for (int i = 0; i < party_->count; ++i) award(party_->m[i]);
+                    snprintf(xp_text_, sizeof xp_text_, "%s", word(kWPartyGainsXp));
+                } else {
+                    party::Character& c = *party_->sel();
+                    char nm[20] = {};
+                    c.name(nm, sizeof nm);
+                    for (size_t n = strlen(nm); n > 0 && nm[n - 1] == ' '; --n) nm[n - 1] = 0;
+                    award(c);
+                    snprintf(xp_text_, sizeof xp_text_, "%s%s%s", word(kWCongrats), nm, word(kWGainsXp));
+                }
+                h_.party_changed();
+            }
+            // its words in the text area (cleared), then the game's delay
+            text_ = xp_text_;
+            clear_ = true;
+            xp_pause_ = true;
+            return wait_for(Wait::Print);
+        }
+        [[fallthrough]];
     default: {
         Insn in;
         if (decode(s_.code, s_.code_len, pc_, set_, in)) {

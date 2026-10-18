@@ -88,7 +88,7 @@ struct Data {
     dax::Index     idx;
     uint8_t        sky[16] = {};
     char           press_key[text::kMaxString] = {};
-    char           script_word[ecl::kScriptWords][32] = {};
+    char           script_word[ecl::kScriptWords][48] = {};   // (Secret's longest: 43)
     const char*    script_words[ecl::kScriptWords] = {};
     char           data_dir[96] = {};
     const profile::Profile* prof = nullptr;
@@ -2117,10 +2117,31 @@ bool items_yes_no(Ask what, char k, pic::Canvas& c)
         const int gold = rules::sell_value(ch.items[i], d->facts);
         rules::remove_item(ch, i);
         const int plat = gold / 5;
+        bool over = false;
+        if (secret_files()) {
+            // Secret (GAME.OVR 0x29FC0): the price in platinum and gold; when
+            // it won't fit (its test weighs the price in gold - the coins
+            // with the rules fixes) the character takes what it can carry,
+            // platinum first, the rest goes on the counter
+            rules::recalc(ch, *names, d->facts);
+            int room = rules::max_load(ch) - ch.encumbrance();
+            if (room < 0) room = 0;
+            over = (rules::fixes() ? plat + gold % 5 : gold) > room;
+            const int p = over && plat > room ? room : plat;
+            room -= p;
+            const int g = over && gold % 5 > room ? room : gold % 5;
+            add_coins(ch, 4, p);
+            add_coins(ch, 3, g);
+            ground->money[4] += plat - p;
+            ground->money[3] += gold % 5 - g;
+            rules::recalc(ch, *names, d->facts);
+            back_to_items(c);
+            note(c, over ? iw(profile::kOverloadPool) : iw(profile::kSold));
+            return true;
+        }
         add_coins(ch, 4, plat);
         add_coins(ch, 3, gold % 5);
         rules::recalc(ch, *names, d->facts);
-        bool over = false;
         if (ch.encumbrance() > rules::max_load(ch)) {
             add_coins(ch, 4, -plat);              // the platinum goes on the counter
             ground->money[4] += plat;
@@ -2339,8 +2360,14 @@ void draw_camp(pic::Canvas& c)
 
 bool camp_from_script = false;     // PROGRAM 9: breaking camp lets the script go on
 
+// Secret's day of rest counts from the camp's start, not each Rest
+// (GAME.OVR 0x1D158 zeroes its counter [0x8DB2] as the camp begins; the
+// rest's 0x2BEB9 counts on from rest to rest: 288 five-minute steps)
+int camp_heal_steps = 0;
+
 void open_camp(pic::Canvas& c)
 {
+    camp_heal_steps = 0;
     screen = Screen::Camp;
     draw_camp(c);
 }
@@ -5348,7 +5375,9 @@ void rest_tick(uint32_t now, pic::Canvas& c)
         if (rest.left < 0) rest.left = 0;
         vm->advance_clock(1, 5);
         vm->take_minutes();                 // (the rest's own clock runs the effects)
+        if (d->prof->variant.secret_files) rest.r.steps = camp_heal_steps;
         const magic::Step st = magic::step(rest.r, *pt, mrules->tables, scroll_facts(), false);
+        camp_heal_steps = rest.r.steps;
         effects_clock(5, c);
         bool said = false;
         if (st.healed) {

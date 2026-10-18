@@ -852,6 +852,7 @@ constexpr ecl::OpSet kSecretEcl = [] {
     s.area_by_block = true;
     s.secret_fields = true;
     s.vault_word = 0x4CFC;          // (secret_facts_2.md 24)
+    s.xp_award = true;              // (op 0x41: GAME.OVR 0x43FF)
     // CALL 2DCB follows the scripts' moves of the party (SAVE x, y, facing
     // to 0xC04B-D, then the call), as Curse's CALL 2E10: the 3D view again
     s.redraw_call = 0x2DCB;
@@ -1358,13 +1359,23 @@ const Profile kProfiles[] = {
                        .hot = 0x32, .cold = 0x36, .zap = 0x70, .slow_poison = 0x16, .poison_damage = 0x0F,
                        .hammer = 0x17, .animated = 0, .con_regen = 0x3E, .giant = 0x71, .shield = 0x11,
                        .enfeeble = 0x1D, .ill = 0x22, .weak = 0x2B, .sick = 0x2C, .stun = 0x6A},
-                .race = {0x61, 0x12, 0x1A, 0x07, 0x2F, 0x30, 0x69},
+                // the races (GAME.OVR 0x10CCB's handlers by its effect phases, 0x3624E): its
+                // own flag tests (secret_flags); 0x61 (Constitution) is in no phase and 0x2F /
+                // 0x30 change the d20 before it's rolled (phase 0xB) - applied only with the
+                // rules fixes (rules::fixes)
+                .race = {0x61, 0x12, 0x1A, 0x07, 0x2F, 0x30, 0x69, true},
                 .items = {.displace = 0x59, .ring_invisible = 0x38, .giant_slayer = 0x4B, .luck = 0x4E, .fire_ring = 0x3D,
                           .boots = 0x4A, .no_disease = 0x4C, .displace_unused = true,
                           .scrolls = {39, 40}},
                 .berserk = 0x6B, .secret = true, .globe_major = 0x39,
                 .cloud_ground = 0x1D, .poison_ground = 0x1B, .cleric_xp_wis = 15},
                kSecretFight, sizeof kSecretFight / sizeof kSecretFight[0]},
+     // The script machine's words (GAME.OVR): the encounter's "Both sides
+     // wait." / "The monsters flee.", DAMAGE's " dies. " / " is hit FOR " /
+     // " points of Damage." / "The entire party is killed!", op 0x41's
+     // "Congratulations the party gains experience!" / "Congratulations " /
+     // " gains experience!"
+     .script_words = {0x30F8, 0x3109, 0xB158, 0xB160, 0xB16D, 0x3971, 0, 0, 0, 0, 0, 0x43AF, 0x43DB, 0x43EC},
      // Random treasure (TREASURE 0x80 + n): Secret's own making (kSecretMake),
      // its rows of ready-made items at DS 0x0A2A (row r: word 1 + 8 r of DS 0x0A28)
      .random_items = &kSecretRandom, .random_rows = 0x0A2A,
