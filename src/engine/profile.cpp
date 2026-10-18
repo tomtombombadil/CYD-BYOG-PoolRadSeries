@@ -360,14 +360,15 @@ constexpr combat::FightSpell kSecretFight[] = {
     {0x2C, SpellDoes::Theirs, 0, 0, 0, 0, 0, 0x2FEBB},      // Bestow Curse: "has been cursed!" (a touch)
     {0x2D, SpellDoes::Affect, 0, 0, 0, 0, 0, kJ | 21},      // Blink: "is blinking"
     {0x44, SpellDoes::Kill, 0, 0, 0, 0, 0, 0x36A24},        // Poison: "is Poisoned", then "is killed"
-    {0x46, SpellDoes::Snakes, 0, 0, 0, 0, 0, 0xFFAB, 0x30AB7},   // Sticks to Snakes: "is fighting with snakes" /
-                                                            // "smashes them flat"
+    {0x46, SpellDoes::Snakes, 0, 0, 0, 0, 0, 0x30A9D, 0x30AB7},  // Sticks to Snakes: the caster "turns sticks into
+                                                            // snakes" / "smashes them flat"
     {0x4C, SpellDoes::Slay, 2, 8, 1, 0, 8, kJ | 27},        // Slay Living: "is slain"; saved 2d8 + 1
     {0x4E, SpellDoes::Entangle, 0, 0, 0, 0, 0, 0},    // Entangle: "is entangled" (outdoors)
     {0x4F, SpellDoes::Faerie, 0, 0, 0, 0, 0, kJ | 28},      // Faerie Fire: "is highlighted"
     {0x50, SpellDoes::Affect, 0, 0, 0, 0, 0, kJ | 29},      // Invisibility to Animals: "is invisible"
     {0x4D, SpellDoes::Affect, 0, 0, 0, 0, 0, kJ | 2},      // Detect Magic (the druids'): "is affected"
-    {0x56, SpellDoes::Fumble, 0, 0, 0, 0, 0, kJ | 32, kJ | 23},  // Fumble: "is clumsy" / "is slowed"
+    {0x56, SpellDoes::Fumble, 0, 0, 0, 0, 0, kJ | 32, kJ | 23, kJ | 33},  // Fumble: "is clumsy" / "is slowed" /
+                                                            // the first failed save "is Befuddled"
     {0x57, SpellDoes::Damage, 3, 10, 0, 0, 0x0A, 0},        // Ice Storm: 3d10 cold (and magic), radius 2
     {0x5D, SpellDoes::Feeble, 0, 0, 0, 0, 0, 0},      // Feeblemind: "is stupid"
     // spell_facts.md (v0.62.0)
@@ -388,8 +389,9 @@ constexpr combat::FightSpell kSecretFight[] = {
     {0x24, SpellDoes::FullHeal, 1, 4, 0, 0, 0, kJ | 25, kJ | 36, kJ | 35, 0, 0x2F687},  // Secret's Heal: "is Healed",
                                                             // "is no longer blind", "is cured", "regains intellect"
     {0x5A, SpellDoes::FullHeal, 1, 4, 0, 0, 0, kJ | 25, kJ | 36, kJ | 35, 0, 0x2F687},  // Barkskin: the original runs
-                                                            // Heal's routine (and gives its effect)
-    {0x38, SpellDoes::HarmTouch, 1, 4, 0, 0, 0, kJ | 18},       // Harm: "is Diseased", down to 1d4 hit points
+                                                            // Heal's routine (no effect given)
+    {0x38, SpellDoes::HarmTouch, 1, 4, 0, 0, 8, kJ | 18},       // Harm: "is Diseased", down to 1d4 hit points (magic -
+                                                                // GAME.OVR 0x30560)
     // The items' own spells (the spell table's monster spells)
     {0x39, SpellDoes::Haste, 5, 4, 0, 0, 0, kJ | 22, 0},     // speed: "is Speedy", 5d4 rounds
     {0x3C, SpellDoes::Bolt, 1, 6, 20, 0, 4, 0, 0, 0, 3},    // a lightning stroke: 1d6 + 20, the path 20, 3 squares
@@ -1221,8 +1223,10 @@ const Profile kProfiles[] = {
                               0x2DA23, 0x298FE, 0x2990B, 0x29911, 0x2AC74, 0},
                .camp = kSecretCamp, .n_camp = sizeof kSecretCamp / sizeof kSecretCamp[0],
                .facts = {2, 0x2A, {0x22, 0x2B, 0}, {{0, 0}, {0x2C, 0x1F}, {0, 0}}, 0x0C, 0x17, 0x32, 0x36, 0x70, 0x71,
+                         // (its time routine GAME.OVR 0x2D5E2: Slow Poison 3780 minutes; no
+                         // Curse's 0x3F / 0x43 cases - those are other spells here)
                          {{0x28, 1, 6, 0, 10}, {0x39, 5, 4, 0, 1}, {0x3D, 5, 4, 0, 1}, {0x3B, 1, 4, 4, 10},
-                          {0x3F, 1, 10, 10, 10}, {0x43, 0, 0, 1440, 1}}},
+                          {0x1A, 0, 0, 3780, 1}, {}}},
                .spell_named = nullptr, .n_spell_named = 0, .named = nullptr, .n_named = 0,
                .scroll_one_spell = 100, .read_magic = 0x10,
                .level_word = 0xE7FA, .effect_names = {0x10047, 38, 0x75}, .these_spells = 0xE1E8},
@@ -1264,7 +1268,7 @@ const Profile kProfiles[] = {
                 .shot_pointed = {5, 7, 0, 12, 14, 30}, .shot_spinning = {2, 3, 6}, .shot_flask = {0, 0},
                 .shot_sling = {28, 0, 29},
                 .bestow = 0x24, .blink = 0x25, .fumbling = 0x1B, .silence = 0x15, .entangle = 0, .sticks = 0x03,
-                .faerie = 0, .blinded = 0x21, .animals_blind = 0x45, .feeble = 0x44,
+                .faerie = 0x47, .blinded = 0x21, .animals_blind = 0x45, .feeble = 0x44,
                 // Its monsters' effects (MON1SPC): deadly poison 0x40 / -2 0x56, paralysis on a hit
                 // 0x58, immune to nonmagical weapons 0x67, fire 0x5D, cold 0x62, electricity 0x06,
                 // the iron golem's spell immunity 0x4F, the gazes 0x3A / 0x3B, breath 0x68 / 0x53 /
@@ -1295,7 +1299,8 @@ const Profile kProfiles[] = {
                        .enfeeble = 0x1D, .ill = 0x22, .weak = 0x2B, .sick = 0x2C, .stun = 0x6A},
                 .race = {0x61, 0x12, 0x1A, 0x07, 0x2F, 0x30, 0x69},
                 .items = {.displace = 0x59, .ring_invisible = 0x38},
-                .berserk = 0x6B, .cleric_xp_wis = 15},
+                .berserk = 0x6B, .secret = true, .globe_major = 0x39,
+                .cloud_ground = 0x1D, .poison_ground = 0x1B, .cleric_xp_wis = 15},
                kSecretFight, sizeof kSecretFight / sizeof kSecretFight[0]},
      // The sound driver: Curse's in START.EXE (segment 0x7E4), 13 sounds
      // (the same byte code but the missile's), its Tandy byte code past

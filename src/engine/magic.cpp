@@ -52,7 +52,13 @@ bool can_use(const party::Character& c, const classes::Tables& t, int s)
         return c.rec[kWis] > 8 &&
                (classes::skill_level(c, classes::Cleric) > 0 || classes::skill_level(c, classes::Paladin) > 8);
     case Druid: return c.rec[kWis] > 8 && classes::skill_level(c, classes::Ranger) > 6;
-    case MagicUser: return c.rec[kInt] > 8;
+    case MagicUser:
+        // Secret (GAME.OVR 0x2C71E): a magic-user, or a ranger over 8th level
+        // (its human magic-users in armour can't in fights - not here)
+        if (t.lay.secret)
+            return c.rec[kInt] > 8 && (classes::skill_level(c, classes::MagicUser) > 0 ||
+                                       classes::skill_level(c, classes::Ranger) > 8);
+        return c.rec[kInt] > 8;
     default: return false;
     }
 }

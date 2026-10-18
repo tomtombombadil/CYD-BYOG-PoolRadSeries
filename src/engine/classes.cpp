@@ -135,9 +135,14 @@ void spell_slots(party::Character& c, const Tables& t)
             for (int L = 2; L <= lv && L <= top; ++L)
                 for (int k = 0; k < cols; ++k) cast(c, 0, k) += t.slots_gained(Cleric, L, k);
             wisdom_spells(c);
+            // Secret (GAME.OVR 0x3C5DD): no 6th level spells under Wisdom 17,
+            // no 7th under 18
+            if (t.lay.secret && c.rec[kWisFull] < 17) cast(c, 0, 5) = 0;
+            if (t.lay.secret && c.rec[kWisFull] < 18) cast(c, 0, 6) = 0;
+            // (Secret's 0x24 is Heal, a cleric spell like the rest)
             for (int s = 1; s < t.lay.spell_count; ++s)
                 if (t.spell_class(s) == 0 && t.spell_level(s) >= 1 && t.spell_level(s) <= t.slot_levels() &&
-                    cast(c, 0, t.spell_level(s) - 1) > 0 && s != kAnimateDead)
+                    cast(c, 0, t.spell_level(s) - 1) > 0 && (s != kAnimateDead || t.lay.secret))
                     learn(c, s);
             break;
         case Paladin:
@@ -159,16 +164,23 @@ void spell_slots(party::Character& c, const Tables& t)
                 // the druid spells of the levels they have slots for (Curse's
                 // are all 1st level; Secret's ranger leaves its 2nd level
                 // ones out until then - the GOG party's ranger)
-                for (int s = 1; s < t.lay.spell_count; ++s)
-                    if (t.spell_class(s) == 1 && t.spell_level(s) >= 1 && t.spell_level(s) <= t.slot_levels() &&
-                        cast(c, 1, t.spell_level(s) - 1) > 0)
-                        learn(c, s);
+                // (Secret, GAME.OVR 0x3C083: the magic-users' too, of the levels
+                // they have magic-user slots for)
+                for (int s = 1; s < t.lay.spell_count; ++s) {
+                    const int k = t.spell_class(s), lvl = t.spell_level(s);
+                    if (lvl < 1 || lvl > t.slot_levels()) continue;
+                    if ((k == 1 || (k == 2 && t.lay.secret)) && cast(c, k, lvl - 1) > 0) learn(c, s);
+                }
             }
             break;
         case MagicUser:
             cast(c, 2, 0) += 1;
             for (int L = 2; L <= lv && L <= top; ++L)
                 for (int k = 0; k < cols; ++k) cast(c, 2, k) += t.slots_gained(MagicUser, L, k);
+            // Secret (GAME.OVR 0x3C609): no 6th level spells under Intelligence
+            // 12, no 7th under 14
+            if (t.lay.secret && c.rec[0x13] < 12) cast(c, 2, 5) = 0;
+            if (t.lay.secret && c.rec[0x13] < 14) cast(c, 2, 6) = 0;
             break;
         default:
             break;

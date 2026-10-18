@@ -57,6 +57,9 @@ Entry entry(const classes::Tables& t, int s)
     e.lasts = b(4);
     e.lasts_level = b(5);
     e.targets = b(7);
+    // Secret's whole party is 3 (its camp routine GAME.OVR 0x2D949 walks the
+    // party list for 3; Curse's 4)
+    if (t.lay.secret && e.targets == 3) e.targets = kParty;
     e.affect = b(10);
     e.when = b(11);
     e.aim = b(6);
@@ -81,12 +84,15 @@ int power(const party::Character& c, const classes::Tables& t, int s)
 {
     if (s <= 0) return 0;
     using classes::skill_level;
-    if (c.level(classes::Cleric) == 0 && c.level(classes::MagicUser) == 0 && c.level(classes::Paladin) < 9 &&
-        c.level(classes::Ranger) < 8)
+    // Secret's (GAME.OVR 0x3AFD7) has no paladin in either test - a paladin
+    // casts at 6th level; AD&D's (Curse's) paladin - 8 with rules::fixes()
+    const bool pal_rule = !t.lay.secret || rules::fixes();
+    if (c.level(classes::Cleric) == 0 && c.level(classes::MagicUser) == 0 &&
+        (!pal_rule || c.level(classes::Paladin) < 9) && c.level(classes::Ranger) < 8)
         return 6;
     auto most = [](int a, int b) { return a > b ? a : b; };
     switch (t.spell_class(s)) {
-    case 0: return most(skill_level(c, classes::Cleric), skill_level(c, classes::Paladin) - 8);
+    case 0: return most(skill_level(c, classes::Cleric), skill_level(c, classes::Paladin) - (pal_rule ? 8 : 0));
     case 1: return most(skill_level(c, classes::Ranger) - 7, 0);
     case 2: return most(skill_level(c, classes::MagicUser), skill_level(c, classes::Ranger) - 8);
     case 3: return 12;
@@ -99,8 +105,9 @@ int item_power(const party::Character& c, const classes::Tables& t, int s)
     return t.spell_class(s) == 3 ? power(c, t, s) : 6;
 }
 
-int enlarge_data(int level)
+int enlarge_data(int level, bool secret)
 {
+    if (secret && (level <= 0 || level >= 12)) return 123;
     switch (level) {
     case 1: return 1;          // 18
     case 2: return 2;          // 18/01
@@ -269,8 +276,13 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
     case Does::SlowPoison:
         for (int k = 0; k < n; ++k) {
             party::Character& c = p.m[who[k]];
-            if (c.health() == party::Animated || find_affect(c, cures.poisoned) < 0) continue;
+            // (Secret, GAME.OVR 0x2ED24: any poisoned one, and okay again)
+            if ((c.health() == party::Animated && !t.lay.secret) || find_affect(c, cures.poisoned) < 0) continue;
             if (c.hp() == 0) c.rec[kHp] = 1;
+            if (t.lay.secret) {
+                c.rec[kHealth] = party::Okay;
+                c.rec[kInCombat] = 1;
+            }
             give(c, e.affect, minutes, 0xFF, true);
             if (cs.word) o.say(who[k], Said::Word);
             add_affect(c, cures.poison_damage, 10, 0xFF, true);
@@ -294,13 +306,15 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
         }
         break;
     case Does::Enlarge: {
-        const int data = enlarge_data(pw);
+        const int data = enlarge_data(pw, t.lay.secret);
         int str = 18, str00 = 0;
         if (data > 101) str = data - 100;
         else str00 = data - 1;
         for (int k = 0; k < n; ++k) {
             party::Character& c = p.m[who[k]];
-            const bool more = data && (str > c.stat(0) || (str == 18 && c.stat(0) == 18 && str00 > c.str00()));
+            bool more = data && (str > c.stat(0) || (str == 18 && c.stat(0) == 18 && str00 > c.str00()));
+            // Secret (GAME.OVR 0x372FC): against the OWN Strength (0x10, its 18/xx 0x1D)
+            if (t.lay.secret) more = str > c.rec[0x10] || (str == 18 && str00 > c.rec[0x1D]);
             if (t.lay.pool) {
                 // Pool (ovr23+12A5): the effect either way, "is stronger" when it's more
                 give(c, e.affect, minutes, data, true);
@@ -369,11 +383,10 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
         break;
     case Does::FullHeal:
         // Secret's Heal (GAME.OVR 0x2F699): disease, blindness, feeblemind
-        // cured, then the most hit points less n dice; the spell table's
-        // effect too (its Barkskin runs this routine)
+        // cured, then the most hit points less n dice (its Barkskin runs this
+        // routine - the handler table's entry - and gives no effect)
         for (int k = 0; k < n; ++k) {
             party::Character& c = p.m[who[k]];
-            if (e.affect) give(c, e.affect, minutes, pw, false);
             bool ill = false;
             for (uint8_t dz : cures.disease)
                 if (dz && cure(c, dz)) ill = true;
@@ -385,10 +398,12 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
         }
         break;
     case Does::Youth:
-        // The Elixir of Youth (GAME.OVR 0x30813): the age down by the dice,
-        // at least 18 ("is now 18 years old"), else "becomes younger"
-        for (int k = 0; k < n; ++k) {
-            party::Character& c = p.m[who[k]];
+        // The Elixir of Youth (GAME.OVR 0x30813): its user's age (0x7D38 - not
+        // the targets) down by the dice, at least 18 ("is now 18 years old"),
+        // else "becomes younger"
+        for (int k = 0; k < 1; ++k) {
+            party::Character& c = me;
+            who[k] = caster;
             int age = c.age() - (d.roll(cs.sides, cs.n) + cs.plus);
             const bool floor = age < 18;
             if (floor) age = 18;
@@ -439,12 +454,22 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
             if (!die) continue;
             const int bonus = d.roll(die, 1);
             int str = c.stat(0) + bonus, str00 = 0;
+            // Secret (GAME.OVR 0x2F546): 18/xx for a fighter or a ranger - not a
+            // paladin (AD&D's, with rules::fixes(), as Curse's)
+            const bool pal = !t.lay.secret || rules::fixes();
             if (str > 18) {
-                if (had(classes::Fighter) || had(classes::Paladin) || had(classes::Ranger)) {
+                if (had(classes::Fighter) || (pal && had(classes::Paladin)) || had(classes::Ranger)) {
                     str00 = c.str00() + (str - 18) * 10;
                     if (str00 > 100) str00 = 100;
                 }
                 str = 18;
+            }
+            // (Secret, 0x372FC: more than the OWN Strength, 0x10 / 0x1D; its effect
+            // with the handler flag)
+            if (t.lay.secret) {
+                if (!(str > c.rec[0x10] || (str == 18 && str00 > c.rec[0x1D]))) continue;
+                give(c, e.affect, minutes, 100 + bonus, true);
+                continue;
             }
             if (!(str > c.stat(0) || (str == 18 && str00 > c.str00()))) continue;
             give(c, e.affect, minutes, 100 + bonus, false);
