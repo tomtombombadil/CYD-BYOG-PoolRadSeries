@@ -191,6 +191,21 @@ void to_darkness(const Character& c, uint8_t* p)
     p[0x1A6] = static_cast<uint8_t>(c.n_items);
 }
 
+uint8_t darkness_byte(const uint8_t* rec, const uint8_t* ext, int n_items, uint16_t off)
+{
+    if (off >= kDarknessRecordSize) return 0;
+    if (off == 0xAD) {
+        const uint8_t own = ext ? ext[kExtRace] : 0;
+        return ext && race_from_darkness(own) == rec[0x74] ? own : race_to_darkness(rec[0x74]);
+    }
+    if (off == 0x1A6) return static_cast<uint8_t>(n_items);
+    for (const auto& run : kDarknessExt)
+        if (off >= run[0] && off < run[0] + run[2]) return ext ? ext[run[1] + off - run[0]] : 0;
+    for (const auto& run : kDarknessRuns)
+        if (off >= run[0] && off < run[0] + run[2]) return rec[run[1] + off - run[0]];
+    return 0;
+}
+
 bool darkness_script_set(Character& c, uint16_t off, uint8_t v)
 {
     // (its program's list: GAME.OVR 0x6C40 - darkness_facts.md 30)

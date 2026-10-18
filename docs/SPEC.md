@@ -1310,6 +1310,20 @@ the scripts' changed ops, the rule tables, fights, the rest.
   Secret: not yet), View's name tables (its races renumbered, its three
   coins in Curse's places 4-6). The GOG party loads (HP, levels, saves as
   the original shows them). Begin: with the scripts' memory (next).
+- **v0.122.0 - the scripts' memory; Begin into Phlan.** `OpSet::byte_map`:
+  the scripts' memory is bytes (a 1 KB game block in GameState::area1, the
+  selected character's own record at 0x401 + its offset -
+  `party::darkness_byte` / `darkness_script_set` -, the script), an
+  operand's code giving the size; the engine's own Curse addresses turned
+  into its places (`Vm::dk_addr`: 0x4BF2 -> 0x16, the clock 0x4BC6 ->
+  0x05, 0xC04B -> x ...). Its own opcodes (`Vm::dk_step`): PRESS KEY,
+  JOURNAL n, LOAD FILES' map and look (`Host::load_look`), YES NO, END,
+  TREASURE's coins and ITEM0 rows, WHAT MENU, SOUND (logged), CALL 1 / 2
+  / 3, FIND NPC, DELAY 600 ms, SHOP n, EXPERIENCE x 100; the results
+  written at their operand's size. The frame's style (game byte 0x3A,
+  `Host::style`) and the background (indoors BACK1, outdoors SKYGRND by
+  style, hour and overcast). Begin with the GOG party: block 16, Rolf's
+  tour of Phlan runs (its pictures, text colours, sounds: next).
 
 ## 7. The journal (Tom, 2026-10-06)
 

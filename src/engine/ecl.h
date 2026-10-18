@@ -31,6 +31,9 @@ namespace ecl {
 // DAMAGE's lines ("  NAME is hit FOR 7 points of Damage.", "  NAME dies. ")
 enum ScriptWord {
     kWBothWait, kWMonstersFlee, kWDies, kWIsHitFor, kWPointsOfDamage, kWPartyKilled,
+    // Darkness (darkness_facts.md S10): PRESS KEY's prompt, JOURNAL's
+    // sentence (two parts), WHAT MENU's question, YES NO's menu
+    kWDkPressKey, kWDkJournal, kWDkJournalEnd, kWDkWhatDo, kWDkYesNo,
     // Secret's experience award (op 0x41): "Congratulations the party gains
     // experience!", "Congratulations " + NAME + " gains experience!"
     kWPartyGainsXp, kWCongrats, kWGainsXp,
@@ -85,6 +88,13 @@ struct OpSet {
     // 8X8D1 / BACK1 block of that number at once (darkness_facts.md 5 S2);
     // find_map_load gives it as walls[0]
     bool files_look = false;
+    // Darkness (darkness_facts.md S3): the scripts' memory is bytes - a
+    // 1 KB game block at 0x0001-0x0400 (GameState::area1's first 1,024),
+    // the selected character's own 510-byte record at 0x0401-0x05FE, the
+    // script at 0x8000; an operand's code says the size (1 a byte, 3 a
+    // word). The engine's own calls with Curse's addresses (0x4BF2 the
+    // block, 0x4BC6 the clock, 0xC04B x ...) are turned into its places.
+    bool byte_map = false;
 };
 
 // A script's memory address as the engine's machine (Curse's map) knows

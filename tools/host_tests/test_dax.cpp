@@ -2469,6 +2469,63 @@ static void test_vm_events_facts()
     }
 }
 
+// Darkness's scripts' memory (darkness_facts.md S3): bytes and words by
+// the operand's code, the game block, the selected character's record at
+// 0x401 + its offset, the engine's Curse addresses turned into its places,
+// CALL 2's step, YES NO's flags, EXPERIENCE x 100 split by classes
+static void test_vm_darkness()
+{
+    const profile::Profile* p = profile::find(games::Game::PoolsOfDarkness, 64203, 72784);
+    if (!p || !p->ecl_ops) return;
+    auto op_word_addr = [](Bytes& b, uint16_t a) { b.push_back(3); b.push_back(a & 0xFF); b.push_back(a >> 8); };
+    auto op_w = [](Bytes& b, uint16_t v) { b.push_back(2); b.push_back(v & 0xFF); b.push_back(v >> 8); };
+    Bytes c;
+    const uint16_t kBase = 0x8000;
+    for (int i = 0; i < 5; ++i) { c.push_back(0); op_addr(c, 0); }
+    const size_t first = c.size();
+    c.push_back(0x09); op_w(c, 0x1234); op_word_addr(c, 0x0A0);     // SAVE word 0x1234 -> 0xA0 / 0xA1
+    c.push_back(0x09); op_imm(c, 0x77); op_addr(c, 0x0A2);          // SAVE byte -> 0xA2
+    c.push_back(0x04); op_word_addr(c, 0x0A0); op_imm(c, 1); op_word_addr(c, 0x0A4);   // ADD: word 0x1235
+    c.push_back(0x09); op_addr(c, 0x401 + 0x1FC); op_addr(c, 0x0A6);      // the selected's HP (record 0x1FC)
+    c.push_back(0x09); op_imm(c, 3); op_addr(c, 0x401 + 0x1FC);          // ... made 3
+    c.push_back(0x2D); op_imm(c, 2);                                 // CALL 2: a step ahead
+    c.push_back(0x41); op_imm(c, 0); op_imm(c, 30);                   // EXPERIENCE: the selected, 3,000
+    c.push_back(0x22);                                               // YES NO
+    c.push_back(0x00);
+    for (int i = 0; i < 5; ++i) {
+        c[1 + i * 4] = 1;
+        c[2 + i * 4] = static_cast<uint8_t>((kBase + first) & 0xFF);
+        c[3 + i * 4] = static_cast<uint8_t>((kBase + first) >> 8);
+    }
+    static ecl::GameState gs;
+    gs = ecl::GameState{};
+    gs.area1[0x21] = 1;                     // (game byte 0x22: in 3D)
+    gs.area1[0x15] = 16;                    // the block (0x16)
+    gs.x = 5;
+    gs.y = 5;
+    gs.dir = 2;                             // east
+    TestHost host;
+    memcpy(gs.code, c.data(), c.size());
+    gs.code_len = static_cast<uint32_t>(c.size());
+    static party::Party pt;
+    pt.clear();
+    pt.count = 1;
+    pt.m[0] = party::Character{};
+    pt.m[0].rec[0x1A4] = 40;                // HP
+    pt.m[0].rec[0x10B] = 9;                 // fighter 9
+    pt.m[0].rec[0x10F] = 9;                 // thief 9: two classes
+    ecl::Vm vm(gs, host, *p->ecl_ops);
+    vm.set_party(&pt);
+    CHECK(vm.init_script());
+    CHECK(vm.run(vm.entry(0)) == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Menu && vm.items() == 2);
+    CHECK(gs.area1[0x9F] == 0x34 && gs.area1[0xA0] == 0x12 && gs.area1[0xA1] == 0x77 &&
+          gs.area1[0xA3] == 0x35 && gs.area1[0xA4] == 0x12 && gs.area1[0xA5] == 40);
+    CHECK(pt.m[0].hp() == 3 && gs.x == 6 && gs.y == 5 && pt.m[0].exp() == 1500);
+    CHECK(vm.get(0x4BF2) == 16 && vm.get(0xC04B) == 6 && vm.get(0x7F3E) == 0 && vm.dk_read(0x0A0, 2) == 0x1234);
+    vm.answer(1);                           // No: "<>"
+    CHECK(!vm.flag(0) && vm.flag(1));
+}
+
 // AND / OR: the flags as the original sets them - 0 against the result
 static void test_vm_and()
 {
@@ -7141,6 +7198,7 @@ int main()
     test_ecl();
     test_ecl_vm();
     test_vm_and();
+    test_vm_darkness();
     test_vm_events_facts();
     test_ecl_party();
     test_treasure();

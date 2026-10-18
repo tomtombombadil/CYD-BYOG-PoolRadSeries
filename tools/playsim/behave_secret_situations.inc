@@ -859,7 +859,8 @@ void xp_award()
     }
     // Its script words (the encounter's, DAMAGE's, 0x41's) read from GAME.OVR
     bool all = true;
-    for (int i = 0; i < ecl::kScriptWords; ++i) all = all && d->script_word[i][0];
+    for (int i = 0; i < ecl::kScriptWords; ++i)
+        if (i < ecl::kWDkPressKey || i > ecl::kWDkYesNo) all = all && d->script_word[i][0];   // (not Darkness's)
     expect(P, "Secret's script words: every one read (Both sides wait ... gains experience!)", all);
 }
 

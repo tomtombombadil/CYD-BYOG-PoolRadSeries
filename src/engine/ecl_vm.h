@@ -122,6 +122,15 @@ public:
     // A sound effect (the games' sound numbers; CALL B200 - a step, or the
     // fireball's roar when the script set 0x03DE to 10)
     virtual void sound(int id) { (void)id; }
+    // Darkness: LOAD FILES' look (WALLDEF1 / 8X8D1 / BACK1 block n at once),
+    // JOURNAL n (the engine shows entry n when wanted), SHOP n's goods (DS
+    // tables of ITEM0 rows) and TREASURE's items (an ITEM0 row: 0xFF a
+    // random one), the frame's style (BORDERS block)
+    virtual void load_look(int look) { (void)look; }
+    virtual void journal(int n) { (void)n; }
+    virtual void shop_items(int n, items::Ground& g) { (void)n; (void)g; }
+    virtual void item_row(int row, items::Ground& g) { (void)row; (void)g; }
+    virtual void style(int v) { (void)v; }
     virtual void log(const char* what) = 0;
 };
 
@@ -174,6 +183,11 @@ public:
     bool new_script() const { return new_script_; }
 
     uint16_t get(uint16_t addr) const;
+    // Darkness: the scripts' memory as bytes / words (byte_map); `addr` in
+    // its own places (get / set turn Curse's into them)
+    uint16_t dk_read(uint16_t addr, int size) const;
+    void dk_write(uint16_t addr, uint16_t v, int size);
+    static uint16_t dk_addr(uint16_t curse);
     // Pool of Radiance's 3D view colours as the scripts set them (0xC059
     // the floor's, 0xC05F the line's and band's; screen_facts.md 4)
     uint8_t view_byte(int i) const { return view_bytes_[i & 1]; }
@@ -198,6 +212,12 @@ private:
         int str = -1;               // string slot
     };
     bool operands(int n, Op* out);
+    void put(const Op& o, uint16_t v);          // a result written where the operand says (its size)
+    bool dk_step(Stop& r);                      // Darkness's own opcodes (true: done)
+    int  dest_size_ = 2;                        // (Darkness: an answer's size)
+    Wait dk_then_ = Wait::None;                 // (Darkness: what waits after a text - JOURNAL's key, WHAT MENU's menu)
+    char dk_text_[64] = {};
+    const char* dk_items_[2] = {};
     void to_map(Op& o) const;
     uint16_t target(const Op& o) const;
     uint16_t value(const Op& o) const;

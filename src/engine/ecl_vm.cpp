@@ -146,8 +146,118 @@ static void word_to(uint8_t* a, uint32_t off, uint16_t v)
     a[off + 1] = static_cast<uint8_t>(v >> 8);
 }
 
+// ---- Darkness's memory (darkness_facts.md S3, S4) ----------------------------
+
+uint16_t Vm::dk_addr(uint16_t a)
+{
+    // The engine's own calls name Curse's places; Darkness's scripts use its
+    // own (1-0x5FE, the script) and pass through
+    if (a < 0x4B00 || (a >= kBase && a < kBase + kCodeSize)) return a;
+    if (a >= 0x4BC6 && a <= 0x4BCC) return static_cast<uint16_t>(0x05 + (a - 0x4BC6));     // the clock
+    switch (a) {
+    case 0x4BF2: return 0x16;           // the block the party is in
+    case 0x4BC5: return 0x13;           // the map loaded
+    case 0x4BE6: return 0x22;           // in 3D
+    case 0x4BF0: return 0x17;           // the last square
+    case 0x4BF1: return 0x18;
+    case 0x4BFB: return 0x1A;           // no Area map here
+    case 0x4BFC: return 0x12;           // game speed
+    case 0x4CF4: return 0x27;           // difficulty (1-5)
+    case 0x7EC9: return 0x03;           // the step blocked
+    case 0x7ECA: return 0x19;           // Search / Look
+    case 0x7ECB: return 0x2E;           // surprise
+    case 0x7EE2: return 0x14;           // COMBAT: the temple
+    case 0x7ED2: return 0x2B;           // resting's encounters
+    case 0x7ED3: return 0x2C;
+    case 0x7F3E: return 0x20;           // the party's size
+    case 0x7F3F: return 0x29;           // DIVIDE's remainder
+    case 0xC04B: return 0x34;           // x, y, facing
+    case 0xC04C: return 0x35;
+    case 0xC04D: return 0x11;
+    case 0xC04E: return 0x32;           // the wall ahead
+    case 0xC04F: return 0x2D;           // the square's flags
+    }
+    return 0;                           // (nothing there)
+}
+
+uint16_t Vm::dk_read(uint16_t a, int size) const
+{
+    if (size == 2) return static_cast<uint16_t>(dk_read(a, 1) | dk_read(static_cast<uint16_t>(a + 1), 1) << 8);
+    if (a == 0) return 0;
+    if (a <= 0x400) {
+        const bool three_d = s_.area1[0x21] != 0;
+        switch (a) {
+        case 0x10: {                    // a member detecting magic (effect 5)
+            for (int i = 0; party_ && i < party_->count; ++i)
+                if (party_->m[i].has_affect(5)) return 1;
+            return 0;
+        }
+        case 0x11: return static_cast<uint16_t>(three_d ? s_.dir / 2 : s_.dir);
+        case 0x23: return static_cast<uint16_t>(s_.dir);
+        case 0x2D: return s_.roof;
+        case 0x32: return s_.wall_ahead;
+        case 0x34: return static_cast<uint16_t>(s_.x);
+        case 0x35: return static_cast<uint16_t>(s_.y);
+        }
+        return s_.area1[a - 1];
+    }
+    if (a <= 0x5FE) {
+        // the selected character's own record (a loaded monster's: no ext)
+        const uint16_t off = static_cast<uint16_t>(a - 0x401);
+        if (const uint8_t* mr = sel_rec()) return party::darkness_byte(mr, nullptr, 0, off);
+        if (party_ && party_->sel()) {
+            const party::Character& c = *party_->sel();
+            return party::darkness_byte(c.rec, c.ext, c.n_items, off);
+        }
+        return 0;
+    }
+    if (a >= kBase && a < kBase + kCodeSize) return s_.code[a - kBase];
+    return 0;
+}
+
+void Vm::dk_write(uint16_t a, uint16_t v, int size)
+{
+    if (size == 2) {
+        dk_write(a, v & 0xFF, 1);
+        dk_write(static_cast<uint16_t>(a + 1), v >> 8, 1);
+        return;
+    }
+    const uint8_t b = static_cast<uint8_t>(v);
+    if (a == 0) return;
+    if (a <= 0x400) {
+        switch (a) {
+        case 0x11:                      // facing (0-3 in 3D, 0-7 outside)
+            s_.dir = s_.area1[0x21] ? (b % 4) * 2 : b & 7;
+            s_.moved = true;
+            return;
+        case 0x34: s_.x = b & 15; s_.moved = true; return;
+        case 0x35: s_.y = b & 15; s_.moved = true; return;
+        case 0x3A:                      // the frame's style: BORDERS block (4: 0)
+            if (b < 5 && b != s_.area1[0x39]) {
+                s_.area1[0x39] = b;
+                h_.style(b == 4 ? 0 : b);
+            }
+            return;
+        }
+        s_.area1[a - 1] = b;
+        return;
+    }
+    if (a <= 0x5FE) {
+        if (party_ && party_->sel() && sel_mon_ < 0) party::darkness_script_set(*party_->sel(), static_cast<uint16_t>(a - 0x401), b);
+        return;
+    }
+    if (a >= kBase && a < kBase + kCodeSize) s_.code[a - kBase] = b;
+}
+
+void Vm::put(const Op& o, uint16_t v)
+{
+    if (set_.byte_map) dk_write(o.word(), v, o.code == 1 ? 1 : 2);
+    else set(o.word(), v);
+}
+
 uint16_t Vm::get(uint16_t a) const
 {
+    if (set_.byte_map) return dk_read(dk_addr(a), 1);
     if (a >= 0x4B00 && a <= 0x4EFF) return word_at(s_.area1, (a - 0x4B00u) * 2);
     if (a >= 0x7A00 && a <= 0x7BFF) return word_at(s_.table, (a - 0x7A00u) * 2);
     if (a >= 0x7C00 && a <= 0x7FFF) {
@@ -189,6 +299,10 @@ uint16_t Vm::get(uint16_t a) const
 
 void Vm::set(uint16_t a, uint16_t v)
 {
+    if (set_.byte_map) {
+        dk_write(dk_addr(a), v, 1);
+        return;
+    }
     if (a >= 0x4B00 && a <= 0x4EFF) {
         word_to(s_.area1, (a - 0x4B00u) * 2, v);
         return;
@@ -233,8 +347,9 @@ void Vm::set(uint16_t a, uint16_t v)
 // Strings in memory: a character a word (a byte in the script), 0 ends
 void Vm::store_string(uint16_t a, const char* t)
 {
-    uint8_t* mr = a == 0x7C00 ? sel_rec() : nullptr;
-    if (a == 0x7C00 && (mr || (party_ && party_->sel()))) {
+    const uint16_t name_at = set_.byte_map ? 0x401 : 0x7C00;      // (Darkness: its record's name)
+    uint8_t* mr = a == name_at ? sel_rec() : nullptr;
+    if (a == name_at && (mr || (party_ && party_->sel()))) {
         // The selected character's name
         uint8_t* r = mr ? mr : party_->sel()->rec;
         size_t n = strlen(t);
@@ -252,7 +367,7 @@ void Vm::store_string(uint16_t a, const char* t)
 
 void Vm::read_string(uint16_t a, char* out, size_t cap) const
 {
-    if (a == 0x7C00) {
+    if (a == (set_.byte_map ? 0x401 : 0x7C00)) {
         const uint8_t* r = sel_rec();
         if (!r && party_ && party_->sel()) r = party_->sel()->rec;
         if (r) {                                // the selected character's name
@@ -342,7 +457,7 @@ uint16_t Vm::value(const Op& o) const
     switch (o.code) {
     case 0: return o.low;
     case 1:
-    case 3: return get(o.word());
+    case 3: return set_.byte_map ? dk_read(o.word(), o.code == 1 ? 1 : 2) : get(o.word());
     case 2:
     case 0x81: return o.word();
     }
@@ -374,6 +489,12 @@ bool Vm::init_script(bool reload)
     view_bytes_[1] = 0x09;
     set(0x7ED2, 0);
     set(0x7ED3, 0);
+    if (set_.byte_map) {
+        // Darkness: each block's variables (0x97-0xC8) cleared at its start
+        // but in the block a saved game was loaded in; the mode stays
+        if (!reload) memset(s_.area1 + 0x96, 0, 50);
+        return true;
+    }
     if (!reload) {
         for (uint16_t a = 0x4C00; a <= 0x4C20; ++a) set(a, 0);
         for (uint16_t a = 0x7F79; a <= 0x7F82; ++a) set(a, 0);
@@ -524,6 +645,11 @@ Stop Vm::resume()
         pause_ms_ = game_delay();
         return wait_for(Wait::Pause);
     }
+    if (dk_then_ != Wait::None) {
+        const Wait w = dk_then_;
+        dk_then_ = Wait::None;
+        return wait_for(w);
+    }
     while (!stop_) {
         if (--budget_ <= 0) {
             h_.log("script ran too long; stopped");
@@ -627,6 +753,25 @@ Stop Vm::answer(int v)
         }
         return resume();
     }
+    if (set_.byte_map) {
+        // Darkness: the answer where its operand says (its size); YES NO's
+        // and the menus' flags
+        switch (op_) {
+        case 0x15:
+        case 0x2B:
+        case 0x31: dk_write(dest_, static_cast<uint16_t>(v & 0xFF), dest_size_); break;
+        case 0x0F: dk_write(dest_, static_cast<uint16_t>(v), dest_size_); break;
+        case 0x22:                      // YES NO: "=" Yes, "<>" No
+            for (bool& f : flags_) f = false;
+            flags_[v == 0 ? 0 : 1] = true;
+            break;
+        case 0x39:
+            if (party_ && v >= 0 && v < party_->count) party_->selected = v;
+            break;
+        default: break;
+        }
+        return resume();
+    }
     switch (op_) {
     case 0x15:                          // VERTICAL MENU: the index
     case 0x2B:                          // HORIZONTAL MENU: the index (a byte)
@@ -653,6 +798,274 @@ Stop Vm::answer_string(const char* t)
 {
     if (op_ == 0x10) store_string(dest_, t && *t ? t : " ");
     return resume();
+}
+
+// Darkness's opcodes that differ from Curse's (darkness_facts.md S2), and
+// those that write a result (its size from the operand). False: the common
+// handler does it.
+bool Vm::dk_step(Stop& r)
+{
+    Op o[kMaxOps];
+    auto need = [&](int n) {
+        if (operands(n, o)) return true;
+        h_.log("bad operands");
+        stop_script();
+        r = Stop::Error;
+        return false;
+    };
+    // n more operands into o[first..] (the rest read past)
+    auto more = [&](int first, int n) {
+        for (int k = 0; k < n; ++k) {
+            Op t{};
+            --pc_;
+            if (!operands(1, &t)) return false;
+            if (first + k < kMaxOps) o[first + k] = t;
+        }
+        return true;
+    };
+    auto size_of = [](const Op& op) { return op.code == 1 || op.code == 0 ? 1 : 2; };
+    r = Stop::Running;
+    switch (op_) {
+    case 0x04:
+    case 0x05:
+    case 0x06:
+    case 0x07: {                                // ADD SUBTRACT DIVIDE MULTIPLY: op3's size
+        if (!need(3)) return true;
+        const uint16_t a = value(o[0]), b = value(o[1]);
+        uint16_t v = 0;
+        if (op_ == 0x04) v = static_cast<uint16_t>(a + b);
+        if (op_ == 0x05) v = static_cast<uint16_t>(b - a);
+        if (op_ == 0x06) {
+            v = b ? static_cast<uint16_t>(a / b) : 0;
+            dk_write(0x29, b ? static_cast<uint16_t>(a % b) : 0, 1);
+        }
+        if (op_ == 0x07) v = static_cast<uint16_t>(a * b);
+        put(o[2], v);
+        return true;
+    }
+    case 0x08: {                                // RANDOM: 0 .. v
+        if (!need(2)) return true;
+        int max = value(o[0]) & 0xFF;
+        if (max < 0xFF) ++max;
+        put(o[1], static_cast<uint16_t>(max ? rnd(static_cast<uint32_t>(max)) : 0));
+        return true;
+    }
+    case 0x09:                                  // SAVE: op2's size; a string as bytes + 0
+        if (!need(2)) return true;
+        if (o[0].code < 0x80) put(o[1], value(o[0]));
+        else store_string(o[1].word(), string_of(o[0]));
+        return true;
+    case 0x0C: {                                // SETUP MONSTER: sprite, how far, picture, sides
+        if (!need(4)) return true;
+        enc_.sprite = static_cast<uint8_t>(value(o[0]));
+        enc_.max = value(o[1]) & 0xFF;
+        enc_.pic = static_cast<uint8_t>(value(o[2]));
+        enc_.distance = sight();
+        if (enc_.distance > enc_.max) enc_.distance = enc_.max;
+        if (show_encounter()) {
+            pause_ms_ = game_delay();
+            r = wait_for(Wait::Pause);
+        }
+        return true;
+    }
+    case 0x0F:                                  // INPUT NUMBER
+        if (!need(2)) return true;
+        dest_ = o[1].word();
+        dest_size_ = size_of(o[1]);
+        r = wait_for(Wait::Number);
+        return true;
+    case 0x15: {                                // VERTICAL MENU
+        if (!need(3)) return true;
+        const int n = value(o[2]) & 0xFF;
+        if (!more(3, n)) return true;
+        dest_ = o[0].word();
+        dest_size_ = size_of(o[0]);
+        prompt_ = string_of(o[1]);
+        n_items_ = 0;
+        for (int i = 0; i < n && 3 + i < kMaxOps && n_items_ < kMaxStrings; ++i) item_[n_items_++] = string_of(o[3 + i]);
+        r = wait_for(Wait::ListMenu);
+        return true;
+    }
+    case 0x1D:                                  // PRESS KEY
+        if (!need(0)) return true;
+        prompt_ = word(kWDkPressKey);
+        r = wait_for(Wait::Key);
+        return true;
+    case 0x1E:                                  // CHECKPARTY: read, nothing done (its program)
+        need(6);
+        return true;
+    case 0x1F: {                                // JOURNAL n: the sentence, then a key
+        if (!need(1)) return true;
+        const int n = value(o[0]);
+        snprintf(dk_text_, sizeof dk_text_, "%s%d%s", word(kWDkJournal), n, word(kWDkJournalEnd));
+        h_.journal(n);
+        text_ = dk_text_;
+        clear_ = false;
+        prompt_ = word(kWDkPressKey);
+        dk_then_ = Wait::Key;
+        r = wait_for(Wait::Print);
+        return true;
+    }
+    case 0x21: {                                // LOAD FILES: map, look
+        if (!need(2)) return true;
+        const int a = value(o[0]) & 0xFF, b = value(o[1]) & 0xFF;
+        if (a < 0x7F && s_.area1[0x21]) {
+            set(0x4BC5, static_cast<uint16_t>(a));
+            h_.load_map(a);
+            set(0x7EC9, 0);
+        }
+        if (b != 0xFF) h_.load_look(b);
+        return true;
+    }
+    case 0x22:                                  // YES NO
+        if (!need(0)) return true;
+        dk_items_[0] = "Yes";
+        dk_items_[1] = "No";
+        {
+            // ("Yes No" - its own words when the profile gives them)
+            const char* w = word(kWDkYesNo);
+            static char yes[8], no[8];
+            if (*w && sscanf(w, "%7s %7s", yes, no) == 2) {
+                dk_items_[0] = yes;
+                dk_items_[1] = no;
+            }
+        }
+        n_items_ = 2;
+        item_[0] = dk_items_[0];
+        item_[1] = dk_items_[1];
+        prompt_ = "";
+        r = wait_for(Wait::Menu);
+        return true;
+    case 0x23:                                  // END: the text window clear, the view back, EXIT
+        if (!need(0)) return true;
+        h_.redraw();
+        restore_selected();
+        stop_script();
+        return true;
+    case 0x27: {                                // TREASURE: platinum, gems, jewelry, n items
+        if (!need(4)) return true;
+        const int n = value(o[3]) & 0xFF;
+        if (!more(4, n)) return true;
+        if (ground_) {
+            ground_->money[4] = value(o[0]);
+            ground_->money[5] = value(o[1]);
+            ground_->money[6] = value(o[2]);
+            for (int k = 0; k < n && 4 + k < kMaxOps; ++k) h_.item_row(value(o[4 + k]) & 0xFF, *ground_);
+        }
+        return true;
+    }
+    case 0x29:                                  // nothing (its program)
+        need(0);
+        return true;
+    case 0x2A:                                  // GET TABLE: op3's size
+        if (!need(3)) return true;
+        put(o[2], dk_read(static_cast<uint16_t>(o[0].word() + (value(o[1]) & 0xFF)), size_of(o[2])));
+        return true;
+    case 0x2B:                                  // HORIZONTAL MENU
+    case 0x31: {                                // WHAT MENU: "what do you do?", then the menu
+        if (!need(2)) return true;
+        const int n = value(o[1]) & 0xFF;
+        if (!more(2, n)) return true;
+        dest_ = o[0].word();
+        dest_size_ = size_of(o[0]);
+        n_items_ = 0;
+        for (int i = 0; i < n && 2 + i < kMaxOps && n_items_ < kMaxStrings; ++i) item_[n_items_++] = string_of(o[2 + i]);
+        prompt_ = "";
+        if (op_ == 0x31) {
+            text_ = word(kWDkWhatDo);
+            clear_ = false;
+            dk_then_ = Wait::Menu;
+            r = wait_for(Wait::Print);
+        } else {
+            r = wait_for(Wait::Menu);
+        }
+        return true;
+    }
+    case 0x2C: {                                // SOUND: 2-14 an effect, 0x80 + n music
+        if (!need(1)) return true;
+        char t[40];
+        snprintf(t, sizeof t, "SOUND %d (not in the engine yet)", value(o[0]) & 0xFF);
+        h_.log(t);
+        return true;
+    }
+    case 0x2D: {                                // CALL 1 / 2 / 3
+        if (!need(1)) return true;
+        const int w = value(o[0]);
+        if (w == 1) {
+            h_.redraw();
+        } else if (w == 2) {                    // a step ahead
+            s_.x = (s_.x + (s_.dir == 2 ? 1 : s_.dir == 6 ? -1 : 0)) & 15;
+            s_.y = (s_.y + (s_.dir == 4 ? 1 : s_.dir == 0 ? -1 : 0)) & 15;
+            s_.moved = true;
+            h_.redraw();
+        } else if (w == 3) {                    // the picture's next frame
+            h_.anim_step();
+            pause_ms_ = game_delay();
+            r = wait_for(Wait::Pause);
+        }
+        return true;
+    }
+    case 0x2F:
+    case 0x30: {                                // AND / OR
+        if (!need(3)) return true;
+        const uint16_t v = static_cast<uint8_t>(op_ == 0x2F ? (value(o[0]) & value(o[1])) : (value(o[0]) | value(o[1])));
+        compare(0, v);
+        put(o[2], v);
+        return true;
+    }
+    case 0x35:                                  // SAVE TABLE: op1's size
+        if (!need(3)) return true;
+        dk_write(static_cast<uint16_t>(o[1].word() + value(o[2])), value(o[0]), size_of(o[0]));
+        return true;
+    case 0x37: {                                // FIND NPC: a name's place in the party (0xFF none; +0x80 not okay)
+        if (!need(2)) return true;
+        const char* nm = string_of(o[0]);
+        int place = 0xFF;
+        for (int i = 0; party_ && i < party_->count && place == 0xFF; ++i) {
+            const party::Character& c = party_->m[i];
+            char n[20];
+            c.name(n, sizeof n);
+            if (c.rec[0xF7] >= 0x80 && !strcmp(n, nm)) place = i | (c.health() == party::Okay ? 0 : 0x80);
+        }
+        dk_write(o[1].word(), static_cast<uint16_t>(place), o[0].code >= 0x80 ? 2 : size_of(o[0]));
+        return true;
+    }
+    case 0x3A:                                  // DELAY: 600 ms
+        if (!need(0)) return true;
+        pause_ms_ = 600;
+        r = wait_for(Wait::Pause);
+        return true;
+    case 0x3C: {                                // SHOP n (1-11)
+        if (!need(1)) return true;
+        int n = value(o[0]) & 0xFF;
+        if (n < 1 || n > 11) n = 1;
+        if (ground_) {
+            ground_->clear();
+            h_.shop_items(n, *ground_);
+        }
+        r = wait_for(Wait::Shop);
+        return true;
+    }
+    case 0x41: {                                // EXPERIENCE: who (0 the selected), amount x 100
+        if (!need(2)) return true;
+        const bool all = value(o[0]) != 0;
+        const uint32_t amount = static_cast<uint32_t>(value(o[1])) * 100u;
+        for (int i = 0; party_ && i < party_->count; ++i) {
+            if (!all && i != party_->selected) continue;
+            party::Character& c = party_->m[i];
+            if (c.health() != party::Okay) continue;
+            int classes = 0;
+            for (int k = 0; k < 7; ++k) classes += c.rec[0x109 + k] > 0;
+            if (!classes) classes = 1;
+            uint32_t xp = c.exp() + amount / static_cast<uint32_t>(classes);
+            for (int k = 0; k < 4; ++k) c.rec[0x127 + k] = static_cast<uint8_t>(xp >> (8 * k));
+        }
+        h_.party_changed();
+        return true;
+    }
+    default:
+        return false;
+    }
 }
 
 Stop Vm::step()
@@ -698,6 +1111,10 @@ Stop Vm::step()
         return Stop::Running;
     };
 
+    if (set_.byte_map) {
+        Stop r = Stop::Running;
+        if (dk_step(r)) return r;
+    }
     switch (op_) {
     case 0x00:                                  // EXIT
         ++pc_;
