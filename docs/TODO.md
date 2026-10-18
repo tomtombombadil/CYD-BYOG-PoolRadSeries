@@ -71,8 +71,9 @@ the Project as claude/TODO.md.
       `behave secret` has THAC0, saves, training's hit points, the Level,
       the vault, the spells past 100, the cockatrice / remorhaz / iron
       golem - 239 checks, 0 failed, 2026-10-17; more of its monsters'
-      abilities to add); then Tom: is Secret playable (Play
-      on the game page: `variant.unfinished` off)?
+      abilities to add). v0.117.0: playable (Tom, 2026-10-18: Play on
+      its game page); now the full checks - every spell, monster,
+      class, item and situation - and the ITEMTEST characters for Tom.
 - [ ] **Pools of Darkness** (started 2026-10-17; facts: the Project's
       claude/darkness_facts.md; SPEC 6d). Done: the survey (program and
       overlay layout, files, saves, the scripts' operand counts). Next, a

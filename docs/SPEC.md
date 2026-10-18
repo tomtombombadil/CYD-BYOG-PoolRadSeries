@@ -899,9 +899,10 @@ Steps (each pushed when it works; Curse stays as it is):
 
 Facts in the Project's claude/secret_facts.md (from the player's files,
 the program and the original in DOSBox; nothing from the game in the
-repo). Built a chunk a commit, Play off the game page until it plays
-(`variant.unfinished`); the Play Test under Dev Tools says it isn't ready
-until the party menu is known (`party.items`).
+repo). Built a chunk a commit, Play off the game page until it played
+(`variant.unfinished`). **v0.117.0: playable** (Tom, 2026-10-18: "go
+ahead and mark it playable" - Play on its game page), followed by the
+full behaviour checks (every spell, monster, class, item, situation).
 
 - **v0.92.0 - scripts, screens, maps.** The script interpreter (GAME.OVR
   overlay 4) reads the same operand counts as Curse's but 0x3C (none) and

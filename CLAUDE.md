@@ -560,7 +560,7 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   item, for Tom).
 - Secret of the Silver Blades (Tom, 2026-10-12: implementing now, in
   discrete chunks a commit each - his usage is limited, nothing may be
-  lost): facts and the plan in the Project's claude/secret_facts.md
+  lost; playable since v0.117.0 - Tom, 2026-10-18, Play on its page): facts and the plan in the Project's claude/secret_facts.md
   (sections 1-13) and claude/secret_facts_2.md (14 on), SPEC
   6c. Its GOG files: scratch /tmp/claude-0/games3/secret/...; game number
   3 (lwsim / playsim GAME=3). Its frame is code-drawn bars
