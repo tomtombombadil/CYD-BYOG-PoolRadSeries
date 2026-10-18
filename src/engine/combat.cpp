@@ -3220,7 +3220,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         break;
     case SpellDoes::Enlarge: {
         // Strength by the caster's level (18 ... 22), only when more than theirs
-        const int data = spells::enlarge_data(pw);
+        const int data = spells::enlarge_data(pw, st.lay.secret);
         int str = 18, str00 = 0;
         if (data > 101) str = data - 100;
         else str00 = data - 1;
@@ -3228,7 +3228,9 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             Fighter& f = b.f[who[k]];
             if (!f.up()) continue;
             const int now = f.rec[0x11], now00 = f.rec[0x1C];
-            const bool more = data && (str > now || (str == 18 && now == 18 && str00 > now00));
+            bool more = data && (str > now || (str == 18 && now == 18 && str00 > now00));
+            // Secret (GAME.OVR 0x372FC): against the OWN Strength (0x10, its 18/xx 0x1D)
+            if (st.lay.secret) more = str > f.rec[0x10] || (str == 18 && str00 > f.rec[0x1D]);
             if (st.lay.pool) {
                 // Pool (ovr23+12A5): the effect either way, "is stronger" when it's more
                 if (b.fx && b.fx->sp.enlarge) give_aff(f, b.fx->sp.enlarge, minutes, data, true);

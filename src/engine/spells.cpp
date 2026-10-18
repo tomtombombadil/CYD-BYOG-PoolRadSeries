@@ -105,8 +105,9 @@ int item_power(const party::Character& c, const classes::Tables& t, int s)
     return t.spell_class(s) == 3 ? power(c, t, s) : 6;
 }
 
-int enlarge_data(int level)
+int enlarge_data(int level, bool secret)
 {
+    if (secret && (level <= 0 || level >= 12)) return 123;
     switch (level) {
     case 1: return 1;          // 18
     case 2: return 2;          // 18/01
@@ -300,13 +301,15 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
         }
         break;
     case Does::Enlarge: {
-        const int data = enlarge_data(pw);
+        const int data = enlarge_data(pw, t.lay.secret);
         int str = 18, str00 = 0;
         if (data > 101) str = data - 100;
         else str00 = data - 1;
         for (int k = 0; k < n; ++k) {
             party::Character& c = p.m[who[k]];
-            const bool more = data && (str > c.stat(0) || (str == 18 && c.stat(0) == 18 && str00 > c.str00()));
+            bool more = data && (str > c.stat(0) || (str == 18 && c.stat(0) == 18 && str00 > c.str00()));
+            // Secret (GAME.OVR 0x372FC): against the OWN Strength (0x10, its 18/xx 0x1D)
+            if (t.lay.secret) more = str > c.rec[0x10] || (str == 18 && str00 > c.rec[0x1D]);
             if (t.lay.pool) {
                 // Pool (ovr23+12A5): the effect either way, "is stronger" when it's more
                 give(c, e.affect, minutes, data, true);
