@@ -845,13 +845,13 @@ static void test_layout()
         layout::combat(c, bt, st);
         CHECK(is(10, 0, 55) && is(10, 22, 55) && is(22, 1, 52) && is(22, 10, 53) && is(39, 21, 54));
         // Its profile: Curse's script opcodes but 0x3C (none) and 0x41 (2);
-        // the font in 8X8D5; still being built
+        // the font in 8X8D5; playable (v0.117.0)
         const profile::Profile* sec = profile::find(games::Game::SecretOfTheSilverBlades, 72097, 79824);
         CHECK(sec && sec->ecl_ops && sec->ecl_ops->sizes[0x41] == 2 && sec->ecl_ops->sizes[0x3C] == 0 &&
               sec->ecl_ops->sizes[0x2E] == 5 && sec->ecl_ops->sizes[0x42] == ecl::kUnknown);
         CHECK(sec && !strcmp(sec->font_file, "8X8D5.DAX") && sec->variant.tile_window == 40 && sec->party.count == 13 &&
               sec->ecl_ops->area_by_block && sec->start_script == 17 && sec->variant.bigpic_from == 0x70);
-        CHECK(!profile::ready(games::Game::SecretOfTheSilverBlades));
+        CHECK(profile::ready(games::Game::SecretOfTheSilverBlades));
     }
 
     // The known release is found only by both sizes
