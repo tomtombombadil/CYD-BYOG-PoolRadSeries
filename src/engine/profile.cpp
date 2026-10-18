@@ -1420,7 +1420,7 @@ const Profile kProfiles[] = {
      // Load's "load from where? "
      .party = {.items = 0xB029, .count = 13, .stride = 42, .choose = kP | 0xC9FD, .load_which = kP | 0xC796,
                .name = 0x34652, .ac_hp = 0x34657, .cfg = "POOL4.CFG", .save_which = kP | 0xC7BF,
-               .slots = kP | 0xCD2F, .saving = 0x1317B, .camp_menu = 0xD115,
+               .slots = kP | 0xCD2F, .saving = 0x1317B, .camp_menu = 0xD115, .makes_camp = kP | 0xBFBF,
                .add_from = kP | 0xBAC8, .add_sources = kP | 0xCC8B, .add_prompt = kP | 0xBAF1, .add = kP | 0xCCB4,
                .drop = 0x16445, .forever = 0x1644B, .sure = 0x16456, .yes_no = kP | 0xC9D4,
                .cant_modify = kP | 0xBA9F, .keep_exit = kP | 0xCC62,
@@ -1431,10 +1431,15 @@ const Profile kProfiles[] = {
      .view = {{0xACC7, 27, 18}, {0xAEAD, 9, 7}, {0xAEEC, 17, 9}, {0xAF85, 7, 2}, {0xAF93, 11, 3}, {0xAFB4, 13, 9},
               0, 0x23899, 0x238B4, 0x238A2, 0x238A8, 0x23891, 0x23FEB, 0x23FDF, 0x24003, 0x2401B, 0x23FF7,
               0x2400C, 0, 5},
+     // Items (darkness_facts.md 31): 125 name words of 21 bytes (DS 0x3354;
+     // Secret's numbering - arrows 30, quarrels 12, darts 5), the ITEMS type
+     // file without a head; "Items" (DS 0x1738)
+     .items = {.words = {0xD1C4, 21, 125}, .types_file = "ITEMS", .arrow = 30, .quarrel = 12, .dart = 5,
+               .title = kP | 0xB5A8, .types_head = 0},
      // The script machine's words (darkness_facts.md S10): DAMAGE's lines,
      // PRESS KEY's prompt, JOURNAL's sentence, WHAT MENU's question, "Yes No"
      .script_words = {0, 0, 0x7B42, 0x7B4A, 0x7B57, 0x19C2, kP | 0xAC82, 0x261D, 0x2640, 0x1212, kP | 0xC9D4},
-     .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .vga = true, .darkness_files = true,
+     .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .camp_pic = 128, .vga = true, .darkness_files = true,
                  .party_menu_col = 9},
      .font_file = "8X8D0.DAX"},
 };
@@ -1456,11 +1461,18 @@ const ViewFacts& view_facts(games::Game g)
                                        0x2A3D5, 0x2A3DF, 0x2A767, 0x2AEF8, 0x2AF04, 0x2AF12, 0x2B004, 0x2B010,
                                        0x2B020, 0x2B02E, 0x2A754},
                                       0x6D, 0x6E};
+    // Darkness: its menu one string (DS 0x2D50), the questions in its data
+    // segment and GAME.OVR (Lay = Secret's Heal; effects 0x6D / 0x6E as Secret's)
+    static const ViewFacts kDarkness = {{0, 0, 0, 0, 0, 0, kP | 0xB504, kP | 0xB4DB, kP | 0xB3E5, kP | 0xB52D,
+                                         kP | 0xB7BD, 0x26B9A, 0x26BA6, 0x26BB4, 0x26C9F, 0x26CAB, 0x26CBB,
+                                         0x26CC9, kP | 0xB7E6},
+                                        0x6D, 0x6E, kP | 0xCBC0};
     static const ViewFacts kNone = {};
     switch (g) {
     case games::Game::CurseOfTheAzureBonds: return kCurse;
     case games::Game::PoolOfRadiance: return kPool;
     case games::Game::SecretOfTheSilverBlades: return kSecret;
+    case games::Game::PoolsOfDarkness: return kDarkness;
     default: return kNone;
     }
 }

@@ -327,6 +327,7 @@ struct Profile {
         bool        light_magic_armour = false;
         uint8_t     speed_fx = 0;
         bool        sell_secret = false;           // a pile's price: Secret's rule (rules::sell_value)
+        uint8_t     types_head = 2;                // the type file's bytes before row 0 (Darkness 0)
     } items;
 
     // Character rules (making and training characters): the rule tables in
@@ -581,6 +582,9 @@ struct ViewFacts {
     // The paladin's heal (once a day: its effect) and cure of disease (the
     // record's 0x191 a week - its effect gives them back when it ends)
     uint8_t  paladin_heal, paladin_cure;
+    // Darkness: the menu as one string ("Items Spells Trade Deposit Drop
+    // Lay Cure Exit"), its words taken for Spells ... Cure (0: words[])
+    uint32_t menu = 0;
 };
 // The game's (all zero: none of it)
 const ViewFacts& view_facts(games::Game g);

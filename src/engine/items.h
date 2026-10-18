@@ -66,7 +66,8 @@ public:
     // (word 1 first) from a buffer holding them.
     void set_words(const uint8_t* table, int count, int stride);
     // Reads the ITEMS file.
-    bool read_types(dax::ByteSource& src);
+    // `head`: the bytes before row 0 (Curse, Pool, Secret 2; Darkness none)
+    bool read_types(dax::ByteSource& src, uint32_t head = 2);
     const char* word(int i) const { return i > 0 && i < kWords && off_[i] ? text_ + off_[i] : ""; }
     const TypeInfo& type(int t) const { static const TypeInfo none; return t >= 0 && t < kTypes ? types_[t] : none; }
     bool has_words() const { return used_ > 1; }

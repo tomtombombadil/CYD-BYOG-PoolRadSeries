@@ -3642,6 +3642,12 @@ static void test_items()
     ty(73, 0) = 10; ty(73, 13) = 0xFF;
     dax::MemorySource tsrc(types.data(), static_cast<uint32_t>(types.size()));
     CHECK(n.read_types(tsrc) && n.type(58).slot == 2 && n.type(58).ac == 0x80 + 57 && n.type(36).dice == 1);
+    {
+        // Darkness's ITEMS has no 2-byte head (rows from offset 0)
+        items::Names nd;
+        dax::MemorySource dsrc(types.data() + 2, static_cast<uint32_t>(types.size() - 2));
+        CHECK(nd.read_types(dsrc, 0) && nd.type(58).slot == 2 && nd.type(58).ac == 0x80 + 57 && nd.type(36).dice == 1);
+    }
 
     uint8_t sword[items::kRecordSize] = {}, plate[items::kRecordSize] = {}, shield[items::kRecordSize] = {},
             arrows[items::kRecordSize] = {};

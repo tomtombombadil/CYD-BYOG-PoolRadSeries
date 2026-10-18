@@ -737,11 +737,16 @@ void draw_position(pic::Canvas& c)
     const int hours = vm->get(0x4BC9), tens = vm->get(0x4BC8), ones = vm->get(0x4BC7);
     int x = g.x, y = g.y;
     if (pool_overland() && ov_load()) ov_square(&x, &y);        // (the wilderness: its global column, its row)
+    // The minutes as digits; Darkness prints tens x 10 + ones as a number
+    // (ovr 0x36ECB: a script's ADD to the ones shows before the clock carries)
+    char mins[8];
+    if (d->prof->variant.darkness_files) snprintf(mins, sizeof mins, "%02d", tens * 10 + ones);
+    else snprintf(mins, sizeof mins, "%d%d", tens, ones);
     if (vm->get(0x4BFB) == 0)
-        snprintf(line, sizeof line, "%d,%d %s %02d:%d%d%s", x, y, geo::dir_name(g.dir), hours, tens, ones,
+        snprintf(line, sizeof line, "%d,%d %s %02d:%s%s", x, y, geo::dir_name(g.dir), hours, mins,
                  camping ? " CAMPING" : (vm->get(0x7ECA) & 1) ? " SEARCH" : "");
     else
-        snprintf(line, sizeof line, "%s %02d:%d%d", geo::dir_name(g.dir), hours, tens, ones);
+        snprintf(line, sizeof line, "%s %02d:%s", geo::dir_name(g.dir), hours, mins);
     put(c, line, 17, 15, 10);
     dirty_rows(15, 15);
 }
@@ -806,15 +811,18 @@ void clear_menu_line(pic::Canvas& c)
     dirty_rows(text::kMenuRow, text::kMenuRow);
 }
 
-// The game's own menu while exploring. Secret's starts with Move (GAME.OVR
-// 0x198E3: "Move Area Cast View Encamp Search Look"): its move mode, with
-// only "Exit" on the menu line - the original's arrows move the party only
-// there; the engine's movement keys move it either way (SPEC 12)
+// The game's own menu while exploring. Secret's and Darkness's start with
+// Move (Secret's GAME.OVR 0x198E3, Darkness's DS 0x2F3A: "Move Area Cast
+// View Encamp Search Look"): its move mode, with only "Exit" on the menu
+// line - the original's arrows move the party only there; the engine's
+// movement keys move it either way (SPEC 12)
 bool moving = false;
 bool secret_files();
+bool darkness_files();
+bool move_menu() { return secret_files() || darkness_files(); }
 void idle_menu(pic::Canvas& c)
 {
-    if (secret_files() && vm->get(0x4BE6)) {
+    if (move_menu() && vm->get(0x4BE6)) {
         text::build(menu, "", moving ? "Exit" : "Move Area Cast View Encamp Search Look");
         menu.selected = 0;
         show_menu_line(c);
@@ -1330,6 +1338,10 @@ bool any_memorized(const party::Character& ch)
 {
     for (int i = 0; i < 84; ++i)
         if (ch.rec[0x1E + i]) return true;
+    // (Darkness: 141 places, filled from the end - the rest in ext)
+    if (darkness_files())
+        for (int i = 0; i < party::kDarknessMemorized - 84; ++i)
+            if (ch.ext[party::kExtMemorized + i]) return true;
     return false;
 }
 bool in_fight();
@@ -1368,7 +1380,7 @@ void view_keys(const party::Character& ch, char* keys, size_t cap)
 void draw_character(pic::Canvas& c)
 {
     const party::Character* ch = new_char ? new_char : pt->sel();
-    if (ch && secret_files()) {
+    if (ch && (secret_files() || darkness_files())) {
         draw_character_secret(c, *ch);
         return;
     }
@@ -1479,7 +1491,9 @@ void draw_character(pic::Canvas& c)
 }
 
 // Secret's View Character (secret_facts.md 10, its own layout): bars at
-// rows 0, 8, 16, 20 and 23, a divider at column 19 from row 8 to 20; name
+// rows 0, 8, 16, 20 and 23, a divider at column 19 from row 8 to 20 (Darkness:
+// the same places in the outer frame alone, the experience without commas,
+// its three coins - darkness_facts.md 34); name
 // and status (row 1), sex and age, Hit Points (3), alignment, race (4),
 // class (5), Experience: (6), level and experience (7), the six stats from
 // row 9, AC / THAC0 / damage and encumbrance / movement (rows 17-19)
@@ -1489,16 +1503,25 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
     dirty(0, pic::kScreenH);
     const layout::Tables& tb = d->tables;
     const layout::Tiles& tl = d->frame_tiles;
-    static const uint8_t kBars[] = {0, 8, 16, 20, 23};
-    for (int k = 0; k + 1 < 5; ++k)
-        for (int col : {0, 39}) layout::bars_col(c, tb, tl, col, kBars[k], kBars[k + 1]);
-    layout::bars_col(c, tb, tl, 19, 8, 20);
-    for (int r : kBars) layout::bars_row(c, tb, tl, r);
+    const bool dk = darkness_files();
+    if (dk) {
+        layout::outer(c, tb, tl);
+    } else {
+        static const uint8_t kBars[] = {0, 8, 16, 20, 23};
+        for (int k = 0; k + 1 < 5; ++k)
+            for (int col : {0, 39}) layout::bars_col(c, tb, tl, col, kBars[k], kBars[k + 1]);
+        layout::bars_col(c, tb, tl, 19, 8, 20);
+        for (int r : kBars) layout::bars_row(c, tb, tl, r);
+    }
     char t[48];
-    // A number with commas between the thousands
+    // A number with commas between the thousands (Darkness: none)
     auto commas = [&](unsigned long v, char* out, size_t cap) {
         char raw[16];
         snprintf(raw, sizeof raw, "%lu", v);
+        if (dk) {
+            snprintf(out, cap, "%s", raw);
+            return;
+        }
         const int n = static_cast<int>(strlen(raw));
         size_t o = 0;
         for (int i = 0; i < n && o + 2 < cap; ++i) {
@@ -2336,6 +2359,33 @@ void save_tap(int x, int y, pic::Canvas& c)
 
 void draw_own_pic(int id);
 
+bool no_rest_here() { return darkness_files() && vm->get(0x2B) == 1 && vm->get(0x2C) >= 100; }
+
+// The camp menu's words (without Rest and Fix where no rest is possible)
+void camp_words(char* out, size_t cap)
+{
+    snprintf(out, cap, "%s", d->w_camp_menu);
+    if (!no_rest_here()) return;
+    // word 3 (Rest) and 5 (Fix) of "Save View Magic Rest Alter Fix Exit"
+    char tmp[sizeof d->w_camp_menu];
+    size_t n = 0;
+    int w = 0;
+    for (const char* p = d->w_camp_menu; *p;) {
+        while (*p == ' ') ++p;
+        const char* e = p;
+        while (*e && *e != ' ') ++e;
+        if (e > p && w != 3 && w != 5 && n + (e - p) + 2 < sizeof tmp) {
+            if (n) tmp[n++] = ' ';
+            memcpy(tmp + n, p, static_cast<size_t>(e - p));
+            n += static_cast<size_t>(e - p);
+        }
+        if (e > p) ++w;
+        p = e;
+    }
+    tmp[n] = 0;
+    snprintf(out, cap, "%s", tmp);
+}
+
 void draw_camp(pic::Canvas& c)
 {
     // The exploring screen; the party's camp in the text window (Secret:
@@ -2353,7 +2403,11 @@ void draw_camp(pic::Canvas& c)
     text::clear(c, text::kTextArea);
     put(c, d->w_makes_camp, 1, 18, 10);
     dirty_rows(17, 22);
-    text::build(menu, d->w_camp, d->w_camp_menu);
+    // Darkness takes Rest and Fix off when resting can't be done here
+    // (its camp at ovr 0x104F1: byte 0x2B = 1 and 0x2C >= 100 - the town's)
+    char words[sizeof d->w_camp_menu];
+    camp_words(words, sizeof words);
+    text::build(menu, d->w_camp, words);
     menu.selected = 0;
     show_menu_line(c);
 }
@@ -7078,7 +7132,7 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         plat::File tf;
         if (pi.types_file && open_file(pi.types_file, tf)) {
             plat::FileSource src(tf);
-            names->read_types(src);
+            names->read_types(src, pi.types_head);
             tf.close();
         }
     }
@@ -7180,6 +7234,25 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             const profile::ViewFacts& vf = profile::view_facts(d->prof->game);
             for (int i = 0; i < profile::kViewWords; ++i)
                 if (vf.words[i]) text::read_pascal(src, vf.words[i], d->vw[i], sizeof d->vw[i]);
+            if (vf.menu) {
+                // Darkness: "Items Spells Trade Deposit Drop Lay Cure Exit" - words
+                // 2-7 are Spells ... Cure (each with its space, as the others)
+                char m[64];
+                text::read_pascal(src, vf.menu, m, sizeof m);
+                static const int kTo[] = {-1, profile::kVwSpells, profile::kVwTrade, profile::kVwDeposit,
+                                          profile::kVwDrop, profile::kVwHeal, profile::kVwCure};
+                int w = 0;
+                for (const char* q = m; *q && w < 7;) {
+                    while (*q == ' ') ++q;
+                    const char* e = q;
+                    while (*e && *e != ' ') ++e;
+                    if (e == q) break;
+                    if (kTo[w] >= 0)
+                        snprintf(d->vw[kTo[w]], sizeof d->vw[0], "%.*s ", static_cast<int>(e - q), q);
+                    ++w;
+                    q = e;
+                }
+            }
         }
         for (int i = 0; i < 6 && pv.stats; ++i)
             text::read_pascal(src, pv.stats + static_cast<uint32_t>(i) * pv.stats_stride, d->v_stat[i], sizeof d->v_stat[i]);
@@ -10779,7 +10852,7 @@ void tap(int x, int y, pic::Canvas& c)
     // The exploring menu: Area Cast View Encamp Search Look (Secret: Move first)
     if (y >= text::kMenuTapTop && (vm->get(0x4BE6) || pool_overland())) {
         const char k = text::key(menu, text::hit(menu, col));
-        if (moving || (k == 'M' && secret_files())) {
+        if (moving || (k == 'M' && move_menu())) {
             if (moving && k != 'E') return;
             moving = !moving;
             idle_menu(c);

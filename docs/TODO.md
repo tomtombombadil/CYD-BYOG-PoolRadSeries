@@ -86,11 +86,14 @@ the Project as claude/TODO.md.
       v0.118.0 the profile (Play off), scripts' counts, the title in its
       EGA colours. v0.119.0-v0.122.0: record, saves, party menu,
       Load, the 3D view and frame, the scripts' memory, Begin into
-      Phlan. v0.123.0: event pictures (PIC1 animations, BIGPIC). Next, a
-      chunk a commit: the profile + scan (Play off: variant.unfinished),
-      title, record + party menu / Load, VGA pictures (EGA colours on the
-      classic boards), 3D view, the scripts' changed ops, rule tables,
-      fights.
+      Phlan. v0.123.0: event pictures (PIC1 animations, BIGPIC).
+      v0.125.0: exploring menu, camp, View, item names. Next, a
+      chunk a commit: the items screen (DS 0x2DA1 "Ready Use Trade
+      Deposit Drop Halve Join Sell Id"), sounds (ZOUNDS, SOUND op),
+      approaching monsters (SPRIT1), rule tables (levels to 40, 9 spell
+      levels; Cast, Magic, training), fights (VGA combat pictures,
+      DUNGCOM, CPIC1 icons), shops / treasure (ITEM0 rows), overland
+      mode, Secret save import, the 8-bit canvas on the S3 / C5.
 - [ ] Tom: flash v0.104.0 on the 4.0" S3: the touch (keys now light as
       the stylus touches; light taps after a pause, finger and stylus;
       small keys) and the sounds (Settings' sound test - Step, Hit; Pool's

@@ -1353,6 +1353,19 @@ the scripts' changed ops, the rule tables, fights, the rest.
   green). Under an event's picture there is no position line (as the
   original; it comes back with the 3D view). Rolf on the docks matches
   DOSBox's EGA screen pixel for pixel (its mouse pointer aside).
+- **v0.125.0 - exploring, camp, View.** The exploring menu starts with
+  Move as Secret's ("Move Area Cast View Encamp Search Look", DS 0x2F3A);
+  the position line's minutes are tens x 10 + ones as one number (ovr
+  0x36ECB: a script's ADD shows before the clock carries). The camp: PIC1
+  128 (the campfire) in the view, "the party makes camp..." (DS 0x214F),
+  Rest and Fix off the menu when byte 0x2B = 1 and 0x2C >= 100 (its camp,
+  ovr 0x104F1 - the town). View Character in Secret's places inside the
+  outer frame alone, the experience without commas (darkness_facts.md
+  34); its menu from one string (DS 0x2D50: Items Spells Trade Deposit
+  Drop Lay Cure Exit - Lay = Heal, effects 0x6D / 0x6E), its questions
+  in its data segment; the 141 memorized places counted for Spells. Item
+  names from its 125 words (DS 0x3354), ITEMS without a head. Area,
+  camp, Binky's and Guy's View match DOSBox (mouse pointer aside).
 
 ## 7. The journal (Tom, 2026-10-06)
 
