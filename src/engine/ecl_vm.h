@@ -247,6 +247,8 @@ private:
     } dmg_[kMaxDamageLines] = {};
     char dmg_text_[64] = {};
     int  n_dmg_ = 0, dmg_at_ = -1;
+    bool xp_pause_ = false;             // (Secret's 0x41: its words stay up for the game's delay)
+    char xp_text_[64] = {};
     bool dmg_killed_ = false;
     Stop damage_step();
     int minutes_ = 0;

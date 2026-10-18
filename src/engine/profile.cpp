@@ -800,6 +800,7 @@ constexpr ecl::OpSet kSecretEcl = [] {
     s.area_by_block = true;
     s.secret_fields = true;
     s.vault_word = 0x4CFC;          // (secret_facts_2.md 24)
+    s.xp_award = true;              // (op 0x41: GAME.OVR 0x43FF)
     // CALL 2DCB follows the scripts' moves of the party (SAVE x, y, facing
     // to 0xC04B-D, then the call), as Curse's CALL 2E10: the 3D view again
     s.redraw_call = 0x2DCB;
@@ -1259,6 +1260,12 @@ const Profile kProfiles[] = {
                 .items = {.displace = 0x59, .ring_invisible = 0x38},
                 .berserk = 0x6B},
                kSecretFight, sizeof kSecretFight / sizeof kSecretFight[0]},
+     // The script machine's words (GAME.OVR): the encounter's "Both sides
+     // wait." / "The monsters flee.", DAMAGE's " dies. " / " is hit FOR " /
+     // " points of Damage." / "The entire party is killed!", op 0x41's
+     // "Congratulations the party gains experience!" / "Congratulations " /
+     // " gains experience!"
+     .script_words = {0x30F8, 0x3109, 0xB158, 0xB160, 0xB16D, 0x3971, 0x43AF, 0x43DB, 0x43EC},
      // The sound driver: Curse's in START.EXE (segment 0x7E4), 13 sounds
      // (the same byte code but the missile's), its Tandy byte code past
      // the driver's code (secret_facts_2.md 22)

@@ -31,6 +31,9 @@ namespace ecl {
 // DAMAGE's lines ("  NAME is hit FOR 7 points of Damage.", "  NAME dies. ")
 enum ScriptWord {
     kWBothWait, kWMonstersFlee, kWDies, kWIsHitFor, kWPointsOfDamage, kWPartyKilled,
+    // Secret's experience award (op 0x41): "Congratulations the party gains
+    // experience!", "Congratulations " + NAME + " gains experience!"
+    kWPartyGainsXp, kWCongrats, kWGainsXp,
     kScriptWords
 };
 
@@ -69,6 +72,10 @@ struct OpSet {
     // Secret: COMBAT with no monsters and this area word 1 (cleared) opens
     // the vault (GAME.OVR 0x269D; its scripts' Deposit / Withdraw); 0: none
     uint16_t vault_word = 0;
+    // Secret: op 0x41 is an experience award (GAME.OVR ovr4 0x37F4 = file
+    // 0x43FF): its 2nd operand's experience to everyone (1st operand not 0)
+    // or the selected member (0), each its share by the classes held
+    bool xp_award = false;
 };
 
 // A script's memory address as the engine's machine (Curse's map) knows

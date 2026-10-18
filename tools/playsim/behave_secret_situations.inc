@@ -664,6 +664,205 @@ void creation()
     expect(P, w, nbad == 0, "%d wrong", nbad);
 }
 
+// ---- The temple (its own overlay, GAME.OVR 0x5AFE; secret_facts_2.md 17):
+// every service, on the GOG party's first member, the dice high and low
+void temple_checks()
+{
+    if (!boot()) {
+        expect(P, "boot for the temple", false);
+        return;
+    }
+    party::Character& ch = pt->m[0];
+    pt->selected = 0;
+    open_heal(C);
+    const uint8_t keep[party::kRecordSize] = {};
+    (void)keep;
+    static party::Character orig;
+    orig = ch;
+    char w[120];
+    auto reset = [&](int hp) {
+        ch = orig;
+        ch.n_affects = 0;
+        ch.rec[0x195] = party::Okay;
+        ch.rec[0x1A4] = static_cast<uint8_t>(hp);
+    };
+    auto add = [&](uint8_t t) { spells::add_affect(ch, t, 0, 0xFF, false); };
+    const int mx = orig.hp_max();
+    // Cure Blindness: 0x21 gone
+    reset(mx);
+    add(0x21);
+    secret_cure(rules::kCureBlindness, C);
+    expect(P, "temple Cure Blindness: effect 0x21 gone", !ch.has_affect(0x21));
+    // Cure Disease: 0x1F 0x22 0x2B 0x2C all gone (DS 0x1B3E)
+    reset(mx);
+    for (uint8_t t : {0x1F, 0x22, 0x2B, 0x2C}) add(t);
+    secret_cure(rules::kCureDisease, C);
+    expect(P, "temple Cure Disease: 0x1F 0x22 0x2B 0x2C gone",
+           !ch.has_affect(0x1F) && !ch.has_affect(0x22) && !ch.has_affect(0x2B) && !ch.has_affect(0x2C));
+    // The wound cures (0x5CFF): 1d8, 2d8+1, 3d8+3; Heal max - HP - 1d4 (a byte)
+    const int cures[4] = {rules::kCureLight, rules::kCureSerious, rules::kCureCritical, rules::kHealCure};
+    for (int ci = 0; ci < 4; ++ci)
+        for (int high = 0; high < 2; ++high)
+            for (int start : {1, mx - 2, mx}) {
+                reset(start);
+                if (high) dice_high();
+                else dice_low();
+                secret_cure(cures[ci], C);
+                dice_usual();
+                int amt;
+                if (ci == 0) amt = high ? 8 : 1;
+                else if (ci == 1) amt = high ? 17 : 3;
+                else if (ci == 2) amt = high ? 27 : 6;
+                else amt = (mx - start - (high ? 4 : 1)) & 0xFF;
+                int want = start == mx ? mx : std::min(mx, start + amt);
+                snprintf(w, sizeof w, "temple cure %d from %d/%d, dice %s", cures[ci], start, mx, high ? "high" : "low");
+                expect(P, w, ch.hp() == want, "%d, the original's %d", ch.hp(), want);
+            }
+    // The dead, stoned and gone: no healing
+    for (int h : {party::Dead, party::Stoned, party::Gone}) {
+        reset(1);
+        ch.rec[0x195] = static_cast<uint8_t>(h);
+        secret_cure(rules::kCureCritical, C);
+        snprintf(w, sizeof w, "temple Cure Critical on status %d: nothing", h);
+        expect(P, w, ch.hp() == 1 && ch.health() == h, "HP %d status %d", ch.hp(), ch.health());
+    }
+    // Heal's cures: blindness, feeblemind 0x44, the diseases
+    reset(mx - 10);
+    for (uint8_t t : {0x21, 0x44, 0x22}) add(t);
+    secret_cure(rules::kHealCure, C);
+    expect(P, "temple Heal: blindness, feeblemind and disease gone", !ch.has_affect(0x21) && !ch.has_affect(0x44) && !ch.has_affect(0x22));
+    // Neutralize Poison (0x6230): 0x37 there - HP 0 -> 1, 0x37 0x16 0x0F gone, okay
+    reset(0);
+    ch.rec[0x195] = party::Dying;
+    for (uint8_t t : {0x37, 0x16, 0x0F}) add(t);
+    secret_cure(rules::kNeutralizePoison, C);
+    expect(P, "temple Neutralize Poison", ch.hp() == 1 && ch.health() == party::Okay && !ch.has_affect(0x37) && !ch.has_affect(0x16) &&
+                                              !ch.has_affect(0x0F), "HP %d status %d", ch.hp(), ch.health());
+    reset(5);
+    secret_cure(rules::kNeutralizePoison, C);
+    expect(P, "temple Neutralize Poison on the unpoisoned: nothing", ch.hp() == 5);
+    // Raise Dead (0x5FC5): the dead only; elves never; Con - 1 (own, in use), 1 HP, max kept
+    for (int elf = 0; elf < 2; ++elf) {
+        reset(0);
+        ch.rec[0x195] = party::Dead;
+        if (elf) ch.rec[0x74] = 2;
+        const int con = ch.rec[0x19];
+        secret_cure(rules::kRaiseDead, C);
+        if (elf)
+            expect(P, "temple Raise Dead: an elf can't be raised", ch.health() == party::Dead);
+        else
+            expect(P, "temple Raise Dead: 1 HP, okay, Constitution - 1, maximum kept",
+                   ch.health() == party::Okay && ch.hp() == 1 && ch.rec[0x19] == con - 1 && ch.rec[0x18] == con - 1 && ch.hp_max() == mx,
+                   "status %d HP %d/%d Con %d", ch.health(), ch.hp(), ch.hp_max(), ch.rec[0x19]);
+    }
+    reset(5);
+    secret_cure(rules::kRaiseDead, C);
+    expect(P, "temple Raise Dead on the living: nothing", ch.health() == party::Okay && ch.rec[0x19] == orig.rec[0x19]);
+    // Remove Curse (0x6344): effect 0x24 gone
+    reset(mx);
+    add(0x24);
+    secret_cure(rules::kRemoveCurse, C);
+    expect(P, "temple Remove Curse: Bestow Curse's 0x24 gone", !ch.has_affect(0x24));
+    // Stone to Flesh (0x6429): status 7 -> 0, HP 1
+    reset(20);
+    ch.rec[0x195] = party::Stoned;
+    secret_cure(rules::kStoneToFlesh, C);
+    expect(P, "temple Stone to Flesh", ch.health() == party::Okay && ch.hp() == 1, "status %d HP %d", ch.health(), ch.hp());
+    ch = orig;
+    delete hw;
+    hw = nullptr;
+    screen = Screen::Game;
+}
+
+// ---- Op 0x41, the experience award (GAME.OVR 0x43FF; its scripts use it 26
+// times): operand 1 not 0 - every member, 0 - the selected; operand 2 the
+// experience, each member's share = it / the classes with a level; only
+// those with record 0x1A7 (in-combat byte) set; "Congratulations the party
+// gains experience!" / "Congratulations NAME gains experience!" (0x43AF,
+// 0x43DB, 0x43EC) in the text area for the game's delay
+ecl::Stop run_code(const std::vector<uint8_t>& code, uint16_t at)
+{
+    ecl::GameState& g = d->gs;
+    memset(g.code, 0, sizeof g.code);
+    memcpy(g.code, code.data(), code.size());
+    g.code_len = static_cast<uint32_t>(code.size());
+    vm->init_script(true);
+    return vm->run(at);
+}
+void xp_award()
+{
+    if (!boot()) {
+        expect(P, "boot for 0x41", false);
+        return;
+    }
+    std::vector<uint8_t> code;
+    for (int i = 0; i < 5; ++i) {
+        code.push_back(0);
+        code.push_back(2);
+        code.push_back(0x14);
+        code.push_back(0x80);
+    }
+    char w[120];
+    for (int who = 0; who < 2; ++who) {
+        std::vector<uint8_t> c = code;
+        const uint8_t prog[] = {0x41, 0, static_cast<uint8_t>(who), 2, 0xE8, 0x03, 0x00};   // EXPERIENCE who, 1000; EXIT
+        c.insert(c.end(), prog, prog + sizeof prog);
+        uint32_t before[8];
+        for (int i = 0; i < pt->count; ++i) before[i] = pt->m[i].exp();
+        pt->m[3].rec[0x196] = 0;                // (one not counted)
+        pt->selected = 2;
+        ecl::Stop st = run_code(c, 0x8014);
+        const bool printed = st == ecl::Stop::Waiting && vm->wait() == ecl::Wait::Print;
+        const std::string txt = vm->text();
+        if (printed) st = vm->resume();
+        const bool paused = st == ecl::Stop::Waiting && vm->wait() == ecl::Wait::Pause;
+        if (paused) vm->resume();
+        bool ok = true;
+        std::string got;
+        for (int i = 0; i < pt->count; ++i) {
+            int n = 0;
+            for (int k = 0; k < 7; ++k) n += pt->m[i].level(k) > 0;
+            const bool gets = (who || i == 2) && i != 3 && n > 0;
+            const uint32_t want = before[i] + (gets ? 1000u / n : 0u);
+            ok = ok && pt->m[i].exp() == want;
+            got += " " + std::to_string(pt->m[i].exp() - before[i]);
+        }
+        snprintf(w, sizeof w, "op 0x41 %s 1000: each its share by its classes", who ? "everyone" : "the selected");
+        expect(P, w, ok, "gains%s", got.c_str());
+        char nm[20];
+        pt->m[2].name(nm, sizeof nm);
+        snprintf(w, sizeof w, "op 0x41 %s: its words, then the game's delay", who ? "everyone" : "the selected");
+        const bool words = who ? txt.find("party gains experience") != std::string::npos
+                               : txt.find("Congratulations") == 0 && txt.find(" gains experience") != std::string::npos;
+        expect(P, w, printed && paused && words, "\"%s\"", txt.c_str());
+        pt->m[3].rec[0x196] = 1;
+    }
+    // A real one: ECL1 block 34 at 0x99B5 - EXPERIENCE 1, 60000 (the party)
+    if (boot()) {
+        d->gs.game_area = 2;
+        vm->set(0x7F12, 2);
+        d->gs.script = 34;
+        uint32_t before[8];
+        for (int i = 0; i < pt->count; ++i) before[i] = pt->m[i].exp();
+        if (host->load_script(34, d->gs.code, &d->gs.code_len) && vm->init_script()) {
+            const ecl::Stop st = vm->run(0x99B5);
+            bool ok = st == ecl::Stop::Waiting && vm->wait() == ecl::Wait::Print;
+            for (int i = 0; i < pt->count; ++i) {
+                int n = 0;
+                for (int k = 0; k < 7; ++k) n += pt->m[i].level(k) > 0;
+                ok = ok && pt->m[i].exp() == before[i] + 60000u / n;
+            }
+            expect(P, "ECL1 block 34's EXPERIENCE (0x99B5): 60000 shared by each one's classes", ok);
+        } else {
+            expect(P, "ECL1 block 34", false);
+        }
+    }
+    // Its script words (the encounter's, DAMAGE's, 0x41's) read from GAME.OVR
+    bool all = true;
+    for (int i = 0; i < ecl::kScriptWords; ++i) all = all && d->script_word[i][0];
+    expect(P, "Secret's script words: every one read (Both sides wait ... gains experience!)", all);
+}
+
 void all_situations()
 {
     if (const char* e = getenv("ENDLESS")) {
@@ -675,4 +874,6 @@ void all_situations()
     class_tables();
     hit_points();
     creation();
+    temple_checks();
+    xp_award();
 }

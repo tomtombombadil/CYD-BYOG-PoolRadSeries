@@ -88,7 +88,7 @@ struct Data {
     dax::Index     idx;
     uint8_t        sky[16] = {};
     char           press_key[text::kMaxString] = {};
-    char           script_word[ecl::kScriptWords][32] = {};
+    char           script_word[ecl::kScriptWords][48] = {};   // (Secret's longest: 43)
     const char*    script_words[ecl::kScriptWords] = {};
     char           data_dir[96] = {};
     const profile::Profile* prof = nullptr;
