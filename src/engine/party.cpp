@@ -174,10 +174,32 @@ void from_darkness(const uint8_t* p, uint8_t* r)
     r[0x74] = race_from_darkness(p[0xAD]);
 }
 
+// Darkness's 141 memorized places, filled from the end (Guy's at 137-140):
+// the engine's spell rules look at Curse's 84 in the record, so the spells
+// move there - packed from the end - and only the 85th on wait in ext; on
+// the way back they fill the 141 from the end again (the original's order)
+static void pack_memorized(Character& c)
+{
+    // (as read: places 84-140 in ext, 0-83 in the record - from the end)
+    uint8_t list[kDarknessMemorized];
+    int n = 0;
+    for (int i = kDarknessMemorized - kListSize - 1; i >= 0; --i)
+        if (c.ext[kExtMemorized + i]) list[n++] = c.ext[kExtMemorized + i];
+    for (int i = kListSize - 1; i >= 0; --i)
+        if (c.rec[kListAt + i]) list[n++] = c.rec[kListAt + i];
+    memset(c.rec + kListAt, 0, kListSize);
+    memset(c.ext + kExtMemorized, 0, kDarknessMemorized - kListSize);
+    for (int k = 0; k < n; ++k) {
+        if (k < kListSize) c.rec[kListAt + kListSize - 1 - k] = list[k];
+        else c.ext[kExtMemorized + (kDarknessMemorized - kListSize - 1) - (k - kListSize)] = list[k];
+    }
+}
+
 void from_darkness(const uint8_t* p, Character& c)
 {
     from_darkness(p, c.rec);
     for (const auto& run : kDarknessExt) memcpy(c.ext + run[1], p + run[0], run[2]);
+    pack_memorized(c);
 }
 
 void to_darkness(const Character& c, uint8_t* p)
@@ -186,6 +208,17 @@ void to_darkness(const Character& c, uint8_t* p)
     memset(p, 0, kDarknessRecordSize);
     for (const auto& run : kDarknessRuns) memcpy(p + run[0], r + run[1], run[2]);
     for (const auto& run : kDarknessExt) memcpy(p + run[0], c.ext + run[1], run[2]);
+    {
+        // (the memorized spells from the end of the 141, as the original fills them)
+        uint8_t list[kDarknessMemorized];
+        int n = 0;
+        for (int i = kListSize - 1; i >= 0; --i)
+            if (r[kListAt + i]) list[n++] = r[kListAt + i];
+        for (int i = kDarknessMemorized - kListSize - 1; i >= 0; --i)
+            if (c.ext[kExtMemorized + i]) list[n++] = c.ext[kExtMemorized + i];
+        memset(p + 0x1E, 0, kDarknessMemorized);
+        for (int k = 0; k < n; ++k) p[0x1E + kDarknessMemorized - 1 - k] = list[k];
+    }
     // The race: its own number while it still means the race the record has
     p[0xAD] = race_from_darkness(c.ext[kExtRace]) == r[0x74] ? c.ext[kExtRace] : race_to_darkness(r[0x74]);
     p[0x1A6] = static_cast<uint8_t>(c.n_items);

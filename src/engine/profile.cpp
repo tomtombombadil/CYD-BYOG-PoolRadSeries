@@ -1437,6 +1437,7 @@ const Profile kProfiles[] = {
      .items = {.words = {0xD1C4, 21, 125}, .types_file = "ITEMS", .arrow = 30, .quarrel = 12, .dart = 5,
                // "Items", "Ready Item", " Yes  ", " No   ", "It's Cursed!", "Wrong Class",
                // "already using ", "Your hands are full!", "'s" (its item overlay)
+               .list_next = kP | 0xAAEE, .list_prev = kP | 0xAB04, .list_exit = kP | 0xAAF9,
                .title = kP | 0xB5A8, .heading = kP | 0xB5D1, .yes = 0x3430D, .no = 0x34314, .cursed = 0x25099,
                .wrong_class = 0x250A6, .already = 0x250B2, .hands_full = 0x250C1, .plural_s = 0x35ABD,
                .types_head = 0, .menu = kP | 0xCC11},
@@ -1455,6 +1456,29 @@ const Profile kProfiles[] = {
      .item_words = {0, 0, 0, 0, 0, 0, 0, 0x24795, kP | 0xB64C, 0x253D4, kP | 0xB5FA, kP | 0xB623, 0, 0x2530A,
                     kP | 0xB675, kP | 0xB69E, kP | 0xB6C7, kP | 0xB6F0, kP | 0xB719, kP | 0xB742, kP | 0xB76B,
                     kP | 0xB794, kP | 0xC159, kP | 0xC9FD, 0},
+     // Magic (camp): "Cast Memorize Scribe Display Rest Exit" (DS 0x32CE),
+     // its level names whole ("1st Level", DS 0x0AD5, 9), spell names (DS
+     // 0x53CD, 127) and effect names (DS 0x4061, 129); the screens' words
+     // in its data segment or GAME.OVR, as Secret's but the kinds' headings
+     // ("    Cleric :") and "spells OK? " / "scribe these spells? "; its
+     // scrolls as Secret's (types 39 / 40, count word at 0x2F - the GOG
+     // clerics' are type 40). What spells do in camp: not yet (camp = none:
+     // "Can't be cast here...")
+     .magic = {.menu = 0xD13E, .levels = {0xA945, 41, 9}, .names = {0xF23D, 35, 127},
+               .words = {0x2697C, 0x26931, 0x2693B, 0x26966, kP | 0xC64E, kP | 0xCA78, kP | 0xC7E8, 0, 0, 0xE26A,
+                         0xE277, 0xE284, 0xE5CD, 0xE03C, 0xE063, 0x27CFD, kP | 0xCB97, 0x2835A, 0x27EF8, 0x27FC3,
+                         0x28369},
+               .rest_period = 0x7ED2, .rest_chance = 0x7ED3,
+               .cast_words = {0xE053, 0xE1A2, kP | 0xCA4F, kP | 0xB318, kP | 0xB274, kP | 0xB24B, 0x2AE07, 0x367E8,
+                              0x367F8, 0x32E12, 0x3383B, 0x2CBBB, 0x2DB95, 0x2DEFB, 0x2D047, 0x2D054, 0xEB9D,
+                              kP | 0xCACA, 0x26951, 0x26972, 0xE7BA, 0xE7D2, 0xE7EE, 0xE812, kP | 0xC811, 0, 0xE073,
+                              0x280A3, 0x2695C, kP | 0xCAF3, kP | 0xB29D, kP | 0xB2C6, kP | 0xB2EF, 0x25682, 0x2568F,
+                              0x25695, 0x26947, 0},
+               .camp = nullptr, .n_camp = 0, .facts = {},
+               .spell_named = nullptr, .n_spell_named = 0, .named = nullptr, .n_named = 0,
+               .scroll_one_spell = 100, .read_magic = 0x10,
+               .level_word = 0, .effect_names = {0xDED1, 38, 129}, .these_spells = 0,
+               .scroll_types = {39, 40}, .scroll_count_at = 0x2F, .scroll_readers = true, .effects_shown = 0xEB7D},
      // The script machine's words (darkness_facts.md S10): DAMAGE's lines,
      // PRESS KEY's prompt, JOURNAL's sentence, WHAT MENU's question, "Yes No"
      .script_words = {0, 0, 0x7B42, 0x7B4A, 0x7B57, 0x19C2, kP | 0xAC82, 0x261D, 0x2640, 0x1212, kP | 0xC9D4},

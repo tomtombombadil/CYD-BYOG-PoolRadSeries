@@ -1385,6 +1385,18 @@ the scripts' changed ops, the rule tables, fights, the rest.
   The playsim's RULECHECK: the GOG party's six records - THAC0, saves,
   thief skills, attacks, class flags, slots 1-9, books 1-126 - all as the
   original stored them.
+- **v0.128.0 - magic (camp).** Its magic menu, level names (whole, 9),
+  spell names (127), effect names (129) and the screens' words (its data
+  segment or GAME.OVR; the kinds' "    Cleric :" with the counts after
+  them), Rest off the magic menu in town as the camp's; Display lists only
+  the effects in its 32-byte set (GAME.OVR 0xEB7D, its Display at ovr
+  0xEBB1), the names in the prompt colour; Cast and View list a spell held
+  more than once on one line, "(n)"; its lists start on the page's last
+  spell (DOSBox). The 141 memorized places are packed from the end into
+  Curse's 84 (the rest in ext) and written back from the end
+  (`party::from_darkness` / `to_darkness`). Memorize, Cast and Display
+  match DOSBox (Dominic, the GOG party). What spells do in camp: not yet
+  ("Can't be cast here...").
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -1865,5 +1877,9 @@ the game's Settings (As Original: all of them).
   weighs the coins it pays (Secret's weighs the price in gold); a pile
   with no count joins nothing (Secret's swallows it). Not in the engine
   yet: Secret's scroll bundles (Join on scrolls, up to 10).
+- **Darkness's memorized spells** (v0.128.0): the original has 141 places;
+  the engine's spell rules use Curse's 84, so a character can hold 84
+  memorized spells at most there (the GOG party: 4 to 30). Saves keep
+  all of them.
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.

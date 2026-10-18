@@ -88,10 +88,10 @@ the Project as claude/TODO.md.
       Load, the 3D view and frame, the scripts' memory, Begin into
       Phlan. v0.123.0: event pictures (PIC1 animations, BIGPIC).
       v0.125.0: exploring menu, camp, View, item names. v0.126.0: the
-      items screen. v0.127.0: the rule tables. Next, a chunk a commit:
-      sounds (ZOUNDS, SOUND op; an agent's survey running 2026-10-18),
-      approaching monsters (SPRIT1), magic (spell names, Cast, Magic /
-      Memorize), training, creation, fights (VGA combat pictures,
+      items screen. v0.127.0: the rule tables. v0.128.0: magic (camp
+      screens). Next, a chunk a commit: sounds (branch darkness-sound),
+      approaching monsters (SPRIT1), the spells' effects in camp and in
+      fights, training, creation, fights (VGA combat pictures,
       DUNGCOM, CPIC1 icons), shops / treasure (ITEM0 rows), overland
       mode, Secret save import, the 8-bit canvas on the S3 / C5.
 - [ ] Tom: flash v0.104.0 on the 4.0" S3: the touch (keys now light as

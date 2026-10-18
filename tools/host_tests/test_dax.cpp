@@ -3270,7 +3270,9 @@ static void test_party()
         CHECK(dc.money(4) == (dk[0x14B] | dk[0x14C] << 8) && dc.level(0) == dk[0x151] && dc.old_level(6) == dk[0x15E]);
         CHECK(dc.exp() == (dk[0x172] | dk[0x173] << 8 | dk[0x174] << 16 | (uint32_t)dk[0x175] << 24));
         CHECK(dc.rec[0x12D] == dk[0x17D] && dc.ext[party::kExtCleric89 + 1] == dk[0x185] && dc.rec[0x137] == dk[0x18F] &&
-              dc.ext[party::kExtMage67] == dk[0x194] && dc.ext[party::kExtMemorized + 56] == dk[0xAA]);
+              dc.ext[party::kExtMage67] == dk[0x194]);
+        // (the memorized places packed from the end into the record's 84: place 140 -> 83, place 56 -> ext's last)
+        CHECK(dc.rec[0x1E + 83] == dk[0xAA] && dc.rec[0x1E] == dk[0x1E + 57] && dc.ext[party::kExtMemorized + 56] == dk[0x1E + 56]);
         CHECK(dc.health() == dk[0x1ED] && dc.hp() == dk[0x1FC] && dc.rec[0x191] == dk[0xAF] &&
               dc.ext[party::kExtMagicRes] == dk[0x1EB] && dc.ext[party::kExtTrain] == dk[0x1EC]);
         uint8_t back[party::kDarknessRecordSize];

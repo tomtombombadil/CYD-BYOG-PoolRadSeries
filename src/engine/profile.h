@@ -419,6 +419,10 @@ struct Profile {
         uint8_t                   scroll_types[2] = {};
         uint8_t                   scroll_count_at = 0x30;
         bool                      scroll_readers = false;
+        // Darkness: the effects Display lists - a Pascal set of 32 bytes in
+        // GAME.OVR (its Display, ovr 0xEBB1, tests each effect against it;
+        // 0: every effect with a name)
+        uint32_t                  effects_shown = 0;
     } magic;
 
     // The camp's Alter: its menu ("Order Drop Speed Icon Pics Exit"), the

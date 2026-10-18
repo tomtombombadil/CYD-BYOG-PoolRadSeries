@@ -143,7 +143,7 @@ struct Data {
     char           guy_letter[kMaxGuys] = {};   // a Pool saved game's letter (CHRDAT<letter>n.SAV)
     char           guy_from = 'C';              // the list's source: C(urse) / P(ool)
     int            guys = 0;
-    char           w_magic[44] = {}, w_level[7][12] = {};    // the magic menu, "1st Level" ... (Secret: 7)
+    char           w_magic[44] = {}, w_level[9][12] = {};    // the magic menu, "1st Level" ... (Secret: 7, Darkness 9)
     char           w_these[16] = {};                        // Secret: " these spells?" after Memorize / Scribe
     char           w_alter[36] = {}, w_select[14] = {}, w_place[14] = {};   // Alter's menus
     char           w_save_which[24] = {}, w_slots[24] = {}, w_saving[24] = {}, w_camp_menu[40] = {},
@@ -161,6 +161,7 @@ struct Data {
                    w_weapon[8] = {}, w_armour[8] = {};
     char           iw[profile::kItemWords][44] = {};   // the items menu's words (profile item_words)
     char           vw[profile::kViewWords][28] = {};   // View's menu and its questions (profile::view_facts)
+    uint8_t        fx_shown[32] = {};                   // Darkness: the effects Display lists (magic.effects_shown)
     char           v_npc[8] = {}, v_age[8] = {}, v_stat[6][8] = {}, v_level[8] = {}, v_exp[12] = {}, v_status[8] = {},
                    v_ac[12] = {}, v_hp[12] = {}, v_thac0[12] = {}, v_damage[20] = {}, v_enc[24] = {}, v_move[16] = {},
                    v_exit[8] = {};
@@ -4684,7 +4685,7 @@ void back_from_view(pic::Canvas& c);
 
 MagicRules* mrules = nullptr;       // the rule tables while camping / casting
 struct SpellNames {
-    char name[120][24];             // (Curse 1-100, Secret 1-118)
+    char name[128][24];             // (Curse 1-100, Secret 1-118, Darkness 1-126)
 };
 SpellNames* spn = nullptr;
 
@@ -4760,7 +4761,7 @@ bool load_magic()
             const size_t n = static_cast<size_t>(nt.stride) * nt.count;
             uint8_t* buf = static_cast<uint8_t*>(malloc(n));
             if (buf && exepack::read(src, info, nt.at, buf, n) == exepack::Status::Ok) {
-                for (int i = 0; i < nt.count && i < 120; ++i) {
+                for (int i = 0; i < nt.count && i < 128; ++i) {
                     const uint8_t* e = buf + static_cast<size_t>(i) * nt.stride;
                     const int len = e[0] >= nt.stride ? 0 : e[0] < 23 ? e[0] : 23;    // (Secret's entry 0 isn't a name)
                     memcpy(spn->name[i], e + 1, len);
@@ -4782,11 +4783,18 @@ bool load_magic()
     return true;
 }
 
-const char* spell_name(int s) { return spn && s >= 0 && s < 120 ? spn->name[s] : ""; }
+const char* spell_name(int s) { return spn && s >= 0 && s < 128 ? spn->name[s] : ""; }
 
 void draw_magic_menu(pic::Canvas& c)
 {
-    text::build(menu, "", d->w_magic);
+    // (Darkness: no Rest where resting can't be done - as its camp menu)
+    char words[sizeof d->w_magic];
+    snprintf(words, sizeof words, "%s", d->w_magic);
+    if (no_rest_here()) {
+        char* r = strstr(words, " Rest");
+        if (r) memmove(r, r + 5, strlen(r + 5) + 1);
+    }
+    text::build(menu, "", words);
     menu.selected = 0;
     show_menu_line(c);
 }
@@ -4828,8 +4836,9 @@ void open_effects(pic::Canvas& c);
 
 // ---- the spell list
 struct SpellLines {
-    uint8_t id[128];                // 0: a level heading (level in lvl; Secret's grimoire: up to 117 + 7)
-    uint8_t lvl[128];
+    uint8_t id[144];                // 0: a level heading (level in lvl; Secret's grimoire: up to 117 + 7,
+    uint8_t lvl[144];               // Darkness's 126 + 9)
+    uint8_t count[144];             // Darkness's memory lists: a spell held more than once on one line, "(n)"
     int     n = 0;
     int     top = 0, sel = -1;
     bool    learning = false;       // "to Memorize" (else the grimoire)
@@ -4855,19 +4864,31 @@ magic::Scrolls scroll_facts()
     return sc;
 }
 
+int list_rows();
+void dk_page_sel();
+
 void build_lines(const uint8_t* ids, int n)
 {
     sl.n = 0;
     int last = 0;
     const classes::Tables& t = mrules->tables;
-    for (int i = 0; i < n && sl.n < 127; ++i) {
+    // (Darkness's Cast and View list a spell held more than once on one
+    // line with its count - "Cure Light Wounds (6)", DOSBox)
+    const bool counted = darkness_files() && (sl.casting || sl.viewing);
+    for (int i = 0; i < n && sl.n < 143; ++i) {
         const int lv = t.spell_level(ids[i]);
         if (lv != last) {
             sl.id[sl.n] = 0;
+            sl.count[sl.n] = 0;
             sl.lvl[sl.n++] = static_cast<uint8_t>(lv);
             last = lv;
         }
+        if (counted && sl.n > 0 && sl.id[sl.n - 1] == ids[i]) {
+            ++sl.count[sl.n - 1];
+            continue;
+        }
         sl.id[sl.n] = ids[i];
+        sl.count[sl.n] = 1;
         sl.lvl[sl.n++] = static_cast<uint8_t>(lv);
     }
     sl.top = 0;
@@ -4877,6 +4898,20 @@ void build_lines(const uint8_t* ids, int n)
         if (sl.id[i]) {
             sl.sel = i;
             break;
+        }
+    dk_page_sel();
+}
+
+// Darkness's lists start on the page's LAST spell, and a turned page's
+// last spell is chosen (DOSBox: Memorize, Cast, the next page)
+void dk_page_sel()
+{
+    if (!darkness_files()) return;
+    const int rows = list_rows();
+    for (int i = sl.top + rows - 1; i >= sl.top; --i)
+        if (i < sl.n && sl.id[i]) {
+            sl.sel = i;
+            return;
         }
 }
 
@@ -4907,11 +4942,14 @@ void draw_counts(pic::Canvas& c)
         if (!any || row > 22) continue;
         mw(kKind[k], w1, sizeof w1);
         put(c, w1, 1, row, 10);
+        // (the counts a column past the heading: Curse's / Secret's 18 letters
+        // put them at 20, Darkness's "    Cleric :" at 14)
+        const int col0 = 1 + static_cast<int>(strlen(w1)) + 1;
         for (int lv = 1; lv <= t.slot_levels(); ++lv) {
             if (!classes::slots(ch, k, lv)) continue;
             char n[4];
             snprintf(n, sizeof n, "%d", magic::room(ch, t, k, lv));
-            put(c, n, 20 + (lv - 1) * 3, row, 10);
+            put(c, n, col0 + (lv - 1) * 3, row, 10);
         }
         ++row;
     }
@@ -4935,6 +4973,7 @@ void draw_spells(pic::Canvas& c)
     snprintf(t, sizeof t, "%s%s", a, b);
     put(c, t, static_cast<int>(strlen(nm)) + 4, 1, 10);
     const int rows = list_rows();
+    if (darkness_files() && (sl.sel < sl.top || sl.sel >= sl.top + rows)) dk_page_sel();   // (a turned page)
     for (int r = 0; r < rows && sl.top + r < sl.n; ++r) {
         const int i = sl.top + r;
         const int row = 5 + r;
@@ -4942,8 +4981,9 @@ void draw_spells(pic::Canvas& c)
             put(c, d->w_level[sl.lvl[i] - 1], 1, row, 13);       // headings in the prompt colour
             continue;
         }
-        char line[32];
-        snprintf(line, sizeof line, "  %s", spell_name(sl.id[i]));
+        char line[40];
+        if (sl.count[i] > 1) snprintf(line, sizeof line, "  %s (%d)", spell_name(sl.id[i]), sl.count[i]);
+        else snprintf(line, sizeof line, "  %s", spell_name(sl.id[i]));
         if (i == sl.sel && !sl.learning) {
             c.fill(3 * 8, row * 8, static_cast<int>(strlen(line) - 2) * 8, 8, 15);
             font::draw_text(c, d->font, line + 2, 3, row, 0, -1);
@@ -6158,7 +6198,9 @@ void effect_name(int type, char* out, size_t cap)
     out[0] = 0;
     const auto& m = d->prof->magic;
     if (m.effect_names.at) {
-        // Secret: its own name for each effect number (none: left out)
+        // Secret: its own name for each effect number (none: left out);
+        // Darkness: only those in its Display's set
+        if (m.effects_shown && !(d->fx_shown[(type & 0xFF) / 8] >> (type % 8) & 1)) return;
         if (type < m.effect_names.count)
             ow(text::kInProgram | (m.effect_names.at + static_cast<uint32_t>(type) * m.effect_names.stride), out, cap);
         return;
@@ -6184,8 +6226,24 @@ void draw_effects(pic::Canvas& c)
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
     const int rows = 22 - 4 + 1;
-    for (int r = 0; r < rows && el->top + r < el->n; ++r)
-        put(c, el->text[el->top + r], 1, 4 + r, el->colour[el->top + r]);
+    // (Darkness: the page's last line inverse, as its lists start there - DOSBox)
+    int last = -1;
+    if (darkness_files())
+        for (int r = rows - 1; r >= 0 && last < 0; --r)
+            if (el->top + r < el->n && el->text[el->top + r][0] && el->text[el->top + r][0] != ' ' ? true
+                : el->top + r < el->n && el->text[el->top + r][1])
+                last = r;
+    for (int r = 0; r < rows && el->top + r < el->n; ++r) {
+        const char* t = el->text[el->top + r];
+        if (r == last) {
+            const char* u = t[0] == ' ' ? t + 1 : t;
+            const int col = t[0] == ' ' ? 2 : 1;
+            c.fill(col * 8, (4 + r) * 8, static_cast<int>(strlen(u)) * 8, 8, 15);
+            font::draw_text(c, d->font, u, col, 4 + r, 0, -1);
+        } else {
+            put(c, t, 1, 4 + r, el->colour[el->top + r]);
+        }
+    }
     char keys[32];
     snprintf(keys, sizeof keys, "%s%s%s", el->top + rows < el->n ? d->w_next : "", el->top > 0 ? d->w_prev : "",
              d->w_exit);
@@ -6217,7 +6275,7 @@ void open_effects(pic::Canvas& c)
         const party::Character& ch = pt->m[i];
         char nm[20];
         ch.name(nm, sizeof nm);
-        add(nm, 11);
+        add(nm, darkness_files() ? 13 : 11);        // (Darkness: the names in its prompt colour)
         bool any = false;
         for (int k = 0; k < ch.n_affects; ++k) {
             char name[30], t[32];
@@ -7230,6 +7288,8 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             if (wd.at) text::read_pascal(src, wd.at, wd.out, wd.cap);
         for (int i = 0; i < profile::kItemWords; ++i)
             if (d->prof->item_words[i]) text::read_pascal(src, d->prof->item_words[i], d->iw[i], sizeof d->iw[i]);
+        if (d->prof->magic.effects_shown && src.read_at(d->prof->magic.effects_shown, d->fx_shown, 32) != 32)
+            memset(d->fx_shown, 0xFF, 32);
         if (pi.menu) {
             // Darkness: "Ready Use Trade Deposit Drop Halve Join Sell Id" - the
             // first word Ready, the rest the item words (" Use" ...)
@@ -7295,7 +7355,7 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
     if (pa.menu) text::read_pascal(exe, info, pa.menu, d->w_alter, sizeof d->w_alter);
     if (pa.select) text::read_pascal(exe, info, pa.select, d->w_select, sizeof d->w_select);
     if (pa.place) text::read_pascal(exe, info, pa.place, d->w_place, sizeof d->w_place);
-    for (int i = 0; i < 7 && i < pm.levels.count && pm.levels.at; ++i)
+    for (int i = 0; i < 9 && i < pm.levels.count && pm.levels.at; ++i)
         text::read_pascal(exe, info, pm.levels.at + static_cast<uint32_t>(i) * pm.levels.stride, d->w_level[i],
                           sizeof d->w_level[i]);
     if (pm.these_spells) text::read_pascal(exe, info, pm.these_spells, d->w_these, sizeof d->w_these);
@@ -7303,8 +7363,9 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         // Secret: "1st" + " Level"
         char lw[12];
         if (text::read_pascal(exe, info, pm.level_word, lw, sizeof lw))
-            for (int i = 0; i < 7; ++i)
-                snprintf(d->w_level[i] + strlen(d->w_level[i]), sizeof d->w_level[i] - strlen(d->w_level[i]), "%s", lw);
+            for (int i = 0; i < 9; ++i)
+                if (d->w_level[i][0])
+                    snprintf(d->w_level[i] + strlen(d->w_level[i]), sizeof d->w_level[i] - strlen(d->w_level[i]), "%s", lw);
     }
     {
         const uint32_t at[Data::kRosterWords] = {pp.add_from, pp.add_sources, pp.add_prompt, pp.add, pp.added,
