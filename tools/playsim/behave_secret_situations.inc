@@ -902,6 +902,37 @@ void camp_rest()
     screen = Screen::Camp;
 }
 
+// ---- Modify (GAME.OVR 0x1FDB4): the hit points' bounds - least 0x21B18,
+// most 0x21BF1 (worked by hand from the routines)
+void modify_bounds()
+{
+    static party::Character c;
+    struct Case { int race, cls, lv[8], con, least, most; const char* what; };
+    const Case cases[] = {
+        {7, 0, {9, 0, 0, 0, 0, 0, 0, 0}, 16, 11, 90, "human cleric 9, Con 16"},
+        {4, 13, {0, 0, 6, 0, 0, 7, 0, 0}, 17, 9, 60, "half-elf fighter 6 / magic-user 7, Con 17"},
+        {7, 4, {0, 0, 0, 0, 9, 0, 0, 0}, 18, 14, 120, "human ranger 9, Con 18"},
+        {7, 6, {0, 0, 0, 0, 0, 0, 10, 0}, 5, 9, 50, "human thief 10, Con 5"},
+        {7, 2, {0, 0, 11, 0, 0, 0, 0, 0}, 16, 13, 92, "human fighter 11 (past its hit dice), Con 16"},
+    };
+    char w[120];
+    for (const Case& k : cases) {
+        bare(c, k.race, k.cls);
+        levels(c, k.lv);
+        set_stat(c, 4, k.con);
+        const int lo = create::hp_least(c, m->tables, m->facts), hi = create::hp_most(c, m->tables, m->facts);
+        snprintf(w, sizeof w, "Modify's hit points, %s: least / most", k.what);
+        expect(P, w, lo == k.least && hi == k.most, "%d / %d, the original's %d / %d", lo, hi, k.least, k.most);
+        c.rec[0x78] = 255;
+        create::modify_hp(c, m->tables, m->facts, 1);
+        const bool up = c.hp_max() == k.most;
+        c.rec[0x78] = 0;
+        create::modify_hp(c, m->tables, m->facts, -1);
+        snprintf(w, sizeof w, "Modify's Add / Subtract held to them, %s", k.what);
+        expect(P, w, up && c.hp_max() == k.least, "%d", c.hp_max());
+    }
+}
+
 void all_situations()
 {
     if (const char* e = getenv("ENDLESS")) {
@@ -916,4 +947,5 @@ void all_situations()
     temple_checks();
     xp_award();
     camp_rest();
+    modify_bounds();
 }

@@ -817,8 +817,61 @@ bool can_modify(const party::Character& c, bool pool, bool secret)
     return (e == 0 || e == 8333 || e == 12500 || e == 25000) && c.rec[kMultiLevel] == 0;
 }
 
+// Secret's Modify bounds (GAME.OVR 0x21B18 / 0x21BF1): the least - the
+// levels (rangers + 1) and each class's Constitution figure (0x21A99) over
+// the classes; the most - each class below its last hit die its levels x
+// (its die + Constitution: 3 -2, 4-6 -1, 15 +1, 16 +2, 17-19 +2, fighters /
+// paladins / rangers Con - 14 - 0x1F86B), past it a fixed figure that
+// replaces the sum (as its code does), over the classes; bytes
+static int secret_con_fig(int con, int k)
+{
+    int v = con >= 0 && con < 26 ? kConHp[con] : 0;
+    if (k == 2 || k == 3 || k == 4)
+        v += con == 17 ? 1 : con == 18 ? 2 : con == 19 || con == 20 ? 3 : con >= 21 && con <= 23 ? 4 : con >= 24 && con <= 25 ? 5 : 0;
+    return v;
+}
+static int secret_hp_least(const party::Character& c)
+{
+    int sum = 0, n = 0, con = 0;
+    for (int k = 0; k < 7; ++k) {
+        const int lv = c.level(k);
+        if (lv <= 0) continue;
+        sum += lv + (k == 4);
+        ++n;
+        con += secret_con_fig(stat_full(c, 4), k);
+    }
+    if (!n) return 1;
+    sum &= 0xFF;
+    con = static_cast<int8_t>(con & 0xFF);
+    if (con < 0 && sum <= n - con) return 1;
+    return static_cast<uint8_t>((sum + con) / n);
+}
+static int secret_hp_most(const party::Character& c, const classes::Tables& t)
+{
+    const int con = stat_full(c, 4);
+    int most = 0, n = 0;
+    for (int k = 0; k < 7; ++k) {
+        const int lv = c.level(k);
+        if (lv <= 0) continue;
+        ++n;
+        int b = con == 3 ? -2 : con <= 6 ? -1 : con <= 14 ? 0 : con == 15 ? 1 : con == 16 ? 2 : 0;
+        if (con >= 17 && con <= 19) b = k == 2 || k == 3 || k == 4 ? con - 14 : 2;
+        static const int kDie[7] = {8, 8, 10, 10, 8, 4, 6};
+        if (lv < t.max_hit_dice(k)) {
+            most += (k == 4 ? lv + 1 : lv) * (b + kDie[k]);
+        } else {
+            const int x = lv - t.max_hit_dice(k) + 1;
+            static const int kPast[7] = {0x48, 0x70, 0x58, 0x58, 0x58, 0x2C, 0x3C};
+            most = k == 1 ? kPast[1] : k == 5 ? x + kPast[5] : 2 * x + kPast[k];
+        }
+        most &= 0xFF;
+    }
+    return n ? most / n : 1;
+}
+
 int hp_least(const party::Character& c, const classes::Tables& t, const Facts& f)
 {
+    if (t.lay.secret) return secret_hp_least(c);
     int total = 0, n = 0;
     for (int k = 0; k <= classes::Monk; ++k) {
         const int lv = c.level(k);
@@ -836,6 +889,7 @@ int hp_least(const party::Character& c, const classes::Tables& t, const Facts& f
 
 int hp_most(const party::Character& c, const classes::Tables& t, const Facts& f)
 {
+    if (t.lay.secret) return secret_hp_most(c, t);
     int total = 0, n = 0;
     const int con = stat_full(c, 4);
     if (t.lay.pool) {
@@ -948,8 +1002,10 @@ void modify_done(party::Character& c, const classes::Tables& t, const Facts& f)
     }
     if (n) base /= n;
     const int rolled = r[kHpMax] - base;
-    // (Pool's Keep leaves the rolled figure as made, and sets its "modified" mark, record 0x85)
+    // (Pool's Keep leaves the rolled figure as made, and sets its "modified"
+    // mark, record 0x85; Secret's Modify never touches its rolled figure 0x131)
     if (t.lay.pool) r[0xF8] = 1;
+    else if (t.lay.secret) return;
     else r[kHpRolled] = static_cast<uint8_t>(rolled < 0 ? 0 : rolled);
 }
 
