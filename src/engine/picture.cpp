@@ -258,6 +258,8 @@ bool parse_dk_anim(dax::RleReader& r, uint32_t raw_size, DkAnim& a)
     if (r.read(h, sizeof h) != sizeof h) return false;
     a.height = static_cast<uint16_t>(h[0] | h[1] << 8);
     a.width_cols = static_cast<uint16_t>(h[2] | h[3] << 8);
+    a.x = static_cast<uint16_t>(h[4] | h[5] << 8);
+    a.y = static_cast<uint16_t>(h[6] | h[7] << 8);
     a.frames = static_cast<uint8_t>(h[8] + 1);
     a.first = h[9];
     a.count = h[10];

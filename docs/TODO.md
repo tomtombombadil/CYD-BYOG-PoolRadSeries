@@ -93,6 +93,8 @@ the Project as claude/TODO.md.
       SL / TL DAC, PC speaker as IBMSND.COM). v0.130.0: training (not
       compared with DOSBox: the hall's screen). v0.131.0: Secret's
       characters (Load / Add; Malachite's HP +3 in the original - open).
+      v0.132.0: approaching monsters (SPRIT1; compare with DOSBox when
+      one is met).
       Agents (2026-10-18): fights, shops / temple / treasure, creation.
       Next, a chunk a commit:
       approaching monsters (SPRIT1), the spells' effects in camp and in

@@ -7927,7 +7927,20 @@ struct Host : ecl::Host {
         if (!open_area_dax("SPRIT", id, f, name, sizeof name)) return;
         plat::FileSource src(f);
         const dax::Entry* e = d->idx.find(static_cast<uint8_t>(id));
-        if (e) {
+        if (e && d->prof->variant.vga) {
+            // Darkness (darkness_facts.md 3.5): an 88 x 88 animation of 3
+            // frames - 0 near, 1 middle, 2 far - over the whole view; its 0
+            // and 13 swapped, 13 see-through (ov111+0x7FA)
+            pic::DkAnim* a = new (std::nothrow) pic::DkAnim;
+            if (a) {
+                dax::RleReader r(src, d->idx, *e);
+                if (pic::parse_dk_anim(r, e->raw_size, *a)) {
+                    const int fr = distance < 0 ? 0 : distance >= a->frames ? a->frames - 1 : distance;
+                    pic::draw_dk_anim(src, d->idx, *e, *a, fr, c, 24 + a->x, 24 + a->y, true);
+                }
+                delete a;
+            }
+        } else if (e) {
             dax::RleReader r(src, d->idx, *e);
             if (pic::parse_anim(r, e->raw_size, d->sprite) && distance >= 0 && distance < d->sprite.frames) {
                 const pic::Header& h = d->sprite.frame[distance];

@@ -1430,6 +1430,10 @@ the scripts' changed ops, the rule tables, fights, the rest.
   Load doesn't take Secret's game state (a new game). Secret's GOG party:
   AC and HP as DOSBox's import but Malachite's HP (58, the original 61 -
   its recalculation's Constitution part: with creation's survey).
+- **v0.132.0 - approaching monsters.** SETUP MONSTER's sprite from
+  SPRIT1.DAX: an 88 x 88 animation over the whole view, its frame by the
+  distance (0 near, 1 middle, 2 far), 0 and 13 swapped and 13 see-through
+  (darkness_facts.md 3.5) - not yet compared with DOSBox (none met).
 
 ## 7. The journal (Tom, 2026-10-06)
 

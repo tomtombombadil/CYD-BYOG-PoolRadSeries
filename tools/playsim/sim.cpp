@@ -877,6 +877,12 @@ int main(int argc, char** argv)
     settle(0, getenv("MS") ? atoi(getenv("MS")) : 60000);
     if (getenv("CAMPRUN")) run_ops(getenv("CAMPRUN"));
     shot("start");
+    if (getenv("SPRITESHOT")) {         // SPRITESHOT=id:distance - a monster's sprite on the view, a snapshot
+        int id = 0, dist = 0;
+        sscanf(getenv("SPRITESHOT"), "%d:%d", &id, &dist);
+        play::host->sprite(id, dist);
+        shot("sprite");
+    }
     if (getenv("NAVGAME")) {
         // NAVGAME on the game screen: as NAVOPS (u d l r s #), the game going on between
         for (const char* q = getenv("NAVGAME"); *q; ++q) {
