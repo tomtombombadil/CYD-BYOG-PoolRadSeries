@@ -1224,6 +1224,17 @@ full behaviour checks (every spell, monster, class, item, situation).
   the phase spider's poison and the dreadlord's paralysis on attack 1
   (10 rounds), the weapon's +1 for type 26 too; two of Secret's own
   mistakes go with Item Fixes (SPEC 12). secret_facts_2.md 29.
+- **v0.121.1 - its spells checked**: all 117 against its handlers
+  (ONLY=allspells, 432 checks). Fixed: camp spells on the whole party
+  (its table's 3, not Curse's 4: Bless, Prayer, Haste, the
+  invisibilities, Barkskin), slots by Wisdom 17 / 18 (cleric 6th / 7th)
+  and Intelligence 12 / 14, clerics learn Heal, rangers magic-user
+  spells; "person" by its race and flags (Charm, Hold, Sleep, Snake
+  Charm); Faerie Fire's effect 0x47; Feeblemind's class table, Enlarge's
+  Strength 23 from 12th level, the Globe up to 4th level, Mirror Image
+  takes blows, Barkskin heals as Heal, the Elixir its user only, Slow
+  Poison's revival and time, Entangle nothing; the clouds' ground values
+  0x1D / 0x1B; words. Four of Secret's mistakes with Item Fixes (SPEC 12).
 
 ## 6d. Pools of Darkness (Tom, 2026-10-17: started after Secret)
 
@@ -1762,7 +1773,12 @@ the game's Settings (As Original: all of them).
   `rules::fixes()` - Item Fixes off plays them as the original):
   the +1 to hit with bows and short / long swords goes to elves only
   (Secret's program gives it to every race); a cleric's +10% experience
-  needs Wisdom 16 (Secret's: 15). More to come from the spells / items /
+  needs Wisdom 16 (Secret's: 15); a paladin casts at his level - 8
+  (Secret's: 6th level always); Harm leaves 1d4 HP (Secret's wraps to
+  250+ damage when HP is under the roll); Invisibility's -4, Blink's
+  miss and Dispel Evil's -7 count at the attack roll (Secret's phases
+  run them before it - they never do); the Strength spell gives a
+  paladin 18/xx (Secret's: none). More to come from the items /
   situations checks.
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.
