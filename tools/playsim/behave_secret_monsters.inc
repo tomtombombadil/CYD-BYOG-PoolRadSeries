@@ -560,7 +560,7 @@ void effects()
         harm_of(m, 40, 9, 10);
         expect(Q, "effect 4F: healed to its maximum", F(m).hp() == 80, "HP %d", F(m).hp());
         const int el = harm_of(m, 30, 0x0C, 10);
-        expect(Q, "effect 4F: electricity slows it 3 rounds, no damage", el == 0 && aff_time(m, d->prof->fight.facts.slow) == 3 &&
+        expect(Q, "effect 4F: electricity slows it 3 rounds, no damage", el == 0 && aff_time(m, d->prof->fight.facts.slow) == ot("m_golem_slow", 0) &&
                                                                            F(m).hp() == 80,
                "%d, slowed %d, HP %d", el, aff_time(m, d->prof->fight.facts.slow), F(m).hp());
         const int ac = harm_of(m, 30, 0x10), br = harm_of(m, 30, 0x21), mg = harm_of(m, 30, 8, 10), none = harm_of(m, 30, 0);
@@ -660,7 +660,7 @@ void effects()
             const combat::Attack r = blow(m, p, c.slot, 19, {{20, c.d20}});
             const int pt_ = aff_time(p, para);
             snprintf(w, sizeof w, "effect %s", c.what);
-            expect(Q, w, hits(r) && F(p).status() == c.status && (c.para ? pt_ == 10 : pt_ < 0),
+            expect(Q, w, hits(r) && F(p).status() == c.status && (c.para ? pt_ == ot("m_para", 0) : pt_ < 0),
                    "status %d, paralysed %d, poisoned %d", F(p).status(), pt_, aff_time(p, poisoned));
         }
     }
@@ -752,6 +752,24 @@ void effects()
         no_dice();
         expect(Q, "effect 63: a save against poison made on a 2", made);
     }
+    // The record's magic resistance (0x1A5; GAME.OVR 0x35FC9): a spell's
+    // effect resisted on d100 <= resistance + (11 - the caster's level) x 5
+    // (the drider 15, the lizard king 20)
+    for (int lvl : {11, 9})
+        for (int roll : {0, 1}) {
+            only({m});
+            put(m, 1, 11, 10, 60, 8);
+            F(m).magic_res = 15;
+            const int chance = 15 + (11 - lvl) * 5;
+            combat::Harm h;
+            h.level = lvl;
+            dice({{100, chance + roll}});
+            const bool res = combat::resists(b, m, d->prof->fight.facts.charm, h, rng);
+            no_dice();
+            snprintf(w, sizeof w, "magic resistance 15 against level %d: d100 %d", lvl, chance + roll);
+            expect(Q, w, res == (roll == 0), "%d", res);
+            F(m).magic_res = 0;
+        }
     no_dice();
 }
 
@@ -770,7 +788,8 @@ void turns()
     // 3A (0x1242D): its pick within its pseudo-spell 0x3D's reach (6
     // squares): "gazes...", a save against petrification (kind 1) or
     // stoned; one with 0x48 sends it back when the gazer has 0x3B
-    for (int dist : {6, 7}) {
+    const int r6 = ot("m_reach", 0);
+    for (int dist : {r6, r6 + 1}) {
         only({m, p});
         put(m, 1, 10, 10, 40, 6);
         give(m, 0x3A);
@@ -780,7 +799,7 @@ void turns()
         special(m);
         no_dice();
         snprintf(w, sizeof w, "effect 3A: the gaze at %d squares, the save failed", dist);
-        expect(Q, w, (F(p).status() == party::Stoned) == (dist <= 6) && !ends, "status %d, gazed %d", F(p).status(),
+        expect(Q, w, (F(p).status() == party::Stoned) == (dist <= r6) && !ends, "status %d, gazed %d", F(p).status(),
                said(combat::Ev::Gazes));
     }
     for (int mirror : {0, 1}) {
@@ -804,8 +823,8 @@ void turns()
     // target next to it: 8, fire and breath (0x21), a breath save for half; it fights on
     {
         const struct { int round, half, dist; int want; const char* what; } py[] = {
-            {0, 24, 1, 0, "the first round (count 0): nothing"}, {1, 24, 1, 8, "round 2 next to it: 8"},
-            {24, 24, 1, 8, "count 24 of 24: 8"}, {25, 24, 1, 0, "count 25 of 24: nothing"},
+            {0, 24, 1, 0, "the first round (count 0): nothing"}, {1, 24, 1, 1, "round 2 next to it: its fire"},
+            {24, 24, 1, 1, "count 24 of 24: its fire"}, {25, 24, 1, 0, "count 25 of 24: nothing"},
             {3, 24, 2, 0, "two squares away: nothing"}};
         for (const auto& c : py) {
             only({m, p});
@@ -820,7 +839,7 @@ void turns()
             special(m);
             no_dice();
             snprintf(w, sizeof w, "effect 43 (the pyrohydra): %s", c.what);
-            expect(Q, w, damage_to(p) == c.want && !ends, "%d", damage_to(p));
+            expect(Q, w, damage_to(p) == c.want * ot("m_pyro", 0) && !ends, "%d", damage_to(p));
         }
         // the save made: half; its target someone else (not next to it): nothing
         only({m, p, p2});
@@ -835,7 +854,7 @@ void turns()
         dice({{20, 15}});
         special(m);
         no_dice();
-        expect(Q, "effect 43: the save made, half (4)", damage_to(p) == 4, "%d", damage_to(p));
+        expect(Q, "effect 43: the save made, half", damage_to(p) == ot("m_pyro", 0) / 2, "%d", damage_to(p));
         F(m).target = p2;
         dice({{20, 5}});
         special(m);
@@ -855,7 +874,7 @@ void turns()
         no_dice();
         const int conf = aff_time(p, d->prof->fight.facts.sp.confuse);
         snprintf(w, sizeof w, "effect 46 (the umber hulk) at %d squares, the save failed", dist);
-        expect(Q, w, dist == 1 ? conf == 9 : conf < 0, "confused %d", conf);
+        expect(Q, w, dist == 1 ? conf == 7 + ot("m_umber", 2) : conf < 0, "confused %d", conf);
     }
     // 50 (0x13457): every turn (no roll), one next to it: 7, fire and
     // breath, a breath save for half; it fights on
@@ -869,7 +888,7 @@ void turns()
         special(m);
         no_dice();
         snprintf(w, sizeof w, "effect 50 (the hell hound) at %d squares, d100 100", dist);
-        expect(Q, w, damage_to(p) == (dist == 1 ? 7 : 0) && !ends, "%d, ends %d", damage_to(p), ends);
+        expect(Q, w, damage_to(p) == (dist == 1 ? ot("m_hound", 0) : 0) && !ends, "%d, ends %d", damage_to(p), ends);
     }
     // 51 (0x13587): its pick within 6 (pseudo-spell 0x3D); (11 - squares) x
     // 10% - 10% when the count is 0 - 4d8 acid (0x10), a breath save for
@@ -890,7 +909,7 @@ void turns()
             special(m);
             no_dice();
             snprintf(w, sizeof w, "effect 51 (the giant slug): %s", c.what);
-            expect(Q, w, (damage_to(p) == 32) == c.spits && said(combat::Ev::SpitsMisses) == c.misses && !ends,
+            expect(Q, w, (damage_to(p) == ot("m_slug", 0) * ot("m_slug", 1)) == c.spits && said(combat::Ev::SpitsMisses) == c.misses && !ends,
                    "%d, misses %d", damage_to(p), said(combat::Ev::SpitsMisses));
         }
     }
