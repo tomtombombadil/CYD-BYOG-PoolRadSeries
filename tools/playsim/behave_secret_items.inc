@@ -1209,6 +1209,10 @@ void all_items()
         expect(PI, "oracle file", false, "no oracle_secret_items.txt");
         return;
     }
+    if (!boot()) {                          // (out of any fight the parts before left)
+        expect(PI, "boot", false);
+        return;
+    }
     s_load_items();
     expect(PI, "the game's item records", s_items.size() > 200, "%zu", s_items.size());
     s_base = pt->m[0];
