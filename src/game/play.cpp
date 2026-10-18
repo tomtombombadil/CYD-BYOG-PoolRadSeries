@@ -1076,7 +1076,7 @@ bool write_character_files(const char* dir, const char* rec_fn, const char* item
         }
     }
     const party::Character& ch = *src;
-    uint8_t buf[party::kSecretRecordSize];      // (the largest: Pool's or Secret's record)
+    uint8_t buf[party::kDarknessRecordSize];    // (the largest: Darkness's record)
     uint8_t fx[party::kMaxAffects * party::kAffectSize];
     size_t n = 0;
     const uint8_t* p = party::record_bytes(ch, rec_format(), buf, &n);
@@ -8759,7 +8759,10 @@ bool title_picture(pic::Canvas& c, int block, int row, int col)
     plat::FileSource src(f);
     bool ok = false;
     const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
-    if (e) {
+    if (e && d->prof->variant.vga) {
+        // (Darkness: a VGA picture - its EGA colours on the 4-bit canvas)
+        ok = pic::draw_vga_block(src, d->idx, *e, 0, c, col * 8, row * 8);
+    } else if (e) {
         dax::RleReader r(src, d->idx, *e);
         uint8_t hdr[pic::kHeaderSize];
         pic::Header h;
@@ -9430,7 +9433,7 @@ bool start_title(pic::Canvas& c, uint32_t timeout_ms)
     }
     if (open_file(p.overlay, f)) {
         plat::FileSource osrc(f);
-        if (osrc.size() == p.overlay_size)
+        if (osrc.size() == p.overlay_size && p.credits_at)
             title_run->n_credits = printcalls::read(osrc, p.credits_at, p.credits_base, title_run->credits, kTitleCredits,
                                                          p.variant.credits_stride ? p.variant.credits_stride : printcalls::kBlock);
         f.close();

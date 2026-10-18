@@ -273,6 +273,12 @@ const char* open(const char* data_dir, games::Game g)
             snprintf(msg, sizeof msg, "This %s is a release the engine doesn't know yet.", prog);
             return msg;
         }
+        if (p->variant.vga) {
+            // (Darkness: its VGA walls and frame - not drawn yet)
+            close();
+            snprintf(msg, sizeof msg, "No walk test for %s yet.", games::title(g));
+            return msg;
+        }
         d->prof = p;
     }
     // Frame tiles, font and the common wall tiles: 8X8D1

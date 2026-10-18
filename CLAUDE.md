@@ -36,8 +36,10 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   Curse, Secret, Darkness - must be complete and playable on a basic
   (classic ESP32, no PSRAM) CYD. Darkness (and Treasures) run there in
   **their own EGA mode**: their setup offers EGA / Tandy / VGA, and in
-  EGA the original turns the same VGA pictures into 16 dithered colours
-  (checked in DOSBox: Darkness with POOL4.CFG's graphics line E) - the
+  EGA the original draws the same VGA pictures in 16 colours - each
+  palette entry's EGA nibble kept in the picture itself, no dither, no
+  palette programming (checked pixel for pixel in DOSBox, v0.118.0:
+  Darkness with POOL4.CFG's graphics line E; `pic::draw_vga_block`) - the
   engine does what the original's EGA mode does (facts from the player's
   EGA.DRV / program, never copied). Unlimited Adventures: NOT on the
   classic boards. **Dark Queen** (Tom, 2026-10-12: "not completely wipe
