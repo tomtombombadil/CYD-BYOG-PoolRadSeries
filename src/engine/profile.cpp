@@ -1435,7 +1435,16 @@ const Profile kProfiles[] = {
      // Secret's numbering - arrows 30, quarrels 12, darts 5), the ITEMS type
      // file without a head; "Items" (DS 0x1738)
      .items = {.words = {0xD1C4, 21, 125}, .types_file = "ITEMS", .arrow = 30, .quarrel = 12, .dart = 5,
-               .title = kP | 0xB5A8, .types_head = 0},
+               // "Items", "Ready Item", " Yes  ", " No   ", "It's Cursed!", "Wrong Class",
+               // "already using ", "Your hands are full!", "'s" (its item overlay)
+               .title = kP | 0xB5A8, .heading = kP | 0xB5D1, .yes = 0x3430D, .no = 0x34314, .cursed = 0x25099,
+               .wrong_class = 0x250A6, .already = 0x250B2, .hands_full = 0x250C1, .plural_s = 0x35ABD,
+               .types_head = 0, .menu = kP | 0xCC11},
+     // The items screen's other words (Use ... Id, Deposit from items.menu):
+     // its data segment's where it has them (DS 0x1738 on), else GAME.OVR
+     .item_words = {0, 0, 0, 0, 0, 0, 0, 0x24795, kP | 0xB64C, 0x253D4, kP | 0xB5FA, kP | 0xB623, 0, 0x2530A,
+                    kP | 0xB675, kP | 0xB69E, kP | 0xB6C7, kP | 0xB6F0, kP | 0xB719, kP | 0xB742, kP | 0xB76B,
+                    kP | 0xB794, kP | 0xC159, kP | 0xC9FD, 0},
      // The script machine's words (darkness_facts.md S10): DAMAGE's lines,
      // PRESS KEY's prompt, JOURNAL's sentence, WHAT MENU's question, "Yes No"
      .script_words = {0, 0, 0x7B42, 0x7B4A, 0x7B57, 0x19C2, kP | 0xAC82, 0x261D, 0x2640, 0x1212, kP | 0xC9D4},

@@ -1366,6 +1366,11 @@ the scripts' changed ops, the rule tables, fights, the rest.
   in its data segment; the 141 memorized places counted for Spells. Item
   names from its 125 words (DS 0x3354), ITEMS without a head. Area,
   camp, Binky's and Guy's View match DOSBox (mouse pointer aside).
+- **v0.126.0 - the items screen.** Its menu from one string (DS 0x2DA1:
+  Ready Use Trade Deposit Drop Halve Join Sell Id; the offers as its ovr
+  0x249A0 makes them - Use where byte 0x02 allows, Deposit in the vault,
+  Sell / Id in a shop), its words in its data segment (DS 0x1738 on) or
+  its item overlay, the outer frame alone. Binky's items match DOSBox.
 
 ## 7. The journal (Tom, 2026-10-06)
 

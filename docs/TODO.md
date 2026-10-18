@@ -87,9 +87,8 @@ the Project as claude/TODO.md.
       EGA colours. v0.119.0-v0.122.0: record, saves, party menu,
       Load, the 3D view and frame, the scripts' memory, Begin into
       Phlan. v0.123.0: event pictures (PIC1 animations, BIGPIC).
-      v0.125.0: exploring menu, camp, View, item names. Next, a
-      chunk a commit: the items screen (DS 0x2DA1 "Ready Use Trade
-      Deposit Drop Halve Join Sell Id"), sounds (ZOUNDS, SOUND op),
+      v0.125.0: exploring menu, camp, View, item names. v0.126.0: the
+      items screen. Next, a chunk a commit: sounds (ZOUNDS, SOUND op),
       approaching monsters (SPRIT1), rule tables (levels to 40, 9 spell
       levels; Cast, Magic, training), fights (VGA combat pictures,
       DUNGCOM, CPIC1 icons), shops / treasure (ITEM0 rows), overland

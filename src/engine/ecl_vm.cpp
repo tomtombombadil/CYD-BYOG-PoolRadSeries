@@ -157,6 +157,7 @@ uint16_t Vm::dk_addr(uint16_t a)
     switch (a) {
     case 0x4BF2: return 0x16;           // the block the party is in
     case 0x4BC5: return 0x13;           // the map loaded
+    case 0x4BE5: return 0x02;           // no spells / items' Use in this area
     case 0x4BE6: return 0x22;           // in 3D
     case 0x4BF0: return 0x17;           // the last square
     case 0x4BF1: return 0x18;

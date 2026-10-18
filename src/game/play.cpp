@@ -1873,7 +1873,7 @@ void draw_items(pic::Canvas& c)
     const party::Character* ch = pt->sel();
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
-    layout::bar(c, d->tables, d->frame_tiles, 2);
+    if (!darkness_files()) layout::bar(c, d->tables, d->frame_tiles, 2);      // (Darkness: the outer frame alone)
     char t[40];
     ch->name(t, sizeof t);
     strncat(t, d->w_s, sizeof t - strlen(t) - 1);
@@ -7230,6 +7230,25 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             if (wd.at) text::read_pascal(src, wd.at, wd.out, wd.cap);
         for (int i = 0; i < profile::kItemWords; ++i)
             if (d->prof->item_words[i]) text::read_pascal(src, d->prof->item_words[i], d->iw[i], sizeof d->iw[i]);
+        if (pi.menu) {
+            // Darkness: "Ready Use Trade Deposit Drop Halve Join Sell Id" - the
+            // first word Ready, the rest the item words (" Use" ...)
+            char m[64];
+            text::read_pascal(src, pi.menu, m, sizeof m);
+            static const int kTo[] = {-1, profile::kUse, profile::kTrade, profile::kDeposit, profile::kDrop,
+                                      profile::kHalve, profile::kJoin, profile::kSell, profile::kId};
+            int w = 0;
+            for (const char* q = m; *q && w < 9;) {
+                while (*q == ' ') ++q;
+                const char* e = q;
+                while (*e && *e != ' ') ++e;
+                if (e == q) break;
+                if (kTo[w] < 0) snprintf(d->w_ready, sizeof d->w_ready, "%.*s", static_cast<int>(e - q), q);
+                else snprintf(d->iw[kTo[w]], sizeof d->iw[0], " %.*s", static_cast<int>(e - q), q);
+                ++w;
+                q = e;
+            }
+        }
         {
             const profile::ViewFacts& vf = profile::view_facts(d->prof->game);
             for (int i = 0; i < profile::kViewWords; ++i)

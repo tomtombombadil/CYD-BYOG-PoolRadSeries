@@ -328,6 +328,10 @@ struct Profile {
         uint8_t     speed_fx = 0;
         bool        sell_secret = false;           // a pile's price: Secret's rule (rules::sell_value)
         uint8_t     types_head = 2;                // the type file's bytes before row 0 (Darkness 0)
+        // Darkness: the items screen's menu as one string ("Ready Use Trade
+        // Deposit Drop Halve Join Sell Id") - "Ready" and the item words
+        // Use ... Id, Deposit taken from it (0: the words above / item_words)
+        uint32_t    menu = 0;
     } items;
 
     // Character rules (making and training characters): the rule tables in
