@@ -1420,6 +1420,16 @@ the scripts' changed ops, the rule tables, fights, the rest.
   limit); hit points as Secret's (the better of two rolls, past the last
   hit die 3 / 2 / 1). Its words GAME.OVR 0x1868F on. The playsim: Dominic
   (cleric 14, +1,000,000 experience) trains to 15, +2 hit points.
+- **v0.131.0 - Secret's characters.** Load from where? Secret: Secret's
+  saved games in its folder on the card (SAVGAMx.DAT's members - seek
+  0x1414 -, each .SAV / .STF / .SFX), Add from where? Secret: its *.who
+  (439 bytes, not its NPCs). Converted as Darkness's ovr 0x11903 does
+  (`secret_to_darkness`): copper, silver, electrum and gold gone, its own
+  race number, a human's highest former level 0, icon flags and flags 2 =
+  2, bundles left out, type 0x2D / 0x3A's bytes, the class values again;
+  Load doesn't take Secret's game state (a new game). Secret's GOG party:
+  AC and HP as DOSBox's import but Malachite's HP (58, the original 61 -
+  its recalculation's Constitution part: with creation's survey).
 
 ## 7. The journal (Tom, 2026-10-06)
 
