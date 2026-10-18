@@ -164,6 +164,24 @@ struct MonFx {
     // half)
     uint8_t need_plus3, petrify_hit, swallow, pyro_fire, confuse_gaze, cold_breath, no_fear, no_poison;
     bool    slug_secret;
+    // More of Secret's (secret_facts_2.md 29.monsters; 0 / false: none, the
+    // Curse rules). A blow with a blunt weapon (its type's byte 7 & 0x80)
+    // does nothing (the giant slug, GAME.OVR 0x138B2); breath (damage kind
+    // 0x20) does nothing (the dragons, 0x1310F); the iron golem's damage
+    // (0x13354): fire and magic heals it, electricity slows it 3 rounds,
+    // anything else nothing; the stone gaze sent back by this effect on its
+    // target (0x1242D); its pseudo-spells' reaches - the gazes', the
+    // slug's and the breaths' (spell 0x3D: 6 squares), the hound's and the
+    // umber hulk's (spell 0x44: next to it); paralysis on a hit lasts these
+    // rounds (0: 2d8 - 0x10CDF: 10)
+    uint8_t blunt_proof = 0, no_breath = 0, golem = 0, reflect = 0;
+    uint8_t far_reach = 0, near_reach = 0, para_rounds = 0;
+    // Secret's ways (0x12D5F, 0x13457, 0x327F9, the lists after a hit at
+    // 0x36289 / 0x362B4): the pyrohydra breathes at its own target from the
+    // second round on, the hell hound every turn and fights on, a breath
+    // never with a friend in its path (3 again when over 3), the -2 poison
+    // and the paralysis after either attack's hit
+    bool    secret_ways = false;
 };
 
 // More spells' effects (spell_facts.md 2): Enlarge, Confusion (and going
@@ -210,15 +228,15 @@ struct SpellFx {
 // 0x1333F), the ring of fire resistance (0x3D, at the damage and the save:
 // fire without magic does nothing, magic fire 2 a die less - at least 1 a
 // die - and saves against it + 4 - 0x1263F), the Boots of Speed (0x4A,
-// before an attack on its wearer: AC 2 better - 0x13130), a mirror (0x48:
-// the stone gaze sent back - 0x12522); and two its program never applies
+// before an attack on its wearer: AC 2 better - 0x13130), (a mirror's 0x48, the stone
+// gaze sent back, is MonFx::reflect); and two its program never applies
 // (rules::fixes() on: as AD&D) - displacement's handler (0x1385F, only at
 // its wearer's own turn) never makes an attack miss, the Periapt of
 // Health's immunity to disease (0x4C) has an empty handler (0x131C2)
 struct ItemFx {
     uint8_t flame_tongue, dragon_slayer, frost_brand, displace, ring_invisible, vermin;
     uint8_t vs_undead, elvenkind;
-    uint8_t giant_slayer = 0, luck = 0, fire_ring = 0, boots = 0, reflect = 0, no_disease = 0;
+    uint8_t giant_slayer = 0, luck = 0, fire_ring = 0, boots = 0, no_disease = 0;
     bool    displace_unused = false;        // Secret: displacement only with rules::fixes()
     uint8_t scrolls[2] = {};                // Secret's scrolls are these types (not slots 11-13)
 };
@@ -271,6 +289,21 @@ struct Facts {
     // level / 4 + 2 (Curse: (level - 1) / 4 + 2)
     uint8_t backstab_armour = 0;
     bool    backstab_plain = false;
+    // Secret's spell rules (secret_facts_2.md 29.spells): its "persons" by
+    // race (Charm Person: Secret's race under 7 or flags 2 & 2; Hold Person:
+    // never its races 0 / 7), no size or type rule for Faerie Fire and Charm
+    // Monsters, Faerie Fire making the AC 2 worse (easier to hit), Sleep's 5
+    // Hit Dice costing 20, its snakes by flags 1 & 0x10, Enlarge's 23 from
+    // 12th level, Harm's byte damage, the Globe of Invulnerability
+    bool    secret = false;
+    uint8_t globe_major = 0;            // its Globe of Invulnerability's effect: spells up to the 4th level
+    // The clouds' ground values (0: Curse's 0x1E / 0x1C - kCloudGround, kPoisonGround;
+    // Secret's 0x1D / 0x1B, its ground table's pictures 28 / 26 - GAME.OVR 0x2F39F, 0x31A43)
+    uint8_t cloud_ground = 0, poison_ground = 0;
+    // The cleric's +10% experience from this Wisdom in use (0: AD&D's 16;
+    // Secret's program 15 - GAME.OVR 0x6E04 - the original's mistake,
+    // applied with rules::fixes() off)
+    uint8_t cleric_xp_wis = 0;
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a
@@ -534,6 +567,7 @@ struct Attack {
     bool slain = false;                 // a helpless target: "slays helpless ... with one cruel blow"
     bool backstab = false;              // "-Backstabs-"
     bool avoided[8] = {};               // a hit dodged ("Avoids it"; counted a miss)
+    bool image[8] = {};                 // a hit taken by a mirror image ("lost an image"; Secret)
     Event ev[8];                        // the extras after hits (poison, paralysis, a touch's damage, engulfing ...)
     int  n_ev = 0;
     int  shots = 0;                     // the weapon's (slot 1) attacks made: a shot uses one missile each

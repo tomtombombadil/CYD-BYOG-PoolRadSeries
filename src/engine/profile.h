@@ -270,6 +270,8 @@ struct Profile {
         uint32_t from_saved;
         // Remove -> "Overwrite NAME? " -> No: "New file name: " (GAME.OVR; curse_finish_facts.md 6)
         uint32_t new_file;
+        // Darkness: Load asks "Load from where? " "Pools Secret Exit" first (0: no question)
+        uint32_t load_from = 0, load_sources = 0;
     } party;
 
     // View Character: name tables in the program and the screen's words
@@ -289,7 +291,7 @@ struct Profile {
         const char* types_file;
         uint8_t     arrow, quarrel, dart, flask;   // missiles, flask of oil (names)
         uint8_t     keep1, keep2;                  // name words that keep a missile's name singular
-        uint8_t     elf_bonus[7];                  // +1 to hit for elves (bows, short / long sword)
+        uint8_t     elf_bonus[8];                  // +1 to hit for elves (bows, short / long sword)
         uint32_t    buy_items, buy;                // GAME.OVR: "Items: " (the shop's list), "Buy"
         uint32_t    list_next, list_prev, list_exit;   //   a list's " Next", " Prev", " Exit"
         uint32_t    shop_menu, shop_menu_money;    //   "Buy View Pool Appraise Exit" / with Take, Share
@@ -322,7 +324,7 @@ struct Profile {
         items::FlameFix flame = {};
         // Secret (rules::ItemFacts): the weapons' +1 for every race, armour's
         // +3 movement for magic armour only, the Boots of Speed's effect
-        bool        bonus_all_races = false, light_magic_armour = false;
+        bool        light_magic_armour = false;
         uint8_t     speed_fx = 0;
         bool        sell_secret = false;           // a pile's price: Secret's rule (rules::sell_value)
     } items;
@@ -529,6 +531,13 @@ struct Profile {
         // Pools of Darkness: its pictures are VGA blocks (picture.h; the EGA
         // colours of each on a 4-bit canvas - the original's EGA mode)
         bool     vga = false;
+        // Darkness's character files (510-byte records .SAV / .PC, items
+        // .THG of 63 bytes, effects .EFX) and saves (SAVGAMx.PTY: the game
+        // block; POOL4.CFG's first folder) - darkness_facts.md 30-33
+        bool     darkness_files = false;
+        // The party menu's column (0: 2, the first letter white; Darkness 9,
+        // all green - DOSBox)
+        uint8_t  party_menu_col = 0;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

@@ -66,6 +66,12 @@ struct Tiles {
 // (Pool: 31; Secret 101; at least 23); tiles 0-19 and 20 from `first`.
 bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, uint8_t first = 20);
 
+// Loads a VGA block of 8 x 8 tiles (Darkness: 8X8D0's area map tiles, a
+// BORDERS style) into slots slot0.. (at most n): on a 4-bit canvas (ega) in
+// their EGA colours, values under the block's first entry as they are
+bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, int slot0, int n,
+                    bool ega);
+
 struct Tables {
     uint8_t top[40], bar[40], bottom[40];
     uint8_t left[24], right[24];
@@ -77,6 +83,10 @@ struct Tables {
     // bar, cap under a bar, side, cap over a bar; the view frame's edge,
     // its top cap, side, bottom cap
     uint8_t bars[8] = {};
+    // Darkness: the frame drawn by its bar routine from BORDERS.DAX's pieces
+    // in slots 20-30 (0-3 corners, 4 / 5 the bars, 6 / 7 junctions, 9 the
+    // row-16 bar's left end - darkness_facts.md 7.1)
+    bool chain = false;
     bool loaded = false;
 };
 

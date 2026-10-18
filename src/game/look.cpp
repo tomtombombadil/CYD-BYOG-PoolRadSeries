@@ -331,9 +331,11 @@ const char* open(const char* data_dir, games::Game g)
     }
     {
         plat::FileSource tsrc(f);
-        // (Darkness's VGA frame tiles: not drawn yet)
+        // (Darkness: VGA tiles - the area map's 20 in slots 0-19, its
+        // BORDERS style below in 20-30; their EGA colours on this canvas)
         bool ok = dax::read_index(tsrc, d->idx) == dax::Status::Ok &&
-                  (p->variant.vga || layout::load_tiles(tsrc, d->idx, p->tiles_block, d->tiles, p->variant.tile_window)) &&
+                  (p->variant.vga ? layout::load_vga_tiles(tsrc, d->idx, p->tiles_block, d->tiles, 0, 20, true)
+                                  : layout::load_tiles(tsrc, d->idx, p->tiles_block, d->tiles, p->variant.tile_window)) &&
                   (p->font_file || font::load(tsrc, d->idx, d->font));
         f.close();
         if (ok && p->font_file) {
@@ -342,6 +344,16 @@ const char* open(const char* data_dir, games::Game g)
             if (ok) {
                 plat::FileSource fsrc(f);
                 ok = dax::read_index(fsrc, d->idx) == dax::Status::Ok && font::load(fsrc, d->idx, d->font);
+                f.close();
+            }
+        }
+        if (ok && p->variant.vga) {
+            // (the gold chain: the style every game starts with)
+            ok = open_file(data_dir, "BORDERS.DAX", f);
+            if (ok) {
+                plat::FileSource bsrc(f);
+                ok = dax::read_index(bsrc, d->idx) == dax::Status::Ok &&
+                     layout::load_vga_tiles(bsrc, d->idx, 0, d->tiles, 20, 11, true);
                 f.close();
             }
         }

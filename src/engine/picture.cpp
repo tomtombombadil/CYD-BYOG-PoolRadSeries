@@ -183,7 +183,11 @@ bool parse_vga_header(const uint8_t* p, uint32_t raw_size, VgaHeader& out)
     out.count = static_cast<uint16_t>(p[9] + 1);
     if (out.height == 0 || out.width_cols == 0 || out.width_cols > kScreenW / 8 || out.frames == 0) return false;
     if (out.first + out.count > 256) return false;
-    out.pixels_at = static_cast<uint32_t>(kVgaHeaderSize + out.count * 3 + (out.count + 1) / 2 + 4);
+    // (4 bytes after the nibbles - 32 when the entries are 0x20 and 0x70 on:
+    // Darkness's program skips that many there - its 8X8D1 wall tiles,
+    // darkness_facts.md 7.3)
+    const uint32_t gap = out.first == 0x20 && out.count == 0x70 ? 32 : 4;
+    out.pixels_at = static_cast<uint32_t>(kVgaHeaderSize + out.count * 3 + (out.count + 1) / 2 + gap);
     const uint64_t need = out.pixels_at + static_cast<uint64_t>(out.frames) * out.frame_bytes();
     return need == raw_size;
 }

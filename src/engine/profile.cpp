@@ -360,14 +360,15 @@ constexpr combat::FightSpell kSecretFight[] = {
     {0x2C, SpellDoes::Theirs, 0, 0, 0, 0, 0, 0x2FEBB},      // Bestow Curse: "has been cursed!" (a touch)
     {0x2D, SpellDoes::Affect, 0, 0, 0, 0, 0, kJ | 21},      // Blink: "is blinking"
     {0x44, SpellDoes::Kill, 0, 0, 0, 0, 0, 0x36A24},        // Poison: "is Poisoned", then "is killed"
-    {0x46, SpellDoes::Snakes, 0, 0, 0, 0, 0, 0xFFAB, 0x30AB7},   // Sticks to Snakes: "is fighting with snakes" /
-                                                            // "smashes them flat"
+    {0x46, SpellDoes::Snakes, 0, 0, 0, 0, 0, 0x30A9D, 0x30AB7},  // Sticks to Snakes: the caster "turns sticks into
+                                                            // snakes" / "smashes them flat"
     {0x4C, SpellDoes::Slay, 2, 8, 1, 0, 8, kJ | 27},        // Slay Living: "is slain"; saved 2d8 + 1
     {0x4E, SpellDoes::Entangle, 0, 0, 0, 0, 0, 0},    // Entangle: "is entangled" (outdoors)
     {0x4F, SpellDoes::Faerie, 0, 0, 0, 0, 0, kJ | 28},      // Faerie Fire: "is highlighted"
     {0x50, SpellDoes::Affect, 0, 0, 0, 0, 0, kJ | 29},      // Invisibility to Animals: "is invisible"
     {0x4D, SpellDoes::Affect, 0, 0, 0, 0, 0, kJ | 2},      // Detect Magic (the druids'): "is affected"
-    {0x56, SpellDoes::Fumble, 0, 0, 0, 0, 0, kJ | 32, kJ | 23},  // Fumble: "is clumsy" / "is slowed"
+    {0x56, SpellDoes::Fumble, 0, 0, 0, 0, 0, kJ | 32, kJ | 23, kJ | 33},  // Fumble: "is clumsy" / "is slowed" /
+                                                            // the first failed save "is Befuddled"
     {0x57, SpellDoes::Damage, 3, 10, 0, 0, 0x0A, 0},        // Ice Storm: 3d10 cold (and magic), radius 2
     {0x5D, SpellDoes::Feeble, 0, 0, 0, 0, 0, 0},      // Feeblemind: "is stupid"
     // spell_facts.md (v0.62.0)
@@ -388,8 +389,9 @@ constexpr combat::FightSpell kSecretFight[] = {
     {0x24, SpellDoes::FullHeal, 1, 4, 0, 0, 0, kJ | 25, kJ | 36, kJ | 35, 0, 0x2F687},  // Secret's Heal: "is Healed",
                                                             // "is no longer blind", "is cured", "regains intellect"
     {0x5A, SpellDoes::FullHeal, 1, 4, 0, 0, 0, kJ | 25, kJ | 36, kJ | 35, 0, 0x2F687},  // Barkskin: the original runs
-                                                            // Heal's routine (and gives its effect)
-    {0x38, SpellDoes::HarmTouch, 1, 4, 0, 0, 0, kJ | 18},       // Harm: "is Diseased", down to 1d4 hit points
+                                                            // Heal's routine (no effect given)
+    {0x38, SpellDoes::HarmTouch, 1, 4, 0, 0, 8, kJ | 18},       // Harm: "is Diseased", down to 1d4 hit points (magic -
+                                                                // GAME.OVR 0x30560)
     // The items' own spells (the spell table's monster spells)
     {0x39, SpellDoes::Haste, 5, 4, 0, 0, 0, kJ | 22, 0},     // speed: "is Speedy", 5d4 rounds
     {0x3C, SpellDoes::Bolt, 1, 6, 20, 0, 4, 0, 0, 0, 3},    // a lightning stroke: 1d6 + 20, the path 20, 3 squares
@@ -879,6 +881,9 @@ constexpr ecl::OpSet kDarknessEcl = [] {
     s.sizes[0x41] = 2;
     s.load_pieces = 0xFF;           // (none: 0x37 is FIND NPC)
     s.end_op = 0x23;
+    s.files_look = true;
+    s.byte_map = true;
+    s.vault_word = 0x31;            // (COMBAT with no monsters: game byte 0x31 the vault)
     return s;
 }();
 
@@ -1194,7 +1199,8 @@ const Profile kProfiles[] = {
      // file; arrows 30, quarrels 12, darts 5; the elves' bows and swords
      // 22-25, 18, 19 (its types are its words' numbers); the menu word
      .items = {.words = {0xED42, 21, 124}, .types_file = "ITEMS", .arrow = 30, .quarrel = 12, .dart = 5,
-               .elf_bonus = {22, 23, 24, 25, 26, 18, 19},     // (and 26: GAME.OVR 0x382C6 - types 22-26)
+               // (types 0x16-0x1A, 0x13, 0x12: GAME.OVR 0x382C6)
+               .elf_bonus = {22, 23, 24, 25, 26, 18, 19},
                // (its GAME.OVR words where Curse's are; no "Weapon" / "Armor")
                .buy_items = 0x8532, .buy = 0x853A, .list_next = 0x3E5AF, .list_prev = 0x3E5B5,
                .list_exit = 0x3E5BB, .shop_menu = 0x8C6C, .shop_menu_money = 0x8C45, .no_money = 0x8962,
@@ -1206,7 +1212,7 @@ const Profile kProfiles[] = {
                // items::kSecretPassive; the Boots of Speed's 0x4A)
                .stat_fx = {0x26, 0x71, 0x0C, 0x0E, 0x44, 0x3E},
                .passive = items::kSecretPassive,
-               .bonus_all_races = true, .light_magic_armour = true, .speed_fx = 0x4A, .sell_secret = true},
+               .light_magic_armour = true, .speed_fx = 0x4A, .sell_secret = true},
      // Character rules (secret_facts.md 9): the tables in Secret's shapes
      // (classes::Layout secret: 7 classes, levels to 18, 119 spells, its
      // own race order), the rest of character making not known yet
@@ -1275,8 +1281,10 @@ const Profile kProfiles[] = {
                               0x2DA23, 0x298FE, 0x2990B, 0x29911, 0x2AC74, 0},
                .camp = kSecretCamp, .n_camp = sizeof kSecretCamp / sizeof kSecretCamp[0],
                .facts = {2, 0x2A, {0x22, 0x2B, 0}, {{0, 0}, {0x2C, 0x1F}, {0, 0}}, 0x0C, 0x17, 0x32, 0x36, 0x70, 0x71,
+                         // (its time routine GAME.OVR 0x2D5E2: Slow Poison 3780 minutes; no
+                         // Curse's 0x3F / 0x43 cases - those are other spells here)
                          {{0x28, 1, 6, 0, 10}, {0x39, 5, 4, 0, 1}, {0x3D, 5, 4, 0, 1}, {0x3B, 1, 4, 4, 10},
-                          {0x3F, 1, 10, 10, 10}, {0x43, 0, 0, 1440, 1}}},
+                          {0x1A, 0, 0, 3780, 1}, {}}},
                .spell_named = nullptr, .n_spell_named = 0, .named = nullptr, .n_named = 0,
                .scroll_one_spell = 100, .read_magic = 0x10,
                .level_word = 0xE7FA, .effect_names = {0x10047, 38, 0x75}, .these_spells = 0xE1E8,
@@ -1321,17 +1329,17 @@ const Profile kProfiles[] = {
                 .shot_pointed = {5, 7, 0, 12, 14, 30}, .shot_spinning = {2, 3, 6}, .shot_flask = {0, 0},
                 .shot_sling = {28, 0, 29},
                 .bestow = 0x24, .blink = 0x25, .fumbling = 0x1B, .silence = 0x15, .entangle = 0, .sticks = 0x03,
-                .faerie = 0, .blinded = 0x21, .animals_blind = 0x45, .feeble = 0x44,
+                .faerie = 0x47, .blinded = 0x21, .animals_blind = 0x45, .feeble = 0x44,
                 // Its monsters' effects (MON1SPC): deadly poison 0x40 / -2 0x56, paralysis on a hit
                 // 0x58, immune to nonmagical weapons 0x67, fire 0x5D, cold 0x62, electricity 0x06,
-                // the iron golem's spell immunity 0x4F, the gazes 0x3A / 0x3B, breath 0x5A / 0x53 /
-                // 0x50; 0x51 and 0x60 unnamed in Secret - taken as Curse's (half damage, the hug)
+                // the iron golem's spell immunity 0x4F, the gazes 0x3A / 0x3B, breath 0x68 / 0x53 /
+                // 0x50, the slug's spit 0x51, charm and sleep 0x60
                 .mon = {.poison = 0x40, .poison_m2 = 0x56, .kreen_bite = 0x58, .heat_proof = {0x14, 0x36, 0x3D},
                         .need_magic = 0x67,
                         .no_fire = 0x5D, .no_cold = 0x62, .no_elec = 0x06,
                         .no_magic = 0x4F, .globe = 0x3F, .elf_sleep = 0x5F, .charm_sleep = 0x60,
                         .detect = 0x18, .prot_evil_near = 0x2D,
-                        .acid_breath = 0x5A, .fire_breath = 0x68, .hound_fire = 0x50, .slug_spit = 0x51, .stone_gaze = 0x3A,
+                        .fire_breath = 0x68, .hound_fire = 0x50, .slug_spit = 0x51, .stone_gaze = 0x3A,
                         .mirror_gaze = 0x3B,
                         .paralyzed = 0x34, .poisoned = 0x37, .sleep = 0x35,
                         // Secret's own (secret_facts_2.md 15): the iron golem, cockatrice,
@@ -1339,16 +1347,23 @@ const Profile kProfiles[] = {
                         // dreadlord's immunities (fear; charm and sleep; poison and paralysis)
                         .need_plus3 = 0x3C, .petrify_hit = 0x41, .swallow = 0x42, .pyro_fire = 0x43,
                         .confuse_gaze = 0x46, .cold_breath = 0x53, .no_fear = 0x5C, .no_poison = 0x63,
-                        .slug_secret = true},
+                        .slug_secret = true,
+                        // (secret_facts_2.md 29.monsters: 0x5A is the slug's blunt-weapon
+                        // immunity, not an acid breath; 0x49 the dragons' breath immunity;
+                        // the iron golem's damage rule; the gaze's mirror effect 0x48;
+                        // the pseudo-spells 0x3D / 0x44's reaches; paralysis 10 rounds)
+                        .blunt_proof = 0x5A, .no_breath = 0x49, .golem = 0x4F, .reflect = 0x48,
+                        .far_reach = 6, .near_reach = 1, .para_rounds = 10, .secret_ways = true},
                 .sp = {.enlarge = 0x0C, .confuse = 0x23, .berserk = 0x4D, .evil_ward = 0x04, .evil_bane = 0x20,
                        .hot = 0x32, .cold = 0x36, .zap = 0x70, .slow_poison = 0x16, .poison_damage = 0x0F,
                        .hammer = 0x17, .animated = 0, .con_regen = 0x3E, .giant = 0x71, .shield = 0x11,
                        .enfeeble = 0x1D, .ill = 0x22, .weak = 0x2B, .sick = 0x2C, .stun = 0x6A},
                 .race = {0x61, 0x12, 0x1A, 0x07, 0x2F, 0x30, 0x69},
                 .items = {.displace = 0x59, .ring_invisible = 0x38, .giant_slayer = 0x4B, .luck = 0x4E, .fire_ring = 0x3D,
-                          .boots = 0x4A, .reflect = 0x48, .no_disease = 0x4C, .displace_unused = true,
+                          .boots = 0x4A, .no_disease = 0x4C, .displace_unused = true,
                           .scrolls = {39, 40}},
-                .berserk = 0x6B},
+                .berserk = 0x6B, .secret = true, .globe_major = 0x39,
+                .cloud_ground = 0x1D, .poison_ground = 0x1B, .cleric_xp_wis = 15},
                kSecretFight, sizeof kSecretFight / sizeof kSecretFight[0]},
      // Random treasure (TREASURE 0x80 + n): Secret's own making (kSecretMake),
      // its rows of ready-made items at DS 0x0A2A (row r: word 1 + 8 r of DS 0x0A28)
@@ -1384,7 +1399,31 @@ const Profile kProfiles[] = {
      .overlay = "GAME.OVR", .overlay_size = 264086,
      .first_area = 1, .last_area = 1,
      .ecl_ops = &kDarknessEcl,
-     .variant = {.unfinished = true, .vga = true},
+     .start_area = 1, .start_script = 16,           // (a new game: block 16, Phlan's docks)
+     // The party menu (darkness_facts.md 34): 13 entries of 42 at DS
+     // 0x11B9; its words mostly in the program's data (kP: image =
+     // 0x9E70 + DS) - "Select", "load which game: ", the list's headings
+     // (GAME.OVR), POOL4.CFG, "save which game: ", the slots, "Saving...",
+     // the camp's menu, Add's "add from where? " "Pools Secret Exit" "add a
+     // character: " "Add", Drop's words (GAME.OVR), "Yes No", Modify's;
+     // Load's "load from where? "
+     .party = {.items = 0xB029, .count = 13, .stride = 42, .choose = kP | 0xC9FD, .load_which = kP | 0xC796,
+               .name = 0x34652, .ac_hp = 0x34657, .cfg = "POOL4.CFG", .save_which = kP | 0xC7BF,
+               .slots = kP | 0xCD2F, .saving = 0x1317B, .camp_menu = 0xD115,
+               .add_from = kP | 0xBAC8, .add_sources = kP | 0xCC8B, .add_prompt = kP | 0xBAF1, .add = kP | 0xCCB4,
+               .drop = 0x16445, .forever = 0x1644B, .sure = 0x16456, .yes_no = kP | 0xC9D4,
+               .cant_modify = kP | 0xBA9F, .keep_exit = kP | 0xCC62,
+               .load_from = kP | 0xC76D, .load_sources = kP | 0xCC8B},
+     // View Character's name tables (DS 0x0E57 classes, 0x103D races in its
+     // own order, 0x107C alignments, 0x1115 sex, 0x1123 its three coins,
+     // 0x1144 health) and its words (GAME.OVR 0x23891 on)
+     .view = {{0xACC7, 27, 18}, {0xAEAD, 9, 7}, {0xAEEC, 17, 9}, {0xAF85, 7, 2}, {0xAF93, 11, 3}, {0xAFB4, 13, 9},
+              0, 0x23899, 0x238B4, 0x238A2, 0x238A8, 0x23891, 0x23FEB, 0x23FDF, 0x24003, 0x2401B, 0x23FF7,
+              0x2400C, 0, 5},
+     // The script machine's words (darkness_facts.md S10): DAMAGE's lines,
+     // PRESS KEY's prompt, JOURNAL's sentence, WHAT MENU's question, "Yes No"
+     .script_words = {0, 0, 0x7B42, 0x7B4A, 0x7B57, 0x19C2, kP | 0xAC82, 0x261D, 0x2640, 0x1212, kP | 0xC9D4},
+     .variant = {.unfinished = true, .program_words = true, .vga = true, .darkness_files = true, .party_menu_col = 9},
      .font_file = "8X8D0.DAX"},
 };
 

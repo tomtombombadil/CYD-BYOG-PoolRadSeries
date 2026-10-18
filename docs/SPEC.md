@@ -1210,6 +1210,32 @@ full behaviour checks (every spell, monster, class, item, situation).
   and its new monster abilities in fights, sound (SOUND.DAX), the sky and
   approaching monsters (SPRIT1).
 
+- **v0.120.1 - its monsters checked** (Tom, 2026-10-18: every monster,
+  ability, spell, item, situation): sweep's `behave secret` ONLY=allmonsters
+  - all 70 MON1CHA records as a fight loads them (and the Level), every
+  effect its monsters use against its handler, their own turns, the
+  fight's end (2,289 checks). Fixed: the giant slug (0x5A: blunt weapons
+  do nothing - not Curse's acid breath), the dragons' breath immunity
+  (0x49) and their breath held when a friend is in the way, the iron
+  golem (0x4F: magical fire heals it, electricity slows it 3 rounds,
+  nothing else hurts), the hell hound (breathes every turn, adjacent, then
+  fights), the pyrohydra (none in the first round), the stone gaze's
+  range 6 and its reflection (0x48), the umber hulk and slug's reach,
+  the phase spider's poison and the dreadlord's paralysis on attack 1
+  (10 rounds), the weapon's +1 for type 26 too; two of Secret's own
+  mistakes go with Item Fixes (SPEC 12). secret_facts_2.md 29.
+- **v0.121.1 - its spells checked**: all 117 against its handlers
+  (ONLY=allspells, 432 checks). Fixed: camp spells on the whole party
+  (its table's 3, not Curse's 4: Bless, Prayer, Haste, the
+  invisibilities, Barkskin), slots by Wisdom 17 / 18 (cleric 6th / 7th)
+  and Intelligence 12 / 14, clerics learn Heal, rangers magic-user
+  spells; "person" by its race and flags (Charm, Hold, Sleep, Snake
+  Charm); Faerie Fire's effect 0x47; Feeblemind's class table, Enlarge's
+  Strength 23 from 12th level, the Globe up to 4th level, Mirror Image
+  takes blows, Barkskin heals as Heal, the Elixir its user only, Slow
+  Poison's revival and time, Entangle nothing; the clouds' ground values
+  0x1D / 0x1B; words. Four of Secret's mistakes with Item Fixes (SPEC 12).
+
 ## 6d. Pools of Darkness (Tom, 2026-10-17: started after Secret)
 
 Facts in the Project's claude/darkness_facts.md (from the player's GOG
@@ -1256,6 +1282,48 @@ the scripts' changed ops, the rule tables, fights, the rest.
   means the same), `darkness_script_set` (the fields its scripts may
   write), `savegame::read_darkness` / `write_darkness` (SAVGAMx.PTY),
   POOL4.CFG's first folder. The GOG party round-trips byte for byte.
+- **v0.119.0 - the frame; the Screen Test.** Its frame is drawn by its bar
+  routine (`layout::Tables::chain`): BORDERS.DAX's 11 pieces (0-3
+  corners, 4 / 5 bars, 6 / 7 junctions, 9 the row-16 bar's left end) in
+  tile slots 20-30, the area map's 20 tiles (8X8D0 block 202) in 0-19
+  (`layout::load_vga_tiles`, their EGA colours); the outer frame, the
+  row-16 bar, the column-16 divider and the 3D view's box, the fight's
+  frame (darkness_facts.md 7.1). The Screen Test's exploring frame
+  matches the original's EGA screen in all 225 frame cells (the GOG
+  start at the docks). The style the scripts choose (game byte 0x39:
+  0 gold, 1 red knots, 2 green, 3 skulls; 4 = gold): with the Play Test.
+- **v0.120.0 - the 3D view; the Walk Test.** LOAD FILES' look N is
+  WALLDEF1 N (wall sets 1-3), 8X8D1 N (256 tiles, numbered as the walls
+  use them - `view3d::World::dk`, `view3d::load_vga_tiles`; the program
+  skips 32 bytes after the nibbles when the entries are 0x20 and 0x70 on)
+  and the background: BACK1 N indoors, SKYGRND outdoors (1 day; 2 night
+  from hour 14, 3 overcast, 4 the red sky for the other frame styles -
+  the Play Test), an 88 x 88 picture on the heap (`view3d::load_back`).
+  The area map's frames: walls 0-15, arrows 16-19. The Walk Test at the
+  docks (GEO 16, look 1, 11,2 S) matches the original's EGA view in all
+  7,744 pixels.
+- **v0.121.0 - the party menu, Load, Save.** Its files (`variant.
+  darkness_files`: .SAV / .PC records, .THG items, .EFX effects,
+  SAVGAMx.PTY; POOL4.CFG's first folder), its party menu (13 entries from
+  DS 0x11B9, at column 9 all green - `variant.party_menu_col`), Load's
+  "Load from where? Pools Secret Exit" first (Pools: its own saved games;
+  Secret: not yet), View's name tables (its races renumbered, its three
+  coins in Curse's places 4-6). The GOG party loads (HP, levels, saves as
+  the original shows them). Begin: with the scripts' memory (next).
+- **v0.122.0 - the scripts' memory; Begin into Phlan.** `OpSet::byte_map`:
+  the scripts' memory is bytes (a 1 KB game block in GameState::area1, the
+  selected character's own record at 0x401 + its offset -
+  `party::darkness_byte` / `darkness_script_set` -, the script), an
+  operand's code giving the size; the engine's own Curse addresses turned
+  into its places (`Vm::dk_addr`: 0x4BF2 -> 0x16, the clock 0x4BC6 ->
+  0x05, 0xC04B -> x ...). Its own opcodes (`Vm::dk_step`): PRESS KEY,
+  JOURNAL n, LOAD FILES' map and look (`Host::load_look`), YES NO, END,
+  TREASURE's coins and ITEM0 rows, WHAT MENU, SOUND (logged), CALL 1 / 2
+  / 3, FIND NPC, DELAY 600 ms, SHOP n, EXPERIENCE x 100; the results
+  written at their operand's size. The frame's style (game byte 0x3A,
+  `Host::style`) and the background (indoors BACK1, outdoors SKYGRND by
+  style, hour and overcast). Begin with the GOG party: block 16, Rolf's
+  tour of Phlan runs (its pictures, text colours, sounds: next).
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -1715,5 +1783,16 @@ the game's Settings (As Original: all of them).
   only in that mode (the menu line just "Exit") do the original's arrow
   keys move the party; the engine shows the same menu and mode, but its
   movement keys move the party in either (the cursor keys work the menu).
+- **Secret's own mistakes, fixed with Item Fixes on** (v0.120.1;
+  `rules::fixes()` - Item Fixes off plays them as the original):
+  the +1 to hit with bows and short / long swords goes to elves only
+  (Secret's program gives it to every race); a cleric's +10% experience
+  needs Wisdom 16 (Secret's: 15); a paladin casts at his level - 8
+  (Secret's: 6th level always); Harm leaves 1d4 HP (Secret's wraps to
+  250+ damage when HP is under the roll); Invisibility's -4, Blink's
+  miss and Dispel Evil's -7 count at the attack roll (Secret's phases
+  run them before it - they never do); the Strength spell gives a
+  paladin 18/xx (Secret's: none). More to come from the items /
+  situations checks.
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.

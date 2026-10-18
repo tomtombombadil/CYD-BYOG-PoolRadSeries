@@ -949,7 +949,7 @@ void s_fights()
     }
     // A mirror / silver shield (0x48): readied, a stone gaze sent back
     // (GAME.OVR 0x12522) - the effect is what the gaze looks for
-    expect(PI, "the mirror's effect is the one the stone gaze looks for (0x48)", ix.reflect == 0x48);
+    expect(PI, "the mirror's effect is the one the stone gaze looks for (0x48)", d->prof->fight.facts.mon.reflect == 0x48);
     // The ring of invisibility (0x38): invisible at a fight's start (phase 8)
     {
         put(t, 0, 11, 10, 60);

@@ -468,9 +468,9 @@ void recalc_values(party::Character& c, const items::Names& names, const ItemFac
         if ((t.flags & 0x80) && quarrels) plus += items::Item{quarrels}.plus();
         if ((t.flags & 0x01) && arrows) plus += items::Item{arrows}.plus();
         dmg += plus;
-        // (Secret, GAME.OVR 0x382C6: every race - no race test there; an
-        // elf's alone in AD&D, so with the originals' mistakes fixed)
-        if (c.race() == 2 || (f.bonus_all_races && !fixes()))
+        // (Secret's program gives it to every race - GAME.OVR 0x382C6, no race
+        // test: the original's mistake, kept only with the fixes off)
+        if (c.race() == 2 || (f.elf_bonus_any_race && !fixes()))
             for (uint8_t e : f.elf_bonus)
                 if (e && it.type() == e) {
                     ++plus;
