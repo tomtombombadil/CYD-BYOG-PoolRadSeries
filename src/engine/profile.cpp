@@ -806,21 +806,29 @@ constexpr ecl::OpSet kSecretEcl = [] {
     return s;
 }();
 
-// Pools of Darkness (darkness_facts.md 2): Curse's operand counts but
-// 0x0C 4, 0x1D none, 0x1F 1, 0x21 2, 0x23 none, 0x27 4, 0x2C 1, 0x37 2 and
-// Secret's new 0x41 (2) - read from its interpreter's handlers (GAME.OVR
-// overlay at 0x246); 55 of its 56 blocks decode from their entry points
+// Pools of Darkness (darkness_facts.md 5; its interpreter, GAME.OVR overlay
+// at 0x246): Curse's operand counts but 0x0C 4 (SETUP MONSTER's sides),
+// 0x1D none (PRESS KEY), 0x1F 1 (JOURNAL n), 0x21 2 (LOAD FILES: map,
+// look), 0x22 none (YES NO), 0x23 none (END - it ends the stream), 0x27
+// 4 then as many as the 4th says (TREASURE), 0x29 none, 0x2C 1 (SOUND),
+// 0x31 2 then as many as the 2nd (WHAT MENU), 0x37 2 (FIND NPC - no LOAD
+// PIECES), 0x41 2 (EXPERIENCE): every one of its 56 blocks decodes
 constexpr ecl::OpSet kDarknessEcl = [] {
     ecl::OpSet s = kCurseEcl;
     s.sizes[0x0C] = 4;
     s.sizes[0x1D] = 0;
     s.sizes[0x1F] = 1;
     s.sizes[0x21] = 2;
+    s.sizes[0x22] = 0;
     s.sizes[0x23] = 0;
-    s.sizes[0x27] = 4;
+    s.sizes[0x27] = ecl::kCount4;
+    s.sizes[0x29] = 0;
     s.sizes[0x2C] = 1;
+    s.sizes[0x31] = K2;
     s.sizes[0x37] = 2;
     s.sizes[0x41] = 2;
+    s.load_pieces = 0xFF;           // (none: 0x37 is FIND NPC)
+    s.end_op = 0x23;
     return s;
 }();
 

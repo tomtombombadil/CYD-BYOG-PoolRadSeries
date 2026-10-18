@@ -1240,6 +1240,16 @@ the scripts' changed ops, the rule tables, fights, the rest.
   game's), 3 (the credits - a picture: no print calls), then "POOLS OF
   DARKNESS 1.10" / "Play Demo"; its font 8X8D0's block 201. Not yet: the
   frame (BORDERS.DAX's four styles), the Walk Test (says "not yet").
+  v0.118.1: the full operand counts (darkness_facts.md 5: 0x22, 0x29 none,
+  0x27 four then as many as the 4th says - `ecl::kCount4` -, 0x31 two then
+  as many as the 2nd; 0x23 END ends a stream - `OpSet::end_op`; no LOAD
+  PIECES): all 56 blocks decode. The surveys (darkness_facts.md 5, 6):
+  the scripts' memory is byte addressed - a 1 KB game block, the selected
+  character's 510-byte record itself (0x401 + offset), the script - so
+  ecl_vm needs a byte-map mode; LOAD FILES takes a map and a "look" (walls
+  1-3, tiles, background, combat ground at once); CALL takes 1 / 2 / 3.
+  The record and the saves (.PTY = the game block + position + file
+  names), the rule tables' places.
 
 ## 7. The journal (Tom, 2026-10-06)
 

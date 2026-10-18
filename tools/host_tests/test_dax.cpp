@@ -882,9 +882,19 @@ static void test_layout()
         const profile::Profile* dk = profile::find(games::Game::PoolsOfDarkness, 64203, 72784);
         CHECK(dk && !strcmp(dk->program, "GAME.EXE") && dk->data_base == 0x9E70 && dk->variant.vga &&
               !profile::ready(games::Game::PoolsOfDarkness));
-        CHECK(dk && dk->ecl_ops->sizes[0x0C] == 4 && dk->ecl_ops->sizes[0x1D] == 0 && dk->ecl_ops->sizes[0x27] == 4 &&
+        CHECK(dk && dk->ecl_ops->sizes[0x0C] == 4 && dk->ecl_ops->sizes[0x1D] == 0 &&
+              dk->ecl_ops->sizes[0x27] == ecl::kCount4 && dk->ecl_ops->sizes[0x31] == ecl::kCount2 &&
+              dk->ecl_ops->end_op == 0x23 && dk->ecl_ops->sizes[0x22] == 0 &&
               dk->ecl_ops->sizes[0x21] == 2 && dk->ecl_ops->sizes[0x37] == 2 && dk->ecl_ops->sizes[0x41] == 2 &&
               dk->ecl_ops->sizes[0x2E] == 5);
+        // kCount4: 4 operands, then as many as the 4th says (Darkness's
+        // TREASURE: 3 coins, 2 items 0xFF and 7)
+        if (dk) {
+            const uint8_t code[] = {0x27, 0, 5, 0, 6, 0, 7, 0, 2, 0, 0xFF, 0, 7, 0x00};
+            ecl::Insn in;
+            CHECK(ecl::decode(code, sizeof code, 0, *dk->ecl_ops, in) && in.count == 6 && in.ops[5].low == 7 &&
+                  in.next == 13);
+        }
     }
 
     // The known release is found only by both sizes
