@@ -257,7 +257,7 @@ void Vm::put(const Op& o, uint16_t v)
 
 uint16_t Vm::get(uint16_t a) const
 {
-    if (set_.byte_map) return dk_read(dk_addr(a), 1);
+    if (set_.byte_map) return a == 0x7EE1 ? 0xFF : dk_read(dk_addr(a), 1);    // (no head pictures)
     if (a >= 0x4B00 && a <= 0x4EFF) return word_at(s_.area1, (a - 0x4B00u) * 2);
     if (a >= 0x7A00 && a <= 0x7BFF) return word_at(s_.table, (a - 0x7A00u) * 2);
     if (a >= 0x7C00 && a <= 0x7FFF) {

@@ -1324,6 +1324,17 @@ the scripts' changed ops, the rule tables, fights, the rest.
   `Host::style`) and the background (indoors BACK1, outdoors SKYGRND by
   style, hour and overcast). Begin with the GOG party: block 16, Rolf's
   tour of Phlan runs (its pictures, text colours, sounds: next).
+- **v0.123.0 - event pictures.** PIC1's animations (78 blocks, all read):
+  their own header (palette, EGA nibbles, the key frame, the frame the
+  loop goes back to, per frame a packed size and a delay in tenths; 99 =
+  it stops there), frames packed with 257 - c runs on top of the DAX's,
+  every frame but the key one XORed with it (`pic::DkAnim`,
+  `parse_dk_anim`, `draw_dk_anim` - two readers in step, nothing held
+  but the header). BIGPIC1 from block 0xF0 (`variant.bigpic_from`), drawn
+  as VGA blocks. The text colour is the scripts' byte 0x39 (0 or past 15:
+  green). Under an event's picture there is no position line (as the
+  original; it comes back with the 3D view). Rolf on the docks matches
+  DOSBox's EGA screen pixel for pixel (its mouse pointer aside).
 
 ## 7. The journal (Tom, 2026-10-06)
 

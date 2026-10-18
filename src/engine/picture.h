@@ -184,4 +184,33 @@ bool draw_vga(dax::RleReader& r, const VgaHeader& h, int frame, Canvas& c, int x
 bool draw_vga_block(dax::ByteSource& src, const dax::Index& idx, const dax::Entry& e, int frame, Canvas& c, int x,
                     int y, int mask = -1, Rgb* rgb256 = nullptr);
 
+// ---- Darkness's animations (PIC1, SPRIT1; darkness_facts.md 7 4.2) --------
+// Their own header: u16 height, u16 width in 8-px columns, u16 x, u16 y, u8
+// frames - 1 (at most 8), u8 first palette entry, u8 count (not count - 1),
+// count x 3 palette, count / 2 EGA nibbles, 4 bytes, u8 key frame, u8 the
+// frame the animation goes back to, then per frame a u16 packed size and a
+// u8 delay (tenths of a second; 99: it stops there); then the frames, each
+// packed - a byte c <= 0x7F: the next c + 1 bytes as they are, c >= 0x80:
+// the next byte 257 - c times - and every frame but the key frame XORed
+// with the key frame.
+constexpr int kDkMaxFrames = 9;
+struct DkAnim {
+    uint16_t height = 0, width_cols = 0;
+    uint8_t  frames = 0, first = 0, key = 0, loop = 0;
+    uint16_t count = 0;
+    uint16_t size[kDkMaxFrames] = {};
+    uint8_t  delay[kDkMaxFrames] = {};
+    uint32_t data_at = 0;            // the first frame's packed bytes
+    uint8_t  ega[256] = {};          // each value's EGA colour (values under 16: themselves)
+    int width_px() const { return width_cols * 8; }
+};
+// Reads the header (r at the block's start); true only if the frames'
+// packed sizes end exactly at the block's end
+bool parse_dk_anim(dax::RleReader& r, uint32_t raw_size, DkAnim& a);
+// Frame k at (x, y): on a 4-bit canvas in its EGA colours, on an 8-bit one
+// the values. sprite: an approaching monster's (0 and 13 swapped, then 13
+// see-through); mask: another see-through value (-1: none)
+bool draw_dk_anim(dax::ByteSource& src, const dax::Index& idx, const dax::Entry& e, const DkAnim& a, int frame,
+                  Canvas& c, int x, int y, bool sprite = false, int mask = -1);
+
 } // namespace pic

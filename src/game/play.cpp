@@ -98,6 +98,7 @@ struct Data {
     plat::File       anim_file;
     int16_t        anim_x = 24, anim_y = 24;   // where it's drawn (the view; Pool's ending: elsewhere)
     dax::Index*    anim_idx = nullptr;      // the PIC file's index while a picture animates (3 KB)
+    pic::DkAnim*   dk_anim = nullptr;       // Darkness: its animation's header while one shows
 
     // A monster's sprite in the 3D view (SPRITn)
     pic::Anim      sprite;
@@ -663,6 +664,15 @@ void draw_overland(pic::Canvas& c)
 }
 
 bool world_parked = false;           // the 3D view's walls on the card during a fight (play_fight.inc)
+// The scripts' text colour: light green (Darkness: game byte 0x39 - its
+// scripts give speech 14, yellow; 0 or past 15 is 10 - darkness_facts.md S2)
+uint8_t script_text_colour()
+{
+    if (!d->prof->variant.vga) return 10;
+    const uint8_t v = d->gs.area1[0x38];
+    return v == 0 || v > 15 ? 10 : v;
+}
+
 // Darkness's background (darkness_facts.md 7.3): indoors (the square's
 // flags 0x80) BACK1's picture of the look; outdoors SKYGRND - with the gold
 // frame (style 0 / 4) night from hour 14 (2), overcast with game byte 0x3A
@@ -832,7 +842,9 @@ bool draw_block(pic::Canvas& c, const char* stem, int block, int x, int y)
     plat::FileSource src(f);
     bool ok = false;
     const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
-    if (e) {
+    if (e && d->prof->variant.vga) {
+        ok = pic::draw_vga_block(src, d->idx, *e, 0, c, x, y);       // (Darkness's BIGPIC1)
+    } else if (e) {
         dax::RleReader r(src, d->idx, *e);
         uint8_t hdr[pic::kHeaderSize];
         pic::Header h;
@@ -851,6 +863,8 @@ void anim_stop()
     if (d->anim_file) d->anim_file.close();
     delete d->anim_idx;
     d->anim_idx = nullptr;
+    delete d->dk_anim;
+    d->dk_anim = nullptr;
 }
 
 void anim_draw(int frame)
@@ -858,8 +872,20 @@ void anim_draw(int frame)
     if (anim_block < 0) return;
     plat::FileSource src(d->anim_file);
     const dax::Entry* e = d->anim_idx ? d->anim_idx->find(static_cast<uint8_t>(anim_block)) : nullptr;
-    if (e) pic::draw_anim(src, *d->anim_idx, *e, d->anim, frame, true, *cv, d->anim_x, d->anim_y);
+    if (e && d->dk_anim) pic::draw_dk_anim(src, *d->anim_idx, *e, *d->dk_anim, frame, *cv, d->anim_x, d->anim_y);
+    else if (e) pic::draw_anim(src, *d->anim_idx, *e, d->anim, frame, true, *cv, d->anim_x, d->anim_y);
     dirty_rows(d->anim_y / 8, (d->anim_y + 88) / 8);
+}
+
+// The next frame of the picture shown (Darkness's: back to its loop frame
+// after the last; a delay of 99 stops it there - darkness_facts.md 7 4.2)
+int anim_next(int frame)
+{
+    if (d->dk_anim) {
+        if (d->dk_anim->delay[frame] == 99) return frame;
+        return frame + 1 < d->dk_anim->frames ? frame + 1 : d->dk_anim->loop;
+    }
+    return (frame + 1) % d->anim.frames;
 }
 
 bool animation_on();
@@ -888,7 +914,24 @@ bool anim_start(int id, const char* stem = "PIC", int x = 24, int y = 24)
     plat::FileSource src(d->anim_file);
     const dax::Entry* e = nullptr;
     if (dax::read_index(src, *d->anim_idx) == dax::Status::Ok) e = d->anim_idx->find(static_cast<uint8_t>(id));
-    if (e) {
+    if (e && d->prof->variant.vga) {
+        // Darkness: its own animation format (pic::DkAnim; delays in tenths)
+        d->dk_anim = new (std::nothrow) pic::DkAnim;
+        dax::RleReader r(src, *d->anim_idx, *e);
+        if (d->dk_anim && pic::parse_dk_anim(r, e->raw_size, *d->dk_anim)) {
+            d->anim.frames = d->dk_anim->frames;
+            for (int k = 0; k < d->dk_anim->frames && k < pic::kMaxAnimFrames; ++k) d->anim.delay[k] = d->dk_anim->delay[k];
+            anim_block = id;
+            anim_frame = 0;
+            anim_at = plat::now_ms();
+            last_pic = id;
+            anim_draw(0);
+            if (!animation_on()) anim_stop();
+            return true;
+        }
+        delete d->dk_anim;
+        d->dk_anim = nullptr;
+    } else if (e) {
         dax::RleReader r(src, *d->anim_idx, *e);
         if (pic::parse_anim(r, e->raw_size, d->anim) && d->anim.frames > 0) {
             anim_block = id;
@@ -7335,12 +7378,16 @@ struct Host : ecl::Host {
             dirty_rows(3, 13);
         }
         pic_shown = true;
+        if (d->prof->variant.vga && bigpic < 0) {       // (Darkness: no position line under an event's picture)
+            c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);
+            dirty_rows(15, 15);
+        }
     }
     void anim_step() override
     {
         if (anim_block < 0) return;
         anim_draw(anim_frame);
-        anim_frame = (anim_frame + 1) % d->anim.frames;
+        anim_frame = anim_next(anim_frame);
         anim_at = plat::now_ms();
     }
     void redraw() override
@@ -7487,7 +7534,7 @@ void begin_wait(pic::Canvas& c)
             handle(vm->resume());
             return;
         }
-        text::begin(w, c, vm->text(), text::kTextArea, 10, vm->clear());
+        text::begin(w, c, vm->text(), text::kTextArea, script_text_colour(), vm->clear());
         if (vm->clear()) dirty_rows(17, 22);
         t_started = false;
         page_prompt = false;
@@ -10856,8 +10903,8 @@ void tick_screens(uint32_t now, pic::Canvas& c)
                         wt == ecl::Wait::Number || wt == ecl::Wait::String;
     if (wt == ecl::Wait::Menu && anim_block >= 0 && d->anim.frames > 1) {
         const uint32_t delay = d->anim.delay[anim_frame] ? d->anim.delay[anim_frame] * 100 : 100;
-        if (now - anim_at >= delay) {
-            anim_frame = (anim_frame + 1) % d->anim.frames;
+        if (now - anim_at >= delay && anim_next(anim_frame) != anim_frame) {
+            anim_frame = anim_next(anim_frame);
             anim_draw(anim_frame);
             anim_at = now;
         }

@@ -412,6 +412,63 @@ static void test_vga()
     }
 }
 
+// Darkness's animations (PIC1 / SPRIT1; darkness_facts.md): their own
+// header, frames packed with 257 - c runs, every frame but the key frame
+// XORed with it
+static void test_dk_anim()
+{
+    Bytes raw = {2, 0, 1, 0, 0, 0, 0, 0, 1, 32, 2};   // 2 rows, 1 column, 2 frames, entries 32-33
+    for (int i = 0; i < 6; ++i) raw.push_back(9);       // palette (not used on a 4-bit canvas)
+    raw.push_back(0x5A);                                // 32 -> EGA 5, 33 -> EGA 10
+    for (int i = 0; i < 4; ++i) raw.push_back(0);
+    raw.push_back(0);                                   // key frame 0
+    raw.push_back(0);                                   // loop back to 0
+    const Bytes f0 = [] {
+        Bytes f = {15};
+        for (int i = 0; i < 16; ++i) f.push_back(static_cast<uint8_t>(32 + (i & 1)));
+        return f;
+    }();
+    const Bytes f1 = {254, 0, 0, 1, 245, 0};            // 3 zeros, a 1 (pixel 3: 33 ^ 1 = 32), 12 zeros
+    raw.push_back(static_cast<uint8_t>(f0.size()));
+    raw.push_back(0);
+    raw.push_back(5);
+    raw.push_back(static_cast<uint8_t>(f1.size()));
+    raw.push_back(0);
+    raw.push_back(99);
+    raw.insert(raw.end(), f0.begin(), f0.end());
+    raw.insert(raw.end(), f1.begin(), f1.end());
+    const Bytes file = make_dax({{148, raw}});
+    dax::MemorySource src(file.data(), static_cast<uint32_t>(file.size()));
+    static dax::Index idx;
+    CHECK(dax::read_index(src, idx) == dax::Status::Ok);
+    const dax::Entry& e = idx.entries[0];
+    static pic::DkAnim a;
+    {
+        dax::RleReader r(src, idx, e);
+        CHECK(pic::parse_dk_anim(r, e.raw_size, a));
+    }
+    CHECK(a.height == 2 && a.width_px() == 8 && a.frames == 2 && a.key == 0 && a.loop == 0);
+    CHECK(a.delay[0] == 5 && a.delay[1] == 99 && a.ega[32] == 5 && a.ega[33] == 10 && a.ega[7] == 7);
+    {
+        dax::RleReader r(src, idx, e);
+        CHECK(!pic::parse_dk_anim(r, e.raw_size + 1, a));  // the sizes must end at the block's end
+        dax::RleReader r2(src, idx, e);
+        CHECK(pic::parse_dk_anim(r2, e.raw_size, a));
+    }
+    static uint8_t px4[pic::kScreenW * pic::kScreenH / 2];
+    pic::Canvas c4{px4, pic::kScreenW, pic::kScreenH, 4};
+    c4.clear(0);
+    CHECK(pic::draw_dk_anim(src, idx, e, a, 0, c4, 8, 4));
+    CHECK(c4.get(8, 4) == 5 && c4.get(9, 4) == 10 && c4.get(11, 4) == 10 && c4.get(15, 5) == 10 && c4.get(16, 4) == 0);
+    CHECK(pic::draw_dk_anim(src, idx, e, a, 1, c4, 8, 4));
+    CHECK(c4.get(8, 4) == 5 && c4.get(9, 4) == 10 && c4.get(11, 4) == 5 && c4.get(13, 4) == 10 && c4.get(15, 5) == 10);
+    CHECK(!pic::draw_dk_anim(src, idx, e, a, 2, c4, 8, 4));
+    // A see-through value leaves the canvas as it was
+    c4.clear(3);
+    CHECK(pic::draw_dk_anim(src, idx, e, a, 0, c4, 0, 0, false, 33));
+    CHECK(c4.get(0, 0) == 5 && c4.get(1, 0) == 3);
+}
+
 // Darkness's frame (darkness_facts.md 7.1): a BORDERS-like VGA block of 11
 // tiles (piece p filled with entry 16 + p, whose EGA nibble is p + 1) and
 // its bar routine's screens
@@ -7182,6 +7239,7 @@ int main()
     test_picture();
     test_anim();
     test_vga();
+    test_dk_anim();
     test_chain_frame();
     test_dk_walls();
     test_font();

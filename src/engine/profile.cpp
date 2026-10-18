@@ -1359,7 +1359,8 @@ const Profile kProfiles[] = {
      // The script machine's words (darkness_facts.md S10): DAMAGE's lines,
      // PRESS KEY's prompt, JOURNAL's sentence, WHAT MENU's question, "Yes No"
      .script_words = {0, 0, 0x7B42, 0x7B4A, 0x7B57, 0x19C2, kP | 0xAC82, 0x261D, 0x2640, 0x1212, kP | 0xC9D4},
-     .variant = {.unfinished = true, .program_words = true, .vga = true, .darkness_files = true, .party_menu_col = 9},
+     .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .vga = true, .darkness_files = true,
+                 .party_menu_col = 9},
      .font_file = "8X8D0.DAX"},
 };
 

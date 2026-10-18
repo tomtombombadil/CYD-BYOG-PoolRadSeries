@@ -78,8 +78,9 @@ the Project as claude/TODO.md.
       claude/darkness_facts.md; SPEC 6d). Done: the survey (program and
       overlay layout, files, saves, the scripts' operand counts);
       v0.118.0 the profile (Play off), scripts' counts, the title in its
-      EGA colours. Surveys running (2026-10-18): screens, characters,
-      scripts. Next, a
+      EGA colours. v0.119.0-v0.122.0: record, saves, party menu,
+      Load, the 3D view and frame, the scripts' memory, Begin into
+      Phlan. v0.123.0: event pictures (PIC1 animations, BIGPIC). Next, a
       chunk a commit: the profile + scan (Play off: variant.unfinished),
       title, record + party menu / Load, VGA pictures (EGA colours on the
       classic boards), 3D view, the scripts' changed ops, rule tables,

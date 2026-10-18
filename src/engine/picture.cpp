@@ -251,4 +251,108 @@ bool draw_vga(dax::RleReader& r, const VgaHeader& h, int frame, Canvas& c, int x
     return true;
 }
 
+bool parse_dk_anim(dax::RleReader& r, uint32_t raw_size, DkAnim& a)
+{
+    a = DkAnim{};
+    uint8_t h[11];
+    if (r.read(h, sizeof h) != sizeof h) return false;
+    a.height = static_cast<uint16_t>(h[0] | h[1] << 8);
+    a.width_cols = static_cast<uint16_t>(h[2] | h[3] << 8);
+    a.frames = static_cast<uint8_t>(h[8] + 1);
+    a.first = h[9];
+    a.count = h[10];
+    if (!a.height || !a.width_cols || a.width_cols > kScreenW / 8 || a.frames > kDkMaxFrames || !a.count ||
+        a.first + a.count > 256)
+        return false;
+    if (r.skip(a.count * 3u) != a.count * 3u) return false;
+    for (int i = 0; i < 256; ++i) a.ega[i] = static_cast<uint8_t>(i & 15);
+    for (int i = 0; i < a.count; i += 2) {
+        const int b = r.next();
+        if (b < 0) return false;
+        a.ega[a.first + i] = static_cast<uint8_t>(b >> 4);
+        if (i + 1 < a.count) a.ega[a.first + i + 1] = static_cast<uint8_t>(b & 15);
+    }
+    uint8_t t[6];
+    if (r.read(t, 6) != 6) return false;
+    a.key = t[4];
+    a.loop = t[5];
+    uint32_t total = 0;
+    for (int k = 0; k < a.frames; ++k) {
+        uint8_t f[3];
+        if (r.read(f, 3) != 3) return false;
+        a.size[k] = static_cast<uint16_t>(f[0] | f[1] << 8);
+        a.delay[k] = f[2];
+        total += a.size[k];
+    }
+    a.data_at = r.produced();
+    if (a.key >= a.frames) a.key = 0;
+    if (a.loop >= a.frames) a.loop = 0;
+    return a.data_at + total == raw_size;
+}
+
+namespace {
+// One frame's packing on top of the block's own (257 - c runs)
+struct FrameUnpack {
+    dax::RleReader& r;
+    int run = 0, rep = -1;
+    int next()
+    {
+        while (run == 0) {
+            const int c = r.next();
+            if (c < 0) return -1;
+            if (c <= 0x7F) {
+                run = c + 1;
+                rep = -1;
+            } else {
+                run = 257 - c;
+                rep = r.next();
+                if (rep < 0) return -1;
+            }
+        }
+        --run;
+        return rep >= 0 ? rep : r.next();
+    }
+};
+} // namespace
+
+bool draw_dk_anim(dax::ByteSource& src, const dax::Index& idx, const dax::Entry& e, const DkAnim& a, int frame,
+                  Canvas& c, int x, int y, bool sprite, int mask)
+{
+    if (frame < 0 || frame >= a.frames) return false;
+    auto at = [&](int k) {
+        uint32_t o = a.data_at;
+        for (int i = 0; i < k; ++i) o += a.size[i];
+        return o;
+    };
+    dax::RleReader rk(src, idx, e);
+    if (rk.skip(at(a.key)) != at(a.key)) return false;
+    FrameUnpack key{rk};
+    dax::RleReader rf(src, idx, e);
+    const bool xored = frame != a.key;
+    if (xored && rf.skip(at(frame)) != at(frame)) return false;
+    FrameUnpack fr{rf};
+    const int w = a.width_px();
+    for (int row = 0; row < a.height; ++row) {
+        const int py = y + row;
+        for (int i = 0; i < w; ++i) {
+            int v = key.next();
+            if (v < 0) return false;
+            if (xored) {
+                const int f = fr.next();
+                if (f < 0) return false;
+                v ^= f;
+            }
+            if (sprite) {
+                if (v == 0) v = 13;
+                else if (v == 13) v = 0;
+                if (v == 13) continue;
+            }
+            if (v == mask) continue;
+            const int px = x + i;
+            if (py >= 0 && py < c.h && px >= 0 && px < c.w) c.set(px, py, c.bpp == 4 ? a.ega[v] : static_cast<uint8_t>(v));
+        }
+    }
+    return true;
+}
+
 } // namespace pic
