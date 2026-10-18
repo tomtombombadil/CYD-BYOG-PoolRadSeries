@@ -1001,6 +1001,128 @@ void words()
     }
 }
 
+// =====================================================================
+// 14. The cures' amounts (their handlers' 0x145:0x43 dice + plus, then the
+// heal routine 0x145:0x84): 3 / 98 1d8, 58 2d8+1, 71 3d8+3, 62 / 99
+// 2d4+2 - dice highest, in a fight and in camp
+void cures()
+{
+    using namespace play;
+    struct H {
+        int s, most;
+    } hs[] = {{3, 8}, {98, 8}, {58, 17}, {71, 27}, {62, 10}, {99, 10}};
+    if (!new_fight()) return;
+    for (const H& h : hs) {
+        setup_cast(h.s);
+        F(1).rec[0x1A4] = 10;
+        F(1).rec[0x78] = 100;
+        dice(1);
+        cast(0, h.s, {1});
+        dice_off();
+        snprintf(w, sizeof w, "fight: spell %d heals %d", h.s, h.most);
+        expect(S, w, F(1).hp() == 10 + h.most, "HP %d", F(1).hp());
+    }
+    boot();
+    load_magic();
+    for (const H& h : hs) {
+        if (orow(h.s, OTargets) == 0) continue;
+        member(0, orow(h.s, OCls) == 0 ? classes::Cleric : orow(h.s, OCls) == 1 ? classes::Ranger : classes::Fighter, 16);
+        member(1, classes::Fighter, 5, 100);
+        mem(1).rec[0x1A4] = 10;
+        dice(1);
+        const int r = ccast(0, orow(h.s, OTargets) == 1 ? 0 : 1, h.s);
+        dice_off();
+        const int who = orow(h.s, OTargets) == 1 ? 0 : 1;
+        if (who == 0) continue;                     // (the caster's own: full already)
+        snprintf(w, sizeof w, "camp: spell %d heals %d", h.s, h.most);
+        expect(S, w, r >= 0 && mem(1).hp() == 10 + h.most, "HP %d", mem(1).hp());
+    }
+}
+
+// 15. Haste and Slow (48 / 55, GAME.OVR 0x3014B / 0x30512): the first
+// "level" of the caster's side (Slow: the other side's) - one with the
+// opposite effect cured of it instead; the items' speed (57) on its user:
+// a slowed one cured, else hastened 5d4 rounds
+void haste_slow()
+{
+    if (!new_fight()) return;
+    setup_cast(48);
+    caster(0, classes::MagicUser, 1);
+    put(2, 0, 9, 10, 60);
+    cast(0, 48, {0, 1, 2});
+    int n = (faff(0, 0x27) >= 0) + (faff(1, 0x27) >= 0) + (faff(2, 0x27) >= 0);
+    expect(S, "Haste at 1st level: one hastened", n == 1, "%d", n);
+    setup_cast(48);
+    give(1, 0x2A);
+    cast(0, 48, {1});
+    expect(S, "Haste on the slowed: cured, not hastened", faff(1, 0x2A) < 0 && faff(1, 0x27) < 0);
+    setup_cast(55);
+    give(6, 0x27);
+    dice(1, 3);
+    cast(0, 55, {6});
+    dice_off();
+    expect(S, "Slow on the hastened: cured, not slowed", faff(6, 0x27) < 0 && faff(6, 0x2A) < 0);
+    setup_cast(57);
+    dice(1);
+    cast(0, 57, {0});
+    dice_off();
+    expect(S, "the speed potion: hastened 5d4 rounds (dice high: 20)", faff(0, 0x27) == 20, "%d", faff(0, 0x27));
+}
+
+// 16. Confusion (82, GAME.OVR 0x30F44): at most 2d8 of those in the area;
+// each saves against spells or confused (0x23) 2 + a round a level
+void confusion()
+{
+    if (!new_fight()) return;
+    setup_cast(82);
+    put(7, 1, 13, 11, 60);
+    dice(2, 3);                                     // 2d8 lowest: 2
+    cast(0, 82, {6, 7, 1});
+    dice_off();
+    const int n = (faff(6, 0x23) >= 0) + (faff(7, 0x23) >= 0) + (faff(1, 0x23) >= 0);
+    expect(S, "Confusion: at most 2d8 (2) of those in the area", n == 2, "%d", n);
+    expect(S, "Confusion's time: 2 + level", faff(6, 0x23) == dur_rule(82, 9, true), "%d", faff(6, 0x23));
+}
+
+// 17. Fire Shield (85, GAME.OVR 0x31214): hot 0x32 or cold 0x36, and 0x70,
+// each 2 + a round a level, on the caster
+void fire_shield()
+{
+    if (!new_fight()) return;
+    for (int flame : {1, 2}) {
+        setup_cast(85);
+        fg->b.flame = flame;
+        cast(0, 85, {0});
+        const int want = dur_rule(85, 9, true);
+        snprintf(w, sizeof w, "Fire Shield (%s)", flame == 1 ? "hot" : "cold");
+        expect(S, w, faff(0, flame == 1 ? 0x32 : 0x36) == want && faff(0, 0x70) == want, "%d / %d (%d)",
+               faff(0, flame == 1 ? 0x32 : 0x36), faff(0, 0x70), want);
+    }
+}
+
+// 18. Dispel Evil (73, GAME.OVR 0x30C00): the caster gets 0x04 and 0x20,
+// each a round a level
+void dispel_evil()
+{
+    if (!new_fight()) return;
+    setup_cast(73);
+    cast(0, 73, {0});
+    expect(S, "Dispel Evil: 0x04 and 0x20 for the level", faff(0, 0x04) == 9 && faff(0, 0x20) == 9, "%d / %d", faff(0, 0x04),
+           faff(0, 0x20));
+}
+
+// 19. Stone to Flesh in a fight (113): the stoned okay with 1 HP
+void stone_fight()
+{
+    if (!new_fight()) return;
+    setup_cast(113);
+    F(1).rec[0x195] = party::Stoned;
+    F(1).rec[0x196] = 0;
+    cast(0, 113, {1});
+    expect(S, "fight: Stone to Flesh", F(1).status() == party::Okay && F(1).hp() == 1 && F(1).up(), "status %d HP %d",
+           F(1).status(), F(1).hp());
+}
+
 } // namespace sspells
 
 void all_spells()
@@ -1028,4 +1150,10 @@ void all_spells()
     feeblemind();
     charm_mammal();
     words();
+    cures();
+    haste_slow();
+    confusion();
+    fire_shield();
+    dispel_evil();
+    stone_fight();
 }
