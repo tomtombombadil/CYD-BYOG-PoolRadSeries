@@ -981,6 +981,60 @@ void shop_sell()
     screen = Screen::Game;
 }
 
+// ---- The scripts' view of a character (Secret's field switch, GAME.OVR
+// 0x9830): each code read from a Secret record (439 bytes) as its code
+// reads it, against the engine's (the record moved to Curse's layout)
+void script_fields()
+{
+    char w[120];
+    int bad = 0, n = 0;
+    for (int pass = 0; pass < 12; ++pass) {
+        uint8_t p[party::kSecretRecordSize];
+        for (int i = 0; i < party::kSecretRecordSize; ++i) p[i] = static_cast<uint8_t>((i * 7 + pass * 13 + 5) & 0x7F);
+        p[0] = 5;
+        p[0x6B] = static_cast<uint8_t>(1 + pass % 6);       // race (Secret's)
+        p[0x6C] = static_cast<uint8_t>(pass % 7);           // class
+        for (int k = 0; k < 7; ++k) p[0x111 + k] = static_cast<uint8_t>(k == pass % 7 ? 3 + pass : 0);
+        for (int k = 0; k < 7; ++k) p[0x118 + k] = 0;       // (no old classes: the dual test 0)
+        p[0x1A6] = static_cast<uint8_t>(pass % 9);          // status
+        p[0x1A8] = static_cast<uint8_t>(pass % 3);          // side
+        p[0x1A9] = static_cast<uint8_t>(pass % 2);
+        p[0x1B] = static_cast<uint8_t>(3 + pass * 2);       // Charisma
+        static party::Character c;
+        c = party::Character{};
+        party::from_secret(p, c);
+        auto w16 = [&](int o) { return static_cast<uint16_t>(p[o] | p[o + 1] << 8); };
+        struct F { uint16_t code; int want; };
+        std::vector<F> fs = {{0x15, p[0x13]}, {0x18, p[0x19]}, {0x19, p[0x1B]}, {0x72, static_cast<int8_t>(p[0x6B])},
+                             {0x73, static_cast<int8_t>(p[0x6C])}, {0x76, p[0x70]}, {0x9B, p[0xE9]},
+                             {0xA0, static_cast<int8_t>(p[0xEE])}, {0xB8, p[0xFF]}, {0xBB, w16(0x103)}, {0xBD, w16(0x105)},
+                             {0xBF, w16(0x107)}, {0xC1, w16(0x109)}, {0xC3, w16(0x10B)}, {0xC5, w16(0x10D)},
+                             {0xC9, p[0x116]}, {0xCA, p[0x111]}, {0xCB, p[0x117]}, {0xCC, p[0x113]}, {0xCF, p[0x114]},
+                             {0xD0, p[0x115]}, {0xD6, static_cast<int8_t>(p[0x11F])}, {0xD8, static_cast<int8_t>(p[0x120])},
+                             {0xF7, w16(0x14E)}, {0xF9, p[0x150]}, {0x119, p[0x1B5]}, {0x11B, p[0x1B6]}};
+        for (int k = 1; k <= 8; ++k) fs.push_back({static_cast<uint16_t>(0xA4 + k), p[0xF2 + k]});
+        static const int kSt[9] = {1, 0, 0, 6, 5, 4, 3, 7, 2};
+        fs.push_back({0x100, kSt[p[0x1A6]]});
+        fs.push_back({0x10C, p[0x1A8] == 0 && p[0x1A9] ? 0x80 : p[0x1A8] == 1 ? 0x81 : 0});
+        const int cha = p[0x1B];
+        const int pct = cha == 3 ? 0 : cha == 4 ? 5 : cha == 5 ? 10 : cha == 6 ? 15 : cha == 7 ? 20 : cha <= 12 ? 25 : cha == 13 ? 30
+                        : cha == 14 ? 35 : cha == 15 ? 40 : cha == 16 ? 50 : cha == 17 ? 55 : cha <= 25 ? 60 : -1;
+        if (pct >= 0) fs.push_back({0x2CF, pct});
+        for (const F& f : fs) {
+            uint16_t got = 0xFFFF;
+            const bool ok = party::script_value_secret(c.rec, c.ext, 0, f.code, &got);
+            ++n;
+            if (!ok || got != static_cast<uint16_t>(f.want)) {
+                ++bad;
+                snprintf(w, sizeof w, "the scripts' field %03X (record pass %d)", f.code, pass);
+                if (bad <= 20) expect(P, w, false, "%d, the original's %d", ok ? got : -1, f.want);
+            }
+        }
+    }
+    snprintf(w, sizeof w, "the scripts' view of a character: %d field reads", n);
+    expect(P, w, bad == 0, "%d wrong", bad);
+}
+
 void all_situations()
 {
     if (const char* e = getenv("ENDLESS")) {
@@ -997,4 +1051,5 @@ void all_situations()
     camp_rest();
     modify_bounds();
     shop_sell();
+    script_fields();
 }
