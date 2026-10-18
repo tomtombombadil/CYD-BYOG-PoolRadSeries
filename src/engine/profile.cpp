@@ -1457,6 +1457,12 @@ const Profile kProfiles[] = {
      .item_words = {0, 0, 0, 0, 0, 0, 0, 0x24795, kP | 0xB64C, 0x253D4, kP | 0xB5FA, kP | 0xB623, 0, 0x2530A,
                     kP | 0xB675, kP | 0xB69E, kP | 0xB6C7, kP | 0xB6F0, kP | 0xB719, kP | 0xB742, kP | 0xB76B,
                     kP | 0xB794, kP | 0xC159, kP | 0xC9FD, 0},
+     // The training hall's words (GAME.OVR 0x1868F on: free, every class -
+     // no "Training costs" / "We don't train that class here"); the shops
+     // and the temple: not yet
+     .shop_words = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0x1868F, 0, 0, 0x186AE, 0x186C4, 0x186D2, 0x186E1, 0x186EE, 0x18705},
      // Magic (camp): "Cast Memorize Scribe Display Rest Exit" (DS 0x32CE),
      // its level names whole ("1st Level", DS 0x0AD5, 9), spell names (DS
      // 0x53CD, 127) and effect names (DS 0x4061, 129); the screens' words

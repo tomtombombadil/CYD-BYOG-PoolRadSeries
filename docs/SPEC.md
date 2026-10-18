@@ -1411,6 +1411,15 @@ the scripts' changed ops, the rule tables, fights, the rest.
   them into Darkness's (the magic hit with stars 6, without 9, sling /
   flask 9, no title sound); turning is silent (`clips.quiet_turns`).
   Facts: the Project's claude/darkness_sound_facts.md.
+- **v0.130.0 - training.** A hall's script sets byte 0x30 (127: every
+  class) and runs PROGRAM 0: the party menu's Train Character and Human
+  Change (the engine's 0x7EA8 is that byte). Free, a level at a time, the
+  experience past the next level's kept to one under the one after
+  (Curse's / Secret's rule, the journal's words); its race limits
+  (darkness_facts.md 36: gnome clerics stop at 7, no dwarf / elf cleric
+  limit); hit points as Secret's (the better of two rolls, past the last
+  hit die 3 / 2 / 1). Its words GAME.OVR 0x1868F on. The playsim: Dominic
+  (cleric 14, +1,000,000 experience) trains to 15, +2 hit points.
 
 ## 7. The journal (Tom, 2026-10-06)
 

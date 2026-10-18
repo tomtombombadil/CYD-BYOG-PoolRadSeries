@@ -168,6 +168,7 @@ uint16_t Vm::dk_addr(uint16_t a)
     case 0x7ECA: return 0x19;           // Search / Look
     case 0x7ECB: return 0x2E;           // surprise
     case 0x7EE2: return 0x14;           // COMBAT: the temple
+    case 0x7EA8: return 0x30;           // the training hall's classes (SAVE 127, then PROGRAM 0)
     case 0x7ED2: return 0x2B;           // resting's encounters
     case 0x7ED3: return 0x2C;
     case 0x7F3E: return 0x20;           // the party's size

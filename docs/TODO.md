@@ -90,7 +90,8 @@ the Project as claude/TODO.md.
       v0.125.0: exploring menu, camp, View, item names. v0.126.0: the
       items screen. v0.127.0: the rule tables. v0.128.0: magic (camp
       screens). v0.129.0: sounds (ZOUNDS samples, SOUND op; Tandy = the
-      SL / TL DAC, PC speaker as IBMSND.COM). Next, a chunk a commit:
+      SL / TL DAC, PC speaker as IBMSND.COM). v0.130.0: training (not
+      compared with DOSBox: the hall's screen). Next, a chunk a commit:
       approaching monsters (SPRIT1), the spells' effects in camp and in
       fights, training, creation, fights (VGA combat pictures,
       DUNGCOM, CPIC1 icons), shops / treasure (ITEM0 rows), overland
