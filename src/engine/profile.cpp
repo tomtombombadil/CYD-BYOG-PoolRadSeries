@@ -1195,7 +1195,10 @@ const Profile kProfiles[] = {
                           {0x3F, 1, 10, 10, 10}, {0x43, 0, 0, 1440, 1}}},
                .spell_named = nullptr, .n_spell_named = 0, .named = nullptr, .n_named = 0,
                .scroll_one_spell = 100, .read_magic = 0x10,
-               .level_word = 0xE7FA, .effect_names = {0x10047, 38, 0x75}, .these_spells = 0xE1E8},
+               .level_word = 0xE7FA, .effect_names = {0x10047, 38, 0x75}, .these_spells = 0xE1E8,
+               // (its scrolls: types 39 / 40 - GAME.OVR 0x32A8B; their count word 0x2F,
+               // "1 Spell" = 100 - 0x32C39; a reader's spells only - 0x2CF28)
+               .scroll_types = {39, 40}, .scroll_count_at = 0x2F, .scroll_readers = true},
      // Fights (secret_facts.md 12): Curse's tables at Secret's places, no
      // terrain table, its turn undead table not found yet (no Turn); the
      // words where they are found; the effects by Secret's numbers (GBC's

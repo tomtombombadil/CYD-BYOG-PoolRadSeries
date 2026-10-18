@@ -4668,6 +4668,10 @@ magic::Scrolls scroll_facts()
     sc.names = names;
     sc.one_spell = d->prof->magic.scroll_one_spell;
     sc.read_magic = d->prof->magic.read_magic;
+    sc.types[0] = d->prof->magic.scroll_types[0];
+    sc.types[1] = d->prof->magic.scroll_types[1];
+    sc.count_at = d->prof->magic.scroll_count_at;
+    sc.readers = d->prof->magic.scroll_readers;
     return sc;
 }
 

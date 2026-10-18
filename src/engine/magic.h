@@ -59,7 +59,20 @@ struct Scrolls {
     const items::Names* names = nullptr;    // the item types (slots 11-13 are scrolls)
     uint8_t one_spell = 0;                  // the word "With 1 Spell"
     uint8_t read_magic = 0;                 // Read Magic's effect: scrolls can be read
+    // Secret of the Silver Blades (GAME.OVR 0x32A8B, 0x2CF28, 0x32ACA): its
+    // scrolls are item types (its mage's and clerics' scrolls - not by slot),
+    // their spell count is name word 1 (0x2F; Curse's word 2), and a scroll
+    // shows only the spells its reader could cast from it (reads_spell)
+    uint8_t types[2] = {};
+    uint8_t count_at = 0x30;
+    bool    readers = false;
 };
+// Secret's test for a spell on a scroll (GAME.OVR 0x2C64B with its scroll
+// flag): clerics' spells Wisdom 9+ and a cleric or a paladin past 8th level;
+// druids' Wisdom 9+ and a ranger past 7th; magic-users' Intelligence 9+ and
+// a magic-user, a ranger past 8th or a thief past 10th (the levels are
+// classes::skill_level's: a changed human's old ones)
+bool reads_spell(const party::Character& c, const classes::Tables& t, int spell);
 bool is_scroll(const Scrolls& sc, const uint8_t* item);
 // The spells on their scrolls they can read (identified, Read Magic on
 // them, or a cleric with a clerics' scroll - which makes them known), or

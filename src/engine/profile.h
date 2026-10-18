@@ -406,6 +406,12 @@ struct Profile {
         // Secret: the confirmations are "Memorize" / "Scribe" + this (" these
         // spells?", program image; 0: the words kMemorizeThese ...)
         uint32_t                  these_spells = 0;
+        // Secret: its scrolls by item type (mage's, clerics'), their spell
+        // count in name word 1 (0x2F), only the spells the reader could cast
+        // shown (magic::Scrolls)
+        uint8_t                   scroll_types[2] = {};
+        uint8_t                   scroll_count_at = 0x30;
+        bool                      scroll_readers = false;
     } magic;
 
     // The camp's Alter: its menu ("Order Drop Speed Icon Pics Exit"), the
