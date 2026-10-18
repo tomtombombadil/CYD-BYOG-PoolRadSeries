@@ -164,6 +164,24 @@ struct MonFx {
     // half)
     uint8_t need_plus3, petrify_hit, swallow, pyro_fire, confuse_gaze, cold_breath, no_fear, no_poison;
     bool    slug_secret;
+    // More of Secret's (secret_facts_2.md 29.monsters; 0 / false: none, the
+    // Curse rules). A blow with a blunt weapon (its type's byte 7 & 0x80)
+    // does nothing (the giant slug, GAME.OVR 0x138B2); breath (damage kind
+    // 0x20) does nothing (the dragons, 0x1310F); the iron golem's damage
+    // (0x13354): fire and magic heals it, electricity slows it 3 rounds,
+    // anything else nothing; the stone gaze sent back by this effect on its
+    // target (0x1242D); its pseudo-spells' reaches - the gazes', the
+    // slug's and the breaths' (spell 0x3D: 6 squares), the hound's and the
+    // umber hulk's (spell 0x44: next to it); paralysis on a hit lasts these
+    // rounds (0: 2d8 - 0x10CDF: 10)
+    uint8_t blunt_proof = 0, no_breath = 0, golem = 0, reflect = 0;
+    uint8_t far_reach = 0, near_reach = 0, para_rounds = 0;
+    // Secret's ways (0x12D5F, 0x13457, 0x327F9, the lists after a hit at
+    // 0x36289 / 0x362B4): the pyrohydra breathes at its own target from the
+    // second round on, the hell hound every turn and fights on, a breath
+    // never with a friend in its path (3 again when over 3), the -2 poison
+    // and the paralysis after either attack's hit
+    bool    secret_ways = false;
 };
 
 // More spells' effects (spell_facts.md 2): Enlarge, Confusion (and going
@@ -256,6 +274,10 @@ struct Facts {
     // level / 4 + 2 (Curse: (level - 1) / 4 + 2)
     uint8_t backstab_armour = 0;
     bool    backstab_plain = false;
+    // The cleric's +10% experience from this Wisdom in use (0: AD&D's 16;
+    // Secret's program 15 - GAME.OVR 0x6E04 - the original's mistake,
+    // applied with rules::fixes() off)
+    uint8_t cleric_xp_wis = 0;
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a

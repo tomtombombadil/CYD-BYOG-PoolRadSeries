@@ -289,7 +289,7 @@ struct Profile {
         const char* types_file;
         uint8_t     arrow, quarrel, dart, flask;   // missiles, flask of oil (names)
         uint8_t     keep1, keep2;                  // name words that keep a missile's name singular
-        uint8_t     elf_bonus[6];                  // +1 to hit for elves (bows, short / long sword)
+        uint8_t     elf_bonus[8];                  // +1 to hit for elves (bows, short / long sword)
         uint32_t    buy_items, buy;                // GAME.OVR: "Items: " (the shop's list), "Buy"
         uint32_t    list_next, list_prev, list_exit;   //   a list's " Next", " Prev", " Exit"
         uint32_t    shop_menu, shop_menu_money;    //   "Buy View Pool Appraise Exit" / with Take, Share

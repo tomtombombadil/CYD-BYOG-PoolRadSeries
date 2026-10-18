@@ -1145,7 +1145,8 @@ const Profile kProfiles[] = {
      // file; arrows 30, quarrels 12, darts 5; the elves' bows and swords
      // 22-25, 18, 19 (its types are its words' numbers); the menu word
      .items = {.words = {0xED42, 21, 124}, .types_file = "ITEMS", .arrow = 30, .quarrel = 12, .dart = 5,
-               .elf_bonus = {22, 23, 24, 25, 18, 19},
+               // (types 0x16-0x1A, 0x13, 0x12: GAME.OVR 0x382C6)
+               .elf_bonus = {22, 23, 24, 25, 26, 18, 19},
                // (its GAME.OVR words where Curse's are; no "Weapon" / "Armor")
                .buy_items = 0x8532, .buy = 0x853A, .list_next = 0x3E5AF, .list_prev = 0x3E5B5,
                .list_exit = 0x3E5BB, .shop_menu = 0x8C6C, .shop_menu_money = 0x8C45, .no_money = 0x8962,
@@ -1266,14 +1267,14 @@ const Profile kProfiles[] = {
                 .faerie = 0, .blinded = 0x21, .animals_blind = 0x45, .feeble = 0x44,
                 // Its monsters' effects (MON1SPC): deadly poison 0x40 / -2 0x56, paralysis on a hit
                 // 0x58, immune to nonmagical weapons 0x67, fire 0x5D, cold 0x62, electricity 0x06,
-                // the iron golem's spell immunity 0x4F, the gazes 0x3A / 0x3B, breath 0x5A / 0x53 /
-                // 0x50; 0x51 and 0x60 unnamed in Secret - taken as Curse's (half damage, the hug)
+                // the iron golem's spell immunity 0x4F, the gazes 0x3A / 0x3B, breath 0x68 / 0x53 /
+                // 0x50, the slug's spit 0x51, charm and sleep 0x60
                 .mon = {.poison = 0x40, .poison_m2 = 0x56, .kreen_bite = 0x58, .heat_proof = {0x14, 0x36, 0x3D},
                         .need_magic = 0x67,
                         .no_fire = 0x5D, .no_cold = 0x62, .no_elec = 0x06,
                         .no_magic = 0x4F, .globe = 0x3F, .elf_sleep = 0x5F, .charm_sleep = 0x60,
                         .detect = 0x18, .prot_evil_near = 0x2D,
-                        .acid_breath = 0x5A, .fire_breath = 0x68, .hound_fire = 0x50, .slug_spit = 0x51, .stone_gaze = 0x3A,
+                        .fire_breath = 0x68, .hound_fire = 0x50, .slug_spit = 0x51, .stone_gaze = 0x3A,
                         .mirror_gaze = 0x3B,
                         .paralyzed = 0x34, .poisoned = 0x37, .sleep = 0x35,
                         // Secret's own (secret_facts_2.md 15): the iron golem, cockatrice,
@@ -1281,14 +1282,20 @@ const Profile kProfiles[] = {
                         // dreadlord's immunities (fear; charm and sleep; poison and paralysis)
                         .need_plus3 = 0x3C, .petrify_hit = 0x41, .swallow = 0x42, .pyro_fire = 0x43,
                         .confuse_gaze = 0x46, .cold_breath = 0x53, .no_fear = 0x5C, .no_poison = 0x63,
-                        .slug_secret = true},
+                        .slug_secret = true,
+                        // (secret_facts_2.md 29.monsters: 0x5A is the slug's blunt-weapon
+                        // immunity, not an acid breath; 0x49 the dragons' breath immunity;
+                        // the iron golem's damage rule; the gaze's mirror effect 0x48;
+                        // the pseudo-spells 0x3D / 0x44's reaches; paralysis 10 rounds)
+                        .blunt_proof = 0x5A, .no_breath = 0x49, .golem = 0x4F, .reflect = 0x48,
+                        .far_reach = 6, .near_reach = 1, .para_rounds = 10, .secret_ways = true},
                 .sp = {.enlarge = 0x0C, .confuse = 0x23, .berserk = 0x4D, .evil_ward = 0x04, .evil_bane = 0x20,
                        .hot = 0x32, .cold = 0x36, .zap = 0x70, .slow_poison = 0x16, .poison_damage = 0x0F,
                        .hammer = 0x17, .animated = 0, .con_regen = 0x3E, .giant = 0x71, .shield = 0x11,
                        .enfeeble = 0x1D, .ill = 0x22, .weak = 0x2B, .sick = 0x2C, .stun = 0x6A},
                 .race = {0x61, 0x12, 0x1A, 0x07, 0x2F, 0x30, 0x69},
                 .items = {.displace = 0x59, .ring_invisible = 0x38},
-                .berserk = 0x6B},
+                .berserk = 0x6B, .cleric_xp_wis = 15},
                kSecretFight, sizeof kSecretFight / sizeof kSecretFight[0]},
      // The sound driver: Curse's in START.EXE (segment 0x7E4), 13 sounds
      // (the same byte code but the missile's), its Tandy byte code past
