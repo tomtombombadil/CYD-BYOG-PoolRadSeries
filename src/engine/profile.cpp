@@ -1440,6 +1440,16 @@ const Profile kProfiles[] = {
                .title = kP | 0xB5A8, .heading = kP | 0xB5D1, .yes = 0x3430D, .no = 0x34314, .cursed = 0x25099,
                .wrong_class = 0x250A6, .already = 0x250B2, .hands_full = 0x250C1, .plural_s = 0x35ABD,
                .types_head = 0, .menu = kP | 0xCC11},
+     // Character rules (darkness_facts.md 37): the tables in Darkness's
+     // shapes (classes::Layout dk, with Secret's rules otherwise - secret):
+     // spells 0x6519 (127), THAC0 0x6D18, class flags / masks, last hit die,
+     // thief skills, race tables, class records 0x71AE (xp steps 0x6EDB),
+     // saves 0x79FA; hit dice count / sides, icon colours
+     .create = {.ds_image = 0x9E70,
+                .tables = {0x6519, 0x7CDE, 0x6519, 127, 0x6D18, 0x6DB2, 0x6DB9, 0x6DC9, 0x6DDB, 0x6E73, 0x6E76,
+                           0x6EF7, 0x6F57, 0x6FAB, 0x7053, 0x708F, 0x70F5, 0x71AE, 0x79FA, false, 0, 0, 0, true,
+                           true, 0x6EDB},
+                .hp_count = 0x6DD0, .hp_dice = 0x6DD7, .icon_colours = 0x6DDE},
      // The items screen's other words (Use ... Id, Deposit from items.menu):
      // its data segment's where it has them (DS 0x1738 on), else GAME.OVR
      .item_words = {0, 0, 0, 0, 0, 0, 0, 0x24795, kP | 0xB64C, 0x253D4, kP | 0xB5FA, kP | 0xB623, 0, 0x2530A,

@@ -637,6 +637,34 @@ int main(int argc, char** argv)
             if (mr) for (int cls = 0; cls < 7; ++cls) { printf("  table class %d:", cls); for (int lv = 1; lv <= 12; ++lv) { printf(" ["); for (int k = 0; k < 5; ++k) printf("%d%s", mr->tables.save(cls, lv, k), k < 4 ? "," : ""); printf("]"); } printf("\n"); }
             delete mr;
         }
+        if (getenv("RULECHECK")) {      // RULECHECK: each member's class values as the tables make them, against the record's
+            play::MagicRules* mr = nullptr;
+            if (play::load_rules(mr))
+                for (int i = 0; i < play::pt->count; ++i) {
+                    const party::Character& o = play::pt->m[i];
+                    party::Character* cc = new party::Character(o);
+                    classes::class_bonuses(*cc, mr->tables);
+                    char nm[20];
+                    o.name(nm, sizeof nm);
+                    std::string diffs;
+                    auto cmp = [&](const char* what, int a, int b) {
+                        if (a != b) { char t[64]; snprintf(t, sizeof t, " %s %d->%d", what, a, b); diffs += t; }
+                    };
+                    cmp("thac0", o.rec[0x73], cc->rec[0x73]);
+                    for (int k = 0; k < 5; ++k) cmp("save", o.rec[0xDF + k], cc->rec[0xDF + k]);
+                    for (int k = 0; k < 8; ++k) cmp("thief", o.rec[0xEA + k], cc->rec[0xEA + k]);
+                    cmp("attacks", o.rec[0x11C], cc->rec[0x11C]);
+                    cmp("classflags", o.rec[0x12B], cc->rec[0x12B]);
+                    for (int k = 0; k < 3; ++k)
+                        for (int lv = 1; lv <= 9; ++lv) cmp(k == 0 ? "clslot" : k == 1 ? "drslot" : "muslot", classes::slots(o, k, lv), classes::slots(*cc, k, lv));
+                    for (int sp = 1; sp <= 126; ++sp) cmp("book", classes::in_book(o, sp), classes::in_book(*cc, sp));
+                    printf("  rules %d %s:%s\n", i, nm, diffs.empty() ? " all the same" : diffs.c_str());
+                    for (int cls = 0; cls < 7; ++cls)
+                        if (o.level(cls) > 0) printf("    class %d level %d: next at %d (has %u)\n", cls, o.level(cls), (int)mr->tables.exp_needed(cls, o.level(cls)), (unsigned)o.exp());
+                    delete cc;
+                }
+            delete mr;
+        }
         printf("party menu:");
         for (int i = 0; i < play::pm_lines; ++i) printf(" [%s]", play::d->item[play::pm_item[i]]);
         printf("\n");

@@ -3764,6 +3764,67 @@ static void test_items()
     CHECK(vt.take_minutes() == 75 && vt.take_minutes() == 0);
 }
 
+// Darkness's table shapes (darkness_facts.md 37): THAC0 rows of 22, saves
+// rows of 105 to 21st level, 301-byte class records - experience to 11th
+// level then steps, slot totals at +0x26 + level x 9 (to 29th) - slots 1-9
+// (8th / 9th in the extension), spells to 126, a dual-class human's saves
+// from the former class once the new one has passed it
+static void test_dk_tables()
+{
+    classes::Layout l{};
+    l.lo = 0x1000; l.hi = 0x2500;
+    l.spells = 0x1000; l.spell_count = 127;
+    l.thac0 = 0x1800; l.saves = 0x1900; l.class_records = 0x1C00; l.xp_step = 0x2480;
+    l.secret = true; l.dk = true;
+    static uint8_t ds[0x1500];
+    memset(ds, 0, sizeof ds);
+    auto at = [&](int off) -> uint8_t& { return ds[off - 0x1000]; };
+    auto put32 = [&](int off, uint32_t v) { for (int i = 0; i < 4; ++i) at(off + i) = static_cast<uint8_t>(v >> (8 * i)); };
+    // spell 120: magic-user (class code 2) level 8; spell 126: cleric 9 (Secret's shape: byte 0 its own)
+    at(0x1000 + 120 * 16 + 1) = 2; at(0x1000 + 120 * 16 + 2) = 8;
+    at(0x1000 + 126 * 16 + 1) = 0; at(0x1000 + 126 * 16 + 2) = 9;
+    for (int c = 0; c < 7; ++c) {
+        for (int lv = 0; lv < 22; ++lv) at(0x1800 + c * 22 + lv) = static_cast<uint8_t>(30 + lv);
+        // (levels 1-21: a class's 21st is the next class's 0th place, as the original's table)
+        for (int lv = 1; lv <= 21; ++lv)
+            for (int k = 0; k < 5; ++k) at(0x1900 + c * 105 + lv * 5 + k) = static_cast<uint8_t>(20 - lv / 2 - (c == 0 ? 3 : 0));
+        const int r = l.class_records + c * 301;
+        for (int lv = 0; lv <= 11; ++lv) put32(r + lv * 4, static_cast<uint32_t>(lv * 1000));
+        put32(0x2480 + c * 4, 50000);
+        for (int lv = 1; lv <= 29; ++lv)
+            for (int sl = 1; sl <= 9; ++sl) at(r + 0x26 + lv * 9 + sl) = static_cast<uint8_t>(lv >= sl * 2 ? lv / 3 + 1 : 0);
+    }
+    classes::Tables t;
+    CHECK(t.set(l, ds, sizeof ds));
+    CHECK(t.top_level() == 40 && t.slot_levels() == 9 && t.record_size() == 301 && t.classes() == 7);
+    CHECK(t.thac0(classes::Fighter, 30) == 51 && t.thac0(classes::Fighter, 5) == 35);
+    CHECK(t.save(classes::Fighter, 30, 0) == 10 && t.save(classes::Fighter, 4, 0) == 18);
+    CHECK(t.exp_needed(classes::Fighter, 3) == 4000 && t.exp_needed(classes::Fighter, 10) == 11000);
+    CHECK(t.exp_needed(classes::Fighter, 11) == 11000 + 50000 && t.exp_needed(classes::Fighter, 20) == 11000 + 10 * 50000);
+    CHECK(t.exp_needed(classes::Fighter, 40) == -1);
+    CHECK(t.slots_at(classes::MagicUser, 20, 8) == 7 && t.slots_at(classes::MagicUser, 35, 1) == 10);
+    CHECK(t.spell_class(120) == 2 && t.spell_level(120) == 8 && t.spell_class(126) == 0 && t.spell_level(126) == 9);
+    party::Character c;
+    c.rec[0x10E] = 20;                  // magic-user 20 (levels at 0x109 + class)
+    c.rec[0x12] = c.rec[0x13] = 18;     // Int 18
+    classes::spell_slots(c, t);
+    CHECK(classes::slots(c, 2, 8) == 7 && classes::slots(c, 2, 9) == 7 && classes::slots(c, 2, 1) == 7);
+    c.rec[0x13] = 15;                   // Int 15: no 8th / 9th level spells
+    classes::spell_slots(c, t);
+    CHECK(classes::slots(c, 2, 8) == 0 && classes::slots(c, 2, 7) == 7);
+    // Spells past 117 in the extension
+    classes::to_book(c, 120);
+    CHECK(classes::in_book(c, 120) && c.ext[party::kExtBook2 + 2] == 1 && !classes::in_book(c, 121));
+    // A human magic-user 12 who was a cleric 11: the cleric's saves once 12 > 11
+    party::Character h;
+    h.rec[0x74] = 7;                    // human
+    h.rec[0x10E] = 12;                  // magic-user 12
+    h.rec[0x111] = 11;                  // former cleric 11 (old levels at 0x111)
+    h.rec[0xE6] = 11;
+    classes::saving_throws(h, t);
+    CHECK(h.rec[0xDF] == 20 - 5 - 3);   // (the cleric row at 11th: 20 - 5 - 3, better than the magic-user's 14)
+}
+
 // Synthetic rule tables (made-up numbers in the games' layout) for the
 // class rules and Create New Character
 static void make_tables(classes::Tables& t)
@@ -7246,6 +7307,7 @@ int main()
     test_anim();
     test_vga();
     test_dk_anim();
+    test_dk_tables();
     test_chain_frame();
     test_dk_walls();
     test_font();

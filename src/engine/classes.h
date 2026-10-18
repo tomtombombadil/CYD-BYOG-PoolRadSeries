@@ -58,6 +58,17 @@ struct Layout {
     // levels 1-7), 119 spells; its race-indexed tables in its own race
     // order (party::race_to_secret)
     bool     secret = false;
+    // Pools of Darkness's (darkness_facts.md 37; set with secret, whose
+    // rules it keeps unless a dk shape says otherwise): levels to 40 -
+    // THAC0 [class][22 levels 0-21], saves + class * 105 + min(level, 21) *
+    // 5, class records of 301 bytes (12 x u32 experience for levels 0-11,
+    // past 11 level 11's + (level - 11) x xp_step[class] (7 x u32); spell
+    // slots in all - not gains - at +0x26 + min(level, 29) x 9 + spell
+    // level 1-9), 127 spells in Secret's shape with class codes 0 cleric, 1
+    // druid, 2 magic-user, 3 items; thief skills to 18th level; its races
+    // numbered its own way (party::race_to_darkness)
+    bool     dk = false;
+    uint16_t xp_step = 0;
 };
 
 // A copy of the tables (read from the program; on the heap, as big as the
@@ -85,12 +96,12 @@ public:
 
     // The highest level the tables have (Curse 12, Pool 9, Secret 18; THAC0
     // one more row in Pool)
-    int  top_level() const { return lay.pool ? 9 : lay.secret ? 18 : 12; }
+    int  top_level() const { return lay.dk ? 40 : lay.pool ? 9 : lay.secret ? 18 : 12; }
     // Classes with rows in the tables (Secret has no monk's)
     int  classes() const { return lay.secret ? 7 : kClasses; }
     int  thac0(int cls, int level) const
     {
-        const int n = lay.pool ? 11 : lay.secret ? 19 : 13;
+        const int n = lay.dk ? 22 : lay.pool ? 11 : lay.secret ? 19 : 13;
         if (cls >= classes()) return 0;
         if (level > n - 1) level = n - 1;
         return s8(static_cast<uint16_t>(lay.thac0 + cls * n + level));
@@ -102,12 +113,20 @@ public:
     int  save(int cls, int level, int kind) const
     {
         if (cls >= classes()) return 20;
+        if (lay.dk) return u8(static_cast<uint16_t>(lay.saves + cls * 105 + (level > 21 ? 21 : level) * 5 + kind));
         if (level > top_level()) level = top_level();
         return u8(static_cast<uint16_t>(lay.saves + cls * (lay.pool ? 45 : lay.secret ? 90 : 60) + level * 5 + kind));
     }
-    int  record_size() const { return lay.pool ? 56 : lay.secret ? 187 : 99; }
-    // Spell levels a class record's slot rows have (Curse 5, Secret 7)
-    int  slot_levels() const { return lay.secret ? 7 : 5; }
+    int  record_size() const { return lay.dk ? 301 : lay.pool ? 56 : lay.secret ? 187 : 99; }
+    // Spell levels a class record's slot rows have (Curse 5, Secret 7, Darkness 9)
+    int  slot_levels() const { return lay.dk ? 9 : lay.secret ? 7 : 5; }
+    // Darkness: the slots of spell level `sl` (1-9) a class has in all at `level`
+    int  slots_at(int cls, int level, int sl) const
+    {
+        if (cls >= classes() || level < 1) return 0;
+        if (level > 29) level = 29;
+        return u8(static_cast<uint16_t>(lay.class_records + cls * 301 + 0x26 + level * 9 + sl));
+    }
     // Spell slots gained on reaching `level` (2-top): row level - 2
     int  slots_gained(int cls, int level, int col) const
     {
@@ -116,7 +135,11 @@ public:
                                         (level - 2) * slot_levels() + col));
     }
     // A race-indexed table's row for the record's race (Curse's numbers)
-    int  race_row(int race) const { return lay.secret ? party::race_to_secret(static_cast<uint8_t>(race)) : race; }
+    int  race_row(int race) const
+    {
+        if (lay.dk) return party::race_to_darkness(static_cast<uint8_t>(race));
+        return lay.secret ? party::race_to_secret(static_cast<uint8_t>(race)) : race;
+    }
     // Pool: the spell slots a class has in all at `level` (2-9), level col + 1
     int  slots_total(int cls, int level, int col) const
     {
@@ -126,6 +149,13 @@ public:
     int32_t exp_needed(int cls, int level) const
     {
         if (level < 1 || level > top_level() - 1 || cls >= classes()) return -1;
+        if (lay.dk) {
+            // (Darkness, ovr 0x39349: the table to 11th level, then steps)
+            const uint16_t r = static_cast<uint16_t>(lay.class_records + cls * 301);
+            const int next = level + 1;
+            if (next <= 11) return i32(static_cast<uint16_t>(r + next * 4));
+            return i32(static_cast<uint16_t>(r + 11 * 4)) + (next - 11) * i32(static_cast<uint16_t>(lay.xp_step + cls * 4));
+        }
         return i32(static_cast<uint16_t>(lay.class_records + cls * record_size() + (level - 1) * 4));
     }
     // 0 cleric, 1 druid, 2 magic-user, 3 the items' and monsters' (Pool's numbers moved to these)
@@ -135,6 +165,7 @@ public:
     int  spell_class(int spell) const
     {
         const int v = u8(spell_row(spell));
+        if (lay.dk) return v;               // (Darkness's own codes are these)
         if (lay.secret) return v >= 3 ? v - 1 : v;
         return lay.pool && v > 0 ? v + 1 : v;
     }
@@ -155,9 +186,10 @@ int skill_level(const party::Character& c, int cls);
 void class_bonuses(party::Character& c, const Tables& t);
 
 // Spell slots of a kind (0 cleric, 1 druid, 2 magic-user) and spell level
-// (1-5 in the record, Secret's 6 and 7 in its extension)
+// (1-5 in the record, Secret's 6 and 7 and Darkness's 8 and 9 in the extension)
 int slots(const party::Character& c, int cls, int level);
-// The spell book: spells 1-100 in the record, Secret's 101-117 in its extension
+// The spell book: spells 1-100 in the record, Secret's 101-117 and Darkness's
+// 118-126 in the extension
 bool in_book(const party::Character& c, int spell);
 void to_book(party::Character& c, int spell);
 

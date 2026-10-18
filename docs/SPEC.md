@@ -1371,6 +1371,20 @@ the scripts' changed ops, the rule tables, fights, the rest.
   0x249A0 makes them - Use where byte 0x02 allows, Deposit in the vault,
   Sell / Id in a shop), its words in its data segment (DS 0x1738 on) or
   its item overlay, the outer frame alone. Binky's items match DOSBox.
+- **v0.127.0 - the rule tables.** `classes::Layout` dk (with secret: its
+  rules otherwise Secret's): levels to 40 - THAC0 rows of 22, saves rows
+  of 105 to 21st level, 301-byte class records (experience to 11th level
+  then a step a level, ovr 0x39349; slot TOTALS for spell levels 1-9 to
+  29th level), 127 spells with class codes 0-3, thief skills to 18th;
+  slots 8 / 9 and spells 118-126 in the extension. Its slots (ovr
+  0x3809F, 0x3860C, 0x3874F): Wisdom's extra cleric slots, no 6th / 7th
+  under Wisdom 17 / 18, paladins past 8th cleric 1-4, rangers past 7th
+  druid 1-3 and magic-user 1-2, magic-users without 6th-9th under
+  Intelligence 12 / 14 / 16 / 18. Saves: a dual-class human's former
+  class counts once the new one has passed it (ovr 0x387B0, 0x38C8A).
+  The playsim's RULECHECK: the GOG party's six records - THAC0, saves,
+  thief skills, attacks, class flags, slots 1-9, books 1-126 - all as the
+  original stored them.
 
 ## 7. The journal (Tom, 2026-10-06)
 

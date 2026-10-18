@@ -23,7 +23,8 @@ uint8_t& cast(party::Character& c, int cls, int lvl)
 {
     if (lvl < 5) return c.rec[kCastCount + cls * 5 + lvl];
     static const uint8_t kAt[3] = {party::kExtCleric67, party::kExtDruidMore, party::kExtMage67};
-    return c.ext[kAt[cls] + (lvl - 5)];
+    static const uint8_t kAt89[3] = {party::kExtCleric89, party::kExtDruid89, party::kExtMage89};
+    return lvl < 7 ? c.ext[kAt[cls] + (lvl - 5)] : c.ext[kAt89[cls] + (lvl - 7)];
 }
 
 void clear_slots(party::Character& c, const Tables& t)
@@ -133,10 +134,63 @@ static void pool_slots(party::Character& c, const Tables& t)
     }
 }
 
+// Darkness (darkness_facts.md 37; ovr 0x3809F, 0x3860C, 0x3874F): the
+// class records' totals at the level (to 29th); a cleric's Wisdom bonus,
+// no 6th level under Wisdom 17, no 7th under 18, every cleric spell of the
+// levels they have; a paladin past 8th the cleric slots 1-4 of its own
+// record; a ranger past 7th druid 1-3 (columns 1-3) and magic-user 1-2
+// (columns 5-6); a magic-user's from its record, then no 6th under
+// Intelligence 12, 7th under 14, 8th under 16, 9th under 18
+static void dk_slots(party::Character& c, const Tables& t)
+{
+    clear_slots(c, t);
+    const int wis = c.rec[kWisFull], intel = c.rec[0x13];
+    int lv = skill_level(c, Cleric);
+    if (lv > 0) {
+        for (int k = 0; k < 9; ++k) cast(c, 0, k) = static_cast<uint8_t>(t.slots_at(Cleric, lv, k + 1));
+    }
+    lv = skill_level(c, Paladin);
+    if (lv > 8)
+        for (int k = 0; k < 4; ++k)
+            cast(c, 0, k) = static_cast<uint8_t>(cast(c, 0, k) + t.slots_at(Paladin, lv, k + 1));
+    if (skill_level(c, Cleric) > 0) {
+        wisdom_spells(c);
+        if (wis < 17) cast(c, 0, 5) = 0;
+        if (wis < 18) cast(c, 0, 6) = 0;
+    }
+    lv = skill_level(c, Ranger);
+    if (lv > 7) {
+        for (int k = 0; k < 3; ++k) cast(c, 1, k) = static_cast<uint8_t>(cast(c, 1, k) + t.slots_at(Ranger, lv, k + 1));
+        for (int k = 0; k < 2; ++k) cast(c, 2, k) = static_cast<uint8_t>(cast(c, 2, k) + t.slots_at(Ranger, lv, k + 5));
+    }
+    lv = skill_level(c, MagicUser);
+    if (lv > 0) {
+        for (int k = 0; k < 9; ++k) cast(c, 2, k) = static_cast<uint8_t>(cast(c, 2, k) + t.slots_at(MagicUser, lv, k + 1));
+        static const int kNeed[4] = {12, 14, 16, 18};
+        for (int k = 0; k < 4; ++k)
+            if (intel < kNeed[k]) cast(c, 2, 5 + k) = 0;
+    }
+    // The spells clerics (and paladins) and rangers know: those of the levels they have slots for
+    for (int s = 1; s < t.lay.spell_count; ++s) {
+        const int k = t.spell_class(s), lvl = t.spell_level(s);
+        if (lvl < 1 || lvl > 9 || k > 2) continue;
+        if (k == 0 && cast(c, 0, lvl - 1) > 0) learn(c, s);
+        else if (k == 1 && cast(c, 1, lvl - 1) > 0) learn(c, s);
+        else if (k == 2 && skill_level(c, Ranger) > 7 && skill_level(c, MagicUser) <= 0 && cast(c, 2, lvl - 1) > 0)
+            learn(c, s);
+    }
+}
+
 void spell_slots(party::Character& c, const Tables& t)
 {
     if (t.lay.pool) {
         pool_slots(c, t);
+        return;
+    }
+    if (t.lay.dk) {
+        dk_slots(c, t);
+        for (int i = 0; i < c.n_items; ++i)
+            if (c.items[i][0x34] && items::passive(c.items[i]) == items::Passive::Wizardry) wizardry(c, t, true);
         return;
     }
     clear_slots(c, t);
@@ -229,10 +283,21 @@ void wizardry(party::Character& c, const Tables& t, bool on)
 
 void saving_throws(party::Character& c, const Tables& t)
 {
+    // Darkness (ovr 0x387B0, its level at 0x392EE): a class's level is the
+    // higher of its own and - once the new class has passed the old ones
+    // (0x38C8A: the highest level over record 0x139) - its former level
+    bool former = false;
+    if (t.lay.dk) {
+        int top = 0;
+        for (int cls = 0; cls < 7; ++cls)
+            if (c.level(cls) > top) top = c.level(cls);
+        former = top > c.rec[kMultiLevel];
+    }
     for (int kind = 0; kind < 5; ++kind) {
         int best = 20;
         for (int cls = 0; cls < kClasses; ++cls) {
-            const int lv = c.level(cls);
+            int lv = c.level(cls);
+            if (former && c.old_level(cls) > lv) lv = c.old_level(cls);
             if (lv <= 0) continue;
             const int v = t.save(cls, lv, kind);
             if (v < best) best = v;
@@ -268,6 +333,7 @@ void thief_skills(party::Character& c, const Tables& t)
 {
     int lv = skill_level(c, Thief);
     if (lv > t.top_level()) lv = t.top_level();
+    if (t.lay.dk && lv > 18) lv = 18;           // (Darkness's table: to 18th level, ovr 0x38A11)
     const int dex = c.rec[kDexFull];
     // The first readied Gauntlets of Dexterity (item effect 0x82) or Gloves
     // of Thievery (0x8B; curse_finish_facts.md 5.4)
@@ -367,7 +433,7 @@ void class_bonuses(party::Character& c, const Tables& t)
 
 int slots(const party::Character& c, int cls, int level)
 {
-    if (cls < 0 || cls > 2 || level < 1 || level > 7) return 0;
+    if (cls < 0 || cls > 2 || level < 1 || level > 9) return 0;
     return cast(const_cast<party::Character&>(c), cls, level - 1);
 }
 
@@ -375,6 +441,7 @@ bool in_book(const party::Character& c, int spell)
 {
     if (spell >= 1 && spell <= 100) return c.rec[kSpellBook + spell - 1] != 0;
     if (spell > 100 && spell <= 117) return c.ext[party::kExtBook + spell - 101] != 0;   // (Secret's)
+    if (spell > 117 && spell <= 126) return c.ext[party::kExtBook2 + spell - 118] != 0;  // (Darkness's)
     return false;
 }
 
@@ -382,6 +449,7 @@ void to_book(party::Character& c, int spell)
 {
     if (spell >= 1 && spell <= 100) c.rec[kSpellBook + spell - 1] = 1;
     else if (spell > 100 && spell <= 117) c.ext[party::kExtBook + spell - 101] = 1;   // (Secret's)
+    else if (spell > 117 && spell <= 126) c.ext[party::kExtBook2 + spell - 118] = 1;  // (Darkness's)
 }
 
 } // namespace classes
