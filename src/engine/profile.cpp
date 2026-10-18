@@ -1260,7 +1260,7 @@ const Profile kProfiles[] = {
                        .enfeeble = 0x1D, .ill = 0x22, .weak = 0x2B, .sick = 0x2C, .stun = 0x6A},
                 .race = {0x61, 0x12, 0x1A, 0x07, 0x2F, 0x30, 0x69},
                 .items = {.displace = 0x59, .ring_invisible = 0x38},
-                .berserk = 0x6B},
+                .berserk = 0x6B, .cleric_xp_wis = 15},
                kSecretFight, sizeof kSecretFight / sizeof kSecretFight[0]},
      // The sound driver: Curse's in START.EXE (segment 0x7E4), 13 sounds
      // (the same byte code but the missile's), its Tandy byte code past

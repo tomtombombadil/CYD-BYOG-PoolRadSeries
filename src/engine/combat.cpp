@@ -2346,7 +2346,7 @@ int award(Battle& b, int total)
         for (int k = 0; k < 8; ++k)
             if (r[0x109 + k]) ++classes;
         switch (r[0x75]) {
-        case 0: if (wis > 15) add += share / 10; break;
+        case 0: if (wis >= (b.fx && b.fx->cleric_xp_wis && !rules::fixes() ? b.fx->cleric_xp_wis : 16)) add += share / 10; break;
         case 2: if (str > 15) add += share / 10; break;
         case 3: if (str > 15 && wis > 15) add += share / 10; break;
         case 4: if (str > 15 && in > 15 && wis > 15) add += share / 10; break;

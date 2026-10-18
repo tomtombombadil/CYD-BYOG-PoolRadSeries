@@ -957,6 +957,81 @@ void turns()
     b.round = 0;
 }
 
+// ---- D: the fight's end - the share of the experience (GAME.OVR 0x6DA3;
+// the divisor counted at 0x6F90: the party less those out of the fight or
+// animated): +10% for the prime requisites - cleric Wisdom over 14 in
+// Secret's program (AD&D's 16 with the fixes on), fighter Strength, paladin
+// Strength and Wisdom, ranger Strength, Intelligence and Wisdom, magic-user
+// Intelligence, thief Dexterity, each over 15, druids none - two classes
+// half; the treasure's worth (0x6C8D: each coin on its own - copper / 200,
+// silver / 20, electrum / 2, gold, platinum x 5, gems x 250, jewellery x
+// 2200)
+uint32_t xp(int i)
+{
+    const uint8_t* r = F(i).rec;
+    return r[0x127] | r[0x128] << 8 | r[0x129] << 16 | static_cast<uint32_t>(r[0x12A]) << 24;
+}
+void fight_end()
+{
+    using namespace play;
+    if (!new_fight()) {
+        expect(Q, "a fight", false);
+        return;
+    }
+    char w[140];
+    // class, the stat in use (Str 0x11, Int 0x13, Wis 0x15, Dex 0x17) at 15 or 16
+    struct M { int cls; int stats[3]; int levels; const char* what; };
+    const M ms[] = {{0, {0x15}, 1, "cleric"}, {2, {0x11}, 1, "fighter"}, {5, {0x13}, 1, "magic-user"},
+                    {6, {0x17}, 1, "thief"}, {1, {0x15}, 1, "druid (none)"}, {3, {0x11, 0x15}, 1, "paladin"}};
+    for (int fixes = 0; fixes < 2; ++fixes)
+        for (int value : {15, 16}) {
+            rules::set_fixes(fixes != 0);
+            for (int i = 0; i < 6; ++i) {
+                put(i, 0, 2 + i, 2, 30);
+                for (int k = 0x10; k < 0x1E; ++k) F(i).rec[k] = 10;
+                F(i).rec[0x75] = static_cast<uint8_t>(ms[i].cls);
+                for (int k = 0; k < 8; ++k) F(i).rec[0x109 + k] = 0;
+                F(i).rec[0x109 + ms[i].cls] = 5;
+                for (int st : ms[i].stats) if (st) F(i).rec[st] = static_cast<uint8_t>(value);
+                F(i).rec[0x127] = F(i).rec[0x128] = F(i).rec[0x129] = F(i).rec[0x12A] = 0;
+            }
+            const int share = combat::award(fg->b, 6000);
+            for (int i = 0; i < 6; ++i) {
+                const bool plus = (ms[i].cls == 0 ? value >= (fixes ? 16 : 15) : value >= 16) && ms[i].cls != 1;
+                const uint32_t want = 1000 + (plus ? 100 : 0);
+                snprintf(w, sizeof w, "the share: a %s at %d, fixes %s", ms[i].what, value, fixes ? "on" : "off");
+                expect(Q, w, share == 1000 && xp(i) == want, "share %d, got %u, the original's %u", share, xp(i), want);
+            }
+        }
+    rules::set_fixes(true);
+    // Out of the fight (in combat 0) or animated: no share, not counted;
+    // a fighter / magic-user (class 13) half
+    for (int i = 0; i < 6; ++i) {
+        put(i, 0, 2 + i, 2, 30);
+        for (int k = 0x10; k < 0x1E; ++k) F(i).rec[k] = 10;
+        F(i).rec[0x75] = 2;
+        for (int k = 0; k < 8; ++k) F(i).rec[0x109 + k] = 0;
+        F(i).rec[0x109 + 2] = 5;
+        F(i).rec[0x127] = F(i).rec[0x128] = F(i).rec[0x129] = F(i).rec[0x12A] = 0;
+    }
+    F(4).rec[0x196] = 0;
+    F(4).rec[0x195] = party::Dead;
+    F(5).rec[0x195] = party::Animated;
+    F(3).rec[0x75] = 13;
+    F(3).rec[0x109 + 5] = 5;
+    const int share = combat::award(fg->b, 4000);
+    expect(Q, "the share: 4 left of 6 (one dead, one animated)", share == 1000 && xp(4) == 0 && xp(5) == 0 && xp(0) == 1000,
+           "share %d, %u %u %u", share, xp(0), xp(4), xp(5));
+    expect(Q, "the share: a fighter / magic-user half", xp(3) == 500, "%u", xp(3));
+    // The treasure's worth, each coin on its own
+    {
+        const int m[7] = {399, 39, 3, 7, 2, 1, 1};
+        const int want = 399 / 200 + 39 / 20 + 3 / 2 + 7 + 2 * 5 + 250 + 2200;
+        expect(Q, "the treasure's experience: each coin on its own", combat::money_exp(m) == want, "%d, the original's %d",
+               combat::money_exp(m), want);
+    }
+}
+
 } // namespace mons
 
 void all_monsters()
@@ -969,5 +1044,6 @@ void all_monsters()
     }
     if (mons::part("b")) mons::effects();
     if (mons::part("c")) mons::turns();
+    if (mons::part("d")) mons::fight_end();
     mons::no_dice();
 }

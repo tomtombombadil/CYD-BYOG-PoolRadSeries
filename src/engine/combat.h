@@ -274,6 +274,10 @@ struct Facts {
     // level / 4 + 2 (Curse: (level - 1) / 4 + 2)
     uint8_t backstab_armour = 0;
     bool    backstab_plain = false;
+    // The cleric's +10% experience from this Wisdom in use (0: AD&D's 16;
+    // Secret's program 15 - GAME.OVR 0x6E04 - the original's mistake,
+    // applied with rules::fixes() off)
+    uint8_t cleric_xp_wis = 0;
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a
