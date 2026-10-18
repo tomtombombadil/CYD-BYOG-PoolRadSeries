@@ -933,6 +933,54 @@ void modify_bounds()
     }
 }
 
+// ---- The shop's Sell (GAME.OVR 0x29D3A): value / 2; a bundle of arrows
+// (30) or quarrels (12) count x that / 20, any other bundle count x that;
+// paid value / 5 platinum + the rest in gold (0x29FC0)
+void shop_sell()
+{
+    if (!boot()) {
+        expect(P, "boot for the shop", false);
+        return;
+    }
+    char w[120];
+    struct Case { int type, count, value, want; const char* what; };
+    const Case cases[] = {
+        {30, 20, 20, 10, "20 arrows of value 20"},
+        {12, 10, 30, 7, "10 quarrels of value 30"},
+        {5, 10, 4, 20, "10 darts of value 4"},
+        {18, 1, 101, 50, "a long sword of value 101"},
+        {18, 0, 0, 0, "a worthless one"},
+    };
+    for (const Case& k : cases) {
+        uint8_t it[items::kRecordSize] = {};
+        it[0x2E] = static_cast<uint8_t>(k.type);
+        it[0x39] = static_cast<uint8_t>(k.count);
+        it[0x3A] = static_cast<uint8_t>(k.value);
+        it[0x3B] = static_cast<uint8_t>(k.value >> 8);
+        const int v = rules::sell_value(it, d->facts);
+        snprintf(w, sizeof w, "Sell's price: %s", k.what);
+        expect(P, w, v == k.want, "%d, the original's %d", v, k.want);
+    }
+    // The payment: a sword of value 2000 (1000 gold = 200 platinum)
+    party::Character& ch = pt->m[0];
+    pt->selected = 0;
+    const int plat0 = ch.money(4), gold0 = ch.money(3);
+    if (ch.n_items < party::kMaxItems) {
+        uint8_t* it = ch.items[ch.n_items++];
+        memset(it, 0, items::kRecordSize);
+        it[0x2E] = 18;
+        it[0x39] = 1;
+        it[0x3A] = 0xD3;                        // 2003: 1001 gold = 200 platinum + 1 gold
+        it[0x3B] = 0x07;
+        item_at = ch.n_items - 1;
+        screen = Screen::Items;
+        items_yes_no(Ask::SellDeal, 'Y', C);
+        expect(P, "Sell's payment: 1001 gold as 200 platinum and 1 gold", ch.money(4) == plat0 + 200 && ch.money(3) == gold0 + 1,
+               "%d / %d", ch.money(4) - plat0, ch.money(3) - gold0);
+    }
+    screen = Screen::Game;
+}
+
 void all_situations()
 {
     if (const char* e = getenv("ENDLESS")) {
@@ -948,4 +996,5 @@ void all_situations()
     xp_award();
     camp_rest();
     modify_bounds();
+    shop_sell();
 }

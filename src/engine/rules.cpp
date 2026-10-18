@@ -954,7 +954,8 @@ int sell_value(const uint8_t* item, const ItemFacts& f)
     const items::Item it{item};
     int v = it.value() > 0 ? it.value() / 2 : 0;
     if (it.count() > 1) {
-        if (it.type() != f.arrow && it.type() != f.quarrel) v = it.count() * v / 20;
+        const bool missile = it.type() == f.arrow || it.type() == f.quarrel;
+        if (missile == f.sell_missiles_by_20) v = it.count() * v / 20;
         else v *= it.count();
     }
     return v;

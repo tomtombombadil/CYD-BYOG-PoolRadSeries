@@ -2029,10 +2029,31 @@ bool items_yes_no(Ask what, char k, pic::Canvas& c)
         const int gold = rules::sell_value(ch.items[i], d->facts);
         rules::remove_item(ch, i);
         const int plat = gold / 5;
+        bool over = false;
+        if (secret_files()) {
+            // Secret (GAME.OVR 0x29FC0): the price in platinum and gold; when
+            // it won't fit (its test weighs the price in gold - the coins
+            // with the rules fixes) the character takes what it can carry,
+            // platinum first, the rest goes on the counter
+            rules::recalc(ch, *names, d->facts);
+            int room = rules::max_load(ch) - ch.encumbrance();
+            if (room < 0) room = 0;
+            over = (rules::fixes() ? plat + gold % 5 : gold) > room;
+            const int p = over && plat > room ? room : plat;
+            room -= p;
+            const int g = over && gold % 5 > room ? room : gold % 5;
+            add_coins(ch, 4, p);
+            add_coins(ch, 3, g);
+            ground->money[4] += plat - p;
+            ground->money[3] += gold % 5 - g;
+            rules::recalc(ch, *names, d->facts);
+            back_to_items(c);
+            note(c, over ? iw(profile::kOverloadPool) : iw(profile::kSold));
+            return true;
+        }
         add_coins(ch, 4, plat);
         add_coins(ch, 3, gold % 5);
         rules::recalc(ch, *names, d->facts);
-        bool over = false;
         if (ch.encumbrance() > rules::max_load(ch)) {
             add_coins(ch, 4, -plat);              // the platinum goes on the counter
             ground->money[4] += plat;
@@ -6897,6 +6918,7 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         d->facts.quarrel = pi.quarrel;
         memcpy(d->facts.elf_bonus, pi.elf_bonus, sizeof d->facts.elf_bonus);
         d->facts.elf_bonus_any_race = secret_files();
+        d->facts.sell_missiles_by_20 = secret_files();
         d->facts.strength_fx = pi.stat_fx[0];
         d->facts.giant_fx = pi.stat_fx[1];
         d->facts.enlarge_fx = pi.stat_fx[2];
