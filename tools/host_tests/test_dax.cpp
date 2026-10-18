@@ -3849,14 +3849,14 @@ static void test_secret_rules()
     static party::Character ch;
     ch.rec[0x109] = 14;                                               // cleric level 14
     ch.rec[0x74] = 7;
-    ch.rec[0x15] = 17;                                                // (Secret: no 7th level below Wisdom 18)
+    ch.rec[0x15] = 17;                                                // Wisdom 17: no 7th level slot (Secret's rule)
     classes::spell_slots(ch, t);
     CHECK(ch.ext[party::kExtCleric67 + 1] == 0);
-    ch.rec[0x15] = 18;
+    ch.rec[0x15] = 18;                                                // 18: there (and Wisdom's 1st level two more)
     classes::spell_slots(ch, t);
     CHECK(ch.ext[party::kExtCleric67 + 1] == 1 && ch.ext[party::kExtCleric67] == 0 && ch.rec[0x12D] == 3);
     // Magic past 5th level: slots 6 / 7 and spells 101-117 in the extension
-    CHECK(classes::slots(ch, 0, 7) == 1 && classes::slots(ch, 0, 6) == 0 && classes::slots(ch, 0, 1) == 3);   // (Wisdom 18: +2)
+    CHECK(classes::slots(ch, 0, 7) == 1 && classes::slots(ch, 0, 6) == 0 && classes::slots(ch, 0, 1) == 3);
     ch.rec[0x15] = 15;                                                // Wisdom
     CHECK(!magic::add(ch, t, 101));                                   // (6th level: no slot)
     ch.ext[party::kExtCleric67] = 1;

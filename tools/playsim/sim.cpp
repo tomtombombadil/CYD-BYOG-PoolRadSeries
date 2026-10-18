@@ -613,7 +613,15 @@ int main(int argc, char** argv)
     }
     {
         play::tap(24, (12 + pm_line('L')) * 8 + 2, C);
+        if (play::load_where) {         // (Darkness: "Load from where?" - Pools)
+            shot("load_where");
+            play::tap(((int)strlen(play::menu.prompt) + play::menu.start[0]) * 8 + 2, text::kMenuRow * 8 + 2, C);
+        }
         printf("  saves [%s] menu [%s%s]\n", play::pm_saves, play::menu.prompt, play::menu.s);
+        if (!strchr(play::pm_saves, save[0])) {
+            printf("  no saved game %c\n", save[0]);
+            return 1;
+        }
         const int k = (int)(strchr(play::pm_saves, save[0]) - play::pm_saves);
         play::tap(((int)strlen(play::menu.prompt) + play::menu.start[k]) * 8 + 2, text::kMenuRow * 8 + 2, C);
         for (int i = 0; i < play::pt->count; ++i) { char n[20]; play::pt->m[i].name(n, 20); printf("  %d: %-15s AC %d HP %d/%d race %d class %d saves %d %d %d %d %d levels %d %d %d %d %d %d %d\n", i, n, play::pt->m[i].ac(), play::pt->m[i].hp(), play::pt->m[i].hp_max(), play::pt->m[i].race(), play::pt->m[i].cls(), play::pt->m[i].rec[0xDF], play::pt->m[i].rec[0xE0], play::pt->m[i].rec[0xE1], play::pt->m[i].rec[0xE2], play::pt->m[i].rec[0xE3], play::pt->m[i].rec[0x109], play::pt->m[i].rec[0x10A], play::pt->m[i].rec[0x10B], play::pt->m[i].rec[0x10C], play::pt->m[i].rec[0x10D], play::pt->m[i].rec[0x10E], play::pt->m[i].rec[0x10F]); }

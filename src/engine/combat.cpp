@@ -717,6 +717,24 @@ void drop_aff(Fighter& f, int i)
     memset(f.aff[*f.n_aff], 0, party::kAffectSize);
 }
 
+// An image of Mirror Image taken (effect k): Curse's whole data byte counts
+// down, gone at 0; Secret's images (data >> 4) one fewer, gone at none
+// (its handler GAME.OVR 0x117CE)
+// The clouds' ground values (the game's, else Curse's)
+static uint8_t cloud_g(const Battle& b) { return b.fx && b.fx->cloud_ground ? b.fx->cloud_ground : kCloudGround; }
+static uint8_t poison_g(const Battle& b) { return b.fx && b.fx->poison_ground ? b.fx->poison_ground : kPoisonGround; }
+
+static void lose_image(Battle& b, Fighter& f, int k)
+{
+    if (b.fx && b.fx->secret) {
+        const int images = (f.aff[k][3] >> 4) - 1;
+        if (images <= 0) drop_aff(f, k);
+        else f.aff[k][3] = static_cast<uint8_t>(images << 4 | (f.aff[k][3] & 0x0F));
+        return;
+    }
+    if (--f.aff[k][3] == 0) drop_aff(f, k);
+}
+
 void give_aff(Fighter& f, int type, int minutes, int data, bool call)
 {
     if (!f.n_aff) return;
@@ -1707,8 +1725,13 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
         if (fx.bestow && at.has(fx.bestow)) side -= 4;
         if (fx.blinded && at.has(fx.blinded)) side -= 4;
         if (fx.animals_blind && at.rec[0x11A] == 19 && tg.has(fx.animals_blind) && !sees) side -= 4;
-        if (hasx(tg, fx.invisible) && !sees) side -= 4;              // an invisible target
-        if (hasx(tg, fx.sp.evil_ward) && (at.rec[0x14B] & 1)) side -= 7;   // Dispel Evil against the evil
+        // Secret's program never applies these at the roll (its handlers 0x116CE
+        // invisibility and 0x1105F Dispel Evil run in phases before the d20 is
+        // rolled or at the holder's own turn - the d20 they lower is rolled
+        // after): AD&D's only with rules::fixes()
+        const bool at_roll = !fx.secret || rules::fixes();
+        if (at_roll && hasx(tg, fx.invisible) && !sees) side -= 4;              // an invisible target
+        if (at_roll && hasx(tg, fx.sp.evil_ward) && (at.rec[0x14B] & 1)) side -= 7;   // Dispel Evil against the evil
         // The races: dwarves +1 against orcs, gnomes +1 against their foes;
         // dwarves and gnomes -4 to be hit by giants and trolls of size 2,
         // gnomes by kobold-kind (type 1) of size 2
@@ -1758,7 +1781,11 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
         if (fx.sp.shield && tg.has(fx.sp.shield) && ac < 0x39) ac = 0x39;   // Shield: AC 3 at worst
         // Faerie Fire: the stored AC + 2 (to AC 0 at most) - the original's
         // own rule, which makes the target harder to hit
-        if (fx.faerie && tg.has(fx.faerie)) ac = ac < 58 ? ac + 2 : 60;
+        if (fx.faerie && tg.has(fx.faerie)) {
+            // (Secret's handler, GAME.OVR 0x130DA: the target's AC 2 worse - easier to hit)
+            if (fx.secret) ac -= 2;
+            else ac = ac < 58 ? ac + 2 : 60;
+        }
         // (protection from evil / good: the original's -2 to hit comes before
         // the roll and is lost; only the saves count)
         // Attacking makes them seen
@@ -1808,7 +1835,9 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             const int extra = roll > 1 ? wbonus + (slayer ? 2 : 0) : 0;
             bool hit = roll == 20 || (roll != 1 && roll + static_cast<int8_t>(at.rec[kHit]) + side + extra >= ac);
             // Blinking, once it has acted this round: not there to be hit
-            if (b.fx && b.fx->blink && tg.has(b.fx->blink) && tg.delay == 0) hit = false;
+            // (Secret's 0x11C9D runs only at the blinker's own turn and for being
+            // seen - never at the roll: AD&D's with rules::fixes())
+            if (b.fx && b.fx->blink && tg.has(b.fx->blink) && tg.delay == 0 && (!b.fx->secret || rules::fixes())) hit = false;
             // Displacement: the first attack (past a 1) on it this fight misses, even a 20
             if (b.fx && b.fx->items.displace && roll > 1) {
                 const int k = find_aff(tg, b.fx->items.displace);
@@ -1847,6 +1876,18 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                 if (hasx(at, m.heat) && !hasx(tg, m.heat_proof[0]) && !hasx(tg, m.heat_proof[1]) &&
                     !hasx(tg, m.heat_proof[2]))
                     dmg += d.roll(6, 1);
+                // Secret: Mirror Image takes weapon blows too (its handler 0x11751 is
+                // in the blow's damage phase 5, GAME.OVR 0x15098) - d(images + 1) over 1
+                if (b.fx->secret && b.fx->mirror) {
+                    const int mi = find_aff(tg, b.fx->mirror);
+                    if (mi >= 0 && d.roll((tg.aff[mi][3] >> 4) + 1, 1) > 1) {
+                        lose_image(b, tg, mi);
+                        out.image[out.n] = true;
+                        h.hit = false;
+                        out.hits[out.n++] = h;
+                        continue;
+                    }
+                }
                 // The target's defences against a blow: missiles dodged
                 const bool far = !adjacent(b, a, c);
                 bool dodged = false;
@@ -2138,9 +2179,12 @@ bool resists(Battle& b, int c, int effect, const Harm& h, create::Dice& d)
     if (hasx(f, m.no_poison) && (paralysis || (effect > 0 && m.poisoned && effect == m.poisoned))) return true;
     if (hasx(f, fx.race.halfelf) && sleep_charm && d.roll(100, 1) <= 30) return true;      // half-elves: 30%
     if (hasx(f, m.globe) && h.spell > 0 && h.spell_level < 4) return true;
+    // Secret's Globe of Invulnerability (0x39, GAME.OVR 0x123D3): up to the 4th level
+    if (hasx(f, fx.globe_major) && h.spell > 0 && h.spell_level <= 4) return true;
     if (hasx(f, m.no_magic) && magic) return true;
     return false;
 }
+
 
 int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* down, bool* resisted)
 {
@@ -2164,7 +2208,7 @@ int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* dow
         const int images = mi < 0 ? 0 : b.fx->mirror_plain ? f.aff[mi][3] : f.aff[mi][3] >> 4;
         if (mi >= 0 && d.roll(images + 1, 1) > 1) {
             b.lost_image = c;
-            if (--f.aff[mi][3] == 0) drop_aff(f, mi);
+            lose_image(b, f, mi);
             return 0;
         }
         // Shield: Magic Missile stopped
@@ -2215,6 +2259,7 @@ int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* dow
         if (hasx(f, m.death_ward) && (h.kind & 0x40)) safe = true;
         if (hasx(f, m.no_elec) && (h.kind & 4)) safe = true;
         if (hasx(f, m.globe) && h.spell > 0 && h.spell_level < 4) safe = true;
+        if (b.fx && hasx(f, b.fx->globe_major) && h.spell > 0 && h.spell_level <= 4) safe = true;
         if (safe) {
             dmg = 0;
             if (resisted) *resisted = true;
@@ -2579,8 +2624,8 @@ Plan think(Battle& b, const Tables& t, int i, create::Dice& d)
         if (cost == 0xFF || cost > f.moves) continue;
         // Not further away than now
         const int nx = f.x + kDx[dir], ny = f.y + kDy[dir];
-        if (b.ground[ny][nx] == kCloudGround && !saving_throw(f, 0, 0, d)) continue;   // a cloud: only after a test save
-        if (b.ground[ny][nx] == kPoisonGround && f.rec[0xE5] < 7) continue;            // poison: never (below 7 Hit Dice)
+        if (b.ground[ny][nx] == cloud_g(b) && !saving_throw(f, 0, 0, d)) continue;   // a cloud: only after a test save
+        if (b.ground[ny][nx] == poison_g(b) && f.rec[0xE5] < 7) continue;            // poison: never (below 7 Hit Dice)
         int best = 9999;
         for (int j = 0; j < n0; ++j) {
             const int ddx = tg.x + ox[j] - nx, ddy = tg.y + oy[j] - ny;
@@ -2724,7 +2769,9 @@ int power_of(const uint8_t* r, const classes::Tables& st, int s, bool item)
 {
     if (item && st.spell_class(s) != 3) return 6;
     const int cl = r[0x109], pa = r[0x10C], ra = r[0x10D], mu = r[0x10E];
-    if (cl == 0 && mu == 0 && pa < 9 && ra < 8) return 6;
+    // (Secret, GAME.OVR 0x3AFD7: no paladin in either test - spells::power)
+    const bool pal_rule = !st.lay.secret || rules::fixes();
+    if (cl == 0 && mu == 0 && (!pal_rule || pa < 9) && ra < 8) return 6;
     auto most = [](int a, int b) { return a > b ? a : b; };
     // The levels that count (classes::skill_level): a human who changed
     // class adds the old class's levels once the new class has passed them
@@ -2734,7 +2781,7 @@ int power_of(const uint8_t* r, const classes::Tables& st, int s, bool item)
     const bool past = r[0x74] == 7 && r[0x109 + k] > r[0xE6];
     auto skill = [&](int cls) { return r[0x109 + cls] + (past ? r[0x111 + cls] : 0); };
     switch (st.spell_class(s)) {
-    case 0: return most(skill(0), skill(3) - 8);
+    case 0: return most(skill(0), skill(3) - (pal_rule ? 8 : 0));
     case 1: return most(skill(4) - 7, 0);
     case 2: return most(skill(5), skill(4) - 8);
     case 3: return 12;
@@ -2746,14 +2793,16 @@ namespace {
 
 int dispel_chance(int L, int lvl);
 
-int sleep_cost(const Fighter& f)
+int sleep_cost(const Fighter& f, bool secret)
 {
     switch (f.rec[0xE5]) {
     case 0: case 1: return 1;
     case 2: return 2;
     case 3: return 4;
     case 4: return 6;
-    case 5: return f.rec[0x74] == 0 ? 10 : 20;
+    // (Secret, GAME.OVR 0x2EB9C: 10 for its race 0 - which no record has; its
+    // monsters are race 7 - so 20)
+    case 5: return f.rec[0x74] == 0 && !secret ? 10 : 20;
     default: return 20;
     }
 }
@@ -2838,8 +2887,12 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         if (fs.does == SpellDoes::Hold) bonus = m == 1 ? (spell == 0x17 ? -2 : -3) : m == 2 ? -1 : 0;
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
-            // The hold spells take persons only (but Hold Monsters)
-            if (fs.does == SpellDoes::Hold && spell != 0x5E && (f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) {
+            // The hold spells take persons only (but Hold Monsters). Secret
+            // (GAME.OVR 0x2E42C): Hold Person never holds its races 0 and 7 (the
+            // engine's race 0), saying nothing; no size rule
+            if (fs.does == SpellDoes::Hold && b.fx && b.fx->secret) {
+                if ((spell == 0x17 || spell == 0x31) && f.rec[0x74] == 0) continue;
+            } else if (fs.does == SpellDoes::Hold && spell != 0x5E && (f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) {
                 say(who[k], Did::Unaffected, 0);
                 continue;
             }
@@ -2922,11 +2975,17 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             if (!f.up()) continue;
             // Charm Monsters (kind 1): the last one picked is unaffected, and
             // (the original's rule) so are non-persons and large ones
-            if (fs.kind == 1 && (k == m - 1 || f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) {
+            // Secret (GAME.OVR 0x2E313): only the last one picked for Charm
+            // Monsters; Charm Person (0x2E73D) takes its races under 7 (the
+            // engine's races but 0) or flags 2 & 2 - no size rule
+            const bool sec = b.fx && b.fx->secret;
+            if (fs.kind == 1 && (k == m - 1 || (!sec && (f.rec[0x11A] > 1 || f.rec[0xDE] > 1)))) {
                 say(who[k], Did::Unaffected, 0);
                 continue;
             }
-            if (fs.kind != 1 && (f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) {
+            // (Charm Person or Mammal, 0x60 - GAME.OVR 0x31D6B: or flags 1, record 0x15D (here 0x14B), & 2)
+            const bool person = f.rec[0x74] != 0 || (spell == 0x60 ? (f.rec[0x14B] & 2) : (f.flags2 & 2));
+            if (fs.kind != 1 && (sec ? !person : f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) {
                 say(who[k], Did::Word2, 0);
                 continue;
             }
@@ -3102,7 +3161,8 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             if (!saving_throw(f, e.save, 0, d)) {
                 give_aff(f, b.fx->fumbling, pw, 0, false);
                 f.moves = f.attacks[0] = f.attacks[1] = 0;
-                say(who[k], Did::Word, 0);
+                // (Secret, GAME.OVR 0x3141C: the first one "is Befuddled" - its word3)
+                say(who[k], fs.word3 ? Did::Word3 : Did::Word, 0);
             } else {
                 give_aff(f, b.fx->slow, pw, 0, false);
                 say(who[k], Did::Word2, 0);
@@ -3121,7 +3181,27 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             Fighter& f = b.f[who[k]];
             if (!f.up() || resisted(k, b.fx ? b.fx->feeble : 0)) continue;
             // This save only: a cleric -1, a magic-user +4, others +2 on the number needed
-            const int adj = f.rec[0x75] == 0 ? -1 : f.rec[0x75] == 5 ? 4 : 2;
+            int adj = f.rec[0x75] == 0 ? -1 : f.rec[0x75] == 5 ? 4 : 2;
+            if (b.fx && b.fx->secret) {
+                // Secret's (GAME.OVR 0x31B94) by the class byte: clerics (C/F, C/T) -1;
+                // rangers +1 at 8 Hit Dice, +2 from 9; paladins +4 from 9; magic-users
+                // (F/MU, F/MU/T, MU/T) +4 a human, else +2; C/F/MU, C/R, C/MU +2; any
+                // other class (fighters, thieves - most monsters) "is unaffected"
+                const int hd = f.rec[0xE5];
+                bool can = true;
+                switch (f.rec[0x75]) {
+                case 0: case 8: case 12: adj = -1; break;
+                case 4: adj = hd == 8 ? 1 : hd >= 9 ? 2 : 0; break;
+                case 3: adj = hd >= 9 ? 4 : 0; break;
+                case 5: case 13: case 15: case 16: adj = f.rec[0x74] == 7 ? 4 : 2; break;
+                case 9: case 10: case 11: adj = 2; break;
+                default: can = false; break;
+                }
+                if (!can) {
+                    say(who[k], Did::Unaffected, 0);
+                    continue;
+                }
+            }
             const uint8_t was = f.rec[0xE3];
             f.rec[0xE3] = static_cast<uint8_t>(was + adj);
             const bool saved = saving_throw(f, 4, 0, d);
@@ -3138,7 +3218,9 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         }
         break;
     case SpellDoes::Entangle:
-        if (b.indoors) break;                       // outdoors only
+        // outdoors only; a game with no entangling effect (Secret: its routine
+        // GAME.OVR 0x30E46 is empty) - nothing at all
+        if (b.indoors || !b.fx || !b.fx->entangle) break;
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
             if (!f.up() || !b.fx || resisted(k, b.fx->entangle)) continue;
@@ -3157,7 +3239,9 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
             if (!f.up()) continue;
-            if (k == m - 1 || f.rec[0x11A] > 1 || f.rec[0xDE] > 1 || saving_throw(f, e.save, 0, d)) {
+            // (Secret, GAME.OVR 0x2E313: the last one picked, else a save - no size or type rule)
+            const bool sec = b.fx && b.fx->secret;
+            if (k == m - 1 || (!sec && (f.rec[0x11A] > 1 || f.rec[0xDE] > 1)) || saving_throw(f, e.save, 0, d)) {
                 say(who[k], Did::Unaffected, 0);
                 continue;
             }
@@ -3179,7 +3263,8 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             // attacks left this round - they go down by those, else gone;
             // either way its actions this round are gone
             const int att = f.attacks[0] + f.attacks[1];
-            say(who[k], Did::Word, 0);
+            // (Secret, GAME.OVR 0x30AE6: the caster "turns sticks into snakes")
+            say(b.fx->secret ? caster : who[k], Did::Word, 0);
             if (pw > att) give_aff(f, b.fx->sticks, minutes, pw - att, false);
             f.moves = f.attacks[0] = f.attacks[1] = 0;
         }
@@ -3189,7 +3274,11 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         int budget = me.hp();
         for (int c = 0; c < b.n; ++c) {
             Fighter& f = b.f[c];
-            if (!f.up() || !f.size || f.rec[0x11A] != 14 || f.hp() > budget) continue;
+            // (Secret, GAME.OVR 0x2EDED: a snake is flags 1 - record 0x15D, here 0x14B - & 0x10,
+            // not already charmed)
+            const bool snake = b.fx && b.fx->secret ? (f.rec[0x14B] & 0x10) && !(e.affect && f.has(static_cast<uint8_t>(e.affect)))
+                                                    : f.rec[0x11A] == 14;
+            if (!f.up() || !f.size || !snake || f.hp() > budget) continue;
             budget -= f.hp();
             if (e.affect) give_aff(f, e.affect, 0, pw, false);
             say(c, Did::Word, 0);
@@ -3242,7 +3331,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         break;
     case SpellDoes::Enlarge: {
         // Strength by the caster's level (18 ... 22), only when more than theirs
-        const int data = spells::enlarge_data(pw);
+        const int data = spells::enlarge_data(pw, st.lay.secret);
         int str = 18, str00 = 0;
         if (data > 101) str = data - 100;
         else str00 = data - 1;
@@ -3250,7 +3339,9 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             Fighter& f = b.f[who[k]];
             if (!f.up()) continue;
             const int now = f.rec[0x11], now00 = f.rec[0x1C];
-            const bool more = data && (str > now || (str == 18 && now == 18 && str00 > now00));
+            bool more = data && (str > now || (str == 18 && now == 18 && str00 > now00));
+            // Secret (GAME.OVR 0x372FC): against the OWN Strength (0x10, its 18/xx 0x1D)
+            if (st.lay.secret) more = str > f.rec[0x10] || (str == 18 && str00 > f.rec[0x1D]);
             if (st.lay.pool) {
                 // Pool (ovr23+12A5): the effect either way, "is stronger" when it's more
                 if (b.fx && b.fx->sp.enlarge) give_aff(f, b.fx->sp.enlarge, minutes, data, true);
@@ -3401,17 +3492,17 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         break;
     }
     case SpellDoes::FullHeal:
-        // Secret's Heal (GAME.OVR 0x2F699; its Barkskin runs it too):
-        // disease, blindness, feeblemind cured, then the most hit points
-        // less the dice; the spell table's effect
+        // Secret's Heal (GAME.OVR 0x2F699; its Barkskin runs it too - the
+        // handler table's entry for both - and gives no effect): disease (its
+        // list DS 0x1B3E: helpless and the three of the disease's course),
+        // blindness, feeblemind cured, then the most hit points less the dice
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
             const int st2 = f.status();
             if (st2 != party::Okay && st2 != party::Animated && st2 != party::Unconscious && st2 != party::Dying) continue;
-            if (e.affect) give_aff(f, e.affect, minutes, pw, false);
             if (b.fx) {
                 bool ill = false;
-                const uint8_t ills[3] = {b.fx->sp.ill, b.fx->sp.weak, b.fx->sp.sick};
+                const uint8_t ills[4] = {b.fx->held[3], b.fx->sp.ill, b.fx->sp.weak, b.fx->sp.sick};
                 for (uint8_t dz : ills) {
                     const int at = dz ? find_aff(f, dz) : -1;
                     if (at >= 0) {
@@ -3450,19 +3541,23 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             if (b.fx && b.fx->sp.ill) give_aff(f, b.fx->sp.ill, 0, 0, false);
             if (fs.word) say(who[k], Did::Word, 0);
             const int left = d.roll(fs.sides, fs.n);
-            if (f.hp() <= left) continue;
+            // (the original, GAME.OVR 0x305DB: the damage HP - 1d4 as a byte - under
+            // the roll it wraps round to over 250: dead. AD&D's - nothing then -
+            // with rules::fixes())
+            if (f.hp() == left || (f.hp() < left && rules::fixes())) continue;
             Harm h = hs;
             h.dice = fs.n;
             bool dn = false;
-            const int done = harm(b, who[k], f.hp() - left, h, d, &dn);
+            const int done = harm(b, who[k], (f.hp() - left) & 0xFF, h, d, &dn);
             if (done > 0) say(who[k], Did::Damage, done);
             if (dn) say(who[k], Did::Down, 0);
         }
         break;
     case SpellDoes::Youth:
-        // The Elixir of Youth (GAME.OVR 0x30813)
-        for (int k = 0; k < m; ++k) {
-            Fighter& f = b.f[who[k]];
+        // The Elixir of Youth (GAME.OVR 0x30813): its user only (0x7D38)
+        for (int k = 0; k < 1; ++k) {
+            Fighter& f = me;
+            who[k] = caster;
             int age = (f.rec[0x76] | f.rec[0x77] << 8) - (d.roll(fs.sides, fs.n) + fs.plus);
             const bool floor = age < 18;
             if (floor) age = 18;
@@ -3545,7 +3640,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         int budget = d.roll(4, 4);
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
-            const int cost = sleep_cost(f);
+            const int cost = sleep_cost(f, b.fx && b.fx->secret);
             if (!f.up() || f.status() == party::Animated || (e.affect && f.has(static_cast<uint8_t>(e.affect))) ||
                 cost > budget)
                 continue;
@@ -4148,7 +4243,7 @@ int sq_dy(bool poison, int k) { return poison ? kDy[(k + 8) % 9] : kCloudDy[k]; 
 int ground_under(const Battle& b, int x, int y)
 {
     const int g = b.ground[y][x];
-    if (g != kCloudGround && g != kPoisonGround) return g;
+    if (g != cloud_g(b) && g != poison_g(b)) return g;
     for (int c = 0; c < b.n_clouds; ++c) {
         const Battle::Cloud& cl = b.clouds[c];
         for (int k = 0; k < cloud_squares(cl.poison); ++k)
@@ -4159,8 +4254,8 @@ int ground_under(const Battle& b, int x, int y)
 }
 } // namespace
 
-bool in_cloud(const Battle& b, int x, int y) { return on_field(x, y) && b.ground[y][x] == kCloudGround; }
-bool in_poison(const Battle& b, int x, int y) { return on_field(x, y) && b.ground[y][x] == kPoisonGround; }
+bool in_cloud(const Battle& b, int x, int y) { return on_field(x, y) && b.ground[y][x] == cloud_g(b); }
+bool in_poison(const Battle& b, int x, int y) { return on_field(x, y) && b.ground[y][x] == poison_g(b); }
 
 int cloud_fighters(const Battle& b, int x, int y, int* out, int cap, bool poison)
 {
@@ -4193,7 +4288,7 @@ bool lay_cloud(Battle& b, const Tables& t, int x, int y, int rounds, bool poison
         cl.present = static_cast<uint16_t>(cl.present | 1 << k);
     }
     for (int k = 0; k < cloud_squares(poison); ++k)
-        if (cl.present >> k & 1) b.ground[y + sq_dy(poison, k)][x + sq_dx(poison, k)] = poison ? kPoisonGround : kCloudGround;
+        if (cl.present >> k & 1) b.ground[y + sq_dy(poison, k)][x + sq_dx(poison, k)] = poison ? poison_g(b) : cloud_g(b);
     ++b.n_clouds;
     return true;
 }
@@ -4202,11 +4297,17 @@ Did breathe_cloud(Battle& b, int i, create::Dice& d)
 {
     Fighter& f = b.f[i];
     if (!f.up() || helpless(b, f)) return Did::Unaffected;
+    // Secret (GAME.OVR 0x36A3A): the undead (record 0xF2, here 0xE9), those
+    // immune to poison (0x63) and the unliving (flags 2 & 8) breathe nothing;
+    // its effects can't be dispelled (data 0xFF)
+    const bool sec = b.fx && b.fx->secret;
+    if (sec && (f.rec[0xE9] || hasx(f, b.fx->mon.no_poison) || (f.flags2 & 8))) return Did::Unaffected;
+    const int data = sec ? 0xFF : 0;
     if (saving_throw(f, 0, 0, d)) {
-        if (b.fx && b.fx->cough) give_aff(f, b.fx->cough, 1, 0, false);      // coughing for a round
+        if (b.fx && b.fx->cough) give_aff(f, b.fx->cough, 1, data, false);      // coughing for a round
         return Did::Word2;
     }
-    if (b.fx) give_aff(f, b.fx->held[3], d.roll(4, 1) + 1, 0, false);
+    if (b.fx) give_aff(f, b.fx->held[3], d.roll(4, 1) + 1, data, false);
     return Did::Word;
 }
 
@@ -4262,7 +4363,7 @@ int clouds_round(Battle& b)
         const Battle::Cloud& cl = b.clouds[c];
         for (int k = 0; k < cloud_squares(cl.poison); ++k)
             if (cl.present >> k & 1)
-                b.ground[cl.y + sq_dy(cl.poison, k)][cl.x + sq_dx(cl.poison, k)] = cl.poison ? kPoisonGround : kCloudGround;
+                b.ground[cl.y + sq_dy(cl.poison, k)][cl.x + sq_dx(cl.poison, k)] = cl.poison ? poison_g(b) : cloud_g(b);
     }
     return gone;
 }

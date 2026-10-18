@@ -282,6 +282,17 @@ struct Facts {
     // level / 4 + 2 (Curse: (level - 1) / 4 + 2)
     uint8_t backstab_armour = 0;
     bool    backstab_plain = false;
+    // Secret's spell rules (secret_facts_2.md 29.spells): its "persons" by
+    // race (Charm Person: Secret's race under 7 or flags 2 & 2; Hold Person:
+    // never its races 0 / 7), no size or type rule for Faerie Fire and Charm
+    // Monsters, Faerie Fire making the AC 2 worse (easier to hit), Sleep's 5
+    // Hit Dice costing 20, its snakes by flags 1 & 0x10, Enlarge's 23 from
+    // 12th level, Harm's byte damage, the Globe of Invulnerability
+    bool    secret = false;
+    uint8_t globe_major = 0;            // its Globe of Invulnerability's effect: spells up to the 4th level
+    // The clouds' ground values (0: Curse's 0x1E / 0x1C - kCloudGround, kPoisonGround;
+    // Secret's 0x1D / 0x1B, its ground table's pictures 28 / 26 - GAME.OVR 0x2F39F, 0x31A43)
+    uint8_t cloud_ground = 0, poison_ground = 0;
     // The cleric's +10% experience from this Wisdom in use (0: AD&D's 16;
     // Secret's program 15 - GAME.OVR 0x6E04 - the original's mistake,
     // applied with rules::fixes() off)
@@ -549,6 +560,7 @@ struct Attack {
     bool slain = false;                 // a helpless target: "slays helpless ... with one cruel blow"
     bool backstab = false;              // "-Backstabs-"
     bool avoided[8] = {};               // a hit dodged ("Avoids it"; counted a miss)
+    bool image[8] = {};                 // a hit taken by a mirror image ("lost an image"; Secret)
     Event ev[8];                        // the extras after hits (poison, paralysis, a touch's damage, engulfing ...)
     int  n_ev = 0;
     int  shots = 0;                     // the weapon's (slot 1) attacks made: a shot uses one missile each

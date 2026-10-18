@@ -119,7 +119,8 @@ struct Facts {
 int lasts_rolled(const classes::Tables& t, int s, int pw, const Facts& f, create::Dice& d);
 // The Strength Enlarge gives at the caster's level, as an effect's data
 // (18/xx: xx + 1; 19 and up: + 100); 0 at 12th level and above (18)
-int enlarge_data(int level);
+// (Secret, GAME.OVR 0x2E892: 23 at 12th level and above)
+int enlarge_data(int level, bool secret = false);
 
 // Can the caster cast now ("is in no condition to cast any spells")
 bool can_cast(const party::Character& caster);

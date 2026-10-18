@@ -141,6 +141,7 @@ bool read_darkness(dax::ByteSource& src, ecl::GameState& gs, Header& h)
     h.look_slot = static_cast<uint16_t>(b[9] | b[10] << 8);
     gs.code_len = 0;
     gs.moved = false;
+    gs.game_area = h.game_area = 1;         // (one file a kind: ECL1 ...)
     return names_in(src, kDarknessBlock + 11, h);
 }
 

@@ -270,6 +270,8 @@ struct Profile {
         uint32_t from_saved;
         // Remove -> "Overwrite NAME? " -> No: "New file name: " (GAME.OVR; curse_finish_facts.md 6)
         uint32_t new_file;
+        // Darkness: Load asks "Load from where? " "Pools Secret Exit" first (0: no question)
+        uint32_t load_from = 0, load_sources = 0;
     } party;
 
     // View Character: name tables in the program and the screen's words
@@ -518,6 +520,13 @@ struct Profile {
         // Pools of Darkness: its pictures are VGA blocks (picture.h; the EGA
         // colours of each on a 4-bit canvas - the original's EGA mode)
         bool     vga = false;
+        // Darkness's character files (510-byte records .SAV / .PC, items
+        // .THG of 63 bytes, effects .EFX) and saves (SAVGAMx.PTY: the game
+        // block; POOL4.CFG's first folder) - darkness_facts.md 30-33
+        bool     darkness_files = false;
+        // The party menu's column (0: 2, the first letter white; Darkness 9,
+        // all green - DOSBox)
+        uint8_t  party_menu_col = 0;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

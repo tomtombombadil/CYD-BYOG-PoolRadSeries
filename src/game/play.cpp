@@ -116,6 +116,7 @@ struct Data {
     bool           item_on[kItems] = {};   // the program's own starting flags
     int            items = 0;
     char           choose[41] = {}, load_which[41] = {}, name_head[8] = {}, ac_hp_head[12] = {};
+    char           load_from[24] = {}, load_sources[24] = {};      // (Darkness: "Load from where? Pools Secret Exit")
     char           save_dir[128] = {};      // the game's save folder (data_dir/SAVE)
     savegame::Header save;                 // the saved game loaded
     bool           loaded = false;
@@ -205,6 +206,7 @@ int  pm_lines = 0;
 int  pm_sel = 0;              // the party menu line the cursor keys highlight
 bool keys_used = false;       // a cursor key was used: highlights where the games had none (the party menu)
 char pm_saves[12];            // save slots found ("AB")
+bool load_where = false;      // Darkness: Load's "Load from where?" asked, a slot next
 bool exit_wanted = false;     // Exit to DOS: back to the viewer
 
 bool area_view = false;
@@ -963,20 +965,22 @@ void draw_party_menu(pic::Canvas& c)
     bool on[Data::kItems];
     pm_flags(on);
     pm_lines = 0;
+    // (Darkness: from column 9, all green)
+    const int col0 = d->prof->variant.party_menu_col ? d->prof->variant.party_menu_col : 2;
     for (int i = 0; i < d->items; ++i) {
         if (!on[i]) continue;
         const int row = 12 + pm_lines;
         char first[2] = {d->item[i][0], 0};
-        put(c, first, 2, row, 15);
-        put(c, d->item[i] + 1, 3, row, 10);
+        put(c, first, col0, row, d->prof->variant.party_menu_col ? 10 : 15);
+        put(c, d->item[i] + 1, col0 + 1, row, 10);
         pm_item[pm_lines++] = i;
     }
     if (pm_sel >= pm_lines) pm_sel = pm_lines ? pm_lines - 1 : 0;
     if (keys_used && pm_lines) {
         // the cursor keys' line, highlighted as the games' lists are
         const char* it = d->item[pm_item[pm_sel]];
-        c.fill(2 * 8, (12 + pm_sel) * 8, static_cast<int>(strlen(it)) * 8, 8, 15);
-        font::draw_text(c, d->font, it, 2, 12 + pm_sel, 0, -1);
+        c.fill(col0 * 8, (12 + pm_sel) * 8, static_cast<int>(strlen(it)) * 8, 8, 15);
+        font::draw_text(c, d->font, it, col0, 12 + pm_sel, 0, -1);
     }
     pm_prompt(c);
     dirty(0, pic::kScreenH);
@@ -985,12 +989,15 @@ void draw_party_menu(pic::Canvas& c)
 // A file in the save folder (save_dir is the folder's full path on the card)
 void save_path(const char* name, char* out, size_t cap) { snprintf(out, cap, "%s/%s", d->save_dir, name); }
 
+void save_file_name(char slot, char* out, size_t cap);
+bool darkness_files();
+
 void find_saves()
 {
     int n = 0;
     for (char s = savegame::kFirst; s <= savegame::kLast; ++s) {
         char name[24], path[160];
-        savegame::file_name(s, name, sizeof name);
+        save_file_name(s, name, sizeof name);
         save_path(name, path, sizeof path);
         plat::File f = plat::open(path, "r");
         if (f) {
@@ -1019,16 +1026,30 @@ void load_journal_list(char slot);
 // (variant.secret_files; party::from_secret / to_secret)
 bool pool_files() { return d->prof->variant.pool_files; }
 bool secret_files() { return d->prof->variant.secret_files; }
+// Darkness's (variant.darkness_files): 510-byte records (NAME.PC), items
+// .THG (63 bytes), effects .EFX; its saves SAVGAMx.PTY
+bool darkness_files() { return d->prof->variant.darkness_files; }
 party::Format rec_format()
 {
-    return pool_files() ? party::Format::Pool : secret_files() ? party::Format::Secret : party::Format::Curse;
+    return pool_files()       ? party::Format::Pool
+           : secret_files()   ? party::Format::Secret
+           : darkness_files() ? party::Format::Darkness
+                              : party::Format::Curse;
 }
-const char* ext_guy() { return pool_files() ? ".CHA" : secret_files() ? ".WHO" : ".GUY"; }
-const char* ext_items() { return pool_files() ? ".ITM" : secret_files() ? ".STF" : ".SWG"; }
-const char* ext_fx() { return pool_files() ? ".SPC" : secret_files() ? ".SFX" : ".FX"; }
+const char* ext_guy() { return pool_files() ? ".CHA" : secret_files() ? ".WHO" : darkness_files() ? ".PC" : ".GUY"; }
+const char* ext_items() { return pool_files() ? ".ITM" : secret_files() ? ".STF" : darkness_files() ? ".THG" : ".SWG"; }
+const char* ext_fx() { return pool_files() ? ".SPC" : secret_files() ? ".SFX" : darkness_files() ? ".EFX" : ".FX"; }
 size_t rec_file_size()
 {
-    return pool_files() ? party::kPoolRecordSize : secret_files() ? party::kSecretRecordSize : party::kRecordSize;
+    return pool_files()       ? party::kPoolRecordSize
+           : secret_files()   ? party::kSecretRecordSize
+           : darkness_files() ? party::kDarknessRecordSize
+                              : party::kRecordSize;
+}
+void save_file_name(char slot, char* out, size_t cap)
+{
+    if (darkness_files()) savegame::file_name_darkness(slot, out, cap);
+    else savegame::file_name(slot, out, cap);
 }
 uint32_t item_stride() { return secret_files() ? party::kSecretItemSize : party::kItemSize; }
 // Secret's monsters' items (MON<n>ITM) have no name of their own (the
@@ -1120,7 +1141,7 @@ bool load_game(char slot)
 {
     load_problem = nullptr;
     char name[24];
-    savegame::file_name(slot, name, sizeof name);
+    save_file_name(slot, name, sizeof name);
     plat::File f;
     if (!open_save_file(name, f)) {
         load_problem = "That saved game couldn't be opened.";
@@ -1129,7 +1150,8 @@ bool load_game(char slot)
     bool ok;
     {
         plat::FileSource src(f);
-        ok = savegame::read(src, d->gs, d->save, !pool_files(), !secret_files());
+        ok = darkness_files() ? savegame::read_darkness(src, d->gs, d->save)
+                              : savegame::read(src, d->gs, d->save, !pool_files(), !secret_files());
     }
     f.close();
     // Whatever was going on is over now (a script's party menu, a wait)
@@ -2141,7 +2163,7 @@ bool save_game(char slot)
     vm->set(0x7F12, d->gs.game_area);
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
     char name[24], path[200];
-    savegame::file_name(slot, name, sizeof name);
+    save_file_name(slot, name, sizeof name);
     save_path(name, path, sizeof path);
     if (!plat::exists(d->save_dir)) plat::mkdir(d->save_dir);
     plat::File f = plat::open(path, "w");
@@ -2149,7 +2171,15 @@ bool save_game(char slot)
     bool ok;
     {
         FileSink sink(f);
-        ok = savegame::write(sink, d->gs, h, !pool_files(), !secret_files());
+        if (darkness_files()) {
+            // (Darkness: its modes - 4 in 3D, 3 outside; the look kept)
+            h.state = h.last_state = static_cast<uint8_t>(d->save.state ? d->save.state : 4);
+            h.look = d->save.look;
+            h.look_slot = d->save.look_slot;
+            ok = savegame::write_darkness(sink, d->gs, h);
+        } else {
+            ok = savegame::write(sink, d->gs, h, !pool_files(), !secret_files());
+        }
     }
     f.close();
     for (int i = 0; ok && i < pt->count; ++i) {
@@ -6666,10 +6696,23 @@ bool modify_act(Act a, pic::Canvas& c)
     return true;
 }
 
-void pm_choose(int i, pic::Canvas& c)
+void pm_choose_key(char key, pic::Canvas& c);
+void pm_choose(int i, pic::Canvas& c) { pm_choose_key(pm_key(i), c); }
+void pm_choose_key(char key, pic::Canvas& c)
 {
-    switch (pm_key(i)) {
+    switch (key) {
     case 'L':
+        if (darkness_files() && d->prof->party.load_from && !load_where) {
+            // Darkness: "Load from where? Pools Secret Exit" first
+            // (darkness_facts.md 32)
+            load_where = true;
+            screen = Screen::LoadWhich;
+            text::build(menu, d->load_from, d->load_sources);
+            menu.selected = 0;
+            show_menu_line(c);
+            return;
+        }
+        load_where = false;
         find_saves();
         if (!pm_saves[0]) break;
         screen = Screen::LoadWhich;
@@ -6876,6 +6919,19 @@ void pm_tap(int x, int y, pic::Canvas& c)
         if (k < 0) return;
         menu.selected = k;
         show_menu_line(c);
+        if (load_where) {
+            // Pools: its own saved games; Secret's: not yet (TODO)
+            const char key = text::key(menu, k);
+            if (key == 'P') {
+                pm_choose_key('L', c);
+            } else {
+                load_where = false;
+                screen = Screen::PartyMenu;
+                draw_party_menu(c);
+                if (key == 'S') pm_prompt(c, "Not in the engine yet.");
+            }
+            return;
+        }
         load_game(text::key(menu, k));
         screen = Screen::PartyMenu;
         draw_party_menu(c);
@@ -7003,6 +7059,16 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             memcpy(tmp, d->race, sizeof tmp);
             for (int i = 0; i < 8; ++i) memcpy(d->race[i], tmp[party::race_to_secret(static_cast<uint8_t>(i))], sizeof tmp[0]);
         }
+        if (darkness_files()) {
+            // Darkness's races in its own order (0 elf ... 6 monster;
+            // party::race_from_darkness) and its three coins - platinum,
+            // gems, jewelry - in Curse's places 4-6
+            char tmp[8][10];
+            memcpy(tmp, d->race, sizeof tmp);
+            for (int i = 0; i < 8; ++i) memcpy(d->race[i], tmp[party::race_to_darkness(static_cast<uint8_t>(i))], sizeof tmp[0]);
+            for (int i = 6; i >= 4; --i) memcpy(d->money[i], d->money[i - 4], sizeof d->money[0]);
+            for (int i = 0; i < 4; ++i) d->money[i][0] = 0;
+        }
     }
     // (its files closed before the roster's words open theirs: the card
     // has 4 file slots, and Pool's words need START.EXE open too)
@@ -7044,6 +7110,8 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             text::read_pascal(src, pv.stats + static_cast<uint32_t>(i) * pv.stats_stride, d->v_stat[i], sizeof d->v_stat[i]);
         text::read_pascal(src, pp.choose, d->choose, sizeof d->choose);
         text::read_pascal(src, pp.load_which, d->load_which, sizeof d->load_which);
+        if (pp.load_from) text::read_pascal(src, pp.load_from, d->load_from, sizeof d->load_from);
+        if (pp.load_sources) text::read_pascal(src, pp.load_sources, d->load_sources, sizeof d->load_sources);
         text::read_pascal(src, pp.name, d->name_head, sizeof d->name_head);
         text::read_pascal(src, pp.ac_hp, d->ac_hp_head, sizeof d->ac_hp_head);
     }
@@ -7096,7 +7164,8 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         f.close();
         if (n > 0) {
             char got[64];
-            savegame::save_dir(cfg, static_cast<size_t>(n), got, sizeof got);
+            // (Darkness's POOL4.CFG: its own save folder first, then Secret's)
+            savegame::save_dir(cfg, static_cast<size_t>(n), got, sizeof got, darkness_files() ? 0 : -1);
             if (got[0]) strcpy(sub, got);
         }
     }
@@ -9685,7 +9754,22 @@ __attribute__((noinline)) bool open_tiles()
 {
     plat::File f;
     bool ok = open_dax(d->prof->tiles_file, f);
-    if (ok) {
+    if (ok && d->prof->variant.vga) {
+        // Darkness: the area map's tiles and the font in 8X8D0, the frame's
+        // style from BORDERS (the gold chain to start with); every wall
+        // tile comes with an area's look (darkness_facts.md 7)
+        plat::FileSource src(f);
+        ok = layout::load_vga_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, 0, 20, true) &&
+             font::load(src, d->idx, d->font);
+        f.close();
+        if (ok) ok = open_dax("BORDERS.DAX", f);
+        if (ok) {
+            plat::FileSource bsrc(f);
+            ok = layout::load_vga_tiles(bsrc, d->idx, 0, d->frame_tiles, 20, 11, true);
+            f.close();
+        }
+        d->world.dk = true;
+    } else if (ok) {
         plat::FileSource src(f);
         ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, d->prof->variant.tile_window) &&
              (d->prof->font_file || font::load(src, d->idx, d->font)) &&
@@ -9860,6 +9944,7 @@ void close()
     if (d) {
         view3d::World* w = &d->world;
         ecl::GameState* g = &d->gs;
+        view3d::back_free(*w);                  // (Darkness's background picture)
         delete d->alt_font;
         delete d;
         delete w;
@@ -10235,7 +10320,7 @@ bool nav_point(int* x, int* y)
     }
     if (screen == Screen::PartyMenu) {
         if (!pm_lines) return false;
-        *x = 3 * 8 + 2;
+        *x = ((d->prof->variant.party_menu_col ? d->prof->variant.party_menu_col : 2) + 1) * 8 + 2;
         *y = (12 + pm_sel) * 8 + 2;
         return true;
     }
@@ -10868,6 +10953,7 @@ bool back(pic::Canvas& c)
         return true;
     }
     if (screen == Screen::LoadWhich) {
+        load_where = false;
         screen = Screen::PartyMenu;
         draw_party_menu(c);
         return true;

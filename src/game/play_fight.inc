@@ -1449,6 +1449,12 @@ void attack_pages(int a, int t, const combat::Attack& at, bool behind, bool shot
         hit_page();
     }
     for (int k = 0; k < at.n && !at.slain; ++k) {
+        if (at.image[k]) {
+            // Secret: a mirror image took the blow - "lost an image"
+            add_page(t, fw(profile::kLostImage));
+            first = false;
+            continue;
+        }
         if (at.avoided[k]) {
             // A missile dodged: "Avoids it"
             add_page(t, fw(profile::kAvoidsIt));
@@ -3334,6 +3340,7 @@ void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::Fi
         switch (l[k].did) {
         case combat::Did::Word:
             ow(fs.word, t, sizeof t);
+            if (!t[0]) break;           // (no word: nothing said - Secret's Feeblemind, GAME.OVR 0x37F63)
             add_page(l[k].who, t);
             if (fs.does != combat::SpellDoes::Poison) page_fx_set(1, hit_fx(l[k].who, true));
             break;
