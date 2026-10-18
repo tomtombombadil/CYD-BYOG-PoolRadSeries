@@ -964,6 +964,43 @@ void charm_mammal()
     }
 }
 
+// =====================================================================
+// 13. The words: each spell's "is <word>" (its handler's first "is " and
+// word - the oracle's place of it) as the engine says it, fights and camp
+void words()
+{
+    using namespace play;
+    for (const auto& r : b_rows("sp_word")) {
+        const int s = r[0];
+        const uint32_t at = r[1] == 0 ? text::kInProgram | (0xDE20u + r[2]) : 0x2C64Bu + r[2];
+        char orig[48], want[56];
+        ow(at, orig, sizeof orig);
+        snprintf(want, sizeof want, "is %s", orig);
+        const combat::FightSpell* fs = fspell(s);
+        const spells::CampSpell* cs = camp(s);
+        // Where the engine keeps it: Heal / Barkskin's first ("is cured") and
+        // Fumble's first ("is Befuddled") are their word3; Fear's and
+        // Feeblemind's first are "is Unaffected" (the engine's own Unaffected
+        // line); the camp's Remove Curse, Neutralize Poison, Raise Dead say
+        // theirs as the cast words' lines (checked with them)
+        if (s == 84 || s == 93) continue;
+        const bool third = s == 36 || s == 90 || s == 86;
+        const bool camp_lines = s == 43 || s == 89 || s == 67 || s == 75;
+        if (fs && orow(s, OWhen) != 0) {
+            char got[64] = "";
+            ow(third ? fs->word3 : fs->word, got, sizeof got);
+            snprintf(w, sizeof w, "fight: spell %d says \"%s\"", s, want);
+            expect(S, w, !strcmp(got, want), "\"%s\"", got);
+        }
+        if (cs && orow(s, OWhen) != 1 && orow(s, OTargets) != 0 && !camp_lines) {
+            char got[64] = "";
+            ow(third ? cs->word3 : cs->word, got, sizeof got);
+            snprintf(w, sizeof w, "camp: spell %d says \"%s\"", s, want);
+            expect(S, w, !strcmp(got, want), "\"%s\"", got);
+        }
+    }
+}
+
 } // namespace sspells
 
 void all_spells()
@@ -990,4 +1027,5 @@ void all_spells()
     damage_spells();
     feeblemind();
     charm_mammal();
+    words();
 }
