@@ -198,11 +198,186 @@ void race_effects()
     // The elf (0x5F) and half-elf (0x12): 90% / 30% against sleep (0x35) and charm (0x0B)
 }
 
+// ---- Every class at every level: spell slots and books, attacks, thief
+// skills, item flags (Secret's class routine GAME.OVR 0x3C1B1 and its
+// helpers: slots 0x3BE4B / 0x3C477 / 0x3C609, thief skills 0x3C911)
+const int kSecretToCurseRace[8] = {0, 2, 4, 1, 3, 5, 7, 0};
+const std::vector<int>* srow(const char* key, int a) { return b_row(key, a); }
+int sval(const char* key, int idx)
+{
+    const auto& r = b_rows(key);
+    return r.empty() || idx < 0 || idx >= static_cast<int>(r[0].size()) ? 0 : r[0][idx];
+}
+// Expected slots [row 0 cleric, 1 druid, 2 magic-user][spell level 0-6]
+void want_slots(int k, int L, int wis, int intel, int out[3][7])
+{
+    memset(out, 0, sizeof(int) * 21);
+    auto gained = [&](const char* key, int lv, int sl) {
+        const auto* r = b_row(key, lv);
+        return r && sl + 1 < static_cast<int>(r->size()) ? (*r)[1 + sl] : 0;
+    };
+    if (k == 0) {
+        out[0][0] = 1;
+        for (int lv = 2; lv <= L; ++lv)
+            for (int sl = 0; sl < 7; ++sl) out[0][sl] += gained("sit_slots_cleric", lv, sl);
+        const int at[6] = {0, 0, 1, 1, 2, 3};
+        for (int i = 0; i < 6; ++i)
+            if (wis > 12 + i && out[0][at[i]] > 0) ++out[0][at[i]];
+        if (wis < 17) out[0][5] = 0;
+        if (wis < 18) out[0][6] = 0;
+    } else if (k == 3 && L > 8) {
+        for (int lv = 9; lv <= L; ++lv)
+            for (int sl = 0; sl < 7; ++sl) out[0][sl] += gained("sit_slots_paladin", lv, sl);
+    } else if (k == 4 && L > 7) {
+        for (int lv = 8; lv <= L; ++lv) {
+            for (int sl = 0; sl < 3; ++sl) out[1][sl] += gained("sit_slots_ranger", lv, sl);
+            for (int sl = 3; sl < 5; ++sl) out[2][sl - 3] += gained("sit_slots_ranger", lv, sl);
+        }
+    } else if (k == 5) {
+        out[2][0] = 1;
+        for (int lv = 2; lv <= L; ++lv)
+            for (int sl = 0; sl < 7; ++sl) out[2][sl] += gained("sit_slots_mu", lv, sl);
+        if (intel < 12) out[2][5] = 0;
+        if (intel < 14) out[2][6] = 0;
+    }
+}
+void class_tables()
+{
+    static party::Character c;
+    char w[140];
+    int nfail_slots = 0, nfail_book = 0, nfail_att = 0, nslots = 0;
+    for (int k = 0; k < 7; ++k)
+        for (int L = 1; L <= 18 && L <= top_level(k); ++L)
+            for (int ws : {9, 12, 13, 14, 15, 16, 17, 18}) {
+                bare(c, 7, k);
+                int lv[8] = {};
+                lv[k] = L;
+                levels(c, lv);
+                set_stat(c, 1, ws);       // (Intelligence and Wisdom the same here)
+                set_stat(c, 2, ws);
+                c.rec[0x11C] = 2;
+                memset(c.rec + 0x79, 0, 100);
+                memset(c.ext, 0, sizeof c.ext);
+                classes::class_bonuses(c, m->tables);
+                int want[3][7];
+                want_slots(k, L, ws, ws, want);
+                bool ok = true;
+                for (int row = 0; row < 3; ++row)
+                    for (int sl = 0; sl < 7; ++sl) ok = ok && classes::slots(c, row, sl + 1) == want[row][sl];
+                ++nslots;
+                if (!ok) {
+                    ++nfail_slots;
+                    snprintf(w, sizeof w, "class %d level %d Wis/Int %d: spell slots", k, L, ws);
+                    char got[120];
+                    int n = 0;
+                    for (int row = 0; row < 3; ++row) {
+                        for (int sl = 0; sl < 7; ++sl) n += snprintf(got + n, sizeof got - n, "%d", classes::slots(c, row, sl + 1));
+                        n += snprintf(got + n, sizeof got - n, " / ");
+                        for (int sl = 0; sl < 7; ++sl) n += snprintf(got + n, sizeof got - n, "%d", want[row][sl]);
+                        n += snprintf(got + n, sizeof got - n, "  ");
+                    }
+                    if (nfail_slots <= 25) expect(P, w, false, "engine / original per row: %s", got);
+                }
+                // The book: every cleric (code 0) / druid (1) / magic-user (3) spell of a
+                // level with slots in its row - clerics and paladins the cleric row,
+                // rangers druid and magic-user (0x3BEC8, 0x3BF87, 0x3C07D); a magic-user none
+                bool bok = true;
+                int bad = 0;
+                for (int sp = 1; sp <= 117; ++sp) {
+                    const auto* r = srow("sit_spell", sp);
+                    if (!r) continue;
+                    const int code = (*r)[1], sl = (*r)[2];
+                    bool want_b = false;
+                    if (sl >= 1 && sl <= 7) {
+                        if ((k == 0 || k == 3) && code == 0) want_b = want[0][sl - 1] > 0;
+                        if (k == 4 && code == 1) want_b = want[1][sl - 1] > 0;
+                        if (k == 4 && code == 3) want_b = want[2][sl - 1] > 0;
+                    }
+                    if (classes::in_book(c, sp) != want_b) {
+                        bok = false;
+                        if (!bad) bad = sp;
+                    }
+                }
+                if (!bok) {
+                    ++nfail_book;
+                    snprintf(w, sizeof w, "class %d level %d Wis %d: the spell book", k, L, ws);
+                    if (nfail_book <= 25) expect(P, w, false, "first wrong spell %d (engine %s it)", bad, classes::in_book(c, bad) ? "has" : "hasn't");
+                }
+                // Attacks (0x121): fighters / paladins > 6 three, > 12 four; rangers > 7 / > 14
+                if (ws == 9) {
+                    int att = 2;
+                    if (k == 2 || k == 3) att = L > 12 ? 4 : L > 6 ? 3 : 2;
+                    if (k == 4) att = L > 14 ? 4 : L > 7 ? 3 : 2;
+                    if (c.rec[0x11C] != att) {
+                        ++nfail_att;
+                        snprintf(w, sizeof w, "class %d level %d: attacks (halves)", k, L);
+                        expect(P, w, false, "%d, the original's %d", c.rec[0x11C], att);
+                    }
+                    // Item flags (0x130): the classes' DS 0x4C92 bytes summed
+                    const int fl = sval("sit_classflags", k);
+                    if (c.rec[0x12B] != fl) {
+                        snprintf(w, sizeof w, "class %d level %d: item flags", k, L);
+                        expect(P, w, false, "%d, the original's %d", c.rec[0x12B], fl);
+                    }
+                }
+            }
+    snprintf(w, sizeof w, "spell slots, %d class / level / Wisdom cases", nslots);
+    expect(P, w, nfail_slots == 0, "%d wrong", nfail_slots);
+    expect(P, "spell books (every class, level, Wisdom)", nfail_book == 0, "%d wrong", nfail_book);
+    expect(P, "attacks by level (every class)", nfail_att == 0, "%d wrong", nfail_att);
+    // Thief skills: every race, level 1-18, Dexterity 3-19 (0x3C911 - no
+    // item takes part, no extra bonus)
+    int nth = 0, nth_bad = 0;
+    for (int sr = 1; sr <= 6; ++sr) {
+        const auto* ra = srow("sit_thiefrace", sr);
+        for (int L = 1; L <= 18; ++L)
+            for (int dx = 3; dx <= 19; ++dx) {
+                bare(c, kSecretToCurseRace[sr], 6);
+                c.ext[party::kExtRace] = static_cast<uint8_t>(sr);
+                int lv[8] = {};
+                lv[6] = L;
+                levels(c, lv);
+                set_stat(c, 3, dx);
+                classes::class_bonuses(c, m->tables);
+                const auto* bs = srow("sit_thiefbase", L);
+                const auto* dd = srow("sit_thiefdex", dx);
+                bool ok = ra && bs && dd;
+                int bad = 0, gotv = 0, wantv = 0;
+                for (int sk = 1; ok && sk <= 8; ++sk) {
+                    const int adj = (*ra)[sk], base = (*bs)[sk];
+                    int v;
+                    if (adj < 0 && base < -adj) v = 0;
+                    else {
+                        v = adj + base;
+                        if (sk < 6) v += (*dd)[sk];
+                    }
+                    v &= 0xFF;
+                    if (c.rec[0xEA + sk - 1] != v) {
+                        ok = false;
+                        bad = sk;
+                        gotv = c.rec[0xEA + sk - 1];
+                        wantv = v;
+                    }
+                }
+                ++nth;
+                if (!ok) {
+                    ++nth_bad;
+                    snprintf(w, sizeof w, "thief skills: race %d level %d Dex %d skill %d", sr, L, dx, bad);
+                    if (nth_bad <= 10) expect(P, w, false, "%d, the original's %d", gotv, wantv);
+                }
+            }
+    }
+    snprintf(w, sizeof w, "thief skills, %d race / level / Dexterity cases", nth);
+    expect(P, w, nth_bad == 0, "%d wrong", nth_bad);
+}
+
 void all_situations()
 {
     if (const char* e = getenv("ENDLESS")) {
         endless_probe(e);
         return;
     }
+    b_oracle_load("secret_situations");
     race_effects();
+    class_tables();
 }

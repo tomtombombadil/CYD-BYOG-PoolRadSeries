@@ -14,7 +14,7 @@ namespace {
 constexpr int kThac0 = 0x73, kSpellBook = 0x79, kSaves = 0xDF, kHitDice = 0xE5, kMultiLevel = 0xE6;
 constexpr int kThief = 0xEA, kLevels = 0x109, kOldLevels = 0x111, kAttacks = 0x11C, kClassFlags = 0x12B;
 constexpr int kCastCount = 0x12D;          // [3][5]: cleric, druid, magic-user spell levels 1-5
-constexpr int kStrFull = 0x11, kWisFull = 0x15, kDexFull = 0x17, kConFull = 0x19;
+constexpr int kStrFull = 0x11, kIntFull = 0x13, kWisFull = 0x15, kDexFull = 0x17, kConFull = 0x19;
 constexpr int kAnimateDead = 0x24;         // not one clerics learn by levelling (Curse)
 
 // Spell slots of spell level lvl + 1 (0 cleric, 1 druid, 2 magic-user):
@@ -135,9 +135,16 @@ void spell_slots(party::Character& c, const Tables& t)
             for (int L = 2; L <= lv && L <= top; ++L)
                 for (int k = 0; k < cols; ++k) cast(c, 0, k) += t.slots_gained(Cleric, L, k);
             wisdom_spells(c);
+            // Secret (GAME.OVR 0x3C5E0): no 6th level spells below Wisdom 17,
+            // no 7th below 18
+            if (t.lay.secret) {
+                if (c.rec[kWisFull] < 17) cast(c, 0, 5) = 0;
+                if (c.rec[kWisFull] < 18) cast(c, 0, 6) = 0;
+            }
+            // (Secret's 0x3BEC8 leaves none out: its 36 is Heal)
             for (int s = 1; s < t.lay.spell_count; ++s)
                 if (t.spell_class(s) == 0 && t.spell_level(s) >= 1 && t.spell_level(s) <= t.slot_levels() &&
-                    cast(c, 0, t.spell_level(s) - 1) > 0 && s != kAnimateDead)
+                    cast(c, 0, t.spell_level(s) - 1) > 0 && (s != kAnimateDead || t.lay.secret))
                     learn(c, s);
             break;
         case Paladin:
@@ -159,9 +166,12 @@ void spell_slots(party::Character& c, const Tables& t)
                 // the druid spells of the levels they have slots for (Curse's
                 // are all 1st level; Secret's ranger leaves its 2nd level
                 // ones out until then - the GOG party's ranger)
+                // (Secret's also the magic-user spells of the levels with
+                // slots - GAME.OVR 0x3C0B9)
                 for (int s = 1; s < t.lay.spell_count; ++s)
-                    if (t.spell_class(s) == 1 && t.spell_level(s) >= 1 && t.spell_level(s) <= t.slot_levels() &&
-                        cast(c, 1, t.spell_level(s) - 1) > 0)
+                    if (t.spell_level(s) >= 1 && t.spell_level(s) <= t.slot_levels() &&
+                        ((t.spell_class(s) == 1 && cast(c, 1, t.spell_level(s) - 1) > 0) ||
+                         (t.lay.secret && t.spell_class(s) == 2 && cast(c, 2, t.spell_level(s) - 1) > 0)))
                         learn(c, s);
             }
             break;
@@ -169,6 +179,12 @@ void spell_slots(party::Character& c, const Tables& t)
             cast(c, 2, 0) += 1;
             for (int L = 2; L <= lv && L <= top; ++L)
                 for (int k = 0; k < cols; ++k) cast(c, 2, k) += t.slots_gained(MagicUser, L, k);
+            // Secret (GAME.OVR 0x3C609): no 6th level spells below
+            // Intelligence 12, no 7th below 14
+            if (t.lay.secret) {
+                if (c.rec[kIntFull] < 12) cast(c, 2, 5) = 0;
+                if (c.rec[kIntFull] < 14) cast(c, 2, 6) = 0;
+            }
             break;
         default:
             break;
@@ -302,6 +318,8 @@ void class_bonuses(party::Character& c, const Tables& t)
         if (c.level(Fighter) > 0) c.rec[kAttacks] = c.level(Fighter) > 6 ? 3 : 2;
     } else if (c.level(Fighter) >= 7 || c.level(Paladin) >= 7 || c.level(Ranger) >= 8) {
         c.rec[kAttacks] = 3;
+        // Secret's levels go on: 2 a round past 12th (rangers 14th) - GAME.OVR 0x3C249
+        if (t.lay.secret && (c.level(Fighter) > 12 || c.level(Paladin) > 12 || c.level(Ranger) > 14)) c.rec[kAttacks] = 4;
     }
     spell_slots(c, t);
     saving_throws(c, t);
@@ -324,6 +342,8 @@ void class_bonuses(party::Character& c, const Tables& t)
                 if (v > c.rec[kThac0]) c.rec[kThac0] = static_cast<uint8_t>(v);
             }
             if (c.old_level(Fighter) > 6 || c.old_level(Paladin) > 6 || c.old_level(Ranger) > 7) c.rec[kAttacks] = 3;
+            if (t.lay.secret && (c.old_level(Fighter) > 12 || c.old_level(Paladin) > 12 || c.old_level(Ranger) > 14))
+                c.rec[kAttacks] = 4;            // (Secret's GAME.OVR 0x3C3CE)
             if (c.old_level(Thief) > 0) thief_skills(c, t);
         }
     }
