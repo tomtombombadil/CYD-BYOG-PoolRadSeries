@@ -1035,6 +1035,60 @@ void script_fields()
     expect(P, w, bad == 0, "%d wrong", bad);
 }
 
+// ---- Add Character -> Curse (GAME.OVR 0x24CB0 / 0x257AC): a Curse .GUY
+// comes in without money, memorized spells, items or effects; its book
+// loses 36 56 63 90 96 98 100 (Secret's numbers mean others); a paladin
+// gets a cure of disease (0x6D) and Protection from Evil (0x08), a ranger
+// the giant-class bonus (0x69); the class values again
+void add_curse()
+{
+    if (!boot() || !load_rules(m)) {
+        expect(P, "boot for Add Character", false);
+        return;
+    }
+    for (int cls : {classes::Paladin, classes::Ranger}) {
+        static party::Character g;
+        bare(g, 7, cls, 15);
+        int lv[8] = {};
+        lv[cls] = 9;
+        levels(g, lv);
+        g.rec[0] = 4;
+        memcpy(g.rec + 1, "TEST", 4);
+        g.rec[0x75] = static_cast<uint8_t>(cls);
+        for (int sp : {1, 3, 0x24, 0x38, 0x3F, 0x5A, 0x60, 0x62, 0x64, 0x50}) g.rec[0x78 + sp] = 1;
+        g.rec[0x1E] = 3;                        // memorized
+        g.rec[0xFB + 3 * 2] = 100;              // gold
+        g.rec[0x78] = 60;
+        g.rec[0x1A4] = 60;
+        char path[220];
+        snprintf(path, sizeof path, "%s/TESTGUY.GUY", d->save_dir);
+        FILE* f = fopen((pc::card_root() + "/" + std::string(path).substr(strlen("/GOLDBOX/"))).c_str(), "wb");
+        if (!f) {
+            expect(P, "a .GUY written", false, "%s", path);
+            return;
+        }
+        fwrite(g.rec, 1, party::kRecordSize, f);
+        fclose(f);
+        d->guys = 1;
+        snprintf(d->guy_file[0], sizeof d->guy_file[0], "TESTGUY.GUY");
+        d->guy_src[0] = 0;
+        static party::Character ch;
+        const bool ok = load_curse_guy(0, ch);
+        plat::remove(path);
+        bool book = ch.rec[0x78 + 1] && ch.rec[0x78 + 3] && ch.rec[0x78 + 0x50];
+        for (int sp : {0x24, 0x38, 0x3F, 0x5A, 0x60, 0x62, 0x64}) book = book && !ch.rec[0x78 + sp];
+        bool money = true;
+        for (int i = 0; i < 7; ++i) money = money && ch.money(i) == 0;
+        const bool fx = cls == classes::Paladin ? ch.has_affect(0x08) && ch.rec[0x191] == 1 && ch.n_affects == 1
+                                                : ch.has_affect(0x69) && ch.n_affects == 1;
+        char w[100];
+        snprintf(w, sizeof w, "Add Character, a Curse %s: book, money, memory, effects, class values",
+                 cls == classes::Paladin ? "paladin" : "ranger");
+        expect(P, w, ok && book && money && !ch.rec[0x1E] && fx && ch.n_items == 0 && ch.rec[0x73] == othac0_all(lv), "ok %d book %d money %d fx %d THAC0 %d",
+               ok, book, money, fx, ch.rec[0x73]);
+    }
+}
+
 void all_situations()
 {
     if (const char* e = getenv("ENDLESS")) {
@@ -1052,4 +1106,5 @@ void all_situations()
     modify_bounds();
     shop_sell();
     script_fields();
+    add_curse();
 }
