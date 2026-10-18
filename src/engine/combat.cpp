@@ -1,6 +1,7 @@
 #include "combat.h"
 
 #include "magic.h"
+#include "rules.h"
 
 #include <cstring>
 
@@ -1728,6 +1729,13 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             // dwarves +1 against flags 1 & 0x80, gnomes against flags 2 & 4
             if (hasx(at, fx.race.dwarf_orc) && (tg.rec[0x14B] & 0x80)) ++side;
             if (hasx(at, fx.race.gnome_foe) && (tg.flags2 & 4)) ++side;
+            // Its dwarves' / gnomes' -4 against flags 1 & 4 / & 0x20 (handlers
+            // 0x12269 / 0x1228E) come before the roll (phase 0xB, 0x16259) and
+            // are lost: only with the rules fixes
+            if (rules::fixes()) {
+                if (hasx(tg, fx.race.giants) && (at.rec[0x14B] & 4)) side -= 4;
+                if (hasx(tg, fx.race.gnome_extra) && (at.rec[0x14B] & 0x20)) side -= 4;
+            }
         } else {
             if (hasx(at, fx.race.dwarf_orc) && (tg.rec[0x14B] & 4)) ++side;
             if (hasx(at, fx.race.gnome_foe) && (tg.rec[0x14B] & 2)) ++side;
@@ -2653,7 +2661,9 @@ bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
             break;
         }
         // Dwarves', gnomes', halflings' Constitution: against spells and wands
-        if ((type == 4 || type == 2) && hasx(f, fx.race.con_save)) {
+        // (Secret's program never applies it - 0x61 is in no effect phase;
+        // only with the rules fixes there)
+        if ((type == 4 || type == 2) && hasx(f, fx.race.con_save) && (!fx.race.secret_flags || rules::fixes())) {
             const int con = f.rec[0x19];
             bonus += con >= 4 && con <= 6 ? 1 : con >= 7 && con <= 10 ? 2 : con >= 11 && con <= 13 ? 3 : con >= 14 && con <= 17 ? 4
                      : con >= 18 && con <= 20 ? 5 : 0;

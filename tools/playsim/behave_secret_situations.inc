@@ -145,19 +145,23 @@ void race_effects()
         snprintf(w, sizeof w, "the %s: +1 to hit %s", fo.who, fo.plus ? "(a 4 hits)" : "none (a 4 misses)");
         expect(P, w, (hits > 0) == fo.plus, "%d hits", hits);
     }
-    // Attacked: a dwarf (0x2F) / gnome (0x30) by a giant (flags 1 0x2C, size 2) -
-    // nothing at the roll: a 5 still hits
-    for (int g = 0; g < 2; ++g) {
-        put(a, 1, 10, 10, 60, 10);
-        F(a).rec[0x14B] = 0x2C;
-        F(a).flags2 = 1;
-        F(a).rec[0xDE] = 2;
-        put(t, 0, 11, 10, 60);
-        give(t, g ? rc.gnome_extra : rc.giants);
-        const int hits = hit_roll(a, t, 5);
-        snprintf(w, sizeof w, "a giant against a %s: no -4 at the roll (a 5 hits)", g ? "gnome (0x30)" : "dwarf (0x2F)");
-        expect(P, w, hits > 0, "%d hits", hits);
-    }
+    // Attacked: a dwarf (0x2F) / gnome (0x30) by a giant (flags 1 0x2C, size 2):
+    // the original - nothing at the roll (a 5 hits); with the rules fixes -4
+    for (int fix = 0; fix < 2; ++fix)
+        for (int g = 0; g < 2; ++g) {
+            rules::set_fixes(fix);
+            put(a, 1, 10, 10, 60, 10);
+            F(a).rec[0x14B] = 0x2C;
+            F(a).flags2 = 1;
+            F(a).rec[0xDE] = 2;
+            put(t, 0, 11, 10, 60);
+            give(t, g ? rc.gnome_extra : rc.giants);
+            const int hits = hit_roll(a, t, 8);
+            snprintf(w, sizeof w, "a giant against a %s, fixes %s: %s", g ? "gnome (0x30)" : "dwarf (0x2F)", fix ? "on" : "off",
+                     fix ? "-4 (an 8 misses)" : "no -4 at the roll (an 8 hits)");
+            expect(P, w, (hits > 0) == !fix, "%d hits", hits);
+        }
+    rules::set_fixes(true);
     // The ranger (0x69, ranger level 0x115 = 7): + 7 against flags 1 & 8 next to it; not from afar
     for (int far = 0; far < 2; ++far)
         for (int giant = 0; giant < 2; ++giant) {
@@ -173,19 +177,24 @@ void race_effects()
             snprintf(w, sizeof w, "the ranger against %s %s: damage", giant ? "a giant" : "a non-giant", far ? "4 squares off" : "next to it");
             expect(P, w, dmg == want, "%d, the original's %d", dmg, want);
         }
-    // The Constitution effect (0x61): no bonus to any save (Con 17; the save 12, the d20 10)
-    for (int kind = 0; kind < 5; ++kind) {
-        put(a, 0, 10, 10, 60);
-        give(a, rc.con_save);
-        F(a).rec[0x19] = F(a).rec[0x18] = 17;
-        for (int k = 0; k < 5; ++k) F(a).rec[0xDF + k] = 12;
-        F(a).rec[0x186] = 0;
-        s_dice(1, 10);
-        const bool made = combat::saving_throw(F(a), kind, 0, rng);
-        create::g_die_hook = nullptr;
-        snprintf(w, sizeof w, "the Constitution effect: a save of kind %d with a 10 against 12 (no bonus)", kind);
-        expect(P, w, !made);
-    }
+    // The Constitution effect (0x61; Con 17: +4 against wands and spells): the
+    // original none (the save 12, the d20 10 fails); with the rules fixes made
+    for (int fix = 0; fix < 2; ++fix)
+        for (int kind = 0; kind < 5; ++kind) {
+            rules::set_fixes(fix);
+            put(a, 0, 10, 10, 60);
+            give(a, rc.con_save);
+            F(a).rec[0x19] = F(a).rec[0x18] = 17;
+            for (int k = 0; k < 5; ++k) F(a).rec[0xDF + k] = 12;
+            F(a).rec[0x186] = 0;
+            s_dice(1, 10);
+            const bool made = combat::saving_throw(F(a), kind, 0, rng);
+            create::g_die_hook = nullptr;
+            const bool want = fix && (kind == 2 || kind == 4);
+            snprintf(w, sizeof w, "the Constitution effect, fixes %s: a save of kind %d, a 10 against 12", fix ? "on" : "off", kind);
+            expect(P, w, made == want, "%s, the original's %s", made ? "made" : "failed", want ? "made" : "failed");
+        }
+    rules::set_fixes(true);
     // The elf (0x5F) and half-elf (0x12): 90% / 30% against sleep (0x35) and charm (0x0B)
 }
 

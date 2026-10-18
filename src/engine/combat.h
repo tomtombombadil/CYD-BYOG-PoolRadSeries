@@ -242,8 +242,10 @@ struct Facts {
     // Secret (secret_flags): its handlers test the creatures' flag bytes -
     // the dwarf's +1 against flags 1 (0x14B) & 0x80, the gnome's against
     // flags 2 (Fighter::flags2) & 4, the ranger's level only next to the
-    // giant; its con_save / giants / gnome_extra are 0 here (no phase of its
-    // own calls them at a roll or a save - secret_situations facts)
+    // giant; its program never applies con_save (in no effect phase) or
+    // giants / gnome_extra (-4 against an attacker's flags 1 & 4 / & 0x20:
+    // set before the d20 is rolled) - the engine does only with
+    // rules::fixes() (an original's mistake, SPEC 12)
     struct RaceFx {
         uint8_t con_save, halfelf, dwarf_orc, gnome_foe, giants, gnome_extra, ranger_giant;
         bool    secret_flags = false;
