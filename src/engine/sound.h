@@ -12,11 +12,16 @@
 //
 // Threads: start() may be called from the game while render() runs in the
 // audio task: the request is picked up at the next tick.
+//
+// Pools of Darkness has no such driver: its effects are digitised samples
+// (ZOUNDS.DAX) played by DigPak drivers - Clips, ClipPlayer below.
 #pragma once
 
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+
+#include "dax.h"
 
 namespace sound {
 
@@ -39,6 +44,61 @@ struct Layout {
 enum Id : uint8_t {
     kStop = 0, kSpell = 2, kMagicHit = 3, kMagicStars = 4, kDeath = 5, kSling = 6, kHit = 7, kLightning = 8,
     kMiss = 9, kStep = 0x0A, kFireball = 0x0B, kMissile = 0x0C, kTitle = 0x0D,
+};
+
+// The later games' effects as digitised samples (Pools of Darkness - facts:
+// the Project's claude/darkness_sound_facts.md): blocks of unsigned 8-bit
+// samples in a DAX file, each handed whole (8SVX header and all) to the
+// game's DigPak driver at one rate. No byte code, no Layout.
+struct Clips {
+    const char* file = nullptr;     // the DAX file (nullptr: Layout's byte code instead)
+    uint16_t hz = 0;                // the rate the game asks the driver for
+    uint8_t  first = 0, last = 0;   // the effect numbers it plays: number n = block n - 1
+    uint8_t  ids[16] = {};          // the engine's sounds (Id, Curse's numbers) -> this game's (0: none)
+    bool     quiet_turns = false;   // turning left / right makes no step sound (Curse's does)
+};
+
+// An effect's samples: the DAX block `block` of the source in a block of its
+// own from malloc (the caller frees it; nullptr: not there, or no memory),
+// *n its size. Reads only the one index entry (no 3 KB index).
+uint8_t* load_clip(dax::ByteSource& src, int block, uint32_t* n);
+
+// The PC speaker driver's (IBMSND.COM) treatment of the samples, in place:
+// each 2,048 bytes stretched to 0-255 when their range is 40 or more (a
+// range of 256 counts as 0: left as it is), then each byte / 4, at most 51,
+// + 1: the pulse widths 1-52 of the speaker's 66-clock pulses
+void pc_speaker_levels(uint8_t* p, uint32_t n);
+
+// The digitised effects' player. The game loads an effect and hands it
+// over; it sounds once the one playing has ended (the original's driver
+// call waits for that) - one waits at most, a newer one takes its place.
+// Tandy: the samples as they are (the Tandy 1000 SL / TL's DAC - and the
+// Sound Blaster's, the GOG release's); PC speaker: as its driver makes them
+// (pc_speaker_levels). Threads: start() from the game, render() from the
+// audio task (it frees what has played).
+class ClipPlayer {
+public:
+    ~ClipPlayer();
+    // `pcm`: n samples at `hz`, from malloc - taken over (freed here, also
+    // when it never plays)
+    void start(uint8_t* pcm, uint32_t n, uint32_t hz, Device d);
+    // As Player::render: n unsigned 8-bit samples at `hz`; false when
+    // nothing sounds any more
+    bool render(uint8_t* out, int n, int hz, int volume);
+    // Everything dropped (the output stopped first)
+    void clear();
+
+private:
+    struct Clip {
+        uint8_t* pcm;
+        uint32_t n;
+        uint32_t hz;
+        Device   dev;
+    };
+    static void drop(Clip* c);
+    std::atomic<Clip*> next_{nullptr};
+    Clip*    cur_ = nullptr;            // the audio task's
+    uint64_t pos_ = 0;                  // in cur_, 16.16 samples
 };
 
 class Player {

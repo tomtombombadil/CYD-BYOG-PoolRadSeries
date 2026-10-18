@@ -984,9 +984,14 @@ bool Vm::dk_step(Stop& r)
     }
     case 0x2C: {                                // SOUND: 2-14 an effect, 0x80 + n music
         if (!need(1)) return true;
-        char t[40];
-        snprintf(t, sizeof t, "SOUND %d (not in the engine yet)", value(o[0]) & 0xFF);
-        h_.log(t);
+        const int v = value(o[0]) & 0xFF;
+        if (v > 0x7F) {
+            char t[40];
+            snprintf(t, sizeof t, "MUSIC %d (not in the engine yet)", v & 0x7F);
+            h_.log(t);
+        } else if (v >= 2 && v <= 14) {
+            h_.game_sound(v);
+        }
         return true;
     }
     case 0x2D: {                                // CALL 1 / 2 / 3

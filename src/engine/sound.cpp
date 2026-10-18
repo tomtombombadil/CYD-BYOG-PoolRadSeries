@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <new>
 
 namespace sound {
 
@@ -292,6 +293,123 @@ bool Player::render(uint8_t* out, int n, int hz, int volume)
         out[i] = static_cast<uint8_t>(128 + (s > 127 ? 127 : s < -128 ? -128 : s));
     }
     return any || busy() || pending_.load() >= 0 || quiet_ < 8;
+}
+
+// ---- Digitised effects (Pools of Darkness; darkness_sound_facts.md)
+
+namespace {
+
+// The PC speaker driver (IBMSND.COM): 2,048-byte pieces stretched when their
+// range is at least 40; pulse widths byte / 4 + 1, at most 52, of a pulse 66
+// timer clocks long (two pulses a sample: 1193182 / 66 Hz). A silent sample
+// (0x80) is width 33: half the pulse.
+constexpr uint32_t kPcChunk = 2048;
+constexpr int kPcMinRange = 40, kPcTop = 0x33, kPcMid = 33;
+
+} // namespace
+
+uint8_t* load_clip(dax::ByteSource& src, int block, uint32_t* n)
+{
+    *n = 0;
+    dax::Entry e{};
+    uint32_t start = 0;
+    if (block < 0 || block > 255 || !dax::find_entry(src, static_cast<uint8_t>(block), e, start) || !e.raw_size)
+        return nullptr;
+    uint8_t* p = static_cast<uint8_t*>(malloc(e.raw_size));
+    // (the reader on the heap: its 256-byte buffer stays off the stack - a
+    // sound starts deep in a fight)
+    dax::RleReader* r = p ? new (std::nothrow) dax::RleReader(src, start, e) : nullptr;
+    const size_t got = r ? r->read(p, e.raw_size) : 0;
+    const bool ok = r && !r->error() && got == e.raw_size;
+    delete r;
+    if (!ok) {
+        free(p);
+        return nullptr;
+    }
+    *n = static_cast<uint32_t>(got);
+    return p;
+}
+
+void pc_speaker_levels(uint8_t* p, uint32_t n)
+{
+    for (uint32_t at = 0; at < n; at += kPcChunk) {
+        const uint32_t len = n - at < kPcChunk ? n - at : kPcChunk;
+        uint8_t lo = 0xFF, hi = 0;
+        for (uint32_t i = 0; i < len; ++i) {
+            if (p[at + i] < lo) lo = p[at + i];
+            if (p[at + i] > hi) hi = p[at + i];
+        }
+        uint8_t range = static_cast<uint8_t>(hi - lo + 1);     // (8 bits, as the driver's: 0-255 is 0)
+        if (range < 2) range = 2;
+        if (range < kPcMinRange) continue;
+        for (uint32_t i = 0; i < len; ++i)
+            p[at + i] = static_cast<uint8_t>(((p[at + i] - lo) << 8) / range);
+    }
+    for (uint32_t i = 0; i < n; ++i) {
+        const int v = p[i] >> 2;
+        p[i] = static_cast<uint8_t>((v > kPcTop ? kPcTop : v) + 1);
+    }
+}
+
+void ClipPlayer::drop(Clip* c)
+{
+    if (!c) return;
+    free(c->pcm);
+    delete c;
+}
+
+ClipPlayer::~ClipPlayer() { clear(); }
+
+void ClipPlayer::clear()
+{
+    drop(next_.exchange(nullptr));
+    drop(cur_);
+    cur_ = nullptr;
+    pos_ = 0;
+}
+
+void ClipPlayer::start(uint8_t* pcm, uint32_t n, uint32_t hz, Device d)
+{
+    if (!pcm) return;
+    Clip* c = n && hz ? new (std::nothrow) Clip{pcm, n, hz, d} : nullptr;
+    if (!c) {
+        free(pcm);
+        return;
+    }
+    if (d == Device::PcSpeaker) pc_speaker_levels(pcm, n);
+    drop(next_.exchange(c));                // (one waiting at most: the newer one)
+}
+
+bool ClipPlayer::render(uint8_t* out, int n, int hz, int volume)
+{
+    bool any = false;
+    for (int i = 0; i < n; ++i) {
+        if (!cur_) {
+            cur_ = next_.exchange(nullptr);
+            pos_ = 0;
+        }
+        if (!cur_ || hz <= 0) {
+            out[i] = 128;
+            continue;
+        }
+        const uint32_t k = static_cast<uint32_t>(pos_ >> 16);
+        if (k >= cur_->n) {                 // played: the next one (if any) at once
+            drop(cur_);
+            cur_ = nullptr;
+            --i;
+            continue;
+        }
+        // Between two samples in a straight line (the DAC's and the
+        // speaker's own smoothing)
+        const int a = cur_->pcm[k], b = k + 1 < cur_->n ? cur_->pcm[k + 1] : a;
+        int s = a + (b - a) * static_cast<int>(pos_ & 0xFFFF) / 65536;
+        s = cur_->dev == Device::PcSpeaker ? (s - kPcMid) * 127 / kPcMid : s - 128;
+        s = s * volume / 255;
+        out[i] = static_cast<uint8_t>(128 + (s > 127 ? 127 : s < -128 ? -128 : s));
+        pos_ += (static_cast<uint64_t>(cur_->hz) << 16) / static_cast<uint32_t>(hz);
+        any = true;
+    }
+    return any || cur_ != nullptr || next_.load() != nullptr;
 }
 
 } // namespace sound

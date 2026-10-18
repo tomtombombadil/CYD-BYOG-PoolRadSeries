@@ -1017,6 +1017,7 @@ const Profile kProfiles[] = {
      {0x29A2, 0x29B3, 0xA28D, 0xA295, 0xA2A2, 0x3222},
      &kCurseRandom, 0x0830,
      {0x6990, 0x04A2, 0x12BB, 0x04A2, 0x054A, 21, 0x2F, 0x33},
+     {},                                              // (no digitised effects)
      {0x18B8B, 0x18B90, 0x18B96, 0x18B9D, 0x18BA3, 0x1F},
      {{0x265C6, 0x265F5, 0x2662A, 0x26660, 0x266B5, 0x266E6, 0x2671F, 0x26754, 0x2678E, 0x267C0, 0x267FA, 0x26831,
        0x2683E, 0x2686C, 0x268A1, 0x268D4, 0x268DA, 0x26901, 0x26936, 0x26969, 0x2698D, 0x269C2, 0x269FD, 0x26A33},
@@ -1448,6 +1449,12 @@ const Profile kProfiles[] = {
      // The script machine's words (darkness_facts.md S10): DAMAGE's lines,
      // PRESS KEY's prompt, JOURNAL's sentence, WHAT MENU's question, "Yes No"
      .script_words = {0, 0, 0x7B42, 0x7B4A, 0x7B57, 0x19C2, kP | 0xAC82, 0x261D, 0x2640, 0x1212, kP | 0xC9D4},
+     // The effects (darkness_sound_facts.md 2-4): ZOUNDS.DAX's blocks 1-11 as
+     // effects 2-12, at 9,000 Hz; Curse's sound numbers here mostly the same
+     // - the magic hit with stars 6, without 9, sling / flask 9, no title
+     // sound; turning is silent
+     .clips = {.file = "ZOUNDS.DAX", .hz = 9000, .first = 2, .last = 12,
+               .ids = {0, 0, 2, 9, 6, 5, 9, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .quiet_turns = true},
      .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .camp_pic = 128, .vga = true, .darkness_files = true,
                  .party_menu_col = 9},
      .font_file = "8X8D0.DAX"},
