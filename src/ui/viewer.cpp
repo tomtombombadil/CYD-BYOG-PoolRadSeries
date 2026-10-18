@@ -231,7 +231,7 @@ bool open_file(int i)
                 A->pic_hdr[e] = pic::Header{};
                 A->pic_hdr[e].height = vh.height;
                 A->pic_hdr[e].width_cols = vh.width_cols;
-                A->pic_hdr[e].frames = vh.frames;
+                A->pic_hdr[e].frames = static_cast<uint8_t>(vh.frames > 255 ? 255 : vh.frames);
             }
         }
         if (!A->is_pic[e]) {

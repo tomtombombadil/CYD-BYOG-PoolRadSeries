@@ -91,7 +91,10 @@ bool draw_title_picture(pic::Canvas& c, int block, int row, int col)
     bool ok = false;
     if (dax::read_index(src, d->idx) == dax::Status::Ok) {
         const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
-        if (e) {
+        if (e && d->prof->variant.vga) {
+            // (Darkness: a VGA picture - its EGA colours on this canvas)
+            ok = pic::draw_vga_block(src, d->idx, *e, 0, c, col * 8, row * 8);
+        } else if (e) {
             dax::RleReader r(src, d->idx, *e);
             uint8_t hdr[pic::kHeaderSize];
             pic::Header h;
@@ -328,8 +331,9 @@ const char* open(const char* data_dir, games::Game g)
     }
     {
         plat::FileSource tsrc(f);
+        // (Darkness's VGA frame tiles: not drawn yet)
         bool ok = dax::read_index(tsrc, d->idx) == dax::Status::Ok &&
-                  layout::load_tiles(tsrc, d->idx, p->tiles_block, d->tiles, p->variant.tile_window) &&
+                  (p->variant.vga || layout::load_tiles(tsrc, d->idx, p->tiles_block, d->tiles, p->variant.tile_window)) &&
                   (p->font_file || font::load(tsrc, d->idx, d->font));
         f.close();
         if (ok && p->font_file) {
@@ -351,7 +355,7 @@ const char* open(const char* data_dir, games::Game g)
     // The credits, from GAME.OVR (the title sequence skips them without it)
     if (open_file(data_dir, p->overlay, f)) {
         plat::FileSource osrc(f);
-        if (osrc.size() == p->overlay_size)
+        if (osrc.size() == p->overlay_size && p->credits_at)
             d->n_credits = printcalls::read(osrc, p->credits_at, p->credits_base, d->credits, kMaxCredits,
                                              p->variant.credits_stride ? p->variant.credits_stride : printcalls::kBlock);
         f.close();

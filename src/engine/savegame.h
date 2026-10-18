@@ -33,11 +33,18 @@ constexpr uint32_t kPoolSize = kSize - 12;
 // Secret of the Silver Blades' (secret_facts.md 7) are Curse's without the
 // script's bytes: 5,469 bytes
 constexpr uint32_t kSecretSize = kSize - 0x1E00;
+// Pools of Darkness's (darkness_facts.md 32, S8): SAVGAMx.PTY - the scripts'
+// 1,024-byte game block, 5 position bytes (x, y, facing 0-7, wall ahead,
+// square flags), the old and current mode, the look (u16) and wall-set
+// slot (u16), the count and 8 x 41 names: 1,364 bytes
+constexpr uint32_t kDarknessBlock = 0x400;
+constexpr uint32_t kDarknessSize = kDarknessBlock + 5 + 2 + 2 + 2 + 1 + 8 * 41;
 constexpr char kFirst = 'A', kLast = 'J';    // the games' ten save slots
 
 struct Header {
     uint8_t game_area = 0;
-    uint8_t last_state = 0, state = 0;
+    uint8_t last_state = 0, state = 0;   // (Darkness: its modes - 4 3D, 3 the overland)
+    uint16_t look = 0, look_slot = 0;    // (Darkness: LOAD FILES' look, its wall-set slot)
     int16_t wall_block[3] = {}, wall_set[3] = {};
     int     count = 0;                       // characters
     char    names[party::kMaxParty][41] = {};
@@ -48,6 +55,10 @@ struct Header {
 // wall_sets = false: Pool's layout (no wall sets; h's stay 0); script =
 // false: Secret's (no script bytes; gs.code_len 0).
 bool read(dax::ByteSource& src, ecl::GameState& gs, Header& h, bool wall_sets = true, bool script = true);
+
+// Darkness's .PTY: the game block into gs.area1's first 1,024 bytes (the
+// scripts' addresses 1-0x400), the position, modes, look and names
+bool read_darkness(dax::ByteSource& src, ecl::GameState& gs, Header& h);
 
 // Where write() puts the bytes (a file on the card, a buffer in tests)
 class Sink {
@@ -60,10 +71,12 @@ public:
 // states, wall sets, the party's file names). The characters' own files
 // are written by the caller (their records as kept, items, effects).
 bool write(Sink& out, const ecl::GameState& gs, const Header& h, bool wall_sets = true, bool script = true);
+bool write_darkness(Sink& out, const ecl::GameState& gs, const Header& h);
 
 // The save file's name for slot 'A'..'J' ("SAVGAMA.DAT"), and the n-th
 // character's (1 ..: "CHRDATA1", + ".SAV" / ".SWG" / ".FX").
 void file_name(char slot, char* out, size_t cap);
+void file_name_darkness(char slot, char* out, size_t cap);      // "SAVGAMA.PTY"
 void char_file(char slot, int n, char* out, size_t cap);
 
 // The save folder from the game's configuration file (Curse: CURSE.CFG,
@@ -71,7 +84,9 @@ void char_file(char slot, int n, char* out, size_t cap);
 // POOL.CFG names the game's folder first, then the save folder), without
 // its drive and with '/' between folders ("SAVE"); "" if none. The games run
 // with their own folder as drive C:, so it is a folder inside it.
-void save_dir(const char* cfg, size_t len, char* out, size_t cap);
+// nth >= 0: the nth folder line instead (Darkness's POOL4.CFG names its own
+// save folder first, then Secret's: nth 0)
+void save_dir(const char* cfg, size_t len, char* out, size_t cap, int nth = -1);
 // The Steam / SNEG releases run with the folder ABOVE the game's as C:
 // (CURSE.CFG "C:\CURSE\SAVE\", the files in GAME/CURSE): when the save
 // folder's first part is the game folder's own name (the data folder's last

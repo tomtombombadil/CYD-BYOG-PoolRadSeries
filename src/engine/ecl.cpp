@@ -72,7 +72,7 @@ bool decode(const uint8_t* c, uint32_t len, uint32_t at, const OpSet& set, Insn&
     if (size >= 0) {
         if (!operands(set, c, len, p, size, out)) return false;
     } else {
-        const int first = size == kCount3 ? 3 : 2;
+        const int first = size == kCount3 ? 3 : size == kCount4 ? 4 : 2;
         if (!operands(set, c, len, p, first, out)) return false;
         const Operand& n = out.ops[first - 1];
         if (!n.immediate()) return false;
@@ -161,7 +161,9 @@ MapLoad find_map_load(const uint8_t* block, uint32_t len, const OpSet& set)
                 Insn next;            // the instruction it may skip: go on after it too
                 if (decode(c, n, in.next, set, next)) push(next.next);
             }
-            if (in.op == set.exit || in.op == set.go_to || in.op == set.ret || in.op == set.new_ecl) break;
+            if (in.op == set.exit || in.op == set.go_to || in.op == set.ret || in.op == set.new_ecl ||
+                in.op == set.end_op)
+                break;
             p = in.next;
         }
     }

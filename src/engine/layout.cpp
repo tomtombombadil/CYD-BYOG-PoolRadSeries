@@ -113,8 +113,9 @@ bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tile
 Status load_tables(dax::ByteSource& program, const exepack::Info& info, const profile::Profile& p, Tables& out)
 {
     out.loaded = false;
-    if (p.variant.box[0] || p.variant.bars[0]) {
-        // Pool: boxes; Secret: bars - no tables to read
+    if (p.variant.box[0] || p.variant.bars[0] || p.variant.vga) {
+        // Pool: boxes; Secret: bars; Darkness: its own (not drawn yet) - no
+        // tables to read
         memcpy(out.box, p.variant.box, sizeof out.box);
         memcpy(out.bars, p.variant.bars, sizeof out.bars);
         out.loaded = true;
