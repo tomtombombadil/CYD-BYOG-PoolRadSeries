@@ -57,6 +57,9 @@ Entry entry(const classes::Tables& t, int s)
     e.lasts = b(4);
     e.lasts_level = b(5);
     e.targets = b(7);
+    // Secret's whole party is 3 (its camp routine GAME.OVR 0x2D949 walks the
+    // party list for 3; Curse's 4)
+    if (t.lay.secret && e.targets == 3) e.targets = kParty;
     e.affect = b(10);
     e.when = b(11);
     e.aim = b(6);
