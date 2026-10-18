@@ -1311,5 +1311,11 @@ int jewel_value(int r, create::Dice& d, int div)
     return d.random(10000 / div) + 2000 / div;
 }
 
+namespace {
+bool g_fixes = true;
+}
+void set_fixes(bool on) { g_fixes = on; }
+bool fixes() { return g_fixes; }
+
 } // namespace rules
 
