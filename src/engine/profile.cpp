@@ -1110,7 +1110,8 @@ const Profile kProfiles[] = {
      // file; arrows 30, quarrels 12, darts 5; the elves' bows and swords
      // 22-25, 18, 19 (its types are its words' numbers); the menu word
      .items = {.words = {0xED42, 21, 124}, .types_file = "ITEMS", .arrow = 30, .quarrel = 12, .dart = 5,
-               .elf_bonus = {22, 23, 24, 25, 18, 19},
+               // (types 0x16-0x1A, 0x13, 0x12: GAME.OVR 0x382C6)
+               .elf_bonus = {22, 23, 24, 25, 26, 18, 19},
                // (its GAME.OVR words where Curse's are; no "Weapon" / "Armor")
                .buy_items = 0x8532, .buy = 0x853A, .list_next = 0x3E5AF, .list_prev = 0x3E5B5,
                .list_exit = 0x3E5BB, .shop_menu = 0x8C6C, .shop_menu_money = 0x8C45, .no_money = 0x8962,
