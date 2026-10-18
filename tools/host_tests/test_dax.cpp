@@ -412,6 +412,69 @@ static void test_vga()
     }
 }
 
+// Darkness's frame (darkness_facts.md 7.1): a BORDERS-like VGA block of 11
+// tiles (piece p filled with entry 16 + p, whose EGA nibble is p + 1) and
+// its bar routine's screens
+static void test_chain_frame()
+{
+    Bytes raw = {8, 1, 0, 0, 0, 0, 11, 0, 16, 15};
+    for (int i = 0; i < 16; ++i) raw.insert(raw.end(), {0, 0, 0});
+    for (int i = 0; i < 16; i += 2) raw.push_back(static_cast<uint8_t>(((i + 1) & 15) << 4 | ((i + 2) & 15)));
+    for (int i = 0; i < 4; ++i) raw.push_back(0);
+    for (int p = 0; p < 11; ++p)
+        for (int i = 0; i < 64; ++i) raw.push_back(static_cast<uint8_t>(i == 0 ? 13 : 16 + p));   // (13: see-through)
+    const Bytes file = make_dax({{0, raw}});
+    dax::MemorySource src(file.data(), static_cast<uint32_t>(file.size()));
+    static dax::Index idx;
+    CHECK(dax::read_index(src, idx) == dax::Status::Ok);
+    static layout::Tiles t;
+    CHECK(layout::load_vga_tiles(src, idx, 0, t, 20, 11, true) && t.count == 31 && t.px[25][5] == 6 && t.px[20][0] == 13);
+    profile::Profile dp{};
+    dp.variant.vga = true;
+    static layout::Tables tb;
+    const Bytes none(16, 0);
+    dax::MemorySource ns(none.data(), 16);
+    exepack::Info info{};
+    CHECK(layout::load_tables(ns, info, dp, tb) == layout::Status::Ok && tb.chain);
+    static uint8_t px[pic::kScreenW * pic::kScreenH / 2];
+    pic::Canvas c{px, pic::kScreenW, pic::kScreenH, 4};
+    auto is = [&](int col, int row, int piece) { return c.get(col * 8 + 3, row * 8 + 3) == piece + 1; };
+    c.clear(0);
+    layout::explore(c, tb, t);
+    CHECK(is(0, 0, 0) && is(39, 0, 1) && is(0, 23, 2) && is(39, 23, 3) && is(10, 0, 4) && is(0, 10, 5) && is(39, 10, 5));
+    CHECK(is(0, 16, 9) && is(20, 16, 4) && is(39, 16, 7) && is(16, 0, 6) && is(16, 8, 5) && is(16, 16, 7));
+    CHECK(is(2, 2, 0) && is(14, 2, 1) && is(2, 14, 2) && is(14, 14, 3) && is(8, 2, 4) && is(2, 8, 5));
+    CHECK(c.get(0, 0) == 0 && c.get(10 * 8, 0) == 0);    // (13 left out)
+    c.clear(0);
+    layout::combat(c, tb, t);
+    CHECK(is(0, 22, 2) && is(39, 22, 3) && is(22, 0, 6) && is(22, 22, 7) && is(22, 10, 5) && c.get(3, 23 * 8 + 3) == 0);
+}
+
+// Darkness's wall tiles (darkness_facts.md 7.3): an 8X8D1-like block -
+// entries 0x20 on, 0x70 of them (the program skips 32 bytes after the
+// nibbles there, not 4), 256 tiles; tile t is the walls' number t (1-45 in
+// common, 46-255 in the sets, no moves), in its EGA colours
+static void test_dk_walls()
+{
+    Bytes raw = {8, 1, 0, 0, 0, 0, 0, 1, 0x20, 0x6F};
+    for (int i = 0; i < 0x70; ++i) raw.insert(raw.end(), {0, 0, 0});
+    for (int i = 0; i < 0x70; i += 2) raw.push_back(static_cast<uint8_t>((i % 15 + 1) << 4 | ((i + 1) % 15 + 1)));
+    for (int i = 0; i < 32; ++i) raw.push_back(0xEE);         // (the 32 skipped)
+    for (int t = 0; t < 256; ++t)
+        for (int i = 0; i < 64; ++i) raw.push_back(static_cast<uint8_t>(0x20 + t % 0x70));
+    const Bytes file = make_dax({{1, raw}});
+    dax::MemorySource src(file.data(), static_cast<uint32_t>(file.size()));
+    static dax::Index idx;
+    CHECK(dax::read_index(src, idx) == dax::Status::Ok);
+    pic::VgaHeader vh;
+    CHECK(pic::parse_vga_header(raw.data(), static_cast<uint32_t>(raw.size()), vh) && vh.frames == 256 &&
+          vh.pixels_at == raw.size() - 256 * 64);
+    static view3d::World w;
+    CHECK(view3d::load_vga_tiles(src, idx, 1, w) && w.dk && w.common.count == 45 && w.sets[2].count == 70);
+    auto nib = [](int t) { return (t % 0x70) % 15 + 1; };       // tile t's colour
+    CHECK((w.common.px[0][0] >> 4) == nib(1) && (w.sets[0].px[0][5] & 15) == nib(46) && (w.sets[2].px[69][0] >> 4) == nib(255));
+}
+
 // Font block: 177 glyphs; glyph g's rows are made-up patterns
 static void test_font()
 {
@@ -7062,6 +7125,8 @@ int main()
     test_picture();
     test_anim();
     test_vga();
+    test_chain_frame();
+    test_dk_walls();
     test_font();
     test_games();
     test_exepack();

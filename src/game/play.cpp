@@ -6888,6 +6888,7 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         d->facts.arrow = pi.arrow;
         d->facts.quarrel = pi.quarrel;
         memcpy(d->facts.elf_bonus, pi.elf_bonus, sizeof d->facts.elf_bonus);
+        d->facts.elf_bonus_any_race = secret_files();
         d->facts.strength_fx = pi.stat_fx[0];
         d->facts.giant_fx = pi.stat_fx[1];
         d->facts.enlarge_fx = pi.stat_fx[2];

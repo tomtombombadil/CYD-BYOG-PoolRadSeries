@@ -16,7 +16,11 @@ namespace rules {
 // Per-game item facts the rules need (from the profile)
 struct ItemFacts {
     uint8_t arrow, quarrel;
-    uint8_t elf_bonus[6];
+    uint8_t elf_bonus[8];
+    // Secret's weapon part (GAME.OVR 0x38151) gives that +1 to anyone with
+    // one of those weapons - its program has no race test there (an
+    // original's mistake: applied only with fixes() off)
+    bool elf_bonus_any_race = false;
     // Effects in the stats: Strength, the giant strength potion's, Enlarge,
     // Friends, Feeblemind (0: none)
     uint8_t strength_fx = 0, giant_fx = 0, enlarge_fx = 0, friends_fx = 0, feeble_fx = 0;

@@ -178,6 +178,26 @@ bool select_map(int i)
         geo::load(src, d->idx, r.load.geo, d->map);
         f.close();
     }
+    if (w.dk) {
+        // Darkness: the look - WALLDEF1's three parts and 8X8D1's tiles of
+        // the same number (darkness_facts.md 7.3)
+        const uint8_t look = r.load.walls[0];
+        if (look != ecl::kNone && open_dax("WALLDEF1.DAX", f)) {
+            plat::FileSource src(f);
+            view3d::load_walls(src, d->idx, 1, look, w, nullptr);
+            f.close();
+        }
+        if (look != ecl::kNone && open_dax("8X8D1.DAX", f)) {
+            plat::FileSource src(f);
+            view3d::load_vga_tiles(src, d->idx, look, w);
+            f.close();
+        }
+        plat::log("[walk] map %d: script %d GEO %d look %d, geo %s\n", i, r.script, r.load.geo, look,
+                  d->map.loaded ? "ok" : "missing");
+        pick_start();
+        note = d->map.loaded ? "" : "This map's GEO block is missing.";
+        return true;
+    }
     // Wall sets: a WALLDEF block of 2 or 3 parts fills the sets after its
     // own too, and the script's numbers for those are then not loaded
     int parts[3] = {0, 0, 0};
@@ -273,17 +293,25 @@ const char* open(const char* data_dir, games::Game g)
             snprintf(msg, sizeof msg, "This %s is a release the engine doesn't know yet.", prog);
             return msg;
         }
-        if (p->variant.vga) {
-            // (Darkness: its VGA walls and frame - not drawn yet)
-            close();
-            snprintf(msg, sizeof msg, "No walk test for %s yet.", games::title(g));
-            return msg;
-        }
         d->prof = p;
     }
-    // Frame tiles, font and the common wall tiles: 8X8D1
+    // Frame tiles, font and the common wall tiles: 8X8D1 (Darkness: the
+    // area map's tiles and the font in 8X8D0, the frame BORDERS' gold
+    // chain, every wall tile in the area's own 8X8D1 block)
     bool ok = open_dax(d->prof->tiles_file, f);
-    if (ok) {
+    if (ok && d->prof->variant.vga) {
+        plat::FileSource src(f);
+        ok = layout::load_vga_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, 0, 20, true) &&
+             font::load(src, d->idx, d->font);
+        f.close();
+        if (ok) ok = open_dax("BORDERS.DAX", f);
+        if (ok) {
+            plat::FileSource bsrc(f);
+            ok = layout::load_vga_tiles(bsrc, d->idx, 0, d->frame_tiles, 20, 11, true);
+            f.close();
+        }
+        d->world.dk = true;
+    } else if (ok) {
         plat::FileSource src(f);
         ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, d->prof->variant.tile_window) &&
              (d->prof->font_file || font::load(src, d->idx, d->font)) &&
@@ -316,6 +344,7 @@ const char* open(const char* data_dir, games::Game g)
 
 void close()
 {
+    if (d) view3d::back_free(d->world);
     delete d;
     d = nullptr;
 }
@@ -331,6 +360,18 @@ void draw(pic::Canvas& c)
         } else {
             // Under a roof: the indoor sky (black); outside: light blue
             const uint8_t sky = geo::flags(d->map, px, py) >= 0x80 ? 0 : 11;
+            if (d->world.dk) {
+                // Darkness: indoors BACK1's picture of the look, outdoors
+                // SKYGRND's day (darkness_facts.md 7.3)
+                const bool in = sky == 0;
+                const uint8_t block = in ? d->maps[cur].load.walls[0] : 1;
+                plat::File f;
+                if (block != ecl::kNone && open_dax(in ? "BACK1.DAX" : "SKYGRND.DAX", f)) {
+                    plat::FileSource src(f);
+                    view3d::load_back(src, d->idx, block, static_cast<uint8_t>((in ? 0x10 : 0x20) | block), d->world);
+                    f.close();
+                }
+            }
             const auto& v = d->prof->variant;
             if (v.flat_view) view3d::draw(c, d->world, d->map, px, py, pdir, view3d::Bands{sky, v.view_line, v.view_band, v.view_floor});
             else view3d::draw(c, d->world, d->map, px, py, pdir, sky);

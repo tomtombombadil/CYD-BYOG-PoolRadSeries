@@ -1,5 +1,6 @@
 #include "view3d.h"
 
+#include <cstdlib>
 #include <cstring>
 
 namespace view3d {
@@ -197,8 +198,9 @@ bool load_walls(dax::ByteSource& src, const dax::Index& idx, int set, uint8_t bl
         // Numbers from 45 up are this set's own tiles: move them to its range.
         // Every part of a block moves by its first set's amount - a 2- or
         // 3-part block's later parts already number their tiles after the
-        // first part's (as the games do it)
-        const int shift = (set - 1) * kSetTiles;
+        // first part's (as the games do it). Darkness: the numbers are the
+        // tile block's own (no moves)
+        const int shift = w.dk ? 0 : (set - 1) * kSetTiles;
         for (int p = 0; p < kPieces; ++p)
             for (int k = 0; k < kPieceTiles; ++k)
                 if (ws.id[p][k] >= kCommonTiles) ws.id[p][k] = static_cast<uint8_t>(ws.id[p][k] + shift);
@@ -219,6 +221,77 @@ bool load_horizon(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Wo
     if (w.horizon_hdr.frame_bytes() > sizeof w.horizon) return false;
     if (r.read(w.horizon, w.horizon_hdr.frame_bytes()) != w.horizon_hdr.frame_bytes()) return false;
     w.has_horizon = true;
+    return true;
+}
+
+void back_free(World& w)
+{
+    free(w.back);
+    w.back = nullptr;
+    w.back_id = 0;
+}
+
+namespace {
+// A VGA block's header, palette skipped and its EGA nibbles read into map
+bool vga_start(dax::RleReader& r, const dax::Entry& e, pic::VgaHeader& h, uint8_t map[256])
+{
+    uint8_t hdr[pic::kVgaHeaderSize];
+    for (int i = 0; i < 256; ++i) map[i] = static_cast<uint8_t>(i & 15);
+    return r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_vga_header(hdr, e.raw_size, h) &&
+           r.skip(h.count * 3u) == h.count * 3u && pic::read_vga_ega(r, h, map) &&
+           r.skip(h.pixels_at - (pic::kVgaHeaderSize + h.count * 3u + (h.count + 1) / 2u)) ==
+               h.pixels_at - (pic::kVgaHeaderSize + h.count * 3u + (h.count + 1) / 2u);
+}
+} // namespace
+
+bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, World& w)
+{
+    w.dk = true;
+    w.common.count = 0;
+    for (auto& ts : w.sets) ts.count = 0;
+    const dax::Entry* e = idx.find(block);
+    if (!e) return false;
+    dax::RleReader r(src, idx, *e);
+    pic::VgaHeader h;
+    uint8_t map[256];
+    if (!vga_start(r, *e, h, map) || h.height != 8 || h.width_cols != 1) return false;
+    for (int t = 0; t < h.frames && t < 256; ++t) {
+        uint8_t px[64];
+        if (r.read(px, sizeof px) != sizeof px) return false;
+        if (t == 0) continue;                       // (tile 0: never drawn)
+        uint8_t* out;
+        if (t <= kCommonTiles) {
+            out = w.common.px[t - 1];
+            w.common.count = t;
+        } else {
+            const int k = t - (kCommonTiles + 1);
+            TileSet& ts = w.sets[k / kSetTiles];
+            out = ts.px[k % kSetTiles];
+            ts.count = k % kSetTiles + 1;
+        }
+        for (int i = 0; i < 32; ++i) out[i] = static_cast<uint8_t>(map[px[i * 2]] << 4 | map[px[i * 2 + 1]]);
+    }
+    return true;
+}
+
+bool load_back(dax::ByteSource& src, const dax::Index& idx, uint8_t block, uint8_t id, World& w)
+{
+    if (w.back && w.back_id == id) return true;
+    const dax::Entry* e = idx.find(block);
+    if (!e) return false;
+    dax::RleReader r(src, idx, *e);
+    pic::VgaHeader h;
+    uint8_t map[256];
+    if (!vga_start(r, *e, h, map) || h.height != kCells * 8 || h.width_px() != kCells * 8) return false;
+    if (!w.back) w.back = static_cast<uint8_t*>(malloc(kCells * 8 * kCells * 4));
+    if (!w.back) return false;
+    w.back_id = 0;
+    for (int i = 0; i < kCells * 8 * kCells * 4; ++i) {
+        const int a = r.next(), b = r.next();
+        if (a < 0 || b < 0) return false;
+        w.back[i] = static_cast<uint8_t>(map[a] << 4 | map[b]);
+    }
+    w.back_id = id;
     return true;
 }
 
@@ -255,6 +328,16 @@ void walls(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int 
 void draw(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int dir, uint8_t sky)
 {
     const int x0 = kCell0 * 8, y0 = kCell0 * 8, wpx = kCells * 8;
+    if (w.dk && w.back) {
+        // Darkness: the background picture, then the walls over it
+        for (int row = 0; row < wpx; ++row)
+            for (int col = 0; col < wpx; ++col) {
+                const uint8_t b = w.back[row * (wpx / 2) + col / 2];
+                c.set(x0 + col, y0 + row, (col & 1) ? (b & 15) : (b >> 4));
+            }
+        walls(c, w, m, x, y, dir);
+        return;
+    }
     c.fill(x0, y0, wpx, 44, sky);
     c.fill(x0, y0 + 44, wpx, 2, 0);
     c.fill(x0, y0 + 46, wpx, 42, 8);
@@ -296,9 +379,11 @@ void draw_area_map(pic::Canvas& c, const World& w, const geo::Map& m, int x, int
             if (geo::wall(m, mx, my, 2)) bits |= 2;
             if (geo::wall(m, mx, my, 4)) bits |= 4;
             if (geo::wall(m, mx, my, 6)) bits |= 8;
-            put_frame_tile(c, *w.frame, 4 + bits, (kCell0 + col) * 8, (kCell0 + r) * 8, kMask, kMask);
+            // (Darkness: walls in frames 0-15, the arrows 16-19)
+            put_frame_tile(c, *w.frame, (w.dk ? 0 : 4) + bits, (kCell0 + col) * 8, (kCell0 + r) * 8, kMask, kMask);
         }
-    put_frame_tile(c, *w.frame, (dir & 7) >> 1, (kCell0 + x - ox) * 8, (kCell0 + y - oy) * 8, 8, kMask);
+    put_frame_tile(c, *w.frame, (w.dk ? 16 : 0) + ((dir & 7) >> 1), (kCell0 + x - ox) * 8, (kCell0 + y - oy) * 8, 8,
+                   kMask);
 }
 
 } // namespace view3d
