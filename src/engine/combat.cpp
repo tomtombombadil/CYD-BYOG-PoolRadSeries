@@ -2708,14 +2708,16 @@ namespace {
 
 int dispel_chance(int L, int lvl);
 
-int sleep_cost(const Fighter& f)
+int sleep_cost(const Fighter& f, bool secret)
 {
     switch (f.rec[0xE5]) {
     case 0: case 1: return 1;
     case 2: return 2;
     case 3: return 4;
     case 4: return 6;
-    case 5: return f.rec[0x74] == 0 ? 10 : 20;
+    // (Secret, GAME.OVR 0x2EB9C: 10 for its race 0 - which no record has; its
+    // monsters are race 7 - so 20)
+    case 5: return f.rec[0x74] == 0 && !secret ? 10 : 20;
     default: return 20;
     }
 }
@@ -3161,7 +3163,11 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         int budget = me.hp();
         for (int c = 0; c < b.n; ++c) {
             Fighter& f = b.f[c];
-            if (!f.up() || !f.size || f.rec[0x11A] != 14 || f.hp() > budget) continue;
+            // (Secret, GAME.OVR 0x2EDED: a snake is flags 1 - record 0x15D, here 0x14B - & 0x10,
+            // not already charmed)
+            const bool snake = b.fx && b.fx->secret ? (f.rec[0x14B] & 0x10) && !(e.affect && f.has(static_cast<uint8_t>(e.affect)))
+                                                    : f.rec[0x11A] == 14;
+            if (!f.up() || !f.size || !snake || f.hp() > budget) continue;
             budget -= f.hp();
             if (e.affect) give_aff(f, e.affect, 0, pw, false);
             say(c, Did::Word, 0);
@@ -3517,7 +3523,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         int budget = d.roll(4, 4);
         for (int k = 0; k < m; ++k) {
             Fighter& f = b.f[who[k]];
-            const int cost = sleep_cost(f);
+            const int cost = sleep_cost(f, b.fx && b.fx->secret);
             if (!f.up() || f.status() == party::Animated || (e.affect && f.has(static_cast<uint8_t>(e.affect))) ||
                 cost > budget)
                 continue;
