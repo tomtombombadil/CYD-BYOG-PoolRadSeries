@@ -2586,7 +2586,7 @@ void find_guys(char from = 'C')
                             strcasecmp(nm + 8, ".SAV") == 0;
         if (f.isDirectory() || (!guy && !member) || f.size() != rec_file_size()) continue;
         uint8_t rec[0x100];
-        const int ctl = pool_files() ? 0x84 : 0xF7;
+        const int ctl = pool_files() ? 0x84 : secret_files() ? 0xFF : 0xF7;     // (Secret's record: 0xFF)
         if (f.read(rec, ctl + 1) != ctl + 1 || rec[ctl] > 0x7F) continue;     // NPCs aren't listed
         char name[16];
         size_t len = rec[0] > 15 ? 15 : rec[0];
