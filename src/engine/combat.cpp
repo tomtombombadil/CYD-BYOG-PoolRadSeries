@@ -1696,8 +1696,13 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
         if (fx.bestow && at.has(fx.bestow)) side -= 4;
         if (fx.blinded && at.has(fx.blinded)) side -= 4;
         if (fx.animals_blind && at.rec[0x11A] == 19 && tg.has(fx.animals_blind) && !sees) side -= 4;
-        if (hasx(tg, fx.invisible) && !sees) side -= 4;              // an invisible target
-        if (hasx(tg, fx.sp.evil_ward) && (at.rec[0x14B] & 1)) side -= 7;   // Dispel Evil against the evil
+        // Secret's program never applies these at the roll (its handlers 0x116CE
+        // invisibility and 0x1105F Dispel Evil run in phases before the d20 is
+        // rolled or at the holder's own turn - the d20 they lower is rolled
+        // after): AD&D's only with rules::fixes()
+        const bool at_roll = !fx.secret || rules::fixes();
+        if (at_roll && hasx(tg, fx.invisible) && !sees) side -= 4;              // an invisible target
+        if (at_roll && hasx(tg, fx.sp.evil_ward) && (at.rec[0x14B] & 1)) side -= 7;   // Dispel Evil against the evil
         // The races: dwarves +1 against orcs, gnomes +1 against their foes;
         // dwarves and gnomes -4 to be hit by giants and trolls of size 2,
         // gnomes by kobold-kind (type 1) of size 2
@@ -1789,7 +1794,9 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             const int extra = roll > 1 ? wbonus + (slayer ? 2 : 0) : 0;
             bool hit = roll == 20 || (roll != 1 && roll + static_cast<int8_t>(at.rec[kHit]) + side + extra >= ac);
             // Blinking, once it has acted this round: not there to be hit
-            if (b.fx && b.fx->blink && tg.has(b.fx->blink) && tg.delay == 0) hit = false;
+            // (Secret's 0x11C9D runs only at the blinker's own turn and for being
+            // seen - never at the roll: AD&D's with rules::fixes())
+            if (b.fx && b.fx->blink && tg.has(b.fx->blink) && tg.delay == 0 && (!b.fx->secret || rules::fixes())) hit = false;
             // Displacement: the first attack (past a 1) on it this fight misses, even a 20
             if (b.fx && b.fx->items.displace && roll > 1) {
                 const int k = find_aff(tg, b.fx->items.displace);
