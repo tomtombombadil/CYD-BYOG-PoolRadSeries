@@ -254,11 +254,12 @@ void every_monster(bool fixes_on)
         // size (0xE7), undead type (0xF2), monster kind flags (0x15D),
         // Hit Dice (0xEE), saves (0xE8-0xEC), class levels (0x111)
         bool bytes = fr[0x197] == s[0x1A8] && fr[0xDE] == s[0xE7] && fr[0xE9] == s[0xF2] && fr[0x14B] == s[0x15D] &&
-                     fr[0xE5] == s[0xEE];
+                     fr[0xE5] == s[0xEE] && fr[0x11B] == s[0x120] && fr[0x119] == s[0x11F] && fr[0xF7] == s[0xFF];
         for (int k = 0; k < 5; ++k) bytes = bytes && fr[0xDF + k] == s[0xE8 + k];
         for (int k = 0; k < 7; ++k) bytes = bytes && fr[0x109 + k] == s[0x111 + k];
-        expect(Q, "side, size, undead type, kind flags, Hit Dice, saves, levels from the record", bytes,
-               "%s: side %d size %d undead %d kind %02X HD %d", tag, fr[0x197], fr[0xDE], fr[0xE9], fr[0x14B], fr[0xE5]);
+        expect(Q, "side, size, undead type, kind flags, Hit Dice, alignment, sex, control, saves, levels from the record", bytes,
+               "%s: side %d size %d undead %d kind %02X HD %d al %d/%d sex %d/%d control %02X/%02X", tag, fr[0x197], fr[0xDE],
+               fr[0xE9], fr[0x14B], fr[0xE5], fr[0x11B], s[0x120], fr[0x119], s[0x11F], fr[0xF7], s[0xFF]);
         expect(Q, "its footprint (record 0xE7)", f.gone || f.size == (s[0xE7] & 7), "%s: size %d, record %d", tag, f.size,
                s[0xE7] & 7);
         // The values the original works out at the battle's setup
@@ -751,6 +752,69 @@ void effects()
         const bool made = combat::saving_throw(F(m), 0, 0, rng);
         no_dice();
         expect(Q, "effect 63: a save against poison made on a 2", made);
+    }
+    // A monster's blow (the roll routine 0x36DB5): d20 + its to-hit against
+    // the AC hits, a natural 1 misses and a natural 20 hits; the damage its
+    // dice + bonus. Protection from Evil on the target: its -2 to be hit is
+    // in phase 0xB, before the roll that overwrites it - lost (its saves'
+    // +2 stay)
+    {
+        const int pe = d->prof->fight.facts.prot_evil;
+        const struct { int d20, hit, pe; bool hits; const char* what; } th[] = {
+            {4, 45, 0, false, "4 + 45 against AC 50 misses"}, {5, 45, 0, true, "5 + 45 against AC 50 hits"},
+            {1, 70, 0, false, "a natural 1 misses (to-hit 70)"}, {20, 10, 0, true, "a natural 20 hits (to-hit 10)"},
+            {5, 45, 1, true, "5 + 45 hits one with Protection from Evil (an evil monster)"}};
+        for (const auto& c : th) {
+            only({m, p});
+            put(m, 1, 11, 10, 60, 5);
+            F(m).rec[0x11B] = 8;                         // (chaotic evil)
+            put(p, 0, 10, 10, 60);
+            if (c.pe) give(p, pe);
+            unarm(m);
+            F(m).rec[0x199] = static_cast<uint8_t>(c.hit);
+            combat::Fighter& f = F(m);
+            f.attacks[0] = 1;
+            f.attacks[1] = 0;
+            f.rec[0x19E] = 2;
+            f.rec[0x1A0] = 6;
+            f.rec[0x1A2] = 3;
+            f.target = p;
+            F(p).received = 0;
+            F(p).rec[0x19A] = 50;
+            dice({{20, c.d20}, {6, 4}, {6, 5}});
+            const combat::Attack r = combat::attack(b, m, p, names, rng, false);
+            no_dice();
+            snprintf(w, sizeof w, "a monster's blow: %s", c.what);
+            expect(Q, w, hits(r) == c.hits && (!c.hits || F(p).hp() == 60 - (4 + 5 + 3)), "hit %d, HP %d", hits(r), F(p).hp());
+        }
+    }
+    // Morale (GAME.OVR 0xE22F, Curse's): control & 0x7F x 2 (0x80: 0) - under
+    // the share of its hit points lost, or 0: its side's health against 100
+    // - the script's morale; under: it flees when no enemy moves more than
+    // half its moves, else surrenders with Intelligence over 5
+    {
+        const struct { int control, hp, health, base, move, enemy_move, intl; combat::Morale want; const char* what; } mo[] = {
+            {0x80 | 25, 60, 50, 0, 12, 12, 10, combat::Morale::Fight, "morale 50, 40% lost: fights"},
+            {0x80 | 25, 40, 50, 40, 12, 12, 10, combat::Morale::Flee, "morale 50, 60% lost, its side 50 < 100 - 40: flees"},
+            {0x80 | 25, 40, 50, 60, 12, 12, 10, combat::Morale::Fight, "its side 50, not under 100 - 60: fights"},
+            {0x80, 100, 50, 40, 12, 15, 10, combat::Morale::Surrender, "morale 0, a faster enemy, Int 10: surrenders"},
+            {0x80, 100, 50, 40, 12, 15, 5, combat::Morale::Fight, "a faster enemy, Int 5: fights on"}};
+        for (const auto& c : mo) {
+            only({m, p});
+            put(m, 1, 11, 10, 100, 5);
+            F(m).rec[0x1A4] = static_cast<uint8_t>(c.hp);
+            F(m).rec[0xF7] = static_cast<uint8_t>(c.control);
+            F(m).rec[0x1A5] = static_cast<uint8_t>(c.move);
+            F(m).rec[0x13] = static_cast<uint8_t>(c.intl);
+            put(p, 0, 2, 2, 60);
+            F(p).rec[0x1A5] = static_cast<uint8_t>(c.enemy_move);
+            b.enemy_health = c.health;
+            b.morale_base = c.base;
+            const combat::Morale got = combat::morale(b, fg->t, m);
+            snprintf(w, sizeof w, "morale: %s", c.what);
+            expect(Q, w, got == c.want, "%d", static_cast<int>(got));
+        }
+        b.morale_base = 0;
     }
     // The record's magic resistance (0x1A5; GAME.OVR 0x35FC9): a spell's
     // effect resisted on d100 <= resistance + (11 - the caster's level) x 5
