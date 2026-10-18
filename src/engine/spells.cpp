@@ -276,8 +276,13 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
     case Does::SlowPoison:
         for (int k = 0; k < n; ++k) {
             party::Character& c = p.m[who[k]];
-            if (c.health() == party::Animated || find_affect(c, cures.poisoned) < 0) continue;
+            // (Secret, GAME.OVR 0x2ED24: any poisoned one, and okay again)
+            if ((c.health() == party::Animated && !t.lay.secret) || find_affect(c, cures.poisoned) < 0) continue;
             if (c.hp() == 0) c.rec[kHp] = 1;
+            if (t.lay.secret) {
+                c.rec[kHealth] = party::Okay;
+                c.rec[kInCombat] = 1;
+            }
             give(c, e.affect, minutes, 0xFF, true);
             if (cs.word) o.say(who[k], Said::Word);
             add_affect(c, cures.poison_damage, 10, 0xFF, true);
@@ -449,12 +454,22 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
             if (!die) continue;
             const int bonus = d.roll(die, 1);
             int str = c.stat(0) + bonus, str00 = 0;
+            // Secret (GAME.OVR 0x2F546): 18/xx for a fighter or a ranger - not a
+            // paladin (AD&D's, with rules::fixes(), as Curse's)
+            const bool pal = !t.lay.secret || rules::fixes();
             if (str > 18) {
-                if (had(classes::Fighter) || had(classes::Paladin) || had(classes::Ranger)) {
+                if (had(classes::Fighter) || (pal && had(classes::Paladin)) || had(classes::Ranger)) {
                     str00 = c.str00() + (str - 18) * 10;
                     if (str00 > 100) str00 = 100;
                 }
                 str = 18;
+            }
+            // (Secret, 0x372FC: more than the OWN Strength, 0x10 / 0x1D; its effect
+            // with the handler flag)
+            if (t.lay.secret) {
+                if (!(str > c.rec[0x10] || (str == 18 && str00 > c.rec[0x1D]))) continue;
+                give(c, e.affect, minutes, 100 + bonus, true);
+                continue;
             }
             if (!(str > c.stat(0) || (str == 18 && str00 > c.str00()))) continue;
             give(c, e.affect, minutes, 100 + bonus, false);
