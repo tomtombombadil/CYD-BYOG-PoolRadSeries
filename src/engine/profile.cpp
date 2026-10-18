@@ -1185,8 +1185,10 @@ const Profile kProfiles[] = {
                               0x2DA23, 0x298FE, 0x2990B, 0x29911, 0x2AC74, 0},
                .camp = kSecretCamp, .n_camp = sizeof kSecretCamp / sizeof kSecretCamp[0],
                .facts = {2, 0x2A, {0x22, 0x2B, 0}, {{0, 0}, {0x2C, 0x1F}, {0, 0}}, 0x0C, 0x17, 0x32, 0x36, 0x70, 0x71,
+                         // (its time routine GAME.OVR 0x2D5E2: Slow Poison 3780 minutes; no
+                         // Curse's 0x3F / 0x43 cases - those are other spells here)
                          {{0x28, 1, 6, 0, 10}, {0x39, 5, 4, 0, 1}, {0x3D, 5, 4, 0, 1}, {0x3B, 1, 4, 4, 10},
-                          {0x3F, 1, 10, 10, 10}, {0x43, 0, 0, 1440, 1}}},
+                          {0x1A, 0, 0, 3780, 1}, {}}},
                .spell_named = nullptr, .n_spell_named = 0, .named = nullptr, .n_named = 0,
                .scroll_one_spell = 100, .read_magic = 0x10,
                .level_word = 0xE7FA, .effect_names = {0x10047, 38, 0x75}, .these_spells = 0xE1E8},
