@@ -3117,7 +3117,8 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             if (!saving_throw(f, e.save, 0, d)) {
                 give_aff(f, b.fx->fumbling, pw, 0, false);
                 f.moves = f.attacks[0] = f.attacks[1] = 0;
-                say(who[k], Did::Word, 0);
+                // (Secret, GAME.OVR 0x3141C: the first one "is Befuddled" - its word3)
+                say(who[k], fs.word3 ? Did::Word3 : Did::Word, 0);
             } else {
                 give_aff(f, b.fx->slow, pw, 0, false);
                 say(who[k], Did::Word2, 0);

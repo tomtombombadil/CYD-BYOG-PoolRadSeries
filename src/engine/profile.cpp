@@ -367,7 +367,8 @@ constexpr combat::FightSpell kSecretFight[] = {
     {0x4F, SpellDoes::Faerie, 0, 0, 0, 0, 0, kJ | 28},      // Faerie Fire: "is highlighted"
     {0x50, SpellDoes::Affect, 0, 0, 0, 0, 0, kJ | 29},      // Invisibility to Animals: "is invisible"
     {0x4D, SpellDoes::Affect, 0, 0, 0, 0, 0, kJ | 2},      // Detect Magic (the druids'): "is affected"
-    {0x56, SpellDoes::Fumble, 0, 0, 0, 0, 0, kJ | 32, kJ | 23},  // Fumble: "is clumsy" / "is slowed"
+    {0x56, SpellDoes::Fumble, 0, 0, 0, 0, 0, kJ | 32, kJ | 23, kJ | 33},  // Fumble: "is clumsy" / "is slowed" /
+                                                            // the first failed save "is Befuddled"
     {0x57, SpellDoes::Damage, 3, 10, 0, 0, 0x0A, 0},        // Ice Storm: 3d10 cold (and magic), radius 2
     {0x5D, SpellDoes::Feeble, 0, 0, 0, 0, 0, 0},      // Feeblemind: "is stupid"
     // spell_facts.md (v0.62.0)
