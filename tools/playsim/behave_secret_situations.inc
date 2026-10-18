@@ -863,6 +863,45 @@ void xp_award()
     expect(P, "Secret's script words: every one read (Both sides wait ... gains experience!)", all);
 }
 
+// ---- Camp: a day's rest heals 1 HP each (GAME.OVR 0x2BEB3: 288 steps of 5
+// minutes), counted from the camp's start (0x1D158) across Rests
+bool rest_for(int minutes)
+{
+    rest = RestRun{};
+    rest.left = minutes;
+    rest.running = true;
+    magic::begin(rest.r);
+    screen = Screen::Rest;
+    for (int k = 0; k < 20000 && rest.running; ++k) {
+        g_now += 2000;
+        rest_tick(g_now, C);
+    }
+    return !rest.running && !rest.interrupted;
+}
+void camp_rest()
+{
+    if (!boot() || !load_magic()) {
+        expect(P, "boot for the camp", false);
+        return;
+    }
+    for (int i = 0; i < pt->count; ++i) pt->m[i].rec[0x1A4] = static_cast<uint8_t>(pt->m[i].hp_max() - 5);
+    open_camp(C);
+    const bool a = rest_for(12 * 60);
+    int healed = 0;
+    for (int i = 0; i < pt->count; ++i) healed += pt->m[i].hp() == pt->m[i].hp_max() - 4;
+    expect(P, "camp: 12 hours' rest heals nothing", a && healed == 0, "%d healed", healed);
+    const bool b = rest_for(12 * 60);
+    healed = 0;
+    for (int i = 0; i < pt->count; ++i) healed += pt->m[i].hp() == pt->m[i].hp_max() - 4;
+    expect(P, "camp: another 12 hours in the same camp - a day: 1 HP each", b && healed == pt->count, "%d of %d healed", healed,
+           pt->count);
+    const bool c2 = rest_for(24 * 60);
+    healed = 0;
+    for (int i = 0; i < pt->count; ++i) healed += pt->m[i].hp() == pt->m[i].hp_max() - 3;
+    expect(P, "camp: a further day: 1 HP more each", c2 && healed == pt->count, "%d of %d", healed, pt->count);
+    screen = Screen::Camp;
+}
+
 void all_situations()
 {
     if (const char* e = getenv("ENDLESS")) {
@@ -876,4 +915,5 @@ void all_situations()
     creation();
     temple_checks();
     xp_award();
+    camp_rest();
 }

@@ -2243,8 +2243,14 @@ void draw_camp(pic::Canvas& c)
 
 bool camp_from_script = false;     // PROGRAM 9: breaking camp lets the script go on
 
+// Secret's day of rest counts from the camp's start, not each Rest
+// (GAME.OVR 0x1D158 zeroes its counter [0x8DB2] as the camp begins; the
+// rest's 0x2BEB9 counts on from rest to rest: 288 five-minute steps)
+int camp_heal_steps = 0;
+
 void open_camp(pic::Canvas& c)
 {
+    camp_heal_steps = 0;
     screen = Screen::Camp;
     draw_camp(c);
 }
@@ -5248,7 +5254,9 @@ void rest_tick(uint32_t now, pic::Canvas& c)
         if (rest.left < 0) rest.left = 0;
         vm->advance_clock(1, 5);
         vm->take_minutes();                 // (the rest's own clock runs the effects)
+        if (d->prof->variant.secret_files) rest.r.steps = camp_heal_steps;
         const magic::Step st = magic::step(rest.r, *pt, mrules->tables, scroll_facts(), false);
+        camp_heal_steps = rest.r.steps;
         effects_clock(5, c);
         bool said = false;
         if (st.healed) {
