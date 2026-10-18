@@ -1266,6 +1266,16 @@ the scripts' changed ops, the rule tables, fights, the rest.
   matches the original's EGA screen in all 225 frame cells (the GOG
   start at the docks). The style the scripts choose (game byte 0x39:
   0 gold, 1 red knots, 2 green, 3 skulls; 4 = gold): with the Play Test.
+- **v0.120.0 - the 3D view; the Walk Test.** LOAD FILES' look N is
+  WALLDEF1 N (wall sets 1-3), 8X8D1 N (256 tiles, numbered as the walls
+  use them - `view3d::World::dk`, `view3d::load_vga_tiles`; the program
+  skips 32 bytes after the nibbles when the entries are 0x20 and 0x70 on)
+  and the background: BACK1 N indoors, SKYGRND outdoors (1 day; 2 night
+  from hour 14, 3 overcast, 4 the red sky for the other frame styles -
+  the Play Test), an 88 x 88 picture on the heap (`view3d::load_back`).
+  The area map's frames: walls 0-15, arrows 16-19. The Walk Test at the
+  docks (GEO 16, look 1, 11,2 S) matches the original's EGA view in all
+  7,744 pixels.
 
 ## 7. The journal (Tom, 2026-10-06)
 

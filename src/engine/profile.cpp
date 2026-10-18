@@ -829,6 +829,7 @@ constexpr ecl::OpSet kDarknessEcl = [] {
     s.sizes[0x41] = 2;
     s.load_pieces = 0xFF;           // (none: 0x37 is FIND NPC)
     s.end_op = 0x23;
+    s.files_look = true;
     return s;
 }();
 

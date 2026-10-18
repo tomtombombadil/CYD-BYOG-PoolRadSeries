@@ -92,7 +92,8 @@ bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, 
         return false;
     if (ega && !pic::read_vga_ega(r, h, map)) return false;
     if (!ega && r.skip((h.count + 1) / 2u) != (h.count + 1) / 2u) return false;
-    if (r.skip(4) != 4) return false;
+    const uint32_t gap = h.pixels_at - (pic::kVgaHeaderSize + h.count * 3u + (h.count + 1) / 2u);
+    if (r.skip(gap) != gap) return false;
     int k = 0;
     for (; k < h.frames && k < n && slot0 + k < kTiles; ++k) {
         uint8_t px[64];

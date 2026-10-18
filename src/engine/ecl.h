@@ -74,6 +74,10 @@ struct OpSet {
     // 0x23: the text window cleared, the view back, EXIT; 0: none - EXIT
     // itself)
     uint8_t end_op = 0;
+    // Darkness: LOAD FILES' second operand is the "look" - WALLDEF1 /
+    // 8X8D1 / BACK1 block of that number at once (darkness_facts.md 5 S2);
+    // find_map_load gives it as walls[0]
+    bool files_look = false;
 };
 
 // A script's memory address as the engine's machine (Curse's map) knows

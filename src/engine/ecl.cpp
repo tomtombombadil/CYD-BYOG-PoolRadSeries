@@ -142,6 +142,10 @@ MapLoad find_map_load(const uint8_t* block, uint32_t len, const OpSet& set)
             if (in.op == set.load_files && p < geo_at && in.count >= 1 && in.ops[0].immediate()) {
                 m.geo = value(in.ops[0]);
                 geo_at = p;
+                if (set.files_look && in.count >= 2 && in.ops[1].immediate() && p < walls_at) {
+                    m.walls[0] = value(in.ops[1]);
+                    walls_at = p;
+                }
             }
             if (in.op == set.load_pieces && p < walls_at && in.count >= 3 && in.ops[0].immediate() &&
                 in.ops[1].immediate() && in.ops[2].immediate()) {
