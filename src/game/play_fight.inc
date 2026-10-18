@@ -3340,6 +3340,7 @@ void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::Fi
         switch (l[k].did) {
         case combat::Did::Word:
             ow(fs.word, t, sizeof t);
+            if (!t[0]) break;           // (no word: nothing said - Secret's Feeblemind, GAME.OVR 0x37F63)
             add_page(l[k].who, t);
             if (fs.does != combat::SpellDoes::Poison) page_fx_set(1, hit_fx(l[k].who, true));
             break;

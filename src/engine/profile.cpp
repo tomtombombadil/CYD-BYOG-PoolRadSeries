@@ -389,8 +389,9 @@ constexpr combat::FightSpell kSecretFight[] = {
     {0x24, SpellDoes::FullHeal, 1, 4, 0, 0, 0, kJ | 25, kJ | 36, kJ | 35, 0, 0x2F687},  // Secret's Heal: "is Healed",
                                                             // "is no longer blind", "is cured", "regains intellect"
     {0x5A, SpellDoes::FullHeal, 1, 4, 0, 0, 0, kJ | 25, kJ | 36, kJ | 35, 0, 0x2F687},  // Barkskin: the original runs
-                                                            // Heal's routine (and gives its effect)
-    {0x38, SpellDoes::HarmTouch, 1, 4, 0, 0, 0, kJ | 18},       // Harm: "is Diseased", down to 1d4 hit points
+                                                            // Heal's routine (no effect given)
+    {0x38, SpellDoes::HarmTouch, 1, 4, 0, 0, 8, kJ | 18},       // Harm: "is Diseased", down to 1d4 hit points (magic -
+                                                                // GAME.OVR 0x30560)
     // The items' own spells (the spell table's monster spells)
     {0x39, SpellDoes::Haste, 5, 4, 0, 0, 0, kJ | 22, 0},     // speed: "is Speedy", 5d4 rounds
     {0x3C, SpellDoes::Bolt, 1, 6, 20, 0, 4, 0, 0, 0, 3},    // a lightning stroke: 1d6 + 20, the path 20, 3 squares
