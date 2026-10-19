@@ -108,7 +108,9 @@ static void item_ops(const char* ops)
 // number, '#' prints the screen, '~' runs ticks for a minute of game time,
 // '?' the selected one's memorized list, '!' everyone's HP and effects, -n sets member n to 1 HP,
 // 'v' / '^' the cursor keys Down / Up, '[' gives the selected one a magic-user's scroll of 3 spells, ']' lists their items and spell book,
-// '{' a readied potion of healing, '}' a readied wand of magic missiles, '(' a readied bow and 20 arrows
+// '{' a readied potion of healing, '}' a readied wand of magic missiles, '(' a readied bow and 20 arrows,
+// '*' Esc (play::back), @X a tap on the menu word X (a digit too: "1st-color"); CAMPTICK=ms the time after
+// each op (5000)
 static void run_ops(const char* q)
 {
     auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
@@ -142,8 +144,11 @@ static void run_ops(const char* q)
             printf("  %c: spell list sel %d top %d of %d\n", *q, play::sl.sel, play::sl.top, play::sl.n);
         }
         else if (*q >= '0' && *q <= '9') play::plist.index = *q - '0';
+        else if (*q == '*') play::back(C);
+        else if (*q == '@' && q[1]) tap_word(*++q);     // (@X: the word X, digits too)
         else tap_word(*q);
-        g_now += 5000; play::tick(g_now, C);
+        // (CAMPTICK=ms: the time between the ops - short: a message on the menu line still up)
+        g_now += getenv("CAMPTICK") ? atoi(getenv("CAMPTICK")) : 5000; play::tick(g_now, C);
     }
 }
 static std::string last_text;
@@ -502,6 +507,8 @@ int main(int argc, char** argv)
     if (getenv("SOUNDMODE")) play::set_sound(static_cast<uint8_t>(atoi(getenv("SOUNDMODE"))), 230);
     const char* e = play::open(dir, game, C, getenv("CACHE"));
     if (e) { printf("open: %s\n", e); return 1; }
+    // NOGALLERY=1: the icon editor opens as the original's (the gallery comfort off)
+    if (getenv("NOGALLERY")) { play::Options o = play::opts; o.gallery = false; play::set_options(o); }
     // SOUNDTEST=a-b: the game's own effects a to b, one after another, then out
     if (const char* st = getenv("SOUNDTEST")) {
         int a = 2, z = 14;
