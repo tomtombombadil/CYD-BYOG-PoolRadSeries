@@ -5799,16 +5799,24 @@ bool load_magic()
         plat::FileSource src(f);
         exepack::Info info;
         if (exepack::parse(src, info) == exepack::Status::Ok) {
-            const size_t n = static_cast<size_t>(nt.stride) * nt.count;
-            uint8_t* buf = static_cast<uint8_t*>(malloc(n));
-            if (buf && exepack::read(src, info, nt.at, buf, n) == exepack::Status::Ok) {
-                for (int i = 0; i < nt.count && i < 128; ++i) {
-                    const uint8_t* e = buf + static_cast<size_t>(i) * nt.stride;
-                    const int len = e[0] >= nt.stride ? 0 : e[0] < 23 ? e[0] : 23;    // (Secret's entry 0 isn't a name)
-                    memcpy(spn->name[i], e + 1, len);
-                    spn->name[i][len] = 0;
+            // (a part at a time: the whole table was 4.4 KB more at a
+            // fight's highest point when a spell was first cast)
+            const int per = nt.stride && nt.stride < 1024 ? 1024 / nt.stride : 1;
+            uint8_t* buf = static_cast<uint8_t*>(malloc(static_cast<size_t>(per) * nt.stride));
+            named = buf != nullptr;
+            for (int at = 0; named && at < nt.count && at < 128; at += per) {
+                const int k = nt.count - at < per ? nt.count - at : per;
+                if (exepack::read(src, info, nt.at + static_cast<uint32_t>(at) * nt.stride, buf,
+                                  static_cast<size_t>(k) * nt.stride) != exepack::Status::Ok) {
+                    named = false;
+                    break;
                 }
-                named = true;
+                for (int j = 0; j < k && at + j < 128; ++j) {
+                    const uint8_t* e = buf + static_cast<size_t>(j) * nt.stride;
+                    const int len = e[0] >= nt.stride ? 0 : e[0] < 23 ? e[0] : 23;    // (Secret's entry 0 isn't a name)
+                    memcpy(spn->name[at + j], e + 1, len);
+                    spn->name[at + j][len] = 0;
+                }
             }
             free(buf);
         }
