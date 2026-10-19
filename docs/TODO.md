@@ -110,9 +110,10 @@ the Project as claude/TODO.md.
 - [ ] Tom: Darkness's sounds - listen on a board (Game menu - Sounds;
       Rolf's tour; steps). Decide: Tandy as the SL / TL DAC (the samples
       as they are, as the GOG Sound Blaster) - or the EX / TX chip's 16
-      volumes (TANEXTX.COM; grainier) as a third choice? And: a new
-      effect waits for the one playing, but the game goes on (the
-      original stops the game until it has played) - OK?
+      volumes (TANEXTX.COM; grainier) as a third choice? Tom
+      (2026-10-19): unsure - asked for samples; sent 2026-10-19 (WAVs:
+      DAC, EX / TX chip, PC speaker, side by side) - his pick open.
+      (The game going on while a sound plays: Tom OK, 2026-10-19.)
 - [ ] Tom: flash v0.104.0 on the 4.0" S3: the touch (keys now light as
       the stylus touches; light taps after a pause, finger and stylus;
       small keys) and the sounds (Settings' sound test - Step, Hit; Pool's

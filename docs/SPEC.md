@@ -1868,7 +1868,8 @@ the game's Settings (As Original: all of them).
   aren't offered. A new effect waits for the one sounding, as the
   original's, but the game goes on meanwhile (the original stops until
   the earlier one has ended - and with the PC speaker, whose driver plays
-  in the foreground, during every effect); one waits at most.
+  in the foreground, during every effect); one waits at most (Tom,
+  2026-10-19: OK - the board's sound task plays it beside the game).
 - **Saving**: the GOG files' save folder on the card, as the game.
 - **Monsters of one kind share one item list** (a group's): one archer's
   arrows, a wand's charges are the group's (the original gives each copy
