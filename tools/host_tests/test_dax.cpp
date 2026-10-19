@@ -5483,6 +5483,12 @@ static void test_combat()
     CHECK(combat::award(b, 1000) == 500);
     CHECK(rec[0][0x127] == (550 & 0xFF) && rec[0][0x128] == (550 >> 8) && rec[1][0x127] == (500 & 0xFF) &&
           rec[1][0x128] == (500 >> 8) && rec[2][0x127] == dead_xp);
+    // Darkness: platinum worth 2 (its money platinum, gems, jewellery); a
+    // share worked out but not given (its script place 0x1F)
+    const int m3[7] = {0, 0, 0, 0, 10, 1, 1};
+    CHECK(combat::money_exp(m3, 2) == 20 + 250 + 2200);
+    CHECK(combat::award(b, 1000, false) == 500);
+    CHECK(rec[0][0x127] == (550 & 0xFF) && rec[1][0x127] == (500 & 0xFF));
     // ---- Spells in fights (made-up spell lines in the games' layout)
     static uint8_t sds[0x100];
     memset(sds, 0, sizeof sds);
