@@ -1502,6 +1502,33 @@ the scripts' changed ops, the rule tables, fights, the rest.
   field's tiles holding the fighters and pictures; the background picture
   dropped while parked; monster groups, spell names and fighters smaller)
   150,755 bytes (Curse 132,315, Pool 132,931).
+- **Alter and the icon editor** (scratch facts
+  /tmp/claude-0/dks_alter/facts_alter.md, for the Project's Darkness
+  facts; its camp overlay GAME.OVR 0xDCC8 +0x172B, the editor 0x17E16).
+  Alter: no prompt, "Order Drop Speed Icon Level Exit"; Order's and Speed's
+  menus are words of one list each (`alter.order_list` / `speed_list`:
+  "party order " Select / Place + Exit; "game speed: " Faster above 0,
+  Slower under 9, Exit), "Game Speed (0=fastest 9=slowest) = n" (row 18),
+  "NAME" / "has been selected" (rows 18 / 19); Drop does nothing with one
+  member, else "Pick Character Select" (`alter.pick`) then the party
+  menu's own Drop ("Drop NAME forever?", "Are you sure?", both on No;
+  "You dump NAME out back." / "NAME bids you farewell." - their files
+  deleted - or "NAME breathes a sigh of relief." on the menu line); Level
+  1-5 (`level_base`). Its menu routine keeps the highlight's place from
+  one menu to the next (DS 0xAAE5; `alter.kept_highlight`): the Alter
+  menu its own (Order first), Order / Speed the word picked, the editor
+  the place before it (from Alter: Icon's - Size lit; from creation:
+  Reroll's answer). Exit: the camp, its text window empty, Alter lit. The
+  editor: its five menus, the colour-part and size menus whole lists a
+  word is left out of (`alter.icon_lists`: Hair / Face, the size the icon
+  has), "old", "ready   action", "new", "is this icon ok?" on Yes, the
+  grey squares COMSPR 15's picture under both poses (`alter.icon_box`;
+  the gallery's cells too); after it the camp screen with its text window
+  empty. The party menu's Drop now has its last four words. Checked
+  against DOSBox (EGA) pixel for pixel (the mouse pointer and the playsim
+  run's place / time line aside): every Alter screen, Drop's questions and
+  messages, the editor through 29 steps (parts, colours, size, Keep /
+  Exit, another pass), from creation and its "is this icon ok?".
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -1999,6 +2026,9 @@ the game's Settings (As Original: all of them).
 - **Darkness's new characters' item count** (record 0x1A6): the original
   writes 3 whatever its kit holds (a magic-user's 4); the engine writes
   the count (loading counts the file in both).
+- **Darkness's Drop** (camp's Alter): the member leaves the party list
+  as "NAME bids you farewell." shows; the original shows the message for
+  its delay first, then redraws the list.
 - **Darkness's memorized spells** (v0.128.0): the original has 141 places;
   the engine's spell rules use Curse's 84, so a character can hold 84
   memorized spells at most there (the GOG party: 4 to 30). Saves keep
