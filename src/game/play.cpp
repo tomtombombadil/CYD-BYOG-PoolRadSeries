@@ -209,6 +209,7 @@ int  pm_sel = 0;              // the party menu line the cursor keys highlight
 bool keys_used = false;       // a cursor key was used: highlights where the games had none (the party menu)
 char pm_saves[12];            // save slots found ("AB")
 bool load_where = false;      // Darkness: Load's "Load from where?" asked, a slot next
+bool load_secret = false;     // Darkness: Load from Secret's saved games (its folder on the card)
 bool exit_wanted = false;     // Exit to DOS: back to the viewer
 
 bool area_view = false;
@@ -1361,6 +1362,128 @@ bool load_game(char slot)
 }
 
 void begin_adventuring();
+
+// ---- Darkness: Load from Secret (darkness_facts.md 32 / 33) ----------------------
+// Secret's saved games in its own folder on the card (import_dir): their
+// SAVGAMx.DAT's member names (seek 0x1414: the count, 8 x 41), each
+// member's 439-byte .SAV, .STF items (67 bytes), .SFX effects, converted as
+// Darkness's ovr 0x11903 does - its NPCs dropped, copper / silver /
+// electrum / gold lost, its own race number, a human's highest former
+// level 0, icon flags and flags 2 = 2, items: bundles (type 0x49) left out,
+// type 0x2D's byte 0x32 = 2, type 0x3A's 0x3D = 0x59, the class values
+// worked out again; Darkness's own game state isn't loaded (a new game)
+extern char import_dir[128];
+void class_values(party::Character& ch);
+void secret_to_darkness(party::Character& ch);
+void find_secret_saves()
+{
+    int n = 0;
+    for (char sl = savegame::kFirst; sl <= savegame::kLast && import_dir[0]; ++sl) {
+        char path[200];
+        snprintf(path, sizeof path, "%s/SAVGAM%c.DAT", import_dir, sl);
+        if (plat::exists(path)) pm_saves[n++] = sl;
+    }
+    pm_saves[n] = 0;
+}
+
+// A Secret character as Darkness takes one in (its ovr 0x11903): its
+// copper, silver, electrum and gold gone, its own race number, a human's
+// highest former level 0, icon flags and flags 2 = 2, bundles of scrolls
+// left out, type 0x2D's byte 0x32 = 2, type 0x3A's 0x3D = 0x59, the class
+// values again (a lower HP max: the difference into the HP rolled)
+void secret_to_darkness(party::Character& ch)
+{
+    for (int k = 0; k < 4; ++k) ch.rec[0xFB + 2 * k] = ch.rec[0xFC + 2 * k] = 0;   // (copper ... gold: gone)
+    ch.ext[party::kExtRace] = party::race_to_darkness(ch.rec[0x74]);
+    if (ch.race() == 7) ch.rec[0xE6] = 0;
+    ch.rec[0x14B] = 2;
+    ch.ext[party::kExtFlags2] = 2;
+    int k = 0;
+    for (int j = 0; j < ch.n_items; ++j) {
+        uint8_t* it = ch.items[j];
+        if (it[0x2E] == 0x49) continue;          // (a bundle of scrolls)
+        if (it[0x2E] == 0x2D) it[0x32] = 2;
+        if (it[0x2E] == 0x3A) it[0x3D] = 0x59;
+        if (k != j) memcpy(ch.items[k], it, party::kItemSize);
+        ++k;
+    }
+    ch.n_items = k;
+    const int hp_max = ch.hp_max();
+    class_values(ch);
+    rules::recalc(ch, *names, d->facts);
+    if (ch.hp_max() < hp_max) ch.rec[0x12C] = static_cast<uint8_t>(ch.rec[0x12C] + hp_max - ch.hp_max());
+}
+
+bool load_secret_game(char slot)
+{
+    load_problem = nullptr;
+    char path[200];
+    snprintf(path, sizeof path, "%s/SAVGAM%c.DAT", import_dir, slot);
+    plat::File f = plat::open(path, "r");
+    if (!f) {
+        load_problem = "That saved game couldn't be opened.";
+        return false;
+    }
+    uint8_t who[1 + 8 * 41];
+    bool ok;
+    {
+        plat::FileSource src(f);
+        ok = src.read_at(0x1414, who, sizeof who) == sizeof who && who[0] <= 8;
+    }
+    f.close();
+    if (!ok) {
+        load_problem = "That saved game couldn't be read (damaged or short).";
+        return false;
+    }
+    in_game_menu = false;
+    waiting = false;
+    then = Then::Idle;
+    pt->clear();
+    for (int i = 0; i < who[0] && pt->count < party::kMaxParty; ++i) {
+        const uint8_t* e = who + 1 + i * 41;
+        char nm[41];
+        const int len = e[0] > 40 ? 40 : e[0];
+        memcpy(nm, e + 1, static_cast<size_t>(len));
+        nm[len] = 0;
+        party::Character& ch = pt->m[pt->count];
+        snprintf(path, sizeof path, "%s/%s.SAV", import_dir, nm);
+        f = plat::open(path, "r");
+        if (!f) {
+            load_problem = "A character of that saved game is missing from Secret's folder.";
+            continue;
+        }
+        {
+            plat::FileSource src(f);
+            ok = f.size() == party::kSecretRecordSize && party::read_record(src, ch, party::Format::Secret);
+        }
+        f.close();
+        if (!ok || ch.rec[0xF7] >= 0x80) {          // (its NPCs stay behind)
+            ch = party::Character{};
+            continue;
+        }
+        snprintf(path, sizeof path, "%s/%s.STF", import_dir, nm);
+        f = plat::open(path, "r");
+        if (f) {
+            plat::FileSource src(f);
+            party::read_items(src, ch, party::kSecretItemSize);
+            f.close();
+        }
+        snprintf(path, sizeof path, "%s/%s.SFX", import_dir, nm);
+        f = plat::open(path, "r");
+        if (f) {
+            plat::FileSource src(f);
+            party::read_affects(src, ch);
+            f.close();
+        }
+        secret_to_darkness(ch);
+        character_read(ch);
+        ++pt->count;
+    }
+    vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
+    d->loaded = false;                              // (its own game state: a new game)
+    plat::log("[play] loaded Secret's saved game %c: %d characters\n", slot, pt->count);
+    return pt->count > 0;
+}
 
 // ---- View Character ------------------------------------------------------------
 //
@@ -2877,6 +3000,76 @@ void sort_guys()
 bool load_pool_guy(int i, party::Character& ch);
 bool load_curse_guy(int i, party::Character& ch);
 
+// Darkness's Add from Secret (darkness_facts.md 33): Secret's *.who of
+// 439 bytes in its folder (src 5), not its NPCs (control 0xFF), not in the
+// party; read as Secret's (.STF items, .SFX effects), then converted
+void find_secret_guys()
+{
+    if (!import_dir[0]) return;
+    plat::File dir = plat::open(import_dir, "r");
+    if (!dir || !dir.isDirectory()) return;
+    for (plat::File f = dir.openNextFile(); f && d->guys < Data::kMaxGuys; f = dir.openNextFile()) {
+        const char* nm = f.name();
+        const char* slash = strrchr(nm, '/');
+        if (slash) nm = slash + 1;
+        const size_t n = strlen(nm);
+        if (f.isDirectory() || n < 5 || n > 12 || strcasecmp(nm + n - 4, ".WHO") != 0 ||
+            f.size() != party::kSecretRecordSize)
+            continue;
+        uint8_t rec[0x100];
+        if (f.read(rec, sizeof rec) != sizeof rec || rec[0xFF] > 0x7F) continue;
+        char name[16];
+        const size_t len = rec[0] > 15 ? 15 : rec[0];
+        memcpy(name, rec + 1, len);
+        name[len] = 0;
+        if (in_party(name)) continue;
+        strncpy(d->guy_file[d->guys], nm, sizeof d->guy_file[0] - 1);
+        strcpy(d->guy_name[d->guys], name);
+        d->guy_added[d->guys] = false;
+        d->guy_src[d->guys] = 5;
+        d->guy_letter[d->guys] = 0;
+        ++d->guys;
+    }
+    dir.close();
+}
+
+void secret_to_darkness(party::Character& ch);
+bool load_secret_guy(int i, party::Character& ch)
+{
+    char base[16], path[200];
+    strncpy(base, d->guy_file[i], sizeof base - 1);
+    base[sizeof base - 1] = 0;
+    char* dot = strrchr(base, '.');
+    if (dot) *dot = 0;
+    snprintf(path, sizeof path, "%s/%s", import_dir, d->guy_file[i]);
+    plat::File f = plat::open(path, "r");
+    if (!f) return false;
+    bool ok;
+    {
+        plat::FileSource src(f);
+        ok = party::read_record(src, ch, party::Format::Secret);
+    }
+    f.close();
+    if (!ok) return false;
+    snprintf(path, sizeof path, "%s/%s.STF", import_dir, base);
+    f = plat::open(path, "r");
+    if (f) {
+        plat::FileSource src(f);
+        party::read_items(src, ch, party::kSecretItemSize);
+        f.close();
+    }
+    snprintf(path, sizeof path, "%s/%s.SFX", import_dir, base);
+    f = plat::open(path, "r");
+    if (f) {
+        plat::FileSource src(f);
+        party::read_affects(src, ch);
+        f.close();
+    }
+    secret_to_darkness(ch);
+    character_read(ch);
+    return true;
+}
+
 void draw_add_list(pic::Canvas& c)
 {
     c.clear(0);
@@ -2899,6 +3092,11 @@ void add_character(int i, pic::Canvas& c)
 {
     if (i < 0 || i >= d->guys || d->guy_added[i] || pt->count >= party::kMaxParty) return;
     party::Character& ch = pt->m[pt->count];
+    if (d->guy_src[i] == 5) {
+        if (!load_secret_guy(i, ch)) return;
+        add_checked(i, ch, c);
+        return;
+    }
     if (d->guy_src[i] == 3 || d->guy_src[i] == 4) {
         if (!load_curse_guy(i, ch)) return;
         add_checked(i, ch, c);
@@ -3006,6 +3204,21 @@ void add_from_tap(int x, int y, pic::Canvas& c)
     const char own = static_cast<char>(toupper(static_cast<unsigned char>(rw(Data::kAddSources)[0])));
     if (secret_files() && k == 'C') {
         find_guys('C');
+        if (!d->guys) {
+            screen = Screen::PartyMenu;
+            draw_party_menu(c);
+            return;
+        }
+        screen = Screen::AddList;
+        plist = PickList{};
+        draw_add_list(c);
+        return;
+    }
+    if (darkness_files() && k == 'S') {
+        // (Darkness: Secret's characters - its folder on the card)
+        d->guys = 0;
+        d->guy_from = 'S';
+        find_secret_guys();
         if (!d->guys) {
             screen = Screen::PartyMenu;
             draw_party_menu(c);
@@ -3139,6 +3352,15 @@ bool load_rules(MagicRules*& m)
         m = nullptr;
     }
     return ok;
+}
+
+// A character's class values worked out with the game's tables (loaded for
+// the moment: Darkness's Load from Secret)
+void class_values(party::Character& ch)
+{
+    MagicRules* m = nullptr;
+    if (load_rules(m)) classes::class_bonuses(ch, m->tables);
+    delete m;
 }
 
 bool load_rules(Making*& m)
@@ -7015,8 +7237,12 @@ void pm_choose_key(char key, pic::Canvas& c)
             return;
         }
         load_where = false;
-        find_saves();
-        if (!pm_saves[0]) break;
+        if (load_secret) find_secret_saves();
+        else find_saves();
+        if (!pm_saves[0]) {
+            load_secret = false;
+            break;
+        }
         screen = Screen::LoadWhich;
         {
             char keys[24];
@@ -7222,19 +7448,24 @@ void pm_tap(int x, int y, pic::Canvas& c)
         menu.selected = k;
         show_menu_line(c);
         if (load_where) {
-            // Pools: its own saved games; Secret's: not yet (TODO)
+            // Pools: its own saved games; Secret: Secret's (its folder on the card)
             const char key = text::key(menu, k);
-            if (key == 'P') {
+            load_secret = key == 'S';
+            if (key == 'P' || key == 'S') {
                 pm_choose_key('L', c);
             } else {
                 load_where = false;
                 screen = Screen::PartyMenu;
                 draw_party_menu(c);
-                if (key == 'S') pm_prompt(c, "Not in the engine yet.");
             }
             return;
         }
-        load_game(text::key(menu, k));
+        if (load_secret) {
+            load_secret = false;
+            load_secret_game(text::key(menu, k));
+        } else {
+            load_game(text::key(menu, k));
+        }
         screen = Screen::PartyMenu;
         draw_party_menu(c);
         if (load_problem) error(c, load_problem);
@@ -7746,7 +7977,20 @@ struct Host : ecl::Host {
         if (!open_area_dax("SPRIT", id, f, name, sizeof name)) return;
         plat::FileSource src(f);
         const dax::Entry* e = d->idx.find(static_cast<uint8_t>(id));
-        if (e) {
+        if (e && d->prof->variant.vga) {
+            // Darkness (darkness_facts.md 3.5): an 88 x 88 animation of 3
+            // frames - 0 near, 1 middle, 2 far - over the whole view; its 0
+            // and 13 swapped, 13 see-through (ov111+0x7FA)
+            pic::DkAnim* a = new (std::nothrow) pic::DkAnim;
+            if (a) {
+                dax::RleReader r(src, d->idx, *e);
+                if (pic::parse_dk_anim(r, e->raw_size, *a)) {
+                    const int fr = distance < 0 ? 0 : distance >= a->frames ? a->frames - 1 : distance;
+                    pic::draw_dk_anim(src, d->idx, *e, *a, fr, c, 24 + a->x, 24 + a->y, true);
+                }
+                delete a;
+            }
+        } else if (e) {
             dax::RleReader r(src, d->idx, *e);
             if (pic::parse_anim(r, e->raw_size, d->sprite) && distance >= 0 && distance < d->sprite.frames) {
                 const pic::Header& h = d->sprite.frame[distance];

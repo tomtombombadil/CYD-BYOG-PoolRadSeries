@@ -628,10 +628,12 @@ int main(int argc, char** argv)
         for (unsigned a = 0x4B00; a < 0x10000; ++a) fresh_words[a - 0x4B00] = play::vm->get((uint16_t)a);
     }
     {
+        if (getenv("LOADFROM") && getenv("POOLDIR")) play::set_import_dir(getenv("POOLDIR"));
         play::tap(24, (12 + pm_line('L')) * 8 + 2, C);
-        if (play::load_where) {         // (Darkness: "Load from where?" - Pools)
+        if (play::load_where) {         // (Darkness: "Load from where?" - Pools; LOADFROM=S: Secret's, POOLDIR its folder)
             shot("load_where");
-            play::tap(((int)strlen(play::menu.prompt) + play::menu.start[0]) * 8 + 2, text::kMenuRow * 8 + 2, C);
+            const int w = getenv("LOADFROM") && *getenv("LOADFROM") == 'S' ? 1 : 0;
+            play::tap(((int)strlen(play::menu.prompt) + play::menu.start[w]) * 8 + 2, text::kMenuRow * 8 + 2, C);
         }
         printf("  saves [%s] menu [%s%s]\n", play::pm_saves, play::menu.prompt, play::menu.s);
         if (!strchr(play::pm_saves, save[0])) {
@@ -875,6 +877,12 @@ int main(int argc, char** argv)
     settle(0, getenv("MS") ? atoi(getenv("MS")) : 60000);
     if (getenv("CAMPRUN")) run_ops(getenv("CAMPRUN"));
     shot("start");
+    if (getenv("SPRITESHOT")) {         // SPRITESHOT=id:distance - a monster's sprite on the view, a snapshot
+        int id = 0, dist = 0;
+        sscanf(getenv("SPRITESHOT"), "%d:%d", &id, &dist);
+        play::host->sprite(id, dist);
+        shot("sprite");
+    }
     if (getenv("NAVGAME")) {
         // NAVGAME on the game screen: as NAVOPS (u d l r s #), the game going on between
         for (const char* q = getenv("NAVGAME"); *q; ++q) {

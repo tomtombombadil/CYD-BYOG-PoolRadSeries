@@ -196,6 +196,7 @@ bool draw_vga_block(dax::ByteSource& src, const dax::Index& idx, const dax::Entr
 constexpr int kDkMaxFrames = 9;
 struct DkAnim {
     uint16_t height = 0, width_cols = 0;
+    uint16_t x = 0, y = 0;           // where in the view (px from its corner; the files' 0, 0)
     uint8_t  frames = 0, first = 0, key = 0, loop = 0;
     uint16_t count = 0;
     uint16_t size[kDkMaxFrames] = {};
