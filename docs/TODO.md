@@ -92,27 +92,35 @@ the Project as claude/TODO.md.
       screens). v0.129.0: sounds (ZOUNDS samples, SOUND op; Tandy = the
       SL / TL DAC, PC speaker as IBMSND.COM). v0.130.0: training (not
       compared with DOSBox: the hall's screen). v0.131.0: Secret's
-      characters (Load / Add; Malachite's HP +3 in the original - open).
+      characters (Load / Add; Malachite's HP: done with creation).
       v0.132.0: approaching monsters (SPRIT1; compare with DOSBox when
       one is met).
+      v0.133.0: the overland (matches DOSBox).
+      v0.134.0: creation / Modify / Human Change, done but
+      the icon editor's VGA pictures (CHEAD / CBODY, with the fights'
+      icons) and Human Change in DOSBox (needs the training hall).
       Agents (2026-10-18): fights, shops / temple / treasure, creation.
       Next, a chunk a commit:
       approaching monsters (SPRIT1), the spells' effects in camp and in
       fights, training, creation, fights (VGA combat pictures,
-      DUNGCOM, CPIC1 icons), shops / treasure (ITEM0 rows), overland
-      mode, Secret save import, the 8-bit canvas on the S3 / C5.
+      DUNGCOM, CPIC1 icons), shops / treasure (ITEM0 rows), the 8-bit canvas on the S3 / C5.
 - [ ] Darkness's sounds, with its fights: the area spells' burst plays
       effect 11 again as their picture shows (spells 0x22, 0x2F, 0x40,
       0x57, 0x5B, 0x73 - GAME.OVR 0x29D34 +0x1451; and an item's burst,
       +0x5FB8); a ranged attack's one sound: 12 for the item types 4, 5,
       7, 0x0C, 0x1E, 0x42, 0x4A, else 9 (+0x2800 of GAME.OVR 0x1E642 -
       check Darkness's shot kinds give that). darkness_sound_facts.md 4.
+- [ ] Tom: Darkness's creation never applies the race adjustments (its
+      program tests the race list's last line, human, not the race
+      picked); the engine applies AD&D's behind Item Fixes (on by
+      default; off = the original) - OK? (SPEC 12)
 - [ ] Tom: Darkness's sounds - listen on a board (Game menu - Sounds;
       Rolf's tour; steps). Decide: Tandy as the SL / TL DAC (the samples
       as they are, as the GOG Sound Blaster) - or the EX / TX chip's 16
-      volumes (TANEXTX.COM; grainier) as a third choice? And: a new
-      effect waits for the one playing, but the game goes on (the
-      original stops the game until it has played) - OK?
+      volumes (TANEXTX.COM; grainier) as a third choice? Tom
+      (2026-10-19): unsure - asked for samples; sent 2026-10-19 (WAVs:
+      DAC, EX / TX chip, PC speaker, side by side) - his pick open.
+      (The game going on while a sound plays: Tom OK, 2026-10-19.)
 - [ ] Tom: flash v0.104.0 on the 4.0" S3: the touch (keys now light as
       the stylus touches; light taps after a pause, finger and stylus;
       small keys) and the sounds (Settings' sound test - Step, Hit; Pool's

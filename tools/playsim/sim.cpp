@@ -582,6 +582,7 @@ int main(int argc, char** argv)
             tap_word(r == 0 ? (keepq ? 'N' : 'Y') : (keepq ? 'Y' : 'N'));
         }
         printf("  input %d prompt [%s]\n", (int)play::input(), play::input_prompt);
+        shot("name");
         for (const char* n = getenv("NAME") ? getenv("NAME") : "TESTER"; *n; ++n) play::input_key(*n, C);
         play::input_key('\n', C);
         printf("  ask [%s]\n", play::menu.prompt);
@@ -595,7 +596,9 @@ int main(int argc, char** argv)
             printf("  head %d body %d, screen %d menu [%s%s]\n", play::mk->ch.rec[0x13F], play::mk->ch.rec[0x140], (int)play::screen, play::menu.prompt, play::menu.s);
             if (play::screen == play::Screen::Icon) tap_word('D');      // the gallery's Done: "Is this icon ok?"
         }
+        if (play::screen == play::Screen::Icon) { shot("icon"); printf("  icon menu [%s%s]\n", play::menu.prompt, play::menu.s); }
         if (play::screen == play::Screen::Icon) tap_word('D');       // (Curse: the icon gallery's Done)
+        shot("save_q");
         tap_word('Y');
         if (play::screen == play::Screen::YesNo) { printf("  ask [%s]\n", play::menu.prompt); tap_word('Y'); }
         printf("  screen %d\n", (int)play::screen);
@@ -724,9 +727,10 @@ int main(int argc, char** argv)
             play::tap(24, (12 + pm_line('R')) * 8 + 2, C);
             if (play::screen == play::Screen::YesNo) tap_word('Y');
             play::tap(24, (12 + pm_line('A')) * 8 + 2, C);
-            if (play::screen != play::Screen::AddList) tap_word('C');
+            if (play::screen != play::Screen::AddList) tap_word(play::darkness_files() ? 'P' : 'C');   // (Darkness: Pools)
             for (int i = 0; i < play::d->guys; ++i) {
                 char t[48]; play::list_line(i, t, sizeof t);
+                if (getenv("ADDLIST")) printf("    add list %d [%s]\n", i, t);
                 if (strstr(t, getenv("ADDGUY"))) { play::add_character(i, C); printf("  added [%s]\n", t); break; }
             }
             tap_word('E');
@@ -802,6 +806,7 @@ int main(int argc, char** argv)
             play::tap(16, (4 + who) * 8 + 2, C);
             party::Character& ch = play::pt->m[who];
             if (getenv("MODFRESH")) { ch.rec[0x127] = 0xA8; ch.rec[0x128] = 0x61; ch.rec[0x129] = 0; ch.rec[0x12A] = 0; ch.rec[0xE6] = 0; }
+            if (getenv("MODFRESH") && play::darkness_files()) { ch.rec[0x127] = 0x61; ch.rec[0x128] = 0xE3; ch.rec[0x129] = 0x16; }   // (Darkness: 1,500,001)
             auto show = [&](const char* tag) { char n[20]; ch.name(n, 20); printf("  %s: %s Str %d/%d Int %d Wis %d Dex %d Con %d Cha %d HP %d/%d AC %d screen %d menu [%s%s]\n", tag, n, ch.stat(0), ch.str00(), ch.stat(1), ch.stat(2), ch.stat(3), ch.stat(4), ch.stat(5), ch.hp(), ch.hp_max(), ch.ac(), (int)play::screen, play::menu.prompt, play::menu.s); };
             show("before");
             play::tap(24, (12 + pm_line('M')) * 8 + 2, C);
@@ -812,14 +817,14 @@ int main(int argc, char** argv)
                 case '>': play::act(play::Act::StepRight, C); break;
                 case 'u': play::act(play::Act::Forward, C); break;
                 case 'd': play::act(play::Act::TurnAround, C); break;
-                case 'h': if (play::secret_files()) play::tap(31 * 8 + 2, 3 * 8 + 2, C); else play::tap(2 * 8 + 2, 18 * 8 + 2, C); break;
+                case 'h': if (play::secret_files() || play::darkness_files()) play::tap(31 * 8 + 2, 3 * 8 + 2, C); else play::tap(2 * 8 + 2, 18 * 8 + 2, C); break;
                 case 'A': case 'S': tap_word(*q); break;          // (Secret's Add / Subtract)
                 case 'n': play::tap(2 * 8 + 2, 1 * 8 + 2, C);
                     if (play::input_mode != play::Input::None && getenv("TYPE")) { for (const char* t = getenv("TYPE"); *t; ++t) play::input_key(*t, C); play::input_key('\n', C); }
                     break;
-                case '#': shot("modify"); break;
+                case '#': shot("modify"); show("#"); break;
                 case 'K': case 'E': tap_word(*q); break;
-                default: if (*q >= '0' && *q <= '5') play::tap(2 * 8 + 2, ((play::secret_files() ? 9 : 7) + *q - '0') * 8 + 2, C); break;
+                default: if (*q >= '0' && *q <= '5') play::tap(2 * 8 + 2, ((play::secret_files() || play::darkness_files() ? 9 : 7) + *q - '0') * 8 + 2, C); break;
                 }
             }
             show("after");
