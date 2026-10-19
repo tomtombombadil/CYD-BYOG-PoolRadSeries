@@ -1443,11 +1443,12 @@ void start_play()
     play::set_darkness_dir(dd);
     apply_options();
     // The earlier game's folder on the card: its characters can be added
-    // (Curse takes Pool's, Secret Curse's)
+    // (Curse takes Pool's, Secret Curse's, Darkness Secret's - its Load and Add)
     play::set_import_dir("");
     const games::Game here = game_dirs[game_sel].game;
     const games::Game earlier = here == games::Game::CurseOfTheAzureBonds     ? games::Game::PoolOfRadiance
                               : here == games::Game::SecretOfTheSilverBlades ? games::Game::CurseOfTheAzureBonds
+                              : here == games::Game::PoolsOfDarkness         ? games::Game::SecretOfTheSilverBlades
                                                                               : here;
     for (int g = 0; earlier != here && g < n_games; ++g)
         if (game_dirs[g].game == earlier && game_dirs[g].format == library::Format::Dax) {

@@ -1411,6 +1411,29 @@ the scripts' changed ops, the rule tables, fights, the rest.
   them into Darkness's (the magic hit with stars 6, without 9, sling /
   flask 9, no title sound); turning is silent (`clips.quiet_turns`).
   Facts: the Project's claude/darkness_sound_facts.md.
+- **v0.130.0 - training.** A hall's script sets byte 0x30 (127: every
+  class) and runs PROGRAM 0: the party menu's Train Character and Human
+  Change (the engine's 0x7EA8 is that byte). Free, a level at a time, the
+  experience past the next level's kept to one under the one after
+  (Curse's / Secret's rule, the journal's words); its race limits
+  (darkness_facts.md 36: gnome clerics stop at 7, no dwarf / elf cleric
+  limit); hit points as Secret's (the better of two rolls, past the last
+  hit die 3 / 2 / 1). Its words GAME.OVR 0x1868F on. The playsim: Dominic
+  (cleric 14, +1,000,000 experience) trains to 15, +2 hit points.
+- **v0.131.0 - Secret's characters.** Load from where? Secret: Secret's
+  saved games in its folder on the card (SAVGAMx.DAT's members - seek
+  0x1414 -, each .SAV / .STF / .SFX), Add from where? Secret: its *.who
+  (439 bytes, not its NPCs). Converted as Darkness's ovr 0x11903 does
+  (`secret_to_darkness`): copper, silver, electrum and gold gone, its own
+  race number, a human's highest former level 0, icon flags and flags 2 =
+  2, bundles left out, type 0x2D / 0x3A's bytes, the class values again;
+  Load doesn't take Secret's game state (a new game). Secret's GOG party:
+  AC and HP as DOSBox's import but Malachite's HP (58, the original 61 -
+  its recalculation's Constitution part: with creation's survey).
+- **v0.132.0 - approaching monsters.** SETUP MONSTER's sprite from
+  SPRIT1.DAX: an 88 x 88 animation over the whole view, its frame by the
+  distance (0 near, 1 middle, 2 far), 0 and 13 swapped and 13 see-through
+  (darkness_facts.md 3.5) - not yet compared with DOSBox (none met).
 
 ## 7. The journal (Tom, 2026-10-06)
 

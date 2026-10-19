@@ -437,6 +437,7 @@ static void shop_run(const char* ops)
         else if (*q == '^') { ++q; play::tap(24, (12 + pm_line_of(*q)) * 8 + 2, C); }   // a party menu line
         else if (*q == '*') { party::Character& w = *play::pt->sel(); w.rec[0x127] = 0x40; w.rec[0x128] = 0x42; w.rec[0x129] = 0x0F; }   // 1000000 xp (a test)
         else if (*q == '&') { party::Character& w = *play::pt->sel(); w.rec[0x127] = 0xA0; w.rec[0x128] = 0x86; w.rec[0x129] = 0x01; }   // 100000 xp (a test)
+        else if (*q == '+') { party::Character& w = *play::pt->sel(); const uint32_t x = w.exp() + 1000000; for (int i = 0; i < 4; ++i) w.rec[0x127 + i] = (uint8_t)(x >> (8 * i)); }   // 1000000 xp more (a test)
         else if (*q == '?') { for (int k = 0; k < 8; ++k) printf(" %d", play::pt->sel()->level(k)); printf(" levels, xp %u, HP %d/%d\n", play::pt->sel()->exp(), play::pt->sel()->hp(), play::pt->sel()->hp_max()); }
         else if (*q == '!') { ++q; play::tap(16, (4 + (*q - '0')) * 8 + 2, C); }       // party menu: select row n
         else if (*q == '$') { party::Character& w = *play::pt->sel(); w.rec[0xFB + 10] = 3; w.rec[0xFB + 12] = 2; }   // 3 gems, 2 jewels (a test)
@@ -627,10 +628,12 @@ int main(int argc, char** argv)
         for (unsigned a = 0x4B00; a < 0x10000; ++a) fresh_words[a - 0x4B00] = play::vm->get((uint16_t)a);
     }
     {
+        if (getenv("LOADFROM") && getenv("POOLDIR")) play::set_import_dir(getenv("POOLDIR"));
         play::tap(24, (12 + pm_line('L')) * 8 + 2, C);
-        if (play::load_where) {         // (Darkness: "Load from where?" - Pools)
+        if (play::load_where) {         // (Darkness: "Load from where?" - Pools; LOADFROM=S: Secret's, POOLDIR its folder)
             shot("load_where");
-            play::tap(((int)strlen(play::menu.prompt) + play::menu.start[0]) * 8 + 2, text::kMenuRow * 8 + 2, C);
+            const int w = getenv("LOADFROM") && *getenv("LOADFROM") == 'S' ? 1 : 0;
+            play::tap(((int)strlen(play::menu.prompt) + play::menu.start[w]) * 8 + 2, text::kMenuRow * 8 + 2, C);
         }
         printf("  saves [%s] menu [%s%s]\n", play::pm_saves, play::menu.prompt, play::menu.s);
         if (!strchr(play::pm_saves, save[0])) {
@@ -874,6 +877,12 @@ int main(int argc, char** argv)
     settle(0, getenv("MS") ? atoi(getenv("MS")) : 60000);
     if (getenv("CAMPRUN")) run_ops(getenv("CAMPRUN"));
     shot("start");
+    if (getenv("SPRITESHOT")) {         // SPRITESHOT=id:distance - a monster's sprite on the view, a snapshot
+        int id = 0, dist = 0;
+        sscanf(getenv("SPRITESHOT"), "%d:%d", &id, &dist);
+        play::host->sprite(id, dist);
+        shot("sprite");
+    }
     if (getenv("NAVGAME")) {
         // NAVGAME on the game screen: as NAVOPS (u d l r s #), the game going on between
         for (const char* q = getenv("NAVGAME"); *q; ++q) {

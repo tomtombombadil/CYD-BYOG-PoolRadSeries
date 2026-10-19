@@ -90,7 +90,13 @@ the Project as claude/TODO.md.
       v0.125.0: exploring menu, camp, View, item names. v0.126.0: the
       items screen. v0.127.0: the rule tables. v0.128.0: magic (camp
       screens). v0.129.0: sounds (ZOUNDS samples, SOUND op; Tandy = the
-      SL / TL DAC, PC speaker as IBMSND.COM). Next, a chunk a commit:
+      SL / TL DAC, PC speaker as IBMSND.COM). v0.130.0: training (not
+      compared with DOSBox: the hall's screen). v0.131.0: Secret's
+      characters (Load / Add; Malachite's HP +3 in the original - open).
+      v0.132.0: approaching monsters (SPRIT1; compare with DOSBox when
+      one is met).
+      Agents (2026-10-18): fights, shops / temple / treasure, creation.
+      Next, a chunk a commit:
       approaching monsters (SPRIT1), the spells' effects in camp and in
       fights, training, creation, fights (VGA combat pictures,
       DUNGCOM, CPIC1 icons), shops / treasure (ITEM0 rows), overland
