@@ -236,6 +236,7 @@ int dy(int dir) { return dir >= 0 && dir <= 8 ? kDy[dir] : 0; }
 bool read_tables(Tables& t, const TableAt& at, ReadDs read, void* ctx)
 {
     t.by_name = false;                  // (Curse: the class bits - was left unset, read as whatever was there)
+    t.turn_cols = at.turn_cols;
     return read(ctx, at.ground, &t.ground[0][0], sizeof t.ground) &&
            read(ctx, at.fallback, &t.fallback[0][0], sizeof t.fallback) &&
            read(ctx, at.formation, &t.formation[0][0], sizeof t.formation) &&
@@ -243,7 +244,9 @@ bool read_tables(Tables& t, const TableAt& at, ReadDs read, void* ctx)
            read(ctx, at.start_y, t.start_y, sizeof t.start_y) &&
            read(ctx, at.shapes, &t.shapes[0][0][0], sizeof t.shapes) &&
            (!at.terrain || read(ctx, at.terrain, t.terrain, sizeof t.terrain)) &&     // (Pool: none)
-           ((t.turn_known = at.turn != 0) ? read(ctx, at.turn, t.turn, sizeof t.turn) : true) &&
+           ((t.turn_known = at.turn != 0)
+                ? read(ctx, at.turn, t.turn, at.turn_cols == 11 ? sizeof t.turn : 13 * 10 + 11)
+                : true) &&
            (!at.race_names || (t.by_name = read(ctx, at.race_names, &t.foe_names[0][0], sizeof t.foe_names)));
 }
 
@@ -4153,11 +4156,64 @@ Morale morale(Battle& b, const Tables& t, int i)
     return Morale::Fight;
 }
 
+// Pools of Darkness's (the fights' rules facts R13; overlay 0xA1, GAME.OVR
+// 0x1F71A): the cleric's level or the paladin's - 2, 9-13 -> 9, 14+ -> 10,
+// less the script's penalty (index 0: never); one d20; the undead in sight
+// not yet turned, the highest type up to a limit (13 first): its value sets
+// the count (D*: 1d6 + 6, else 1d12) the first time; the roll at least the
+// value: turned (> 0) or destroyed (0, D* -1), the count down (D*'s extra 6);
+// too low: the limit - 1 and a weaker type next
+static int turn_undead_dk(Battle& b, const Tables& t, int cleric, create::Dice& d, int* out, int cap)
+{
+    Fighter& me = b.f[cleric];
+    ++me.undead_turns;
+    const int cl = me.rec[kLevels], pa = me.rec[kLevels + 3] - 2;
+    const int lv = cl > pa ? cl : pa;
+    int col = lv <= 8 ? lv : lv < 14 ? 9 : 10;
+    col = b.turn_minus > col ? 0 : col - b.turn_minus;
+    const int roll = d.roll(20, 1);
+    int count = -1, extra = 6, limit = 13, n = 0;
+    const int my = me.team() ? 1 : 0;
+    while (n < cap) {
+        int best = -1, type = 0;
+        for (int i = 0; i < b.n; ++i) {
+            const Fighter& f = b.f[i];
+            const int ut = f.rec[0xE9];
+            if (!f.up() || !f.size || f.fleeing || (f.team() ? 1 : 0) == my || ut <= type || ut > limit) continue;
+            if (!range(b, t, cleric, i, false, nullptr)) continue;
+            best = i;
+            type = ut;
+        }
+        if (best < 0 || count == 0) break;
+        const int v = static_cast<int8_t>(t.turn[type * 11 + col]);
+        if (count < 0) count = v < 0 ? d.roll(6, 1) + 6 : d.roll(12, 1);
+        if (roll < (v < 0 ? -v : v)) {
+            if (--limit < 1) break;
+            continue;
+        }
+        Fighter& f = b.f[best];
+        if (v > 0) {
+            f.fleeing = true;
+            out[n++] = best;
+        } else {
+            f.rec[kHealth] = party::Gone;
+            f.rec[kInCombat] = 0;
+            f.size = 0;
+            occupancy(b);
+            out[n++] = best + 1000;
+        }
+        if (extra > 0) --extra;
+        if (--count == 0 && extra > 0 && v < 0) ++count;
+    }
+    return n;
+}
+
 int turn_undead(Battle& b, const Tables& t, int cleric, create::Dice& d, int* out, int cap)
 {
     Fighter& me = b.f[cleric];
     me.turned_undead = true;
     if (!t.turn_known) return 0;
+    if (t.turn_cols == 11) return turn_undead_dk(b, t, cleric, d, out, cap);
     const int lv = me.rec[0x109];
     const int col = lv >= 1 && lv <= 8 ? lv : lv <= 13 ? 9 : 10;
     int count = d.roll(12, 1);
@@ -4176,7 +4232,7 @@ int turn_undead(Battle& b, const Tables& t, int cleric, create::Dice& d, int* ou
             type = ut;
         }
         if (best < 0) break;
-        const int v = static_cast<int8_t>(t.turn[type * 10 + col]);
+        const int v = static_cast<int8_t>(t.turn[type * t.turn_cols + col]);
         if (roll < (v < 0 ? -v : v)) break;
         Fighter& f = b.f[best];
         if (v > 0) {

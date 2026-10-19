@@ -342,11 +342,13 @@ static bool boot(char slot = 'A')
 static bool start_fight(int area = 0, int mon = 0, int copies = 0)
 {
     // A LOAD MONSTER in save A's script (Curse: 8AC2; Pool, GAME=1: 85F9, the
-    // Slums' goblins; Secret, GAME=3: 848A, the fire knives; FIGHTAT=hex another)
+    // Slums' goblins; Secret, GAME=3: 848A, the fire knives; Darkness, GAME=4: 85BB, its 30-monster
+    // fight with the menus answered 0; FIGHTAT=hex another)
     const int game = getenv("GAME") ? atoi(getenv("GAME")) : 0;
     const uint16_t a = getenv("FIGHTAT") ? static_cast<uint16_t>(strtol(getenv("FIGHTAT"), nullptr, 16))
                        : game == 1       ? 0x85F9
                        : game == 3       ? 0x848A
+                       : game == 4       ? 0x85BB
                                          : 0x8AC2;
     if (mon) {
         play::d->gs.game_area = static_cast<uint8_t>(area);

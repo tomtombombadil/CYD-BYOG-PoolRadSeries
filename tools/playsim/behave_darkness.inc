@@ -5,7 +5,8 @@
 // tables read from the player's program and ITEM0.DAX by a scratch script,
 // the constants of the Project's claude/darkness_create_facts.md and its
 // rules worked out there) - never against the engine's own code.
-// ONLY= create, kit, modify, conhp, change.
+// ONLY= create, kit, modify, conhp, change; the fights (behave_darkness_fights.inc):
+// fights (all of them), turn ...
 #include "behave_oracle.inc"
 
 namespace bdark {
@@ -551,6 +552,15 @@ bool open_game()
     return play::screen == play::Screen::PartyMenu;
 }
 
+#include "behave_darkness_fights.inc"
+
+bool want_part(const char* s)
+{
+    const char* only = getenv("ONLY");
+    return !only || strstr(only, s) || (strstr(only, "fights") && strcmp(s, "create") && strcmp(s, "kit") &&
+                                        strcmp(s, "modify") && strcmp(s, "conhp") && strcmp(s, "change"));
+}
+
 } // namespace bdark
 
 static void behave_darkness()
@@ -561,6 +571,7 @@ static void behave_darkness()
         expect(P, "oracle file", false, "no oracle_darkness.txt");
         return;
     }
+    if (!b_oracle_load("darkness_fights")) expect(P, "oracle file", false, "no oracle_darkness_fights.txt");
     if (!open_game()) {
         expect(P, "the game opened", false);
         return;
@@ -577,4 +588,5 @@ static void behave_darkness()
     if (want("modify")) modify();
     if (want("conhp")) conhp();
     if (want("change")) change();
+    dkfight::checks(want_part);
 }

@@ -58,8 +58,12 @@ struct Tables {
     uint8_t start_x[8], start_y[8];     // a rank's centre in the 11 x 6 grid
     uint8_t shapes[5][6][2];            // allowed columns (min, max) a row; [4] = the fallback shape
     uint8_t terrain[33];                // outdoors: terrain flags a place (city)
-    uint8_t turn[13 * 10 + 11];         // turn undead: [undead type * 10 + column]
+    uint8_t turn[14 * 11];              // turn undead: [undead type * turn_cols + column]
     bool    turn_known;                 // the turn table was found (Secret's not yet: no Turn)
+    // 10: Curse's rows and rules; 11: Pools of Darkness's (the fights' rules
+    // facts R13 - column 0 for level 0, the cleric or the paladin - 2, the
+    // highest type first and a weaker one after a roll too low, 1d6 + 6 for D*)
+    uint8_t turn_cols;
     // Pool: the races' foes by name (poolrad_combat_facts.md 2.2; Pascal
     // names 16 bytes apart: 4 the gnomes' foes, 8 the dwarves', 8 the
     // giants the dwarves and gnomes dodge - the last 3 the turn table's
@@ -79,6 +83,7 @@ struct Comspr {
 struct TableAt {
     uint16_t ground, fallback, formation, facing, start_x, start_y, shapes, terrain, turn;
     uint16_t race_names;                // Pool's foe names (0: none - the class bits)
+    uint8_t  turn_cols = 10;            // the turn table's columns (Darkness 11, its rows 0-13)
 };
 // Reads them: read(ctx, ds offset, out, n) gives the data segment's bytes
 using ReadDs = bool (*)(void* ctx, uint16_t ds, uint8_t* out, size_t n);
@@ -465,6 +470,7 @@ struct Fighter {
     bool    fleeing = false;            // turned undead, panic: runs for the field's edge
     bool    escaped = false;            // turned gaseous and escaped (Pool's vampire): away, not down
     uint8_t was_control = 0;            // its control byte before Animate Dead (back after the fight)
+    uint8_t undead_turns = 0;           // Darkness: its Turn Undeads this fight (R13)
     // Secret's record bytes with no Curse place (secret_facts_2.md 19): flags
     // 2 (0x15E: 8 = unharmed by Slay Living and the Death Spell) and magic
     // resistance (0x1A5, % - by the caster's level as Curse's effects)
@@ -499,6 +505,9 @@ struct Battle {
     int     to_hit_party = 0, to_hit_monsters = 0;  // the scripts' bonuses
     const Facts* fx = nullptr;
     int     morale_base = 0;            // the script's morale word (0x7EC6)
+    // Darkness's Turn Undead (R13): the undead loaded for the fight (each
+    // cleric may turn that many times), the script's penalty (block +0x0E)
+    int     undead_loaded = 0, turn_minus = 0;
     // Missiles: the item types (ITEMS) and the ammunition's types
     const items::Names* names = nullptr;
     uint8_t arrow = 0, quarrel = 0;

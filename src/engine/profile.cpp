@@ -1694,15 +1694,16 @@ const Profile kProfiles[] = {
      // Fights (the fights' facts, darkness fights survey 1): Secret's tables at
      // Darkness's places - its ground table (DS 0x3EBA, 70 values: 0-25 the
      // dungeons', 0x1F on the wilderness's), the placing tables (DS 0x090C -
-     // 0x0940); no terrain table; the turn undead table not read yet; the
+     // 0x0940); no terrain table; the turn undead table DS 0x09FB (11 columns, rows
+     // 0-13 - the fights' rules facts R13); the
      // words where its fight overlays have them; the effects a fight's end
      // takes away (DS 0x0C6E, 16 - GAME.OVR 0x32DB0); the effects by
      // Darkness's own numbers (its View names, DS 0x4061; its handler table
      // DS 0xA7EA + 4 x (effect - 1), set at GAME.OVR 0x1DD3B)
-     .fight = {{0x3EBA, 0x090C, 0x091C, 0x092C, 0x0930, 0x0938, 0x0940, 0, 0, 0},
+     .fight = {{0x3EBA, 0x090C, 0x091C, 0x092C, 0x0930, 0x0938, 0x0940, 0, 0x09FB, 0, 11},
               {
-               0xD2F1, 0, 0, 0, 0, 0, 0, 0xA290, kP | 0xC0B5, 0, 0x9785, kP | 0xC03A, 0, 0, 0, 0x3A3DD, 0, 0, 0, 0,
-               0x36BDA, 0, 0, 0, 0, kP | 0xCDD3, 0x1E89C, 0x1E8A8, 0x1E8B7, 0x1E8BF, 0x1E8CE, 0x1E8E2, 0x1E8EF,
+               0xD2F1, 0, 0, 0, 0, 0, 0, 0xA290, kP | 0xC0B5, 0, 0x9785, kP | 0xC03A, 0, 0, 0, kP | 0xC88C, 0, 0, 0, 0,
+               0x36BDA, kP | 0xC863, 0x9837, 0, 0, kP | 0xCDD3, 0x1E89C, 0x1E8A8, 0x1E8B7, 0x1E8BF, 0x1E8CE, 0x1E8E2, 0x1E8EF,
                0x1E8F7, 0x1E900, 0x1E90A, 0x1E915, 0x1E922, 0x1E92C, 0x1E959, 0x922F, kP | 0xC8DE, 0x1F3D1, 0x1F3DA,
                kP | 0xC011, 0x9AC5, 0xAC8F, 0xACA1, 0x37278, 0, 0x34B11, 0x34B1B, 0x34B1E, kP | 0xC224, 0,
                kP | 0xC276, 0, kP | 0xC343, kP | 0xC36C, 0x19DE, 0x5917, 0x594E, 0x5468, 0x546F, 0, kP | 0xAAF9, 0,
@@ -1712,7 +1713,10 @@ const Profile kProfiles[] = {
                0, 0, 0, 0, 0, 0, 0x1BD7D, 0, 0, 0x1BD67, 0x1BD70, 0x1BD7D, 0, 0, kJ | 17, kJ | 15, 0, 0, 0, 0,
                0x1B668, 0x1B65E, 0x1B674, 0x1B681, 0x1B50B, 0x1B518, 0x1D5AF, kP | 0xC677, kP | 0xCB1C, kP | 0xB341,
                kP | 0xC9D4, 0, 0, 0x1B039, 0, 0x1B337, 0, 0x1B898, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-               0, 0, 0, kJ | 16, 0, 0x1C438, 0, 0, 0, 0, 0, kP | 0xCDFC, 0x30251, 0x30449
+               0, 0, 0, kJ | 16, 0, 0x1C438, 0, 0, 0, 0, 0, kP | 0xCDFC, 0x30251, 0x30449,
+               // (R15) "Next Prev Manual Target Center Exit", "Target Exit", "(use cursor keys) ", "  ", "(",
+               // "Faster Slower Exit"
+               kP | 0xCE76, kP | 0xCE9F, kP | 0xC8B5, 0x210FA, 0x9835, kP | 0xCD81
                },
                {0x03, 0x06, 0x0B, 0x15, 0x17, 0x1B, 0x1E, 0x1F, 0x23, 0x34, 0x35, 0x4D, 0x6A, 0x6B, 0x6F, 0x76},
                {.held = {0x33, 0x34, 0x35, 0x1F}, .bless = 0x01, .curse = 0x02, .prayer = 0x31, .haste = 0x27,

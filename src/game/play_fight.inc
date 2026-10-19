@@ -2313,22 +2313,14 @@ bool can_guard(const combat::Fighter& f)
     return dk_menu() ? ti.range <= 1 || (ti.flags & 0x14) == 0x14 : (ti.flags & 0x04) != 0;
 }
 
-void fight_menu_dk(char* words, size_t cap, const combat::Fighter& f, bool spells)
+// Darkness's menus are one string each with the words not offered left out
+// (its Pascal sets): word k of `all` when on[k] ('@' a row break kept)
+void dk_words(const char* all, const bool* on, int n, char* words, size_t cap)
 {
-    const char* all = fw(profile::kFMenuDk);
-    bool on[12] = {};
-    on[0] = f.moves > 1;
-    on[1] = true;
-    on[2] = f.n_items && f.can_use;
-    on[3] = spells && f.can_cast;
-    on[4] = f.rec[0x109] > 0 && !f.turned_undead && fg->t.turn_known;
-    on[5] = can_guard(f);
-    on[6] = on[7] = on[9] = on[10] = on[11] = true;
-    on[8] = combat::anyone_dying(fg->b);
     size_t o = 0;
     int k = 0;
     const char* p = all;
-    while (*p && k < 12) {
+    while (*p && k < n) {
         while (*p == ' ') ++p;
         if (*p == text::kRowBreak) {
             if (o && words[o - 1] == ' ') --o;
@@ -2348,6 +2340,24 @@ void fight_menu_dk(char* words, size_t cap, const combat::Fighter& f, bool spell
     }
     if (o && words[o - 1] == ' ') --o;
     words[o] = 0;
+}
+
+void fight_menu_dk(char* words, size_t cap, const combat::Fighter& f, bool spells)
+{
+    bool on[12] = {};
+    on[0] = f.moves > 1;
+    on[1] = true;
+    on[2] = f.n_items && f.can_use;
+    on[3] = spells && f.can_cast;
+    // (Darkness, R13: a cleric or a paladin over 2nd level, as many times
+    // as undead were loaded for the fight)
+    on[4] = fg->t.turn_known && (fg->t.turn_cols == 11 ? (f.rec[0x109] > 0 || f.rec[0x10C] > 2) &&
+                                                              f.undead_turns < fg->b.undead_loaded
+                                                        : f.rec[0x109] > 0 && !f.turned_undead);
+    on[5] = can_guard(f);
+    on[6] = on[7] = on[9] = on[10] = on[11] = true;
+    on[8] = combat::anyone_dying(fg->b);
+    dk_words(fw(profile::kFMenuDk), on, 12, words, cap);
 }
 
 void fight_menu(pic::Canvas& c)
@@ -2595,13 +2605,28 @@ void aim_menu(pic::Canvas& c)
              sq <= spells::reach(mrules->tables, fg->spell, spell_power(b.f[fg->cur]));
     }
     char line[24];
-    snprintf(line, sizeof line, "%s%d", fw(profile::kRangeIs), sq);
+    snprintf(line, sizeof line, "%s%d%s", fw(profile::kRangeIs), sq, fw(profile::kRangeEndDk));
     status_line(c, t >= 0 ? line : "");
     char words[64];
-    if (fg->manual) snprintf(words, sizeof words, "%s%s", ok ? fw(profile::kFTarget) : "", fw(profile::kCenterExit));
-    else snprintf(words, sizeof words, "%s%s%s", fw(profile::kNextPrevManual), ok ? fw(profile::kFTarget) : "",
-                  fw(profile::kCenterExit));
-    text::build(menu, fg->manual ? "" : fw(profile::kAimPrompt), words);
+    const char* prompt = fg->manual ? "" : fw(profile::kAimPrompt);
+    if (d->prof->fight.words[profile::kAimDk]) {
+        // Darkness (R15): "aim: " Next Prev Manual [Target] Center Exit; Manual:
+        // "(use cursor keys) " [Target] Exit
+        if (fg->manual) {
+            const bool on[2] = {ok, true};
+            dk_words(fw(profile::kAimManualDk), on, 2, words, sizeof words);
+            prompt = fw(profile::kManualPromptDk);
+        } else {
+            const bool on[6] = {true, true, true, ok, true, true};
+            dk_words(fw(profile::kAimDk), on, 6, words, sizeof words);
+        }
+    } else if (fg->manual) {
+        snprintf(words, sizeof words, "%s%s", ok ? fw(profile::kFTarget) : "", fw(profile::kCenterExit));
+    } else {
+        snprintf(words, sizeof words, "%s%s%s", fw(profile::kNextPrevManual), ok ? fw(profile::kFTarget) : "",
+                 fw(profile::kCenterExit));
+    }
+    text::build(menu, prompt, words);
     menu.selected = 0;
     show_menu_line(c);
 }
@@ -2729,11 +2754,18 @@ void speed_menu(pic::Canvas& c)
 {
     const int speed = vm->get(0x4BFC) & 0xFF;
     char prompt[24], words[32];
-    snprintf(prompt, sizeof prompt, "%s%d%s", fw(profile::kGameSpeed), speed, fw(profile::kSpeedClose));
+    snprintf(prompt, sizeof prompt, "%s%s%d%s", fw(profile::kGameSpeed), fw(profile::kSpeedOpenDk), speed,
+             fw(profile::kSpeedClose));
     words[0] = 0;
-    if (speed < 9) strcat(words, fw(profile::kFSlower));
-    if (speed > 0) strcat(words, fw(profile::kFFaster));
-    strcat(words, fw(profile::kFExit));
+    if (d->prof->fight.words[profile::kSpeedWordsDk]) {
+        // Darkness (R15): "game speed: (n) " Faster Slower Exit
+        const bool on[3] = {speed > 0, speed < 9, true};
+        dk_words(fw(profile::kSpeedWordsDk), on, 3, words, sizeof words);
+    } else {
+        if (speed < 9) strcat(words, fw(profile::kFSlower));
+        if (speed > 0) strcat(words, fw(profile::kFFaster));
+        strcat(words, fw(profile::kFExit));
+    }
     fg->st = FSt::Speed;
     text::build(menu, prompt, words);
     menu.selected = 0;
@@ -3170,6 +3202,15 @@ void fight_start(pic::Canvas& c)
         f.magic_res = m.magic_res;
     }
     b.fx = &d->prof->fight.facts;
+    // Darkness's Turn Undead (R13): the undead its LOAD MONSTERs loaded (each
+    // cleric turns as many times), the script's penalty (block +0x0E)
+    if (fg->t.turn_cols == 11) {
+        for (int k = 0; k < ml->n; ++k) {
+            const combat::Rec r(&ml->m[k]);
+            if (r[0xE9] && r[0x195] != 9) ++b.undead_loaded;
+        }
+        b.turn_minus = vm->get(0x0F) & 0xFF;
+    }
     b.names = names;
     b.arrow = d->facts.arrow;
     b.quarrel = d->facts.quarrel;

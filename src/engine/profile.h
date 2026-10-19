@@ -200,6 +200,12 @@ enum FightWord {
     kFMenuDk,                                                                    // Darkness: the menu on two rows ("Move Aim Use Cast
                                                                                  // Turn Guard Quick@Delay Bandage View Speed End")
     kBreathesPoison, kBreathesLightning,                                         // Darkness: "breathes poison", "breathes lightning"
+    // Darkness's Aim and Speed (the fights' rules facts R15): one string
+    // each, the words not offered left out - "Next Prev Manual Target
+    // Center Exit", Manual's "Target Exit" with "(use cursor keys) ", the
+    // range's "  " after its number; "game speed: " "(" n ") " "Faster
+    // Slower Exit"
+    kAimDk, kAimManualDk, kManualPromptDk, kRangeEndDk, kSpeedOpenDk, kSpeedWordsDk,
     kFightWords
 };
 
