@@ -862,6 +862,7 @@ bool Vm::dk_step(Stop& r)
         enc_.sprite = static_cast<uint8_t>(value(o[0]));
         enc_.max = value(o[1]) & 0xFF;
         enc_.pic = static_cast<uint8_t>(value(o[2]));
+        enc_.sides = static_cast<uint8_t>(value(o[3]));
         enc_.distance = sight();
         if (enc_.distance > enc_.max) enc_.distance = enc_.max;
         if (show_encounter()) {

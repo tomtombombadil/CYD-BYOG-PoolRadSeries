@@ -428,24 +428,46 @@ bool fits(const Battle& b, const Tables& t, int i, int size, int x, int y)
 
 } // namespace
 
-void place(Battle& b, const Tables& t, int facing, int distance, SolidSide solid, void* ctx)
+void place(Battle& b, const Tables& t, int facing, int distance, SolidSide solid, void* ctx, int sides)
 {
-    const int f0 = (facing / 2) & 3;
+    const int party_f0 = (facing / 2) & 3;
     bool used[2][4][6][11] = {};
     int width[2] = {};
     for (int i = 0; i < b.n; ++i)
         if (b.f[i].up()) ++width[b.f[i].team() ? 1 : 0];
-    for (int k = 0; k < 2; ++k) width[k] = (width[k] + 1) / 2;
+    // Darkness (GAME.OVR 0xCF9C): the enemies come from the sides SETUP
+    // MONSTER named (bits 0-3 north, east, south, west), one after another -
+    // east first -, each placed as if the party faced that way; a side's
+    // rank (count + 2n - 1) / 2n wide for n sides
+    sides &= 15;
+    int n_sides = 0;
+    for (int k = 0; k < 4; ++k) n_sides += (sides >> k) & 1;
+    width[0] = (width[0] + 1) / 2;
+    width[1] = n_sides ? (width[1] + 2 * n_sides - 1) / (2 * n_sides) : (width[1] + 1) / 2;
+    // (the original's 0xCD6D: each change of facing starts the placing
+    // grids afresh, and enemies on another side than the party faces come
+    // at least 1 square away)
+    int side = 0, last_f0 = party_f0;
     memset(b.who, 0, sizeof b.who);
     for (int i = 0; i < b.n; ++i) {
         Fighter& f = b.f[i];
         const int team = f.team() ? 1 : 0;
+        const int grid = team;
+        int f0 = party_f0;
+        if (team && n_sides) {
+            do side = (side + 1) & 3;
+            while (!((sides >> side) & 1));
+            f0 = side;
+        }
+        if (n_sides && f0 != last_f0) memset(used, 0, sizeof used);
+        last_f0 = f0;
+        const int dist = n_sides && distance == 0 && f0 != party_f0 ? 1 : distance;
         const int tf = team ? (f0 + 2) & 3 : f0;           // the team's half facing
         f.facing = team ? (t.facing[f0] + 4) & 7 : t.facing[f0];
         int size = f.rec[kSize] & 7;
         if (size < 1 || size > 4) size = 1;
         if (f.member >= 0) size = 1;
-        const int tx0 = team ? distance * geo::dx(f0 * 2) : 0, ty0 = team ? distance * geo::dy(f0 * 2) : 0;
+        const int tx0 = team ? dist * geo::dx(f0 * 2) : 0, ty0 = team ? dist * geo::dy(f0 * 2) : 0;
         bool placed = false;
         for (int at = 0; at < 4 && !placed; ++at) {
             int tx = tx0, ty = ty0;
@@ -473,10 +495,10 @@ void place(Battle& b, const Tables& t, int facing, int distance, SolidSide solid
                     if (rank == 0 && count > width[team]) break;
                     if (rank > 0 && count > 11) break;
                     const uint8_t* row = t.shapes[shape][gy];
-                    if (gx < row[0] || gx > row[1] || used[team][at][gy][gx]) continue;
+                    if (gx < row[0] || gx > row[1] || used[grid][at][gy][gx]) continue;
                     const int x = gx + 6 * tx + 5 * ty + 22, y = gy + 5 * ty + 10;
                     if (!fits(b, t, i, f.up() ? size : 1, x, y)) continue;
-                    used[team][at][gy][gx] = true;
+                    used[grid][at][gy][gx] = true;
                     f.x = x;
                     f.y = y;
                     placed = true;

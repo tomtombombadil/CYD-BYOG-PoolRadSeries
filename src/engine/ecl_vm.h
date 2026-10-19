@@ -165,6 +165,9 @@ public:
 #endif
     // How far apart the two sides start a fight (map squares): the
     // encounter's distance, no further than the party can see
+    // Darkness's SETUP MONSTER sides (DS 0xAEE8, set only there - ovr 0x562):
+    // bits 0-3 north, east, south, west; 0 = ahead of the party
+    uint8_t fight_sides() const { return enc_.sides; }
     int fight_distance() const
     {
         const int s = sight();
@@ -302,6 +305,7 @@ private:
         bool sprite_on = false, pic_on = false, in_menu = false, pic_due = false;
         uint8_t sprite = 0, pic = 0, head = 0xFF;
         int distance = 0, max = 0;
+        uint8_t sides = 0;              // Darkness: SETUP MONSTER's 4th - the sides the monsters come from
     } enc_;
     // The encounter menu in progress: what it waits for next
     enum class EncPhase : uint8_t { None, Text, Menu, Note };

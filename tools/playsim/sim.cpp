@@ -160,7 +160,15 @@ static void settle(int choice = 0, int max_ms = 60000)
         if (!waiting) return;
         const auto wt = vm->wait();
         if (play::input() != play::Input::None) {
-            const char* t = getenv("TYPE") ? getenv("TYPE") : "42";
+            // TYPE=a,b,c: one answer each time (the last one again after them)
+            static int typed = 0;
+            const char* all = getenv("TYPE") ? getenv("TYPE") : "42";
+            const char* t = all;
+            for (int k = 0; k < typed && strchr(t, ','); ++k) t = strchr(t, ',') + 1;
+            ++typed;
+            char ans[64];
+            snprintf(ans, sizeof ans, "%.*s", (int)(strchr(t, ',') ? strchr(t, ',') - t : (long)strlen(t)), t);
+            t = ans;
             printf("  INPUT %s: typing %s\n", play::input() == play::Input::Number ? "number" : "text", t);
             for (const char* q = t; *q; ++q) play::input_key(*q, C);
             shot("input");
@@ -918,8 +926,11 @@ int main(int argc, char** argv)
         // Run the script from an address (e.g. a shop), then BUY=n,n,...
         // buys those goods for character 0, READY=i readies their item i
         unsigned a; sscanf(getenv("RUNAT"), "%x", &a);
-        if (getenv("SETVAR") && !getenv("AREA"))      // (SETVAR without AREA: here)
-            for (const char* q = getenv("SETVAR"); q && *q;) {
+        // (SETVAR without AREA: here; RUNSET=addr=value,... here either way -
+        // after the block's start cleared its variables)
+        const char* runset = getenv("RUNSET") ? getenv("RUNSET") : !getenv("AREA") ? getenv("SETVAR") : nullptr;
+        if (runset)
+            for (const char* q = runset; q && *q;) {
                 unsigned sa, v;
                 if (sscanf(q, "%x=%u", &sa, &v) == 2) play::vm->set((uint16_t)sa, (uint16_t)v);
                 q = strchr(q, ',');

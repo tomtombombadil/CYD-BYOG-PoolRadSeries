@@ -523,7 +523,8 @@ const uint8_t* tile(const Battle& b, const Tables& t, int x, int y);
 // outdoors. Monsters that can't be placed are left off the field (their
 // size 0) and out of the fight; downed party members leave a body.
 using SolidSide = bool (*)(void* ctx, int dir);
-void place(Battle& b, const Tables& t, int facing, int distance, SolidSide solid, void* ctx);
+// sides: Darkness's SETUP MONSTER sides (bits 0-3 N E S W; 0: ahead)
+void place(Battle& b, const Tables& t, int facing, int distance, SolidSide solid, void* ctx, int sides = 0);
 void occupancy(Battle& b);
 
 // Distance and sight: the path from fighter a to square (x, y) (2 a
