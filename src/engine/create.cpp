@@ -50,8 +50,12 @@ void learn(party::Character& c, int spell) { classes::to_book(c, spell); }
 // The experience a new character starts with: 25,000 for one class, 12,500
 // for two, 8,333 for three - and for the magic-user / thief, as the
 // original gives it (its createPlayer: 8,333 for C/F/MU, F/MU/T and MU/T)
-uint32_t start_exp(int cls, bool secret = false)
+uint32_t start_exp(int cls, bool secret = false, bool dk = false)
 {
+    // (Darkness's, GAME.OVR 0x14D74: 1,500,001; two classes 750,000 - the
+    // magic-user / thief too -, cleric / fighter / magic-user and fighter /
+    // magic-user / thief 500,000)
+    if (dk) return cls < ClericFighter ? 1500001u : (cls == ClericFighterMU || cls == FighterMUThief) ? 500000u : 750000u;
     // (Secret's: 200,000, 100,000, 66,667 - secret_facts_2.md 21)
     if (cls < ClericFighter) return secret ? 200000u : 25000u;
     if (cls == ClericFighterMU || cls == FighterMUThief || cls == MUThief) return secret ? 66667u : 8333u;
@@ -310,7 +314,22 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
     r[kIconSize] = race == 1 || race == 3 || race == 5 ? 1 : 2;
     r[0x13F] = r[0x140] = t.lay.pool ? 1 : 0;      // (Pool: the portrait's head and body, from 1)
     if (race == 1 || race == 5) add_affect(c, f.poison_save);     // (Pool's dwarves and halflings)
-    switch (race) {
+    if (t.lay.dk) {
+        // Darkness's races' effects in its order (GAME.OVR 0x149AA): dwarves
+        // 0x2F 0x1A 0x61, gnomes 0x30 0x07 0x61, halflings 0x61, elves 0x5F,
+        // half-elves 0x12; its record's 0x1A4 / 0x1A5 (flags) are 2 (0x16217)
+        switch (race) {
+        case 1: add_affect(c, f.giants); add_affect(c, f.dwarf_orc); add_affect(c, f.con_save); break;
+        case 3: add_affect(c, f.gnome_extra); add_affect(c, f.gnome_giant); add_affect(c, f.con_save); break;
+        case 5: add_affect(c, f.con_save); break;
+        case 2: add_affect(c, f.elf_sleep); break;
+        case 4: add_affect(c, f.halfelf); break;
+        default: break;
+        }
+        r[0x14B] = 2;
+        c.ext[party::kExtFlags2] = 2;
+        r[kModId] = 0;                          // (its 0x171: left 0)
+    } else switch (race) {
     case 5: add_affect(c, f.con_save); break;
     case 1:
         add_affect(c, f.con_save);
@@ -334,7 +353,7 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
     const uint8_t lv = cls >= 0 && cls < 17 ? kStartLevels[cls] : 0;
     for (int k = 0; k < 8; ++k)
         if (lv & (1 << k)) r[kLevels + k] = 1;
-    put32(r, kExp, t.lay.pool ? 0 : start_exp(cls, t.lay.secret));
+    put32(r, kExp, t.lay.pool ? 0 : start_exp(cls, t.lay.secret, t.lay.dk));
     if (r[kLevels + classes::Paladin]) {
         r[kCures] = 1;
         add_affect(c, f.prot_evil);
@@ -342,6 +361,16 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
     if (r[kLevels + classes::Ranger]) add_affect(c, f.ranger_giant);
 
     r[kAlign] = static_cast<uint8_t>(alignment);
+    if (t.lay.dk) {
+        // Darkness's first icon (GAME.OVR 0x179A5, before the editor): the
+        // head - halflings 3, women 9 (small races 7), men 5 (small 0) -; the
+        // body - clerics 23, rangers 1, paladins and fighters 24,
+        // magic-users 29, thieves 5 (the first that fits)
+        r[0x141] = race == 5 ? 3 : sex == 1 ? (r[kIconSize] == 2 ? 9 : 7) : (r[kIconSize] == 2 ? 5 : 0);
+        r[0x142] = r[kLevels + classes::Cleric] ? 23 : r[kLevels + classes::Ranger] ? 1
+                 : (r[kLevels + classes::Paladin] || r[kLevels + classes::Fighter]) ? 24
+                 : r[kLevels + classes::MagicUser] ? 29 : 5;
+    }
 
     // Age: the race's dice for the class; a fixed age for multi-classes
     auto age_entry = [&](int e, int* base, int* count, int* sides) {
@@ -353,7 +382,8 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
     int base, count, sides;
     if (cls <= Monk) {
         age_entry(cls, &base, &count, &sides);
-        put16(r, kAge, d.roll(sides, count) + base);
+        // (Darkness adds 10 years to a single class's - GAME.OVR 0x1528A)
+        put16(r, kAge, d.roll(sides, count) + base + (t.lay.dk ? 10 : 0));
     } else {
         // (the entry: Curse's thief one for the magic-users, Pool's and Secret's
         // magic-user one - Secret's GAME.OVR 0x1E8F5: DS 0x4E59 = entry 5)
@@ -374,14 +404,22 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
         if (r[kLevels + k]) r[kLevels + k] = 1;
     r[kHitDice] = 1;
     memset(r + kSpellBook, 0, 100);
+    if (t.lay.dk) {
+        memset(c.ext + party::kExtBook, 0, 17);
+        memset(c.ext + party::kExtBook2, 0, 9);
+    }
     memset(r + kMoney, 0, 14);
     const bool pool = t.lay.pool;
-    put32(r, kExp, pool ? 0 : start_exp(cls, t.lay.secret));
+    put32(r, kExp, pool ? 0 : start_exp(cls, t.lay.secret, t.lay.dk));
 
     // Secret adds its races' adjustments to each roll (GAME.OVR 0x1EA28):
     // dwarves Con +1 Cha -1, elves Dex +1 Con -1, halflings Str -1 Dex +1
     auto race_adj = [&](int i) {
         if (!t.lay.secret) return 0;
+        // (Darkness's program tests the race list's last line - human - not
+        // the race picked (GAME.OVR 0x15449: [bp-0x17]), so it never adds
+        // them; AD&D's with the rules fixes - SPEC 12)
+        if (t.lay.dk && !rules::fixes()) return 0;
         switch (race) {
         case 1: return i == 4 ? 1 : i == 5 ? -1 : 0;
         case 2: return i == 3 ? 1 : i == 4 ? -1 : 0;
@@ -459,7 +497,7 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
         } else if (k == classes::MagicUser) {
             r[kCastCount + 10] = 1;
             for (uint8_t s : f.mu_first) learn(c, s);
-        } else if (k == classes::Thief && t.lay.secret) {
+        } else if (k == classes::Thief && t.lay.secret && !t.lay.dk) {
             // Secret's thieves start with 2d6 gold (GAME.OVR 0x1F589, record
             // 0x109; DOSBox: a new human thief with GOLD 7)
             put16(r, kMoney + 3 * 2, d.roll(6, 2));
@@ -476,6 +514,8 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
                 ++n;
             }
         put16(r, kMoney + 3 * 2, n ? (sum & 0xFF) * 10 / n : 0);
+    } else if (t.lay.dk) {
+        put16(r, kMoney + 4 * 2, 200);          // Darkness: 200 platinum (GAME.OVR 0x15FB5)
     } else if (!t.lay.secret) {
         put16(r, kMoney + 4 * 2, 300);          // 300 platinum (Secret's start with none)
     }
@@ -487,6 +527,9 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
         classes::class_bonuses(c, t);
         while (train(c, t, f, d, true)) {
         }
+        // (Darkness: a magic-user's book by its slots - at its save in the
+        // original, GAME.OVR 0x16287; nothing between looks at it)
+        if (t.lay.dk && c.level(classes::MagicUser) > 0) dk_mu_book(c, t, f);
         return;
     }
     const int rolled = hp_roll(c, t, f, d, 0xFF);
@@ -791,6 +834,29 @@ void change_class(party::Character& c, const classes::Tables& t, const Facts& f,
         for (uint8_t s : f.mu_change) learn(c, s);
     }
     memset(r + kListAt, 0, kListSize);
+    if (t.lay.dk) {
+        // Darkness (GAME.OVR 0x39173 on): the best levels, every slot (6-9
+        // too) and all 141 memorized places cleared; the paladin's and
+        // ranger's effects (0x08, 0x69) taken away and given to a new one
+        // (the party menu's, 0x1447D)
+        memset(c.ext + party::kExtBestLevels, 0, 7);
+        memset(c.ext + party::kExtCleric67, 0, 2);
+        memset(c.ext + party::kExtDruidMore, 0, 2);
+        memset(c.ext + party::kExtMage67, 0, 2);
+        memset(c.ext + party::kExtCleric89, 0, 6);
+        memset(c.ext + party::kExtMemorized, 0, 57);
+        for (int k = 0; k < c.n_affects;) {
+            const uint8_t ty = c.affects[k][0];
+            if ((ty && ty == f.prot_evil) || (ty && ty == f.ranger_giant)) {
+                for (int j = k; j + 1 < c.n_affects; ++j) memcpy(c.affects[j], c.affects[j + 1], party::kAffectSize);
+                --c.n_affects;
+            } else {
+                ++k;
+            }
+        }
+        if (cls == classes::Paladin) add_affect(c, f.prot_evil);
+        if (cls == classes::Ranger) add_affect(c, f.ranger_giant);
+    }
     classes::class_bonuses(c, t);
 }
 
@@ -811,10 +877,11 @@ int class_con_bonus(int con, int cls)
 }
 } // namespace
 
-bool can_modify(const party::Character& c, bool pool, bool secret)
+bool can_modify(const party::Character& c, bool pool, bool secret, bool dk)
 {
     const uint32_t e = c.exp();
     if (pool) return e == 0;
+    if (dk) return e == 1500001 || e == 750000 || e == 500000;
     // (Secret's: its own starting experience - GAME.OVR 0x1FBF0)
     if (secret) return (e == 0 || e == 66667 || e == 100000 || e == 200000) && c.rec[kMultiLevel] == 0;
     return (e == 0 || e == 8333 || e == 12500 || e == 25000) && c.rec[kMultiLevel] == 0;
@@ -872,8 +939,93 @@ static int secret_hp_most(const party::Character& c, const classes::Tables& t)
     return n ? most / n : 1;
 }
 
+// Darkness's Modify bounds (GAME.OVR 0x184FE least, 0x27206 most): the
+// least - a point a hit die (rangers one more), past the last die each
+// class's fixed figures (cleric 2 a level + 9, fighter / paladin 3 + 9,
+// ranger 2 + 11, magic-user 1 + 11, thief 2 + 10), and each class's
+// Constitution figure times its dice when their sum is above 0; the most -
+// every die at its highest with the figure, past the last die those dice
+// and 2 / 3 / 1 a level; a human's former classes count, the classes
+// held divide
+static int dk_con_fig(const party::Character& c, int k) { return secret_con_fig(stat_full(c, 4), k); }
+static int dk_hp_least(const party::Character& c, const classes::Tables& t)
+{
+    int base = 0, con = 0, n = 0;
+    for (int k = 0; k < 7; ++k) {
+        const int lv = c.level(k), hd = t.max_hit_dice(k);
+        if (lv <= 0) continue;
+        ++n;
+        if (lv < hd) {
+            base += lv + (k == 4);
+            con += dk_con_fig(c, k) * lv;
+        } else {
+            const int x = lv - hd + 1;
+            static const int kTimes[7] = {2, 0, 3, 3, 2, 1, 2}, kPlus[7] = {9, 0, 9, 9, 11, 11, 10};
+            base += kTimes[k] * x + kPlus[k];
+            con += dk_con_fig(c, k) * (hd - 1);
+        }
+    }
+    if (!n) return 1;
+    con = static_cast<int16_t>(con & 0xFFFF);
+    const int v = con > 0 ? (base + con) / n : base / n;
+    return v & 0xFF;
+}
+static int dk_hp_most(const party::Character& c, const classes::Tables& t, const Facts& f)
+{
+    const uint8_t* r = c.rec;
+    const int former = r[kMultiLevel];
+    int total = 0, n = 0;
+    for (int k = 0; k < 7; ++k) {
+        const int lv = c.level(k), fl = c.old_level(k), hd = t.max_hit_dice(k);
+        if (!((lv > 0 && lv > former) || fl > 0)) continue;
+        const int fig = dk_con_fig(c, k), sides = f.hp_dice[k];
+        int L;
+        bool full;
+        if (fl > 0) {
+            L = fl;
+            full = true;
+        } else {
+            ++n;
+            L = lv;
+            full = former == 0;
+        }
+        if (hd > L) {
+            if (!full && L > former) {
+                L -= former;
+                full = true;
+            } else if (k == 4) {
+                ++L;
+            }
+            if (full) total += L * (sides + fig);
+            continue;
+        }
+        int past = 0, dice = 0;
+        if (!full) {
+            if (L <= former) continue;
+            full = true;
+            if (former >= hd - 1) {
+                past = L - former;
+            } else {
+                dice = ((sides + fig) * (hd - former - 1)) & 0xFF;
+                past = L - hd + 1;
+            }
+        } else {
+            past = L - hd + 1;
+            dice = ((sides + fig) * (hd - 1)) & 0xFF;
+        }
+        if (k == 4) dice = (dice + sides + fig) & 0xFF;
+        static const int kPer[7] = {2, 0, 3, 3, 2, 1, 2};
+        if (k != 1) total += past * kPer[k] + dice;
+    }
+    total &= 0xFFFF;
+    if (n > 0) total /= n;
+    else if (former == 0) total = 0;
+    return total & 0xFF;
+}
+
 int hp_least(const party::Character& c, const classes::Tables& t, const Facts& f)
 {
+    if (t.lay.dk) return dk_hp_least(c, t);
     if (t.lay.secret) return secret_hp_least(c);
     int total = 0, n = 0;
     for (int k = 0; k <= classes::Monk; ++k) {
@@ -892,6 +1044,7 @@ int hp_least(const party::Character& c, const classes::Tables& t, const Facts& f
 
 int hp_most(const party::Character& c, const classes::Tables& t, const Facts& f)
 {
+    if (t.lay.dk) return dk_hp_most(c, t, f);
     if (t.lay.secret) return secret_hp_most(c, t);
     int total = 0, n = 0;
     const int con = stat_full(c, 4);
@@ -990,9 +1143,26 @@ void modify_stat(party::Character& c, const classes::Tables& t, const Facts& f, 
 
 void modify_done(party::Character& c, const classes::Tables& t, const Facts& f)
 {
-    (void)f;
     classes::class_bonuses(c, t);
     uint8_t* r = c.rec;
+    if (t.lay.dk) {
+        // Darkness's Keep (GAME.OVR 0x1740A): the magic-user's book again by
+        // its slots; the rolled figure = the maximum less each class's
+        // Constitution figure times its dice (rangers' level + 1; past the
+        // last die, that die less one) over the classes - in a byte
+        if (c.level(classes::MagicUser) > 0) dk_mu_book(c, t, f);
+        int sum = 0, n = 0;
+        for (int k = 0; k < 7; ++k) {
+            const int lv = c.level(k), hd = t.max_hit_dice(k);
+            if (lv <= 0) continue;
+            ++n;
+            const int fig = dk_con_fig(c, k);
+            sum += fig * (lv < hd ? lv + (k == 4) : hd - 1);
+        }
+        const int part = n ? (sum & 0xFF) / n : 0;
+        r[kHpRolled] = static_cast<uint8_t>(r[kHpMax] - part);
+        return;
+    }
     const int con = stat_full(c, 4);
     int base = 0, n = 0;
     for (int k = 0; k <= classes::Monk; ++k) {
@@ -1010,6 +1180,98 @@ void modify_done(party::Character& c, const classes::Tables& t, const Facts& f)
     if (t.lay.pool) r[0xF8] = 1;
     else if (t.lay.secret) return;
     else r[kHpRolled] = static_cast<uint8_t>(rolled < 0 ? 0 : rolled);
+}
+
+// ---- Pools of Darkness
+void dk_mu_book(party::Character& c, const classes::Tables& t, const Facts& f)
+{
+    for (int s = 1; s < t.lay.spell_count && s <= 126; ++s) {
+        if (t.spell_class(s) != 2) continue;
+        if (s <= 100) c.rec[kSpellBook + s - 1] = 0;
+        else if (s <= 117) c.ext[party::kExtBook + s - 101] = 0;
+        else c.ext[party::kExtBook2 + s - 118] = 0;
+    }
+    if (c.level(classes::MagicUser) <= 0) return;
+    for (int s = 1; s < t.lay.spell_count && s <= 126; ++s)
+        if (t.spell_class(s) == 2 && t.spell_level(s) <= f.mu_all_levels) learn(c, s);
+    for (int i = 0; f.mu_by_slot && i < f.mu_by_slot_n; ++i)
+        if (classes::slots(c, 2, f.mu_by_slot_from + i) > 0)
+            for (uint8_t s : f.mu_by_slot[i])
+                if (s) learn(c, s);
+    if (f.mu_all_slot && classes::slots(c, 2, f.mu_all_slot) > 0)
+        for (int s = 1; s < t.lay.spell_count && s <= 126; ++s)
+            if (t.spell_class(s) == 2) learn(c, s);
+}
+
+int dk_kit_kind(const party::Character& c)
+{
+    if (c.level(classes::Fighter) || c.level(classes::Ranger) || c.level(classes::Paladin)) return 1;
+    if (c.level(classes::Thief)) return 2;
+    if (c.level(classes::Cleric)) return 3;
+    return 4;
+}
+
+void dk_kit(party::Character& c, int kind, const uint8_t ids[6], const uint8_t recs[6][17])
+{
+    uint8_t got[6][party::kItemSize];
+    int n = 0;
+    for (int j = 1; j <= 6; ++j) {
+        const uint8_t* src = recs[j - 1];
+        if (!ids[j - 1] || src[0] == 0xFF) continue;
+        uint8_t* it = got[n++];
+        memset(it, 0, party::kItemSize);
+        memcpy(it + 0x2E, src, 17);
+        it[0x35] &= 0xF8;                                   // identified
+        if ((j == 5 && kind == 1) || (j == 4 && kind == 4)) it[0x39] = 50;
+        if (j != 4) it[0x34] = 1;                           // readied (not the 4th)
+    }
+    // (each one goes to the front of the list: the last given first)
+    for (int i = n - 1; i >= 0 && c.n_items < party::kMaxItems; --i) memcpy(c.items[c.n_items++], got[i], party::kItemSize);
+}
+
+int dk_con_hp(const party::Character& c, const classes::Tables& t)
+{
+    const uint8_t* r = c.rec;
+    const int con = r[kStats + 4 * 2];                      // (its own value)
+    int acc = 0, n = 0;
+    auto add = [&](int k, int lvl) {
+        const int hd = t.max_hit_dice(k);
+        if (hd <= lvl) lvl = hd - 1;
+        if (k == 4) ++lvl;
+        if (k == 2 || k == 3 || k == 4) {
+            if (con >= 15 && con <= 19) acc += lvl * (con - 14);
+            else if (con == 20) acc += lvl * 5;
+            else if (con >= 21 && con <= 23) acc += lvl * 6;
+            else if (con >= 24 && con <= 25) acc += lvl * 7;
+        } else if (con > 15) {
+            acc += lvl * 2;
+        } else if (con == 15) {
+            acc += lvl;
+        }
+        acc &= 0xFF;
+    };
+    for (int k = 0; k < 7; ++k) {
+        if (c.old_level(k) > 0) add(k, c.old_level(k));
+        int lv = c.level(k);
+        if (lv <= 0) continue;
+        ++n;
+        if (t.max_hit_dice(k) < lv) lv = t.max_hit_dice(k);
+        if (c.race() == 7) {
+            if (lv > r[kMultiLevel]) add(k, lv - r[kMultiLevel]);
+        } else {
+            add(k, lv);
+        }
+    }
+    return (r[kHpRolled] + (n ? acc / n : 0)) & 0xFF;
+}
+
+void dk_con_recompute(party::Character& c, const classes::Tables& t)
+{
+    uint8_t* r = c.rec;
+    const int old = r[kHpMax], now = dk_con_hp(c, t);
+    r[kHpMax] = static_cast<uint8_t>(now);
+    if (now > old) r[kHp] = static_cast<uint8_t>(r[kHp] + now - old);
+    else if (now < old) r[kHp] = static_cast<uint8_t>(r[kHp] > old - now ? r[kHp] - (old - now) : 0);
 }
 
 } // namespace create

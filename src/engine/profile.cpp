@@ -756,6 +756,14 @@ constexpr uint32_t sx_effect(int n) { return kP | (0x10047u + 38u * static_cast<
 // Secret's silent training (a new character trained to its experience):
 // a magic-user's spells at levels 6-9 (GAME.OVR 0x22921; its level 6 list
 // has Cure Light Wounds, as the original's)
+// Darkness's magic-user book by its slots (GAME.OVR 0x162CE: the book bytes
+// it sets for 4th, 5th, 6th and 7th level slots - darkness_create_facts.md)
+constexpr uint8_t kDarknessMuSlots[4][8] = {
+    {82, 84, 88, 81, 83, 85, 87},
+    {91, 92, 118, 119},
+    {113, 114, 112, 111},
+    {115, 117},
+};
 constexpr uint8_t kSecretMuLevels[4][8] = {
     {0x0C, 0x0F, 0x1E, 0x03, 0x22, 0x2F, 0x33, 0x36},
     {0x0E, 0x10, 0x1D, 0x23, 0x2D, 0x30, 0x51, 0},
@@ -1424,7 +1432,7 @@ const Profile kProfiles[] = {
                .slots = kP | 0xCD2F, .saving = 0x1317B, .camp_menu = 0xD115, .makes_camp = kP | 0xBFBF,
                .add_from = kP | 0xBAC8, .add_sources = kP | 0xCC8B, .add_prompt = kP | 0xBAF1, .add = kP | 0xCCB4,
                .drop = 0x16445, .forever = 0x1644B, .sure = 0x16456, .yes_no = kP | 0xC9D4,
-               .cant_modify = kP | 0xBA9F, .keep_exit = kP | 0xCC62,
+               .cant_modify = kP | 0xBA9F, .modify = kP | 0xC6F2, .keep_exit = kP | 0xCC62,
                .load_from = kP | 0xC76D, .load_sources = kP | 0xCC8B},
      // View Character's name tables (DS 0x0E57 classes, 0x103D races in its
      // own order, 0x107C alignments, 0x1115 sex, 0x1123 its three coins,
@@ -1451,7 +1459,26 @@ const Profile kProfiles[] = {
                 .tables = {0x6519, 0x7CDE, 0x6519, 127, 0x6D18, 0x6DB2, 0x6DB9, 0x6DC9, 0x6DDB, 0x6E73, 0x6E76,
                            0x6EF7, 0x6F57, 0x6FAB, 0x7053, 0x708F, 0x70F5, 0x71AE, 0x79FA, false, 0, 0, 0, true,
                            true, 0x6EDB},
-                .hp_count = 0x6DD0, .hp_dice = 0x6DD7, .icon_colours = 0x6DDE},
+                .hp_count = 0x6DD0, .hp_dice = 0x6DD7, .icon_colours = 0x6DDE,
+                // Create New Character (the Project's claude/darkness_create_facts.md): the
+                // races' effects (GAME.OVR 0x149AA - Secret's), a paladin's Protection from
+                // Evil, a ranger's giant-class bonus; no first magic-user spells (its book
+                // comes by its slots, below)
+                .con_save = 0x61, .dwarf_orc = 0x1A, .giants = 0x2F, .gnome_giant = 0x07, .gnome_extra = 0x30,
+                .elf_sleep = 0x5F, .halfelf = 0x12, .prot_evil = 0x08, .ranger_giant = 0x69,
+                // its words: "Pick Race" ... (its data segment), "Select", "Reroll stats? ",
+                // "Character name: ", "Save ", "? " (the creation overlay)
+                .pick_race = kP | 0xB861, .pick_gender = kP | 0xB88A, .pick_class = kP | 0xB8B3,
+                .pick_alignment = kP | 0xB905, .select = 0x1474B, .reroll = 0x14776, .char_name = 0x14785,
+                .save_q = 0x147B6, .qmark = 0x147BC,
+                // Human Change (GAME.OVR 0x38E84): a new magic-user's 11 18 12 21, its words
+                .mu_change = {0x0B, 0x12, 0x0C, 0x15},
+                .pick_new = 0x38E56, .no_qualify = 0x38E44, .change_select = 0x38E66, .now_first = 0x38E6D,
+                .dot = 0x38E82,
+                // the magic-user's book (GAME.OVR 0x162CE): spell levels 1-3, the lists for
+                // 4th-7th level slots, everything with a 9th level slot; the kit (0x19558)
+                .mu_by_slot = kDarknessMuSlots, .mu_by_slot_from = 4, .mu_by_slot_n = 4, .mu_all_levels = 3,
+                .mu_all_slot = 9, .kit = 0x9B7, .kit_block = 1},
      // The items screen's other words (Use ... Id, Deposit from items.menu):
      // its data segment's where it has them (DS 0x1738 on), else GAME.OVR
      .item_words = {0, 0, 0, 0, 0, 0, 0, 0x24795, kP | 0xB64C, 0x253D4, kP | 0xB5FA, kP | 0xB623, 0, 0x2530A,

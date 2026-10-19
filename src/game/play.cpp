@@ -1417,7 +1417,7 @@ void begin_adventuring();
 // type 0x2D's byte 0x32 = 2, type 0x3A's 0x3D = 0x59, the class values
 // worked out again; Darkness's own game state isn't loaded (a new game)
 extern char import_dir[128];
-void class_values(party::Character& ch);
+void dk_import_values(party::Character& ch);
 void secret_to_darkness(party::Character& ch);
 void find_secret_saves()
 {
@@ -1439,7 +1439,11 @@ void secret_to_darkness(party::Character& ch)
 {
     for (int k = 0; k < 4; ++k) ch.rec[0xFB + 2 * k] = ch.rec[0xFC + 2 * k] = 0;   // (copper ... gold: gone)
     ch.ext[party::kExtRace] = party::race_to_darkness(ch.rec[0x74]);
-    if (ch.race() == 7) ch.rec[0xE6] = 0;
+    // (0x139, a human's highest former level: 0, then a human's former levels' highest - ovr 0x11CB6)
+    ch.rec[0xE6] = 0;
+    if (ch.race() == 7)
+        for (int c = 0; c < 7; ++c)
+            if (ch.old_level(c) > ch.rec[0xE6]) ch.rec[0xE6] = static_cast<uint8_t>(ch.old_level(c));
     ch.rec[0x14B] = 2;
     ch.ext[party::kExtFlags2] = 2;
     int k = 0;
@@ -1452,10 +1456,11 @@ void secret_to_darkness(party::Character& ch)
         ++k;
     }
     ch.n_items = k;
-    const int hp_max = ch.hp_max();
-    class_values(ch);
+    // Its Constitution recalculation sets the HP max (ovr 0x11D22: 0xE2:0x89 -
+    // create::dk_con_recompute): a drop goes into the HP rolled and it runs
+    // again (Secret's GOG party in DOSBox: Malachite 58 -> 61)
+    dk_import_values(ch);
     rules::recalc(ch, *names, d->facts);
-    if (ch.hp_max() < hp_max) ch.rec[0x12C] = static_cast<uint8_t>(ch.rec[0x12C] + hp_max - ch.hp_max());
 }
 
 bool load_secret_game(char slot)
@@ -2036,6 +2041,7 @@ enum class Ask : uint8_t { None, Overwrite, Drop, DropSure, Reroll, SaveNew, Ove
                           LeaveCoins, CureAnyway, PayCure, Train, MemorizeThese, StopRest, LoseIt, AlterDrop, QuitDos,
                           ScribeThese, ScribeThese2, UseIt, PaladinCure };
 void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt);
+void ask_create(pic::Canvas& c, Ask what, const char* prompt);
 bool view_yes_no(Ask what, char k, pic::Canvas& c);
 
 bool shop_yes_no(Ask what, char k, pic::Canvas& c);
@@ -2993,12 +2999,14 @@ void find_guys(char from = 'C')
         // .GUY files, and (Tom, v0.58.0 - the original lists only those)
         // the members of saved games, CHRDAT<letter><n>.SAV
         // (Pool of Radiance: .CHA, 285-byte records, the control byte at 0x84)
-        const bool guy = n >= 5 && n <= 12 && strcasecmp(nm + n - 4, ext_guy()) == 0;
+        // (the extension's own length: Darkness's ".PC" is 3)
+        const size_t ne = strlen(ext_guy());
+        const bool guy = n > ne && n <= 12 && strcasecmp(nm + n - ne, ext_guy()) == 0;
         const bool member = CYD_MORE_CHARACTERS && opts.more_guys && n == 12 && strncasecmp(nm, "CHRDAT", 6) == 0 &&
                             strcasecmp(nm + 8, ".SAV") == 0;
         if (f.isDirectory() || (!guy && !member) || f.size() != rec_file_size()) continue;
-        uint8_t rec[0x100];
-        const int ctl = pool_files() ? 0x84 : secret_files() ? 0xFF : 0xF7;     // (Secret's record: 0xFF)
+        uint8_t rec[0x150];
+        const int ctl = pool_files() ? 0x84 : secret_files() ? 0xFF : darkness_files() ? 0x147 : 0xF7;     // (Secret's record: 0xFF)
         if (f.read(rec, ctl + 1) != ctl + 1 || rec[ctl] > 0x7F) continue;     // NPCs aren't listed
         char name[16];
         size_t len = rec[0] > 15 ? 15 : rec[0];
@@ -3335,6 +3343,7 @@ struct Making {
     // Pool: the portrait picker's "Head Body Keep", its HEAD / BODY blocks for heads 1-14 / bodies 1-12
     char portrait_menu[24] = {};
     uint8_t head_map[15] = {}, body_map[13] = {};
+    bool kit_given = false;         // Darkness: the starting kit (at the save)
 };
 Making* mk = nullptr;
 
@@ -3399,10 +3408,18 @@ bool load_rules(MagicRules*& m)
 
 // A character's class values worked out with the game's tables (loaded for
 // the moment: Darkness's Load from Secret)
-void class_values(party::Character& ch)
+void dk_import_values(party::Character& ch)
 {
+    const int hp_max = ch.hp_max();
     MagicRules* m = nullptr;
-    if (load_rules(m)) classes::class_bonuses(ch, m->tables);
+    if (load_rules(m)) {
+        classes::class_bonuses(ch, m->tables);
+        create::dk_con_recompute(ch, m->tables);
+        if (ch.hp_max() < hp_max) {
+            ch.rec[0x12C] = static_cast<uint8_t>(ch.rec[0x12C] + hp_max - ch.hp_max());
+            create::dk_con_recompute(ch, m->tables);
+        }
+    }
     delete m;
 }
 
@@ -3457,6 +3474,11 @@ bool load_rules(Making*& m)
     fa.mu_by_level = pc.mu_by_level;
     fa.mu_by_level_from = pc.mu_by_level_from;
     fa.mu_by_level_n = pc.mu_by_level_n;
+    fa.mu_by_slot = pc.mu_by_slot;
+    fa.mu_by_slot_from = pc.mu_by_slot_from;
+    fa.mu_by_slot_n = pc.mu_by_slot_n;
+    fa.mu_all_levels = pc.mu_all_levels;
+    fa.mu_all_slot = pc.mu_all_slot;
     const uint32_t at[9] = {pc.pick_race, pc.pick_gender, pc.pick_class, pc.pick_alignment, pc.select,
                             pc.reroll,    pc.char_name,   pc.save_q,     pc.qmark};
     const uint32_t ch_at[5] = {pc.pick_new, pc.no_qualify, pc.change_select, pc.now_first, pc.dot};
@@ -3639,7 +3661,7 @@ void pick_stage(int stage, pic::Canvas& c)
 {
     mk->stage = stage;
     switch (stage) {
-    case 0: mk->n_opt = create::races(mk->opt, 17, secret_files()); break;
+    case 0: mk->n_opt = create::races(mk->opt, 17, secret_files() || darkness_files()); break;
     case 1:
         mk->opt[0] = 0;
         mk->opt[1] = 1;
@@ -3687,13 +3709,24 @@ void picked(int i, pic::Canvas& c)
         create::roll(mk->ch, mk->tables, mk->facts, mk->dice);
         rules::recalc(mk->ch, *names, d->facts);
         show_new_character(c);
-        ask_yes_no(c, Ask::Reroll, mk->words[5]);
+        ask_create(c, Ask::Reroll, mk->words[5]);
         return;
     }
 }
 
 void start_icon(pic::Canvas& c, Screen from);
 void create_after_icon(pic::Canvas& c);
+
+// Creation's questions: Darkness's start on Yes (its menu call takes 'Y' as
+// the default - GAME.OVR 0x16169, 0x1624D; DOSBox), the others' on No
+void ask_create(pic::Canvas& c, Ask what, const char* prompt)
+{
+    ask_yes_no(c, what, prompt);
+    if (darkness_files()) {
+        menu.selected = 0;
+        show_menu_line(c);
+    }
+}
 
 // The name, then the icon editor (as the games do), then "save NAME?"
 void start_portrait(pic::Canvas& c);
@@ -3720,12 +3753,14 @@ void create_after_icon(pic::Canvas& c)
         save_new(c, true);
         return;
     }
+    const bool from_icon = screen == Screen::Icon;
     screen = Screen::CreateName;
-    show_new_character(c);
+    // (Darkness asks it over the icon editor's screen - DOSBox)
+    if (!(from_icon && darkness_files())) show_new_character(c);
     char t[72], nm[20];
     mk->ch.name(nm, sizeof nm);
     snprintf(t, sizeof t, "%s%s%s", mk->words[7], nm, mk->words[8]);
-    ask_yes_no(c, Ask::SaveNew, t);
+    ask_create(c, Ask::SaveNew, t);
 }
 
 void ask_name(pic::Canvas& c)
@@ -3779,6 +3814,46 @@ void add_to_charlist(const party::Character& ch)
     free(buf);
 }
 
+// Darkness's starting kit (darkness_create_facts.md; GAME.OVR 0x19558, as
+// its creation saves): the kind's six item numbers from the program's data
+// segment, their 17-byte rows from ITEM0.DAX, the items readied as it does
+__attribute__((noinline)) void give_kit(party::Character& ch)
+{
+    const auto& pc = d->prof->create;
+    if (!pc.kit) return;
+    const int kind = create::dk_kit_kind(ch);
+    uint8_t ids[6] = {}, recs[6][17];
+    memset(recs, 0xFF, sizeof recs);
+    {
+        plat::File f;
+        if (!open_file(d->prof->program, f)) return;
+        plat::FileSource src(f);
+        exepack::Info info;
+        const bool ok = exepack::parse(src, info) == exepack::Status::Ok &&
+                        exepack::read(src, info, pc.ds_image + pc.kit + 6 * kind + 1, ids, 6) == exepack::Status::Ok;
+        f.close();
+        if (!ok) return;
+    }
+    plat::File f;
+    if (!open_dax("ITEM0.DAX", f)) return;
+    {
+        plat::FileSource src(f);
+        dax::Entry e;
+        uint32_t data_start = 0;
+        if (dax::find_entry(src, pc.kit_block, e, data_start)) {
+            // (the rows in order: read along, keeping the six asked for)
+            dax::RleReader r(src, data_start, e);
+            uint8_t row[17];
+            for (int n = 1; n <= 255 && r.read(row, sizeof row) == sizeof row; ++n)
+                for (int j = 0; j < 6; ++j)
+                    if (ids[j] == n) memcpy(recs[j], row, sizeof row);
+        }
+    }
+    f.close();
+    create::dk_kit(ch, kind, ids, recs);
+    rules::recalc(ch, *names, d->facts);
+}
+
 // Saves the new character as NAME.GUY (asking first if there is one)
 void save_new(pic::Canvas& c, bool overwrite_ok)
 {
@@ -3794,6 +3869,10 @@ void save_new(pic::Canvas& c, bool overwrite_ok)
         return;
     }
     new_base[0] = 0;
+    if (!mk->kit_given) {
+        mk->kit_given = true;
+        give_kit(mk->ch);
+    }
     const bool ok = write_character(base, mk->ch);
     if (ok && d->prof->create.charlist) add_to_charlist(mk->ch);
     end_create(c);
@@ -3813,7 +3892,7 @@ bool create_yes_no(Ask what, char k, pic::Canvas& c)
             create::roll(mk->ch, mk->tables, mk->facts, mk->dice);
             rules::recalc(mk->ch, *names, d->facts);
             show_new_character(c);
-            ask_yes_no(c, Ask::Reroll, mk->words[5]);
+            ask_create(c, Ask::Reroll, mk->words[5]);
         } else {
             ask_name(c);
         }
@@ -7037,6 +7116,10 @@ bool train_yes_no(Ask what, char k, pic::Canvas& c)
 
 Making* modder = nullptr;               // the rule tables, and the character as it was (ch)
 int mod_item = 0;                       // 0-5 the stats, 6 the hit points, 7 the name
+// Darkness: the menu word last used stays lit (0 Add, 1 Subtract), and the
+// name, once Modify has drawn it, is green (GAME.OVR 0x16606; DOSBox)
+int  mod_word = 0;
+bool mod_name_seen = false;
 
 void draw_modify(pic::Canvas& c)
 {
@@ -7044,7 +7127,17 @@ void draw_modify(pic::Canvas& c)
     if (!ch) return;
     draw_character(c);
     char t[24];
-    if (secret_files()) {
+    if (darkness_files() && modder) {
+        // Darkness marks a stat Modify has changed (its in-use value no longer
+        // its own until Keep) with a "*" at column 12 - the highlight colour
+        // on the line being changed (GAME.OVR 0x244E5; DOSBox)
+        for (int i = 0; i < 6; ++i) {
+            const bool changed = ch->stat(i) != modder->ch.stat(i) || (i == 0 && ch->str00() != modder->ch.str00());
+            c.fill(12 * 8, (9 + i) * 8, 8, 8, 0);
+            if (changed) put(c, "*", 12, 9 + i, mod_item == i ? 13 : 10);
+        }
+    }
+    if (secret_files() || darkness_files()) {
         // Secret's View: the stats from row 9 (the number at column 5), the
         // hit points "95/95" at row 3, column 31; its menu "Add Subtract
         // Keep Exit" (Add / Subtract: the arrows' up / down)
@@ -7065,9 +7158,14 @@ void draw_modify(pic::Canvas& c)
         } else {
             ch->name(t, sizeof t);
             put(c, t, 1, 1, 13);
+            mod_name_seen = true;
+        }
+        if (darkness_files() && mod_item != 7 && mod_name_seen) {
+            ch->name(t, sizeof t);
+            put(c, t, 1, 1, 10);
         }
         text::build(menu, rw(Data::kModify), rw(Data::kKeepExit));
-        menu.selected = 0;
+        menu.selected = darkness_files() ? mod_word : 0;
         show_menu_line(c);
         return;
     }
@@ -7116,7 +7214,7 @@ void start_modify(pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
     if (!ch) return;
-    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files())) {
+    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files())) {
         char t[60], nm[20];
         ch->name(nm, sizeof nm);
         snprintf(t, sizeof t, "%s%s", nm, rw(Data::kCantModify));
@@ -7132,6 +7230,8 @@ void start_modify(pic::Canvas& c)
     }
     modder->ch = *ch;
     mod_item = 0;
+    mod_word = 0;
+    mod_name_seen = false;
     screen = Screen::Modify;
     draw_modify(c);
 }
@@ -7162,7 +7262,7 @@ void modify_name(pic::Canvas& c)
 // The item a tap at (row, col) picks (-1: none)
 int modify_item_at(int row, int col)
 {
-    if (secret_files()) {
+    if (secret_files() || darkness_files()) {
         if (row >= 9 && row <= 14 && col >= 1 && col <= 12) return row - 9;
         if (row == 3 && col >= 20 && col <= 38) return 6;
         if (row == 1 && col >= 1 && col <= 16) return 7;
@@ -7182,8 +7282,8 @@ void modify_tap(int x, int y, pic::Canvas& c)
         switch (text::key(menu, text::hit(menu, col))) {
         case 'K': end_modify(c, true); break;
         case 'E': end_modify(c, false); break;
-        case 'A': modify_step(1, c); break;            // (Secret's Add / Subtract)
-        case 'S': modify_step(-1, c); break;
+        case 'A': mod_word = 0; modify_step(1, c); break;            // (Secret's Add / Subtract)
+        case 'S': mod_word = 1; modify_step(-1, c); break;
         default: break;
         }
         return;
@@ -8081,9 +8181,15 @@ void host_picture(int id, int head) { host->picture(id, head); }
 void draw_input(pic::Canvas& c)
 {
     clear_menu_line(c);
-    const int x = input_engine ? static_cast<int>(strlen(input_prompt)) : 0;
+    // (Darkness's name input starts a column after its prompt - DOSBox, its
+    // creation's "Character name: ")
+    const int x = input_engine ? static_cast<int>(strlen(input_prompt)) +
+                                     (engine_ask == EngineAsk::Name && screen == Screen::CreateName && darkness_files() ? 1 : 0)
+                               : 0;
     if (input_engine) put(c, input_prompt, 0, text::kMenuRow, 13);
-    put(c, input_buf, x, text::kMenuRow, input_engine ? 13 : 10);
+    // (Darkness's typed name is white - DOSBox)
+    put(c, input_buf, x, text::kMenuRow,
+        input_engine ? (screen == Screen::CreateName && darkness_files() ? 15 : 13) : 10);
     if (x + input_len < 40) c.fill((x + input_len) * 8, text::kMenuRow * 8, 8, 8, 15);     // the cursor
 }
 
