@@ -549,6 +549,12 @@ struct Profile {
         // The party menu's column (0: 2, the first letter white; Darkness 9,
         // all green - DOSBox)
         uint8_t  party_menu_col = 0;
+        // Darkness's overland (byte 0x24 = 1): the regions' map pictures
+        // (BIGPIC; a DS table of 5 by the region byte 0x3A - 0: none) and
+        // the party's marker (a VGA block of this file)
+        uint16_t dk_overland_pics = 0;
+        const char* marker_file = nullptr;
+        uint8_t  marker_block = 0;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

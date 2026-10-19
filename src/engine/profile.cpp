@@ -1499,7 +1499,10 @@ const Profile kProfiles[] = {
      .clips ={.file = "ZOUNDS.DAX", .hz = 9000, .first = 2, .last = 12,
                .ids = {0, 0, 2, 9, 6, 5, 9, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .quiet_turns = true},
      .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .camp_pic = 128, .vga = true, .darkness_files = true,
-                 .party_menu_col = 9},
+                 .party_menu_col = 9,
+                 // (the overland: DS 0x7D08's regions 0-4 -> BIGPIC 240, 241, 242,
+                 // 242, 245; the marker CURSOR.DAX block 1 - DOSBox)
+                 .dk_overland_pics = 0x7D08, .marker_file = "CURSOR.DAX", .marker_block = 1},
      .font_file = "8X8D0.DAX"},
 };
 

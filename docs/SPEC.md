@@ -1434,6 +1434,14 @@ the scripts' changed ops, the rule tables, fights, the rest.
   SPRIT1.DAX: an 88 x 88 animation over the whole view, its frame by the
   distance (0 near, 1 middle, 2 far), 0 and 13 swapped and 13 see-through
   (darkness_facts.md 3.5) - not yet compared with DOSBox (none met).
+- **v0.133.0 - the overland.** Flag 0x24 = 1 outside a dungeon (0x22 =
+  0): the map picture by region (0x3A) from DS 0x7D08 (BIGPIC 240, 241,
+  242, 242, 245) over the view and panel, the party CURSOR.DAX block 1
+  (8 x 8, 13 see-through) at ((x + 1) * 8, (y + 1) * 8), x / y in 0x25 /
+  0x26 held to 0-37 / 0-14, eight directions (a turn 45 degrees), twelve
+  hours a step; the menu Move / Encamp (Move: Exit) - the movement keys
+  step from either (as Secret's Move, SPEC 12). Matches DOSBox before and
+  after a step north (mouse pointer aside).
 
 ## 7. The journal (Tom, 2026-10-06)
 
