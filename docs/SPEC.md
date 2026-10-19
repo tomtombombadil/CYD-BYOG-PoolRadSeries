@@ -1509,6 +1509,35 @@ the scripts' changed ops, the rule tables, fights, the rest.
   fighter's record is a `combat::Rec` (a party member's own bytes or a
   monster's) - 140,959 bytes (Curse 128,363, Pool 129,861); the fight
   logs and snapshots are the same as before (seeds 1-4, 7).
+- **The fights' missing rules** (branch darkness-fight-rules; scratch
+  facts /tmp/claude-0/dks_rules/facts_rules.md R1-R16, for the Project's
+  Darkness fight facts). Turn Undead: its own table (DS 0x09FB, 11
+  columns, rows 0-13) and rules - the cleric's level or the paladin's - 2,
+  the area's penalty (script place 0x0F), the highest type first, D*
+  1d6 + 6 (`turn_undead_dk`). The 6th-9th level spells: Blade Barrier
+  (knives on the ground, 3 rounds a level, 8d8 - a save only at the
+  cast), Energy Drain (one level), Destruction, Mass Charm (Hit Dice up
+  to 2 x level), Otto's Irresistible Dance (lost turns, then AC 4 worse),
+  Power Word Blind / Kill, Meteor Swarm (four meteors on the aimed
+  square's diagonals), Monster Summoning - at every fight's start 10
+  monsters of the MON block the frame style picks wait out of the fight
+  (status 9, `load_reserve`), 2 a cast join the caster's side next to a
+  fighter (`combat::add_fighter`). Restoration and Resurrection are camp
+  spells (not in a fight). The monsters' abilities: dragon fear (at the
+  set-up and each round's start: a save at -4 or terrified, -2 to hit and
+  damage), Kalistes' six weapons by blow number, vorpal blows (17+),
+  blessed bolts, the paralysing and vampire gazes, gaze-proof, the
+  beholder's rays (Curse's, Darkness's words) then Fear / Slow / Sleep,
+  immune to the disease. The bulette's handler never takes in the
+  original (its attack count is written over right after) - none in the
+  engine either. The area spells' burst plays sound 11 again where it
+  lands; the Aim and Speed menus' own words (checked in DOSBox: "RANGE =
+  0", "AIM: NEXT PREV MANUAL CENTER EXIT" starting on the fighter itself,
+  "GAME SPEED: (4) FASTER SLOWER EXIT"). Checks: sweep's `behave
+  darkness` with ONLY= turn, spells, abilities, blows (oracle
+  /tmp/claude-0/bt/oracle_darkness_fights.txt from scratch
+  `dk_fight_oracle.py`). Memory: the budget fight 145,404 bytes (the
+  reserve's 10 monsters ~4 KB; Curse 128,499, Pool 129,997).
 - **Alter and the icon editor** (scratch facts
   /tmp/claude-0/dks_alter/facts_alter.md, for the Project's Darkness
   facts; its camp overlay GAME.OVR 0xDCC8 +0x172B, the editor 0x17E16).
@@ -2040,5 +2069,20 @@ the game's Settings (As Original: all of them).
   the engine's spell rules use Curse's 84, so a character can hold 84
   memorized spells at most there (the GOG party: 4 to 30). Saves keep
   all of them.
+- **Darkness's Power Word Blind** (`rules::fixes()`): the original's
+  handler works out (1d4 + 1) rounds, x 10 when the HP total is under 51,
+  and never uses it - the blindness gets the spell row's time, 0: for
+  good. With Item Fixes on the engine uses the worked-out time; off as
+  the original.
+- **Darkness's level drain** (Energy Drain, the drainers 0x65 / 0x66):
+  the engine drains as Pool's routine does (a level's share of the hit
+  points, the experience to the level's start, killed at 0 hit points);
+  Darkness's own (experience halfway between the levels, the best levels
+  remembered, "collapses from drainning" at 0 hit points) isn't in yet.
+  Its words are Darkness's ("gets drained", "dies from drainning").
+- **Darkness's gazes' pictures**: the paralysing gaze flies COMSPR
+  picture 0x2D, the vampire's 0x32 in the original; the engine flies the
+  spell's picture. Kalistes' blows: the original shows the weapon's name
+  and "+4" on row 23; the engine doesn't.
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.
