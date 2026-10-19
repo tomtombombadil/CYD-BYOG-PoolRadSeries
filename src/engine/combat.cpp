@@ -1510,6 +1510,30 @@ int start_round(Battle& b, create::Dice& d, Event* out, int cap)
             }
         }
     }
+    // Darkness's dragon fear (R14: effect 0x64, GAME.OVR 0x1CC4B - phase 8 at
+    // the fight's set-up, ovr 0xD4AD, and phase 0x18 at each round's start,
+    // ovr 0x83C9): each one of the other side up and in the fight saves
+    // against petrification at -4, else (when not yet) terrified for the
+    // fight - its blows -2 to hit and -2 damage
+    if (b.fx && b.fx->dk.dragon_fear && b.fx->dk.feared) {
+        const auto& k = b.fx->dk;
+        for (int pass = b.round == 0 ? 2 : 1; pass > 0; --pass)
+            for (int i = 0; i < b.n; ++i) {
+                const Fighter& f = b.f[i];
+                if (!f.size || !f.up() || !hasx(f, k.dragon_fear)) continue;
+                for (int c = 0; c < b.n; ++c) {
+                    Fighter& v = b.f[c];
+                    if (!v.size || v.status() != party::Okay || v.team() == f.team()) continue;
+                    if (saving_throw(v, 1, -4, d) || hasx(v, k.feared)) continue;
+                    give_aff(v, k.feared, 0, 0, false);
+                    if (out && n_ev < cap) {
+                        out[n_ev] = Event{};
+                        out[n_ev].who = static_cast<uint8_t>(c);
+                        out[n_ev++].ev = Ev::Terrified;
+                    }
+                }
+            }
+    }
     return n_ev;
 }
 
@@ -1783,6 +1807,20 @@ void after_hit(Battle& b, int a, int c, int slot, int roll, int hits1, create::D
 
 } // namespace
 
+namespace {
+// Darkness's Kalistes (0x74, ovr 0x1D924 - the blow's damage): by its blow's
+// number in this attack a weapon's die + 4 + its Strength's bonus - 1 Two-Handed
+// Sword 1d10, 2 Bastard Sword 2d4, 3 Long Sword 1d8, 4 Scimitar 1d8, 5
+// Dagger 1d4, 6 Spear 1d6 (each "+4"); past the sixth its own blow
+int kalistes_blow(const Fighter& at, create::Dice& d, int dmg)
+{
+    static constexpr uint8_t kN[6] = {1, 2, 1, 1, 1, 1}, kSides[6] = {10, 4, 8, 8, 4, 6};
+    const int k = at.blows - 1;
+    if (k < 0 || k >= 6) return dmg;
+    return d.roll(kSides[k], kN[k]) + 4 + rules::strength_damage(at.rec[0x125], at.rec[0x11], at.rec[0x1C]);
+}
+} // namespace
+
 Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& d, bool from_behind)
 {
     Attack out;
@@ -1793,6 +1831,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
     g_kind = 0;
     b.no_action = b.round + 15;
     at.attacked = true;
+    at.blows = 0;                               // (Darkness: counted from each attack - DS 0xAED7, zeroed at ovr 0x1FA62)
     at.swept = true;                            // (no sweep after any attack this round: the original zeroes its sweep count)
     // The original's order (the listing's sub_3F94D, called before the attack
     // itself, sub_3F9DB): the attack is counted first - attacks received + 1,
@@ -1931,6 +1970,10 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             }
         }
         if (fx.blinded && tg.has(fx.blinded) && !coughing) ac -= 4;     // a blind target: easier (coughing: lost)
+        // Darkness (R6, R14): a dancing target's AC 4 worse (0x76, ovr 0x1DB21);
+        // a terrified attacker -2 to hit (0x78, ovr 0x1DBDF)
+        if (fx.dk.dancing && tg.has(fx.dk.dancing)) ac -= 4;
+        if (fx.dk.feared && at.has(fx.dk.feared)) side -= 2;
         if (fx.sp.shield && tg.has(fx.sp.shield) && ac < 0x39) ac = 0x39;   // Shield: AC 3 at worst
         // Faerie Fire: the stored AC + 2 (to AC 0 at most) - the original's
         // own rule, which makes the target harder to hit
@@ -1985,6 +2028,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
         while (at.attacks[slot] > 0 && tg.up() && out.n < 8) {
             --at.attacks[slot];
             if (slot == 0) ++out.shots;
+            if (at.blows < 255) ++at.blows;
             const int roll = d.roll(20, 1);
             const int extra = roll > 1 ? wbonus + (slayer ? 2 : 0) + (giant ? 1 : 0) : 0;
             bool hit = roll == 20 || (roll != 1 && roll + static_cast<int8_t>(at.rec[kHit]) + side + extra >= ac);
@@ -2010,6 +2054,9 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             const int s = slot ? at.rec[kSides + 1] : sides1;
             const int bo = slot ? static_cast<int8_t>(at.rec[kBonus + 1]) : bonus1;
             int dmg = (n && s ? d.roll(s, n) : 0) + bo;
+            if (b.fx && b.fx->dk.kalistes && hasx(at, b.fx->dk.kalistes)) dmg = kalistes_blow(at, d, dmg);
+            // (a terrified attacker: -2 damage, not under 0 - R14)
+            if (b.fx && b.fx->dk.feared && at.has(b.fx->dk.feared)) dmg -= 2;
             if (dmg < 0) dmg = 0;
             dmg *= times;
             // The magic weapon's own damage (a dragon slayer's: 3 x d12 + 4 + Strength's)
@@ -2022,7 +2069,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             if (b.fx && hasx(at, b.fx->race.ranger_giant) && (tg.rec[0x14B] & 8) &&
                 (!b.fx->race.secret_flags || adjacent(b, a, c)))
                 dmg += at.rec[0x10D];
-            bool bane = false;
+            bool bane = false, bolt_bane = false;
             if (b.fx) {
                 const MonFx& m = b.fx->mon;
                 // Ray of Enfeeblement on the attacker: a quarter off (coab's
@@ -2092,6 +2139,9 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                 if (hasx(tg, m.blessed_bane) && item && item[0x2E] == b.quarrel && m.blessed_word &&
                     item[0x31] == m.blessed_word)
                     bane = true;
+                // Darkness's (0x52, ovr 0x1C994): a blessed bolt (its item type) slays it
+                if (b.fx->dk.blessed && hasx(tg, b.fx->dk.blessed) && item && item[0x2E] == b.fx->dk.blessed_type)
+                    bolt_bane = true;
             }
             h.damage = dmg;
             out.any = true;
@@ -2107,11 +2157,25 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                 tg.rec[kHealth] = party::Gone;
                 fall(b, c);
                 out.down = true;
+            } else if (bolt_bane) {
+                tg.rec[kHp] = 0;
+                tg.rec[kHealth] = party::Dead;
+                fall(b, c);
             } else if (damage(b, c, dmg)) {
                 out.down = true;
             }
             if (blow_kind) g_kind = 0;
             out.hits[out.n++] = h;
+            if (bolt_bane) add_event(out, c, Ev::SlainBolt);
+            // Darkness's vorpal blow (0x73, ovr 0x1D8C0 - after attack 1's hit):
+            // a d20 of 17 or more beheads it, but not one with flags 2 & 0x20
+            if (b.fx && slot == 0 && b.fx->dk.vorpal && hasx(at, b.fx->dk.vorpal) && tg.up() && d.roll(20, 1) >= 17 &&
+                !(tg.flags2 & 0x20)) {
+                tg.rec[kHp] = 0;
+                tg.rec[kHealth] = party::Dead;
+                fall(b, c);
+                add_event(out, c, Ev::Beheaded);
+            }
             // A fire shield: one hitting it from next to it takes twice the blow (magic)
             if (b.fx && dmg > 0 && hasx(tg, b.fx->sp.zap) && at.up() && adjacent(b, a, c)) {
                 add_event(out, a, Ev::Zapped);
@@ -5129,6 +5193,48 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
             if (!f.up()) return n;
         }
     }
+    const Facts::DarkFx& dk = b.fx->dk;
+    // Darkness's paralysing gaze (0x72, ovr 0x1D6B4): "gazes..." at its pick;
+    // sent back by a mirror (0x48) when the gazer has 0x3B, as the stone gaze;
+    // a save against petrification at +3 - or gaze-proof (0x7E: the gaze's
+    // kind 0x10 always saved) - else paralysed for 10 rounds ("paralyzed")
+    if (dk.para_gaze && hasx(f, dk.para_gaze) && m.paralyzed) {
+        int tg = special_target(b, t, i, reach_far ? reach_far : 12, false, d);
+        if (tg >= 0) {
+            ev(i, Ev::ParaGazes);
+            fly(i, b.f[tg].x, b.f[tg].y, 5, 4, 45);
+            if (hasx(f, m.mirror_gaze) && m.reflect && hasx(b.f[tg], m.reflect)) {
+                ev(tg, Ev::Reflects);
+                fly(tg, f.x, f.y, 5, 4, 45);
+                tg = i;
+            }
+            Fighter& v = b.f[tg];
+            const bool proof = dk.gaze_proof && hasx(v, dk.gaze_proof);
+            if (v.up() && !proof && !saving_throw(v, 1, 3, d)) {
+                give_aff(v, m.paralyzed, 10, 12, false);
+                ev(tg, Ev::Paralyzed);
+            }
+            if (!f.up()) return n;
+        }
+    }
+    // Darkness's vampire gaze (0x7C, ovr 0x30898 - among the breaths): its
+    // pick within 10 squares, "gazes", then Charm Person on it (its save; the
+    // gaze-proof make it - kind 0x10) - the caller casts it at `to`; the turn is over
+    if (dk.vamp_gaze && hasx(f, dk.vamp_gaze) && b.fx->charm) {
+        const int tg = special_target(b, t, i, 10, false, d);
+        if (tg >= 0) {
+            *ends_turn = true;
+            ev(i, Ev::VampGazes);
+            fly(i, b.f[tg].x, b.f[tg].y, 5, 4, 45);
+            if (!(dk.gaze_proof && hasx(b.f[tg], dk.gaze_proof))) {
+                Event* e = ev(i, Ev::Cast, tg);
+                if (e) e->amount = 0x0A;
+            } else {
+                ev(tg, Ev::Unaffected);
+            }
+            return n;
+        }
+    }
     // Pool's vampire: its charming gaze at its pick in sight - a save
     // against spells at -2 or charmed, on its side for the fight
     if (hasx(f, m.charm_gaze) && b.fx->charm) {
@@ -5248,7 +5354,7 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
                 used[1] = true;
                 ev(i, Ev::RayStone);
                 fly(i, v.x, v.y, 10, 1, 30);
-                if (!saving_throw(v, 1, 0, d)) remove(tg, party::Stoned, Ev::Stoned);
+                if (!saving_throw(v, 1, 0, d)) remove(tg, party::Stoned, b.fx->dk.beholder ? Ev::RayStoned : Ev::Stoned);
             } else if (!used[2] && r <= 4) {
                 used[2] = true;
                 ev(i, Ev::RayDeath);

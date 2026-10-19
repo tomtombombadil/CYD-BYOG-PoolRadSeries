@@ -206,6 +206,10 @@ enum FightWord {
     // range's "  " after its number; "game speed: " "(" n ") " "Faster
     // Slower Exit"
     kAimDk, kAimManualDk, kManualPromptDk, kRangeEndDk, kSpeedOpenDk, kSpeedWordsDk,
+    // Darkness's monsters (the fights' rules facts R14): "is terrified" (dragon
+    // fear), "is beheaded" (vorpal), "is slain" (a blessed bolt), the
+    // paralysing gaze's "gazes...", the beholder's "is Stoned"
+    kTerrifiedDk, kBeheadedDk, kSlainBoltDk, kParaGazeDk, kRayStonedDk,
     kFightWords
 };
 

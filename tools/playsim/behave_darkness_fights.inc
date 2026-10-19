@@ -429,10 +429,215 @@ void spell_checks()
     #undef BT
 }
 
+// ---- The monsters' abilities (R14) and Otto's dancing (R6)
+// An effect put on a fighter (as the game's own list keeps it)
+void add_aff(int i, int type, int data = 0)
+{
+    combat::Fighter& f = F(i);
+    if (!f.n_aff || *f.n_aff >= f.max_aff) return;
+    if (combat::Monster* m = f.rec.monster()) {
+        if (!m->room_for_aff(*f.n_aff + 1)) return;
+        f.aff = m->aff;
+    }
+    uint8_t* a = f.aff[(*f.n_aff)++];
+    memset(a, 0, party::kAffectSize);
+    a[0] = static_cast<uint8_t>(type);
+    a[3] = static_cast<uint8_t>(data);
+}
+// A blow set up: THAC0-like value 40 against AC 50 (a d20 of 10 hits), one
+// attack of 1d6, no bonuses
+void blower(int i, int attacks = 1)
+{
+    combat::Fighter& f = F(i);
+    f.rec[0x199] = 40;
+    f.rec[0x19E] = 1;
+    f.rec[0x1A0] = 6;
+    f.rec[0x1A2] = 0;
+    f.rec[0x11] = 10;
+    f.rec[0x1C] = 0;
+    f.attacks[0] = attacks;
+    f.attacks[1] = 0;
+}
+int blow_damage(const combat::Attack& at)
+{
+    int n = 0;
+    for (int k = 0; k < at.n; ++k) n += at.hits[k].hit ? at.hits[k].damage : 0;
+    return n;
+}
+int events(const combat::Event* ev, int n, combat::Ev e, int who = -1)
+{
+    int c = 0;
+    for (int k = 0; k < n; ++k) c += ev[k].ev == e && (who < 0 || ev[k].who == who);
+    return c;
+}
+
+void ability_checks()
+{
+    if (!new_fight()) {
+        expect(F_, "a fight for the abilities", false);
+        return;
+    }
+#define BT (play::fg->b)
+    const combat::Facts& fx = *BT.fx;
+    const auto& k = fx.dk;
+    const int C = 0, A = BT.party_size, B = A + 1;
+    auto two = [&](int side_a) {
+        new_fight();
+        BT.to_hit_party = BT.to_hit_monsters = 0;
+        put(C, 0, 10, 10, 200);
+        put(A, 1, 11, 10, 200);
+        (void)side_a;
+    };
+
+    // Otto's dancing (R6, ovr 0x1DB21): the dancer's AC 4 worse - a d20 4 lower hits
+    for (int dancing : {0, 1}) {
+        for (int d20 : {10 - fv("dance", 0), 10 - fv("dance", 0) - 1}) {
+            two(0);
+            blower(C);
+            if (dancing) add_aff(A, k.dancing, 0);
+            dice(1, d20);
+            const combat::Attack at = combat::attack(BT, C, A, nullptr, play::rng, false);
+            dice_off();
+            const bool want = d20 + 40 + (dancing ? fv("dance", 0) : 0) >= 50;
+            snprintf(w, sizeof w, "Otto's dancing: a %sdancer hit by a d20 of %d (needs 10%s)", dancing ? "" : "non-", d20,
+                     dancing ? " less 4" : "");
+            expect(F_, w, (at.n == 1 && at.hits[0].hit) == want, "hit %d, the original's %d", at.n ? at.hits[0].hit : -1, want);
+        }
+    }
+
+    // Terrified (0x78, ovr 0x1DBDF): -2 to hit, -2 damage (not under 0)
+    for (int d20 : {12, 11}) {
+        two(0);
+        blower(C);
+        add_aff(C, k.feared, 0);
+        dice(1, d20);
+        const combat::Attack at = combat::attack(BT, C, A, nullptr, play::rng, false);
+        dice_off();
+        const bool hit = d20 + 40 + fv("feared", 0) >= 50;
+        const int want = hit ? std::max(0, 6 + fv("feared", 1)) : 0;
+        snprintf(w, sizeof w, "terrified: a d20 of %d (needs 12), 1d6 (high: 6) - 2", d20);
+        expect(F_, w, (at.n == 1 && at.hits[0].hit) == hit && blow_damage(at) == want, "hit %d damage %d, the original's %d / %d",
+               at.n ? at.hits[0].hit : -1, blow_damage(at), hit, want);
+    }
+
+    // Kalistes (0x74, ovr 0x1D924): blows 1-6 of an attack, each its weapon's
+    // die (highest here) + 4 + Strength's (10: none)
+    {
+        two(0);
+        blower(A, 7);
+        add_aff(A, k.kalistes, 0);
+        dice(1, 20);
+        const combat::Attack at = combat::attack(BT, A, C, nullptr, play::rng, false);
+        dice_off();
+        std::string got, want;
+        for (int j = 0; j < at.n; ++j) got += " " + std::to_string(at.hits[j].hit ? at.hits[j].damage : -1);
+        for (int j = 0; j < 7; ++j)
+            want += " " + std::to_string(j < 6 ? fv("kalistes", 2 * j) * fv("kalistes", 2 * j + 1) + fv("kalistes", 12) : 6);
+        expect(F_, "Kalistes: seven blows - the six weapons by number (highest dice), then its own 1d6", got == want,
+               "%s, the original's%s", got.c_str(), want.c_str());
+    }
+
+    // Vorpal (0x73, ovr 0x1D8C0): after attack 1's hit a d20 of 17+ beheads -
+    // not one with flags 2 & 0x20
+    for (int d20 : {fv("vorpal", 0), fv("vorpal", 0) - 1}) {
+        for (int proof : {0, 1}) {
+            two(0);
+            blower(A);
+            add_aff(A, k.vorpal, 0);
+            F(C).flags2 = static_cast<uint8_t>(proof ? 0x20 : 0);
+            dice(1, d20);
+            const combat::Attack at = combat::attack(BT, A, C, nullptr, play::rng, false);
+            dice_off();
+            const bool want = d20 >= fv("vorpal", 0) && !proof;
+            snprintf(w, sizeof w, "vorpal: a d20 of %d%s", d20, proof ? ", the target flags 2 & 0x20" : "");
+            const int beh = events(at.ev, at.n_ev, combat::Ev::Beheaded, C);
+            expect(F_, w, (beh == 1) == want && (F(C).status() == party::Dead) == want, "beheaded %d status %d", beh,
+                   F(C).status());
+        }
+    }
+
+    // Dragon fear (0x64, ovr 0x1CC4B; phase 8 at the set-up and 0x18 each
+    // round): the other side's, a save against petrification at -4, else
+    // terrified (once); the first round's start has both
+    for (int d20 : {18, 19}) {
+        two(0);
+        put(B, 1, 12, 12, 200);                     // (its own side: never)
+        add_aff(A, k.dragon_fear, 0);
+        BT.round = 0;
+        dice(1, d20);
+        combat::Event ev[16];
+        const int n = combat::start_round(BT, play::rng, ev, 16);
+        dice_off();
+        const bool fails = d20 + fv("dfear", 1) < 15;
+        snprintf(w, sizeof w, "dragon fear at the first round's start: a d20 of %d against a save of 15 at -4", d20);
+        expect(F_, w, events(ev, n, combat::Ev::Terrified, C) == (fails ? 1 : 0) && F(C).has(k.feared) == fails &&
+               !F(B).has(k.feared) && !F(A).has(k.feared),
+               "terrified %d, has %d", events(ev, n, combat::Ev::Terrified, C), F(C).has(k.feared));
+    }
+
+    // The paralysing gaze (0x72, ovr 0x1D6B4): a save against petrification at
+    // +3, else paralysed 10 rounds; the gaze-proof (0x7E) always save
+    for (int d20 : {11, 12}) {
+        for (int proof : {0, 1}) {
+            two(0);
+            add_aff(A, k.para_gaze, 0);
+            if (proof) add_aff(C, k.gaze_proof, 0);
+            dice(1, d20);
+            combat::Event ev[16];
+            bool ends = false;
+            const int n = combat::special(BT, play::fg->t, A, play::rng, ev, 16, &ends);
+            dice_off();
+            const bool fails = !proof && d20 + fv("pgaze", 1) < 15;
+            snprintf(w, sizeof w, "paralysing gaze: a d20 of %d, save 15 at +3%s", d20, proof ? ", gaze-proof" : "");
+            expect(F_, w, events(ev, n, combat::Ev::ParaGazes, A) == 1 && (aff_time(C, fx.mon.paralyzed) == fv("pgaze", 2)) == fails,
+                   "gazes %d, paralysed for %d", events(ev, n, combat::Ev::ParaGazes, A), aff_time(C, fx.mon.paralyzed));
+        }
+    }
+
+    // The vampire's gaze (0x7C, ovr 0x30898): its pick within 10, then Charm
+    // Person on it (the caller casts) - the turn over
+    {
+        two(0);
+        add_aff(A, k.vamp_gaze, 0);
+        combat::Event ev[16];
+        bool ends = false;
+        const int n = combat::special(BT, play::fg->t, A, play::rng, ev, 16, &ends);
+        int cast_at = -1, sp = -1;
+        for (int j = 0; j < n; ++j)
+            if (ev[j].ev == combat::Ev::Cast) {
+                cast_at = ev[j].to;
+                sp = ev[j].amount;
+            }
+        expect(F_, "the vampire's gaze: Charm Person (spell 0x0A) at its pick, the turn over",
+               events(ev, n, combat::Ev::VampGazes, A) == 1 && cast_at == C && sp == 0x0A && ends, "at %d spell %d", cast_at, sp);
+    }
+
+    // The beholder (0x75, ovr 0x23275): the rays by distance - 2 disintegrate
+    // (a save kind 3), 3 flesh to stone (kind 1: "is Stoned")
+    for (int dist : {fv("beholder", 0), fv("beholder", 1)}) {
+        two(0);
+        put(A, 1, 10 + dist, 10, 200);
+        add_aff(A, fx.mon.rays, 0);
+        dice(1, 1);
+        combat::Event ev[16];
+        bool ends = false;
+        const int n = combat::special(BT, play::fg->t, A, play::rng, ev, 16, &ends);
+        dice_off();
+        const bool dis = dist == fv("beholder", 0);
+        snprintf(w, sizeof w, "the beholder at %d squares: %s (a d20 of 1)", dist, dis ? "disintegrated" : "stoned");
+        const bool ok = dis ? events(ev, n, combat::Ev::RayDisintegrate, A) == 1 && F(C).status() == party::Gone
+                            : events(ev, n, combat::Ev::RayStone, A) == 1 && events(ev, n, combat::Ev::RayStoned, C) == 1 &&
+                                  F(C).status() == party::Stoned;
+        expect(F_, w, ok, "status %d, %d events", F(C).status(), n);
+    }
+#undef BT
+}
+
 void checks(bool (*want)(const char*))
 {
     if (want("turn")) turn_checks();
     if (want("spells")) spell_checks();
+    if (want("abilities")) ability_checks();
 }
 
 } // namespace dkfight

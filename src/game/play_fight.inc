@@ -1604,7 +1604,8 @@ void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::Fi
 
 // The beholder's spells (Fear, Slow, Sleep): cast as the computer casts,
 // each picking its own targets
-void special_cast(int i, int sp)
+// (`at` >= 0: at that one, its own pages before - Darkness's vampire gaze)
+void special_cast(int i, int sp, int at)
 {
     combat::Battle& b = fg->b;
     if (!load_magic()) return;
@@ -1612,6 +1613,13 @@ void special_cast(int i, int sp)
     if (!fs) return;
     const int pw = combat::power_of(b.f[i].rec, mrules->tables, sp, false);
     int tg[combat::kMaxFighters], nt = 0;
+    if (at >= 0 && at < b.n) {
+        tg[nt++] = at;
+        combat::SpellLine lines[24];
+        const int n = combat::cast(b, mrules->tables, i, sp, *fs, tg, nt, rng, lines, 24, pw);
+        spell_pages(i, lines, n, *fs, false);
+        return;
+    }
     if (!combat::spell_targets(b, fg->t, mrules->tables, i, *fs, sp, pw, rng, tg, &nt) || nt <= 0) return;
     const int ax = b.f[tg[0]].x, ay = b.f[tg[0]].y;
     if (fs->does == combat::SpellDoes::Fear || fs->does == combat::SpellDoes::Cone)
@@ -1744,7 +1752,14 @@ void event_page(const combat::Event& e)
         page_fx_set(1, r);
         break;
     }
-    case combat::Ev::Cast: special_cast(who, e.amount); break;
+    case combat::Ev::Cast: special_cast(who, e.amount, e.to); break;
+    // Darkness's monsters (R14)
+    case combat::Ev::Terrified: said(profile::kTerrifiedDk); break;
+    case combat::Ev::Beheaded: fallen(profile::kBeheadedDk); break;
+    case combat::Ev::SlainBolt: fallen(profile::kSlainBoltDk); break;
+    case combat::Ev::ParaGazes: said(profile::kParaGazeDk); break;
+    case combat::Ev::RayStoned: fallen(profile::kRayStonedDk); break;
+    case combat::Ev::VampGazes: said(profile::kGazesCharm); break;
     case combat::Ev::Dispelled: fallen(profile::kIsDispelled); break;
     case combat::Ev::ResistsDispel: said(profile::kResistsDispel); break;
     case combat::Ev::Zapped: said(profile::kGetsZapped); break;
