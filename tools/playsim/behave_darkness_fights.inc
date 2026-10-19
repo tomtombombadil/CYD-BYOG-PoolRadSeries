@@ -633,11 +633,121 @@ void ability_checks()
 #undef BT
 }
 
+// ---- The blows' rules (the fights' facts F10) and the breaths (F9)
+int dmg_events(const combat::Event* ev, int n, int who)
+{
+    int s = 0;
+    for (int k = 0; k < n; ++k)
+        if (ev[k].ev == combat::Ev::Damage && ev[k].who == who) s += ev[k].amount;
+    return s;
+}
+void blow_checks()
+{
+    if (!new_fight()) {
+        expect(F_, "a fight for the blows", false);
+        return;
+    }
+#define BT (play::fg->b)
+    const combat::Facts& fx = *BT.fx;
+    const int A = BT.party_size, B = A + 1, C = 0;
+    // A monster's bare blow against one needing a +N weapon: through from
+    // (N - 1) x 2 + 5 Hit Dice (F10, plus_hd)
+    struct Need { uint8_t type; int plus; };
+    const Need needs[] = {{fx.mon.need_plus1, 1}, {fx.mon.need_plus2, 2}, {fx.mon.need_plus3, 3}};
+    for (const Need& nd : needs) {
+        const int from = (nd.plus - 1) * 2 + 5;
+        for (int hd : {from - 1, from}) {
+            new_fight();
+            BT.to_hit_party = BT.to_hit_monsters = 0;
+            put(A, 1, 11, 10, 200, hd);
+            put(B, 0, 12, 10, 200);
+            blower(A);
+            F(A).rec[0x74] = 0;
+            add_aff(B, nd.type, 0);
+            dice(1, 20);
+            const combat::Attack at = combat::attack(BT, A, B, nullptr, play::rng, false);
+            dice_off();
+            const int want = hd >= from ? 6 : 0;
+            snprintf(w, sizeof w, "a bare blow of %d Hit Dice on one needing +%d", hd, nd.plus);
+            expect(F_, w, blow_damage(at) == want, "%d, the original's %d", blow_damage(at), want);
+        }
+    }
+    // Fire after a hit: 0x79 2d6 after either attack, 0x68 4d6 after attack 2
+    // only; a save against spells for half
+    struct Fire { uint8_t type; int slot, dice; };
+    const Fire fires[] = {{fx.mon.fire2d6_hit, 0, 2}, {fx.mon.fire2d6_hit, 1, 2}, {fx.mon.fire4d6_2, 1, 4}, {fx.mon.fire4d6_2, 0, 0}};
+    for (const Fire& fr : fires)
+        for (int d20 : {10, 20}) {
+            new_fight();
+            BT.to_hit_party = BT.to_hit_monsters = 0;
+            put(A, 1, 11, 10, 200);
+            put(C, 0, 12, 10, 200);
+            blower(A);
+            if (fr.slot) {
+                F(A).attacks[0] = 0;
+                F(A).attacks[1] = 1;
+                F(A).rec[0x19F] = 1;
+                F(A).rec[0x1A1] = 6;
+                F(A).rec[0x1A3] = 0;
+            }
+            add_aff(A, fr.type, 0);
+            dice(1, d20);
+            const combat::Attack at = combat::attack(BT, A, C, nullptr, play::rng, false);
+            dice_off();
+            const int full = fr.dice * 6, want = d20 >= 15 ? full / 2 : full;
+            snprintf(w, sizeof w, "fire effect 0x%02X after attack %d, the save's d20 %d", fr.type, fr.slot + 1, d20);
+            expect(F_, w, dmg_events(at.ev, at.n_ev, C) == want, "%d, the original's %d", dmg_events(at.ev, at.n_ev, C), want);
+        }
+    // Thorne's breath (0x53): 24d10 & 0xFF + 12 in the 3 x 9 cone, a save for half
+    for (int high : {1, 2}) {
+        new_fight();
+        put(A, 1, 14, 10, 250);
+        put(C, 0, 12, 10, 255);
+        add_aff(A, fx.mon.big_fire, 3);
+        BT.round = 0;
+        dice(high, 1);
+        combat::Event ev[16];
+        bool ends = false;
+        const int n = combat::special(BT, play::fg->t, A, play::rng, ev, 16, &ends);
+        dice_off();
+        const int want = ((high == 1 ? 240 : 24) & 0xFF) + 12;
+        snprintf(w, sizeof w, "Thorne's breath, the dice %s, the save missed", high == 1 ? "high" : "low");
+        expect(F_, w, events(ev, n, combat::Ev::BreathesFire, A) == 1 && dmg_events(ev, n, C) == std::min(want, 255) && ends,
+               "%d, the original's %d", dmg_events(ev, n, C), want);
+    }
+    // The black dragon's acid (0x60): a line of 6, its HP max, a save for half
+    for (int d20 : {1, 20}) {
+        new_fight();
+        put(A, 1, 14, 10, 80);
+        put(C, 0, 12, 10, 200);
+        add_aff(A, fx.mon.acid_breath, 3);
+        BT.round = 0;
+        dice(1, d20);
+        combat::Event ev[16];
+        bool ends = false;
+        const int n = combat::special(BT, play::fg->t, A, play::rng, ev, 16, &ends);
+        dice_off();
+        const int want = d20 >= 15 ? 40 : 80;
+        snprintf(w, sizeof w, "the black dragon's acid (HP max 80), the save's d20 %d", d20);
+        expect(F_, w, events(ev, n, combat::Ev::BreathesAcid, A) == 1 && dmg_events(ev, n, C) == want, "%d, the original's %d",
+               dmg_events(ev, n, C), want);
+    }
+    // The money's experience (F13): platinum x 2, gems x 250, jewellery x 2200
+    {
+        const int money[7] = {0, 0, 0, 0, 100, 3, 2};
+        const int got = combat::money_exp(money, fx.plat_xp);
+        expect(F_, "the treasure's experience: 100 platinum, 3 gems, 2 pieces of jewellery", got == 100 * 2 + 3 * 250 + 2 * 2200,
+               "%d", got);
+    }
+#undef BT
+}
+
 void checks(bool (*want)(const char*))
 {
     if (want("turn")) turn_checks();
     if (want("spells")) spell_checks();
     if (want("abilities")) ability_checks();
+    if (want("blows")) blow_checks();
 }
 
 } // namespace dkfight
