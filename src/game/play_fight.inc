@@ -526,6 +526,9 @@ bool park_world()
     world_park_path(path, sizeof path);
     plat::File f = plat::open(path, "w");
     if (!f) return false;
+    // (Darkness's background picture, 3.8 KB, isn't drawn in a fight
+    // either: it goes, and reads again when the 3D view is next drawn)
+    view3d::back_free(d->world);
     const bool ok = f.write(reinterpret_cast<const uint8_t*>(&d->world), sizeof(view3d::World)) == sizeof(view3d::World);
     f.close();
     if (ok) world_parked = true;

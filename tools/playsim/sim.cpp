@@ -252,9 +252,13 @@ static void disasm()
 
 static uint32_t world_hash()
 {
+    // (Darkness's background picture - its pointer and id - left out: a
+    // fight drops it and the next 3D view reads it again)
     const uint8_t* p = reinterpret_cast<const uint8_t*>(&play::d->world);
+    const size_t skip0 = offsetof(view3d::World, back), skip1 = offsetof(view3d::World, back_id) + 1;
     uint32_t h = 2166136261u;
-    for (size_t i = 0; i < sizeof(view3d::World); ++i) h = (h ^ p[i]) * 16777619u;
+    for (size_t i = 0; i < sizeof(view3d::World); ++i)
+        if (i < skip0 || i >= skip1) h = (h ^ p[i]) * 16777619u;
     return h;
 }
 static uint32_t w0 = 0;              // the 3D view's walls before the fight (RUNAT)
