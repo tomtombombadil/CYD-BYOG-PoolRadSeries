@@ -1469,6 +1469,20 @@ the scripts' changed ops, the rule tables, fights, the rest.
   2,142 Modify bounds, 300 recalculations, Human Change - 0 failed.
   Not yet: its icon editor's pictures (CHEAD / CBODY are VGA - with the
   fights' icons).
+- **v0.135.0 - shops, temple, treasure, vault** (the Project's
+  claude/darkness_shop_facts.md). SHOP n's goods (DS 0x17 + k, ITEM0 rows
+  1-based), prices in platinum paid from the buyer's own platinum then the
+  counter's (zeroed as a shop opens), one menu string with words left out,
+  Buy / Sell / Id (20 platinum) / Take / Pool / Share / Appraise (the value
+  itself in platinum); Darkness's own questions start on Yes, the temple's
+  and treasure's on No. The temple: Heal View Repair Exit, all free, its 11
+  cures (Restoration last), Repair the whole party (cures, raised, stoned,
+  levels, the stats recalculated - Abagail 92 -> 94, Paine 96 -> 98 as
+  DOSBox). The treasure: PIC 129, Take's coins jewelry first. The vault:
+  VAULTx.DAT a save slot's, TMPVAULT.DAT while playing. Checked against
+  DOSBox (EGA) screen by screen (mouse pointer aside). Not yet: the
+  treasure-only result screen (with the fights), Restoration's cheapest
+  class, Remove Curse's words, Vault Items' way back.
 
 ## 7. The journal (Tom, 2026-10-06)
 

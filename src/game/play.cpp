@@ -4794,6 +4794,10 @@ void dk_cure(int i, pic::Canvas& c)
 void dk_repair()
 {
     const rules::CureFacts& f = d->prof->cures;
+    // (the stats' recalculation, 0xE2:0x89 for each: Constitution's sets the
+    // HP max - DOSBox: Abagail 92 -> 94, Paine 96 -> 98)
+    MagicRules* mr = nullptr;
+    if (!load_rules(mr)) mr = nullptr;
     for (int m = 0; m < pt->count; ++m) {
         party::Character& ch = pt->m[m];
         rules::remove_affects(ch, f.feeblemind);
@@ -4820,12 +4824,17 @@ void dk_repair()
         }
         while (dk_restore(ch)) {}
         rules::recalc(ch, *names, d->facts);
+        if (mr) create::dk_con_recompute(ch, mr->tables);
         if (ch.health() != party::Gone) ch.rec[0x1A4] = ch.rec[0x78];
+        char who[20];
+        ch.name(who, sizeof who);
+        plat::log("[play] temple: Repair - %s HP %d of %d\n", who, ch.hp(), ch.hp_max());
         if (ch.health() == party::Unconscious) {
             ch.rec[0x195] = party::Okay;
             ch.rec[0x196] = 1;
         }
     }
+    delete mr;
     plat::log("[play] temple: Repair\n");
 }
 
