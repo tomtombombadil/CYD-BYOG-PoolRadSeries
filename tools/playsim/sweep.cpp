@@ -119,7 +119,7 @@ static bool pump(int max_iter = 400000)
         if (getenv("FIGHTLOG") && fg && it % 10000 == 0) {
             const combat::Fighter& cf = fg->b.f[fg->cur < 0 ? 0 : fg->cur];
             printf("  [it %d round %d cur %d (%s team %d hp %d at %d,%d) st %d n %d]\n", it, fg->b.round, fg->cur,
-                   (const char*)&cf.rec[0], cf.team(), cf.hp(), cf.x, cf.y, (int)fg->st, fg->b.n);
+                   (const char*)cf.rec.whole(), cf.team(), cf.hp(), cf.x, cf.y, (int)fg->st, fg->b.n);
         }
         const int st_from = getenv("STLOG") && getenv("STLOG")[0] == 'r' ? atoi(getenv("STLOG") + 1) : 20;   // (STLOG=r0: rounds 0-1)
         if (getenv("STLOG") && fg && fg->b.round >= st_from && fg->b.round <= st_from + 1) {
@@ -139,7 +139,7 @@ static bool pump(int max_iter = 400000)
                 last_cur = fg->cur;
                 const combat::Fighter& f = fg->b.f[fg->cur];
                 printf("   turn %d %s team %d st %d up %d status %d at %d,%d moves %d atk %d/%d quick %d guard %d target %d delay %d naff %d:",
-                       fg->cur, (const char*)&f.rec[0], f.team(), (int)fg->st, (int)f.up(), f.status(), f.x, f.y, f.moves,
+                       fg->cur, (const char*)f.rec.whole(), f.team(), (int)fg->st, (int)f.up(), f.status(), f.x, f.y, f.moves,
                        f.attacks[0], f.attacks[1], (int)f.quick, (int)f.guarding, f.target, f.delay, f.n_aff ? *f.n_aff : -1);
                 for (int k = 0; f.n_aff && k < *f.n_aff; ++k) printf(" %02X", f.aff[k][0]);
                 printf("\n");
@@ -1310,7 +1310,7 @@ static void sweep_monkey(int rounds)
                     if (!mv && f.turns == 0 && f.delay != 1) {      // (back from Delay: its moves may be spent)
                         char tx[128];
                         snprintf(tx, sizeof tx, "fight: fighter %d's turn without Move (moves %d, rec move %d)", fg->cur, f.moves,
-                                 f.rec[0x1A5]);
+                                 (int)f.rec[0x1A5]);
                         problem(tx);
                         printf("    [round %d surprise %d delay %d attacks %d/%d helpless %d menu %s affects:", fg->b.round, fg->b.surprise, f.delay,
                                f.attacks[0], f.attacks[1], (int)combat::helpless(fg->b, f), menu.s);
@@ -1421,7 +1421,8 @@ static void sweep_memloop(int rounds)
 #ifdef CYD_TEST_HOOKS
 static int b_pass = 0, b_fail = 0;
 // One check: "PASS part: what - detail" / "FAIL ..."; a failure counts as a problem
-static bool expect(const char* part, const char* what, bool ok, const char* fmt = "", ...)
+static bool expect(const char* part, const char* what, bool ok, const char* fmt = "", ...) __attribute__((format(printf, 4, 5)));
+static bool expect(const char* part, const char* what, bool ok, const char* fmt, ...)
 {
     char detail[400];
     va_list ap;

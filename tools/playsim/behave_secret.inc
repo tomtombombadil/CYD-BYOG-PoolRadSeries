@@ -156,11 +156,11 @@ void level()
         const int f = mul ? (*mul)[L] : 0;
         int want = raw[0x1B5] * f / 4 & 0xFF, want_max = raw[0x70] * f / 4 & 0xFF;
         if (!want || !want_max) want = want_max = 1;
-        const bool ok = ml && ml->n == 1 && ml->m[0].rec[0x1A4] == want && ml->m[0].rec[0x78] == want_max;
+        const bool ok = ml && ml->n == 1 && ml->m[0].get(0x1A4) == want && ml->m[0].get(0x78) == want_max;
         char w[60];
         snprintf(w, sizeof w, "Level %d: a monster's hit points", L);
-        expect(P, w, ok, "%d / %d, the original's %d / %d", ml && ml->n ? ml->m[0].rec[0x1A4] : -1,
-               ml && ml->n ? ml->m[0].rec[0x78] : -1, want, want_max);
+        expect(P, w, ok, "%d / %d, the original's %d / %d", ml && ml->n ? ml->m[0].get(0x1A4) : -1,
+               ml && ml->n ? ml->m[0].get(0x78) : -1, want, want_max);
     }
     fight_clear_monsters();
     vm->set(0x4CF4, 2);

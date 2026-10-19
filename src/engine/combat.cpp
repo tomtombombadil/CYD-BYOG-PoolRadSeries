@@ -3,9 +3,103 @@
 #include "magic.h"
 #include "rules.h"
 
+#include <cstdlib>
 #include <cstring>
 
 namespace combat {
+
+// ---- A monster's record: its group's, with its own changes over it
+uint8_t Monster::get(int off) const
+{
+    if (own) return own[off];
+    for (int k = 0; k < n_ch; ++k)
+        if (ch_off[k] == off) return ch_val[k];
+    return base ? base[off] : 0;
+}
+
+void Monster::set(int off, uint8_t v)
+{
+    if (own) {
+        own[off] = v;
+        return;
+    }
+    const uint8_t was = base ? base[off] : 0;
+    for (int k = 0; k < n_ch; ++k)
+        if (ch_off[k] == off) {
+            if (v == was) {                 // back as its group's: no longer a change
+                --n_ch;
+                ch_off[k] = ch_off[n_ch];
+                ch_val[k] = ch_val[n_ch];
+            } else {
+                ch_val[k] = v;
+            }
+            return;
+        }
+    if (v == was) return;
+    if (n_ch < kMonsterChanges) {
+        ch_off[n_ch] = static_cast<uint16_t>(off);
+        ch_val[n_ch++] = v;
+        return;
+    }
+    if (uint8_t* r = whole()) r[off] = v;
+}
+
+uint8_t* Monster::whole()
+{
+    if (own) return own;
+    own = static_cast<uint8_t*>(malloc(party::kRecordSize));
+    if (!own) return nullptr;
+    if (base) memcpy(own, base, party::kRecordSize);
+    else memset(own, 0, party::kRecordSize);
+    for (int k = 0; k < n_ch; ++k) own[ch_off[k]] = ch_val[k];
+    n_ch = 0;
+    return own;
+}
+
+bool Monster::room_for_aff(int n)
+{
+    if (n <= aff_cap) return true;
+    if (n > kMonsterAffects) return false;
+    int cap = aff_cap + 2;
+    if (cap < n) cap = n;
+    if (cap > kMonsterAffects) cap = kMonsterAffects;
+    void* p = realloc(aff, static_cast<size_t>(cap) * party::kAffectSize);
+    if (!p) return false;
+    aff = static_cast<uint8_t(*)[party::kAffectSize]>(p);
+    memset(aff[aff_cap], 0, static_cast<size_t>(cap - aff_cap) * party::kAffectSize);
+    aff_cap = static_cast<uint8_t>(cap);
+    return true;
+}
+
+void Monster::release()
+{
+    free(own);
+    free(aff);
+    own = nullptr;
+    aff = nullptr;
+    n_aff = 0;
+    aff_cap = 0;
+    n_ch = 0;
+}
+
+void Rec::read(uint8_t* out, int off, int n) const
+{
+    if (p_) memcpy(out, p_ + off, static_cast<size_t>(n));
+    else if (m_ && m_->own) memcpy(out, m_->own + off, static_cast<size_t>(n));
+    else if (m_) {
+        if (m_->base) memcpy(out, m_->base + off, static_cast<size_t>(n));
+        else memset(out, 0, static_cast<size_t>(n));
+        for (int k = 0; k < m_->n_ch; ++k)
+            if (m_->ch_off[k] >= off && m_->ch_off[k] < off + n) out[m_->ch_off[k] - off] = m_->ch_val[k];
+    }
+}
+
+void Rec::write(const uint8_t* in, int off, int n) const
+{
+    if (p_) memmove(p_ + off, in, static_cast<size_t>(n));
+    else if (m_)
+        for (int k = 0; k < n; ++k) m_->set(off + k, in[k]);
+}
 
 namespace {
 
@@ -763,6 +857,10 @@ void give_aff(Fighter& f, int type, int minutes, int data, bool call)
     const int i = find_aff(f, static_cast<uint8_t>(type));
     if (i >= 0 && (f.aff[i][1] | f.aff[i][2] << 8) > 0) drop_aff(f, i);
     if (*f.n_aff >= f.max_aff) return;
+    if (Monster* m = f.rec.monster()) {     // (a monster's effects grow as they come)
+        if (!m->room_for_aff(*f.n_aff + 1)) return;
+        f.aff = m->aff;
+    }
     uint8_t* a = f.aff[(*f.n_aff)++];
     memset(a, 0, party::kAffectSize);
     a[0] = static_cast<uint8_t>(type);
@@ -830,7 +928,7 @@ void fall(Battle& b, int c)
 
 } // namespace
 
-void uncharm(uint8_t* rec, const uint8_t* a) { rec[0x197] = static_cast<uint8_t>((a[3] & 0x40) >> 6); }
+void uncharm(const Rec& rec, const uint8_t* a) { rec[0x197] = static_cast<uint8_t>((a[3] & 0x40) >> 6); }
 
 namespace {
 
@@ -1787,7 +1885,9 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             // defender fights (its target: the original's); bugbears and
             // gnolls (type 1) any size
             const Tables& tt = *b.tables;
-            auto named = [&](const uint8_t* rec, int from, int n) {
+            auto named = [&](const Rec& r, int from, int n) {
+                uint8_t rec[16];
+                r.read(rec, 0, 16);
                 for (int k = from; k < from + n; ++k)
                     if (tt.foe_names[k][0] && tt.foe_names[k][0] < 16 && !memcmp(rec, tt.foe_names[k], tt.foe_names[k][0] + 1))
                         return true;
@@ -1799,8 +1899,10 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                 tg.target < b.n && named(b.f[tg.target].rec, 12, 8))
                 side -= 4;
             if (hasx(tg, fx.race.gnome_extra) && at.rec[0x11A] == 1) {
+                uint8_t at_name[16];
+                at.rec.read(at_name, 0, 16);
                 for (const uint8_t* nm : tt.dodge_names)
-                    if (nm[0] && nm[0] < 16 && !memcmp(at.rec, nm, nm[0] + 1)) side -= 4;
+                    if (nm[0] && nm[0] < 16 && !memcmp(at_name, nm, nm[0] + 1)) side -= 4;
             }
         } else if (fx.race.secret_flags) {
             // Secret's (GAME.OVR 0x11703 / 0x110A1, the attacker's phase):
@@ -1906,9 +2008,9 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             dmg *= times;
             // The magic weapon's own damage (a dragon slayer's: 3 x d12 + 4 + Strength's)
             dmg += wbonus;
-            if (slayer) dmg = d.roll(12, 1) * 3 + 4 + rules::strength_damage(at.rec);
+            if (slayer) dmg = d.roll(12, 1) * 3 + 4 + rules::strength_damage(at.rec[0x125], at.rec[0x11], at.rec[0x1C]);
             // Secret's giant slaying: 6d6 + Strength's (GAME.OVR 0x13162)
-            if (giant) dmg = d.roll(6, 6) + rules::strength_damage(at.rec);
+            if (giant) dmg = d.roll(6, 6) + rules::strength_damage(at.rec[0x125], at.rec[0x11], at.rec[0x1C]);
             // A ranger against giants: their ranger level more
             // (Secret's only next to it: GAME.OVR 0x1427D, the distance at most 1)
             if (b.fx && hasx(at, b.fx->race.ranger_giant) && (tg.rec[0x14B] & 8) &&
@@ -2058,7 +2160,7 @@ namespace {
 // The class a drained level comes off (the original's pick, its ovr13
 // routine): the highest level, of those the one whose level needed the
 // most experience (a later class on a tie); that experience in *exp
-int drain_class(const Battle& b, const uint8_t* r, int32_t* exp)
+int drain_class(const Battle& b, const Rec& r, int32_t* exp)
 {
     int best = 0, best_l = 0;
     int32_t best_e = 0;
@@ -2080,7 +2182,7 @@ int drain_class(const Battle& b, const uint8_t* r, int32_t* exp)
 void drain(Battle& b, int c, int n, Event* out, int cap, int* n_out, int hit)
 {
     Fighter& f = b.f[c];
-    uint8_t* r = f.rec;
+    const Rec r = f.rec;
     auto said = [&](Ev e, int amount) {
         if (!out || *n_out >= cap) return;
         Event& x = out[(*n_out)++];
@@ -2477,7 +2579,7 @@ int award(Battle& b, int total, bool give)
     for (int i = 0; give && i < b.party_size; ++i) {
         Fighter& f = b.f[i];
         if (!f.up() || f.status() == party::Animated) continue;
-        const uint8_t* r = f.rec;
+        const Rec r = f.rec;
         int add = share;
         const int str = r[0x11], in = r[0x13], wis = r[0x15], dex = r[0x17];
         int classes = 0;
@@ -2844,7 +2946,7 @@ bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
 }
 
 // The caster's level for the spell's kind (as spells::power, from the record)
-int power_of(const uint8_t* r, const classes::Tables& st, int s, bool item)
+int power_of(const Rec& r, const classes::Tables& st, int s, bool item)
 {
     if (item && st.spell_class(s) != 3) return 6;
     const int cl = r[0x109], pa = r[0x10C], ra = r[0x10D], mu = r[0x10E];
@@ -3559,7 +3661,7 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             f.rec[0xE9] = 2;                                // undead
             f.rec[kMove] = 6;
             f.rec[0xDD] = 0;                                // attack level 0
-            memset(f.rec + 0x1E, 0, 84);                    // no spells
+            for (int k = 0; k < 84; ++k) f.rec[0x1E + k] = 0;   // no spells
             f.was_control = f.rec[kControl];
             f.rec[kControl] = f.rec[kControl] > 0x7F ? 0xB2 : 0xB3;
             f.rec[0x11A] = 4;                               // animated dead
@@ -4273,7 +4375,7 @@ int choose_weapon(const Battle& b, int i)
     const Fighter& f = b.f[i];
     if (!b.names || !f.items) return kKeep;
     const items::Names& n = *b.names;
-    const uint8_t* r = f.rec;
+    const Rec r = f.rec;
     // The hands besides the weapon and shield held now
     int hands = r[0x185];
     for (int k = 0; k < f.n_items; ++k) {

@@ -1859,7 +1859,7 @@ static void sp_check_special()
         const bool feeble = sp_aff(sp_t[0], 0x44) >= 0;
         snprintf(what, sizeof what, "Feeblemind on class %d, d20 %d against 12: %s", f.cls, f.roll, f.saved ? "saved" : "feebleminded");
         expect(SP, what, feeble == !f.saved && (!feeble || (F(sp_t[0]).rec[0x13] == 7 && F(sp_t[0]).rec[0x15] == 7)), "effect %d Int %d Wis %d",
-               (int)feeble, F(sp_t[0]).rec[0x13], F(sp_t[0]).rec[0x15]);
+               (int)feeble, (int)F(sp_t[0]).rec[0x13], (int)F(sp_t[0]).rec[0x15]);
     }
     // Mirror Image: a spell at picked creatures takes an image (d(images + 1) over 1); an area spell doesn't
     for (int pass = 0; pass < 3; ++pass) {
@@ -2040,12 +2040,12 @@ static void sp_check_course()
         expect(SP, "Cause Disease run out (a fight): weakness 60 and sickness 10 begin, Str 12 -> 11, HP 50 -> 49, said",
                sp_aff(T, 0x22) < 0 && sp_aff_time(T, 0x2B) == 60 && sp_aff_time(T, 0x2C) == 10 && F(T).rec[0x11] == 11 &&
                    F(T).hp() == 49 && weak_ev && hurt_ev,
-               "weak %d sick %d Str %d HP %d events %d/%d", sp_aff_time(T, 0x2B), sp_aff_time(T, 0x2C), F(T).rec[0x11], F(T).hp(),
+               "weak %d sick %d Str %d HP %d events %d/%d", sp_aff_time(T, 0x2B), sp_aff_time(T, 0x2C), (int)F(T).rec[0x11], F(T).hp(),
                (int)weak_ev, (int)hurt_ev);
         for (int r = 0; r < 60; ++r) combat::tick(fg->b, ev, 8);
         expect(SP, "the disease's course, 60 rounds on: 6 more HP, Str 1 less",
                F(T).hp() == 43 && F(T).rec[0x11] == 10 && sp_aff(T, 0x2B) >= 0 && sp_aff(T, 0x2C) >= 0, "HP %d Str %d", F(T).hp(),
-               F(T).rec[0x11]);
+               (int)F(T).rec[0x11]);
         F(T).rec[0x1A4] = 1;
         for (int r = 0; r < 10; ++r) combat::tick(fg->b, ev, 8);
         expect(SP, "the disease's course at 1 HP: no damage, helpless", F(T).hp() == 1 && sp_aff(T, 0x1F) >= 0, "HP %d", F(T).hp());
@@ -2114,7 +2114,7 @@ static void sp_check_miscast()
         sp_put(sp_c, 0, 10, 12);
         sp_put(sp_t[0], 1, 30, 12);
         sp_give(sp_c, vermin, 0, 0xFF, false);
-        memset(f.rec + magic::kListAt, 0, magic::kListSize);
+        memset(f.rec.whole() + magic::kListAt, 0, magic::kListSize);
         f.rec[magic::kListAt] = 0x13;
         fg->cur = sp_c;
         fg->pages = 0;

@@ -73,7 +73,7 @@ void endless_probe(const char* list)
                 create::Dice dd = rng;
                 const combat::Plan pl = combat::think(copy, play::fg->t, i, dd);
                 printf("   #%d %s team %d at %d,%d size %d hp %d status %d flee %d moves %d plan %d target %d\n", i,
-                       (const char*)&f.rec[1], f.team(), f.x, f.y, f.size, f.hp(), f.rec[0x195], (int)f.fleeing, f.moves,
+                       (const char*)f.rec.whole() + 1, f.team(), f.x, f.y, f.size, f.hp(), (int)f.rec[0x195], (int)f.fleeing, f.moves,
                        (int)pl.act, pl.target);
             }
         printf("  round %d: the other side %d up, %d hit points; party%s\n", play::fg->b.round, up, hp, fx.c_str());

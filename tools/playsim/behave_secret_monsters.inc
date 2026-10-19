@@ -235,7 +235,7 @@ void every_monster(bool fixes_on)
             const combat::Fighter& f = b.f[i];
             ++copies;
             if (f.hp() != s[0x1B5] || f.hp_max() != s[0x70]) same_hp = false;
-            if (!f.n_aff || *f.n_aff < r.n_aff || memcmp(f.aff, r.aff, static_cast<size_t>(r.n_aff) * 9) != 0) same_aff = false;
+            if (!f.n_aff || *f.n_aff < r.n_aff || (r.n_aff && memcmp(f.aff, r.aff, static_cast<size_t>(r.n_aff) * 9) != 0)) same_aff = false;
             if (f.n_items != r.n_items) same_items = false;
             for (int k = 0; k < r.n_items && k < f.n_items; ++k)
                 if (memcmp(f.items[k] + 0x2E, r.item[k] + 0x2E, 0x3F - 0x2E) != 0 && f.items[k][0x2E] != r.item[k][0x2E])
@@ -250,7 +250,7 @@ void every_monster(bool fixes_on)
         expect(Q, "flags 2 (0x15E) and magic resistance (0x1A5) kept", same_x, "%s: %02X %d", tag, b.f[first].flags2,
                b.f[first].magic_res);
         const combat::Fighter& f = b.f[first];
-        const uint8_t* fr = f.rec;
+        const uint8_t* fr = f.rec.whole();
         // Its record's other fight bytes in the engine's places: side (0x1A8),
         // size (0xE7), undead type (0xF2), monster kind flags (0x15D),
         // Hit Dice (0xEE), saves (0xE8-0xEC), class levels (0x111)
@@ -355,11 +355,11 @@ void every_level()
                 want_max = r.s[0x70] * f / 4 & 0xFF;
                 if (!want || !want_max) want = want_max = 1;
             }
-            const bool ok = ml && ml->n == 1 && ml->m[0].rec[0x1A4] == want && ml->m[0].rec[0x78] == want_max;
+            const bool ok = ml && ml->n == 1 && ml->m[0].get(0x1A4) == want && ml->m[0].get(0x78) == want_max;
             char w[80];
             snprintf(w, sizeof w, "the Level %d: #%d %s's hit points", L, id, r.name);
-            expect(Q, w, ok, "%d / %d, the original's %d / %d", ml && ml->n ? ml->m[0].rec[0x1A4] : -1,
-                   ml && ml->n ? ml->m[0].rec[0x78] : -1, want, want_max);
+            expect(Q, w, ok, "%d / %d, the original's %d / %d", ml && ml->n ? ml->m[0].get(0x1A4) : -1,
+                   ml && ml->n ? ml->m[0].get(0x78) : -1, want, want_max);
         }
     }
     fight_clear_monsters();
@@ -1052,7 +1052,7 @@ void turns()
 // 2200)
 uint32_t xp(int i)
 {
-    const uint8_t* r = F(i).rec;
+    const uint8_t* r = F(i).rec.whole();
     return r[0x127] | r[0x128] << 8 | r[0x129] << 16 | static_cast<uint32_t>(r[0x12A]) << 24;
 }
 void fight_end()

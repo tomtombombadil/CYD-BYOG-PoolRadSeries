@@ -59,6 +59,8 @@ void stats(party::Character& c, const ItemFacts& f);
 int strength_group(const party::Character& c);
 // Strength's damage bonus (for those with the Strength flag 0x125) from a record
 int strength_damage(const uint8_t* rec);
+// (the same from its three bytes: 0x125 uses Strength, 0x11 Strength in use, 0x1C its 18/xx)
+int strength_damage(int uses_strength, int str_full, int str00);
 // Extra weight carried before slowing down (can be negative)
 int max_encumbrance(const party::Character& c);
 int dex_ac_bonus(const party::Character& c);

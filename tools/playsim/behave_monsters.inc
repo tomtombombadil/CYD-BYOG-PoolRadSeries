@@ -257,7 +257,7 @@ void every_monster()
                 ++copies;
                 if (f.hp() != r.rec[0x1A4] || f.hp_max() != r.rec[0x78]) same_hp = false;
                 // (those invisible from the start have their invisibility added: compare the file's part)
-                if (!f.n_aff || *f.n_aff < r.n_aff || memcmp(f.aff, r.aff, static_cast<size_t>(r.n_aff) * 9) != 0) same_aff = false;
+                if (!f.n_aff || *f.n_aff < r.n_aff || (r.n_aff && memcmp(f.aff, r.aff, static_cast<size_t>(r.n_aff) * 9) != 0)) same_aff = false;
                 if (f.n_items != r.n_items) same_items = false;
                 for (int k = 0; k < r.n_items && k < f.n_items; ++k)
                     if (memcmp(f.items[k] + 0x2E, r.item[k] + 0x2E, 0x3F - 0x2E) != 0) same_items = false;
@@ -275,7 +275,7 @@ void every_monster()
             expect(kPart, "its footprint (record 0xDE)", f.gone || f.size == foot, "%s: size %d, record %d", tag, f.size, foot);
             // The values the original works out at the battle's setup
             const Values v = expected(r.rec, r.item, r.n_items);
-            const uint8_t* fr = f.rec;
+            const uint8_t* fr = f.rec.whole();
             const bool vals = sb(fr[0x199]) == v.hit && fr[0x19A] == v.ac && fr[0x19B] == v.ac_behind && fr[0x1A5] == v.move;
             expect(kPart, "to-hit value, AC, rear AC, movement (the setup's recalculation)", vals,
                    "%s: hit %d (want %d), AC %d (%d), rear %d (%d), move %d (%d)", tag, sb(fr[0x199]), v.hit, fr[0x19A], v.ac,
@@ -461,8 +461,8 @@ void rules_checks()
     put(F, 20, 10, 2);
     put(M, 21, 10, 6);
     bare(F);
-    uint8_t* fr = b.f[F].rec;
-    uint8_t* mr = b.f[M].rec;
+    uint8_t* fr = b.f[F].rec.whole();
+    uint8_t* mr = b.f[M].rec.whole();
     fr[0x199] = 45;
     mr[0x19A] = 55;
     fr[0x19E] = 1;
@@ -581,7 +581,7 @@ void rules_checks()
         combat::Fighter& f = b.f[F];
         *f.n_aff = 0;                           // (no effects: a dwarf's / halfling's Constitution bonus is the classes part's)
         const uint8_t saves[5] = {10, 11, 12, 13, 14};
-        memcpy(f.rec + 0xDF, saves, 5);
+        memcpy(f.rec.whole() + 0xDF, saves, 5);
         f.rec[0x186] = 0;
         combat::set_actor(b, F);
         bool all = true;
@@ -614,7 +614,7 @@ void rules_checks()
     const int T = find_member(0x10F);
     expect(kPart, "the sample party has a thief", T >= 0);
     if (T >= 0) {
-        uint8_t* tr = b.f[T].rec;
+        uint8_t* tr = b.f[T].rec.whole();
         // The target back on its feet, man-sized, facing `facing`, with `received` attacks this round
         auto ready_target = [&](int facing, int received) {
             mr[0xDE] = 1;
@@ -1055,7 +1055,7 @@ bool vs(int area, int id, int copies = 1)
     P = 0;
     put(P, 20, 10, 2);
     put(M, 21, 10, 6);
-    uint8_t* r = b.f[P].rec;
+    uint8_t* r = b.f[P].rec.whole();
     r[0x195] = party::Okay;
     r[0x196] = 1;
     r[0x78] = 100;
@@ -1070,7 +1070,7 @@ bool vs(int area, int id, int copies = 1)
 }
 void heal_p()
 {
-    uint8_t* r = B->f[P].rec;
+    uint8_t* r = B->f[P].rec.whole();
     r[0x195] = party::Okay;
     r[0x196] = 1;
     r[0x1A4] = 100;
@@ -1916,7 +1916,7 @@ void specials_more()
         expect(kPart, "berserk: the nearest other creature (a friend next to it) its target, on the side against it",
                tf == combat::TurnFx::Berzerk && b.f[P].target == O && b.f[P].team() == 1 && b.f[P].rec[0xF7] == 0xB3 &&
                b.f[P].quick && !b.f[P].can_cast, "fx %d target %d team %d control %02X", static_cast<int>(tf), b.f[P].target,
-               b.f[P].team(), b.f[P].rec[0xF7]);
+               b.f[P].team(), (unsigned)b.f[P].rec[0xF7]);
         put(O, 30, 15, 2);                    // the friend away: the enemy nearest
         combat::turn_effects(b, P);
         expect(kPart, "berserk: the enemy nearest - back on the party's side against it", b.f[P].target == M && b.f[P].team() == 0,
@@ -1968,7 +1968,7 @@ void computer_turns()
     expect(kPart, "Red Plume (a monster) readies its long bow at range (the computer's weapon choice)", w >= 0 &&
            b.f[M].items[w][0x2E] == 43, "weapon type %d", w >= 0 ? b.f[M].items[w][0x2E] : -1);
     expect(kPart, "... its to-hit / dice worked out for the bow (1d6)", b.f[M].rec[0x19E] == 1 && b.f[M].rec[0x1A0] == 6, "%dd%d",
-           b.f[M].rec[0x19E], b.f[M].rec[0x1A0]);
+           (int)b.f[M].rec[0x19E], (int)b.f[M].rec[0x1A0]);
     expect(kPart, "... and shoots twice a round (bow: 4 half attacks), an arrow each", arrows_after == arrows_before - 2, "%d -> %d", arrows_before,
            arrows_after);
     // next to an enemy: the sword again

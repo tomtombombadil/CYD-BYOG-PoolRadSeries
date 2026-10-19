@@ -346,26 +346,97 @@ struct Facts {
     uint8_t plat_xp = 0;
 };
 
-// ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a
-// record and effects per monster
+// ---- Monsters (LOAD MONSTER): a group per load (the record its copies
+// start from, its items and icon), and per monster only what is its own
+// (v0.137: the copies of a group share its record and each keeps just the
+// bytes it changed - a monster's 540 bytes were 14 KB of Darkness's
+// 30-monster fight)
 struct Group {
     uint8_t id = 0, icon = 0;           // MON block, CPIC block
     uint8_t n_items = 0;
     uint8_t item[kGroupItems][items::kRecordSize] = {};
+    uint8_t rec[party::kRecordSize] = {};   // the record as loaded (the copies' base)
 };
+constexpr int kMonsterChanges = 24;     // a monster's changed bytes kept in its list (past them: a record of its own)
 struct Monster {
-    uint8_t rec[party::kRecordSize] = {};
-    uint8_t aff[kMonsterAffects][party::kAffectSize] = {};
+    const uint8_t* base = nullptr;      // its group's record
+    uint8_t* own = nullptr;             // its own whole record (malloc'd) once its changes outgrew the list
+    uint8_t (*aff)[party::kAffectSize] = nullptr;   // its effects (malloc'd, grown as needed up to kMonsterAffects)
     int     n_aff = 0;
+    uint16_t ch_off[kMonsterChanges] = {};
+    uint8_t ch_val[kMonsterChanges] = {};
+    uint8_t n_ch = 0;
+    uint8_t aff_cap = 0;
     uint8_t group = 0;
     uint8_t flags2 = 0, magic_res = 0;  // Secret's record 0x15E, 0x1A5 (no Curse place; Fighter)
+    uint8_t get(int off) const;
+    void    set(int off, uint8_t v);
+    uint8_t* whole();                   // a whole record of its own (made at the first call; nullptr: no memory)
+    bool    room_for_aff(int n);        // its effects' block holds n (false: no memory, or over kMonsterAffects)
+    void    release();                  // its own blocks let go
+};
+// (realloc'd in their array: nothing in them may point into themselves)
+static_assert(sizeof(Monster) < 128, "a monster keeps only its changes");
+
+// A byte of a fighter's record: a party member's own, or a monster's
+// (its changed bytes over its group's record)
+class RecByte {
+public:
+    RecByte(uint8_t* p, Monster* m, int off) : p_(p), m_(m), off_(static_cast<uint16_t>(off)) {}
+    operator uint8_t() const { return m_ ? m_->get(off_) : *p_; }
+    RecByte& operator=(int v)
+    {
+        if (m_) m_->set(off_, static_cast<uint8_t>(v));
+        else *p_ = static_cast<uint8_t>(v);
+        return *this;
+    }
+    RecByte& operator=(const RecByte& o) { return *this = static_cast<int>(static_cast<uint8_t>(o)); }
+    RecByte& operator+=(int v) { return *this = static_cast<uint8_t>(*this) + v; }
+    RecByte& operator-=(int v) { return *this = static_cast<uint8_t>(*this) - v; }
+    RecByte& operator|=(int v) { return *this = static_cast<uint8_t>(*this) | v; }
+    RecByte& operator&=(int v) { return *this = static_cast<uint8_t>(*this) & v; }
+    RecByte& operator^=(int v) { return *this = static_cast<uint8_t>(*this) ^ v; }
+    RecByte& operator++() { return *this += 1; }
+    RecByte& operator--() { return *this -= 1; }
+    uint8_t  operator++(int) { const uint8_t v = *this; *this += 1; return v; }
+    uint8_t  operator--(int) { const uint8_t v = *this; *this -= 1; return v; }
+private:
+    uint8_t* p_;
+    Monster* m_;
+    uint16_t off_;
+};
+
+// A fighter's record (Curse's layout, party::kRecordSize bytes): a party
+// member's own block, or a monster's (Monster: its group's record and its
+// changes). Bytes through [], whole runs through read / write.
+class Rec {
+public:
+    Rec() = default;
+    Rec(uint8_t* p) : p_(p) {}          // a whole record
+    Rec(std::nullptr_t) {}
+    explicit Rec(Monster* m) : m_(m) {}
+    RecByte  operator[](int off) const { return RecByte(p_ ? p_ + off : nullptr, m_, off); }
+    explicit operator bool() const { return p_ || m_; }
+    bool     operator==(const Rec& o) const { return p_ == o.p_ && m_ == o.m_; }
+    bool     operator!=(const Rec& o) const { return !(*this == o); }
+    Monster* monster() const { return m_; }
+    // The whole record as one block: a party member's own; a monster's own
+    // made for it (Monster::whole - the tests' and tools' way to a monster's
+    // bytes in one piece; nullptr: no memory)
+    uint8_t* whole() const { return p_ ? p_ : m_ ? m_->whole() : nullptr; }
+    // n bytes from off into out / from in (a monster: only those that differ become its changes)
+    void     read(uint8_t* out, int off = 0, int n = static_cast<int>(party::kRecordSize)) const;
+    void     write(const uint8_t* in, int off = 0, int n = static_cast<int>(party::kRecordSize)) const;
+private:
+    uint8_t* p_ = nullptr;
+    Monster* m_ = nullptr;
 };
 
 // ---- A fighter: a party member or a monster
 // (v0.136.1: its numbers are 16 bits - all small: squares, counts, indexes,
 // spell numbers - and the pointers first: 112 bytes, was 168 with ints)
 struct Fighter {
-    uint8_t* rec = nullptr;
+    Rec     rec;
     uint8_t (*aff)[party::kAffectSize] = nullptr;
     int*    n_aff = nullptr;
     uint8_t (*items)[items::kRecordSize] = nullptr;    // its items (a monster: its group's)
@@ -476,7 +547,7 @@ bool hidden(const Battle& b, int viewer, int target);
 enum class TurnFx : uint8_t { None, Silenced, Snakes, Fumbling, Suffocates, Confused, RunsAway, Berserk, Enraged, Berzerk };
 TurnFx turn_effects(Battle& b, int i);
 // A charm's end: back to their own side (the effect's data, bit 6)
-void uncharm(uint8_t* rec, const uint8_t* affect);
+void uncharm(const Rec& rec, const uint8_t* affect);
 // What happened besides the plain blows: an attack's extras, the
 // computer's special actions, the round's end. `who` says it (its name
 // first), `to` the second name (or -1); `hit`: the attack's hit it follows.
@@ -872,7 +943,11 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
          int n, create::Dice& d, SpellLine* out, int cap, int pw = 0);
 // The caster's level for a spell: by its kind; from an item 6 (the
 // monsters' spells - the items' own - as the caster's)
-int power_of(const uint8_t* rec, const classes::Tables& st, int spell, bool item = false);
+int power_of(const Rec& rec, const classes::Tables& st, int spell, bool item = false);
+inline int power_of(const uint8_t* rec, const classes::Tables& st, int spell, bool item = false)
+{
+    return power_of(Rec(const_cast<uint8_t*>(rec)), st, spell, item);
+}
 
 // A cone (Fear, Cone of Cold; coab's facts): the line from the caster
 // through (tx, ty) carried on (its steps repeated) to `reach` squares

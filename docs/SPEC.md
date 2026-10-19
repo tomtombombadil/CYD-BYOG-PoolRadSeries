@@ -1501,7 +1501,14 @@ the scripts' changed ops, the rule tables, fights, the rest.
   `_CYD/CODE.TMP` during a fight, its memory and the 3D view's past the
   field's tiles holding the fighters and pictures; the background picture
   dropped while parked; monster groups, spell names and fighters smaller)
-  150,755 bytes (Curse 132,315, Pool 132,931).
+  150,755 bytes (Curse 132,315, Pool 132,931). Since the shared monster
+  records (branch darkness-fight-rules): a LOAD MONSTER's copies share
+  its group's record (`combat::Group::rec`) and each keeps only the bytes
+  it changed (`combat::Monster`: up to 24, past them a whole record of
+  its own; its effects a block grown as they come, up to 12) - a
+  fighter's record is a `combat::Rec` (a party member's own bytes or a
+  monster's) - 140,959 bytes (Curse 128,363, Pool 129,861); the fight
+  logs and snapshots are the same as before (seeds 1-4, 7).
 
 ## 7. The journal (Tom, 2026-10-06)
 

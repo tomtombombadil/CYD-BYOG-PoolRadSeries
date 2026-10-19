@@ -989,7 +989,7 @@ void experience()
     const int n = std::min(b.party_size, 6);
     uint32_t before[8] = {};
     for (int i = 0; i < n; ++i) {
-        uint8_t* r = b.f[i].rec;
+        uint8_t* r = b.f[i].rec.whole();
         const Case& cs = cases[i];
         r[0x75] = static_cast<uint8_t>(cs.cls);
         for (int k = 0; k < 8; ++k) r[0x109 + k] = static_cast<uint8_t>(cs.lv[k]);
@@ -1006,7 +1006,7 @@ void experience()
     combat::award(b, total);
     const int share = total / (b.party_size - 1);
     for (int i = 0; i < n; ++i) {
-        const uint8_t* r = b.f[i].rec;
+        const uint8_t* r = b.f[i].rec.whole();
         const uint32_t now = r[0x127] | r[0x128] << 8 | r[0x129] << 16 | static_cast<uint32_t>(r[0x12A]) << 24;
         const Case& cs = cases[i];
         int want = i == n - 1 ? 0 : (cs.num == 11 ? share + share / 10 : share * cs.num / cs.den);
@@ -1217,7 +1217,7 @@ void turning()
             const int need = v < 0 ? -v : v;
             for (int face : {need, need - 1}) {
                 if (face < 1 || face > 20) continue;
-                memset(me.rec + 0x109, 0, 8);
+                memset(me.rec.whole() + 0x109, 0, 8);
                 me.rec[0x109] = static_cast<uint8_t>(L);
                 me.turned_undead = false;
                 un.rec[0xE9] = static_cast<uint8_t>(type);

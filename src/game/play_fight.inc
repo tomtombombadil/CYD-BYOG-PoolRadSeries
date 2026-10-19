@@ -43,6 +43,7 @@ MonsterLoad* ml = nullptr;
 void fight_clear_monsters()
 {
     if (!ml) return;
+    for (int k = 0; k < ml->n; ++k) ml->m[k].release();
     free(ml->m);
     delete ml;
     ml = nullptr;
@@ -192,7 +193,17 @@ void fight_load_monster(int id, int copies, int icon)
 {
     if (!ml) ml = new (std::nothrow) MonsterLoad;
     if (!ml || ml->groups >= combat::kMaxGroups || ml->n >= combat::kMaxMonsters) return;
-    uint8_t rec[party::kRecordSize], sx[2] = {};
+    // The group's block first: the record goes straight into it (its copies'
+    // base); a load that stops keeps the block for the next one
+    if (!ml->g[ml->groups]) ml->g[ml->groups] = new (std::nothrow) combat::Group;
+    if (!ml->g[ml->groups]) {
+        plat::log("[play] LOAD MONSTER: not enough memory\n");
+        return;
+    }
+    combat::Group& g = *ml->g[ml->groups];
+    new (&g) combat::Group();           // (in place: it's a big block for the stack)
+    uint8_t* rec = g.rec;
+    uint8_t sx[2] = {};
     // MON<area>CHA.DAX
     char cha[24];
     area_fmt(cha, sizeof cha, "MON%dCHA.DAX");
@@ -214,13 +225,6 @@ void fight_load_monster(int id, int copies, int icon)
         rec[0x78] = static_cast<uint8_t>(rec[0x78] * (level + 2) / 4);
         if (rec[0x1A4] == 0 || rec[0x78] == 0) rec[0x1A4] = rec[0x78] = 1;
     }
-    if (!ml->g[ml->groups]) ml->g[ml->groups] = new (std::nothrow) combat::Group;
-    if (!ml->g[ml->groups]) {
-        plat::log("[play] LOAD MONSTER: not enough memory\n");
-        return;
-    }
-    combat::Group& g = *ml->g[ml->groups];
-    g = combat::Group{};
     g.id = static_cast<uint8_t>(id);
     g.icon = static_cast<uint8_t>(icon);
     char itm[24];
@@ -231,6 +235,7 @@ void fight_load_monster(int id, int copies, int icon)
     char spc[24];
     area_fmt(spc, sizeof spc, "MON%dSPC.DAX");
     const int na = read_block(spc, id, aff, sizeof aff);
+    const int n_aff = na > 0 ? na / static_cast<int>(party::kAffectSize) : 0;
     if (copies < 1) copies = 1;
     if (ml->n + copies > combat::kMaxMonsters) copies = combat::kMaxMonsters - ml->n;
     if (ml->n + copies > ml->cap) {
@@ -243,16 +248,25 @@ void fight_load_monster(int id, int copies, int icon)
         ml->m = static_cast<combat::Monster*>(p);
         ml->cap = cap;
     }
+    // Each copy: the group's record, its own effects
+    int made = 0;
     for (int k = 0; k < copies; ++k) {
-        combat::Monster& m = ml->m[ml->n++];
-        memset(&m, 0, sizeof m);
-        memcpy(m.rec, rec, sizeof rec);
+        combat::Monster& m = ml->m[ml->n];
+        new (&m) combat::Monster();
+        m.base = g.rec;
         m.flags2 = sx[0];
         m.magic_res = sx[1];
-        m.n_aff = na > 0 ? na / static_cast<int>(party::kAffectSize) : 0;
-        memcpy(m.aff, aff, static_cast<size_t>(m.n_aff) * party::kAffectSize);
+        if (n_aff && !m.room_for_aff(n_aff)) {
+            plat::log("[play] LOAD MONSTER: not enough memory\n");
+            break;
+        }
+        m.n_aff = n_aff;
+        if (n_aff) memcpy(m.aff, aff, static_cast<size_t>(n_aff) * party::kAffectSize);
         m.group = static_cast<uint8_t>(ml->groups);
+        ++ml->n;
+        ++made;
     }
+    if (!made) return;
     ++ml->groups;
     plat::log("[play] LOAD MONSTER %d x%d (icon %d): %d monsters\n", id, copies, icon, ml->n);
 }
@@ -260,9 +274,10 @@ void fight_load_monster(int id, int copies, int icon)
 // The k-th loaded monster's own record (LOAD CHARACTER past the party: the
 // scripts can change one before the fight - the Thieves' Guild hideout makes
 // four of the loaded thieves fight on the party's side); nullptr past them
+// (the one taken gets a whole record of its own - its group's copies share one)
 uint8_t* fight_monster_record(int k)
 {
-    return ml && k >= 0 && k < ml->n ? ml->m[k].rec : nullptr;
+    return ml && k >= 0 && k < ml->n ? ml->m[k].whole() : nullptr;
 }
 
 // ---- The fight's arena (v0.136.1): memory a fight borrows instead of
@@ -995,8 +1010,10 @@ uint8_t name_colour(const combat::Fighter& f) { return !f.up() ? 12 : f.team() ?
 
 void fighter_name(const combat::Fighter& f, char* out, size_t cap)
 {
+    char nm[16];
+    f.rec.read(reinterpret_cast<uint8_t*>(nm), 1, 15);
     const int len = f.rec[0] < 15 ? f.rec[0] : 15;
-    snprintf(out, cap, "%.*s", len, reinterpret_cast<const char*>(f.rec + 1));
+    snprintf(out, cap, "%.*s", len, nm);
 }
 
 void draw_icon(pic::Canvas& c, int i, bool attack = false)
@@ -2742,11 +2759,11 @@ bool ai_ready_weapon(int i)
     if (!member) {
         tmp = new (std::nothrow) party::Character;
         if (!tmp) return false;
-        memcpy(tmp->rec, f.rec, sizeof tmp->rec);
+        f.rec.read(tmp->rec);
         tmp->n_items = f.n_items < party::kMaxItems ? f.n_items : party::kMaxItems;
         memcpy(tmp->items, f.items, static_cast<size_t>(tmp->n_items) * items::kRecordSize);
         tmp->n_affects = f.n_aff ? (*f.n_aff < party::kMaxAffects ? *f.n_aff : party::kMaxAffects) : 0;
-        memcpy(tmp->affects, f.aff, static_cast<size_t>(tmp->n_affects) * party::kAffectSize);
+        if (tmp->n_affects) memcpy(tmp->affects, f.aff, static_cast<size_t>(tmp->n_affects) * party::kAffectSize);
     }
     party::Character& ch = member ? pt->m[f.member] : *tmp;
     auto recalc = [&]() {
@@ -2796,11 +2813,16 @@ bool ai_ready_weapon(int i)
         f.items = ch.items;
     } else {
         // Back into the monster (its record, effects) and its group's items
-        memcpy(f.rec, tmp->rec, sizeof tmp->rec);
+        f.rec.write(tmp->rec);
         memcpy(f.items, tmp->items, static_cast<size_t>(tmp->n_items) * items::kRecordSize);
         if (f.n_aff) {
-            *f.n_aff = tmp->n_affects < f.max_aff ? tmp->n_affects : f.max_aff;
-            memcpy(f.aff, tmp->affects, static_cast<size_t>(*f.n_aff) * party::kAffectSize);
+            int n = tmp->n_affects < f.max_aff ? tmp->n_affects : f.max_aff;
+            if (combat::Monster* m = f.rec.monster()) {
+                if (!m->room_for_aff(n)) n = m->aff_cap;
+                f.aff = m->aff;
+            }
+            *f.n_aff = n;
+            if (n) memcpy(f.aff, tmp->affects, static_cast<size_t>(n) * party::kAffectSize);
         }
         delete tmp;
     }
@@ -3100,23 +3122,42 @@ void fight_start(pic::Canvas& c)
     // sub_66C20 for each): a monster's to-hit, AC, damage dice and movement
     // come from its record's base values and its readied items - the
     // record's own stored ones are not used
-    if (party::Character* tmp = new (std::nothrow) party::Character) {
-        for (int k = 0; k < ml->n; ++k) {
-            combat::Monster& m = ml->m[k];
-            const combat::Group& g = *ml->g[m.group];
-            memcpy(tmp->rec, m.rec, sizeof tmp->rec);
+    // (the copies of a group share its record: the group's is worked out
+    // once, then each copy with changes of its own from its own bytes - its
+    // changes kept over the group's new record)
+    party::Character* tmp = new (std::nothrow) party::Character;
+    uint8_t* fresh = new (std::nothrow) uint8_t[party::kRecordSize];
+    if (tmp && fresh) {
+        auto recalc = [&](const combat::Group& g) {
             tmp->n_items = g.n_items < party::kMaxItems ? g.n_items : party::kMaxItems;
             memcpy(tmp->items, g.item, static_cast<size_t>(tmp->n_items) * items::kRecordSize);
             tmp->n_affects = 0;
             rules::recalc_values(*tmp, *names, d->facts);
-            memcpy(m.rec, tmp->rec, sizeof m.rec);
+        };
+        for (int gi = 0; gi < ml->groups; ++gi) {
+            combat::Group& g = *ml->g[gi];
+            memcpy(tmp->rec, g.rec, sizeof tmp->rec);
+            recalc(g);
+            memcpy(fresh, tmp->rec, party::kRecordSize);
+            for (int k = 0; k < ml->n; ++k) {
+                combat::Monster& m = ml->m[k];
+                if (m.group != gi || (!m.own && !m.n_ch)) continue;
+                combat::Rec(&m).read(tmp->rec);
+                recalc(g);
+                m.n_ch = 0;
+                m.base = fresh;
+                combat::Rec(&m).write(tmp->rec);
+                m.base = g.rec;
+            }
+            memcpy(g.rec, fresh, party::kRecordSize);
         }
-        delete tmp;
     }
+    delete tmp;
+    delete[] fresh;
     for (int k = 0; k < ml->n && b.n < b.cap; ++k) {
         combat::Monster& m = ml->m[k];
         combat::Fighter& f = b.f[b.n++];
-        f.rec = m.rec;
+        f.rec = combat::Rec(&m);
         f.aff = m.aff;
         f.n_aff = &m.n_aff;
         f.items = ml->g[m.group]->item;
@@ -3521,7 +3562,7 @@ int spell_power(const combat::Fighter& f)
 {
     // An item's spell: the item's level (6 - the monsters' own, 12)
     if (fg->use_item >= 0 && fg->spell && mrules) return combat::power_of(f.rec, mrules->tables, fg->spell, true);
-    const uint8_t* r = f.rec;
+    const combat::Rec r = f.rec;
     const int cl = r[0x109], pa = r[0x10C], ra = r[0x10D], mu = r[0x10E];
     if (cl == 0 && mu == 0 && pa < 9 && ra < 8) return 6;
     if (!fg->spell || !mrules) return cl > mu ? cl : mu;

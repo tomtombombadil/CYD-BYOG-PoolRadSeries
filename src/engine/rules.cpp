@@ -39,12 +39,10 @@ int str_hit(const party::Character& c)
 }
 
 // Strength as one number (strength_group) from a record
-int group_of(const uint8_t* r)
+int group_of(int s, int e)
 {
-    const int s = r[kStrFull];
     if (s <= 17) return s;
     if (s == 18) {
-        const int e = r[kStr00];
         if (e == 0) return 18;
         if (e <= 50) return 19;
         if (e <= 75) return 20;
@@ -55,11 +53,12 @@ int group_of(const uint8_t* r)
     if (s <= 25) return s + 5;
     return 0;
 }
+int group_of(const uint8_t* r) { return group_of(r[kStrFull], r[kStr00]); }
 
-int str_damage(const uint8_t* r)
+int str_damage_of(int uses, int str_full, int str00)
 {
-    if (!r[kUsesStrength]) return 0;
-    const int s = group_of(r);
+    if (!uses) return 0;
+    const int s = group_of(str_full, str00);
     if (s == 1 || s == 2) return -2;
     if (s >= 3 && s <= 5) return -1;
     if (s == 16) return 1;
@@ -68,6 +67,7 @@ int str_damage(const uint8_t* r)
     if (s == 30) return 14;
     return 0;
 }
+int str_damage(const uint8_t* r) { return str_damage_of(r[kUsesStrength], r[kStrFull], r[kStr00]); }
 
 int dex_missile(const party::Character& c)
 {
@@ -101,6 +101,7 @@ constexpr int kPerCopper[5] = {1, 10, 100, 200, 1000};
 int strength_group(const party::Character& c) { return group_of(c.rec); }
 
 int strength_damage(const uint8_t* rec) { return str_damage(rec); }
+int strength_damage(int uses_strength, int str_full, int str00) { return str_damage_of(uses_strength, str_full, str00); }
 
 int max_encumbrance(const party::Character& c)
 {

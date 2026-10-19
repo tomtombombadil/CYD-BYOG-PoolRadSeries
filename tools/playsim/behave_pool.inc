@@ -911,9 +911,10 @@ void spells_in_fights()
 // ---- 8. Fights: the races' foes by name, backstabs, turning undead, level drain
 void set_name(combat::Fighter& f, const char* nm)
 {
-    memset(f.rec, 0, 16);
-    f.rec[0] = static_cast<uint8_t>(strlen(nm));
-    memcpy(f.rec + 1, nm, strlen(nm));
+    uint8_t* r = f.rec.whole();
+    memset(r, 0, 16);
+    r[0] = static_cast<uint8_t>(strlen(nm));
+    memcpy(r + 1, nm, strlen(nm));
 }
 // The lowest d20 (2-19) that hits; 21 none
 int lowest_hit(int a, int c, int ac)
@@ -1102,7 +1103,7 @@ void fights()
                 const int need = v < 0 ? -v : v;
                 for (int face : {need, need - 1}) {
                     if (face < 1 || face > 20) continue;
-                    memset(me.rec + 0x109, 0, 8);
+                    memset(me.rec.whole() + 0x109, 0, 8);
                     me.rec[0x109] = static_cast<uint8_t>(L);
                     me.turned_undead = false;
                     un.rec[0xE9] = static_cast<uint8_t>(type);
@@ -1157,7 +1158,7 @@ void fights()
         f.rec[0xE5] = static_cast<uint8_t>(hd);
         f.rec[0x78] = f.rec[0x1A4] = static_cast<uint8_t>(dr.hp);
         f.rec[0x12C] = static_cast<uint8_t>(dr.hp);
-        put32(f.rec, 0x127, 200000);
+        put32(f.rec.whole(), 0x127, 200000);
         combat::Event ev[8];
         int ne = 0;
         combat::drain(fg->b, sp_c, dr.n, ev, 8, &ne);
@@ -1168,8 +1169,8 @@ void fights()
         snprintf(w, sizeof w, "level drain: %s", dr.what);
         expect(P, w, lok && f.rec[0x78] == dr.want_hp && f.rec[0x1A4] == dr.want_hp && exp == static_cast<uint32_t>(want_exp) &&
                          f.rec[0xE5] == dr.lv_exp,
-               "levels %d/%d/%d/%d, HP %d/%d, exp %u (the original's %d), HD %d", f.rec[0x109], f.rec[0x10B], f.rec[0x10E],
-               f.rec[0x10F], f.rec[0x1A4], f.rec[0x78], exp, want_exp, f.rec[0xE5]);
+               "levels %d/%d/%d/%d, HP %d/%d, exp %u (the original's %d), HD %d", (int)f.rec[0x109], (int)f.rec[0x10B],
+               (int)f.rec[0x10E], (int)f.rec[0x10F], (int)f.rec[0x1A4], (int)f.rec[0x78], exp, want_exp, (int)f.rec[0xE5]);
     }
     // One of a single level: dead forever
     {
@@ -1183,7 +1184,7 @@ void fights()
         int ne = 0;
         combat::drain(fg->b, sp_c, 1, ev, 8, &ne);
         expect(P, "level drain: a level-1 character is dead forever", f.status() == party::Gone && f.rec[0x78] == 0,
-               "status %d, HP max %d", f.status(), f.rec[0x78]);
+               "status %d, HP max %d", f.status(), (int)f.rec[0x78]);
     }
 }
 #endif
