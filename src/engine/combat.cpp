@@ -1634,15 +1634,35 @@ void after_hit(Battle& b, int a, int c, int slot, int roll, int hits1, create::D
         if (hasx(at, m.poison)) poison(0);
         if (hasx(at, m.poison_p4)) poison(4);
         if (hasx(at, m.poison_p2)) poison(2);
-        if (hasx(at, m.kreen_bite) && m.paralyzed && tg.up() && !saving_throw(tg, 0, 0, d)) {
+        if (!m.dk_ways && hasx(at, m.kreen_bite) && m.paralyzed && tg.up() && !saving_throw(tg, 0, 0, d)) {
             // (Secret's: 10 rounds - GAME.OVR 0x10CDF)
             give_aff(tg, m.paralyzed, m.para_rounds ? m.para_rounds : d.roll(8, 2), 12, false);
             add_event(out, c, Ev::Paralyzed);
         }
-        if (hasx(at, m.poison_m2)) poison(-2);
+        if (!m.dk_ways && hasx(at, m.poison_m2)) poison(-2);
         if (hasx(at, m.fire_touch)) touch(d.roll(10, 2), 9);
         pool_hit();
     }
+    // Darkness's fire after a hit: a save against spells for half
+    auto fire_hit = [&](int dice) {
+        if (!tg.up()) return;
+        Harm h;
+        h.kind = 9;
+        h.save = 4;
+        h.on_save = 2;
+        bool dn = false;
+        const int done = harm(b, c, d.roll(6, dice) & 0xFF, h, d, &dn);
+        g_kind = 0;
+        Event* e = done > 0 ? add_event(out, c, Ev::Damage) : nullptr;
+        if (e) {
+            e->amount = static_cast<int16_t>(done);
+            e->kind = 9;
+        }
+        if (dn) out.down = true;
+    };
+    if (hasx(at, m.fire2d6_hit)) fire_hit(2);
+    if (slot == 1 && hasx(at, m.fire4d6_2)) fire_hit(4);
+    if (slot == 1 && hasx(at, m.fire2d6_2)) fire_hit(2);
     // Secret's (secret_facts_2.md 15): the cockatrice's touch - a save
     // against petrification or stoned; the remorhaz swallows its victim
     // whole on a natural 20
@@ -1934,8 +1954,19 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                     else if (plus <= 2) dmg /= 2;
                 }
                 if (hasx(tg, m.half)) dmg /= 2;
-                // Secret's iron golem: a +3 weapon or better, else nothing (even a monster's blow)
-                if (hasx(tg, m.need_plus3) && (!item || plus < 3)) dmg = 0;
+                // Secret's iron golem: a +3 weapon or better, else nothing (even a monster's blow);
+                // Darkness's: +1 / +2 / +3, a monster's bare blow from (N - 1) x 2 + 5 Hit Dice
+                auto plus_ok = [&](int need) {
+                    if (item) return plus >= need;
+                    return m.plus_hd && at.rec[0x74] == 0 && at.rec[kHd] >= (need - 1) * 2 + 5;
+                };
+                if (hasx(tg, m.need_plus3) && !plus_ok(3)) dmg = 0;
+                if (hasx(tg, m.need_plus2) && !plus_ok(2)) dmg = 0;
+                if (hasx(tg, m.need_plus1) && !plus_ok(1)) dmg = 0;
+                if (hasx(tg, m.half_under3) && item && plus < 3) dmg /= 2;
+                if (hasx(tg, m.half_under4) && item && plus < 4) dmg /= 2;
+                if (hasx(tg, m.half_pierce) && item && names && names->type(item[0x2E]).blow <= 1) dmg /= 2;
+                if (hasx(tg, m.half_crush) && item && names && names->type(item[0x2E]).blow > 0x7F) dmg /= 2;
                 // Secret's giant slug: a blunt weapon's blow (its type's byte 7 & 0x80) nothing
                 if (hasx(tg, m.blunt_proof) && item && names && (names->type(item[0x2E]).blow & 0x80)) dmg = 0;
                 if (hasx(tg, m.pierce_one) && item && names && names->type(item[0x2E]).blow == 1) dmg = 1;
@@ -2212,6 +2243,7 @@ bool resists(Battle& b, int c, int effect, const Harm& h, create::Dice& d)
     if (hasx(f, m.no_poison) && (paralysis || (effect > 0 && m.poisoned && effect == m.poisoned))) return true;
     if (hasx(f, fx.race.halfelf) && sleep_charm && d.roll(100, 1) <= 30) return true;      // half-elves: 30%
     if (hasx(f, m.globe) && h.spell > 0 && h.spell_level < 4) return true;
+    if (hasx(f, m.ward8) && h.spell > 0 && h.spell_level < 8) return true;
     // Secret's Globe of Invulnerability (0x39, GAME.OVR 0x123D3): up to the 4th level
     if (hasx(f, fx.globe_major) && h.spell > 0 && h.spell_level <= 4) return true;
     if (hasx(f, m.no_magic) && magic) return true;
@@ -2303,6 +2335,7 @@ int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* dow
         if (hasx(f, m.death_ward) && (h.kind & 0x40)) safe = true;
         if (hasx(f, m.no_elec) && (h.kind & 4)) safe = true;
         if (hasx(f, m.globe) && h.spell > 0 && h.spell_level < 4) safe = true;
+        if (hasx(f, m.ward8) && h.spell > 0 && h.spell_level < 8) safe = true;
         if (b.fx && hasx(f, b.fx->globe_major) && h.spell > 0 && h.spell_level <= 4) safe = true;
         if (safe) {
             dmg = 0;

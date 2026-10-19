@@ -1687,7 +1687,7 @@ const Profile kProfiles[] = {
                 .bestow = 0x24, .blink = 0x25, .fumbling = 0x1B, .silence = 0x15, .entangle = 0, .sticks = 0x03,
                 .faerie = 0x47, .blinded = 0x21, .animals_blind = 0x45, .feeble = 0x44,
                 .mon = {.poison = 0x40, .poison_m2 = 0x56, .kreen_bite = 0x58,
-                        .need_magic = 0x67,
+                        
                         .no_fire = 0x5D, .no_cold = 0x62, .no_elec = 0x06,
                         .no_magic = 0x4F, .globe = 0x3F, .elf_sleep = 0x5F,
                         .detect = 0x18, .prot_evil_near = 0x2D,
@@ -1699,7 +1699,11 @@ const Profile kProfiles[] = {
                         .far_reach = 6, .near_reach = 1, .para_rounds = 10, .secret_ways = true,
                         // its dragons (F9): red 0x54, white 0x55, black 0x60 (breath only, 0x20), big red
                         // 0x53, green 0x5A, blue 0x5B
-                        .big_fire = 0x53, .poison_breath = 0x5A, .dk_lightning = 0x5B, .acid_kind = 0x20},
+                        .big_fire = 0x53, .poison_breath = 0x5A, .dk_lightning = 0x5B, .acid_kind = 0x20,
+                        // its blows' rules (F10)
+                        .need_plus1 = 0x67, .need_plus2 = 0x7D, .half_under3 = 0x50, .half_under4 = 0x51,
+                        .half_pierce = 0x42, .half_crush = 0x43, .ward8 = 0x28, .plus_hd = true,
+                        .fire2d6_hit = 0x79, .fire4d6_2 = 0x68, .fire2d6_2 = 0x6C, .dk_ways = true},
                 .sp = {.enlarge = 0x0C, .confuse = 0x23, .berserk = 0x4D, .evil_ward = 0x04, .evil_bane = 0x20,
                        .hot = 0x32, .cold = 0x36, .zap = 0x70, .slow_poison = 0x16, .poison_damage = 0x0F,
                        .hammer = 0x17, .animated = 0, .con_regen = 0x3E, .giant = 0x71, .shield = 0x11,

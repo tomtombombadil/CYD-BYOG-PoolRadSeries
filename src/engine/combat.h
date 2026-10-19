@@ -194,6 +194,23 @@ struct MonFx {
     // end of a 3-square line), the blue's lightning (a bolt, every turn
     // while it has breaths); the acid breath's damage kind (0: Curse's 0x30)
     uint8_t big_fire = 0, poison_breath = 0, dk_lightning = 0, acid_kind = 0;
+    // Darkness's blows on it (F10; phase 5): only a +1 / +2 weapon or better
+    // (0x67 / 0x7D - need_plus3 the +3's), a monster's bare blow getting
+    // through from (N - 1) x 2 + 5 Hit Dice up (plus_hd; GAME.OVR 0x1BF78);
+    // half from weapons under +3 / +4 (0x50 / 0x51), from piercing / cutting
+    // weapons (their type's byte 7 at most 1 - 0x42) and crushing ones (over
+    // 0x7F - 0x43); spells under 8th level do nothing to it (0x28, the
+    // rakshasa's - GAME.OVR 0x1B917)
+    uint8_t need_plus1 = 0, need_plus2 = 0, half_under3 = 0, half_under4 = 0, half_pierce = 0, half_crush = 0;
+    uint8_t ward8 = 0;
+    bool    plus_hd = false;
+    // Darkness's hits (its phases 2 / 3): fire on its target after either
+    // attack's hit (0x79: 2d6) or after attack 2's (0x68: 4d6, 0x6C: 2d6),
+    // fire and magic, a save against spells for half (GAME.OVR 0x1D2C7,
+    // 0x1D4D4, 0x1DBFE); after attack 2 only the deadly poison (0x40) - the
+    // -2 poison and the paralysis after attack 1 alone (dk_ways)
+    uint8_t fire2d6_hit = 0, fire4d6_2 = 0, fire2d6_2 = 0;
+    bool    dk_ways = false;
 };
 
 // More spells' effects (spell_facts.md 2): Enlarge, Confusion (and going
