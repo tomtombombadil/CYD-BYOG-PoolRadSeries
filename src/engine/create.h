@@ -62,6 +62,12 @@ struct Facts {
     // mu_by_level_from (n levels, up to 8 spells each, 0 ends)
     const uint8_t (*mu_by_level)[8] = nullptr;
     uint8_t  mu_by_level_from = 0, mu_by_level_n = 0;
+    // Darkness (GAME.OVR 0x162CE): a magic-user's book by its slots - every
+    // magic-user spell of levels 1 .. mu_all_levels, the lists below for
+    // slots of levels mu_by_slot_from on (up to 8 spells each, 0 ends), and
+    // every magic-user spell with slots of level mu_all_slot
+    const uint8_t (*mu_by_slot)[8] = nullptr;
+    uint8_t  mu_by_slot_from = 0, mu_by_slot_n = 0, mu_all_levels = 0, mu_all_slot = 0;
 };
 
 // Starts a character: race, sex, class, alignment chosen. Sets the
@@ -146,7 +152,9 @@ void change_class(party::Character& c, const classes::Tables& t, const Facts& f,
 // who hasn't adventured (experience as made: 0, 8333, 12500 or 25000) and
 // has no former class
 // Pool (pool = true; poolrad_create_facts.md 5): experience 0 only.
-bool can_modify(const party::Character& c, bool pool = false, bool secret = false);
+// Darkness (dk; GAME.OVR 0x1675F): experience exactly 1,500,001, 750,000 or
+// 500,000 (its former class not looked at).
+bool can_modify(const party::Character& c, bool pool = false, bool secret = false, bool dk = false);
 // A stat (0 Str ... 5 Cha) a step up (dir > 0) or down: within the race's
 // and sex's limits, down no lower than the class's minimums; a fighter,
 // ranger or paladin at Strength 18 goes on into 18/01 ... 18/00 (and back
@@ -167,5 +175,28 @@ int hp_most(const party::Character& c, const classes::Tables& t, const Facts& f)
 // and the "rolled" hit points (record 0x12C) are what's left after the
 // Constitution bonus. Pool: its "modified" mark (Pool record 0x85 = 1).
 void modify_done(party::Character& c, const classes::Tables& t, const Facts& f);
+
+// ---- Pools of Darkness (the Project's claude/darkness_create_facts.md)
+// The magic-user's book as its creation's save and Modify's Keep make it
+// (GAME.OVR 0x165C6 then 0x162CE): its magic-user spells taken out, then
+// given again by the slots it has (Facts::mu_by_slot ...)
+void dk_mu_book(party::Character& c, const classes::Tables& t, const Facts& f);
+// The starting kit's kind (GAME.OVR 0x19558): 1 fighter / paladin / ranger,
+// 2 thief, 3 cleric, 4 magic-user (the first that fits, in that order)
+int dk_kit_kind(const party::Character& c);
+// The kit: up to 6 items (`ids`: the kind's item numbers, 0 none; `recs`:
+// their 17-byte ITEM0 rows, type 0xFF none) - each identified, readied but
+// the 4th, 50 of the fighters' 5th and the magic-users' 4th; the list in
+// the original's order (the last given first)
+void dk_kit(party::Character& c, int kind, const uint8_t ids[6], const uint8_t recs[6][17]);
+// Hit points as the original's Constitution recalculation sets them (GAME.OVR
+// 0xE2:0x89, stat 4 - 0x3307E): the rolled figure (record 0x12C) plus each
+// class's Constitution bonus (fighters / paladins / rangers 15-19 Con - 14,
+// 20 5, 21-23 6, 24-25 7; the others 15 1, 16+ 2; no penalties) times its
+// levels (to one under its last hit die; rangers one more; a human's
+// classes from their former level on), over the classes held
+int dk_con_hp(const party::Character& c, const classes::Tables& t);
+// That recalculation: the maximum set so, the hit points now moved by as much
+void dk_con_recompute(party::Character& c, const classes::Tables& t);
 
 } // namespace create

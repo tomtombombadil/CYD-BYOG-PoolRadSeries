@@ -3078,6 +3078,7 @@ struct Making {
     // Pool: the portrait picker's "Head Body Keep", its HEAD / BODY blocks for heads 1-14 / bodies 1-12
     char portrait_menu[24] = {};
     uint8_t head_map[15] = {}, body_map[13] = {};
+    bool kit_given = false;         // Darkness: the starting kit (at the save)
 };
 Making* mk = nullptr;
 
@@ -3191,6 +3192,11 @@ bool load_rules(Making*& m)
     fa.mu_by_level = pc.mu_by_level;
     fa.mu_by_level_from = pc.mu_by_level_from;
     fa.mu_by_level_n = pc.mu_by_level_n;
+    fa.mu_by_slot = pc.mu_by_slot;
+    fa.mu_by_slot_from = pc.mu_by_slot_from;
+    fa.mu_by_slot_n = pc.mu_by_slot_n;
+    fa.mu_all_levels = pc.mu_all_levels;
+    fa.mu_all_slot = pc.mu_all_slot;
     const uint32_t at[9] = {pc.pick_race, pc.pick_gender, pc.pick_class, pc.pick_alignment, pc.select,
                             pc.reroll,    pc.char_name,   pc.save_q,     pc.qmark};
     const uint32_t ch_at[5] = {pc.pick_new, pc.no_qualify, pc.change_select, pc.now_first, pc.dot};
@@ -3373,7 +3379,7 @@ void pick_stage(int stage, pic::Canvas& c)
 {
     mk->stage = stage;
     switch (stage) {
-    case 0: mk->n_opt = create::races(mk->opt, 17, secret_files()); break;
+    case 0: mk->n_opt = create::races(mk->opt, 17, secret_files() || darkness_files()); break;
     case 1:
         mk->opt[0] = 0;
         mk->opt[1] = 1;
@@ -3513,6 +3519,46 @@ void add_to_charlist(const party::Character& ch)
     free(buf);
 }
 
+// Darkness's starting kit (darkness_create_facts.md; GAME.OVR 0x19558, as
+// its creation saves): the kind's six item numbers from the program's data
+// segment, their 17-byte rows from ITEM0.DAX, the items readied as it does
+__attribute__((noinline)) void give_kit(party::Character& ch)
+{
+    const auto& pc = d->prof->create;
+    if (!pc.kit) return;
+    const int kind = create::dk_kit_kind(ch);
+    uint8_t ids[6] = {}, recs[6][17];
+    memset(recs, 0xFF, sizeof recs);
+    {
+        plat::File f;
+        if (!open_file(d->prof->program, f)) return;
+        plat::FileSource src(f);
+        exepack::Info info;
+        const bool ok = exepack::parse(src, info) == exepack::Status::Ok &&
+                        exepack::read(src, info, pc.ds_image + pc.kit + 6 * kind + 1, ids, 6) == exepack::Status::Ok;
+        f.close();
+        if (!ok) return;
+    }
+    plat::File f;
+    if (!open_dax("ITEM0.DAX", f)) return;
+    {
+        plat::FileSource src(f);
+        dax::Entry e;
+        uint32_t data_start = 0;
+        if (dax::find_entry(src, pc.kit_block, e, data_start)) {
+            // (the rows in order: read along, keeping the six asked for)
+            dax::RleReader r(src, data_start, e);
+            uint8_t row[17];
+            for (int n = 1; n <= 255 && r.read(row, sizeof row) == sizeof row; ++n)
+                for (int j = 0; j < 6; ++j)
+                    if (ids[j] == n) memcpy(recs[j], row, sizeof row);
+        }
+    }
+    f.close();
+    create::dk_kit(ch, kind, ids, recs);
+    rules::recalc(ch, *names, d->facts);
+}
+
 // Saves the new character as NAME.GUY (asking first if there is one)
 void save_new(pic::Canvas& c, bool overwrite_ok)
 {
@@ -3528,6 +3574,10 @@ void save_new(pic::Canvas& c, bool overwrite_ok)
         return;
     }
     new_base[0] = 0;
+    if (!mk->kit_given) {
+        mk->kit_given = true;
+        give_kit(mk->ch);
+    }
     const bool ok = write_character(base, mk->ch);
     if (ok && d->prof->create.charlist) add_to_charlist(mk->ch);
     end_create(c);
@@ -6850,7 +6900,7 @@ void start_modify(pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
     if (!ch) return;
-    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files())) {
+    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files())) {
         char t[60], nm[20];
         ch->name(nm, sizeof nm);
         snprintf(t, sizeof t, "%s%s", nm, rw(Data::kCantModify));
