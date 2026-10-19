@@ -981,6 +981,12 @@ int main(int argc, char** argv)
             shot("won_after");
         }
         if (play::screen == play::Screen::Fight && getenv("FIGHT")) run_fight();
+        // TAPS=n: n taps first (a treasure's result screen before its menu)
+        for (int k = 0; getenv("TAPS") && k < atoi(getenv("TAPS")); ++k) {
+            play::tap(100, 100, C);
+            g_now += 3000;
+            play::tick(g_now, C);
+        }
         if ((play::screen == play::Screen::Shop || play::screen == play::Screen::PartyMenu) && getenv("SHOPRUN")) {
             shop_run(getenv("SHOPRUN"));
         } else if (play::screen == play::Screen::Shop) {

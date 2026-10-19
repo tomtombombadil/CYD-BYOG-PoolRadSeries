@@ -91,6 +91,26 @@ enum ShopWord {
     // Secret's temple (free; each cure says what it did - secret_facts_2.md 17)
     kTCanSee, kTIsHealed, kTMustRaise, kTStonemason, kTNotHere, kTNoNeed, kTFullyHealed,
     kTCantRaise, kTResurrected, kTNoLongerPoisoned, kTCurseLifted, kTTurnedFlesh,
+    // Pools of Darkness (facts_shops.md 2): the shop's menu as one string;
+    // Buy's "Personal funds:" / "Pooled funds:  ", " buys " / " buys a ",
+    // "OverLoaded"; Sell's "Will you sell " "it? " "them? " "Your "
+    // " is worthless to me." "Shall I dispose of it for you? " " are
+    // worthless." "Would you like to discard them? " "I will give it to one
+    // of my sons." "Very well.  I'll take them."; Appraise's " platinum.",
+    // "gems : ", "jewelry : ", "Gems Jewelry Exit", "Sell Keep"; Take's "How
+    // many " and its coin words ("Platinum ", "Gems ", "Jewelry ")
+    kDkShopMenu, kDkPersonal, kDkPooled, kDkBuys, kDkBuysA, kDkOverLoaded,
+    kDkWillSell, kDkIt, kDkThem, kDkYour, kDkWorthless, kDkDispose, kDkAreWorthless, kDkDiscard, kDkSons,
+    kDkTakeThem,
+    kDkPlatinumDot, kDkGemsCount, kDkJewelryCount, kDkAppraiseMenu, kDkSellKeep, kDkHowMany, kDkCoinWord,
+    // ... its temple (facts_shops.md 3): "Heal View Repair Exit", "Heal", "is
+    // beyond our help", "has no lost levels.", "is raised", "is healed"
+    kDkTempleMenu = kDkCoinWord + 3, kDkHeal, kDkBeyond, kDkNoLostLevels, kDkRaised, kDkHealed,
+    // ... its treasure (facts_shops.md 4): "View Take Pool Share Detect
+    // Exit", "Take: " "Money Items Exit", the list's "Take", "there is still
+    // treasure left. " "do you want to go back and claim it?"; its vault:
+    // "View Take Pool Money Items Exit"
+    kDkTreasureMenu, kDkTakeColon, kDkMoneyItems, kDkTakeKey, kDkStillTreasure, kDkClaimIt, kDkVaultMenu,
     kShopWords
 };
 
@@ -335,6 +355,16 @@ struct Profile {
         // Deposit Drop Halve Join Sell Id") - "Ready" and the item words
         // Use ... Id, Deposit taken from it (0: the words above / item_words)
         uint32_t    menu = 0;
+        // Darkness's shops (facts_shops.md 1): SHOP n's goods - the range's
+        // first and last at DS goods_first + n / goods_last + n, the rows at
+        // DS goods_rows + k; a row is rows_file's block 1, 17 bytes a row
+        // (1-based); row 0xFF a random magic-user scroll (its spells by the
+        // spell table's class byte, DS spell_class + 16 s - 2 a magic-user's)
+        uint16_t    goods_first = 0, goods_last = 0, goods_rows = 0, spell_class = 0;
+        const char* rows_file = nullptr;
+        // ... its temple's cures: their spells' numbers (DS, 11) - names
+        // from magic.names (0: none)
+        uint16_t    temple_spells = 0;
     } items;
 
     // Character rules (making and training characters): the rule tables in
@@ -584,6 +614,12 @@ struct Profile {
     struct {
         const char* file = nullptr;
         uint32_t    view = 0, take = 0, pool_exit = 0;
+        // Darkness (facts_shops.md 5): the vault a save slot's (this name
+        // with the slot letter; `file` the one in use while playing), 3 coin
+        // counts (platinum gems jewelry) and 63-byte items (0: Secret's 7 /
+        // its .STF items)
+        const char* slot_file = nullptr;
+        uint8_t     coins = 7, item_size = 0;
     } vault;
     // Secret's version screen: the game's name (row 22) over the version
     // line (row 23), black on a green bar, and the menu's own prompt (its

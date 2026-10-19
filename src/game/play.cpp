@@ -1334,9 +1334,52 @@ void character_read(party::Character& ch)
 // the party from their files (.SAV, with .SWG items and .FX effects)
 const char* load_problem = nullptr;     // what went wrong with the last load (shown, stays until tapped)
 
+// The slot Darkness's vault was loaded with (its VAULTx.DAT is read when no
+// TMPVAULT.DAT is there yet)
+char vault_slot = 'A';
+
+// Darkness's vault is a save slot's (VAULTx.DAT), kept in TMPVAULT.DAT while
+// playing (facts_shops.md 5): a load starts from the slot's own, a save
+// copies the one in use to the slot's
+void vault_loaded(char slot)
+{
+    const auto& v = d->prof->vault;
+    if (!v.slot_file) return;
+    vault_slot = slot;
+    char path[200];
+    save_path(v.file, path, sizeof path);
+    if (plat::exists(path)) plat::remove(path);
+}
+
+void vault_saved(char slot)
+{
+    const auto& v = d->prof->vault;
+    if (!v.slot_file) return;
+    char from[200], to[200], name[16];
+    save_path(v.file, from, sizeof from);
+    if (!plat::exists(from)) {
+        snprintf(name, sizeof name, v.slot_file, vault_slot);
+        save_path(name, from, sizeof from);
+    }
+    snprintf(name, sizeof name, v.slot_file, slot);
+    save_path(name, to, sizeof to);
+    if (!strcmp(from, to)) return;
+    plat::File in = plat::open(from, "r");
+    if (!in) return;
+    plat::File out = plat::open(to, "w");
+    if (out) {
+        uint8_t buf[256];
+        int n;
+        while ((n = in.read(buf, sizeof buf)) > 0) out.write(buf, static_cast<size_t>(n));
+        out.close();
+    }
+    in.close();
+}
+
 bool load_game(char slot)
 {
     load_problem = nullptr;
+    if (darkness_files()) vault_loaded(slot);
     char name[24];
     save_file_name(slot, name, sizeof name);
     plat::File f;
@@ -1961,6 +2004,7 @@ void draw_input(pic::Canvas& c);
 
 // The shop's goods are listed last first (as the games list them)
 const uint8_t* goods(int i) { return ground->item[ground->n - 1 - i]; }
+int shop_price(const uint8_t* it);
 
 // Combat and the treasure after it (play_fight.inc)
 bool treasure_on();
@@ -2000,6 +2044,15 @@ void list_line(int i, char* out, size_t cap)
         char nm[48];
         const uint8_t* it = goods(i);
         names->name(items::Item{it}, nm, sizeof nm);
+        if (darkness_files()) {
+            // (30 characters: the price ending at the 30th, the name over the start)
+            char line[31];
+            snprintf(line, sizeof line, "%30d", shop_price(it));
+            const size_t n = strlen(nm);
+            memcpy(line, nm, n < 30 ? n : 30);
+            snprintf(out, cap, "%s", line);
+            return;
+        }
         snprintf(out, cap, "%-21s%9d", nm, rules::price(it, vm->get(0x7F6D) & 0xFF));
     } else {
         const party::Character* ch = pt->sel();
@@ -2087,7 +2140,7 @@ void items_keys(char* out, size_t cap)
     const party::Character* ch = pt->sel();
     const bool exploring = view_from == Screen::Game || view_from == Screen::Camp || view_from == Screen::Fight;
     snprintf(out, cap, "%s%s%s%s%s%s%s%s", d->w_ready, exploring && can_use_items(*ch) ? iw(profile::kUse) : "",
-             !ch->npc() && !in_shop_items() && view_from != Screen::Fight ? iw(profile::kTrade) : "",
+             !ch->npc() && (!in_shop_items() || darkness_files()) && view_from != Screen::Fight ? iw(profile::kTrade) : "",
              iw(vault_on() ? profile::kDeposit : profile::kDrop),
              ch->n_items < party::kMaxItems ? iw(profile::kHalve) : "", iw(profile::kJoin),
              in_shop_items() && !ch->npc() ? iw(profile::kSell) : "", in_shop_items() ? iw(profile::kId) : "");
@@ -2338,9 +2391,55 @@ void join_item(int i, pic::Canvas& c)
 }
 
 // The shop's offer for an item
+void sw(int i, char* out, size_t cap);
+
+// A Yes / No with Yes lit (Darkness's own questions start on Yes - DOSBox)
+void ask_yes_first(pic::Canvas& c, Ask what, const char* prompt)
+{
+    ask_yes_no(c, what, prompt);
+    if (darkness_files()) {
+        menu.selected = 0;
+        show_menu_line(c);
+    }
+}
+
+// Darkness's Sell (its items overlay, GAME.OVR 0x25A73; facts_shops.md 2.2):
+// its price in platinum (Secret's rule), "I'll give you N platinum pieces
+// for your ITEM" / "Will you sell it? " ("them? "); nothing: "Your ITEM is
+// worthless to me." / "Shall I dispose of it for you? " (a pile: " are
+// worthless." / "Would you like to discard them? "). The item's name ends
+// with a space, as the original's.
+void sell_dk(int i, pic::Canvas& c)
+{
+    const uint8_t* it = pt->sel()->items[i];
+    const int price = rules::sell_value(it, d->facts);
+    const bool one = items::Item{it}.count() < 2;
+    char nm[48], t[120], a[40], b[40];
+    item_name(i, nm, sizeof nm);
+    if (strlen(nm) + 1 < sizeof nm) strcat(nm, " ");
+    if (price > 0) {
+        snprintf(t, sizeof t, "%s%d%s%s", iw(profile::kGiveYou), price, iw(profile::kGoldFor), nm);
+        sw(profile::kDkWillSell, a, sizeof a);
+        sw(one ? profile::kDkIt : profile::kDkThem, b, sizeof b);
+        strncat(a, b, sizeof a - strlen(a) - 1);
+    } else {
+        sw(profile::kDkYour, a, sizeof a);
+        sw(one ? profile::kDkWorthless : profile::kDkAreWorthless, b, sizeof b);
+        snprintf(t, sizeof t, "%s%s%s", a, nm, b);
+        sw(one ? profile::kDkDispose : profile::kDkDiscard, a, sizeof a);
+    }
+    say_item(c, t);
+    item_at = i;
+    ask_yes_first(c, Ask::SellDeal, a);
+}
+
 void sell_item(int i, pic::Canvas& c)
 {
     if (!can_part_with(i, c)) return;
+    if (darkness_files()) {
+        sell_dk(i, c);
+        return;
+    }
     char nm[48], t[120];
     item_name(i, nm, sizeof nm);
     snprintf(t, sizeof t, "%s%d%s%s", iw(profile::kGiveYou), rules::sell_value(pt->sel()->items[i], d->facts),
@@ -2357,7 +2456,7 @@ void identify_item(int i, pic::Canvas& c)
     snprintf(t, sizeof t, "%s%s", iw(profile::kIdentify), nm);
     say_item(c, t);
     item_at = i;
-    ask_yes_no(c, Ask::IdDeal, iw(profile::kDeal));
+    ask_yes_first(c, Ask::IdDeal, iw(profile::kDeal));
 }
 
 void add_coins(party::Character& ch, int kind, int n)
@@ -2385,6 +2484,51 @@ bool items_yes_no(Ask what, char k, pic::Canvas& c)
         rules::remove_item(ch, i);
         rules::recalc(ch, *names, d->facts);
         back_to_items(c);
+        return true;
+    }
+    if (what == Ask::SellDeal && darkness_files()) {
+        // Darkness: "Sold!" / "I will give it to one of my sons." / "Very
+        // well.  I'll take them."; the platinum - what the character can't
+        // carry goes on the counter ("Overloaded.  Money will be put in pool.")
+        const int price = rules::sell_value(ch.items[i], d->facts);
+        const bool one = items::Item{ch.items[i]}.count() < 2;
+        rules::remove_item(ch, i);
+        rules::recalc(ch, *names, d->facts);
+        int room = rules::max_load(ch) - ch.encumbrance();
+        if (room < 0) room = 0;
+        const bool over = price > room;
+        add_coins(ch, 4, over ? room : price);
+        if (over) ground->money[4] += price - room;
+        rules::recalc(ch, *names, d->facts);
+        back_to_items(c);
+        t[0] = 0;
+        if (price <= 0) sw(one ? profile::kDkSons : profile::kDkTakeThem, t, sizeof t);
+        note(c, over ? iw(profile::kOverloadPool) : price > 0 ? iw(profile::kSold) : t);
+        return true;
+    }
+    if (what == Ask::IdDeal && darkness_files()) {
+        // Darkness: 20 platinum - the character's, else theirs and the counter's
+        const int own = ch.money(4);
+        if (own >= 20) {
+            add_coins(ch, 4, -20);
+        } else if (own + ground->money[4] >= 20) {
+            add_coins(ch, 4, -own);
+            ground->money[4] -= 20 - own;
+        } else {
+            back_to_items(c);
+            note(c, iw(profile::kNoMoney));
+            return true;
+        }
+        if (!(ch.items[i][0x35] & 7)) {
+            snprintf(t, sizeof t, "%s%s", iw(profile::kNothingNew), nm);
+        } else {
+            ch.items[i][0x35] &= 0xF8;
+            item_name(i, nm, sizeof nm);
+            snprintf(t, sizeof t, "%s%s", iw(profile::kSortOf), nm);
+        }
+        rules::recalc(ch, *names, d->facts);
+        back_to_items(c);
+        say_item(c, t);
         return true;
     }
     if (what == Ask::SellDeal) {
@@ -2489,6 +2633,7 @@ bool write_file(const char* dir, const char* name, const uint8_t* p, size_t n)
 
 bool save_game(char slot)
 {
+    if (darkness_files()) vault_saved(slot);
     savegame::Header h;
     h.game_area = d->gs.game_area;
     const bool dungeon = vm->get(0x4BE6) != 0;
@@ -4002,6 +4147,29 @@ void sw(int i, char* out, size_t cap)
     text::read_pascal(src, at, out, cap);
 }
 
+// The words of a menu string whose bit is set in mask (bit k: word k), as
+// one menu string again
+void keep_words(const char* in, unsigned mask, char* out, size_t cap)
+{
+    size_t o = 0;
+    out[0] = 0;
+    int k = 0;
+    for (const char* q = in; *q;) {
+        while (*q == ' ') ++q;
+        const char* e = q;
+        while (*e && *e != ' ') ++e;
+        if (e == q) break;
+        if ((mask >> k & 1) && o + (e - q) + 2 < cap) {
+            if (o) out[o++] = ' ';
+            memcpy(out + o, q, e - q);
+            o += e - q;
+            out[o] = 0;
+        }
+        ++k;
+        q = e;
+    }
+}
+
 void treasure_menu(pic::Canvas& c);
 
 void shop_menu(pic::Canvas& c)
@@ -4011,6 +4179,19 @@ void shop_menu(pic::Canvas& c)
         return;
     }
     char words[48];
+    if (darkness_files()) {
+        // Darkness: one string each (facts_shops.md 2, 3) - the shop's without
+        // Take and Share when no coins lie on the counter; the highlight keeps
+        // its place in the line
+        char all[48];
+        sw(temple ? profile::kDkTempleMenu : profile::kDkShopMenu, all, sizeof all);
+        keep_words(all, temple || ground->any_money() ? ~0u : ~0x14u, words, sizeof words);
+        const int was = menu.selected;
+        text::build(menu, "", words);
+        menu.selected = was >= 0 && was < menu.count ? was : menu.count - 1;
+        show_menu_line(c);
+        return;
+    }
     if (temple) sw(ground->any_money() ? profile::kHealMenuMoney : profile::kHealMenu, words, sizeof words);
     else snprintf(words, sizeof words, "%s", ground->any_money() ? d->w_shop_money : d->w_shop);
     text::build(menu, "", words);
@@ -4047,8 +4228,11 @@ void draw_shop(pic::Canvas& c)
 void open_shop(pic::Canvas& c)
 {
     screen = Screen::Shop;
-    text::clear(c, text::kTextArea);
-    dirty_rows(17, 22);
+    if (!darkness_files()) {                // (Darkness: the script's words stay - DOSBox)
+        text::clear(c, text::kTextArea);
+        dirty_rows(17, 22);
+    }
+    menu.selected = 0;
     if (pt->count) draw_party(c, 17);
     shop_menu(c);
 }
@@ -4061,7 +4245,10 @@ void leave_shop(pic::Canvas& c, bool asked = false);
 void ask_leave(pic::Canvas& c)
 {
     char says[96], back[64];
-    if (treasure_on()) {
+    if (treasure_on() && darkness_files()) {
+        sw(profile::kDkStillTreasure, says, sizeof says);
+        sw(profile::kDkClaimIt, back, sizeof back);
+    } else if (treasure_on()) {
         snprintf(says, sizeof says, "%s", tw(profile::kTreasureLeft));
         snprintf(back, sizeof back, "%s", tw(profile::kClaimTreasure));
     } else {
@@ -4074,7 +4261,8 @@ void ask_leave(pic::Canvas& c)
     text::begin(w, c, back, text::kTextArea, temple ? 10 : 15, false);
     text::step(w, c, d->font, -1);
     dirty_rows(17, 22);
-    ask_yes_no(c, Ask::LeaveCoins, "");
+    if (treasure_on()) ask_yes_no(c, Ask::LeaveCoins, "");        // (the treasure's starts on No)
+    else ask_yes_first(c, Ask::LeaveCoins, "");
 }
 
 void treasure_off();
@@ -4110,6 +4298,16 @@ void leave_shop(pic::Canvas& c, bool asked)
     handle(vm->resume());
 }
 
+// A shop's price (Darkness: in platinum, x the count - facts_shops.md 2.1)
+int shop_price(const uint8_t* it)
+{
+    int v = rules::price(it, vm->get(0x7F6D) & 0xFF);
+    if (!darkness_files()) return v;
+    const int n = items::Item{it}.count();
+    if (n > 1) v = (v * n) & 0xFFFF;
+    return v ? v : 1;
+}
+
 void draw_buy(pic::Canvas& c)
 {
     c.clear(0);
@@ -4118,13 +4316,63 @@ void draw_buy(pic::Canvas& c)
     plist.row1 = 22;
     plist.col0 = 1;
     plist.n = ground->n;
+    if (darkness_files()) {
+        // (rows 1-18; the buyer's and the counter's platinum at rows 20 / 21)
+        plist.row1 = 18;
+        char w[24], t[40];
+        sw(profile::kDkPersonal, w, sizeof w);
+        snprintf(t, sizeof t, "%s%10d", w, pt->sel() ? pt->sel()->money(4) : 0);
+        put(c, t, 1, 20, 15);
+        sw(profile::kDkPooled, w, sizeof w);
+        snprintf(t, sizeof t, "%s%10d", w, ground->money[4]);
+        put(c, t, 1, 21, 15);
+    }
     draw_list(c, d->w_items, d->w_buy);
+}
+
+// Darkness's Buy (facts_shops.md 2.1): platinum only - the buyer's, then the
+// counter's; "NAME buys [a ]ITEM" for the game's delay
+void buy_dk(int i, pic::Canvas& c)
+{
+    party::Character& ch = *pt->sel();
+    const uint8_t* it = goods(i);
+    const int cost = shop_price(it);
+    const int own = ch.money(4);
+    if (cost > own + ground->money[4]) {
+        note(c, d->w_no_money);
+        return;
+    }
+    if (rules::too_heavy(ch, it, *names, d->facts)) {
+        note(c, d->w_over);
+        return;
+    }
+    rules::add_item(ch, it);
+    if (cost <= own) {
+        add_coins(ch, 4, -cost);
+    } else {
+        add_coins(ch, 4, -own);
+        ground->money[4] -= cost - own;
+    }
+    rules::recalc(ch, *names, d->facts);
+    char nm[20], it_nm[48], w[12], t[80];
+    ch.name(nm, sizeof nm);
+    for (size_t n = strlen(nm); n > 0 && nm[n - 1] == ' '; --n) nm[n - 1] = 0;
+    names->name(items::Item{it}, it_nm, sizeof it_nm);
+    sw(items::Item{it}.count() > 0 ? profile::kDkBuys : profile::kDkBuysA, w, sizeof w);
+    snprintf(t, sizeof t, "%s%s%s", nm, w, it_nm);
+    plat::log("[play] %s for %d platinum\n", t, cost);
+    draw_buy(c);
+    note(c, t);
 }
 
 void buy(int i, pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
     if (!ch || i < 0 || i >= ground->n) return;
+    if (darkness_files()) {
+        buy_dk(i, c);
+        return;
+    }
     const uint8_t* it = goods(i);
     const int cost = rules::price(it, vm->get(0x7F6D) & 0xFF);
     const bool own = cost <= rules::gold_worth(*ch);
@@ -4152,18 +4400,52 @@ void buy(int i, pic::Canvas& c)
 // "cast cure anyway: "; then "<cure> will only cost N gold pieces.", "pay
 // for cure " - the character pays, or the counter; "NAME is cured."
 
+bool program_ds(uint16_t ds, uint8_t* out, size_t n);
+
 struct HealWords {
-    char name[10][24];
+    char name[11][24];                // (Darkness: 11 - Restoration too)
     char help[28];
     char heal[8];                   // "Heal" (from "Heal Exit")
 };
 HealWords* hw = nullptr;
 int cure_at = -1;
 
-void heal_line(int i, char* out, size_t cap) { snprintf(out, cap, "%s", hw && i < 10 ? hw->name[i] : ""); }
+void heal_line(int i, char* out, size_t cap) { snprintf(out, cap, "%s", hw && i < 11 ? hw->name[i] : ""); }
+
+// Darkness's temple list (its overlay, GAME.OVR 0x386C; facts_shops.md 3):
+// the outer frame and the row-16 bar, "NAME, how can we help you?" (1, 1),
+// the 11 cures from row 3 at column 2, the character's name (1, 19) and
+// hit points at column 18 (magenta when not full) "/max"
+void draw_heal_dk(pic::Canvas& c)
+{
+    party::Character& ch = *pt->sel();
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    layout::bar(c, d->tables, d->frame_tiles, 16);
+    char t[48], nm[20];
+    ch.name(nm, sizeof nm);
+    for (size_t n = strlen(nm); n > 0 && nm[n - 1] == ' '; --n) nm[n - 1] = 0;
+    snprintf(t, sizeof t, "%s%s", nm, hw->help);
+    put(c, t, 1, 1, 15);
+    put(c, nm, 1, 19, 15);
+    snprintf(t, sizeof t, "%d", ch.hp());
+    put(c, t, 18, 19, ch.hp() != ch.hp_max() ? 13 : 15);
+    const int x = 18 + static_cast<int>(strlen(t));
+    snprintf(t, sizeof t, "/%d", ch.hp_max());
+    put(c, t, x, 19, 15);
+    plist.row0 = 3;
+    plist.row1 = 15;
+    plist.col0 = 2;
+    plist.n = 11;
+    draw_list(c, "", hw->heal);
+}
 
 void draw_heal(pic::Canvas& c)
 {
+    if (darkness_files()) {
+        draw_heal_dk(c);
+        return;
+    }
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
     if (d->tables.bars[0]) layout::bar(c, d->tables, d->frame_tiles, 16);     // (Secret: the shop's bar stays)
@@ -4184,6 +4466,26 @@ void open_heal(pic::Canvas& c)
     if (!hw) hw = new (std::nothrow) HealWords;
     if (!hw) {
         error(c, "Not enough memory.");
+        return;
+    }
+    if (darkness_files()) {
+        // (Darkness: the cures are spells - their names by number, DS 0x08CC)
+        uint8_t sp[11] = {};
+        program_ds(d->prof->items.temple_spells, sp, sizeof sp);
+        {
+            OvrWords src;
+            const profile::NameTable& nt = d->prof->magic.names;
+            const bool open = src.open();
+            for (int i = 0; i < 11; ++i) {
+                hw->name[i][0] = 0;
+                if (open) text::read_pascal(src, text::kInProgram | (nt.at + nt.stride * sp[i]), hw->name[i], sizeof hw->name[i]);
+            }
+        }
+        sw(profile::kHelpYou, hw->help, sizeof hw->help);
+        sw(profile::kDkHeal, hw->heal, sizeof hw->heal);
+        screen = Screen::Heal;
+        plist = PickList{};
+        draw_heal(c);
         return;
     }
     for (int i = 0; i < 10; ++i) sw(profile::kCureName + i, hw->name[i], sizeof hw->name[i]);
@@ -4343,8 +4645,215 @@ void secret_cure(int i, pic::Canvas& c)
     plat::log("[play] temple: cure %d - %s\n", i, t);
 }
 
+// Darkness's temple says NAME (row 18; cyan, red when not okay, magenta
+// when able to train) and a word under it (row 19, green) - its overlay
+// 0xec ov+0x1B08; with ask, then "cast cure anyway? " (No first)
+void dk_temple_say(pic::Canvas& c, party::Character& ch, int word, bool ask_anyway)
+{
+    char nm[20], w[48];
+    ch.name(nm, sizeof nm);
+    sw(word, w, sizeof w);
+    c.fill(8, 17 * 8, 38 * 8, 6 * 8, 0);
+    put(c, nm, 1, 18, ch.health() != party::Okay ? 12 : ch.ext[party::kExtTrain] ? 13 : 11);
+    text::Writer ws;
+    text::begin(ws, c, w, text::Region{1, 19, 38, 22}, 10, false);
+    text::step(ws, c, d->font, -1);
+    dirty_rows(17, 22);
+    plat::log("[play] temple: %s %s\n", nm, w);
+    {
+        // (the list's highlight goes while it speaks - DOSBox)
+        const int row = plist.row0 + plist.index - plist.top;
+        char line[32];
+        heal_line(plist.index, line, sizeof line);
+        c.fill(plist.col0 * 8, row * 8, (39 - plist.col0) * 8, 8, 0);
+        put(c, line, plist.col0, row, 10);
+    }
+    if (ask_anyway) {
+        char q[24];
+        sw(profile::kCastAnyway, q, sizeof q);
+        ask_yes_no(c, Ask::CureAnyway, q);
+    }
+}
+
+// Restoration (Darkness's spell 102, GAME.OVR 0x2EBEC): one level back in a
+// drained class (the first; the original takes the one whose next level
+// costs least), hit points back by the lost ones shared over the levels
+// lost; the last level back brings the best experience back
+bool dk_restore(party::Character& ch)
+{
+    int lost = 0, cls = -1;
+    for (int k = 0; k < 7; ++k) {
+        const int l = ch.rec[0x109 + k], best = ch.ext[party::kExtBestLevels + k];
+        if (l < best) {
+            lost += best - l;
+            if (cls < 0) cls = k;
+        }
+    }
+    if (cls < 0) return false;
+    const int best_hp = ch.ext[party::kExtBestHp];
+    if (ch.hp_max() < best_hp) {
+        const int gain = (best_hp - ch.hp_max()) / lost;
+        ch.rec[0x78] = static_cast<uint8_t>(ch.hp_max() + gain);
+        ch.rec[0x1A4] = static_cast<uint8_t>(ch.hp() + gain);
+        ch.rec[0x12C] = static_cast<uint8_t>(ch.rec[0x12C] + gain);
+    }
+    ++ch.rec[0x109 + cls];
+    if (lost == 1) memcpy(ch.rec + 0x127, ch.ext + party::kExtBestXp, 4);
+    rules::recalc(ch, *names, d->facts);
+    return true;
+}
+
+// Darkness's cures (its temple overlay; facts_shops.md 3): free, done at once;
+// one that has nothing to do says why and asks "cast cure anyway? "
+void dk_cure(int i, pic::Canvas& c)
+{
+    party::Character& ch = *pt->sel();
+    const rules::CureFacts& f = d->prof->cures;
+    const int h = ch.health();
+    auto okay = [&]() {
+        ch.rec[0x195] = party::Okay;
+        ch.rec[0x196] = 1;
+    };
+    auto uncure_poison = [&]() {
+        rules::remove_affects(ch, f.poisoned);
+        rules::remove_affects(ch, f.slow_poison);
+        rules::remove_affects(ch, f.poison_damage);
+    };
+    int say = -1;
+    bool ask = false;
+    switch (i) {
+    case 0:                                         // Cure Blindness (nothing said)
+        if (!rules::remove_affects(ch, f.blinded)) say = profile::kNotBlind, ask = true;
+        break;
+    case 1: {                                       // Cure Disease
+        int n = 0;
+        for (uint8_t t : f.disease)
+            if (t) n += rules::remove_affects(ch, t);
+        say = n ? profile::kCured : profile::kNotDiseased;
+        break;
+    }
+    case 2: case 3: case 4: case 5: {               // the wounds, Heal (nothing said)
+        int amount;
+        if (i == 2) amount = rng.roll(8, 1);
+        else if (i == 3) amount = rng.roll(8, 2) + 1;
+        else if (i == 4) amount = rng.roll(8, 3) + 3;
+        else {
+            // (Heal: to all but 1d4 - nothing when that is past the most;
+            // blindness and feeblemind go)
+            const int r = rng.roll(4, 1);
+            amount = ch.hp() + r > ch.hp_max() ? 0 : ch.hp_max() - ch.hp() - r;
+            rules::remove_affects(ch, f.blinded);
+            rules::remove_affects(ch, f.feeblemind);
+        }
+        rules::heal(ch, amount);
+        break;
+    }
+    case 6:                                         // Neutralize Poison
+        if (!ch.has_affect(f.poisoned)) {
+            say = profile::kNotPoisoned, ask = true;
+            break;
+        }
+        if (ch.hp() == 0) ch.rec[0x1A4] = 1;
+        uncure_poison();
+        okay();
+        break;
+    case 7: {                                       // Raise Dead (the spell's routine: "is raised")
+        const bool dead = h == party::Dead || h == party::Animated, elf = ch.rec[0x74] == 2;
+        if (!dead || elf) {
+            say = elf ? profile::kTCantRaise : h == party::Gone ? profile::kDkBeyond : profile::kNotDead;
+            ask = true;
+            break;
+        }
+        if (ch.rec[0x18] == 0) break;
+        rules::remove_affects(ch, f.poisoned);
+        okay();
+        --ch.rec[0x18];
+        rules::recalc(ch, *names, d->facts);
+        ch.rec[0x1A4] = 1;
+        say = profile::kDkRaised;
+        break;
+    }
+    case 8:                                         // Remove Curse
+        if (!rules::needs_cure(ch, rules::kRemoveCurse, f)) {
+            say = profile::kNotCursed, ask = true;
+            break;
+        }
+        rules::apply_cure(ch, rules::kRemoveCurse, f, rng);
+        break;
+    case 9:                                         // Stone to Flesh
+        if (h != party::Stoned) {
+            say = profile::kNotStoned, ask = true;
+            break;
+        }
+        okay();
+        ch.rec[0x1A4] = 1;
+        break;
+    case 10:                                        // Restoration
+        if (!dk_restore(ch)) say = profile::kDkNoLostLevels, ask = true;
+        break;
+    default: return;
+    }
+    rules::recalc(ch, *names, d->facts);
+    draw_heal(c);
+    if (say >= 0) dk_temple_say(c, ch, say, ask);
+}
+
+// Darkness's Repair (facts_shops.md 3): the whole party at once, free - the
+// cures all done, the dead resurrected (not elves), the stoned back, every
+// lost level restored, the hit points full
+void dk_repair()
+{
+    const rules::CureFacts& f = d->prof->cures;
+    // (the stats' recalculation, 0xE2:0x89 for each: Constitution's sets the
+    // HP max - DOSBox: Abagail 92 -> 94, Paine 96 -> 98)
+    MagicRules* mr = nullptr;
+    if (!load_rules(mr)) mr = nullptr;
+    for (int m = 0; m < pt->count; ++m) {
+        party::Character& ch = pt->m[m];
+        rules::remove_affects(ch, f.feeblemind);
+        rules::remove_affects(ch, f.blinded);
+        for (uint8_t t : f.disease)
+            if (t) rules::remove_affects(ch, t);
+        if (ch.has_affect(f.poisoned)) {
+            if (ch.hp() == 0) ch.rec[0x1A4] = 1;
+            rules::remove_affects(ch, f.poisoned);
+            rules::remove_affects(ch, f.slow_poison);
+            rules::remove_affects(ch, f.poison_damage);
+            ch.rec[0x195] = party::Okay;
+            ch.rec[0x196] = 1;
+        }
+        if (ch.health() == party::Dead && ch.rec[0x74] != 2 && ch.rec[0x18] > 0) {
+            rules::remove_affects(ch, f.poisoned);         // (Resurrection, spell 105)
+            ch.rec[0x195] = party::Okay;
+            ch.rec[0x196] = 1;
+            ch.rec[0x1A4] = ch.rec[0x78];
+        }
+        if (ch.health() == party::Stoned) {
+            ch.rec[0x195] = party::Okay;
+            ch.rec[0x196] = 1;
+        }
+        while (dk_restore(ch)) {}
+        rules::recalc(ch, *names, d->facts);
+        if (mr) create::dk_con_recompute(ch, mr->tables);
+        if (ch.health() != party::Gone) ch.rec[0x1A4] = ch.rec[0x78];
+        char who[20];
+        ch.name(who, sizeof who);
+        plat::log("[play] temple: Repair - %s HP %d of %d\n", who, ch.hp(), ch.hp_max());
+        if (ch.health() == party::Unconscious) {
+            ch.rec[0x195] = party::Okay;
+            ch.rec[0x196] = 1;
+        }
+    }
+    delete mr;
+    plat::log("[play] temple: Repair\n");
+}
+
 void heal_pick(int i, pic::Canvas& c)
 {
+    if (darkness_files()) {
+        dk_cure(i, c);
+        return;
+    }
     if (free_temple()) {
         secret_cure(i, c);
         return;
@@ -4385,13 +4894,24 @@ int  take_mode = 0, take_to = -1, view_by = -1;
 int coins_there(int k) { return take_mode ? pt->m[view_by].money(k) : ground->money[k]; }
 
 bool secret_coin_panel() { return take_mode && secret_files(); }
+// Darkness's vault Money: the selected's coins listed in the text area
+// (row 17, the panel's 18-character lines), the screen kept (DOSBox)
+bool dk_vault_coins() { return take_mode == 2 && darkness_files() && vault_on(); }
+int  dk_vault_sel = 0;
 
 void list_coins()
 {
     take_n = 0;
-    if (secret_coin_panel()) {
+    if (secret_coin_panel() || dk_vault_coins()) {
         // (Secret's View: its money panel's order, copper first)
         for (int k = 0; k < 7; ++k)
+            if (coins_there(k) > 0) take_kind[take_n++] = k;
+        return;
+    }
+    if (darkness_files() && !take_mode && !treasure_on()) {
+        // (Darkness's Take in a shop: platinum first - facts_shops.md 2.3; the
+        // treasure's lists jewelry first)
+        for (int k = 4; k < 7; ++k)
             if (coins_there(k) > 0) take_kind[take_n++] = k;
         return;
     }
@@ -4406,7 +4926,7 @@ void take_line(int i, char* out, size_t cap)
         return;
     }
     const int k = take_kind[i];
-    if (secret_coin_panel()) {
+    if (secret_coin_panel() || dk_vault_coins()) {
         // (the panel's line: the name at column 20, the number ending at 37)
         char n[12];
         snprintf(n, sizeof n, "%d", coins_there(k));
@@ -4419,7 +4939,13 @@ void take_line(int i, char* out, size_t cap)
 
 void draw_take(pic::Canvas& c)
 {
-    if (secret_coin_panel()) {
+    if (dk_vault_coins()) {
+        draw_shop(c);
+        c.fill(8, 17 * 8, 38 * 8, 6 * 8, 0);
+        plist.row0 = 17;
+        plist.row1 = 22;
+        plist.col0 = 1;
+    } else if (secret_coin_panel()) {
         // Secret's View (Trade / Drop / Deposit): the coin is picked on the
         // character's money panel (rows 9-15, columns 20-37), the screen kept
         draw_character_secret(c, pt->m[view_by]);
@@ -4467,10 +4993,26 @@ void ask_take(int i, pic::Canvas& c)
         snprintf(a, sizeof a, "%s", vword(profile::kVwHowMuch));
         snprintf(b, sizeof b, "%s", vword(take_mode == 1 ? profile::kVwWillTrade : vault_on() ? profile::kVwWillDeposit : profile::kVwWillDrop));
     } else {
-        sw(profile::kHowMuch, a, sizeof a);
+        sw(darkness_files() && take_coin == 5 ? profile::kDkHowMany : profile::kHowMuch, a, sizeof a);
         sw(profile::kWillTake, b, sizeof b);
     }
-    snprintf(take_prompt, sizeof take_prompt, "%s%s%s%s", a, d->money[take_coin], b[0] == ' ' ? "" : " ", b);
+    if (darkness_files() && !take_mode && take_coin >= 4) {
+        // (Darkness: the coin's own word, "Platinum " - its space and the
+        // question's make two)
+        char cw[16];
+        sw(profile::kDkCoinWord + take_coin - 4, cw, sizeof cw);
+        snprintf(take_prompt, sizeof take_prompt, "%s%s%s", a, cw, b);
+    } else {
+        snprintf(take_prompt, sizeof take_prompt, "%s%s%s%s", a, d->money[take_coin], b[0] == ' ' ? "" : " ", b);
+    }
+    if (dk_vault_coins()) {
+        // (the line's highlight goes while it asks - DOSBox)
+        char line[32];
+        take_line(i, line, sizeof line);
+        const int row = plist.row0 + i - plist.top;
+        c.fill(plist.col0 * 8, row * 8, (39 - plist.col0) * 8, 8, 0);
+        put(c, line, plist.col0, row, 10);
+    }
     input_engine = true;
     engine_ask = EngineAsk::Coins;
     input_prompt = take_prompt;
@@ -4520,6 +5062,15 @@ int  cure_for = -1;                 // "is not diseased" / "cure anyway: " - who
 
 void back_to_view(pic::Canvas& c)
 {
+    if (dk_vault_coins()) {
+        // (Darkness's vault Money: back to the vault)
+        if (view_by >= 0) pt->selected = view_by;
+        take_mode = 0;
+        screen = Screen::Shop;
+        menu.selected = dk_vault_sel;               // (the highlight where it was)
+        draw_shop(c);
+        return;
+    }
     if (view_by >= 0) pt->selected = view_by;
     take_mode = 0;
     screen = Screen::View;
@@ -4727,13 +5278,52 @@ void draw_appraise(pic::Canvas& c)
 {
     party::Character& ch = *pt->sel();
     c.clear(0);
-    layout::outer(c, d->tables, d->frame_tiles);
+    if (darkness_files()) {
+        // (Darkness clears inside the exploring frame - its junctions stay -
+        // and the name is cyan: DOSBox)
+        layout::explore(c, d->tables, d->frame_tiles);
+        c.fill(8, 8, 38 * 8, 22 * 8, 0);
+    } else {
+        layout::outer(c, d->tables, d->frame_tiles);
+    }
     char nm[20], t[48], w1[24];
     ch.name(nm, sizeof nm);
-    put(c, nm, 1, 1, 15);
+    put(c, nm, 1, 1, darkness_files() ? 11 : 15);
     sw(profile::kCollection, t, sizeof t);
     put(c, t, 1, 7, 15);
     const int gems = ch.money(5), jewels = ch.money(6);
+    if (darkness_files()) {
+        // Darkness (facts_shops.md 2.4): "gems : N", "jewelry : N" always (as
+        // they were before the one just appraised); its menus one string
+        // each, no "You can : "
+        char w[24], all[32], keys[40];
+        sw(profile::kDkGemsCount, w, sizeof w);
+        snprintf(t, sizeof t, "%s%d", w, gems + (appraised && !appraised_jewel));
+        put(c, t, 1, 9, 15);
+        sw(profile::kDkJewelryCount, w, sizeof w);
+        snprintf(t, sizeof t, "%s%d", w, jewels + (appraised && appraised_jewel));
+        put(c, t, 1, 10, 15);
+        char prompt[16] = "";
+        if (appraised) {
+            char line[48];
+            sw(appraised_jewel ? profile::kJewelValued : profile::kGemValued, t, sizeof t);
+            sw(profile::kDkPlatinumDot, w, sizeof w);
+            snprintf(line, sizeof line, "%s%d%s", t, appraised, w);
+            put(c, line, 1, 12, 15);
+            const bool must_sell = ch.encumbrance() + 1 > rules::max_load(ch) || ch.n_items >= party::kMaxItems;
+            sw(profile::kDkSellKeep, all, sizeof all);
+            keep_words(all, must_sell ? 1u : 3u, keys, sizeof keys);
+        } else {
+            sw(profile::kAppraisePrompt, prompt, sizeof prompt);
+            sw(profile::kDkAppraiseMenu, all, sizeof all);
+            keep_words(all, (gems ? 1u : 0u) | (jewels ? 2u : 0u) | 4u, keys, sizeof keys);
+        }
+        text::build(menu, prompt, keys);
+        menu.selected = 0;
+        show_menu_line(c);
+        dirty(0, pic::kScreenH);
+        return;
+    }
     if (gems) {
         sw(gems == 1 ? profile::kGemWord : profile::kGemsWord, w1, sizeof w1);
         snprintf(t, sizeof t, "%d%s", gems, w1);
@@ -4807,7 +5397,7 @@ void appraise_key(char k, pic::Canvas& c)
             it[0x3B] = static_cast<uint8_t>(appraised >> 8);
             rules::add_item(ch, it);
         } else if (k == 'S' || k == 'K') {
-            const int plat = appraised / 5;
+            const int plat = darkness_files() ? appraised : appraised / 5;     // (Darkness: the value in platinum)
             const int room = rules::max_load(ch) - ch.encumbrance();
             if (plat > room) {
                 add_coins(ch, 4, room > 0 ? room : 0);
@@ -4865,6 +5455,11 @@ bool shop_yes_no(Ask what, char k, pic::Canvas& c)
     }
     if (what != Ask::CureAnyway && what != Ask::PayCure) return false;
     screen = Screen::Heal;
+    if (darkness_files() && hw) {
+        // (Darkness: casting anyway does nothing for them)
+        draw_heal(c);
+        return true;
+    }
     if (!hw || cure_at < 0) {
         leave_heal(c);
         return true;
@@ -4918,7 +5513,9 @@ void shop_tap(int x, int y, pic::Canvas& c)
         return;
     }
     if (y >= text::kMenuTapTop) {
-        switch (text::key(menu, text::hit(menu, col))) {
+        const int hit = text::hit(menu, col);
+        if (darkness_files() && hit >= 0) menu.selected = hit;      // (the highlight stays there)
+        switch (text::key(menu, hit)) {
         case 'B':
             screen = Screen::ShopBuy;
             plist = PickList{};
@@ -4936,10 +5533,25 @@ void shop_tap(int x, int y, pic::Canvas& c)
             else open_take(c);
             break;
         case 'M':                       // the treasure's "Take: Money Items Exit"
-            if (treasure_on()) open_take(c);
+            if (vault_on() && darkness_files() && strncmp(menu.prompt, "", 1) == 0) {
+                // (Darkness's vault: Money - the selected's coins put in it)
+                view_from = Screen::Shop;
+                view_by = pt->selected;
+                dk_vault_sel = menu.selected;
+                take_mode = 2;
+                take_to = -1;
+                open_coins(c);
+            } else if (treasure_on()) {
+                open_take(c);
+            }
             break;
         case 'I':
-            if (treasure_on()) open_loot(c);
+            if (vault_on() && darkness_files() && strncmp(menu.prompt, "", 1) == 0) {
+                view_from = Screen::Shop;               // (Darkness's vault: Items - to put in it)
+                open_items(c);
+            } else if (treasure_on()) {
+                open_loot(c);
+            }
             break;
         case 'D':                       // the treasure's Detect (Detect Magic memorized)
             if (treasure_on()) treasure_detect(c);
@@ -4949,6 +5561,13 @@ void shop_tap(int x, int y, pic::Canvas& c)
             break;
         case 'H':                       // the temple's Heal
             if (temple) open_heal(c);
+            break;
+        case 'R':                       // Darkness's temple: Repair (the whole party)
+            if (temple && darkness_files()) {
+                dk_repair();
+                if (pt->count) draw_party(c, 17);
+                shop_menu(c);
+            }
             break;
         case 'S':                       // Share: the coins on the counter shared out
             rules::share(*pt, ground->money);
@@ -7868,6 +8487,80 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
 
 // ---- the script host ------------------------------------------------------------
 
+// ---- Darkness's goods (facts_shops.md 1) -------------------------------------------
+// SHOP n's and TREASURE's items are rows of ITEM0.DAX block 1: 17 bytes a
+// row (1-based) - an item's bytes 0x2E-0x3E; row 0xFF a random magic-user
+// scroll of three spells (any spell whose class byte is 2), a row whose type
+// is 0xFF none. Each new item goes at the head of the original's list (the
+// engine's: appended - goods() shows the last first).
+
+// The program's bytes at DS ds (n of them)
+bool program_ds(uint16_t ds, uint8_t* out, size_t n)
+{
+    plat::File f;
+    if (!open_file(d->prof->program, f)) return false;
+    plat::FileSource src(f);
+    exepack::Info info;
+    const bool ok = exepack::parse(src, info) == exepack::Status::Ok &&
+                    exepack::read(src, info, d->prof->create.ds_image + ds, out, n) == exepack::Status::Ok;
+    f.close();
+    return ok;
+}
+
+__attribute__((noinline)) void dk_add_rows(const uint8_t* rows, int n, bool identify, items::Ground& g)
+{
+    const auto& pi = d->prof->items;
+    if (!pi.rows_file) return;
+    // the spells' class bytes, only when a random scroll is wanted
+    uint8_t* cls = nullptr;
+    for (int k = 0; k < n; ++k)
+        if (rows[k] == 0xFF && !cls) {
+            uint8_t* t = new (std::nothrow) uint8_t[127 * 16];
+            if (t && program_ds(pi.spell_class, t, 127 * 16 - 15)) {
+                cls = new (std::nothrow) uint8_t[127];
+                if (cls)
+                    for (int s2 = 0; s2 < 127; ++s2) cls[s2] = t[s2 * 16];
+            }
+            delete[] t;
+        }
+    plat::File f;
+    const bool open = open_dax(pi.rows_file, f);
+    const dax::Entry* e = open ? d->idx.find(1) : nullptr;
+    for (int k = 0; k < n; ++k) {
+        uint8_t row[17] = {};
+        if (rows[k] == 0xFF) {
+            // (L+0x1ABE: type 0x27, words 0x66 0x27 0x28, plus 1, weight 1, value 3000)
+            if (!cls) continue;
+            row[0] = 0x27, row[1] = 0x66, row[2] = 0x27, row[3] = 0x28, row[4] = 1, row[9] = 1;
+            row[12] = 3000 & 0xFF, row[13] = 3000 >> 8;
+            for (int j = 0; j < 3; ++j) {
+                int sp;
+                do sp = rng.roll(126, 1);
+                while (cls[sp] != 2);
+                row[14 + j] = static_cast<uint8_t>(sp);
+            }
+        } else {
+            if (!e || !rows[k]) continue;
+            plat::FileSource src(f);
+            dax::RleReader r(src, d->idx, *e);
+            r.skip(static_cast<size_t>(rows[k] - 1) * 17);
+            if (r.read(row, 17) != 17 || row[0] == 0xFF) continue;
+        }
+        if (g.n >= items::kMaxGround) {
+            // (full: the oldest goes - the original's list shows the newest
+            // first, and the engine keeps kMaxGround)
+            memmove(g.item[0], g.item[1], static_cast<size_t>(g.n - 1) * items::kRecordSize);
+            --g.n;
+        }
+        uint8_t* it = g.item[g.n++];
+        memset(it, 0, items::kRecordSize);
+        memcpy(it + 0x2E, row, 17);
+        if (identify) it[0x35] &= 0xF8;
+    }
+    if (open) f.close();
+    delete[] cls;
+}
+
 struct Host : ecl::Host {
     bool load_script(int block, uint8_t* code, uint32_t* len) override
     {
@@ -8117,6 +8810,25 @@ struct Host : ecl::Host {
         f.close();
         dirty_rows(3, 13);
     }
+    void shop_items(int n, items::Ground& g) override
+    {
+        // Darkness's SHOP n: the goods DS[first + n] .. DS[last + n], rows DS[rows + k]
+        const auto& pi = d->prof->items;
+        uint8_t a = 0, b = 0, rows[256];
+        if (!pi.goods_rows || !program_ds(static_cast<uint16_t>(pi.goods_first + n), &a, 1) ||
+            !program_ds(static_cast<uint16_t>(pi.goods_last + n), &b, 1) || b < a ||
+            !program_ds(static_cast<uint16_t>(pi.goods_rows + a), rows, b - a + 1u)) {
+            log("SHOP: the program's goods didn't read");
+            return;
+        }
+        dk_add_rows(rows, b - a + 1, true, g);
+        plat::log("[play] SHOP %d: %d items\n", n, g.n);
+    }
+    void item_row(int row, items::Ground& g) override
+    {
+        const uint8_t r = static_cast<uint8_t>(row);
+        dk_add_rows(&r, 1, false, g);
+    }
     void load_items(int block, items::Ground& g) override
     {
         char name[24];
@@ -8196,10 +8908,12 @@ void draw_input(pic::Canvas& c)
     const int x = input_engine ? static_cast<int>(strlen(input_prompt)) +
                                      (engine_ask == EngineAsk::Name && screen == Screen::CreateName && darkness_files() ? 1 : 0)
                                : 0;
-    if (input_engine) put(c, input_prompt, 0, text::kMenuRow, 13);
+    // (Darkness's coin questions: the prompt green, the number white - DOSBox)
+    const bool dk = input_engine && darkness_files() && engine_ask == EngineAsk::Coins;
+    if (input_engine) put(c, input_prompt, 0, text::kMenuRow, dk ? 10 : 13);
     // (Darkness's typed name is white - DOSBox)
     put(c, input_buf, x, text::kMenuRow,
-        input_engine ? (screen == Screen::CreateName && darkness_files() ? 15 : 13) : 10);
+        dk ? 15 : input_engine ? (screen == Screen::CreateName && darkness_files() ? 15 : 13) : 10);
     if (x + input_len < 40) c.fill((x + input_len) * 8, text::kMenuRow * 8, 8, 8, 15);     // the cursor
 }
 
@@ -8310,6 +9024,8 @@ void begin_wait(pic::Canvas& c)
         break;
     case ecl::Wait::Temple:
         temple = true;
+        if (darkness_files())               // (its temple: no coins on the counter)
+            for (int& m : ground->money) m = 0;
         open_shop(c);
         break;
     case ecl::Wait::Combat:

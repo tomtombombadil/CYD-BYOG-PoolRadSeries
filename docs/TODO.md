@@ -96,6 +96,9 @@ the Project as claude/TODO.md.
       v0.132.0: approaching monsters (SPRIT1; compare with DOSBox when
       one is met).
       v0.133.0: the overland (matches DOSBox).
+      v0.135.0: shops, temple, treasure, vault (open: the treasure-only
+      result screen, Restoration's cheapest class, Remove Curse's words,
+      Vault Items' way back, Raise Dead's stats recalculation).
       v0.134.0: creation / Modify / Human Change, done but
       the icon editor's VGA pictures (CHEAD / CBODY, with the fights'
       icons) and Human Change in DOSBox (needs the training hall).

@@ -169,6 +169,7 @@ uint16_t Vm::dk_addr(uint16_t a)
     case 0x7ECB: return 0x2E;           // surprise
     case 0x7EC6: return 0x1B;           // the monsters' morale (its fight's morale, GAME.OVR 0xAD85)
     case 0x7EE2: return 0x14;           // COMBAT: the temple
+    case 0x7F6D: return 0x28;           // the shop's prices in 16ths
     case 0x7EA8: return 0x30;           // the training hall's classes (SAVE 127, then PROGRAM 0)
     case 0x7ED2: return 0x2B;           // resting's encounters
     case 0x7ED3: return 0x2C;
@@ -949,12 +950,18 @@ bool Vm::dk_step(Stop& r)
     case 0x27: {                                // TREASURE: platinum, gems, jewelry, n items
         if (!need(4)) return true;
         const int n = value(o[3]) & 0xFF;
-        if (!more(4, n)) return true;
         if (ground_) {
-            ground_->money[4] = value(o[0]);
-            ground_->money[5] = value(o[1]);
-            ground_->money[6] = value(o[2]);
-            for (int k = 0; k < n && 4 + k < kMaxOps; ++k) h_.item_row(value(o[4 + k]) & 0xFF, *ground_);
+            ground_->money[4] += value(o[0]);       // (added to what lies there: its program)
+            ground_->money[5] += value(o[1]);
+            ground_->money[6] += value(o[2]);
+        }
+        // (the items one at a time: there may be more than kMaxOps - the
+        // debug block's 87)
+        for (int k = 0; k < n; ++k) {
+            Op t{};
+            --pc_;
+            if (!operands(1, &t)) return true;
+            if (ground_) h_.item_row(value(t) & 0xFF, *ground_);
         }
         return true;
     }

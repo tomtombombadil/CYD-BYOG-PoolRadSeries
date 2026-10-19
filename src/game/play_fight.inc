@@ -4348,6 +4348,10 @@ void treasure_take(pic::Canvas& c)
         char prompt[12], words[24];
         snprintf(prompt, sizeof prompt, "%s", tw(profile::kTakeColon));
         snprintf(words, sizeof words, "%s", tw(profile::kMoneyItems));
+        if (darkness_files()) {
+            sw(profile::kDkTakeColon, prompt, sizeof prompt);
+            sw(profile::kDkMoneyItems, words, sizeof words);
+        }
         text::build(menu, prompt, words);
         menu.selected = 0;
         show_menu_line(c);
@@ -4368,6 +4372,10 @@ void draw_loot(pic::Canvas& c)
     char prompt[12], what[8];
     snprintf(prompt, sizeof prompt, "%s", tw(profile::kItemsColon));
     snprintf(what, sizeof what, "%s", tw(profile::kTakeW));
+    if (darkness_files()) {
+        snprintf(prompt, sizeof prompt, "%s", d->w_items);         // ("items : " "Take")
+        sw(profile::kDkTakeKey, what, sizeof what);
+    }
     draw_list(c, prompt, what);
 }
 
@@ -4416,7 +4424,30 @@ int detect_spell()
 void treasure_menu(pic::Canvas& c)
 {
     char words[48];
-    char a[32], b2[16];
+    char a[40], b2[16];
+    if (darkness_files()) {
+        // Darkness (facts_shops.md 4, 5): one string each - the treasure's
+        // "View Take Pool Share Detect Exit" (Take with something there,
+        // Share with coins, Detect with Detect Magic memorized), the vault's
+        // "View Take Pool Money Items Exit" (Money / Items: the selected's to
+        // put in it); the highlight keeps its place
+        const party::Character* ch = pt->sel();
+        const bool any = ground->any_money() || ground->n;
+        unsigned mask;
+        if (vault) {
+            const bool coins = ch && (ch->money(4) || ch->money(5) || ch->money(6));
+            mask = 1u | (any ? 2u : 0u) | 4u | (coins ? 8u : 0u) | (ch && ch->n_items ? 16u : 0u) | 32u;
+        } else {
+            mask = 1u | (any ? 2u : 0u) | 4u | (ground->any_money() ? 8u : 0u) | (detect_spell() ? 16u : 0u) | 32u;
+        }
+        sw(vault ? profile::kDkVaultMenu : profile::kDkTreasureMenu, a, sizeof a);
+        keep_words(a, mask, words, sizeof words);
+        const int was = menu.selected;
+        text::build(menu, "", words);
+        menu.selected = was >= 0 && was < menu.count ? was : menu.count - 1;
+        show_menu_line(c);
+        return;
+    }
     if (vault) {
         // "View Take Pool Exit" (Take with something there)
         const auto& v = d->prof->vault;
@@ -4466,9 +4497,43 @@ void open_treasure(pic::Canvas& c)
 // puts coins or an item in it, Take takes them out, Pool puts the party's
 // coins in; leaving writes the file. The engine keeps up to kMaxGround
 // items there (the original: as many as its memory takes).
+void vault_read_dk()
+{
+    const auto& v = d->prof->vault;
+    char path[200], name[16];
+    save_path(v.file, path, sizeof path);
+    if (!plat::exists(path)) {
+        snprintf(name, sizeof name, v.slot_file, vault_slot);
+        save_path(name, path, sizeof path);
+    }
+    plat::File f = plat::open(path, "r");
+    if (!f) return;
+    uint8_t b[items::kRecordSize];
+    if (f.read(b, 12) == 12)
+        for (int m = 0; m < 3; ++m) {
+            const uint32_t x = b[m * 4] | b[m * 4 + 1] << 8 | b[m * 4 + 2] << 16 | static_cast<uint32_t>(b[m * 4 + 3]) << 24;
+            ground->money[4 + m] = x > 0x7FFFFFFF ? 0x7FFFFFFF : static_cast<int>(x);
+        }
+    while (ground->n < items::kMaxGround && f.read(b, 63) == 63) {
+        memcpy(ground->item[ground->n], b, items::kRecordSize);
+        ++ground->n;
+    }
+    f.close();
+    for (int i = 0, j = ground->n - 1; i < j; ++i, --j) {
+        uint8_t t[items::kRecordSize];
+        memcpy(t, ground->item[i], sizeof t);
+        memcpy(ground->item[i], ground->item[j], sizeof t);
+        memcpy(ground->item[j], t, sizeof t);
+    }
+}
+
 void vault_read()
 {
     ground->clear();
+    if (d->prof->vault.item_size == 63) {
+        vault_read_dk();
+        return;
+    }
     char path[200];
     save_path(d->prof->vault.file, path, sizeof path);
     plat::File f = plat::open(path, "r");
@@ -4511,16 +4576,19 @@ bool vault_write()
     plat::File f = plat::open(path, "w");
     if (!f) return false;
     uint8_t b[party::kSecretItemSize] = {};
-    for (int m = 0; m < 7; ++m) {
-        const uint32_t v = ground->money[m] > 0 ? static_cast<uint32_t>(ground->money[m]) : 0;
+    const auto& vf = d->prof->vault;
+    const int first = vf.coins == 3 ? 4 : 0;                // (Darkness: platinum gems jewelry)
+    for (int m = 0; m < vf.coins; ++m) {
+        const uint32_t v = ground->money[first + m] > 0 ? static_cast<uint32_t>(ground->money[first + m]) : 0;
         for (int k = 0; k < 4; ++k) b[m * 4 + k] = static_cast<uint8_t>(v >> (8 * k));
     }
-    bool ok = f.write(b, 28) == 28;
+    bool ok = f.write(b, vf.coins * 4u) == vf.coins * 4u;
+    const size_t isz = vf.item_size ? vf.item_size : sizeof b;
     for (int i = ground->n - 1; ok && i >= 0; --i) {        // (the list's order)
         memset(b, 0, sizeof b);
         memcpy(b, ground->item[i], items::kRecordSize);
         items::fix_item(b, true);                   // (the original's bytes in the files)
-        ok = f.write(b, sizeof b) == sizeof b;
+        ok = f.write(b, isz) == isz;
     }
     f.close();
     return ok;
@@ -4530,6 +4598,7 @@ void open_vault(pic::Canvas& c)
 {
     vault_read();
     vault = true;
+    menu.selected = 0;
     open_treasure(c);
 }
 
