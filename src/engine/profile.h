@@ -398,6 +398,13 @@ struct Profile {
         // Secret: silent training's spells by magic-user level (create::Facts)
         const uint8_t (*mu_by_level)[8];
         uint8_t         mu_by_level_from, mu_by_level_n;
+        // Darkness: a magic-user's book by its slots (create::Facts); the
+        // starting kit's ITEM0 rows - a byte each, kind k's six from DS
+        // kit + 6 k + 1 (create::dk_kit), ITEM0.DAX block kit_block
+        const uint8_t (*mu_by_slot)[8];
+        uint8_t         mu_by_slot_from, mu_by_slot_n, mu_all_levels, mu_all_slot;
+        uint16_t        kit;
+        uint8_t         kit_block;
     } create;
 
     // Items: Use Trade Drop Halve Join Sell Id and their words (ItemWord order)
@@ -579,6 +586,12 @@ struct Profile {
         // The party menu's column (0: 2, the first letter white; Darkness 9,
         // all green - DOSBox)
         uint8_t  party_menu_col = 0;
+        // Darkness's overland (byte 0x24 = 1): the regions' map pictures
+        // (BIGPIC; a DS table of 5 by the region byte 0x3A - 0: none) and
+        // the party's marker (a VGA block of this file)
+        uint16_t dk_overland_pics = 0;
+        const char* marker_file = nullptr;
+        uint8_t  marker_block = 0;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;
