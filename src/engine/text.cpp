@@ -172,7 +172,7 @@ void build(Menu& m, const char* prompt, const char* s)
         if (!is_key(m.s[i])) continue;
         if (m.count > 0) {
             int e = i - 1;
-            while (e > m.start[m.count - 1] && m.s[e] == ' ') --e;
+            while (e > m.start[m.count - 1] && (m.s[e] == ' ' || m.s[e] == kRowBreak)) --e;
             m.end[m.count - 1] = static_cast<int8_t>(e);
         }
         m.start[m.count++] = static_cast<int8_t>(i);
@@ -184,8 +184,32 @@ void build(Menu& m, const char* prompt, const char* s)
     }
 }
 
+bool two_rows(const Menu& m) { return strchr(m.s, kRowBreak) != nullptr; }
+
 void draw(pic::Canvas& c, const font::Font& f, const Menu& m, const MenuColors& col)
 {
+    const bool two = two_rows(m);
+    if (two) {
+        // Two rows: row 23's choices, then row 24's (no prompt)
+        c.fill(0, (kMenuRow - 1) * 8, pic::kScreenW, 16, 0);
+        const int sel = m.selected >= 0 && m.selected < m.count ? m.selected : -1;
+        int x = 0, row = kMenuRow - 1;
+        for (int i = 0; m.s[i]; ++i) {
+            if (m.s[i] == kRowBreak) {
+                row = kMenuRow;
+                x = 0;
+                continue;
+            }
+            if (x >= font::kCols) continue;
+            const int g = font::glyph_of(f, m.s[i]);
+            if (sel >= 0 && i >= m.start[sel] && i <= m.end[sel])
+                font::draw_glyph(c, f, g, x * 8, row * 8, 0, col.highlight);
+            else
+                font::draw_glyph(c, f, g, x * 8, row * 8, is_key(m.s[i]) ? col.highlight : col.normal, 0);
+            ++x;
+        }
+        return;
+    }
     c.fill(0, kMenuRow * 8, pic::kScreenW, 8, 0);
     int x = 0;
     for (const char* p = m.prompt; *p && x < font::kCols; ++p, ++x)
@@ -197,6 +221,43 @@ void draw(pic::Canvas& c, const font::Font& f, const Menu& m, const MenuColors& 
             font::draw_glyph(c, f, g, x * 8, kMenuRow * 8, 0, col.highlight);
         else
             font::draw_glyph(c, f, g, x * 8, kMenuRow * 8, is_key(m.s[i]) ? col.highlight : col.normal, 0);
+    }
+}
+
+int hit_row(const Menu& m, int col, int row)
+{
+    const char* br = strchr(m.s, kRowBreak);
+    if (!br) return row == kMenuRow ? hit(m, col) : -1;
+    const int split = static_cast<int>(br - m.s);
+    // The row's own columns: row 23's from 0, row 24's from just after the break
+    const int rel = row == kMenuRow ? col + split + 1 : col;
+    int first = -1, last = -1;
+    for (int k = 0; k < m.count; ++k) {
+        const bool second = m.start[k] > split;
+        if (second != (row == kMenuRow)) continue;
+        if (first < 0) first = k;
+        last = k;
+    }
+    for (int k = first; k >= 0 && k <= last; ++k) {
+        const int hi = k < last ? m.start[k + 1] - 1 : (row == kMenuRow ? m.end[k] : split - 1);
+        if (rel >= m.start[k] && rel <= hi) return k;
+    }
+    return -1;
+}
+
+void item_cell(const Menu& m, int k, int* col, int* row)
+{
+    const char* br = strchr(m.s, kRowBreak);
+    const int at = k >= 0 && k < m.count ? m.start[k] : 0;
+    if (br && at < br - m.s) {
+        *col = at;
+        *row = kMenuRow - 1;
+    } else if (br) {
+        *col = at - static_cast<int>(br - m.s) - 1;
+        *row = kMenuRow;
+    } else {
+        *col = static_cast<int>(strlen(m.prompt)) + at;
+        *row = kMenuRow;
     }
 }
 

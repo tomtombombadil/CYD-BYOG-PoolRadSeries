@@ -865,18 +865,28 @@ void draw_frame(pic::Canvas& c)
 
 bool menu_on = false;            // the menu line shows `menu` (for the tap highlight)
 
+// (Darkness's fight menu takes rows 23 and 24: text::two_rows)
+bool menu_was_two = false;
+
 void show_menu_line(pic::Canvas& c)
 {
     menu_on = true;
+    if (menu_was_two && !text::two_rows(menu)) {
+        c.fill(0, (text::kMenuRow - 1) * 8, pic::kScreenW, 8, 0);
+        dirty_rows(text::kMenuRow - 1, text::kMenuRow - 1);
+    }
+    menu_was_two = text::two_rows(menu);
     text::draw(c, d->font, menu);
-    dirty_rows(text::kMenuRow, text::kMenuRow);
+    dirty_rows(menu_was_two ? text::kMenuRow - 1 : text::kMenuRow, text::kMenuRow);
 }
 
 void clear_menu_line(pic::Canvas& c)
 {
     menu_on = false;
-    c.fill(0, text::kMenuRow * 8, pic::kScreenW, 8, 0);
-    dirty_rows(text::kMenuRow, text::kMenuRow);
+    const int top = menu_was_two ? text::kMenuRow - 1 : text::kMenuRow;
+    menu_was_two = false;
+    c.fill(0, top * 8, pic::kScreenW, (text::kMenuRow + 1 - top) * 8, 0);
+    dirty_rows(top, text::kMenuRow);
 }
 
 // The game's own menu while exploring. Secret's and Darkness's start with
@@ -7830,7 +7840,7 @@ void begin_wait(pic::Canvas& c)
         if (menu.count != vm->items()) {
             // Words that don't split by their capitals (a digit inside, too
             // long a line): one target a choice, as far as the line shows
-            const int shown = static_cast<int>(sizeof menu.s) - 1;
+            const int shown = font::kCols;      // (the 40 columns shown)
             menu.count = 0;
             for (int i = 0; i < vm->items() && i < text::kMaxItems && at[i] < shown; ++i) {
                 menu.start[i] = static_cast<int8_t>(at[i]);

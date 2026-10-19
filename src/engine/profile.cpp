@@ -1480,6 +1480,69 @@ const Profile kProfiles[] = {
                .scroll_one_spell = 100, .read_magic = 0x10,
                .level_word = 0, .effect_names = {0xDED1, 38, 129}, .these_spells = 0,
                .scroll_types = {39, 40}, .scroll_count_at = 0x2F, .scroll_readers = true, .effects_shown = 0xEB7D},
+     // Fights (the fights' facts, darkness fights survey 1): Secret's tables at
+     // Darkness's places - its ground table (DS 0x3EBA, 70 values: 0-25 the
+     // dungeons', 0x1F on the wilderness's), the placing tables (DS 0x090C -
+     // 0x0940); no terrain table; the turn undead table not read yet; the
+     // words where its fight overlays have them; the effects a fight's end
+     // takes away (DS 0x0C6E, 16 - GAME.OVR 0x32DB0); the effects by
+     // Darkness's own numbers (its View names, DS 0x4061; its handler table
+     // DS 0xA7EA + 4 x (effect - 1), set at GAME.OVR 0x1DD3B)
+     .fight = {{0x3EBA, 0x090C, 0x091C, 0x092C, 0x0930, 0x0938, 0x0940, 0, 0, 0},
+              {
+               0xD2F1, 0, 0, 0, 0, 0, 0, 0xA290, kP | 0xC0B5, 0, 0x9785, kP | 0xC03A, 0, 0, 0, 0x3A3DD, 0, 0, 0, 0,
+               0x36BDA, 0, 0, 0, 0, kP | 0xCDD3, 0x1E89C, 0x1E8A8, 0x1E8B7, 0x1E8BF, 0x1E8CE, 0x1E8E2, 0x1E8EF,
+               0x1E8F7, 0x1E900, 0x1E90A, 0x1E915, 0x1E922, 0x1E92C, 0x1E959, 0x922F, kP | 0xC8DE, 0x1F3D1, 0x1F3DA,
+               kP | 0xC011, 0x9AC5, 0xAC8F, 0xACA1, 0x37278, 0, 0x34B11, 0x34B1B, 0x34B1E, kP | 0xC224, 0,
+               kP | 0xC276, 0, kP | 0xC343, kP | 0xC36C, 0x19DE, 0x5917, 0x594E, 0x5468, 0x546F, 0, kP | 0xAAF9, 0,
+               0, 0, kP | 0xC395, 0, 0, kP | 0xCF39, 0x33476, 0x3347D, 0x33490, 0x334A9, 0x334B3, 0x334BD, 0,
+               0x334CE, 0x334E6, 0x2BC6A, 0x30A18, 0x30A26, 0x20B00, 0x20AF0, 0x1F6E0, 0x1F6F0, 0x1F6FA, 0x1F707,
+               0x2055B, kP | 0xB341, kP | 0xB36A, 0, 0x33B70, 0, 0x32498, 0x1B447, 0x2C270, 0x1ABA4, 0, 0, 0x1B944,
+               0, 0, 0, 0, 0, 0, 0x1BD7D, 0, 0, 0x1BD67, 0x1BD70, 0x1BD7D, 0, 0, 0, 0, 0, 0, 0, 0, 0x1B668, 0x1B65E,
+               0x1B674, 0x1B681, 0x1B50B, 0x1B518, 0x1D5AF, kP | 0xC677, kP | 0xCB1C, kP | 0xB341, kP | 0xC9D4, 0, 0,
+               0x1B039, 0, 0x1B337, 0, 0x1B898, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+               0x1C438, 0, 0, 0, 0, 0,
+               // the menu on two rows (DS 0x2F8C: "Move Aim Use Cast Turn Guard Quick@Delay
+               // Bandage View Speed End"; GAME.OVR 0x904E offers them)
+               kP | 0xCDFC
+               },
+               {0x03, 0x06, 0x0B, 0x15, 0x17, 0x1B, 0x1E, 0x1F, 0x23, 0x34, 0x35, 0x4D, 0x6A, 0x6B, 0x6F, 0x76},
+               {.held = {0x33, 0x34, 0x35, 0x1F}, .bless = 0x01, .curse = 0x02, .prayer = 0x31, .haste = 0x27,
+                .slow = 0x2A, .invisible = 0x19, .prot_evil = 0x08, .prot_good = 0x09, .mirror = 0x1C,
+                .backstab_weapons = {3, 4, 17, 18, 19, 0}, .charm = 0x0B, .fear = 0x6F, .cough = 0x1E,
+                .shot_pointed = {5, 7, 0, 12, 14, 30}, .shot_spinning = {2, 3, 6}, .shot_flask = {0, 0},
+                .shot_sling = {28, 0, 29},
+                .bestow = 0x24, .blink = 0x25, .fumbling = 0x1B, .silence = 0x15, .entangle = 0, .sticks = 0x03,
+                .faerie = 0x47, .blinded = 0x21, .animals_blind = 0x45, .feeble = 0x44,
+                .mon = {.poison = 0x40, .poison_m2 = 0x56, .kreen_bite = 0x58,
+                        .need_magic = 0x67,
+                        .no_fire = 0x5D, .no_cold = 0x62, .no_elec = 0x06,
+                        .no_magic = 0x4F, .globe = 0x3F, .elf_sleep = 0x5F,
+                        .detect = 0x18, .prot_evil_near = 0x2D,
+                        .stone_gaze = 0x3A, .mirror_gaze = 0x3B,
+                        .paralyzed = 0x34, .poisoned = 0x37, .sleep = 0x35,
+                        .drain1 = 0x65, .drain2 = 0x66,
+                        .need_plus3 = 0x3C, .petrify_hit = 0x41, .confuse_gaze = 0x46, .no_fear = 0x5C,
+                        .no_breath = 0x49, .golem = 0x4F, .reflect = 0x48,
+                        .far_reach = 6, .near_reach = 1, .para_rounds = 10, .secret_ways = true},
+                .sp = {.enlarge = 0x0C, .confuse = 0x23, .berserk = 0x4D, .evil_ward = 0x04, .evil_bane = 0x20,
+                       .hot = 0x32, .cold = 0x36, .zap = 0x70, .slow_poison = 0x16, .poison_damage = 0x0F,
+                       .hammer = 0x17, .animated = 0, .con_regen = 0x3E, .giant = 0x71, .shield = 0x11,
+                       .enfeeble = 0x1D, .ill = 0x22, .weak = 0x2B, .sick = 0x2C, .stun = 0x6A},
+                .race = {0x61, 0x12, 0x1A, 0x07, 0x2F, 0x30, 0x69, true},
+                .items = {.displace = 0x59, .ring_invisible = 0x38, .giant_slayer = 0x4B, .luck = 0x4E, .fire_ring = 0x3D,
+                          .boots = 0x4A, .no_disease = 0x4C, .displace_unused = true,
+                          .scrolls = {39, 40}},
+                .berserk = 0x6B, .secret = true, .globe_major = 0x39,
+                .cloud_ground = 0x1D, .poison_ground = 0x1B, .cleric_xp_wis = 15},
+               nullptr, 0,
+               // COMSPR (its 22 blocks, + 0x80 the second pictures; loaded at a
+               // fight's start as slots 13-34 - GAME.OVR 0xD34A): 0-2 the arrows, 3
+               // the axe, 4 the spell, 5 lightning, 6 a rock, 7 a sling stone, 8
+               // sparkles, 9 the skull, 10 a burst; no flask (a rock); its marks:
+               // the grey square under the one whose turn it is (15), the skull (9),
+               // the ring round a target (14)
+               {0, 1, 2, 3, 6, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15}, {15, 9, 14}},
      // The script machine's words (darkness_facts.md S10): DAMAGE's lines,
      // PRESS KEY's prompt, JOURNAL's sentence, WHAT MENU's question, "Yes No"
      .script_words = {0, 0, 0x7B42, 0x7B4A, 0x7B57, 0x19C2, kP | 0xAC82, 0x261D, 0x2640, 0x1212, kP | 0xC9D4},
@@ -1492,8 +1555,8 @@ const Profile kProfiles[] = {
      .sound = {.fireball_spell = 0x2F, .lightning_spell = 0x33},
      .clips ={.file = "ZOUNDS.DAX", .hz = 9000, .first = 2, .last = 12,
                .ids = {0, 0, 2, 9, 6, 5, 9, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .quiet_turns = true},
-     .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .camp_pic = 128, .vga = true, .darkness_files = true,
-                 .party_menu_col = 9},
+     .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .camp_pic = 128,
+                 .fight_unswapped = true, .vga = true, .darkness_files = true, .party_menu_col = 9},
      .font_file = "8X8D0.DAX"},
 };
 

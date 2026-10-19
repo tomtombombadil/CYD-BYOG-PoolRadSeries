@@ -85,7 +85,7 @@ static void shot(const char* tag)
 // that menu word, @n taps party row n (Trade), '#' lists the items
 static void item_ops(const char* ops)
 {
-    auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+    auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
     auto list = [&]() {
         const party::Character* ch = play::pt->sel();
         char n[20]; ch->name(n, 20);
@@ -111,7 +111,7 @@ static void item_ops(const char* ops)
 // '{' a readied potion of healing, '}' a readied wand of magic missiles, '(' a readied bow and 20 arrows
 static void run_ops(const char* q)
 {
-    auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+    auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
     int n = 0;
     for (; *q; ++q) {
         if (*q == '#') {
@@ -256,7 +256,7 @@ static void run_fight()
             // FIGHT: the fight played out - Quick for each party member on
             // their menu (FIGHT=m: their menu is left alone and snapshots
             // taken), the results and treasure tapped through
-            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
+            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } return false; };
             shot("fight_start");
             heap_mark("fight start");
             if (getenv("FIGHTCHECK") && play::fg && play::fg->b.tables) {
@@ -425,7 +425,7 @@ static void shop_run(const char* ops)
     // SHOPRUN: letters tap menu words, digits pick a list line, %n taps
     // party row n (the shop's list at column 17), =n; types a number
     // and Enter, '#' shows the screen and menu, @rr taps row rr
-    auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+    auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
     int n = 0;
     for (const char* q = ops; *q; ++q) {
         const party::Character& ch = *play::pt->sel();
@@ -552,7 +552,7 @@ int main(int argc, char** argv)
     }
     if (getenv("CREATE")) {
         // CREATE=race,sex,class,alignment (list positions), NAME=...
-        auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
+        auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } return false; };
         play::tap(24, (12 + pm_line('C')) * 8 + 2, C);
         const char* q = getenv("CREATE");
         for (int stage = 0; stage < 4 && play::screen == play::Screen::CreatePick; ++stage) {
@@ -595,7 +595,7 @@ int main(int argc, char** argv)
         // ADDPOOL=i,j...: Add Character -> Pool (POOLDIR: Pool's folder as /GOLDBOX/...; ADDFROM=C:
         // Curse's list instead), add those lines
         if (getenv("POOLDIR")) play::set_import_dir(getenv("POOLDIR"));
-        auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+        auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
         play::tap(24, (12 + pm_line('A')) * 8 + 2, C);
         printf("  add menu [%s%s]\n", play::menu.prompt, play::menu.s);
         tap_word(getenv("ADDFROM") ? getenv("ADDFROM")[0] : 'P');      // ADDFROM=C: Curse's list
@@ -686,7 +686,7 @@ int main(int argc, char** argv)
         shot("party_loaded");
         if (getenv("ROSTER")) {
             // Remove the selected character (MATHEW.GUY), Add them back, Drop -> No
-            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
+            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } return false; };
             play::tap(24, (12 + pm_line('R')) * 8 + 2, C);
             if (play::screen == play::Screen::YesNo) { printf("  ask [%s]\n", play::menu.prompt); tap_word('Y'); }
             printf("  removed: party %d\n", play::pt->count);
@@ -709,7 +709,7 @@ int main(int argc, char** argv)
         if (getenv("ADDGUY")) {
             // ADDGUY=NAME: the selected member (the first) removed, NAME (a made
             // character, e.g. CREATE's) added from the Curse list
-            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
             play::tap(24, (12 + pm_line('R')) * 8 + 2, C);
             if (play::screen == play::Screen::YesNo) tap_word('Y');
             play::tap(24, (12 + pm_line('A')) * 8 + 2, C);
@@ -724,7 +724,7 @@ int main(int argc, char** argv)
         if (getenv("ITEMOPS")) {
             // ITEMOPS: the selected character's items: a digit picks list line n,
             // a letter taps that menu word, @n taps party row n (Trade), '#' lists
-            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
             play::tap(16, (4 + (getenv("WHO") ? atoi(getenv("WHO")) : 0)) * 8 + 2, C);
             play::tap(24, (12 + pm_line('V')) * 8 + 2, C);
             tap_word('I');
@@ -763,7 +763,7 @@ int main(int argc, char** argv)
         }
         if (getenv("CHANGE")) {
             // CHANGE=n: Human Change for character WHO where training is offered: list line n
-            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
             const int who = getenv("WHO") ? atoi(getenv("WHO")) : 0;
             play::tap(16, (4 + who) * 8 + 2, C);
             play::vm->set(0x7EA8, 0xFF);
@@ -786,7 +786,7 @@ int main(int argc, char** argv)
             // 25000 xp): < > down / up, u d the item above / below, digits tap
             // stat n, h the hit points, n the name (twice: the keyboard; TYPE
             // then types it), K / E Keep / Exit, # a snapshot
-            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
             const int who = getenv("WHO") ? atoi(getenv("WHO")) : 0;
             play::tap(16, (4 + who) * 8 + 2, C);
             party::Character& ch = play::pt->m[who];
@@ -960,7 +960,7 @@ int main(int argc, char** argv)
             shop_run(getenv("SHOPRUN"));
         } else if (play::screen == play::Screen::Shop) {
             shot("shop");
-            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
+            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } return false; };
             tap_word('B');
             shot("buy_list");
             if (getenv("BUY")) for (const char* q = getenv("BUY"); *q; ) { int n = atoi(q); play::plist.index = n; tap_word('B'); g_now += 5000; play::tick(g_now, C); while (*q && *q != ',') ++q; if (*q) ++q; }
@@ -1040,7 +1040,7 @@ int main(int argc, char** argv)
     if (getenv("AFTERSHOP")) shop_run(getenv("AFTERSHOP"));
     if (getenv("SAVESLOT")) {
         // Encamp, Save to that slot
-        auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } return false; };
+        auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } return false; };
         tap_word('E');
         shot("camp");
         tap_word('S');

@@ -38,7 +38,7 @@ constexpr int kMaxFighters = party::kMaxParty + kMaxMonsters;
 // all come before the fight, staged fights are fights of their own - but
 // Secret / Darkness may (1.3 KB a fight)
 constexpr int kSpareFighters = 8;
-constexpr int kGroundValues = 0x43;
+constexpr int kGroundValues = 0x46;        // (Darkness: 70 values; Curse 0x43)
 constexpr int kMaxGroups = 8;           // monster kinds a fight (icon slots 8 ...)
 constexpr int kGroupItems = 8;
 constexpr int kMonsterAffects = 12;    // the most in a monster file (9) and those a fight adds
@@ -68,6 +68,12 @@ struct Tables {
     bool    by_name;
     uint8_t foe_names[20][16];
     uint8_t dodge_names[2][16];
+};
+// COMSPR.DAX's marks (block numbers; 0: Curse's - the box under the one
+// whose turn it is 0x19, the skull 11 + 0x80, the box round a target 0x19 +
+// 0x80)
+struct Comspr {
+    uint8_t cursor = 0, skull = 0, outline = 0;
 };
 // Where they are (data segment offsets), from the profile
 struct TableAt {

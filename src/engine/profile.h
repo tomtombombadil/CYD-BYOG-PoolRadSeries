@@ -177,6 +177,8 @@ enum FightWord {
                                                                                  // segments (1-50)? " ... "... goes off"
     kBelches, kDigested,                                                         // Secret's remorhaz after a swallow: "belches in
                                                                                  // satisfaction", "is digested instantly"
+    kFMenuDk,                                                                    // Darkness: the menu on two rows ("Move Aim Use Cast
+                                                                                 // Turn Guard Quick@Delay Bandage View Speed End")
     kFightWords
 };
 
@@ -450,6 +452,11 @@ struct Profile {
         combat::Facts   facts;
         const combat::FightSpell* spells;
         uint8_t         n_spells;
+        // COMSPR.DAX: the game's picture for each of Curse's numbers 0-15 (0-2
+        // arrows, 3 axe, 4 flask, 5 spell, 6 lightning, 7 rock, 8 sling stone, 9
+        // sparkles, 10 burst; all 0: Curse's), its marks
+        uint8_t         comspr[16] = {};
+        combat::Comspr  marks = {};
     } fight;
 
     // The script machine's own words (GAME.OVR), in ecl::ScriptWord's order

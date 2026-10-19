@@ -87,11 +87,59 @@ bool read_record_block(const char* file, int block, uint8_t* rec, uint8_t* ext =
         free(sec);
         return ok;
     }
+    if (darkness_files()) {
+        // Darkness's 510-byte records (party::from_darkness - an NPC keeps
+        // its extension; a monster its flags 2 (0x1A5) and magic resistance
+        // (0x1EB): sx)
+        uint8_t* dk = static_cast<uint8_t*>(malloc(party::kDarknessRecordSize));
+        const bool ok = dk && read_block(file, block, dk, party::kDarknessRecordSize) ==
+                                  static_cast<int>(party::kDarknessRecordSize);
+        if (ok && sx) {
+            sx[0] = dk[0x1A5];
+            sx[1] = dk[0x1EB];
+        }
+        if (ok) {
+            party::Character* tmp = ext ? new (std::nothrow) party::Character : nullptr;
+            if (tmp) {
+                party::from_darkness(dk, *tmp);
+                memcpy(rec, tmp->rec, party::kRecordSize);
+                memcpy(ext, tmp->ext, party::kExtSize);
+                delete tmp;
+            } else {
+                party::from_darkness(dk, rec);
+            }
+        }
+        free(dk);
+        return ok;
+    }
     if (!pool_files()) return read_block(file, block, rec, party::kRecordSize) == static_cast<int>(party::kRecordSize);
     uint8_t pool[party::kPoolRecordSize];
     if (read_block(file, block, pool, sizeof pool) != static_cast<int>(sizeof pool)) return false;
     party::from_pool(pool, rec);
     return true;
+}
+
+// A monster's items (MON<area>ITM block): Curse's 63-byte records, or
+// Darkness's 17-byte ones - an item's bytes 0x2E-0x3E (type, words, plus
+// ... value, effects; darkness_facts.md 31), the rest of the record zero
+// (the name is made from its words). How many (up to cap) into out.
+int read_monster_items(const char* file, int block, uint8_t* out, int cap)
+{
+    if (!darkness_files()) {
+        const int n = read_block(file, block, out, cap * static_cast<int>(items::kRecordSize));
+        return n > 0 ? n / static_cast<int>(items::kRecordSize) : 0;
+    }
+    constexpr int kRow = 17;
+    uint8_t* rows = static_cast<uint8_t*>(malloc(static_cast<size_t>(cap) * kRow));
+    const int n = rows ? read_block(file, block, rows, cap * kRow) : -1;
+    const int k = n > 0 ? n / kRow : 0;
+    for (int i = 0; i < k; ++i) {
+        uint8_t* it = out + i * items::kRecordSize;
+        memset(it, 0, items::kRecordSize);
+        memcpy(it + 0x2E, rows + i * kRow, kRow);
+    }
+    free(rows);
+    return k;
 }
 
 // ADD NPC: MON<area> block `id` (its record, effects, items) joins the party
@@ -108,8 +156,7 @@ bool npc_join(int id)
         return false;
     }
     area_fmt(file, sizeof file, "MON%dITM.DAX");
-    const int ni = read_block(file, id, &ch.items[0][0], sizeof ch.items);
-    ch.n_items = ni > 0 ? ni / static_cast<int>(party::kItemSize) : 0;
+    ch.n_items = read_monster_items(file, id, &ch.items[0][0], party::kMaxItems);
     area_fmt(file, sizeof file, "MON%dSPC.DAX");
     const int na = read_block(file, id, &ch.affects[0][0], sizeof ch.affects);
     ch.n_affects = na > 0 ? na / static_cast<int>(party::kAffectSize) : 0;
@@ -147,8 +194,12 @@ void fight_load_monster(int id, int copies, int icon)
     // hit points and maximum x (level + 2) / 4 - Novice half, Squire three
     // quarters, Veteran as they are, Adept 5/4, Champion 3/2 - kept in a
     // byte as the original's; both 1 when either comes to 0
-    const int level = secret_files() ? vm->get(0x4CF4) : 2;
-    if (rec[0x197] == 1 && level < 5 && level != 2) {
+    // Darkness (GAME.OVR 0x621): the same with its difficulty 1-5 (game
+    // byte 0x27) as (v + 1) / 4 - 3 as they are - and a LOAD MONSTER with
+    // 48 or more loaded already loads nothing (0x5E1; copies stop at 63)
+    if (darkness_files() && ml->n >= 48) return;
+    const int level = secret_files() ? vm->get(0x4CF4) : darkness_files() ? (vm->get(0x4CF4) & 0xFF) - 1 : 2;
+    if (rec[0x197] == 1 && level >= 0 && level < 5 && level != 2) {
         rec[0x1A4] = static_cast<uint8_t>(rec[0x1A4] * (level + 2) / 4);
         rec[0x78] = static_cast<uint8_t>(rec[0x78] * (level + 2) / 4);
         if (rec[0x1A4] == 0 || rec[0x78] == 0) rec[0x1A4] = rec[0x78] = 1;
@@ -159,13 +210,8 @@ void fight_load_monster(int id, int copies, int icon)
     g.icon = static_cast<uint8_t>(icon);
     char itm[24];
     area_fmt(itm, sizeof itm, "MON%dITM.DAX");
-    uint8_t buf[combat::kGroupItems * items::kRecordSize];
-    const int ni = read_block(itm, id, buf, sizeof buf);
-    if (ni > 0) {
-        g.n_items = static_cast<uint8_t>(ni / items::kRecordSize);
-        memcpy(g.item, buf, static_cast<size_t>(g.n_items) * items::kRecordSize);
-        for (int k = 0; k < g.n_items; ++k) name_from_words(g.item[k]);
-    }
+    g.n_items = static_cast<uint8_t>(read_monster_items(itm, id, &g.item[0][0], combat::kGroupItems));
+    for (int k = 0; k < g.n_items; ++k) name_from_words(g.item[k]);
     uint8_t aff[combat::kMonsterAffects * party::kAffectSize];
     char spc[24];
     area_fmt(spc, sizeof spc, "MON%dSPC.DAX");
@@ -210,6 +256,17 @@ struct Pic4 {
     uint8_t* px[2] = {};                // ready, attack: rows of w / 2 bytes
 };
 
+inline int nib(const uint8_t* p, int w, int x, int y)
+{
+    const uint8_t b = p[y * (w / 2) + x / 2];
+    return x & 1 ? b & 15 : b >> 4;
+}
+inline void set_nib(uint8_t* p, int w, int x, int y, int v)
+{
+    uint8_t& b = p[y * (w / 2) + x / 2];
+    b = static_cast<uint8_t>(x & 1 ? (b & 0xF0) | (v & 15) : (b & 0x0F) | (v << 4));
+}
+
 void free_pic(Pic4& p)
 {
     free(p.px[0]);
@@ -217,7 +274,62 @@ void free_pic(Pic4& p)
     p = Pic4{};
 }
 
+// Darkness's fight pictures are VGA blocks (darkness_facts.md 7 4.7): each
+// pixel in its palette entry's EGA colour (its EGA mode), values under the
+// block's first entry EGA colours themselves; the value 8 is see-through
+// (the original's mask colour for CPIC / COMSPR / CHEAD / CBODY - GAME.OVR
+// 0x3FFA4: their loads pass 8), kept as a bit plane after the rows (1 =
+// see-through) since its pictures use every colour, black and dark grey
+// included. The rows' see-through pixels are 0 (the head is OR'd onto the
+// body as the original's EGA path does - GAME.OVR 0x10FC5).
+bool fight_masks() { return d->prof->variant.vga; }
+constexpr int kMaskColour = 8;
+uint32_t mask_bytes(int w, int h) { return (static_cast<uint32_t>(w) * h + 7) / 8; }
+const uint8_t* mask_of(const uint8_t* p, int w, int h) { return fight_masks() && p ? p + (w / 2) * h : nullptr; }
+inline bool masked(const uint8_t* m, int w, int x, int y)
+{
+    const int k = y * w + x;
+    return (m[k >> 3] >> (k & 7)) & 1;
+}
+
+uint8_t* load_vga4(dax::RleReader& r, uint32_t raw_size, int frame, int* w, int* h)
+{
+    uint8_t hdr[pic::kVgaHeaderSize];
+    pic::VgaHeader vh;
+    if (r.read(hdr, sizeof hdr) != sizeof hdr || !pic::parse_vga_header(hdr, raw_size, vh) || frame >= vh.frames)
+        return nullptr;
+    uint8_t map[256];
+    for (int i = 0; i < 256; ++i) map[i] = static_cast<uint8_t>(i & 15);
+    if (r.skip(vh.count * 3u) != vh.count * 3u || !pic::read_vga_ega(r, vh, map)) return nullptr;
+    const uint32_t at = 10u + vh.count * 3u + (vh.count + 1u) / 2u;
+    const uint32_t skip = vh.pixels_at + static_cast<uint32_t>(frame) * vh.frame_bytes() - at;
+    if (r.skip(skip) != skip) return nullptr;
+    const int pw = vh.width_px(), ph = vh.height;
+    const uint32_t nb = static_cast<uint32_t>(pw / 2) * ph;
+    uint8_t* out = static_cast<uint8_t*>(calloc(1, nb + mask_bytes(pw, ph)));
+    if (!out) return nullptr;
+    uint8_t* m = out + nb;
+    for (int y = 0; y < ph; ++y)
+        for (int x = 0; x < pw; ++x) {
+            const int v = r.next();
+            if (v < 0) {
+                free(out);
+                return nullptr;
+            }
+            if (v == kMaskColour) {
+                const int k = y * pw + x;
+                m[k >> 3] = static_cast<uint8_t>(m[k >> 3] | 1 << (k & 7));
+            } else {
+                set_nib(out, pw, x, y, map[v]);
+            }
+        }
+    *w = pw;
+    *h = ph;
+    return out;
+}
+
 // Frame `frame` of a picture block into 4-bit rows (malloc'd); w, h
+// (Darkness: a VGA block, its see-through plane after the rows)
 uint8_t* load_pic4(const char* file, int block, int frame, int* w, int* h)
 {
     plat::File f;
@@ -225,7 +337,10 @@ uint8_t* load_pic4(const char* file, int block, int frame, int* w, int* h)
     plat::FileSource src(f);
     uint8_t* out = nullptr;
     const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
-    if (e) {
+    if (e && d->prof->variant.vga) {
+        dax::RleReader r(src, d->idx, *e);
+        out = load_vga4(r, e->raw_size, frame, w, h);
+    } else if (e) {
         dax::RleReader r(src, d->idx, *e);
         uint8_t hdr[pic::kHeaderSize];
         pic::Header ph;
@@ -247,30 +362,21 @@ uint8_t* load_pic4(const char* file, int block, int frame, int* w, int* h)
     return out;
 }
 
-inline int nib(const uint8_t* p, int w, int x, int y)
-{
-    const uint8_t b = p[y * (w / 2) + x / 2];
-    return x & 1 ? b & 15 : b >> 4;
-}
-inline void set_nib(uint8_t* p, int w, int x, int y, int v)
-{
-    uint8_t& b = p[y * (w / 2) + x / 2];
-    b = static_cast<uint8_t>(x & 1 ? (b & 0xF0) | (v & 15) : (b & 0x0F) | (v << 4));
-}
-
 // Draws a 4-bit picture clipped to (cx0, cy0)-(cx1, cy1): mirrored, colour 0 see-through
 void blit4(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y, bool mirror, bool see_through, int cx0,
            int cy0, int cx1, int cy1)
 {
     if (!p) return;
+    const uint8_t* mk = see_through ? mask_of(p, w, h) : nullptr;    // (Darkness: its see-through plane)
     for (int j = 0; j < h; ++j) {
         const int yy = y + j;
         if (yy < cy0 || yy >= cy1) continue;
         for (int i = 0; i < w; ++i) {
             const int xx = x + i;
             if (xx < cx0 || xx >= cx1) continue;
-            const int v = nib(p, w, mirror ? w - 1 - i : i, j);
-            if (see_through && v == 0) continue;
+            const int px = mirror ? w - 1 - i : i;
+            const int v = nib(p, w, px, j);
+            if (see_through && (mk ? masked(mk, w, px, j) : v == 0)) continue;
             c.set(xx, yy, static_cast<uint8_t>(v));
         }
     }
@@ -475,7 +581,7 @@ void load_fight_words()
     if (!src.open()) return;
     for (int i = 0; i < profile::kFightWords; ++i) {
         if (!d->prof->fight.words[i]) continue;
-        char t[40];
+        char t[72];                     // (Darkness's two-row menu: 63)
         t[0] = 0;
         read_word(src, d->prof->fight.words[i], t, sizeof t);
         const int n = static_cast<int>(strlen(t)) + 1;
@@ -531,11 +637,40 @@ void load_frames(const char* file, int at, int n)
     f.close();
 }
 
+// Darkness: the field's pictures are a VGA block's frames - DUNGCOM block
+// = the look (LOAD FILES' second operand) indoors, WILDCOM block = the
+// region (game byte 0x3A when 0-2, else 0) outside (darkness_facts.md S7;
+// 26 / 40 frames of 24 x 24, the ground table's pictures)
+void load_vga_frames(const char* file, int block)
+{
+    plat::File f;
+    if (!open_dax(file, f)) return;
+    plat::FileSource src(f);
+    const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
+    if (e) {
+        for (int k = 0; k < kTiles; ++k) {
+            dax::RleReader r(src, d->idx, *e);
+            int w = 0, h = 0;
+            uint8_t* t = load_vga4(r, e->raw_size, k, &w, &h);
+            if (!t) break;
+            if (w == kSq && h == kSq) memcpy(fg->tile[k], t, kTileBytes);   // (see-through: the colour 0 under it)
+            free(t);
+        }
+    }
+    f.close();
+}
+
 // The field's pictures: DUNGCOM / WILDCOM (0-33), RANDCOM (34-39)
 void load_tiles(bool indoors)
 {
     for (uint8_t* t : fg->tile)
         if (t) memset(t, 0, kTileBytes);
+    if (d->prof->variant.vga) {
+        const int region = vm->get(0x3A) & 0xFF;
+        if (indoors) load_vga_frames("DUNGCOM.DAX", d->save.look ? d->save.look : 1);
+        else load_vga_frames("WILDCOM.DAX", region <= 2 ? region : 0);
+        return;
+    }
     load_frames(indoors ? "DUNGCOM.DAX" : "WILDCOM.DAX", 0, indoors ? 25 : 34);
     load_frames("RANDCOM.DAX", 34, 6);
 }
@@ -556,12 +691,24 @@ void icon_compose(uint8_t* b, const uint8_t* h, int hh, const uint8_t* colours)
         map[kDefault[i]] = colours[i] & 15;
         map[kDefault[i] + 8] = colours[i] >> 4;
     }
-    if (h)
+    if (h && fight_masks()) {
+        // Darkness's EGA path (GAME.OVR 0x10FC5): the head's colours OR'd
+        // onto the body's, see-through where both are
+        uint8_t* bm = b + (kSq / 2) * kSq;
+        const uint8_t* hm = h + (kSq / 2) * hh;
+        for (int y = 0; y < hh && y < kSq; ++y)
+            for (int x = 0; x < kSq; ++x) {
+                set_nib(b, kSq, x, y, nib(h, kSq, x, y) | nib(b, kSq, x, y));
+                const int k = y * kSq + x;
+                if (!masked(hm, kSq, x, y)) bm[k >> 3] = static_cast<uint8_t>(bm[k >> 3] & ~(1 << (k & 7)));
+            }
+    } else if (h) {
         for (int y = 0; y < hh && y < kSq; ++y)
             for (int x = 0; x < kSq; ++x) {
                 const int v = nib(h, kSq, x, y);
                 if (v) set_nib(b, kSq, x, y, v | nib(b, kSq, x, y));
             }
+    }
     for (int y = 0; y < kSq; ++y)
         for (int x = 0; x < kSq; ++x) set_nib(b, kSq, x, y, map[nib(b, kSq, x, y)]);
 }
@@ -572,7 +719,7 @@ void build_icon(const uint8_t* rec, Pic4& ic)
 #if CYD_ICON_GALLERY
     // A Gold Box Companion icon picked for this character (the player's
     // copy of the Companion on the card)
-    if (opts.gallery && d->icon_picks.count) {
+    if (opts.gallery && d->icon_picks.count && !fight_masks()) {
         char nm[16];
         rec_name(rec, nm);
         const int pair = gbc_icons::find(d->icon_picks, nm);
@@ -592,7 +739,8 @@ void build_icon(const uint8_t* rec, Pic4& ic)
     for (int fr = 0; fr < 2; ++fr) {
         int bw = 0, bh = 0, hw = 0, hh = 0;
         uint8_t* b = load_pic4("CBODY.DAX", body + (small ? 0 : 0x40) + fr * 0x80, 0, &bw, &bh);
-        uint8_t* h = load_pic4("CHEAD.DAX", head + (small ? 0 : 0x40) + fr * 0x80, 0, &hw, &hh);
+        // (Darkness: one head for both pictures - GAME.OVR 0x3FFC3; its CHEAD has no +0x80 blocks)
+        uint8_t* h = load_pic4("CHEAD.DAX", head + (small ? 0 : 0x40) + (fight_masks() ? 0 : fr * 0x80), 0, &hw, &hh);
         if (!b || bw != kSq || bh != kSq) {
             free(b);
             free(h);
@@ -880,10 +1028,19 @@ void fx_free()
     fg->fx_pic[0] = fg->fx_pic[1] = nullptr;
 }
 
+// A COMSPR picture by Curse's number (the engine's): the game's own (the
+// profile's fight.comspr; none: as Curse's)
+int comspr(int pic)
+{
+    const uint8_t* m = d->prof->fight.comspr;
+    return m[0] || m[1] ? (pic < 16 ? m[pic] : pic) : pic;
+}
+
 bool fx_load(int pic)
 {
     fx_free();
     int w = 0, h = 0, w2 = 0, h2 = 0;
+    pic = comspr(pic);
     fg->fx_pic[0] = load_pic4("COMSPR.DAX", pic, 0, &w, &h);
     fg->fx_pic[1] = load_pic4("COMSPR.DAX", pic + 0x80, 0, &w2, &h2);
     if (!fg->fx_pic[0] || w != kSq || h != kSq || (fg->fx_pic[1] && (w2 != kSq || h2 != kSq))) {
@@ -1950,6 +2107,60 @@ void round_rest(pic::Canvas& c)
 // ---- The player's menu
 void draw_fight(pic::Canvas& c);
 
+// Darkness's menu (GAME.OVR 0x904E): one string of 12 choices on two rows
+// - Move (moves left), Aim, Use (with items), Cast (a spell in memory, able
+// to cast, not where game byte 0x02 forbids), Turn (a cleric, or a paladin
+// past 2nd level, with undead in the fight it hasn't turned), Guard (no
+// readied weapon that only shoots: range under 2, or type flags 0x14 both),
+// Quick, then Delay, Bandage (someone dying), View, Speed, End - the ones
+// not offered left out
+bool dk_menu() { return d->prof->fight.words[profile::kFMenuDk] != 0; }
+
+bool can_guard(const combat::Fighter& f)
+{
+    const int w = combat::weapon(f, *names);
+    if (w < 0) return true;
+    const items::TypeInfo& ti = names->type(f.items[w][0x2E]);
+    return dk_menu() ? ti.range <= 1 || (ti.flags & 0x14) == 0x14 : (ti.flags & 0x04) != 0;
+}
+
+void fight_menu_dk(char* words, size_t cap, const combat::Fighter& f, bool spells)
+{
+    const char* all = fw(profile::kFMenuDk);
+    bool on[12] = {};
+    on[0] = f.moves > 1;
+    on[1] = true;
+    on[2] = f.n_items && f.can_use;
+    on[3] = spells && f.can_cast;
+    on[4] = f.rec[0x109] > 0 && !f.turned_undead && fg->t.turn_known;
+    on[5] = can_guard(f);
+    on[6] = on[7] = on[9] = on[10] = on[11] = true;
+    on[8] = combat::anyone_dying(fg->b);
+    size_t o = 0;
+    int k = 0;
+    const char* p = all;
+    while (*p && k < 12) {
+        while (*p == ' ') ++p;
+        if (*p == text::kRowBreak) {
+            if (o && words[o - 1] == ' ') --o;
+            if (o + 1 < cap) words[o++] = text::kRowBreak;
+            ++p;
+            continue;
+        }
+        const char* e = p;
+        while (*e && *e != ' ' && *e != text::kRowBreak) ++e;
+        if (on[k] && o + (e - p) + 2 < cap) {
+            memcpy(words + o, p, static_cast<size_t>(e - p));
+            o += static_cast<size_t>(e - p);
+            words[o++] = ' ';
+        }
+        ++k;
+        p = e;
+    }
+    if (o && words[o - 1] == ' ') --o;
+    words[o] = 0;
+}
+
 void fight_menu(pic::Canvas& c)
 {
     const combat::Fighter& f = fg->b.f[fg->cur];
@@ -1960,8 +2171,19 @@ void fight_menu(pic::Canvas& c)
         focus(fg->cur, 2);
         draw_fight(c);
     }
-    char words[64];
+    char words[80];
     words[0] = 0;
+    if (dk_menu()) {
+        bool spells = false;
+        for (int k = 0; k < magic::kListSize; ++k)
+            if (f.rec[magic::kListAt + k] && !(f.rec[magic::kListAt + k] & 0x80)) spells = true;
+        fight_menu_dk(words, sizeof words, f, spells);
+        fg->st = FSt::Menu;
+        text::build(menu, "", words);
+        menu.selected = 0;
+        show_menu_line(c);
+        return;
+    }
     if (f.moves > 1) strcat(words, fw(profile::kFMove));
     strcat(words, fw(profile::kFViewAim));
     if (f.n_items && f.can_use) strcat(words, fw(profile::kFUse));
@@ -2159,7 +2381,8 @@ void aim_menu(pic::Canvas& c)
     const int t = fg->manual ? (b.who[fg->my][fg->mx] ? b.who[fg->my][fg->mx] - 1 : -1) : fg->cand[fg->ci];
     if (!fg->outline) {
         int w, h;
-        fg->outline = load_pic4("COMSPR.DAX", 0x19 + 0x80, 0, &w, &h);     // (another try)
+        fg->outline = load_pic4("COMSPR.DAX", d->prof->fight.marks.outline ? d->prof->fight.marks.outline : 0x19 + 0x80,
+                                0, &w, &h);     // (another try)
     }
     if (t >= 0 || fg->manual) {
         // (the Manual square keeps the view with it - empty or not: Tom,
@@ -2751,9 +2974,10 @@ void fight_start(pic::Canvas& c)
     free(fg->cursor);                        // (a fight started over another: nothing kept twice)
     free(fg->skull);
     free(fg->outline);
-    fg->cursor = load_pic4("COMSPR.DAX", 0x19, 0, &w, &h);
-    fg->skull = load_pic4("COMSPR.DAX", 11 + 0x80, 0, &w, &h);
-    fg->outline = load_pic4("COMSPR.DAX", 0x19 + 0x80, 0, &w, &h);
+    const combat::Comspr& cs = d->prof->fight.marks;
+    fg->cursor = load_pic4("COMSPR.DAX", cs.cursor ? cs.cursor : 0x19, 0, &w, &h);
+    fg->skull = load_pic4("COMSPR.DAX", cs.skull ? cs.skull : 11 + 0x80, 0, &w, &h);
+    fg->outline = load_pic4("COMSPR.DAX", cs.outline ? cs.outline : 0x19 + 0x80, 0, &w, &h);
     // (Tom, 3.2", v0.85.5: Aim's box once didn't show - a picture that
     // couldn't be loaded goes in the Errors log)
     if (!fg->cursor || !fg->outline || !fg->skull) log_error(no_memory("the fight's cursor / target box"));
@@ -3660,6 +3884,82 @@ void fight_turn_undead(pic::Canvas& c)
     say(c, FSt::Next);
 }
 
+// The fight menu's choices (by their keys): Curse's menu, and Darkness's
+// first row
+void fight_menu_key(pic::Canvas& c, char key)
+{
+    combat::Fighter& f = fg->b.f[fg->cur];
+    switch (key) {
+    case 'M': start_move(c); break;
+    case 'V':
+        if (f.member >= 0) {
+            pt->selected = f.member;
+            palette_fight(false);
+            view_character(c);
+        }
+        break;
+    case 'A':
+        fg->spell = 0;              // (a weapon's aim)
+        fg->use_item = -1;
+        start_aim(c);
+        break;
+    case 'Q':
+        f.quick = true;
+        fg->st = FSt::Ai;
+        fg->until = plat::now_ms() + 200;
+        clear_menu_line(c);
+        break;
+    case 'D': done_menu(c); break;
+    case 0: break;
+    case 'C': fight_cast_menu(c); break;
+    case 'T': fight_turn_undead(c); break;
+    case 'U':
+        // The items screen (Use there; Exit comes back here)
+        if (f.member >= 0 && pt->m[f.member].n_items) {
+            pt->selected = f.member;
+            palette_fight(false);
+            view_from = Screen::Fight;
+            items_direct = true;
+            open_items(c);
+        }
+        break;
+    default: break;
+    }
+}
+
+// Curse's Done menu (Guard Delay Quit Bandage Speed Exit) - Darkness's on
+// its menu's second row
+void done_key(pic::Canvas& c, char key)
+{
+    combat::Fighter& f = fg->b.f[fg->cur];
+    switch (key) {
+    case 'G':
+        f.guarding = true;
+        add_page(fg->cur, fw(profile::kGuarding));
+        f.delay = 0;
+        say(c, FSt::Next);            // (the turn is over: not an attack)
+        break;
+    case 'D':
+        f.delay = 1;
+        status_line(c, "");
+        next_turn(c);
+        break;
+    case 'Q': end_turn(c); break;
+    case 'B': {
+        const int k = combat::bandage(fg->b);
+        if (k >= 0) {
+            add_page(k, fw(profile::kBandaged));
+            f.delay = 0;
+            say(c, FSt::Next);            // (the turn is over: not an attack)
+        }
+        break;
+    }
+    case 'S': speed_menu(c); break;
+    case 'E': fight_menu(c); break;
+    default: break;
+    }
+}
+
 void fight_tap(int x, int y, pic::Canvas& c)
 {
     if (!fg) return;
@@ -3708,42 +4008,26 @@ void fight_tap(int x, int y, pic::Canvas& c)
     case FSt::Menu: {
         if (y < text::kMenuTapTop) return;
         combat::Fighter& f = fg->b.f[fg->cur];
-        switch (text::key(menu, text::hit(menu, col))) {
-        case 'M': start_move(c); break;
-        case 'V':
-            if (f.member >= 0) {
+        if (dk_menu()) {
+            // Darkness's two rows: Guard, Delay, Bandage, Speed, End (as
+            // Curse's Done menu's Quit) are on it; View comes with them
+            const int item = text::two_rows(menu) ? text::hit_row(menu, col, y / 8) : text::hit(menu, col);
+            const char k = text::key(menu, item);
+            if (k == 'G' || k == 'D' || k == 'B' || k == 'S' || k == 'E') {
+                done_key(c, k == 'E' ? 'Q' : k);
+                return;
+            }
+            if (k == 'V' && f.member >= 0) {
                 pt->selected = f.member;
                 palette_fight(false);
                 view_character(c);
+                return;
             }
-            break;
-        case 'A':
-            fg->spell = 0;              // (a weapon's aim)
-            fg->use_item = -1;
-            start_aim(c);
-            break;
-        case 'Q':
-            f.quick = true;
-            fg->st = FSt::Ai;
-            fg->until = plat::now_ms() + 200;
-            clear_menu_line(c);
-            break;
-        case 'D': done_menu(c); break;
-        case 0: break;
-        case 'C': fight_cast_menu(c); break;
-        case 'T': fight_turn_undead(c); break;
-        case 'U':
-            // The items screen (Use there; Exit comes back here)
-            if (f.member >= 0 && pt->m[f.member].n_items) {
-                pt->selected = f.member;
-                palette_fight(false);
-                view_from = Screen::Fight;
-                items_direct = true;
-                open_items(c);
-            }
-            break;
-        default: break;
+            if (k == 'V') return;
+            fight_menu_key(c, k);
+            return;
         }
+        fight_menu_key(c, text::key(menu, text::hit(menu, col)));
         return;
     }
     case FSt::Move: {
@@ -3763,37 +4047,10 @@ void fight_tap(int x, int y, pic::Canvas& c)
         return;
     }
     case FSt::Aim: aim_tap(x, y, c); return;
-    case FSt::DoneMenu: {
+    case FSt::DoneMenu:
         if (y < text::kMenuTapTop) return;
-        combat::Fighter& f = fg->b.f[fg->cur];
-        switch (text::key(menu, text::hit(menu, col))) {
-        case 'G':
-            f.guarding = true;
-            add_page(fg->cur, fw(profile::kGuarding));
-            f.delay = 0;
-            say(c, FSt::Next);            // (the turn is over: not an attack)
-            break;
-        case 'D':
-            f.delay = 1;
-            status_line(c, "");
-            next_turn(c);
-            break;
-        case 'Q': end_turn(c); break;
-        case 'B': {
-            const int k = combat::bandage(fg->b);
-            if (k >= 0) {
-                add_page(k, fw(profile::kBandaged));
-                f.delay = 0;
-                say(c, FSt::Next);            // (the turn is over: not an attack)
-            }
-            break;
-        }
-        case 'S': speed_menu(c); break;
-        case 'E': fight_menu(c); break;
-        default: break;
-        }
+        done_key(c, text::key(menu, text::hit(menu, col)));
         return;
-    }
     case FSt::Speed: {
         if (y < text::kMenuTapTop) return;
         int speed = vm->get(0x4BFC) & 0xFF;

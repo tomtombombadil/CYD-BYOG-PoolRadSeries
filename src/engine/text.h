@@ -111,8 +111,12 @@ struct MenuColors {
     uint8_t highlight = 15, normal = 10, prompt = 13;   // the games' usual menu colours
 };
 
+// A menu on two rows (Pools of Darkness's fight menu, "Move Aim Use Cast
+// Turn Guard Quick@Delay Bandage View Speed End" - DS 0x2F8C): '@' in the
+// choices ends row 23's; the rest goes on row 24
+constexpr char kRowBreak = '@';
 struct Menu {
-    char    s[41] = {};            // the choices, e.g. "Area Cast View"
+    char    s[72] = {};            // the choices, e.g. "Area Cast View"
     char    prompt[41] = {};       // printed before them, in the prompt colour
     int     count = 0;
     int8_t  start[kMaxItems] = {}; // first character of each choice (its key)
@@ -127,6 +131,13 @@ void draw(pic::Canvas& c, const font::Font& f, const Menu& m, const MenuColors& 
 // The choice under canvas column col on the menu row (its trailing space
 // counts, so targets have no gaps), or -1.
 int hit(const Menu& m, int col);
+// The same on a two-row menu: row 23 (the first) or 24; a one-row menu's
+// choices are row 24's
+int hit_row(const Menu& m, int col, int row);
+// Whether the menu takes two rows (rows 23 and 24)
+bool two_rows(const Menu& m);
+// Where choice k is drawn: its first cell's column and row
+void item_cell(const Menu& m, int k, int* col, int* row);
 // The key a choice stands for (its first character).
 char key(const Menu& m, int item);
 
