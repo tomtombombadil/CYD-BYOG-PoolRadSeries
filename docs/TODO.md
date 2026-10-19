@@ -99,6 +99,10 @@ the Project as claude/TODO.md.
       v0.135.0: shops, temple, treasure, vault (open: the treasure-only
       result screen, Restoration's cheapest class, Remove Curse's words,
       Vault Items' way back, Raise Dead's stats recalculation).
+      v0.136.2: the icon gallery shows Darkness's parts (VGA CHEAD /
+      CBODY with their see-through plane). Open: Darkness's camp Alter
+      and its own icon editor (its menus differ from Secret's: "Weapon
+      Body Hair Face Shield Arm Leg Exit", "Small Large Keep Exit").
       v0.136.0: fights. Open: the memory (next item); spells Blade
       Barrier, Restoration, Energy Drain, Destruction, Resurrection, Mass
       Charm, Otto's Dance, Power Word Blind, Meteor Swarm, Power Word

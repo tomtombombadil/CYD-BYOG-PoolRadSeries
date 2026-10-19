@@ -10107,6 +10107,10 @@ void gal_frame(pic::Canvas& c, int i, uint8_t colour)
 
 // The parts' ready pictures for the character's size, read once (each
 // file opened once); heads padded to 24 rows
+// A gallery part's bytes: 24 x 24 4-bit rows (Darkness: its see-through
+// plane after them)
+uint32_t gal_bytes() { return kTileBytes + (fight_masks() ? mask_bytes(kSq, kSq) : 0); }
+
 bool gal_load(uint8_t** parts, int n, const char* file, int add)
 {
     bool need = false;
@@ -10121,6 +10125,37 @@ bool gal_load(uint8_t** parts, int n, const char* file, int add)
         const dax::Entry* e = d->idx.find(static_cast<uint8_t>(i + add));
         if (!e) continue;                   // a missing part: its cell stays empty
         dax::RleReader r(src, d->idx, *e);
+        if (fight_masks()) {
+            // Darkness: VGA parts in their EGA colours with the see-through
+            // plane (load_vga4), made 24 rows - the rows past a short part
+            // see-through - with the plane after them (gal_bytes)
+            int w = 0, h = 0;
+            uint8_t* v = load_vga4(r, e->raw_size, 0, &w, &h);
+            if (!v || w != kSq || h > kSq) {
+                free(v);
+                continue;
+            }
+            uint8_t* p = static_cast<uint8_t*>(malloc(gal_bytes()));
+            if (!p) {
+                free(v);
+                ok = false;
+                break;
+            }
+            memset(p, 0, kTileBytes);
+            memcpy(p, v, static_cast<size_t>(kSq / 2) * h);
+            uint8_t* m = p + kTileBytes;
+            memset(m, 0xFF, gal_bytes() - kTileBytes);
+            const uint8_t* vm = v + (kSq / 2) * h;
+            for (int y = 0; y < h; ++y)
+                for (int x = 0; x < kSq; ++x)
+                    if (!masked(vm, kSq, x, y)) {
+                        const int k = y * kSq + x;
+                        m[k >> 3] = static_cast<uint8_t>(m[k >> 3] & ~(1 << (k & 7)));
+                    }
+            free(v);
+            parts[i] = p;
+            continue;
+        }
         uint8_t hdr[pic::kHeaderSize];
         pic::Header ph;
         if (r.read(hdr, sizeof hdr) != sizeof hdr || !pic::parse_header(hdr, e->raw_size, ph) || ph.width_px() != kSq ||
@@ -10157,13 +10192,14 @@ bool gal_parts()
 }
 
 // A 24 x 24 picture at twice its size, colour 0 see-through
-void blit4_x2(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y)
+// (mk: Darkness's see-through plane - colour 0 drawn; none: colour 0 see-through)
+void blit4_x2(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y, const uint8_t* mk = nullptr)
 {
     if (!p) return;
     for (int j = 0; j < h; ++j)
         for (int i = 0; i < w; ++i) {
             const int v = nib(p, w, i, j);
-            if (v) c.fill(x + 2 * i, y + 2 * j, 2, 2, static_cast<uint8_t>(v));
+            if (mk ? !masked(mk, w, i, j) : v != 0) c.fill(x + 2 * i, y + 2 * j, 2, 2, static_cast<uint8_t>(v));
         }
 }
 
@@ -10173,7 +10209,8 @@ void gal_cell(pic::Canvas& c, int i)
         // A Companion icon (its ready pose)
         int x, y, w, h;
         gal_box(i, &x, &y, &w, &h);
-        blit4_x2(c, ie->base[0].px[0], ie->base[0].w, ie->base[0].h, x + 3, y + 3);
+        blit4_x2(c, ie->base[0].px[0], ie->base[0].w, ie->base[0].h, x + 3, y + 3,
+                 mask_of(ie->base[0].px[0], ie->base[0].w, ie->base[0].h));
         uint8_t* p = load_gbc_icon(2 * (i - icon_looks::kLooks) + 1);
         blit4_x2(c, p, kSq, kSq, x + 3, y + 3);
         free(p);
@@ -10185,12 +10222,13 @@ void gal_cell(pic::Canvas& c, int i)
     gal_box(i, &x, &y, &w, &h);
     x += 3;
     y += 3;
-    blit4_x2(c, ie->base[0].px[0], ie->base[0].w, ie->base[0].h, x, y);
+    blit4_x2(c, ie->base[0].px[0], ie->base[0].w, ie->base[0].h, x, y,
+             mask_of(ie->base[0].px[0], ie->base[0].w, ie->base[0].h));
     if (body >= icon_looks::kBodies || !ie->gbody[body]) return;
-    uint8_t px[kTileBytes];
-    memcpy(px, ie->gbody[body], kTileBytes);
+    uint8_t px[kTileBytes + kSq * kSq / 8];
+    memcpy(px, ie->gbody[body], gal_bytes());
     icon_compose(px, head < icon_looks::kHeads ? ie->ghead[head] : nullptr, kSq, colours);
-    blit4_x2(c, px, kSq, kSq, x, y);
+    blit4_x2(c, px, kSq, kSq, x, y, mask_of(px, kSq, kSq));
 }
 
 void gal_menu(pic::Canvas& c)

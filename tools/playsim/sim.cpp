@@ -774,7 +774,17 @@ int main(int argc, char** argv)
             shot("icon");
             for (const char* q = getenv("ICONKEYS"); *q; ++q) {
                 if (*q == '#') { shot("icon"); continue; }
-                if (*q == 'x') play::back(C);
+                if (*q == '@' && q[1]) {
+                    // @X: a tap on the menu line's word X (the gallery's words)
+                    ++q;
+                    for (int i = 0; i < play::menu.count; ++i)
+                        if (text::key(play::menu, i) == *q) {
+                            int cx, cy;
+                            text::item_cell(play::menu, i, &cx, &cy);
+                            play::tap(cx * 8 + 2, cy * 8 + 2, C);
+                            break;
+                        }
+                } else if (*q == 'x') play::back(C);
                 else play::icon_key(*q, C);
                 const uint8_t* r = play::pt->m[who].rec;
                 printf("  %c: screen %d level %d menu [%s%s] head %d body %d size %d col %02X %02X %02X %02X %02X %02X\n", *q, (int)play::screen, play::ie ? play::ie->level : -1, play::menu.prompt, play::menu.s, r[0x141], r[0x142], r[0x144], r[0x145], r[0x146], r[0x147], r[0x148], r[0x149], r[0x14A]);
