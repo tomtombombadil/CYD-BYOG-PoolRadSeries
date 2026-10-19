@@ -1496,7 +1496,12 @@ the scripts' changed ops, the rule tables, fights, the rest.
   each as DOSBox). Checked against DOSBox (EGA): the frame, panel, menu
   rows, icons, placing pixel for pixel; arena fights won to the end.
   Memory: the biggest test fight (`GAME=4 SAVE=A CHOICES=0 RUNAT=85BB
-  FIGHT=1`, 30 monsters) peaks at 169 KB - over the 150 KB budget (TODO).
+  FIGHT=1`, 30 monsters) peaked at 169 KB - over the 150 KB budget; since
+  the fight's arena (after v0.136.0: the script's code parked to
+  `_CYD/CODE.TMP` during a fight, its memory and the 3D view's past the
+  field's tiles holding the fighters and pictures; the background picture
+  dropped while parked; monster groups, spell names and fighters smaller)
+  150,755 bytes (Curse 132,315, Pool 132,931).
 
 ## 7. The journal (Tom, 2026-10-06)
 
