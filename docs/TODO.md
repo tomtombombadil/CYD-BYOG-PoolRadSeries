@@ -100,9 +100,12 @@ the Project as claude/TODO.md.
       result screen, Restoration's cheapest class, Remove Curse's words,
       Vault Items' way back, Raise Dead's stats recalculation).
       v0.136.2: the icon gallery shows Darkness's parts (VGA CHEAD /
-      CBODY with their see-through plane). Open: Darkness's camp Alter
-      and its own icon editor (its menus differ from Secret's: "Weapon
-      Body Hair Face Shield Arm Leg Exit", "Small Large Keep Exit").
+      CBODY with their see-through plane). v0.137.0: camp Alter (Order,
+      Drop, Speed, Level) and Darkness's own icon editor (camp, creation,
+      the gallery's Edit) - matches DOSBox. Open: the party menu's Drop
+      Character should ask "Pick Character Select" first (the same
+      routine in the original); Darkness keeps the menu highlight's place
+      in every menu - the engine does it in Alter / the editor only.
       v0.136.0: fights. Open: the memory (next item); spells Blade
       Barrier, Restoration, Energy Drain, Destruction, Resurrection, Mass
       Charm, Otto's Dance, Power Word Blind, Meteor Swarm, Power Word
