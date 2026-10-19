@@ -560,6 +560,17 @@ constexpr combat::FightSpell kDarknessFight[] = {
     {0x76, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2F6CD},      // Fire Touch: "is covered in flame"
     {0x77, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2F70E},      // Iron Skin: "is protected"
     {0x7A, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2BBB6},      // Mind Blank: the protections' handler
+    // (the fights' rules facts R2-R10; 102 Restoration and 105 Resurrection are camp spells)
+    {0x65, SpellDoes::Blade, 8, 8, 0, 0, 8, 0x324AE},       // Blade Barrier: "is cut by knives", 8d8
+    {0x67, SpellDoes::EnergyDrain, 0, 0, 0, 0, 0, 0},       // Energy Drain: a level (the drain's own words)
+    {0x68, SpellDoes::Destroy, 0, 0, 0, 0, 0x48, 0x2EE5B},  // Destruction: "is destroyed"
+    {0x78, SpellDoes::MassCharm, 0, 0, 0, 0, 0, 0x2F756, 0x2F748},  // Mass Charm: "is charmed" / "is unaffected"
+    {0x79, SpellDoes::Dance, 1, 4, 1, 0, 0, 0x2F8E4},       // Otto's: "begins to dance wildly", 1d4 + 1 rounds
+    {0x7B, SpellDoes::WordBlind, 0, 0, 0, 0, 0, 0x2F9B4},   // Power Word Blind: "is blinded"
+    {0x7C, SpellDoes::Meteors, 10, 4, 0, 0, 9, 0},          // Meteor Swarm: 10d4 a meteor, fire and magic
+    {0x7D, SpellDoes::WordKill, 0, 0, 0, 0, 0, 0x2FEA9},    // Power Word Kill: "is slain"
+    {0x7E, SpellDoes::Summon, 0, 0, 0, 0, 0, 0x2FFC7, 0x2FFD0},     // Monster Summoning: "gates in" /
+                                                            // "summons is not answered"
 };
 
 // Pool's spells in fights and in camp (poolrad_combat_facts.md 3; the
@@ -1715,7 +1726,7 @@ const Profile kProfiles[] = {
      // takes away (DS 0x0C6E, 16 - GAME.OVR 0x32DB0); the effects by
      // Darkness's own numbers (its View names, DS 0x4061; its handler table
      // DS 0xA7EA + 4 x (effect - 1), set at GAME.OVR 0x1DD3B)
-     .fight = {{0x3EBA, 0x090C, 0x091C, 0x092C, 0x0930, 0x0938, 0x0940, 0, 0x09FB, 0, 11},
+     .fight = {{0x3EBA, 0x090C, 0x091C, 0x092C, 0x0930, 0x0938, 0x0940, 0, 0x09FB, 0, 11, 0x08D8},
               {
                0xD2F1, 0, 0, 0, 0, 0, 0, 0xA290, kP | 0xC0B5, 0, 0x9785, kP | 0xC03A, 0, 0, 0, kP | 0xC88C, 0, 0, 0, 0,
                0x36BDA, kP | 0xC863, 0x9837, 0, 0, kP | 0xCDD3, 0x1E89C, 0x1E8A8, 0x1E8B7, 0x1E8BF, 0x1E8CE, 0x1E8E2, 0x1E8EF,
@@ -1769,7 +1780,12 @@ const Profile kProfiles[] = {
                           .scrolls = {39, 40}},
                 .berserk = 0x6B, .secret = true, .globe_major = 0x39,
                 // (its clouds: Stinking Cloud 0x1D, Cloudkill 0x1C, Blade Barrier 0x1B - GAME.OVR 0x2C617)
-                .cloud_ground = 0x1D, .poison_ground = 0x1C, .cleric_xp_wis = 15, .plat_xp = 2, .shot_pointed2 = 0x4A},
+                .cloud_ground = 0x1D, .poison_ground = 0x1C, .cleric_xp_wis = 15, .plat_xp = 2, .shot_pointed2 = 0x4A,
+                // its own (the fights' rules facts R2-R14)
+                .dk = {.knives = 0x1B, .knife_n = 8, .knife_sides = 8, .dancing = 0x76, .dragon_fear = 0x64,
+                       .feared = 0x78, .para_gaze = 0x72, .gaze_proof = 0x7E, .vamp_gaze = 0x7C, .beholder = 0x75,
+                       .vorpal = 0x73, .kalistes = 0x74, .rake = 0x63, .blessed = 0x52, .blessed_type = 0x4A,
+                       .no_disease = 0x4C, .disease = 0x22}},
                kDarknessFight, sizeof kDarknessFight / sizeof kDarknessFight[0],
                // COMSPR (its 22 blocks, + 0x80 the second pictures; loaded at a
                // fight's start as slots 13-34 - GAME.OVR 0xD34A): 0-2 the arrows, 3
@@ -1787,7 +1803,7 @@ const Profile kProfiles[] = {
      // sound; turning is silent. A spell's own sound as Curse's: Fireball
      // (0x2F) 11, Lightning Bolt (0x33) 8, the rest 2 (its overlay at
      // GAME.OVR 0x29D34, +0x1407)
-     .sound = {.fireball_spell = 0x2F, .lightning_spell = 0x33, .burst_spells = {0x22, 0x2F, 0x40, 0x57, 0x5B, 0x73}},
+     .sound = {.fireball_spell = 0x2F, .lightning_spell = 0x33, .burst_spells = {0x22, 0x2F, 0x40, 0x57, 0x5B, 0x73, 0x7C}},
      .clips ={.file = "ZOUNDS.DAX", .hz = 9000, .first = 2, .last = 12,
                .ids = {0, 0, 2, 9, 6, 5, 9, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .quiet_turns = true},
      .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .treasure_pic = 129, .camp_pic = 128, .appraise_div = 2,

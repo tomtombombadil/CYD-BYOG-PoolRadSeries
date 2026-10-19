@@ -28,6 +28,10 @@ constexpr int kViewX = 8, kViewY = 8, kSq = 24;
 struct MonsterLoad {
     combat::Monster* m = nullptr;
     int n = 0, cap = 0;
+    // Darkness's Monster Summoning reserve (R10): its monsters from here on,
+    // their group, its icon loaded (at the first summons)
+    int reserve_from = -1, reserve_group = -1;
+    bool reserve_icon = false;
     combat::Group* g[combat::kMaxGroups] = {};
     int groups = 0;
     ~MonsterLoad()
@@ -189,7 +193,7 @@ bool npc_join(int id)
     return true;
 }
 
-void fight_load_monster(int id, int copies, int icon)
+void fight_load_monster(int id, int copies, int icon, bool reserve)
 {
     if (!ml) ml = new (std::nothrow) MonsterLoad;
     if (!ml || ml->groups >= combat::kMaxGroups || ml->n >= combat::kMaxMonsters) return;
@@ -218,9 +222,9 @@ void fight_load_monster(int id, int copies, int icon)
     // Darkness (GAME.OVR 0x621): the same with its difficulty 1-5 (game
     // byte 0x27) as (v + 1) / 4 - 3 as they are - and a LOAD MONSTER with
     // 48 or more loaded already loads nothing (0x5E1; copies stop at 63)
-    if (darkness_files() && ml->n >= 48) return;
+    if (darkness_files() && ml->n >= 48 && !reserve) return;
     const int level = secret_files() ? vm->get(0x4CF4) : darkness_files() ? (vm->get(0x4CF4) & 0xFF) - 1 : 2;
-    if (rec[0x197] == 1 && level >= 0 && level < 5 && level != 2) {
+    if (rec[0x197] == 1 && level >= 0 && level < 5 && level != 2 && !reserve) {
         rec[0x1A4] = static_cast<uint8_t>(rec[0x1A4] * (level + 2) / 4);
         rec[0x78] = static_cast<uint8_t>(rec[0x78] * (level + 2) / 4);
         if (rec[0x1A4] == 0 || rec[0x78] == 0) rec[0x1A4] = rec[0x78] = 1;
@@ -268,7 +272,28 @@ void fight_load_monster(int id, int copies, int icon)
     }
     if (!made) return;
     ++ml->groups;
-    plat::log("[play] LOAD MONSTER %d x%d (icon %d): %d monsters\n", id, copies, icon, ml->n);
+    plat::log("[play] %s %d x%d (icon %d): %d monsters\n", reserve ? "the summoning reserve" : "LOAD MONSTER", id, copies,
+              icon, ml->n);
+}
+
+// Darkness's Monster Summoning reserve (R10; GAME.OVR 0x7D2B, at every
+// COMBAT): 10 monsters of the MON block the frame style (block +0x39)
+// picks, out of the fight (status 9) until a Monster Summoning brings them
+// in; no difficulty for them (the loader alone)
+void load_reserve(const combat::Tables& t)
+{
+    if (!ml || !d->prof->fight.tables.reserve || ml->groups >= combat::kMaxGroups) return;
+    const int style = vm->get(0x3A) & 0xFF;
+    if (style > 4 || !t.reserve_mon[style]) return;
+    const int from = ml->n, group = ml->groups;
+    fight_load_monster(t.reserve_mon[style], 10, t.reserve_pic[style], true);
+    if (ml->groups == group) return;
+    ml->reserve_from = from;
+    ml->reserve_group = group;
+    uint8_t* r = ml->g[group]->rec;
+    r[0x195] = 9;
+    r[0x196] = 0;
+    r[0xF7] |= 0x32;
 }
 
 // The k-th loaded monster's own record (LOAD CHARACTER past the party: the
@@ -1518,10 +1543,32 @@ void poison_page(int i)
     down_page(i);
 }
 
+void damage_text(int amount, int kind, char* t, size_t cap);
+// Darkness's Blade Barrier on one in its knives (R2: a step into them, a
+// round's end): "is cut by knives", the damage (magic) - no save
+void knives_page(int i)
+{
+    bool dn = false;
+    const int done = combat::knives_cut(fg->b, i, rng, &dn);
+    const combat::FightSpell* fs = fight_spell(0x65);
+    if (done <= 0 || !fs) return;
+    char t[48];
+    ow(fs->word, t, sizeof t);
+    add_page(i, t);
+    damage_text(done, 8, t, sizeof t);
+    add_page(i, t);
+    page_fx_set(1, hit_fx(i, false));
+    if (dn) down_page(i);
+}
+
 void cloud_step(int i)
 {
     combat::Battle& b = fg->b;
     const combat::Fighter& f = b.f[i];
+    if (f.up() && combat::in_knives(b, f.x, f.y)) {
+        knives_page(i);
+        return;
+    }
     if (f.up() && combat::in_poison(b, f.x, f.y)) {
         if (combat::breathe_poison(b, i, rng)) poison_page(i);
         return;
@@ -2238,6 +2285,8 @@ void round_end(pic::Canvas& c)
     for (int k = 0; k < fg->b.n; ++k) {
         const combat::Fighter& f = fg->b.f[k];
         if (f.up() && f.size && combat::in_poison(fg->b, f.x, f.y) && combat::breathe_poison(fg->b, k, rng)) poison_page(k);
+        // (Darkness: and those in a blade barrier's knives are cut - R2)
+        if (f.up() && f.size && combat::in_knives(fg->b, f.x, f.y)) knives_page(k);
     }
     // A delayed blast fireball whose time has come
     for (auto& bl : fg->blast)
@@ -3092,7 +3141,8 @@ void fight_start(pic::Canvas& c)
     // join (combat::kSpareFighters)
     release_fighters(fg->fighters);
     fg->fighters = nullptr;
-    int n_fighters = pt->count + ml->n + combat::kSpareFighters;
+    // (Darkness: its summoning reserve's 10 too, loaded with the tables below)
+    int n_fighters = pt->count + ml->n + combat::kSpareFighters + (d->prof->fight.tables.reserve ? 10 : 0);
     if (n_fighters > combat::kMaxFighters) n_fighters = combat::kMaxFighters;
     // (the field's tiles first: the 3D view's memory, then the script's
     // code, parked - the arena the fighters and pictures go in)
@@ -3119,6 +3169,7 @@ void fight_start(pic::Canvas& c)
         resume_after_note = true;       // the script goes on once the error is tapped
         return;
     }
+    load_reserve(fg->t);
     combat::Battle& b = fg->b;
     b.~Battle();
     new (&b) combat::Battle();         // (in place: a temporary would take a lot of stack)
@@ -3189,6 +3240,7 @@ void fight_start(pic::Canvas& c)
     delete tmp;
     delete[] fresh;
     for (int k = 0; k < ml->n && b.n < b.cap; ++k) {
+        if (ml->reserve_from >= 0 && k >= ml->reserve_from) break;     // (the reserve waits: summon())
         combat::Monster& m = ml->m[k];
         combat::Fighter& f = b.f[b.n++];
         f.rec = combat::Rec(&m);
@@ -3228,7 +3280,8 @@ void fight_start(pic::Canvas& c)
     combat::battle_start(b, &rng);           // those invisible from the start
     // Their pictures
     fight_party_icons();
-    for (int g = 0; g < ml->groups; ++g) load_monster_icon(8 + g, ml->g[g]->icon);
+    for (int g = 0; g < ml->groups; ++g)
+        if (g != ml->reserve_group) load_monster_icon(8 + g, ml->g[g]->icon);
     arena_free(fg->cursor);                  // (a fight started over another: nothing kept twice)
     arena_free(fg->skull);
     arena_free(fg->outline);
@@ -4000,6 +4053,81 @@ void blast_delay(int n, pic::Canvas& c)
 
 void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::FightSpell& fs, bool each);
 
+// Darkness's Monster Summoning (R10; GAME.OVR 0x2FFE8): the reserve's
+// monsters out of the fight, in order, at most 2 a cast - each next to a
+// fighter (the list's first, then the next once its 8 squares are taken:
+// N, NE, E ...) on a free square of plain ground (3D 0x17, else 0x45),
+// on the caster's side, up with its full hit points: "gates in"; none:
+// "summons is not answered"
+void summon(int caster, const combat::FightSpell& fs)
+{
+    combat::Battle& b = fg->b;
+    int placed = 0;
+    if (ml && ml->reserve_from >= 0) {
+        const uint8_t plain = (vm->get(0x22) & 0xFF) ? 0x17 : 0x45;
+        int anchor = 0, dir = 0;
+        for (int k = ml->reserve_from; k < ml->n && placed < 2; ++k) {
+            combat::Monster& m = ml->m[k];
+            const combat::Rec r(&m);
+            if (r[0x195] != 9) continue;
+            int x = -1, y = -1;
+            while (x < 0 && anchor < b.n) {
+                const combat::Fighter& a = b.f[anchor];
+                for (; a.size && dir < 8 && x < 0; ++dir) {
+                    const int xx = a.x + combat::dx(dir), yy = a.y + combat::dy(dir);
+                    if (xx < 0 || yy < 0 || xx >= combat::kW || yy >= combat::kH || b.who[yy][xx] || b.ground[yy][xx] != plain)
+                        continue;
+                    x = xx;
+                    y = yy;
+                }
+                if (x < 0) {
+                    ++anchor;
+                    dir = 0;
+                }
+            }
+            if (x < 0) break;
+            combat::Fighter* f = combat::add_fighter(b);
+            if (!f) break;
+            if (!ml->reserve_icon) {
+                load_monster_icon(8 + ml->reserve_group, ml->g[ml->reserve_group]->icon);
+                ml->reserve_icon = true;
+            }
+            f->rec = r;
+            f->aff = m.aff;
+            f->n_aff = &m.n_aff;
+            f->items = ml->g[m.group]->item;
+            f->n_items = ml->g[m.group]->n_items;
+            f->monster = static_cast<int16_t>(k);
+            f->icon = static_cast<int16_t>(8 + m.group);
+            f->quick = true;
+            f->max_aff = combat::kMonsterAffects;
+            f->flags2 = m.flags2;
+            f->magic_res = m.magic_res;
+            r[0x195] = party::Okay;
+            r[0x196] = 1;
+            r[0x1A4] = r[0x78];
+            r[0x197] = b.f[caster].rec[0x197];
+            f->x = static_cast<int16_t>(x);
+            f->y = static_cast<int16_t>(y);
+            f->size = static_cast<int16_t>((r[0xDE] & 7) ? (r[0xDE] & 7) : 1);
+            f->facing = b.f[caster].facing;
+            combat::occupancy(b);
+            char t[48];
+            ow(fs.word, t, sizeof t);
+            add_page(b.n - 1, t);
+            ++placed;
+        }
+    }
+    if (!placed) {
+        char t[48];
+        ow(fs.word2, t, sizeof t);
+        add_page(caster, t);
+    }
+    Fx e;
+    e.kind = Fx::Redraw;
+    page_fx_set(1, e);
+}
+
 // Darkness's area spells with a burst that sounds again (R16)
 bool burst_spell(int sp)
 {
@@ -4096,6 +4224,25 @@ void cast_now(pic::Canvas& c, bool forgotten)
         }
         fg->sp_n = combat::cloud_fighters(b, ax, ay, fg->sp_t, combat::kMaxFighters, poison);
     }
+    if (fs->does == combat::SpellDoes::Blade && ax >= 0) {
+        // Darkness's Blade Barrier (R2): Stinking Cloud's 2 x 2 squares of
+        // knives for 3 rounds a level; those in it get cut (a save at the cast)
+        const int lv = from_item ? pw : combat::power_of(f.rec, mrules->tables, sp, false);
+        if (combat::lay_cloud(b, fg->t, ax, ay, 3 * lv, false, true)) {
+            Fx e;
+            e.kind = Fx::Redraw;
+            page_fx_set(1, e);
+        }
+        fg->sp_n = combat::cloud_fighters(b, ax, ay, fg->sp_t, combat::kMaxFighters, false);
+    }
+    if (fs->does == combat::SpellDoes::Summon) {
+        // Darkness's Monster Summoning (R10): the fight's reserve
+        summon(i, *fs);
+        if (from_item) spend_item(i, sp);
+        f.attacks[0] = f.attacks[1] = 0;
+        say(c, FSt::Next);
+        return;
+    }
     if (fs->does == combat::SpellDoes::Teleport) {
         // Dimension Door: to the square aimed at, within 3 squares a level, when it can stand there
         const int lv = from_item ? pw : combat::power_of(f.rec, mrules->tables, sp, false);
@@ -4130,6 +4277,13 @@ void cast_now(pic::Canvas& c, bool forgotten)
                 create::restore(pt->m[rf.member], mrules->tables);
         }
     if (fs->does == combat::SpellDoes::Hammer) fight_hammer(i);
+    // Darkness's Energy Drain (R3): one level from the one touched, the drain's own words
+    if (fs->does == combat::SpellDoes::EnergyDrain && fg->sp_n > 0 && b.f[fg->sp_t[0]].up()) {
+        combat::Event ev[8];
+        int nev = 0;
+        combat::drain(b, fg->sp_t[0], 1, ev, 8, &nev, -1);
+        for (int k = 0; k < nev; ++k) event_page(ev[k]);
+    }
     // Strength, items and effects changed: the party's values again
     if (fs->does == combat::SpellDoes::Enlarge || fs->does == combat::SpellDoes::Reduce ||
         fs->does == combat::SpellDoes::GiantStrength ||

@@ -237,6 +237,9 @@ bool read_tables(Tables& t, const TableAt& at, ReadDs read, void* ctx)
 {
     t.by_name = false;                  // (Curse: the class bits - was left unset, read as whatever was there)
     t.turn_cols = at.turn_cols;
+    for (int k = 0; k < 5; ++k) t.reserve_mon[k] = t.reserve_pic[k] = 0;
+    if (at.reserve && !(read(ctx, at.reserve, t.reserve_mon, 5) && read(ctx, static_cast<uint16_t>(at.reserve + 5), t.reserve_pic, 5)))
+        return false;
     return read(ctx, at.ground, &t.ground[0][0], sizeof t.ground) &&
            read(ctx, at.fallback, &t.fallback[0][0], sizeof t.fallback) &&
            read(ctx, at.formation, &t.formation[0][0], sizeof t.formation) &&
@@ -2339,6 +2342,8 @@ bool resists(Battle& b, int c, int effect, const Harm& h, create::Dice& d)
     if (rules::fixes() && fx.items.no_disease && hasx(f, fx.items.no_disease) && effect > 0 &&
         (effect == fx.sp.ill || effect == fx.sp.weak || effect == fx.sp.sick))
         return true;
+    // Darkness's 0x4C (GAME.OVR 0x1C661, phase 9): the disease does nothing (R14)
+    if (fx.dk.no_disease && hasx(f, fx.dk.no_disease) && effect > 0 && effect == fx.dk.disease) return true;
     if (hasx(f, m.no_paralyze) && paralysis) return true;
     if (hasx(f, m.no_cold) && (h.kind & 2)) return true;
     if (hasx(f, m.no_fire) && (h.kind & 1)) return true;
@@ -2992,6 +2997,71 @@ int sleep_cost(const Fighter& f, bool secret)
 }
 
 } // namespace
+
+// Darkness's Meteor Swarm (R8; GAME.OVR 0x2FBEC): four meteors, the k-th
+// landing on a diagonal of the square aimed at (x / y offsets -1 1 -1 1 /
+// -1 -1 1 1), else straight above / below it, beside it, on it - the first
+// the caster's line reaches; each strikes those it lands on and one square
+// beyond (10d4, no save) and bursts on those within 1 of it (10d4, a save
+// for half). The landing squares stay in the Battle for the pictures.
+static int meteors(Battle& b, int caster, const FightSpell& fs, const Harm& hs, create::Dice& d, SpellLine* out, int cap)
+{
+    int lines = 0;
+    auto say = [&](int who, Did did, int amount) {
+        if (lines < cap) out[lines++] = SpellLine{static_cast<uint8_t>(who), did, amount};
+    };
+    b.n_meteors = 0;
+    if (!b.tables || b.aim_x < 0) return 0;
+    const Tables& t = *b.tables;
+    static const int8_t kMdx[4] = {-1, 1, -1, 1}, kMdy[4] = {-1, -1, 1, 1};
+    for (int k = 0; k < 4; ++k) {
+        const int tries[4][2] = {{b.aim_x + kMdx[k], b.aim_y + kMdy[k]}, {b.aim_x, b.aim_y + kMdy[k]},
+                                 {b.aim_x + kMdx[k], b.aim_y}, {b.aim_x, b.aim_y}};
+        int x = -1, y = -1;
+        for (const auto& tr : tries) {
+            if (!on_field(tr[0], tr[1]) || !b.ground[tr[1]][tr[0]] || tile(b, t, tr[0], tr[1])[0] == 0xFF) continue;
+            if (!path(b, t, caster, tr[0], tr[1], false, nullptr)) continue;
+            x = tr[0];
+            y = tr[1];
+            break;
+        }
+        if (x < 0) continue;
+        b.meteor_x[b.n_meteors] = static_cast<uint8_t>(x);
+        b.meteor_y[b.n_meteors++] = static_cast<uint8_t>(y);
+        int struck[kMaxFighters], ns = 0;
+        if (b.who[y][x]) struck[ns++] = b.who[y][x] - 1;
+        int hits[32];
+        BoltSeg segs[16];
+        int nseg = 0;
+        const int nh = bolt_path(b, t, caster, x, y, 1, false, hits, 32, segs, &nseg, 16);
+        for (int j = 0; j < nh && ns < kMaxFighters; ++j) {
+            bool seen = false;
+            for (int q = 0; q < ns; ++q) seen = seen || struck[q] == hits[j];
+            if (!seen) struck[ns++] = hits[j];
+        }
+        int area[kMaxFighters];
+        const int na = in_area(b, t, x, y, 1, area, kMaxFighters);
+        for (int j = 0; j < ns + na; ++j) {
+            const bool direct = j < ns;
+            const int c = direct ? struck[j] : area[j - ns];
+            if (!direct) {
+                bool seen = false;
+                for (int q = 0; q < ns; ++q) seen = seen || struck[q] == c;
+                if (seen) continue;
+            }
+            if (c < 0 || c >= b.n || !b.f[c].up()) continue;
+            Harm h = hs;
+            h.dice = fs.n;
+            h.save = direct ? -1 : 4;
+            h.on_save = direct ? 0 : 2;
+            bool dn = false;
+            const int done = harm(b, c, d.roll(fs.sides, fs.n) & 0xFF, h, d, &dn);
+            say(c, done > 0 ? Did::Damage : Did::Unaffected, done);
+            if (dn) say(c, Did::Down, 0);
+        }
+    }
+    return lines;
+}
 
 int cast(Battle& b, const classes::Tables& st, int caster, int spell, const FightSpell& fs, const int* targets,
          int n, create::Dice& d, SpellLine* out, int cap, int pw)
@@ -3815,6 +3885,144 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             say(who[k], Did::Word, 0);
         }
         break;
+    case SpellDoes::Blade:
+        // Darkness's Blade Barrier at the cast (R2; the knives laid by the
+        // caller): those in it - magic resistance, a save against spells,
+        // else "is cut by knives" and 8d8 (no save for half)
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up() || resisted(k, 0)) continue;
+            if (saving_throw(f, e.save, 0, d)) continue;
+            say(who[k], Did::Word, 0);
+            Harm h = hs;
+            h.dice = fs.n;
+            bool dn = false;
+            const int done = harm(b, who[k], d.roll(fs.sides, fs.n) & 0xFF, h, d, &dn);
+            if (done > 0) say(who[k], Did::Damage, done);
+            if (dn) say(who[k], Did::Down, 0);
+        }
+        break;
+    case SpellDoes::EnergyDrain:
+        // (the level itself and its words: the caller, drain() - no save, no
+        // blow, no magic resistance: R3)
+        break;
+    case SpellDoes::Destroy:
+        // Darkness's Destruction (R4): no save
+        for (int k = 0; k < m && k < 1; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up()) continue;
+            if ((f.flags2 & 8) || resists(b, who[k], 0, hs, d)) {
+                say(who[k], Did::Unaffected, 0);
+                continue;
+            }
+            say(who[k], Did::Word, 0);
+            f.rec[kHp] = 0;
+            f.rec[kHealth] = party::Gone;
+            fall(b, who[k]);
+            say(who[k], Did::Fallen, 0);
+        }
+        break;
+    case SpellDoes::MassCharm: {
+        // Darkness's (R5; GAME.OVR 0x2F761): Hit Dice against 2 x level, in
+        // the targets' order, until the count is exactly reached; persons only,
+        // not large, of the other side ("is unaffected" - word2, not counted);
+        // one that would pass the count is left out; a save against spells at
+        // -2, else charmed (its side the caster's)
+        const int budget = 2 * pw;
+        int used = 0;
+        const int caster_side = me.team() ? 1 : 0;
+        for (int k = 0; k < m && used != budget; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up()) continue;
+            if (!(f.flags2 & 2) || (f.rec[kSize] & 0x7F) > 1 || (f.team() ? 1 : 0) == caster_side) {
+                say(who[k], Did::Word2, 0);
+                continue;
+            }
+            const int hd = f.rec[kHd];
+            if (used + hd > budget) continue;
+            used += hd;
+            if (resisted(k, b.fx ? b.fx->charm : 0)) continue;
+            if (saving_throw(f, e.save, -2, d)) {
+                say(who[k], Did::Unaffected, 0);
+                continue;
+            }
+            if (!b.fx || !b.fx->charm) continue;
+            // (the data as the engine's Charm Person: its own side kept under it for when it ends)
+            give_aff(f, b.fx->charm, minutes, (caster_side << 7) | ((f.team() ? 1 : 0) << 6) | 0x20 | (pw & 0x1F), false);
+            f.rec[0x197] = static_cast<uint8_t>(caster_side);
+            f.target = -1;
+            say(who[k], Did::Word, 0);
+        }
+        break;
+    }
+    case SpellDoes::Dance: {
+        // Otto's Irresistible Dance (R6; GAME.OVR 0x2F8FB): the touch's blow,
+        // then 1d4 + 1 rounds of lost turns and another 1d4 + 1 of dancing;
+        // no save
+        Fighter& f = b.f[who[0]];
+        if (!f.up() || !b.fx) break;
+        const int roll = d.roll(20, 1);
+        if (roll == 1 || (roll != 20 && roll + static_cast<int8_t>(me.rec[kHit]) < f.rec[kAc])) {
+            say(who[0], Did::Misses, 0);
+            break;
+        }
+        if (resisted(0, b.fx->fumbling)) break;
+        if (b.fx->fumbling) give_aff(f, b.fx->fumbling, d.roll(fs.sides, fs.n) + fs.plus, pw, false);
+        if (b.fx->dk.dancing) give_aff(f, b.fx->dk.dancing, d.roll(fs.sides, fs.n) + fs.plus, pw, false);
+        say(who[0], Did::Word, 0);
+        break;
+    }
+    case SpellDoes::WordBlind: {
+        // Power Word Blind (R7; GAME.OVR 0x2F9BF): those of HP max 100 or less
+        // while the total stays at 100 or less; no save. The original works
+        // out (1d4 + 1) rounds (x 10 for a total under 51) and never uses it -
+        // its effect lasts the row's time, 0: for good. AD&D's with the rules
+        // fixes (SPEC 12)
+        int total = 0;
+        for (int k = 0; k < m; ++k) {
+            const Fighter& f = b.f[who[k]];
+            if (f.hp_max() <= 100 && total + f.hp_max() <= 100) total += f.hp_max();
+        }
+        int rounds = minutes;
+        if (rules::fixes()) {
+            rounds = d.roll(4, 1) + 1;
+            if (total < 51) rounds *= 10;
+        }
+        int sum = 0;
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (f.hp_max() > 100 || sum + f.hp_max() > 100) continue;
+            sum += f.hp_max();
+            if (!b.fx || resisted(k, b.fx->blinded)) continue;
+            give_aff(f, b.fx->blinded, rounds, 0, false);
+            say(who[k], Did::Word, 0);
+        }
+        break;
+    }
+    case SpellDoes::WordKill: {
+        // Power Word Kill (R9; GAME.OVR 0x2FEB2): the first of 11-60 HP max
+        // alone; else every one of 10 or less; no save
+        auto slay = [&](int k) {
+            if (resists(b, who[k], 0, hs, d)) return;
+            Fighter& f = b.f[who[k]];
+            say(who[k], Did::Word, 0);
+            damage(b, who[k], f.hp() + 10);
+            f.rec[kHealth] = party::Dead;
+            say(who[k], Did::Fallen, 0);
+        };
+        if (b.f[who[0]].hp_max() > 10 && b.f[who[0]].hp_max() <= 60) {
+            if (b.f[who[0]].up()) slay(0);
+            break;
+        }
+        for (int k = 0; k < m; ++k)
+            if (b.f[who[k]].up() && b.f[who[k]].hp_max() <= 10) slay(k);
+        break;
+    }
+    case SpellDoes::Meteors:
+        lines += meteors(b, caster, fs, hs, d, out + lines, cap - lines);
+        break;
+    case SpellDoes::Summon:
+        break;                          // (the caller: the fight's reserve)
     case SpellDoes::Restore:
         // (the level itself: the caller, create::restore)
         for (int k = 0; k < m; ++k)
@@ -4232,7 +4440,7 @@ int turn_undead(Battle& b, const Tables& t, int cleric, create::Dice& d, int* ou
             type = ut;
         }
         if (best < 0) break;
-        const int v = static_cast<int8_t>(t.turn[type * t.turn_cols + col]);
+        const int v = static_cast<int8_t>(t.turn[type * (t.turn_cols ? t.turn_cols : 10) + col]);   // (0: unset - Curse's 10)
         if (roll < (v < 0 ? -v : v)) break;
         Fighter& f = b.f[best];
         if (v > 0) {
@@ -4479,11 +4687,16 @@ constexpr int kCloudDx[4] = {0, 1, 1, 0}, kCloudDy[4] = {0, 0, 1, 1};
 int cloud_squares(bool poison) { return poison ? 9 : 4; }
 int sq_dx(bool poison, int k) { return poison ? kDx[(k + 8) % 9] : kCloudDx[k]; }
 int sq_dy(bool poison, int k) { return poison ? kDy[(k + 8) % 9] : kCloudDy[k]; }
+uint8_t knives_g(const Battle& b) { return b.fx ? b.fx->dk.knives : 0; }
+uint8_t ground_of(const Battle& b, const Battle::Cloud& cl)
+{
+    return cl.poison ? poison_g(b) : cl.knives ? knives_g(b) : cloud_g(b);
+}
 // What the ground under a cloud square really is (another cloud's memory)
 int ground_under(const Battle& b, int x, int y)
 {
     const int g = b.ground[y][x];
-    if (g != cloud_g(b) && g != poison_g(b)) return g;
+    if (g != cloud_g(b) && g != poison_g(b) && (!knives_g(b) || g != knives_g(b))) return g;
     for (int c = 0; c < b.n_clouds; ++c) {
         const Battle::Cloud& cl = b.clouds[c];
         for (int k = 0; k < cloud_squares(cl.poison); ++k)
@@ -4496,6 +4709,7 @@ int ground_under(const Battle& b, int x, int y)
 
 bool in_cloud(const Battle& b, int x, int y) { return on_field(x, y) && b.ground[y][x] == cloud_g(b); }
 bool in_poison(const Battle& b, int x, int y) { return on_field(x, y) && b.ground[y][x] == poison_g(b); }
+bool in_knives(const Battle& b, int x, int y) { return knives_g(b) && on_field(x, y) && b.ground[y][x] == knives_g(b); }
 
 int cloud_fighters(const Battle& b, int x, int y, int* out, int cap, bool poison)
 {
@@ -4511,7 +4725,7 @@ int cloud_fighters(const Battle& b, int x, int y, int* out, int cap, bool poison
     return n;
 }
 
-bool lay_cloud(Battle& b, const Tables& t, int x, int y, int rounds, bool poison)
+bool lay_cloud(Battle& b, const Tables& t, int x, int y, int rounds, bool poison, bool knives)
 {
     if (b.n_clouds >= Battle::kMaxClouds) return false;
     Battle::Cloud& cl = b.clouds[b.n_clouds];
@@ -4519,8 +4733,9 @@ bool lay_cloud(Battle& b, const Tables& t, int x, int y, int rounds, bool poison
     cl.x = static_cast<uint8_t>(x);
     cl.y = static_cast<uint8_t>(y);
     cl.poison = poison;
+    cl.knives = knives && !poison;
     cl.rounds = static_cast<uint8_t>(rounds < 1 ? 1 : rounds > 255 ? 255 : rounds);
-    cl.level = cl.rounds;                   // (the caster's level is its rounds)
+    cl.level = cl.knives ? static_cast<uint8_t>(cl.rounds / 3) : cl.rounds;   // (the caster's level: its rounds; the knives' a third)
     for (int k = 0; k < cloud_squares(poison); ++k) {
         const int xx = x + sq_dx(poison, k), yy = y + sq_dy(poison, k);
         if (!on_field(xx, yy) || !b.ground[yy][xx] || tile(b, t, xx, yy)[0] == 0xFF) continue;
@@ -4528,7 +4743,7 @@ bool lay_cloud(Battle& b, const Tables& t, int x, int y, int rounds, bool poison
         cl.present = static_cast<uint16_t>(cl.present | 1 << k);
     }
     for (int k = 0; k < cloud_squares(poison); ++k)
-        if (cl.present >> k & 1) b.ground[y + sq_dy(poison, k)][x + sq_dx(poison, k)] = poison ? poison_g(b) : cloud_g(b);
+        if (cl.present >> k & 1) b.ground[y + sq_dy(poison, k)][x + sq_dx(poison, k)] = ground_of(b, cl);
     ++b.n_clouds;
     return true;
 }
@@ -4568,6 +4783,26 @@ bool breathe_poison(Battle& b, int i, create::Dice& d)
     return true;
 }
 
+// Darkness's Blade Barrier (R2; GAME.OVR 0x328A2): the spell's kind 8,
+// magic resistance (its cloud's caster level), then 8d8 - no save
+int knives_cut(Battle& b, int i, create::Dice& d, bool* down)
+{
+    *down = false;
+    Fighter& f = b.f[i];
+    if (!b.fx || !f.up() || !in_knives(b, f.x, f.y)) return 0;
+    int level = 12;
+    for (int c = 0; c < b.n_clouds; ++c)
+        if (b.clouds[c].knives) level = b.clouds[c].level;
+    Harm h;
+    h.kind = 8;
+    h.level = level;
+    h.spell = 0x65;
+    h.spell_level = 6;
+    if (resists(b, i, 0, h, d)) return 0;
+    h.dice = b.fx->dk.knife_n;
+    return harm(b, i, d.roll(b.fx->dk.knife_sides, b.fx->dk.knife_n) & 0xFF, h, d, down);
+}
+
 int clouds_round(Battle& b)
 {
     int gone = 0;
@@ -4603,7 +4838,7 @@ int clouds_round(Battle& b)
         const Battle::Cloud& cl = b.clouds[c];
         for (int k = 0; k < cloud_squares(cl.poison); ++k)
             if (cl.present >> k & 1)
-                b.ground[cl.y + sq_dy(cl.poison, k)][cl.x + sq_dx(cl.poison, k)] = cl.poison ? poison_g(b) : cloud_g(b);
+                b.ground[cl.y + sq_dy(cl.poison, k)][cl.x + sq_dx(cl.poison, k)] = ground_of(b, cl);
     }
     return gone;
 }

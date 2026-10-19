@@ -329,7 +329,7 @@ void turn_sound()
     if (!d->prof->clips.quiet_turns) sfx(sound::kStep);
 }
 
-void fight_load_monster(int id, int copies, int icon);
+void fight_load_monster(int id, int copies, int icon, bool reserve = false);
 uint8_t* fight_monster_record(int k);
 bool npc_join(int id);
 bool party_dead = false;      // DAMAGE killed everyone: the party menu after the script

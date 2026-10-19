@@ -190,9 +190,249 @@ void turn_checks()
     }
 }
 
+// ---- The new spells (R2-R10)
+combat::SpellLine L[24];
+int nl = 0;
+int cast(int caster, int s, std::initializer_list<int> tg, int pw = 0)
+{
+    const auto& fl = play::d->prof->fight;
+    const combat::FightSpell* fs = combat::fight_spell(fl.spells, fl.n_spells, s);
+    if (!fs) return -1;
+    int t[24], n = 0;
+    for (int i : tg) t[n++] = i;
+    nl = combat::cast(play::fg->b, play::mrules->tables, caster, s, *fs, t, n, play::rng, L, 24, pw);
+    return nl;
+}
+int said(int who, combat::Did did)
+{
+    int n = 0;
+    for (int k = 0; k < nl; ++k) n += L[k].who == who && L[k].did == did;
+    return n;
+}
+int dmg(int who)
+{
+    int n = 0;
+    for (int k = 0; k < nl; ++k)
+        if (L[k].who == who && L[k].did == combat::Did::Damage) n += L[k].amount;
+    return n;
+}
+int aff_time(int i, int type)
+{
+    const combat::Fighter& f = F(i);
+    for (int k = 0; f.n_aff && k < *f.n_aff; ++k)
+        if (f.aff[k][0] == type) return f.aff[k][1] | f.aff[k][2] << 8;
+    return -1;
+}
+const std::vector<int>* fact(const char* key) { return b_row(key, b_rows(key).empty() ? 0 : b_rows(key)[0][0]); }
+int fv(const char* key, int i)
+{
+    const auto& r = b_rows(key);
+    return r.empty() || i >= static_cast<int>(r[0].size()) ? -999 : r[0][i];
+}
+
+void spell_checks()
+{
+    if (!new_fight()) {
+        expect(F_, "a fight to cast in", false);
+        return;
+    }
+#define BT (play::fg->b)
+    const combat::Facts& fx = *BT.fx;
+    const int C = 0, A = BT.party_size, B = A + 1, D = A + 2, E = A + 3;
+    auto reset = [&]() {
+        new_fight();
+        put(C, 0, 10, 10, 60);
+        levels(C, classes::MagicUser, 18);
+        F(C).rec[0x10E] = 18;
+        F(C).rec[0x109] = 18;
+        BT.f[C].rec[0x199] = 20;                     // (the touch spells' blows: a good to-hit)
+    };
+
+    // Blade Barrier (R2): the knives 3 rounds a level; at the cast a save
+    // against spells or 8d8 (no half); later no save
+    for (int d20 : {20, 2}) {
+        reset();
+        put(A, 1, 12, 10, 100);
+        const int lv = combat::power_of(F(C).rec, play::mrules->tables, 0x65, false);
+        combat::lay_cloud(BT, play::fg->t, 12, 10, 3 * lv, false, true);
+        dice(1, d20);
+        cast(C, 0x65, {A});
+        const int want = d20 >= 15 ? 0 : fv("bb", 0) * fv("bb", 1);
+        snprintf(w, sizeof w, "Blade Barrier at the cast, d20 %d against a save of 15", d20);
+        expect(F_, w, dmg(A) == want && (want == 0) == (said(A, combat::Did::Word) == 0), "damage %d, the original's %d", dmg(A), want);
+        bool dn = false;
+        dice(1, 20);
+        const int cut = combat::knives_cut(BT, A, play::rng, &dn);
+        snprintf(w, sizeof w, "Blade Barrier's round's end, d20 %d: no save", 20);
+        expect(F_, w, cut == fv("bb", 0) * fv("bb", 1), "%d", cut);
+        int rounds = -1;
+        for (int k = 0; k < BT.n_clouds; ++k)
+            if (BT.clouds[k].knives) rounds = BT.clouds[k].rounds;
+        expect(F_, "Blade Barrier lasts 3 rounds a caster level", rounds == fv("bb", 2) * lv, "%d rounds, level %d", rounds, lv);
+        dice_off();
+    }
+
+    // Destruction (R4): the unliving unaffected; else gone, no save
+    for (int unliving : {0, 1}) {
+        reset();
+        put(A, 1, 11, 10, 100);
+        F(A).flags2 = static_cast<uint8_t>(unliving ? 8 : 0);
+        dice(1, 20);
+        cast(C, 0x68, {A});
+        dice_off();
+        snprintf(w, sizeof w, "Destruction on a %s creature (a d20 of 20: no save)", unliving ? "unliving" : "living");
+        const bool ok = unliving ? F(A).status() == party::Okay && said(A, combat::Did::Unaffected)
+                                 : F(A).status() == party::Gone && said(A, combat::Did::Word);
+        expect(F_, w, ok, "status %d", F(A).status());
+    }
+
+    // Mass Charm (R5): Hit Dice against 2 x level; persons, not large, of the
+    // other side; a save at -2
+    for (int d20 : {16, 17}) {
+        reset();
+        levels(C, classes::MagicUser, 10);
+        put(A, 1, 12, 10, 40, 8);
+        put(B, 1, 13, 10, 40, 8);
+        put(D, 1, 14, 10, 40, 8);
+        put(E, 1, 15, 10, 40, 2);
+        for (int i : {A, B, D, E}) F(i).rec[0xDE] = 1;
+        for (int i : {A, B, D}) F(i).flags2 = 2;
+        dice(1, d20);
+        cast(C, 0x78, {A, B, E, D});
+        dice_off();
+        const bool fails = d20 - 2 < 15;
+        const bool ok = (F(A).team() == 0) == fails && (F(B).team() == 0) == fails && F(D).team() == 1 &&
+                        said(E, combat::Did::Word2) == 1 && said(D, combat::Did::Word) == 0;
+        snprintf(w, sizeof w, "Mass Charm, level 10 (20 Hit Dice), d20 %d: 8 + 8 charmed or saved, a non-person unaffected, "
+                              "the third 8 past the count", d20);
+        expect(F_, w, ok, "sides %d %d %d (lines %d: A word %d word2 %d unaffected %d; size %d, power %d)", F(A).team(), F(B).team(),
+               F(D).team(), nl, said(A, combat::Did::Word), said(A, combat::Did::Word2), said(A, combat::Did::Unaffected),
+               (int)F(A).rec[0xDE], combat::power_of(F(C).rec, play::mrules->tables, 0x78, false));
+    }
+
+    // Otto's (R6): a blow, then 1d4 + 1 rounds lost and 1d4 + 1 dancing
+    for (int d20 : {20, 1}) {
+        reset();
+        put(A, 1, 11, 10, 40);
+        dice(1, d20);
+        cast(C, 0x79, {A});
+        dice_off();
+        const int want = d20 == 1 ? -1 : 4 + 1;
+        snprintf(w, sizeof w, "Otto's Irresistible Dance, d20 %d", d20);
+        expect(F_, w, aff_time(A, fx.fumbling) == want && aff_time(A, fx.dk.dancing) == want, "%d / %d, the original's %d",
+               aff_time(A, fx.fumbling), aff_time(A, fx.dk.dancing), want);
+    }
+
+    // Power Word Blind (R7): HP max 100 at most in all; the time - the
+    // original's the row's (0: for good), the rules fixes' 1d4 + 1 (x 10 under 51)
+    for (bool fix : {false, true}) {
+        reset();
+        const bool was = rules::fixes();
+        rules::set_fixes(fix);
+        put(A, 1, 12, 10, 40);
+        put(B, 1, 13, 10, 50);
+        put(D, 1, 14, 10, 30);
+        dice(1, 10);
+        cast(C, 0x7B, {A, B, D});
+        dice_off();
+        rules::set_fixes(was);
+        const auto* row = b_row("sprow", 0x7B);
+        const int orig = row ? (*row)[5] + (*row)[6] * combat::power_of(F(C).rec, play::mrules->tables, 0x7B, false) : -2;
+        const int want = fix ? 5 : orig;
+        snprintf(w, sizeof w, "Power Word Blind on HP max 40, 50, 30 (rules fixes %s)", fix ? "on" : "off");
+        expect(F_, w, aff_time(A, fx.blinded) == want && aff_time(B, fx.blinded) == want && aff_time(D, fx.blinded) == -1,
+               "%d %d %d, the original's %d", aff_time(A, fx.blinded), aff_time(B, fx.blinded), aff_time(D, fx.blinded), want);
+    }
+
+    // Power Word Kill (R9)
+    {
+        reset();
+        put(A, 1, 12, 10, 50);
+        put(B, 1, 13, 10, 8);
+        cast(C, 0x7D, {A, B});
+        expect(F_, "Power Word Kill: the first of 11-60 HP max alone", F(A).status() == party::Dead && F(B).up(),
+               "%d %d", F(A).status(), F(B).status());
+        reset();
+        put(A, 1, 12, 10, 70);
+        put(B, 1, 13, 10, 8);
+        put(D, 1, 14, 10, 10);
+        put(E, 1, 15, 10, 11);
+        cast(C, 0x7D, {A, B, D, E});
+        expect(F_, "Power Word Kill: the first over 60: all of 10 or less", F(A).up() && !F(B).up() && !F(D).up() && F(E).up(),
+               "%d %d %d %d", F(A).status(), F(B).status(), F(D).status(), F(E).status());
+    }
+
+    // Meteor Swarm (R8): four meteors on the diagonals of the square aimed
+    // at; struck: 10d4 no save; the burst round it: a save for half
+    {
+        reset();
+        put(A, 1, 19, 9, 200);                     // on a meteor's square (aim 20,10: NW)
+        put(B, 1, 20, 10, 200);                    // the square aimed at: in all four bursts
+        dice(1, 20);
+        play::fg->b.aim_x = 20;
+        play::fg->b.aim_y = 10;
+        cast(C, 0x7C, {B});
+        play::fg->b.aim_x = play::fg->b.aim_y = -1;
+        dice_off();
+        const int full = fv("meteor", 1) * fv("meteor", 2);
+        bool spots = BT.n_meteors == 4;
+        for (int k = 0; k < 4 && spots; ++k)
+            spots = BT.meteor_x[k] == 20 + fv("meteor_dx", k) && BT.meteor_y[k] == 10 + fv("meteor_dy", k);
+        expect(F_, "Meteor Swarm: four meteors on the square's diagonals", spots, "%d", BT.n_meteors);
+        // (A: struck by the first meteor, full; then within 1 of none of the others' landings but...)
+        expect(F_, "Meteor Swarm: struck (no save) / in a burst (saved: half)", dmg(B) == 4 * (full / 2) && dmg(A) >= full,
+               "B %d (the original's %d), A %d", dmg(B), 4 * (full / 2), dmg(A));
+    }
+
+    // Monster Summoning (R10): the fight's reserve, 2 a cast, on the caster's side
+    {
+        new_fight();
+        const MonsterLoad* m = play::ml;
+        const int style = play::vm->get(0x3A) & 0xFF;
+        const auto* rs = b_row("reserve", fv("reserve", 0));
+        const int want_id = style <= 4 ? fv("reserve", style) : -1;
+        const bool loaded = m && m->reserve_from >= 0 && m->n - m->reserve_from == 10 &&
+                            m->g[m->reserve_group]->id == want_id;
+        (void)rs;
+        expect(F_, "the summoning reserve: 10 of the frame style's MON block, out of the fight", loaded, "style %d, block %d",
+               style, m && m->reserve_group >= 0 ? m->g[m->reserve_group]->id : -1);
+        // (the facts' plain ground: 0x17 in the 3D view's areas, else 0x45)
+        const int plain = (play::vm->get(0x22) & 0xFF) ? 0x17 : 0x45;
+        for (int y = 0; y < combat::kH; ++y)
+            for (int x = 0; x < combat::kW; ++x) BT.ground[y][x] = static_cast<uint8_t>(plain);
+        put(0, 0, 10, 10, 50);
+        const int before = BT.n;
+        play::summon(0, *combat::fight_spell(play::d->prof->fight.spells, play::d->prof->fight.n_spells, 0x7E));
+        bool joined = BT.n == before + 2;
+        for (int i = before; i < BT.n && joined; ++i)
+            joined = BT.f[i].team() == F(0).team() && BT.f[i].up() && BT.f[i].hp() == BT.f[i].hp_max() && BT.f[i].size;
+        expect(F_, "Monster Summoning: 2 gate in on the caster's side, whole", joined, "%d joined", BT.n - before);
+        // (the squares: next to the list's first fighter, N, then the next
+        // direction (DS 0x3EAC / 0x3EB5: N, NE, E ...) whose square the first
+        // doesn't cover - a large one covers its size's squares east and north)
+        int want2 = -1;
+        if (BT.n == before + 2) {
+            const int sz = BT.f[before].size;
+            static const int ddx[8] = {0, 1, 1, 1, 0, -1, -1, -1}, ddy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
+            for (int k = 1; k < 8 && want2 < 0; ++k) {
+                const int x = 10 + ddx[k], y = 10 + ddy[k];
+                const bool covered = x >= 10 && x < 10 + sz && y <= 9 && y > 9 - sz;
+                if (!covered) want2 = k;
+            }
+        }
+        const bool where = want2 >= 0 && BT.f[before].x == 10 && BT.f[before].y == 9 &&
+                           BT.f[before + 1].x == 10 + (want2 == 1 || want2 == 2 || want2 == 3) - (want2 >= 5) &&
+                           BT.f[before + 1].y == 10 + (want2 >= 3 && want2 <= 5) - (want2 <= 1 || want2 == 7);
+        expect(F_, "Monster Summoning: next to the first fighter, north first", where, "%d,%d %d,%d (size %d)",
+               BT.f[before].x, BT.f[before].y, BT.f[before + 1].x, BT.f[before + 1].y, BT.f[before].size);
+    }
+    #undef BT
+}
+
 void checks(bool (*want)(const char*))
 {
     if (want("turn")) turn_checks();
+    if (want("spells")) spell_checks();
 }
 
 } // namespace dkfight

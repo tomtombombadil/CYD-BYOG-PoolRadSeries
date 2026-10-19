@@ -64,6 +64,9 @@ struct Tables {
     // facts R13 - column 0 for level 0, the cleric or the paladin - 2, the
     // highest type first and a weaker one after a roll too low, 1d6 + 6 for D*)
     uint8_t turn_cols;
+    // Darkness's Monster Summoning reserve (R10): MON block / CPIC by the
+    // frame style 0-4 (none: 0)
+    uint8_t reserve_mon[5], reserve_pic[5];
     // Pool: the races' foes by name (poolrad_combat_facts.md 2.2; Pascal
     // names 16 bytes apart: 4 the gnomes' foes, 8 the dwarves', 8 the
     // giants the dwarves and gnomes dodge - the last 3 the turn table's
@@ -84,6 +87,7 @@ struct TableAt {
     uint16_t ground, fallback, formation, facing, start_x, start_y, shapes, terrain, turn;
     uint16_t race_names;                // Pool's foe names (0: none - the class bits)
     uint8_t  turn_cols = 10;            // the turn table's columns (Darkness 11, its rows 0-13)
+    uint16_t reserve = 0;               // Darkness: the summoning reserve's MON blocks (5) and CPIC (5) by frame style
 };
 // Reads them: read(ctx, ds offset, out, n) gives the data segment's bytes
 using ReadDs = bool (*)(void* ctx, uint16_t ds, uint8_t* out, size_t n);
@@ -351,6 +355,26 @@ struct Facts {
     uint8_t plat_xp = 0;
     // A seventh pointed shot type (Darkness 0x4A - GAME.OVR 0x20E3C; 0xFF none)
     uint8_t shot_pointed2 = 0xFF;
+    // Pools of Darkness's own (the fights' rules facts R2-R14; 0: none):
+    // Blade Barrier's ground and its damage dice; Otto's dancing (AC 4
+    // worse); the dragons' fear at the fight's start (a save against
+    // petrification at -4, else feared: -2 to hit, -2 damage); the
+    // paralysing gaze (a save against petrification +3 or paralysed 10
+    // rounds), gaze-proof (gazes always saved), the vampire's gaze (Charm
+    // Person); the beholder's rays by distance; vorpal blows (a d20 of 17+
+    // beheads, but flags 2 & 0x20); Kalistes' six weapons; the bulette's
+    // rake (its second slot 8 attacks 1 in 4, else 4); killed by the
+    // blessed bolts (an item of this type); immune to the disease
+    struct DarkFx {
+        uint8_t knives = 0, knife_n = 0, knife_sides = 0;
+        uint8_t dancing = 0;
+        uint8_t dragon_fear = 0, feared = 0;
+        uint8_t para_gaze = 0, gaze_proof = 0, vamp_gaze = 0;
+        uint8_t beholder = 0;
+        uint8_t vorpal = 0, kalistes = 0, rake = 0;
+        uint8_t blessed = 0, blessed_type = 0;
+        uint8_t no_disease = 0, disease = 0;
+    } dk{};
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (the record its copies
@@ -517,6 +541,7 @@ struct Battle {
     struct Cloud {
         uint8_t  x = 0, y = 0, rounds = 0;
         bool     poison = false;        // Cloudkill (3 x 3, ground 0x1C), else Stinking Cloud (2 x 2, 0x1E)
+        bool     knives = false;        // Darkness's Blade Barrier (2 x 2, its ground: fx->dk.knives)
         uint8_t  level = 0;             // its caster's (Dispel Magic)
         bool     resisted = false;      // a Dispel Magic failed on it
         uint16_t present = 0;           // bit k = square k is cloud
@@ -536,6 +561,9 @@ struct Battle {
     int     n_bolt = 0;
     Cloud   clouds[kMaxClouds];
     int     n_clouds = 0;
+    // Darkness's Meteor Swarm: where its meteors landed (the pictures)
+    uint8_t meteor_x[4] = {}, meteor_y[4] = {};
+    int     n_meteors = 0;
 };
 
 // Effects on a fighter
@@ -885,6 +913,19 @@ enum class SpellDoes : uint8_t {
     Unstone,                            // Stone to Flesh: the stoned back up with 1 HP (word); else unaffected
     Stun,                               // Power Word Stun: by the hit points left (1-30 4d4, 31-60 2d4, 61-90 1d4
                                         // rounds) the table's effect - turns lost (word)
+    // Pools of Darkness (the fights' rules facts R2-R10)
+    Blade,                              // Blade Barrier: the caller lays the knives (cloud); those in it at the cast:
+                                        // magic resistance, a save, else the word and the dice (no save for half)
+    EnergyDrain,                        // a level drained from the one touched (the caller: drain(), its words)
+    Destroy,                            // Destruction: magic resistance or unliving: unaffected; else gone (word)
+    MassCharm,                          // Hit Dice up to 2 x level: persons, not large, of the other side; a save at -2
+                                        // or charmed (word; word2 "is unaffected" for the rest)
+    Dance,                              // Otto's: a touch's blow, then the lost turns (fumbling) and dancing, each
+                                        // 1d4 + 1 rounds (word)
+    WordBlind,                          // Power Word Blind: HP max up to 100 in total, blinded (word)
+    Meteors,                            // Meteor Swarm: four meteors round the square aimed at (meteors())
+    WordKill,                           // Power Word Kill: one of 11-60 HP max, else all of 10 or less (word)
+    Summon,                             // Monster Summoning: the caller brings in the fight's reserve (word / word2)
 };
 struct FightSpell {
     uint8_t   spell;
@@ -924,7 +965,12 @@ int cloud_fighters(const Battle& b, int x, int y, int* out, int cap, bool poison
 // its caster's (once: a failed one resists); how many end as the round does
 int dispel_clouds(Battle& b, int x, int y, int level, create::Dice& d);
 // Lays a cloud there (false: no room for another)
-bool lay_cloud(Battle& b, const Tables& t, int x, int y, int rounds, bool poison = false);
+bool lay_cloud(Battle& b, const Tables& t, int x, int y, int rounds, bool poison = false, bool knives = false);
+// Darkness's Blade Barrier (R2): standing in its knives (the field's ground)
+bool in_knives(const Battle& b, int x, int y);
+// Its 8d8 (no save; magic resistance first) on one in it: the damage done
+// (0: resisted / nothing), *down when it fell
+int knives_cut(Battle& b, int i, create::Dice& d, bool* down);
 bool in_cloud(const Battle& b, int x, int y);
 bool in_poison(const Battle& b, int x, int y);
 // Breathing the poison: true when it kills them (dead already, out of the fight)
