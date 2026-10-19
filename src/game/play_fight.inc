@@ -22,11 +22,21 @@
 
 constexpr int kViewX = 8, kViewY = 8, kSq = 24;
 
+// The monsters loaded: their groups each a block of its own, made as a
+// LOAD MONSTER needs one (v0.136.1: 8 fixed, 507 bytes each, took 4 KB
+// in every fight - most have one or two kinds)
 struct MonsterLoad {
     combat::Monster* m = nullptr;
     int n = 0, cap = 0;
-    combat::Group g[combat::kMaxGroups];
+    combat::Group* g[combat::kMaxGroups] = {};
     int groups = 0;
+    ~MonsterLoad()
+    {
+        for (combat::Group*& p : g) {
+            delete p;
+            p = nullptr;
+        }
+    }
 };
 MonsterLoad* ml = nullptr;
 
@@ -204,7 +214,12 @@ void fight_load_monster(int id, int copies, int icon)
         rec[0x78] = static_cast<uint8_t>(rec[0x78] * (level + 2) / 4);
         if (rec[0x1A4] == 0 || rec[0x78] == 0) rec[0x1A4] = rec[0x78] = 1;
     }
-    combat::Group& g = ml->g[ml->groups];
+    if (!ml->g[ml->groups]) ml->g[ml->groups] = new (std::nothrow) combat::Group;
+    if (!ml->g[ml->groups]) {
+        plat::log("[play] LOAD MONSTER: not enough memory\n");
+        return;
+    }
+    combat::Group& g = *ml->g[ml->groups];
     g = combat::Group{};
     g.id = static_cast<uint8_t>(id);
     g.icon = static_cast<uint8_t>(icon);
@@ -1759,7 +1774,7 @@ void remove_group_item(const combat::Fighter& f, int k)
     for (int j = 0; j < fg->b.n; ++j)
         if (fg->b.f[j].items == list) fg->b.f[j].n_items = n - 1;
     for (int g = 0; ml && g < combat::kMaxGroups; ++g)
-        if (ml->g[g].item == list) ml->g[g].n_items = static_cast<uint8_t>(n - 1);
+        if (ml->g[g] && ml->g[g]->item == list) ml->g[g]->n_items = static_cast<uint8_t>(n - 1);
 }
 
 // Shots: `n` arrows / quarrels of the pile (one for each attack made), or
@@ -2934,7 +2949,7 @@ void fight_start(pic::Canvas& c)
     if (party::Character* tmp = new (std::nothrow) party::Character) {
         for (int k = 0; k < ml->n; ++k) {
             combat::Monster& m = ml->m[k];
-            const combat::Group& g = ml->g[m.group];
+            const combat::Group& g = *ml->g[m.group];
             memcpy(tmp->rec, m.rec, sizeof tmp->rec);
             tmp->n_items = g.n_items < party::kMaxItems ? g.n_items : party::kMaxItems;
             memcpy(tmp->items, g.item, static_cast<size_t>(tmp->n_items) * items::kRecordSize);
@@ -2950,8 +2965,8 @@ void fight_start(pic::Canvas& c)
         f.rec = m.rec;
         f.aff = m.aff;
         f.n_aff = &m.n_aff;
-        f.items = ml->g[m.group].item;
-        f.n_items = ml->g[m.group].n_items;
+        f.items = ml->g[m.group]->item;
+        f.n_items = ml->g[m.group]->n_items;
         f.monster = k;
         f.icon = 8 + m.group;
         f.quick = true;
@@ -2975,7 +2990,7 @@ void fight_start(pic::Canvas& c)
     combat::battle_start(b, &rng);           // those invisible from the start
     // Their pictures
     fight_party_icons();
-    for (int g = 0; g < ml->groups; ++g) load_monster_icon(8 + g, ml->g[g].icon);
+    for (int g = 0; g < ml->groups; ++g) load_monster_icon(8 + g, ml->g[g]->icon);
     int w, h;
     free(fg->cursor);                        // (a fight started over another: nothing kept twice)
     free(fg->skull);
