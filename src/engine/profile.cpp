@@ -1436,12 +1436,25 @@ const Profile kProfiles[] = {
      // Secret's numbering - arrows 30, quarrels 12, darts 5), the ITEMS type
      // file without a head; "Items" (DS 0x1738)
      .items = {.words = {0xD1C4, 21, 125}, .types_file = "ITEMS", .arrow = 30, .quarrel = 12, .dart = 5,
+               // the shop (facts_shops.md 2): "items : ", "Buy", its menu one string
+               // (Take and Share left out with no coins on the counter), "not
+               // enough money.", Buy's "OverLoaded"
+               .buy_items = kP | 0xC930, .buy = kP | 0xCEC8,
                // "Items", "Ready Item", " Yes  ", " No   ", "It's Cursed!", "Wrong Class",
                // "already using ", "Your hands are full!", "'s" (its item overlay)
                .list_next = kP | 0xAAEE, .list_prev = kP | 0xAB04, .list_exit = kP | 0xAAF9,
+               .shop_menu = kP | 0xCEF1, .shop_menu_money = kP | 0xCEF1, .no_money = kP | 0xC159,
+               .overloaded = 0x5F4F,
                .title = kP | 0xB5A8, .heading = kP | 0xB5D1, .yes = 0x3430D, .no = 0x34314, .cursed = 0x25099,
                .wrong_class = 0x250A6, .already = 0x250B2, .hands_full = 0x250C1, .plural_s = 0x35ABD,
-               .types_head = 0, .menu = kP | 0xCC11},
+               // (Sell's prices as Secret's - facts_shops.md 2.2)
+               .sell_secret = true,
+               .types_head = 0, .menu = kP | 0xCC11,
+               // SHOP n's goods: DS 0x0001 + n .. 0x000C + n, rows DS 0x0017 + k of
+               // ITEM0.DAX block 1; the random scroll's spells by DS 0x651A + 16 s;
+               // the temple's 11 cures by spell number (DS 0x08CC)
+               .goods_first = 0x0001, .goods_last = 0x000C, .goods_rows = 0x0017, .spell_class = 0x651A,
+               .rows_file = "ITEM0.DAX", .temple_spells = 0x08CC},
      // Character rules (darkness_facts.md 37): the tables in Darkness's
      // shapes (classes::Layout dk, with Secret's rules otherwise - secret):
      // spells 0x6519 (127), THAC0 0x6D18, class flags / masks, last hit die,
@@ -1455,14 +1468,27 @@ const Profile kProfiles[] = {
      // The items screen's other words (Use ... Id, Deposit from items.menu):
      // its data segment's where it has them (DS 0x1738 on), else GAME.OVR
      .item_words = {0, 0, 0, 0, 0, 0, 0, 0x24795, kP | 0xB64C, 0x253D4, kP | 0xB5FA, kP | 0xB623, 0, 0x2530A,
-                    kP | 0xB675, kP | 0xB69E, kP | 0xB6C7, kP | 0xB6F0, kP | 0xB719, kP | 0xB742, kP | 0xB76B,
-                    kP | 0xB794, kP | 0xC159, kP | 0xC9FD, 0},
-     // The training hall's words (GAME.OVR 0x1868F on: free, every class -
-     // no "Training costs" / "We don't train that class here"); the shops
-     // and the temple: not yet
-     .shop_words = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0x1868F, 0, 0, 0x186AE, 0x186C4, 0x186D2, 0x186E1, 0x186EE, 0x18705},
+                    // (Sell and Id: the items overlay's own words, GAME.OVR 0x25956 on -
+                    // facts_shops.md 2.2)
+                    0x25956, 0x25965, 0x25D93, 0x25A07, 0x25A4B, 0x25D68, 0x25DB3,
+                    0x25DD9, 0x25DA2, kP | 0xC9FD, 0},
+     // The shop, Take, Appraise, the training hall, the temple (facts_shops.md
+     // 2, 3; the training hall's words GAME.OVR 0x1868F on: free, every class)
+     .shop_words = {0, 0, kP | 0xC5D3, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    kP | 0xC3E7, 0, 0, 0, 0, 0x3927,
+                    kP | 0xC462, 0x3917, kP | 0xC506, 0x3C39, kP | 0xC558, kP | 0xC581,
+                    0, 0, kP | 0xC182, kP | 0xC1D3,
+                    kP | 0xB460, 0, 0, 0, kP | 0xC6A0, kP | 0xB489, 0, 0, 0, 0,
+                    kP | 0xB4B2, 0x29468, 0, 0, 0, 0,
+                    kP | 0xB4DB, kP | 0xC9FD, kP | 0xB3E5, kP | 0xB3BC, 0x286B4,
+                    0x1868F, 0, 0, 0x186AE, 0x186C4, 0x186D2, 0x186E1, 0x186EE, 0x18705,
+                    0, 0, 0, 0, 0, 0, 0, kP | 0xC4B4, 0, 0, 0, 0,
+                    kP | 0xCEF1, 0x5BFC, 0x5C0C, kP | 0xC107, kP | 0xC130, 0x5F4F,
+                    0x25980, 0x2598F, 0x25994, 0x2599B, 0x259A1, 0x259B6, 0x259D6, 0x259E6, 0x25A0D,
+                    0x25A2F,
+                    0x2947B, kP | 0xB40E, kP | 0xB437, kP | 0xCB45, kP | 0xCB6E, kP | 0xB393, 0x290AE, 0x290A8, 0x290B8,
+                    kP | 0xCFDD, kP | 0xCFB4, kP | 0xC4DD, kP | 0xC5AA, 0x2DEFB, 0},
      // Magic (camp): "Cast Memorize Scribe Display Rest Exit" (DS 0x32CE),
      // its level names whole ("1st Level", DS 0x0AD5, 9), spell names (DS
      // 0x53CD, 127) and effect names (DS 0x4061, 129); the screens' words

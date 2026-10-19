@@ -1902,6 +1902,7 @@ void draw_input(pic::Canvas& c);
 
 // The shop's goods are listed last first (as the games list them)
 const uint8_t* goods(int i) { return ground->item[ground->n - 1 - i]; }
+int shop_price(const uint8_t* it);
 
 // Combat and the treasure after it (play_fight.inc)
 bool treasure_on();
@@ -1941,6 +1942,15 @@ void list_line(int i, char* out, size_t cap)
         char nm[48];
         const uint8_t* it = goods(i);
         names->name(items::Item{it}, nm, sizeof nm);
+        if (darkness_files()) {
+            // (30 characters: the price ending at the 30th, the name over the start)
+            char line[31];
+            snprintf(line, sizeof line, "%30d", shop_price(it));
+            const size_t n = strlen(nm);
+            memcpy(line, nm, n < 30 ? n : 30);
+            snprintf(out, cap, "%s", line);
+            return;
+        }
         snprintf(out, cap, "%-21s%9d", nm, rules::price(it, vm->get(0x7F6D) & 0xFF));
     } else {
         const party::Character* ch = pt->sel();
@@ -3869,6 +3879,29 @@ void sw(int i, char* out, size_t cap)
     text::read_pascal(src, at, out, cap);
 }
 
+// The words of a menu string whose bit is set in mask (bit k: word k), as
+// one menu string again
+void keep_words(const char* in, unsigned mask, char* out, size_t cap)
+{
+    size_t o = 0;
+    out[0] = 0;
+    int k = 0;
+    for (const char* q = in; *q;) {
+        while (*q == ' ') ++q;
+        const char* e = q;
+        while (*e && *e != ' ') ++e;
+        if (e == q) break;
+        if ((mask >> k & 1) && o + (e - q) + 2 < cap) {
+            if (o) out[o++] = ' ';
+            memcpy(out + o, q, e - q);
+            o += e - q;
+            out[o] = 0;
+        }
+        ++k;
+        q = e;
+    }
+}
+
 void treasure_menu(pic::Canvas& c);
 
 void shop_menu(pic::Canvas& c)
@@ -3878,6 +3911,19 @@ void shop_menu(pic::Canvas& c)
         return;
     }
     char words[48];
+    if (darkness_files()) {
+        // Darkness: one string each (facts_shops.md 2, 3) - the shop's without
+        // Take and Share when no coins lie on the counter; the highlight keeps
+        // its place in the line
+        char all[48];
+        sw(temple ? profile::kDkTempleMenu : profile::kDkShopMenu, all, sizeof all);
+        keep_words(all, temple || ground->any_money() ? ~0u : ~0x14u, words, sizeof words);
+        const int was = menu.selected;
+        text::build(menu, "", words);
+        menu.selected = was >= 0 && was < menu.count ? was : menu.count - 1;
+        show_menu_line(c);
+        return;
+    }
     if (temple) sw(ground->any_money() ? profile::kHealMenuMoney : profile::kHealMenu, words, sizeof words);
     else snprintf(words, sizeof words, "%s", ground->any_money() ? d->w_shop_money : d->w_shop);
     text::build(menu, "", words);
@@ -3914,8 +3960,11 @@ void draw_shop(pic::Canvas& c)
 void open_shop(pic::Canvas& c)
 {
     screen = Screen::Shop;
-    text::clear(c, text::kTextArea);
-    dirty_rows(17, 22);
+    if (!darkness_files()) {                // (Darkness: the script's words stay - DOSBox)
+        text::clear(c, text::kTextArea);
+        dirty_rows(17, 22);
+    }
+    menu.selected = 0;
     if (pt->count) draw_party(c, 17);
     shop_menu(c);
 }
@@ -3977,6 +4026,16 @@ void leave_shop(pic::Canvas& c, bool asked)
     handle(vm->resume());
 }
 
+// A shop's price (Darkness: in platinum, x the count - facts_shops.md 2.1)
+int shop_price(const uint8_t* it)
+{
+    int v = rules::price(it, vm->get(0x7F6D) & 0xFF);
+    if (!darkness_files()) return v;
+    const int n = items::Item{it}.count();
+    if (n > 1) v = (v * n) & 0xFFFF;
+    return v ? v : 1;
+}
+
 void draw_buy(pic::Canvas& c)
 {
     c.clear(0);
@@ -3985,13 +4044,63 @@ void draw_buy(pic::Canvas& c)
     plist.row1 = 22;
     plist.col0 = 1;
     plist.n = ground->n;
+    if (darkness_files()) {
+        // (rows 1-18; the buyer's and the counter's platinum at rows 20 / 21)
+        plist.row1 = 18;
+        char w[24], t[40];
+        sw(profile::kDkPersonal, w, sizeof w);
+        snprintf(t, sizeof t, "%s%10d", w, pt->sel() ? pt->sel()->money(4) : 0);
+        put(c, t, 1, 20, 15);
+        sw(profile::kDkPooled, w, sizeof w);
+        snprintf(t, sizeof t, "%s%10d", w, ground->money[4]);
+        put(c, t, 1, 21, 15);
+    }
     draw_list(c, d->w_items, d->w_buy);
+}
+
+// Darkness's Buy (facts_shops.md 2.1): platinum only - the buyer's, then the
+// counter's; "NAME buys [a ]ITEM" for the game's delay
+void buy_dk(int i, pic::Canvas& c)
+{
+    party::Character& ch = *pt->sel();
+    const uint8_t* it = goods(i);
+    const int cost = shop_price(it);
+    const int own = ch.money(4);
+    if (cost > own + ground->money[4]) {
+        note(c, d->w_no_money);
+        return;
+    }
+    if (rules::too_heavy(ch, it, *names, d->facts)) {
+        note(c, d->w_over);
+        return;
+    }
+    rules::add_item(ch, it);
+    if (cost <= own) {
+        add_coins(ch, 4, -cost);
+    } else {
+        add_coins(ch, 4, -own);
+        ground->money[4] -= cost - own;
+    }
+    rules::recalc(ch, *names, d->facts);
+    char nm[20], it_nm[48], w[12], t[80];
+    ch.name(nm, sizeof nm);
+    for (size_t n = strlen(nm); n > 0 && nm[n - 1] == ' '; --n) nm[n - 1] = 0;
+    names->name(items::Item{it}, it_nm, sizeof it_nm);
+    sw(items::Item{it}.count() > 0 ? profile::kDkBuys : profile::kDkBuysA, w, sizeof w);
+    snprintf(t, sizeof t, "%s%s%s", nm, w, it_nm);
+    plat::log("[play] %s for %d platinum\n", t, cost);
+    draw_buy(c);
+    note(c, t);
 }
 
 void buy(int i, pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
     if (!ch || i < 0 || i >= ground->n) return;
+    if (darkness_files()) {
+        buy_dk(i, c);
+        return;
+    }
     const uint8_t* it = goods(i);
     const int cost = rules::price(it, vm->get(0x7F6D) & 0xFF);
     const bool own = cost <= rules::gold_worth(*ch);
@@ -7710,6 +7819,74 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
 
 // ---- the script host ------------------------------------------------------------
 
+// ---- Darkness's goods (facts_shops.md 1) -------------------------------------------
+// SHOP n's and TREASURE's items are rows of ITEM0.DAX block 1: 17 bytes a
+// row (1-based) - an item's bytes 0x2E-0x3E; row 0xFF a random magic-user
+// scroll of three spells (any spell whose class byte is 2), a row whose type
+// is 0xFF none. Each new item goes at the head of the original's list (the
+// engine's: appended - goods() shows the last first).
+
+// The program's bytes at DS ds (n of them)
+bool program_ds(uint16_t ds, uint8_t* out, size_t n)
+{
+    plat::File f;
+    if (!open_file(d->prof->program, f)) return false;
+    plat::FileSource src(f);
+    exepack::Info info;
+    const bool ok = exepack::parse(src, info) == exepack::Status::Ok &&
+                    exepack::read(src, info, d->prof->create.ds_image + ds, out, n) == exepack::Status::Ok;
+    f.close();
+    return ok;
+}
+
+__attribute__((noinline)) void dk_add_rows(const uint8_t* rows, int n, bool identify, items::Ground& g)
+{
+    const auto& pi = d->prof->items;
+    if (!pi.rows_file) return;
+    // the spells' class bytes, only when a random scroll is wanted
+    uint8_t* cls = nullptr;
+    for (int k = 0; k < n; ++k)
+        if (rows[k] == 0xFF && !cls) {
+            uint8_t* t = new (std::nothrow) uint8_t[127 * 16];
+            if (t && program_ds(pi.spell_class, t, 127 * 16 - 15)) {
+                cls = new (std::nothrow) uint8_t[127];
+                if (cls)
+                    for (int s2 = 0; s2 < 127; ++s2) cls[s2] = t[s2 * 16];
+            }
+            delete[] t;
+        }
+    plat::File f;
+    const bool open = open_dax(pi.rows_file, f);
+    const dax::Entry* e = open ? d->idx.find(1) : nullptr;
+    for (int k = 0; k < n && g.n < items::kMaxGround; ++k) {
+        uint8_t row[17] = {};
+        if (rows[k] == 0xFF) {
+            // (L+0x1ABE: type 0x27, words 0x66 0x27 0x28, plus 1, weight 1, value 3000)
+            if (!cls) continue;
+            row[0] = 0x27, row[1] = 0x66, row[2] = 0x27, row[3] = 0x28, row[4] = 1, row[9] = 1;
+            row[12] = 3000 & 0xFF, row[13] = 3000 >> 8;
+            for (int j = 0; j < 3; ++j) {
+                int sp;
+                do sp = rng.roll(126, 1);
+                while (cls[sp] != 2);
+                row[14 + j] = static_cast<uint8_t>(sp);
+            }
+        } else {
+            if (!e || !rows[k]) continue;
+            plat::FileSource src(f);
+            dax::RleReader r(src, d->idx, *e);
+            r.skip(static_cast<size_t>(rows[k] - 1) * 17);
+            if (r.read(row, 17) != 17 || row[0] == 0xFF) continue;
+        }
+        uint8_t* it = g.item[g.n++];
+        memset(it, 0, items::kRecordSize);
+        memcpy(it + 0x2E, row, 17);
+        if (identify) it[0x35] &= 0xF8;
+    }
+    if (open) f.close();
+    delete[] cls;
+}
+
 struct Host : ecl::Host {
     bool load_script(int block, uint8_t* code, uint32_t* len) override
     {
@@ -7950,6 +8127,25 @@ struct Host : ecl::Host {
         }
         f.close();
         dirty_rows(3, 13);
+    }
+    void shop_items(int n, items::Ground& g) override
+    {
+        // Darkness's SHOP n: the goods DS[first + n] .. DS[last + n], rows DS[rows + k]
+        const auto& pi = d->prof->items;
+        uint8_t a = 0, b = 0, rows[256];
+        if (!pi.goods_rows || !program_ds(static_cast<uint16_t>(pi.goods_first + n), &a, 1) ||
+            !program_ds(static_cast<uint16_t>(pi.goods_last + n), &b, 1) || b < a ||
+            !program_ds(static_cast<uint16_t>(pi.goods_rows + a), rows, b - a + 1u)) {
+            log("SHOP: the program's goods didn't read");
+            return;
+        }
+        dk_add_rows(rows, b - a + 1, true, g);
+        plat::log("[play] SHOP %d: %d items\n", n, g.n);
+    }
+    void item_row(int row, items::Ground& g) override
+    {
+        const uint8_t r = static_cast<uint8_t>(row);
+        dk_add_rows(&r, 1, false, g);
     }
     void load_items(int block, items::Ground& g) override
     {
