@@ -5725,8 +5725,12 @@ void back_from_view(pic::Canvas& c);
 
 
 MagicRules* mrules = nullptr;       // the rule tables while camping / casting
+// The spell names, packed: name s at text + at[s] (v0.136.1: 128 x 24
+// fixed was 3 KB at a fight's highest point; the names are ~12 letters)
 struct SpellNames {
-    char name[128][24];             // (Curse 1-100, Secret 1-118, Darkness 1-126)
+    static constexpr int kMax = 128;    // (Curse 1-100, Secret 1-118, Darkness 1-126)
+    uint16_t at[kMax];                  // (0: the empty name at text[0])
+    char text[1];                       // (malloc'd past its end: every name and its 0)
 };
 SpellNames* spn = nullptr;
 
@@ -5746,7 +5750,7 @@ void end_magic()
     end_effects();
     delete mrules;
     mrules = nullptr;
-    delete spn;
+    free(spn);
     spn = nullptr;
 }
 
@@ -5784,14 +5788,17 @@ bool load_magic()
         return false;
     }
     if (spn) return true;
-    spn = new (std::nothrow) SpellNames;
-    if (!spn) return false;
-    memset(spn, 0, sizeof *spn);
     const profile::NameTable& nt = d->prof->magic.names;
-    if (!nt.at) return true;
+    if (!nt.at) {
+        spn = static_cast<SpellNames*>(calloc(1, sizeof(SpellNames)));
+        return spn != nullptr;
+    }
     // (v0.86.1: a failed read was kept - the spell lists stayed blank, only
     // their level headings, until the Play Test closed - Tom, Curse's Fire
     // Knives fight on the 3.2". Now it's dropped, logged and tried again)
+    // Two passes over the table, a part at a time (the whole table was
+    // 4.4 KB more at a fight's highest point when a spell was first cast):
+    // the names' lengths, then the names into a block just their size
     bool named = false, opened = false;
     plat::File f;
     if (open_file(d->prof->program, f)) {
@@ -5799,23 +5806,41 @@ bool load_magic()
         plat::FileSource src(f);
         exepack::Info info;
         if (exepack::parse(src, info) == exepack::Status::Ok) {
-            // (a part at a time: the whole table was 4.4 KB more at a
-            // fight's highest point when a spell was first cast)
             const int per = nt.stride && nt.stride < 1024 ? 1024 / nt.stride : 1;
+            const int count = nt.count < SpellNames::kMax ? nt.count : SpellNames::kMax;
             uint8_t* buf = static_cast<uint8_t*>(malloc(static_cast<size_t>(per) * nt.stride));
+            uint8_t len[SpellNames::kMax] = {};
             named = buf != nullptr;
-            for (int at = 0; named && at < nt.count && at < 128; at += per) {
-                const int k = nt.count - at < per ? nt.count - at : per;
-                if (exepack::read(src, info, nt.at + static_cast<uint32_t>(at) * nt.stride, buf,
-                                  static_cast<size_t>(k) * nt.stride) != exepack::Status::Ok) {
-                    named = false;
-                    break;
+            for (int pass = 0; named && pass < 2; ++pass) {
+                if (pass == 1) {
+                    size_t total = 1;
+                    for (int s = 0; s < count; ++s) total += len[s] ? len[s] + 1u : 0u;
+                    spn = static_cast<SpellNames*>(calloc(1, offsetof(SpellNames, text) + total));
+                    if (!spn) {
+                        named = false;
+                        break;
+                    }
                 }
-                for (int j = 0; j < k && at + j < 128; ++j) {
-                    const uint8_t* e = buf + static_cast<size_t>(j) * nt.stride;
-                    const int len = e[0] >= nt.stride ? 0 : e[0] < 23 ? e[0] : 23;    // (Secret's entry 0 isn't a name)
-                    memcpy(spn->name[at + j], e + 1, len);
-                    spn->name[at + j][len] = 0;
+                uint16_t next = 1;
+                for (int at = 0; named && at < count; at += per) {
+                    const int k = count - at < per ? count - at : per;
+                    if (exepack::read(src, info, nt.at + static_cast<uint32_t>(at) * nt.stride, buf,
+                                      static_cast<size_t>(k) * nt.stride) != exepack::Status::Ok) {
+                        named = false;
+                        break;
+                    }
+                    for (int j = 0; j < k; ++j) {
+                        const uint8_t* e = buf + static_cast<size_t>(j) * nt.stride;
+                        const int n = e[0] >= nt.stride ? 0 : e[0] < 23 ? e[0] : 23;    // (Secret's entry 0 isn't a name)
+                        if (pass == 0) {
+                            len[at + j] = static_cast<uint8_t>(n);
+                        } else if (n) {
+                            spn->at[at + j] = next;
+                            memcpy(spn->text + next, e + 1, static_cast<size_t>(n));
+                            spn->text[next + n] = 0;
+                            next = static_cast<uint16_t>(next + n + 1);
+                        }
+                    }
                 }
             }
             free(buf);
@@ -5823,7 +5848,7 @@ bool load_magic()
         f.close();
     }
     if (!named) {
-        delete spn;
+        free(spn);
         spn = nullptr;
         log_error(opened ? no_memory("the spell names")
                          : "The spell names couldn't be read: the game's program file didn't open.");
@@ -5832,7 +5857,7 @@ bool load_magic()
     return true;
 }
 
-const char* spell_name(int s) { return spn && s >= 0 && s < 128 ? spn->name[s] : ""; }
+const char* spell_name(int s) { return spn && s >= 0 && s < SpellNames::kMax ? spn->text + spn->at[s] : ""; }
 
 void draw_magic_menu(pic::Canvas& c)
 {
