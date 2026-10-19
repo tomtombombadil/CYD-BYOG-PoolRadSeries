@@ -1483,6 +1483,20 @@ the scripts' changed ops, the rule tables, fights, the rest.
   DOSBox (EGA) screen by screen (mouse pointer aside). Not yet: the
   treasure-only result screen (with the fights), Restoration's cheapest
   class, Remove Curse's words, Vault Items' way back.
+- **v0.136.0 - fights** (the Project's claude/darkness_fight_facts.md
+  F1-F14). Monster records and items, LOAD MONSTER's difficulty and its 48
+  monsters; the VGA combat pictures in their EGA colours with a
+  see-through plane; DUNGCOM / WILDCOM backgrounds, CHEAD / CBODY party
+  icons, COMSPR numbering; the fight menu on two rows (`text::Menu`);
+  SETUP MONSTER's sides; spells (Secret's workings, Darkness's words), the
+  dragons' breaths, morale; the blow rules (+1 / +2 weapons, half damage
+  under +3 / +4, piercing / crushing, the rakshasa's spell immunity, fire
+  after a hit); experience (a platinum piece 2 points, script places 0x1E
+  / 0x1F), the treasure-only result screen (the debug treasure 127,966
+  each as DOSBox). Checked against DOSBox (EGA): the frame, panel, menu
+  rows, icons, placing pixel for pixel; arena fights won to the end.
+  Memory: the biggest test fight (`GAME=4 SAVE=A CHOICES=0 RUNAT=85BB
+  FIGHT=1`, 30 monsters) peaks at 169 KB - over the 150 KB budget (TODO).
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -1954,7 +1968,8 @@ the game's Settings (As Original: all of them).
   `rules::fixes()` - Item Fixes off plays them as the original):
   the +1 to hit with bows and short / long swords goes to elves only
   (Secret's program gives it to every race); a cleric's +10% experience
-  needs Wisdom 16 (Secret's: 15); a paladin casts at his level - 8
+  needs Wisdom 16 (Secret's and Darkness's: 15 - v0.136.0, Darkness
+  the same with Item Fixes); a paladin casts at his level - 8
   (Secret's: 6th level always); Harm leaves 1d4 HP (Secret's wraps to
   250+ damage when HP is under the roll); Invisibility's -4, Blink's
   miss and Dispel Evil's -7 count at the attack roll (Secret's phases

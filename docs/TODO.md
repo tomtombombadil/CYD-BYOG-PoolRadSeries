@@ -99,6 +99,22 @@ the Project as claude/TODO.md.
       v0.135.0: shops, temple, treasure, vault (open: the treasure-only
       result screen, Restoration's cheapest class, Remove Curse's words,
       Vault Items' way back, Raise Dead's stats recalculation).
+      v0.136.0: fights. Open: the memory (next item); spells Blade
+      Barrier, Restoration, Energy Drain, Destruction, Resurrection, Mass
+      Charm, Otto's Dance, Power Word Blind, Meteor Swarm, Power Word
+      Kill, Monster Summoning; Turn Undead's table; the Aim screen's words
+      (AIM: NEXT PREV MANUAL CENTER EXIT, RANGE = n) and the speed
+      submenu's; the area spells' burst sound 11; monster abilities 0x63
+      (bulette's rake), 0x64 / 0x78 (dragon fear), 0x70 (fire shield),
+      0x72 (paralysing gaze), 0x7C / 0x7E (vampire gaze, gaze immunity),
+      0x75 (beholders), 0x73 (vorpal), 0x74 (Kalistes' weapons), 0x52
+      (blessed bolts), 0x4C; the arena's third south ogre at (31,19), the
+      original (33,18); fight checks in sweep's behave darkness.
+- [ ] Darkness's fight memory: the 30-monster test fight peaks at 169 KB
+      (budget 150; Curse 146, Pool 147). Where: monster records ~520 bytes
+      each (14 KB), fighters 6.7 KB, rule tables 6.1 KB, icons with the
+      see-through plane 9.7 KB. Ideas: a group's copies share one record
+      (their changing bytes each), the rule tables only while casting.
       v0.134.0: creation / Modify / Human Change, done but
       the icon editor's VGA pictures (CHEAD / CBODY, with the fights'
       icons) and Human Change in DOSBox (needs the training hall).
