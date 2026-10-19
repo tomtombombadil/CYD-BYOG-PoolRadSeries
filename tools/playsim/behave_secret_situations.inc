@@ -1043,6 +1043,8 @@ void script_fields()
 // the giant-class bonus (0x69); the class values again
 void add_curse()
 {
+    delete m;                               // (the tables again: a block of their own)
+    m = nullptr;
     if (!boot() || !load_rules(m)) {
         expect(P, "boot for Add Character", false);
         return;

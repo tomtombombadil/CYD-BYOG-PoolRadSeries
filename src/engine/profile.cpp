@@ -1573,7 +1573,8 @@ const Profile kProfiles[] = {
                .name = 0x34652, .ac_hp = 0x34657, .cfg = "POOL4.CFG", .save_which = kP | 0xC7BF,
                .slots = kP | 0xCD2F, .saving = 0x1317B, .camp_menu = 0xD115, .makes_camp = kP | 0xBFBF,
                .add_from = kP | 0xBAC8, .add_sources = kP | 0xCC8B, .add_prompt = kP | 0xBAF1, .add = kP | 0xCCB4,
-               .drop = 0x16445, .forever = 0x1644B, .sure = 0x16456, .yes_no = kP | 0xC9D4,
+               .drop = 0x16445, .forever = 0x1644B, .sure = 0x16456, .dump = 0x16465, .out_back = 0x1646F,
+               .farewell = 0x1647A, .relief = 0x1648E, .yes_no = kP | 0xC9D4,
                .cant_modify = kP | 0xBA9F, .modify = kP | 0xC6F2, .keep_exit = kP | 0xCC62,
                .load_from = kP | 0xC76D, .load_sources = kP | 0xCC8B},
      // View Character's name tables (DS 0x0E57 classes, 0x103D races in its
@@ -1691,6 +1692,20 @@ const Profile kProfiles[] = {
                .scroll_one_spell = 100, .read_magic = 0x10,
                .level_word = 0, .effect_names = {0xDED1, 38, 129}, .these_spells = 0,
                .scroll_types = {39, 40}, .scroll_count_at = 0x2F, .scroll_readers = true, .effects_shown = 0xEB7D},
+     // Alter (camp; its camp overlay GAME.OVR 0xDCC8 +0x172B): "Order Drop
+     // Speed Icon Level Exit" (no prompt); Order's / Speed's word lists,
+     // "party order ", "has been selected", the speed line "Game Speed
+     // (0=fastest 9=slowest) = " + speed, "game speed: "; Drop = the party
+     // menu's ("Pick Character " "Select" first); the icon editor (GAME.OVR
+     // 0x17E16): its five menus (whole lists), "old", "ready   action",
+     // "new", "is this icon ok? ", the grey squares COMSPR 15; Level 1-5
+     .alter = {.menu = 0xD167, .select = 0, .place = 0,
+               .words = {0, kP | 0xC83A, kP | 0xBF6D, kP | 0xBF96, 0, 0, 0, 0, kP | 0xC863},
+               .icon_menu = {0xD02F, 0xD05D, 0xD08B, 0xD0B9, 0xD0E7},
+               .icon_words = {kP | 0xBB95, kP | 0xBB43, kP | 0xBB6C, 0, 0, 0, 0, kP | 0xBBBE},
+               .level_menu = kP | 0xD190, .level_base = 1, .order_list = 0xCD58, .speed_list = 0xCD81,
+               .pick = kP | 0xC6C9, .pick_menu = kP | 0xC9FD, .icon_box = 15, .icon_lists = true,
+               .kept_highlight = true},
      // Fights (the fights' facts, darkness fights survey 1): Secret's tables at
      // Darkness's places - its ground table (DS 0x3EBA, 70 values: 0-25 the
      // dungeons', 0x1F on the wilderness's), the placing tables (DS 0x090C -

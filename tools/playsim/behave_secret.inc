@@ -474,4 +474,6 @@ static void behave_secret()
     if (want("allmonsters")) all_monsters();
     if (want("allitems")) all_items();
     if (want("allsituations")) all_situations();
+    delete m;
+    m = nullptr;
 }
