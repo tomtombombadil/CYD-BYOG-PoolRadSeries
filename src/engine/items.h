@@ -105,6 +105,7 @@ struct Ground {
     int     money[7] = {};
     uint8_t item[kMaxGround][kRecordSize] = {};
     int     n = 0;
+    int     lost_plus = 0;              // the pluses of items that didn't fit (their experience still counts)
     void clear() { *this = Ground{}; }
     bool any_money() const { for (int m : money) if (m) return true; return false; }
 };

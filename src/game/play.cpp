@@ -8548,7 +8548,8 @@ __attribute__((noinline)) void dk_add_rows(const uint8_t* rows, int n, bool iden
         }
         if (g.n >= items::kMaxGround) {
             // (full: the oldest goes - the original's list shows the newest
-            // first, and the engine keeps kMaxGround)
+            // first, and the engine keeps kMaxGround; its experience still counts)
+            if (static_cast<int8_t>(g.item[0][0x32]) > 0) g.lost_plus += static_cast<int8_t>(g.item[0][0x32]);
             memmove(g.item[0], g.item[1], static_cast<size_t>(g.n - 1) * items::kRecordSize);
             --g.n;
         }

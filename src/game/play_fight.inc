@@ -3064,6 +3064,13 @@ int fight_plat_xp()
     return d->prof->fight.facts.plat_xp ? d->prof->fight.facts.plat_xp : 5;
 }
 
+// Darkness's script place 0x1F: no experience given and none shown
+// (GAME.OVR 0x4A2C, 0x51DF)
+bool no_exp_lines()
+{
+    return darkness_files() && vm->get(0x1F) != 0;
+}
+
 // The fight is over: the outcome, experience, treasure
 void end_fight(pic::Canvas& c)
 {
@@ -3107,7 +3114,12 @@ void end_fight(pic::Canvas& c)
             for (int i = b.party_size; i < b.n; ++i) {
                 const combat::Fighter& f = b.f[i];
                 if (f.gone || !f.team() || f.status() == party::Okay || f.status() == party::Running) continue;
-                for (int k = 0; k < f.n_items && ground->n < items::kMaxGround; ++k) {
+                for (int k = 0; k < f.n_items; ++k) {
+                    if (ground->n >= items::kMaxGround) {
+                        // (no room: its experience still counts)
+                        if (static_cast<int8_t>(f.items[k][0x32]) > 0) ground->lost_plus += static_cast<int8_t>(f.items[k][0x32]);
+                        continue;
+                    }
                     memcpy(ground->item[ground->n], f.items[k], items::kRecordSize);
                     ground->item[ground->n][0x34] = 0;
                     ++ground->n;
@@ -3118,7 +3130,8 @@ void end_fight(pic::Canvas& c)
             const int plus = static_cast<int8_t>(ground->item[k][0x32]);
             if (plus > 0) total += 400 * plus;
         }
-        fg->share = combat::award(b, total, !(darkness_files() && vm->get(0x1F)));
+        total += 400 * ground->lost_plus;
+        fg->share = combat::award(b, total, !no_exp_lines());
         // The party's own thrown weapons: there to take back (no experience for them)
         for (int k = 0; k < fg->n_thrown && ground->n < items::kMaxGround; ++k)
             memcpy(ground->item[ground->n++], fg->thrown[k], items::kRecordSize);
@@ -3146,9 +3159,11 @@ void end_fight(pic::Canvas& c)
     } else {
         put(c, fw(r == combat::Fled ? profile::kHasFled : profile::kHasWon), 1, 3, 10);
         char t[48];
-        snprintf(t, sizeof t, "%s%d", fw(profile::kEachReceives), fg->share);
-        put(c, t, 1, 5, 10);
-        put(c, fw(profile::kExpPoints), 1, 7, 10);
+        if (!no_exp_lines()) {
+            snprintf(t, sizeof t, "%s%d", fw(profile::kEachReceives), fg->share);
+            put(c, t, 1, 5, 10);
+            put(c, fw(profile::kExpPoints), 1, 7, 10);
+        }
         clear_menu_line(c);
         put(c, fw(profile::kPressEnter), 0, text::kMenuRow, 15);
         fg->st = FSt::Results;
@@ -3209,6 +3224,7 @@ void fight_treasure_only(pic::Canvas& c)
         const int plus = static_cast<int8_t>(ground->item[k][0x32]);
         if (plus > 0) total += 400 * plus;
     }
+    total += 400 * ground->lost_plus;
     // (no fighters: the party shares as the games do - the survivors).
     // The party's fighter blocks (since v0.86.1 a fight's fighters are its
     // own block: a fresh Battle has none - the treasure step crashed on it)
@@ -3230,7 +3246,7 @@ void fight_treasure_only(pic::Canvas& c)
         b.f[i].member = i;
     }
     b.n = b.party_size = pt->count;
-    fg->share = combat::award(b, total);
+    fg->share = combat::award(b, total, !no_exp_lines());
     fg->treasure_only = true;
     screen = Screen::Fight;
     c.clear(0);
@@ -3243,9 +3259,12 @@ void fight_treasure_only(pic::Canvas& c)
     } else {
         put(c, fw(profile::kFoundTreasure), 1, 3, 10);
     }
-    snprintf(t, sizeof t, "%s%d", fw(profile::kEachReceives), fg->share);
-    put(c, t, 1, 5, 10);
-    put(c, fw(profile::kExpPoints), 1, 7, 10);
+    plat::log("[fight] treasure: experience %d, each %d\n", total, fg->share);
+    if (!no_exp_lines()) {
+        snprintf(t, sizeof t, "%s%d", fw(profile::kEachReceives), fg->share);
+        put(c, t, 1, 5, 10);
+        put(c, fw(profile::kExpPoints), 1, 7, 10);
+    }
     clear_menu_line(c);
     put(c, fw(profile::kPressEnter), 0, text::kMenuRow, 15);
     fg->st = FSt::Results;
