@@ -681,8 +681,9 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   RUNAT=85BB FIGHT=1` (Darkness, 30 monsters) with heapprof linked and
   BUDGET=150 must stay within 150 KB at their highest point (the 32 KB
   canvas included; v0.87.1: 145 / 143 KB, was 195 at v0.85.7; v0.136.1:
-  Curse 132, Pool 133, Darkness 150.6 of 153.6 - its monster records,
-  ~540 bytes each up to 48, are the next cut). Measure with no out/
+  Curse 132, Pool 133, Darkness 150.6 of 153.6; v0.138.0: 128 / 130 /
+  145 - a group's monsters share one record, Darkness's summoning
+  reserve of 10 included). Measure with no out/
   folder in the run's directory and a `_CYD` folder beside the game
   folder. Raise it only with a reason. Also since v0.87.1: the picture animation's DAX index
   (3 KB) only while a picture animates; the magic tables load alone

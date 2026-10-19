@@ -106,17 +106,18 @@ the Project as claude/TODO.md.
       Character should ask "Pick Character Select" first (the same
       routine in the original); Darkness keeps the menu highlight's place
       in every menu - the engine does it in Alter / the editor only.
-      v0.136.0: fights. Open: the memory (next item); spells Blade
-      Barrier, Restoration, Energy Drain, Destruction, Resurrection, Mass
-      Charm, Otto's Dance, Power Word Blind, Meteor Swarm, Power Word
-      Kill, Monster Summoning; Turn Undead's table; the Aim screen's words
-      (AIM: NEXT PREV MANUAL CENTER EXIT, RANGE = n) and the speed
-      submenu's; the area spells' burst sound 11; monster abilities 0x63
-      (bulette's rake), 0x64 / 0x78 (dragon fear), 0x70 (fire shield),
-      0x72 (paralysing gaze), 0x7C / 0x7E (vampire gaze, gaze immunity),
-      0x75 (beholders), 0x73 (vorpal), 0x74 (Kalistes' weapons), 0x52
-      (blessed bolts), 0x4C; the arena's third south ogre at (31,19), the
-      original (33,18); fight checks in sweep's behave darkness.
+      v0.136.0: fights. v0.138.0: the missing rules - Turn Undead's
+      table, the 6th-9th level spells (Monster Summoning from a reserve
+      of 10), dragon fear, Otto's, Kalistes' weapons, vorpal, blessed
+      bolts, the gazes, beholders' rays, the burst sound, the Aim / Speed
+      words (as DOSBox); monster records shared per group (Darkness's
+      budget fight 145 KB). Open: the arena's third south ogre (31,19)
+      against the original's (33,18) - its rank widths (DS 0xA7CE / 0xA7CF)
+      are left over from an earlier count (facts R17); Darkness's own
+      level drain (the engine uses Pool's with Darkness's words); the
+      gazes' pictures (COMSPR 0x2D / 0x32); Kalistes' weapon on row 23;
+      the beholder's ray target (the original's picker, ovr 0x23130); an
+      Energy Drain check.
 - [x] Darkness's fight memory (v0.136.1): the 30-monster test fight 169
       -> 150.6 KB (Curse 146 -> 132, Pool 147 -> 133): the script's code
       parked during fights and its memory the fight's arena, the monster
@@ -134,6 +135,14 @@ the Project as claude/TODO.md.
       program tests the race list's last line, human, not the race
       picked); the engine applies AD&D's behind Item Fixes (on by
       default; off = the original) - OK? (SPEC 12)
+- [ ] Tom: Darkness's fights, the original's own ways (SPEC 12): Power
+      Word Blind blinds for good in the original (its time 0) - Item Fixes
+      on uses the 1d4+1 x 10 it works out, OK? Kept as the original:
+      Energy Drain takes one level (AD&D two), Power Word Kill has no 120
+      HP total, Resurrection no Constitution loss - want AD&D's behind
+      Item Fixes? Dragon fear (-2 / -2) outlasts the fight (not cleared
+      at a fight's end) - keep? The bulette's rake never takes in the
+      original (its count overwritten) - the engine has none; want one?
 - [ ] Tom: Darkness's sounds - listen on a board (Game menu - Sounds;
       Rolf's tour; steps). Decide: Tandy as the SL / TL DAC (the samples
       as they are, as the GOG Sound Blaster) - or the EX / TX chip's 16
