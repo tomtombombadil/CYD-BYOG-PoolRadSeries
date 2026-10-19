@@ -1489,6 +1489,8 @@ const Profile kProfiles[] = {
                     0x25A2F,
                     0x2947B, kP | 0xB40E, kP | 0xB437, kP | 0xCB45, kP | 0xCB6E, kP | 0xB393, 0x290AE, 0x290A8, 0x290B8,
                     kP | 0xCFDD, kP | 0xCFB4, kP | 0xC4DD, kP | 0xC5AA, 0x2DEFB, 0},
+     // A kept gem / jewel (its Appraise, facts_shops.md 2.4): type 0x2F, words 0x7A / 0x7B
+     .gem_type = 47, .gem_word = 0x7A, .jewel_word = 0x7B,
      // Magic (camp): "Cast Memorize Scribe Display Rest Exit" (DS 0x32CE),
      // its level names whole ("1st Level", DS 0x0AD5, 9), spell names (DS
      // 0x53CD, 127) and effect names (DS 0x4061, 129); the screens' words
@@ -1524,7 +1526,7 @@ const Profile kProfiles[] = {
      .sound = {.fireball_spell = 0x2F, .lightning_spell = 0x33},
      .clips ={.file = "ZOUNDS.DAX", .hz = 9000, .first = 2, .last = 12,
                .ids = {0, 0, 2, 9, 6, 5, 9, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .quiet_turns = true},
-     .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .camp_pic = 128, .vga = true, .darkness_files = true,
+     .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .camp_pic = 128, .appraise_div = 2, .vga = true, .darkness_files = true,
                  .party_menu_col = 9},
      .font_file = "8X8D0.DAX"},
 };
