@@ -1432,7 +1432,7 @@ const Profile kProfiles[] = {
                .slots = kP | 0xCD2F, .saving = 0x1317B, .camp_menu = 0xD115, .makes_camp = kP | 0xBFBF,
                .add_from = kP | 0xBAC8, .add_sources = kP | 0xCC8B, .add_prompt = kP | 0xBAF1, .add = kP | 0xCCB4,
                .drop = 0x16445, .forever = 0x1644B, .sure = 0x16456, .yes_no = kP | 0xC9D4,
-               .cant_modify = kP | 0xBA9F, .keep_exit = kP | 0xCC62,
+               .cant_modify = kP | 0xBA9F, .modify = kP | 0xC6F2, .keep_exit = kP | 0xCC62,
                .load_from = kP | 0xC76D, .load_sources = kP | 0xCC8B},
      // View Character's name tables (DS 0x0E57 classes, 0x103D races in its
      // own order, 0x107C alignments, 0x1115 sex, 0x1123 its three coins,

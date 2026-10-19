@@ -2956,12 +2956,14 @@ void find_guys(char from = 'C')
         // .GUY files, and (Tom, v0.58.0 - the original lists only those)
         // the members of saved games, CHRDAT<letter><n>.SAV
         // (Pool of Radiance: .CHA, 285-byte records, the control byte at 0x84)
-        const bool guy = n >= 5 && n <= 12 && strcasecmp(nm + n - 4, ext_guy()) == 0;
+        // (the extension's own length: Darkness's ".PC" is 3)
+        const size_t ne = strlen(ext_guy());
+        const bool guy = n > ne && n <= 12 && strcasecmp(nm + n - ne, ext_guy()) == 0;
         const bool member = CYD_MORE_CHARACTERS && opts.more_guys && n == 12 && strncasecmp(nm, "CHRDAT", 6) == 0 &&
                             strcasecmp(nm + 8, ".SAV") == 0;
         if (f.isDirectory() || (!guy && !member) || f.size() != rec_file_size()) continue;
-        uint8_t rec[0x100];
-        const int ctl = pool_files() ? 0x84 : secret_files() ? 0xFF : 0xF7;     // (Secret's record: 0xFF)
+        uint8_t rec[0x150];
+        const int ctl = pool_files() ? 0x84 : secret_files() ? 0xFF : darkness_files() ? 0x147 : 0xF7;     // (Secret's record: 0xFF)
         if (f.read(rec, ctl + 1) != ctl + 1 || rec[ctl] > 0x7F) continue;     // NPCs aren't listed
         char name[16];
         size_t len = rec[0] > 15 ? 15 : rec[0];
@@ -7078,6 +7080,10 @@ bool train_yes_no(Ask what, char k, pic::Canvas& c)
 
 Making* modder = nullptr;               // the rule tables, and the character as it was (ch)
 int mod_item = 0;                       // 0-5 the stats, 6 the hit points, 7 the name
+// Darkness: the menu word last used stays lit (0 Add, 1 Subtract), and the
+// name, once Modify has drawn it, is green (GAME.OVR 0x16606; DOSBox)
+int  mod_word = 0;
+bool mod_name_seen = false;
 
 void draw_modify(pic::Canvas& c)
 {
@@ -7085,7 +7091,17 @@ void draw_modify(pic::Canvas& c)
     if (!ch) return;
     draw_character(c);
     char t[24];
-    if (secret_files()) {
+    if (darkness_files() && modder) {
+        // Darkness marks a stat Modify has changed (its in-use value no longer
+        // its own until Keep) with a "*" at column 12 - the highlight colour
+        // on the line being changed (GAME.OVR 0x244E5; DOSBox)
+        for (int i = 0; i < 6; ++i) {
+            const bool changed = ch->stat(i) != modder->ch.stat(i) || (i == 0 && ch->str00() != modder->ch.str00());
+            c.fill(12 * 8, (9 + i) * 8, 8, 8, 0);
+            if (changed) put(c, "*", 12, 9 + i, mod_item == i ? 13 : 10);
+        }
+    }
+    if (secret_files() || darkness_files()) {
         // Secret's View: the stats from row 9 (the number at column 5), the
         // hit points "95/95" at row 3, column 31; its menu "Add Subtract
         // Keep Exit" (Add / Subtract: the arrows' up / down)
@@ -7106,9 +7122,14 @@ void draw_modify(pic::Canvas& c)
         } else {
             ch->name(t, sizeof t);
             put(c, t, 1, 1, 13);
+            mod_name_seen = true;
+        }
+        if (darkness_files() && mod_item != 7 && mod_name_seen) {
+            ch->name(t, sizeof t);
+            put(c, t, 1, 1, 10);
         }
         text::build(menu, rw(Data::kModify), rw(Data::kKeepExit));
-        menu.selected = 0;
+        menu.selected = darkness_files() ? mod_word : 0;
         show_menu_line(c);
         return;
     }
@@ -7173,6 +7194,8 @@ void start_modify(pic::Canvas& c)
     }
     modder->ch = *ch;
     mod_item = 0;
+    mod_word = 0;
+    mod_name_seen = false;
     screen = Screen::Modify;
     draw_modify(c);
 }
@@ -7203,7 +7226,7 @@ void modify_name(pic::Canvas& c)
 // The item a tap at (row, col) picks (-1: none)
 int modify_item_at(int row, int col)
 {
-    if (secret_files()) {
+    if (secret_files() || darkness_files()) {
         if (row >= 9 && row <= 14 && col >= 1 && col <= 12) return row - 9;
         if (row == 3 && col >= 20 && col <= 38) return 6;
         if (row == 1 && col >= 1 && col <= 16) return 7;
@@ -7223,8 +7246,8 @@ void modify_tap(int x, int y, pic::Canvas& c)
         switch (text::key(menu, text::hit(menu, col))) {
         case 'K': end_modify(c, true); break;
         case 'E': end_modify(c, false); break;
-        case 'A': modify_step(1, c); break;            // (Secret's Add / Subtract)
-        case 'S': modify_step(-1, c); break;
+        case 'A': mod_word = 0; modify_step(1, c); break;            // (Secret's Add / Subtract)
+        case 'S': mod_word = 1; modify_step(-1, c); break;
         default: break;
         }
         return;
