@@ -4858,7 +4858,7 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
                 ev(i, Ev::BreathesAcid);
                 fly(i, b.f[tg].x, b.f[tg].y, 5, 1, 30);
                 Harm h = breath;
-                h.kind = 0x30;
+                h.kind = m.acid_kind ? m.acid_kind : 0x30;
                 const int amount = f.hp_max();
                 for (int j = 0; j < k; ++j) hurt(on[j], amount, h);
                 --*left;
@@ -4887,6 +4887,87 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
                 *ends_turn = true;
                 return n;
             }
+        }
+    }
+    // Darkness's big red dragon (GAME.OVR 0x305F4): the fire breath with
+    // 24d10 + 12 (a byte's sum) in place of its hit points
+    if (hasx(f, m.big_fire)) {
+        uint8_t* left = breaths(m.big_fire);
+        const int tg = left && *left ? special_target(b, t, i, 6, true, d) : -1;
+        if (tg >= 0) {
+            int on[kMaxFighters];
+            const int k = cone(b, t, i, b.f[tg].x, b.f[tg].y, 9, 3, on, kMaxFighters);
+            if (k && !friend_on(on, k)) {
+                ev(i, Ev::BreathesFire);
+                fly(i, b.f[tg].x, b.f[tg].y, 5, 1, 30);
+                Harm h = breath;
+                h.kind = 0x21;
+                const int amount = (d.roll(10, 24) & 0xFF) + 12;
+                for (int j = 0; j < k; ++j) hurt(on[j], amount, h);
+                --*left;
+                *ends_turn = true;
+                return n;
+            }
+        }
+    }
+    // Darkness's green dragon (GAME.OVR 0x30261): poison breath - a line of
+    // 3 squares toward its pick (pseudo-spell 0x3D's reach), then all within
+    // 3 squares of the line's end but itself; its maximum hit points, a
+    // breath save for half
+    if (hasx(f, m.poison_breath)) {
+        uint8_t* left = breaths(m.poison_breath);
+        const int tg = left && *left ? special_target(b, t, i, 6, true, d) : -1;
+        if (tg >= 0) {
+            int line[kMaxFighters];
+            const int k0 = cone(b, t, i, b.f[tg].x, b.f[tg].y, 3, 1, line, kMaxFighters);
+            if (!friend_on(line, k0)) {
+                // the line's end: 3 squares from it toward the pick
+                const int dx = b.f[tg].x - f.x, dy = b.f[tg].y - f.y;
+                const int adx = dx < 0 ? -dx : dx, ady = dy < 0 ? -dy : dy;
+                const int steps = adx > ady ? adx : ady;
+                const int ex = steps > 3 ? f.x + dx * 3 / steps : b.f[tg].x;
+                const int ey = steps > 3 ? f.y + dy * 3 / steps : b.f[tg].y;
+                int on[kMaxFighters];
+                const int k = in_area(b, t, ex, ey, 3, on, kMaxFighters);
+                ev(i, Ev::BreathesPoison);
+                fly(i, ex, ey, 12, 1, 30);
+                Harm h = breath;
+                h.kind = 0x20;
+                const int amount = f.hp_max();
+                for (int j = 0; j < k; ++j)
+                    if (on[j] != i) hurt(on[j], amount, h);
+                --*left;
+                *ends_turn = true;
+                return n;
+            }
+        }
+    }
+    // Darkness's blue dragon and electric spider (GAME.OVR 0x3045C):
+    // lightning - a bolt (Lightning Bolt's reach, 10 squares) at its pick,
+    // its maximum hit points, a save for half; every turn while it has breaths
+    if (hasx(f, m.dk_lightning)) {
+        uint8_t* left = breaths(m.dk_lightning);
+        const int tg = left && *left ? special_target(b, t, i, 10, false, d) : -1;
+        if (tg >= 0) {
+            *ends_turn = true;
+            ev(i, Ev::BreathesLightning);
+            Harm h = breath;
+            h.kind = 0x24;
+            const int tx = b.f[tg].x, ty = b.f[tg].y;
+            Event* e = ev(i, Ev::BoltFly);
+            if (e) {
+                e->x = static_cast<uint8_t>(tx);
+                e->y = static_cast<uint8_t>(ty);
+                e->pic = 6;
+            }
+            const int amount = f.hp_max();
+            hurt(tg, amount, h);
+            int on[32];
+            const int k = bolt_path(b, t, i, tx, ty, 10, false, on, 32, b.bolt, &b.n_bolt, 16);
+            for (int j = 0; j < k; ++j)
+                if (on[j] != tg) hurt(on[j], amount, h);
+            --*left;
+            return n;
         }
     }
     // Secret's cold breath (the white dragons; GAME.OVR 0x327F9): as the

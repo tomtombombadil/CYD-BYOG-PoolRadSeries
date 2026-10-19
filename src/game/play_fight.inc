@@ -1440,6 +1440,8 @@ void event_page(const combat::Event& e)
     case combat::Ev::SpitsMisses: said(profile::kSpitsMisses); break;
     case combat::Ev::Gazes: said(profile::kGazes); break;
     case combat::Ev::BreathesCold: said(profile::kBreathesCold); break;
+    case combat::Ev::BreathesPoison: said(profile::kBreathesPoison); break;
+    case combat::Ev::BreathesLightning: said(profile::kBreathesLightning); break;
     case combat::Ev::Swallowed:
         fallen(profile::kSwallowed);
         // Secret's remorhaz (GAME.OVR 0x128F1): then "NAME is killed", and

@@ -179,6 +179,7 @@ enum FightWord {
                                                                                  // satisfaction", "is digested instantly"
     kFMenuDk,                                                                    // Darkness: the menu on two rows ("Move Aim Use Cast
                                                                                  // Turn Guard Quick@Delay Bandage View Speed End")
+    kBreathesPoison, kBreathesLightning,                                         // Darkness: "breathes poison", "breathes lightning"
     kFightWords
 };
 

@@ -188,6 +188,12 @@ struct MonFx {
     // never with a friend in its path (3 again when over 3), the -2 poison
     // and the paralysis after either attack's hit
     bool    secret_ways = false;
+    // Pools of Darkness's dragons (the fights' facts F9; their handlers in
+    // GAME.OVR's spell overlay, set at 0x311B4): the big red's fire (3 lines
+    // of 9, 24d10 + 12), the green's poison (a burst of 3 squares round the
+    // end of a 3-square line), the blue's lightning (a bolt, every turn
+    // while it has breaths); the acid breath's damage kind (0: Curse's 0x30)
+    uint8_t big_fire = 0, poison_breath = 0, dk_lightning = 0, acid_kind = 0;
 };
 
 // More spells' effects (spell_facts.md 2): Enlarge, Confusion (and going
@@ -481,6 +487,8 @@ enum class Ev : uint8_t {
     FearWeakened,
     // Secret's: "breathes cold", "is swallowed whole", "stares blankly"
     BreathesCold, Swallowed, StaresBlankly,
+    // Darkness's: "breathes poison", "breathes lightning"
+    BreathesPoison, BreathesLightning,
 };
 struct Event {
     uint8_t who = 0;

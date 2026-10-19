@@ -167,6 +167,7 @@ uint16_t Vm::dk_addr(uint16_t a)
     case 0x7EC9: return 0x03;           // the step blocked
     case 0x7ECA: return 0x19;           // Search / Look
     case 0x7ECB: return 0x2E;           // surprise
+    case 0x7EC6: return 0x1B;           // the monsters' morale (its fight's morale, GAME.OVR 0xAD85)
     case 0x7EE2: return 0x14;           // COMBAT: the temple
     case 0x7EA8: return 0x30;           // the training hall's classes (SAVE 127, then PROGRAM 0)
     case 0x7ED2: return 0x2B;           // resting's encounters
