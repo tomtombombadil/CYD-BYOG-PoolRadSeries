@@ -92,9 +92,12 @@ the Project as claude/TODO.md.
       screens). v0.129.0: sounds (ZOUNDS samples, SOUND op; Tandy = the
       SL / TL DAC, PC speaker as IBMSND.COM). v0.130.0: training (not
       compared with DOSBox: the hall's screen). v0.131.0: Secret's
-      characters (Load / Add; Malachite's HP +3 in the original - open).
+      characters (Load / Add; Malachite's HP: done with creation).
       v0.132.0: approaching monsters (SPRIT1; compare with DOSBox when
       one is met).
+      Creation / Modify / Human Change (branch darkness-create): done but
+      the icon editor's VGA pictures (CHEAD / CBODY, with the fights'
+      icons) and Human Change in DOSBox (needs the training hall).
       Agents (2026-10-18): fights, shops / temple / treasure, creation.
       Next, a chunk a commit:
       approaching monsters (SPRIT1), the spells' effects in camp and in

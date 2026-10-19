@@ -1373,7 +1373,6 @@ void begin_adventuring();
 // type 0x2D's byte 0x32 = 2, type 0x3A's 0x3D = 0x59, the class values
 // worked out again; Darkness's own game state isn't loaded (a new game)
 extern char import_dir[128];
-void class_values(party::Character& ch);
 void dk_import_values(party::Character& ch);
 void secret_to_darkness(party::Character& ch);
 void find_secret_saves()
@@ -3365,13 +3364,6 @@ bool load_rules(MagicRules*& m)
 
 // A character's class values worked out with the game's tables (loaded for
 // the moment: Darkness's Load from Secret)
-void class_values(party::Character& ch)
-{
-    MagicRules* m = nullptr;
-    if (load_rules(m)) classes::class_bonuses(ch, m->tables);
-    delete m;
-}
-
 void dk_import_values(party::Character& ch)
 {
     const int hp_max = ch.hp_max();

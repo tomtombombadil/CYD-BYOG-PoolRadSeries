@@ -1434,6 +1434,33 @@ the scripts' changed ops, the rule tables, fights, the rest.
   SPRIT1.DAX: an 88 x 88 animation over the whole view, its frame by the
   distance (0 near, 1 middle, 2 far), 0 and 13 swapped and 13 see-through
   (darkness_facts.md 3.5) - not yet compared with DOSBox (none met).
+- **Create New Character, Modify, Human Change** (the Project's
+  claude/darkness_create_facts.md 40-47; the creation overlay, GAME.OVR
+  0x140E0 on). Its races in its order (Elf Half-Elf Dwarf Gnome Halfling
+  Human), its words; the races' effects in its order; 1,500,001
+  experience (two classes - and the magic-user / thief - 750,000; C/F/MU
+  and F/MU/T 500,000) trained silently to its level; a single class's age
+  10 years more; 200 platinum; no first magic-user spells - its book by
+  its slots at the save (`create::dk_mu_book`: spell levels 1-3, lists for
+  4th-7th level slots, all with a 9th); the first icon by race / sex /
+  class; the **starting kit** at the save (`create::dk_kit`: the program's
+  DS 0x9B7 item numbers by kind - fighters, thieves, clerics, magic-users -
+  their ITEM0 rows, identified, readied but the 4th, 50 arrows / darts).
+  Its questions start on Yes, the name is typed white a column on, "Save
+  NAME?" over the icon screen. Modify: experience exactly as made, "Modify
+  : Add Subtract Keep Exit" in Secret's places, a "*" by a changed stat,
+  its own hit point bounds (`dk_hp_least` / `dk_hp_most`) and Keep's
+  rolled figure. Human Change: the slots, memorized places and best levels
+  cleared, the paladin's / ranger's effects moved. Secret's characters'
+  hit points as its converter recalculates them (`create::dk_con_recompute`
+  - Malachite 61, as DOSBox). Checked against DOSBox (EGA): the four lists,
+  the sheet, the name, Save, Modify pixel for pixel (mouse aside; the
+  rolls differ); a magic-user's record and items byte for byte but the
+  rolls; Modify's bounds 36 / 69 and Con 15 / 14 58 / 47. Sweep's
+  `behave darkness` (-DBEHAVE_DARKNESS, GAME=4): 2,072 creation cases,
+  2,142 Modify bounds, 300 recalculations, Human Change - 0 failed.
+  Not yet: its icon editor's pictures (CHEAD / CBODY are VGA - with the
+  fights' icons).
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -1921,6 +1948,14 @@ the game's Settings (As Original: all of them).
   weighs the coins it pays (Secret's weighs the price in gold); a pile
   with no count joins nothing (Secret's swallows it). Not in the engine
   yet: Secret's scroll bundles (Join on scrolls, up to 10).
+- **Darkness's race adjustments at creation** (`rules::fixes()`): its
+  program tests the race list's last line (human) instead of the race
+  picked, so dwarves' Con +1 Cha -1, elves' Dex +1 Con -1 and halflings'
+  Str -1 Dex +1 never happen; with Item Fixes on the engine applies them
+  (AD&D's), off as the original.
+- **Darkness's new characters' item count** (record 0x1A6): the original
+  writes 3 whatever its kit holds (a magic-user's 4); the engine writes
+  the count (loading counts the file in both).
 - **Darkness's memorized spells** (v0.128.0): the original has 141 places;
   the engine's spell rules use Curse's 84, so a character can hold 84
   memorized spells at most there (the GOG party: 4 to 30). Saves keep
