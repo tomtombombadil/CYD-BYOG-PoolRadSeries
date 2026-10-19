@@ -110,19 +110,13 @@ the Project as claude/TODO.md.
       0x75 (beholders), 0x73 (vorpal), 0x74 (Kalistes' weapons), 0x52
       (blessed bolts), 0x4C; the arena's third south ogre at (31,19), the
       original (33,18); fight checks in sweep's behave darkness.
-- [ ] Darkness's fight memory: the 30-monster test fight peaks at 169 KB
-      (budget 150; Curse 146, Pool 147). Where: monster records ~520 bytes
-      each (14 KB), fighters 6.7 KB, rule tables 6.1 KB, icons with the
-      see-through plane 9.7 KB. Ideas: a group's copies share one record
-      (their changing bytes each), the rule tables only while casting.
-      v0.134.0: creation / Modify / Human Change, done but
-      the icon editor's VGA pictures (CHEAD / CBODY, with the fights'
-      icons) and Human Change in DOSBox (needs the training hall).
-      Agents (2026-10-18): fights, shops / temple / treasure, creation.
-      Next, a chunk a commit:
-      approaching monsters (SPRIT1), the spells' effects in camp and in
-      fights, training, creation, fights (VGA combat pictures,
-      DUNGCOM, CPIC1 icons), shops / treasure (ITEM0 rows), the 8-bit canvas on the S3 / C5.
+- [x] Darkness's fight memory (v0.136.1): the 30-monster test fight 169
+      -> 150.6 KB (Curse 146 -> 132, Pool 147 -> 133): the script's code
+      parked during fights and its memory the fight's arena, the monster
+      groups made as needed, the spell names packed, smaller fighters,
+      Darkness's background picture freed. Only 3 KB spare: next cut the
+      monster records (~540 bytes each, up to 48) - a group's copies
+      sharing one, or growable effects (108 bytes each).
 - [ ] Darkness's sounds, with its fights: the area spells' burst plays
       effect 11 again as their picture shows (spells 0x22, 0x2F, 0x40,
       0x57, 0x5B, 0x73 - GAME.OVR 0x29D34 +0x1451; and an item's burst,

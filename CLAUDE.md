@@ -653,7 +653,10 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   there; (2) what a screen doesn't use waits on the card while a bigger
   one runs (`frame::park` the canvas for the book; the 3D view's walls
   park to `_CYD/WORLD.TMP` during a fight and the field's tiles use their
-  memory - `park_world`); (3) no fixed-size word tables (the fight's words
+  memory - `park_world`; since v0.136.1 the script's code (7.5 KB) parks
+  to `_CYD/CODE.TMP` during a fight - the script runs nothing then - and
+  its memory plus the 3D view's past the field's tiles is the fight's
+  **arena** for the fighters and pictures, overflow on the heap); (3) no fixed-size word tables (the fight's words
   are packed: `wbuf` / `woff`); (4) before / after any change that adds a
   long-lived block, measure: the playsim's `SIZES=1` (the big blocks'
   sizes), sweep's `memloop` (one session, fight after fight: the heap in
@@ -674,10 +677,14 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   8 then 1 KB; v0.86.1 cut a fight ~12 KB (fighters as many as the fight
   has, not 71; the pages' lines in one 2 KB pool). (7) **the budget**:
   the playsim's fights `SAVE=A RUNAT=8AC2 FIGHT=1` (Curse) and `GAME=1
-  SAVE=A RUNAT=85F9 FIGHT=1` (Pool) with heapprof linked and BUDGET=150
-  must stay within 150 KB at their highest point (the 32 KB canvas
-  included; v0.87.1: 145 / 143 KB, was 195 at v0.85.7) - raise it only
-  with a reason. Also since v0.87.1: the picture animation's DAX index
+  SAVE=A RUNAT=85F9 FIGHT=1` (Pool) and `GAME=4 SAVE=A CHOICES=0
+  RUNAT=85BB FIGHT=1` (Darkness, 30 monsters) with heapprof linked and
+  BUDGET=150 must stay within 150 KB at their highest point (the 32 KB
+  canvas included; v0.87.1: 145 / 143 KB, was 195 at v0.85.7; v0.136.1:
+  Curse 132, Pool 133, Darkness 150.6 of 153.6 - its monster records,
+  ~540 bytes each up to 48, are the next cut). Measure with no out/
+  folder in the run's directory and a `_CYD` folder beside the game
+  folder. Raise it only with a reason. Also since v0.87.1: the picture animation's DAX index
   (3 KB) only while a picture animates; the magic tables load alone
   (`MagicRules`, 4.7 KB) instead of in character making's 6.9 KB block.
   (8) **careful cuts** (Tom, 2026-10-12): a reduction must not take away
