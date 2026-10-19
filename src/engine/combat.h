@@ -362,25 +362,30 @@ struct Monster {
 };
 
 // ---- A fighter: a party member or a monster
+// (v0.136.1: its numbers are 16 bits - all small: squares, counts, indexes,
+// spell numbers - and the pointers first: 112 bytes, was 168 with ints)
 struct Fighter {
     uint8_t* rec = nullptr;
     uint8_t (*aff)[party::kAffectSize] = nullptr;
     int*    n_aff = nullptr;
-    int     max_aff = 0;
     uint8_t (*items)[items::kRecordSize] = nullptr;    // its items (a monster: its group's)
-    int     n_items = 0;
-    int     member = -1;                // party index, or -1 (a monster)
-    int     monster = -1;               // index in the monsters, or -1
-    int     icon = 0;                   // icon slot: party 0-7, monsters 8 + group
-    int     x = 0, y = 0, size = 0;     // top-left square, footprint (0: not on the field)
-    int     facing = 0;
-    int     delay = 0;                  // initiative left (0: done this round)
-    int     moves = 0;                  // half squares left
-    int     attacks[2] = {};            // left this round (slot 1, slot 2)
-    int     bleeding = 0;
-    int     received = 0, turns = 0;    // attacks received this round, facing changes
-    int     target = -1;
-    int     ground = 0;                 // the square's ground before a body was left there
+    int16_t max_aff = 0;
+    int16_t n_items = 0;
+    int16_t member = -1;                // party index, or -1 (a monster)
+    int16_t monster = -1;               // index in the monsters, or -1
+    int16_t icon = 0;                   // icon slot: party 0-7, monsters 8 + group
+    int16_t x = 0, y = 0, size = 0;     // top-left square, footprint (0: not on the field)
+    int16_t facing = 0;
+    int16_t delay = 0;                  // initiative left (0: done this round)
+    int16_t moves = 0;                  // half squares left
+    int16_t attacks[2] = {};            // left this round (slot 1, slot 2)
+    int16_t bleeding = 0;
+    int16_t received = 0, turns = 0;    // attacks received this round, facing changes
+    int16_t target = -1;
+    int16_t ground = 0;                 // the square's ground before a body was left there
+    int16_t down_size = 0;              // its footprint before it fell (a troll gets up again)
+    int16_t spell = 0;                  // a spell being cast (it goes off at its delay)
+    int16_t spell_n = 0;                // the computer's targets for it
     bool    guarding = false, quick = false, attacked = false, turned_undead = false, can_cast = true;
     bool    can_use = true;             // items this round (coughing: not)
     bool    coughed = false;            // "is coughing" said this round
@@ -388,15 +393,12 @@ struct Fighter {
     bool    gone = false;               // a monster there was no room for: not in the fight at all
     bool    fleeing = false;            // turned undead, panic: runs for the field's edge
     bool    escaped = false;            // turned gaseous and escaped (Pool's vampire): away, not down
-    int     down_size = 0;              // its footprint before it fell (a troll gets up again)
     uint8_t was_control = 0;            // its control byte before Animate Dead (back after the fight)
-    int     spell = 0;                  // a spell being cast (it goes off at its delay)
-    int     spell_n = 0;                // the computer's targets for it
-    uint8_t spell_t[24] = {};
     // Secret's record bytes with no Curse place (secret_facts_2.md 19): flags
     // 2 (0x15E: 8 = unharmed by Slay Living and the Death Spell) and magic
     // resistance (0x1A5, % - by the caster's level as Curse's effects)
     uint8_t flags2 = 0, magic_res = 0;
+    uint8_t spell_t[24] = {};
     int     team() const { return rec[0x197]; }
     bool    up() const { return rec[0x196] != 0; }          // able to fight
     int     hp() const { return rec[0x1A4]; }
