@@ -574,6 +574,7 @@ int main(int argc, char** argv)
             tap_word(r == 0 ? (keepq ? 'N' : 'Y') : (keepq ? 'Y' : 'N'));
         }
         printf("  input %d prompt [%s]\n", (int)play::input(), play::input_prompt);
+        shot("name");
         for (const char* n = getenv("NAME") ? getenv("NAME") : "TESTER"; *n; ++n) play::input_key(*n, C);
         play::input_key('\n', C);
         printf("  ask [%s]\n", play::menu.prompt);
@@ -587,7 +588,9 @@ int main(int argc, char** argv)
             printf("  head %d body %d, screen %d menu [%s%s]\n", play::mk->ch.rec[0x13F], play::mk->ch.rec[0x140], (int)play::screen, play::menu.prompt, play::menu.s);
             if (play::screen == play::Screen::Icon) tap_word('D');      // the gallery's Done: "Is this icon ok?"
         }
+        if (play::screen == play::Screen::Icon) { shot("icon"); printf("  icon menu [%s%s]\n", play::menu.prompt, play::menu.s); }
         if (play::screen == play::Screen::Icon) tap_word('D');       // (Curse: the icon gallery's Done)
+        shot("save_q");
         tap_word('Y');
         if (play::screen == play::Screen::YesNo) { printf("  ask [%s]\n", play::menu.prompt); tap_word('Y'); }
         printf("  screen %d\n", (int)play::screen);
