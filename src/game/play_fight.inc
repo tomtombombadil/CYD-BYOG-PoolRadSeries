@@ -265,6 +265,22 @@ uint8_t* fight_monster_record(int k)
     return ml && k >= 0 && k < ml->n ? ml->m[k].rec : nullptr;
 }
 
+// ---- The fight's arena (v0.136.1): memory a fight borrows instead of
+// asking the heap. While the field is up the script waits for the fight's
+// result and runs none of its code, so its code (GameState::code, 7.5 KB)
+// waits on the card (_CYD/CODE.TMP) and holds the fighters' blocks and
+// pictures; the 3D view's memory past the field's 40 tiles (parked with
+// the walls, ~2 KB) holds pictures. The arena only grows (a picture let go
+// leaves its room unused); what doesn't fit goes on the heap as before.
+// The pictures go at the fight's art's end (end_fight_art), the fighters
+// with the fight, then the code comes back - before the script goes on.
+void* arena_take(size_t n, bool code_only);
+bool in_arena(const void* p);
+void arena_free(void* p);
+void fight_arena_end();
+combat::Fighter* make_fighters(int n);
+void release_fighters(combat::Fighter* f);
+
 // ---- Pictures, 4 bits a pixel
 struct Pic4 {
     uint8_t w = 0, h = 0;
@@ -284,8 +300,8 @@ inline void set_nib(uint8_t* p, int w, int x, int y, int v)
 
 void free_pic(Pic4& p)
 {
-    free(p.px[0]);
-    free(p.px[1]);
+    arena_free(p.px[0]);
+    arena_free(p.px[1]);
     p = Pic4{};
 }
 
@@ -447,7 +463,14 @@ struct Fight {
             t = nullptr;
         }
         delete &b;
-        delete[] fighters;
+        // (end_fight_art let the pictures go; any left are let go before the arena goes)
+        for (Pic4& p : icon) free_pic(p);
+        arena_free(cursor);
+        arena_free(skull);
+        arena_free(outline);
+        release_fighters(fighters);
+        fighters = nullptr;
+        fight_arena_end();
     }
     Fight(const Fight&) = delete;
     Fight& operator=(const Fight&) = delete;
@@ -566,12 +589,137 @@ void unpark_world()
     }
 }
 
+// The arena's two parts: [0] the script's code, [1] the 3D view's memory
+// past the field's tiles
+struct Arena {
+    uint8_t* at[2] = {};
+    uint32_t cap[2] = {}, used[2] = {};
+    bool code_parked = false;
+    bool pictures = false;              // pictures may go in (the fight's art is up)
+};
+Arena arena;
+
+void code_park_path(char* out, size_t cap) { snprintf(out, cap, "%s/_CYD/CODE.TMP", games::kRootDir); }
+
+// The script's code onto the card: its memory the arena's first part
+bool park_code()
+{
+    if (arena.code_parked) return true;
+    if (!plat::card_ready()) return false;
+    char path[96];
+    code_park_path(path, sizeof path);
+    plat::File f = plat::open(path, "w");
+    if (!f) return false;
+    const bool ok = f.write(d->gs.code, sizeof d->gs.code) == sizeof d->gs.code;
+    f.close();
+    if (!ok) return false;
+    arena.code_parked = true;
+    arena.at[0] = d->gs.code;
+    arena.cap[0] = sizeof d->gs.code;
+    arena.used[0] = 0;
+    return true;
+}
+
+// The 3D view's memory past the tiles (the walls parked): the second part
+void arena_world(bool on)
+{
+    constexpr uint32_t kUsed = (kTiles * kTileBytes + 7u) & ~7u;
+    arena.at[1] = on ? reinterpret_cast<uint8_t*>(&d->world) + kUsed : nullptr;
+    arena.cap[1] = on ? static_cast<uint32_t>(sizeof(view3d::World)) - kUsed : 0;
+    arena.used[1] = 0;
+}
+
+void* arena_take(size_t n, bool code_only)
+{
+    const uint32_t need = static_cast<uint32_t>((n + 7u) & ~static_cast<size_t>(7u));
+    if (!code_only && !arena.pictures) return nullptr;
+    for (int k = 0; k < (code_only ? 1 : 2); ++k)
+        if (arena.at[k] && arena.cap[k] - arena.used[k] >= need) {
+            void* p = arena.at[k] + arena.used[k];
+            arena.used[k] += need;
+            return p;
+        }
+    return nullptr;
+}
+
+bool in_arena(const void* p)
+{
+    const uint8_t* q = static_cast<const uint8_t*>(p);
+    for (int k = 0; k < 2; ++k)
+        if (q && arena.at[k] && q >= arena.at[k] && q < arena.at[k] + arena.cap[k]) return true;
+    return false;
+}
+
+void arena_free(void* p)
+{
+    if (!in_arena(p)) free(p);
+}
+
+// A picture of n bytes (malloc'd) into the arena when there's room
+uint8_t* arena_adopt(uint8_t* p, size_t n)
+{
+    if (!p || in_arena(p)) return p;
+    uint8_t* q = static_cast<uint8_t*>(arena_take(n, false));
+    if (!q) return p;
+    memcpy(q, p, n);
+    free(p);
+    return q;
+}
+
+// A fight picture's bytes (load_pic4's block: 4-bit rows, Darkness's see-through plane after them)
+size_t pic_bytes(int w, int h) { return static_cast<size_t>(w / 2) * h + (fight_masks() ? mask_bytes(w, h) : 0); }
+void arena_adopt(Pic4& ic)
+{
+    for (uint8_t*& p : ic.px) p = arena_adopt(p, pic_bytes(ic.w, ic.h));
+}
+// A COMSPR picture for the whole fight (the arena when there's room)
+uint8_t* fight_pic(int block)
+{
+    int w = 0, h = 0;
+    uint8_t* p = load_pic4("COMSPR.DAX", block, 0, &w, &h);
+    return p ? arena_adopt(p, pic_bytes(w, h)) : nullptr;
+}
+
+// The script's code back (the fight is gone: nothing of it is in the arena)
+void fight_arena_end()
+{
+    arena_world(false);
+    if (!arena.code_parked) return;
+    arena = Arena{};
+    char path[96];
+    code_park_path(path, sizeof path);
+    plat::File f = plat::open(path, "r");
+    const bool ok = f && f.read(d->gs.code, sizeof d->gs.code) == sizeof d->gs.code;
+    if (f) f.close();
+    if (!ok) {
+        // (the card lost it: the script reads again from the game's files)
+        log_error("The script couldn't be read back after a fight: reloaded.");
+        host->load_script(d->gs.script, d->gs.code, &d->gs.code_len);
+    }
+}
+
+static_assert(std::is_trivially_destructible<combat::Fighter>::value, "the fighters' blocks are let go without destructors");
+combat::Fighter* make_fighters(int n)
+{
+    void* p = arena_take(static_cast<size_t>(n) * sizeof(combat::Fighter), true);
+    if (!p) return new (std::nothrow) combat::Fighter[n];
+    combat::Fighter* f = static_cast<combat::Fighter*>(p);
+    for (int i = 0; i < n; ++i) new (&f[i]) combat::Fighter();
+    return f;
+}
+
+void release_fighters(combat::Fighter* f)
+{
+    if (!in_arena(f)) delete[] f;
+}
+
 bool alloc_tiles()
 {
     if (!fg->tiles_in_world && park_world()) {
         uint8_t* base = reinterpret_cast<uint8_t*>(&d->world);
         for (int i = 0; i < kTiles; ++i) fg->tile[i] = base + i * kTileBytes;
         fg->tiles_in_world = true;
+        arena_world(true);
     }
     if (fg->tiles_in_world) return true;
     for (uint8_t*& t : fg->tile)
@@ -785,6 +933,7 @@ void compose_icon(int slot, const party::Character& ch)
         if (fg->icon[slot].px[0]) return;
     }
     build_icon(ch.rec, fg->icon[slot]);
+    arena_adopt(fg->icon[slot]);
 }
 
 void load_monster_icon(int slot, int block)
@@ -797,7 +946,7 @@ void load_monster_icon(int slot, int block)
         int w, h;
         uint8_t* p = load_pic4(file, block + fr * 0x80, 0, &w, &h);
         if (!p) continue;
-        ic.px[fr] = p;
+        ic.px[fr] = arena_adopt(p, pic_bytes(w, h));
         ic.w = static_cast<uint8_t>(w);
         ic.h = static_cast<uint8_t>(h);
     }
@@ -806,6 +955,17 @@ void load_monster_icon(int slot, int block)
 void end_fight_art()
 {
     if (!fg) return;
+    // (the pictures first: some are in the 3D view's memory)
+    arena.pictures = false;
+    for (Pic4& p : fg->icon) free_pic(p);
+    arena_free(fg->cursor);
+    arena_free(fg->skull);
+    arena_free(fg->outline);
+    fg->cursor = fg->skull = fg->outline = nullptr;
+    free(fg->fx_pic[0]);
+    free(fg->fx_pic[1]);
+    fg->fx_pic[0] = fg->fx_pic[1] = nullptr;
+    arena_world(false);
     for (uint8_t*& t : fg->tile) {
         if (!fg->tiles_in_world) free(t);
         t = nullptr;
@@ -820,14 +980,6 @@ void end_fight_art()
     end_magic();
     sound_hold(false);
     memlog::note("fight over");
-    for (Pic4& p : fg->icon) free_pic(p);
-    free(fg->cursor);
-    free(fg->skull);
-    free(fg->outline);
-    fg->cursor = fg->skull = fg->outline = nullptr;
-    free(fg->fx_pic[0]);
-    free(fg->fx_pic[1]);
-    fg->fx_pic[0] = fg->fx_pic[1] = nullptr;
 }
 
 // ---- Drawing
@@ -2399,11 +2551,8 @@ void aim_menu(pic::Canvas& c)
     fg->st = FSt::Aim;                  // (also back from "Abort Spell?" - No / Esc)
     combat::Battle& b = fg->b;
     const int t = fg->manual ? (b.who[fg->my][fg->mx] ? b.who[fg->my][fg->mx] - 1 : -1) : fg->cand[fg->ci];
-    if (!fg->outline) {
-        int w, h;
-        fg->outline = load_pic4("COMSPR.DAX", d->prof->fight.marks.outline ? d->prof->fight.marks.outline : 0x19 + 0x80,
-                                0, &w, &h);     // (another try)
-    }
+    if (!fg->outline)
+        fg->outline = fight_pic(d->prof->fight.marks.outline ? d->prof->fight.marks.outline : 0x19 + 0x80);  // (another try)
     if (t >= 0 || fg->manual) {
         // (the Manual square keeps the view with it - empty or not: Tom,
         // v0.104.2, the cursor went off the view)
@@ -2885,11 +3034,16 @@ void fight_start(pic::Canvas& c)
     load_fight_words();
     // The fighters' blocks: as many as this fight has, and room for some to
     // join (combat::kSpareFighters)
-    delete[] fg->fighters;
+    release_fighters(fg->fighters);
+    fg->fighters = nullptr;
     int n_fighters = pt->count + ml->n + combat::kSpareFighters;
     if (n_fighters > combat::kMaxFighters) n_fighters = combat::kMaxFighters;
-    fg->fighters = new (std::nothrow) combat::Fighter[n_fighters];
-    const bool room = fg->fighters && alloc_tiles();
+    // (the field's tiles first: the 3D view's memory, then the script's
+    // code, parked - the arena the fighters and pictures go in)
+    const bool tiles = alloc_tiles();
+    if (tiles && park_code()) arena.pictures = true;
+    fg->fighters = make_fighters(n_fighters);
+    const bool room = fg->fighters && tiles;
     const bool tables = room && load_fight_tables();
     // Pool's two names gnomes dodge (its GAME.OVR words), as Pascal names
     for (int k = 0; tables && k < 2; ++k) {
@@ -2991,14 +3145,13 @@ void fight_start(pic::Canvas& c)
     // Their pictures
     fight_party_icons();
     for (int g = 0; g < ml->groups; ++g) load_monster_icon(8 + g, ml->g[g]->icon);
-    int w, h;
-    free(fg->cursor);                        // (a fight started over another: nothing kept twice)
-    free(fg->skull);
-    free(fg->outline);
+    arena_free(fg->cursor);                  // (a fight started over another: nothing kept twice)
+    arena_free(fg->skull);
+    arena_free(fg->outline);
     const combat::Comspr& cs = d->prof->fight.marks;
-    fg->cursor = load_pic4("COMSPR.DAX", cs.cursor ? cs.cursor : 0x19, 0, &w, &h);
-    fg->skull = load_pic4("COMSPR.DAX", cs.skull ? cs.skull : 11 + 0x80, 0, &w, &h);
-    fg->outline = load_pic4("COMSPR.DAX", cs.outline ? cs.outline : 0x19 + 0x80, 0, &w, &h);
+    fg->cursor = fight_pic(cs.cursor ? cs.cursor : 0x19);
+    fg->skull = fight_pic(cs.skull ? cs.skull : 11 + 0x80);
+    fg->outline = fight_pic(cs.outline ? cs.outline : 0x19 + 0x80);
     // (Tom, 3.2", v0.85.5: Aim's box once didn't show - a picture that
     // couldn't be loaded goes in the Errors log)
     if (!fg->cursor || !fg->outline || !fg->skull) log_error(no_memory("the fight's cursor / target box"));
@@ -3246,7 +3399,7 @@ void fight_treasure_only(pic::Canvas& c)
     // (no fighters: the party shares as the games do - the survivors).
     // The party's fighter blocks (since v0.86.1 a fight's fighters are its
     // own block: a fresh Battle has none - the treasure step crashed on it)
-    delete[] fg->fighters;
+    release_fighters(fg->fighters);
     fg->fighters = new (std::nothrow) combat::Fighter[pt->count > 0 ? pt->count : 1];
     if (!fg->fighters) {
         delete fg;
