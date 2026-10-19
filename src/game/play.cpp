@@ -4219,18 +4219,52 @@ void buy(int i, pic::Canvas& c)
 // "cast cure anyway: "; then "<cure> will only cost N gold pieces.", "pay
 // for cure " - the character pays, or the counter; "NAME is cured."
 
+bool program_ds(uint16_t ds, uint8_t* out, size_t n);
+
 struct HealWords {
-    char name[10][24];
+    char name[11][24];                // (Darkness: 11 - Restoration too)
     char help[28];
     char heal[8];                   // "Heal" (from "Heal Exit")
 };
 HealWords* hw = nullptr;
 int cure_at = -1;
 
-void heal_line(int i, char* out, size_t cap) { snprintf(out, cap, "%s", hw && i < 10 ? hw->name[i] : ""); }
+void heal_line(int i, char* out, size_t cap) { snprintf(out, cap, "%s", hw && i < 11 ? hw->name[i] : ""); }
+
+// Darkness's temple list (its overlay, GAME.OVR 0x386C; facts_shops.md 3):
+// the outer frame and the row-16 bar, "NAME, how can we help you?" (1, 1),
+// the 11 cures from row 3 at column 2, the character's name (1, 19) and
+// hit points at column 18 (magenta when not full) "/max"
+void draw_heal_dk(pic::Canvas& c)
+{
+    party::Character& ch = *pt->sel();
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    layout::bar(c, d->tables, d->frame_tiles, 16);
+    char t[48], nm[20];
+    ch.name(nm, sizeof nm);
+    for (size_t n = strlen(nm); n > 0 && nm[n - 1] == ' '; --n) nm[n - 1] = 0;
+    snprintf(t, sizeof t, "%s%s", nm, hw->help);
+    put(c, t, 1, 1, 15);
+    put(c, nm, 1, 19, 15);
+    snprintf(t, sizeof t, "%d", ch.hp());
+    put(c, t, 18, 19, ch.hp() != ch.hp_max() ? 13 : 15);
+    const int x = 18 + static_cast<int>(strlen(t));
+    snprintf(t, sizeof t, "/%d", ch.hp_max());
+    put(c, t, x, 19, 15);
+    plist.row0 = 3;
+    plist.row1 = 15;
+    plist.col0 = 2;
+    plist.n = 11;
+    draw_list(c, "", hw->heal);
+}
 
 void draw_heal(pic::Canvas& c)
 {
+    if (darkness_files()) {
+        draw_heal_dk(c);
+        return;
+    }
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
     if (d->tables.bars[0]) layout::bar(c, d->tables, d->frame_tiles, 16);     // (Secret: the shop's bar stays)
@@ -4251,6 +4285,26 @@ void open_heal(pic::Canvas& c)
     if (!hw) hw = new (std::nothrow) HealWords;
     if (!hw) {
         error(c, "Not enough memory.");
+        return;
+    }
+    if (darkness_files()) {
+        // (Darkness: the cures are spells - their names by number, DS 0x08CC)
+        uint8_t sp[11] = {};
+        program_ds(d->prof->items.temple_spells, sp, sizeof sp);
+        {
+            OvrWords src;
+            const profile::NameTable& nt = d->prof->magic.names;
+            const bool open = src.open();
+            for (int i = 0; i < 11; ++i) {
+                hw->name[i][0] = 0;
+                if (open) text::read_pascal(src, text::kInProgram | (nt.at + nt.stride * sp[i]), hw->name[i], sizeof hw->name[i]);
+            }
+        }
+        sw(profile::kHelpYou, hw->help, sizeof hw->help);
+        sw(profile::kDkHeal, hw->heal, sizeof hw->heal);
+        screen = Screen::Heal;
+        plist = PickList{};
+        draw_heal(c);
         return;
     }
     for (int i = 0; i < 10; ++i) sw(profile::kCureName + i, hw->name[i], sizeof hw->name[i]);
@@ -4410,8 +4464,206 @@ void secret_cure(int i, pic::Canvas& c)
     plat::log("[play] temple: cure %d - %s\n", i, t);
 }
 
+// Darkness's temple says NAME (row 18; cyan, red when not okay, magenta
+// when able to train) and a word under it (row 19, green) - its overlay
+// 0xec ov+0x1B08; with ask, then "cast cure anyway? " (No first)
+void dk_temple_say(pic::Canvas& c, party::Character& ch, int word, bool ask_anyway)
+{
+    char nm[20], w[48];
+    ch.name(nm, sizeof nm);
+    sw(word, w, sizeof w);
+    c.fill(8, 17 * 8, 38 * 8, 6 * 8, 0);
+    put(c, nm, 1, 18, ch.health() != party::Okay ? 12 : ch.ext[party::kExtTrain] ? 13 : 11);
+    text::Writer ws;
+    text::begin(ws, c, w, text::Region{1, 19, 38, 22}, 10, false);
+    text::step(ws, c, d->font, -1);
+    dirty_rows(17, 22);
+    plat::log("[play] temple: %s %s\n", nm, w);
+    {
+        // (the list's highlight goes while it speaks - DOSBox)
+        const int row = plist.row0 + plist.index - plist.top;
+        char line[32];
+        heal_line(plist.index, line, sizeof line);
+        c.fill(plist.col0 * 8, row * 8, (39 - plist.col0) * 8, 8, 0);
+        put(c, line, plist.col0, row, 10);
+    }
+    if (ask_anyway) {
+        char q[24];
+        sw(profile::kCastAnyway, q, sizeof q);
+        ask_yes_no(c, Ask::CureAnyway, q);
+    }
+}
+
+// Restoration (Darkness's spell 102, GAME.OVR 0x2EBEC): one level back in a
+// drained class (the first; the original takes the one whose next level
+// costs least), hit points back by the lost ones shared over the levels
+// lost; the last level back brings the best experience back
+bool dk_restore(party::Character& ch)
+{
+    int lost = 0, cls = -1;
+    for (int k = 0; k < 7; ++k) {
+        const int l = ch.rec[0x109 + k], best = ch.ext[party::kExtBestLevels + k];
+        if (l < best) {
+            lost += best - l;
+            if (cls < 0) cls = k;
+        }
+    }
+    if (cls < 0) return false;
+    const int best_hp = ch.ext[party::kExtBestHp];
+    if (ch.hp_max() < best_hp) {
+        const int gain = (best_hp - ch.hp_max()) / lost;
+        ch.rec[0x78] = static_cast<uint8_t>(ch.hp_max() + gain);
+        ch.rec[0x1A4] = static_cast<uint8_t>(ch.hp() + gain);
+        ch.rec[0x12C] = static_cast<uint8_t>(ch.rec[0x12C] + gain);
+    }
+    ++ch.rec[0x109 + cls];
+    if (lost == 1) memcpy(ch.rec + 0x127, ch.ext + party::kExtBestXp, 4);
+    rules::recalc(ch, *names, d->facts);
+    return true;
+}
+
+// Darkness's cures (its temple overlay; facts_shops.md 3): free, done at once;
+// one that has nothing to do says why and asks "cast cure anyway? "
+void dk_cure(int i, pic::Canvas& c)
+{
+    party::Character& ch = *pt->sel();
+    const rules::CureFacts& f = d->prof->cures;
+    const int h = ch.health();
+    auto okay = [&]() {
+        ch.rec[0x195] = party::Okay;
+        ch.rec[0x196] = 1;
+    };
+    auto uncure_poison = [&]() {
+        rules::remove_affects(ch, f.poisoned);
+        rules::remove_affects(ch, f.slow_poison);
+        rules::remove_affects(ch, f.poison_damage);
+    };
+    int say = -1;
+    bool ask = false;
+    switch (i) {
+    case 0:                                         // Cure Blindness (nothing said)
+        if (!rules::remove_affects(ch, f.blinded)) say = profile::kNotBlind, ask = true;
+        break;
+    case 1: {                                       // Cure Disease
+        int n = 0;
+        for (uint8_t t : f.disease)
+            if (t) n += rules::remove_affects(ch, t);
+        say = n ? profile::kCured : profile::kNotDiseased;
+        break;
+    }
+    case 2: case 3: case 4: case 5: {               // the wounds, Heal (nothing said)
+        int amount;
+        if (i == 2) amount = rng.roll(8, 1);
+        else if (i == 3) amount = rng.roll(8, 2) + 1;
+        else if (i == 4) amount = rng.roll(8, 3) + 3;
+        else {
+            // (Heal: to all but 1d4 - nothing when that is past the most;
+            // blindness and feeblemind go)
+            const int r = rng.roll(4, 1);
+            amount = ch.hp() + r > ch.hp_max() ? 0 : ch.hp_max() - ch.hp() - r;
+            rules::remove_affects(ch, f.blinded);
+            rules::remove_affects(ch, f.feeblemind);
+        }
+        rules::heal(ch, amount);
+        break;
+    }
+    case 6:                                         // Neutralize Poison
+        if (!ch.has_affect(f.poisoned)) {
+            say = profile::kNotPoisoned, ask = true;
+            break;
+        }
+        if (ch.hp() == 0) ch.rec[0x1A4] = 1;
+        uncure_poison();
+        okay();
+        break;
+    case 7: {                                       // Raise Dead (the spell's routine: "is raised")
+        const bool dead = h == party::Dead || h == party::Animated, elf = ch.rec[0x74] == 2;
+        if (!dead || elf) {
+            say = elf ? profile::kTCantRaise : h == party::Gone ? profile::kDkBeyond : profile::kNotDead;
+            ask = true;
+            break;
+        }
+        if (ch.rec[0x18] == 0) break;
+        rules::remove_affects(ch, f.poisoned);
+        okay();
+        --ch.rec[0x18];
+        rules::recalc(ch, *names, d->facts);
+        ch.rec[0x1A4] = 1;
+        say = profile::kDkRaised;
+        break;
+    }
+    case 8:                                         // Remove Curse
+        if (!rules::needs_cure(ch, rules::kRemoveCurse, f)) {
+            say = profile::kNotCursed, ask = true;
+            break;
+        }
+        rules::apply_cure(ch, rules::kRemoveCurse, f, rng);
+        break;
+    case 9:                                         // Stone to Flesh
+        if (h != party::Stoned) {
+            say = profile::kNotStoned, ask = true;
+            break;
+        }
+        okay();
+        ch.rec[0x1A4] = 1;
+        break;
+    case 10:                                        // Restoration
+        if (!dk_restore(ch)) say = profile::kDkNoLostLevels, ask = true;
+        break;
+    default: return;
+    }
+    rules::recalc(ch, *names, d->facts);
+    draw_heal(c);
+    if (say >= 0) dk_temple_say(c, ch, say, ask);
+}
+
+// Darkness's Repair (facts_shops.md 3): the whole party at once, free - the
+// cures all done, the dead resurrected (not elves), the stoned back, every
+// lost level restored, the hit points full
+void dk_repair()
+{
+    const rules::CureFacts& f = d->prof->cures;
+    for (int m = 0; m < pt->count; ++m) {
+        party::Character& ch = pt->m[m];
+        rules::remove_affects(ch, f.feeblemind);
+        rules::remove_affects(ch, f.blinded);
+        for (uint8_t t : f.disease)
+            if (t) rules::remove_affects(ch, t);
+        if (ch.has_affect(f.poisoned)) {
+            if (ch.hp() == 0) ch.rec[0x1A4] = 1;
+            rules::remove_affects(ch, f.poisoned);
+            rules::remove_affects(ch, f.slow_poison);
+            rules::remove_affects(ch, f.poison_damage);
+            ch.rec[0x195] = party::Okay;
+            ch.rec[0x196] = 1;
+        }
+        if (ch.health() == party::Dead && ch.rec[0x74] != 2 && ch.rec[0x18] > 0) {
+            rules::remove_affects(ch, f.poisoned);         // (Resurrection, spell 105)
+            ch.rec[0x195] = party::Okay;
+            ch.rec[0x196] = 1;
+            ch.rec[0x1A4] = ch.rec[0x78];
+        }
+        if (ch.health() == party::Stoned) {
+            ch.rec[0x195] = party::Okay;
+            ch.rec[0x196] = 1;
+        }
+        while (dk_restore(ch)) {}
+        rules::recalc(ch, *names, d->facts);
+        if (ch.health() != party::Gone) ch.rec[0x1A4] = ch.rec[0x78];
+        if (ch.health() == party::Unconscious) {
+            ch.rec[0x195] = party::Okay;
+            ch.rec[0x196] = 1;
+        }
+    }
+    plat::log("[play] temple: Repair\n");
+}
+
 void heal_pick(int i, pic::Canvas& c)
 {
+    if (darkness_files()) {
+        dk_cure(i, c);
+        return;
+    }
     if (free_temple()) {
         secret_cure(i, c);
         return;
@@ -4985,6 +5237,11 @@ bool shop_yes_no(Ask what, char k, pic::Canvas& c)
     }
     if (what != Ask::CureAnyway && what != Ask::PayCure) return false;
     screen = Screen::Heal;
+    if (darkness_files() && hw) {
+        // (Darkness: casting anyway does nothing for them)
+        draw_heal(c);
+        return true;
+    }
     if (!hw || cure_at < 0) {
         leave_heal(c);
         return true;
@@ -5071,6 +5328,13 @@ void shop_tap(int x, int y, pic::Canvas& c)
             break;
         case 'H':                       // the temple's Heal
             if (temple) open_heal(c);
+            break;
+        case 'R':                       // Darkness's temple: Repair (the whole party)
+            if (temple && darkness_files()) {
+                dk_repair();
+                if (pt->count) draw_party(c, 17);
+                shop_menu(c);
+            }
             break;
         case 'S':                       // Share: the coins on the counter shared out
             rules::share(*pt, ground->money);
@@ -8482,6 +8746,8 @@ void begin_wait(pic::Canvas& c)
         break;
     case ecl::Wait::Temple:
         temple = true;
+        if (darkness_files())               // (its temple: no coins on the counter)
+            for (int& m : ground->money) m = 0;
         open_shop(c);
         break;
     case ecl::Wait::Combat:

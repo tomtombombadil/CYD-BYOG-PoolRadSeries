@@ -1489,6 +1489,11 @@ const Profile kProfiles[] = {
                     0x25A2F,
                     0x2947B, kP | 0xB40E, kP | 0xB437, kP | 0xCB45, kP | 0xCB6E, kP | 0xB393, 0x290AE, 0x290A8, 0x290B8,
                     kP | 0xCFDD, kP | 0xCFB4, kP | 0xC4DD, kP | 0xC5AA, 0x2DEFB, 0},
+     // The effects its cures take away (its temple overlay; Secret's numbers):
+     // blindness 0x21, diseases 0x1F 0x22 0x2B 0x2C (DS 0x4012), feeblemind
+     // 0x44, poison 0x37, Slow Poison 0x16, poison's damage 0x0F, a curse 0x24
+     .cures = {{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+               0x21, {0x1F, 0x22, 0x2B, 0x2C, 0, 0}, 0x44, 0x37, 0x16, 0x0F, 0, 0x24, 0x22, 0x2B, 0x2C, 0x1F},
      // A kept gem / jewel (its Appraise, facts_shops.md 2.4): type 0x2F, words 0x7A / 0x7B
      .gem_type = 47, .gem_word = 0x7A, .jewel_word = 0x7B,
      // Magic (camp): "Cast Memorize Scribe Display Rest Exit" (DS 0x32CE),
