@@ -1447,6 +1447,8 @@ const Profile kProfiles[] = {
                .overloaded = 0x5F4F,
                .title = kP | 0xB5A8, .heading = kP | 0xB5D1, .yes = 0x3430D, .no = 0x34314, .cursed = 0x25099,
                .wrong_class = 0x250A6, .already = 0x250B2, .hands_full = 0x250C1, .plural_s = 0x35ABD,
+               // (the treasure's Detect: spell 77, its effect 5 - facts_shops.md 4)
+               .detect = {5, 0x4D, 0, 0},
                // (Sell's prices as Secret's - facts_shops.md 2.2)
                .sell_secret = true,
                .types_head = 0, .menu = kP | 0xCC11,
@@ -1488,7 +1490,8 @@ const Profile kProfiles[] = {
                     0x25980, 0x2598F, 0x25994, 0x2599B, 0x259A1, 0x259B6, 0x259D6, 0x259E6, 0x25A0D,
                     0x25A2F,
                     0x2947B, kP | 0xB40E, kP | 0xB437, kP | 0xCB45, kP | 0xCB6E, kP | 0xB393, 0x290AE, 0x290A8, 0x290B8,
-                    kP | 0xCFDD, kP | 0xCFB4, kP | 0xC4DD, kP | 0xC5AA, 0x2DEFB, 0},
+                    kP | 0xCFDD, kP | 0xCFB4, kP | 0xC4DD, kP | 0xC5AA, 0x2DEFB, 0,
+                    kP | 0xCF8B, 0x5468, 0x546F, kP | 0xCF39, kP | 0xC395, kP | 0xC3BE, kP | 0xD006},
      // The effects its cures take away (its temple overlay; Secret's numbers):
      // blindness 0x21, diseases 0x1F 0x22 0x2B 0x2C (DS 0x4012), feeblemind
      // 0x44, poison 0x37, Slow Poison 0x16, poison's damage 0x0F, a curse 0x24
@@ -1531,9 +1534,11 @@ const Profile kProfiles[] = {
      .sound = {.fireball_spell = 0x2F, .lightning_spell = 0x33},
      .clips ={.file = "ZOUNDS.DAX", .hz = 9000, .first = 2, .last = 12,
                .ids = {0, 0, 2, 9, 6, 5, 9, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .quiet_turns = true},
-     .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .camp_pic = 128, .appraise_div = 2, .vga = true, .darkness_files = true,
+     .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .treasure_pic = 129, .camp_pic = 128, .appraise_div = 2, .vga = true, .darkness_files = true,
                  .party_menu_col = 9},
-     .font_file = "8X8D0.DAX"},
+     .font_file = "8X8D0.DAX",
+     // Its vault (facts_shops.md 5): VAULTx.DAT a save slot, TMPVAULT.DAT while playing
+     .vault = {.file = "TMPVAULT.DAT", .slot_file = "VAULT%c.DAT", .coins = 3, .item_size = 63}},
 };
 
 } // namespace

@@ -948,12 +948,18 @@ bool Vm::dk_step(Stop& r)
     case 0x27: {                                // TREASURE: platinum, gems, jewelry, n items
         if (!need(4)) return true;
         const int n = value(o[3]) & 0xFF;
-        if (!more(4, n)) return true;
         if (ground_) {
             ground_->money[4] += value(o[0]);       // (added to what lies there: its program)
             ground_->money[5] += value(o[1]);
             ground_->money[6] += value(o[2]);
-            for (int k = 0; k < n && 4 + k < kMaxOps; ++k) h_.item_row(value(o[4 + k]) & 0xFF, *ground_);
+        }
+        // (the items one at a time: there may be more than kMaxOps - the
+        // debug block's 87)
+        for (int k = 0; k < n; ++k) {
+            Op t{};
+            --pc_;
+            if (!operands(1, &t)) return true;
+            if (ground_) h_.item_row(value(t) & 0xFF, *ground_);
         }
         return true;
     }

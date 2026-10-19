@@ -1280,9 +1280,52 @@ void character_read(party::Character& ch)
 // the party from their files (.SAV, with .SWG items and .FX effects)
 const char* load_problem = nullptr;     // what went wrong with the last load (shown, stays until tapped)
 
+// The slot Darkness's vault was loaded with (its VAULTx.DAT is read when no
+// TMPVAULT.DAT is there yet)
+char vault_slot = 'A';
+
+// Darkness's vault is a save slot's (VAULTx.DAT), kept in TMPVAULT.DAT while
+// playing (facts_shops.md 5): a load starts from the slot's own, a save
+// copies the one in use to the slot's
+void vault_loaded(char slot)
+{
+    const auto& v = d->prof->vault;
+    if (!v.slot_file) return;
+    vault_slot = slot;
+    char path[200];
+    save_path(v.file, path, sizeof path);
+    if (plat::exists(path)) plat::remove(path);
+}
+
+void vault_saved(char slot)
+{
+    const auto& v = d->prof->vault;
+    if (!v.slot_file) return;
+    char from[200], to[200], name[16];
+    save_path(v.file, from, sizeof from);
+    if (!plat::exists(from)) {
+        snprintf(name, sizeof name, v.slot_file, vault_slot);
+        save_path(name, from, sizeof from);
+    }
+    snprintf(name, sizeof name, v.slot_file, slot);
+    save_path(name, to, sizeof to);
+    if (!strcmp(from, to)) return;
+    plat::File in = plat::open(from, "r");
+    if (!in) return;
+    plat::File out = plat::open(to, "w");
+    if (out) {
+        uint8_t buf[256];
+        int n;
+        while ((n = in.read(buf, sizeof buf)) > 0) out.write(buf, static_cast<size_t>(n));
+        out.close();
+    }
+    in.close();
+}
+
 bool load_game(char slot)
 {
     load_problem = nullptr;
+    if (darkness_files()) vault_loaded(slot);
     char name[24];
     save_file_name(slot, name, sizeof name);
     plat::File f;
@@ -2530,6 +2573,7 @@ bool write_file(const char* dir, const char* name, const uint8_t* p, size_t n)
 
 bool save_game(char slot)
 {
+    if (darkness_files()) vault_saved(slot);
     savegame::Header h;
     h.game_area = d->gs.game_area;
     const bool dungeon = vm->get(0x4BE6) != 0;
@@ -4068,7 +4112,10 @@ void leave_shop(pic::Canvas& c, bool asked = false);
 void ask_leave(pic::Canvas& c)
 {
     char says[96], back[64];
-    if (treasure_on()) {
+    if (treasure_on() && darkness_files()) {
+        sw(profile::kDkStillTreasure, says, sizeof says);
+        sw(profile::kDkClaimIt, back, sizeof back);
+    } else if (treasure_on()) {
         snprintf(says, sizeof says, "%s", tw(profile::kTreasureLeft));
         snprintf(back, sizeof back, "%s", tw(profile::kClaimTreasure));
     } else {
@@ -4081,7 +4128,8 @@ void ask_leave(pic::Canvas& c)
     text::begin(w, c, back, text::kTextArea, temple ? 10 : 15, false);
     text::step(w, c, d->font, -1);
     dirty_rows(17, 22);
-    ask_yes_first(c, Ask::LeaveCoins, "");
+    if (treasure_on()) ask_yes_no(c, Ask::LeaveCoins, "");        // (the treasure's starts on No)
+    else ask_yes_first(c, Ask::LeaveCoins, "");
 }
 
 void treasure_off();
@@ -4714,8 +4762,9 @@ void list_coins()
             if (coins_there(k) > 0) take_kind[take_n++] = k;
         return;
     }
-    if (darkness_files() && !take_mode) {
-        // (Darkness's Take: platinum first - facts_shops.md 2.3)
+    if (darkness_files() && !take_mode && !treasure_on()) {
+        // (Darkness's Take in a shop: platinum first - facts_shops.md 2.3; the
+        // treasure's lists jewelry first)
         for (int k = 4; k < 7; ++k)
             if (coins_there(k) > 0) take_kind[take_n++] = k;
         return;
@@ -5315,10 +5364,24 @@ void shop_tap(int x, int y, pic::Canvas& c)
             else open_take(c);
             break;
         case 'M':                       // the treasure's "Take: Money Items Exit"
-            if (treasure_on()) open_take(c);
+            if (vault_on() && darkness_files() && strncmp(menu.prompt, "", 1) == 0) {
+                // (Darkness's vault: Money - the selected's coins put in it)
+                view_from = Screen::Shop;
+                view_by = pt->selected;
+                take_mode = 2;
+                take_to = -1;
+                open_coins(c);
+            } else if (treasure_on()) {
+                open_take(c);
+            }
             break;
         case 'I':
-            if (treasure_on()) open_loot(c);
+            if (vault_on() && darkness_files() && strncmp(menu.prompt, "", 1) == 0) {
+                view_from = Screen::Shop;               // (Darkness's vault: Items - to put in it)
+                open_items(c);
+            } else if (treasure_on()) {
+                open_loot(c);
+            }
             break;
         case 'D':                       // the treasure's Detect (Detect Magic memorized)
             if (treasure_on()) treasure_detect(c);
@@ -8268,7 +8331,7 @@ __attribute__((noinline)) void dk_add_rows(const uint8_t* rows, int n, bool iden
     plat::File f;
     const bool open = open_dax(pi.rows_file, f);
     const dax::Entry* e = open ? d->idx.find(1) : nullptr;
-    for (int k = 0; k < n && g.n < items::kMaxGround; ++k) {
+    for (int k = 0; k < n; ++k) {
         uint8_t row[17] = {};
         if (rows[k] == 0xFF) {
             // (L+0x1ABE: type 0x27, words 0x66 0x27 0x28, plus 1, weight 1, value 3000)
@@ -8287,6 +8350,12 @@ __attribute__((noinline)) void dk_add_rows(const uint8_t* rows, int n, bool iden
             dax::RleReader r(src, d->idx, *e);
             r.skip(static_cast<size_t>(rows[k] - 1) * 17);
             if (r.read(row, 17) != 17 || row[0] == 0xFF) continue;
+        }
+        if (g.n >= items::kMaxGround) {
+            // (full: the oldest goes - the original's list shows the newest
+            // first, and the engine keeps kMaxGround)
+            memmove(g.item[0], g.item[1], static_cast<size_t>(g.n - 1) * items::kRecordSize);
+            --g.n;
         }
         uint8_t* it = g.item[g.n++];
         memset(it, 0, items::kRecordSize);

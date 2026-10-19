@@ -106,6 +106,11 @@ enum ShopWord {
     // ... its temple (facts_shops.md 3): "Heal View Repair Exit", "Heal", "is
     // beyond our help", "has no lost levels.", "is raised", "is healed"
     kDkTempleMenu = kDkCoinWord + 3, kDkHeal, kDkBeyond, kDkNoLostLevels, kDkRaised, kDkHealed,
+    // ... its treasure (facts_shops.md 4): "View Take Pool Share Detect
+    // Exit", "Take: " "Money Items Exit", the list's "Take", "there is still
+    // treasure left. " "do you want to go back and claim it?"; its vault:
+    // "View Take Pool Money Items Exit"
+    kDkTreasureMenu, kDkTakeColon, kDkMoneyItems, kDkTakeKey, kDkStillTreasure, kDkClaimIt, kDkVaultMenu,
     kShopWords
 };
 
@@ -588,6 +593,12 @@ struct Profile {
     struct {
         const char* file = nullptr;
         uint32_t    view = 0, take = 0, pool_exit = 0;
+        // Darkness (facts_shops.md 5): the vault a save slot's (this name
+        // with the slot letter; `file` the one in use while playing), 3 coin
+        // counts (platinum gems jewelry) and 63-byte items (0: Secret's 7 /
+        // its .STF items)
+        const char* slot_file = nullptr;
+        uint8_t     coins = 7, item_size = 0;
     } vault;
     // Secret's version screen: the game's name (row 22) over the version
     // line (row 23), black on a green bar, and the menu's own prompt (its
