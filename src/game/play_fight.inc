@@ -4327,6 +4327,7 @@ void open_vault(pic::Canvas& c)
 {
     vault_read();
     vault = true;
+    menu.selected = 0;
     open_treasure(c);
 }
 

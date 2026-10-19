@@ -4752,11 +4752,15 @@ int  take_mode = 0, take_to = -1, view_by = -1;
 int coins_there(int k) { return take_mode ? pt->m[view_by].money(k) : ground->money[k]; }
 
 bool secret_coin_panel() { return take_mode && secret_files(); }
+// Darkness's vault Money: the selected's coins listed in the text area
+// (row 17, the panel's 18-character lines), the screen kept (DOSBox)
+bool dk_vault_coins() { return take_mode == 2 && darkness_files() && vault_on(); }
+int  dk_vault_sel = 0;
 
 void list_coins()
 {
     take_n = 0;
-    if (secret_coin_panel()) {
+    if (secret_coin_panel() || dk_vault_coins()) {
         // (Secret's View: its money panel's order, copper first)
         for (int k = 0; k < 7; ++k)
             if (coins_there(k) > 0) take_kind[take_n++] = k;
@@ -4780,7 +4784,7 @@ void take_line(int i, char* out, size_t cap)
         return;
     }
     const int k = take_kind[i];
-    if (secret_coin_panel()) {
+    if (secret_coin_panel() || dk_vault_coins()) {
         // (the panel's line: the name at column 20, the number ending at 37)
         char n[12];
         snprintf(n, sizeof n, "%d", coins_there(k));
@@ -4793,7 +4797,13 @@ void take_line(int i, char* out, size_t cap)
 
 void draw_take(pic::Canvas& c)
 {
-    if (secret_coin_panel()) {
+    if (dk_vault_coins()) {
+        draw_shop(c);
+        c.fill(8, 17 * 8, 38 * 8, 6 * 8, 0);
+        plist.row0 = 17;
+        plist.row1 = 22;
+        plist.col0 = 1;
+    } else if (secret_coin_panel()) {
         // Secret's View (Trade / Drop / Deposit): the coin is picked on the
         // character's money panel (rows 9-15, columns 20-37), the screen kept
         draw_character_secret(c, pt->m[view_by]);
@@ -4853,6 +4863,14 @@ void ask_take(int i, pic::Canvas& c)
     } else {
         snprintf(take_prompt, sizeof take_prompt, "%s%s%s%s", a, d->money[take_coin], b[0] == ' ' ? "" : " ", b);
     }
+    if (dk_vault_coins()) {
+        // (the line's highlight goes while it asks - DOSBox)
+        char line[32];
+        take_line(i, line, sizeof line);
+        const int row = plist.row0 + i - plist.top;
+        c.fill(plist.col0 * 8, row * 8, (39 - plist.col0) * 8, 8, 0);
+        put(c, line, plist.col0, row, 10);
+    }
     input_engine = true;
     engine_ask = EngineAsk::Coins;
     input_prompt = take_prompt;
@@ -4902,6 +4920,15 @@ int  cure_for = -1;                 // "is not diseased" / "cure anyway: " - who
 
 void back_to_view(pic::Canvas& c)
 {
+    if (dk_vault_coins()) {
+        // (Darkness's vault Money: back to the vault)
+        if (view_by >= 0) pt->selected = view_by;
+        take_mode = 0;
+        screen = Screen::Shop;
+        menu.selected = dk_vault_sel;               // (the highlight where it was)
+        draw_shop(c);
+        return;
+    }
     if (view_by >= 0) pt->selected = view_by;
     take_mode = 0;
     screen = Screen::View;
@@ -5368,6 +5395,7 @@ void shop_tap(int x, int y, pic::Canvas& c)
                 // (Darkness's vault: Money - the selected's coins put in it)
                 view_from = Screen::Shop;
                 view_by = pt->selected;
+                dk_vault_sel = menu.selected;
                 take_mode = 2;
                 take_to = -1;
                 open_coins(c);
