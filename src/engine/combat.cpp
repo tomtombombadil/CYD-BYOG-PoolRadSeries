@@ -2454,15 +2454,15 @@ int missile(const Battle& b, const Fighter& f, int* ammo)
     return ti.range - 1 > 1 ? ti.range - 1 : 1;
 }
 
-int money_exp(const int m[7])
+int money_exp(const int m[7], int plat_xp)
 {
     // Each kind on its own, the divisions rounded down one by one (the
     // listing's calc_battle_exp, ovr006:0248-02D9: the pool's copper / 200,
     // silver / 20, electrum / 2, gold, platinum x 5, gems x 250, jewellery x 2200)
-    return static_cast<int>(m[0] / 200L + m[1] / 20L + m[2] / 2L + m[3] + 5L * m[4] + 250L * m[5] + 2200L * m[6]);
+    return static_cast<int>(m[0] / 200L + m[1] / 20L + m[2] / 2L + m[3] + static_cast<long>(plat_xp) * m[4] + 250L * m[5] + 2200L * m[6]);
 }
 
-int award(Battle& b, int total)
+int award(Battle& b, int total, bool give)
 {
     // The share: among those still in the fight and not animated dead (the
     // original's calc_battle_exp divides by the party less its count kept in
@@ -2474,7 +2474,7 @@ int award(Battle& b, int total)
         if (b.f[i].up() && b.f[i].status() != party::Animated) ++members;
     if (!members) return 0;
     const int share = total / members;
-    for (int i = 0; i < b.party_size; ++i) {
+    for (int i = 0; give && i < b.party_size; ++i) {
         Fighter& f = b.f[i];
         if (!f.up() || f.status() == party::Animated) continue;
         const uint8_t* r = f.rec;

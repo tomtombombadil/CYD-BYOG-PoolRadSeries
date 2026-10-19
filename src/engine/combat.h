@@ -341,6 +341,9 @@ struct Facts {
     // Secret's program 15 - GAME.OVR 0x6E04 - the original's mistake,
     // applied with rules::fixes() off)
     uint8_t cleric_xp_wis = 0;
+    // Experience a platinum piece is worth (0: Curse's 5; Darkness 2 -
+    // GAME.OVR 0x4956, its money being platinum, gems, jewellery)
+    uint8_t plat_xp = 0;
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (its items and icon), a
@@ -942,12 +945,14 @@ struct Outcome {
 Outcome finish(Battle& b, const Monster* monsters);
 // Experience for the pool's money: gold worth + 250 a gem + 2200 a piece of
 // jewellery
-int money_exp(const int money[7]);
+int money_exp(const int money[7], int plat_xp = 5);
 // Shares `total` among the party (all but the animated dead: those who
 // fell count too, as in the original) and gives it to those still standing
 // (not animated): +10% for a high prime requisite (over 15), multi-classes
-// divided by their classes; the share each got before that
-int award(Battle& b, int total);
+// divided by their classes; the share each got before that. give false:
+// the share worked out but not given (Darkness's script place 0x1F -
+// GAME.OVR 0x4A2C)
+int award(Battle& b, int total, bool give = true);
 // The readied weapon among the fighter's items (-1: none)
 int weapon(const Fighter& f, const items::Names& names);
 

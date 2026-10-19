@@ -3058,6 +3058,12 @@ void fight_cleanup_party(combat::Result r)
 
 void open_treasure(pic::Canvas& c);
 
+// The experience a platinum piece is worth
+int fight_plat_xp()
+{
+    return d->prof->fight.facts.plat_xp ? d->prof->fight.facts.plat_xp : 5;
+}
+
 // The fight is over: the outcome, experience, treasure
 void end_fight(pic::Canvas& c)
 {
@@ -3096,7 +3102,8 @@ void end_fight(pic::Canvas& c)
     // The beaten monsters' coins and items go to the treasure
     if (r == combat::Won) {
         for (int m = 0; m < 7; ++m) ground->money[m] += fg->out.money[m];
-        if (vm->get(0x7EE3) != 1)
+        // (Darkness: its script place 0x1E - GAME.OVR 0x4820)
+        if (vm->get(darkness_files() ? 0x1E : 0x7EE3) != 1)
             for (int i = b.party_size; i < b.n; ++i) {
                 const combat::Fighter& f = b.f[i];
                 if (f.gone || !f.team() || f.status() == party::Okay || f.status() == party::Running) continue;
@@ -3106,12 +3113,12 @@ void end_fight(pic::Canvas& c)
                     ++ground->n;
                 }
             }
-        int total = fg->out.exp + combat::money_exp(ground->money);
+        int total = fg->out.exp + combat::money_exp(ground->money, fight_plat_xp());
         for (int k = 0; k < ground->n; ++k) {
             const int plus = static_cast<int8_t>(ground->item[k][0x32]);
             if (plus > 0) total += 400 * plus;
         }
-        fg->share = combat::award(b, total);
+        fg->share = combat::award(b, total, !(darkness_files() && vm->get(0x1F)));
         // The party's own thrown weapons: there to take back (no experience for them)
         for (int k = 0; k < fg->n_thrown && ground->n < items::kMaxGround; ++k)
             memcpy(ground->item[ground->n++], fg->thrown[k], items::kRecordSize);
@@ -3159,6 +3166,10 @@ void fight_done(pic::Canvas& c)
     vm->set(0x7F72, 0);
     vm->set(0x7EE3, 0);
     vm->set(0x7EE6, 0);
+    if (darkness_files())
+        // Darkness's own (GAME.OVR 0x5B03: its block's bytes 0, 0x1B-0x1E,
+        // 0x2E - script places 1, 0x1C-0x1F, 0x2F)
+        for (uint16_t a : {0x01, 0x1C, 0x1D, 0x1E, 0x1F, 0x2F}) vm->set(a, 0);
     delete fg;
     fg = nullptr;
     if (lost) {
@@ -3193,7 +3204,7 @@ void fight_treasure_only(pic::Canvas& c)
         return;
     }
     load_fight_words();
-    int total = combat::money_exp(ground->money);
+    int total = combat::money_exp(ground->money, fight_plat_xp());
     for (int k = 0; k < ground->n; ++k) {
         const int plus = static_cast<int8_t>(ground->item[k][0x32]);
         if (plus > 0) total += 400 * plus;

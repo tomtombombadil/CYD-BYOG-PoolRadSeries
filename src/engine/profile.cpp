@@ -1714,7 +1714,7 @@ const Profile kProfiles[] = {
                           .scrolls = {39, 40}},
                 .berserk = 0x6B, .secret = true, .globe_major = 0x39,
                 // (its clouds: Stinking Cloud 0x1D, Cloudkill 0x1C, Blade Barrier 0x1B - GAME.OVR 0x2C617)
-                .cloud_ground = 0x1D, .poison_ground = 0x1C, .cleric_xp_wis = 15},
+                .cloud_ground = 0x1D, .poison_ground = 0x1C, .cleric_xp_wis = 15, .plat_xp = 2},
                kDarknessFight, sizeof kDarknessFight / sizeof kDarknessFight[0],
                // COMSPR (its 22 blocks, + 0x80 the second pictures; loaded at a
                // fight's start as slots 13-34 - GAME.OVR 0xD34A): 0-2 the arrows, 3
