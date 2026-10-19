@@ -479,6 +479,27 @@ struct Profile {
         // Secret: Level's choices ("Novice Squire Veteran Adept Champion",
         // program image; 0: no Level) - the difficulty, area word 0x4CF4
         uint32_t level_menu = 0;
+        // Level's value for the first choice (Secret 0; Darkness 1: its
+        // game byte 0x26 holds 1-5)
+        uint8_t  level_base = 0;
+        // Darkness: Order's and Speed's menus are one word list each ("Select
+        // Place Exit", "Faster Slower Exit"; program image, read like `menu`)
+        // the program shows some words of (0: select / place, words above)
+        uint32_t order_list = 0, speed_list = 0;
+        // Darkness: Drop asks "Pick Character " + "Select" first (program
+        // image), then the party menu's Drop questions ("Drop NAME forever?",
+        // "Are you sure?"), and does nothing with one member (0: Curse's Drop)
+        uint32_t pick = 0, pick_menu = 0;
+        // The editor's grey squares: this COMSPR block, its first picture
+        // under both poses (0: block 25 and its + 0x80; Darkness 15)
+        uint8_t  icon_box = 0;
+        // Darkness: the editor's colour-part and size menus are whole lists
+        // ("Weapon Body Hair Face Shield Arm Leg Exit", "Small Large Keep
+        // Exit") a word is left out of (Face / Hair, the size the icon has)
+        bool     icon_lists = false;
+        // Darkness's menus keep the highlight's place from the menu before
+        // (its menu routine's DS 0xAAE5), and "is this icon ok?" starts on Yes
+        bool     kept_highlight = false;
     } alter;
 
     // Combat: the program's tables, the words, the effects that end with

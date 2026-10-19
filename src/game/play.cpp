@@ -146,6 +146,7 @@ struct Data {
     char           w_magic[44] = {}, w_level[9][12] = {};    // the magic menu, "1st Level" ... (Secret: 7, Darkness 9)
     char           w_these[16] = {};                        // Secret: " these spells?" after Memorize / Scribe
     char           w_alter[36] = {}, w_select[14] = {}, w_place[14] = {};   // Alter's menus
+    char           w_speed[24] = {};           // Darkness: Speed's word list ("Faster Slower Exit")
     char           w_save_which[24] = {}, w_slots[24] = {}, w_saving[24] = {}, w_camp_menu[40] = {},
                    w_camp[8] = {}, w_makes_camp[28] = {};
 
@@ -2102,7 +2103,7 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
 
 enum class Ask : uint8_t { None, Overwrite, Drop, DropSure, Reroll, SaveNew, OverwriteNew, DropItem, SellDeal, IdDeal,
                           LeaveCoins, CureAnyway, PayCure, Train, MemorizeThese, StopRest, LoseIt, AlterDrop, QuitDos,
-                          ScribeThese, ScribeThese2, UseIt, PaladinCure };
+                          ScribeThese, ScribeThese2, UseIt, PaladinCure, AlterSure };
 void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt);
 void ask_create(pic::Canvas& c, Ask what, const char* prompt);
 bool view_yes_no(Ask what, char k, pic::Canvas& c);
@@ -2983,6 +2984,11 @@ bool create_yes_no(Ask what, char k, pic::Canvas& c);
 
 void yes_no_key(char k, pic::Canvas& c);
 
+// The place of the last Yes / No answered (0 / 1): Darkness's icon editor
+// after creation's "Reroll stats?" starts with that place lit (its menus
+// keep the highlight's place - alter.kept_highlight)
+int yes_no_place = 0;
+
 void yes_no_tap(int x, int y, pic::Canvas& c)
 {
     if (y < text::kMenuTapTop) return;
@@ -2994,6 +3000,7 @@ void yes_no_key(char k, pic::Canvas& c)
     if (k != 'Y' && k != 'N') return;
     const Ask what = ask;
     ask = Ask::None;
+    yes_no_place = k == 'N' ? 1 : 0;
     if (create_yes_no(what, k, c)) return;
     if (view_yes_no(what, k, c)) return;
     if (items_yes_no(what, k, c)) return;
@@ -7402,10 +7409,62 @@ void effects_tap(int x, int y, pic::Canvas& c)
 // Faster Slower Exit" (the area word 0x4BFC). Pics: on / off, Animation on
 // / off. Icon: the combat icon editor (with Create New Character too).
 
-enum class AlterMode : uint8_t { Menu, Select, Place, Speed, Pics, Level };
+// Darkness (its camp overlay, GAME.OVR 0xDCC8 +0x172B; darkness_alter facts):
+// no prompt, "Order Drop Speed Icon Level Exit"; Order's and Speed's menus
+// are words of one list ("party order " Select / Place + Exit; "game speed:
+// " Faster when above 0, Slower when under 9, Exit); "NAME" (row 18) / "has
+// been selected" (row 19); Drop (more than one member) = "Pick Character
+// Select", then the party menu's "Drop NAME forever?" / "Are you sure?" and
+// its words on the menu line; Level 1-5. Its menus keep the highlight's
+// place from the menu before; the Alter menu its own.
+
+enum class AlterMode : uint8_t { Menu, Select, Place, Speed, Pics, Level, Pick };
 AlterMode alter_mode = AlterMode::Menu;
+int alter_hl = 0;                   // (kept_highlight) the Alter menu's own highlight
 
 void aw(int i, char* out, size_t cap) { ow(d->prof->alter.words[i], out, cap); }
+
+bool kept_hl() { return d->prof->alter.kept_highlight; }
+
+// Darkness's menu routine: the highlight stays at its place in the menu
+// shown next (past its end: the first word)
+void keep_place(int at) { menu.selected = at >= 0 && at < menu.count ? at : 0; }
+
+// Word k of a word list (out: "" if none)
+void list_word(const char* list, int k, char* out, size_t cap)
+{
+    out[0] = 0;
+    const char* p = list;
+    for (int i = 0; *p; ++i) {
+        while (*p == ' ') ++p;
+        const char* e = p;
+        while (*e && *e != ' ') ++e;
+        if (i == k) {
+            snprintf(out, cap, "%.*s", static_cast<int>(e - p), p);
+            return;
+        }
+        p = e;
+    }
+}
+
+// A word list without its word k (the menus the program shows a list's
+// other words of)
+void drop_word(char* list, int k)
+{
+    char* p = list;
+    for (int i = 0; *p; ++i) {
+        while (*p == ' ') ++p;
+        char* e = p;
+        while (*e && *e != ' ') ++e;
+        if (i == k) {
+            while (*e == ' ') ++e;
+            if (!*e && p > list) --p;          // (the last word: the space before it goes)
+            memmove(p, e, strlen(e) + 1);
+            return;
+        }
+        p = e;
+    }
+}
 
 void alter_menu(pic::Canvas& c)
 {
@@ -7413,13 +7472,15 @@ void alter_menu(pic::Canvas& c)
     aw(profile::kAlterPrompt, prompt, sizeof prompt);
     alter_mode = AlterMode::Menu;
     text::build(menu, prompt, d->w_alter);
-    menu.selected = 0;
+    if (kept_hl()) keep_place(alter_hl);
+    else menu.selected = 0;
     show_menu_line(c);
 }
 
 void open_alter(pic::Canvas& c)
 {
     screen = Screen::Alter;
+    alter_hl = 0;
     alter_menu(c);
 }
 
@@ -7468,25 +7529,48 @@ void level_menu(pic::Canvas& c)
     char words[48];
     ow(d->prof->alter.level_menu, words, sizeof words);
     text::build(menu, "", words);
-    const int level = vm->get(0x4CF4);
+    const int level = (vm->get(0x4CF4) & 0xFF) - d->prof->alter.level_base;   // (Darkness: 1-5)
     menu.selected = level >= 0 && level < menu.count ? level : 0;
     show_menu_line(c);
 }
 
-void order_menu(pic::Canvas& c, bool place)
+// keep: (Darkness) the highlight stays at the place of the word picked
+void order_menu(pic::Canvas& c, bool place, bool keep = false)
 {
     char prompt[16];
     aw(profile::kPartyOrder, prompt, sizeof prompt);
+    const int at = menu.selected;
     alter_mode = place ? AlterMode::Place : AlterMode::Select;
     text::build(menu, prompt, place ? d->w_place : d->w_select);
-    menu.selected = 0;
+    if (keep && kept_hl()) keep_place(at);
+    else menu.selected = 0;
     show_menu_line(c);
 }
 
-void draw_speed(pic::Canvas& c)
+// "NAME has been selected" - Darkness: NAME (row 18, in its party list
+// colour but not the selected one's) over the words (row 19; GAME.OVR
+// 0x359A6), the text rows cleared
+void say_selected(pic::Canvas& c)
+{
+    char t[24];
+    aw(profile::kHasBeenSelected, t, sizeof t);
+    if (!darkness_files()) {
+        say_status(c, t);
+        return;
+    }
+    char nm[20];
+    const party::Character& ch = *pt->sel();
+    ch.name(nm, sizeof nm);
+    c.fill(8, 17 * 8, 38 * 8, 6 * 8, 0);
+    put(c, nm, 1, 18, ch.in_combat() ? 11 : 12);
+    put(c, t, 1, 19, 10);
+    dirty_rows(17, 22);
+}
+
+void draw_speed(pic::Canvas& c, bool keep = false)
 {
     const int speed = vm->get(0x4BFC) & 0xFF;
-    char a[16], b[26], t[48], words[32], prompt[14], w1[10];
+    char a[40], b[26], t[48], words[32], prompt[14], w1[10];      // (Darkness's a: "Game Speed (0=fastest 9=slowest) = ")
     aw(profile::kSpeedIs, a, sizeof a);
     aw(profile::kSpeedRange, b, sizeof b);
     snprintf(t, sizeof t, "%s%d%s", a, speed, b);
@@ -7494,22 +7578,31 @@ void draw_speed(pic::Canvas& c)
     put(c, t, 1, 18, 10);
     dirty_rows(18, 18);
     words[0] = 0;
-    if (speed > 0) {
-        aw(profile::kFaster, w1, sizeof w1);
+    if (d->w_speed[0]) {
+        // Darkness: "Faster Slower Exit" without Slower at 9, Faster at 0
+        strlcpy(words, d->w_speed, sizeof words);
+        if (speed >= 9) drop_word(words, 1);
+        if (speed <= 0) drop_word(words, 0);
+    } else {
+        if (speed > 0) {
+            aw(profile::kFaster, w1, sizeof w1);
+            strcat(words, w1);
+        }
+        if (speed < 9) {
+            aw(profile::kSlower, w1, sizeof w1);
+            strcat(words, w1);
+        }
+        aw(profile::kSpeedExit, w1, sizeof w1);
         strcat(words, w1);
     }
-    if (speed < 9) {
-        aw(profile::kSlower, w1, sizeof w1);
-        strcat(words, w1);
-    }
-    aw(profile::kSpeedExit, w1, sizeof w1);
-    strcat(words, w1);
     const char* k = words;
     while (*k == ' ') ++k;
     aw(profile::kSpeedPrompt, prompt, sizeof prompt);
+    const int at = menu.selected;
     alter_mode = AlterMode::Speed;
     text::build(menu, prompt, k);
-    menu.selected = 0;
+    if (keep && kept_hl()) keep_place(at);
+    else menu.selected = 0;
     show_menu_line(c);
 }
 
@@ -7531,6 +7624,22 @@ void move_member(int from, int to)
 void alter_drop(pic::Canvas& c)
 {
     char t[24];
+    if (d->prof->alter.pick) {
+        // Darkness: nothing with one member; else "Pick Character Select"
+        if (pt->count <= 1) {
+            alter_menu(c);
+            return;
+        }
+        char prompt[20], words[12];
+        ow(d->prof->alter.pick, prompt, sizeof prompt);
+        ow(d->prof->alter.pick_menu, words, sizeof words);
+        const int at = menu.selected;
+        alter_mode = AlterMode::Pick;
+        text::build(menu, prompt, words);
+        keep_place(at);
+        show_menu_line(c);
+        return;
+    }
     if (pt->count <= 1) {
         aw(profile::kQuitToDos, t, sizeof t);
         ask_yes_no(c, Ask::QuitDos, t);
@@ -7542,10 +7651,47 @@ void alter_drop(pic::Canvas& c)
     ask_yes_no(c, Ask::AlterDrop, t);
 }
 
+void delete_character(const char* base);
+
+// Darkness's Drop (the party menu's, GAME.OVR 0x164AA): "Drop NAME
+// forever?", "Are you sure?" (both on No first) - Yes: "You dump NAME out
+// back." (one who can't stand) / "NAME bids you farewell.", their files
+// gone; No: "NAME breathes a sigh of relief." - each on the menu line for
+// the game's delay, then the Alter menu
+bool alter_drop_dk(Ask what, char k, pic::Canvas& c)
+{
+    party::Character* ch = pt->sel();
+    if (!ch) {
+        alter_menu(c);
+        return true;
+    }
+    char nm[20], t[64];
+    ch->name(nm, sizeof nm);
+    if (what == Ask::AlterDrop && k == 'Y') {
+        ask_yes_no(c, Ask::AlterSure, rw(Data::kSure));
+        return true;
+    }
+    if (what == Ask::AlterSure && k == 'Y') {
+        if (!ch->in_combat()) snprintf(t, sizeof t, "%s%s%s", rw(Data::kDump), nm, rw(Data::kOutBack));
+        else snprintf(t, sizeof t, "%s%s", nm, rw(Data::kFarewell));
+        char base[12];
+        guy_base(*ch, base, sizeof base);
+        delete_character(base);
+        leave_party(pt->selected);
+        draw_panel(c);
+    } else {
+        snprintf(t, sizeof t, "%s%s", nm, rw(Data::kRelief));
+    }
+    alter_menu(c);
+    note(c, t);
+    return true;
+}
+
 bool alter_yes_no(Ask what, char k, pic::Canvas& c)
 {
-    if (what != Ask::AlterDrop && what != Ask::QuitDos) return false;
+    if (what != Ask::AlterDrop && what != Ask::QuitDos && what != Ask::AlterSure) return false;
     screen = Screen::Alter;
+    if (d->prof->alter.pick && what != Ask::QuitDos) return alter_drop_dk(what, k, c);
     if (what == Ask::QuitDos) {
         if (k == 'Y') exit_wanted = true;
         alter_menu(c);
@@ -7565,6 +7711,22 @@ bool alter_yes_no(Ask what, char k, pic::Canvas& c)
     return true;
 }
 
+// Exit (or Esc): the camp again
+void alter_leave(pic::Canvas& c)
+{
+    screen = Screen::Camp;
+    draw_camp(c);
+    if (kept_hl()) {
+        // Darkness (DOSBox): the camp's text window empty, its menu's
+        // highlight on Alter (the camp keeps its own place)
+        text::clear(c, text::kTextArea);
+        dirty_rows(17, 22);
+        for (int i = 0; i < menu.count; ++i)
+            if (text::key(menu, i) == 'A') menu.selected = i;
+        show_menu_line(c);
+    }
+}
+
 void alter_tap(int x, int y, pic::Canvas& c)
 {
     const int row = y / 8, col = x / 8;
@@ -7579,8 +7741,14 @@ void alter_tap(int x, int y, pic::Canvas& c)
         draw_party(c, 17);
         return;
     }
-    const char k = text::key(menu, text::hit(menu, col));
+    const int hit = text::hit(menu, col);
+    const char k = text::key(menu, hit);
     if (!k) return;
+    if (kept_hl()) {
+        // (Darkness: the highlight stays where the word picked was)
+        menu.selected = hit;
+        if (alter_mode == AlterMode::Menu) alter_hl = hit;
+    }
     switch (alter_mode) {
     case AlterMode::Menu:
         switch (k) {
@@ -7592,10 +7760,7 @@ void alter_tap(int x, int y, pic::Canvas& c)
             if (d->prof->alter.level_menu) level_menu(c);
             break;
         case 'I': start_icon(c, Screen::Alter); break;
-        case 'E':
-            screen = Screen::Camp;
-            draw_camp(c);
-            break;
+        case 'E': alter_leave(c); break;
         default: break;
         }
         return;
@@ -7612,17 +7777,22 @@ void alter_tap(int x, int y, pic::Canvas& c)
         return;
     }
     case AlterMode::Level: {
-        const int w = text::hit(menu, col);
-        if (w >= 0 && w < 5) vm->set(0x4CF4, static_cast<uint16_t>(w));
+        if (hit >= 0 && hit < 5) vm->set(0x4CF4, static_cast<uint16_t>(hit + d->prof->alter.level_base));
         alter_menu(c);
+        return;
+    }
+    case AlterMode::Pick: {
+        if (k != 'S') return;
+        char t[60], nm[20];
+        pt->sel()->name(nm, sizeof nm);
+        snprintf(t, sizeof t, "%s%s%s", rw(Data::kDrop), nm, rw(Data::kForever));
+        ask_yes_no(c, Ask::AlterDrop, t);
         return;
     }
     case AlterMode::Select:
         if (k == 'S') {
-            char t[24];
-            aw(profile::kHasBeenSelected, t, sizeof t);
-            say_status(c, t);
-            order_menu(c, true);
+            say_selected(c);
+            order_menu(c, true, true);
         } else if (k == 'E') {
             alter_menu(c);
         }
@@ -7630,7 +7800,7 @@ void alter_tap(int x, int y, pic::Canvas& c)
     case AlterMode::Place:
         text::clear(c, text::kTextArea);
         dirty_rows(17, 22);
-        if (k == 'P') order_menu(c, false);
+        if (k == 'P') order_menu(c, false, true);
         else if (k == 'E') alter_menu(c);
         return;
     case AlterMode::Speed: {
@@ -7645,7 +7815,7 @@ void alter_tap(int x, int y, pic::Canvas& c)
             return;
         }
         vm->set(0x4BFC, static_cast<uint16_t>(high | speed));
-        draw_speed(c);
+        draw_speed(c, true);
         return;
     }
     }
@@ -8463,6 +8633,18 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
     if (pa.menu) text::read_pascal(exe, info, pa.menu, d->w_alter, sizeof d->w_alter);
     if (pa.select) text::read_pascal(exe, info, pa.select, d->w_select, sizeof d->w_select);
     if (pa.place) text::read_pascal(exe, info, pa.place, d->w_place, sizeof d->w_place);
+    if (pa.order_list) {
+        // Darkness: "Select Place Exit" -> "Select Exit" / "Place Exit"
+        char list[24], w0[10], w1[10], w2[10];
+        if (text::read_pascal(exe, info, pa.order_list, list, sizeof list)) {
+            list_word(list, 0, w0, sizeof w0);
+            list_word(list, 1, w1, sizeof w1);
+            list_word(list, 2, w2, sizeof w2);
+            snprintf(d->w_select, sizeof d->w_select, "%s %s", w0, w2);
+            snprintf(d->w_place, sizeof d->w_place, "%s %s", w1, w2);
+        }
+    }
+    if (pa.speed_list) text::read_pascal(exe, info, pa.speed_list, d->w_speed, sizeof d->w_speed);
     for (int i = 0; i < 9 && i < pm.levels.count && pm.levels.at; ++i)
         text::read_pascal(exe, info, pm.levels.at + static_cast<uint32_t>(i) * pm.levels.stride, d->w_level[i],
                           sizeof d->w_level[i]);
@@ -9750,26 +9932,44 @@ void icon_new(pic::Canvas& c)
 void icon_menu(pic::Canvas& c)
 {
     char t[48];
+    const bool lists = d->prof->alter.icon_lists;
+    const int at = menu.selected;
     switch (ie->level) {
     case 1: text::build(menu, "", ie->menus[0]); break;
     case 2: text::build(menu, "", ie->menus[1]); break;
     case 3: {
         strlcpy(t, ie->menus[2], sizeof t);
-        const char* hf = ie->words[ie->second ? profile::kIconFace : profile::kIconHair];
-        char* x = strstr(t, "xxxx");
-        if (x && strlen(hf) == 4) memcpy(x, hf, 4);
+        if (lists) {
+            drop_word(t, ie->second ? 2 : 3);       // (Darkness: Hair for the 1st colour, Face for the 2nd)
+        } else {
+            const char* hf = ie->words[ie->second ? profile::kIconFace : profile::kIconHair];
+            char* x = strstr(t, "xxxx");
+            if (x && strlen(hf) == 4) memcpy(x, hf, 4);
+        }
         text::build(menu, "", t);
         break;
     }
     case 4:
-        snprintf(t, sizeof t, "%s%s", ie->words[ie->ch->rec[0x144] == 2 ? profile::kIconSmall : profile::kIconLarge],
-                 ie->menus[3]);
+        if (lists) {
+            strlcpy(t, ie->menus[3], sizeof t);     // (Darkness: "Small Large Keep Exit" without the size it has)
+            drop_word(t, ie->ch->rec[0x144] == 2 ? 1 : 0);
+        } else {
+            snprintf(t, sizeof t, "%s%s", ie->words[ie->ch->rec[0x144] == 2 ? profile::kIconSmall : profile::kIconLarge],
+                     ie->menus[3]);
+        }
         text::build(menu, "", t);
         break;
     case 5: text::build(menu, "", ie->menus[4]); break;
     default: text::build(menu, ie->words[profile::kIconOk], rw(Data::kYesNo)); break;
     }
-    menu.selected = ie->level == 6 ? 1 : 0;          // the question starts on No, as the games do
+    // The question starts on No, as Curse / Pool / Secret do; Darkness's on
+    // Yes (GAME.OVR 0x18465), and its menus keep the highlight's place
+    if (kept_hl()) {
+        if (ie->level == 6) menu.selected = 0;
+        else keep_place(at);
+    } else {
+        menu.selected = ie->level == 6 ? 1 : 0;
+    }
     show_menu_line(c);
 }
 
@@ -9824,9 +10024,12 @@ void start_icon(pic::Canvas& c, Screen from)
         f.close();
     }
     for (int i = 0; i < profile::kIconWords; ++i) ow(pa.icon_words[i], ie->words[i], sizeof ie->words[i]);
+    // The grey squares (Darkness: COMSPR 15's first picture under both -
+    // GAME.OVR 0x17E2D loads it, 0x17B42 draws it)
+    const int box = pa.icon_box ? pa.icon_box : 25;
     for (int fr = 0; fr < 2; ++fr) {
         int w = 0, h = 0;
-        ie->base[fr].px[0] = load_pic4("COMSPR.DAX", 25 + fr * 0x80, 0, &w, &h);
+        ie->base[fr].px[0] = load_pic4("COMSPR.DAX", box + (pa.icon_box ? 0 : fr * 0x80), 0, &w, &h);
         ie->base[fr].w = static_cast<uint8_t>(w);
         ie->base[fr].h = static_cast<uint8_t>(h);
     }
@@ -9842,6 +10045,9 @@ void start_icon(pic::Canvas& c, Screen from)
         return;
     }
 #endif
+    // (Darkness: from Alter its menu's place stays lit - menu.selected - and
+    // from creation the last Yes / No's)
+    if (from == Screen::CreateName) menu.selected = yes_no_place;
     icon_screen(c);
     icon_pass(c);
 }
@@ -9874,6 +10080,11 @@ void end_icon(pic::Canvas& c)
         return;
     }
     draw_camp(c);
+    if (darkness_files()) {
+        // (its camp screen again - GAME.OVR 0x36D6F - with the text window empty: DOSBox)
+        text::clear(c, text::kTextArea);
+        dirty_rows(17, 22);
+    }
     screen = Screen::Alter;
     alter_menu(c);
 }
@@ -10330,6 +10541,7 @@ void gal_key(char k, pic::Canvas& c)
     icon_screen(c);
     icon_new(c);
     ie->level = k == 'E' ? 1 : 6;
+    menu.selected = 0;                      // (Edit: Parts lit)
     icon_menu(c);
 }
 
@@ -12512,8 +12724,7 @@ bool back_from_magic(pic::Canvas& c)
         text::clear(c, text::kTextArea);
         dirty_rows(17, 22);
         if (alter_mode == AlterMode::Menu) {
-            screen = Screen::Camp;
-            draw_camp(c);
+            alter_leave(c);
         } else {
             alter_menu(c);
         }
