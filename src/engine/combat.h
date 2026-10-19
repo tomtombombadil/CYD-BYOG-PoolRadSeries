@@ -349,6 +349,8 @@ struct Facts {
     // Experience a platinum piece is worth (0: Curse's 5; Darkness 2 -
     // GAME.OVR 0x4956, its money being platinum, gems, jewellery)
     uint8_t plat_xp = 0;
+    // A seventh pointed shot type (Darkness 0x4A - GAME.OVR 0x20E3C; 0xFF none)
+    uint8_t shot_pointed2 = 0xFF;
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (the record its copies

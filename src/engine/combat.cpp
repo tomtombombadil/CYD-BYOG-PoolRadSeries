@@ -4288,7 +4288,7 @@ template <size_t N> bool listed(const uint8_t (&l)[N], int v)
 
 Shot shot_kind(const Facts& fx, int t)
 {
-    if (listed(fx.shot_pointed, t)) return Shot::Pointed;
+    if (listed(fx.shot_pointed, t) || t == fx.shot_pointed2) return Shot::Pointed;
     if (listed(fx.shot_spinning, t)) return Shot::Spinning;
     if (listed(fx.shot_flask, t)) return Shot::Flask;
     if (listed(fx.shot_sling, t)) return Shot::Sling;

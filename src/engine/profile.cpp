@@ -1737,8 +1737,8 @@ const Profile kProfiles[] = {
                {.held = {0x33, 0x34, 0x35, 0x1F}, .bless = 0x01, .curse = 0x02, .prayer = 0x31, .haste = 0x27,
                 .slow = 0x2A, .invisible = 0x19, .prot_evil = 0x08, .prot_good = 0x09, .mirror = 0x1C,
                 .backstab_weapons = {3, 4, 17, 18, 19, 0}, .charm = 0x0B, .fear = 0x6F, .cough = 0x1E,
-                .shot_pointed = {5, 7, 0, 12, 14, 30}, .shot_spinning = {2, 3, 6}, .shot_flask = {0, 0},
-                .shot_sling = {28, 0, 29},
+                .shot_pointed = {5, 7, 12, 30, 4, 0x42}, .shot_spinning = {2, 3, 6}, .shot_flask = {0xFF, 0xFF},
+                .shot_sling = {28, 29, 0x43},
                 .bestow = 0x24, .blink = 0x25, .fumbling = 0x1B, .silence = 0x15, .entangle = 0, .sticks = 0x03,
                 .faerie = 0x47, .blinded = 0x21, .animals_blind = 0x45, .feeble = 0x44,
                 .mon = {.poison = 0x40, .poison_m2 = 0x56, .kreen_bite = 0x58,
@@ -1769,7 +1769,7 @@ const Profile kProfiles[] = {
                           .scrolls = {39, 40}},
                 .berserk = 0x6B, .secret = true, .globe_major = 0x39,
                 // (its clouds: Stinking Cloud 0x1D, Cloudkill 0x1C, Blade Barrier 0x1B - GAME.OVR 0x2C617)
-                .cloud_ground = 0x1D, .poison_ground = 0x1C, .cleric_xp_wis = 15, .plat_xp = 2},
+                .cloud_ground = 0x1D, .poison_ground = 0x1C, .cleric_xp_wis = 15, .plat_xp = 2, .shot_pointed2 = 0x4A},
                kDarknessFight, sizeof kDarknessFight / sizeof kDarknessFight[0],
                // COMSPR (its 22 blocks, + 0x80 the second pictures; loaded at a
                // fight's start as slots 13-34 - GAME.OVR 0xD34A): 0-2 the arrows, 3
@@ -1787,7 +1787,7 @@ const Profile kProfiles[] = {
      // sound; turning is silent. A spell's own sound as Curse's: Fireball
      // (0x2F) 11, Lightning Bolt (0x33) 8, the rest 2 (its overlay at
      // GAME.OVR 0x29D34, +0x1407)
-     .sound = {.fireball_spell = 0x2F, .lightning_spell = 0x33},
+     .sound = {.fireball_spell = 0x2F, .lightning_spell = 0x33, .burst_spells = {0x22, 0x2F, 0x40, 0x57, 0x5B, 0x73}},
      .clips ={.file = "ZOUNDS.DAX", .hz = 9000, .first = 2, .last = 12,
                .ids = {0, 0, 2, 9, 6, 5, 9, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .quiet_turns = true},
      .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .treasure_pic = 129, .camp_pic = 128, .appraise_div = 2,

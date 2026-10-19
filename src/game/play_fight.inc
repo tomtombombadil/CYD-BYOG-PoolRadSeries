@@ -2568,6 +2568,8 @@ void start_aim(pic::Canvas& c)
         dist[at] = sq;
     }
     fg->ci = fg->n_cand > 1 ? 1 : 0;        // the nearest other than themselves
+    // (Darkness, DOSBox: its aim starts on the fighter itself, "range = 0")
+    if (d->prof->fight.words[profile::kAimDk] && !fg->spell) fg->ci = 0;
     fg->manual = false;
     fg->st = FSt::Aim;
     aim_menu(c);
@@ -3998,6 +4000,14 @@ void blast_delay(int n, pic::Canvas& c)
 
 void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::FightSpell& fs, bool each);
 
+// Darkness's area spells with a burst that sounds again (R16)
+bool burst_spell(int sp)
+{
+    for (uint8_t s : d->prof->sound.burst_spells)
+        if (s && s == sp) return true;
+    return false;
+}
+
 void blast_off(Fight::Blast& bl)
 {
     combat::Battle& b = fg->b;
@@ -4141,6 +4151,11 @@ void cast_now(pic::Canvas& c, bool forgotten)
                                        : bolt                              ? sound::kLightning
                                                                            : sound::kSpell);
         fg->page[first_page].fx[0] = e;
+        // Darkness: an area spell's burst plays the fireball's effect again
+        // where it lands (R16)
+        if (ax >= 0 && burst_spell(sp) && fg->page[first_page].fx[1].kind == Fx::None &&
+            !fg->page[first_page].fx[1].sound)
+            fg->page[first_page].fx[1].sound = sound::kFireball;
     }
     if (from_item) spend_item(i, sp);
     f.attacks[0] = f.attacks[1] = 0;

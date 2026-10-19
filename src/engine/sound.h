@@ -37,6 +37,10 @@ struct Layout {
     // A second part to read (0: none) - Secret's Tandy byte code sits
     // further on in the segment, past the driver's own code
     uint16_t lo2 = 0, hi2 = 0;
+    // Pools of Darkness: the area spells whose burst plays the fireball's
+    // effect again where it lands (darkness_sound_facts.md 4; the fights'
+    // rules facts R16; 0: none)
+    uint8_t  burst_spells[6] = {};
     size_t   size() const { return static_cast<size_t>(hi - lo) + (hi2 > lo2 ? hi2 - lo2 : 0); }
 };
 
