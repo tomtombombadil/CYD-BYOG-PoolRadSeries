@@ -1711,6 +1711,50 @@ void begin_adventuring();
 extern char import_dir[128];
 void dk_import_values(party::Character& ch);
 void secret_to_darkness(party::Character& ch);
+
+// The earlier game Load / Add take characters from: Darkness's Secret,
+// Treasures' Gateway (its 422-byte records of Curse's layout as *.GUY /
+// CHRDATxn.SAV, items .SWG of 63 bytes, effects .FX; a saved game's names
+// at 0x3214 - treasures_facts.md 2)
+struct Earlier {
+    const char*   guy;                  // its character files' extension
+    uint32_t      rec_size;
+    party::Format fmt;
+    const char*   items;
+    uint32_t      item_size;
+    const char*   fx;
+    uint32_t      names_at;             // the saved game's member count and names
+    int           ctl;                  // the record's control byte (0x80 on: an NPC)
+};
+const Earlier& earlier()
+{
+    static const Earlier kSecret = {".WHO", party::kSecretRecordSize, party::Format::Secret, ".STF",
+                                    party::kSecretItemSize, ".SFX", 0x1414, 0xFF};
+    static const Earlier kGateway = {".GUY", party::kRecordSize, party::Format::Curse, ".SWG", party::kItemSize, ".FX",
+                                     0x3214, 0xF7};
+    return d->prof->variant.tr ? kGateway : kSecret;
+}
+
+// A Gateway character as Treasures takes one in (its ovl 0x7C +0x16E6): its
+// copper, silver, electrum and gold gone, the race in Darkness's numbers
+// (half-elf 0, dwarf 1, elf 2, gnome 3, halfling 4, human 5, others 6 - a
+// half-orc too), flags = 2, the class values worked out again
+void gateway_to_treasures(party::Character& ch)
+{
+    for (int k = 0; k < 4; ++k) ch.rec[0xFB + 2 * k] = ch.rec[0xFC + 2 * k] = 0;
+    static const uint8_t kRace[8] = {6, 2, 0, 3, 1, 4, 6, 5};
+    ch.ext[party::kExtRace] = ch.rec[0x74] < 8 ? kRace[ch.rec[0x74]] : 6;
+    ch.rec[0x14B] = 2;
+    ch.ext[party::kExtFlags2] = 2;
+    dk_import_values(ch);
+    rules::recalc(ch, *names, d->facts);
+}
+void import_convert(party::Character& ch)
+{
+    if (d->prof->variant.tr) gateway_to_treasures(ch);
+    else secret_to_darkness(ch);
+}
+
 void find_secret_saves()
 {
     int n = 0;
@@ -1769,7 +1813,7 @@ bool load_secret_game(char slot)
     bool ok;
     {
         plat::FileSource src(f);
-        ok = src.read_at(0x1414, who, sizeof who) == sizeof who && who[0] <= 8;
+        ok = src.read_at(earlier().names_at, who, sizeof who) == sizeof who && who[0] <= 8;
     }
     f.close();
     if (!ok) {
@@ -1787,42 +1831,43 @@ bool load_secret_game(char slot)
         memcpy(nm, e + 1, static_cast<size_t>(len));
         nm[len] = 0;
         party::Character& ch = pt->m[pt->count];
+        const Earlier& ea = earlier();
         snprintf(path, sizeof path, "%s/%s.SAV", import_dir, nm);
         f = plat::open(path, "r");
         if (!f) {
-            load_problem = "A character of that saved game is missing from Secret's folder.";
+            load_problem = "A character of that saved game is missing from its folder.";
             continue;
         }
         {
             plat::FileSource src(f);
-            ok = f.size() == party::kSecretRecordSize && party::read_record(src, ch, party::Format::Secret);
+            ok = f.size() == ea.rec_size && party::read_record(src, ch, ea.fmt);
         }
         f.close();
         if (!ok || ch.rec[0xF7] >= 0x80) {          // (its NPCs stay behind)
             ch = party::Character{};
             continue;
         }
-        snprintf(path, sizeof path, "%s/%s.STF", import_dir, nm);
+        snprintf(path, sizeof path, "%s/%s%s", import_dir, nm, ea.items);
         f = plat::open(path, "r");
         if (f) {
             plat::FileSource src(f);
-            party::read_items(src, ch, party::kSecretItemSize);
+            party::read_items(src, ch, ea.item_size);
             f.close();
         }
-        snprintf(path, sizeof path, "%s/%s.SFX", import_dir, nm);
+        snprintf(path, sizeof path, "%s/%s%s", import_dir, nm, ea.fx);
         f = plat::open(path, "r");
         if (f) {
             plat::FileSource src(f);
             party::read_affects(src, ch);
             f.close();
         }
-        secret_to_darkness(ch);
+        import_convert(ch);
         character_read(ch);
         ++pt->count;
     }
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
     d->loaded = false;                              // (its own game state: a new game)
-    plat::log("[play] loaded Secret's saved game %c: %d characters\n", slot, pt->count);
+    plat::log("[play] loaded the earlier game's saved game %c: %d characters\n", slot, pt->count);
     return pt->count > 0;
 }
 
@@ -3483,11 +3528,11 @@ void find_secret_guys()
         const char* slash = strrchr(nm, '/');
         if (slash) nm = slash + 1;
         const size_t n = strlen(nm);
-        if (f.isDirectory() || n < 5 || n > 12 || strcasecmp(nm + n - 4, ".WHO") != 0 ||
-            f.size() != party::kSecretRecordSize)
+        const Earlier& ea = earlier();
+        if (f.isDirectory() || n < 5 || n > 12 || strcasecmp(nm + n - 4, ea.guy) != 0 || f.size() != ea.rec_size)
             continue;
         uint8_t rec[0x100];
-        if (f.read(rec, sizeof rec) != sizeof rec || rec[0xFF] > 0x7F) continue;
+        if (f.read(rec, sizeof rec) != sizeof rec || rec[ea.ctl] > 0x7F) continue;
         char name[16];
         const size_t len = rec[0] > 15 ? 15 : rec[0];
         memcpy(name, rec + 1, len);
@@ -3515,27 +3560,28 @@ bool load_secret_guy(int i, party::Character& ch)
     plat::File f = plat::open(path, "r");
     if (!f) return false;
     bool ok;
+    const Earlier& ea = earlier();
     {
         plat::FileSource src(f);
-        ok = party::read_record(src, ch, party::Format::Secret);
+        ok = party::read_record(src, ch, ea.fmt);
     }
     f.close();
     if (!ok) return false;
-    snprintf(path, sizeof path, "%s/%s.STF", import_dir, base);
+    snprintf(path, sizeof path, "%s/%s%s", import_dir, base, ea.items);
     f = plat::open(path, "r");
     if (f) {
         plat::FileSource src(f);
-        party::read_items(src, ch, party::kSecretItemSize);
+        party::read_items(src, ch, ea.item_size);
         f.close();
     }
-    snprintf(path, sizeof path, "%s/%s.SFX", import_dir, base);
+    snprintf(path, sizeof path, "%s/%s%s", import_dir, base, ea.fx);
     f = plat::open(path, "r");
     if (f) {
         plat::FileSource src(f);
         party::read_affects(src, ch);
         f.close();
     }
-    secret_to_darkness(ch);
+    import_convert(ch);
     character_read(ch);
     return true;
 }
@@ -3684,8 +3730,9 @@ void add_from_tap(int x, int y, pic::Canvas& c)
         draw_add_list(c);
         return;
     }
-    if (darkness_files() && k == 'S') {
-        // (Darkness: Secret's characters - its folder on the card)
+    if (darkness_files() && k == (d->prof->variant.tr ? 'G' : 'S')) {
+        // (Darkness: Secret's characters - its folder on the card; Treasures:
+        // Gateway's)
         d->guys = 0;
         d->guy_from = 'S';
         find_secret_guys();
@@ -12194,6 +12241,16 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     gs.y = 13;
     gs.dir = 0;
     vm->set(0x7F12, gs.game_area);
+    if (d->prof->variant.tr) {
+        // Treasures' game block as its start sets it (ovl 0x87 +0x54E): the
+        // difficulty 3, in 3D, the text green, BACK1 block 3 ...
+        gs.area1[0x26] = 3;
+        gs.area1[0x21] = 1;
+        gs.area1[0x38] = 0x0A;
+        gs.area1[0x52] = 2;
+        gs.area1[0x54] = 3;
+        gs.area1[0x11] = 4;
+    }
     area_view = false;
     pic_shown = false;
     look_pending = false;

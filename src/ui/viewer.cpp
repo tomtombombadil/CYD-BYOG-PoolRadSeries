@@ -1460,6 +1460,7 @@ void start_play()
     const games::Game earlier = here == games::Game::CurseOfTheAzureBonds     ? games::Game::PoolOfRadiance
                               : here == games::Game::SecretOfTheSilverBlades ? games::Game::CurseOfTheAzureBonds
                               : here == games::Game::PoolsOfDarkness         ? games::Game::SecretOfTheSilverBlades
+                              : here == games::Game::TreasuresOfTheSavageFrontier ? games::Game::GatewayToTheSavageFrontier
                                                                               : here;
     for (int g = 0; earlier != here && g < n_games; ++g)
         if (game_dirs[g].game == earlier && game_dirs[g].format == library::Format::Dax) {
