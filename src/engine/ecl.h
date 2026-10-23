@@ -111,6 +111,10 @@ struct OpSet {
     // C04D is (0-3) - its scripts keep the facing there leaving a city and
     // choose the gate by it coming back (0: none)
     uint16_t facing_alias = 0;
+    // Gateway (its CALL handler, interpreter overlay +0x3320): the sound call
+    // plays the effect 0x03DE holds by the game's own number (0x80 up: its
+    // music - not played); Curse's: a step, or the fireball's roar for 10
+    bool sound_word = false;
 };
 
 // A script's memory address as the engine's machine (Curse's map) knows

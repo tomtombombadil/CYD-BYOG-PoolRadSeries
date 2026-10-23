@@ -1158,6 +1158,7 @@ constexpr ecl::OpSet kGatewayEcl = [] {
     s.step_square = true;
     s.facing_alias = 0x03B2;
     s.vault_word = 0x4CFC;          // (its vault: SAVE 1 [4CFC] + COMBAT - gateway_facts.md 12)
+    s.sound_word = true;
     return s;
 }();
 
@@ -2097,6 +2098,12 @@ const Profile kProfiles[] = {
               kCurseFight, sizeof kCurseFight / sizeof kCurseFight[0]},
      .script_words = {0x2C54, 0x2C65, 0xB76A, 0xB772, 0xB77F, 0x357C, 0x3BE5, 0, 0, 0, 0x3BFF},
      .random_items = &kCurseRandom, .random_rows = 0x1058,
+     // Its effects (gateway_facts.md 16): DigPak samples, ZOUNDS.DAX block n
+     // = effect n (2-12; 3 and 6 played as 9 - seg 0x17B +0x18), each at its
+     // own rate (DS 0x1794); Curse's numbers
+     .clips = {.file = "ZOUNDS.DAX", .hz = 8000, .first = 2, .last = 12,
+               .ids = {0, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .to_block = 0, .rate_table = 0x1794,
+               .as_nine = 1u << 3 | 1u << 6},
      .door = {0x1C147, 0x1C14C, 0x1C152, 0x1C159, 0x1C15F, 0x1F},
      .variant = {.unfinished = true, .program_words = true, .treasure_pic = 1, .camp_pic = 29, .eight_black = true, .field_swap = true,
                  .party_menu_col = 9,

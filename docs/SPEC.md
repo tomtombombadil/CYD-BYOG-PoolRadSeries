@@ -1751,7 +1751,13 @@ segment at image 0x4C70; run as `GAME UseStart`) + GAME.OVR (51 overlays),
   head or body picture's raw 13s go through its colour map
   (`pic::sf_keep13`). Every vault screen matches DOSBox pixel for pixel
   (deposit, withdraw, share, the file's bytes).
-- **Not yet:** the sounds (TSR drivers, ZOUNDS.DAX), the journal.
+- **Sounds.** DigPak samples as Darkness's (`sound::Clips`): ZOUNDS.DAX
+  block n = effect n, 2-12 (`to_block` 0), each at its own rate from the
+  program's table (DS 0x1794: 4,000-9,000 Hz; `rate_table`), 3 and 6 played
+  as 9 (`as_nine`); the program's numbers are Curse's (steps and turns 10,
+  hit 7, miss 9 ...). A script's CALL 0xB200 plays the effect 0x03DE holds
+  (`OpSet::sound_word`; 0x80 up is music, not played). No music (MUSIC.DAX).
+- **Not yet:** the journal.
 
 ## 7. The journal (Tom, 2026-10-06)
 

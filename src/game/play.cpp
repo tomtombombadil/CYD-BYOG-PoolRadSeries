@@ -361,6 +361,9 @@ void sound_hold(bool on)
 
 bool open_file(const char* name, plat::File& f);
 
+// Gateway: each effect's rate (the program's table, read with the sound; 0: Clips::hz)
+uint16_t clip_rates[16] = {};
+
 // A digitised effect (the game's own number): its block read from the card
 // now (the reader and its file buffer on the heap - a sound starts deep in
 // a fight), handed to the player - it sounds once the one playing ends
@@ -368,11 +371,12 @@ __attribute__((noinline)) void play_clip(int v)
 {
     const sound::Clips& cl = d->prof->clips;
     if (v < cl.first || v > cl.last) return;            // (13 / 14: the game plays nothing)
+    if (cl.as_nine >> v & 1) v = 9;                     // (Gateway's player: 3 and 6 as 9)
     plat::File f;
     if (!open_file(cl.file, f)) return;
     plat::FileSource* src = new (std::nothrow) plat::FileSource(f);
     uint32_t n = 0;
-    uint8_t* pcm = src ? sound::load_clip(*src, v - 1, &n) : nullptr;
+    uint8_t* pcm = src ? sound::load_clip(*src, v + cl.to_block, &n) : nullptr;
     delete src;
     f.close();
     if (!pcm) {
@@ -383,7 +387,7 @@ __attribute__((noinline)) void play_clip(int v)
         }
         return;
     }
-    clips->start(pcm, n, cl.hz, sound_device());
+    clips->start(pcm, n, clip_rates[v & 15] ? clip_rates[v & 15] : cl.hz, sound_device());
     start_output();
 }
 
@@ -11385,6 +11389,17 @@ void load_sound()
             clips = new (std::nothrow) sound::ClipPlayer;
         }
         if (!clips) plat::log("[play] no %s: no sound\n", d->prof->clips.file);
+        memset(clip_rates, 0, sizeof clip_rates);
+        if (clips && d->prof->clips.rate_table && open_file(d->prof->program, f)) {
+            // (Gateway: the rates by effect number, from the player's program)
+            plat::FileSource src(f);
+            exepack::Info info;
+            uint8_t b[32];
+            if (exepack::parse(src, info) == exepack::Status::Ok &&
+                exepack::read(src, info, d->prof->create.ds_image + d->prof->clips.rate_table, b, sizeof b) == exepack::Status::Ok)
+                for (int k = 0; k < 16; ++k) clip_rates[k] = static_cast<uint16_t>(b[2 * k] | b[2 * k + 1] << 8);
+            f.close();
+        }
         return;
     }
     const sound::Layout& l = d->prof->sound;

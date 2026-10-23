@@ -1550,6 +1550,9 @@ Stop Vm::step()
             if (speed == 0) speed = 4;
             pause_ms_ = static_cast<uint32_t>(speed) * 100;
             return wait_for(Wait::Pause);
+        } else if (w == set_.sound_call && set_.sound_word) {
+            // Gateway: the effect 0x03DE names (its own number); 0x80 up music
+            if (sound_kind_ < 0x80) h_.game_sound(sound_kind_);
         } else if (w == set_.sound_call) {
             h_.sound(sound_kind_ == 10 ? 0x0B : 0x0A);         // a step; 10: the fireball's roar
         } else if (set_.press_call && w == set_.press_call) {
