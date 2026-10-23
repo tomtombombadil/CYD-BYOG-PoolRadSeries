@@ -752,7 +752,11 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   now: finish Pools of Darkness, then the Savage Frontier games (Gateway,
   then Treasures) without waiting for Tom's input on routine choices
   (follow the originals; fixes behind Game Fixes; note open questions in
-  TODO).
+  TODO), then the Krynn games (Tom, 2026-10-23).
+- **Standing answer for originals' mistakes** (Tom, 2026-10-23): the game
+  keeps the original's behaviour; the fixed (AD&D) version goes behind
+  Game Fixes - don't ask, just do it and list each such case in the
+  summary to Tom (and SPEC 12).
 - Semantic versioning from `VERSION` (started 0.1.0, 2026-10-06). Bump it in
   every push to main that changes the firmware (fix = Z, feature = Y).
 - Every push to main: CI runs host tests, builds every board, redeploys the

@@ -138,12 +138,9 @@ the Project as claude/TODO.md.
       switch); Power Word Kill and Resurrection as AD&D behind Game Fixes;
       dragon fear ends with the fight behind Game Fixes. (Claude: the
       last three on branch darkness-leftovers.)
-- [ ] Tom: the bulette's leap (explained 2026-10-23): Darkness's
-      ability 0x63 was meant to give the bulette, one round in four (1d4
-      = 1), 4 attacks from its second attack slot instead of 2 - AD&D's
-      bulette leaping and striking with all four feet - but the program
-      overwrites it at once, so it never happens. Make it work behind
-      Game Fixes, or leave it as the original?
+- [x] Tom (2026-10-23): the bulette's leap - the original's way (never
+      happens) in the game, the working leap behind Game Fixes; the same
+      answer for every future question of this kind (CLAUDE.md).
 - [x] Darkness's sounds (Tom, 2026-10-23): Claude's recommendation -
       two choices, Tandy = the recordings as they are (the SL / TL DAC,
       the GOG Sound Blaster), and the PC speaker; no EX / TX chip choice
