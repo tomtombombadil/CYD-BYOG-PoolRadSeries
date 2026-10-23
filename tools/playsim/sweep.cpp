@@ -1487,6 +1487,9 @@ static void dice_faces(std::initializer_list<int> f) { dice_usual(); b_faces.ass
 #ifdef BEHAVE_DARKNESS
 #include "behave_darkness.inc"
 #endif
+#ifdef BEHAVE_GATEWAY
+#include "behave_gateway.inc"
+#endif
 
 int main(int argc, char** argv)
 {
@@ -1545,6 +1548,9 @@ int main(int argc, char** argv)
 #endif
 #ifdef BEHAVE_DARKNESS
         if (want("darkness")) behave_darkness();
+#endif
+#ifdef BEHAVE_GATEWAY
+        if (want("gateway")) behave_gateway();
 #endif
         create::g_die_hook = nullptr;
         printf("== behaviour: %d passed, %d failed\n", b_pass, b_fail);
