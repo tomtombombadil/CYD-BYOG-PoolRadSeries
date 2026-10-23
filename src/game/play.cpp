@@ -720,6 +720,53 @@ int ov_area()
 bool pool_overland() { return d && vm && ov_area() >= 0; }
 // Darkness's overland (darkness_facts.md S4 / S7): byte 0x24 = 1 and not 3D
 bool dk_overland() { return d && vm && d->prof->variant.dk_overland_pics && vm->get(0x24) == 1 && !vm->get(0x22); }
+// Gateway's wilderness (gateway_facts.md 14): area word 0x4BE6 = 0
+bool gw_wild() { return d && vm && d->prof->variant.tile_wild && !vm->get(0x4BE6); }
+// Gateway's way ahead (GAME.OVR 0x4712F +0x82A, kept in area word 0x4CF6 as
+// the square's values are taken): the facing side's door state (plane 3),
+// a side without a wall open (1) in 3D only; its scripts' steps stop on 0
+void gw_way_ahead()
+{
+    if (!d || !vm || !d->prof->ecl_ops->step_square || !d->map.loaded) return;
+    const ecl::GameState& g = d->gs;
+    const int dir = g.dir & 6;
+    const int v = vm->get(0x4BE6) && geo::wall(d->map, g.x, g.y, dir) == 0 ? 1 : geo::door(d->map, g.x, g.y, dir);
+    vm->set(0x4CF6, static_cast<uint16_t>(v));
+}
+// What a step out of (x, y) towards dir meets (geo::passage); in Gateway's
+// wilderness the side's door state alone (its plane 0 holds tiles, not walls)
+int way(int x, int y, int dir)
+{
+    return gw_wild() ? geo::door(d->map, x, y, dir) : geo::passage(d->map, x, y, dir);
+}
+
+// Its view (DOSBox, pixel checked): 11 x 11 squares of the region's map in
+// the view's window - its first square kept 0-5 so the window stays on the
+// map - each square GEO plane 0's tile (0-209: sets 1-3, 70 each), opaque;
+// the party's square gets the arrow of its facing (block 202's 256-259,
+// 13 see-through)
+void draw_gw_wild(pic::Canvas& c)
+{
+    const ecl::GameState& g = d->gs;
+    const int x0 = g.x - 5 < 0 ? 0 : g.x - 5 > 5 ? 5 : g.x - 5;
+    const int y0 = g.y - 5 < 0 ? 0 : g.y - 5 > 5 ? 5 : g.y - 5;
+    c.fill(24, 24, 88, 88, 0);
+    for (int r = 0; r < view3d::kCells && d->map.loaded; ++r)
+        for (int k = 0; k < view3d::kCells; ++k) {
+            const int t = d->map.plane[0][(y0 + r) * geo::kSize + x0 + k];
+            const view3d::TileSet& s = d->world.sets[t / view3d::kSetTiles];
+            if (t >= 3 * view3d::kSetTiles || t % view3d::kSetTiles >= s.count) continue;
+            const uint8_t* px = s.px[t % view3d::kSetTiles];
+            const int x = (view3d::kCell0 + k) * 8, y = (view3d::kCell0 + r) * 8;
+            for (int yy = 0; yy < 8; ++yy)
+                for (int xx = 0; xx < 8; ++xx) {
+                    const uint8_t b = px[yy * 4 + xx / 2];
+                    c.set(x + xx, y + yy, static_cast<uint8_t>(xx & 1 ? b & 15 : b >> 4));
+                }
+        }
+    view3d::draw_tile(c, d->world, 256 + (g.dir & 7) / 2, g.y - y0, g.x - x0);
+    dirty_rows(3, 13);
+}
 
 // Its screen (DOSBox): the outer frame with a bar at row 16, the region's
 // map picture (BIGPIC) inside, the party's marker (CURSOR.DAX block 1, 13
@@ -909,7 +956,7 @@ void draw_view(pic::Canvas& c)
     if (bigpic >= 0) {
         // A big picture covers the screen: outdoors it stays (the wilderness
         // map); in a 3D area the exploring screen comes back
-        if (!vm->get(0x4BE6) && !pool_overland()) return;
+        if (!vm->get(0x4BE6) && !pool_overland() && !gw_wild()) return;
         bigpic = -1;
         pic_shown = false;
         draw_frame(c);
@@ -918,6 +965,10 @@ void draw_view(pic::Canvas& c)
     if (pic_shown) return;
     if (pool_overland()) {
         draw_overland(c);
+        return;
+    }
+    if (gw_wild()) {
+        draw_gw_wild(c);
         return;
     }
     if (!d->map.loaded) {
@@ -1116,6 +1167,7 @@ bool secret_files();
 bool darkness_files();
 bool gateway();
 bool move_menu() { return secret_files() || darkness_files() || gateway(); }
+void ow(uint32_t at, char* out, size_t cap);
 void idle_menu(pic::Canvas& c)
 {
     if (dk_overland()) {
@@ -1137,6 +1189,15 @@ void idle_menu(pic::Canvas& c)
     } else if (pool_overland()) {
         // Pool's wilderness: no Area (its program's words)
         text::build(menu, "", "Cast View Encamp Search Look");
+        menu.selected = 0;
+        show_menu_line(c);
+    } else if (gw_wild()) {
+        // Gateway's wilderness: no Area (DS 0x4D9); its move mode's prompt
+        // "Move (Use arrow keys):" before Exit (DOSBox)
+        static char prompt[32];
+        prompt[0] = 0;
+        if (moving) ow(d->prof->variant.move_prompt, prompt, sizeof prompt);
+        text::build(menu, prompt, moving ? "Exit" : "Move Cast View Encamp Search Look");
         menu.selected = 0;
         show_menu_line(c);
     } else if (vm->get(0x4BE6)) {
@@ -9492,6 +9553,20 @@ struct Host : ecl::Host {
         char name[24];
         int n = 0;
         plat::File f;
+        if (gw_wild()) {
+            // Gateway's wilderness (its wall loader, GAME.OVR 0x4712F +0x134D:
+            // only the tiles while 0x4BE6 is 0): the 8X8D block into the set
+            wd.walls[set - 1].loaded = false;
+            view3d::free_extra(wd.sets[set - 1]);
+            wd.sets[set - 1].count = 0;
+            if (open_area_dax("8X8D", block, f, name, sizeof name)) {
+                plat::FileSource src(f);
+                view3d::load_tiles(src, d->idx, static_cast<uint8_t>(block), wd.sets[set - 1]);
+                f.close();
+            }
+            if (!wd.sets[set - 1].count) plat::log("[play] wilderness tiles %d: block %d not loaded\n", set, block);
+            return;
+        }
         if (open_area_dax("WALLDEF", block, f, name, sizeof name)) {
             plat::FileSource src(f);
             if (!view3d::load_walls(src, d->idx, set, static_cast<uint8_t>(block), wd, &n)) n = 0;
@@ -9623,6 +9698,12 @@ struct Host : ecl::Host {
         d->gs.roof = geo::flags(d->map, d->gs.x, d->gs.y);
         draw_view(*cv);
         draw_position(*cv);
+    }
+    void square() override
+    {
+        d->gs.roof = geo::flags(d->map, d->gs.x, d->gs.y);
+        d->gs.wall_ahead = static_cast<uint8_t>(geo::wall(d->map, d->gs.x, d->gs.y, d->gs.dir));
+        gw_way_ahead();
     }
     void clear_box() override
     {
@@ -9954,6 +10035,7 @@ void after_move_redraw()
     head_shown = body_shown = -1;
     d->gs.roof = geo::flags(d->map, d->gs.x, d->gs.y);
     d->gs.wall_ahead = static_cast<uint8_t>(geo::wall(d->map, d->gs.x, d->gs.y, d->gs.dir));
+    gw_way_ahead();
     draw_view(*cv);
     draw_panel(*cv);
 }
@@ -10022,8 +10104,8 @@ bool do_move()
     }
     bool locked = false;
     if (vm->get(0x7EC9) < 0xFF && d->map.loaded) {
-        const int p = geo::passage(d->map, g.x, g.y, step_dir);
-        locked = p >= 2;        // locked or barred: the party would need to bash or pick it
+        const int p = way(g.x, g.y, step_dir);
+        locked = p >= 2;       // locked or barred: the party would need to bash or pick it
         if (p == 1) {
             g.x = (g.x + geo::dx(step_dir)) & 15;
             g.y = (g.y + geo::dy(step_dir)) & 15;
@@ -10198,7 +10280,7 @@ void handle(ecl::Stop r)
         look_pending = false;
         vm->set(0x7ECA, look_search);
     }
-    if (!vm->get(0x4BE6) && !pool_overland() && !dk_overland()) {
+    if (!vm->get(0x4BE6) && !pool_overland() && !dk_overland() && !gw_wild()) {
         // Outdoors the scripts run the show: go round again, unless nothing
         // happened (a script with nothing to do would spin forever)
         if (++idle_cycles < 3) {
@@ -10226,13 +10308,14 @@ void step(int dir_of_step)
         const int nx = g.x + geo::dx(dir_of_step), ny = g.y + geo::dy(dir_of_step);
         const bool off = nx < 0 || nx > 15 || ny < 0 || ny > 15;
         vm->set(0x7ED5, d->map.loaded && off && !pool_overland() && !dk_overland() &&
-                            geo::passage(d->map, g.x, g.y, dir_of_step) != 0
+                            way(g.x, g.y, dir_of_step) != 0
                             ? 1 : 0);
     }
     // The original's exploring menu clears 0x7EC9 (field_592) before every
     // key: a "don't move" left by an earlier script (a block's first run)
     // doesn't hold back this step - only this step's script can
     vm->set(0x7EC9, 0);
+    gw_way_ahead();
     // The step script runs before the move, on the square the party is on
     run_entry(0, Then::Move);
 }
@@ -10332,6 +10415,9 @@ void begin_adventuring()
         pm_prompt(c, msg);
         return;
     }
+    // (Gateway's wilderness: saved there, its 0x4BE6 = 0 stays - the map and
+    // tile sets load as the original's, and the view is the map)
+    if (resume && !dungeon && d->prof->variant.tile_wild) vm->set(0x4BE6, 0);
     draw_frame(c);
     if (resume) {
         if (dungeon && pool_files()) {
@@ -10351,7 +10437,8 @@ void begin_adventuring()
             // (Darkness: its map and its look again - darkness_facts.md S8)
             host->load_map(vm->get(0x4BC5) & 0xFF);
             if (d->save.look) host->load_look(d->save.look);
-        } else if (dungeon) {
+        } else if (dungeon || gw_wild()) {
+            // (Gateway's wilderness too: its region's map and tile sets)
             if (d->save.wall_block[0] > 0) host->load_map(vm->get(0x4BC5) & 0xFF);
             for (int i = 0; i < 3; ++i)
                 if (d->save.wall_block[i] > 0) host->load_walls(d->save.wall_set[i], d->save.wall_block[i]);
@@ -12548,6 +12635,9 @@ bool act(Act a, pic::Canvas& c)
         }
         if (dir == -1) return false;
     }
+    // Gateway's wilderness: turns and a step ahead only (its step script
+    // judges the square ahead), no Area
+    if (gw_wild() && (a == Act::StepLeft || a == Act::StepRight || a == Act::Area)) return false;
     switch (a) {
     case Act::TurnLeft:   g.dir = (g.dir + 6) & 7; turn_sound(); break;
     case Act::TurnRight:  g.dir = (g.dir + 2) & 7; turn_sound(); break;
@@ -12806,7 +12896,7 @@ bool walking()
 {
     if (!d || input_mode != Input::None) return false;
     if (screen == Screen::Fight) return fg && (fg->st == FSt::Move || (fg->st == FSt::Aim && fg->manual));
-    return screen == Screen::Game && !waiting && then == Then::Idle && (vm->get(0x4BE6) != 0 || pool_overland());
+    return screen == Screen::Game && !waiting && then == Then::Idle && (vm->get(0x4BE6) != 0 || pool_overland() || gw_wild());
 }
 
 void set_present_now(void (*fn)()) { g_present_now = fn; }
@@ -13186,6 +13276,20 @@ void tap(int x, int y, pic::Canvas& c)
         if (a != Act::Area) act(a, c);
         return;
     }
+    // Gateway's wilderness: a tap on a square beside the party's arrow faces
+    // that way, a tap on the square ahead steps there (its arrow keys turn
+    // and step)
+    if (gw_wild() && !pic_shown && !bigpic_shown() && x >= 24 && x < 112 && y >= 24 && y < 112) {
+        const ecl::GameState& g = d->gs;
+        const int x0 = g.x - 5 < 0 ? 0 : g.x - 5 > 5 ? 5 : g.x - 5;
+        const int y0 = g.y - 5 < 0 ? 0 : g.y - 5 > 5 ? 5 : g.y - 5;
+        const int dx = (x - 24) / 8 - (g.x - x0), dy = (y - 24) / 8 - (g.y - y0);
+        const int to = dx == 0 && dy < 0 ? 0 : dx > 0 && dy == 0 ? 2 : dx == 0 && dy > 0 ? 4 : dx < 0 && dy == 0 ? 6 : -1;
+        if (to < 0) return;
+        const int turn = (to - (g.dir & 6) + 8) % 8;
+        act(turn == 0 ? Act::Forward : turn == 2 ? Act::TurnRight : turn == 4 ? Act::TurnAround : Act::TurnLeft, c);
+        return;
+    }
     // A tap on a character in the party list selects them
     if (col >= 17 && row >= 4 && row < 4 + pt->count && !bigpic_shown()) {
         pt->selected = row - 4;
@@ -13193,7 +13297,7 @@ void tap(int x, int y, pic::Canvas& c)
         return;
     }
     // The exploring menu: Area Cast View Encamp Search Look (Secret: Move first)
-    if (y >= text::kMenuTapTop && (vm->get(0x4BE6) || pool_overland() || dk_overland())) {
+    if (y >= text::kMenuTapTop && (vm->get(0x4BE6) || pool_overland() || dk_overland() || gw_wild())) {
         const char k = text::key(menu, text::hit(menu, col));
         if (moving || (k == 'M' && move_menu())) {
             if (moving && k != 'E') return;

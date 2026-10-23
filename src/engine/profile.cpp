@@ -1154,6 +1154,8 @@ constexpr ecl::OpSet kGatewayEcl = [] {
     s.sizes[0x41] = 2;
     s.press_call = 0x809;
     s.yes_no_call = 0x80C;
+    s.files_outdoors = true;
+    s.step_square = true;
     return s;
 }();
 
@@ -2098,7 +2100,8 @@ const Profile kProfiles[] = {
                  .party_menu_col = 9,
                  .sf_pics = true,
                  .frame_base = 20,
-                 .common_files = true, .party_menu_row = 15, .per_set_walls = true},
+                 .common_files = true, .party_menu_row = 15, .per_set_walls = true,
+                 .tile_wild = true, .move_prompt = 0x1BD9A},
      .joined = kGatewayJoined, .n_joined = sizeof kGatewayJoined / sizeof kGatewayJoined[0]},
 };
 

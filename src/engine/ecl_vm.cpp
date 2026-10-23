@@ -1374,7 +1374,7 @@ Stop Vm::step()
         const int a = value(o[0]) & 0xFF, b = value(o[1]) & 0xFF, c = value(o[2]) & 0xFF;
         const bool dungeon = get(0x4BE6) != 0;
         if (op_ == 0x21) {
-            if (a != 0xFF && a != 0x7F && dungeon) {
+            if (a != 0xFF && a != 0x7F && (dungeon || set_.files_outdoors)) {
                 set(0x4BC5, static_cast<uint16_t>(a));
                 h_.load_map(a);
                 set(0x7EC9, 0);
@@ -1575,6 +1575,9 @@ Stop Vm::step()
             s_.x = (s_.x + (s_.dir == 2 ? 1 : s_.dir == 6 ? -1 : 0)) & 15;
             s_.y = (s_.y + (s_.dir == 4 ? 1 : s_.dir == 0 ? -1 : 0)) & 15;
             s_.moved = true;
+            if (set_.step_square) h_.square();
+        } else if (w == 0xC01A && set_.step_square) {
+            h_.square();
         } else if (!set_.pool_map || w == 0x8000 || w == 0x8001) {
             // (Pool's program does nothing for addresses it doesn't know;
             // 0x8000 / 0x8001 are its duels)

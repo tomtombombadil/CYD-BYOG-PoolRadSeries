@@ -1716,9 +1716,28 @@ segment at image 0x4C70; run as `GAME UseStart`) + GAME.OVR (51 overlays),
   results match DOSBox. The budget fight (`RUNAT=91B1 FIGHT=1`, 6
   bandits): 137.0 KB at its highest; 30 goblins (MONSWAP=6:8:30, 22
   placed): 135.5 KB.
+- **Behaviour checks:** sweep's `behave gateway` (-DCYD_TEST_HOOKS
+  -DBEHAVE_GATEWAY, GAME=8; ONLY= create, menus): every race / class /
+  alignment / sex made with the dice high and low (experience, platinum,
+  levels against the program's class records) and the shop's, temple's and
+  treasure's menus in every state, against a scratch oracle from the
+  program's tables and overlays (`oracle_gateway.txt`, never in the repo).
+- **The wilderness** (area 6, area word 0x4BE6 = 0; `variant.tile_wild`,
+  `gw_wild`): the view window shows 11 x 11 squares of the region's map
+  (kept inside it), each GEO plane-0 byte a tile of LOAD PIECES' three 8X8D
+  sets (tiles only, no WALLDEF), the party an arrow; LOAD FILES loads the map
+  outdoors too (`OpSet::files_outdoors`); "Move Cast View Encamp Search
+  Look", the move mode's "Move (Use arrow keys):" (`variant.move_prompt`).
+  Its step scripts read the way ahead (area word 0x4CF6, `gw_way_ahead`)
+  and the ground ahead through CALL 0xC01E / 0xC01A, which take the
+  square's values at once (`OpSet::step_square`, `Host::square`); a step
+  out of a square there follows the side's door state alone. A save made
+  there loads back into it. Matches DOSBox pixel for pixel (the map, the
+  arrow, the position and clock, the move mode's line) along the same
+  walk; region changes, entering Yartar, encounters and outdoor fights run
+  (the snakes' fight 124.5 KB at its highest).
 - **Not yet:** the vault (Yartar's: Deposit / Withdraw / Vault, vault.dat),
-  the wilderness (area 6: tile sets only, its drawing not seen yet), the
-  sounds (TSR drivers, ZOUNDS.DAX), the journal, `behave gateway`.
+  the sounds (TSR drivers, ZOUNDS.DAX), the journal.
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -2064,8 +2083,12 @@ the game's Settings (As Original: all of them).
   "initialize JoyStick/Mouse" isn't shown (its rows stay where the
   original puts them) and the menu's own "SELECT" isn't printed; the
   party menu's selected member is drawn white, the cursor line as the
-  other games'. Add also lists saved games' members (as Curse's). No
-  original mistake against AD&D found so far (none behind Game Fixes yet).
+  other games'. Add also lists saved games' members (as Curse's). In the
+  wilderness the movement keys step and turn without choosing Move first
+  (the original's arrow keys need its move mode; the side-steps and Area
+  do nothing there), and a tap on a square beside the party's arrow turns
+  that way, on the square ahead steps. No original mistake against AD&D
+  found so far (none behind Game Fixes yet).
 - **Controls and screens**: taps on menu words, list lines and combat
   squares; on-screen keys (movement pad, cursor keys - Up / Down / Left /
   Right / Select - Game, Look, and on 320x240 Map: the area map over

@@ -1127,6 +1127,21 @@ int main(int argc, char** argv)
         printf("   now %d,%d %s | %s | %s\n", play::pos_x(), play::pos_y(), geo::dir_name(play::dir()), l1, l2);
     }
     if (play::screen == play::Screen::Fight && getenv("FIGHT")) run_fight();
+    if (getenv("TEXIT")) {
+        // TEXIT: the treasure's Exit after the fight, then a snapshot (the screen it goes back to)
+        for (char want : {'E', 'N'}) {
+            for (int i = 0; i < play::menu.count; ++i)
+                if (text::key(play::menu, i) == want) {
+                    int cx, cy;
+                    text::item_cell(play::menu, i, &cx, &cy);
+                    play::tap(cx * 8 + 2, cy * 8 + 2, C);
+                    break;
+                }
+            settle();
+        }
+        printf("  after the treasure: screen %d menu [%s%s]\n", (int)play::screen, play::menu.prompt, play::menu.s);
+        shot("after_treasure");
+    }
     // AFTERSHOP: SHOPRUN's steps once the moves are done (a shop or temple walked into)
     if (getenv("AFTERSHOP")) shop_run(getenv("AFTERSHOP"));
     if (getenv("SAVESLOT")) {
@@ -1140,6 +1155,24 @@ int main(int argc, char** argv)
         shot("saved");
         tap_word('E');
         printf("  saved at %d,%d %s script %d\n", play::pos_x(), play::pos_y(), geo::dir_name(play::dir()), play::vm->get(0x4BF2));
+    }
+    if (getenv("MOVEMODE")) {
+        // MOVEMODE: the exploring menu's Move tapped (Secret / Darkness / Gateway's move mode)
+        for (int i = 0; i < play::menu.count; ++i)
+            if (text::key(play::menu, i) == 'M') {
+                int cx, cy;
+                text::item_cell(play::menu, i, &cx, &cy);
+                play::tap(cx * 8 + 2, cy * 8 + 2, C);
+                break;
+            }
+        printf("  move mode %d menu [%s%s]\n", (int)play::moving, play::menu.prompt, play::menu.s);
+        shot("moving");
+    }
+    if (getenv("SAVENOW")) {
+        // SAVENOW=slot: saved as it stands, without the camp (a save for the original to load)
+        const bool ok = play::save_game(getenv("SAVENOW")[0]);
+        printf("  saved now (%c): %s, area %d at %d,%d script %d\n", getenv("SAVENOW")[0], ok ? "ok" : "failed",
+               play::d->gs.game_area, play::pos_x(), play::pos_y(), play::vm->get(0x4BF2));
     }
     shot("end");
     save_wav();

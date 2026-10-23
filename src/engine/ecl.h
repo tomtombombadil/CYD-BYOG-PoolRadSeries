@@ -99,6 +99,14 @@ struct OpSet {
     // 0x3150): CALL 0x809 waits for a key ("Press Enter to continue."),
     // CALL 0x80C asks Yes / No - 0 / 1 into 0x7F79 (0: none of these)
     uint16_t press_call = 0, yes_no_call = 0;
+    // Gateway (gateway_facts.md 14): LOAD FILES loads the map outdoors too
+    // (0x4BE6 = 0: its wilderness is drawn from the region's map)
+    bool files_outdoors = false;
+    // Gateway (GAME.OVR seg 0x53 entry 0x84, seg 0x123 entry 0x4D): CALL
+    // 0xC01E's step and CALL 0xC01A take the square's flags (C04F) and the
+    // wall ahead (C04E) again at once - its wilderness scripts read the
+    // ground of the square ahead that way
+    bool step_square = false;
 };
 
 // A script's memory address as the engine's machine (Curse's map) knows

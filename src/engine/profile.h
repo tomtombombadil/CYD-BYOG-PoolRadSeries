@@ -671,6 +671,14 @@ struct Profile {
         // Gateway: wall sets' tile numbers per set, up to 210 tiles a set
         // (view3d::World::per_set)
         bool     per_set_walls = false;
+        // Gateway's wilderness (gateway_facts.md 14): where area word 0x4BE6
+        // is 0 the view is the region's map - each GEO square's plane-0 byte
+        // a tile (0-209: LOAD PIECES' three 8X8D blocks, 70 each, no
+        // WALLDEF), the window kept inside the map, the party an arrow (a
+        // step's hours are its scripts' ECL CLOCK)
+        bool     tile_wild = false;
+        // The move mode's prompt before its Exit (GAME.OVR; 0: none)
+        uint32_t move_prompt = 0;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;
