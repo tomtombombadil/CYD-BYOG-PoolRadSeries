@@ -126,6 +126,7 @@ struct Menu {
     int8_t  end[kMaxItems] = {};   // its last character
     int     selected = 0;
     bool    marked = false;        // (Gateway's '~' marks: only each choice's first letter lit)
+    uint8_t prompt_fg = 0;         // the prompt's colour when not the usual (Gateway's questions: 14)
 };
 
 // Splits s into choices: each starts at a capital letter or digit.

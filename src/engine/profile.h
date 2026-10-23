@@ -362,6 +362,7 @@ struct Profile {
         uint8_t     speed_fx = 0;
         bool        sell_secret = false;           // a pile's price: Secret's rule (rules::sell_value)
         uint8_t     types_head = 2;                // the type file's bytes before row 0 (Darkness 0)
+        uint8_t     types_stride = 16;             // a row's bytes (Gateway's ITEMS.1 24: 8 more each)
         // Darkness: the items screen's menu as one string ("Ready Use Trade
         // Deposit Drop Halve Join Sell Id") - "Ready" and the item words
         // Use ... Id, Deposit taken from it (0: the words above / item_words)
@@ -474,6 +475,13 @@ struct Profile {
         // GAME.OVR (its Display, ovr 0xEBB1, tests each effect against it;
         // 0: every effect with a name)
         uint32_t                  effects_shown = 0;
+        // Gateway: a list's headings are the level, a space, the kind
+        // ("Clerical ", "Druidical ", "Magic-User ": program image, 3 names)
+        // and this word ("Spells", GAME.OVR) - a heading where the level or
+        // the kind changes; "NAME" over "can memorize:" (0: Curse's headings
+        // and one line)
+        NameTable                 kind_names = {};
+        uint32_t                  heading_word = 0;
     } magic;
 
     // The camp's Alter: its menu ("Order Drop Speed Icon Pics Exit"), the

@@ -250,7 +250,7 @@ void draw(pic::Canvas& c, const font::Font& f, const Menu& m, const MenuColors& 
     c.fill(0, kMenuRow * 8, pic::kScreenW, 8, 0);
     int x = 0;
     for (const char* p = m.prompt; *p && x < font::kCols; ++p, ++x)
-        font::draw_glyph(c, f, font::glyph_of(f, *p), x * 8, kMenuRow * 8, col.prompt, 0);
+        font::draw_glyph(c, f, font::glyph_of(f, *p), x * 8, kMenuRow * 8, m.prompt_fg ? m.prompt_fg : col.prompt, 0);
     const int sel = m.selected >= 0 && m.selected < m.count ? m.selected : -1;
     for (int i = 0; m.s[i] && x < font::kCols; ++i, ++x) {
         const int g = font::glyph_of(f, m.s[i]);

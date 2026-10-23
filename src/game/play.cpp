@@ -143,7 +143,8 @@ struct Data {
     char           guy_letter[kMaxGuys] = {};   // a Pool saved game's letter (CHRDAT<letter>n.SAV)
     char           guy_from = 'C';              // the list's source: C(urse) / P(ool)
     int            guys = 0;
-    char           w_magic[44] = {}, w_level[9][12] = {};    // the magic menu, "1st Level" ... (Secret: 7, Darkness 9)
+    char           w_magic[44] = {}, w_level[9][12] = {};
+    char           w_kind[3][12] = {}, w_spells_word[8] = {};      // Gateway's headings: "Magic-User " + "Spells"    // the magic menu, "1st Level" ... (Secret: 7, Darkness 9)
     char           w_these[16] = {};                        // Secret: " these spells?" after Memorize / Scribe
     char           w_alter[36] = {}, w_select[14] = {}, w_place[14] = {};   // Alter's menus
     char           w_speed[24] = {};           // Darkness: Speed's word list ("Faster Slower Exit")
@@ -3092,6 +3093,12 @@ void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt)
     screen = Screen::YesNo;
     text::build(menu, prompt, rw(Data::kYesNo));
     menu.selected = 1;          // the games start on No
+    if (gateway()) {
+        // (Gateway's questions: the prompt yellow, starting on Yes - its
+        // question routine, seg 0x116 entry 0x39 with 14, 10, 15; DOSBox)
+        menu.prompt_fg = 14;
+        menu.selected = 0;
+    }
     show_menu_line(c);
 }
 
@@ -4304,7 +4311,7 @@ void sw(int i, char* out, size_t cap)
     const uint32_t at = d->prof->shop_words[i];
     OvrWords src;
     if (!at || !src.open()) return;
-    text::read_pascal(src, at, out, cap);
+    read_word(src, at, out, cap);
 }
 
 // The words of a menu string whose bit is set in mask (bit k: word k), as
@@ -4349,6 +4356,36 @@ void shop_menu(pic::Canvas& c)
         const int was = menu.selected;
         text::build(menu, "", words);
         menu.selected = was >= 0 && was < menu.count ? was : menu.count - 1;
+        show_menu_line(c);
+        return;
+    }
+    if (gateway()) {
+        // Gateway (gateway_facts.md 12): its menus' words that apply - the
+        // temple's Take with coins or items on the counter, Pool when the
+        // party has coins, Share with coins there; the shop's Items when the
+        // one shopping has items, Take and Share with coins there, Pool as
+        // the temple's
+        char all[48];
+        bool party_coins = false;
+        for (int i = 0; i < pt->count; ++i)
+            if (any_money(pt->m[i])) party_coins = true;
+        const bool coins = ground->any_money();
+        unsigned mask = ~0u;
+        if (temple) {
+            sw(profile::kHealMenuMoney, all, sizeof all);
+            if (!coins && ground->n == 0) mask &= ~(1u << 2);
+            if (!party_coins) mask &= ~(1u << 3);
+            if (!coins) mask &= ~(1u << 4);
+        } else {
+            snprintf(all, sizeof all, "%s", d->w_shop);
+            const party::Character* ch = pt->sel();
+            if (!ch || ch->n_items == 0) mask &= ~(1u << 1);
+            if (!coins) mask &= ~(1u << 3 | 1u << 5);
+            if (!party_coins) mask &= ~(1u << 4);
+        }
+        keep_words(all, mask, words, sizeof words);
+        text::build(menu, "", words);
+        menu.selected = 0;
         show_menu_line(c);
         return;
     }
@@ -5711,6 +5748,9 @@ void shop_tap(int x, int y, pic::Canvas& c)
                 open_items(c);
             } else if (treasure_on()) {
                 open_loot(c);
+            } else if (gateway() && !temple) {
+                view_from = Screen::Shop;               // (Gateway's shop: Items - to sell them)
+                open_items(c);
             }
             break;
         case 'D':                       // the treasure's Detect (Detect Magic memorized)
@@ -6083,6 +6123,7 @@ struct SpellLines {
     int     reading = -1;           // a scroll's spells (the item): "on Scroll", Cast reads one (Use)
     bool    viewing = false;        // View Character's Spells: "in Memory", only looked at
 } sl;
+int gw_preview = -1;                // Gateway: the spells to memorize shown first (the question's word)
 
 // The scrolls' facts for the magic rules
 magic::Scrolls scroll_facts()
@@ -6110,7 +6151,12 @@ void build_lines(const uint8_t* ids, int n)
     // line with its count - "Cure Light Wounds (6)", DOSBox)
     const bool counted = darkness_files() && (sl.casting || sl.viewing);
     for (int i = 0; i < n && sl.n < 143; ++i) {
-        const int lv = t.spell_level(ids[i]);
+        int lv = t.spell_level(ids[i]);
+        // (Gateway: a heading for each level and kind - lvl's high bits the kind)
+        if (d->prof->magic.heading_word) {
+            const int k = t.spell_class(ids[i]);
+            lv |= (k >= 0 && k < 3 ? k : 2) << 4;
+        }
         if (lv != last) {
             sl.id[sl.n] = 0;
             sl.count[sl.n] = 0;
@@ -6137,10 +6183,11 @@ void build_lines(const uint8_t* ids, int n)
 }
 
 // Darkness's lists start on the page's LAST spell, and a turned page's
-// last spell is chosen (DOSBox: Memorize, Cast, the next page)
+// last spell is chosen (DOSBox: Memorize, Cast, the next page); Gateway's
+// too (DOSBox: Memorize)
 void dk_page_sel()
 {
-    if (!darkness_files()) return;
+    if (!darkness_files() && !gateway()) return;
     const int rows = list_rows();
     for (int i = sl.top + rows - 1; i >= sl.top; --i)
         if (i < sl.n && sl.id[i]) {
@@ -6164,7 +6211,14 @@ void draw_counts(pic::Canvas& c)
     mw(profile::kCanMemorize, w1, sizeof w1);
     // (Secret: no "NAME can memorize:" - the kinds from row 18)
     int row = 18;
-    if (w1[0]) {
+    if (w1[0] && d->prof->magic.heading_word) {
+        // (Gateway: the name on row 18, "can memorize:" under it - DOSBox)
+        char nm[20];
+        ch.name(nm, sizeof nm);
+        put(c, nm, 1, 18, ch.npc() ? 10 : 11);
+        put(c, w1, 1, 19, 10);
+        row = 20;
+    } else if (w1[0]) {
         say_status(c, w1, 19);
         row = 20;
     }
@@ -6194,6 +6248,7 @@ void draw_spells(pic::Canvas& c)
 {
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
+    if (gateway() && sl.learning) layout::bar(c, d->tables, d->frame_tiles, 2);    // (its frame GAME.OVR 0x4C43D)
     char nm[20], t[48], a[12], b[16];
     pt->sel()->name(nm, sizeof nm);
     snprintf(t, sizeof t, "%s%s", nm, d->w_s);
@@ -6207,17 +6262,35 @@ void draw_spells(pic::Canvas& c)
     snprintf(t, sizeof t, "%s%s", a, b);
     put(c, t, static_cast<int>(strlen(nm)) + 4, 1, 10);
     const int rows = list_rows();
-    if (darkness_files() && (sl.sel < sl.top || sl.sel >= sl.top + rows)) dk_page_sel();   // (a turned page)
+    if ((darkness_files() || gateway()) && (sl.sel < sl.top || sl.sel >= sl.top + rows)) dk_page_sel();   // (a turned page)
     for (int r = 0; r < rows && sl.top + r < sl.n; ++r) {
         const int i = sl.top + r;
         const int row = 5 + r;
         if (!sl.id[i]) {
-            put(c, d->w_level[sl.lvl[i] - 1], 1, row, 13);       // headings in the prompt colour
+            if (d->prof->magic.heading_word) {
+                char h[40];
+                snprintf(h, sizeof h, "%s %s%s", d->w_level[(sl.lvl[i] & 15) - 1], d->w_kind[sl.lvl[i] >> 4],
+                         d->w_spells_word);
+                put(c, h, 1, row, 13);
+            } else {
+                put(c, d->w_level[sl.lvl[i] - 1], 1, row, 13);       // headings in the prompt colour
+            }
             continue;
         }
         char line[40];
         if (sl.count[i] > 1) snprintf(line, sizeof line, "  %s (%d)", spell_name(sl.id[i]), sl.count[i]);
         else snprintf(line, sizeof line, "  %s", spell_name(sl.id[i]));
+        if (gateway() && sl.learning) {
+            // (Gateway: "*" before a spell to memorize; lit while it's shown first)
+            snprintf(line, sizeof line, " *%s", spell_name(sl.id[i]));
+            if (i == sl.sel && gw_preview >= 0) {
+                c.fill(2 * 8, row * 8, static_cast<int>(strlen(line) - 1) * 8, 8, 15);
+                font::draw_text(c, d->font, line + 1, 2, row, 0, -1);
+            } else {
+                put(c, line, 1, row, 10);
+            }
+            continue;
+        }
         if (i == sl.sel && !sl.learning) {
             c.fill(3 * 8, row * 8, static_cast<int>(strlen(line) - 2) * 8, 8, 15);
             font::draw_text(c, d->font, line + 2, 3, row, 0, -1);
@@ -6225,14 +6298,24 @@ void draw_spells(pic::Canvas& c)
             put(c, line, 1, row, 10);
         }
     }
-    if (!sl.learning && !sl.casting && !sl.scrolls && !sl.choosing && !sl.viewing && sl.reading < 0) draw_counts(c);
+    if (!sl.learning && !sl.casting && !sl.scrolls && !sl.choosing && !sl.viewing && sl.reading < 0) {
+        if (gateway()) {
+            // (Gateway: the counts boxed off, joints at rows 14, 15, 17, 18 -
+            // its frame routine GAME.OVR 0x4C12C; DOSBox)
+            layout::bar(c, d->tables, d->frame_tiles, 16);
+            for (int col : {0, 39})
+                for (int r : {15, 17}) layout::tile(c, d->frame_tiles, 27, col, r);
+        }
+        draw_counts(c);
+    }
     // The menu
     char keys[40], prompt[20], k1[12];
     keys[0] = 0;
     prompt[0] = 0;
-    if (!sl.learning) {
+    if (!sl.learning || gw_preview >= 0) {
         mw(profile::kChooseSpell, prompt, sizeof prompt);
-        if (sl.viewing) k1[0] = 0;
+        if (gw_preview >= 0) prompt[0] = k1[0] = 0;
+        else if (sl.viewing) k1[0] = 0;
         else if (sl.casting || sl.reading >= 0) cw(profile::kCastKey, k1, sizeof k1);
         else if (sl.scrolls) cw(profile::kScribeKey, k1, sizeof k1);
         else if (sl.choosing) cw(profile::kLearnKey, k1, sizeof k1);
@@ -6259,6 +6342,15 @@ void confirm_memorize(pic::Canvas& c, int word)
     sl.viewing = false;
     build_lines(ids, n);
     screen = Screen::SpellList;
+    if (gateway() && gw_preview < 0) {
+        // Gateway: the list first with its last spell lit and only Exit,
+        // then the question (its memorize overlay, GAME.OVR 0x1EC90 +0x9C2:
+        // the list routine seg 0xC0 entry 0x5C in its mode 5; DOSBox)
+        gw_preview = word;
+        draw_spells(c);
+        return;
+    }
+    gw_preview = -1;
     draw_spells(c);
     char q[40];
     if (d->w_these[0]) {
@@ -6500,6 +6592,10 @@ void spells_tap(int x, int y, pic::Canvas& c)
         return;
     }
     const char k = text::key(menu, text::hit(menu, x / 8));
+    if (gw_preview >= 0) {
+        if (k == 'E') confirm_memorize(c, gw_preview);
+        return;
+    }
     if (sl.reading >= 0) {
         reading_tap(k, c);
         return;
@@ -7749,7 +7845,7 @@ void draw_speed(pic::Canvas& c, bool keep = false)
         strcat(words, w1);
     }
     const char* k = words;
-    while (*k == ' ') ++k;
+    while (*k == ' ' && !gateway()) ++k;          // (Gateway's " Faster" keeps its space - DOSBox)
     aw(profile::kSpeedPrompt, prompt, sizeof prompt);
     const int at = menu.selected;
     alter_mode = AlterMode::Speed;
@@ -8623,7 +8719,7 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         plat::File tf;
         if (pi.types_file && open_file(pi.types_file, tf)) {
             plat::FileSource src(tf);
-            names->read_types(src, pi.types_head);
+            names->read_types(src, pi.types_head, pi.types_stride);
             tf.close();
         }
     }
@@ -8716,9 +8812,10 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             {pp.save_which, d->w_save_which, sizeof d->w_save_which}, {pp.slots, d->w_slots, sizeof d->w_slots},
             {pp.saving, d->w_saving, sizeof d->w_saving}, {pp.camp, d->w_camp, sizeof d->w_camp},
             {pp.makes_camp, d->w_makes_camp, sizeof d->w_makes_camp},
+            {d->prof->magic.heading_word, d->w_spells_word, sizeof d->w_spells_word},
         };
         for (auto& wd : words)
-            if (wd.at) text::read_pascal(src, wd.at, wd.out, wd.cap);
+            if (wd.at) read_word(src, wd.at, wd.out, wd.cap);
         for (int i = 0; i < profile::kItemWords; ++i)
             if (d->prof->item_words[i]) text::read_pascal(src, d->prof->item_words[i], d->iw[i], sizeof d->iw[i]);
         if (d->prof->magic.effects_shown && src.read_at(d->prof->magic.effects_shown, d->fx_shown, 32) != 32)
@@ -8808,6 +8905,9 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         text::read_pascal(exe, info, pm.levels.at + static_cast<uint32_t>(i) * pm.levels.stride, d->w_level[i],
                           sizeof d->w_level[i]);
     if (pm.these_spells) text::read_pascal(exe, info, pm.these_spells, d->w_these, sizeof d->w_these);
+    for (int i = 0; i < 3 && i < pm.kind_names.count && pm.kind_names.at; ++i)
+        text::read_pascal(exe, info, pm.kind_names.at + static_cast<uint32_t>(i) * pm.kind_names.stride, d->w_kind[i],
+                          sizeof d->w_kind[i]);
     if (pm.level_word) {
         // Secret: "1st" + " Level"
         char lw[12];

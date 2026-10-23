@@ -311,7 +311,8 @@ void bar(pic::Canvas& c, const Tables& tb, const Tiles& t, int row)
     for (int col = 0; col < kCols; ++col) put(c, t, tb.frame_base + tb.bar[col], col, row);
     if (tb.joints)
         for (int col : {0, kCols - 1})
-            for (int r : {row - 2, row + 2}) put(c, t, 27, col, r);
+            for (int r : {row - 2, row + 2})
+                if (r > 0) put(c, t, 27, col, r);
 }
 
 void explore(pic::Canvas& c, const Tables& tb, const Tiles& t)
