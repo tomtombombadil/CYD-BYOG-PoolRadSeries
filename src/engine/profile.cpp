@@ -573,6 +573,80 @@ constexpr combat::FightSpell kDarknessFight[] = {
                                                             // "summons is not answered"
 };
 
+// Darkness's spells in camp (facts L6: the same handlers as its fights -
+// the handler table DS 0xAB3E - with their camp words; Secret's workings
+// where its code is Secret's, its own where not). A spell whose row's
+// targets byte is 0 (Knock, Cloudkill ...) "Can't be cast here..." (GAME.OVR
+// 0x2AF7C) as the engine's kCombat
+constexpr spells::CampSpell kDarknessCamp[] = {
+    {0x01, Does::Affect, 0, 0, 0, kJ | 0},                 // Bless: "is Blessed"
+    {0x03, Does::Heal, 1, 8, 0, 0},                        // Cure Light Wounds: fully / partially healed
+    {0x05, Does::Affect, 0, 0, 0, 0x2BB7D},                // Detect Magic: "is affected"
+    {0x06, Does::Affect, 0, 0, 0, 0x2BBB6},                // the protections: "is protected"
+    {0x07, Does::Affect, 0, 0, 0, 0x2BBB6},
+    {0x08, Does::Affect, 0, 0, 0, 0x2BBF0},                // Resist Cold: "is cold-resistant"
+    {0x0B, Does::Affect, 0, 0, 0, 0x2BB7D},
+    {0x0C, Does::Enlarge, 0, 0, 0, 0x2BD59, 0x2BD65},      // Enlarge: "is stronger" / "is unaffected"
+    {0x0D, Does::Reduce, 0, 0, 0, 0x2BEC0},                // Reduce: "has been reduced"
+    {0x0E, Does::Friends, 0, 0, 0, 0x2BF65},               // Friends: "is friendly"
+    {0x10, Does::Affect, 0, 0, 0, 0x2BBB6},
+    {0x11, Does::Affect, 0, 0, 0, 0x2BBB6},
+    {0x12, Does::Affect, 0, 0, 0, 0x2BB7D},                // Read Magic
+    {0x13, Does::Affect, 0, 0, 0, 0x2C011},                // Shield: "is shielded"
+    {0x16, Does::Affect, 0, 0, 0, 0x2BB7D},                // Find Traps
+    {0x18, Does::Affect, 0, 0, 0, 0x2C231},                // Resist Fire: "is fire resistant"
+    {0x1A, Does::SlowPoison, 0, 0, 0, 0x2C2A9},            // Slow Poison: "is affected"
+    {0x1C, Does::Hammer, 0, 0, 0, 0},                      // Spiritual Hammer
+    {0x1D, Does::Affect, 0, 0, 0, 0x2BB7D},                // Detect Invisibility
+    {0x1E, Does::Affect, 0, 0, 0, 0x2C485},                // Invisibility: "is invisible"
+    {0x20, Does::Mirror, 0, 0, 0, 0x2C4F8},                // Mirror Image: "is duplicated"
+    {0x23, Does::Strength, 0, 0, 0, 0},                    // Strength (no word)
+    {0x24, Does::FullHeal, 1, 4, 0, 0x2CA4A, kJ | 6, kJ | 5, 0x2CA38},   // Heal: "is healed", "is no longer
+                                                           // blind", "is cured", "regains intellect"
+    {0x25, Does::CureBlind, 0, 0, 0, 0},                   // Cure Blindness: "is Cured", "can see"
+    {0x27, Does::CureDisease, 0, 0, 0, kJ | 5},            // Cure Disease: "is Cured" each, "is cured"
+    {0x29, Does::Dispel, 0, 0, 0, 0x2CD3A},                // Dispel Magic: "is affected"
+    {0x2A, Does::Prayer, 0, 0, 0, 0x2CFF1},                // Prayer: "is praying"
+    {0x2B, Does::RemoveCurse, 0, 0, 0, 0},                 // Remove Curse (its 0x2B slip: Facts::curse_dk)
+    {0x2E, Does::Dispel, 0, 0, 0, 0x2CD3A},
+    {0x30, Does::Haste, 0, 0, 0, 0x2D416},                 // Haste: "is Hasted"
+    {0x32, Does::Affect, 0, 0, 0, 0x2C485},                // Invisibility 10' Radius
+    {0x34, Does::Affect, 0, 0, 0, 0x2BBB6},
+    {0x35, Does::Affect, 0, 0, 0, 0x2BBB6},
+    {0x36, Does::Affect, 0, 0, 0, 0x2BBB6},                // Protection from Normal Missiles
+    {0x3A, Does::Heal, 2, 8, 1, 0},                        // Cure Serious Wounds
+    {0x43, Does::Neutralize, 0, 0, 0, 0, 0x2DBA3},         // Neutralize Poison: "is unpoisoned" / "is unaffected"
+    {0x45, Does::Affect, 0, 0, 0, 0x2BBB6},
+    {0x47, Does::Heal, 3, 8, 3, 0},                        // Cure Critical Wounds
+    {0x4B, Does::Raise, 0, 0, 0, 0},                       // Raise Dead: "is raised"
+    {0x4D, Does::Affect, 0, 0, 0, 0x2BB7D},
+    {0x50, Does::Affect, 0, 0, 0, 0x2E17E},                // Invisibility to Animals: "is invisible"
+    {0x55, Does::FireShield, 0, 0, 0, kJ | 4},             // Fire Shield: "is Protected"
+    {0x58, Does::Affect, 0, 0, 0, 0x2E7E1},                // Minor Globe: "is protected"
+    {0x59, Does::RemoveCurse, 0, 0, 0, 0},
+    {0x5A, Does::Affect, 0, 0, 0, 0x2E81B},                // Barkskin: "is toughened" (its own handler)
+    {0x62, Does::Heal, 1, 8, 0, 0},                        // the druids' Cure Light Wounds
+    {0x66, Does::DkRestore, 0, 0, 0, 0},                   // Restoration (nothing said)
+    {0x69, Does::Resurrect, 0, 0, 0, kJ | 14},             // Resurrection: "is ressurected"
+    {0x6A, Does::CureDisease, 0, 0, 0, kJ | 5},            // the druids' Cure Disease / Neutralize Poison
+    {0x6B, Does::Neutralize, 0, 0, 0, 0, 0x2DBA3},
+    {0x6D, Does::ProtFire, 0, 0, 0, kJ | 4},               // Protection from Fire: "is Protected"
+    {0x70, Does::Affect, 0, 0, 0, kJ | 7},                 // Globe of Invulnerability: "is protected"
+    {0x71, Does::Unstone, 0, 0, 0, kJ | 8},                // Stone to Flesh: "is no longer a statue"
+    {0x74, Does::Affect, 0, 0, 0, kJ | 10},                // Mass Invisibility: "is Invisible (spell)"
+    {0x76, Does::Affect, 0, 0, 0, 0x2F6CD},                // Fire Touch: "is covered in flame"
+    {0x77, Does::Affect, 0, 0, 0, 0x2F70E},                // Iron Skin: "is protected"
+    {0x7A, Does::Affect, 0, 0, 0, 0x2BBB6},                // Mind Blank: the protections' handler
+    // The items' own spells
+    {0x39, Does::Haste, 0, 0, 0, 0x2D8A5},                 // speed: "is Speedy"
+    {0x3B, Does::GiantStrength, 0, 0, 0, 0x2D92E},         // giant strength (frost): "is stronger"
+    {0x3E, Does::Heal, 2, 4, 2, 0x2DA17},                  // healing: "is Healed"
+    {0x3F, Does::Youth, 1, 4, 1, 0x2DA82, 0x2DA6E},        // the Elixir of Youth
+    {0x5F, Does::Affect, 0, 0, 0, 0},                      // protection (the scroll; nothing said)
+    {0x61, Does::Affect, 0, 0, 0, 0},                      // invisibility (the potion)
+    {0x63, Does::Heal, 2, 4, 2, 0x2EB67},                  // extra healing: "is Healed"
+};
+
 // Pool's spells in fights and in camp (poolrad_combat_facts.md 3; the
 // words: Pool's GAME.OVR strings the same code prints): Curse's that Pool
 // has (Magic Missile as AD&D's: (level + 1) / 2 missiles of 1d4 + 1 - Tom,
@@ -1686,8 +1760,7 @@ const Profile kProfiles[] = {
      // in its data segment or GAME.OVR, as Secret's but the kinds' headings
      // ("    Cleric :") and "spells OK? " / "scribe these spells? "; its
      // scrolls as Secret's (types 39 / 40, count word at 0x2F - the GOG
-     // clerics' are type 40). What spells do in camp: not yet (camp = none:
-     // "Can't be cast here...")
+     // clerics' are type 40). What spells do in camp: kDarknessCamp
      .magic = {.menu = 0xD13E, .levels = {0xA945, 41, 9}, .names = {0xF23D, 35, 127},
                .words = {0x2697C, 0x26931, 0x2693B, 0x26966, kP | 0xC64E, kP | 0xCA78, kP | 0xC7E8, 0, 0, 0xE26A,
                          0xE277, 0xE284, 0xE5CD, 0xE03C, 0xE063, 0x27CFD, kP | 0xCB97, 0x2835A, 0x27EF8, 0x27FC3,
@@ -1698,7 +1771,14 @@ const Profile kProfiles[] = {
                               kP | 0xCACA, 0x26951, 0x26972, 0xE7BA, 0xE7D2, 0xE7EE, 0xE812, kP | 0xC811, 0, 0xE073,
                               0x280A3, 0x2695C, kP | 0xCAF3, kP | 0xB29D, kP | 0xB2C6, kP | 0xB2EF, 0x25682, 0x2568F,
                               0x25695, 0x26947, 0},
-               .camp = nullptr, .n_camp = 0, .facts = {},
+               .camp = kDarknessCamp, .n_camp = sizeof kDarknessCamp / sizeof kDarknessCamp[0],
+               // (Secret's numbers; its time routine GAME.OVR 0x2AB51: Slow Poison
+               // 3780, speed / paralysis 5d4, giant strength 1d4 x 10 + 40, Mind
+               // Blank 1440, Otto's 1d4 + 1; Remove Curse's 0x2B, Resist Fire 0x14)
+               .facts = {2, 0x2A, {0x22, 0x2B, 0}, {{0, 0}, {0x2C, 0x1F}, {0, 0}}, 0x0C, 0x17, 0x32, 0x36, 0x70, 0x71,
+                         {{0x39, 5, 4, 0, 1}, {0x3D, 5, 4, 0, 1}, {0x3B, 1, 4, 4, 10}, {0x1A, 0, 0, 3780, 1},
+                          {0x7A, 0, 0, 1440, 1}, {0x79, 1, 4, 1, 1}},
+                         0x2B, 0x14},
                .spell_named = nullptr, .n_spell_named = 0, .named = nullptr, .n_named = 0,
                .scroll_one_spell = 100, .read_magic = 0x10,
                .level_word = 0, .effect_names = {0xDED1, 38, 129}, .these_spells = 0,

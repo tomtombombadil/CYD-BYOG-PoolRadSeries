@@ -1,5 +1,6 @@
 // Behaviour checks: Pools of Darkness - the level drain, Energy Drain in a
-// fight (included by behave_darkness.inc inside namespace bdark; ONLY=drain).
+// fight, the fixes switch's cases, spells cast in camp (included by
+// behave_darkness.inc inside namespace bdark; ONLY= drain, fixes, camp).
 // Expected values from the scratch oracle oracle_darkness_left.txt
 // (dk_left_oracle.py: the program's own tables and the drain's facts L1 /
 // L2 worked out there) - never from the engine's code.
@@ -167,6 +168,243 @@ void fixes_checks()
     rules::set_fixes(true);
 }
 
+
+// ---- Spells cast in camp (facts L6): every spell the camp lets through
+// (its row's targets byte above 0 - GAME.OVR 0x2AF7C) does something, its
+// words are its handler's, its effect goes on whom the row says for the
+// row's time (or the time routine's); Raise Dead, Resurrection (both ways),
+// Restoration (the oracle's cases), the cures' words, Remove Curse's slip
+// both ways, Protection from Fire
+party::Character& mem(int i) { return play::pt->m[i]; }
+void member(int i, int cls, int level, int hp = 60)
+{
+    party::Character& c = mem(i);
+    for (int k = 0; k < 8; ++k) c.rec[0x109 + k] = c.rec[0x111 + k] = 0;
+    if (cls >= 0) c.rec[0x109 + cls] = static_cast<uint8_t>(level);
+    c.rec[0x74] = 7;
+    c.ext[party::kExtRace] = 5;
+    c.rec[0xE6] = 0;
+    c.rec[0x1A4] = c.rec[0x78] = static_cast<uint8_t>(hp);
+    c.rec[0x195] = party::Okay;
+    c.rec[0x196] = 1;
+    c.rec[0x197] = 0;
+    c.n_affects = 0;
+    for (int k = 0; k < 6; ++k) c.rec[0x10 + 2 * k] = c.rec[0x11 + 2 * k] = 12;
+    c.rec[0x1C] = c.rec[0x1D] = 0;
+    memset(c.ext + party::kExtBestLevels, 0, 7);
+}
+spells::Line cl[24];
+int cn = 0;
+int ccast(int caster, int target, int s)
+{
+    using namespace play;
+    cn = 0;
+    const spells::CampSpell* cs = camp_spell(s);
+    if (!cs) return -1;
+    cn = spells::cast(*pt, caster, target, *cs, mrules->tables, d->prof->cures, d->prof->magic.facts, rng, cl, 24, 0, 1);
+    return cn;
+}
+int csaid(int who, spells::Said w)
+{
+    int n = 0;
+    for (int k = 0; k < cn; ++k) n += cl[k].who == who && cl[k].what == w;
+    return n;
+}
+int caff(int i, int type, int* minutes = nullptr)
+{
+    const party::Character& c = mem(i);
+    for (int k = 0; k < c.n_affects; ++k)
+        if (c.affects[k][0] == type) {
+            if (minutes) *minutes = c.affects[k][1] | c.affects[k][2] << 8;
+            return k;
+        }
+    return -1;
+}
+std::string word_text(uint32_t at)
+{
+    char t[64];
+    play::ow(at, t, sizeof t);
+    return t;
+}
+bool handler_says(int s, const std::string& t)
+{
+    for (const auto& r : b_rows("campword"))
+        if (r.size() > 2 && r[0] == s) {
+            std::string h;
+            for (size_t k = 2; k < r.size(); ++k) h += static_cast<char>(r[k]);
+            if (h == t) return true;
+        }
+    return false;
+}
+int fx(int k) { const auto& r = b_rows("campfx"); return r.empty() || k >= (int)r[0].size() ? 0 : r[0][k]; }
+// The time the oracle's rules give: the time routine's rolled ones (dice highest), else row + per level
+int want_time(int s, int t, int tl, int lv)
+{
+    for (const auto& r : b_rows("camptimed"))
+        if (r[0] == s) return (r[1] * r[2] + r[3]) * r[4];
+    return t + tl * lv;
+}
+
+void camp_checks()
+{
+    using namespace play;
+    char w[200];
+    if (!dkfight::dk_boot() || pt->count < 3 || !load_magic()) {
+        expect(D_, "a party in camp to cast with", false);
+        return;
+    }
+    // (a) every spell the camp lets through has its workings; (b) the words
+    int none = 0, words_bad = 0, n = 0;
+    std::string first;
+    for (const auto& r : b_rows("camprow")) {
+        const int sp = r[0], tg = r[3];
+        if (tg == 0) continue;
+        ++n;
+        const spells::CampSpell* cs = camp_spell(sp);
+        if (!cs || cs->does == spells::Does::NotYet) {
+            ++none;
+            if (first.empty()) first = "no workings: " + std::to_string(sp);
+            continue;
+        }
+        for (uint32_t at : {cs->word, cs->word2, cs->word3, cs->word4}) {
+            if (!at) continue;
+            const std::string t = word_text(at);
+            if (!handler_says(sp, t)) {
+                ++words_bad;
+                if (first.empty()) first = "spell " + std::to_string(sp) + " says \"" + t + "\"";
+            }
+        }
+    }
+    snprintf(w, sizeof w, "camp: the %d spells the camp lets through all do something, with their handlers' words", n);
+    expect(D_, w, n > 50 && none == 0 && words_bad == 0, "%d without, %d words not the handler's; %s", none, words_bad, first.c_str());
+    // (c) the plain effects: on whom the row says, the effect, its time
+    int bad = 0;
+    first.clear();
+    for (const auto& r : b_rows("camprow")) {
+        const int sp = r[0], cls = r[1], tg = r[3], eff = r[4], t = r[6], tl = r[7];
+        const spells::CampSpell* cs = camp_spell(sp);
+        if (tg == 0 || !cs || cs->does != spells::Does::Affect || !eff || cls == 1) continue;
+        for (int i = 0; i < pt->count; ++i) member(i, classes::Fighter, 5);
+        member(0, cls == 0 ? classes::Cleric : classes::MagicUser, 14);
+        dkfight::dice(1);
+        ccast(0, 1, sp);
+        dkfight::dice_off();
+        const int lv = cls == 3 ? 12 : 14;
+        const int want = want_time(sp, t, tl, lv);
+        for (int i = 0; i < pt->count; ++i) {
+            const bool should = tg == 3 || (tg == 1 && i == 0) || (tg == 2 && i == 1);
+            int got = -1;
+            const bool has = caff(i, eff, &got) >= 0;
+            if (has != should || (has && got != want)) {
+                ++bad;
+                if (first.empty())
+                    first = "spell " + std::to_string(sp) + " member " + std::to_string(i) + " time " + std::to_string(got) +
+                            " want " + std::to_string(should ? want : -1);
+            }
+        }
+    }
+    expect(D_, "camp: the effects' spells - on whom, the effect, its time (dice highest)", bad == 0, "%d wrong; %s", bad,
+           first.c_str());
+
+    // Raise Dead (GAME.OVR 0x2DF05): dead, Con 12 -> 11, okay with 1 HP
+    member(0, classes::Cleric, 14);
+    member(1, classes::Fighter, 8, 70);
+    mem(1).rec[0x195] = party::Dead;
+    mem(1).rec[0x196] = 0;
+    mem(1).rec[0x1A4] = 0;
+    spells::add_affect(mem(1), fx(3), 0, 0, false);
+    ccast(0, 1, 0x4B);
+    expect(D_, "camp: Raise Dead - okay, 1 HP, Con 11, the poison gone, \"is raised\"",
+           mem(1).health() == party::Okay && mem(1).hp() == 1 && mem(1).rec[0x18] == 11 && caff(1, fx(3)) < 0 &&
+               csaid(1, spells::Said::Raised) == 1,
+           "status %d hp %d con %d", mem(1).health(), mem(1).hp(), mem(1).rec[0x18]);
+    // Resurrection (0x2EF05): dead only, all hit points; Con kept - AD&D's -1 with Game Fixes
+    for (bool fix : {false, true}) {
+        rules::set_fixes(fix);
+        member(1, classes::Fighter, 8, 70);
+        mem(1).rec[0x195] = party::Dead;
+        mem(1).rec[0x196] = 0;
+        mem(1).rec[0x1A4] = 0;
+        ccast(0, 1, 0x69);
+        const int con = mem(1).rec[0x18];
+        snprintf(w, sizeof w, "camp: Resurrection (Game Fixes %s) - okay with all hit points, Con %d", fix ? "on" : "off", fix ? 11 : 12);
+        expect(D_, w, mem(1).health() == party::Okay && mem(1).hp() == mem(1).hp_max() && con == (fix ? 11 : 12) &&
+                          csaid(1, spells::Said::Word) == 1,
+               "status %d hp %d/%d con %d", mem(1).health(), mem(1).hp(), mem(1).hp_max(), con);
+        member(1, classes::Fighter, 8, 70);
+        mem(1).rec[0x195] = party::Unconscious;
+        ccast(0, 1, 0x69);
+        snprintf(w, sizeof w, "camp: Resurrection (Game Fixes %s) on one not dead: nothing", fix ? "on" : "off");
+        expect(D_, w, mem(1).health() == party::Unconscious && cn == 0);
+    }
+    rules::set_fixes(true);
+    // Remove Curse: the original looks for effect 0x2B; Game Fixes the curse 0x24
+    for (bool fix : {false, true}) {
+        rules::set_fixes(fix);
+        member(1, classes::Fighter, 8);
+        spells::add_affect(mem(1), static_cast<uint8_t>(fx(0)), 0, 0, false);
+        spells::add_affect(mem(1), static_cast<uint8_t>(fx(1)), 0, 0, false);
+        ccast(0, 1, 0x2B);
+        const bool gone2b = caff(1, fx(0)) < 0, gone24 = caff(1, fx(1)) < 0;
+        snprintf(w, sizeof w, "camp: Remove Curse (Game Fixes %s) takes away %s, \"is Cured\", \"is un-cursed\"", fix ? "on" : "off",
+                 fix ? "the curse (0x24)" : "0x2B, not the curse");
+        expect(D_, w, gone2b == !fix && gone24 == fix && csaid(1, spells::Said::Cured) == 1 && csaid(1, spells::Said::Uncursed) == 1);
+    }
+    rules::set_fixes(true);
+    // Cure Disease: "is Cured" for each disease it takes, then "is cured"
+    member(1, classes::Fighter, 8);
+    for (uint8_t e : {0x22, 0x2B, 0x2C, 0x1F}) spells::add_affect(mem(1), e, 0, 0, false);
+    ccast(0, 1, 0x27);
+    expect(D_, "camp: Cure Disease - both diseases (and their course) gone, \"is Cured\" twice, then \"is cured\"",
+           mem(1).n_affects == 0 && csaid(1, spells::Said::Cured) == 2 && csaid(1, spells::Said::Word) == 1 && cn == 3 &&
+               cl[2].what == spells::Said::Word,
+           "%d effects left, %d lines", mem(1).n_affects, cn);
+    // Cure Blindness: "is Cured", "can see"
+    member(1, classes::Fighter, 8);
+    spells::add_affect(mem(1), 0x21, 0, 0, false);
+    ccast(0, 1, 0x25);
+    expect(D_, "camp: Cure Blindness - \"is Cured\", \"can see\"", mem(1).n_affects == 0 && cn == 2 &&
+                                                                     cl[0].what == spells::Said::Cured && cl[1].what == spells::Said::CanSee);
+    // Protection from Fire: a ranger its own effect for the caster's level, others Resist Fire's
+    member(0, classes::Ranger, 12);
+    member(1, classes::Fighter, 8);
+    ccast(0, 0, 0x6D);
+    const auto* pr = b_row("camprow", 0x6D);
+    expect(D_, "camp: Protection from Fire on a ranger - its own effect", pr && caff(0, (*pr)[4]) >= 0 && caff(0, fx(2)) < 0);
+    ccast(0, 1, 0x6D);
+    expect(D_, "camp: Protection from Fire on a fighter - Resist Fire's effect", pr && caff(1, (*pr)[4]) < 0 && caff(1, fx(2)) >= 0);
+    // Restoration: the oracle's cases (R11 worked out there)
+    int rn = 0, rbad = 0;
+    for (const auto& r : b_rows("restore")) {
+        if (r.size() < 1 + 7 + 14 + 7 + 4) continue;
+        const int* v = r.data() + 1;
+        party::Character& c = mem(1);
+        member(1, -1, 0);
+        set_stat(c, 4, v[0]);
+        c.rec[0x1A4] = static_cast<uint8_t>(v[1]);
+        c.rec[0x78] = static_cast<uint8_t>(v[2]);
+        c.ext[party::kExtBestHp] = static_cast<uint8_t>(v[3]);
+        c.rec[0x12C] = static_cast<uint8_t>(v[4]);
+        put32(c.rec + 0x127, v[5]);
+        put32(c.ext + party::kExtBestXp, v[6]);
+        for (int k = 0; k < 7; ++k) {
+            c.rec[0x109 + k] = static_cast<uint8_t>(v[7 + k]);
+            c.ext[party::kExtBestLevels + k] = static_cast<uint8_t>(v[14 + k]);
+        }
+        create::dk_restore(c, mrules->tables);
+        const int* e = v + 21;
+        bool ok = true;
+        for (int k = 0; k < 7; ++k) ok = ok && c.rec[0x109 + k] == e[k];
+        ok = ok && c.rec[0x1A4] == e[7] && c.rec[0x78] == e[8] && c.rec[0x12C] == e[9] && get32(c.rec + 0x127) == e[10];
+        ++rn;
+        if (!ok && ++rbad <= 8)
+            expect(D_, "Restoration case", false, "case %d: hp %d/%d rolled %d exp %d; the original's %d/%d %d %d", r[0], c.rec[0x1A4],
+                   c.rec[0x78], c.rec[0x12C], get32(c.rec + 0x127), e[7], e[8], e[9], e[10]);
+    }
+    snprintf(w, sizeof w, "camp: Restoration (R11): %d cases", rn);
+    expect(D_, w, rn > 0 && rbad == 0, "%d wrong", rbad);
+}
+
 void checks(bool (*want)(const char*))
 {
     if (want("drain")) {
@@ -174,6 +412,7 @@ void checks(bool (*want)(const char*))
         energy_drain();
     }
     if (want("fixes")) fixes_checks();
+    if (want("camp")) camp_checks();
 }
 
 } // namespace dkleft

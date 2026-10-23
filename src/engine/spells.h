@@ -76,6 +76,12 @@ enum class Does : uint8_t {
                     // hit points less n dice (word); the table's effect too (its Barkskin goes here)
     Youth,          // the Elixir of Youth: the age down by n dice + plus, at least 18 (word; word2 at 18)
     Unstone,        // Secret's Stone to Flesh: the stoned okay with 1 HP (word); else "is not stoned." (word2)
+    // Darkness's own (facts L6)
+    Resurrect,      // Resurrection: the dead (not elves, Con above 0) okay with all their hit points (word);
+                    // Game Fixes: AD&D's Constitution point lost
+    DkRestore,      // Restoration: a lost level back as its program does (create::dk_restore; nothing said)
+    ProtFire,       // Protection from Fire: a ranger gets the spell's effect for the caster's level, others
+                    // Resist Fire's (Facts::resist_fire) for the spell's time (word either way)
 };
 struct CampSpell {
     uint8_t  spell;
@@ -113,6 +119,10 @@ struct Facts {
         uint8_t  mult;
     };
     Timed timed[6];
+    // Darkness: Remove Curse looks for this effect instead of the curse
+    // (its program's slip - 0x2B; Game Fixes: the curse), Resist Fire's
+    // effect (Protection from Fire on a non-ranger)
+    uint8_t curse_dk = 0, resist_fire = 0;
 };
 // A spell's time in minutes outside fights: the rolled ones as `f.timed`
 // says, else the spell table's (fixed + per level)

@@ -211,4 +211,10 @@ DrainResult dk_drain(party::Character& c, const classes::Tables& t, const Facts&
 // The experience a Darkness level starts at (ovr 0x39349; 41+: 0x7FFFFFFF)
 int32_t dk_level_exp(const classes::Tables& t, int cls, int level);
 
+// Darkness's Restoration (GAME.OVR 0x2EBEC): a drained level back - the
+// class whose next level starts at the least experience, its share of the
+// best hit points, the experience (the best one when one level was lost,
+// else that level's start), the class values, "able to train"
+void dk_restore(party::Character& c, const classes::Tables& t);
+
 } // namespace create

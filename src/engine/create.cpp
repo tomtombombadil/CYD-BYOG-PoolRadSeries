@@ -1373,4 +1373,51 @@ DrainResult dk_drain(party::Character& c, const classes::Tables& t, const Facts&
     return DrainResult::Lives;
 }
 
+// Darkness's Restoration (GAME.OVR 0x2EBEC; facts L6): the levels lost
+// (best - now) counted; the class whose next level starts at the least
+// experience (a later class on a tie) gets one back; when HP max is under
+// the best, (best - max) / levels lost added to HP max and now, that less
+// the Constitution's figure over the classes ever held (only while the
+// class is below its last hit die) to the rolled hit points; experience:
+// one level lost - the best when more, else that level's start. Then the
+// class values and "able to train"
+void dk_restore(party::Character& c, const classes::Tables& t)
+{
+    uint8_t* r = c.rec;
+    int held = 0, lost = 0, cls = -1;
+    int32_t least = 0x7FFFFFFF;
+    for (int j = 0; j < 7; ++j)
+        if (c.ext[party::kExtBestLevels + j] > 0) ++held;
+    for (int j = 0; j < 7; ++j) {
+        const int lv = r[kLevels + j], best = c.ext[party::kExtBestLevels + j];
+        if (lv >= best) continue;
+        lost = (lost + best - lv) & 0xFF;
+        const int32_t e = dk_level_exp(t, j, (lv + 1) & 0xFF);
+        if (e <= least) {
+            least = e;
+            cls = j;
+        }
+    }
+    if (cls >= 0) {
+        const int best_hp = c.ext[party::kExtBestHp];
+        if (r[kHpMax] < best_hp && lost > 0) {
+            const int per = ((best_hp - r[kHpMax]) / lost) & 0xFF;
+            int con = 0;
+            if (r[kLevels + cls] + 1 < t.max_hit_dice(cls) && held > 0)
+                con = static_cast<int8_t>(dk_con_fig(c, cls)) / held;
+            r[kHp] = static_cast<uint8_t>(r[kHp] + per);
+            r[kHpRolled] = static_cast<uint8_t>(r[kHpRolled] + per - (con & 0xFF));
+            r[kHpMax] = static_cast<uint8_t>(r[kHpMax] + per);
+        }
+        ++r[kLevels + cls];
+        classes::class_bonuses(c, t);
+        if (lost == 1) {
+            if (get32(r + kExp) < get32(c.ext + party::kExtBestXp)) put32(r + kExp, get32(c.ext + party::kExtBestXp));
+        } else {
+            put32(r + kExp, least);
+        }
+    }
+    c.ext[party::kExtTrain] = trainable(c, t) ? 1 : 0;
+}
+
 } // namespace create
