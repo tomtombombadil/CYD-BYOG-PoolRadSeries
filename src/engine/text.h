@@ -48,6 +48,10 @@ constexpr uint32_t kInProgram = 0x80000000u;
 // A word made of two: the game profile's joined[at & 0xFFFF] (Secret's "is "
 // + an effect's name) - the front end puts the two together
 constexpr uint32_t kJoined = 0x40000000u;
+// A word in the game's names file (Treasures: its effect names, BORD.DAX
+// block 9, copied to the card's _CYD folder by the front end with effect 0's
+// room first - the name of effect n at 38 x n); the front end reads it
+constexpr uint32_t kInNames = 0x20000000u;
 class Words : public dax::ByteSource {
 public:
     Words(dax::ByteSource& ovr, dax::ByteSource* exe, const exepack::Info* info) : ovr_(ovr), exe_(exe), info_(info) {}

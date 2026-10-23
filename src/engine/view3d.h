@@ -70,6 +70,20 @@ struct World {
     uint8_t* vga_px = nullptr;
     uint8_t* back = nullptr;
     uint8_t  back_id = 0;                    // which background `back` holds (file kind << 4 | block; 0 none)
+    // Treasures of the Savage Frontier (its op 0x42, treasures_facts.md 3):
+    // three wall slots, each with an 8X8D1 block of its own - wall set k
+    // takes its tiles from slot tr_base[k]'s block (a block given to slot s
+    // fills the sets from s on, all of them with s's tiles). Only the tiles
+    // the walls use are kept: tr_map[slot][tile] = its place in the pool + 1;
+    // the pool is the sets' memory above (kPoolOwn tiles, 4-bit), then
+    // tr_more on the heap (a VGA screen: all on the heap, a byte a pixel)
+    bool     tr = false;
+    uint8_t  tr_base[3] = {0, 1, 2};
+    uint8_t  tr_block[3] = {};               // each slot's WALLDEF1 / 8X8D1 block (0: empty)
+    uint16_t tr_map[3][256] = {};
+    uint16_t tr_used = 0;                    // the pool's tiles in use
+    uint8_t* tr_more = nullptr;
+    uint16_t tr_more_cap = 0;                // (tiles tr_more has room for)
 };
 void back_free(World& w);
 // The VGA tiles' memory let go (vga_px; the background too)
@@ -99,6 +113,21 @@ bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, 
 // read again while it's the one held - pal then untouched)
 bool load_back(dax::ByteSource& src, const dax::Index& idx, uint8_t block, uint8_t id, World& w,
                pic::VgaPalette* pal = nullptr);
+
+// Treasures: WALLDEF block `block` into wall slot `slot` (0-2) and the
+// slots after it (as many as its sets, up to 3; block < 0: the slot
+// emptied) - their tiles from that slot's block (tr_base); the tiles then
+// come with load_tr_tiles
+bool load_tr_walls(dax::ByteSource& src, const dax::Index& idx, int slot, int block, World& w);
+// Treasures: the tiles every slot's walls use, slot `slot`'s from 8X8D1
+// block `block` (src / idx: that file) - call it for each slot holding a
+// block after the walls changed (tr_pool_reset first). pal: the block's
+// palette entries (nullptr: not wanted)
+void tr_pool_reset(World& w);
+bool load_tr_tiles(dax::ByteSource& src, const dax::Index& idx, int slot, uint8_t block, World& w,
+                   pic::VgaPalette* pal = nullptr);
+// The pool's memory let go (tr_more)
+void tr_free(World& w);
 
 // Draws tile number `id` at view cell (row, col) (0-10), colour 13 not drawn.
 void draw_tile(pic::Canvas& c, const World& w, int id, int row, int col);

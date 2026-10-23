@@ -614,8 +614,22 @@ public:
         w_ = new (std::nothrow) text::Words(*ovr_, exe_, exe_ ? &info_ : nullptr);
         return w_ != nullptr;
     }
-    size_t read_at(uint32_t pos, uint8_t* buf, size_t n) override { return w_ ? w_->read_at(pos, buf, n) : 0; }
+    size_t read_at(uint32_t pos, uint8_t* buf, size_t n) override
+    {
+        if (pos & text::kInNames) {
+            // (Treasures' effect names: the names file the start made - names_file)
+            char path[200];
+            names_path(path, sizeof path);
+            plat::File f = plat::open(path, "r");
+            if (!f) return 0;
+            const int got = f.seek(pos & ~text::kInNames) ? f.read(buf, n) : 0;
+            f.close();
+            return got > 0 ? static_cast<size_t>(got) : 0;
+        }
+        return w_ ? w_->read_at(pos, buf, n) : 0;
+    }
     uint32_t size() const override { return ovr_ ? ovr_->size() : 0; }
+    static void names_path(char* out, size_t cap) { snprintf(out, cap, "%s/NAMES.BIN", d->cache_dir); }
 
 private:
     plat::FileSource* ovr_ = nullptr;
@@ -867,13 +881,23 @@ void dk_background()
     const uint8_t* gb = d->gs.area1;
     const bool in = geo::flags(d->map, d->gs.x, d->gs.y) >= 0x80;
     int block;
-    if (in) block = d->save.look;
-    else if (gb[0x39] == 0 || gb[0x39] == 4) block = gb[0x07] >= 14 ? 2 : gb[0x3A] ? 3 : 1;
-    else block = 4;
+    if (d->prof->variant.tr) {
+        // Treasures (its ovl 0x144 +0x328): indoors BACK1 block game byte
+        // 0x54; outdoors SKYGRND byte 0x56 x 3 + the time of day - 2 from
+        // 8 to 16 o'clock, 1 from 19 to 4, else 0
+        const int h = gb[0x07];
+        block = in ? gb[0x54] : gb[0x56] * 3 + (h >= 8 && h <= 16 ? 2 : h <= 4 || (h >= 19 && h <= 23) ? 1 : 0);
+    } else if (in) {
+        block = d->save.look;
+    } else if (gb[0x39] == 0 || gb[0x39] == 4) {
+        block = gb[0x07] >= 14 ? 2 : gb[0x3A] ? 3 : 1;
+    } else {
+        block = 4;
+    }
     const uint8_t id = static_cast<uint8_t>((in ? 0x10 : 0x20) | (block & 15));
     if (d->world.back && d->world.back_id == id) return;
     plat::File f;
-    if (block > 0 && open_dax(in ? "BACK1.DAX" : "SKYGRND.DAX", f)) {
+    if ((block > 0 || (d->prof->variant.tr && !in)) && open_dax(in ? "BACK1.DAX" : "SKYGRND.DAX", f)) {
         plat::FileSource src(f);
         view3d::load_back(src, d->idx, static_cast<uint8_t>(block), id, d->world, vga_load());
         vga_take(true);              // (a VGA screen: entries 144-175, kept for the view)
@@ -1185,6 +1209,9 @@ bool anim_start(int id, const char* stem = "PIC", int x = 24, int y = 24)
     d->anim_y = static_cast<int16_t>(y);
     char name[24];
     area_file(name, sizeof name, stem);
+    // (Treasures: PICTURE ids from pic_split on are PIC1A.DAX's)
+    if (d->prof->variant.pic_split && id >= d->prof->variant.pic_split && !strcmp(stem, "PIC"))
+        snprintf(name, sizeof name, "PIC%dA.DAX", area_file_no());
     if (blocks_across()) {
         // (Secret: whichever of the family's files holds the picture)
         plat::File probe;
@@ -7469,8 +7496,9 @@ void effect_name(int type, char* out, size_t cap)
         // Secret: its own name for each effect number (none: left out);
         // Darkness: only those in its Display's set
         if (m.effects_shown && !(d->fx_shown[(type & 0xFF) / 8] >> (type % 8) & 1)) return;
-        if (type < m.effect_names.count)
-            ow(text::kInProgram | (m.effect_names.at + static_cast<uint32_t>(type) * m.effect_names.stride), out, cap);
+        // (Treasures: the names file - text::kInNames)
+        const uint32_t base = m.effect_names.at & text::kInNames ? m.effect_names.at : text::kInProgram | m.effect_names.at;
+        if (type < m.effect_names.count) ow(base + static_cast<uint32_t>(type) * m.effect_names.stride, out, cap);
         return;
     }
     for (int i = 0; i < m.n_spell_named; ++i)
@@ -8577,10 +8605,11 @@ void pm_tap(int x, int y, pic::Canvas& c)
         menu.selected = k;
         show_menu_line(c);
         if (load_where) {
-            // Pools: its own saved games; Secret: Secret's (its folder on the card)
-            const char key = text::key(menu, k);
-            load_secret = key == 'S';
-            if (key == 'P' || key == 'S') {
+            // Pools: its own saved games; Secret: Secret's (its folder on the
+            // card) - Treasures: Treasures / Gateway (the first word the
+            // game's own, the second the earlier game's, Exit last)
+            load_secret = k == 1 && k + 1 < menu.count;
+            if (k + 1 < menu.count) {
                 pm_choose_key('L', c);
             } else {
                 load_where = false;
@@ -9018,7 +9047,7 @@ struct Host : ecl::Host {
         plat::FileSource src(f);
         bool ok = false;
         const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
-        if (e && e->raw_size >= 2 && static_cast<uint32_t>(e->raw_size) - 2 <= ecl::kCodeSize) {
+        if (e && e->raw_size >= 2 && static_cast<uint32_t>(e->raw_size) - 2 <= d->gs.code_cap) {
             uint8_t* tmp = static_cast<uint8_t*>(malloc(e->raw_size));
             if (tmp && dax::load_block(src, d->idx, *e, tmp) == e->raw_size) {
                 memcpy(code, tmp + 2, e->raw_size - 2);
@@ -9083,6 +9112,14 @@ struct Host : ecl::Host {
     // tiles of that number (darkness_facts.md 7.3); kept for saving
     void load_look(int look) override
     {
+        if (d->prof->variant.tr) {
+            // Treasures: slot 0 takes the look, slots 1 and 2 let go of
+            // their tiles (ov43+0xE54)
+            load_slot(0, look);
+            d->world.tr_block[1] = d->world.tr_block[2] = 0;
+            slots_done();
+            return;
+        }
         view3d::World& wd = d->world;
         plat::File f;
         int n = 0;
@@ -9101,6 +9138,42 @@ struct Host : ecl::Host {
         d->save.look = static_cast<uint16_t>(look);
         d->save.look_slot = 1;
         plat::log("[play] look %d: %d wall sets, tiles %s\n", look, n, tiles ? "ok" : "missing");
+    }
+    // Treasures (op 0x42): a wall slot's block - its walls now, its tiles
+    // in slots_done (the saves keep the three blocks)
+    void load_slot(int slot, int block) override
+    {
+        view3d::World& wd = d->world;
+        plat::File f;
+        if (block >= 0 && open_dax("WALLDEF1.DAX", f)) {
+            plat::FileSource src(f);
+            if (!view3d::load_tr_walls(src, d->idx, slot, block, wd)) plat::log("[play] slot %d: WALLDEF1 %d missing\n", slot, block);
+            f.close();
+        } else if (block < 0 && slot >= 0 && slot < 3) {
+            wd.tr = wd.dk = true;
+            wd.tr_block[slot] = 0;          // (its tiles go; its walls stay - ov43+0xFC0)
+        }
+    }
+    void slots_done() override
+    {
+        view3d::World& wd = d->world;
+        view3d::tr_pool_reset(wd);
+        plat::File f;
+        bool ok = true;
+        if (open_dax("8X8D1.DAX", f)) {
+            plat::FileSource src(f);
+            for (int s = 0; s < 3; ++s)
+                if (wd.tr_block[s]) {
+                    ok = view3d::load_tr_tiles(src, d->idx, s, wd.tr_block[s], wd, vga_load()) && ok;
+                    vga_take(true);          // (a VGA screen: the walls' entries, 32-143)
+                }
+            f.close();
+        }
+        d->save.look = static_cast<uint16_t>(wd.tr_block[0] | wd.tr_block[1] << 8);
+        d->save.look_slot = wd.tr_block[2];
+        plat::log("[play] wall slots %d %d %d: %d tiles%s\n", wd.tr_block[0], wd.tr_block[1], wd.tr_block[2], wd.tr_used,
+                  ok ? "" : " (not all loaded)");
+        if (screen == Screen::Game) draw_view(*cv);
     }
     // Darkness: the frame's style (BORDERS block 0-3), the screen's frame again
     void style(int v) override
@@ -9258,6 +9331,21 @@ struct Host : ecl::Host {
         // Darkness's SHOP n: the goods DS[first + n] .. DS[last + n], rows DS[rows + k]
         const auto& pi = d->prof->items;
         uint8_t a = 0, b = 0, rows[256];
+        if (pi.goods_runs) {
+            // Treasures: the n-th run of rows from DS first + 2, each ended by
+            // 0xFF (ov43+0x2C58)
+            int k = 2, run = 1;
+            if (!program_ds(pi.goods_first, rows, sizeof rows)) {
+                log("SHOP: the program's goods didn't read");
+                return;
+            }
+            while (run < n && k < 256) run += rows[k++] == 0xFF;
+            int m = 0;
+            while (k + m < 256 && rows[k + m] != 0xFF) ++m;
+            dk_add_rows(rows + k, m, true, g);
+            plat::log("[play] SHOP %d: %d items\n", n, g.n);
+            return;
+        }
         if (!pi.goods_rows || !program_ds(static_cast<uint16_t>(pi.goods_first + n), &a, 1) ||
             !program_ds(static_cast<uint16_t>(pi.goods_last + n), &b, 1) || b < a ||
             !program_ds(static_cast<uint16_t>(pi.goods_rows + a), rows, b - a + 1u)) {
@@ -9882,7 +9970,7 @@ void begin_adventuring()
     const bool dungeon = !d->loaded || vm->get(0x4BE6) != 0;
     gs.script = static_cast<uint8_t>(resume ? last : d->prof->start_script);
     screen = Screen::Game;
-    if (!host->load_script(gs.script, gs.code, &gs.code_len) || !vm->init_script(resume)) {
+    if (!host->load_script(gs.script, ecl::code_of(gs), &gs.code_len) || !vm->init_script(resume)) {
         snprintf(msg, sizeof msg, "Script %d of ECL%d.DAX didn't load.", gs.script, gs.game_area);
         screen = Screen::PartyMenu;
         draw_party_menu(c);
@@ -9897,13 +9985,20 @@ void begin_adventuring()
             uint8_t* blk = static_cast<uint8_t*>(malloc(gs.code_len + 2));
             if (blk) {
                 blk[0] = blk[1] = 0;
-                memcpy(blk + 2, gs.code, gs.code_len);
+                memcpy(blk + 2, ecl::code_of(gs), gs.code_len);
                 const ecl::MapLoad ml = ecl::find_map_load(blk, gs.code_len + 2, *d->prof->ecl_ops);
                 free(blk);
                 if (ml.has_geo()) host->load_map(ml.geo);
                 for (int i = 0; i < 3; ++i)
                     if (ml.walls[i] != ecl::kNone) host->load_walls(i + 1, ml.walls[i]);
             }
+        } else if (dungeon && d->prof->variant.tr) {
+            // (Treasures: its map and the three slots' blocks - the save's
+            // bytes 0x407-0x409, ovl 0x7C +0x2877)
+            host->load_map(vm->get(0x4BC5) & 0xFF);
+            const int blk[3] = {d->save.look & 0xFF, d->save.look >> 8, d->save.look_slot & 0xFF};
+            for (int s2 = 0; s2 < 3; ++s2) host->load_slot(s2, blk[s2] ? blk[s2] : -1);
+            host->slots_done();
         } else if (dungeon && darkness_files()) {
             // (Darkness: its map and its look again - darkness_facts.md S8)
             host->load_map(vm->get(0x4BC5) & 0xFF);
@@ -10914,7 +11009,10 @@ void title_show(int from, pic::Canvas& c)
                 font::draw_text(c, d->font, l.s, l.col, l.row, l.fg, l.bg);
             }
         } else {
-            title_picture(c, st.block, st.row, st.col);
+            // (Treasures: its game picture redrawn for 16 colours in the EGA
+            // mode - a 4-bit screen; ovl 0x40 +0x11E)
+            const bool ega = p.variant.title_ega[0] && st.block == p.variant.title_ega[0] && !vga;
+            title_picture(c, ega ? p.variant.title_ega[1] : st.block, st.row, st.col);
         }
         if (st.sound) sfx(st.sound);
         title_run->step = s;
@@ -11470,7 +11568,7 @@ void start_demo(pic::Canvas& c)
     d->loaded = false;
     c.clear(0);
     screen = Screen::Game;
-    if (!host->load_script(gs.script, gs.code, &gs.code_len) || !vm->init_script(false)) {
+    if (!host->load_script(gs.script, ecl::code_of(gs), &gs.code_len) || !vm->init_script(false)) {
         plat::log("[play] the demo's script didn't load\n");
         end_demo(c);
         return;
@@ -11851,6 +11949,34 @@ __attribute__((noinline)) void open_sky()
     }
 }
 
+// Treasures: its effect names (BORD.DAX block 9, 38 bytes a name from
+// effect 1) into the names file on the card, once - effect 0's room first,
+// so effect n's name is at 38 x n (text::kInNames)
+__attribute__((noinline)) void open_names()
+{
+    if (!(d->prof->magic.effect_names.at & text::kInNames) || !d->cache_dir[0]) return;
+    char path[200];
+    OvrWords::names_path(path, sizeof path);
+    if (plat::exists(path)) return;
+    plat::File f;
+    if (!open_dax("BORD.DAX", f)) return;
+    plat::FileSource src(f);
+    const dax::Entry* e = d->idx.find(9);
+    plat::File o = e ? plat::open(path, "w") : plat::File();
+    bool ok = false;
+    if (o) {
+        uint8_t buf[38] = {};
+        ok = o.write(buf, sizeof buf) == sizeof buf;
+        dax::RleReader r(src, d->idx, *e);
+        size_t got;
+        while (ok && (got = r.read(buf, sizeof buf)) > 0) ok = o.write(buf, got) == got;
+        o.close();
+        if (!ok) plat::remove(path);
+    }
+    f.close();
+    plat::log("[play] the effect names: %s\n", ok ? "made" : "not made");
+}
+
 // The script machine's own words
 __attribute__((noinline)) void open_script_words()
 {
@@ -11877,11 +12003,11 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     if (!plat::card_ready()) return "No SD card found.";
     {
         view3d::World* w = new (std::nothrow) view3d::World;
-        ecl::GameState* g = new (std::nothrow) ecl::GameState;
-        d = w && g ? new (std::nothrow) Data(*w, *g) : nullptr;
+        ecl::GameState* st = ecl::new_game_state(profile::code_cap(g));
+        d = w && st ? new (std::nothrow) Data(*w, *st) : nullptr;
         if (!d) {
             delete w;
-            delete g;
+            ecl::free_game_state(st);
             return no_memory("the game state");
         }
     }
@@ -11912,6 +12038,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     }
     d->world.frame = &d->frame_tiles;
     open_sky();
+    open_names();
 
     // The party menu first, as the games begin
     host = new (std::nothrow) Host;
@@ -12019,7 +12146,7 @@ void close()
         delete d->alt_font;
         delete d;
         delete w;
-        delete g;
+        ecl::free_game_state(g);
     }
     d = nullptr;
     delete vga;
@@ -13164,8 +13291,11 @@ bool fight_colours() { return d && fight_palette_on; }
 
 int canvas_depth(games::Game g)
 {
-    // (the VGA games: Pools of Darkness - profile variant.vga)
-    return g == games::Game::PoolsOfDarkness && plat::vga_screen() ? 8 : 4;
+    // (the VGA games: Pools of Darkness, Treasures of the Savage Frontier -
+    // profile variant.vga)
+    return (g == games::Game::PoolsOfDarkness || g == games::Game::TreasuresOfTheSavageFrontier) && plat::vga_screen()
+               ? 8
+               : 4;
 }
 
 bool palette(const pic::Rgb** rgb, bool all)

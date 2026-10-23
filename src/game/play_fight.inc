@@ -630,6 +630,8 @@ bool park_world()
     // (Darkness's background picture, 3.8 KB, isn't drawn in a fight
     // either: it goes, and reads again when the 3D view is next drawn)
     view3d::back_free(d->world);
+    // (Treasures: its wall slots' tiles on the heap go too - read again after)
+    if (d->world.tr) view3d::tr_free(d->world);
     const bool ok = f.write(reinterpret_cast<const uint8_t*>(&d->world), sizeof(view3d::World)) == sizeof(view3d::World);
     f.close();
     if (ok) world_parked = true;
@@ -644,6 +646,7 @@ void unpark_world()
     const bool ok = f && f.read(reinterpret_cast<uint8_t*>(&d->world), sizeof(view3d::World)) == sizeof(view3d::World);
     if (f) f.close();
     world_parked = false;
+    if (ok && d->world.tr) host->slots_done();     // (Treasures: the slots' tiles again)
     if (!ok) {
         // (the card lost it: the walls read again from the game's files)
         log_error("The 3D view's walls couldn't be read back after a fight: reloaded.");
@@ -673,12 +676,12 @@ bool park_code()
     code_park_path(path, sizeof path);
     plat::File f = plat::open(path, "w");
     if (!f) return false;
-    const bool ok = f.write(d->gs.code, sizeof d->gs.code) == sizeof d->gs.code;
+    const bool ok = f.write(ecl::code_of(d->gs), d->gs.code_cap) == d->gs.code_cap;
     f.close();
     if (!ok) return false;
     arena.code_parked = true;
-    arena.at[0] = d->gs.code;
-    arena.cap[0] = sizeof d->gs.code;
+    arena.at[0] = ecl::code_of(d->gs);
+    arena.cap[0] = d->gs.code_cap;
     arena.used[0] = 0;
     return true;
 }
@@ -752,12 +755,12 @@ void fight_arena_end()
     char path[96];
     code_park_path(path, sizeof path);
     plat::File f = plat::open(path, "r");
-    const bool ok = f && f.read(d->gs.code, sizeof d->gs.code) == sizeof d->gs.code;
+    const bool ok = f && f.read(ecl::code_of(d->gs), d->gs.code_cap) == static_cast<int>(d->gs.code_cap);
     if (f) f.close();
     if (!ok) {
         // (the card lost it: the script reads again from the game's files)
         log_error("The script couldn't be read back after a fight: reloaded.");
-        host->load_script(d->gs.script, d->gs.code, &d->gs.code_len);
+        host->load_script(d->gs.script, ecl::code_of(d->gs), &d->gs.code_len);
     }
 }
 

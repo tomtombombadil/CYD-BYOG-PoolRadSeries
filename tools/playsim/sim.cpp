@@ -237,7 +237,7 @@ static void disasm()
         const auto& gs = play::d->gs;
         for (uint32_t at = 0; at < gs.code_len;) {
             ecl::Insn in;
-            if (!ecl::decode(gs.code, gs.code_len, at, *play::d->prof->ecl_ops, in)) { ++at; continue; }
+            if (!ecl::decode(ecl::code_of(gs), gs.code_len, at, *play::d->prof->ecl_ops, in)) { ++at; continue; }
             const unsigned va = 0x8000 + in.at;
             if (va >= a0 && va <= a1) {
                 printf("%04X op %02X:", va, in.op);
@@ -246,8 +246,8 @@ static void disasm()
                     printf(" %X:%04X", in.ops[k].code, in.ops[k].word());
                     if (in.ops[k].code == 0x80) {
                         // the packed string after it: 3 bytes = four 6-bit characters
-                        while (sp + 1 < in.next && !(gs.code[sp] == 0x80 && gs.code[sp + 1] == in.ops[k].low)) ++sp;
-                        const uint8_t* b = gs.code + sp + 2;
+                        while (sp + 1 < in.next && !(ecl::code_of(gs)[sp] == 0x80 && ecl::code_of(gs)[sp + 1] == in.ops[k].low)) ++sp;
+                        const uint8_t* b = ecl::code_of(gs) + sp + 2;
                         printf(" \"");
                         uint32_t bits = 0; int nb = 0;
                         for (int i = 0; i < in.ops[k].low; ++i) {
