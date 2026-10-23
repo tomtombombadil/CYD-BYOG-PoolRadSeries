@@ -560,7 +560,7 @@ bool want_part(const char* s)
     const char* only = getenv("ONLY");
     return !only || strstr(only, s) || (strstr(only, "fights") && strcmp(s, "create") && strcmp(s, "kit") &&
                                         strcmp(s, "modify") && strcmp(s, "conhp") && strcmp(s, "change") &&
-                                        strcmp(s, "drain") && strcmp(s, "camp") && strcmp(s, "menus"));
+                                        strcmp(s, "drain") && strcmp(s, "fixes") && strcmp(s, "camp") && strcmp(s, "menus"));
 }
 
 } // namespace bdark

@@ -1529,8 +1529,8 @@ the scripts' changed ops, the rule tables, fights, the rest.
   blessed bolts, the paralysing and vampire gazes, gaze-proof, the
   beholder's rays (Curse's, Darkness's words) then Fear / Slow / Sleep,
   immune to the disease. The bulette's handler never takes in the
-  original (its attack count is written over right after) - none in the
-  engine either. The area spells' burst plays sound 11 again where it
+  original (its attack count is written over right after) - the engine
+  the same, its leap only with Game Fixes (SPEC 12). The area spells' burst plays sound 11 again where it
   lands; the Aim and Speed menus' own words (checked in DOSBox: "RANGE =
   0", "AIM: NEXT PREV MANUAL CENTER EXIT" starting on the fighter itself,
   "GAME SPEED: (4) FASTER SLOWER EXIT"). Checks: sweep's `behave
@@ -2097,6 +2097,12 @@ the game's Settings (As Original: all of them).
   original's "terrified" (-2 to hit and damage) has no time and isn't
   among the effects a fight's end takes away, so it stays after the
   fight. With Game Fixes on it ends with the fight; off as the original.
+- **Darkness's bulette** (`rules::fixes()`; Tom, 2026-10-23): its ability
+  0x63 sets its second attack slot to 8 half-attacks one round in four
+  (1d4 = 1; else 4) - the leap with all four feet - but the original writes
+  the slot's count over it at once, so it never leaps (a bite and two
+  claws every round). With Game Fixes on the leap takes (four claws of
+  3d6 that round); off as the original.
 - **Darkness's gazes' pictures**: the paralysing gaze flies COMSPR
   picture 0x2D, the vampire's 0x32 in the original; the engine flies the
   spell's picture. Kalistes' blows: the original shows the weapon's name

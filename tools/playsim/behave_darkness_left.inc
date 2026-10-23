@@ -118,11 +118,62 @@ void energy_drain()
     }
 }
 
+// The originals' mistakes kept with Game Fixes off, mended with it on (Tom,
+// 2026-10-23): dragon fear after the fight (L4), the bulette's leap (L5)
+void fixes_checks()
+{
+    using dkfight::F;
+    char w[160];
+    for (bool fix : {false, true}) {
+        // Dragon fear (0x78): kept after the fight in the original
+        if (!dkfight::new_fight()) {
+            expect(D_, "a fight for dragon fear", false);
+            return;
+        }
+        rules::set_fixes(fix);
+        const uint8_t feared = play::fg->b.fx->dk.feared;
+        dkfight::add_aff(0, feared);
+        party::Character& ch = play::pt->m[F(0).member];
+        play::fight_cleanup_party(combat::Won);
+        snprintf(w, sizeof w, "dragon fear after the fight, Game Fixes %s: %s", fix ? "on" : "off", fix ? "gone" : "kept");
+        expect(D_, w, ch.has_affect(feared) == !fix);
+        // The bulette (0x63): half-attacks 4 in its second slot; 1d4 = 1 -
+        // the original's leap never takes (2 attacks), mended: 8 halves (4)
+        dkfight::new_fight();
+        rules::set_fixes(fix);
+        combat::Battle& b = play::fg->b;
+        int mon = -1;
+        for (int i = 0; i < b.n && mon < 0; ++i)
+            if (b.f[i].member < 0) mon = i;
+        if (mon < 0) {
+            expect(D_, "a monster for the bulette", false);
+            continue;
+        }
+        dkfight::put(mon, 1, 14, 10, 60);
+        F(mon).rec[0x11D] = 4;
+        dkfight::add_aff(mon, b.fx->dk.rake);
+        int got[2] = {};
+        for (int mode : {2, 1}) {
+            dkfight::dice(mode);                   // (2: every die 1 - the d4 too; 1: every die its highest)
+            combat::Event ev[24];
+            b.round = 2;                           // (an even round: half-attacks / 2 exactly)
+            combat::start_round(b, play::rng, ev, 24);
+            dkfight::dice_off();
+            got[mode - 1] = F(mon).attacks[1];
+        }
+        snprintf(w, sizeof w, "the bulette's leap, Game Fixes %s: 1d4 = 1 %d claws, else 2", fix ? "on" : "off", fix ? 4 : 2);
+        expect(D_, w, got[1] == (fix ? 4 : 2) && got[0] == 2, "1d4 = 1: %d, 1d4 = 4: %d", got[1], got[0]);
+    }
+    rules::set_fixes(true);
+}
+
 void checks(bool (*want)(const char*))
 {
-    if (!want("drain")) return;
-    drain_cases();
-    energy_drain();
+    if (want("drain")) {
+        drain_cases();
+        energy_drain();
+    }
+    if (want("fixes")) fixes_checks();
 }
 
 } // namespace dkleft

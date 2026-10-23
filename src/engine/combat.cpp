@@ -1451,6 +1451,10 @@ int start_round(Battle& b, create::Dice& d, Event* out, int cap)
         bool ranged = false;
         f.attacks[0] = slot1_attacks(b, f, &ranged);
         int half2 = f.rec[kHalf2];
+        // Darkness's bulette (0x63, facts L5): its handler sets 8 half-attacks
+        // one round in four, else 4 - written over at once in the original (it
+        // never leaps); with the rules fixes as meant (Tom, 2026-10-23; SPEC 12)
+        if (b.fx && b.fx->dk.rake && rules::fixes() && hasx(f, b.fx->dk.rake)) half2 = d.roll(4, 1) == 1 ? 8 : 4;
         if (b.fx && f.has(b.fx->haste)) half2 *= 2;
         if (b.fx && f.has(b.fx->slow)) half2 /= 2;
         f.attacks[1] = attacks_this_round(half2, b.round);
