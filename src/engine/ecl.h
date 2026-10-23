@@ -95,6 +95,10 @@ struct OpSet {
     // word). The engine's own calls with Curse's addresses (0x4BF2 the
     // block, 0x4BC6 the clock, 0xC04B x ...) are turned into its places.
     bool byte_map = false;
+    // Gateway (gateway_facts.md 10; its CALL handler, GAME.OVR 0xAB8 +
+    // 0x3150): CALL 0x809 waits for a key ("Press Enter to continue."),
+    // CALL 0x80C asks Yes / No - 0 / 1 into 0x7F79 (0: none of these)
+    uint16_t press_call = 0, yes_no_call = 0;
 };
 
 // A script's memory address as the engine's machine (Curse's map) knows

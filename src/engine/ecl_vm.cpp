@@ -793,6 +793,9 @@ Stop Vm::answer(int v)
     case 0x39:                          // WHO: that member is selected
         if (party_ && v >= 0 && v < party_->count) party_->selected = v;
         break;
+    case 0x2D:                          // (Gateway's CALL 0x80C: Yes 0, No 1)
+        set(dest_, static_cast<uint16_t>(v ? 1 : 0));
+        break;
     default: break;
     }
     return resume();
@@ -1547,6 +1550,25 @@ Stop Vm::step()
             return wait_for(Wait::Pause);
         } else if (w == set_.sound_call) {
             h_.sound(sound_kind_ == 10 ? 0x0B : 0x0A);         // a step; 10: the fireball's roar
+        } else if (set_.press_call && w == set_.press_call) {
+            // Gateway: "Press Enter to continue." and a key
+            prompt_ = word(kWDkPressKey);
+            return wait_for(Wait::Key);
+        } else if (set_.yes_no_call && w == set_.yes_no_call) {
+            // Gateway: Yes / No (the answer into 0x7F79: 0 Yes, 1 No)
+            static char yes[8] = "Yes", no[8] = "No";
+            char yn[24];
+            int k = 0;
+            for (const char* q = word(kWDkYesNo); *q && k < 23; ++q)
+                if (*q != '~') yn[k++] = *q;            // (its marks)
+            yn[k] = 0;
+            if (*yn) sscanf(yn, "%7s %7s", yes, no);
+            n_items_ = 2;
+            item_[0] = yes;
+            item_[1] = no;
+            prompt_ = "";
+            dest_ = 0x7F79;
+            return wait_for(Wait::Menu);
         } else if (w == 0xC018) {
             // The wall type ahead (worked out anyway)
         } else if (w == 0xC01E) {

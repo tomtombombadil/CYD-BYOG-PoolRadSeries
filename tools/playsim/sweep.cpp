@@ -272,7 +272,7 @@ static bool pump(int max_iter = 400000)
         case Screen::Title: return false;      // (the party is gone: the title again)
         case Screen::PartyMenu:
             if (in_game_menu && pt->count) {
-                play::tap(24, (12 + pm_line('B')) * 8 + 2, C);
+                play::tap(24, (play::pm_row0() + pm_line('B')) * 8 + 2, C);
                 break;
             }
             return false;
@@ -329,12 +329,12 @@ static bool boot(char slot = 'A')
         }
         play::tap(2, 2, C);
     }
-    play::tap(24, (12 + pm_line('L')) * 8 + 2, C);
+    play::tap(24, (play::pm_row0() + pm_line('L')) * 8 + 2, C);
     const char* p = strchr(play::pm_saves, slot);
     if (!p) return false;
     tap_item(static_cast<int>(p - play::pm_saves));
     if (!play::pt->count) return false;
-    play::tap(24, (12 + pm_line('B')) * 8 + 2, C);
+    play::tap(24, (play::pm_row0() + pm_line('B')) * 8 + 2, C);
     return pump();
 }
 

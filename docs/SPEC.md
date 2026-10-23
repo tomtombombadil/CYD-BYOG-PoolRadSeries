@@ -1592,6 +1592,19 @@ segment at image 0x4C70; run as `GAME UseStart`) + GAME.OVR (51 overlays),
   "initialize JoyStick/Mouse" - its key is J, left out as Secret's). The
   title pictures, the version line and the party menu's frame, prompt and
   lines match DOSBox's EGA screens pixel for pixel.
+- **The 3D view, Begin, the scripts' calls.** A family's file without a
+  number first, then the area's (`variant.common_files`: PIC, WALLDEF,
+  8X8D ...). Its big wall sets (210 tiles) keep their own tile numbers
+  (`variant.per_set_walls`, `World::per_set`, tiles past 70 on the heap -
+  let go while a fight parks the view); value 13 stays see-through through
+  its pictures' maps. Its frame's joint pieces where bars meet
+  (`layout::Tables::joints`). CALL 0x809 ("Press Enter to continue.") and
+  0x80C (Yes / No into 0x7F79); its '~'-marked menu words (`Menu::marked`);
+  its text windows let a word's space hang past the edge
+  (`text::set_hanging_space`); the party menu from row 23 - lines (12-15),
+  Icon Select (the icon editor), no Add past 6. Loading a save made by the
+  original (Curse's format), Begin into Yartar (PIC 5, the texts, the
+  prompt, the room at 1,10) and the start room's view match DOSBox.
 
 ## 7. The journal (Tom, 2026-10-06)
 

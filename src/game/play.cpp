@@ -564,6 +564,15 @@ void area_fmt(char* out, size_t cap, const char* fmt)
 // file opened)
 bool open_area_dax(const char* stem, int block, plat::File& f, char* name, size_t cap)
 {
+    if (d->prof->variant.common_files && block >= 0) {
+        // Gateway: the family's file without a number first, then the area's
+        // (its loader, GAME.OVR 0x53B0F - gateway_facts.md 8)
+        snprintf(name, cap, "%s.DAX", stem);
+        if (open_dax(name, f)) {
+            if (d->idx.find(static_cast<uint8_t>(block))) return true;
+            f.close();
+        }
+    }
     area_file(name, cap, stem);
     if (open_dax(name, f)) {
         if (!blocks_across() || block < 0 || d->idx.find(static_cast<uint8_t>(block))) return true;
@@ -938,7 +947,8 @@ void clear_menu_line(pic::Canvas& c)
 bool moving = false;
 bool secret_files();
 bool darkness_files();
-bool move_menu() { return secret_files() || darkness_files(); }
+bool gateway();
+bool move_menu() { return secret_files() || darkness_files() || gateway(); }
 void idle_menu(pic::Canvas& c)
 {
     if (dk_overland()) {
@@ -1031,8 +1041,9 @@ bool anim_start(int id, const char* stem = "PIC", int x = 24, int y = 24)
     d->anim_y = static_cast<int16_t>(y);
     char name[24];
     area_file(name, sizeof name, stem);
-    if (blocks_across()) {
-        // (Secret: whichever of the family's files holds the picture)
+    if (blocks_across() || d->prof->variant.common_files) {
+        // (Secret: whichever of the family's files holds the picture;
+        // Gateway: PIC.DAX's or the area's)
         plat::File probe;
         if (open_area_dax(stem, id, probe, name, sizeof name)) probe.close();
     }
@@ -1125,10 +1136,21 @@ char pm_key(int i)
         if (*q >= 'A' && *q <= 'Z') return *q;
     return static_cast<char>(toupper(static_cast<unsigned char>(d->item[i][0])));
 }
-// The party menu's first row (Gateway's from row 15 - DOSBox)
-int pm_row0() { return d->prof->variant.party_menu_row ? d->prof->variant.party_menu_row : 12; }
+// The party menu's first row: 12; Gateway's 23 - its lines, 12 to 15 (its
+// party menu, GAME.OVR 0x2650E + 0x55C)
+void pm_flags(bool on[]);
+int pm_row0()
+{
+    if (!d->prof->variant.party_menu_row) return 12;
+    bool on[Data::kItems];
+    pm_flags(on);
+    int n = 0;
+    for (int i = 0; i < d->items; ++i) n += on[i];
+    const int r = 23 - n;
+    return r > d->prof->variant.party_menu_row ? d->prof->variant.party_menu_row : r < 12 ? 12 : r;
+}
 
-void pm_flags(bool on[Data::kItems])
+void pm_flags(bool on[])
 {
     for (int i = 0; i < d->items; ++i) {
         on[i] = d->item_on[i];
@@ -1137,8 +1159,13 @@ void pm_flags(bool on[Data::kItems])
             on[i] = pt->count > 0;
             break;
         case 'I':                               // Secret's Initialize Mouse/Joystick: nothing to set up here
+            on[i] = gateway() && pt->count > 0;     // (Gateway's Icon Select: with a party)
+            break;
         case 'J':                               // (Gateway's "initialize JoyStick/Mouse")
             on[i] = false;
+            break;
+        case 'A':                               // (Gateway: none past 6 members - DOSBox)
+            if (gateway()) on[i] = pt->count < 6;
             break;
         case 'T':                               // training: only where the game offers it
             on[i] = pt->count > 0 && (vm->get(0x7EA8) & 0xFF) != 0;
@@ -1233,6 +1260,8 @@ void load_journal_list(char slot);
 // (variant.secret_files; party::from_secret / to_secret)
 bool pool_files() { return d->prof->variant.pool_files; }
 bool secret_files() { return d->prof->variant.secret_files; }
+// Gateway to the Savage Frontier (Curse's files and saves; its own ways)
+bool gateway() { return d->prof->game == games::Game::GatewayToTheSavageFrontier; }
 // Darkness's (variant.darkness_files): 510-byte records (NAME.PC), items
 // .THG (63 bytes), effects .EFX; its saves SAVGAMx.PTY
 bool darkness_files() { return d->prof->variant.darkness_files; }
@@ -8242,6 +8271,12 @@ void pm_choose_key(char key, pic::Canvas& c)
     case 'H':
         start_change(c);
         return;
+    case 'I':                                   // (Gateway's Icon Select)
+        if (gateway() && pt->sel()) {
+            start_icon(c, Screen::PartyMenu);
+            return;
+        }
+        break;
     default:
         pm_prompt(c, "Not in the engine yet.");
         dirty_rows(text::kMenuRow, text::kMenuRow);
@@ -8860,7 +8895,7 @@ struct Host : ecl::Host {
             plat::FileSource src(f);
             for (int k = 0; k < n; ++k)
                 view3d::load_tiles(src, d->idx, static_cast<uint8_t>(view3d::tiles_block(static_cast<uint8_t>(block), n, k)),
-                                   wd.sets[set - 1 + k]);
+                                   wd.sets[set - 1 + k], wd.per_set);
             f.close();
         }
     }
@@ -9240,6 +9275,14 @@ void begin_wait(pic::Canvas& c)
         start_won(c);
         break;
     case ecl::Wait::Key:                // "press <enter>/<return> to continue"
+        if (gateway() && *vm->prompt()) {
+            // Gateway's CALL 0x809: "Press Enter to continue." as its one-word
+            // menu, lit (DOSBox)
+            text::build(menu, "", vm->prompt());
+            menu.selected = 0;
+            show_menu_line(c);
+            break;
+        }
         clear_menu_line(c);
         put(c, d->press_key, 0, text::kMenuRow, 15);
         break;
@@ -10086,6 +10129,12 @@ void end_icon(pic::Canvas& c)
     palette_fight(false);
     if (from == Screen::CreateName) {
         create_after_icon(c);
+        return;
+    }
+    if (from == Screen::PartyMenu) {
+        // (Gateway's party menu Icon Select: back to the party menu)
+        screen = Screen::PartyMenu;
+        draw_party_menu(c);
         return;
     }
     draw_camp(c);
@@ -11648,6 +11697,8 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
         return msg;
     }
     d->world.frame = &d->frame_tiles;
+    d->world.per_set = d->prof->variant.per_set_walls;
+    text::set_hanging_space(gateway());
     open_sky();
 
     // The party menu first, as the games begin
@@ -11753,6 +11804,7 @@ void close()
         view3d::World* w = &d->world;
         ecl::GameState* g = &d->gs;
         view3d::back_free(*w);                  // (Darkness's background picture)
+        for (view3d::TileSet& ts : w->sets) view3d::free_extra(ts);     // (Gateway's big wall sets)
         delete d->alt_font;
         delete d;
         delete w;

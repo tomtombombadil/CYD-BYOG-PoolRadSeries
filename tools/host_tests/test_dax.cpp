@@ -282,7 +282,9 @@ static void test_picture()
 // Gateway to the Savage Frontier's pictures: five bit planes a row, a
 // 32-entry colour map (picture.h)
 static int sf_value(int f, int r, int x) { return (f * 5 + r * 3 + x) % 32; }
-static uint8_t sf_mapped(int v) { return static_cast<uint8_t>((v * 7 + 3) % 16); }
+static uint8_t sf_map_of(int v) { return static_cast<uint8_t>((v * 7 + 3) % 16); }
+// (13, the see-through value, is drawn as 13 whatever the map says)
+static uint8_t sf_mapped(int v) { return v == 13 ? 13 : sf_map_of(v); }
 static void sf_planes(Bytes& raw, int f, int height, int cols, int xor_with = -1)
 {
     for (int r = 0; r < height; ++r)
@@ -307,7 +309,7 @@ static void sf_header(Bytes& raw, int height, int cols, int frames, uint8_t flag
     raw.push_back(flags);
     if (flags & 1) for (int i = 0; i < 8; ++i) raw.push_back(0xAA);
     if (flags & 2)
-        for (int v = 0; v < 32; v += 2) raw.push_back(static_cast<uint8_t>(sf_mapped(v) | sf_mapped(v + 1) << 4));
+        for (int v = 0; v < 32; v += 2) raw.push_back(static_cast<uint8_t>(sf_map_of(v) | sf_map_of(v + 1) << 4));
     if (flags & 8) for (int i = 0; i < 24; ++i) raw.push_back(0x55);
 }
 

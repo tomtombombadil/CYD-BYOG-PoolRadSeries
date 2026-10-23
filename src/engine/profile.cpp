@@ -1078,6 +1078,8 @@ constexpr ecl::OpSet kGatewayEcl = [] {
     s.sizes[0x32] = 4;
     s.sizes[0x40] = 4;
     s.sizes[0x41] = 2;
+    s.press_call = 0x809;
+    s.yes_no_call = 0x80C;
     return s;
 }();
 
@@ -1854,7 +1856,7 @@ const Profile kProfiles[] = {
      // The frame tables (DS 0x1596 on, tile 20 + value - gateway_facts.md 4):
      // top, bar, bottom, left, right, column 16, the 3D view's four sides
      // (from column / row 0), the fight's columns 0, 22, 39
-     .frame = {0x1596, 0x15E6, 0x15BE, 0x160E, 0x1638, 0x1626, 0x1696, 0x16A4, 0x16B2, 0x16C0, 0x1650, 0x1668, 0x1680},
+     .frame = {0x1596, 0x15E6, 0x15BE, 0x160E, 0x1638, 0x1626, 0x16B2, 0x16C0, 0x1696, 0x16A4, 0x1650, 0x1668, 0x1680},
      .tiles_file = "8X8D1.DAX", .tiles_block = 202,
      .press_any_key = 0x1D1F,
      .title_file = "TITLE.DAX", .title = kGatewayTitle, .title_steps = sizeof kGatewayTitle / sizeof kGatewayTitle[0],
@@ -1871,8 +1873,11 @@ const Profile kProfiles[] = {
                0x22844, 0x2284F, 0x28D1C, 0x28D22, 0x28D2D, 0, 0, 0x28D48, 0x28D5C, kP | 0x6118,
                0, 0x29066, 0, 0x21DBB, 0x22852},
      .view = {{0x6434, 27, 18}, {0x661A, 10, 8}, {0x666A, 17, 9}, {0x6704, 7, 2}, {0x6712, 11, 7}, {0x6760, 13, 9}},
+     // The script machine's words (its interpreter's overlay): the encounter's,
+     // DAMAGE's, CALL 0x809's "~Press Enter to continue." and 0x80C's "~Yes ~No"
+     .script_words = {0x2C54, 0x2C65, 0xB76A, 0xB772, 0xB77F, 0x357C, 0x3BE5, 0, 0, 0, 0x3BFF},
      .variant = {.unfinished = true, .program_words = true, .party_menu_col = 9, .sf_pics = true, .frame_base = 20,
-                 .common_files = true, .party_menu_row = 15}},
+                 .common_files = true, .party_menu_row = 15, .per_set_walls = true}},
 };
 
 } // namespace

@@ -597,6 +597,7 @@ Fight* make_fight()
 // the fight (end_fight_art). False: the card couldn't take them.
 static_assert(kTiles * kTileBytes <= sizeof(view3d::World), "the field's tiles must fit in the 3D view's memory");
 void world_park_path(char* out, size_t cap) { snprintf(out, cap, "%s/_CYD/WORLD.TMP", games::kRootDir); }
+bool world_big = false;             // (Gateway: big wall sets' tiles freed while parked - read again after)
 bool park_world()
 {
     if (world_parked || !plat::card_ready()) return false;
@@ -607,6 +608,14 @@ bool park_world()
     // (Darkness's background picture, 3.8 KB, isn't drawn in a fight
     // either: it goes, and reads again when the 3D view is next drawn)
     view3d::back_free(d->world);
+    // (Gateway's big wall sets' far tiles go too: read again after the fight)
+    bool big = false;
+    for (view3d::TileSet& ts : d->world.sets)
+        if (ts.extra) {
+            view3d::free_extra(ts);
+            big = true;
+        }
+    world_big = big;
     const bool ok = f.write(reinterpret_cast<const uint8_t*>(&d->world), sizeof(view3d::World)) == sizeof(view3d::World);
     f.close();
     if (ok) world_parked = true;
@@ -621,9 +630,11 @@ void unpark_world()
     const bool ok = f && f.read(reinterpret_cast<uint8_t*>(&d->world), sizeof(view3d::World)) == sizeof(view3d::World);
     if (f) f.close();
     world_parked = false;
-    if (!ok) {
-        // (the card lost it: the walls read again from the game's files)
-        log_error("The 3D view's walls couldn't be read back after a fight: reloaded.");
+    if (!ok || world_big) {
+        // (the card lost it - or Gateway's big sets' tiles were let go: the
+        // walls read again from the game's files)
+        if (!ok) log_error("The 3D view's walls couldn't be read back after a fight: reloaded.");
+        world_big = false;
         for (int i = 0; i < 3; ++i)
             if (d->wall_block[i] >= 0 && d->wall_set[i] > 0) host->load_walls(d->wall_set[i], d->wall_block[i]);
     }

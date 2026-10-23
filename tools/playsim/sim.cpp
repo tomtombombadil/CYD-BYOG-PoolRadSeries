@@ -451,7 +451,7 @@ static void shop_run(const char* ops)
             printf("  screen %d temple %d menu [%s%s] %s HP %d/%d gold worth %d counter %d %d %d %d %d gems %d jewels %d items %d\n", (int)play::screen, (int)play::temple, play::menu.prompt, play::menu.s, nm, ch.hp(), ch.hp_max(), rules::gold_worth(ch), play::ground->money[0], play::ground->money[1], play::ground->money[2], play::ground->money[3], play::ground->money[4], ch.money(5), ch.money(6), ch.n_items);
             char t[16]; snprintf(t, 16, "shoprun%d", n++); shot(t);
         } else if (*q == '%') { ++q; play::tap(17 * 8 + 2, (4 + (*q - '0')) * 8 + 2, C); }
-        else if (*q == '^') { ++q; play::tap(24, (12 + pm_line_of(*q)) * 8 + 2, C); }   // a party menu line
+        else if (*q == '^') { ++q; play::tap(24, (play::pm_row0() + pm_line_of(*q)) * 8 + 2, C); }   // a party menu line
         else if (*q == '*') { party::Character& w = *play::pt->sel(); w.rec[0x127] = 0x40; w.rec[0x128] = 0x42; w.rec[0x129] = 0x0F; }   // 1000000 xp (a test)
         else if (*q == '&') { party::Character& w = *play::pt->sel(); w.rec[0x127] = 0xA0; w.rec[0x128] = 0x86; w.rec[0x129] = 0x01; }   // 100000 xp (a test)
         else if (*q == '+') { party::Character& w = *play::pt->sel(); const uint32_t x = w.exp() + 1000000; for (int i = 0; i < 4; ++i) w.rec[0x127 + i] = (uint8_t)(x >> (8 * i)); }   // 1000000 xp more (a test)
@@ -564,7 +564,7 @@ int main(int argc, char** argv)
     if (getenv("HLTEST")) {
         // The tap highlight on a party menu line, then put back
         int y0, y1;
-        const bool on = play::tap_highlight(24, (12 + pm_line('C')) * 8 + 2, C, &y0, &y1);
+        const bool on = play::tap_highlight(24, (play::pm_row0() + pm_line('C')) * 8 + 2, C, &y0, &y1);
         printf("  highlight %d rows %d-%d\n", on, on ? y0 : 0, on ? y1 : 0);
         shot("hl_on");
         play::tap_highlight_end(C);
@@ -573,7 +573,7 @@ int main(int argc, char** argv)
     if (getenv("CREATE")) {
         // CREATE=race,sex,class,alignment (list positions), NAME=...
         auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } return false; };
-        play::tap(24, (12 + pm_line('C')) * 8 + 2, C);
+        play::tap(24, (play::pm_row0() + pm_line('C')) * 8 + 2, C);
         const char* q = getenv("CREATE");
         for (int stage = 0; stage < 4 && play::screen == play::Screen::CreatePick; ++stage) {
             printf("  pick:"); for (int i = 0; i < play::mk->n_opt; ++i) { char l[40]; play::pick_line(i + 1, l, 40); printf(" [%s]", l); } printf("\n");
@@ -619,7 +619,7 @@ int main(int argc, char** argv)
         // Curse's list instead), add those lines
         if (getenv("POOLDIR")) play::set_import_dir(getenv("POOLDIR"));
         auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
-        play::tap(24, (12 + pm_line('A')) * 8 + 2, C);
+        play::tap(24, (play::pm_row0() + pm_line('A')) * 8 + 2, C);
         printf("  add menu [%s%s]\n", play::menu.prompt, play::menu.s);
         tap_word(getenv("ADDFROM") ? getenv("ADDFROM")[0] : 'P');      // ADDFROM=C: Curse's list
         printf("  screen %d, %d to add\n", (int)play::screen, play::d->guys);
@@ -651,7 +651,7 @@ int main(int argc, char** argv)
     }
     {
         if (getenv("LOADFROM") && getenv("POOLDIR")) play::set_import_dir(getenv("POOLDIR"));
-        play::tap(24, (12 + pm_line('L')) * 8 + 2, C);
+        play::tap(24, (play::pm_row0() + pm_line('L')) * 8 + 2, C);
         if (play::load_where) {         // (Darkness: "Load from where?" - Pools; LOADFROM=S: Secret's, POOLDIR its folder)
             shot("load_where");
             const int w = getenv("LOADFROM") && *getenv("LOADFROM") == 'S' ? 1 : 0;
@@ -712,11 +712,11 @@ int main(int argc, char** argv)
         if (getenv("ROSTER")) {
             // Remove the selected character (MATHEW.GUY), Add them back, Drop -> No
             auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } return false; };
-            play::tap(24, (12 + pm_line('R')) * 8 + 2, C);
+            play::tap(24, (play::pm_row0() + pm_line('R')) * 8 + 2, C);
             if (play::screen == play::Screen::YesNo) { printf("  ask [%s]\n", play::menu.prompt); tap_word('Y'); }
             printf("  removed: party %d\n", play::pt->count);
             shot("removed");
-            play::tap(24, (12 + pm_line('A')) * 8 + 2, C);
+            play::tap(24, (play::pm_row0() + pm_line('A')) * 8 + 2, C);
             printf("  add menu [%s%s]\n", play::menu.prompt, play::menu.s);
             tap_word('C');
             printf("  %d to add; menu [%s%s]\n", play::d->guys, play::menu.prompt, play::menu.s);
@@ -725,7 +725,7 @@ int main(int argc, char** argv)
             printf("  added: party %d\n", play::pt->count);
             shot("added");
             tap_word('E');
-            play::tap(24, (12 + pm_line('D')) * 8 + 2, C);
+            play::tap(24, (play::pm_row0() + pm_line('D')) * 8 + 2, C);
             printf("  ask [%s] [%s]\n", play::menu.prompt, play::menu.s);
             tap_word('N');
             shot("not_dropped");
@@ -735,9 +735,9 @@ int main(int argc, char** argv)
             // ADDGUY=NAME: the selected member (the first) removed, NAME (a made
             // character, e.g. CREATE's) added from the Curse list
             auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
-            play::tap(24, (12 + pm_line('R')) * 8 + 2, C);
+            play::tap(24, (play::pm_row0() + pm_line('R')) * 8 + 2, C);
             if (play::screen == play::Screen::YesNo) tap_word('Y');
-            play::tap(24, (12 + pm_line('A')) * 8 + 2, C);
+            play::tap(24, (play::pm_row0() + pm_line('A')) * 8 + 2, C);
             if (play::screen != play::Screen::AddList) tap_word(play::darkness_files() ? 'P' : 'C');   // (Darkness: Pools)
             for (int i = 0; i < play::d->guys; ++i) {
                 char t[48]; play::list_line(i, t, sizeof t);
@@ -752,7 +752,7 @@ int main(int argc, char** argv)
             // a letter taps that menu word, @n taps party row n (Trade), '#' lists
             auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
             play::tap(16, (4 + (getenv("WHO") ? atoi(getenv("WHO")) : 0)) * 8 + 2, C);
-            play::tap(24, (12 + pm_line('V')) * 8 + 2, C);
+            play::tap(24, (play::pm_row0() + pm_line('V')) * 8 + 2, C);
             tap_word('I');
             item_ops(getenv("ITEMOPS"));
         }
@@ -809,7 +809,7 @@ int main(int argc, char** argv)
             printf("  %s: class %d levels F%d MU%d C%d, Str %d Int %d Wis %d\n", nm, ch.cls(), ch.level(2), ch.level(5), ch.level(0), ch.stat(0), ch.stat(1), ch.stat(2));
             if (pm_line('H') < 0) printf("  no Human Change on the menu\n");
             else {
-                play::tap(24, (12 + pm_line('H')) * 8 + 2, C);
+                play::tap(24, (play::pm_row0() + pm_line('H')) * 8 + 2, C);
                 printf("  screen %d, %d choices, menu [%s%s]\n", (int)play::screen, play::mk ? play::mk->n_opt : -1, play::menu.prompt, play::menu.s);
                 shot("change_list");
                 if (play::mk) { play::plist.index = atoi(getenv("CHANGE")); tap_word('S'); }
@@ -830,7 +830,7 @@ int main(int argc, char** argv)
             if (getenv("MODFRESH") && play::darkness_files()) { ch.rec[0x127] = 0x61; ch.rec[0x128] = 0xE3; ch.rec[0x129] = 0x16; }   // (Darkness: 1,500,001)
             auto show = [&](const char* tag) { char n[20]; ch.name(n, 20); printf("  %s: %s Str %d/%d Int %d Wis %d Dex %d Con %d Cha %d HP %d/%d AC %d screen %d menu [%s%s]\n", tag, n, ch.stat(0), ch.str00(), ch.stat(1), ch.stat(2), ch.stat(3), ch.stat(4), ch.stat(5), ch.hp(), ch.hp_max(), ch.ac(), (int)play::screen, play::menu.prompt, play::menu.s); };
             show("before");
-            play::tap(24, (12 + pm_line('M')) * 8 + 2, C);
+            play::tap(24, (play::pm_row0() + pm_line('M')) * 8 + 2, C);
             show("modify");
             for (const char* q = getenv("MODIFYOPS"); *q; ++q) {
                 switch (*q) {
@@ -854,7 +854,7 @@ int main(int argc, char** argv)
         if (getenv("VIEW")) {
             // Select a character (tap their line), View Character, back
             play::tap(16, (4 + atoi(getenv("VIEW"))) * 8 + 2, C);
-            play::tap(24, (12 + pm_line('V')) * 8 + 2, C);
+            play::tap(24, (play::pm_row0() + pm_line('V')) * 8 + 2, C);
             shot("view");
             // VIEWTAPS=n: n taps on the portrait box (portrait / icon / action)
             for (int k = 0; k < (getenv("VIEWTAPS") ? atoi(getenv("VIEWTAPS")) : 0); ++k) {
@@ -888,7 +888,7 @@ int main(int argc, char** argv)
         play::d->loaded = false;
         printf("  new game: area %d script %d\n", play::d->gs.game_area, play::d->gs.script);
     }
-    play::tap(24, (12 + pm_line('B')) * 8 + 2, C);
+    play::tap(24, (play::pm_row0() + pm_line('B')) * 8 + 2, C);
     if (getenv("AREA")) {
         // Start somewhere else: as a script would (SAVE area; NEWECL block)
         play::d->gs.game_area = (uint8_t)atoi(getenv("AREA"));

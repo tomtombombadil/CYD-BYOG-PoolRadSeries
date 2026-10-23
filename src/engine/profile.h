@@ -640,6 +640,9 @@ struct Profile {
         uint8_t  frame_base = 0;
         bool     common_files = false;
         uint8_t  party_menu_row = 0;       // the party menu's first row (0: 12; Gateway 15)
+        // Gateway: wall sets' tile numbers per set, up to 210 tiles a set
+        // (view3d::World::per_set)
+        bool     per_set_walls = false;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

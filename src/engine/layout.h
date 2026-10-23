@@ -90,6 +90,11 @@ struct Tables {
     // The frame tables' tile = this + value (Curse 30; Gateway 20 - its
     // values 0-13 for the frame, 14-19 the 3D view's: gateway_facts.md 4)
     uint8_t frame_base = kFrameTile;
+    // Gateway: the bamboo's joint pieces put next to where bars meet (its
+    // frame routines, GAME.OVR 0x4BC7B on - gateway_facts.md 4): tile 27
+    // on a side two rows (exploring: one and two) from a bar, 33 two
+    // columns either side of a divider on the bars it meets
+    bool joints = false;
     bool loaded = false;
 };
 

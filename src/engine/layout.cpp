@@ -181,6 +181,7 @@ Status load_tables(dax::ByteSource& program, const exepack::Info& info, const pr
 
     // Sanity: every value used must name a tile
     out.frame_base = p.variant.frame_base ? p.variant.frame_base : kFrameTile;
+    out.joints = p.variant.frame_base != 0;
     const int fmax = kTiles - out.frame_base, vmax = kTiles - kViewTile;
     if (!all_below(out.top, 0, 40, fmax) || !all_below(out.bar, 0, 40, fmax) || !all_below(out.bottom, 0, 40, fmax) ||
         !all_below(out.left, 0, 24, fmax) || !all_below(out.right, 0, 24, fmax) ||
@@ -304,6 +305,9 @@ void bar(pic::Canvas& c, const Tables& tb, const Tiles& t, int row)
         return;
     }
     for (int col = 0; col < kCols; ++col) put(c, t, tb.frame_base + tb.bar[col], col, row);
+    if (tb.joints)
+        for (int col : {0, kCols - 1})
+            for (int r : {row - 2, row + 2}) put(c, t, 27, col, r);
 }
 
 void explore(pic::Canvas& c, const Tables& tb, const Tiles& t)
@@ -327,6 +331,13 @@ void explore(pic::Canvas& c, const Tables& tb, const Tiles& t)
         return;
     }
     for (int row = 0; row <= 16; ++row) put(c, t, tb.frame_base + tb.view_split[row], 16, row);
+    if (tb.joints) {
+        // (Gateway's explore frame, GAME.OVR 0x4BD5B)
+        for (int col : {0, kCols - 1})
+            for (int r : {14, 15, 17, 18}) put(c, t, 27, col, r);
+        for (int row : {0, 16})
+            for (int col : {14, 15, 17, 18}) put(c, t, 33, col, row);
+    }
     for (int i = 2; i <= 14; ++i) {
         put(c, t, kViewTile + tb.view_top[i], i, 2);
         put(c, t, kViewTile + tb.view_bottom[i], i, 14);
@@ -386,6 +397,9 @@ void combat(pic::Canvas& c, const Tables& tb, const Tiles& t)
         put(c, t, tb.frame_base + tb.combat_right[row], kCols - 1, row);
     }
     for (int col = 0; col < kCols; ++col) put(c, t, tb.frame_base + tb.bottom[col], col, 22);
+    if (tb.joints)
+        for (int row : {0, 22})                                 // (Gateway, GAME.OVR 0x4C2E6)
+            for (int col : {20, 24}) put(c, t, 33, col, row);
 }
 
 void bars_row(pic::Canvas& c, const Tables& tb, const Tiles& t, int row)

@@ -73,6 +73,9 @@ constexpr Region kTextAreaLow{1, 21, 38, 22};
 constexpr Region kCombatPanel{23, 1, 38, 21};
 
 enum class State : uint8_t { Idle, Writing, PageFull, Done };
+// Gateway's line breaks: a word fits when its letters do (its trailing space
+// may fall past the window's last column, not drawn); off: the space must fit too
+void set_hanging_space(bool on);
 
 struct Writer {
     Region      r{1, 17, 38, 22};
@@ -122,6 +125,7 @@ struct Menu {
     int8_t  start[kMaxItems] = {}; // first character of each choice (its key)
     int8_t  end[kMaxItems] = {};   // its last character
     int     selected = 0;
+    bool    marked = false;        // (Gateway's '~' marks: only each choice's first letter lit)
 };
 
 // Splits s into choices: each starts at a capital letter or digit.

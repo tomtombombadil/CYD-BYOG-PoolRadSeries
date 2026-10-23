@@ -56,17 +56,23 @@ void put_frame_tile(pic::Canvas& c, const layout::Tiles& t, int n, int x0, int y
 
 // Draws wall piece `type` (1-15) of group g with its top left at view cell
 // (row, col)
+void set_tile(pic::Canvas& c, const World& w, int set, int id, int row, int col);
+
 void piece(pic::Canvas& c, const World& w, int group, int type, int row, int col)
 {
     if (type < 1 || type > 15) return;
-    const WallSet& ws = w.walls[(type - 1) / kPieces];
+    const int set = (type - 1) / kPieces;
+    const WallSet& ws = w.walls[set];
     if (!ws.loaded) return;
     const uint8_t* ids = ws.id[(type - 1) % kPieces];
     const Group& g = kGroups[group];
     int i = g.first;
     for (int r = row; r < row + g.rows; ++r)
         for (int cc = col; cc < col + g.cols; ++cc, ++i)
-            if (ids[i] && r >= 0 && r < kCells && cc >= 0 && cc < kCells) draw_tile(c, w, ids[i], r, cc);
+            if (ids[i] && r >= 0 && r < kCells && cc >= 0 && cc < kCells) {
+                if (w.per_set) set_tile(c, w, set, ids[i], r, cc);
+                else draw_tile(c, w, ids[i], r, cc);
+            }
 }
 
 int left_of(int dir) { return (dir + 6) & 7; }
@@ -158,9 +164,17 @@ void near(pic::Canvas& c, const World& w, const geo::Map& m, int bx, int by, int
 
 } // namespace
 
-bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, TileSet& out)
+void free_extra(TileSet& t)
+{
+    free(t.extra);
+    t.extra = nullptr;
+    t.extra_count = 0;
+}
+
+bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, TileSet& out, bool big)
 {
     out.count = 0;
+    free_extra(out);
     const dax::Entry* e = idx.find(block);
     if (!e) return false;
     dax::RleReader r(src, idx, *e);
@@ -174,6 +188,14 @@ bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tile
     for (int i = 0; i < n; ++i)
         if (!pic::next_frame(r, h, map, out.px[i])) return false;
     out.count = n;
+    if (big && h.frames > kSetTiles) {
+        const int more = h.frames - kSetTiles;
+        out.extra = static_cast<uint8_t(*)[32]>(malloc(static_cast<size_t>(more) * 32));
+        if (!out.extra) return true;            // (the walls' far tiles left out)
+        for (int i = 0; i < more; ++i)
+            if (!pic::next_frame(r, h, map, out.extra[i])) break;
+            else out.extra_count = i + 1;
+    }
     return true;
 }
 
@@ -202,7 +224,7 @@ bool load_walls(dax::ByteSource& src, const dax::Index& idx, int set, uint8_t bl
         // 3-part block's later parts already number their tiles after the
         // first part's (as the games do it). Darkness: the numbers are the
         // tile block's own (no moves)
-        const int shift = w.dk ? 0 : (set - 1) * kSetTiles;
+        const int shift = w.dk || w.per_set ? 0 : (set - 1) * kSetTiles;
         for (int p = 0; p < kPieces; ++p)
             for (int k = 0; k < kPieceTiles; ++k)
                 if (ws.id[p][k] >= kCommonTiles) ws.id[p][k] = static_cast<uint8_t>(ws.id[p][k] + shift);
@@ -312,6 +334,23 @@ void draw_tile(pic::Canvas& c, const World& w, int id, int row, int col)
 }
 
 namespace {
+
+// Gateway: a wall set's tile (46 on: its own, from 0; 1-45 the common ones)
+void set_tile(pic::Canvas& c, const World& w, int set, int id, int row, int col)
+{
+    if (id <= kCommonTiles) {
+        draw_tile(c, w, id, row, col);
+        return;
+    }
+    const TileSet& ts = w.sets[set];
+    const int k = id - (kCommonTiles + 1);
+    const int x0 = (kCell0 + col) * 8, y0 = (kCell0 + row) * 8;
+    if (k < kSetTiles) {
+        if (k < ts.count) put_packed(c, ts.px[k], x0, y0, kMask, kMask);
+    } else if (k - kSetTiles < ts.extra_count) {
+        put_packed(c, ts.extra[k - kSetTiles], x0, y0, kMask, kMask);
+    }
+}
 
 void walls(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int dir)
 {

@@ -89,7 +89,9 @@ void sf_row(const uint8_t* planes, int cols, const uint8_t* map, uint8_t* packed
                 const int bit = 7 - (k + half);
                 int v = 0;
                 for (int p = 0; p < 5; ++p) v |= ((planes[p * cols + col] >> bit) & 1) << p;
-                const uint8_t m = static_cast<uint8_t>((map[v >> 1] >> ((v & 1) * 4)) & 0x0F);
+                // (13 stays 13: the see-through value, tested before the map -
+                // the big wall sets map it to black; DOSBox)
+                const uint8_t m = v == 13 ? 13 : static_cast<uint8_t>((map[v >> 1] >> ((v & 1) * 4)) & 0x0F);
                 two = static_cast<uint8_t>(two | (half ? m : m << 4));
             }
             packed[col * 4 + k / 2] = two;

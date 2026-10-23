@@ -16,6 +16,7 @@ bool printable(const char* s, size_t n)
 
 bool punct(char c) { return c && strchr("!,-.:;?", c) != nullptr; }
 
+
 bool is_key(char c) { return (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'); }
 
 // The word starting at pos: punctuation, letters, punctuation, one space
@@ -114,6 +115,11 @@ void begin(Writer& w, pic::Canvas& c, const char* s, const Region& r, uint8_t fg
     w.state = w.len > 0 ? State::Writing : State::Done;
 }
 
+namespace {
+bool g_hang = false;
+}
+void set_hanging_space(bool on) { g_hang = on; }
+
 State step(Writer& w, pic::Canvas& c, const font::Font& f, int n)
 {
     if (w.state != State::Writing) return w.state;
@@ -128,7 +134,10 @@ State step(Writer& w, pic::Canvas& c, const font::Font& f, int n)
         }
         if (w.pos >= w.unit_end) {
             const int e = unit_end(w.s, w.len, w.pos);
-            if (w.col + (e - w.pos) - 1 > r.x1) {
+            // (Gateway: a word fits when its letters do - its space may hang
+            // past the window's edge, not drawn; DOSBox)
+            const int wl = g_hang && e - w.pos > 1 && w.s[e - 1] == ' ' ? e - w.pos - 1 : e - w.pos;
+            if (w.col + wl - 1 > r.x1) {
                 if (w.col == r.x0) {
                     // Longer than a line: as much as fits, the rest below
                     w.unit_end = w.pos + (r.x1 - r.x0 + 1);
@@ -144,7 +153,7 @@ State step(Writer& w, pic::Canvas& c, const font::Font& f, int n)
                 w.unit_end = e;
             }
         }
-        font::draw_glyph(c, f, font::glyph_of(f, w.s[w.pos]), w.col * 8, w.row * 8, w.fg, 0);
+        if (w.col <= r.x1) font::draw_glyph(c, f, font::glyph_of(f, w.s[w.pos]), w.col * 8, w.row * 8, w.fg, 0);
         ++w.pos;
         ++w.col;
         if (n > 0) --n;
@@ -167,6 +176,33 @@ void build(Menu& m, const char* prompt, const char* s)
 {
     m = Menu{};
     strncpy(m.prompt, prompt ? prompt : "", sizeof m.prompt - 1);
+    if (s && strchr(s, '~')) {
+        // Gateway's menus mark each choice's key with '~' ("~Yes ~No",
+        // "~Press Enter to continue."): a choice runs from its mark to the
+        // next; only the marked letter is lit
+        m.marked = true;
+        int o = 0;
+        for (const char* q = s; *q && o < static_cast<int>(sizeof m.s) - 1; ++q) {
+            if (*q == '~') {
+                if (m.count >= kMaxItems) break;
+                if (m.count > 0) {
+                    int e = o - 1;
+                    while (e > m.start[m.count - 1] && m.s[e] == ' ') --e;
+                    m.end[m.count - 1] = static_cast<int8_t>(e);
+                }
+                m.start[m.count++] = static_cast<int8_t>(o);
+                continue;
+            }
+            m.s[o++] = *q;
+        }
+        m.s[o] = 0;
+        if (m.count > 0) {
+            int e = o - 1;
+            while (e > m.start[m.count - 1] && m.s[e] == ' ') --e;
+            m.end[m.count - 1] = static_cast<int8_t>(e);
+        }
+        return;
+    }
     strncpy(m.s, s ? s : "", sizeof m.s - 1);
     const int len = static_cast<int>(strlen(m.s));
     for (int i = 0; i < len && m.count < kMaxItems; ++i) {
@@ -218,10 +254,17 @@ void draw(pic::Canvas& c, const font::Font& f, const Menu& m, const MenuColors& 
     const int sel = m.selected >= 0 && m.selected < m.count ? m.selected : -1;
     for (int i = 0; m.s[i] && x < font::kCols; ++i, ++x) {
         const int g = font::glyph_of(f, m.s[i]);
-        if (sel >= 0 && i >= m.start[sel] && i <= m.end[sel])
+        if (sel >= 0 && i >= m.start[sel] && i <= m.end[sel]) {
             font::draw_glyph(c, f, g, x * 8, kMenuRow * 8, 0, col.highlight);
-        else
-            font::draw_glyph(c, f, g, x * 8, kMenuRow * 8, is_key(m.s[i]) ? col.highlight : col.normal, 0);
+        } else {
+            bool lit = is_key(m.s[i]);
+            if (m.marked) {
+                lit = false;
+                for (int k = 0; k < m.count; ++k)
+                    if (m.start[k] == i) lit = true;
+            }
+            font::draw_glyph(c, f, g, x * 8, kMenuRow * 8, lit ? col.highlight : col.normal, 0);
+        }
     }
 }
 
