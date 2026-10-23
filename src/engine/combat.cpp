@@ -283,6 +283,95 @@ void build_indoors(Battle& b, const Tables& t, const geo::Map& m, int px, int py
         for (int ddx = -6; ddx <= 6; ++ddx) draw_block(b, s, px + ddx, py + ddy, ddx, ddy, d);
 }
 
+void build_outdoors_dk(Battle& b, const Tables& t, bool river, create::Dice& d)
+{
+    b.indoors = false;
+    const int W = 50, H = 25;
+    auto at = [&](int x, int y) -> uint8_t& { return b.ground[y][x]; };
+    // (a square's picture: the ground entry's fourth byte - 0x25 the plain grass)
+    auto plain = [&](int x, int y) { const uint8_t* g = tile(b, t, x, y); return g && g[3] == 0x25; };
+    for (int y = 0; y < kH; ++y)
+        for (int x = 0; x < kW; ++x) b.ground[y][x] = 0x45;
+    const int f = t.terrain[15];
+    // The river (ovr 0xBEE9): from a column 34 - 5d4 (brought down to one 2
+    // short of a multiple of 7) running down and right; a ford (0xBE24)
+    // when a d20 is at most the rows since the last one
+    if (river) {
+        int col = 0x22 - d.roll(4, 5);
+        while ((col + 2) % 7 > 0) --col;
+        int since = 1;
+        for (int y = 0; y < H; ++y) {
+            if (col > 0x31) continue;
+            if (col >= 0) at(col, y) = 0x34;
+            if (col < 0x31) {
+                if (d.roll(20, 1) <= since) {
+                    const int c = col + 1;
+                    if (c >= 0) at(c, y) = 0x3A;
+                    if (c < 0x31) at(c + 1, y) = static_cast<uint8_t>(0x3A + d.roll(2, 1));
+                    if (c + 1 < 0x31) at(c + 2, y) = static_cast<uint8_t>(0x3A + d.roll(2, 1));
+                    if (c + 2 < 0x31) at(c + 3, y) = 0x3D;
+                    since = 1;
+                } else {
+                    ++since;
+                    if (col + 1 >= 0) at(col + 1, y) = static_cast<uint8_t>(0x34 + d.roll(2, 1));
+                    if (col + 1 < 0x31 && col + 2 >= 0) at(col + 2, y) = 0x37;
+                    if (col + 2 < 0x31 && col + 3 >= 0) at(col + 3, y) = 0x37;
+                    if (col + 3 < 0x31 && col + 4 >= 0) at(col + 4, y) = static_cast<uint8_t>(0x37 + d.roll(2, 1));
+                }
+            }
+            if (col + 4 < 0x31 && col + 5 >= 0) at(col + 5, y) = 0x34;
+            ++col;
+        }
+    }
+    // Trees and logs (ovr 0xC087): column by column
+    if (!(f & 0x80)) {
+        int n = 5;
+        if (f & 0x02) n -= 3;
+        if (f & 0x04) n -= 3;
+        if (f & 0x40) n += 2;
+        if (f & 0x08) n += 5;
+        if (n < 0) n = 1;
+        for (int x = 0; x < W; ++x)
+            for (int y = 1; y < H; ++y) {
+                if (!plain(x, y) || !plain(x, y - 1) || n < d.roll(100, 1)) continue;
+                if (n < d.roll(100, 1)) {
+                    at(x, y - 1) = static_cast<uint8_t>(0x1F + d.roll(5, 1));
+                    at(x, y) = static_cast<uint8_t>(0x24 + d.roll(5, 1));
+                } else {
+                    at(x, y) = static_cast<uint8_t>(0x29 + d.roll(2, 1));
+                }
+            }
+    }
+    // Scattered ground (ovr 0xC39C, a square 0xC21E): by the density's band
+    int D = 50;
+    if (f & 0x10) D += 10;
+    if (f & 0x20) D += 30;
+    if (f & 0x40) D += 20;
+    if (f & 0x04) D -= 10;
+    if (f & 0x02) D -= 20;
+    if (f & 0x80) D -= 50;
+    static const uint8_t kBand[5][5] = {{0, 0, 0, 0x1E, 0x0F}, {0, 1, 5, 0x14, 0x0A}, {0, 2, 5, 0x0A, 5},
+                                        {0x0A, 2, 0x0A, 0x0A, 1}, {0x0F, 5, 0x0F, 0x0A, 1}};
+    int band = -1;
+    if (D >= -30 && D <= 9) band = 0;
+    else if (D >= 10 && D <= 29) band = 1;
+    else if (D >= 30 && D <= 69) band = 2;
+    else if (D >= 70 && D <= 89) band = 3;
+    else if (D >= 90 && D <= 110) band = 4;
+    if (band < 0) return;
+    const uint8_t* k = kBand[band];
+    for (int x = 0; x < W; ++x)
+        for (int y = 0; y < H; ++y) {
+            if (!plain(x, y)) continue;
+            const int r = d.roll(100, 1);
+            if (r <= k[0]) at(x, y) = static_cast<uint8_t>(0x31 + d.roll(2, 1));
+            else if (r <= k[0] + k[1]) at(x, y) = 0x2C;
+            else if (r <= k[0] + k[1] + 1) at(x, y) = static_cast<uint8_t>(0x2C + d.roll(5, 1));
+            else if (r <= k[0] + k[1] + k[2] + k[3]) at(x, y) = 0x44;
+            else if (r <= k[0] + k[1] + k[2] + k[3] + k[4]) at(x, y) = static_cast<uint8_t>(0x3D + d.roll(6, 1));
+        }
+}
+
 void build_outdoors(Battle& b, const Tables& t, int city, create::Dice& d)
 {
     b.indoors = false;
@@ -1451,6 +1540,10 @@ int start_round(Battle& b, create::Dice& d, Event* out, int cap)
         bool ranged = false;
         f.attacks[0] = slot1_attacks(b, f, &ranged);
         int half2 = f.rec[kHalf2];
+        // Darkness's bulette (0x63, facts L5): its handler sets 8 half-attacks
+        // one round in four, else 4 - written over at once in the original (it
+        // never leaps); with the rules fixes as meant (Tom, 2026-10-23; SPEC 12)
+        if (b.fx && b.fx->dk.rake && rules::fixes() && hasx(f, b.fx->dk.rake)) half2 = d.roll(4, 1) == 1 ? 8 : 4;
         if (b.fx && f.has(b.fx->haste)) half2 *= 2;
         if (b.fx && f.has(b.fx->slow)) half2 /= 2;
         f.attacks[1] = attacks_this_round(half2, b.round);
@@ -2054,7 +2147,10 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             const int s = slot ? at.rec[kSides + 1] : sides1;
             const int bo = slot ? static_cast<int8_t>(at.rec[kBonus + 1]) : bonus1;
             int dmg = (n && s ? d.roll(s, n) : 0) + bo;
-            if (b.fx && b.fx->dk.kalistes && hasx(at, b.fx->dk.kalistes)) dmg = kalistes_blow(at, d, dmg);
+            if (b.fx && b.fx->dk.kalistes && hasx(at, b.fx->dk.kalistes)) {
+                dmg = kalistes_blow(at, d, dmg);
+                if (at.blows >= 1 && at.blows <= 6) h.weapon = at.blows;
+            }
             // (a terrified attacker: -2 damage, not under 0 - R14)
             if (b.fx && b.fx->dk.feared && at.has(b.fx->dk.feared)) dmg -= 2;
             if (dmg < 0) dmg = 0;
@@ -2249,6 +2345,8 @@ int drain_class(const Battle& b, const Rec& r, int32_t* exp)
 }
 } // namespace
 
+int (*g_dk_drain)(Battle& b, int c, int n) = nullptr;
+
 void drain(Battle& b, int c, int n, Event* out, int cap, int* n_out, int hit)
 {
     Fighter& f = b.f[c];
@@ -2271,6 +2369,13 @@ void drain(Battle& b, int c, int n, Event* out, int cap, int* n_out, int hit)
         r[kHp] = 0;
         fall(b, c);
     };
+    if (g_dk_drain) {
+        said(Ev::DkDrained, n);
+        const int res = g_dk_drain(b, c, n);
+        if (res == 2) put_down(party::Gone, Ev::DkDrainDies);
+        else if (res == 1) put_down(party::Unconscious, Ev::DkDrainCollapses);
+        return;
+    }
     said(Ev::Drained, n);
     if (f.status() == party::Animated) {
         put_down(party::Gone, Ev::DeadForever);
@@ -4074,6 +4179,24 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             f.rec[kHealth] = party::Dead;
             say(who[k], Did::Fallen, 0);
         };
+        // With the rules fixes AD&D's (1st edition; Tom, 2026-10-23 - SPEC
+        // 12): by hit points now - the first of 11-60 alone, else those of
+        // 10 or less while their total stays at 120 or less
+        if (rules::fixes()) {
+            const int h0 = b.f[who[0]].hp();
+            if (h0 > 10 && h0 <= 60) {
+                if (b.f[who[0]].up()) slay(0);
+                break;
+            }
+            int total = 0;
+            for (int k = 0; k < m; ++k) {
+                const int h = b.f[who[k]].hp();
+                if (!b.f[who[k]].up() || h > 10 || total + h > 120) continue;
+                total += h;
+                slay(k);
+            }
+            break;
+        }
         if (b.f[who[0]].hp_max() > 10 && b.f[who[0]].hp_max() <= 60) {
             if (b.f[who[0]].up()) slay(0);
             break;
@@ -5127,9 +5250,10 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
         return &x;
     };
     // A picture flying from `from` to the square (COMSPR pic, frames, ms a step)
-    auto fly = [&](int from, int x, int y, int pic, int frames, int delay) {
+    auto fly = [&](int from, int x, int y, int pic, int frames, int delay, bool silent = false) {
         Event* e = ev(from, Ev::Fly);
         if (!e) return;
+        e->kind = silent ? 1 : 0;               // (Fly: 1 = no sound of its own)
         e->x = static_cast<uint8_t>(x);
         e->y = static_cast<uint8_t>(y);
         e->pic = static_cast<uint8_t>(pic);
@@ -5181,12 +5305,15 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
         int tg = special_target(b, t, i, reach_far ? reach_far : 12, false, d);
         if (tg >= 0) {
             ev(i, Ev::Gazes);
-            fly(i, b.f[tg].x, b.f[tg].y, 5, 4, 45);
+            // (Darkness's gazes fly the lightning's picture, COMSPR 5 - its
+            // slot 18, ovr 0x1BE0C; no sound: facts L7)
+            const int gp = b.fx->dk.gaze_pic ? b.fx->dk.gaze_pic : 5;
+            fly(i, b.f[tg].x, b.f[tg].y, gp, 4, 45, b.fx->dk.gaze_pic != 0);
             // (Secret's: sent back by its target's effect 0x48 - GAME.OVR 0x1250A)
             if (hasx(f, m.mirror_gaze) && ((m.mirror_word && readied_word(b.f[tg], m.mirror_word)) ||
                                            (m.reflect && hasx(b.f[tg], m.reflect)))) {
                 ev(tg, Ev::Reflects);
-                fly(tg, f.x, f.y, 5, 4, 45);
+                fly(tg, f.x, f.y, gp, 4, 45, b.fx->dk.gaze_pic != 0);
                 tg = i;
             }
             if (!saving_throw(b.f[tg], 1, 0, d)) remove(tg, party::Stoned, Ev::GazeStoned);
@@ -5202,10 +5329,11 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
         int tg = special_target(b, t, i, reach_far ? reach_far : 12, false, d);
         if (tg >= 0) {
             ev(i, Ev::ParaGazes);
-            fly(i, b.f[tg].x, b.f[tg].y, 5, 4, 45);
+            const int gp = dk.gaze_pic ? dk.gaze_pic : 5;           // (ovr 0x1D735: slot 18)
+            fly(i, b.f[tg].x, b.f[tg].y, gp, 4, 45, dk.gaze_pic != 0);
             if (hasx(f, m.mirror_gaze) && m.reflect && hasx(b.f[tg], m.reflect)) {
                 ev(tg, Ev::Reflects);
-                fly(tg, f.x, f.y, 5, 4, 45);
+                fly(tg, f.x, f.y, gp, 4, 45, dk.gaze_pic != 0);
                 tg = i;
             }
             Fighter& v = b.f[tg];
@@ -5225,7 +5353,7 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
         if (tg >= 0) {
             *ends_turn = true;
             ev(i, Ev::VampGazes);
-            fly(i, b.f[tg].x, b.f[tg].y, 5, 4, 45);
+            fly(i, b.f[tg].x, b.f[tg].y, 5, 4, 50);         // (ovr 0x30917: slot 17 - the spell's - 50 a step)
             if (!(dk.gaze_proof && hasx(b.f[tg], dk.gaze_proof))) {
                 Event* e = ev(i, Ev::Cast, tg);
                 if (e) e->amount = 0x0A;
@@ -5341,7 +5469,11 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
     // else the first unused spell (Fear, Slow, Sleep - the caller casts it)
     if (hasx(f, m.rays)) {
         bool used[7] = {};
-        int tg = nearest_enemy(b, t, i);
+        // (Darkness, GAME.OVR 0x23130: the computer's own pick - a random enemy
+        // in sight, any distance - kept ray after ray while it's still in the
+        // fight, else picked again; Curse / Pool / Secret: the nearest each time)
+        const bool dk_pick = b.fx->dk.beholder != 0;
+        int tg = dk_pick ? special_target(b, t, i, 0xFF, false, d) : nearest_enemy(b, t, i);
         for (int pass = 0; pass < 4 && tg >= 0; ++pass) {
             const int r = squares_to(b, t, i, tg);
             Fighter& v = b.f[tg];
@@ -5375,7 +5507,8 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
                 if (e) e->amount = m.ray_spells[k];
                 continue;
             }
-            tg = nearest_enemy(b, t, i);
+            if (!dk_pick) tg = nearest_enemy(b, t, i);
+            else if (!b.f[tg].up()) tg = special_target(b, t, i, 0xFF, false, d);
         }
     }
     // Acid breath (the black dragon): 3 a fight, a line of 6 squares - not
@@ -5545,7 +5678,8 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
         const int tg = special_target(b, t, i, reach_near ? reach_near : 12, false, d);
         if (tg >= 0 && squares_to(b, t, i, tg) < 2) {
             ev(i, Ev::Gazes);
-            fly(i, b.f[tg].x, b.f[tg].y, 0x2D, 4, 45);
+            if (b.fx->dk.gaze_pic) fly(i, b.f[tg].x, b.f[tg].y, b.fx->dk.gaze_pic, 4, 45, true);   // (ovr 0x1C4C6)
+            else fly(i, b.f[tg].x, b.f[tg].y, 0x2D, 4, 45);
             Fighter& v = b.f[tg];
             if (!saving_throw(v, 4, 0, d)) {
                 give_aff(v, b.fx->sp.confuse, d.roll(10, 1) + 2, f.rec[kTeam], false);

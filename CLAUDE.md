@@ -587,7 +587,8 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   DOSBox screenshots matched against tiles, lw/lwsim.cpp: the Screen /
   Walk Tests on the PC). DOSBox: `usescancodes=false` makes Return and
   letters work.
-- Pools of Darkness (Tom, 2026-10-17: next after Secret): facts in the
+- Pools of Darkness (Tom, 2026-10-17: next after Secret; playable since
+  v0.141.0, Play on its page): facts in the
   Project's claude/darkness_facts.md, SPEC 6d. Its GOG files: scratch
   /tmp/claude-0/games2/darkness/...; game number 4; the unpacked program
   /tmp/claude-0/dk/game.bin (data segment image 0x9E70); scratch tools in
@@ -752,7 +753,11 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   now: finish Pools of Darkness, then the Savage Frontier games (Gateway,
   then Treasures) without waiting for Tom's input on routine choices
   (follow the originals; fixes behind Game Fixes; note open questions in
-  TODO).
+  TODO), then the Krynn games (Tom, 2026-10-23).
+- **Standing answer for originals' mistakes** (Tom, 2026-10-23): the game
+  keeps the original's behaviour; the fixed (AD&D) version goes behind
+  Game Fixes - don't ask, just do it and list each such case in the
+  summary to Tom (and SPEC 12).
 - Semantic versioning from `VERSION` (started 0.1.0, 2026-10-06). Bump it in
   every push to main that changes the firmware (fix = Z, feature = Y).
 - Every push to main: CI runs host tests, builds every board, redeploys the

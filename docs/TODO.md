@@ -106,6 +106,15 @@ the Project as claude/TODO.md.
       Character should ask "Pick Character Select" first (the same
       routine in the original); Darkness keeps the menu highlight's place
       in every menu - the engine does it in Alter / the editor only.
+      v0.141.0: PLAYABLE (Play on its page; Tom, 2026-10-23: "finish
+      Pools of Darkness") - its own level drain, camp spells, the gazes'
+      pictures, Kalistes' weapon, the beholder's pick, menu highlights
+      everywhere, the party menu's Drop pick, the overland fight's field
+      (its own outdoor builder), Game Fixes: Power Word Kill, dragon fear,
+      the bulette's leap, Remove Curse's slip, Resurrection's Con. Open:
+      the journal table (Secret's too - neither has one yet: the book
+      view only); Protection from Fire in fights a plain effect; Secret's
+      camp picture while asking whom (not checked).
       v0.136.0: fights. v0.138.0: the missing rules - Turn Undead's
       table, the 6th-9th level spells (Monster Summoning from a reserve
       of 10), dragon fear, Otto's, Kalistes' weapons, vorpal, blessed
@@ -118,6 +127,14 @@ the Project as claude/TODO.md.
       gazes' pictures (COMSPR 0x2D / 0x32); Kalistes' weapon on row 23;
       the beholder's ray target (the original's picker, ovr 0x23130); an
       Energy Drain check.
+- [ ] Darkness 256 colours on the S3 / C5 (merged, branch darkness-vga):
+      matches DOSBox's VGA mode. Open: the overland arena fight (jumper ->
+      Arena -> Overland -> Prime, river No, monster 10 x 1) gives an
+      all-river field with no monster and an empty frame after (EGA
+      too; DOSBox: grass, the monster, the map back); the VGA fight's 40
+      field tiles (23 KB) in internal RAM - one block would go to PSRAM;
+      a Settings switch for EGA on the S3 / C5 (Claude: not now - Tom's
+      rule is 256 colours there).
 - [x] Darkness's fight memory (v0.136.1): the 30-monster test fight 169
       -> 150.6 KB (Curse 146 -> 132, Pool 147 -> 133): the script's code
       parked during fights and its memory the fight's arena, the monster
@@ -138,12 +155,9 @@ the Project as claude/TODO.md.
       switch); Power Word Kill and Resurrection as AD&D behind Game Fixes;
       dragon fear ends with the fight behind Game Fixes. (Claude: the
       last three on branch darkness-leftovers.)
-- [ ] Tom: the bulette's leap (explained 2026-10-23): Darkness's
-      ability 0x63 was meant to give the bulette, one round in four (1d4
-      = 1), 4 attacks from its second attack slot instead of 2 - AD&D's
-      bulette leaping and striking with all four feet - but the program
-      overwrites it at once, so it never happens. Make it work behind
-      Game Fixes, or leave it as the original?
+- [x] Tom (2026-10-23): the bulette's leap - the original's way (never
+      happens) in the game, the working leap behind Game Fixes; the same
+      answer for every future question of this kind (CLAUDE.md).
 - [x] Darkness's sounds (Tom, 2026-10-23): Claude's recommendation -
       two choices, Tandy = the recordings as they are (the SL / TL DAC,
       the GOG Sound Blaster), and the PC speaker; no EX / TX chip choice

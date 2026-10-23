@@ -355,9 +355,11 @@ can't get the memory says "Not enough memory to show this log."
   2.8" ST7789 resistive C5 board (`cyd28c5_st7789_res`: ESP32-C5, 8 MB
   PSRAM; display, touch and card share one SPI bus; sound as I2S PDM on
   GPIO 26 into the amplifier's filter - the C5 has no DAC). Blocks over
-  4 KB go to PSRAM by themselves (Arduino's malloc); later the VGA games
-  run there in 256 colours (the 8-bit canvas). Flasher entries carry the
-  chip (ESP Web Tools' chipFamily).
+  4 KB go to PSRAM by themselves (Arduino's malloc); the VGA games run
+  there in 256 colours (the 8-bit canvas - Pools of Darkness since this
+  branch: `BOARD_PSRAM` in board_select.h, `plat::vga_screen()`,
+  `play::canvas_depth`; 6d). Flasher entries carry the chip (ESP Web
+  Tools' chipFamily).
 - Board facts: the Project's claude/board_facts.md; the games' needs:
   claude/other_games_facts.md.
 
@@ -1254,7 +1256,7 @@ full behaviour checks (every spell, monster, class, item, situation).
   Settings (its own help text); the magic tables are read straight into
   their block (no 4.5 KB copy at a fight's peak).
 
-## 6d. Pools of Darkness (Tom, 2026-10-17: started after Secret)
+## 6d. Pools of Darkness (Tom, 2026-10-17: started after Secret; playable since v0.141.0)
 
 Facts in the Project's claude/darkness_facts.md (from the player's GOG
 files; nothing copied). Its own program generation: GAME.EXE (EXEPACK,
@@ -1529,8 +1531,8 @@ the scripts' changed ops, the rule tables, fights, the rest.
   blessed bolts, the paralysing and vampire gazes, gaze-proof, the
   beholder's rays (Curse's, Darkness's words) then Fear / Slow / Sleep,
   immune to the disease. The bulette's handler never takes in the
-  original (its attack count is written over right after) - none in the
-  engine either. The area spells' burst plays sound 11 again where it
+  original (its attack count is written over right after) - the engine
+  the same, its leap only with Game Fixes (SPEC 12). The area spells' burst plays sound 11 again where it
   lands; the Aim and Speed menus' own words (checked in DOSBox: "RANGE =
   0", "AIM: NEXT PREV MANUAL CENTER EXIT" starting on the fighter itself,
   "GAME SPEED: (4) FASTER SLOWER EXIT"). Checks: sweep's `behave
@@ -1538,6 +1540,56 @@ the scripts' changed ops, the rule tables, fights, the rest.
   /tmp/claude-0/bt/oracle_darkness_fights.txt from scratch
   `dk_fight_oracle.py`). Memory: the budget fight 145,404 bytes (the
   reserve's 10 monsters ~4 KB; Curse 128,499, Pool 129,997).
+- **Darkness's own level drain** (branch darkness-leftovers; scratch
+  facts /tmp/claude-0/dks_left/facts_left.md L1 / L2; its GAME.OVR
+  0x1CF3B): Energy Drain and the drainers 0x65 / 0x66 go through
+  `combat::Battle::dk_drain` to `create::dk_drain` - the class with the
+  highest level (ties: the one whose level started at the least
+  experience), the best levels / experience / HP remembered (the record's
+  0x15F / 0x176 / 0x17A), the experience halfway into the level below,
+  that level's hit points taken by the hit point routine (its roll, the
+  Constitution's part, never below Modify's most), "gets drained", then
+  "dies from drainning" (no level left or HP max 0: gone) or "collapses
+  from drainning" (0 HP: unconscious). Energy Drain stays one level (Tom,
+  2026-10-23: as the original). Checks: sweep's `behave darkness` ONLY=
+  drain (400 oracle cases from scratch `dk_left_oracle.py`, Energy Drain
+  in a fight).
+- **Spells cast in camp** (branch darkness-leftovers; facts L6): the
+  camp lets through the spells whose row's targets byte is above 0 (64:
+  Knock and Cloudkill are not, whatever "when" says) and casts them with
+  their handlers' workings and words (`kDarknessCamp`, Secret's shapes in
+  `spells::cast`): the cures say "is Cured" for each effect they take
+  away (its E2:6B) - Cure Blindness then "can see", Cure Disease then "is
+  cured", Heal its three; Raise Dead (Constitution - 1, its hit points
+  worked out again, 1 HP), Resurrection (the dead only, all hit points),
+  Restoration (`create::dk_restore`: a drained level back with its share
+  of the best hit points and experience), Protection from Fire (a ranger
+  its own effect, others Resist Fire's); the time routine's rolled times
+  (Mind Blank 1440). Checks: ONLY=camp (oracle: the program's rows and the
+  handlers' own words, Restoration worked out in scratch). On screen as
+  DOSBox shows it (Neutralize Poison on Dominic, save A: pixel for pixel):
+  "NAME casts" with the name in cyan and the menu line left up, the camp's
+  picture in the view while it asks whom, each result as the name (cyan)
+  on a line of its own and the words under it.
+- **The fights' smaller gaps** (facts L7): the gazes (stone, confusion,
+  paralysis) fly the lightning's picture (COMSPR 5) without its sound; the
+  vampire's the spell's at 50 a step; Kalistes' blow shows its weapon and
+  "+4" in the panel's weapon rows (23-38 x 7-9); the beholder's rays go at
+  its own pick (a random enemy in sight, kept while it stands).
+- **The menus' highlight** (facts L8): Darkness's menu routine keeps one
+  place for all menus; the camp, Magic, View, items, shop / temple,
+  treasure and exploring menus keep their own, Rest, Take and the spell
+  lists start on their first word, the rest where the last menu was left
+  (`play::hl_own / hl_first / hl_inherit`, the place following each tap);
+  "Lose it?" starts on Yes; the party menu's Drop asks "Pick Character
+  Select" first. Checks: ONLY=menus.
+- **The outdoor field** (facts L9): Darkness's own builder
+  (`combat::build_outdoors_dk`: plain grass, a river with fords when the
+  area's script place 0x33 says so, trees and logs, scattered ground - by
+  its fixed terrain flags) in place of Curse's, whose values its ground
+  table read as river everywhere (the overland arena had no room for the
+  monsters); after an overland fight the map comes back (not Curse's
+  wilderness picture). Checks: ONLY=field.
 - **Alter and the icon editor** (scratch facts
   /tmp/claude-0/dks_alter/facts_alter.md, for the Project's Darkness
   facts; its camp overlay GAME.OVR 0xDCC8 +0x172B, the editor 0x17E16).
@@ -1565,6 +1617,41 @@ the scripts' changed ops, the rule tables, fights, the rest.
   run's place / time line aside): every Alter screen, Drop's questions and
   messages, the editor through 29 steps (parts, colours, size, Keep /
   Exit, another pass), from creation and its "is this icon ok?".
+- **256 colours on the boards with PSRAM** (Tom, 2026-10-12; scratch
+  facts /tmp/claude-0/dks_vga/facts_vga.md): `play::canvas_depth` - 8 for
+  Darkness where `plat::vga_screen()` (BOARD_PSRAM and PSRAM found; the
+  playsim's VGA=1), the viewer makes the canvas so for the Play Test
+  (`frame::set_depth(8)` sets `Canvas::vga`; short of memory: EGA). On a
+  VGA canvas every VGA block draws its values (`draw_vga_block`,
+  `draw_dk_anim`, layout / view3d / the fight's loaders - a byte a pixel:
+  `World::vga_px`, `back`, `px8()` pictures) and its palette entries go
+  to the screen as it's shown (`pic::VgaPalette`; play's `Vga`: `now` =
+  the DAC, `vga_take` / `vga_send`), as the original's VGA mode
+  (darkness_facts.md 7 5.1): BORDERS 16-31, the walls 32-143 and the
+  background 144-175 kept and sent again when the 3D view is drawn
+  (after a picture or a fight), the titles all 256 (16-31 again after
+  them), PIC / BIGPIC 32-255, sprites 176-255 only, the fight's ground
+  32-63, COMSPR 64-95, the party 96-143, monsters 144-255; the frame's
+  colour 13 drawn (EGA leaves it out). Party icons: the head's pixels
+  that aren't see-through replace the body's, then values under 16
+  recoloured (GAME.OVR 0x10F8F; img 0x1C30+0x18B0). Colour cycling: the
+  program's table (DS 0x0CB0, `profile::cycle_facts`: PICs 7, 128, 133,
+  136, 137, 139, 142, 149 and BIGPIC 240-246), each range turning one
+  place every speed x 5 / 100 s while the picture shows. `play::palette`
+  hands the 256 colours to the front end. Checked pixel for pixel against
+  DOSBox in VGA (POOL4.CFG V; the mouse pointer aside): the three titles,
+  the party menu, the docks' 3D view, Rolf, the debug arena's picture
+  with its cycling, sprite (middle range), fight start (party icons,
+  turn box, frame), a monster (CPIC), the results and the view after the
+  fight, the overland (BIGPIC + marker + cycling), the icon editor.
+  The 4-bit path unchanged (Curse / Pool / Secret / Darkness EGA
+  snapshots identical; CANVAS8=1 now draws Darkness in EGA too); the
+  budget fights 128,505 / 129,969 / 145,337 (+6 bytes); classic static
+  RAM +24 bytes. The VGA budget fight: 236,963 bytes at its highest
+  (the 64 KB canvas, 16 KB tiles, the fight's 40 tiles 23 KB - each 576
+  bytes, so internal RAM -, the 3D view not parked) - PSRAM boards only.
+  The canvas parks to the card through a 2 KB internal buffer (the S3's
+  SD/MMC DMA rule). The Look / Walk tests stay in EGA.
 
 ## 6e. Gateway to the Savage Frontier (Tom, 2026-10-23: started after Darkness)
 
@@ -2114,15 +2201,36 @@ the game's Settings (As Original: all of them).
   and never uses it - the blindness gets the spell row's time, 0: for
   good. With Game Fixes on the engine uses the worked-out time; off as
   the original.
-- **Darkness's level drain** (Energy Drain, the drainers 0x65 / 0x66):
-  the engine drains as Pool's routine does (a level's share of the hit
-  points, the experience to the level's start, killed at 0 hit points);
-  Darkness's own (experience halfway between the levels, the best levels
-  remembered, "collapses from drainning" at 0 hit points) isn't in yet.
-  Its words are Darkness's ("gets drained", "dies from drainning").
-- **Darkness's gazes' pictures**: the paralysing gaze flies COMSPR
-  picture 0x2D, the vampire's 0x32 in the original; the engine flies the
-  spell's picture. Kalistes' blows: the original shows the weapon's name
-  and "+4" on row 23; the engine doesn't.
+- **Darkness's Power Word Kill** (`rules::fixes()`; Tom, 2026-10-23): the
+  original goes by HP max - the first target of 11-60 alone, else every
+  one of 10 or less, no total. With Game Fixes on the engine uses AD&D's
+  rule by hit points now: the first of 11-60 alone, else those of 10 or
+  less up to 120 in all; off as the original.
+- **Darkness's dragon fear** (`rules::fixes()`; Tom, 2026-10-23): the
+  original's "terrified" (-2 to hit and damage) has no time and isn't
+  among the effects a fight's end takes away, so it stays after the
+  fight. With Game Fixes on it ends with the fight; off as the original.
+- **Darkness's bulette** (`rules::fixes()`; Tom, 2026-10-23): its ability
+  0x63 sets its second attack slot to 8 half-attacks one round in four
+  (1d4 = 1; else 4) - the leap with all four feet - but the original writes
+  the slot's count over it at once, so it never leaps (a bite and two
+  claws every round). With Game Fixes on the leap takes (four claws of
+  3d6 that round); off as the original.
+- **Darkness's Remove Curse** (`rules::fixes()`): its handler takes off
+  effect 0x2B (a disease's weakness) instead of the curse 0x24 (Secret's
+  same handler takes 0x24); with Game Fixes on the engine takes the curse,
+  off as the original.
+- **Darkness's Resurrection** (`rules::fixes()`; Tom, 2026-10-23): the
+  original costs no Constitution; with Game Fixes on the one raised loses
+  a point as AD&D says (its hit points worked out again); the caster's
+  days of rest AD&D asks for aren't in the engine either way.
+- **Darkness's exploring menu's place** after a script: taken from the
+  last menu's (its routine's restart as the engine sees it - not checked
+  in DOSBox).
+- **Darkness in 256 colours** (the boards with PSRAM): the original's
+  VGA mode; on the classic boards its EGA mode (both the originals'
+  own). The palette changes with the canvas (the whole screen shown
+  again), as the VGA DAC does. The Gold Box Companion's icons (EGA) in
+  the icon gallery use the palette's first 16 entries.
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.

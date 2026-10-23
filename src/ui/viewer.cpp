@@ -116,6 +116,7 @@ int                block_sel = 0;    // entry number in index_
 const char* walk_error = nullptr;
 // Play test
 const char* play_error = nullptr;
+int play_depth = 4;                 // the game screen's depth while the Play Test is open (play::canvas_depth)
 
 // Screen test
 int         look_page = 0;
@@ -155,8 +156,9 @@ void go(Screen s)
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 #endif
     // (the canvas is 4 bits a pixel except while the Resource Test shows a
-    // 256-colour picture: back to 4 anywhere else)
-    if (s != Screen::View) frame::set_depth(4);
+    // 256-colour picture, and while a VGA game plays in 256 colours - its
+    // depth until the Play Test closes; back to 4 anywhere else)
+    if (s != Screen::View) frame::set_depth(play_depth);
     const bool assets = s == Screen::Resources || s == Screen::Blocks || s == Screen::View;
     if (assets && !A) {
         A = new (std::nothrow) Assets;
@@ -1428,6 +1430,15 @@ bool darkness_dir(char* out, size_t cap)
 }
 
 void present_play();
+// The VGA palette of a game in 256 colours (play::palette) to the panel's
+// colours; true: they changed (all: whenever there is one)
+bool play_palette(bool all)
+{
+    const pic::Rgb* pal = nullptr;
+    if (!play::palette(&pal, all)) return false;
+    for (int i = 0; i < 256; ++i) frame::set_palette(i, pal[i]);
+    return true;
+}
 void start_play()
 {
     if (frame::parked()) {
@@ -1471,6 +1482,11 @@ void start_play()
             play::set_import_dir(sd_fs().exists(sv) ? sv : pd);
             break;
         }
+    // The game screen's depth: a byte a pixel for a VGA game in 256 colours
+    // (Pools of Darkness on the boards with PSRAM; short of memory: its EGA
+    // mode on the 4-bit canvas)
+    play_depth = play::canvas_depth(here);
+    if (!frame::set_depth(play_depth)) play_depth = 4;
     play_error = play::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game, frame::canvas(), cdir);
     play::set_present_now(present_play);       // (a message up before slow work - "Saving to slot A...")
     go(Screen::Play);
@@ -3708,6 +3724,7 @@ void leave_play()
     jv = nullptr;
     play::close();
     play_error = nullptr;
+    play_depth = 4;
     if (frame::parked()) {
         // Left on the card after the journal book (no memory then): the
         // Play Test's memory is free now
@@ -3762,6 +3779,11 @@ void draw_big_icon()
 
 void present_play()
 {
+    // A VGA game in 256 colours: its palette changed - the whole screen again
+    if (play_palette(false)) {
+        frame::present();
+        big_force = true;
+    }
     // A fight swaps colours 0 and 8 (the field's black shows dark grey);
     // Gateway's shows 8 black
     static int fight_colours = 0;
@@ -3836,6 +3858,7 @@ void draw_play()
     big_force = true;
     frame::set_ega_palette();
     play::draw(frame::canvas());
+    play_palette(true);                  // (a VGA game in 256 colours: its palette)
     ui::clear();
     frame::present();
     int y0, y1;

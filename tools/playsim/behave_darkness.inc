@@ -6,7 +6,7 @@
 // the constants of the Project's claude/darkness_create_facts.md and its
 // rules worked out there) - never against the engine's own code.
 // ONLY= create, kit, modify, conhp, change; the fights (behave_darkness_fights.inc):
-// fights (all of them), turn ...
+// fights (all of them), turn ...; drain (behave_darkness_left.inc)
 #include "behave_oracle.inc"
 
 namespace bdark {
@@ -553,12 +553,14 @@ bool open_game()
 }
 
 #include "behave_darkness_fights.inc"
+#include "behave_darkness_left.inc"
 
 bool want_part(const char* s)
 {
     const char* only = getenv("ONLY");
     return !only || strstr(only, s) || (strstr(only, "fights") && strcmp(s, "create") && strcmp(s, "kit") &&
-                                        strcmp(s, "modify") && strcmp(s, "conhp") && strcmp(s, "change"));
+                                        strcmp(s, "modify") && strcmp(s, "conhp") && strcmp(s, "change") &&
+                                        strcmp(s, "drain") && strcmp(s, "fixes") && strcmp(s, "field") && strcmp(s, "camp") && strcmp(s, "menus"));
 }
 
 } // namespace bdark
@@ -572,6 +574,7 @@ static void behave_darkness()
         return;
     }
     if (!b_oracle_load("darkness_fights")) expect(P, "oracle file", false, "no oracle_darkness_fights.txt");
+    if (!b_oracle_load("darkness_left")) expect(P, "oracle file", false, "no oracle_darkness_left.txt");
     if (!open_game()) {
         expect(P, "the game opened", false);
         return;
@@ -589,4 +592,5 @@ static void behave_darkness()
     if (want("conhp")) conhp();
     if (want("change")) change();
     dkfight::checks(want_part);
+    dkleft::checks(want_part);
 }

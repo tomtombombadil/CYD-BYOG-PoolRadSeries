@@ -401,7 +401,7 @@ bool read_vga_ega(dax::RleReader& r, const VgaHeader& h, uint8_t* ega256)
 }
 
 bool draw_vga_block(dax::ByteSource& src, const dax::Index& idx, const dax::Entry& e, int frame, Canvas& c, int x,
-                    int y, int mask, Rgb* rgb256)
+                    int y, int mask, VgaPalette* pal)
 {
     uint8_t hdr[kVgaHeaderSize];
     VgaHeader h;
@@ -409,12 +409,16 @@ bool draw_vga_block(dax::ByteSource& src, const dax::Index& idx, const dax::Entr
     {
         dax::RleReader r(src, idx, e);
         if (r.read(hdr, sizeof hdr) != sizeof hdr || !parse_vga_header(hdr, e.raw_size, h)) return false;
-        if (rgb256 ? !read_vga_palette(r, h, rgb256) : r.skip(h.count * 3u) != h.count * 3u) return false;
+        if (pal ? !read_vga_palette(r, h, pal->rgb) : r.skip(h.count * 3u) != h.count * 3u) return false;
+        if (pal) {
+            pal->first = h.first;
+            pal->count = h.count;
+        }
         for (int i = 0; i < 256; ++i) map[i] = static_cast<uint8_t>(i & 0x0F);
         if (!read_vga_ega(r, h, map)) return false;
     }
     dax::RleReader r(src, idx, e);
-    return draw_vga(r, h, frame, c, x, y, mask, c.bpp == 4 ? map : nullptr);
+    return draw_vga(r, h, frame, c, x, y, mask, c.vga && c.bpp == 8 ? nullptr : map);
 }
 
 bool draw_vga(dax::RleReader& r, const VgaHeader& h, int frame, Canvas& c, int x, int y, int mask, const uint8_t* map)
@@ -436,7 +440,7 @@ bool draw_vga(dax::RleReader& r, const VgaHeader& h, int frame, Canvas& c, int x
     return true;
 }
 
-bool parse_dk_anim(dax::RleReader& r, uint32_t raw_size, DkAnim& a)
+bool parse_dk_anim(dax::RleReader& r, uint32_t raw_size, DkAnim& a, VgaPalette* pal)
 {
     a = DkAnim{};
     uint8_t h[11];
@@ -451,7 +455,16 @@ bool parse_dk_anim(dax::RleReader& r, uint32_t raw_size, DkAnim& a)
     if (!a.height || !a.width_cols || a.width_cols > kScreenW / 8 || a.frames > kDkMaxFrames || !a.count ||
         a.first + a.count > 256)
         return false;
-    if (r.skip(a.count * 3u) != a.count * 3u) return false;
+    if (pal) {
+        VgaHeader vh;
+        vh.first = a.first;
+        vh.count = a.count;
+        if (!read_vga_palette(r, vh, pal->rgb)) return false;
+        pal->first = a.first;
+        pal->count = a.count;
+    } else if (r.skip(a.count * 3u) != a.count * 3u) {
+        return false;
+    }
     for (int i = 0; i < 256; ++i) a.ega[i] = static_cast<uint8_t>(i & 15);
     for (int i = 0; i < a.count; i += 2) {
         const int b = r.next();
@@ -536,7 +549,7 @@ bool draw_dk_anim(dax::ByteSource& src, const dax::Index& idx, const dax::Entry&
             }
             if (v == mask) continue;
             const int px = x + i;
-            if (py >= 0 && py < c.h && px >= 0 && px < c.w) c.set(px, py, c.bpp == 4 ? a.ega[v] : static_cast<uint8_t>(v));
+            if (py >= 0 && py < c.h && px >= 0 && px < c.w) c.set(px, py, c.vga && c.bpp == 8 ? static_cast<uint8_t>(v) : a.ega[v]);
         }
     }
     return true;

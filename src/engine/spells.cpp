@@ -241,19 +241,24 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
     case Does::CureBlind:
         for (int k = 0; k < n; ++k)
             if (cure(p.m[who[k]], cures.blinded)) {
-                if (!t.lay.secret) o.say(who[k], Said::Cured);      // (Secret: "can see" alone - 0x2F7DB)
+                // (Secret: "can see" alone - 0x2F7DB; Darkness's cure says "is Cured" first, GAME.OVR 0x32E1B)
+                if (!t.lay.secret || t.lay.dk) o.say(who[k], Said::Cured);
                 o.say(who[k], Said::CanSee);
             }
         break;
     case Does::CureDisease:
         for (int k = 0; k < n; ++k) {
             party::Character& c = p.m[who[k]];
+            bool any = false;
             for (int i = 0; i < 3; ++i) {
                 if (!f.disease[i] || !cure(c, f.disease[i])) continue;
+                any = true;
                 o.say(who[k], Said::Cured);
                 for (uint8_t also : f.disease_with[i])
                     if (also) cure(c, also);
             }
+            // (Darkness, GAME.OVR 0x2CC3C: then "is " + "cured")
+            if (any && t.lay.dk && cs.word) o.say(who[k], Said::Word);
         }
         break;
     case Does::Neutralize:
@@ -261,7 +266,7 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
             party::Character& c = p.m[who[k]];
             if (c.health() == party::Animated) continue;
             if (find_affect(c, cures.poisoned) < 0) {
-                o.say(who[k], Said::Unaffected);
+                o.say(who[k], cs.word2 ? Said::Word2 : Said::Unaffected);     // (Darkness's own "is unaffected")
                 continue;
             }
             if (c.hp() == 0) c.rec[kHp] = 1;
@@ -291,7 +296,10 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
     case Does::RemoveCurse:
         for (int k = 0; k < n; ++k) {
             party::Character& c = p.m[who[k]];
-            if (cure(c, cures.curse)) {
+            // (Darkness's looks for 0x2B - a disease's - not the curse: facts L6;
+            // with Game Fixes the curse)
+            const uint8_t curse = f.curse_dk && !rules::fixes() ? f.curse_dk : cures.curse;
+            if (cure(c, curse)) {
                 o.say(who[k], Said::Cured);
                 o.say(who[k], Said::Uncursed);
                 continue;
@@ -322,7 +330,7 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
                 continue;
             }
             if (!more) {
-                o.say(who[k], Said::Unaffected);
+                o.say(who[k], cs.word2 ? Said::Word2 : Said::Unaffected);     // (Darkness's own "is unaffected")
                 continue;
             }
             give(c, e.affect, minutes, data, false);
@@ -388,6 +396,30 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
         for (int k = 0; k < n; ++k) {
             party::Character& c = p.m[who[k]];
             bool ill = false;
+            if (t.lay.dk) {
+                // Darkness (GAME.OVR 0x2CA54): its cure says "is Cured" for each
+                // effect it takes away (0x32E1B) - the diseases (Cure Disease's
+                // helper 0x2C99B), blindness, feeblemind - then the word
+                for (int i = 0; i < 3; ++i) {
+                    if (!f.disease[i] || !cure(c, f.disease[i])) continue;
+                    ill = true;
+                    o.say(who[k], Said::Cured);
+                    for (uint8_t also : f.disease_with[i])
+                        if (also) cure(c, also);
+                }
+                if (ill && cs.word3) o.say(who[k], Said::Word3);
+                if (cures.blinded && cure(c, cures.blinded)) {
+                    o.say(who[k], Said::Cured);
+                    if (cs.word2) o.say(who[k], Said::Word2);
+                }
+                if (cures.feeblemind && cure(c, cures.feeblemind)) {
+                    o.say(who[k], Said::Cured);
+                    if (cs.word4) o.say(who[k], Said::Word4);
+                }
+                const int target = c.hp_max() - d.roll(cs.sides, cs.n);
+                if (target > c.hp() && rules::heal(c, target - c.hp()) && cs.word) o.say(who[k], Said::Word);
+                continue;
+            }
             for (uint8_t dz : cures.disease)
                 if (dz && cure(c, dz)) ill = true;
             if (ill && cs.word3) o.say(who[k], Said::Word3);
@@ -487,8 +519,41 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
             c.rec[kInCombat] = 1;
             if (c.rec[kConFull] == c.rec[kConNow]) --c.rec[kConFull];    // (no item raising it)
             --c.rec[kConNow];
+            if (t.lay.dk) create::dk_con_recompute(c, t);          // (Darkness: the Constitution's hit points again)
             c.rec[kHp] = 1;
             o.say(who[k], Said::Raised);
+        }
+        break;
+    case Does::Resurrect:
+        // Darkness (GAME.OVR 0x2EF05): the dead only, no Constitution lost,
+        // no survival roll; AD&D's Constitution point with Game Fixes (Tom,
+        // 2026-10-23 - the caster's rest isn't in the engine)
+        for (int k = 0; k < n; ++k) {
+            party::Character& c = p.m[who[k]];
+            if (c.health() != party::Dead || c.rec[kConNow] == 0 || c.race() == f.elf_race) continue;
+            cure(c, cures.poisoned);
+            c.rec[kHealth] = party::Okay;
+            c.rec[kInCombat] = 1;
+            if (rules::fixes()) {
+                if (c.rec[kConFull] == c.rec[kConNow]) --c.rec[kConFull];
+                --c.rec[kConNow];
+                if (t.lay.dk) create::dk_con_recompute(c, t);
+            }
+            c.rec[kHp] = c.rec[0x78];
+            if (cs.word) o.say(who[k], Said::Word);
+        }
+        break;
+    case Does::DkRestore:
+        for (int k = 0; k < n; ++k) create::dk_restore(p.m[who[k]], t);
+        break;
+    case Does::ProtFire:
+        // Darkness (GAME.OVR 0x2EFEC): a ranger (the casters) its own effect for
+        // the caster's level, anyone else Resist Fire's for the spell's time
+        for (int k = 0; k < n; ++k) {
+            party::Character& c = p.m[who[k]];
+            if (c.level(classes::Ranger) > 0) give(c, e.affect, pw, 0, false);
+            else if (f.resist_fire) give(c, f.resist_fire, minutes, 0, false);
+            if (cs.word) o.say(who[k], Said::Word);
         }
         break;
     case Does::Unstone:
@@ -496,7 +561,7 @@ int cast(party::Party& p, int caster, int target, const CampSpell& cs, const cla
         for (int k = 0; k < n; ++k) {
             party::Character& c = p.m[who[k]];
             if (c.health() != party::Stoned) {
-                o.say(who[k], Said::Word2);
+                if (cs.word2) o.say(who[k], Said::Word2);             // (Darkness: nothing said)
                 continue;
             }
             c.rec[kHealth] = party::Okay;

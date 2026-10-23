@@ -211,6 +211,9 @@ enum FightWord {
     // fear), "is beheaded" (vorpal), "is slain" (a blessed bolt), the
     // paralysing gaze's "gazes...", the beholder's "is Stoned"
     kTerrifiedDk, kBeheadedDk, kSlainBoltDk, kParaGazeDk, kRayStonedDk,
+    // Darkness's level drain (its ovr 0x1CF3B): "collapses from drainning"
+    // ("gets drained" / "dies from drainning" are kIsDrained / kDeadForever)
+    kCollapsesDrainDk,
     kFightWords
 };
 
@@ -538,6 +541,9 @@ struct Profile {
         // sparkles, 10 burst; all 0: Curse's), its marks
         uint8_t         comspr[16] = {};
         combat::Comspr  marks = {};
+        // Darkness's Kalistes: its six weapons' names and "+4" (R14; shown in
+        // the panel's weapon rows at each blow - read when shown, facts L7)
+        uint32_t        kalistes_words[7] = {};
     } fight;
 
     // The script machine's own words (GAME.OVR), in ecl::ScriptWord's order
@@ -713,6 +719,20 @@ struct ViewFacts {
 };
 // The game's (all zero: none of it)
 const ViewFacts& view_facts(games::Game g);
+
+// A VGA game's colour cycling (darkness_facts.md 7 4.3; its VGA mode only):
+// the program's table at DS `table` - 15 entries of up to 4 ranges (first
+// entry, count, speed in 5/100 s), a byte each - and which entry a picture
+// takes: the event pictures pic[i] (PIC ids) take entry i, the big pictures
+// big .. big + bigs - 1 entries n_pic on (ov111+0x0, a test per picture)
+struct CycleFacts {
+    uint16_t table;
+    uint8_t  pic[8];
+    uint8_t  n_pic;
+    uint8_t  big, bigs;
+};
+// The game's (nullptr: no cycling)
+const CycleFacts* cycle_facts(games::Game g);
 
 // Whether title step `step` is the one with the lightning (the last
 // picture, when the profile has variant.title_flash)

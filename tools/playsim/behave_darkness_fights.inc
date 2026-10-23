@@ -344,15 +344,19 @@ void spell_checks()
                "%d %d %d, the original's %d", aff_time(A, fx.blinded), aff_time(B, fx.blinded), aff_time(D, fx.blinded), want);
     }
 
-    // Power Word Kill (R9)
+    // Power Word Kill (R9): the original (rules fixes off) by HP max
     {
+        const bool was = rules::fixes();
+        rules::set_fixes(false);
         reset();
+        rules::set_fixes(false);
         put(A, 1, 12, 10, 50);
         put(B, 1, 13, 10, 8);
         cast(C, 0x7D, {A, B});
         expect(F_, "Power Word Kill: the first of 11-60 HP max alone", F(A).status() == party::Dead && F(B).up(),
                "%d %d", F(A).status(), F(B).status());
         reset();
+        rules::set_fixes(false);
         put(A, 1, 12, 10, 70);
         put(B, 1, 13, 10, 8);
         put(D, 1, 14, 10, 10);
@@ -360,6 +364,55 @@ void spell_checks()
         cast(C, 0x7D, {A, B, D, E});
         expect(F_, "Power Word Kill: the first over 60: all of 10 or less", F(A).up() && !F(B).up() && !F(D).up() && F(E).up(),
                "%d %d %d %d", F(A).status(), F(B).status(), F(D).status(), F(E).status());
+        // HP max 70 with 50 left: by HP max the first is over 60
+        reset();
+        rules::set_fixes(false);
+        put(A, 1, 12, 10, 70);
+        F(A).rec[0x1A4] = 50;
+        put(B, 1, 13, 10, 8);
+        cast(C, 0x7D, {A, B});
+        expect(F_, "Power Word Kill (fixes off): HP max 70, 50 left - the 8 slain, not it", F(A).up() && !F(B).up(),
+               "%d %d", F(A).status(), F(B).status());
+        rules::set_fixes(was);
+    }
+    // ... and AD&D's with the rules fixes (Tom, 2026-10-23): by hit points
+    // now - one of 11-60 alone, else those of 10 or less up to 120 in all
+    // (the oracle's pwk_fix: 10 60 10 120)
+    {
+        const bool was = rules::fixes();
+        rules::set_fixes(true);
+        reset();
+        rules::set_fixes(true);
+        put(A, 1, 12, 10, 70);
+        F(A).rec[0x1A4] = 50;
+        put(B, 1, 13, 10, 8);
+        cast(C, 0x7D, {A, B});
+        expect(F_, "Power Word Kill (fixes on): 50 hit points now - slain alone", !F(A).up() && F(B).up(), "%d %d",
+               F(A).status(), F(B).status());
+        reset();
+        rules::set_fixes(true);
+        const int lim = fv("pwk_fix", 3), each = fv("pwk_fix", 2);
+        std::vector<int> tg;
+        int want_dead = 0, total = 0;
+        for (int k = 0; k < 13 && A + k < BT.n; ++k) {
+            put(A + k, 1, 12 + k % 8, 8 + k / 8, k == 0 ? 5 : each);
+            tg.push_back(A + k);
+            const int h = k == 0 ? 5 : each;
+            if (total + h <= lim) {
+                total += h;
+                ++want_dead;
+            }
+        }
+        int t[24], n = 0;
+        for (int i : tg) t[n++] = i;
+        const auto& fl = play::d->prof->fight;
+        nl = combat::cast(BT, play::mrules->tables, C, 0x7D, *combat::fight_spell(fl.spells, fl.n_spells, 0x7D), t, n, play::rng, L,
+                          24, 0);
+        int dead = 0;
+        for (int i : tg) dead += !F(i).up();
+        snprintf(w, sizeof w, "Power Word Kill (fixes on): %d of 5 and 10 hit points - %d slain (120 in all)", n, want_dead);
+        expect(F_, w, dead == want_dead, "%d slain", dead);
+        rules::set_fixes(was);
     }
 
     // Meteor Swarm (R8): four meteors on the diagonals of the square aimed
@@ -535,6 +588,10 @@ void ability_checks()
             want += " " + std::to_string(j < 6 ? fv("kalistes", 2 * j) * fv("kalistes", 2 * j + 1) + fv("kalistes", 12) : 6);
         expect(F_, "Kalistes: seven blows - the six weapons by number (highest dice), then its own 1d6", got == want,
                "%s, the original's%s", got.c_str(), want.c_str());
+        // (each of the six blows names its weapon - with "+4" in the panel, facts L7)
+        std::string wn;
+        for (int j = 0; j < at.n; ++j) wn += " " + std::to_string(at.hits[j].weapon);
+        expect(F_, "Kalistes: the blows' weapons shown (1-6, the seventh none)", wn == " 1 2 3 4 5 6 0", "%s", wn.c_str());
     }
 
     // Vorpal (0x73, ovr 0x1D8C0): after attack 1's hit a d20 of 17+ beheads -
@@ -591,6 +648,18 @@ void ability_checks()
             snprintf(w, sizeof w, "paralysing gaze: a d20 of %d, save 15 at +3%s", d20, proof ? ", gaze-proof" : "");
             expect(F_, w, events(ev, n, combat::Ev::ParaGazes, A) == 1 && (aff_time(C, fx.mon.paralyzed) == fv("pgaze", 2)) == fails,
                    "gazes %d, paralysed for %d", events(ev, n, combat::Ev::ParaGazes, A), aff_time(C, fx.mon.paralyzed));
+            // (the picture in flight: the program's slot 18 - COMSPR 13 + 5, the lightning's - no sound, 45 a step: L7)
+            int pic = -1, delay = -1, silent = -1;
+            for (int j = 0; j < n; ++j)
+                if (ev[j].ev == combat::Ev::Fly) {
+                    pic = play::comspr(ev[j].pic);
+                    delay = ev[j].delay;
+                    silent = ev[j].kind;
+                }
+            if (d20 == 11 && !proof)
+                expect(F_, "the paralysing gaze flies COMSPR slot 18's picture, silent, 45 a step",
+                       pic + 13 == fv("gaze_fly", 0) && delay == fv("gaze_fly", 2) && silent == 1, "COMSPR %d delay %d silent %d",
+                       pic, delay, silent);
         }
     }
 
@@ -610,6 +679,14 @@ void ability_checks()
             }
         expect(F_, "the vampire's gaze: Charm Person (spell 0x0A) at its pick, the turn over",
                events(ev, n, combat::Ev::VampGazes, A) == 1 && cast_at == C && sp == 0x0A && ends, "at %d spell %d", cast_at, sp);
+        int pic = -1, delay = -1;
+        for (int j = 0; j < n; ++j)
+            if (ev[j].ev == combat::Ev::Fly) {
+                pic = play::comspr(ev[j].pic);
+                delay = ev[j].delay;
+            }
+        expect(F_, "the vampire's gaze flies COMSPR slot 17's picture (the spell's), 50 a step",
+               pic + 13 == fv("gaze_fly", 1) && delay == fv("gaze_fly", 3), "COMSPR %d delay %d", pic, delay);
     }
 
     // The beholder (0x75, ovr 0x23275): the rays by distance - 2 disintegrate
@@ -629,6 +706,27 @@ void ability_checks()
                             : events(ev, n, combat::Ev::RayStone, A) == 1 && events(ev, n, combat::Ev::RayStoned, C) == 1 &&
                                   F(C).status() == party::Stoned;
         expect(F_, w, ok, "status %d, %d events", F(C).status(), n);
+    }
+    // ... its target its own pick (ovr 0x23130: a random one in sight, any
+    // distance, kept while it stands): the dice at their highest pick the
+    // last in the list - the farther one, stoned first; then the other
+    {
+        two(0);
+        put(A, 1, 14, 10, 200);
+        put(C, 0, 12, 10, 200);
+        put(1, 0, 11, 10, 200);
+        add_aff(A, fx.mon.rays, 0);
+        dice(1, 1);
+        combat::Event ev[16];
+        bool ends = false;
+        const int n = combat::special(BT, play::fg->t, A, play::rng, ev, 16, &ends);
+        dice_off();
+        int first = -1;
+        for (int j = 0; j < n && first < 0; ++j)
+            if (ev[j].ev == combat::Ev::RayStone || ev[j].ev == combat::Ev::RayDisintegrate) first = static_cast<int>(ev[j].ev);
+        expect(F_, "the beholder's own pick: the farther one (the dice's) stoned first, then the nearer disintegrated",
+               first == static_cast<int>(combat::Ev::RayStone) && F(1).status() == party::Stoned && F(C).status() == party::Gone,
+               "first ray %d, status %d / %d", first, F(1).status(), F(C).status());
     }
 #undef BT
 }

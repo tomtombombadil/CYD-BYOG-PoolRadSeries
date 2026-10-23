@@ -374,6 +374,9 @@ struct Facts {
         uint8_t vorpal = 0, kalistes = 0, rake = 0;
         uint8_t blessed = 0, blessed_type = 0;
         uint8_t no_disease = 0, disease = 0;
+        // its gazes' picture in flight (stone, confusion, paralysis): this one
+        // of Curse's numbers (6, the lightning's - COMSPR 5), with no sound; 0: the game's own
+        uint8_t gaze_pic = 0;
     } dk{};
 };
 
@@ -626,6 +629,9 @@ enum class Ev : uint8_t {
     // bolt), the paralysing gaze's "gazes...", the beholder's "is Stoned",
     // the vampire's "gazes" (then Cast at `to`)
     Terrified, Beheaded, SlainBolt, ParaGazes, RayStoned, VampGazes,
+    // Darkness's level drain (combat::g_dk_drain): "gets drained" (amount: the
+    // levels), "dies from drainning", "collapses from drainning"
+    DkDrained, DkDrainDies, DkDrainCollapses,
 };
 struct Event {
     uint8_t who = 0;
@@ -651,6 +657,11 @@ int squares(int size, int* sx, int* sy);
 // Builds the field
 void build_indoors(Battle& b, const Tables& t, const geo::Map& m, int px, int py, create::Dice& d);
 void build_outdoors(Battle& b, const Tables& t, int city, create::Dice& d);
+// Pools of Darkness's own (GAME.OVR 0xC51A; facts L9): the field plain
+// (0x45), a river (when the area's script place 0x33 says so) with its
+// fords, trees and logs, then scattered ground - by the terrain flags its
+// program always takes (the table's entry 15)
+void build_outdoors_dk(Battle& b, const Tables& t, bool river, create::Dice& d);
 // Pool of Radiance (poolrad_combat_facts.md 1.2): no terrain table - the
 // field's flags come from the place on its overland map (a byte of the
 // program's map; `special`: the area's word says so) and its own
@@ -715,8 +726,9 @@ void recount_attacks(Battle& b, int i);
 
 // ---- Attacking
 struct Hit {
-    bool hit = false;
     int  damage = 0;
+    bool hit = false;
+    uint8_t weapon = 0;                 // Darkness's Kalistes: the blow's weapon (1-6, R14), shown with "+4"
 };
 struct Attack {
     Hit  hits[8];
@@ -766,8 +778,13 @@ Attack bite_attack(Battle& b, int a, int c, const items::Names* names, create::D
 // original - its hit points by the share of a level, the class with the
 // highest level (by its experience) a level less, the experience the new
 // level needs; at level 1: dead forever. The class values (THAC0, saves,
-// slots) are the caller's to work out again (a party member).
+// slots) are the caller's to work out again (a party member). Darkness
+// (g_dk_drain set): its own routine through the caller, its words.
 void drain(Battle& b, int c, int n, Event* out, int cap, int* n_out, int hit = -1);
+// Darkness's own level drain (its ovr 0x1CF3B; set by the caller for its
+// fights, nullptr otherwise - not in the Battle: its memory): the work on
+// fighter c's record (create::dk_drain) - 0 lives, 1 collapses, 2 dies
+extern int (*g_dk_drain)(Battle& b, int c, int n);
 // Damage: HP 0 unconscious, -1..-9 dying (bleeding), -10 dead (HP kept 0
 // when down); true when they went down
 bool damage(Battle& b, int c, int amount);

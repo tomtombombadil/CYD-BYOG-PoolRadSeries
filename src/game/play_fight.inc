@@ -321,19 +321,27 @@ void fight_arena_end();
 combat::Fighter* make_fighters(int n);
 void release_fighters(combat::Fighter* f);
 
-// ---- Pictures, 4 bits a pixel
+// ---- Pictures, 4 bits a pixel (a VGA game in 256 colours: a byte a
+// pixel, its values - px8)
 struct Pic4 {
     uint8_t w = 0, h = 0;
-    uint8_t* px[2] = {};                // ready, attack: rows of w / 2 bytes
+    uint8_t* px[2] = {};                // ready, attack: rows of rowb(w) bytes
 };
 
+inline bool px8() { return vga != nullptr; }
+inline int rowb(int w) { return px8() ? w : w / 2; }
 inline int nib(const uint8_t* p, int w, int x, int y)
 {
+    if (px8()) return p[y * w + x];
     const uint8_t b = p[y * (w / 2) + x / 2];
     return x & 1 ? b & 15 : b >> 4;
 }
 inline void set_nib(uint8_t* p, int w, int x, int y, int v)
 {
+    if (px8()) {
+        p[y * w + x] = static_cast<uint8_t>(v);
+        return;
+    }
     uint8_t& b = p[y * (w / 2) + x / 2];
     b = static_cast<uint8_t>(x & 1 ? (b & 0xF0) | (v & 15) : (b & 0x0F) | (v << 4));
 }
@@ -356,7 +364,7 @@ void free_pic(Pic4& p)
 bool fight_masks() { return d->prof->variant.vga; }
 constexpr int kMaskColour = 8;
 uint32_t mask_bytes(int w, int h) { return (static_cast<uint32_t>(w) * h + 7) / 8; }
-const uint8_t* mask_of(const uint8_t* p, int w, int h) { return fight_masks() && p ? p + (w / 2) * h : nullptr; }
+const uint8_t* mask_of(const uint8_t* p, int w, int h) { return fight_masks() && p ? p + rowb(w) * h : nullptr; }
 inline bool masked(const uint8_t* m, int w, int x, int y)
 {
     const int k = y * w + x;
@@ -371,12 +379,24 @@ uint8_t* load_vga4(dax::RleReader& r, uint32_t raw_size, int frame, int* w, int*
         return nullptr;
     uint8_t map[256];
     for (int i = 0; i < 256; ++i) map[i] = static_cast<uint8_t>(i & 15);
-    if (r.skip(vh.count * 3u) != vh.count * 3u || !pic::read_vga_ega(r, vh, map)) return nullptr;
+    // (a VGA screen: the values, the block's palette entries sent - the
+    // fight's kinds keep apart: ground 32-63, COMSPR 64-95, the party
+    // 96-143, the monsters 144-255; darkness_facts.md 7 4.7)
+    pic::VgaPalette* pal = vga_load();
+    if (pal ? !pic::read_vga_palette(r, vh, pal->rgb) : r.skip(vh.count * 3u) != vh.count * 3u) return nullptr;
+    if (pal) {
+        pal->first = vh.first;
+        pal->count = vh.count;
+        vga_take();
+    }
+    if (!pic::read_vga_ega(r, vh, map)) return nullptr;
+    if (px8())
+        for (int i = 0; i < 256; ++i) map[i] = static_cast<uint8_t>(i);
     const uint32_t at = 10u + vh.count * 3u + (vh.count + 1u) / 2u;
     const uint32_t skip = vh.pixels_at + static_cast<uint32_t>(frame) * vh.frame_bytes() - at;
     if (r.skip(skip) != skip) return nullptr;
     const int pw = vh.width_px(), ph = vh.height;
-    const uint32_t nb = static_cast<uint32_t>(pw / 2) * ph;
+    const uint32_t nb = static_cast<uint32_t>(rowb(pw)) * ph;
     uint8_t* out = static_cast<uint8_t*>(calloc(1, nb + mask_bytes(pw, ph)));
     if (!out) return nullptr;
     uint8_t* m = out + nb;
@@ -481,6 +501,7 @@ constexpr int kPageText = 2048;
 struct Page {
     uint16_t line_at[5];                // where each line starts in Fight::ptext
     uint8_t colour[5];
+    uint8_t weapon = 0;                 // Darkness's Kalistes: its blow's weapon + "+4" in the panel's rows 7-9
     int     lines = 0;
     uint8_t sound = 0;                  // the game's sound effect as it shows (0: none)
     Fx      fx[2];                      // then these, one after the other; then the page's wait
@@ -488,6 +509,8 @@ struct Page {
 
 constexpr int kTileBytes = kSq * kSq / 2;
 constexpr int kTiles = 40;
+// A field picture's bytes (a VGA game in 256 colours: a byte a pixel)
+inline int tile_bytes() { return px8() ? kSq * kSq : kTileBytes; }
 
 // A fight's state in pieces - the battle, this, each field picture a block
 // of its own - so a heap broken up by the area's pictures and a big monster
@@ -718,7 +741,7 @@ uint8_t* arena_adopt(uint8_t* p, size_t n)
 }
 
 // A fight picture's bytes (load_pic4's block: 4-bit rows, Darkness's see-through plane after them)
-size_t pic_bytes(int w, int h) { return static_cast<size_t>(w / 2) * h + (fight_masks() ? mask_bytes(w, h) : 0); }
+size_t pic_bytes(int w, int h) { return static_cast<size_t>(rowb(w)) * h + (fight_masks() ? mask_bytes(w, h) : 0); }
 void arena_adopt(Pic4& ic)
 {
     for (uint8_t*& p : ic.px) p = arena_adopt(p, pic_bytes(ic.w, ic.h));
@@ -766,7 +789,9 @@ void release_fighters(combat::Fighter* f)
 
 bool alloc_tiles()
 {
-    if (!fg->tiles_in_world && park_world()) {
+    // (a VGA game in 256 colours: its tiles don't fit the 3D view's memory -
+    // on the heap; those boards have the PSRAM)
+    if (!px8() && !fg->tiles_in_world && park_world()) {
         uint8_t* base = reinterpret_cast<uint8_t*>(&d->world);
         for (int i = 0; i < kTiles; ++i) fg->tile[i] = base + i * kTileBytes;
         fg->tiles_in_world = true;
@@ -774,7 +799,7 @@ bool alloc_tiles()
     }
     if (fg->tiles_in_world) return true;
     for (uint8_t*& t : fg->tile)
-        if (!t && !(t = static_cast<uint8_t*>(malloc(kTileBytes)))) {
+        if (!t && !(t = static_cast<uint8_t*>(malloc(tile_bytes())))) {
             for (uint8_t*& u : fg->tile) {
                 free(u);
                 u = nullptr;
@@ -874,7 +899,7 @@ void load_vga_frames(const char* file, int block)
             int w = 0, h = 0;
             uint8_t* t = load_vga4(r, e->raw_size, k, &w, &h);
             if (!t) break;
-            if (w == kSq && h == kSq) memcpy(fg->tile[k], t, kTileBytes);   // (see-through: the colour 0 under it)
+            if (w == kSq && h == kSq) memcpy(fg->tile[k], t, tile_bytes());  // (see-through: the colour 0 under it)
             free(t);
         }
     }
@@ -885,7 +910,7 @@ void load_vga_frames(const char* file, int block)
 void load_tiles(bool indoors)
 {
     for (uint8_t* t : fg->tile)
-        if (t) memset(t, 0, kTileBytes);
+        if (t) memset(t, 0, tile_bytes());
     if (d->prof->variant.vga) {
         const int region = vm->get(0x3A) & 0xFF;
         if (indoors) load_vga_frames("DUNGCOM.DAX", d->save.look ? d->save.look : 1);
@@ -912,10 +937,21 @@ void icon_compose(uint8_t* b, const uint8_t* h, int hh, const uint8_t* colours)
         map[kDefault[i]] = colours[i] & 15;
         map[kDefault[i] + 8] = colours[i] >> 4;
     }
-    if (h && fight_masks()) {
+    uint8_t* const bm = fight_masks() ? b + rowb(kSq) * kSq : nullptr;
+    if (h && fight_masks() && px8()) {
+        // Darkness's VGA path (GAME.OVR 0x10F8F): the head's pixels that
+        // aren't see-through replace the body's
+        const uint8_t* hm = h + rowb(kSq) * hh;
+        for (int y = 0; y < hh && y < kSq; ++y)
+            for (int x = 0; x < kSq; ++x) {
+                if (masked(hm, kSq, x, y)) continue;
+                set_nib(b, kSq, x, y, nib(h, kSq, x, y));
+                const int k = y * kSq + x;
+                bm[k >> 3] = static_cast<uint8_t>(bm[k >> 3] & ~(1 << (k & 7)));
+            }
+    } else if (h && fight_masks()) {
         // Darkness's EGA path (GAME.OVR 0x10FC5): the head's colours OR'd
         // onto the body's, see-through where both are
-        uint8_t* bm = b + (kSq / 2) * kSq;
         const uint8_t* hm = h + (kSq / 2) * hh;
         for (int y = 0; y < hh && y < kSq; ++y)
             for (int x = 0; x < kSq; ++x) {
@@ -929,6 +965,19 @@ void icon_compose(uint8_t* b, const uint8_t* h, int hh, const uint8_t* colours)
                 const int v = nib(h, kSq, x, y);
                 if (v) set_nib(b, kSq, x, y, v | nib(b, kSq, x, y));
             }
+    }
+    if (px8()) {
+        // (VGA, img 0x1C30+0x18B0: the values under 16 through the table, the
+        // others as they are; a pixel made the see-through 8 is see-through)
+        for (int y = 0; y < kSq; ++y)
+            for (int x = 0; x < kSq; ++x) {
+                const int k = y * kSq + x;
+                const int v = nib(b, kSq, x, y);
+                if (v >= 16 || (bm && masked(bm, kSq, x, y))) continue;
+                set_nib(b, kSq, x, y, map[v]);
+                if (bm && map[v] == kMaskColour) bm[k >> 3] = static_cast<uint8_t>(bm[k >> 3] | 1 << (k & 7));
+            }
+        return;
     }
     for (int y = 0; y < kSq; ++y)
         for (int x = 0; x < kSq; ++x) set_nib(b, kSq, x, y, map[nib(b, kSq, x, y)]);
@@ -1207,6 +1256,7 @@ void add_page(int who, const char* a, const char* b2 = nullptr, int whom = -1, c
     Page& p = fg->page[fg->pages++];
     p.lines = 0;
     p.sound = 0;
+    p.weapon = 0;
     p.fx[0] = p.fx[1] = Fx{};
     auto line = [&](const char* s, uint8_t col) {
         if (p.lines < 5 && s) {
@@ -1457,6 +1507,17 @@ void show_page(pic::Canvas& c)
     if (log_pages) plat::log("[page] %s %s %s\n", p.lines > 0 ? page_line(p, 0) : "", p.lines > 1 ? page_line(p, 1) : "",
                                  p.lines > 2 ? page_line(p, 2) : "");
     if (p.sound) sfx(p.sound);
+    if (p.weapon) {
+        // Kalistes' blow (GAME.OVR 0x1D924): the weapon and "+4" in the
+        // attacker's weapon rows - the window 23-38 x 7-9 cleared, colour 10
+        char t[40], a[24], b4[8];
+        const auto& kw = d->prof->fight.kalistes_words;
+        ow(kw[p.weapon - 1], a, sizeof a);
+        ow(kw[6], b4, sizeof b4);
+        snprintf(t, sizeof t, "%s%s", a, b4);
+        clear_panel(c, 7, 9);
+        panel_text(c, t, 7, 10, 9);
+    }
     clear_panel(c, 10, 21);
     int row = 10;
     for (int k = 0; k < p.lines; ++k) row = panel_text(c, page_line(p, k), row, p.colour[k]);
@@ -1669,6 +1730,59 @@ void drained_member(int who)
     if (!had) end_magic();
 }
 
+// Darkness's own level drain (its GAME.OVR 0x1CF3B; combat::g_dk_drain): the
+// record's work by create::dk_drain - a party member's own (with its best
+// levels / experience / HP), a monster's whole record; the hit dice from
+// the program (DS hp_count / hp_dice). 0 lives, 1 collapses, 2 dies
+bool read_hp_facts(create::Facts& fa)
+{
+    const auto& pc = d->prof->create;
+    plat::File f;
+    if (!pc.ds_image || !open_file(d->prof->program, f)) return false;
+    bool ok;
+    {
+        plat::FileSource src(f);
+        exepack::Info info;
+        ok = exepack::parse(src, info) == exepack::Status::Ok &&
+             exepack::read(src, info, pc.ds_image + pc.hp_count, fa.hp_count, 8) == exepack::Status::Ok &&
+             exepack::read(src, info, pc.ds_image + pc.hp_dice, fa.hp_dice, 8) == exepack::Status::Ok;
+    }
+    f.close();
+    return ok;
+}
+
+__attribute__((noinline)) int dk_drain_hook(combat::Battle&, int who, int n)
+{
+    combat::Fighter& f = fg->b.f[who];
+    const bool had = mrules != nullptr;
+    if (!had && !load_rules(mrules)) {
+        memlog::note("drain: no memory for the rule tables");
+        return 0;
+    }
+    int res = 0;
+    create::Facts fa{};
+    if (read_hp_facts(fa)) {
+        create::DrainResult r = create::DrainResult::Lives;
+        if (f.member >= 0 && f.member < pt->count) {
+            r = create::dk_drain(pt->m[f.member], mrules->tables, fa, rng, n);
+        } else if (combat::Monster* m = f.rec.monster()) {
+            uint8_t* w = m->whole();
+            party::Character* tmp = w ? new (std::nothrow) party::Character : nullptr;
+            if (tmp) {
+                memcpy(tmp->rec, w, party::kRecordSize);
+                r = create::dk_drain(*tmp, mrules->tables, fa, rng, n);
+                memcpy(w, tmp->rec, party::kRecordSize);
+                delete tmp;
+            } else {
+                memlog::note("drain: no memory for the monster's record");
+            }
+        }
+        res = r == create::DrainResult::Dies ? 2 : r == create::DrainResult::Collapses ? 1 : 0;
+    }
+    if (!had) end_magic();
+    return res;
+}
+
 // What the engine says happened besides the plain blows (monster_fx_facts.md),
 // as pages: the special's words, its picture flying, the results
 void event_page(const combat::Event& e)
@@ -1726,7 +1840,7 @@ void event_page(const combat::Event& e)
         f.y0 = static_cast<uint8_t>(fg->b.f[who].y);
         f.x1 = e.x;
         f.y1 = e.y;
-        if (e.pic == 6) f.sound = sound::kLightning;
+        if (e.pic == 6 && !e.kind) f.sound = sound::kLightning;     // (kind 1: silent - Darkness's gazes)
         Page& p = fg->page[fg->pages - 1];
         p.fx[p.fx[0].kind == Fx::None ? 0 : 1] = f;
         break;
@@ -1805,6 +1919,14 @@ void event_page(const combat::Event& e)
         break;
     }
     case combat::Ev::DeadForever: fallen(profile::kDeadForever); break;
+    // Darkness's drain: "gets drained" (the class values again), "dies from
+    // drainning", "collapses from drainning"
+    case combat::Ev::DkDrained:
+        said(profile::kIsDrained);
+        drained_member(who);
+        break;
+    case combat::Ev::DkDrainDies: fallen(profile::kDeadForever); break;
+    case combat::Ev::DkDrainCollapses: fallen(profile::kCollapsesDrainDk); break;
     case combat::Ev::Diseased: said(profile::kIsDiseased); break;
     case combat::Ev::SucksBlood: said(profile::kSucksBlood); break;
     case combat::Ev::HeldFast: said(profile::kHeldFast); break;
@@ -1890,6 +2012,7 @@ void attack_pages(int a, int t, const combat::Attack& at, bool behind, bool shot
         snprintf(line, sizeof line, "%s%s%d%s%s", behind ? fw(profile::kFromBehind) : "", fw(profile::kHittingFor), dmg,
                  dmg == 1 ? fw(profile::kPointW) : fw(profile::kPointsW), fw(profile::kOfDamage));
         add_page(a, fw(at.backstab ? profile::kBackstabs : profile::kAttacksW), line, t);
+        if (at.hits[k].weapon && !fg->page_dropped) fg->page[fg->pages - 1].weapon = at.hits[k].weapon;
         hit_page();
         // What the hit did besides (poison, paralysis, a touch's damage, engulfing ...)
         for (int j = 0; j < at.n_ev; ++j)
@@ -2850,6 +2973,7 @@ void speed_menu(pic::Canvas& c)
     fg->st = FSt::Speed;
     text::build(menu, prompt, words);
     menu.selected = 0;
+    hl_inherit();                       // (Darkness: GAME.OVR 0x983A - no place of its own)
     show_menu_line(c);
 }
 
@@ -3161,7 +3285,7 @@ void fight_start(pic::Canvas& c)
     // needs, from the rule tables (loaded for this, before the field's blocks)
     int32_t level_exp[8][13] = {};
     const combat::MonFx& mf = d->prof->fight.facts.mon;
-    if ((mf.drain1 || mf.drain2) && load_rules(mrules)) {
+    if ((mf.drain1 || mf.drain2) && !darkness_files() && load_rules(mrules)) {
         for (int k = 0; k < 8; ++k)
             for (int l = 2; l < 13; ++l) level_exp[k][l] = mrules->tables.exp_needed(k, l - 1);
         end_magic();
@@ -3207,12 +3331,17 @@ void fight_start(pic::Canvas& c)
     b.cap = n_fighters;
     b.tables = &fg->t;
     memcpy(b.level_exp, level_exp, sizeof level_exp);
+    combat::g_dk_drain = darkness_files() ? dk_drain_hook : nullptr;     // (its own drain: facts L1)
     b.indoors = vm->get(0x4BE6) != 0;
     // Pool: only its wilderness areas are fought outdoors (the rest from the 3D map)
     const int over = d->prof->variant.overland_area;
     if (d->prof->variant.overland_map && (d->gs.script < over || d->gs.script > over + 2)) b.indoors = true;
     if (b.indoors) combat::build_indoors(b, fg->t, d->map, d->gs.x, d->gs.y, rng);
     else if (d->prof->variant.overland_map) combat::build_outdoors_pool(b, pool_place_flags(), rng);
+    else if (darkness_files()) {
+        combat::build_outdoors_dk(b, fg->t, vm->get(0x33) != 0, rng);   // (its own: facts L9)
+        plat::log("[fight] outdoors: river %d, region %d\n", vm->get(0x33), vm->get(0x3A));
+    }
     else combat::build_outdoors(b, fg->t, vm->get(0x4CA1) & 0xFF, rng);
     load_tiles(b.indoors);
     // The fighters: the party, then the monsters
@@ -3349,7 +3478,8 @@ void fight_back_to_game(pic::Canvas& c)
     bigpic = -1;
     pic_shown = false;
     head_shown = body_shown = -1;
-    if (!vm->get(0x4BE6) && !pool_overland()) host->picture(0x79, 0xFF);     // (Curse's wilderness map)
+    // (Curse's wilderness map; Darkness's overland draws its own map - draw_view)
+    if (!vm->get(0x4BE6) && !pool_overland() && !darkness_files()) host->picture(0x79, 0xFF);
     draw_frame(c);
     draw_view(c);
     draw_panel(c);
@@ -3368,6 +3498,10 @@ void fight_cleanup_party(combat::Result r)
         ch.rec[0x197] = 0;                              // (whatever happened: the party's side after a fight)
         for (uint8_t t : d->prof->fight.ends)
             if (t) rules::remove_affects(ch, t);
+        // Darkness's dragon fear (0x78, R17): the original keeps its -2 / -2
+        // after the fight (no time, not in the list); with the fixes it ends
+        // with the fight (Tom, 2026-10-23; SPEC 12)
+        if (rules::fixes() && d->prof->fight.facts.dk.feared) rules::remove_affects(ch, d->prof->fight.facts.dk.feared);
         rules::keep_hammer(ch, *names, d->facts);       // (its effect ended: the hammer goes)
         // Animated dead: they collapse - dead, on their own side again
         const uint8_t anim = d->prof->fight.facts.sp.animated;
@@ -3766,6 +3900,7 @@ void flame_menu(pic::Canvas& c)
     fg->st = FSt::FlameAsk;
     text::build(menu, fw(profile::kFlameType), fw(profile::kHotCold));
     menu.selected = 0;
+    hl_inherit();                       // (Darkness: GAME.OVR 0x2E555)
     show_menu_line(c);
 }
 
@@ -4825,6 +4960,7 @@ void treasure_take(pic::Canvas& c)
         }
         text::build(menu, prompt, words);
         menu.selected = 0;
+        hl_first();                     // (Darkness: GAME.OVR 0x5480 sets the first)
         show_menu_line(c);
         return;
     }
@@ -4913,9 +5049,9 @@ void treasure_menu(pic::Canvas& c)
         }
         sw(vault ? profile::kDkVaultMenu : profile::kDkTreasureMenu, a, sizeof a);
         keep_words(a, mask, words, sizeof words);
-        const int was = menu.selected;
         text::build(menu, "", words);
-        menu.selected = was >= 0 && was < menu.count ? was : menu.count - 1;
+        menu.selected = 0;
+        hl_own(kDkTreasureMain);        // (GAME.OVR 0x5585 / 0x3261: its own place, from View)
         show_menu_line(c);
         return;
     }
@@ -4949,6 +5085,7 @@ void treasure_menu(pic::Canvas& c)
 
 void open_treasure(pic::Canvas& c)
 {
+    dk_own[kDkTreasureMain] = 0;
     treasure = true;
     temple = false;
     screen = Screen::Shop;

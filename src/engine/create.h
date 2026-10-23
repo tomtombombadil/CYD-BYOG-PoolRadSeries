@@ -204,4 +204,22 @@ int dk_con_hp(const party::Character& c, const classes::Tables& t);
 // That recalculation: the maximum set so, the hit points now moved by as much
 void dk_con_recompute(party::Character& c, const classes::Tables& t);
 
+// Darkness's level drain (GAME.OVR 0x1CF3B): n levels off, each from the
+// class with the highest level (ties: the one whose level started at the
+// least experience), the best levels / experience / HP remembered (ext),
+// the experience halfway into the level below, that level's hit points
+// taken (its roll, while the level is past a human's former one). Dies: no
+// level left or HP max 0; Collapses: HP 0. The class values are the
+// caller's to work out again.
+enum class DrainResult : uint8_t { Lives, Collapses, Dies };
+DrainResult dk_drain(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, int n);
+// The experience a Darkness level starts at (ovr 0x39349; 41+: 0x7FFFFFFF)
+int32_t dk_level_exp(const classes::Tables& t, int cls, int level);
+
+// Darkness's Restoration (GAME.OVR 0x2EBEC): a drained level back - the
+// class whose next level starts at the least experience, its share of the
+// best hit points, the experience (the best one when one level was lost,
+// else that level's start), the class values, "able to train"
+void dk_restore(party::Character& c, const classes::Tables& t);
+
 } // namespace create

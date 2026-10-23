@@ -41,6 +41,11 @@ struct Canvas {
     uint8_t* px;          // stride() * h bytes
     int w, h;
     uint8_t bpp = 8;
+    // The screen shows VGA pictures in their own 256 colours (Pools of
+    // Darkness on the boards with PSRAM: an 8-bit canvas whose values are
+    // the VGA palette's entries); false: in their EGA colours, as the
+    // original's EGA mode (any depth - darkness_facts.md 7)
+    bool vga = false;
     int stride() const { return bpp == 4 ? (w + 1) >> 1 : w; }
     size_t bytes() const { return static_cast<size_t>(stride()) * h; }
     uint8_t get(int x, int y) const
@@ -204,6 +209,13 @@ struct VgaHeader {
     uint32_t frame_bytes() const { return static_cast<uint32_t>(height) * width_px(); }
 };
 
+// The palette entries a VGA block sets, at their own indexes: rgb[first ..
+// first + count - 1] (8-bit RGB from the block's 6-bit values)
+struct VgaPalette {
+    Rgb rgb[256];
+    int first = 0, count = 0;
+};
+
 // Parses the 10 header bytes; true only if the block's size matches exactly.
 bool parse_vga_header(const uint8_t* p, uint32_t raw_size, VgaHeader& out);
 
@@ -221,13 +233,13 @@ bool read_vga_ega(dax::RleReader& r, const VgaHeader& h, uint8_t* ega256);
 bool draw_vga(dax::RleReader& r, const VgaHeader& h, int frame, Canvas& c, int x, int y, int mask = -1,
               const uint8_t* map = nullptr);
 
-// A whole VGA block drawn as the game's screen shows it: on a 4-bit canvas
-// in its EGA colours (the original's EGA mode - Pools of Darkness on the
-// classic boards), on an 8-bit one its palette indexes, the palette entries
-// it sets written to rgb256 (nullptr: not wanted). False: not a VGA picture
-// block or short data.
+// A whole VGA block drawn as the game's screen shows it: in its EGA colours
+// (the original's EGA mode - Pools of Darkness on the classic boards), on
+// a VGA canvas (c.vga) its palette indexes; the palette entries it sets
+// into pal (nullptr: not wanted). False: not a VGA picture block or short
+// data.
 bool draw_vga_block(dax::ByteSource& src, const dax::Index& idx, const dax::Entry& e, int frame, Canvas& c, int x,
-                    int y, int mask = -1, Rgb* rgb256 = nullptr);
+                    int y, int mask = -1, VgaPalette* pal = nullptr);
 
 // ---- Darkness's animations (PIC1, SPRIT1; darkness_facts.md 7 4.2) --------
 // Their own header: u16 height, u16 width in 8-px columns, u16 x, u16 y, u8
@@ -251,10 +263,11 @@ struct DkAnim {
     int width_px() const { return width_cols * 8; }
 };
 // Reads the header (r at the block's start); true only if the frames'
-// packed sizes end exactly at the block's end
-bool parse_dk_anim(dax::RleReader& r, uint32_t raw_size, DkAnim& a);
-// Frame k at (x, y): on a 4-bit canvas in its EGA colours, on an 8-bit one
-// the values. sprite: an approaching monster's (0 and 13 swapped, then 13
+// packed sizes end exactly at the block's end. pal: its palette entries
+// (nullptr: not wanted)
+bool parse_dk_anim(dax::RleReader& r, uint32_t raw_size, DkAnim& a, VgaPalette* pal = nullptr);
+// Frame k at (x, y): in its EGA colours, on a VGA canvas (c.vga) the
+// values. sprite: an approaching monster's (0 and 13 swapped, then 13
 // see-through); mask: another see-through value (-1: none)
 bool draw_dk_anim(dax::ByteSource& src, const dax::Index& idx, const dax::Entry& e, const DkAnim& a, int frame,
                   Canvas& c, int x, int y, bool sprite = false, int mask = -1);

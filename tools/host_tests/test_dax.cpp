@@ -496,8 +496,9 @@ static void test_vga()
             if (px[(20 + row) * pic::kScreenW + 10 + col] != 40 + (row * 8 + col + 1) % 4) ok = false;
     CHECK(ok);
     // On a 4-bit canvas (the classic boards: Darkness's EGA mode) each
-    // pixel is its entry's EGA nibble (high nibble first); on an 8-bit one
-    // the index, the palette handed back
+    // pixel is its entry's EGA nibble (high nibble first), on an 8-bit one
+    // without vga too; on a VGA canvas (the boards with PSRAM) the index,
+    // the palette handed back
     {
         static uint8_t px4[pic::kScreenW * pic::kScreenH / 2];
         pic::Canvas c4{px4, pic::kScreenW, pic::kScreenH, 4};
@@ -508,10 +509,15 @@ static void test_vga()
             for (int col = 0; col < 8; ++col)
                 if (c4.get(16 + col, 8 + row) != 1 + (row * 8 + col) % 4) ok4 = false;
         CHECK(ok4 && c4.get(15, 8) == 0 && c4.get(24, 8) == 0);
-        static pic::Rgb rgb2[256];
+        static pic::VgaPalette pal2;
         c.clear(0);
-        CHECK(pic::draw_vga_block(src, idx, e, 1, c, 0, 0, -1, rgb2));
-        CHECK(px[0] == 41 && rgb2[41].g == 255 && rgb2[40].r == 255);
+        CHECK(pic::draw_vga_block(src, idx, e, 1, c, 0, 0, -1, &pal2));
+        CHECK(px[0] == 1 + 1 && pal2.first == 40 && pal2.count == 4);        // (not vga: the EGA nibble)
+        c.vga = true;
+        c.clear(0);
+        CHECK(pic::draw_vga_block(src, idx, e, 1, c, 0, 0, -1, &pal2));
+        CHECK(px[0] == 41 && pal2.rgb[41].g == 255 && pal2.rgb[40].r == 255);
+        c.vga = false;
     }
     // The frame count is a u16 (Darkness's wall sets: 256 tiles)
     {
@@ -572,6 +578,17 @@ static void test_dk_anim()
     CHECK(c4.get(8, 4) == 5 && c4.get(9, 4) == 10 && c4.get(11, 4) == 10 && c4.get(15, 5) == 10 && c4.get(16, 4) == 0);
     CHECK(pic::draw_dk_anim(src, idx, e, a, 1, c4, 8, 4));
     CHECK(c4.get(8, 4) == 5 && c4.get(9, 4) == 10 && c4.get(11, 4) == 5 && c4.get(13, 4) == 10 && c4.get(15, 5) == 10);
+    // A VGA canvas (Darkness on the boards with PSRAM): the values, the palette handed back
+    {
+        static pic::VgaPalette pal;
+        dax::RleReader r(src, idx, e);
+        CHECK(pic::parse_dk_anim(r, e.raw_size, a, &pal) && pal.first == 32 && pal.count == a.count);
+        static uint8_t px8[pic::kScreenW * pic::kScreenH];
+        pic::Canvas c8{px8, pic::kScreenW, pic::kScreenH, 8};
+        c8.vga = true;
+        c8.clear(0);
+        CHECK(pic::draw_dk_anim(src, idx, e, a, 0, c8, 8, 4) && c8.get(8, 4) == 32 && c8.get(9, 4) == 33);
+    }
     CHECK(!pic::draw_dk_anim(src, idx, e, a, 2, c4, 8, 4));
     // A see-through value leaves the canvas as it was
     c4.clear(3);
@@ -615,6 +632,17 @@ static void test_chain_frame()
     c.clear(0);
     layout::combat(c, tb, t);
     CHECK(is(0, 22, 2) && is(39, 22, 3) && is(22, 0, 6) && is(22, 22, 7) && is(22, 10, 5) && c.get(3, 23 * 8 + 3) == 0);
+    // A VGA screen: the values, 13 drawn too (only EGA leaves it out), the palette handed back
+    static layout::Tiles tv;
+    static pic::VgaPalette pal;
+    CHECK(layout::load_vga_tiles(src, idx, 0, tv, 20, 11, false, &pal) && tv.vga && tv.px[25][5] == 21 &&
+          pal.first == 16 && pal.count == 16);
+    static uint8_t px8[pic::kScreenW * pic::kScreenH];
+    pic::Canvas c8{px8, pic::kScreenW, pic::kScreenH, 8};
+    c8.vga = true;
+    c8.clear(0);
+    layout::explore(c8, tb, tv);
+    CHECK(c8.get(0, 0) == 13 && c8.get(3, 3) == 16 && c8.get(39 * 8 + 3, 3) == 17);
 }
 
 // Darkness's wall tiles (darkness_facts.md 7.3): an 8X8D1-like block -
@@ -640,6 +668,20 @@ static void test_dk_walls()
     CHECK(view3d::load_vga_tiles(src, idx, 1, w) && w.dk && w.common.count == 45 && w.sets[2].count == 70);
     auto nib = [](int t) { return (t % 0x70) % 15 + 1; };       // tile t's colour
     CHECK((w.common.px[0][0] >> 4) == nib(1) && (w.sets[0].px[0][5] & 15) == nib(46) && (w.sets[2].px[69][0] >> 4) == nib(255));
+    // A VGA screen: the tiles a byte a pixel (their values), the palette handed back
+    static view3d::World wv;
+    wv.vga = true;
+    static pic::VgaPalette pal;
+    CHECK(view3d::load_vga_tiles(src, idx, 1, wv, &pal) && wv.vga_px && wv.common.count == 45 && wv.sets[2].count == 70 &&
+          pal.first == 0x20 && pal.count == 0x70);
+    static uint8_t px8[pic::kScreenW * pic::kScreenH];
+    pic::Canvas c8{px8, pic::kScreenW, pic::kScreenH, 8};
+    c8.vga = true;
+    c8.clear(0);
+    view3d::draw_tile(c8, wv, 46, 0, 0);
+    view3d::draw_tile(c8, wv, 255, 1, 1);
+    CHECK(c8.get(24, 24) == 0x20 + 46 % 0x70 && c8.get(32, 32) == 0x20 + 255 % 0x70);
+    view3d::vga_free(wv);
 }
 
 // Font block: 177 glyphs; glyph g's rows are made-up patterns
@@ -1107,11 +1149,11 @@ static void test_layout()
         CHECK(sec && !strcmp(sec->font_file, "8X8D5.DAX") && sec->variant.tile_window == 40 && sec->party.count == 13 &&
               sec->ecl_ops->area_by_block && sec->start_script == 17 && sec->variant.bigpic_from == 0x70);
         CHECK(profile::ready(games::Game::SecretOfTheSilverBlades));
-        // Pools of Darkness: being built; GAME.EXE; its scripts' operand
-        // counts (darkness_facts.md 2); VGA pictures
+        // Pools of Darkness: playable (v0.141.0); GAME.EXE; its scripts'
+        // operand counts (darkness_facts.md 2); VGA pictures
         const profile::Profile* dk = profile::find(games::Game::PoolsOfDarkness, 64203, 72784);
         CHECK(dk && !strcmp(dk->program, "GAME.EXE") && dk->data_base == 0x9E70 && dk->variant.vga &&
-              !profile::ready(games::Game::PoolsOfDarkness));
+              profile::ready(games::Game::PoolsOfDarkness));
         CHECK(dk && dk->ecl_ops->sizes[0x0C] == 4 && dk->ecl_ops->sizes[0x1D] == 0 &&
               dk->ecl_ops->sizes[0x27] == ecl::kCount4 && dk->ecl_ops->sizes[0x31] == ecl::kCount2 &&
               dk->ecl_ops->end_op == 0x23 && dk->ecl_ops->sizes[0x22] == 0 &&

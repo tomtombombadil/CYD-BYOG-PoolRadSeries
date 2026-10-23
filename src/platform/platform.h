@@ -28,4 +28,9 @@ void log(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 size_t free_heap();
 size_t largest_block();
 
+// The machine shows the VGA games in their 256 colours (a byte-a-pixel
+// game screen and its palette; the boards with PSRAM - Tom, 2026-10-12);
+// false: in their own EGA mode's 16 (the classic boards)
+bool vga_screen();
+
 } // namespace plat
