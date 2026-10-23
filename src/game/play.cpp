@@ -69,11 +69,17 @@ struct Data {
     {
         delete ov;
         delete anim_idx;
+        free(tr_frame);
+        free(tr_pieces);
     }
     Data(const Data&) = delete;
     Data& operator=(const Data&) = delete;
     layout::Tiles  frame_tiles;
     layout::Tables tables;
+    // Treasures: its frame's tiles (BORD block 0, 64 x 64 bytes) and pieces
+    // (BORD block 7) - layout::Tables tr
+    uint8_t*       tr_frame = nullptr;
+    uint8_t*       tr_pieces = nullptr;
     font::Font     font;
     font::Font*    alt_font = nullptr;      // the player's Pools of Darkness font while it's chosen
     bool           alt_tried = false;       // (its file was looked for)
@@ -872,6 +878,17 @@ uint8_t script_text_colour()
     return v == 0 || v > 15 ? 10 : v;
 }
 
+// The scripts' text window (Treasures: five lines 9 pixels apart from 2
+// below row 17 - DOSBox)
+text::Region script_area()
+{
+    if (!d->prof->variant.tr) return text::kTextArea;
+    text::Region r = text::kTextArea;
+    r.line_h = 9;
+    r.y_off = 2;
+    return r;
+}
+
 // Darkness's background (darkness_facts.md 7.3): indoors (the square's
 // flags 0x80) BACK1's picture of the look; outdoors SKYGRND - with the gold
 // frame (style 0 / 4) night from hour 14 (2), overcast with game byte 0x3A
@@ -969,7 +986,7 @@ void draw_position(pic::Canvas& c)
                  camping ? " CAMPING" : (vm->get(0x7ECA) & 1) ? " SEARCH" : "");
     else
         snprintf(line, sizeof line, "%s %02d:%s", geo::dir_name(g.dir), hours, mins);
-    put(c, line, 17, 15, 10);
+    put(c, line, d->prof->variant.tr ? 18 : 17, 15, 10);      // (Treasures: from column 18 - DOSBox)
     dirty_rows(15, 15);
 }
 
@@ -977,7 +994,7 @@ void draw_position(pic::Canvas& c)
 // row 4 - the selected one's name white, the others cyan (red: out of the
 // fights, yellow: on the other side); AC and HP right-aligned at columns
 // 34 and 38, HP yellow when below the most (as the games print it)
-void draw_party(pic::Canvas& c, int col)
+void draw_party(pic::Canvas& c, int col, bool mark_sel = true)
 {
     c.fill(col * 8, 2 * 8, (39 - col) * 8, 8, 0);      // (a "no party yet" line goes)
     put(c, d->name_head, col, 2, 15);
@@ -988,7 +1005,7 @@ void draw_party(pic::Canvas& c, int col)
         c.fill(col * 8, row * 8, (39 - col) * 8, 8, 0);
         char t[24];
         ch.name(t, sizeof t);
-        const uint8_t fg = i == pt->selected ? 15 : !ch.in_combat() ? 12 : ch.enemy() ? 14 : 11;
+        const uint8_t fg = i == pt->selected && mark_sel ? 15 : !ch.in_combat() ? 12 : ch.enemy() ? 14 : 11;
         put(c, t, col, row, fg);
         const int ac = ch.ac_raw();
         const int aw = ac <= 0x32 ? 1 : ac <= 0x3C ? 2 : ac <= 0x45 ? 1 : 0;
@@ -1011,6 +1028,23 @@ void draw_panel(pic::Canvas& c)
     draw_position(c);
 }
 
+// Treasures: the lattice round the picture box (its img 0x199B): BORD 3's
+// frames 0 / 1 along the top and bottom, BORD 5's down the sides
+void tr_lattice(pic::Canvas& c)
+{
+    plat::File f;
+    if (!open_dax("BORD.DAX", f)) return;
+    plat::FileSource src(f);
+    struct Part { uint8_t block, frame; int16_t x, y; };
+    static const Part kParts[] = {{3, 0, 0, 0}, {3, 1, 0, 112}, {5, 0, 0, 24}, {5, 1, 112, 24}};
+    for (const Part& p : kParts) {
+        const dax::Entry* e = d->idx.find(p.block);
+        if (e) pic::draw_vga_block(src, d->idx, *e, p.frame, c, p.x, p.y, 13, vga_load());
+        vga_take();
+    }
+    f.close();
+}
+
 void draw_frame(pic::Canvas& c)
 {
     c.clear(0);
@@ -1019,6 +1053,7 @@ void draw_frame(pic::Canvas& c)
         layout::bar(c, d->tables, d->frame_tiles, 16);
     } else {
         layout::explore(c, d->tables, d->frame_tiles);
+        if (d->tables.tr) tr_lattice(c);
     }
     dirty(0, pic::kScreenH);
 }
@@ -1335,25 +1370,33 @@ void pm_flags(bool on[Data::kItems])
 void pm_prompt(pic::Canvas& c, const char* note = nullptr)
 {
     clear_menu_line(c);
-    put(c, note ? note : d->choose, 0, text::kMenuRow, 13);
+    // (Treasures: "Select" white - DOSBox)
+    put(c, note ? note : d->choose, 0, text::kMenuRow, d->prof->variant.tr && !note ? 15 : 13);
 }
 
 void draw_party_menu(pic::Canvas& c)
 {
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
-    if (pt->count) draw_party(c, 1);
+    // (Treasures: no member marked on its party menu, its menu's line white
+    // - DOSBox)
+    const bool tr = d->prof->variant.tr;
+    if (pt->count) draw_party(c, 1, !tr);
     bool on[Data::kItems];
     pm_flags(on);
     pm_lines = 0;
+    int n_on = 0;
+    for (int i = 0; i < d->items; ++i) n_on += on[i];
+    if (pm_sel >= n_on) pm_sel = n_on ? n_on - 1 : 0;
     // (Darkness: from column 9, all green)
     const int col0 = d->prof->variant.party_menu_col ? d->prof->variant.party_menu_col : 2;
     for (int i = 0; i < d->items; ++i) {
         if (!on[i]) continue;
         const int row = 12 + pm_lines;
+        const uint8_t fg = tr && pm_lines == pm_sel ? 15 : 10;
         char first[2] = {d->item[i][0], 0};
-        put(c, first, col0, row, d->prof->variant.party_menu_col ? 10 : 15);
-        put(c, d->item[i] + 1, col0 + 1, row, 10);
+        put(c, first, col0, row, d->prof->variant.party_menu_col ? fg : 15);
+        put(c, d->item[i] + 1, col0 + 1, row, fg);
         pm_item[pm_lines++] = i;
     }
     if (pm_sel >= pm_lines) pm_sel = pm_lines ? pm_lines - 1 : 0;
@@ -8372,6 +8415,11 @@ void pm_choose_key(char key, pic::Canvas& c)
             // (darkness_facts.md 32)
             load_where = true;
             screen = Screen::LoadWhich;
+            if (d->prof->variant.tr) {
+                // (Treasures: the frame alone while it asks - DOSBox)
+                layout::outer(c, d->tables, d->frame_tiles);
+                dirty(0, pic::kScreenH);
+            }
             text::build(menu, d->load_from, d->load_sources);
             menu.selected = 0;
             hl_inherit();
@@ -8657,6 +8705,7 @@ void pm_tap(int x, int y, pic::Canvas& c)
     }
     const int line = row - 12;
     if (line >= 0 && line < pm_lines && y < text::kMenuTapTop) {
+        if (d->prof->variant.tr) pm_sel = line;     // (Treasures: its menu keeps the line picked white)
         pm_prompt(c);
         pm_choose(pm_item[line], c);
     }
@@ -9463,7 +9512,16 @@ void begin_wait(pic::Canvas& c)
             handle(vm->resume());
             return;
         }
-        text::begin(w, c, vm->text(), text::kTextArea, script_text_colour(), vm->clear());
+        text::begin(w, c, vm->text(), script_area(), script_text_colour(), vm->clear());
+        if (d->prof->variant.tr) {
+            // Treasures: its colour codes ("%" + a hex digit); the last one
+            // stays the scripts' colour (game byte 0x38 - img 0x6765)
+            w.codes = true;
+            const char* t = vm->text();
+            for (int k = 0; t[k] && t[k + 1]; ++k)
+                if (t[k] == '%' && isxdigit(static_cast<unsigned char>(t[k + 1])) && !islower(static_cast<unsigned char>(t[k + 1])))
+                    d->gs.area1[0x38] = static_cast<uint8_t>(isdigit(static_cast<unsigned char>(t[k + 1])) ? t[k + 1] - '0' : t[k + 1] - 'A' + 10);
+        }
         if (vm->clear()) dirty_rows(17, 22);
         t_started = false;
         page_prompt = false;
@@ -9505,7 +9563,7 @@ void begin_wait(pic::Canvas& c)
     }
     case ecl::Wait::ListMenu:
         heard(vm->prompt());
-        text::begin(w, c, vm->prompt(), text::kTextArea, 10, true);
+        text::begin(w, c, vm->prompt(), script_area(), 10, true);
         dirty_rows(17, 22);
         t_started = false;
         page_prompt = false;
@@ -11901,6 +11959,48 @@ __attribute__((noinline)) bool open_program(games::Game g, const char* prog)
     return true;
 }
 
+// Treasures: its frame (port facts P7) - BORD.DAX block 0's tiles and
+// block 7's pieces, kept while playing
+__attribute__((noinline)) bool open_tr_frame()
+{
+    plat::File f;
+    if (!open_dax("BORD.DAX", f)) return false;
+    plat::FileSource src(f);
+    bool ok = false;
+    d->tr_frame = static_cast<uint8_t*>(malloc(64 * 64));
+    const dax::Entry* e = d->idx.find(7);
+    if (d->tr_frame && e && e->raw_size > 0) d->tr_pieces = static_cast<uint8_t*>(malloc(e->raw_size));
+    if (d->tr_pieces && dax::load_block(src, d->idx, *e, d->tr_pieces) == e->raw_size &&
+        layout::load_tr_tiles(src, d->idx, 0, d->tr_frame, !vga, vga_load())) {
+        vga_take(true);              // (a VGA screen: its entries 16-31, kept)
+        layout::Tables& tb = d->tables;
+        tb.tr = true;
+        tb.chain = false;
+        layout::tr_set_pieces(tb, d->tr_pieces, e->raw_size);
+        tb.tr_tiles = d->tr_frame;
+        tb.tr_vga = vga != nullptr;
+        ok = true;
+        // Its text font: BORD block 8's 64 glyphs (white on magenta - '@',
+        // A-Z ... in the order of the font's glyphs 0-63; DOSBox) in place
+        // of 8X8D0's (whose other glyphs stay)
+        uint8_t* g = static_cast<uint8_t*>(malloc(64 * 64));
+        if (g && layout::load_tr_tiles(src, d->idx, 8, g, true)) {
+            for (int k = 0; k < 64; ++k)
+                for (int y = 0; y < 8; ++y) {
+                    uint8_t bits = 0;
+                    for (int x = 0; x < 8; ++x) {
+                        const uint8_t v = g[k * 64 + y * 8 + x];
+                        if (v != 13 && v != 0) bits = static_cast<uint8_t>(bits | 0x80 >> x);
+                    }
+                    d->font.glyph[k][y] = bits;
+                }
+        }
+        free(g);
+    }
+    f.close();
+    return ok;
+}
+
 // The frame's tiles, the font, the 3D view's common tiles
 __attribute__((noinline)) bool open_tiles()
 {
@@ -11916,8 +12016,9 @@ __attribute__((noinline)) bool open_tiles()
         ok = layout::load_vga_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, 0, 20, !vga) &&
              font::load(src, d->idx, d->font);
         f.close();
-        if (ok) ok = open_dax("BORDERS.DAX", f);
-        if (ok) {
+        if (ok && d->prof->variant.tr) ok = open_tr_frame();
+        else if (ok) ok = open_dax("BORDERS.DAX", f);
+        if (ok && !d->prof->variant.tr) {
             plat::FileSource bsrc(f);
             ok = layout::load_vga_tiles(bsrc, d->idx, 0, d->frame_tiles, 20, 11, !vga, vga_load());
             vga_take(true);
