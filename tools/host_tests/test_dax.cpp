@@ -1039,11 +1039,11 @@ static void test_layout()
         CHECK(sec && !strcmp(sec->font_file, "8X8D5.DAX") && sec->variant.tile_window == 40 && sec->party.count == 13 &&
               sec->ecl_ops->area_by_block && sec->start_script == 17 && sec->variant.bigpic_from == 0x70);
         CHECK(profile::ready(games::Game::SecretOfTheSilverBlades));
-        // Pools of Darkness: being built; GAME.EXE; its scripts' operand
-        // counts (darkness_facts.md 2); VGA pictures
+        // Pools of Darkness: playable (v0.141.0); GAME.EXE; its scripts'
+        // operand counts (darkness_facts.md 2); VGA pictures
         const profile::Profile* dk = profile::find(games::Game::PoolsOfDarkness, 64203, 72784);
         CHECK(dk && !strcmp(dk->program, "GAME.EXE") && dk->data_base == 0x9E70 && dk->variant.vga &&
-              !profile::ready(games::Game::PoolsOfDarkness));
+              profile::ready(games::Game::PoolsOfDarkness));
         CHECK(dk && dk->ecl_ops->sizes[0x0C] == 4 && dk->ecl_ops->sizes[0x1D] == 0 &&
               dk->ecl_ops->sizes[0x27] == ecl::kCount4 && dk->ecl_ops->sizes[0x31] == ecl::kCount2 &&
               dk->ecl_ops->end_op == 0x23 && dk->ecl_ops->sizes[0x22] == 0 &&

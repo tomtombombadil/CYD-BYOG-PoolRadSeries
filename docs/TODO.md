@@ -106,6 +106,15 @@ the Project as claude/TODO.md.
       Character should ask "Pick Character Select" first (the same
       routine in the original); Darkness keeps the menu highlight's place
       in every menu - the engine does it in Alter / the editor only.
+      v0.141.0: PLAYABLE (Play on its page; Tom, 2026-10-23: "finish
+      Pools of Darkness") - its own level drain, camp spells, the gazes'
+      pictures, Kalistes' weapon, the beholder's pick, menu highlights
+      everywhere, the party menu's Drop pick, the overland fight's field
+      (its own outdoor builder), Game Fixes: Power Word Kill, dragon fear,
+      the bulette's leap, Remove Curse's slip, Resurrection's Con. Open:
+      the journal table (Secret's too - neither has one yet: the book
+      view only); Protection from Fire in fights a plain effect; Secret's
+      camp picture while asking whom (not checked).
       v0.136.0: fights. v0.138.0: the missing rules - Turn Undead's
       table, the 6th-9th level spells (Monster Summoning from a reserve
       of 10), dragon fear, Otto's, Kalistes' weapons, vorpal, blessed

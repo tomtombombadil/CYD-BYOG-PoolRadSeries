@@ -1256,7 +1256,7 @@ full behaviour checks (every spell, monster, class, item, situation).
   Settings (its own help text); the magic tables are read straight into
   their block (no 4.5 KB copy at a fight's peak).
 
-## 6d. Pools of Darkness (Tom, 2026-10-17: started after Secret)
+## 6d. Pools of Darkness (Tom, 2026-10-17: started after Secret; playable since v0.141.0)
 
 Facts in the Project's claude/darkness_facts.md (from the player's GOG
 files; nothing copied). Its own program generation: GAME.EXE (EXEPACK,

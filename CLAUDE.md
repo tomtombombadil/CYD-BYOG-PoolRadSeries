@@ -587,7 +587,8 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   DOSBox screenshots matched against tiles, lw/lwsim.cpp: the Screen /
   Walk Tests on the PC). DOSBox: `usescancodes=false` makes Return and
   letters work.
-- Pools of Darkness (Tom, 2026-10-17: next after Secret): facts in the
+- Pools of Darkness (Tom, 2026-10-17: next after Secret; playable since
+  v0.141.0, Play on its page): facts in the
   Project's claude/darkness_facts.md, SPEC 6d. Its GOG files: scratch
   /tmp/claude-0/games2/darkness/...; game number 4; the unpacked program
   /tmp/claude-0/dk/game.bin (data segment image 0x9E70); scratch tools in
