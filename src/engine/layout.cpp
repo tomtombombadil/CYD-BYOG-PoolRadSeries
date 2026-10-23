@@ -290,7 +290,7 @@ void tr_tile(pic::Canvas& c, const Tables& tb, int n, int col, int row)
         for (int x = 0; x < 8; ++x) {
             const uint8_t v = s[y * 8 + x];
             const int px = col * 8 + x, py = row * 8 + y;
-            if ((v != kMask || tb.tr_vga) && px >= 0 && px < c.w && py >= 0 && py < c.h) c.set(px, py, v);
+            if (v != kMask && px >= 0 && px < c.w && py >= 0 && py < c.h) c.set(px, py, v);
         }
 }
 // Piece k across (or down) from cell (col, row): its tiles one a cell, 0xFF
