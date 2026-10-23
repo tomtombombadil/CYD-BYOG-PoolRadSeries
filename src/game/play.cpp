@@ -12690,6 +12690,7 @@ __attribute__((noinline)) void open_names()
     char path[200];
     OvrWords::names_path(path, sizeof path);
     if (plat::exists(path)) return;
+    plat::mkdir(d->cache_dir);          // (the scan makes it; a card scanned before this game was there may lack it)
     plat::File f;
     if (!open_dax("BORD.DAX", f)) return;
     plat::FileSource src(f);

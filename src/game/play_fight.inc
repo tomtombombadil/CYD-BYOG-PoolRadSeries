@@ -646,7 +646,7 @@ void unpark_world()
     const bool ok = f && f.read(reinterpret_cast<uint8_t*>(&d->world), sizeof(view3d::World)) == sizeof(view3d::World);
     if (f) f.close();
     world_parked = false;
-    if (ok && d->world.tr) host->slots_done();     // (Treasures: the slots' tiles again)
+    if (ok && d->world.tr && host) host->slots_done();     // (Treasures: the slots' tiles again; none when closing)
     if (!ok) {
         // (the card lost it: the walls read again from the game's files)
         log_error("The 3D view's walls couldn't be read back after a fight: reloaded.");
