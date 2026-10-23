@@ -1823,6 +1823,14 @@ const Profile kProfiles[] = {
 
 } // namespace
 
+const CycleFacts* cycle_facts(games::Game g)
+{
+    // (Darkness: GAME.OVR 0x3B914 - pictures 7, 128, 133, 136, 137, 139,
+    // 142, 149 take entries 0-7, BIGPIC 240-246 entries 8-14)
+    static const CycleFacts kDarkness = {0x0CB0, {7, 128, 133, 136, 137, 139, 142, 149}, 8, 240, 7};
+    return g == games::Game::PoolsOfDarkness ? &kDarkness : nullptr;
+}
+
 const ViewFacts& view_facts(games::Game g)
 {
     // (secret_facts_2.md 16; Curse's words at the same places coab's View

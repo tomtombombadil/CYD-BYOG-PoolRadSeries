@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <esp_heap_caps.h>
+#include <esp_memory_utils.h>
 #include <cstring>
 
 #include "hal/sdcard.h"
@@ -81,6 +82,39 @@ uint16_t colour(int index)
 
 namespace {
 bool is_parked = false;
+
+// The card's DMA never gets a PSRAM buffer (the S3's SD/MMC - CLAUDE.md):
+// a canvas there (the 64 KB one of a game in 256 colours) goes to and from
+// the card through a small internal buffer
+constexpr size_t kBounce = 2048;
+bool card_write(fs::File& f, const uint8_t* p, size_t n)
+{
+    if (esp_ptr_internal(p)) return f.write(p, n) == n;
+    uint8_t* b = static_cast<uint8_t*>(heap_caps_malloc(kBounce, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    if (!b) return false;
+    bool ok = true;
+    for (size_t at = 0; ok && at < n; at += kBounce) {
+        const size_t k = n - at < kBounce ? n - at : kBounce;
+        memcpy(b, p + at, k);
+        ok = f.write(b, k) == k;
+    }
+    heap_caps_free(b);
+    return ok;
+}
+bool card_read(fs::File& f, uint8_t* p, size_t n)
+{
+    if (esp_ptr_internal(p)) return f.read(p, n) == static_cast<int>(n);
+    uint8_t* b = static_cast<uint8_t*>(heap_caps_malloc(kBounce, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    if (!b) return false;
+    bool ok = true;
+    for (size_t at = 0; ok && at < n; at += kBounce) {
+        const size_t k = n - at < kBounce ? n - at : kBounce;
+        ok = f.read(b, k) == static_cast<int>(k);
+        if (ok) memcpy(p + at, b, k);
+    }
+    heap_caps_free(b);
+    return ok;
+}
 }
 
 bool park(const char* path)
@@ -88,7 +122,7 @@ bool park(const char* path)
     if (!pixels || is_parked || !sd_begin()) return false;
     fs::File f = sd_fs().open(path, "w");
     if (!f) return false;
-    const bool ok = f.write(pixels, cv.bytes()) == cv.bytes();
+    const bool ok = card_write(f, pixels, cv.bytes());
     f.close();
     if (!ok) return false;
     heap_caps_free(pixels);
@@ -110,7 +144,7 @@ bool unpark(const char* path)
     bool ok = sd_begin();
     if (ok) {
         fs::File f = sd_fs().open(path, "r");
-        ok = f && f.read(p, cv.bytes()) == cv.bytes();
+        ok = f && card_read(f, p, cv.bytes());
         if (f) f.close();
     }
     if (!ok) memset(p, 0, cv.bytes());       // a blank screen rather than none; the game redraws

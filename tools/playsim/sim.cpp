@@ -1059,6 +1059,7 @@ int main(int argc, char** argv)
         }
     }
     if (getenv("FINDLOCK")) for (int y = 0; y < 16; ++y) for (int x = 0; x < 16; ++x) for (int dd = 0; dd < 8; dd += 2) if (geo::passage(play::d->map, x, y, dd) >= 2) printf("locked %d,%d,%d\n", x, y, dd);
+    if (getenv("SEARCH")) play::vm->set(0x7ECA, play::vm->get(0x7ECA) | 1);     // SEARCH=1: Search on before the moves
     if (getenv("TELE")) { int x, y, dd; sscanf(getenv("TELE"), "%d,%d,%d", &x, &y, &dd); play::d->gs.x = x; play::d->gs.y = y; play::d->gs.dir = dd; play::after_move_redraw(); }
     const char* moves = argc > 2 ? argv[2] : "FFFF";
     for (const char* m = moves; *m; ++m) {

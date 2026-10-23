@@ -193,6 +193,12 @@ struct Vga {
     pic::Rgb kept[256];
     pic::VgaPalette load;          // a block's entries as it's read
     bool changed = true;
+    // Colour cycling (darkness_facts.md 7 4.3): the program's table (read
+    // at the start), the entry of the picture shown (-1: none), each
+    // range's last turn
+    uint8_t  cyc[15][12] = {};
+    int8_t   cyc_on = -1;
+    uint32_t cyc_at[4] = {};
 };
 Vga* vga = nullptr;
 // A block's palette is to be read (nullptr: not on this screen)
@@ -217,6 +223,39 @@ void vga_take(bool keep = false, int from = 0, int n = 256)
     }
     vga->load.count = 0;
 }
+// A picture is shown (a PIC id; big: a BIGPIC block): its colour cycling
+// starts when the game's list has it, else none (ov111+0x0)
+void vga_cycle(int id, bool big)
+{
+    if (!vga) return;
+    vga->cyc_on = -1;
+    const profile::CycleFacts* cf = profile::cycle_facts(d->prof->game);
+    if (!cf) return;
+    if (big && id >= cf->big && id < cf->big + cf->bigs) vga->cyc_on = static_cast<int8_t>(cf->n_pic + id - cf->big);
+    for (int i = 0; !big && i < cf->n_pic; ++i)
+        if (cf->pic[i] == id) vga->cyc_on = static_cast<int8_t>(i);
+    const uint32_t now = plat::now_ms();
+    for (uint32_t& t : vga->cyc_at) t = now;
+    plat::log("[play] %s %d: colour cycling %d\n", big ? "big picture" : "picture", id, vga->cyc_on);
+}
+// While a picture with colour cycling shows: each range's entries turn
+// one place on every speed x 5 / 100 s - entry k takes k - 1's colour, the
+// first the last's (ov111+0xBD8)
+void vga_cycle_tick(uint32_t now)
+{
+    if (!vga || vga->cyc_on < 0 || vga->cyc_on >= 15) return;
+    const uint8_t* e = vga->cyc[vga->cyc_on];
+    for (int r = 0; r < 4; ++r) {
+        const int first = e[r * 3], n = e[r * 3 + 1], speed = e[r * 3 + 2];
+        if (n < 2 || first + n > 256 || !speed || now - vga->cyc_at[r] < speed * 50u) continue;
+        vga->cyc_at[r] = now;
+        const pic::Rgb last = vga->now[first + n - 1];
+        for (int k = first + n - 1; k > first; --k) vga->now[k] = vga->now[k - 1];
+        vga->now[first] = last;
+        vga->changed = true;
+    }
+}
+
 // Kept entries first .. first + n - 1 to the screen again
 void vga_send(int first, int n)
 {
@@ -876,8 +915,10 @@ void draw_view(pic::Canvas& c)
             if (d->world.dk) dk_background();
             view3d::draw(c, d->world, d->map, d->gs.x, d->gs.y, d->gs.dir, sky_colour());
             // (a VGA screen: the walls' and the background's entries again
-            // after a picture or a fight used them - ovr 0x3C671+0xEF5)
+            // after a picture or a fight used them - ovr 0x3C671+0xEF5; no
+            // picture's colour cycling)
             vga_send(32, 144);
+            if (vga) vga->cyc_on = -1;
         }
     }
     dirty_rows(3, 13);
@@ -1030,6 +1071,7 @@ bool draw_block(pic::Canvas& c, const char* stem, int block, int x, int y)
     if (e && d->prof->variant.vga) {
         ok = pic::draw_vga_block(src, d->idx, *e, 0, c, x, y, -1, vga_load());   // (Darkness's BIGPIC1)
         vga_take();
+        vga_cycle(block, true);
     } else if (e) {
         dax::RleReader r(src, d->idx, *e);
         uint8_t hdr[pic::kHeaderSize];
@@ -1106,6 +1148,7 @@ bool anim_start(int id, const char* stem = "PIC", int x = 24, int y = 24)
         dax::RleReader r(src, *d->anim_idx, *e);
         if (d->dk_anim && pic::parse_dk_anim(r, e->raw_size, *d->dk_anim, vga_load())) {
             vga_take();                  // (a VGA screen: its entries, 32-255)
+            vga_cycle(id, false);
             d->anim.frames = d->dk_anim->frames;
             for (int k = 0; k < d->dk_anim->frames && k < pic::kMaxAnimFrames; ++k) d->anim.delay[k] = d->dk_anim->delay[k];
             anim_block = id;
@@ -9789,6 +9832,18 @@ uint8_t* load_gbc_icon(int k)
         p = nullptr;
     }
     f.close();
+    if (p && vga) {
+        // (a VGA game in 256 colours: its pictures a byte a pixel - the
+        // Companion's EGA colours are the palette's first 16)
+        uint8_t* q = static_cast<uint8_t*>(malloc(gbc_icons::kPicBytes * 2));
+        if (q)
+            for (int i = 0; i < gbc_icons::kPicBytes; ++i) {
+                q[2 * i] = p[i] >> 4;
+                q[2 * i + 1] = p[i] & 15;
+            }
+        free(p);
+        p = q;
+    }
     return p;
 }
 
@@ -10378,7 +10433,7 @@ void gal_frame(pic::Canvas& c, int i, uint8_t colour)
 // file opened once); heads padded to 24 rows
 // A gallery part's bytes: 24 x 24 4-bit rows (Darkness: its see-through
 // plane after them)
-uint32_t gal_bytes() { return kTileBytes + (fight_masks() ? mask_bytes(kSq, kSq) : 0); }
+uint32_t gal_bytes() { return tile_bytes() + (fight_masks() ? mask_bytes(kSq, kSq) : 0); }
 
 bool gal_load(uint8_t** parts, int n, const char* file, int add)
 {
@@ -10410,11 +10465,11 @@ bool gal_load(uint8_t** parts, int n, const char* file, int add)
                 ok = false;
                 break;
             }
-            memset(p, 0, kTileBytes);
-            memcpy(p, v, static_cast<size_t>(kSq / 2) * h);
-            uint8_t* m = p + kTileBytes;
-            memset(m, 0xFF, gal_bytes() - kTileBytes);
-            const uint8_t* vm = v + (kSq / 2) * h;
+            memset(p, 0, tile_bytes());
+            memcpy(p, v, static_cast<size_t>(rowb(kSq)) * h);
+            uint8_t* m = p + tile_bytes();
+            memset(m, 0xFF, gal_bytes() - tile_bytes());
+            const uint8_t* vm = v + rowb(kSq) * h;
             for (int y = 0; y < h; ++y)
                 for (int x = 0; x < kSq; ++x)
                     if (!masked(vm, kSq, x, y)) {
@@ -10494,7 +10549,7 @@ void gal_cell(pic::Canvas& c, int i)
     blit4_x2(c, ie->base[0].px[0], ie->base[0].w, ie->base[0].h, x, y,
              mask_of(ie->base[0].px[0], ie->base[0].w, ie->base[0].h));
     if (body >= icon_looks::kBodies || !ie->gbody[body]) return;
-    uint8_t px[kTileBytes + kSq * kSq / 8];
+    uint8_t px[kSq * kSq + kSq * kSq / 8];      // (a byte a pixel at most: a VGA game in 256 colours)
     memcpy(px, ie->gbody[body], gal_bytes());
     icon_compose(px, head < icon_looks::kHeads ? ie->ghead[head] : nullptr, kSq, colours);
     blit4_x2(c, px, kSq, kSq, x, y, mask_of(px, kSq, kSq));
@@ -11566,6 +11621,21 @@ namespace {
 
 // The program: which release, its tables and words. False: not one the
 // engine knows (msg set)
+// A VGA game in 256 colours: its colour cycling table from the player's
+// program (none: no cycling)
+__attribute__((noinline)) void open_cycles(games::Game g, const char* prog)
+{
+    const profile::CycleFacts* cf = profile::cycle_facts(g);
+    plat::File f;
+    if (!cf || !open_file(prog, f)) return;
+    plat::FileSource src(f);
+    exepack::Info info;
+    if (exepack::parse(src, info) != exepack::Status::Ok ||
+        exepack::read(src, info, d->prof->data_base + cf->table, &vga->cyc[0][0], sizeof vga->cyc) != exepack::Status::Ok)
+        memset(vga->cyc, 0, sizeof vga->cyc);
+    f.close();
+}
+
 __attribute__((noinline)) bool open_program(games::Game g, const char* prog)
 {
     plat::File f;
@@ -11705,6 +11775,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
         }
         for (int i = 0; i < 256; ++i) vga->now[i] = vga->kept[i] = i < 16 ? pic::kEga[i] : pic::Rgb{0, 0, 0};
         d->world.vga = true;
+        open_cycles(g, prog);
     }
     if (!open_tiles()) {
         snprintf(msg, sizeof msg, "%s: the tiles or font didn't load.", d->prof->tiles_file);
@@ -12703,6 +12774,7 @@ void tick_screens(uint32_t now, pic::Canvas& c)
     }
     if (!waiting || screen != Screen::Game) return;
     cv = &c;
+    if (pic_shown || bigpic >= 0 || dk_overland()) vga_cycle_tick(now);    // (a VGA screen's colour cycling)
     const ecl::Wait wt = vm->wait();
     // While the game waits for the player: the event picture animates (at
     // a menu, as in the games) and the wilderness map's square blinks
