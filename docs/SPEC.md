@@ -1699,8 +1699,10 @@ are Darkness's byte for byte at other places (the profile's offsets).
   GAME=9, CACHE=_CYD/<folder>; Darkness's checks with oracles read from
   Treasures' own program in scratch): 155 pass. Its budget fight (save
   A's RUNAT=874D FIGHT=1) is within 150 KB.
-- Not yet: old age (a fight's end can kill a member past the race's
-  age), the 256-colour mode's parchment background (BORD 1), the
+- Old age: a fight in which someone aged (haste) ends with the race's
+  greatest age checked (its program's table) - past it, death with the
+  original's sentences; within ten years "is looking very old".
+- Not yet: the 256-colour mode's parchment background (BORD 1), the
   journal (its PDF has several pictures a page), the copy protection is
   skipped as everywhere.
 
