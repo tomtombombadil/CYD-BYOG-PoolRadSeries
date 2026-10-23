@@ -1654,6 +1654,59 @@ void drained_member(int who)
     if (!had) end_magic();
 }
 
+// Darkness's own level drain (its GAME.OVR 0x1CF3B; Battle::dk_drain): the
+// record's work by create::dk_drain - a party member's own (with its best
+// levels / experience / HP), a monster's whole record; the hit dice from
+// the program (DS hp_count / hp_dice). 0 lives, 1 collapses, 2 dies
+bool read_hp_facts(create::Facts& fa)
+{
+    const auto& pc = d->prof->create;
+    plat::File f;
+    if (!pc.ds_image || !open_file(d->prof->program, f)) return false;
+    bool ok;
+    {
+        plat::FileSource src(f);
+        exepack::Info info;
+        ok = exepack::parse(src, info) == exepack::Status::Ok &&
+             exepack::read(src, info, pc.ds_image + pc.hp_count, fa.hp_count, 8) == exepack::Status::Ok &&
+             exepack::read(src, info, pc.ds_image + pc.hp_dice, fa.hp_dice, 8) == exepack::Status::Ok;
+    }
+    f.close();
+    return ok;
+}
+
+__attribute__((noinline)) int dk_drain_hook(void*, int who, int n)
+{
+    combat::Fighter& f = fg->b.f[who];
+    const bool had = mrules != nullptr;
+    if (!had && !load_rules(mrules)) {
+        memlog::note("drain: no memory for the rule tables");
+        return 0;
+    }
+    int res = 0;
+    create::Facts fa{};
+    if (read_hp_facts(fa)) {
+        create::DrainResult r = create::DrainResult::Lives;
+        if (f.member >= 0 && f.member < pt->count) {
+            r = create::dk_drain(pt->m[f.member], mrules->tables, fa, rng, n);
+        } else if (combat::Monster* m = f.rec.monster()) {
+            uint8_t* w = m->whole();
+            party::Character* tmp = w ? new (std::nothrow) party::Character : nullptr;
+            if (tmp) {
+                memcpy(tmp->rec, w, party::kRecordSize);
+                r = create::dk_drain(*tmp, mrules->tables, fa, rng, n);
+                memcpy(w, tmp->rec, party::kRecordSize);
+                delete tmp;
+            } else {
+                memlog::note("drain: no memory for the monster's record");
+            }
+        }
+        res = r == create::DrainResult::Dies ? 2 : r == create::DrainResult::Collapses ? 1 : 0;
+    }
+    if (!had) end_magic();
+    return res;
+}
+
 // What the engine says happened besides the plain blows (monster_fx_facts.md),
 // as pages: the special's words, its picture flying, the results
 void event_page(const combat::Event& e)
@@ -1790,6 +1843,14 @@ void event_page(const combat::Event& e)
         break;
     }
     case combat::Ev::DeadForever: fallen(profile::kDeadForever); break;
+    // Darkness's drain: "gets drained" (the class values again), "dies from
+    // drainning", "collapses from drainning"
+    case combat::Ev::DkDrained:
+        said(profile::kIsDrained);
+        drained_member(who);
+        break;
+    case combat::Ev::DkDrainDies: fallen(profile::kDeadForever); break;
+    case combat::Ev::DkDrainCollapses: fallen(profile::kCollapsesDrainDk); break;
     case combat::Ev::Diseased: said(profile::kIsDiseased); break;
     case combat::Ev::SucksBlood: said(profile::kSucksBlood); break;
     case combat::Ev::HeldFast: said(profile::kHeldFast); break;
@@ -3146,7 +3207,7 @@ void fight_start(pic::Canvas& c)
     // needs, from the rule tables (loaded for this, before the field's blocks)
     int32_t level_exp[8][13] = {};
     const combat::MonFx& mf = d->prof->fight.facts.mon;
-    if ((mf.drain1 || mf.drain2) && load_rules(mrules)) {
+    if ((mf.drain1 || mf.drain2) && !darkness_files() && load_rules(mrules)) {
         for (int k = 0; k < 8; ++k)
             for (int l = 2; l < 13; ++l) level_exp[k][l] = mrules->tables.exp_needed(k, l - 1);
         end_magic();
@@ -3192,6 +3253,7 @@ void fight_start(pic::Canvas& c)
     b.cap = n_fighters;
     b.tables = &fg->t;
     memcpy(b.level_exp, level_exp, sizeof level_exp);
+    if (darkness_files()) b.dk_drain = dk_drain_hook;     // (its own drain: facts L1)
     b.indoors = vm->get(0x4BE6) != 0;
     // Pool: only its wilderness areas are fought outdoors (the rest from the 3D map)
     const int over = d->prof->variant.overland_area;

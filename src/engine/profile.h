@@ -210,6 +210,9 @@ enum FightWord {
     // fear), "is beheaded" (vorpal), "is slain" (a blessed bolt), the
     // paralysing gaze's "gazes...", the beholder's "is Stoned"
     kTerrifiedDk, kBeheadedDk, kSlainBoltDk, kParaGazeDk, kRayStonedDk,
+    // Darkness's level drain (its ovr 0x1CF3B): "collapses from drainning"
+    // ("gets drained" / "dies from drainning" are kIsDrained / kDeadForever)
+    kCollapsesDrainDk,
     kFightWords
 };
 

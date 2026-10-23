@@ -1538,6 +1538,20 @@ the scripts' changed ops, the rule tables, fights, the rest.
   /tmp/claude-0/bt/oracle_darkness_fights.txt from scratch
   `dk_fight_oracle.py`). Memory: the budget fight 145,404 bytes (the
   reserve's 10 monsters ~4 KB; Curse 128,499, Pool 129,997).
+- **Darkness's own level drain** (branch darkness-leftovers; scratch
+  facts /tmp/claude-0/dks_left/facts_left.md L1 / L2; its GAME.OVR
+  0x1CF3B): Energy Drain and the drainers 0x65 / 0x66 go through
+  `combat::Battle::dk_drain` to `create::dk_drain` - the class with the
+  highest level (ties: the one whose level started at the least
+  experience), the best levels / experience / HP remembered (the record's
+  0x15F / 0x176 / 0x17A), the experience halfway into the level below,
+  that level's hit points taken by the hit point routine (its roll, the
+  Constitution's part, never below Modify's most), "gets drained", then
+  "dies from drainning" (no level left or HP max 0: gone) or "collapses
+  from drainning" (0 HP: unconscious). Energy Drain stays one level (Tom,
+  2026-10-23: as the original). Checks: sweep's `behave darkness` ONLY=
+  drain (400 oracle cases from scratch `dk_left_oracle.py`, Energy Drain
+  in a fight).
 - **Alter and the icon editor** (scratch facts
   /tmp/claude-0/dks_alter/facts_alter.md, for the Project's Darkness
   facts; its camp overlay GAME.OVR 0xDCC8 +0x172B, the editor 0x17E16).
@@ -2074,12 +2088,6 @@ the game's Settings (As Original: all of them).
   and never uses it - the blindness gets the spell row's time, 0: for
   good. With Item Fixes on the engine uses the worked-out time; off as
   the original.
-- **Darkness's level drain** (Energy Drain, the drainers 0x65 / 0x66):
-  the engine drains as Pool's routine does (a level's share of the hit
-  points, the experience to the level's start, killed at 0 hit points);
-  Darkness's own (experience halfway between the levels, the best levels
-  remembered, "collapses from drainning" at 0 hit points) isn't in yet.
-  Its words are Darkness's ("gets drained", "dies from drainning").
 - **Darkness's gazes' pictures**: the paralysing gaze flies COMSPR
   picture 0x2D, the vampire's 0x32 in the original; the engine flies the
   spell's picture. Kalistes' blows: the original shows the weapon's name

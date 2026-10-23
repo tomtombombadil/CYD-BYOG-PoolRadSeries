@@ -1274,4 +1274,103 @@ void dk_con_recompute(party::Character& c, const classes::Tables& t)
     else if (now < old) r[kHp] = static_cast<uint8_t>(r[kHp] > old - now ? r[kHp] - (old - now) : 0);
 }
 
+// ---- Darkness's level drain (GAME.OVR 0x1CF3B; facts L1 / L2)
+
+// The experience a level of a class starts at (ovr 0x39349): the class
+// record's to 11th level, then level 11's and a step a level; 41+: never
+int32_t dk_level_exp(const classes::Tables& t, int cls, int level)
+{
+    level &= 0xFF;                      // (a byte: 0 - 1 is 255)
+    if (level >= 41) return 0x7FFFFFFF;
+    const uint16_t r = static_cast<uint16_t>(t.lay.class_records + cls * 301);
+    if (level < 12) return t.i32(static_cast<uint16_t>(r + level * 4));
+    return t.i32(static_cast<uint16_t>(r + 11 * 4)) + (level - 11) * t.i32(static_cast<uint16_t>(t.lay.xp_step + cls * 4));
+}
+
+namespace {
+uint8_t& dk_ext(party::Character& c, int at) { return c.ext[at]; }
+int32_t get32(const uint8_t* p) { return static_cast<int32_t>(p[0] | p[1] << 8 | p[2] << 16 | static_cast<uint32_t>(p[3]) << 24); }
+void put32(uint8_t* p, int32_t v)
+{
+    for (int j = 0; j < 4; ++j) p[j] = static_cast<uint8_t>(static_cast<uint32_t>(v) >> (8 * j));
+}
+
+// The hit point routine taking a level's HP (ovr 0x26F4B with 0)
+void dk_take_hp(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, int mask, int held)
+{
+    uint8_t* r = c.rec;
+    if (held <= 0) {
+        r[kHp] = r[kHpRolled] = r[kHpMax] = 0;
+        return;
+    }
+    int rolled = 0, con = 0;
+    for (int k = 0; k < 7; ++k) {
+        const int lv = c.level(k);
+        if (lv <= 0 || !(t.u8(static_cast<uint16_t>(t.lay.class_masks + k)) & mask)) continue;
+        if (lv < t.max_hit_dice(k)) {
+            const int n = lv > 1 ? 1 : f.hp_count[k];
+            const int a = d.roll(f.hp_dice[k], n), b = d.roll(f.hp_dice[k], n);
+            rolled = (rolled + (a > b ? a : b)) & 0xFF;
+            con = (con + dk_con_fig(c, k) * n) & 0xFF;
+        } else if (k == 2 || k == 3) {
+            rolled = 3;
+        } else if (k == 4 || k == 0 || k == 6) {
+            rolled = 2;
+        } else if (k == 5) {
+            rolled = 1;
+        }
+    }
+    int inc = rolled / held;
+    if (inc < 1) inc = 1;
+    const int cp = con / held;
+    const int lost = (r[kHpMax] - r[kHp]) & 0xFF;
+    r[kHpRolled] = static_cast<uint8_t>(r[kHpRolled] > inc ? r[kHpRolled] - inc : 0);
+    int take = (inc + cp) & 0xFF;
+    const int most = dk_hp_most(c, t, f);
+    if (r[kHpMax] - take > most) take = (r[kHpMax] - most) & 0xFF;
+    r[kHpMax] = static_cast<uint8_t>(take > r[kHpMax] ? 0 : r[kHpMax] - take);
+    r[kHp] = static_cast<uint8_t>(lost > r[kHpMax] ? 0 : r[kHpMax] - lost);
+}
+} // namespace
+
+DrainResult dk_drain(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, int n)
+{
+    uint8_t* r = c.rec;
+    for (int k = 0; k < n; ++k) {
+        int held = 0, best = 0, cls = 0;
+        for (int j = 0; j < 7; ++j) {
+            const int l = r[kLevels + j];
+            if (l > 0 || dk_ext(c, party::kExtBestLevels + j) > 0) ++held;
+            if (l > best) {
+                best = l;
+                cls = j;
+            } else if (l == best && best != 0 && dk_level_exp(t, cls, l) > dk_level_exp(t, j, best)) {
+                cls = j;
+            }
+        }
+        uint8_t& bl = dk_ext(c, party::kExtBestLevels + cls);
+        if (bl <= r[kLevels + cls]) bl = r[kLevels + cls];
+        if (get32(c.ext + party::kExtBestXp) <= get32(r + kExp)) put32(c.ext + party::kExtBestXp, get32(r + kExp));
+        if (dk_ext(c, party::kExtBestHp) <= r[kHpMax]) dk_ext(c, party::kExtBestHp) = r[kHpMax];
+        int32_t lo = 0, hi = 0;
+        if (best == 2) hi = dk_level_exp(t, cls, 2);
+        else if (best != 1) {
+            lo = dk_level_exp(t, cls, best - 1);
+            hi = dk_level_exp(t, cls, best);
+        }
+        // (32-bit, as its long arithmetic: a level byte of 0 - 1 reads as 255's)
+        const int32_t half = static_cast<int32_t>(static_cast<uint32_t>(hi) - static_cast<uint32_t>(lo)) / 2;
+        put32(r + kExp, static_cast<int32_t>(static_cast<uint32_t>(half) + static_cast<uint32_t>(lo)));
+        if (r[kLevels + cls] > 0) --r[kLevels + cls];
+        if (r[kLevels + cls] >= r[kMultiLevel])
+            dk_take_hp(c, t, f, d, t.u8(static_cast<uint16_t>(t.lay.class_masks + cls)), held);
+    }
+    bool any = false;
+    for (int j = 0; j < 7; ++j)
+        if (r[kLevels + j] > 0) any = true;
+    if (!any || r[kHpMax] == 0) return DrainResult::Dies;
+    if (r[kHp] == 0) return DrainResult::Collapses;
+    return DrainResult::Lives;
+}
+
 } // namespace create

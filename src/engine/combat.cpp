@@ -2271,6 +2271,13 @@ void drain(Battle& b, int c, int n, Event* out, int cap, int* n_out, int hit)
         r[kHp] = 0;
         fall(b, c);
     };
+    if (b.dk_drain) {
+        said(Ev::DkDrained, n);
+        const int res = b.dk_drain(b.dk_ctx, c, n);
+        if (res == 2) put_down(party::Gone, Ev::DkDrainDies);
+        else if (res == 1) put_down(party::Unconscious, Ev::DkDrainCollapses);
+        return;
+    }
     said(Ev::Drained, n);
     if (f.status() == party::Animated) {
         put_down(party::Gone, Ev::DeadForever);
