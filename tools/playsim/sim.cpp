@@ -269,9 +269,17 @@ static uint32_t world_hash()
 {
     // (Darkness's background picture - its pointer and id - left out: a
     // fight drops it and the next 3D view reads it again)
-    const uint8_t* p = reinterpret_cast<const uint8_t*>(&play::d->world);
-    const size_t skip0 = offsetof(view3d::World, back), skip1 = offsetof(view3d::World, back_id) + 1;
+    // (Gateway's big wall sets' far tiles: their contents, not where the
+    // heap put them - a fight lets them go and reads them again)
+    static view3d::World w;
+    memcpy(static_cast<void*>(&w), &play::d->world, sizeof w);
     uint32_t h = 2166136261u;
+    for (view3d::TileSet& ts : w.sets) {
+        for (int i = 0; ts.extra && i < ts.extra_count * 32; ++i) h = (h ^ ts.extra[i / 32][i % 32]) * 16777619u;
+        ts.extra = nullptr;
+    }
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(&w);
+    const size_t skip0 = offsetof(view3d::World, back), skip1 = offsetof(view3d::World, back_id) + 1;
     for (size_t i = 0; i < sizeof(view3d::World); ++i)
         if (i < skip0 || i >= skip1) h = (h ^ p[i]) * 16777619u;
     return h;

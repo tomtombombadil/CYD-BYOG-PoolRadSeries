@@ -4637,6 +4637,10 @@ void draw_shop(pic::Canvas& c)
     else if (last_pic_id >= 0 && (!treasure_on() || vault_on())) host_picture(last_pic_id, last_pic_head);
     else draw_view(c);
     draw_panel(c);
+    if (gateway() && treasure_on() && !vault_on()) {
+        c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);       // (Gateway's treasure: no place and time - DOSBox)
+        dirty_rows(15, 15);
+    }
     shop_menu(c);
 }
 
@@ -10680,7 +10684,7 @@ void start_icon(pic::Canvas& c, Screen from)
     screen = Screen::Icon;
     anim_stop();
     pic_shown = false;
-    palette_fight(true);
+    palette_fight(true, true);
 #if CYD_ICON_GALLERY
     if (opts.gallery) {
         icon_take(ie->keep, ch->rec);

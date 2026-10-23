@@ -637,9 +637,12 @@ struct Profile {
         // 0 and 8 (Curse's palette while fighting) and the field's empty
         // squares are dark grey (DOSBox)
         bool     fight_unswapped = false;
-        // Gateway: while fighting (and in the icon editor) colour 8 shows
-        // black, 0 stays black (its palette then; DOSBox)
+        // Gateway: in the icon editor colour 8 shows black, 0 stays black
+        // (its palette then; its fights swap 0 and 8 as Curse's - DOSBox)
         bool     eight_black = false;
+        // Gateway: in a fight its pictures (the field, the fighters) are
+        // drawn with 0 and 8 swapped, the rest of the screen as it is
+        bool     field_swap = false;
         // Pools of Darkness: its pictures are VGA blocks (picture.h; the EGA
         // colours of each on a 4-bit canvas - the original's EGA mode)
         bool     vga = false;

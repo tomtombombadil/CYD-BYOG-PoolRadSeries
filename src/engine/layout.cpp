@@ -410,9 +410,17 @@ void combat(pic::Canvas& c, const Tables& tb, const Tiles& t)
         put(c, t, tb.frame_base + tb.combat_right[row], kCols - 1, row);
     }
     for (int col = 0; col < kCols; ++col) put(c, t, tb.frame_base + tb.bottom[col], col, 22);
-    if (tb.joints)
-        for (int row : {0, 22})                                 // (Gateway, GAME.OVR 0x4C2E6)
+    if (tb.joints) {
+        // (Gateway, GAME.OVR 0x4C2E6: the columns over the bottom row, then
+        // its joints)
+        for (int row = 0; row <= 22; ++row) {
+            put(c, t, tb.frame_base + tb.combat_left[row], 0, row);
+            put(c, t, tb.frame_base + tb.combat_split[row], 22, row);
+            put(c, t, tb.frame_base + tb.combat_right[row], kCols - 1, row);
+        }
+        for (int row : {0, 22})
             for (int col : {20, 24}) put(c, t, 33, col, row);
+    }
 }
 
 void character(pic::Canvas& c, const Tables& tb, const Tiles& t)

@@ -454,6 +454,8 @@ uint8_t* load_pic4(const char* file, int block, int frame, int* w, int* h)
 }
 
 // Draws a 4-bit picture clipped to (cx0, cy0)-(cx1, cy1): mirrored, colour 0 see-through
+bool blit_swap = false;             // Gateway's fight: its pictures' 0 and 8 swapped as they're drawn
+
 void blit4(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y, bool mirror, bool see_through, int cx0,
            int cy0, int cx1, int cy1)
 {
@@ -468,7 +470,7 @@ void blit4(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y, bool mi
             const int px = mirror ? w - 1 - i : i;
             const int v = nib(p, w, px, j);
             if (see_through && (mk ? masked(mk, w, px, j) : v == 0)) continue;
-            c.set(xx, yy, static_cast<uint8_t>(v));
+            c.set(xx, yy, static_cast<uint8_t>(blit_swap && (v == 0 || v == 8) ? v ^ 8 : v));
         }
     }
 }
@@ -1087,11 +1089,29 @@ void end_fight_art()
 }
 
 // ---- Drawing
+// The results' "press <enter>/<return> to continue" (Gateway's lit as a
+// menu's one choice - DOSBox)
+void press_enter_line(pic::Canvas& c)
+{
+    clear_menu_line(c);
+    if (gateway()) {
+        const char* t = fw(profile::kPressEnter);
+        c.fill(0, text::kMenuRow * 8, static_cast<int>(strlen(t)) * 8, 8, 15);
+        font::draw_text(c, d->font, t, 0, text::kMenuRow, 0, -1);
+        return;
+    }
+    put(c, fw(profile::kPressEnter), 0, text::kMenuRow, 15);
+}
+
 int fight_palette_on = 0;          // play::fight_colours()
 
-void palette_fight(bool on)
+void palette_fight(bool on, bool editor = false)
 {
-    fight_palette_on = !on ? 0 : d->prof->variant.eight_black ? 2 : d->prof->variant.fight_unswapped ? 0 : 1;
+    fight_palette_on = !on ? 0 : editor && d->prof->variant.eight_black ? 2
+                     : d->prof->variant.fight_unswapped || d->prof->variant.field_swap ? 0 : 1;
+    // (Gateway: the field's pictures swap 0 and 8, the panel beside them
+    // stays black - DOSBox)
+    blit_swap = on && !editor && d->prof->variant.field_swap;
     dirty(0, pic::kScreenH);
 }
 
@@ -1122,7 +1142,7 @@ void draw_square(pic::Canvas& c, int x, int y)
     const uint8_t* g = combat::tile(fg->b, fg->t, x, y);
     const int pic_no = x >= 0 && x < combat::kW && y >= 0 && y < combat::kH && fg->b.ground[y][x] ? g[3] : -1;
     if (pic_no < 0 || pic_no >= kTiles || !fg->tile[pic_no])
-        c.fill(sx, sy, kSq, kSq, d->prof->variant.fight_unswapped ? 8 : 0);     // (shown dark grey either way)
+        c.fill(sx, sy, kSq, kSq, d->prof->variant.fight_unswapped || blit_swap ? 8 : 0);     // (shown dark grey either way)
     else blit4(c, fg->tile[pic_no], kSq, kSq, sx, sy, false, false, 0, 0, pic::kScreenW, pic::kScreenH);
 }
 
@@ -3636,8 +3656,7 @@ void end_fight(pic::Canvas& c)
             put(c, t, 1, 5, 10);
             put(c, fw(profile::kExpPoints), 1, 7, 10);
         }
-        clear_menu_line(c);
-        put(c, fw(profile::kPressEnter), 0, text::kMenuRow, 15);
+        press_enter_line(c);
         fg->st = FSt::Results;
     }
     fg->until = 0;
@@ -3737,8 +3756,7 @@ void fight_treasure_only(pic::Canvas& c)
         put(c, t, 1, 5, 10);
         put(c, fw(profile::kExpPoints), 1, 7, 10);
     }
-    clear_menu_line(c);
-    put(c, fw(profile::kPressEnter), 0, text::kMenuRow, 15);
+    press_enter_line(c);
     fg->st = FSt::Results;
     dirty(0, pic::kScreenH);
 }
@@ -4917,7 +4935,7 @@ const char* tw(int i)
     const uint32_t at = d->prof->fight.words[i];
     OvrWords src;
     if (!at || !src.open()) return out;
-    text::read_pascal(src, at, out, 48);
+    read_word(src, at, out, 48);
     return out;
 }
 
@@ -5055,6 +5073,21 @@ void treasure_menu(pic::Canvas& c)
         show_menu_line(c);
         return;
     }
+    if (gateway() && !vault) {
+        // Gateway: "View [Take] [Pool] [Share] [Detect] Exit" - Take with
+        // something there, Pool when the party has coins, Share with coins
+        // there, Detect with Detect Magic memorized (GAME.OVR 0x6B85 +0x12DE)
+        bool party_coins = false;
+        for (int i = 0; i < pt->count; ++i)
+            if (any_money(pt->m[i])) party_coins = true;
+        const unsigned mask = 1u | (ground->any_money() || ground->n ? 2u : 0u) | (party_coins ? 4u : 0u) |
+                              (ground->any_money() ? 8u : 0u) | (detect_spell() ? 16u : 0u) | 32u;
+        keep_words(tw(profile::kViewTakePoolShare), mask, words, sizeof words);
+        text::build(menu, "", words);
+        menu.selected = 0;
+        show_menu_line(c);
+        return;
+    }
     if (vault) {
         // "View Take Pool Exit" (Take with something there)
         const auto& v = d->prof->vault;
@@ -5093,6 +5126,10 @@ void open_treasure(pic::Canvas& c)
     dirty_rows(17, 22);
     if (d->prof->variant.treasure_pic && !vault) draw_treasure_pic();
     if (pt->count) draw_party(c, 17);
+    if (gateway() && !vault) {
+        c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);       // (Gateway's treasure: no place and time - DOSBox)
+        dirty_rows(15, 15);
+    }
     treasure_menu(c);
 }
 
