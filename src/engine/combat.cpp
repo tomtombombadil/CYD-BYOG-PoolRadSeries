@@ -2058,7 +2058,10 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
             const int s = slot ? at.rec[kSides + 1] : sides1;
             const int bo = slot ? static_cast<int8_t>(at.rec[kBonus + 1]) : bonus1;
             int dmg = (n && s ? d.roll(s, n) : 0) + bo;
-            if (b.fx && b.fx->dk.kalistes && hasx(at, b.fx->dk.kalistes)) dmg = kalistes_blow(at, d, dmg);
+            if (b.fx && b.fx->dk.kalistes && hasx(at, b.fx->dk.kalistes)) {
+                dmg = kalistes_blow(at, d, dmg);
+                if (at.blows >= 1 && at.blows <= 6) h.weapon = at.blows;
+            }
             // (a terrified attacker: -2 damage, not under 0 - R14)
             if (b.fx && b.fx->dk.feared && at.has(b.fx->dk.feared)) dmg -= 2;
             if (dmg < 0) dmg = 0;
@@ -5156,9 +5159,10 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
         return &x;
     };
     // A picture flying from `from` to the square (COMSPR pic, frames, ms a step)
-    auto fly = [&](int from, int x, int y, int pic, int frames, int delay) {
+    auto fly = [&](int from, int x, int y, int pic, int frames, int delay, bool silent = false) {
         Event* e = ev(from, Ev::Fly);
         if (!e) return;
+        e->kind = silent ? 1 : 0;               // (Fly: 1 = no sound of its own)
         e->x = static_cast<uint8_t>(x);
         e->y = static_cast<uint8_t>(y);
         e->pic = static_cast<uint8_t>(pic);
@@ -5210,12 +5214,15 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
         int tg = special_target(b, t, i, reach_far ? reach_far : 12, false, d);
         if (tg >= 0) {
             ev(i, Ev::Gazes);
-            fly(i, b.f[tg].x, b.f[tg].y, 5, 4, 45);
+            // (Darkness's gazes fly the lightning's picture, COMSPR 5 - its
+            // slot 18, ovr 0x1BE0C; no sound: facts L7)
+            const int gp = b.fx->dk.gaze_pic ? b.fx->dk.gaze_pic : 5;
+            fly(i, b.f[tg].x, b.f[tg].y, gp, 4, 45, b.fx->dk.gaze_pic != 0);
             // (Secret's: sent back by its target's effect 0x48 - GAME.OVR 0x1250A)
             if (hasx(f, m.mirror_gaze) && ((m.mirror_word && readied_word(b.f[tg], m.mirror_word)) ||
                                            (m.reflect && hasx(b.f[tg], m.reflect)))) {
                 ev(tg, Ev::Reflects);
-                fly(tg, f.x, f.y, 5, 4, 45);
+                fly(tg, f.x, f.y, gp, 4, 45, b.fx->dk.gaze_pic != 0);
                 tg = i;
             }
             if (!saving_throw(b.f[tg], 1, 0, d)) remove(tg, party::Stoned, Ev::GazeStoned);
@@ -5231,10 +5238,11 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
         int tg = special_target(b, t, i, reach_far ? reach_far : 12, false, d);
         if (tg >= 0) {
             ev(i, Ev::ParaGazes);
-            fly(i, b.f[tg].x, b.f[tg].y, 5, 4, 45);
+            const int gp = dk.gaze_pic ? dk.gaze_pic : 5;           // (ovr 0x1D735: slot 18)
+            fly(i, b.f[tg].x, b.f[tg].y, gp, 4, 45, dk.gaze_pic != 0);
             if (hasx(f, m.mirror_gaze) && m.reflect && hasx(b.f[tg], m.reflect)) {
                 ev(tg, Ev::Reflects);
-                fly(tg, f.x, f.y, 5, 4, 45);
+                fly(tg, f.x, f.y, gp, 4, 45, dk.gaze_pic != 0);
                 tg = i;
             }
             Fighter& v = b.f[tg];
@@ -5254,7 +5262,7 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
         if (tg >= 0) {
             *ends_turn = true;
             ev(i, Ev::VampGazes);
-            fly(i, b.f[tg].x, b.f[tg].y, 5, 4, 45);
+            fly(i, b.f[tg].x, b.f[tg].y, 5, 4, 50);         // (ovr 0x30917: slot 17 - the spell's - 50 a step)
             if (!(dk.gaze_proof && hasx(b.f[tg], dk.gaze_proof))) {
                 Event* e = ev(i, Ev::Cast, tg);
                 if (e) e->amount = 0x0A;
@@ -5370,7 +5378,11 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
     // else the first unused spell (Fear, Slow, Sleep - the caller casts it)
     if (hasx(f, m.rays)) {
         bool used[7] = {};
-        int tg = nearest_enemy(b, t, i);
+        // (Darkness, GAME.OVR 0x23130: the computer's own pick - a random enemy
+        // in sight, any distance - kept ray after ray while it's still in the
+        // fight, else picked again; Curse / Pool / Secret: the nearest each time)
+        const bool dk_pick = b.fx->dk.beholder != 0;
+        int tg = dk_pick ? special_target(b, t, i, 0xFF, false, d) : nearest_enemy(b, t, i);
         for (int pass = 0; pass < 4 && tg >= 0; ++pass) {
             const int r = squares_to(b, t, i, tg);
             Fighter& v = b.f[tg];
@@ -5404,7 +5416,8 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
                 if (e) e->amount = m.ray_spells[k];
                 continue;
             }
-            tg = nearest_enemy(b, t, i);
+            if (!dk_pick) tg = nearest_enemy(b, t, i);
+            else if (!b.f[tg].up()) tg = special_target(b, t, i, 0xFF, false, d);
         }
     }
     // Acid breath (the black dragon): 3 a fight, a line of 6 squares - not
@@ -5574,7 +5587,8 @@ int special(Battle& b, const Tables& t, int i, create::Dice& d, Event* out, int 
         const int tg = special_target(b, t, i, reach_near ? reach_near : 12, false, d);
         if (tg >= 0 && squares_to(b, t, i, tg) < 2) {
             ev(i, Ev::Gazes);
-            fly(i, b.f[tg].x, b.f[tg].y, 0x2D, 4, 45);
+            if (b.fx->dk.gaze_pic) fly(i, b.f[tg].x, b.f[tg].y, b.fx->dk.gaze_pic, 4, 45, true);   // (ovr 0x1C4C6)
+            else fly(i, b.f[tg].x, b.f[tg].y, 0x2D, 4, 45);
             Fighter& v = b.f[tg];
             if (!saving_throw(v, 4, 0, d)) {
                 give_aff(v, b.fx->sp.confuse, d.roll(10, 1) + 2, f.rec[kTeam], false);

@@ -374,6 +374,9 @@ struct Facts {
         uint8_t vorpal = 0, kalistes = 0, rake = 0;
         uint8_t blessed = 0, blessed_type = 0;
         uint8_t no_disease = 0, disease = 0;
+        // its gazes' picture in flight (stone, confusion, paralysis): this one
+        // of Curse's numbers (6, the lightning's - COMSPR 5), with no sound; 0: the game's own
+        uint8_t gaze_pic = 0;
     } dk{};
 };
 
@@ -724,6 +727,7 @@ void recount_attacks(Battle& b, int i);
 struct Hit {
     bool hit = false;
     int  damage = 0;
+    uint8_t weapon = 0;                 // Darkness's Kalistes: the blow's weapon (1-6, R14), shown with "+4"
 };
 struct Attack {
     Hit  hits[8];

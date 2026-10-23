@@ -213,6 +213,8 @@ enum FightWord {
     // Darkness's level drain (its ovr 0x1CF3B): "collapses from drainning"
     // ("gets drained" / "dies from drainning" are kIsDrained / kDeadForever)
     kCollapsesDrainDk,
+    // Kalistes' six weapons and their "+4" (R14; the panel's weapon rows 7-9 at each blow - facts L7)
+    kKalistesW1, kKalistesW2, kKalistesW3, kKalistesW4, kKalistesW5, kKalistesW6, kPlus4Dk,
     kFightWords
 };
 

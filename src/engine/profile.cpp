@@ -1826,7 +1826,10 @@ const Profile kProfiles[] = {
                // (R14) "is terrified", "is beheaded", "is slain", "gazes...", "is Stoned"
                0x1CC3E, 0x1D8B4, 0x1C98B, 0x1D694, 0x23239,
                // (facts L1) "collapses from drainning"
-               0x1CF22
+               0x1CF22,
+               // (L7) Kalistes' weapons: "Two-Handed Sword", "Bastard Sword", "Long Sword",
+               // "Scimitar", "Dagger", "Spear" (DS 0x34E3 ...), "+4" (DS 0x3C99)
+               kP | 0xD353, kP | 0xD2FF, kP | 0xD329, kP | 0xD2C0, kP | 0xD203, kP | 0xD2D5, kP | 0xDB09
                },
                {0x03, 0x06, 0x0B, 0x15, 0x17, 0x1B, 0x1E, 0x1F, 0x23, 0x34, 0x35, 0x4D, 0x6A, 0x6B, 0x6F, 0x76},
                {.held = {0x33, 0x34, 0x35, 0x1F}, .bless = 0x01, .curse = 0x02, .prayer = 0x31, .haste = 0x27,
@@ -1871,7 +1874,7 @@ const Profile kProfiles[] = {
                 .dk = {.knives = 0x1B, .knife_n = 8, .knife_sides = 8, .dancing = 0x76, .dragon_fear = 0x64,
                        .feared = 0x78, .para_gaze = 0x72, .gaze_proof = 0x7E, .vamp_gaze = 0x7C, .beholder = 0x75,
                        .vorpal = 0x73, .kalistes = 0x74, .rake = 0x63, .blessed = 0x52, .blessed_type = 0x4A,
-                       .no_disease = 0x4C, .disease = 0x22}},
+                       .no_disease = 0x4C, .disease = 0x22, .gaze_pic = 6}},
                kDarknessFight, sizeof kDarknessFight / sizeof kDarknessFight[0],
                // COMSPR (its 22 blocks, + 0x80 the second pictures; loaded at a
                // fight's start as slots 13-34 - GAME.OVR 0xD34A): 0-2 the arrows, 3

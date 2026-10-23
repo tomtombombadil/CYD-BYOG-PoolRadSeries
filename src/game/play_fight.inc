@@ -483,6 +483,7 @@ struct Page {
     uint8_t colour[5];
     int     lines = 0;
     uint8_t sound = 0;                  // the game's sound effect as it shows (0: none)
+    uint8_t weapon = 0;                 // Darkness's Kalistes: its blow's weapon + "+4" in the panel's rows 7-9
     Fx      fx[2];                      // then these, one after the other; then the page's wait
 };
 
@@ -1192,6 +1193,7 @@ void add_page(int who, const char* a, const char* b2 = nullptr, int whom = -1, c
     Page& p = fg->page[fg->pages++];
     p.lines = 0;
     p.sound = 0;
+    p.weapon = 0;
     p.fx[0] = p.fx[1] = Fx{};
     auto line = [&](const char* s, uint8_t col) {
         if (p.lines < 5 && s) {
@@ -1442,6 +1444,14 @@ void show_page(pic::Canvas& c)
     if (log_pages) plat::log("[page] %s %s %s\n", p.lines > 0 ? page_line(p, 0) : "", p.lines > 1 ? page_line(p, 1) : "",
                                  p.lines > 2 ? page_line(p, 2) : "");
     if (p.sound) sfx(p.sound);
+    if (p.weapon) {
+        // Kalistes' blow (GAME.OVR 0x1D924): the weapon and "+4" in the
+        // attacker's weapon rows - the window 23-38 x 7-9 cleared, colour 10
+        char t[40];
+        snprintf(t, sizeof t, "%s%s", fw(profile::kKalistesW1 + p.weapon - 1), fw(profile::kPlus4Dk));
+        clear_panel(c, 7, 9);
+        panel_text(c, t, 7, 10, 9);
+    }
     clear_panel(c, 10, 21);
     int row = 10;
     for (int k = 0; k < p.lines; ++k) row = panel_text(c, page_line(p, k), row, p.colour[k]);
@@ -1764,7 +1774,7 @@ void event_page(const combat::Event& e)
         f.y0 = static_cast<uint8_t>(fg->b.f[who].y);
         f.x1 = e.x;
         f.y1 = e.y;
-        if (e.pic == 6) f.sound = sound::kLightning;
+        if (e.pic == 6 && !e.kind) f.sound = sound::kLightning;     // (kind 1: silent - Darkness's gazes)
         Page& p = fg->page[fg->pages - 1];
         p.fx[p.fx[0].kind == Fx::None ? 0 : 1] = f;
         break;
@@ -1936,6 +1946,7 @@ void attack_pages(int a, int t, const combat::Attack& at, bool behind, bool shot
         snprintf(line, sizeof line, "%s%s%d%s%s", behind ? fw(profile::kFromBehind) : "", fw(profile::kHittingFor), dmg,
                  dmg == 1 ? fw(profile::kPointW) : fw(profile::kPointsW), fw(profile::kOfDamage));
         add_page(a, fw(at.backstab ? profile::kBackstabs : profile::kAttacksW), line, t);
+        if (at.hits[k].weapon && !fg->page_dropped) fg->page[fg->pages - 1].weapon = at.hits[k].weapon;
         hit_page();
         // What the hit did besides (poison, paralysis, a touch's damage, engulfing ...)
         for (int j = 0; j < at.n_ev; ++j)
