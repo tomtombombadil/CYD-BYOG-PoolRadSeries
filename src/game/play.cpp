@@ -2380,6 +2380,8 @@ void list_line(int i, char* out, size_t cap)
     }
 }
 
+bool list_unlit = false;            // draw_list without its highlight (Gateway's item questions)
+
 void draw_list(pic::Canvas& c, const char* prompt, const char* what)
 {
     PickList& l = plist;
@@ -2394,7 +2396,7 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
         size_t n = strlen(line);
         while (n && line[n - 1] == ' ') line[--n] = 0;
         const int row = l.row0 + r;
-        if (l.top + r == l.index) {
+        if (l.top + r == l.index && !list_unlit) {
             int lead = 0;
             while (line[lead] == ' ') ++lead;
             c.fill((l.col0 + lead) * 8, row * 8, static_cast<int>(n - lead) * 8, 8, 15);
@@ -2461,7 +2463,7 @@ void items_keys(char* out, size_t cap)
     const party::Character* ch = pt->sel();
     const bool exploring = view_from == Screen::Game || view_from == Screen::Camp || view_from == Screen::Fight;
     snprintf(out, cap, "%s%s%s%s%s%s%s%s", d->w_ready, exploring && can_use_items(*ch) ? iw(profile::kUse) : "",
-             !ch->npc() && (!in_shop_items() || darkness_files()) && view_from != Screen::Fight ? iw(profile::kTrade) : "",
+             !ch->npc() && (!in_shop_items() || darkness_files() || gateway()) && view_from != Screen::Fight ? iw(profile::kTrade) : "",
              iw(vault_on() ? profile::kDeposit : profile::kDrop),
              ch->n_items < party::kMaxItems ? iw(profile::kHalve) : "", iw(profile::kJoin),
              in_shop_items() && !ch->npc() ? iw(profile::kSell) : "", in_shop_items() ? iw(profile::kId) : "");
@@ -2469,10 +2471,10 @@ void items_keys(char* out, size_t cap)
 
 // What the game says about an item, in the text rows under the list
 // (rows 21-22, colour 14), wrapped
-void say_item(pic::Canvas& c, const char* t, uint8_t colour = 14)
+void say_item(pic::Canvas& c, const char* t, uint8_t colour = 14, int row0 = 21)
 {
-    c.fill(8, 21 * 8, 38 * 8, 16, 0);
-    int row = 21;
+    c.fill(8, row0 * 8, 38 * 8, (23 - row0) * 8, 0);
+    int row = row0;
     const char* s = t;
     while (*s && row <= 22) {
         int n = static_cast<int>(strlen(s));
@@ -2488,7 +2490,7 @@ void say_item(pic::Canvas& c, const char* t, uint8_t colour = 14)
         s += n;
         while (*s == ' ') ++s;
     }
-    dirty_rows(21, 22);
+    dirty_rows(row0, 22);
 }
 
 void item_name(int i, char* out, size_t cap) { names->name(items::Item{pt->sel()->items[i]}, out, cap); }
@@ -2514,6 +2516,16 @@ void draw_items(pic::Canvas& c)
     char keys[48];
     items_keys(keys, sizeof keys);
     draw_list(c, "", keys);
+}
+
+// Gateway's item questions (Drop It?, Is It a Deal?) show the list unlit
+// (DOSBox)
+void gw_unlight(pic::Canvas& c)
+{
+    if (!gateway() || screen != Screen::Items) return;
+    list_unlit = true;
+    draw_items(c);
+    list_unlit = false;
 }
 
 void open_items(pic::Canvas& c)
@@ -2615,6 +2627,7 @@ void drop_item(int i, pic::Canvas& c)
     char nm[48], t[96];
     item_name(i, nm, sizeof nm);
     snprintf(t, sizeof t, "%s%s %s", iw(profile::kYour), nm, iw(profile::kGoneForever));
+    gw_unlight(c);
     say_item(c, t);
     item_at = i;
     ask_yes_no(c, Ask::DropItem, iw(profile::kDropIt));
@@ -2644,6 +2657,9 @@ void trade_item(int i, pic::Canvas& c)
     draw_trade(c);
 }
 
+bool items_from_shop = false;       // Gateway: the items opened by the shop's Items (Exit: the shop)
+void draw_shop(pic::Canvas& c);
+
 // Back to the items of the one who traded (or their sheet when none are left)
 void back_to_items(pic::Canvas& c)
 {
@@ -2652,6 +2668,10 @@ void back_to_items(pic::Canvas& c)
     if (pt->sel()->n_items) {
         screen = Screen::Items;
         draw_items(c);
+    } else if (items_from_shop) {
+        items_from_shop = false;            // (Gateway: none left - the shop again, DOSBox)
+        screen = Screen::Shop;
+        draw_shop(c);
     } else {
         screen = Screen::View;
         draw_character(c);
@@ -2765,6 +2785,7 @@ void sell_item(int i, pic::Canvas& c)
     item_name(i, nm, sizeof nm);
     snprintf(t, sizeof t, "%s%d%s%s", iw(profile::kGiveYou), rules::sell_value(pt->sel()->items[i], d->facts),
              iw(profile::kGoldFor), nm);
+    gw_unlight(c);
     say_item(c, t);
     item_at = i;
     ask_yes_no(c, Ask::SellDeal, iw(profile::kDeal));
@@ -2775,6 +2796,7 @@ void identify_item(int i, pic::Canvas& c)
     char nm[48], t[120];
     item_name(i, nm, sizeof nm);
     snprintf(t, sizeof t, "%s%s", iw(profile::kIdentify), nm);
+    gw_unlight(c);
     say_item(c, t);
     item_at = i;
     ask_yes_first(c, Ask::IdDeal, iw(profile::kDeal));
@@ -3636,8 +3658,14 @@ void draw_add_list(pic::Canvas& c)
     char what[12];
     strncpy(what, rw(Data::kAdd), sizeof what - 1);
     what[sizeof what - 1] = 0;
-    for (size_t n = strlen(what); n && what[n - 1] == ' ';) what[--n] = 0;
+    // (Gateway keeps "Add "'s space - it lights with the word: DOSBox)
+    if (!gateway())
+        for (size_t n = strlen(what); n && what[n - 1] == ' ';) what[--n] = 0;
     draw_list(c, rw(Data::kAddPrompt), what);
+    if (gateway() && menu.count > 0 && what[0] && what[strlen(what) - 1] == ' ') {
+        menu.end[0] = static_cast<int8_t>(menu.start[0] + strlen(what) - 1);
+        show_menu_line(c);
+    }
 }
 
 // Adds the chosen character, with the games' rules
@@ -4833,7 +4861,7 @@ void draw_heal(pic::Canvas& c)
     }
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
-    if (d->tables.bars[0]) layout::bar(c, d->tables, d->frame_tiles, 16);     // (Secret: the shop's bar stays)
+    if (d->tables.bars[0] || gateway()) layout::bar(c, d->tables, d->frame_tiles, 16);     // (Secret: the shop's bar stays; Gateway too - DOSBox)
     char t[48], nm[20];
     pt->sel()->name(nm, sizeof nm);
     snprintf(t, sizeof t, "%s%s", nm, hw->help);
@@ -4900,7 +4928,15 @@ void offer_cure(pic::Canvas& c)
     sw(profile::kOnlyCost, a, sizeof a);
     sw(profile::kGoldPieces, b, sizeof b);
     snprintf(t, sizeof t, "%s%s%d%s", hw->name[cure_at], a, d->prof->cures.cost[cure_at], b);
-    say_item(c, t, 10);
+    if (gateway()) {
+        // (Gateway: the list unlit, the price from row 17 - DOSBox)
+        list_unlit = true;
+        draw_heal(c);
+        list_unlit = false;
+        say_item(c, t, 10, 17);
+    } else {
+        say_item(c, t, 10);
+    }
     sw(profile::kPayFor, a, sizeof a);
     ask_yes_no(c, Ask::PayCure, a);
 }
@@ -5939,6 +5975,7 @@ void shop_tap(int x, int y, pic::Canvas& c)
                 open_loot(c);
             } else if (gateway() && !temple) {
                 view_from = Screen::Shop;               // (Gateway's shop: Items - to sell them)
+                items_from_shop = true;
                 open_items(c);
             }
             break;
@@ -6049,6 +6086,10 @@ void list_tap(int x, int y, pic::Canvas& c)
         } else if (items_direct) {
             items_direct = false;
             fight_after_view(c);
+        } else if (items_from_shop && screen == Screen::Items) {
+            items_from_shop = false;
+            screen = Screen::Shop;
+            draw_shop(c);
         } else {
             screen = Screen::View;
             draw_character(c);
