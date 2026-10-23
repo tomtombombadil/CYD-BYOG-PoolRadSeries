@@ -42,6 +42,7 @@ struct FrameTables {
     uint16_t combat_left;    // combat: column 0, rows 0-22
     uint16_t combat_split;   //   column 22, rows 0-22
     uint16_t combat_right;   //   column 39, rows 0-22
+    uint16_t char_split = 0; // Gateway's View Character: column 19, rows 8-20 (at + row; 0: none)
 };
 
 // One step of the title sequence: a TITLE.DAX picture at a cell position,

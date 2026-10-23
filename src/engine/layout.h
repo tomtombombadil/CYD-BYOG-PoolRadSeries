@@ -95,6 +95,7 @@ struct Tables {
     // on a side two rows (exploring: one and two) from a bar, 33 two
     // columns either side of a divider on the bars it meets
     bool joints = false;
+    uint8_t char_split[13] = {};     // Gateway's View Character column 19, rows 8-20
     bool loaded = false;
 };
 
@@ -129,5 +130,8 @@ void bars_col(pic::Canvas& c, const Tables& tb, const Tiles& t, int col, int r0,
 // The credits screen: the border and bars at `rows` (0: none); with boxes
 // (Pool) the border goes down to row 24
 void credits(pic::Canvas& c, const Tables& tb, const Tiles& t, const uint8_t rows[2]);
+// Gateway's View Character frame (GAME.OVR 0x4C06C): the outer frame, bars
+// at rows 8, 16 and 20, column 19 from row 8 to 20
+void character(pic::Canvas& c, const Tables& tb, const Tiles& t);
 
 } // namespace layout

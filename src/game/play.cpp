@@ -1709,11 +1709,17 @@ void view_keys(const party::Character& ch, char* keys, size_t cap)
     add(d->v_exit);
 }
 
+void draw_character_gateway(pic::Canvas& c, const party::Character& ch);
+
 void draw_character(pic::Canvas& c)
 {
     const party::Character* ch = new_char ? new_char : pt->sel();
     if (ch && (secret_files() || darkness_files())) {
         draw_character_secret(c, *ch);
+        return;
+    }
+    if (ch && gateway()) {
+        draw_character_gateway(c, *ch);
         return;
     }
     c.clear(0);
@@ -1953,6 +1959,115 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
             right(t, 37, row, 10);
             ++row;
         }
+    }
+    char keys[80];
+    view_keys(ch, keys, sizeof keys);
+    text::build(menu, "", keys);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+// Gateway's View Character (gateway_facts.md 12; DOSBox): its frame (the
+// outer one, bars at rows 8, 16, 20, column 19 from row 8 to 20); name and
+// status (row 1), sex, age, hit points (3), alignment, race (4), class (5),
+// level and experience (7), the stats from row 9 with the money panel beside
+// them, AC / THAC0 / damage (17-19, their numbers to column 18) beside
+// encumbrance / movement (numbers to column 37)
+void draw_character_gateway(pic::Canvas& c, const party::Character& ch)
+{
+    c.clear(0);
+    dirty(0, pic::kScreenH);
+    layout::character(c, d->tables, d->frame_tiles);
+    char t[48];
+    auto right = [&](const char* s, int end_col, int row, uint8_t fg) {
+        put(c, s, end_col + 1 - static_cast<int>(strlen(s)), row, fg);
+    };
+    ch.name(t, sizeof t);
+    put(c, t, 1, 1, !ch.in_combat() ? 11 : ch.enemy() ? 14 : 11);
+    if (ch.npc()) put(c, d->v_npc, static_cast<int>(strlen(t)) + 2, 1, 10);
+    put(c, d->v_status, 20, 1, 15);
+    put(c, name_of(d->health[0], 13, 9, ch.health()), 27, 1, 10);
+    put(c, name_of(d->sex[0], 7, 2, ch.sex()), 1, 3, 15);
+    snprintf(t, sizeof t, "%s%d", d->v_age, ch.age());
+    put(c, t, 12, 3, 15);
+    put(c, d->v_hp, 20, 3, 15);
+    snprintf(t, sizeof t, "%d/%d", ch.hp(), ch.hp_max());
+    right(t, 37, 3, ch.hp() < ch.hp_max() ? 14 : 10);
+    put(c, name_of(d->alignment[0], 17, 9, ch.alignment()), 1, 4, 15);
+    put(c, name_of(d->race[0], 10, 8, ch.race()), 20, 4, 15);
+    put(c, name_of(d->cls[0], 27, 18, ch.cls()), 1, 5, 15);
+    put(c, d->v_level, 1, 7, 15);
+    {
+        int top = 0;
+        for (int k = 0; k < 8; ++k)
+            if (ch.level(k) > top) top = ch.level(k);
+        size_t o = 0;
+        t[0] = 0;
+        for (int k = 0; k < 8; ++k) {
+            const int lv = ch.level(k), old = ch.old_level(k);
+            if (lv > 0 || (old > 0 && old < top)) {
+                o += static_cast<size_t>(snprintf(t + o, sizeof t - o, "%s%d", o ? "/" : "", lv + old));
+                if (o >= sizeof t) break;
+            }
+        }
+        put(c, t, 7, 7, 15);
+    }
+    put(c, d->v_exp, 20, 7, 15);
+    snprintf(t, sizeof t, "%lu", static_cast<unsigned long>(ch.exp()));
+    right(t, 37, 7, 15);
+    for (int i = 0; i < 6; ++i) {
+        put(c, d->v_stat[i], 1, 9 + i, 10);
+        const int v = ch.stat(i);
+        if (i == 0 && v == 18 && ch.str00() > 0) {
+            if (ch.str00() == 100) snprintf(t, sizeof t, "18(00)");
+            else snprintf(t, sizeof t, "18(%02d)", ch.str00());
+        } else {
+            snprintf(t, sizeof t, "%d", v);
+        }
+        put(c, t, 5, 9 + i, 10);
+    }
+    {
+        int row = 9;
+        for (int coin = 0; coin < 7 && row <= 15; ++coin) {
+            const int n = ch.money(coin);
+            if (n <= 0) continue;
+            put(c, name_of(d->money[0], 11, 7, coin), 20, row, 10);
+            snprintf(t, sizeof t, "%d", n);
+            right(t, 37, row, 10);
+            ++row;
+        }
+    }
+    put(c, d->v_ac, 1, 17, 15);
+    const int ac = ch.ac_raw();
+    snprintf(t, sizeof t, "%s%d", ac > 60 ? "-" : "", ac > 60 ? ac - 60 : 60 - ac);
+    right(t, 18, 17, 10);
+    put(c, d->v_thac0, 1, 18, 15);
+    snprintf(t, sizeof t, "%d", ch.thac0());
+    right(t, 18, 18, 10);
+    put(c, d->v_damage, 1, 19, 15);
+    const int b = ch.damage_bonus();
+    if (b) snprintf(t, sizeof t, "%dD%d%s%d", ch.dice(), ch.dice_sides(), b > 0 ? "+" : "-", b > 0 ? b : -b);
+    else snprintf(t, sizeof t, "%dD%d", ch.dice(), ch.dice_sides());
+    right(t, 18, 19, 10);
+    put(c, d->v_enc, 20, 17, 15);
+    snprintf(t, sizeof t, "%d", ch.encumbrance());
+    right(t, 37, 17, 10);
+    int mv = ch.movement();
+    if (ch.has_affect(0x2A)) mv *= 2;          // slow
+    if (ch.has_affect(0x27)) mv /= 2;          // haste
+    put(c, d->v_move, 20, 18, 15);
+    snprintf(t, sizeof t, "%d", mv);
+    right(t, 37, 18, 10);
+    // The readied weapon and armour (rows 21-22)
+    const int wi = items::readied_in(ch.items, ch.n_items, *names, items::kSlotWeapon);
+    const int ai = items::readied_in(ch.items, ch.n_items, *names, items::kSlotArmour);
+    if (wi >= 0) {
+        names->name(items::Item{ch.items[wi]}, t, sizeof t);
+        put(c, t, 1, 21, 10);
+    }
+    if (ai >= 0) {
+        names->name(items::Item{ch.items[ai]}, t, sizeof t);
+        put(c, t, 1, 22, 10);
     }
     char keys[80];
     view_keys(ch, keys, sizeof keys);

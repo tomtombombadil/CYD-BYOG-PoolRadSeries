@@ -178,6 +178,10 @@ Status load_tables(dax::ByteSource& program, const exepack::Info& info, const pr
     default:                         return Status::NotPacked;
     }
     for (const Slice& x : s) memcpy(x.dst, span + (x.at - lo), x.len);
+    if (f.char_split &&
+        exepack::read(program, info, p.data_base + f.char_split + 8, out.char_split, sizeof out.char_split) !=
+            exepack::Status::Ok)
+        return Status::ReadError;
 
     // Sanity: every value used must name a tile
     out.frame_base = p.variant.frame_base ? p.variant.frame_base : kFrameTile;
@@ -400,6 +404,14 @@ void combat(pic::Canvas& c, const Tables& tb, const Tiles& t)
     if (tb.joints)
         for (int row : {0, 22})                                 // (Gateway, GAME.OVR 0x4C2E6)
             for (int col : {20, 24}) put(c, t, 33, col, row);
+}
+
+void character(pic::Canvas& c, const Tables& tb, const Tiles& t)
+{
+    outer(c, tb, t);
+    for (int row : {8, 16, 20})
+        for (int col = 0; col < kCols; ++col) put(c, t, tb.frame_base + tb.bar[col], col, row);
+    for (int row = 8; row <= 20; ++row) put(c, t, tb.frame_base + tb.char_split[row - 8], 19, row);
 }
 
 void bars_row(pic::Canvas& c, const Tables& tb, const Tiles& t, int row)

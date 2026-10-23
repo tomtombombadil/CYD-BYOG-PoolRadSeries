@@ -1856,7 +1856,8 @@ const Profile kProfiles[] = {
      // The frame tables (DS 0x1596 on, tile 20 + value - gateway_facts.md 4):
      // top, bar, bottom, left, right, column 16, the 3D view's four sides
      // (from column / row 0), the fight's columns 0, 22, 39
-     .frame = {0x1596, 0x15E6, 0x15BE, 0x160E, 0x1638, 0x1626, 0x16B2, 0x16C0, 0x1696, 0x16A4, 0x1650, 0x1668, 0x1680},
+     .frame = {0x1596, 0x15E6, 0x15BE, 0x160E, 0x1638, 0x1626, 0x16B2, 0x16C0, 0x1696, 0x16A4, 0x1650, 0x1668, 0x1680,
+               0x16C8},
      .tiles_file = "8X8D1.DAX", .tiles_block = 202,
      .press_any_key = 0x1D1F,
      .title_file = "TITLE.DAX", .title = kGatewayTitle, .title_steps = sizeof kGatewayTitle / sizeof kGatewayTitle[0],
@@ -1872,7 +1873,11 @@ const Profile kProfiles[] = {
                0x217A1, 0, 0, 0, 0x29E5A, 0x29E6C, 0x29E71, 0, 0x29E9B, 0x29EB5,
                0x22844, 0x2284F, 0x28D1C, 0x28D22, 0x28D2D, 0, 0, 0x28D48, 0x28D5C, kP | 0x6118,
                0, 0x29066, 0, 0x21DBB, 0x22852},
-     .view = {{0x6434, 27, 18}, {0x661A, 10, 8}, {0x666A, 17, 9}, {0x6704, 7, 2}, {0x6712, 11, 7}, {0x6760, 13, 9}},
+     // View Character's name tables and words ("ARMOR CLASS", "HIT POINTS"
+     // its own; "Experience " with its space)
+     .view = {{0x6434, 27, 18}, {0x661A, 10, 8}, {0x666A, 17, 9}, {0x6704, 7, 2}, {0x6712, 11, 7}, {0x6760, 13, 9},
+              0x2D9FF, 0x2DA0C, 0x2DA25, 0x2DA13, 0x2DA19, 0x2DA05, 0x2E007, 0x2E013, 0x2E020, 0x2E02C, 0x2E033,
+              0x2E040, 0x2E562, 5},
      // The script machine's words (its interpreter's overlay): the encounter's,
      // DAMAGE's, CALL 0x809's "~Press Enter to continue." and 0x80C's "~Yes ~No"
      .script_words = {0x2C54, 0x2C65, 0xB76A, 0xB772, 0xB77F, 0x357C, 0x3BE5, 0, 0, 0, 0x3BFF},
@@ -1903,12 +1908,18 @@ const ViewFacts& view_facts(games::Game g)
                                          kP | 0xB7BD, 0x26B9A, 0x26BA6, 0x26BB4, 0x26C9F, 0x26CAB, 0x26CBB,
                                          0x26CC9, kP | 0xB7E6},
                                         0x6D, 0x6E, kP | 0xCBC0};
+    // Gateway: Curse's words a step on (gateway_facts.md 12)
+    static const ViewFacts kGateway = {{0x2E538, 0x2E540, 0x2E547, 0x2E550, 0x2E556, 0x2E55C, 0x303A1, 0x303AB,
+                                        0x303C8, 0x303D2, 0x30704, 0x30E91, 0x30E9D, 0x30EAB, 0x30FA3, 0x30FAF,
+                                        0x30FBF, 0x30FCD, 0x306F1},
+                                       0x8C, 0x8D};
     static const ViewFacts kNone = {};
     switch (g) {
     case games::Game::CurseOfTheAzureBonds: return kCurse;
     case games::Game::PoolOfRadiance: return kPool;
     case games::Game::SecretOfTheSilverBlades: return kSecret;
     case games::Game::PoolsOfDarkness: return kDarkness;
+    case games::Game::GatewayToTheSavageFrontier: return kGateway;
     default: return kNone;
     }
 }
