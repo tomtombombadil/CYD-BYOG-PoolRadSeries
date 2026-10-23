@@ -355,9 +355,11 @@ can't get the memory says "Not enough memory to show this log."
   2.8" ST7789 resistive C5 board (`cyd28c5_st7789_res`: ESP32-C5, 8 MB
   PSRAM; display, touch and card share one SPI bus; sound as I2S PDM on
   GPIO 26 into the amplifier's filter - the C5 has no DAC). Blocks over
-  4 KB go to PSRAM by themselves (Arduino's malloc); later the VGA games
-  run there in 256 colours (the 8-bit canvas). Flasher entries carry the
-  chip (ESP Web Tools' chipFamily).
+  4 KB go to PSRAM by themselves (Arduino's malloc); the VGA games run
+  there in 256 colours (the 8-bit canvas - Pools of Darkness since this
+  branch: `BOARD_PSRAM` in board_select.h, `plat::vga_screen()`,
+  `play::canvas_depth`; 6d). Flasher entries carry the chip (ESP Web
+  Tools' chipFamily).
 - Board facts: the Project's claude/board_facts.md; the games' needs:
   claude/other_games_facts.md.
 
@@ -1565,6 +1567,41 @@ the scripts' changed ops, the rule tables, fights, the rest.
   run's place / time line aside): every Alter screen, Drop's questions and
   messages, the editor through 29 steps (parts, colours, size, Keep /
   Exit, another pass), from creation and its "is this icon ok?".
+- **256 colours on the boards with PSRAM** (Tom, 2026-10-12; scratch
+  facts /tmp/claude-0/dks_vga/facts_vga.md): `play::canvas_depth` - 8 for
+  Darkness where `plat::vga_screen()` (BOARD_PSRAM and PSRAM found; the
+  playsim's VGA=1), the viewer makes the canvas so for the Play Test
+  (`frame::set_depth(8)` sets `Canvas::vga`; short of memory: EGA). On a
+  VGA canvas every VGA block draws its values (`draw_vga_block`,
+  `draw_dk_anim`, layout / view3d / the fight's loaders - a byte a pixel:
+  `World::vga_px`, `back`, `px8()` pictures) and its palette entries go
+  to the screen as it's shown (`pic::VgaPalette`; play's `Vga`: `now` =
+  the DAC, `vga_take` / `vga_send`), as the original's VGA mode
+  (darkness_facts.md 7 5.1): BORDERS 16-31, the walls 32-143 and the
+  background 144-175 kept and sent again when the 3D view is drawn
+  (after a picture or a fight), the titles all 256 (16-31 again after
+  them), PIC / BIGPIC 32-255, sprites 176-255 only, the fight's ground
+  32-63, COMSPR 64-95, the party 96-143, monsters 144-255; the frame's
+  colour 13 drawn (EGA leaves it out). Party icons: the head's pixels
+  that aren't see-through replace the body's, then values under 16
+  recoloured (GAME.OVR 0x10F8F; img 0x1C30+0x18B0). Colour cycling: the
+  program's table (DS 0x0CB0, `profile::cycle_facts`: PICs 7, 128, 133,
+  136, 137, 139, 142, 149 and BIGPIC 240-246), each range turning one
+  place every speed x 5 / 100 s while the picture shows. `play::palette`
+  hands the 256 colours to the front end. Checked pixel for pixel against
+  DOSBox in VGA (POOL4.CFG V; the mouse pointer aside): the three titles,
+  the party menu, the docks' 3D view, Rolf, the debug arena's picture
+  with its cycling, sprite (middle range), fight start (party icons,
+  turn box, frame), a monster (CPIC), the results and the view after the
+  fight, the overland (BIGPIC + marker + cycling), the icon editor.
+  The 4-bit path unchanged (Curse / Pool / Secret / Darkness EGA
+  snapshots identical; CANVAS8=1 now draws Darkness in EGA too); the
+  budget fights 128,505 / 129,969 / 145,337 (+6 bytes); classic static
+  RAM +24 bytes. The VGA budget fight: 236,963 bytes at its highest
+  (the 64 KB canvas, 16 KB tiles, the fight's 40 tiles 23 KB - each 576
+  bytes, so internal RAM -, the 3D view not parked) - PSRAM boards only.
+  The canvas parks to the card through a 2 KB internal buffer (the S3's
+  SD/MMC DMA rule). The Look / Walk tests stay in EGA.
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -2084,5 +2121,10 @@ the game's Settings (As Original: all of them).
   picture 0x2D, the vampire's 0x32 in the original; the engine flies the
   spell's picture. Kalistes' blows: the original shows the weapon's name
   and "+4" on row 23; the engine doesn't.
+- **Darkness in 256 colours** (the boards with PSRAM): the original's
+  VGA mode; on the classic boards its EGA mode (both the originals'
+  own). The palette changes with the canvas (the whole screen shown
+  again), as the VGA DAC does. The Gold Box Companion's icons (EGA) in
+  the icon gallery use the palette's first 16 entries.
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.

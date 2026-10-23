@@ -321,19 +321,27 @@ void fight_arena_end();
 combat::Fighter* make_fighters(int n);
 void release_fighters(combat::Fighter* f);
 
-// ---- Pictures, 4 bits a pixel
+// ---- Pictures, 4 bits a pixel (a VGA game in 256 colours: a byte a
+// pixel, its values - px8)
 struct Pic4 {
     uint8_t w = 0, h = 0;
-    uint8_t* px[2] = {};                // ready, attack: rows of w / 2 bytes
+    uint8_t* px[2] = {};                // ready, attack: rows of rowb(w) bytes
 };
 
+inline bool px8() { return vga != nullptr; }
+inline int rowb(int w) { return px8() ? w : w / 2; }
 inline int nib(const uint8_t* p, int w, int x, int y)
 {
+    if (px8()) return p[y * w + x];
     const uint8_t b = p[y * (w / 2) + x / 2];
     return x & 1 ? b & 15 : b >> 4;
 }
 inline void set_nib(uint8_t* p, int w, int x, int y, int v)
 {
+    if (px8()) {
+        p[y * w + x] = static_cast<uint8_t>(v);
+        return;
+    }
     uint8_t& b = p[y * (w / 2) + x / 2];
     b = static_cast<uint8_t>(x & 1 ? (b & 0xF0) | (v & 15) : (b & 0x0F) | (v << 4));
 }
@@ -356,7 +364,7 @@ void free_pic(Pic4& p)
 bool fight_masks() { return d->prof->variant.vga; }
 constexpr int kMaskColour = 8;
 uint32_t mask_bytes(int w, int h) { return (static_cast<uint32_t>(w) * h + 7) / 8; }
-const uint8_t* mask_of(const uint8_t* p, int w, int h) { return fight_masks() && p ? p + (w / 2) * h : nullptr; }
+const uint8_t* mask_of(const uint8_t* p, int w, int h) { return fight_masks() && p ? p + rowb(w) * h : nullptr; }
 inline bool masked(const uint8_t* m, int w, int x, int y)
 {
     const int k = y * w + x;
@@ -371,12 +379,24 @@ uint8_t* load_vga4(dax::RleReader& r, uint32_t raw_size, int frame, int* w, int*
         return nullptr;
     uint8_t map[256];
     for (int i = 0; i < 256; ++i) map[i] = static_cast<uint8_t>(i & 15);
-    if (r.skip(vh.count * 3u) != vh.count * 3u || !pic::read_vga_ega(r, vh, map)) return nullptr;
+    // (a VGA screen: the values, the block's palette entries sent - the
+    // fight's kinds keep apart: ground 32-63, COMSPR 64-95, the party
+    // 96-143, the monsters 144-255; darkness_facts.md 7 4.7)
+    pic::VgaPalette* pal = vga_load();
+    if (pal ? !pic::read_vga_palette(r, vh, pal->rgb) : r.skip(vh.count * 3u) != vh.count * 3u) return nullptr;
+    if (pal) {
+        pal->first = vh.first;
+        pal->count = vh.count;
+        vga_take();
+    }
+    if (!pic::read_vga_ega(r, vh, map)) return nullptr;
+    if (px8())
+        for (int i = 0; i < 256; ++i) map[i] = static_cast<uint8_t>(i);
     const uint32_t at = 10u + vh.count * 3u + (vh.count + 1u) / 2u;
     const uint32_t skip = vh.pixels_at + static_cast<uint32_t>(frame) * vh.frame_bytes() - at;
     if (r.skip(skip) != skip) return nullptr;
     const int pw = vh.width_px(), ph = vh.height;
-    const uint32_t nb = static_cast<uint32_t>(pw / 2) * ph;
+    const uint32_t nb = static_cast<uint32_t>(rowb(pw)) * ph;
     uint8_t* out = static_cast<uint8_t*>(calloc(1, nb + mask_bytes(pw, ph)));
     if (!out) return nullptr;
     uint8_t* m = out + nb;
@@ -488,6 +508,8 @@ struct Page {
 
 constexpr int kTileBytes = kSq * kSq / 2;
 constexpr int kTiles = 40;
+// A field picture's bytes (a VGA game in 256 colours: a byte a pixel)
+inline int tile_bytes() { return px8() ? kSq * kSq : kTileBytes; }
 
 // A fight's state in pieces - the battle, this, each field picture a block
 // of its own - so a heap broken up by the area's pictures and a big monster
@@ -707,7 +729,7 @@ uint8_t* arena_adopt(uint8_t* p, size_t n)
 }
 
 // A fight picture's bytes (load_pic4's block: 4-bit rows, Darkness's see-through plane after them)
-size_t pic_bytes(int w, int h) { return static_cast<size_t>(w / 2) * h + (fight_masks() ? mask_bytes(w, h) : 0); }
+size_t pic_bytes(int w, int h) { return static_cast<size_t>(rowb(w)) * h + (fight_masks() ? mask_bytes(w, h) : 0); }
 void arena_adopt(Pic4& ic)
 {
     for (uint8_t*& p : ic.px) p = arena_adopt(p, pic_bytes(ic.w, ic.h));
@@ -755,7 +777,9 @@ void release_fighters(combat::Fighter* f)
 
 bool alloc_tiles()
 {
-    if (!fg->tiles_in_world && park_world()) {
+    // (a VGA game in 256 colours: its tiles don't fit the 3D view's memory -
+    // on the heap; those boards have the PSRAM)
+    if (!px8() && !fg->tiles_in_world && park_world()) {
         uint8_t* base = reinterpret_cast<uint8_t*>(&d->world);
         for (int i = 0; i < kTiles; ++i) fg->tile[i] = base + i * kTileBytes;
         fg->tiles_in_world = true;
@@ -763,7 +787,7 @@ bool alloc_tiles()
     }
     if (fg->tiles_in_world) return true;
     for (uint8_t*& t : fg->tile)
-        if (!t && !(t = static_cast<uint8_t*>(malloc(kTileBytes)))) {
+        if (!t && !(t = static_cast<uint8_t*>(malloc(tile_bytes())))) {
             for (uint8_t*& u : fg->tile) {
                 free(u);
                 u = nullptr;
@@ -859,7 +883,7 @@ void load_vga_frames(const char* file, int block)
             int w = 0, h = 0;
             uint8_t* t = load_vga4(r, e->raw_size, k, &w, &h);
             if (!t) break;
-            if (w == kSq && h == kSq) memcpy(fg->tile[k], t, kTileBytes);   // (see-through: the colour 0 under it)
+            if (w == kSq && h == kSq) memcpy(fg->tile[k], t, tile_bytes());  // (see-through: the colour 0 under it)
             free(t);
         }
     }
@@ -870,7 +894,7 @@ void load_vga_frames(const char* file, int block)
 void load_tiles(bool indoors)
 {
     for (uint8_t* t : fg->tile)
-        if (t) memset(t, 0, kTileBytes);
+        if (t) memset(t, 0, tile_bytes());
     if (d->prof->variant.vga) {
         const int region = vm->get(0x3A) & 0xFF;
         if (indoors) load_vga_frames("DUNGCOM.DAX", d->save.look ? d->save.look : 1);
@@ -897,10 +921,21 @@ void icon_compose(uint8_t* b, const uint8_t* h, int hh, const uint8_t* colours)
         map[kDefault[i]] = colours[i] & 15;
         map[kDefault[i] + 8] = colours[i] >> 4;
     }
-    if (h && fight_masks()) {
+    uint8_t* const bm = fight_masks() ? b + rowb(kSq) * kSq : nullptr;
+    if (h && fight_masks() && px8()) {
+        // Darkness's VGA path (GAME.OVR 0x10F8F): the head's pixels that
+        // aren't see-through replace the body's
+        const uint8_t* hm = h + rowb(kSq) * hh;
+        for (int y = 0; y < hh && y < kSq; ++y)
+            for (int x = 0; x < kSq; ++x) {
+                if (masked(hm, kSq, x, y)) continue;
+                set_nib(b, kSq, x, y, nib(h, kSq, x, y));
+                const int k = y * kSq + x;
+                bm[k >> 3] = static_cast<uint8_t>(bm[k >> 3] & ~(1 << (k & 7)));
+            }
+    } else if (h && fight_masks()) {
         // Darkness's EGA path (GAME.OVR 0x10FC5): the head's colours OR'd
         // onto the body's, see-through where both are
-        uint8_t* bm = b + (kSq / 2) * kSq;
         const uint8_t* hm = h + (kSq / 2) * hh;
         for (int y = 0; y < hh && y < kSq; ++y)
             for (int x = 0; x < kSq; ++x) {
@@ -914,6 +949,19 @@ void icon_compose(uint8_t* b, const uint8_t* h, int hh, const uint8_t* colours)
                 const int v = nib(h, kSq, x, y);
                 if (v) set_nib(b, kSq, x, y, v | nib(b, kSq, x, y));
             }
+    }
+    if (px8()) {
+        // (VGA, img 0x1C30+0x18B0: the values under 16 through the table, the
+        // others as they are; a pixel made the see-through 8 is see-through)
+        for (int y = 0; y < kSq; ++y)
+            for (int x = 0; x < kSq; ++x) {
+                const int k = y * kSq + x;
+                const int v = nib(b, kSq, x, y);
+                if (v >= 16 || (bm && masked(bm, kSq, x, y))) continue;
+                set_nib(b, kSq, x, y, map[v]);
+                if (bm && map[v] == kMaskColour) bm[k >> 3] = static_cast<uint8_t>(bm[k >> 3] | 1 << (k & 7));
+            }
+        return;
     }
     for (int y = 0; y < kSq; ++y)
         for (int x = 0; x < kSq; ++x) set_nib(b, kSq, x, y, map[nib(b, kSq, x, y)]);

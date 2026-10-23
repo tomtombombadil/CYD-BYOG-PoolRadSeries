@@ -16,6 +16,12 @@ namespace play {
 
 bool available(games::Game g);
 
+// The game screen's depth for game g on this machine: 8 (a byte a pixel,
+// the canvas's vga set) for a VGA game where the platform shows 256 colours
+// (Pools of Darkness on the boards with PSRAM - plat::vga_screen), else 4
+// (the original's EGA mode). The front end makes the canvas so before open.
+int canvas_depth(games::Game g);
+
 // Loads the shared pieces and shows the party menu. nullptr = ready, else
 // why not. Draws into c. cache_dir: the engine's own folder for this game
 // (_CYD/<folder>; what it keeps beside saved games), or nullptr.
@@ -137,6 +143,11 @@ void set_present_now(void (*fn)());
 // True while a fight is on screen: colours 0 and 8 swap (the games' combat
 // palette)
 bool fight_colours();
+// The VGA palette (a VGA game on a 256-colour canvas): true when it
+// changed since the last call (all: whenever there is one - a redraw),
+// *rgb its 256 entries; the front end sets the panel's colours from it and
+// shows the whole canvas again. False: no change (or no VGA palette).
+bool palette(const pic::Rgb** rgb, bool all = false);
 
 // The game's sound (Settings: 1 Tandy, 2 PC speaker, 3 Off) and its volume
 // 0-255; the Menu's sound test plays one of the game's sound effects (the

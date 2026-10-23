@@ -12,6 +12,8 @@
 // (fighter m's weapon becomes that type), FXSHOTS=n (snapshots of the pages'
 // pictures in flight), PAGELOG (each fight page's lines), MONSWAP=area:id[:copies[:icon]]
 // (the LOAD MONSTER at RUNAT loads that monster; its picture: CPIC block icon, else id). Needs an out/ folder.
+// VGA=1: a VGA game (Darkness) in 256 colours, as on the boards with PSRAM (snapshots in its palette);
+// SEARCH=1: Search on before the moves (Darkness's debug arena: a step asks "FIGHT HERE?").
 #include "game/play.cpp"
 #include "host.h"
 #include "engine/rules.h"
@@ -57,7 +59,9 @@ static void save_wav()
 }
 uint32_t g_now = 1000;
 static std::vector<uint8_t> px(getenv("CANVAS8") ? 320 * 200 : 320 * 200 / 2);   // (exactly the canvas: ASan sees an overrun)
-// (4 bits a pixel as on the board since v0.87.0; CANVAS8=1: a byte a pixel)
+// (4 bits a pixel as on the board since v0.87.0; CANVAS8=1: a byte a pixel;
+// VGA=1: a VGA game - Darkness - in 256 colours as on the boards with
+// PSRAM, a byte a pixel with the game's palette - play::canvas_depth)
 static pic::Canvas C{px.data(), 320, 200, static_cast<uint8_t>(getenv("CANVAS8") ? 8 : 4)};
 static int shot_n = 0;
 static void shot(const char* tag)
@@ -77,6 +81,12 @@ static void shot(const char* tag)
         int y0, y1;
         play::take_dirty(y0, y1);
         if (y1 > y0) memcpy(lcd.data() + y0 * 320, all.data() + y0 * 320, (size_t)(y1 - y0) * 320);
+    }
+    const pic::Rgb* vpal = nullptr;
+    if (C.vga && play::palette(&vpal, true)) {
+        for (uint8_t v : (getenv("LCD") ? lcd : all)) { const pic::Rgb& c = vpal[v]; fputc(c.r, f); fputc(c.g, f); fputc(c.b, f); }
+        fclose(f);
+        return;
     }
     for (uint8_t v : (getenv("LCD") ? lcd : all)) { int k = v & 15; if (swap && (k == 0 || k == 8)) k ^= 8; const pic::Rgb& c = pic::kEga[k]; fputc(c.r, f); fputc(c.g, f); fputc(c.b, f); }
     fclose(f);
@@ -503,6 +513,12 @@ int main(int argc, char** argv)
     const char* dir = folder.c_str();
     // GAME=n: another game (games::Game's number: 1 Pool of Radiance)
     const games::Game game = getenv("GAME") ? (games::Game)atoi(getenv("GAME")) : games::Game::CurseOfTheAzureBonds;
+    if (play::canvas_depth(game) == 8) {
+        px.assign(320 * 200, 0);
+        C.px = px.data();
+        C.bpp = 8;
+        C.vga = true;
+    }
     // SOUNDMODE=2: the PC speaker's sounds (1 Tandy, the default)
     if (getenv("SOUNDMODE")) play::set_sound(static_cast<uint8_t>(atoi(getenv("SOUNDMODE"))), 230);
     const char* e = play::open(dir, game, C, getenv("CACHE"));
@@ -1045,6 +1061,7 @@ int main(int argc, char** argv)
         }
     }
     if (getenv("FINDLOCK")) for (int y = 0; y < 16; ++y) for (int x = 0; x < 16; ++x) for (int dd = 0; dd < 8; dd += 2) if (geo::passage(play::d->map, x, y, dd) >= 2) printf("locked %d,%d,%d\n", x, y, dd);
+    if (getenv("SEARCH")) play::vm->set(0x7ECA, play::vm->get(0x7ECA) | 1);     // SEARCH=1: Search on before the moves
     if (getenv("TELE")) { int x, y, dd; sscanf(getenv("TELE"), "%d,%d,%d", &x, &y, &dd); play::d->gs.x = x; play::d->gs.y = y; play::d->gs.dir = dd; play::after_move_redraw(); }
     const char* moves = argc > 2 ? argv[2] : "FFFF";
     for (const char* m = moves; *m; ++m) {

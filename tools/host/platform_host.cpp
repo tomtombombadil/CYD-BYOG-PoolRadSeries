@@ -50,6 +50,8 @@ void log(const char* fmt, ...)
 // (the PC's heap isn't the board's: unknown)
 size_t free_heap() { return 0; }
 size_t largest_block() { return 0; }
+// (VGA=1: as a board with PSRAM - the VGA games in 256 colours)
+bool vga_screen() { return getenv("VGA") != nullptr; }
 
 namespace {
 
