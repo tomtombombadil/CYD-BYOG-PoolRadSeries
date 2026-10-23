@@ -115,6 +115,13 @@ struct OpSet {
     // plays the effect 0x03DE holds by the game's own number (0x80 up: its
     // music - not played); Curse's: a step, or the fireball's roar for 10
     bool sound_word = false;
+    // Treasures of the Savage Frontier (treasures_facts.md 3): its script
+    // buffer's size (0: kCodeSize), SHOP's last list (Darkness 11) and its
+    // three new opcodes - 0x42 LOAD 3D (map, the wall slots' blocks), 0x43
+    // FIND ITEM, 0x44 DESTROY ITEM (type, three name words)
+    uint32_t code_size = 0;
+    uint8_t  shops = 11;
+    bool     tr_ops = false;
 };
 
 // A script's memory address as the engine's machine (Curse's map) knows

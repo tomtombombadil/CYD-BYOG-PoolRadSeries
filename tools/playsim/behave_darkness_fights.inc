@@ -8,7 +8,7 @@
 
 namespace dkfight {
 
-const char* F_ = "darkness fights";
+const char* F_ = BDK_NAME " fights";
 char w[200];
 
 // ---- Dice: d20 set, the others highest (1) or lowest (2)
@@ -438,7 +438,17 @@ void spell_checks()
     }
 
     // Monster Summoning (R10): the fight's reserve, 2 a cast, on the caster's side
-    {
+    if (b_rows("reserve").empty()) {
+        // (Treasures: no reserve - nothing in its program puts a fighter in
+        // status 9, so its handler, the same as Darkness's, finds no one:
+        // "summons is not answered")
+        new_fight();
+        const MonsterLoad* m = play::ml;
+        expect(F_, "no summoning reserve in this game", !m || m->reserve_from < 0);
+        const int before = BT.n;
+        play::summon(0, *combat::fight_spell(play::d->prof->fight.spells, play::d->prof->fight.n_spells, 0x7E));
+        expect(F_, "Monster Summoning: nobody answers", BT.n == before, "%d joined", BT.n - before);
+    } else {
         new_fight();
         const MonsterLoad* m = play::ml;
         const int style = play::vm->get(0x3A) & 0xFF;

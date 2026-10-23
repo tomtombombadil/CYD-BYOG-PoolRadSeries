@@ -43,18 +43,37 @@ constexpr uint32_t kCodeSize = 0x1E00;
 constexpr int kMaxStrings = 16;
 constexpr int kMaxInput = 40;       // INPUT STRING: characters the player may type
 
+// Treasures of the Savage Frontier: its scripts load into a 14,001-byte
+// buffer (0x8000-0xB6B0; GAME.OVR 0x7354 +0x2FA)
+constexpr uint32_t kTreasuresCodeSize = 0x36B1;
+
 struct GameState {
     uint8_t  area1[0x800] = {};
     uint8_t  area2[0x800] = {};
     uint8_t  table[0x400] = {};
-    uint8_t  code[kCodeSize] = {};
     uint32_t code_len = 0;
     uint8_t  script = 0;            // the ECL block running
     uint8_t  game_area = 2;         // ECL<n>, GEO<n> ... files
     int      x = 7, y = 13, dir = 0;  // dir 0, 2, 4, 6
     uint8_t  wall_ahead = 0, roof = 0;
     bool     moved = false;          // a script set the position
+    // The script's bytes: kCodeSize, or more when the state was made by
+    // new_game_state with a bigger room (the array runs on past its end
+    // into that room - code stays the last member)
+    uint32_t code_cap = kCodeSize;
+    uint8_t  code[kCodeSize] = {};
 };
+// A game state on the heap with room for `cap` script bytes (Treasures:
+// kTreasuresCodeSize; nullptr: no memory); free_game_state lets it go
+GameState* new_game_state(uint32_t cap);
+void free_game_state(GameState* g);
+// The script's bytes, all code_cap of them (taken from the state's own
+// address: the room past the array's end belongs to the same block)
+inline uint8_t* code_of(GameState& g) { return reinterpret_cast<uint8_t*>(&g) + offsetof(GameState, code); }
+inline const uint8_t* code_of(const GameState& g)
+{
+    return reinterpret_cast<const uint8_t*>(&g) + offsetof(GameState, code);
+}
 
 // What the machine asks the front end for
 enum class Wait : uint8_t {
@@ -75,6 +94,8 @@ enum class Wait : uint8_t {
     Camp,         // PROGRAM 9: the camp; resume() when the party breaks camp (the script has ended)
     Vault,        // COMBAT with Secret's vault word set: its vault (VAULT.DAT); resume() when the party leaves
     Won,          // PROGRAM 8: the game won - the ending, then the party menu (the script has ended; Pool: the ending, then resume())
+    Luck,         // Treasures' PROGRAM 3: a LUCK.DAX text (news / the crown's end), page by page; resume() after
+    ShipRest,     // Treasures' PROGRAM 4: the party heals itself on the way (Fix, then a rest); resume() after
 };
 
 enum class Stop : uint8_t { Running, Waiting, Stopped, NewScript, Error };
@@ -135,6 +156,11 @@ public:
     virtual void shop_items(int n, items::Ground& g) { (void)n; (void)g; }
     virtual void item_row(int row, items::Ground& g) { (void)row; (void)g; }
     virtual void style(int v) { (void)v; }
+    // Treasures (op 0x42): WALLDEF1 block `block` into wall slot `slot`
+    // (0-2) and on, with its own 8X8D1 tiles; block < 0 empties the slot
+    virtual void load_slot(int slot, int block) { (void)slot; (void)block; }
+    virtual void clear_text() {}                        // the text window emptied
+    virtual void slots_done() {}                        // (after a LOAD 3D's slots: their tiles)
     virtual void log(const char* what) = 0;
 };
 
@@ -229,7 +255,7 @@ private:
     uint16_t target(const Op& o) const;
     uint16_t value(const Op& o) const;
     const char* string_of(const Op& o) const;
-    uint8_t byte_at(uint32_t p) const { return p < kCodeSize ? s_.code[p] : 0; }
+    uint8_t byte_at(uint32_t p) const { return p < s_.code_cap ? code_of(s_)[p] : 0; }
     Stop step();
     void skip_next();
     void compare(uint16_t a, uint16_t b);

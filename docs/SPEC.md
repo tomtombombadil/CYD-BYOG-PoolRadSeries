@@ -1766,6 +1766,58 @@ segment at image 0x4C70; run as `GAME UseStart`) + GAME.OVR (51 overlays),
   companion at /GOLDBOX/GBC isn't used for journals (no JE pictures there;
   a choice for Tom).
 - **Not yet:** no music (MUSIC.DAX: the original's "0x80 up" sounds).
+## 6f. Treasures of the Savage Frontier (2026-10-23: started after Darkness)
+
+Facts: the Project's claude/treasures_facts.md (the survey) and
+treasures_port_facts.md (the port; scratch until synced). It is the
+Darkness engine a year on: GAME.EXE (EXEPACK, 71,971 / 78,976 bytes,
+data segment at image 0xC3E0) + GAME.OVR (38 overlays), Darkness's file
+kinds, 510-byte records, .PTY saves, VGA pictures with their EGA nibbles
+(its own EGA mode on the classic boards, 256 colours on the S3 / C5).
+Game number 9 (playsim / sweep GAME=9); `variant.tr`. Its rule tables
+are Darkness's byte for byte at other places (the profile's offsets).
+`variant.unfinished` stays on until Tom has played it.
+
+- **The profile and scripts.** Its scripts: Darkness's opcodes plus 0x42
+  LOAD 3D (a map and three wall slots), 0x43 FIND ITEM and 0x44 DESTROY
+  ITEM (type and three name words); a 14,001-byte script buffer
+  (`ecl::new_game_state(cap)`, `profile::code_cap`); SHOP 1-16 as runs of
+  item codes split by 0xFF; END clears the text window (`OpSet.tr_ops`).
+- **The wall slots** (op 0x42): each slot its own WALLDEF1 block and
+  8X8D1 tiles (tile = slot << 8 | n), kept in one compact pool.
+- **The frame**: BORD.DAX - block 0's tiles, block 7's pieces (four
+  screens: exploring, border, border + bar, fight), the lattice round the
+  view (BORD 3 / 5; the overland's parchment BORD 4 / 6), the font (BORD
+  8's 64 glyphs), "%X" colour codes in printed text, a five-line text
+  window 9 pixels a line. Menus show only their enabled words (the
+  camp's lone "C", the fight's "Z" hidden).
+- **Characters**: Load / Add from Gateway's folder (`earlier()`:
+  Gateway's .GUY / .SWG / .FX and saved games; coins but platinum gone,
+  races renumbered, flags 2); a new game's defaults (game bytes 0x26,
+  0x21, 0x38, 0x52, 0x54, 0x11).
+- **The overland** (game byte 0x3F): an 11 x 11 window of its OVER.DAX
+  map in the view with the party's arrow; the demo (ECL1 block 4).
+- **LUCK.DAX**: PROGRAM 3's news pages, the camp's Crown (PIC 130 and the
+  same text), the romance at camp (LUCK 101-117, Accept / Reject), the
+  lucky paper (LUCK 51-61, letters by the crystals held), the crystals
+  in the camp's text; PROGRAM 4 (the passage: the party heals as Fix).
+- **Fights**: the ground (DUNGCOM by game byte 0x51 or slot 0's block),
+  the weather (game byte 0x52: snow / rain cut everyone's moves to 3/5
+  / 2/5 and say so), no summoning reserve (Monster Summoning goes
+  unanswered, as in the original).
+- Checked in DOSBox (EGA) pixel for pixel: the party menu, Load, the
+  start's screens, exploring, the area map, the camp, View and Items, the
+  demo's overland and event pictures, the fight's frame. The behaviour
+  checks: sweep `behave treasures` (-DCYD_TEST_HOOKS -DBEHAVE_TREASURES,
+  GAME=9, CACHE=_CYD/<folder>; Darkness's checks with oracles read from
+  Treasures' own program in scratch): 155 pass. Its budget fight (save
+  A's RUNAT=874D FIGHT=1) is within 150 KB.
+- Old age: a fight in which someone aged (haste) ends with the race's
+  greatest age checked (its program's table) - past it, death with the
+  original's sentences; within ten years "is looking very old".
+- Not yet: the 256-colour mode's parchment background (BORD 1), the
+  journal (its PDF has several pictures a page), the copy protection is
+  skipped as everywhere.
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -1803,6 +1855,15 @@ player's PDF, in scratch space); 58 entries and 23 tavern tales, each
 checked by eye (entry 37 is the atlas across a whole spread; the "legend
 for all maps" box belongs to none). Pool's scripts also say "TALK ENTRY 55
 IN YOUR JOURNAL" (the number first): the mention finder knows that too.
+2026-10-23 (branch journal-tables): **Secret** (72 entries), **Darkness**
+(99; the book has no entry 13) and **Gateway** (62) GOG journals -
+`make_table.py secret / darkness / gateway` (tesseract finds the
+"Journal Entry N" headings; maps across columns and the picture-and-quote
+boxes between Gateway's columns set by hand), every entry checked by eye.
+Secret prints the number as a text of its own (play::heard joins them);
+Darkness's JOURNAL n op says "...journal entry N." and waits for a key -
+the entry is offered there too. Treasures' GOG PDF (72 dpi grayscale,
+several pictures a page) needs more than one picture a page: not done.
 
 v0.10.0 did this in a browser page (pdf.js) on the player's PC; Tom
 (2026-10-09) wants no PC step: since v0.12.0 the board does it.
@@ -2318,5 +2379,17 @@ the game's Settings (As Original: all of them).
   own). The palette changes with the canvas (the whole screen shown
   again), as the VGA DAC does. The Gold Box Companion's icons (EGA) in
   the icon gallery use the palette's first 16 entries.
+- **Treasures' 256-colour mode** (the boards with PSRAM): black behind the
+  frame where the original's VGA mode shows its red parchment (BORD 1);
+  its EGA mode (the classic boards) is black as the original's.
+- **Treasures' camp menu with the Crown** shows the program's word list as
+  it is ("... Fix Crown Ex": its 41-byte field cuts Exit) - as the
+  original, not checked in DOSBox (the Crown comes at the game's end).
+- **Treasures' PROGRAM 4** (a ship's passage): the engine runs the camp's
+  Fix (the healers' rest and healing) where the original does its own
+  copy of it; an interrupted rest only ends it.
+- **Treasures' romance**: a character the story sends away (LUCK 104 / 116)
+  leaves the party as Remove would (the original's ovl 0x83 entry 0x2A,
+  not traced further).
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.

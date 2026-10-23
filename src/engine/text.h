@@ -48,6 +48,10 @@ constexpr uint32_t kInProgram = 0x80000000u;
 // A word made of two: the game profile's joined[at & 0xFFFF] (Secret's "is "
 // + an effect's name) - the front end puts the two together
 constexpr uint32_t kJoined = 0x40000000u;
+// A word in the game's names file (Treasures: its effect names, BORD.DAX
+// block 9, copied to the card's _CYD folder by the front end with effect 0's
+// room first - the name of effect n at 38 x n); the front end reads it
+constexpr uint32_t kInNames = 0x20000000u;
 class Words : public dax::ByteSource {
 public:
     Words(dax::ByteSource& ovr, dax::ByteSource* exe, const exepack::Info* info) : ovr_(ovr), exe_(exe), info_(info) {}
@@ -65,6 +69,12 @@ private:
 
 struct Region {
     int8_t x0, y0, x1, y1;    // cells, inclusive
+    // Lines line_h pixels apart from y_off below the top (Treasures' text
+    // window: 9 apart from 2 - five lines in rows 17-22; DOSBox)
+    uint8_t line_h = 8, y_off = 0;
+    // The last line's row (rows count from y0, one a line)
+    int last_row() const { return y0 + ((y1 - y0 + 1) * 8 - y_off) / line_h - 1; }
+    int line_y(int row) const { return y0 * 8 + y_off + (row - y0) * line_h; }
 };
 // The game's text areas: under the 3D view / pictures, its last two rows,
 // and the combat panel on the right.
@@ -85,6 +95,9 @@ struct Writer {
     int         len = 0, pos = 0;
     int         unit_end = 0;           // end of the word being printed
     State       state = State::Idle;
+    // Treasures: "%" + a hex digit in the text sets the colour from there on
+    // (its img 0x6765: no columns taken; begin() turns it off)
+    bool        codes = false;
 };
 
 // Starts printing s into r. clear_area: clear r and start at its top left;
@@ -112,6 +125,7 @@ constexpr int kMaxItems = 20;
 
 struct MenuColors {
     uint8_t highlight = 15, normal = 10, prompt = 13;   // the games' usual menu colours
+    bool    plain_sel = false;      // Treasures: the chosen word white on black, not black on white
 };
 
 // A menu on two rows (Pools of Darkness's fight menu, "Move Aim Use Cast

@@ -112,8 +112,7 @@ the Project as claude/TODO.md.
       everywhere, the party menu's Drop pick, the overland fight's field
       (its own outdoor builder), Game Fixes: Power Word Kill, dragon fear,
       the bulette's leap, Remove Curse's slip, Resurrection's Con. Open:
-      the journal table (Secret's too - neither has one yet: the book
-      view only); Protection from Fire in fights a plain effect; Secret's
+      Protection from Fire in fights a plain effect; Secret's
       camp picture while asking whom (not checked).
       v0.136.0: fights. v0.138.0: the missing rules - Turn Undead's
       table, the 6th-9th level spells (Monster Summoning from a reserve
@@ -135,6 +134,24 @@ the Project as claude/TODO.md.
       field tiles (23 KB) in internal RAM - one block would go to PSRAM;
       a Settings switch for EGA on the S3 / C5 (Claude: not now - Tom's
       rule is 256 colours there).
+- [ ] Treasures of the Savage Frontier (v0.143.0, SPEC 6f; Darkness's
+      engine): plays in the playsim from the party menu through exploring,
+      camp, fights, the overland, LUCK texts, romance, Crown, the lucky
+      paper, weather, old age; Load / Add from Gateway; matches DOSBox
+      (EGA) screen by screen; behave treasures 155. Play still off. Left,
+      in order: the 256-colour parchment (BORD 1) behind the frame; the
+      journal (the PDF reader: several images a page; then its table);
+      DOSBox checks with late-game saves (romance, Crown, PROGRAM 4, the
+      lucky paper, old age, VGA screens); long rests age characters
+      (ovl 0xCB); LUCK 51-61's other readers; a Gateway half-orc's race;
+      the outdoor camp / treasure pictures (128 / 129 assumed); the masks
+      table's multi-class index; the fight menu's hidden "Z"; then Play on.
+- [x] Journal tables (v0.142.0): Secret 72 entries, Darkness 99 (its
+      book has no entry 13), Gateway 62 - checked by eye; Darkness's
+      mentions now offered at a key wait too. Small leftovers: neighbouring
+      text at the edges of four maps (Secret 45, Darkness 36 / 38, Gateway
+      7). Open: Treasures' GOG PDF (72 dpi, several pictures a page) needs
+      the PDF reader to take more than one image a page first.
 - [x] Darkness's fight memory (v0.136.1): the 30-monster test fight 169
       -> 150.6 KB (Curse 146 -> 132, Pool 147 -> 133): the script's code
       parked during fights and its memory the fight's arena, the monster

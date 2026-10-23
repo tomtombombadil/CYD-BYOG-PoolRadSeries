@@ -113,6 +113,50 @@ bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, 
     return k > 0;
 }
 
+void tr_set_pieces(Tables& tb, const uint8_t* bytes, uint16_t n)
+{
+    tb.tr_pieces = bytes;
+    tb.tr_size = n;
+    tb.tr_count = 0;
+    uint16_t at = 0;
+    while (at < n && tb.tr_count < sizeof tb.tr_at / sizeof tb.tr_at[0]) {
+        tb.tr_at[tb.tr_count++] = at;
+        while (at < n && bytes[at] != 0xFE) ++at;
+        ++at;                                   // (past its end)
+    }
+}
+
+bool load_tr_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, uint8_t* out, bool ega, pic::VgaPalette* pal)
+{
+    // (load_vga_tiles' Tiles hold 40: the block's 64 frames read here)
+    const dax::Entry* e = idx.find(block);
+    if (!e) return false;
+    dax::RleReader r(src, idx, *e);
+    uint8_t hdr[pic::kVgaHeaderSize];
+    pic::VgaHeader h;
+    uint8_t map[256];
+    for (int i = 0; i < 256; ++i) map[i] = static_cast<uint8_t>(ega ? i & 15 : i);
+    if (r.read(hdr, sizeof hdr) != sizeof hdr || !pic::parse_vga_header(hdr, e->raw_size, h) || h.height != 8 ||
+        h.width_cols != 1)
+        return false;
+    if (pal ? !pic::read_vga_palette(r, h, pal->rgb) : r.skip(h.count * 3u) != h.count * 3u) return false;
+    if (pal) {
+        pal->first = h.first;
+        pal->count = h.count;
+    }
+    if (ega && !pic::read_vga_ega(r, h, map)) return false;
+    if (!ega && r.skip((h.count + 1) / 2u) != (h.count + 1) / 2u) return false;
+    const uint32_t gap = h.pixels_at - (pic::kVgaHeaderSize + h.count * 3u + (h.count + 1) / 2u);
+    if (r.skip(gap) != gap) return false;
+    memset(out, 0, 64 * 64);
+    for (int k = 0; k < h.frames && k < 64; ++k) {
+        uint8_t px[64];
+        if (r.read(px, sizeof px) != sizeof px) return false;
+        for (int i = 0; i < 64; ++i) out[k * 64 + i] = map[px[i]];
+    }
+    return true;
+}
+
 bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, uint8_t first)
 {
     out.loaded = false;
@@ -244,6 +288,46 @@ void chain_box(pic::Canvas& c, const Tiles& t, int c0, int r0, int c1, int r1)
 }
 } // namespace
 
+namespace {
+// Treasures' frames (port facts P7): a tile of BORD block 0 at a cell
+void tr_tile(pic::Canvas& c, const Tables& tb, int n, int col, int row)
+{
+    if (!tb.tr_tiles || n < 0 || n > 63) return;
+    const uint8_t* s = tb.tr_tiles + n * 64;
+    for (int y = 0; y < 8; ++y)
+        for (int x = 0; x < 8; ++x) {
+            const uint8_t v = s[y * 8 + x];
+            const int px = col * 8 + x, py = row * 8 + y;
+            if (v != kMask && px >= 0 && px < c.w && py >= 0 && py < c.h) c.set(px, py, v);
+        }
+}
+// Piece k across (or down) from cell (col, row): its tiles one a cell, 0xFF
+// a cell left as it is, 0xFE its end (img 0x18D2 / 0x1934)
+void tr_piece(pic::Canvas& c, const Tables& tb, int k, int col, int row, bool down)
+{
+    if (k >= tb.tr_count) return;
+    for (uint16_t at = tb.tr_at[k]; at < tb.tr_size && tb.tr_pieces[at] != 0xFE; ++at) {
+        if (tb.tr_pieces[at] != 0xFF) tr_tile(c, tb, tb.tr_pieces[at], col, row);
+        if (down) ++row;
+        else ++col;
+    }
+}
+// Its four screens: the screen cleared (its background), then the pieces -
+// (piece, col, row, down)
+struct TrPiece { uint8_t k, col, row; bool down; };
+constexpr TrPiece kTrExplore[] = {{0, 17, 0, false}, {1, 17, 16, false}, {2, 0, 23, false}, {3, 0, 17, true}, {4, 39, 0, true}};
+constexpr TrPiece kTrOuter[] = {{5, 0, 0, false}, {6, 0, 23, false}, {7, 0, 0, true}, {8, 39, 0, true}};
+constexpr TrPiece kTrBar[] = {{9, 0, 0, false}, {10, 0, 16, false}, {11, 0, 23, false}, {12, 0, 0, true}, {13, 39, 0, true}};
+constexpr TrPiece kTrFight[] = {{14, 0, 0, false}, {15, 0, 22, false}, {16, 0, 0, true}, {17, 22, 0, true}, {18, 39, 0, true}};
+template <size_t N>
+void tr_screen(pic::Canvas& c, const Tables& tb, const TrPiece (&p)[N], int rows = 24)
+{
+    if (tb.tr_clear) tb.tr_clear(c, 0, 0, pic::kScreenW, rows * 8);
+    else c.fill(0, 0, pic::kScreenW, rows * 8, 0);
+    for (const TrPiece& x : p) tr_piece(c, tb, x.k, x.col, x.row, x.down);
+}
+} // namespace
+
 // Pool: the border of a box whose corners are cells (c0, r0) and (c1, r1)
 void box(pic::Canvas& c, const Tables& tb, const Tiles& t, int c0, int r0, int c1, int r1)
 {
@@ -268,6 +352,10 @@ void box(pic::Canvas& c, const Tables& tb, const Tiles& t, int c0, int r0, int c
 
 void outer(pic::Canvas& c, const Tables& tb, const Tiles& t)
 {
+    if (tb.tr) {
+        tr_screen(c, tb, kTrOuter);
+        return;
+    }
     if (tb.chain) {
         c.fill(8, 8, 38 * 8, 22 * 8, 0);
         chain_rows(c, t, kChainOuter, 4);
@@ -297,6 +385,11 @@ void outer(pic::Canvas& c, const Tables& tb, const Tiles& t)
 
 void bar(pic::Canvas& c, const Tables& tb, const Tiles& t, int row)
 {
+    if (tb.tr) {
+        // (Treasures: the border and the row-16 bar are a screen of their own)
+        if (row == 16) tr_screen(c, tb, kTrBar);
+        return;
+    }
     if (tb.chain) {
         chain_bar(c, t, 0, row, kCols - 1, row, 9, 7);      // (img 0x1519: pieces 9 and 7)
         return;
@@ -325,6 +418,11 @@ void bar(pic::Canvas& c, const Tables& tb, const Tiles& t, int row)
 
 void explore(pic::Canvas& c, const Tables& tb, const Tiles& t)
 {
+    if (tb.tr) {
+        // (the picture box's lattice is pictures: the front end's)
+        tr_screen(c, tb, kTrExplore);
+        return;
+    }
     outer(c, tb, t);
     bar(c, tb, t, 16);
     if (tb.chain) {
@@ -384,6 +482,10 @@ void picture_frame(pic::Canvas& c, const Tables& tb, const Tiles& t, int col, in
 
 void combat(pic::Canvas& c, const Tables& tb, const Tiles& t)
 {
+    if (tb.tr) {
+        tr_screen(c, tb, kTrFight);
+        return;
+    }
     c.fill(0, 0, pic::kScreenW, 24 * 8, 0);
     if (tb.chain) {
         chain_rows(c, t, kChainFight, 5);

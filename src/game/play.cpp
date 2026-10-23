@@ -73,11 +73,19 @@ struct Data {
     {
         delete ov;
         delete anim_idx;
+        free(tr_frame);
+        free(tr_pieces);
     }
     Data(const Data&) = delete;
     Data& operator=(const Data&) = delete;
     layout::Tiles  frame_tiles;
     layout::Tables tables;
+    // Treasures: its frame's tiles (BORD block 0, 64 x 64 bytes) and pieces
+    // (BORD block 7) - layout::Tables tr
+    uint8_t*       tr_frame = nullptr;
+    uint8_t*       tr_pieces = nullptr;
+    uint8_t        tr_over = 0;             // Treasures: the overland's OVER.DAX map (0: none)
+    uint16_t       tr_max_age[8] = {};      // Treasures: the races' greatest ages (old age after a fight)
     font::Font     font;
     font::Font*    alt_font = nullptr;      // the player's Pools of Darkness font while it's chosen
     bool           alt_tried = false;       // (its file was looked for)
@@ -152,7 +160,7 @@ struct Data {
     char           w_these[16] = {};                        // Secret: " these spells?" after Memorize / Scribe
     char           w_alter[36] = {}, w_select[14] = {}, w_place[14] = {};   // Alter's menus
     char           w_speed[24] = {};           // Darkness: Speed's word list ("Faster Slower Exit")
-    char           w_save_which[24] = {}, w_slots[24] = {}, w_saving[24] = {}, w_camp_menu[40] = {},
+    char           w_save_which[24] = {}, w_slots[24] = {}, w_saving[24] = {}, w_camp_menu[40] = {}, w_crown_menu[44] = {},
                    w_camp[8] = {}, w_makes_camp[28] = {};
 
     // View Character's words (from the program and GAME.OVR)
@@ -626,8 +634,22 @@ public:
         w_ = new (std::nothrow) text::Words(*ovr_, exe_, exe_ ? &info_ : nullptr);
         return w_ != nullptr;
     }
-    size_t read_at(uint32_t pos, uint8_t* buf, size_t n) override { return w_ ? w_->read_at(pos, buf, n) : 0; }
+    size_t read_at(uint32_t pos, uint8_t* buf, size_t n) override
+    {
+        if (pos & text::kInNames) {
+            // (Treasures' effect names: the names file the start made - names_file)
+            char path[200];
+            names_path(path, sizeof path);
+            plat::File f = plat::open(path, "r");
+            if (!f) return 0;
+            const int got = f.seek(pos & ~text::kInNames) ? f.read(buf, n) : 0;
+            f.close();
+            return got > 0 ? static_cast<size_t>(got) : 0;
+        }
+        return w_ ? w_->read_at(pos, buf, n) : 0;
+    }
     uint32_t size() const override { return ovr_ ? ovr_->size() : 0; }
+    static void names_path(char* out, size_t cap) { snprintf(out, cap, "%s/NAMES.BIN", d->cache_dir); }
 
 private:
     plat::FileSource* ovr_ = nullptr;
@@ -697,6 +719,17 @@ bool open_area_dax(const char* stem, int block, plat::File& f, char* name, size_
 void put(pic::Canvas& c, const char* s, int col, int row, uint8_t fg)
 {
     font::draw_text(c, d->font, s, col, row, fg, 0);
+}
+
+// A list's highlighted line: black on white (Treasures: white on black - DOSBox)
+void hl_text(pic::Canvas& c, const char* s, int col, int row)
+{
+    if (d->prof->variant.tr) {
+        put(c, s, col, row, 15);
+        return;
+    }
+    c.fill(col * 8, row * 8, static_cast<int>(strlen(s)) * 8, 8, 15);
+    font::draw_text(c, d->font, s, col, row, 0, -1);
 }
 
 uint8_t sky_colour()
@@ -916,6 +949,28 @@ void draw_overland(pic::Canvas& c)
     dirty_rows(1, 15);
 }
 
+// Treasures' overland (its o144+0x8C2; the demo's): 11 x 11 squares of
+// its OVER.DAX map (8 pixels a square, 16 x 16) round the party - the
+// window kept on the map - and the party's arrow (8X8D0 202's 16-19)
+void draw_tr_overland(pic::Canvas& c)
+{
+    auto clamp = [](int v) { return v < 0 ? 0 : v > 5 ? 5 : v; };
+    const int x0 = clamp(d->gs.x - 5), y0 = clamp(d->gs.y - 5);
+    plat::File f;
+    if (!open_dax("OVER.DAX", f)) {
+        c.fill(24, 24, 88, 88, 0);
+        return;
+    }
+    plat::FileSource src(f);
+    if (!view3d::draw_vga_window(src, d->idx, d->tr_over, c, x0 * 8, y0 * 8, 88, 88, 24, 24, vga != nullptr, vga_load())) {
+        c.fill(24, 24, 88, 88, 0);
+    }
+    vga_take();
+    f.close();
+    view3d::draw_marker(c, d->world, 16 + ((d->gs.dir & 7) >> 1), (3 + d->gs.x - x0) * 8, (3 + d->gs.y - y0) * 8);
+    dirty_rows(3, 13);
+}
+
 bool world_parked = false;           // the 3D view's walls on the card during a fight (play_fight.inc)
 // The scripts' text colour: light green (Darkness: game byte 0x39 - its
 // scripts give speech 14, yellow; 0 or past 15 is 10 - darkness_facts.md S2)
@@ -924,6 +979,17 @@ uint8_t script_text_colour()
     if (!d->prof->variant.vga) return 10;
     const uint8_t v = d->gs.area1[0x38];
     return v == 0 || v > 15 ? 10 : v;
+}
+
+// The scripts' text window (Treasures: five lines 9 pixels apart from 2
+// below row 17 - DOSBox)
+text::Region script_area()
+{
+    if (!d->prof->variant.tr) return text::kTextArea;
+    text::Region r = text::kTextArea;
+    r.line_h = 9;
+    r.y_off = 2;
+    return r;
 }
 
 // Darkness's background (darkness_facts.md 7.3): indoors (the square's
@@ -935,13 +1001,23 @@ void dk_background()
     const uint8_t* gb = d->gs.area1;
     const bool in = geo::flags(d->map, d->gs.x, d->gs.y) >= 0x80;
     int block;
-    if (in) block = d->save.look;
-    else if (gb[0x39] == 0 || gb[0x39] == 4) block = gb[0x07] >= 14 ? 2 : gb[0x3A] ? 3 : 1;
-    else block = 4;
+    if (d->prof->variant.tr) {
+        // Treasures (its ovl 0x144 +0x328): indoors BACK1 block game byte
+        // 0x54; outdoors SKYGRND byte 0x56 x 3 + the time of day - 2 from
+        // 8 to 16 o'clock, 1 from 19 to 4, else 0
+        const int h = gb[0x07];
+        block = in ? gb[0x54] : gb[0x56] * 3 + (h >= 8 && h <= 16 ? 2 : h <= 4 || (h >= 19 && h <= 23) ? 1 : 0);
+    } else if (in) {
+        block = d->save.look;
+    } else if (gb[0x39] == 0 || gb[0x39] == 4) {
+        block = gb[0x07] >= 14 ? 2 : gb[0x3A] ? 3 : 1;
+    } else {
+        block = 4;
+    }
     const uint8_t id = static_cast<uint8_t>((in ? 0x10 : 0x20) | (block & 15));
     if (d->world.back && d->world.back_id == id) return;
     plat::File f;
-    if (block > 0 && open_dax(in ? "BACK1.DAX" : "SKYGRND.DAX", f)) {
+    if ((block > 0 || (d->prof->variant.tr && !in)) && open_dax(in ? "BACK1.DAX" : "SKYGRND.DAX", f)) {
         plat::FileSource src(f);
         view3d::load_back(src, d->idx, static_cast<uint8_t>(block), id, d->world, vga_load());
         vga_take(true);              // (a VGA screen: entries 144-175, kept for the view)
@@ -949,6 +1025,8 @@ void dk_background()
     }
 }
 
+extern int tr_lattice_drawn;
+void tr_lattice(pic::Canvas& c);
 void draw_view(pic::Canvas& c)
 {
     if (world_parked) return;
@@ -973,6 +1051,11 @@ void draw_view(pic::Canvas& c)
     }
     if (gw_wild()) {
         draw_gw_wild(c);
+        return;
+    }
+    if (d->prof->variant.tr && tr_lattice_drawn != (d->gs.area1[0x3F] ? 2 : 1)) tr_lattice(c);
+    if (d->prof->variant.tr && d->gs.area1[0x3F] && d->tr_over) {
+        draw_tr_overland(c);
         return;
     }
     if (!d->map.loaded) {
@@ -1017,7 +1100,7 @@ void draw_position(pic::Canvas& c)
                  camping ? " CAMPING" : (vm->get(0x7ECA) & 1) ? " SEARCH" : "");
     else
         snprintf(line, sizeof line, "%s %02d:%s", geo::dir_name(g.dir), hours, mins);
-    put(c, line, 17, 15, 10);
+    put(c, line, d->prof->variant.tr ? 18 : 17, 15, 10);      // (Treasures: from column 18 - DOSBox)
     dirty_rows(15, 15);
 }
 
@@ -1039,7 +1122,7 @@ bool gw_trainable(const party::Character& ch)
     return false;
 }
 
-void draw_party(pic::Canvas& c, int col)
+void draw_party(pic::Canvas& c, int col, bool mark_sel = true)
 {
     c.fill(col * 8, 2 * 8, (39 - col) * 8, 8, 0);      // (a "no party yet" line goes)
     put(c, d->name_head, col, 2, 15);
@@ -1050,7 +1133,7 @@ void draw_party(pic::Canvas& c, int col)
         c.fill(col * 8, row * 8, (39 - col) * 8, 8, 0);
         char t[24];
         ch.name(t, sizeof t);
-        const uint8_t fg = i == pt->selected ? 15 : !ch.in_combat() ? 12 : ch.enemy() ? 14 : gw_trainable(ch) ? 13 : 11;
+        const uint8_t fg = i == pt->selected && mark_sel ? 15 : !ch.in_combat() ? 12 : ch.enemy() ? 14 : gw_trainable(ch) ? 13 : 11;
         put(c, t, col, row, fg);
         const int ac = ch.ac_raw();
         const int aw = ac <= 0x32 ? 1 : ac <= 0x3C ? 2 : ac <= 0x45 ? 1 : 0;
@@ -1073,6 +1156,29 @@ void draw_panel(pic::Canvas& c)
     draw_position(c);
 }
 
+// Treasures: the lattice round the picture box (its img 0x199B): BORD 3's
+// frames 0 / 1 along the top and bottom, BORD 5's down the sides
+// Treasures' lattice round the view: BORD 3 / 5, the overland's BORD 4 /
+// 6 (its parchment; resident 0x15D:0x474 - [0x7025] the style drawn)
+int tr_lattice_drawn = 0;
+void tr_lattice(pic::Canvas& c)
+{
+    const int style = d->gs.area1[0x3F] ? 2 : 1;
+    tr_lattice_drawn = style;
+    plat::File f;
+    if (!open_dax("BORD.DAX", f)) return;
+    plat::FileSource src(f);
+    struct Part { uint8_t block, frame; int16_t x, y; };
+    static const Part kParts[] = {{3, 0, 0, 0}, {3, 1, 0, 112}, {5, 0, 0, 24}, {5, 1, 112, 24}};
+    for (const Part& p : kParts) {
+        const dax::Entry* e = d->idx.find(static_cast<uint8_t>(p.block + style - 1));
+        if (e) pic::draw_vga_block(src, d->idx, *e, p.frame, c, p.x, p.y, 13, vga_load());
+        vga_take();
+    }
+    f.close();
+    dirty_rows(0, 16);
+}
+
 void draw_frame(pic::Canvas& c)
 {
     c.clear(0);
@@ -1081,6 +1187,7 @@ void draw_frame(pic::Canvas& c)
         layout::bar(c, d->tables, d->frame_tiles, 16);
     } else {
         layout::explore(c, d->tables, d->frame_tiles);
+        if (d->tables.tr) tr_lattice(c);
     }
     dirty(0, pic::kScreenH);
 }
@@ -1098,7 +1205,9 @@ void show_menu_line(pic::Canvas& c)
         dirty_rows(text::kMenuRow - 1, text::kMenuRow - 1);
     }
     menu_was_two = text::two_rows(menu);
-    text::draw(c, d->font, menu);
+    text::MenuColors mc;
+    mc.plain_sel = d->prof->variant.tr;     // (Treasures: the chosen word white - DOSBox)
+    text::draw(c, d->font, menu, mc);
     dirty_rows(menu_was_two ? text::kMenuRow - 1 : text::kMenuRow, text::kMenuRow);
 }
 
@@ -1290,6 +1399,9 @@ bool anim_start(int id, const char* stem = "PIC", int x = 24, int y = 24)
     d->anim_y = static_cast<int16_t>(y);
     char name[24];
     area_file(name, sizeof name, stem);
+    // (Treasures: PICTURE ids from pic_split on are PIC1A.DAX's)
+    if (d->prof->variant.pic_split && id >= d->prof->variant.pic_split && !strcmp(stem, "PIC"))
+        snprintf(name, sizeof name, "PIC%dA.DAX", area_file_no());
     if (blocks_across() || d->prof->variant.common_files) {
         // (Secret: whichever of the family's files holds the picture;
         // Gateway: PIC.DAX's or the area's)
@@ -1443,33 +1555,40 @@ void pm_flags(bool on[])
 void pm_prompt(pic::Canvas& c, const char* note = nullptr)
 {
     clear_menu_line(c);
-    put(c, note ? note : d->choose, 0, text::kMenuRow, 13);
+    // (Treasures: "Select" white - DOSBox)
+    put(c, note ? note : d->choose, 0, text::kMenuRow, d->prof->variant.tr && !note ? 15 : 13);
 }
 
 void draw_party_menu(pic::Canvas& c)
 {
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
-    if (pt->count) draw_party(c, 1);
+    // (Treasures: no member marked on its party menu, its menu's line white
+    // - DOSBox)
+    const bool tr = d->prof->variant.tr;
+    if (pt->count) draw_party(c, 1, !tr);
     bool on[Data::kItems];
     pm_flags(on);
     pm_lines = 0;
+    int n_on = 0;
+    for (int i = 0; i < d->items; ++i) n_on += on[i];
+    if (pm_sel >= n_on) pm_sel = n_on ? n_on - 1 : 0;
     // (Darkness: from column 9, all green)
     const int col0 = d->prof->variant.party_menu_col ? d->prof->variant.party_menu_col : 2;
     for (int i = 0; i < d->items; ++i) {
         if (!on[i]) continue;
         const int row = pm_row0() + pm_lines;
+        const uint8_t fg = tr && pm_lines == pm_sel ? 15 : 10;
         char first[2] = {d->item[i][0], 0};
-        put(c, first, col0, row, d->prof->variant.party_menu_col ? 10 : 15);
-        put(c, d->item[i] + 1, col0 + 1, row, 10);
+        put(c, first, col0, row, d->prof->variant.party_menu_col ? fg : 15);
+        put(c, d->item[i] + 1, col0 + 1, row, fg);
         pm_item[pm_lines++] = i;
     }
     if (pm_sel >= pm_lines) pm_sel = pm_lines ? pm_lines - 1 : 0;
     if (keys_used && pm_lines) {
         // the cursor keys' line, highlighted as the games' lists are
         const char* it = d->item[pm_item[pm_sel]];
-        c.fill(col0 * 8, (pm_row0() + pm_sel) * 8, static_cast<int>(strlen(it)) * 8, 8, 15);
-        font::draw_text(c, d->font, it, col0, pm_row0() + pm_sel, 0, -1);
+        hl_text(c, it, col0, pm_row0() + pm_sel);
     }
     pm_prompt(c);
     dirty(0, pic::kScreenH);
@@ -1766,6 +1885,50 @@ void begin_adventuring();
 extern char import_dir[128];
 void dk_import_values(party::Character& ch);
 void secret_to_darkness(party::Character& ch);
+
+// The earlier game Load / Add take characters from: Darkness's Secret,
+// Treasures' Gateway (its 422-byte records of Curse's layout as *.GUY /
+// CHRDATxn.SAV, items .SWG of 63 bytes, effects .FX; a saved game's names
+// at 0x3214 - treasures_facts.md 2)
+struct Earlier {
+    const char*   guy;                  // its character files' extension
+    uint32_t      rec_size;
+    party::Format fmt;
+    const char*   items;
+    uint32_t      item_size;
+    const char*   fx;
+    uint32_t      names_at;             // the saved game's member count and names
+    int           ctl;                  // the record's control byte (0x80 on: an NPC)
+};
+const Earlier& earlier()
+{
+    static const Earlier kSecret = {".WHO", party::kSecretRecordSize, party::Format::Secret, ".STF",
+                                    party::kSecretItemSize, ".SFX", 0x1414, 0xFF};
+    static const Earlier kGateway = {".GUY", party::kRecordSize, party::Format::Curse, ".SWG", party::kItemSize, ".FX",
+                                     0x3214, 0xF7};
+    return d->prof->variant.tr ? kGateway : kSecret;
+}
+
+// A Gateway character as Treasures takes one in (its ovl 0x7C +0x16E6): its
+// copper, silver, electrum and gold gone, the race in Darkness's numbers
+// (half-elf 0, dwarf 1, elf 2, gnome 3, halfling 4, human 5, others 6 - a
+// half-orc too), flags = 2, the class values worked out again
+void gateway_to_treasures(party::Character& ch)
+{
+    for (int k = 0; k < 4; ++k) ch.rec[0xFB + 2 * k] = ch.rec[0xFC + 2 * k] = 0;
+    static const uint8_t kRace[8] = {6, 2, 0, 3, 1, 4, 6, 5};
+    ch.ext[party::kExtRace] = ch.rec[0x74] < 8 ? kRace[ch.rec[0x74]] : 6;
+    ch.rec[0x14B] = 2;
+    ch.ext[party::kExtFlags2] = 2;
+    dk_import_values(ch);
+    rules::recalc(ch, *names, d->facts);
+}
+void import_convert(party::Character& ch)
+{
+    if (d->prof->variant.tr) gateway_to_treasures(ch);
+    else secret_to_darkness(ch);
+}
+
 void find_secret_saves()
 {
     int n = 0;
@@ -1824,7 +1987,7 @@ bool load_secret_game(char slot)
     bool ok;
     {
         plat::FileSource src(f);
-        ok = src.read_at(0x1414, who, sizeof who) == sizeof who && who[0] <= 8;
+        ok = src.read_at(earlier().names_at, who, sizeof who) == sizeof who && who[0] <= 8;
     }
     f.close();
     if (!ok) {
@@ -1842,42 +2005,43 @@ bool load_secret_game(char slot)
         memcpy(nm, e + 1, static_cast<size_t>(len));
         nm[len] = 0;
         party::Character& ch = pt->m[pt->count];
+        const Earlier& ea = earlier();
         snprintf(path, sizeof path, "%s/%s.SAV", import_dir, nm);
         f = plat::open(path, "r");
         if (!f) {
-            load_problem = "A character of that saved game is missing from Secret's folder.";
+            load_problem = "A character of that saved game is missing from its folder.";
             continue;
         }
         {
             plat::FileSource src(f);
-            ok = f.size() == party::kSecretRecordSize && party::read_record(src, ch, party::Format::Secret);
+            ok = f.size() == ea.rec_size && party::read_record(src, ch, ea.fmt);
         }
         f.close();
         if (!ok || ch.rec[0xF7] >= 0x80) {          // (its NPCs stay behind)
             ch = party::Character{};
             continue;
         }
-        snprintf(path, sizeof path, "%s/%s.STF", import_dir, nm);
+        snprintf(path, sizeof path, "%s/%s%s", import_dir, nm, ea.items);
         f = plat::open(path, "r");
         if (f) {
             plat::FileSource src(f);
-            party::read_items(src, ch, party::kSecretItemSize);
+            party::read_items(src, ch, ea.item_size);
             f.close();
         }
-        snprintf(path, sizeof path, "%s/%s.SFX", import_dir, nm);
+        snprintf(path, sizeof path, "%s/%s%s", import_dir, nm, ea.fx);
         f = plat::open(path, "r");
         if (f) {
             plat::FileSource src(f);
             party::read_affects(src, ch);
             f.close();
         }
-        secret_to_darkness(ch);
+        import_convert(ch);
         character_read(ch);
         ++pt->count;
     }
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
     d->loaded = false;                              // (its own game state: a new game)
-    plat::log("[play] loaded Secret's saved game %c: %d characters\n", slot, pt->count);
+    plat::log("[play] loaded the earlier game's saved game %c: %d characters\n", slot, pt->count);
     return pt->count > 0;
 }
 
@@ -2159,7 +2323,7 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
         put(c, t, 7, 7, 15);
     }
     commas(static_cast<unsigned long>(ch.exp()), t, sizeof t);
-    right(t, 32, 7, 10);
+    right(t, d->prof->variant.tr ? 31 : 32, 7, 10);       // (Treasures: a column further left - DOSBox)
     for (int i = 0; i < 6; ++i) {
         put(c, d->v_stat[i], 1, 9 + i, 10);
         const int v = ch.stat(i);
@@ -2493,8 +2657,7 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
         if (l.top + r == l.index && !list_unlit) {
             int lead = 0;
             while (line[lead] == ' ') ++lead;
-            c.fill((l.col0 + lead) * 8, row * 8, static_cast<int>(n - lead) * 8, 8, 15);
-            font::draw_text(c, d->font, line + lead, l.col0 + lead, row, 0, -1);
+            hl_text(c, line + lead, l.col0 + lead, row);
         } else {
             put(c, line, l.col0, row, screen == Screen::CreatePick && l.top + r == 0 ? 13 : 10);
         }
@@ -3193,12 +3356,24 @@ void save_tap(int x, int y, pic::Canvas& c)
 
 void draw_own_pic(int id);
 
+// The camp's picture (Treasures: its own indoors - PIC 132, DOSBox)
+int camp_pic()
+{
+    const auto& v = d->prof->variant;
+    return v.camp_pic_in && geo::flags(d->map, d->gs.x, d->gs.y) >= 0x80 ? v.camp_pic_in : v.camp_pic;
+}
+
 bool no_rest_here() { return darkness_files() && vm->get(0x2B) == 1 && vm->get(0x2C) >= 100; }
 
 // The camp menu's words (without Rest and Fix where no rest is possible)
+bool tr_crown()
+{
+    // (its camp, ovl 0x74 +0x2EDE: game byte 0x3E set and 0x25B not 2)
+    return d->prof->variant.tr && d->w_crown_menu[0] && d->gs.area1[0x3E] && d->gs.area1[0x25B] != 2;
+}
 void camp_words(char* out, size_t cap)
 {
-    snprintf(out, cap, "%s", d->w_camp_menu);
+    snprintf(out, cap, "%s", tr_crown() ? d->w_crown_menu : d->w_camp_menu);
     if (!no_rest_here()) return;
     // word 3 (Rest) and 5 (Fix) of "Save View Magic Rest Alter Fix Exit"
     char tmp[sizeof d->w_camp_menu];
@@ -3220,10 +3395,9 @@ void camp_words(char* out, size_t cap)
     snprintf(out, cap, "%s", tmp);
 }
 
-void draw_camp(pic::Canvas& c)
+void draw_camp_screen(pic::Canvas& c)
 {
-    // The exploring screen; the party's camp in the text window (Secret:
-    // its camp picture in the view)
+    // The exploring screen (Secret: its camp picture in the view)
     anim_stop();
     pic_shown = false;
     head_shown = body_shown = -1;
@@ -3231,11 +3405,29 @@ void draw_camp(pic::Canvas& c)
     if (bigpic < 0) {
         draw_frame(c);
         draw_view(c);
-        if (d->prof->variant.camp_pic) draw_own_pic(d->prof->variant.camp_pic);
+        if (d->prof->variant.camp_pic) draw_own_pic(camp_pic());
         draw_panel(c);
     }
+}
+
+void draw_camp(pic::Canvas& c)
+{
+    // The party's camp in the text window
+    draw_camp_screen(c);
     text::clear(c, text::kTextArea);
-    put(c, d->w_makes_camp, 1, 18, 10);
+    const auto& tv = d->prof->variant;
+    if (tv.tr && d->gs.area1[0x3B]) {
+        // Treasures: "The party has acquired the..." and each crystal (game
+        // byte 0x3B's bits; ovl 0x74 +0x2D1E)
+        char t[40];
+        ow(tv.tr_acquired, t, sizeof t);
+        put(c, t, 1, 17, 10);
+        for (int k = 0; k < 3; ++k)
+            if (d->gs.area1[0x3B] & (1 << k)) {
+                ow(tv.tr_crystal[k], t, sizeof t);
+                put(c, t, 11, 18 + k, 15);
+            }
+    } else put(c, d->w_makes_camp, 1, 18, 10);
     dirty_rows(17, 22);
     // Darkness takes Rest and Fix off when resting can't be done here
     // (its camp at ovr 0x104F1: byte 0x2B = 1 and 0x2C >= 100 - the town's)
@@ -3254,11 +3446,18 @@ bool camp_from_script = false;     // PROGRAM 9: breaking camp lets the script g
 // rest's 0x2BEB9 counts on from rest to rest: 288 five-minute steps)
 int camp_heal_steps = 0;
 
+bool tr_romance(pic::Canvas& c);
+void tr_crown_used(pic::Canvas& c);
+
 void open_camp(pic::Canvas& c)
 {
     camp_heal_steps = 0;
     dk_own[kDkCamp] = 0;
     screen = Screen::Camp;
+    if (d->prof->variant.tr) {
+        draw_camp_screen(c);
+        if (tr_romance(c)) return;          // (its texts first, then the camp - ovl 0x74 +0x2D08)
+    }
     draw_camp(c);
 }
 
@@ -3309,6 +3508,9 @@ void camp_tap(int x, int y, pic::Canvas& c)
         case 'R': open_rest(c, false); break;
         case 'A': open_alter(c); break;
         case 'F': fix_party(c); break;
+        case 'C':
+            if (tr_crown()) tr_crown_used(c);
+            break;
         case 'E': leave_camp(c); break;
         case 0: break;
         default: error(c, "Not in the engine yet."); break;
@@ -3370,6 +3572,437 @@ void leave_party(int i)
     --pt->count;
     pt->selected = i > 0 ? i - 1 : 0;
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
+}
+
+// ---- Treasures' LUCK.DAX texts ------------------------------------------------------
+// PROGRAM 3 (ovl 0x74 +0x2A75): the news - block 0 when game byte 0x25B is
+// 1 (then 2: the crown), 12 when 0x1F7 is 0xFF, else the first k of 1-10
+// whose byte 0x125 + k isn't 1 (11 when all are); a page (0x0C) at a time
+// in the script's text window, green, "press a key" after each; CR / LF /
+// ^Z left out; the window cleared at the end. The camp's romance (ovl 0x79
+// +0x3CC) prints line by line ("line " - the lines run on), \x02 - \x08 the
+// two characters' names, a third member's, "HIS" / "HER".
+struct LuckRun {
+    bool     on = false, romance = false, prompt = false;
+    enum class Then : uint8_t { Vm, Romance, Crown, Paper } then = Then::Vm;
+    uint8_t* buf = nullptr;
+    uint32_t len = 0, pos = 0;
+    char     page[720] = {};
+} lk;
+
+// The romance's state: the two (party indices), what's still to do
+struct Romance {
+    int a = -1, b = -1;                 // the characters named at game bytes 0xF4 / 0xE4
+    int acts[6] = {}, n = 0, i = 0;     // LUCK blocks (> 0) and steps (kLeave ...)
+    int witness = -1;                   // \x06: a member who isn't one of them (its [0xA44])
+    bool asking = false, pic = false;   // "Accept Reject" up; PIC 131 shown
+} rom;
+constexpr int kRomLeave = -1, kRomAsk = -2, kRomPic = -3;
+
+void lk_free()
+{
+    free(lk.buf);
+    lk.buf = nullptr;
+    lk.on = false;
+}
+
+bool lk_load(int block)
+{
+    lk_free();
+    plat::File f;
+    if (!open_dax("LUCK.DAX", f)) return false;
+    plat::FileSource src(f);
+    const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
+    if (e) lk.buf = static_cast<uint8_t*>(malloc(e->raw_size + 16));
+    lk.len = e && lk.buf ? dax::load_block(src, d->idx, *e, lk.buf) : 0;
+    f.close();
+    if (!lk.len) {
+        lk_free();
+        plat::log("[play] LUCK %d: not read\n", block);
+        return false;
+    }
+    lk.pos = 0;
+    return true;
+}
+
+// The name in the game block from `at` (a byte a letter, 0 ends it)
+void game_name(int at, char* out, size_t cap)
+{
+    size_t o = 0;
+    for (int k = 0; k < 16 && d->gs.area1[at + k] && o + 1 < cap; ++k) out[o++] = static_cast<char>(d->gs.area1[at + k]);
+    out[o] = 0;
+}
+
+// \x02 - \x08 (ovl 0x79 +0x122 ... +0x2CE): the one whose count is the
+// higher first (0x105 > 0x106: B), the other, A's name, B's, a witness,
+// his / her of the first, of the second
+void rom_word(int code, char* out, size_t cap)
+{
+    out[0] = 0;
+    const bool b_first = d->gs.area1[0x105] > d->gs.area1[0x106];
+    auto sex_word = [&](int who) {
+        const party::Character* ch = who >= 0 && who < pt->count ? &pt->m[who] : nullptr;
+        const bool her = ch && party::darkness_byte(ch->rec, ch->ext, ch->n_items, 0x166);
+        ow(her ? d->prof->variant.tr_her : d->prof->variant.tr_his, out, cap);
+    };
+    switch (code) {
+    case 2: game_name(b_first ? 0xE4 : 0xF4, out, cap); break;
+    case 3: game_name(b_first ? 0xF4 : 0xE4, out, cap); break;
+    case 4: game_name(0xF4, out, cap); break;
+    case 5: game_name(0xE4, out, cap); break;
+    case 6:
+        if (rom.witness >= 0 && rom.witness < pt->count) pt->m[rom.witness].name(out, cap);
+        break;
+    case 7: sex_word(b_first ? rom.b : rom.a); break;
+    case 8: sex_word(b_first ? rom.a : rom.b); break;
+    default: break;
+    }
+}
+
+// The next page's text from the block (false: none left)
+bool lk_page()
+{
+    size_t o = 0;
+    bool any = false;
+    while (lk.pos < lk.len) {
+        const uint8_t ch = lk.buf[lk.pos++];
+        if (ch == 0x0C) {
+            if (any) break;
+            continue;
+        }
+        if (ch == 0x1A || ch == 0x0A) continue;
+        if (ch == 0x0D) {
+            if (lk.romance && o && o + 1 < sizeof lk.page && lk.page[o - 1] != ' ') lk.page[o++] = ' ';
+            continue;
+        }
+        if (lk.romance && ch >= 2 && ch <= 8) {
+            char t[24];
+            rom_word(ch, t, sizeof t);
+            for (const char* q = t; *q && o + 1 < sizeof lk.page; ++q) lk.page[o++] = *q;
+            any = true;
+            continue;
+        }
+        if (o + 1 < sizeof lk.page) lk.page[o++] = static_cast<char>(ch);
+        if (ch != ' ') any = true;
+    }
+    lk.page[o] = 0;
+    return any;
+}
+
+void lk_show(pic::Canvas& c)
+{
+    text::begin(w, c, lk.page, script_area(), 10, true);
+    dirty_rows(17, 22);
+    t_started = false;
+    lk.prompt = false;
+}
+
+void lk_start(pic::Canvas& c, int block, bool romance, LuckRun::Then then)
+{
+    lk.romance = romance;
+    lk.then = then;
+    plat::log("[play] LUCK %d\n", block);
+    if (!lk_load(block) || !lk_page()) {
+        lk_free();
+        lk.on = true;               // (nothing to show: straight on)
+        lk.prompt = true;
+        lk.pos = lk.len = 0;
+        lk.page[0] = 0;
+        return;
+    }
+    lk.on = true;
+    lk_show(c);
+}
+
+void rom_next(pic::Canvas& c);
+void lk_end(pic::Canvas& c)
+{
+    lk_free();
+    clear_menu_line(c);
+    switch (lk.then) {
+    case LuckRun::Then::Vm:
+        text::clear(c, text::kTextArea);
+        dirty_rows(17, 22);
+        waiting = false;
+        handle(vm->resume());
+        break;
+    case LuckRun::Then::Romance: rom_next(c); break;
+    case LuckRun::Then::Paper:
+        screen = Screen::Items;
+        draw_frame(c);
+        draw_panel(c);
+        back_to_items(c);
+        break;
+    case LuckRun::Then::Crown:
+        // (the crown's text over its picture; the picture goes after - ovl 0x74 +0x2C5A)
+        text::clear(c, text::kTextArea);
+        c.fill(24, 24, 88, 88, 0);
+        dirty_rows(3, 22);
+        pic_shown = false;
+        draw_view(c);
+        draw_camp(c);
+        break;
+    }
+}
+
+void lk_tick(uint32_t now, pic::Canvas& c)
+{
+    if (lk.prompt) {
+        if (!lk.len) lk_end(c);            // (an empty text)
+        else if (in_demo) {
+            auto_tap = true;
+            tap(0, 0, c);
+            auto_tap = false;
+        }
+        return;
+    }
+    if (w.state == text::State::Writing) {
+        if (!t_started) {
+            t_last = now;
+            t_started = true;
+        }
+        const int n = static_cast<int>((now - t_last) / kCharMs);
+        if (n > 0) {
+            t_last += static_cast<uint32_t>(n) * kCharMs;
+            text::step(w, c, d->font, n);
+            dirty_rows(17, 22);
+        }
+    }
+    if (w.state == text::State::PageFull || w.state == text::State::Done) {
+        clear_menu_line(c);
+        put(c, d->press_key, 0, text::kMenuRow, 13);
+        lk.prompt = true;
+    }
+}
+
+void lk_tap(pic::Canvas& c)
+{
+    if (!lk.prompt) {
+        if (w.state == text::State::Writing) {
+            text::step(w, c, d->font, -1);      // a tap prints the rest of the page
+            dirty_rows(17, 22);
+        }
+        return;
+    }
+    clear_menu_line(c);
+    if (lk.then == LuckRun::Then::Paper) {
+        lk_end(c);
+        return;
+    }
+    if (w.state == text::State::PageFull) {
+        dirty_rows(17, 22);
+        lk.prompt = false;
+        t_last = plat::now_ms();
+        return;
+    }
+    if (lk_page()) lk_show(c);
+    else lk_end(c);
+}
+
+// The lucky paper (an item whose byte 0x3E is 0x0E; ovl 0xC3 +0x22A7): the
+// border screen, "The lucky paper of <its name word> reads:" at (2,2),
+// white, then LUCK block 50 + its byte 0x3D a line (LF) every second row
+// from row 7, yellow - each letter shown only with its crystal (game byte
+// 0x3B: letters take the bits 1, 2, 4 in turn), else "@"
+void back_to_items(pic::Canvas& c);
+void lucky_paper(const uint8_t* it, pic::Canvas& c)
+{
+    const int block = 50 + it[0x3D];
+    if (!lk_load(block)) return;
+    plat::log("[play] LUCK %d (lucky paper)\n", block);
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    char t[64], wd[24];
+    ow(d->prof->variant.tr_paper[0], t, sizeof t);
+    snprintf(wd, sizeof wd, "%s", names->word(it[0x2F]));
+    size_t o = strlen(t);
+    snprintf(t + o, sizeof t - o, "%s", wd);
+    o = strlen(t);
+    ow(d->prof->variant.tr_paper[1], t + o, sizeof t - o);
+    put(c, t, 2, 2, 15);
+    char line[48];
+    size_t n = 0;
+    int row = 7, mask = 1;
+    for (uint32_t k = 0; k < lk.len; ++k) {
+        const uint8_t ch = lk.buf[k];
+        if (ch == 0x0A) {
+            line[n] = 0;
+            if (row < 25) put(c, line, 2, row, 14);
+            row += 2;
+            n = 0;
+            continue;
+        }
+        if (ch == 0x0D || ch == 0x1A) continue;
+        char shown = ' ';
+        if (ch != ' ') {
+            shown = d->gs.area1[0x3B] & mask ? static_cast<char>(ch) : '@';
+            mask = mask >= 4 ? 1 : mask * 2;
+        }
+        if (n + 1 < sizeof line) line[n++] = shown;
+    }
+    lk_free();
+    dirty(0, pic::kScreenH);
+    clear_menu_line(c);
+    put(c, d->press_key, 0, text::kMenuRow, 13);
+    lk.on = true;
+    lk.prompt = true;
+    lk.len = 1;
+    lk.then = LuckRun::Then::Paper;
+}
+
+// PROGRAM 3's block (ovl 0x74 +0x2A75)
+int luck_news_block()
+{
+    uint8_t* g = d->gs.area1;
+    if (g[0x25B] == 1) {
+        g[0x25B] = 2;
+        return 0;
+    }
+    if (g[0x1F7] == 0xFF) return 12;
+    int k = 1;
+    while (k <= 10 && g[0x125 + k] == 1) ++k;
+    return k;
+}
+
+// The camp's Crown: its picture (PIC 130) and PROGRAM 3's text
+void tr_crown_used(pic::Canvas& c)
+{
+    anim_stop();
+    c.fill(24, 24, 88, 88, 0);
+    draw_own_pic(130);
+    pic_shown = true;
+    clear_menu_line(c);
+    lk_start(c, luck_news_block(), false, LuckRun::Then::Crown);
+}
+
+// The romance (ovl 0x79 +0x742, +0x8E6): with game byte 0x104 set, the
+// two named characters get effect 0x83 (anyone else loses it); when both
+// are up and the stages of bytes 0x105 / 0x106 (count / 25, at most 4)
+// have changed since bytes 0x4C / 0x4B, the stages' text (LUCK 101-117)
+bool tr_romance(pic::Canvas& c)
+{
+    uint8_t* g = d->gs.area1;
+    rom = Romance{};
+    if (!g[0x104] || !pt || !names) return false;
+    char an[20], bn[20], nm[20];
+    game_name(0xF4, an, sizeof an);
+    game_name(0xE4, bn, sizeof bn);
+    for (int i = 0; i < pt->count; ++i) {
+        pt->m[i].name(nm, sizeof nm);
+        if (rom.a < 0 && an[0] && strcmp(nm, an) == 0) rom.a = i;
+        if (rom.b < 0 && bn[0] && strcmp(nm, bn) == 0) rom.b = i;
+    }
+    constexpr uint8_t kFx = 0x83;
+    for (int i = 0; i < pt->count; ++i) {
+        party::Character& ch = pt->m[i];
+        const bool one = i == rom.a || i == rom.b;
+        if (one && !ch.has_affect(kFx)) spells::add_affect(ch, kFx, 0, 0, false);
+        else if (!one && ch.has_affect(kFx)) rules::remove_affects(ch, kFx);
+    }
+    if (rom.a < 0 || rom.b < 0) return false;
+    auto up = [&](int i) { return party::darkness_byte(pt->m[i].rec, pt->m[i].ext, pt->m[i].n_items, 0x1EE) != 0; };
+    if (!up(rom.a) || !up(rom.b)) return false;
+    auto stage = [](int v) { return v / 25 < 4 ? v / 25 : 4; };
+    const int sa = stage(g[0x105]), sb = stage(g[0x106]);
+    if (sb == g[0x4B] && sa == g[0x4C]) return false;
+    g[0x4B] = static_cast<uint8_t>(sb);
+    g[0x4C] = static_cast<uint8_t>(sa);
+    for (int i = 0; i < pt->count; ++i)
+        if (i != rom.a && i != rom.b && up(i)) {
+            rom.witness = i;
+            break;
+        }
+    // The text for each pair of stages (ovl 0x79 +0x9A9 ...)
+    static const int8_t kText[5][5] = {{0, 1, 2, 3, 4}, {1, 5, 6, 7, 8}, {2, 6, 9, 10, 11}, {3, 7, 10, 12, 13},
+                                       {4, 8, 11, 12, 0}};
+    auto add = [&](int v) {
+        if (rom.n < 6) rom.acts[rom.n++] = v;
+    };
+    if (sa == 4 && sb == 4) {
+        add(kRomPic);
+        add(114);
+        add(kRomAsk);
+    } else if (kText[sa][sb]) {
+        add(100 + kText[sa][sb]);
+        if (kText[sa][sb] == 4) add(kRomLeave);         // (104: A leaves the party)
+    } else return false;
+    text::clear(c, text::kTextArea);
+    dirty_rows(17, 22);
+    rom_next(c);
+    return true;
+}
+
+void rom_leave(pic::Canvas& c)
+{
+    if (rom.a < 0) return;
+    if (rom.b > rom.a) --rom.b;
+    leave_party(rom.a);
+    rom.a = -1;
+    draw_party(c, 17);
+}
+
+void rom_next(pic::Canvas& c)
+{
+    while (rom.i < rom.n) {
+        const int a = rom.acts[rom.i++];
+        if (a > 0) {
+            lk_start(c, a, true, LuckRun::Then::Romance);
+            return;
+        }
+        if (a == kRomLeave) rom_leave(c);
+        else if (a == kRomPic) {
+            anim_stop();
+            c.fill(24, 24, 88, 88, 0);
+            draw_own_pic(131);
+            pic_shown = true;
+            rom.pic = true;
+        } else if (a == kRomAsk) {
+            char words[24];
+            ow(d->prof->variant.tr_accept, words, sizeof words);
+            text::build(menu, "", words);
+            menu.selected = 0;
+            show_menu_line(c);
+            lk.on = true;               // (the answer comes to lk_tap's menu)
+            lk.prompt = false;
+            lk.then = LuckRun::Then::Romance;
+            rom.asking = true;
+            return;
+        }
+    }
+    // Done: the camp as usual
+    if (rom.pic) {
+        rom.pic = false;
+        pic_shown = false;
+        c.fill(24, 24, 88, 88, 0);
+        draw_view(c);
+    }
+    draw_camp(c);
+}
+
+// "Accept Reject" (ovl 0x79 +0xC76): Accept - LUCK 115; Reject - 116, A
+// leaves, 117, and B's Charisma (its own and in use) 6 lower (0 at least),
+// B's effect 0x83 marked (byte 3 = 1)
+void rom_answer(int k, pic::Canvas& c)
+{
+    clear_menu_line(c);
+    lk.on = false;
+    rom.asking = false;
+    rom.n = rom.i = 0;
+    if (k == 0) {
+        rom.acts[rom.n++] = 115;
+    } else {
+        rom.acts[rom.n++] = 116;
+        rom.acts[rom.n++] = kRomLeave;
+        rom.acts[rom.n++] = 117;
+        if (rom.b >= 0) {
+            party::Character& ch = pt->m[rom.b];
+            for (int o = 0x1A; o <= 0x1B; ++o) ch.rec[o] = ch.rec[o] > 6 ? static_cast<uint8_t>(ch.rec[o] - 6) : 0;
+            for (int i = 0; i < ch.n_affects; ++i)
+                if (ch.affects[i][0] == 0x83) ch.affects[i][3] = 1;
+            rules::recalc(ch, *names, d->facts);
+        }
+    }
+    rom_next(c);                        // (the picture stays up until the end)
 }
 
 void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt)
@@ -3684,11 +4317,11 @@ void find_secret_guys()
         const char* slash = strrchr(nm, '/');
         if (slash) nm = slash + 1;
         const size_t n = strlen(nm);
-        if (f.isDirectory() || n < 5 || n > 12 || strcasecmp(nm + n - 4, ".WHO") != 0 ||
-            f.size() != party::kSecretRecordSize)
+        const Earlier& ea = earlier();
+        if (f.isDirectory() || n < 5 || n > 12 || strcasecmp(nm + n - 4, ea.guy) != 0 || f.size() != ea.rec_size)
             continue;
         uint8_t rec[0x100];
-        if (f.read(rec, sizeof rec) != sizeof rec || rec[0xFF] > 0x7F) continue;
+        if (f.read(rec, sizeof rec) != sizeof rec || rec[ea.ctl] > 0x7F) continue;
         char name[16];
         const size_t len = rec[0] > 15 ? 15 : rec[0];
         memcpy(name, rec + 1, len);
@@ -3716,27 +4349,28 @@ bool load_secret_guy(int i, party::Character& ch)
     plat::File f = plat::open(path, "r");
     if (!f) return false;
     bool ok;
+    const Earlier& ea = earlier();
     {
         plat::FileSource src(f);
-        ok = party::read_record(src, ch, party::Format::Secret);
+        ok = party::read_record(src, ch, ea.fmt);
     }
     f.close();
     if (!ok) return false;
-    snprintf(path, sizeof path, "%s/%s.STF", import_dir, base);
+    snprintf(path, sizeof path, "%s/%s%s", import_dir, base, ea.items);
     f = plat::open(path, "r");
     if (f) {
         plat::FileSource src(f);
-        party::read_items(src, ch, party::kSecretItemSize);
+        party::read_items(src, ch, ea.item_size);
         f.close();
     }
-    snprintf(path, sizeof path, "%s/%s.SFX", import_dir, base);
+    snprintf(path, sizeof path, "%s/%s%s", import_dir, base, ea.fx);
     f = plat::open(path, "r");
     if (f) {
         plat::FileSource src(f);
         party::read_affects(src, ch);
         f.close();
     }
-    secret_to_darkness(ch);
+    import_convert(ch);
     character_read(ch);
     return true;
 }
@@ -3891,8 +4525,9 @@ void add_from_tap(int x, int y, pic::Canvas& c)
         draw_add_list(c);
         return;
     }
-    if (darkness_files() && k == 'S') {
-        // (Darkness: Secret's characters - its folder on the card)
+    if (darkness_files() && k == (d->prof->variant.tr ? 'G' : 'S')) {
+        // (Darkness: Secret's characters - its folder on the card; Treasures:
+        // Gateway's)
         d->guys = 0;
         d->guy_from = 'S';
         find_secret_guys();
@@ -6635,8 +7270,7 @@ void draw_spells(pic::Canvas& c)
             continue;
         }
         if (i == sl.sel && !sl.learning) {
-            c.fill(3 * 8, row * 8, static_cast<int>(strlen(line) - 2) * 8, 8, 15);
-            font::draw_text(c, d->font, line + 2, 3, row, 0, -1);
+            hl_text(c, line + 2, 3, row);
         } else {
             put(c, line, 1, row, 10);
         }
@@ -7010,6 +7644,7 @@ struct RestRun {
     int  unit = 2;                  // being set: 2 minutes, 3 hours, 4 days
     bool running = false, from_magic = false, interrupted = false;
     bool fix = false;               // Fix's rest: `fix_heal` shared out at its end
+    bool ship = false;              // Treasures' PROGRAM 4: the script goes on after it
     int  fix_heal = 0;
     uint32_t pause_until = 0;       // a message stays a moment
     int  shown = 0;                 // steps since the time was shown
@@ -7073,6 +7708,17 @@ void end_rest(pic::Canvas& c)
     rest.running = false;
     text::clear(c, text::kTextArea);
     dirty_rows(17, 22);
+    if (rest.ship) {
+        // (Treasures' PROGRAM 4: an interruption only ends it - its result
+        // isn't looked at by the script's PROGRAM)
+        rest.ship = rest.interrupted = false;
+        clear_menu_line(c);
+        screen = Screen::Game;
+        draw_position(c);
+        waiting = false;
+        handle(vm->resume());
+        return;
+    }
     if (rest.interrupted) {
         // The camp breaks up; the area's camp-interrupted script runs
         rest.interrupted = false;
@@ -7237,6 +7883,22 @@ void fix_party(pic::Canvas& c)
     rest.r.paladin_cure = profile::view_facts(d->prof->game).paladin_cure;
     clear_menu_line(c);
     draw_rest_time(c);
+}
+
+// Treasures' PROGRAM 4 (ovl 0x74 +0x292C): on a ship's passage the party
+// heals itself as the camp's Fix does when anyone is hurt (not with game
+// byte 1 set), then the script goes on
+void ship_rest(pic::Canvas& c)
+{
+    if (!d->gs.area1[1] && spells::hp_lost(*pt) > 0) {
+        fix_party(c);
+        if (screen == Screen::Rest && rest.running) {
+            rest.ship = true;
+            return;
+        }
+    }
+    waiting = false;
+    handle(vm->resume());
 }
 
 void show_memory(pic::Canvas& c);
@@ -7497,7 +8159,7 @@ void draw_whom(pic::Canvas& c)
         draw_frame(c);
         draw_view(c);
         // (Darkness: the camp's picture in the view again - DOSBox)
-        if (camping && darkness_files() && d->prof->variant.camp_pic) draw_own_pic(d->prof->variant.camp_pic);
+        if (camping && darkness_files() && d->prof->variant.camp_pic) draw_own_pic(camp_pic());
         draw_panel(c);
         text::clear(c, text::kTextArea);
         dirty_rows(17, 22);
@@ -7822,6 +8484,10 @@ void use_item(int i, pic::Canvas& c)
         note(c, iw(profile::kMustReady));
         return;
     }
+    if (d->prof->variant.tr && it[0x3D] && it[0x3E] == 0x0E) {
+        lucky_paper(it, c);
+        return;
+    }
     const magic::Scrolls sc = scroll_facts();
     const bool scroll = magic::is_scroll(sc, it);
     if (!scroll && !magic::usable(sc, it)) return;
@@ -7891,8 +8557,9 @@ void effect_name(int type, char* out, size_t cap)
         // Secret: its own name for each effect number (none: left out);
         // Darkness: only those in its Display's set
         if (m.effects_shown && !(d->fx_shown[(type & 0xFF) / 8] >> (type % 8) & 1)) return;
-        if (type < m.effect_names.count)
-            ow(text::kInProgram | (m.effect_names.at + static_cast<uint32_t>(type) * m.effect_names.stride), out, cap);
+        // (Treasures: the names file - text::kInNames)
+        const uint32_t base = m.effect_names.at & text::kInNames ? m.effect_names.at : text::kInProgram | m.effect_names.at;
+        if (type < m.effect_names.count) ow(base + static_cast<uint32_t>(type) * m.effect_names.stride, out, cap);
         return;
     }
     for (int i = 0; i < m.n_spell_named; ++i)
@@ -7928,8 +8595,7 @@ void draw_effects(pic::Canvas& c)
         if (r == last) {
             const char* u = t[0] == ' ' ? t + 1 : t;
             const int col = t[0] == ' ' ? 2 : 1;
-            c.fill(col * 8, (4 + r) * 8, static_cast<int>(strlen(u)) * 8, 8, 15);
-            font::draw_text(c, d->font, u, col, 4 + r, 0, -1);
+            hl_text(c, u, col, 4 + r);
         } else {
             put(c, t, 1, 4 + r, el->colour[el->top + r]);
         }
@@ -8793,6 +9459,11 @@ void pm_choose_key(char key, pic::Canvas& c)
             // (darkness_facts.md 32)
             load_where = true;
             screen = Screen::LoadWhich;
+            if (d->prof->variant.tr) {
+                // (Treasures: the frame alone while it asks - DOSBox)
+                layout::outer(c, d->tables, d->frame_tiles);
+                dirty(0, pic::kScreenH);
+            }
             text::build(menu, d->load_from, d->load_sources);
             menu.selected = 0;
             hl_inherit();
@@ -9032,10 +9703,11 @@ void pm_tap(int x, int y, pic::Canvas& c)
         menu.selected = k;
         show_menu_line(c);
         if (load_where) {
-            // Pools: its own saved games; Secret: Secret's (its folder on the card)
-            const char key = text::key(menu, k);
-            load_secret = key == 'S';
-            if (key == 'P' || key == 'S') {
+            // Pools: its own saved games; Secret: Secret's (its folder on the
+            // card) - Treasures: Treasures / Gateway (the first word the
+            // game's own, the second the earlier game's, Exit last)
+            load_secret = k == 1 && k + 1 < menu.count;
+            if (k + 1 < menu.count) {
                 pm_choose_key('L', c);
             } else {
                 load_where = false;
@@ -9123,6 +9795,7 @@ void pm_tap(int x, int y, pic::Canvas& c)
     }
     const int line = row - pm_row0();
     if (line >= 0 && line < pm_lines && y < text::kMenuTapTop) {
+        if (d->prof->variant.tr) pm_sel = line;     // (Treasures: its menu keeps the line picked white)
         pm_prompt(c);
         pm_choose(pm_item[line], c);
     }
@@ -9362,6 +10035,20 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
     if (!d->ac_hp_head[0]) strcpy(d->ac_hp_head, "AC  HP");
     if (!d->v_exit[0]) strcpy(d->v_exit, "Exit");
     if (pp.camp_menu) text::read_pascal(exe, info, pp.camp_menu, d->w_camp_menu, sizeof d->w_camp_menu);
+    if (d->prof->variant.tr_crown_menu)
+        text::read_pascal(exe, info, d->prof->variant.tr_crown_menu, d->w_crown_menu, sizeof d->w_crown_menu);
+    if (d->prof->variant.tr_max_age) {
+        uint8_t ages[16];
+        if (exepack::read(exe, info, d->prof->create.ds_image + d->prof->variant.tr_max_age, ages, sizeof ages) ==
+            exepack::Status::Ok)
+            for (int k = 0; k < 8; ++k) d->tr_max_age[k] = static_cast<uint16_t>(ages[2 * k] | ages[2 * k + 1] << 8);
+    }
+    if (d->prof->variant.tr) {
+        // Treasures: its menus show only the words their callers enable (its
+        // o121+0x1134) - the camp's lone "C" never (DOSBox)
+        char* t = strstr(d->w_camp_menu, " C ");
+        if (t) memmove(t, t + 2, strlen(t + 2) + 1);
+    }
     if (d->prof->variant.dk_overland_pics &&
         exepack::read(exe, info, d->prof->create.ds_image + d->prof->variant.dk_overland_pics, d->dk_ov_pics, 5) !=
             exepack::Status::Ok)
@@ -9536,7 +10223,7 @@ struct Host : ecl::Host {
         plat::FileSource src(f);
         bool ok = false;
         const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
-        if (e && e->raw_size >= 2 && static_cast<uint32_t>(e->raw_size) - 2 <= ecl::kCodeSize) {
+        if (e && e->raw_size >= 2 && static_cast<uint32_t>(e->raw_size) - 2 <= d->gs.code_cap) {
             uint8_t* tmp = static_cast<uint8_t*>(malloc(e->raw_size));
             if (tmp && dax::load_block(src, d->idx, *e, tmp) == e->raw_size) {
                 memcpy(code, tmp + 2, e->raw_size - 2);
@@ -9615,6 +10302,25 @@ struct Host : ecl::Host {
     // tiles of that number (darkness_facts.md 7.3); kept for saving
     void load_look(int look) override
     {
+        if (d->prof->variant.tr && d->gs.area1[0x3F]) {
+            // Treasures' overland (game byte 0x3F): the look is its map
+            // picture, OVER.DAX (o144+0xA70)
+            d->tr_over = static_cast<uint8_t>(look);
+            if (screen == Screen::Game && bigpic < 0) {
+                anim_stop();
+                pic_shown = false;
+                draw_view(*cv);
+            }
+            return;
+        }
+        if (d->prof->variant.tr) {
+            // Treasures: slot 0 takes the look, slots 1 and 2 let go of
+            // their tiles (ov43+0xE54)
+            load_slot(0, look);
+            d->world.tr_block[1] = d->world.tr_block[2] = 0;
+            slots_done();
+            return;
+        }
         view3d::World& wd = d->world;
         plat::File f;
         int n = 0;
@@ -9633,6 +10339,46 @@ struct Host : ecl::Host {
         d->save.look = static_cast<uint16_t>(look);
         d->save.look_slot = 1;
         plat::log("[play] look %d: %d wall sets, tiles %s\n", look, n, tiles ? "ok" : "missing");
+    }
+    // Treasures (op 0x42): a wall slot's block - its walls now, its tiles
+    // in slots_done (the saves keep the three blocks)
+    void load_slot(int slot, int block) override
+    {
+        if (d->gs.area1[0x3F]) {
+            if (block >= 0) d->tr_over = static_cast<uint8_t>(block);     // (the overland's map: o144+0x1511)
+            return;
+        }
+        view3d::World& wd = d->world;
+        plat::File f;
+        if (block >= 0 && open_dax("WALLDEF1.DAX", f)) {
+            plat::FileSource src(f);
+            if (!view3d::load_tr_walls(src, d->idx, slot, block, wd)) plat::log("[play] slot %d: WALLDEF1 %d missing\n", slot, block);
+            f.close();
+        } else if (block < 0 && slot >= 0 && slot < 3) {
+            wd.tr = wd.dk = true;
+            wd.tr_block[slot] = 0;          // (its tiles go; its walls stay - ov43+0xFC0)
+        }
+    }
+    void slots_done() override
+    {
+        view3d::World& wd = d->world;
+        view3d::tr_pool_reset(wd);
+        plat::File f;
+        bool ok = true;
+        if (open_dax("8X8D1.DAX", f)) {
+            plat::FileSource src(f);
+            for (int s = 0; s < 3; ++s)
+                if (wd.tr_block[s]) {
+                    ok = view3d::load_tr_tiles(src, d->idx, s, wd.tr_block[s], wd, vga_load()) && ok;
+                    vga_take(true);          // (a VGA screen: the walls' entries, 32-143)
+                }
+            f.close();
+        }
+        d->save.look = static_cast<uint16_t>(wd.tr_block[0] | wd.tr_block[1] << 8);
+        d->save.look_slot = wd.tr_block[2];
+        plat::log("[play] wall slots %d %d %d: %d tiles%s\n", wd.tr_block[0], wd.tr_block[1], wd.tr_block[2], wd.tr_used,
+                  ok ? "" : " (not all loaded)");
+        if (screen == Screen::Game) draw_view(*cv);
     }
     // Darkness: the frame's style (BORDERS block 0-3), the screen's frame again
     void style(int v) override
@@ -9701,7 +10447,9 @@ struct Host : ecl::Host {
             dirty_rows(3, 13);
         }
         pic_shown = true;
-        if (d->prof->variant.vga && bigpic < 0) {       // (Darkness: no position line under an event's picture)
+        if (d->prof->variant.vga && !d->prof->variant.tr && bigpic < 0) {
+            // (Darkness: no position line under an event's picture; Treasures
+            // keeps it - DOSBox, the demo)
             c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);
             dirty_rows(15, 15);
         }
@@ -9729,6 +10477,13 @@ struct Host : ecl::Host {
         d->gs.roof = geo::flags(d->map, d->gs.x, d->gs.y);
         d->gs.wall_ahead = static_cast<uint8_t>(geo::wall(d->map, d->gs.x, d->gs.y, d->gs.dir));
         gw_way_ahead();
+    }
+    void clear_text() override
+    {
+        text::clear(*cv, text::kTextArea);
+        w.col = w.r.x0;
+        w.row = w.r.y0;
+        dirty_rows(17, 22);
     }
     void clear_box() override
     {
@@ -9796,6 +10551,21 @@ struct Host : ecl::Host {
         // Darkness's SHOP n: the goods DS[first + n] .. DS[last + n], rows DS[rows + k]
         const auto& pi = d->prof->items;
         uint8_t a = 0, b = 0, rows[256];
+        if (pi.goods_runs) {
+            // Treasures: the n-th run of rows from DS first + 2, each ended by
+            // 0xFF (ov43+0x2C58)
+            int k = 2, run = 1;
+            if (!program_ds(pi.goods_first, rows, sizeof rows)) {
+                log("SHOP: the program's goods didn't read");
+                return;
+            }
+            while (run < n && k < 256) run += rows[k++] == 0xFF;
+            int m = 0;
+            while (k + m < 256 && rows[k + m] != 0xFF) ++m;
+            dk_add_rows(rows + k, m, true, g);
+            plat::log("[play] SHOP %d: %d items\n", n, g.n);
+            return;
+        }
         if (!pi.goods_rows || !program_ds(static_cast<uint16_t>(pi.goods_first + n), &a, 1) ||
             !program_ds(static_cast<uint16_t>(pi.goods_last + n), &b, 1) || b < a ||
             !program_ds(static_cast<uint16_t>(pi.goods_rows + a), rows, b - a + 1u)) {
@@ -9918,7 +10688,16 @@ void begin_wait(pic::Canvas& c)
             handle(vm->resume());
             return;
         }
-        text::begin(w, c, vm->text(), text::kTextArea, script_text_colour(), vm->clear());
+        text::begin(w, c, vm->text(), script_area(), script_text_colour(), vm->clear());
+        if (d->prof->variant.tr) {
+            // Treasures: its colour codes ("%" + a hex digit); the last one
+            // stays the scripts' colour (game byte 0x38 - img 0x6765)
+            w.codes = true;
+            const char* t = vm->text();
+            for (int k = 0; t[k] && t[k + 1]; ++k)
+                if (t[k] == '%' && isxdigit(static_cast<unsigned char>(t[k + 1])) && !islower(static_cast<unsigned char>(t[k + 1])))
+                    d->gs.area1[0x38] = static_cast<uint8_t>(isdigit(static_cast<unsigned char>(t[k + 1])) ? t[k + 1] - '0' : t[k + 1] - 'A' + 10);
+        }
         if (vm->clear()) dirty_rows(17, 22);
         t_started = false;
         page_prompt = false;
@@ -9960,7 +10739,7 @@ void begin_wait(pic::Canvas& c)
     }
     case ecl::Wait::ListMenu:
         heard(vm->prompt());
-        text::begin(w, c, vm->prompt(), text::kTextArea, 10, true);
+        text::begin(w, c, vm->prompt(), script_area(), 10, true);
         dirty_rows(17, 22);
         t_started = false;
         page_prompt = false;
@@ -10000,7 +10779,14 @@ void begin_wait(pic::Canvas& c)
     case ecl::Wait::Won:                // PROGRAM 8: the game won
         start_won(c);
         break;
+    case ecl::Wait::Luck:               // Treasures' PROGRAM 3: the news
+        lk_start(c, luck_news_block(), false, LuckRun::Then::Vm);
+        break;
+    case ecl::Wait::ShipRest:           // Treasures' PROGRAM 4: healing on the way
+        ship_rest(c);
+        break;
     case ecl::Wait::Key:                // "press <enter>/<return> to continue"
+        journal_ready();                // (Darkness: JOURNAL n's sentence waits for a key)
         if (gateway() && *vm->prompt()) {
             // Gateway's CALL 0x809: "Press Enter to continue." as its one-word
             // menu, lit (DOSBox)
@@ -10354,8 +11140,7 @@ void draw_list_menu(pic::Canvas& c)
         if (row > text::kTextArea.y1) break;
         c.fill(8, row * 8, 38 * 8, 8, 0);
         if (i == list_sel) {
-            c.fill(8, row * 8, static_cast<int>(strlen(vm->item(i))) * 8, 8, 15);
-            font::draw_text(c, d->font, vm->item(i), 1, row, 0, -1);
+            hl_text(c, vm->item(i), 1, row);
         } else {
             put(c, vm->item(i), 1, row, 10);
         }
@@ -10434,7 +11219,7 @@ void begin_adventuring()
     const bool dungeon = !d->loaded || vm->get(0x4BE6) != 0;
     gs.script = static_cast<uint8_t>(resume ? last : d->prof->start_script);
     screen = Screen::Game;
-    if (!host->load_script(gs.script, gs.code, &gs.code_len) || !vm->init_script(resume)) {
+    if (!host->load_script(gs.script, ecl::code_of(gs), &gs.code_len) || !vm->init_script(resume)) {
         snprintf(msg, sizeof msg, "Script %d of ECL%d.DAX didn't load.", gs.script, gs.game_area);
         screen = Screen::PartyMenu;
         draw_party_menu(c);
@@ -10452,13 +11237,20 @@ void begin_adventuring()
             uint8_t* blk = static_cast<uint8_t*>(malloc(gs.code_len + 2));
             if (blk) {
                 blk[0] = blk[1] = 0;
-                memcpy(blk + 2, gs.code, gs.code_len);
+                memcpy(blk + 2, ecl::code_of(gs), gs.code_len);
                 const ecl::MapLoad ml = ecl::find_map_load(blk, gs.code_len + 2, *d->prof->ecl_ops);
                 free(blk);
                 if (ml.has_geo()) host->load_map(ml.geo);
                 for (int i = 0; i < 3; ++i)
                     if (ml.walls[i] != ecl::kNone) host->load_walls(i + 1, ml.walls[i]);
             }
+        } else if (dungeon && d->prof->variant.tr) {
+            // (Treasures: its map and the three slots' blocks - the save's
+            // bytes 0x407-0x409, ovl 0x7C +0x2877)
+            host->load_map(vm->get(0x4BC5) & 0xFF);
+            const int blk[3] = {d->save.look & 0xFF, d->save.look >> 8, d->save.look_slot & 0xFF};
+            for (int s2 = 0; s2 < 3; ++s2) host->load_slot(s2, blk[s2] ? blk[s2] : -1);
+            host->slots_done();
         } else if (dungeon && darkness_files()) {
             // (Darkness: its map and its look again - darkness_facts.md S8)
             host->load_map(vm->get(0x4BC5) & 0xFF);
@@ -11488,7 +12280,10 @@ void title_show(int from, pic::Canvas& c)
                 font::draw_text(c, d->font, l.s, l.col, l.row, l.fg, l.bg);
             }
         } else {
-            title_picture(c, st.block, st.row, st.col);
+            // (Treasures: its game picture redrawn for 16 colours in the EGA
+            // mode - a 4-bit screen; ovl 0x40 +0x11E)
+            const bool ega = p.variant.title_ega[0] && st.block == p.variant.title_ega[0] && !vga;
+            title_picture(c, ega ? p.variant.title_ega[1] : st.block, st.row, st.col);
         }
         if (st.sound) sfx(st.sound);
         title_run->step = s;
@@ -12040,11 +12835,11 @@ void start_demo(pic::Canvas& c)
     gs.x = 7;
     gs.y = 13;
     gs.dir = 2;
-    gs.script = 0x52;
+    gs.script = d->prof->variant.demo_block ? d->prof->variant.demo_block : 0x52;    // (Treasures: block 4)
     d->loaded = false;
     c.clear(0);
     screen = Screen::Game;
-    if (!host->load_script(gs.script, gs.code, &gs.code_len) || !vm->init_script(false)) {
+    if (!host->load_script(gs.script, ecl::code_of(gs), &gs.code_len) || !vm->init_script(false)) {
         plat::log("[play] the demo's script didn't load\n");
         end_demo(c);
         return;
@@ -12377,6 +13172,48 @@ __attribute__((noinline)) bool open_program(games::Game g, const char* prog)
     return true;
 }
 
+// Treasures: its frame (port facts P7) - BORD.DAX block 0's tiles and
+// block 7's pieces, kept while playing
+__attribute__((noinline)) bool open_tr_frame()
+{
+    plat::File f;
+    if (!open_dax("BORD.DAX", f)) return false;
+    plat::FileSource src(f);
+    bool ok = false;
+    d->tr_frame = static_cast<uint8_t*>(malloc(64 * 64));
+    const dax::Entry* e = d->idx.find(7);
+    if (d->tr_frame && e && e->raw_size > 0) d->tr_pieces = static_cast<uint8_t*>(malloc(e->raw_size));
+    if (d->tr_pieces && dax::load_block(src, d->idx, *e, d->tr_pieces) == e->raw_size &&
+        layout::load_tr_tiles(src, d->idx, 0, d->tr_frame, !vga, vga_load())) {
+        vga_take(true);              // (a VGA screen: its entries 16-31, kept)
+        layout::Tables& tb = d->tables;
+        tb.tr = true;
+        tb.chain = false;
+        layout::tr_set_pieces(tb, d->tr_pieces, e->raw_size);
+        tb.tr_tiles = d->tr_frame;
+        tb.tr_vga = vga != nullptr;
+        ok = true;
+        // Its text font: BORD block 8's 64 glyphs (white on magenta - '@',
+        // A-Z ... in the order of the font's glyphs 0-63; DOSBox) in place
+        // of 8X8D0's (whose other glyphs stay)
+        uint8_t* g = static_cast<uint8_t*>(malloc(64 * 64));
+        if (g && layout::load_tr_tiles(src, d->idx, 8, g, true)) {
+            for (int k = 0; k < 64; ++k)
+                for (int y = 0; y < 8; ++y) {
+                    uint8_t bits = 0;
+                    for (int x = 0; x < 8; ++x) {
+                        const uint8_t v = g[k * 64 + y * 8 + x];
+                        if (v != 13 && v != 0) bits = static_cast<uint8_t>(bits | 0x80 >> x);
+                    }
+                    d->font.glyph[k][y] = bits;
+                }
+        }
+        free(g);
+    }
+    f.close();
+    return ok;
+}
+
 // The frame's tiles, the font, the 3D view's common tiles
 __attribute__((noinline)) bool open_tiles()
 {
@@ -12392,8 +13229,9 @@ __attribute__((noinline)) bool open_tiles()
         ok = layout::load_vga_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, 0, 20, !vga) &&
              font::load(src, d->idx, d->font);
         f.close();
-        if (ok) ok = open_dax("BORDERS.DAX", f);
-        if (ok) {
+        if (ok && d->prof->variant.tr) ok = open_tr_frame();
+        else if (ok) ok = open_dax("BORDERS.DAX", f);
+        if (ok && !d->prof->variant.tr) {
             plat::FileSource bsrc(f);
             ok = layout::load_vga_tiles(bsrc, d->idx, 0, d->frame_tiles, 20, 11, !vga, vga_load());
             vga_take(true);
@@ -12425,6 +13263,35 @@ __attribute__((noinline)) void open_sky()
     }
 }
 
+// Treasures: its effect names (BORD.DAX block 9, 38 bytes a name from
+// effect 1) into the names file on the card, once - effect 0's room first,
+// so effect n's name is at 38 x n (text::kInNames)
+__attribute__((noinline)) void open_names()
+{
+    if (!(d->prof->magic.effect_names.at & text::kInNames) || !d->cache_dir[0]) return;
+    char path[200];
+    OvrWords::names_path(path, sizeof path);
+    if (plat::exists(path)) return;
+    plat::mkdir(d->cache_dir);          // (the scan makes it; a card scanned before this game was there may lack it)
+    plat::File f;
+    if (!open_dax("BORD.DAX", f)) return;
+    plat::FileSource src(f);
+    const dax::Entry* e = d->idx.find(9);
+    plat::File o = e ? plat::open(path, "w") : plat::File();
+    bool ok = false;
+    if (o) {
+        uint8_t buf[38] = {};
+        ok = o.write(buf, sizeof buf) == sizeof buf;
+        dax::RleReader r(src, d->idx, *e);
+        size_t got;
+        while (ok && (got = r.read(buf, sizeof buf)) > 0) ok = o.write(buf, got) == got;
+        o.close();
+        if (!ok) plat::remove(path);
+    }
+    f.close();
+    plat::log("[play] the effect names: %s\n", ok ? "made" : "not made");
+}
+
 // The script machine's own words
 __attribute__((noinline)) void open_script_words()
 {
@@ -12452,11 +13319,11 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     if (!plat::card_ready()) return "No SD card found.";
     {
         view3d::World* w = new (std::nothrow) view3d::World;
-        ecl::GameState* g = new (std::nothrow) ecl::GameState;
-        d = w && g ? new (std::nothrow) Data(*w, *g) : nullptr;
+        ecl::GameState* st = ecl::new_game_state(profile::code_cap(g));
+        d = w && st ? new (std::nothrow) Data(*w, *st) : nullptr;
         if (!d) {
             delete w;
-            delete g;
+            ecl::free_game_state(st);
             return no_memory("the game state");
         }
     }
@@ -12489,6 +13356,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     d->world.per_set = d->prof->variant.per_set_walls;
     text::set_hanging_space(gateway());
     open_sky();
+    open_names();
 
     // The party menu first, as the games begin
     host = new (std::nothrow) Host;
@@ -12515,6 +13383,16 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     gs.y = 13;
     gs.dir = 0;
     vm->set(0x7F12, gs.game_area);
+    if (d->prof->variant.tr) {
+        // Treasures' game block as its start sets it (ovl 0x87 +0x54E): the
+        // difficulty 3, in 3D, the text green, BACK1 block 3 ...
+        gs.area1[0x26] = 3;
+        gs.area1[0x21] = 1;
+        gs.area1[0x38] = 0x0A;
+        gs.area1[0x52] = 2;
+        gs.area1[0x54] = 3;
+        gs.area1[0x11] = 4;
+    }
     area_view = false;
     pic_shown = false;
     look_pending = false;
@@ -12598,7 +13476,7 @@ void close()
         free(d->gw_xp);
         delete d;
         delete w;
-        delete g;
+        ecl::free_game_state(g);
     }
     d = nullptr;
     delete vga;
@@ -13216,6 +14094,18 @@ void tap(int x, int y, pic::Canvas& c)
     if (!d) return;
     cv = &c;
     if (demo_input(c)) return;
+    if (lk.on) {
+        if (rom.asking) {
+            // (the romance's "Accept Reject")
+            if (y >= text::kMenuTapTop) {
+                const int k = text::hit(menu, x / 8);
+                if (k >= 0) rom_answer(k, c);
+            }
+            return;
+        }
+        lk_tap(c);
+        return;
+    }
     // (Darkness: the menu's place follows the word picked - facts L8)
     if (kept_hl() && menu_on && y >= text::kMenuTapTop && menu.count > 0) hl_picked(text::hit(menu, x / 8));
     if (screen != Screen::Game) {
@@ -13473,6 +14363,10 @@ void effects_clock(int m, pic::Canvas& c)
 // What each screen does as time passes
 void tick_screens(uint32_t now, pic::Canvas& c)
 {
+    if (lk.on) {
+        if (!rom.asking) lk_tick(now, c);
+        return;
+    }
     if (screen == Screen::Rest) {
         cv = &c;
         rest_tick(now, c);
@@ -13760,8 +14654,11 @@ int fight_colours() { return d ? fight_palette_on : 0; }
 
 int canvas_depth(games::Game g)
 {
-    // (the VGA games: Pools of Darkness - profile variant.vga)
-    return g == games::Game::PoolsOfDarkness && plat::vga_screen() ? 8 : 4;
+    // (the VGA games: Pools of Darkness, Treasures of the Savage Frontier -
+    // profile variant.vga)
+    return (g == games::Game::PoolsOfDarkness || g == games::Game::TreasuresOfTheSavageFrontier) && plat::vga_screen()
+               ? 8
+               : 4;
 }
 
 bool palette(const pic::Rgb** rgb, bool all)

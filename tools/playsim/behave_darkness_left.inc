@@ -7,7 +7,7 @@
 
 namespace dkleft {
 
-const char* D_ = "darkness drain";
+const char* D_ = BDK_NAME " drain";
 int d_mode = 1;
 int d_die(int n) { return d_mode == 1 ? n - 1 : 0; }
 

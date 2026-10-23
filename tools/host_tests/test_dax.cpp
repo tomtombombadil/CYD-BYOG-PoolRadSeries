@@ -3315,6 +3315,26 @@ static void test_journal()
     }
     // A table for another PDF: not found
     CHECK(journal::find_table(123, "00") == nullptr);
+    // The firmware's tables (positions only): each found by its PDF's size
+    // and /ID; entries in range, one of each number, pieces on a page
+    // picture (the GOG journals: spreads of 1650 x 1275 at most)
+    CHECK(journal::kTableCount >= 5);
+    for (int ti = 0; ti < journal::kTableCount; ++ti) {
+        const journal::Table& t = *journal::kTables[ti];
+        CHECK(journal::find_table(t.pdf_size, t.pdf_id) == &t);
+        CHECK(strlen(t.pdf_id) == 32 && t.n_entries > 0 && t.n_pieces >= t.n_entries);
+        for (int e = 0; e < t.n_entries; ++e) {
+            const journal::EntryDef& d = t.entries[e];
+            CHECK((d.kind == 'J' || d.kind == 'T') && d.number > 0 && d.count > 0 &&
+                  d.first + d.count <= t.n_pieces);
+            for (int k = 0; k < e; ++k)
+                CHECK(!(t.entries[k].kind == d.kind && t.entries[k].number == d.number));
+        }
+        for (int i = 0; i < t.n_pieces; ++i) {
+            const journal::Piece& p = t.pieces[i];
+            CHECK(p.page >= 1 && p.w >= 30 && p.h >= 8 && p.x + p.w <= 1650 && p.y + p.h <= 1275);
+        }
+    }
     // Half made (no "GBJ2"): not read
     Bytes half = out.b;
     half[0] = 0;
@@ -3337,6 +3357,10 @@ static void test_journal()
     CHECK(journal::find_mention("YOU OVERHEAR TAVERN TALE #12 ", &n) == 'T' && n == 12);
     CHECK(journal::find_mention("YOU OVERHEAR TAVERN TALE 7", &n) == 'T' && n == 7);
     CHECK(journal::find_mention("AND YOU RECORD IT IN JOURNAL ENTRY ", &n) == 0);
+    // (Secret prints the number as a text of its own; play::heard joins them)
+    CHECK(journal::find_mention(" AND YOU NOTE IT IN JOURNAL ENTRY 37.", &n) == 'J' && n == 37);
+    // (Darkness: the program's sentence in mixed case)
+    CHECK(journal::find_mention("It is noted as journal entry 12.", &n) == 'J' && n == 12);
     CHECK(journal::find_mention("TAVERN TALES WITH YOU,", &n) == 0);
 }
 

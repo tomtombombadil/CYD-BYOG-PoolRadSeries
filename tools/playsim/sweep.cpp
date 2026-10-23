@@ -317,7 +317,7 @@ static bool boot(char slot = 'A')
     folder = host.substr(s + 1);
     // GAME=n: another game (games::Game's number: 1 Pool of Radiance)
     const games::Game game = getenv("GAME") ? (games::Game)atoi(getenv("GAME")) : games::Game::CurseOfTheAzureBonds;
-    const char* e = play::open(folder.c_str(), game, C, nullptr);
+    const char* e = play::open(folder.c_str(), game, C, getenv("CACHE"));
     if (e) {
         printf("open: %s\n", e);
         return false;
@@ -349,6 +349,7 @@ static bool start_fight(int area = 0, int mon = 0, int copies = 0)
                        : game == 1       ? 0x85F9
                        : game == 3       ? 0x848A
                        : game == 4       ? 0x85BB
+                       : game == 9       ? 0x9C1D          // (Treasures: save A's 11-monster fight)
                                          : 0x8AC2;
     if (mon) {
         play::d->gs.game_area = static_cast<uint8_t>(area);
@@ -1484,7 +1485,7 @@ static void dice_faces(std::initializer_list<int> f) { dice_usual(); b_faces.ass
 #ifdef BEHAVE_SECRET
 #include "behave_secret.inc"
 #endif
-#ifdef BEHAVE_DARKNESS
+#if defined(BEHAVE_DARKNESS) || defined(BEHAVE_TREASURES)
 #include "behave_darkness.inc"
 #endif
 #ifdef BEHAVE_GATEWAY
@@ -1551,6 +1552,9 @@ int main(int argc, char** argv)
 #endif
 #ifdef BEHAVE_GATEWAY
         if (want("gateway")) behave_gateway();
+#endif
+#ifdef BEHAVE_TREASURES
+        if (want("treasures")) behave_darkness();       // (Darkness's checks, Treasures' oracles)
 #endif
         create::g_die_hook = nullptr;
         printf("== behaviour: %d passed, %d failed\n", b_pass, b_fail);

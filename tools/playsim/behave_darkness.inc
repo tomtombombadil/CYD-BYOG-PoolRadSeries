@@ -9,11 +9,22 @@
 // fights (all of them), turn ...; drain (behave_darkness_left.inc)
 #include "behave_oracle.inc"
 
+// (Treasures of the Savage Frontier runs the same checks: -DBEHAVE_TREASURES,
+// GAME=9 on its folder, its own oracles oracle_treasures*.txt - its rule
+// tables are Darkness's at other places)
+#ifdef BEHAVE_TREASURES
+#define BDK_GAME 9
+#define BDK_NAME "treasures"
+#else
+#define BDK_GAME 4
+#define BDK_NAME "darkness"
+#endif
+
 namespace bdark {
 
 using namespace play;
 Making* m = nullptr;
-const char* P = "darkness";
+const char* P = BDK_NAME;
 
 // Darkness's race numbers (0 elf .. 5 human) as the record's (Curse's)
 const int kToCurseRace[6] = {2, 4, 1, 3, 5, 7};
@@ -541,7 +552,7 @@ bool open_game()
     pc::card_root() = game_dir.substr(0, sl);
     static std::string folder;
     folder = game_dir.substr(sl + 1);
-    if (play::open(folder.c_str(), games::Game(4), C, nullptr)) return false;
+    if (play::open(folder.c_str(), games::Game(BDK_GAME), C, getenv("CACHE"))) return false;     // (CACHE: _CYD/<folder> on the card)
     for (int guard = 0; play::screen == play::Screen::Title && guard < 40; ++guard) {
         if (play::title_run && play::title_run->prompt) {
             tap_word('P');
@@ -569,12 +580,12 @@ static void behave_darkness()
 {
     using namespace bdark;
     b_oracle.clear();
-    if (!b_oracle_load("darkness")) {
-        expect(P, "oracle file", false, "no oracle_darkness.txt");
+    if (!b_oracle_load(BDK_NAME)) {
+        expect(P, "oracle file", false, "no oracle_" BDK_NAME ".txt");
         return;
     }
-    if (!b_oracle_load("darkness_fights")) expect(P, "oracle file", false, "no oracle_darkness_fights.txt");
-    if (!b_oracle_load("darkness_left")) expect(P, "oracle file", false, "no oracle_darkness_left.txt");
+    if (!b_oracle_load(BDK_NAME "_fights")) expect(P, "oracle file", false, "no oracle_" BDK_NAME "_fights.txt");
+    if (!b_oracle_load(BDK_NAME "_left")) expect(P, "oracle file", false, "no oracle_" BDK_NAME "_left.txt");
     if (!open_game()) {
         expect(P, "the game opened", false);
         return;

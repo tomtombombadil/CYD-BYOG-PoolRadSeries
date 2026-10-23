@@ -1547,6 +1547,8 @@ int start_round(Battle& b, create::Dice& d, Event* out, int cap)
         if (b.fx && f.has(b.fx->haste)) half2 *= 2;
         if (b.fx && f.has(b.fx->slow)) half2 /= 2;
         f.attacks[1] = attacks_this_round(half2, b.round);
+        if (b.weather < 2 && !(b.weather_free && f.has(b.weather_free)))
+            f.moves = static_cast<int16_t>((f.moves & 0xFF) * (b.weather == 0 ? 3 : 2) / 5);
         if (b.fx && b.fx->entangle && f.has(b.fx->entangle)) f.moves = 0;      // entangled: no moving
         if (b.fx && hasx(f, b.fx->mon.held_fast)) f.moves = 0;                 // engulfed, hugged
     }

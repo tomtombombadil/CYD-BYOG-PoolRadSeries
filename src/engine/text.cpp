@@ -20,6 +20,10 @@ bool punct(char c) { return c && strchr("!,-.:;?", c) != nullptr; }
 bool is_key(char c) { return (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'); }
 
 // The word starting at pos: punctuation, letters, punctuation, one space
+int hex_digit(char c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1; }
+// A colour code at s[pos] (Writer::codes): "%" and a hex digit
+bool code_at(const char* s, int len, int pos) { return pos + 1 < len && s[pos] == '%' && hex_digit(s[pos + 1]) >= 0; }
+
 int unit_end(const char* s, int len, int pos)
 {
     int e = pos;
@@ -100,6 +104,7 @@ void begin(Writer& w, pic::Canvas& c, const char* s, const Region& r, uint8_t fg
 {
     w.r = r;
     w.fg = fg;
+    w.codes = false;
     w.s = s;
     w.len = s ? static_cast<int>(strlen(s)) : 0;
     w.pos = 0;
@@ -108,7 +113,7 @@ void begin(Writer& w, pic::Canvas& c, const char* s, const Region& r, uint8_t fg
         clear(c, r);
         w.col = r.x0;
         w.row = r.y0;
-    } else if (w.col < r.x0 || w.col > r.x1 || w.row < r.y0 || w.row > r.y1) {
+    } else if (w.col < r.x0 || w.col > r.x1 || w.row < r.y0 || w.row > r.last_row()) {
         w.col = r.x0;
         w.row = r.y0;
     }
@@ -132,12 +137,23 @@ State step(Writer& w, pic::Canvas& c, const font::Font& f, int n)
             }
             return w.state = State::Done;
         }
+        if (w.codes && code_at(w.s, w.len, w.pos)) {
+            w.fg = static_cast<uint8_t>(hex_digit(w.s[w.pos + 1]));
+            w.pos += 2;
+            continue;
+        }
         if (w.pos >= w.unit_end) {
             const int e = unit_end(w.s, w.len, w.pos);
-            // (Gateway: a word fits when its letters do - its space may hang
-            // past the window's edge, not drawn; DOSBox)
-            const int wl = g_hang && e - w.pos > 1 && w.s[e - 1] == ' ' ? e - w.pos - 1 : e - w.pos;
-            if (w.col + wl - 1 > r.x1) {
+            int width = e - w.pos;
+            for (int k = w.pos; w.codes && k + 1 < e; ++k)
+                if (code_at(w.s, w.len, k)) {
+                    width -= 2;
+                    ++k;
+                }
+            // (Treasures: a word's trailing space may run off the line - DOSBox;
+            // Gateway too: a word fits when its letters do, set_hanging_space)
+            if ((w.codes || g_hang) && width > 1 && w.s[e - 1] == ' ') --width;
+            if (w.col + width - 1 > r.x1) {
                 if (w.col == r.x0) {
                     // Longer than a line: as much as fits, the rest below
                     w.unit_end = w.pos + (r.x1 - r.x0 + 1);
@@ -146,14 +162,15 @@ State step(Writer& w, pic::Canvas& c, const font::Font& f, int n)
                     ++w.row;
                     while (w.pos < w.len && w.s[w.pos] == ' ') ++w.pos;
                     if (w.pos >= w.len) continue;
-                    if (w.row > r.y1) return w.state = State::PageFull;
+                    if (w.row > r.last_row()) return w.state = State::PageFull;
                     continue;
                 }
             } else {
                 w.unit_end = e;
             }
         }
-        if (w.col <= r.x1) font::draw_glyph(c, f, font::glyph_of(f, w.s[w.pos]), w.col * 8, w.row * 8, w.fg, 0);
+        if (w.col <= r.x1 || w.s[w.pos] != ' ')
+            font::draw_glyph(c, f, font::glyph_of(f, w.s[w.pos]), w.col * 8, r.line_y(w.row), w.fg, 0);
         ++w.pos;
         ++w.col;
         if (n > 0) --n;
@@ -240,7 +257,7 @@ void draw(pic::Canvas& c, const font::Font& f, const Menu& m, const MenuColors& 
             if (x >= font::kCols) continue;
             const int g = font::glyph_of(f, m.s[i]);
             if (sel >= 0 && i >= m.start[sel] && i <= m.end[sel])
-                font::draw_glyph(c, f, g, x * 8, row * 8, 0, col.highlight);
+                font::draw_glyph(c, f, g, x * 8, row * 8, col.plain_sel ? col.highlight : 0, col.plain_sel ? 0 : col.highlight);
             else
                 font::draw_glyph(c, f, g, x * 8, row * 8, is_key(m.s[i]) ? col.highlight : col.normal, 0);
             ++x;
@@ -255,7 +272,7 @@ void draw(pic::Canvas& c, const font::Font& f, const Menu& m, const MenuColors& 
     for (int i = 0; m.s[i] && x < font::kCols; ++i, ++x) {
         const int g = font::glyph_of(f, m.s[i]);
         if (sel >= 0 && i >= m.start[sel] && i <= m.end[sel]) {
-            font::draw_glyph(c, f, g, x * 8, kMenuRow * 8, 0, col.highlight);
+            font::draw_glyph(c, f, g, x * 8, kMenuRow * 8, col.plain_sel ? col.highlight : 0, col.plain_sel ? 0 : col.highlight);
         } else {
             bool lit = is_key(m.s[i]);
             if (m.marked) {

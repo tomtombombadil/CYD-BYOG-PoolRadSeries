@@ -384,6 +384,10 @@ struct Profile {
         // ... its temple's cures: their spells' numbers (DS, 11) - names
         // from magic.names (0: none)
         uint16_t    temple_spells = 0;
+        // Treasures (treasures_facts.md 3): SHOP n's goods are the n-th run of
+        // rows from DS goods_first + 2, each run ended by 0xFF (0 none, 0xFF
+        // the random scroll; goods_last / goods_rows unused)
+        bool        goods_runs = false;
     } items;
 
     // Character rules (making and training characters): the rule tables in
@@ -679,6 +683,35 @@ struct Profile {
         bool     tile_wild = false;
         // The move mode's prompt before its Exit (GAME.OVR; 0: none)
         uint32_t move_prompt = 0;
+        // Treasures of the Savage Frontier (treasures_facts.md; the Darkness
+        // engine a year on): its BORD.DAX frame, the wall slots' own tiles
+        // (op 0x42), its overland drawn in the view box (OVER.DAX), LUCK.DAX's
+        // texts, Gateway's characters imported
+        bool     tr = false;
+        // PICTURE ids from this one on are PIC1A.DAX's (0: all in PIC<area>)
+        uint8_t  pic_split = 0;
+        // The title's picture shown in the 16-colour mode instead of
+        // title_ega[0] (Treasures: block 5 for 4; 0: none)
+        uint8_t  title_ega[2] = {};
+        // The camp's picture indoors (0: camp_pic everywhere; Treasures 132)
+        uint8_t  camp_pic_in = 0;
+        // The demo's ECL1 block (0: 0x52; Treasures 4 - its CONTROL "INTRO 1")
+        uint8_t  demo_block = 0;
+        // Treasures' camp words (GAME.OVR / the program, text::kInProgram):
+        // the camp menu with Crown, "The party has acquired the...", the
+        // crystals' names, the romance's "Accept Reject" and "HIS" / "HER"
+        uint32_t tr_crown_menu = 0, tr_acquired = 0, tr_crystal[3] = {}, tr_accept = 0, tr_his = 0, tr_her = 0;
+        // "The lucky paper of " / " reads:" (GAME.OVR)
+        uint32_t tr_paper[2] = {};
+        // "Battle in snow! Movement restricted." / "... rain! ..." (GAME.OVR)
+        uint32_t tr_weather[2] = {};
+        // Old age after a fight (ovl 0x62 +0x3F0): the races' greatest ages
+        // (DS words by its race number), "is looking very old", "The strain
+        // of this last battle has worn heavily on ", ".  ", "He", "She", " breathes
+        // deeply ...", "Sadly, no party member witnesses ...", " weeps at the
+        // loss ...", " The remaining party members ...", "'s body for valuables."
+        uint16_t tr_max_age = 0;
+        uint32_t tr_age_words[10] = {};
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;
@@ -762,6 +795,9 @@ bool title_flash_step(const Profile& p, int step);
 
 // A game the engine plays (a release known and not still being built)
 bool ready(games::Game g);
+
+// The script buffer a game's scripts need (ecl::kCodeSize but Treasures')
+uint32_t code_cap(games::Game g);
 
 // The profile matching a program, or nullptr.
 const Profile* find(games::Game g, uint32_t program_size, uint32_t image_size);

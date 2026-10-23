@@ -54,6 +54,35 @@ void put_frame_tile(pic::Canvas& c, const layout::Tiles& t, int n, int x0, int y
         }
 }
 
+// Treasures' tile pool: the 4-bit tile sets' own memory first (kPoolOwn
+// tiles), then tr_more (a VGA screen: tr_more only, 64 bytes a tile)
+constexpr int kPoolOwn = 4 * kSetTiles;
+int tr_bytes(const World& w) { return w.vga ? 64 : 32; }
+const uint8_t* tr_tile(const World& w, int p)
+{
+    if (!w.vga && p < kPoolOwn) return p < kSetTiles ? w.common.px[p] : w.sets[p / kSetTiles - 1].px[p % kSetTiles];
+    const int k = p - (w.vga ? 0 : kPoolOwn);
+    return w.tr_more && k < w.tr_more_cap ? w.tr_more + static_cast<size_t>(k) * tr_bytes(w) : nullptr;
+}
+
+void draw_tr_tile(pic::Canvas& c, const World& w, int slot, int id, int row, int col)
+{
+    const int p = w.tr_map[slot][id & 0xFF];
+    if (!p) return;
+    const uint8_t* px = tr_tile(w, p - 1);
+    if (!px) return;
+    const int x0 = (kCell0 + col) * 8, y0 = (kCell0 + row) * 8;
+    if (!w.vga) {
+        put_packed(c, px, x0, y0, kMask, kMask);
+        return;
+    }
+    for (int y = 0; y < 8; ++y)
+        for (int x = 0; x < 8; ++x) {
+            const uint8_t v = px[y * 8 + x];
+            if (v != kMask && x0 + x >= 0 && x0 + x < c.w && y0 + y >= 0 && y0 + y < c.h) c.set(x0 + x, y0 + y, v);
+        }
+}
+
 // Draws wall piece `type` (1-15) of group g with its top left at view cell
 // (row, col)
 void set_tile(pic::Canvas& c, const World& w, int set, int id, int row, int col);
@@ -71,6 +100,7 @@ void piece(pic::Canvas& c, const World& w, int group, int type, int row, int col
         for (int cc = col; cc < col + g.cols; ++cc, ++i)
             if (ids[i] && r >= 0 && r < kCells && cc >= 0 && cc < kCells) {
                 if (w.per_set) set_tile(c, w, set, ids[i], r, cc);
+                else if (w.tr) draw_tr_tile(c, w, w.tr_base[set], ids[i], r, cc);
                 else draw_tile(c, w, ids[i], r, cc);
             }
 }
@@ -248,6 +278,44 @@ bool load_horizon(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Wo
     return true;
 }
 
+bool load_tr_walls(dax::ByteSource& src, const dax::Index& idx, int slot, int block, World& w)
+{
+    if (slot < 0 || slot > 2) return false;
+    w.tr = w.dk = true;
+    if (block < 0) {
+        // (the slot emptied: its walls stay, its tiles go - ov43+0xFC0)
+        w.tr_block[slot] = 0;
+        return true;
+    }
+    const dax::Entry* e = idx.find(static_cast<uint8_t>(block));
+    if (!e || e->raw_size == 0 || e->raw_size % kWallSetBytes != 0) return false;
+    const int n = static_cast<int>(e->raw_size / kWallSetBytes);
+    dax::RleReader r(src, idx, *e);
+    // (ovr 0x48926: sets 0, 1 ... into slots slot, slot + 1 ... while there are slots)
+    for (int i = 0; i < n && slot + i < 3; ++i) {
+        WallSet& ws = w.walls[slot + i];
+        if (r.read(&ws.id[0][0], kWallSetBytes) != kWallSetBytes) return false;
+        ws.loaded = true;
+        w.tr_base[slot + i] = static_cast<uint8_t>(slot);
+    }
+    w.tr_block[slot] = static_cast<uint8_t>(block);
+    return true;
+}
+
+void tr_pool_reset(World& w)
+{
+    memset(w.tr_map, 0, sizeof w.tr_map);
+    w.tr_used = 0;
+}
+
+void tr_free(World& w)
+{
+    free(w.tr_more);
+    w.tr_more = nullptr;
+    w.tr_more_cap = 0;
+    tr_pool_reset(w);
+}
+
 void back_free(World& w)
 {
     free(w.back);
@@ -258,6 +326,7 @@ void back_free(World& w)
 void vga_free(World& w)
 {
     back_free(w);
+    tr_free(w);
     free(w.vga_px);
     w.vga_px = nullptr;
 }
@@ -328,6 +397,81 @@ bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, 
         for (int i = 0; i < 32; ++i) out[i] = static_cast<uint8_t>(map[px[i * 2]] << 4 | map[px[i * 2 + 1]]);
     }
     return true;
+}
+
+bool load_tr_tiles(dax::ByteSource& src, const dax::Index& idx, int slot, uint8_t block, World& w, pic::VgaPalette* pal)
+{
+    if (slot < 0 || slot > 2) return false;
+    // The tiles the slot's walls use
+    bool want[256] = {};
+    int n = 0;
+    for (int k = 0; k < 3; ++k) {
+        if (!w.walls[k].loaded || w.tr_base[k] != slot) continue;
+        for (int p = 0; p < kPieces; ++p)
+            for (int i = 0; i < kPieceTiles; ++i) {
+                const uint8_t id = w.walls[k].id[p][i];
+                if (id && !want[id]) {
+                    want[id] = true;
+                    ++n;
+                }
+            }
+    }
+    memset(w.tr_map[slot], 0, sizeof w.tr_map[slot]);
+    if (!n) return true;
+    // Room in the pool
+    const int own = w.vga ? 0 : kPoolOwn;
+    const int more = w.tr_used + n - own;
+    if (more > w.tr_more_cap) {
+        uint8_t* m = static_cast<uint8_t*>(realloc(w.tr_more, static_cast<size_t>(more) * tr_bytes(w)));
+        if (!m) return false;
+        w.tr_more = m;
+        w.tr_more_cap = static_cast<uint16_t>(more);
+    }
+    const dax::Entry* e = idx.find(block);
+    if (!e) return false;
+    dax::RleReader r(src, idx, *e);
+    pic::VgaHeader h;
+    uint8_t map[256];
+    if (!vga_start(r, *e, h, map, pal, w.vga) || h.height != 8 || h.width_cols != 1) return false;
+    for (int t = 0; t < h.frames && t < 256; ++t) {
+        uint8_t px[64];
+        if (r.read(px, sizeof px) != sizeof px) return false;
+        if (!want[t]) continue;
+        const int p = w.tr_used++;
+        w.tr_map[slot][t] = static_cast<uint16_t>(p + 1);
+        uint8_t* out = const_cast<uint8_t*>(tr_tile(w, p));
+        if (!out) return false;
+        if (w.vga) memcpy(out, px, 64);
+        else
+            for (int i = 0; i < 32; ++i) out[i] = static_cast<uint8_t>(map[px[i * 2]] << 4 | map[px[i * 2 + 1]]);
+    }
+    return true;
+}
+
+bool draw_vga_window(dax::ByteSource& src, const dax::Index& idx, uint8_t block, pic::Canvas& c, int sx, int sy, int w,
+                     int h, int dx, int dy, bool vga, pic::VgaPalette* pal)
+{
+    const dax::Entry* e = idx.find(block);
+    if (!e) return false;
+    dax::RleReader r(src, idx, *e);
+    pic::VgaHeader hd;
+    uint8_t map[256];
+    if (!vga_start(r, *e, hd, map, pal, vga)) return false;
+    const int pw = hd.width_px();
+    if (sx < 0 || sy < 0 || sx + w > pw || sy + h > hd.height) return false;
+    if (r.skip(static_cast<size_t>(sy) * pw) != static_cast<size_t>(sy) * pw) return false;
+    uint8_t row[320];
+    if (pw > static_cast<int>(sizeof row)) return false;
+    for (int y = 0; y < h; ++y) {
+        if (r.read(row, static_cast<size_t>(pw)) != static_cast<size_t>(pw)) return false;
+        for (int x = 0; x < w; ++x) c.set(dx + x, dy + y, map[row[sx + x]]);
+    }
+    return true;
+}
+
+void draw_marker(pic::Canvas& c, const World& w, int n, int x, int y)
+{
+    if (w.frame) put_frame_tile(c, *w.frame, n, x, y, 8, kMask);
 }
 
 bool load_back(dax::ByteSource& src, const dax::Index& idx, uint8_t block, uint8_t id, World& w, pic::VgaPalette* pal)

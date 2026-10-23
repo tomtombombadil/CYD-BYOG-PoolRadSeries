@@ -1,6 +1,8 @@
 #include "ecl_vm.h"
 #include "rules.h"
 
+#include <cstdlib>
+#include <new>
 #include <cstdio>
 #include <cstring>
 
@@ -137,6 +139,27 @@ void unpack_string(const uint8_t* p, size_t n, char* out, size_t cap)
     if (cap) out[o] = 0;
 }
 
+// ---- the game state with room for a bigger script ----------------------------
+
+GameState* new_game_state(uint32_t cap)
+{
+    if (cap < kCodeSize) cap = kCodeSize;
+    const size_t bytes = offsetof(GameState, code) + cap;
+    void* m = malloc(bytes < sizeof(GameState) ? sizeof(GameState) : bytes);
+    if (!m) return nullptr;
+    GameState* g = new (m) GameState;
+    memset(code_of(*g), 0, cap);
+    g->code_cap = cap;
+    return g;
+}
+
+void free_game_state(GameState* g)
+{
+    if (!g) return;
+    g->~GameState();
+    free(g);
+}
+
 // ---- memory -----------------------------------------------------------------
 
 static uint16_t word_at(const uint8_t* a, uint32_t off) { return static_cast<uint16_t>(a[off] | a[off + 1] << 8); }
@@ -152,7 +175,7 @@ uint16_t Vm::dk_addr(uint16_t a)
 {
     // The engine's own calls name Curse's places; Darkness's scripts use its
     // own (1-0x5FE, the script) and pass through
-    if (a < 0x4B00 || (a >= kBase && a < kBase + kCodeSize)) return a;
+    if (a < 0x4B00 || (a >= kBase && a < 0xC000)) return a;
     if (a >= 0x4BC6 && a <= 0x4BCC) return static_cast<uint16_t>(0x05 + (a - 0x4BC6));     // the clock
     switch (a) {
     case 0x4BF2: return 0x16;           // the block the party is in
@@ -215,7 +238,7 @@ uint16_t Vm::dk_read(uint16_t a, int size) const
         }
         return 0;
     }
-    if (a >= kBase && a < kBase + kCodeSize) return s_.code[a - kBase];
+    if (a >= kBase && a < kBase + s_.code_cap) return code_of(s_)[a - kBase];
     return 0;
 }
 
@@ -250,7 +273,7 @@ void Vm::dk_write(uint16_t a, uint16_t v, int size)
         if (party_ && party_->sel() && sel_mon_ < 0) party::darkness_script_set(*party_->sel(), static_cast<uint16_t>(a - 0x401), b);
         return;
     }
-    if (a >= kBase && a < kBase + kCodeSize) s_.code[a - kBase] = b;
+    if (a >= kBase && a < kBase + s_.code_cap) code_of(s_)[a - kBase] = b;
 }
 
 void Vm::put(const Op& o, uint16_t v)
@@ -286,7 +309,7 @@ uint16_t Vm::get(uint16_t a) const
         if (a == 0x7F12) return s_.game_area;
         return word_at(s_.area2, (a - 0x7C00u) * 2);
     }
-    if (a >= kBase && a < kBase + kCodeSize) return s_.code[a - kBase];
+    if (a >= kBase && a < kBase + s_.code_cap) return code_of(s_)[a - kBase];
     if (set_.facing_alias && a == set_.facing_alias) a = 0xC04D;
     switch (a) {
     case 0x033D: return static_cast<uint16_t>(s_.dir);
@@ -334,8 +357,8 @@ void Vm::set(uint16_t a, uint16_t v)
         if ((a == 0x7F22 || a == 0x7F24 || a == 0x7F26) && v > 0x80) h_.load_walls(1 + (a - 0x7F22) / 2, v & 0x7F);
         return;
     }
-    if (a >= kBase && a < kBase + kCodeSize) {
-        s_.code[a - kBase] = static_cast<uint8_t>(v);
+    if (a >= kBase && a < kBase + s_.code_cap) {
+        code_of(s_)[a - kBase] = static_cast<uint8_t>(v);
         return;
     }
     if (set_.facing_alias && a == set_.facing_alias) a = 0xC04D;
@@ -439,9 +462,9 @@ bool Vm::operands(int n, Op* out)
             o.high = byte_at(++p);
             if (o.code != 2) to_map(o);
         } else if (o.code == 0x80) {
-            if (p + o.low >= kCodeSize) return false;
+            if (p + o.low >= s_.code_cap) return false;
             o.str = n_slots_;
-            add_string(reinterpret_cast<const char*>(s_.code + p + 1), o.low, true);
+            add_string(reinterpret_cast<const char*>(code_of(s_) + p + 1), o.low, true);
             p += o.low;
         } else if (o.code == 0x81) {
             o.high = byte_at(++p);
@@ -451,7 +474,7 @@ bool Vm::operands(int n, Op* out)
             read_string(o.word(), tmp, sizeof tmp);
             add_string(tmp, strlen(tmp), false);
         }
-        if (p >= kCodeSize) return false;
+        if (p >= s_.code_cap) return false;
         out[i] = o;
     }
     pc_ = p + 1;
@@ -481,7 +504,7 @@ const char* Vm::string_of(const Op& o) const
 bool Vm::init_script(bool reload)
 {
     uint32_t e[5];
-    if (!entries(s_.code, s_.code_len, set_, e)) return false;
+    if (!entries(code_of(s_), s_.code_len, set_, e)) return false;
     for (int i = 0; i < 5; ++i) entry_[i] = static_cast<uint16_t>(e[i] == 0xFFFFFFFFu ? 0 : kBase + e[i]);
     sp_ = 0;
     for (bool& f : flags_) f = false;
@@ -604,7 +627,7 @@ void Vm::compare(uint16_t a, uint16_t b)
 void Vm::skip_next()
 {
     Insn in;
-    if (decode(s_.code, s_.code_len, pc_, set_, in)) pc_ = in.next;
+    if (decode(code_of(s_), s_.code_len, pc_, set_, in)) pc_ = in.next;
     else ++pc_;
 }
 
@@ -948,6 +971,7 @@ bool Vm::dk_step(Stop& r)
         return true;
     case 0x23:                                  // END: the text window clear, the view back, EXIT
         if (!need(0)) return true;
+        if (set_.tr_ops) h_.clear_text();       // (Treasures: the text window empty - DOSBox)
         h_.redraw();
         restore_selected();
         stop_script();
@@ -1056,10 +1080,10 @@ bool Vm::dk_step(Stop& r)
         pause_ms_ = 600;
         r = wait_for(Wait::Pause);
         return true;
-    case 0x3C: {                                // SHOP n (1-11)
+    case 0x3C: {                                // SHOP n (1-11; Treasures 1-16)
         if (!need(1)) return true;
         int n = value(o[0]) & 0xFF;
-        if (n < 1 || n > 11) n = 1;
+        if (n < 1 || n > set_.shops) n = 1;
         if (ground_) {
             ground_->clear();
             h_.shop_items(n, *ground_);
@@ -1084,6 +1108,55 @@ bool Vm::dk_step(Stop& r)
         h_.party_changed();
         return true;
     }
+    case 0x42: {                                // Treasures: LOAD 3D - the map, the wall slots' blocks
+        if (!set_.tr_ops) return false;
+        if (!need(4)) return true;
+        const int a = value(o[0]) & 0xFF;
+        if (a < 0x7F && s_.area1[0x21]) {
+            set(0x4BC5, static_cast<uint16_t>(a));
+            h_.load_map(a);
+            set(0x7EC9, 0);
+        }
+        // (each slot its block - one of 3 sets fills the slots from it on;
+        // 0 or 0xFF empties the slot: ov43+0xF2D)
+        for (int slot = 0; slot < 3; ++slot) {
+            const int b = value(o[1 + slot]) & 0xFF;
+            h_.load_slot(slot, b == 0 || b == 0xFF ? -1 : b);
+        }
+        h_.slots_done();
+        return true;
+    }
+    case 0x43:                                  // Treasures: FIND ITEM - type (0 any), the name words
+    case 0x44: {                                // DESTROY ITEM: the first such item (ov43+0x1BDC, +0x2764)
+        if (!set_.tr_ops) return false;
+        if (!need(4)) return true;
+        const int type = value(o[0]) & 0xFF;
+        // (the three words compared as the program does: the item's 0x2F-0x31
+        // against the 4th, 3rd and 2nd operands; the 2nd 0: any words)
+        const uint8_t w[3] = {static_cast<uint8_t>(value(o[3])), static_cast<uint8_t>(value(o[2])),
+                              static_cast<uint8_t>(value(o[1]))};
+        bool found = false;
+        for (int i = 0; party_ && i < party_->count && !found; ++i) {
+            party::Character& c = party_->m[i];
+            for (int k = 0; k < c.n_items && !found; ++k) {
+                const uint8_t* it = c.items[k];
+                if (type && it[0x2E] != type) continue;
+                if (w[2] && (it[0x2F] != w[0] || it[0x30] != w[1] || it[0x31] != w[2])) continue;
+                found = true;
+                if (op_ == 0x44) {
+                    if (it[0x34]) rules::worn(c, k, false);
+                    rules::remove_item(c, k);
+                    h_.party_changed();
+                }
+            }
+        }
+        if (op_ == 0x43) {
+            for (bool& f : flags_) f = false;
+            flags_[0] = found;
+            flags_[1] = !found;
+        }
+        return true;
+    }
     default:
         return false;
     }
@@ -1098,7 +1171,7 @@ Stop Vm::step()
         stop_script();
         return Stop::Error;
     }
-    op_ = s_.code[pc_];
+    op_ = code_of(s_)[pc_];
     Op o[kMaxOps];
     char line[96];
     auto need = [&](int n) {
@@ -1360,7 +1433,7 @@ Stop Vm::step()
         const int block = value(o[0]) & 0xFF;
         set(0x4BF2, s_.script);
         s_.script = static_cast<uint8_t>(block);
-        if (!h_.load_script(block, s_.code, &s_.code_len) || !init_script()) {
+        if (!h_.load_script(block, code_of(s_), &s_.code_len) || !init_script()) {
             snprintf(line, sizeof line, "NEWECL %d: script not found", block);
             h_.log(line);
             stop_script();
@@ -1732,6 +1805,8 @@ Stop Vm::step()
             stop_script();
             return wait_for(Wait::Camp);
         }
+        if (set_.tr_ops && (v == 3 || v == 4))             // (Treasures: its ovl 0x74 +0x2A75 / +0x292C)
+            return wait_for(v == 3 ? Wait::Luck : Wait::ShipRest);
         if (v == 3 && set_.program_kills) {                 // the party is killed
             stop_script();
             h_.party_killed();
@@ -1845,7 +1920,7 @@ Stop Vm::step()
         [[fallthrough]];
     default: {
         Insn in;
-        if (decode(s_.code, s_.code_len, pc_, set_, in)) {
+        if (decode(code_of(s_), s_.code_len, pc_, set_, in)) {
             snprintf(line, sizeof line, "opcode %02X passed over", op_);
             h_.log(line);
             pc_ = in.next;

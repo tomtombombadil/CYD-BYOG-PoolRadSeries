@@ -478,7 +478,7 @@ void blit4(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y, bool mi
 // ---- The fight's state (on the heap while fighting)
 enum class FSt : uint8_t {
     Begin, Turn, Menu, Move, Aim, DoneMenu, Speed, Ai, Pages, RoundEnd, Results, Destroyed, AllyAsk, FleeAsk,
-    ContinueAsk, Next, UseAim, AbortAsk, RoundRest, Clouds, Resume, FlameAsk, FlameAbort
+    ContinueAsk, Next, UseAim, AbortAsk, RoundRest, Clouds, Resume, FlameAsk, FlameAbort, OldAge
 };
 
 // A page's pictures: a missile or spell flying, a burst / sparkles on a
@@ -520,6 +520,9 @@ inline int tile_bytes() { return px8() ? kSq * kSq : kTileBytes; }
 // monsters, ran out on the 2.8")
 struct Fight {
     combat::Battle& b;                  // (its own block: make_fight)
+    bool   aged = false;                // Treasures: someone aged (haste) - old age at the end
+    int8_t old[12][3] = {};             // its old-age steps (kind, member, the weeping one)
+    int    old_n = 0, old_i = 0;
     explicit Fight(combat::Battle& battle) : b(battle) {}
     ~Fight()
     {
@@ -641,6 +644,8 @@ bool park_world()
             big = true;
         }
     world_big = big;
+    // (Treasures: its wall slots' tiles on the heap go too - read again after)
+    if (d->world.tr) view3d::tr_free(d->world);
     const bool ok = f.write(reinterpret_cast<const uint8_t*>(&d->world), sizeof(view3d::World)) == sizeof(view3d::World);
     f.close();
     if (ok) world_parked = true;
@@ -655,6 +660,7 @@ void unpark_world()
     const bool ok = f && f.read(reinterpret_cast<uint8_t*>(&d->world), sizeof(view3d::World)) == sizeof(view3d::World);
     if (f) f.close();
     world_parked = false;
+    if (ok && d->world.tr && host) host->slots_done();     // (Treasures: the slots' tiles again; none when closing)
     if (!ok || world_big) {
         // (the card lost it - or Gateway's big sets' tiles were let go: the
         // walls read again from the game's files)
@@ -686,12 +692,12 @@ bool park_code()
     code_park_path(path, sizeof path);
     plat::File f = plat::open(path, "w");
     if (!f) return false;
-    const bool ok = f.write(d->gs.code, sizeof d->gs.code) == sizeof d->gs.code;
+    const bool ok = f.write(ecl::code_of(d->gs), d->gs.code_cap) == d->gs.code_cap;
     f.close();
     if (!ok) return false;
     arena.code_parked = true;
-    arena.at[0] = d->gs.code;
-    arena.cap[0] = sizeof d->gs.code;
+    arena.at[0] = ecl::code_of(d->gs);
+    arena.cap[0] = d->gs.code_cap;
     arena.used[0] = 0;
     return true;
 }
@@ -765,12 +771,12 @@ void fight_arena_end()
     char path[96];
     code_park_path(path, sizeof path);
     plat::File f = plat::open(path, "r");
-    const bool ok = f && f.read(d->gs.code, sizeof d->gs.code) == sizeof d->gs.code;
+    const bool ok = f && f.read(ecl::code_of(d->gs), d->gs.code_cap) == static_cast<int>(d->gs.code_cap);
     if (f) f.close();
     if (!ok) {
         // (the card lost it: the script reads again from the game's files)
         log_error("The script couldn't be read back after a fight: reloaded.");
-        host->load_script(d->gs.script, d->gs.code, &d->gs.code_len);
+        host->load_script(d->gs.script, ecl::code_of(d->gs), &d->gs.code_len);
     }
 }
 
@@ -913,6 +919,15 @@ void load_tiles(bool indoors)
 {
     for (uint8_t* t : fg->tile)
         if (t) memset(t, 0, tile_bytes());
+    if (d->prof->variant.tr) {
+        // Treasures (its ovl 0x68 +0xEFA): in 3D and not the overland (game
+        // byte 0x3F) DUNGCOM block = game byte 0x51, or wall slot 0's block;
+        // else WILDCOM block 0
+        const uint8_t* gb = d->gs.area1;
+        if (gb[0x21] && !gb[0x3F]) load_vga_frames("DUNGCOM.DAX", gb[0x51] ? gb[0x51] : d->save.look & 0xFF);     // (the slots kept in save.look)
+        else load_vga_frames("WILDCOM.DAX", 0);
+        return;
+    }
     if (d->prof->variant.vga) {
         const int region = vm->get(0x3A) & 0xFF;
         if (indoors) load_vga_frames("DUNGCOM.DAX", d->save.look ? d->save.look : 1);
@@ -1957,7 +1972,10 @@ void event_page(const combat::Event& e)
     case combat::Ev::FearParalyzed: said(profile::kFearParalyzed); break;
     case combat::Ev::FearWeakened: said(profile::kFearWeakened); break;
     case combat::Ev::Weakened: said(profile::kIsWeakened); break;
-    case combat::Ev::Ages: said(profile::kAges); break;
+    case combat::Ev::Ages:
+        said(profile::kAges);
+        fg->aged = true;                // (Treasures: old age is looked at when the fight ends - [0x9318])
+        break;
     case combat::Ev::Regen: {
         char w[24];
         cw(fg->b.f[who].hp() >= fg->b.f[who].hp_max() ? profile::kFullyHealed : profile::kPartlyHealed, w, sizeof w);
@@ -3353,6 +3371,10 @@ void fight_start(pic::Canvas& c)
     memcpy(b.level_exp, level_exp, sizeof level_exp);
     combat::g_dk_drain = darkness_files() ? dk_drain_hook : nullptr;     // (its own drain: facts L1)
     b.indoors = vm->get(0x4BE6) != 0;
+    if (d->prof->variant.tr) {
+        b.weather = d->gs.area1[0x52];
+        b.weather_free = 0x9E;
+    }
     // Pool: only its wilderness areas are fought outdoors (the rest from the 3D map)
     const int over = d->prof->variant.overland_area;
     if (d->prof->variant.overland_map && (d->gs.script < over || d->gs.script > over + 2)) b.indoors = true;
@@ -3477,12 +3499,17 @@ void fight_start(pic::Canvas& c)
     fg->cur = -1;
     draw_fight(c);
     clear_menu_line(c);
-    put(c, fw(profile::kBattleBegins), 0, text::kMenuRow, 10);
+    if (b.weather < 2) {
+        // Treasures: "Battle in snow! / rain! Movement restricted." (ovl 0x68 +0x1E4C)
+        char t[40];
+        ow(d->prof->variant.tr_weather[b.weather], t, sizeof t);
+        put(c, t, 0, text::kMenuRow, 10);
+    } else put(c, fw(profile::kBattleBegins), 0, text::kMenuRow, 10);
     fg->st = FSt::Begin;
     fg->until = plat::now_ms() + game_delay_ms() * 3;
     if (!fg->until) fg->until = 1;
-    plat::log("[play] a fight: %d against %d (%s)\n", combat::standing(b, 0), combat::standing(b, 1),
-                  b.indoors ? "indoors" : "outdoors");
+    plat::log("[play] a fight: %d against %d (%s%s)\n", combat::standing(b, 0), combat::standing(b, 1),
+                  b.indoors ? "indoors" : "outdoors", b.weather == 0 ? ", snow" : b.weather == 1 ? ", rain" : "");
     sound_hold(true);                        // (Hit / Miss: the output ready all fight)
     char t[48];
     snprintf(t, sizeof t, "fight start, %d against %d%s", combat::standing(b, 0), combat::standing(b, 1),
@@ -3563,10 +3590,116 @@ bool no_exp_lines()
     return darkness_files() && vm->get(0x1F) != 0;
 }
 
+// Treasures' old age (ovl 0x62 +0x3F0), when someone aged in the fight:
+// each member not dead past the race's greatest age dies of it - "The
+// strain of this last battle has worn heavily on NAME.", "He / She breathes
+// deeply one last time and crumples to the ground." (white, the panel's
+// rows 14-21, a key each), then what the others do (yellow); within ten
+// years of it: "NAME is looking very old". The steps queue in old[]: kind,
+// member, the one who weeps.
+void end_fight(pic::Canvas& c);
+void old_age_next(pic::Canvas& c);
+bool old_age_begin(pic::Canvas& c)
+{
+    combat::Battle& b = fg->b;
+    fg->old_n = fg->old_i = 0;
+    auto add = [&](int kind, int who, int other) {
+        if (fg->old_n >= 12) return;
+        fg->old[fg->old_n][0] = static_cast<int8_t>(kind);
+        fg->old[fg->old_n][1] = static_cast<int8_t>(who);
+        fg->old[fg->old_n++][2] = static_cast<int8_t>(other);
+    };
+    for (int i = 0; i < b.party_size && i < pt->count; ++i) {
+        party::Character& ch = pt->m[i];
+        if (ch.health() >= party::Dead) continue;
+        const int race = party::darkness_byte(ch.rec, ch.ext, ch.n_items, 0xAD);
+        const int most = race >= 0 && race < 8 ? d->tr_max_age[race] : 0;
+        const int age = ch.rec[0x76] | ch.rec[0x77] << 8;
+        if (most && age > most) {
+            add(1, i, -1);
+            add(2, i, -1);
+            int seen = 0, who = -1;         // the witnesses: up and okay
+            for (int k = 0; k < pt->count; ++k)
+                if (k != i && pt->m[k].health() == party::Okay && pt->m[k].hp() > 0) {
+                    ++seen;
+                    who = k;
+                }
+            add(seen == 0 ? 3 : seen == 1 ? 4 : 5, i, who);
+        } else if (most && age > most - 10) {
+            add(0, i, -1);
+        }
+    }
+    if (!fg->old_n) return false;
+    fg->st = FSt::OldAge;
+    old_age_next(c);
+    return true;
+}
+void old_age_next(pic::Canvas& c)
+{
+    if (fg->old_i >= fg->old_n) {
+        fg->old_n = 0;
+        clear_panel(c, 14, 21);
+        end_fight(c);
+        return;
+    }
+    const int8_t* o = fg->old[fg->old_i++];
+    const auto& v = d->prof->variant;
+    char nm[20] = {}, wn[20] = {}, a[96], b2[48], t[160];
+    pt->m[o[1]].name(nm, sizeof nm);
+    if (o[2] >= 0) pt->m[o[2]].name(wn, sizeof wn);
+    auto word = [&](int k, char* out, size_t cap) { ow(v.tr_age_words[k], out, cap); };
+    uint8_t colour = 15;
+    switch (o[0]) {
+    case 0:
+        word(0, a, sizeof a);
+        snprintf(t, sizeof t, "%s %s", nm, a);
+        colour = 10;
+        break;
+    case 1:
+        word(1, a, sizeof a);
+        word(2, b2, sizeof b2);
+        snprintf(t, sizeof t, "%s%s%s", a, nm, b2);
+        break;
+    case 2: {
+        const party::Character& ch = pt->m[o[1]];
+        word(party::darkness_byte(ch.rec, ch.ext, ch.n_items, 0x166) ? 4 : 3, b2, sizeof b2);
+        word(5, a, sizeof a);
+        snprintf(t, sizeof t, "%s%s", b2, a);
+        // status 8, "dies from age" (ovl 0xFB +0x25)
+        pt->m[o[1]].rec[0x195] = party::Gone;
+        plat::log("[fight] old age: member %d dies\n", o[1]);
+        break;
+    }
+    case 3:
+        word(6, t, sizeof t);
+        colour = 14;
+        break;
+    case 4:
+        word(7, a, sizeof a);
+        snprintf(t, sizeof t, "%s%s", wn, a);
+        colour = 14;
+        break;
+    default:
+        word(8, a, sizeof a);
+        word(9, b2, sizeof b2);
+        snprintf(t, sizeof t, "%s%s%s", a, nm, b2);
+        colour = 14;
+        break;
+    }
+    clear_panel(c, 14, 21);
+    panel_text(c, t, 14, colour, 21);
+    clear_menu_line(c);
+    put(c, d->press_key, 0, text::kMenuRow, 13);
+}
+
 // The fight is over: the outcome, experience, treasure
 void end_fight(pic::Canvas& c)
 {
     combat::Battle& b = fg->b;
+    if (d->prof->variant.tr && fg->aged && !in_demo) {
+        fg->aged = false;
+        if (old_age_begin(c)) return;
+    }
     fg->out = combat::finish(b, ml ? ml->m : nullptr);
     combat::Result r = fg->out.result;
     if (in_demo && r == combat::Lost)
@@ -4614,6 +4747,9 @@ void fight_tap(int x, int y, pic::Canvas& c)
             fg->fx_at = 2;
         }
         if (fg->until) fg->until = 1;   // a tap moves on
+        return;
+    case FSt::OldAge:
+        old_age_next(c);
         return;
     case FSt::Results:
     case FSt::Destroyed:

@@ -172,6 +172,11 @@ static void settle(int choice = 0, int max_ms = 60000)
         play::tick(g_now, C);
         { char jk; int jn; if (play::journal_request(&jk, &jn)) printf("  JOURNAL %c %d\n", jk, jn); }
         using namespace play;
+        if (play::lk.on) {                // (Treasures' LUCK texts: a tap at each page's end)
+            if (play::lk.prompt) { shot("luck"); play::tap(10, 10, C); }
+            else if (play::rom.asking) { shot("ask"); play::tap((int)strlen(play::menu.prompt) * 8 + 2 + (getenv("ROMREJECT") ? play::menu.start[1] * 8 : 0), text::kMenuRow * 8 + 2, C); }
+            continue;
+        }
         if (!waiting) return;
         const auto wt = vm->wait();
         if (play::input() != play::Input::None) {
@@ -237,7 +242,7 @@ static void disasm()
         const auto& gs = play::d->gs;
         for (uint32_t at = 0; at < gs.code_len;) {
             ecl::Insn in;
-            if (!ecl::decode(gs.code, gs.code_len, at, *play::d->prof->ecl_ops, in)) { ++at; continue; }
+            if (!ecl::decode(ecl::code_of(gs), gs.code_len, at, *play::d->prof->ecl_ops, in)) { ++at; continue; }
             const unsigned va = 0x8000 + in.at;
             if (va >= a0 && va <= a1) {
                 printf("%04X op %02X:", va, in.op);
@@ -246,8 +251,8 @@ static void disasm()
                     printf(" %X:%04X", in.ops[k].code, in.ops[k].word());
                     if (in.ops[k].code == 0x80) {
                         // the packed string after it: 3 bytes = four 6-bit characters
-                        while (sp + 1 < in.next && !(gs.code[sp] == 0x80 && gs.code[sp + 1] == in.ops[k].low)) ++sp;
-                        const uint8_t* b = gs.code + sp + 2;
+                        while (sp + 1 < in.next && !(ecl::code_of(gs)[sp] == 0x80 && ecl::code_of(gs)[sp + 1] == in.ops[k].low)) ++sp;
+                        const uint8_t* b = ecl::code_of(gs) + sp + 2;
                         printf(" \"");
                         uint32_t bits = 0; int nb = 0;
                         for (int i = 0; i < in.ops[k].low; ++i) {
@@ -785,6 +790,15 @@ int main(int argc, char** argv)
             tap_word('E');
             for (int i = 0; i < play::pt->count; ++i) { char n[20]; play::pt->m[i].name(n, 20); printf("  %d: %-15s attacks byte %d\n", i, n, play::pt->m[i].rec[0x11C]); }
         }
+        if (getenv("PAPER") && play::pt->count) {
+            // PAPER=n: the first character's first item made Treasures' lucky
+            // paper n (LUCK 50 + n), readied
+            uint8_t* it = play::pt->m[getenv("WHO") ? atoi(getenv("WHO")) : 0].items[0];
+            it[0x3D] = (uint8_t)atoi(getenv("PAPER"));
+            it[0x3E] = 0x0E;
+            it[0x2F] = 126;
+            it[0x34] = 1;
+        }
         if (getenv("ITEMOPS")) {
             // ITEMOPS: the selected character's items: a digit picks list line n,
             // a letter taps that menu word, @n taps party row n (Trade), '#' lists
@@ -985,6 +999,25 @@ int main(int argc, char** argv)
         if (q) ++q;
     }
     if (getenv("DISASM") && !getenv("AREA")) disasm();
+    // GBYTES=off=value,...: the game block's bytes (hex offsets) before the
+    // moves; GNAME=off:NAME,...: a name there (Treasures' romance)
+    for (const char* q = getenv("GBYTES"); q && *q;) {
+        unsigned o, v;
+        if (sscanf(q, "%x=%u", &o, &v) == 2 && o < sizeof play::d->gs.area1) play::d->gs.area1[o] = (uint8_t)v;
+        q = strchr(q, ',');
+        if (q) ++q;
+    }
+    for (const char* q = getenv("GNAME"); q && *q;) {
+        unsigned o;
+        char nm[20] = {};
+        if (sscanf(q, "%x:%19[^,]", &o, nm) == 2 && o + 16 < sizeof play::d->gs.area1) {
+            memset(play::d->gs.area1 + o, 0, 16);
+            memcpy(play::d->gs.area1 + o, nm, strlen(nm));
+        }
+        q = strchr(q, ',');
+        if (q) ++q;
+    }
+    if (getenv("TELE")) { int x, y, dd; sscanf(getenv("TELE"), "%d,%d,%d", &x, &y, &dd); play::d->gs.x = x; play::d->gs.y = y; play::d->gs.dir = dd; play::after_move_redraw(); }
     if (getenv("TELE0")) { int x, y, dd; sscanf(getenv("TELE0"), "%d,%d,%d", &x, &y, &dd); play::d->gs.x = x; play::d->gs.y = y; play::d->gs.dir = dd; play::after_move_redraw(); }
     if (getenv("RUNAT")) {
         // Run the script from an address (e.g. a shop), then BUY=n,n,...
@@ -1084,9 +1117,24 @@ int main(int argc, char** argv)
     }
     if (getenv("FINDLOCK")) for (int y = 0; y < 16; ++y) for (int x = 0; x < 16; ++x) for (int dd = 0; dd < 8; dd += 2) if (geo::passage(play::d->map, x, y, dd) >= 2) printf("locked %d,%d,%d\n", x, y, dd);
     if (getenv("SEARCH")) play::vm->set(0x7ECA, play::vm->get(0x7ECA) | 1);     // SEARCH=1: Search on before the moves
-    if (getenv("TELE")) { int x, y, dd; sscanf(getenv("TELE"), "%d,%d,%d", &x, &y, &dd); play::d->gs.x = x; play::d->gs.y = y; play::d->gs.dir = dd; play::after_move_redraw(); }
     const char* moves = argc > 2 ? argv[2] : "FFFF";
     for (const char* m = moves; *m; ++m) {
+        if (*m == '/' && m[1]) {
+            // "/X": tap the menu line's word with key X (Encamp, its words ...)
+            const char k = *++m;
+            bool hit = false;
+            for (int i = 0; i < play::menu.count && !hit; ++i)
+                if (text::key(play::menu, i) == k) {
+                    int cx, cy;
+                    text::item_cell(play::menu, i, &cx, &cy);
+                    play::tap(cx * 8 + 2, cy * 8 + 2, C);
+                    hit = true;
+                }
+            if (!hit) printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s);
+            settle();
+            { char t[16]; snprintf(t, sizeof t, "word_%c", k); shot(t); }
+            continue;
+        }
         play::Act a = play::Act::Forward;
         switch (*m) {
         case 'F': a = play::Act::Forward; break;
