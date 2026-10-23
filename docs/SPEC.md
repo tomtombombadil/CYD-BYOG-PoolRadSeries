@@ -1552,6 +1552,31 @@ the scripts' changed ops, the rule tables, fights, the rest.
   2026-10-23: as the original). Checks: sweep's `behave darkness` ONLY=
   drain (400 oracle cases from scratch `dk_left_oracle.py`, Energy Drain
   in a fight).
+- **Spells cast in camp** (branch darkness-leftovers; facts L6): the
+  camp lets through the spells whose row's targets byte is above 0 (64:
+  Knock and Cloudkill are not, whatever "when" says) and casts them with
+  their handlers' workings and words (`kDarknessCamp`, Secret's shapes in
+  `spells::cast`): the cures say "is Cured" for each effect they take
+  away (its E2:6B) - Cure Blindness then "can see", Cure Disease then "is
+  cured", Heal its three; Raise Dead (Constitution - 1, its hit points
+  worked out again, 1 HP), Resurrection (the dead only, all hit points),
+  Restoration (`create::dk_restore`: a drained level back with its share
+  of the best hit points and experience), Protection from Fire (a ranger
+  its own effect, others Resist Fire's); the time routine's rolled times
+  (Mind Blank 1440). Checks: ONLY=camp (oracle: the program's rows and the
+  handlers' own words, Restoration worked out in scratch).
+- **The fights' smaller gaps** (facts L7): the gazes (stone, confusion,
+  paralysis) fly the lightning's picture (COMSPR 5) without its sound; the
+  vampire's the spell's at 50 a step; Kalistes' blow shows its weapon and
+  "+4" in the panel's weapon rows (23-38 x 7-9); the beholder's rays go at
+  its own pick (a random enemy in sight, kept while it stands).
+- **The menus' highlight** (facts L8): Darkness's menu routine keeps one
+  place for all menus; the camp, Magic, View, items, shop / temple,
+  treasure and exploring menus keep their own, Rest, Take and the spell
+  lists start on their first word, the rest where the last menu was left
+  (`play::hl_own / hl_first / hl_inherit`, the place following each tap);
+  "Lose it?" starts on Yes; the party menu's Drop asks "Pick Character
+  Select" first. Checks: ONLY=menus.
 - **Alter and the icon editor** (scratch facts
   /tmp/claude-0/dks_alter/facts_alter.md, for the Project's Darkness
   facts; its camp overlay GAME.OVR 0xDCC8 +0x172B, the editor 0x17E16).
@@ -2103,9 +2128,16 @@ the game's Settings (As Original: all of them).
   the slot's count over it at once, so it never leaps (a bite and two
   claws every round). With Game Fixes on the leap takes (four claws of
   3d6 that round); off as the original.
-- **Darkness's gazes' pictures**: the paralysing gaze flies COMSPR
-  picture 0x2D, the vampire's 0x32 in the original; the engine flies the
-  spell's picture. Kalistes' blows: the original shows the weapon's name
-  and "+4" on row 23; the engine doesn't.
+- **Darkness's Remove Curse** (`rules::fixes()`): its handler takes off
+  effect 0x2B (a disease's weakness) instead of the curse 0x24 (Secret's
+  same handler takes 0x24); with Game Fixes on the engine takes the curse,
+  off as the original.
+- **Darkness's Resurrection** (`rules::fixes()`; Tom, 2026-10-23): the
+  original costs no Constitution; with Game Fixes on the one raised loses
+  a point as AD&D says (its hit points worked out again); the caster's
+  days of rest AD&D asks for aren't in the engine either way.
+- **Darkness's exploring menu's place** after a script: taken from the
+  last menu's (its routine's restart as the engine sees it - not checked
+  in DOSBox).
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.
