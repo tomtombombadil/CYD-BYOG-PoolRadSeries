@@ -2910,6 +2910,7 @@ void speed_menu(pic::Canvas& c)
     fg->st = FSt::Speed;
     text::build(menu, prompt, words);
     menu.selected = 0;
+    hl_inherit();                       // (Darkness: GAME.OVR 0x983A - no place of its own)
     show_menu_line(c);
 }
 
@@ -3831,6 +3832,7 @@ void flame_menu(pic::Canvas& c)
     fg->st = FSt::FlameAsk;
     text::build(menu, fw(profile::kFlameType), fw(profile::kHotCold));
     menu.selected = 0;
+    hl_inherit();                       // (Darkness: GAME.OVR 0x2E555)
     show_menu_line(c);
 }
 
@@ -4890,6 +4892,7 @@ void treasure_take(pic::Canvas& c)
         }
         text::build(menu, prompt, words);
         menu.selected = 0;
+        hl_first();                     // (Darkness: GAME.OVR 0x5480 sets the first)
         show_menu_line(c);
         return;
     }
@@ -4978,9 +4981,9 @@ void treasure_menu(pic::Canvas& c)
         }
         sw(vault ? profile::kDkVaultMenu : profile::kDkTreasureMenu, a, sizeof a);
         keep_words(a, mask, words, sizeof words);
-        const int was = menu.selected;
         text::build(menu, "", words);
-        menu.selected = was >= 0 && was < menu.count ? was : menu.count - 1;
+        menu.selected = 0;
+        hl_own(kDkTreasureMain);        // (GAME.OVR 0x5585 / 0x3261: its own place, from View)
         show_menu_line(c);
         return;
     }
@@ -5014,6 +5017,7 @@ void treasure_menu(pic::Canvas& c)
 
 void open_treasure(pic::Canvas& c)
 {
+    dk_own[kDkTreasureMain] = 0;
     treasure = true;
     temple = false;
     screen = Screen::Shop;

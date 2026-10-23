@@ -207,6 +207,7 @@ int last_pic_id = -1, last_pic_head = 0xFF;   // the script's picture (shops com
 bool camping = false;              // the camp is open (the position line says so)
 int  pm_item[Data::kItems];   // the menu item on each list line
 int  pm_lines = 0;
+bool pm_picking = false;          // Darkness's Drop: "Pick Character Select" on the party menu
 int  pm_sel = 0;              // the party menu line the cursor keys highlight
 bool keys_used = false;       // a cursor key was used: highlights where the games had none (the party menu)
 char pm_saves[12];            // save slots found ("AB")
@@ -930,6 +931,56 @@ void clear_menu_line(pic::Canvas& c)
     dirty_rows(top, text::kMenuRow);
 }
 
+// Darkness's menu routine (darkness_alter_facts.md A1, the leftovers' facts
+// L8): its highlight is one place (DS 0xAAE5) every menu starts from where
+// the menu before left it, unless the routine around the menu sets it - the
+// first word, or a place of its own it keeps while it runs (the exploring,
+// camp, Magic, View, items, shop / temple and treasure menus: a local saved
+// after each pick, put back before the menu again). The place: a word's
+// index; past the menu's end the first word. Other games: as their callers set it
+bool kept_hl();
+enum DkMenu : uint8_t { kDkExplore, kDkCamp, kDkMagic, kDkView, kDkItemsList, kDkShopMain, kDkTreasureMain, kDkMenus };
+int  dk_place = 0;                  // where the last menu was left
+int  dk_own[kDkMenus] = {};         // the menus keeping a place of their own
+int  dk_slot = -1;                  // the menu shown keeps its place here (-1: none)
+int  dk_slot_sig = 0;               // ... while it is this menu (its words' keys)
+bool dk_explore_fresh = true;       // the exploring routine starts again: its place from the last menu's
+int  menu_sig()
+{
+    uint32_t v = static_cast<uint32_t>(menu.count);
+    for (int k = 0; k < menu.count; ++k) v = v * 31u + static_cast<uint8_t>(text::key(menu, k));
+    return static_cast<int>(v & 0x7FFFFFFF);
+}
+void hl_place(int at) { menu.selected = at >= 0 && at < menu.count ? at : 0; }
+// The menu just built starts where the one before left it
+void hl_inherit()
+{
+    dk_slot = -1;
+    if (kept_hl()) hl_place(dk_place);
+}
+// ... on its first word (its routine sets it)
+void hl_first()
+{
+    dk_slot = -1;
+    if (kept_hl()) menu.selected = 0;
+}
+// ... at its own place
+void hl_own(DkMenu m)
+{
+    dk_slot = -1;
+    if (!kept_hl()) return;
+    hl_place(dk_own[m]);
+    dk_slot = m;
+    dk_slot_sig = menu_sig();
+}
+// A menu word picked (or tapped): the place kept
+void hl_picked(int at)
+{
+    if (!kept_hl() || at < 0) return;
+    dk_place = at;
+    if (dk_slot >= 0 && dk_slot_sig == menu_sig()) dk_own[dk_slot] = at;
+}
+
 // The game's own menu while exploring. Secret's and Darkness's start with
 // Move (Secret's GAME.OVR 0x198E3, Darkness's DS 0x2F3A: "Move Area Cast
 // View Encamp Search Look"): its move mode, with only "Exit" on the menu
@@ -949,6 +1000,13 @@ void idle_menu(pic::Canvas& c)
     } else if (move_menu() && vm->get(0x4BE6)) {
         text::build(menu, "", moving ? "Exit" : "Move Area Cast View Encamp Search Look");
         menu.selected = 0;
+        if (!moving && kept_hl()) {
+            // (Darkness's exploring routine, GAME.OVR 0xD78B: its place from the
+            // last menu's as it starts - after a script - then its own)
+            if (dk_explore_fresh) dk_own[kDkExplore] = dk_place;
+            dk_explore_fresh = false;
+            hl_own(kDkExplore);
+        }
         show_menu_line(c);
     } else if (pool_overland()) {
         // Pool's wilderness: no Area (its program's words)
@@ -1781,6 +1839,7 @@ void draw_character(pic::Canvas& c)
     view_keys(*ch, keys, sizeof keys);
     text::build(menu, "", keys);
     menu.selected = 0;
+    hl_own(kDkView);
     show_menu_line(c);
 }
 
@@ -1920,6 +1979,7 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
     view_keys(ch, keys, sizeof keys);
     text::build(menu, "", keys);
     menu.selected = 0;
+    hl_own(kDkView);                    // (Darkness: GAME.OVR 0x2452E's own place, from Items)
     show_menu_line(c);
 }
 
@@ -1928,6 +1988,7 @@ void view_character(pic::Canvas& c)
     if (!pt->sel()) return;
     view_from = screen;
     screen = Screen::View;
+    dk_own[kDkView] = 0;
     d->view_icon = d->view_action = false;      // (a portrait first, the ready pose)
     draw_character(c);
 }
@@ -2091,6 +2152,9 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
              d->w_exit[0] == ' ' ? d->w_exit : " Exit");
     text::build(menu, prompt, keys);
     menu.selected = 0;
+    // (Darkness: the items' menu keeps its own place - GAME.OVR 0x24B77)
+    if (screen == Screen::Items) hl_own(kDkItemsList);
+    else hl_first();
     show_menu_line(c);
     dirty(0, pic::kScreenH);
 }
@@ -2714,6 +2778,7 @@ void ask_save(pic::Canvas& c)
     screen = Screen::SaveWhich;
     text::build(menu, d->w_save_which, d->w_slots);
     menu.selected = 0;
+    hl_inherit();
     show_menu_line(c);
 }
 
@@ -2806,6 +2871,7 @@ void draw_camp(pic::Canvas& c)
     camp_words(words, sizeof words);
     text::build(menu, d->w_camp, words);
     menu.selected = 0;
+    hl_own(kDkCamp);                    // (Darkness: GAME.OVR 0x104F1's own place, from Save)
     show_menu_line(c);
 }
 
@@ -2819,6 +2885,7 @@ int camp_heal_steps = 0;
 void open_camp(pic::Canvas& c)
 {
     camp_heal_steps = 0;
+    dk_own[kDkCamp] = 0;
     screen = Screen::Camp;
     draw_camp(c);
 }
@@ -2939,6 +3006,9 @@ void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt)
     screen = Screen::YesNo;
     text::build(menu, prompt, rw(Data::kYesNo));
     menu.selected = 1;          // the games start on No
+    dk_slot = -1;
+    // (Darkness's camp "Lose it?" lights Yes - GAME.OVR 0x2AFCB: 0x108:0x43 with 'Y')
+    if (what == Ask::LoseIt && kept_hl()) menu.selected = 0;
     show_menu_line(c);
 }
 
@@ -4193,9 +4263,9 @@ void shop_menu(pic::Canvas& c)
         char all[48];
         sw(temple ? profile::kDkTempleMenu : profile::kDkShopMenu, all, sizeof all);
         keep_words(all, temple || ground->any_money() ? ~0u : ~0x14u, words, sizeof words);
-        const int was = menu.selected;
         text::build(menu, "", words);
-        menu.selected = was >= 0 && was < menu.count ? was : menu.count - 1;
+        menu.selected = 0;
+        hl_own(kDkShopMain);            // (GAME.OVR 0x631A's own place, from Buy / Heal)
         show_menu_line(c);
         return;
     }
@@ -4235,6 +4305,7 @@ void draw_shop(pic::Canvas& c)
 void open_shop(pic::Canvas& c)
 {
     screen = Screen::Shop;
+    dk_own[kDkShopMain] = 0;
     if (!darkness_files()) {                // (Darkness: the script's words stay - DOSBox)
         text::clear(c, text::kTextArea);
         dirty_rows(17, 22);
@@ -5327,6 +5398,7 @@ void draw_appraise(pic::Canvas& c)
         }
         text::build(menu, prompt, keys);
         menu.selected = 0;
+        hl_inherit();                   // (GAME.OVR 0x29486: no place of its own)
         show_menu_line(c);
         dirty(0, pic::kScreenH);
         return;
@@ -5877,6 +5949,7 @@ void draw_magic_menu(pic::Canvas& c)
     }
     text::build(menu, "", words);
     menu.selected = 0;
+    hl_own(kDkMagic);                   // (Darkness: GAME.OVR 0xED74's own place, from Cast)
     show_menu_line(c);
 }
 
@@ -5887,6 +5960,7 @@ void open_magic(pic::Canvas& c)
         return;
     }
     screen = Screen::Magic;
+    dk_own[kDkMagic] = 0;
     draw_magic_menu(c);
 }
 
@@ -6088,6 +6162,7 @@ void draw_spells(pic::Canvas& c)
                  sl.choosing ? "" : d->w_exit);
         text::build(menu, prompt, keys);
         menu.selected = 0;
+        hl_first();                     // (Darkness: GAME.OVR 0x29E86 sets the first)
         show_menu_line(c);
     }
     dirty(0, pic::kScreenH);
@@ -6448,6 +6523,7 @@ void rest_menu(pic::Canvas& c)
     mw(profile::kRestMenu, words, sizeof words);
     text::build(menu, "", words);
     menu.selected = 0;
+    hl_first();                         // (Darkness: GAME.OVR 0x27DFE sets the first)
     show_menu_line(c);
 }
 
@@ -6909,6 +6985,7 @@ void draw_whom(pic::Canvas& c)
     snprintf(keys, sizeof keys, "%s%s", iw(profile::kSelect), d->w_exit);
     text::build(menu, prompt, keys);
     menu.selected = 0;
+    hl_inherit();                       // (Darkness: GAME.OVR 0x373FA - no place of its own)
     show_menu_line(c);
 }
 
@@ -7026,6 +7103,7 @@ void flame_ask(pic::Canvas& c, bool abort)
     cr.stage = abort ? CastRun::FlameAbort : CastRun::Flame;
     text::build(menu, a, b);
     menu.selected = abort ? 1 : 0;
+    if (!abort) hl_inherit();           // (Darkness: GAME.OVR 0x2E555)
     show_menu_line(c);
 }
 
@@ -8159,6 +8237,7 @@ void pm_choose_key(char key, pic::Canvas& c)
             screen = Screen::LoadWhich;
             text::build(menu, d->load_from, d->load_sources);
             menu.selected = 0;
+            hl_inherit();
             show_menu_line(c);
             return;
         }
@@ -8180,6 +8259,7 @@ void pm_choose_key(char key, pic::Canvas& c)
             keys[o] = 0;
             text::build(menu, d->load_which, keys);
             menu.selected = 0;
+            hl_inherit();
             show_menu_line(c);
         }
         return;
@@ -8211,6 +8291,7 @@ void pm_choose_key(char key, pic::Canvas& c)
         screen = Screen::AddFrom;
         text::build(menu, rw(Data::kAddFrom), rw(Data::kAddSources));
         menu.selected = 0;
+        hl_inherit();
         show_menu_line(c);
         return;
     case 'R':
@@ -8218,6 +8299,19 @@ void pm_choose_key(char key, pic::Canvas& c)
         return;
     case 'D':
         if (pt->sel()) {
+            if (d->prof->alter.pick) {
+                // Darkness: the party menu's Drop is the camp's (GAME.OVR
+                // 0x164AA): "Pick Character Select" first (darkness_alter_facts.md A2)
+                char prompt[20], words[12];
+                ow(d->prof->alter.pick, prompt, sizeof prompt);
+                ow(d->prof->alter.pick_menu, words, sizeof words);
+                pm_picking = true;
+                text::build(menu, prompt, words);
+                menu.selected = 0;
+                hl_inherit();
+                show_menu_line(c);
+                return;
+            }
             char t[60], nm[20];
             pt->sel()->name(nm, sizeof nm);
             snprintf(t, sizeof t, "%s%s%s", rw(Data::kDrop), nm, rw(Data::kForever));
@@ -8396,6 +8490,27 @@ void pm_tap(int x, int y, pic::Canvas& c)
         draw_party_menu(c);
         if (load_problem) error(c, load_problem);
         return;
+    }
+    if (pm_picking) {
+        // Darkness's Drop: "Pick Character Select" - a member picked on the
+        // list, Select asks "Drop NAME forever?"; a menu line of the party
+        // menu leaves it
+        if (y >= text::kMenuTapTop) {
+            if (text::key(menu, text::hit(menu, col)) != 'S' || !pt->sel()) return;
+            pm_picking = false;
+            char t[60], nm[20];
+            pt->sel()->name(nm, sizeof nm);
+            snprintf(t, sizeof t, "%s%s%s", rw(Data::kDrop), nm, rw(Data::kForever));
+            ask_yes_no(c, Ask::Drop, t);
+            return;
+        }
+        if (row >= 4 && row < 4 + pt->count && col >= 1) {
+            pt->selected = row - 4;
+            draw_party_menu(c);
+            show_menu_line(c);
+            return;
+        }
+        pm_picking = false;
     }
     if (row >= 4 && row < 4 + pt->count && col >= 1) {
         pt->selected = row - 4;
@@ -9269,6 +9384,7 @@ void begin_wait(pic::Canvas& c)
 void run_entry(int i, Then next)
 {
     moving = false;                         // (a script: Secret's move mode ends)
+    dk_explore_fresh = true;
     then = next;
     handle(vm->run(vm->entry(i)));
 }
@@ -12359,6 +12475,8 @@ void tap(int x, int y, pic::Canvas& c)
     if (!d) return;
     cv = &c;
     if (demo_input(c)) return;
+    // (Darkness: the menu's place follows the word picked - facts L8)
+    if (kept_hl() && menu_on && y >= text::kMenuTapTop && menu.count > 0) hl_picked(text::hit(menu, x / 8));
     if (screen != Screen::Game) {
         pm_tap(x, y, c);
         return;

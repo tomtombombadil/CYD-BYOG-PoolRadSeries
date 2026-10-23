@@ -405,6 +405,84 @@ void camp_checks()
     expect(D_, w, rn > 0 && rbad == 0, "%d wrong", rbad);
 }
 
+
+// ---- The menus' highlight (facts L8; darkness_alter_facts.md A1): the
+// camp's, Magic's and View's own places, Rest's first word, a menu with no
+// place of its own starting where the last one was left, the camp's "Lose
+// it?" on Yes, the party menu's Drop through "Pick Character Select"
+int word_at(char k)
+{
+    for (int i = 0; i < play::menu.count; ++i)
+        if (text::key(play::menu, i) == k) return i;
+    return -1;
+}
+void menu_checks()
+{
+    using namespace play;
+    char w[160];
+    if (!dkfight::dk_boot() || screen != Screen::Game) {
+        expect(D_, "exploring, for the menus", false);
+        return;
+    }
+    tap_word('E');                                  // Encamp
+    if (screen != Screen::Camp) {
+        expect(D_, "the camp, for the menus", false, "screen %d", (int)screen);
+        return;
+    }
+    expect(D_, "menus: the camp opens on its first word", menu.selected == 0, "%d", menu.selected);
+    const int magic_at = word_at('M'), view_at = word_at('V'), rest_at = word_at('R');
+    tap_word('M');
+    expect(D_, "menus: Magic opens on its first word (its own place starts there)", screen == Screen::Magic && menu.selected == 0,
+           "screen %d, %d", (int)screen, menu.selected);
+    tap_word('E');
+    snprintf(w, sizeof w, "menus: back in camp, Magic lit (the camp's own place - word %d)", magic_at);
+    expect(D_, w, screen == Screen::Camp && menu.selected == magic_at, "%d", menu.selected);
+    if (rest_at >= 0) {
+        tap_word('R');
+        expect(D_, "menus: Rest opens on its first word", screen == Screen::Rest && menu.selected == 0, "%d", menu.selected);
+        tap_word('E');
+        expect(D_, "menus: back in camp, Rest lit", screen == Screen::Camp && menu.selected == rest_at, "%d", menu.selected);
+    }
+    tap_word('V');
+    expect(D_, "menus: View opens on its first word", screen == Screen::View && menu.selected == 0, "%d", menu.selected);
+    tap_word('E');
+    expect(D_, "menus: back in camp, View lit", screen == Screen::Camp && menu.selected == view_at, "%d", menu.selected);
+    // A menu with no place of its own (the save slots: GAME.OVR 0x131D2) starts at the last one's
+    dk_place = 3;
+    ask_save(C);
+    expect(D_, "menus: the save slots start where the last menu was left (D)", menu.selected == 3, "%d", menu.selected);
+    dk_place = 40;
+    ask_save(C);
+    expect(D_, "menus: past the menu's end - the first word", menu.selected == 0, "%d", menu.selected);
+    // The camp's "Lose it?" lights Yes (GAME.OVR 0x2AFCB)
+    ask_yes_no(C, Ask::LoseIt, "Lose it? ");
+    expect(D_, "menus: \"Lose it?\" on Yes", text::key(menu, menu.selected) == 'Y', "%d", menu.selected);
+    // The party menu's Drop: "Pick Character Select" first
+    if (open_game()) {
+        play::tap(24, (12 + pm_line('L')) * 8 + 2, C);
+        if (play::load_where) tap_item(0);
+        const char* p = strchr(play::pm_saves, 'A');
+        if (p) tap_item(static_cast<int>(p - play::pm_saves));
+        const int dl = pm_line('D');
+        if (dl >= 0) {
+            play::tap(24, (12 + dl) * 8 + 2, C);
+            const bool pick = strncmp(menu.prompt, "Pick", 4) == 0 || strncmp(menu.prompt, "PICK", 4) == 0;
+            expect(D_, "menus: the party menu's Drop asks \"Pick Character Select\" first", pick && word_at('S') >= 0 &&
+                                                                                                 screen == Screen::PartyMenu,
+                   "prompt \"%s\"", menu.prompt);
+            play::tap(10, (4 + 1) * 8 + 2, C);       // the second member
+            tap_word('S');
+            char nm[20];
+            pt->m[1].name(nm, sizeof nm);
+            expect(D_, "menus: ... then \"Drop NAME forever?\" for the one picked", screen == Screen::YesNo && strstr(menu.prompt, nm),
+                   "prompt \"%s\"", menu.prompt);
+            tap_word('N');
+        } else {
+            expect(D_, "menus: the party menu's Drop", false, "no Drop line");
+        }
+    }
+}
+
 void checks(bool (*want)(const char*))
 {
     if (want("drain")) {
@@ -413,6 +491,7 @@ void checks(bool (*want)(const char*))
     }
     if (want("fixes")) fixes_checks();
     if (want("camp")) camp_checks();
+    if (want("menus")) menu_checks();
 }
 
 } // namespace dkleft
