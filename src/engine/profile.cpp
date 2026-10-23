@@ -1156,6 +1156,7 @@ constexpr ecl::OpSet kGatewayEcl = [] {
     s.yes_no_call = 0x80C;
     s.files_outdoors = true;
     s.step_square = true;
+    s.facing_alias = 0x03B2;
     return s;
 }();
 

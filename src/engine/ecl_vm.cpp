@@ -287,6 +287,7 @@ uint16_t Vm::get(uint16_t a) const
         return word_at(s_.area2, (a - 0x7C00u) * 2);
     }
     if (a >= kBase && a < kBase + kCodeSize) return s_.code[a - kBase];
+    if (set_.facing_alias && a == set_.facing_alias) a = 0xC04D;
     switch (a) {
     case 0x033D: return static_cast<uint16_t>(s_.dir);
     case 0x03DE: return sound_kind_;
@@ -337,6 +338,7 @@ void Vm::set(uint16_t a, uint16_t v)
         s_.code[a - kBase] = static_cast<uint8_t>(v);
         return;
     }
+    if (set_.facing_alias && a == set_.facing_alias) a = 0xC04D;
     switch (a) {
     case 0x03DE: sound_kind_ = v; break;
     case 0xC04B: s_.x = static_cast<int8_t>(v) & 15; s_.moved = true; break;

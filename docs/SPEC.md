@@ -1732,10 +1732,14 @@ segment at image 0x4C70; run as `GAME UseStart`) + GAME.OVR (51 overlays),
   and the ground ahead through CALL 0xC01E / 0xC01A, which take the
   square's values at once (`OpSet::step_square`, `Host::square`); a step
   out of a square there follows the side's door state alone. A save made
-  there loads back into it. Matches DOSBox pixel for pixel (the map, the
-  arrow, the position and clock, the move mode's line) along the same
-  walk; region changes, entering Yartar, encounters and outdoor fights run
-  (the snakes' fight 124.5 KB at its highest).
+  there loads back into it. Script address 0x03B2 is the facing as C04D
+  (`OpSet::facing_alias`: the gate a city is entered by). The move mode
+  stays on through the scripts' messages, with its prompt in 3D too.
+  Matches DOSBox pixel for pixel (the map, the arrow, the position and
+  clock, the move mode's line) along the same walk and back into Yartar
+  (0,7 E at the west gate); encounters and outdoor fights run (the
+  snakes' fight 124.5 KB at its highest). Open: after the wilderness's
+  start the original has MERL selected, the engine ARNOLD.
 - **Not yet:** the vault (Yartar's: Deposit / Withdraw / Vault, vault.dat),
   the sounds (TSR drivers, ZOUNDS.DAX), the journal.
 

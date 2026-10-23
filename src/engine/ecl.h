@@ -107,6 +107,10 @@ struct OpSet {
     // wall ahead (C04E) again at once - its wilderness scripts read the
     // ground of the square ahead that way
     bool step_square = false;
+    // Gateway (seg 0x53 +0xF77 / +0x10FC): this address is the facing as
+    // C04D is (0-3) - its scripts keep the facing there leaving a city and
+    // choose the gate by it coming back (0: none)
+    uint16_t facing_alias = 0;
 };
 
 // A script's memory address as the engine's machine (Curse's map) knows

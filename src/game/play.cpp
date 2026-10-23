@@ -1176,7 +1176,11 @@ void idle_menu(pic::Canvas& c)
         menu.selected = 0;
         show_menu_line(c);
     } else if (move_menu() && vm->get(0x4BE6)) {
-        text::build(menu, "", moving ? "Exit" : "Move Area Cast View Encamp Search Look");
+        // (Gateway's move mode: "Move (Use arrow keys):" before Exit - DOSBox)
+        static char prompt3d[32];
+        prompt3d[0] = 0;
+        if (moving) ow(d->prof->variant.move_prompt, prompt3d, sizeof prompt3d);
+        text::build(menu, prompt3d, moving ? "Exit" : "Move Area Cast View Encamp Search Look");
         menu.selected = 0;
         if (!moving && kept_hl()) {
             // (Darkness's exploring routine, GAME.OVR 0xD78B: its place from the
@@ -10020,7 +10024,7 @@ void begin_wait(pic::Canvas& c)
 
 void run_entry(int i, Then next)
 {
-    moving = false;                         // (a script: Secret's move mode ends)
+    if (!gateway()) moving = false;         // (a script: Secret's move mode ends; Gateway's stays - DOSBox)
     dk_explore_fresh = true;
     then = next;
     handle(vm->run(vm->entry(i)));
