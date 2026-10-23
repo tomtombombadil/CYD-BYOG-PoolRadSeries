@@ -699,6 +699,10 @@ struct Profile {
         // its .STF items)
         const char* slot_file = nullptr;
         uint8_t     coins = 7, item_size = 0;
+        // Gateway (gateway_facts.md 12; GAME.OVR overlay 0x4E7F): its menu's
+        // six words one after another - "Deposit" " Withdraw" " Vault"
+        // " Pool" " Share" " Exit" - the first's place (0: the menu above)
+        uint32_t menu6 = 0;
     } vault;
     // Secret's version screen: the game's name (row 22) over the version
     // line (row 23), black on a green bar, and the menu's own prompt (its
@@ -731,6 +735,9 @@ struct ViewFacts {
     // Darkness: the menu as one string ("Items Spells Trade Deposit Drop
     // Lay Cure Exit"), its words taken for Spells ... Cure (0: words[])
     uint32_t menu = 0;
+    // Gateway: the coin question's own " Select" (after "Select type of
+    // coin "; 0: the items' "Select")
+    uint32_t coin_select = 0;
 };
 // The game's (all zero: none of it)
 const ViewFacts& view_facts(games::Game g);

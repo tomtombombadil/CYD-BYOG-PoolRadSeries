@@ -5073,6 +5073,32 @@ void treasure_menu(pic::Canvas& c)
         show_menu_line(c);
         return;
     }
+    if (vault && d->prof->vault.menu6) {
+        // Gateway's vault (GAME.OVR overlay 0x4E7F +0x21C, DOSBox): "Deposit
+        // [Withdraw] [Vault] [Pool] [Share] Exit" - Withdraw with coins or
+        // items in it, Vault when the one selected has items, Pool when the
+        // party has coins, Share with coins in it
+        bool party_coins = false;
+        for (int i = 0; i < pt->count; ++i)
+            if (any_money(pt->m[i])) party_coins = true;
+        const party::Character* ch = pt->sel();
+        const bool on[6] = {true, ground->any_money() || ground->n > 0, ch && ch->n_items > 0, party_coins,
+                            ground->any_money(), true};
+        words[0] = 0;
+        OvrWords src;
+        uint32_t at = d->prof->vault.menu6;
+        const bool open = src.open();
+        for (int k = 0; k < 6 && open; ++k) {
+            char w[16];
+            read_word(src, at, w, sizeof w);
+            at += 1 + static_cast<uint32_t>(strlen(w));             // (the next Pascal string)
+            if (on[k]) strlcat(words, w, sizeof words);
+        }
+        text::build(menu, "", words);
+        menu.selected = 0;
+        show_menu_line(c);
+        return;
+    }
     if (gateway() && !vault) {
         // Gateway: "View [Take] [Pool] [Share] [Detect] Exit" - Take with
         // something there, Pool when the party has coins, Share with coins
@@ -5154,10 +5180,12 @@ void vault_read_dk()
     plat::File f = plat::open(path, "r");
     if (!f) return;
     uint8_t b[items::kRecordSize];
-    if (f.read(b, 12) == 12)
-        for (int m = 0; m < 3; ++m) {
+    // (Darkness: 3 counts - platinum gems jewelry; Gateway: 7 - copper on)
+    const int nc = v.coins == 3 ? 3 : 7, first = nc == 3 ? 4 : 0;
+    if (f.read(b, nc * 4) == nc * 4)
+        for (int m = 0; m < nc; ++m) {
             const uint32_t x = b[m * 4] | b[m * 4 + 1] << 8 | b[m * 4 + 2] << 16 | static_cast<uint32_t>(b[m * 4 + 3]) << 24;
-            ground->money[4 + m] = x > 0x7FFFFFFF ? 0x7FFFFFFF : static_cast<int>(x);
+            ground->money[first + m] = x > 0x7FFFFFFF ? 0x7FFFFFFF : static_cast<int>(x);
         }
     while (ground->n < items::kMaxGround && f.read(b, 63) == 63) {
         memcpy(ground->item[ground->n], b, items::kRecordSize);

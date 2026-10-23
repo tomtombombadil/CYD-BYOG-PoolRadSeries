@@ -116,6 +116,10 @@ int sf_extra(uint8_t flags);
 // 16 bytes, 32 nibbles; reset to colours 0-15 as themselves, 16-31 black
 uint8_t* sf_map();
 void sf_map_reset();
+// Raw value 13 kept as 13 (the see-through value) rather than mapped - the
+// default; off while a head or body picture is drawn (Gateway's vault
+// keeper's body: its 13s through its map, DOSBox)
+void sf_keep13(bool on);
 // Five planes of `cols` bytes (one row) as packed nibbles (cols * 4 bytes)
 // through a colour map
 void sf_row(const uint8_t* planes, int cols, const uint8_t* map, uint8_t* packed);

@@ -1157,6 +1157,7 @@ constexpr ecl::OpSet kGatewayEcl = [] {
     s.files_outdoors = true;
     s.step_square = true;
     s.facing_alias = 0x03B2;
+    s.vault_word = 0x4CFC;          // (its vault: SAVE 1 [4CFC] + COMBAT - gateway_facts.md 12)
     return s;
 }();
 
@@ -2008,7 +2009,7 @@ const Profile kProfiles[] = {
                 .start_xp = 3000, .platinum = 35},
      .item_words = {0x2EA45, 0x2EA4A, 0x2EA5A, 0x2EA60, 0x2EA67, 0x2EA6D, 0x2EA73, 0x2E8D1, 0x2EA88, 0x2F93E, 0x2EA98,
                     0x2EAB8, 0x2EACD, 0x2F852, 0x2FEF6, 0x2FF05, 0x2FF1C, 0x2FF2B, 0x2FF31, 0x3013E, 0x30186, 0x301AC,
-                    0x30175, 0x33431},
+                    0x30175, 0x33431, 0x2EA51},
      .shop_words = {kJ | 0, kJ | 0, 0x64A3, 0x64BB,
                     0x5B18, 0x5BC6, 0x5CB4, 0x5CC6, 0x5CDA, 0x5CEF, 0x61DB, 0x5EEC, 0x630B, 0x63FF,
                     0x58CB, 0x5949, 0x595A, 0x5968, 0x5976, 0x5988,
@@ -2103,7 +2104,10 @@ const Profile kProfiles[] = {
                  .frame_base = 20,
                  .common_files = true, .party_menu_row = 15, .per_set_walls = true,
                  .tile_wild = true, .move_prompt = 0x1BD9A},
-     .joined = kGatewayJoined, .n_joined = sizeof kGatewayJoined / sizeof kGatewayJoined[0]},
+     .joined = kGatewayJoined, .n_joined = sizeof kGatewayJoined / sizeof kGatewayJoined[0],
+     // Its vault (GAME.OVR overlay 0x4E7F): vault.dat in the save folder while
+     // playing, vault.<slot> with each saved game; 7 coin counts, 63-byte items
+     .vault = {.file = "VAULT.DAT", .slot_file = "VAULT.%c", .coins = 7, .item_size = 63, .menu6 = 0x4E89}},
 };
 
 } // namespace
@@ -2141,7 +2145,7 @@ const ViewFacts& view_facts(games::Game g)
     static const ViewFacts kGateway = {{0x2E538, 0x2E540, 0x2E547, 0x2E550, 0x2E556, 0x2E55C, 0x303A1, 0x303AB,
                                         0x303C8, 0x303D2, 0x30704, 0x30E91, 0x30E9D, 0x30EAB, 0x30FA3, 0x30FAF,
                                         0x30FBF, 0x30FCD, 0x306F1},
-                                       0x8C, 0x8D};
+                                       0x8C, 0x8D, 0, 0x303C0};
     static const ViewFacts kNone = {};
     switch (g) {
     case games::Game::CurseOfTheAzureBonds: return kCurse;

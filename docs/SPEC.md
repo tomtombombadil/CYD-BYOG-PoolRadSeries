@@ -1740,8 +1740,18 @@ segment at image 0x4C70; run as `GAME UseStart`) + GAME.OVR (51 overlays),
   (0,7 E at the west gate); encounters and outdoor fights run (the
   snakes' fight 124.5 KB at its highest). Open: after the wilderness's
   start the original has MERL selected, the engine ARNOLD.
-- **Not yet:** the vault (Yartar's: Deposit / Withdraw / Vault, vault.dat),
-  the sounds (TSR drivers, ZOUNDS.DAX), the journal.
+- **The vault** (Yartar's, 9,5: SAVE 1 [4CFC] + COMBAT as Secret's;
+  GAME.OVR overlay 0x4E7F): the treasure screen under the keeper's head and
+  body over what VAULT.DAT in the save folder keeps (7 coin counts, 63-byte
+  items; `vault.<slot>` with each saved game, as Darkness's), "Deposit
+  [Withdraw] [Vault] [Pool] [Share] Exit" (`vault.menu6`): Deposit = View
+  with Deposit in Drop's place, Withdraw = Take, Vault = the selected's
+  items, Pool / Share. View's coins are picked on its money panel (as
+  Secret's), its question green, the panel's " Select" (`coin_select`). A
+  head or body picture's raw 13s go through its colour map
+  (`pic::sf_keep13`). Every vault screen matches DOSBox pixel for pixel
+  (deposit, withdraw, share, the file's bytes).
+- **Not yet:** the sounds (TSR drivers, ZOUNDS.DAX), the journal.
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -2091,8 +2101,10 @@ the game's Settings (As Original: all of them).
   wilderness the movement keys step and turn without choosing Move first
   (the original's arrow keys need its move mode; the side-steps and Area
   do nothing there), and a tap on a square beside the party's arrow turns
-  that way, on the square ahead steps. No original mistake against AD&D
-  found so far (none behind Game Fixes yet).
+  that way, on the square ahead steps. After coins are put down from View
+  (the vault's Deposit, Drop) its Encumbrance shows the new load at once
+  (the original only when View opens again). No original mistake against
+  AD&D found so far (none behind Game Fixes yet).
 - **Controls and screens**: taps on menu words, list lines and combat
   squares; on-screen keys (movement pad, cursor keys - Up / Down / Left /
   Right / Select - Game, Look, and on 320x240 Map: the area map over

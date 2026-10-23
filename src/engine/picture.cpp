@@ -74,6 +74,8 @@ void sf_take_map(uint8_t flags, const uint8_t* part, uint8_t* map)
 } // namespace
 
 uint8_t* sf_map() { return g_sf_map; }
+bool g_sf_keep13 = true;
+void sf_keep13(bool on) { g_sf_keep13 = on; }
 void sf_map_reset()
 {
     for (int i = 0; i < 8; ++i) g_sf_map[i] = static_cast<uint8_t>((2 * i) | (2 * i + 1) << 4);
@@ -90,8 +92,9 @@ void sf_row(const uint8_t* planes, int cols, const uint8_t* map, uint8_t* packed
                 int v = 0;
                 for (int p = 0; p < 5; ++p) v |= ((planes[p * cols + col] >> bit) & 1) << p;
                 // (13 stays 13: the see-through value, tested before the map -
-                // the big wall sets map it to black; DOSBox)
-                const uint8_t m = v == 13 ? 13 : static_cast<uint8_t>((map[v >> 1] >> ((v & 1) * 4)) & 0x0F);
+                // the big wall sets map it to black; DOSBox. Not for a head
+                // or body picture: sf_keep13)
+                const uint8_t m = v == 13 && g_sf_keep13 ? 13 : static_cast<uint8_t>((map[v >> 1] >> ((v & 1) * 4)) & 0x0F);
                 two = static_cast<uint8_t>(two | (half ? m : m << 4));
             }
             packed[col * 4 + k / 2] = two;

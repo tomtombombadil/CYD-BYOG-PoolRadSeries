@@ -1231,8 +1231,12 @@ bool draw_block(pic::Canvas& c, const char* stem, int block, int x, int y)
         dax::RleReader r(src, d->idx, *e);
         uint8_t hdr[pic::kHeaderSize];
         pic::Header h;
+        // (a head or body: its 13s through its colour map - Gateway, DOSBox)
+        const bool person = !strcmp(stem, "HEAD") || !strcmp(stem, "BODY");
+        if (person) pic::sf_keep13(false);
         ok = r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_header(hdr, e->raw_size, h) &&
              pic::draw(r, h, 0, c, x, y);
+        pic::sf_keep13(true);
     }
     f.close();
     return ok;
@@ -1665,7 +1669,7 @@ void vault_saved(char slot)
 bool load_game(char slot)
 {
     load_problem = nullptr;
-    if (darkness_files()) vault_loaded(slot);
+    vault_loaded(slot);                     // (Darkness, Gateway: the slot's own vault)
     char name[24];
     save_file_name(slot, name, sizeof name);
     plat::File f;
@@ -3062,7 +3066,7 @@ bool write_file(const char* dir, const char* name, const uint8_t* p, size_t n)
 
 bool save_game(char slot)
 {
-    if (darkness_files()) vault_saved(slot);
+    vault_saved(slot);
     savegame::Header h;
     h.game_area = d->gs.game_area;
     const bool dungeon = vm->get(0x4BE6) != 0;
@@ -5404,7 +5408,8 @@ int  take_mode = 0, take_to = -1, view_by = -1;
 
 int coins_there(int k) { return take_mode ? pt->m[view_by].money(k) : ground->money[k]; }
 
-bool secret_coin_panel() { return take_mode && secret_files(); }
+// (Gateway's View too - DOSBox: the coin lit on its money panel)
+bool secret_coin_panel() { return take_mode && (secret_files() || gateway()); }
 // Darkness's vault Money: the selected's coins listed in the text area
 // (row 17, the panel's 18-character lines), the screen kept (DOSBox)
 bool dk_vault_coins() { return take_mode == 2 && darkness_files() && vault_on(); }
@@ -5459,7 +5464,8 @@ void draw_take(pic::Canvas& c)
     } else if (secret_coin_panel()) {
         // Secret's View (Trade / Drop / Deposit): the coin is picked on the
         // character's money panel (rows 9-15, columns 20-37), the screen kept
-        draw_character_secret(c, pt->m[view_by]);
+        if (gateway()) draw_character_gateway(c, pt->m[view_by]);
+        else draw_character_secret(c, pt->m[view_by]);
         plist.row0 = 9;
         plist.row1 = 15;
         plist.col0 = 20;
@@ -5478,6 +5484,8 @@ void draw_take(pic::Canvas& c)
         // (View's Trade / Drop: its words)
         snprintf(prompt, sizeof prompt, "%s", vword(profile::kVwCoinType));
         snprintf(sel, sizeof sel, "%s", iw(profile::kSelect));
+        // (Gateway: its own " Select" - a column after the prompt, DOSBox)
+        if (const uint32_t cs = profile::view_facts(d->prof->game).coin_select) ow(cs, sel, sizeof sel);
     } else {
         sw(profile::kCoinType, prompt, sizeof prompt);
         sw(profile::kSelectWord, sel, sizeof sel);
@@ -5516,7 +5524,7 @@ void ask_take(int i, pic::Canvas& c)
     } else {
         snprintf(take_prompt, sizeof take_prompt, "%s%s%s%s", a, d->money[take_coin], b[0] == ' ' ? "" : " ", b);
     }
-    if (dk_vault_coins()) {
+    if (dk_vault_coins() || (gateway() && secret_coin_panel())) {
         // (the line's highlight goes while it asks - DOSBox)
         char line[32];
         take_line(i, line, sizeof line);
@@ -6034,6 +6042,11 @@ void shop_tap(int x, int y, pic::Canvas& c)
             draw_buy(c);
             break;
         case 'V':
+            if (vault_on() && d->prof->vault.menu6) {
+                view_from = Screen::Shop;               // (Gateway's vault: Vault - the selected's items to put in it)
+                open_items(c);
+                break;
+            }
             view_character(c);
             break;
         case 'P':                       // Pool: everyone's coins on the counter
@@ -6043,6 +6056,9 @@ void shop_tap(int x, int y, pic::Canvas& c)
         case 'T':                       // Take: coins from the counter (the treasure: coins, items)
             if (treasure_on()) treasure_take(c);
             else open_take(c);
+            break;
+        case 'W':                       // Gateway's vault: Withdraw (as the treasure's Take)
+            if (vault_on()) treasure_take(c);
             break;
         case 'M':                       // the treasure's "Take: Money Items Exit"
             if (vault_on() && darkness_files() && strncmp(menu.prompt, "", 1) == 0) {
@@ -6070,7 +6086,8 @@ void shop_tap(int x, int y, pic::Canvas& c)
             }
             break;
         case 'D':                       // the treasure's Detect (Detect Magic memorized)
-            if (treasure_on()) treasure_detect(c);
+            if (vault_on() && d->prof->vault.menu6) view_character(c);     // (Gateway's vault: Deposit - View)
+            else if (treasure_on()) treasure_detect(c);
             break;
         case 'A':                       // Appraise: gems and jewellery
             open_appraise(c);
@@ -9870,7 +9887,8 @@ void draw_input(pic::Canvas& c)
     const bool name_after = engine_ask == EngineAsk::Name && screen == Screen::CreateName && (darkness_files() || gateway());
     const int x = input_engine ? static_cast<int>(strlen(input_prompt)) + (name_after ? 1 : 0) : 0;
     // (Darkness's coin questions: the prompt green, the number white - DOSBox)
-    const bool dk = input_engine && darkness_files() && engine_ask == EngineAsk::Coins;
+    // (Gateway's View's coin question: the prompt green too - DOSBox)
+    const bool dk = input_engine && (darkness_files() || (gateway() && take_mode)) && engine_ask == EngineAsk::Coins;
     if (input_engine) put(c, input_prompt, 0, text::kMenuRow, dk ? 10 : 13);
     // (Darkness's typed name is white - DOSBox)
     put(c, input_buf, x, text::kMenuRow,
