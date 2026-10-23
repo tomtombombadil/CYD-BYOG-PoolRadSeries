@@ -2725,7 +2725,9 @@ const char* comfort_help_text(int c)
                "action pose. Off: as the original.";
     case kCItemFixes:
         // (the game in hand's own fixes: the whole list doesn't fit a 320x240 screen)
-        if (game_dirs[game_sel].game == games::Game::PoolsOfDarkness)
+        // (Treasures: Darkness's engine, the same fixes)
+        if (game_dirs[game_sel].game == games::Game::PoolsOfDarkness ||
+            game_dirs[game_sel].game == games::Game::TreasuresOfTheSavageFrontier)
             return "The original game's mistakes made as AD&D has them: the races' stat adjustments at "
                    "character creation (the original never applies them); a cleric's experience bonus from "
                    "Wisdom 16; Power Word Blind lasts its worked-out time (the original blinds for good). "
