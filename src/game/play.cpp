@@ -9458,6 +9458,7 @@ void begin_wait(pic::Canvas& c)
         start_won(c);
         break;
     case ecl::Wait::Key:                // "press <enter>/<return> to continue"
+        journal_ready();                // (Darkness: JOURNAL n's sentence waits for a key)
         clear_menu_line(c);
         put(c, d->press_key, 0, text::kMenuRow, 15);
         break;

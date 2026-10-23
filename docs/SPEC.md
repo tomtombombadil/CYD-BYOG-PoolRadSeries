@@ -1689,6 +1689,15 @@ player's PDF, in scratch space); 58 entries and 23 tavern tales, each
 checked by eye (entry 37 is the atlas across a whole spread; the "legend
 for all maps" box belongs to none). Pool's scripts also say "TALK ENTRY 55
 IN YOUR JOURNAL" (the number first): the mention finder knows that too.
+2026-10-23 (branch journal-tables): **Secret** (72 entries), **Darkness**
+(99; the book has no entry 13) and **Gateway** (62) GOG journals -
+`make_table.py secret / darkness / gateway` (tesseract finds the
+"Journal Entry N" headings; maps across columns and the picture-and-quote
+boxes between Gateway's columns set by hand), every entry checked by eye.
+Secret prints the number as a text of its own (play::heard joins them);
+Darkness's JOURNAL n op says "...journal entry N." and waits for a key -
+the entry is offered there too. Treasures' GOG PDF (72 dpi grayscale,
+several pictures a page) needs more than one picture a page: not done.
 
 v0.10.0 did this in a browser page (pdf.js) on the player's PC; Tom
 (2026-10-09) wants no PC step: since v0.12.0 the board does it.
