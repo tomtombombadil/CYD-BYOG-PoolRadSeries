@@ -420,6 +420,9 @@ struct Profile {
         uint8_t         mu_by_slot_from, mu_by_slot_n, mu_all_levels, mu_all_slot;
         uint16_t        kit;
         uint8_t         kit_block;
+        // Gateway: a new character's experience (one class's) and platinum (0: Curse's)
+        uint32_t        start_xp = 0;
+        uint16_t        platinum = 0;
     } create;
 
     // Items: Use Trade Drop Halve Join Sell Id and their words (ItemWord order)
@@ -624,6 +627,9 @@ struct Profile {
         // 0 and 8 (Curse's palette while fighting) and the field's empty
         // squares are dark grey (DOSBox)
         bool     fight_unswapped = false;
+        // Gateway: while fighting (and in the icon editor) colour 8 shows
+        // black, 0 stays black (its palette then; DOSBox)
+        bool     eight_black = false;
         // Pools of Darkness: its pictures are VGA blocks (picture.h; the EGA
         // colours of each on a 4-bit canvas - the original's EGA mode)
         bool     vga = false;

@@ -3762,15 +3762,17 @@ void draw_big_icon()
 
 void present_play()
 {
-    // A fight swaps colours 0 and 8 (the field's black shows dark grey)
-    static bool fight_colours = false;
+    // A fight swaps colours 0 and 8 (the field's black shows dark grey);
+    // Gateway's shows 8 black
+    static int fight_colours = 0;
     if (play::fight_colours() != fight_colours) {
-        fight_colours = !fight_colours;
-        if (fight_colours) {
+        fight_colours = play::fight_colours();
+        frame::set_ega_palette();
+        if (fight_colours == 1) {
             frame::set_palette(0, pic::kEga[8]);
             frame::set_palette(8, pic::kEga[0]);
-        } else {
-            frame::set_ega_palette();
+        } else if (fight_colours == 2) {
+            frame::set_palette(8, pic::kEga[0]);
         }
         frame::present();
         big_force = true;

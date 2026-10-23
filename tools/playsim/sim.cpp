@@ -67,7 +67,7 @@ static void shot(const char* tag)
     FILE* f = fopen(name, "wb");
     if (!f) return;                     // no out/ folder: no snapshots
     fprintf(f, "P6 320 200 255\n");
-    const bool swap = play::fight_colours();     // the fight's colours: 0 and 8 swapped
+    const int swap = play::fight_colours();      // the fight's colours: 0 and 8 swapped (2: 8 black)
     // LCD: what the board's screen would show - only the rows the game
     // marked as changed reach it (play::take_dirty, as the viewer does)
     static std::vector<uint8_t> lcd(320 * 200, 0);
@@ -78,7 +78,7 @@ static void shot(const char* tag)
         play::take_dirty(y0, y1);
         if (y1 > y0) memcpy(lcd.data() + y0 * 320, all.data() + y0 * 320, (size_t)(y1 - y0) * 320);
     }
-    for (uint8_t v : (getenv("LCD") ? lcd : all)) { int k = v & 15; if (swap && (k == 0 || k == 8)) k ^= 8; const pic::Rgb& c = pic::kEga[k]; fputc(c.r, f); fputc(c.g, f); fputc(c.b, f); }
+    for (uint8_t v : (getenv("LCD") ? lcd : all)) { int k = v & 15; if (swap == 1 && (k == 0 || k == 8)) k ^= 8; else if (swap == 2 && k == 8) k = 0; const pic::Rgb& c = pic::kEga[k]; fputc(c.r, f); fputc(c.g, f); fputc(c.b, f); }
     fclose(f);
 }
 // ITEMOPS on the items screen: a digit picks list line n, a letter taps

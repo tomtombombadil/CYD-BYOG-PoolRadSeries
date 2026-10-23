@@ -1147,6 +1147,10 @@ int pm_row0()
     pm_flags(on);
     int n = 0;
     for (int i = 0; i < d->items; ++i) n += on[i];
+    // (Gateway's "initialize JoyStick/Mouse", always there in the original,
+    // counts though the engine leaves it out: the lines above it stay where
+    // the original has them - DOSBox)
+    if (gateway()) ++n;
     const int r = 23 - n;
     return r > d->prof->variant.party_menu_row ? d->prof->variant.party_menu_row : r < 12 ? 12 : r;
 }
@@ -3093,12 +3097,20 @@ void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt)
     screen = Screen::YesNo;
     text::build(menu, prompt, rw(Data::kYesNo));
     menu.selected = 1;          // the games start on No
-    if (gateway()) {
-        // (Gateway's questions: the prompt yellow, starting on Yes - its
-        // question routine, seg 0x116 entry 0x39 with 14, 10, 15; DOSBox)
-        menu.prompt_fg = 14;
-        menu.selected = 0;
-    }
+    // (Gateway's questions start on Yes - its question routine, seg 0x116
+    // entry 0x39, GAME.OVR 0x46203; DOSBox)
+    if (gateway()) menu.selected = 0;
+    show_menu_line(c);
+}
+
+// Gateway's questions about memorizing, scribing, overwriting a character
+// and stopping a spell have a yellow prompt (its question routine's callers
+// pass 14, the rest 13 - GAME.OVR 0x1F68C, 0x1F7C0, 0x1F8E6, 0x1FB58,
+// 0x22BBE, 0x361BB; DOSBox)
+void ask_yellow(pic::Canvas& c)
+{
+    if (!gateway()) return;
+    menu.prompt_fg = 14;
     show_menu_line(c);
 }
 
@@ -3124,6 +3136,7 @@ void remove_character(pic::Canvas& c, bool overwrite_ok)
         char t[60];
         snprintf(t, sizeof t, "%s%s%s", rw(Data::kOverwrite), base, rw(Data::kQmark));
         ask_yes_no(c, Ask::Overwrite, t);
+        ask_yellow(c);
         return;
     }
     new_base[0] = 0;
@@ -3801,6 +3814,8 @@ bool load_rules(Making*& m)
     fa.mu_by_slot_n = pc.mu_by_slot_n;
     fa.mu_all_levels = pc.mu_all_levels;
     fa.mu_all_slot = pc.mu_all_slot;
+    fa.start_xp = pc.start_xp;
+    fa.platinum = pc.platinum;
     const uint32_t at[9] = {pc.pick_race, pc.pick_gender, pc.pick_class, pc.pick_alignment, pc.select,
                             pc.reroll,    pc.char_name,   pc.save_q,     pc.qmark};
     const uint32_t ch_at[5] = {pc.pick_new, pc.no_qualify, pc.change_select, pc.now_first, pc.dot};
@@ -4047,6 +4062,9 @@ void ask_create(pic::Canvas& c, Ask what, const char* prompt)
     if (darkness_files()) {
         menu.selected = 0;
         show_menu_line(c);
+    } else if (gateway() && what == Ask::Reroll) {
+        menu.selected = 1;          // (Gateway's "Reroll stats?" is a menu of its own on No - DOSBox)
+        show_menu_line(c);
     }
 }
 
@@ -4188,6 +4206,7 @@ void save_new(pic::Canvas& c, bool overwrite_ok)
         char t[60];
         snprintf(t, sizeof t, "%s%s%s", rw(Data::kOverwrite), base, rw(Data::kQmark));
         ask_yes_no(c, Ask::OverwriteNew, t);
+        ask_yellow(c);
         return;
     }
     new_base[0] = 0;
@@ -6362,6 +6381,7 @@ void confirm_memorize(pic::Canvas& c, int word)
         mw(word, q, sizeof q);
     }
     ask_yes_no(c, Ask::MemorizeThese, q);
+    ask_yellow(c);
 }
 
 void show_grimoire(pic::Canvas& c)
@@ -6412,6 +6432,7 @@ void confirm_scribe(pic::Canvas& c, int word, Ask what)
         cw(word, q, sizeof q);
     }
     ask_yes_no(c, what, q);
+    ask_yellow(c);
 }
 
 void show_scrolls(pic::Canvas& c)
@@ -9380,16 +9401,20 @@ void draw_input(pic::Canvas& c)
     clear_menu_line(c);
     // (Darkness's name input starts a column after its prompt - DOSBox, its
     // creation's "Character name: ")
-    const int x = input_engine ? static_cast<int>(strlen(input_prompt)) +
-                                     (engine_ask == EngineAsk::Name && screen == Screen::CreateName && darkness_files() ? 1 : 0)
-                               : 0;
+    // (Gateway's too, the name white, its cursor the font's glyph 0 - an
+    // underline - in white: DOSBox)
+    const bool name_after = engine_ask == EngineAsk::Name && screen == Screen::CreateName && (darkness_files() || gateway());
+    const int x = input_engine ? static_cast<int>(strlen(input_prompt)) + (name_after ? 1 : 0) : 0;
     // (Darkness's coin questions: the prompt green, the number white - DOSBox)
     const bool dk = input_engine && darkness_files() && engine_ask == EngineAsk::Coins;
     if (input_engine) put(c, input_prompt, 0, text::kMenuRow, dk ? 10 : 13);
     // (Darkness's typed name is white - DOSBox)
     put(c, input_buf, x, text::kMenuRow,
-        dk ? 15 : input_engine ? (screen == Screen::CreateName && darkness_files() ? 15 : 13) : 10);
-    if (x + input_len < 40) c.fill((x + input_len) * 8, text::kMenuRow * 8, 8, 8, 15);     // the cursor
+        dk ? 15 : input_engine ? (name_after ? 15 : 13) : 10);
+    if (x + input_len < 40) {
+        if (gateway()) font::draw_glyph(c, d->font, 0, (x + input_len) * 8, text::kMenuRow * 8, 15, 0);
+        else c.fill((x + input_len) * 8, text::kMenuRow * 8, 8, 8, 15);     // the cursor
+    }
 }
 
 void start_won(pic::Canvas& c);
@@ -10235,7 +10260,8 @@ void icon_menu(pic::Canvas& c)
         if (ie->level == 6) menu.selected = 0;
         else keep_place(at);
     } else {
-        menu.selected = ie->level == 6 ? 1 : 0;
+        // (Gateway's on Yes too: its question routine - DOSBox)
+        menu.selected = ie->level == 6 && !gateway() ? 1 : 0;
     }
     show_menu_line(c);
 }
@@ -13159,7 +13185,7 @@ bool journal_seen(int i, char* kind, int* number)
     return true;
 }
 
-bool fight_colours() { return d && fight_palette_on; }
+int fight_colours() { return d ? fight_palette_on : 0; }
 
 bool exit_requested()
 {

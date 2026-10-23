@@ -134,9 +134,10 @@ void take_dirty(int& y0, int& y1);
 // The viewer's "show the changed rows now" (for a message before slow work
 // inside a tap, e.g. saving); unset: nothing
 void set_present_now(void (*fn)());
-// True while a fight is on screen: colours 0 and 8 swap (the games' combat
-// palette)
-bool fight_colours();
+// While a fight (or the icon editor) is on screen, the games' combat
+// palette: 1 colours 0 and 8 swap; 2 colour 8 shows black (Gateway's -
+// DOSBox); 0 none
+int fight_colours();
 
 // The game's sound (Settings: 1 Tandy, 2 PC speaker, 3 Off) and its volume
 // 0-255; the Menu's sound test plays one of the game's sound effects (the

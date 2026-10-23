@@ -1038,11 +1038,11 @@ void end_fight_art()
 }
 
 // ---- Drawing
-bool fight_palette_on = false;
+int fight_palette_on = 0;          // play::fight_colours()
 
 void palette_fight(bool on)
 {
-    fight_palette_on = on && !d->prof->variant.fight_unswapped;
+    fight_palette_on = !on ? 0 : d->prof->variant.eight_black ? 2 : d->prof->variant.fight_unswapped ? 0 : 1;
     dirty(0, pic::kScreenH);
 }
 
