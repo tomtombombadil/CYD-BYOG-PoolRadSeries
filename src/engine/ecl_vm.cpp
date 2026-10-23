@@ -966,6 +966,7 @@ bool Vm::dk_step(Stop& r)
         return true;
     case 0x23:                                  // END: the text window clear, the view back, EXIT
         if (!need(0)) return true;
+        if (set_.tr_ops) h_.clear_text();       // (Treasures: the text window empty - DOSBox)
         h_.redraw();
         restore_selected();
         stop_script();

@@ -1065,6 +1065,22 @@ int main(int argc, char** argv)
     if (getenv("TELE")) { int x, y, dd; sscanf(getenv("TELE"), "%d,%d,%d", &x, &y, &dd); play::d->gs.x = x; play::d->gs.y = y; play::d->gs.dir = dd; play::after_move_redraw(); }
     const char* moves = argc > 2 ? argv[2] : "FFFF";
     for (const char* m = moves; *m; ++m) {
+        if (*m == '/' && m[1]) {
+            // "/X": tap the menu line's word with key X (Encamp, its words ...)
+            const char k = *++m;
+            bool hit = false;
+            for (int i = 0; i < play::menu.count && !hit; ++i)
+                if (text::key(play::menu, i) == k) {
+                    int cx, cy;
+                    text::item_cell(play::menu, i, &cx, &cy);
+                    play::tap(cx * 8 + 2, cy * 8 + 2, C);
+                    hit = true;
+                }
+            if (!hit) printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s);
+            settle();
+            { char t[16]; snprintf(t, sizeof t, "word_%c", k); shot(t); }
+            continue;
+        }
         play::Act a = play::Act::Forward;
         switch (*m) {
         case 'F': a = play::Act::Forward; break;

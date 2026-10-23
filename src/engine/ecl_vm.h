@@ -156,6 +156,7 @@ public:
     // Treasures (op 0x42): WALLDEF1 block `block` into wall slot `slot`
     // (0-2) and on, with its own 8X8D1 tiles; block < 0 empties the slot
     virtual void load_slot(int slot, int block) { (void)slot; (void)block; }
+    virtual void clear_text() {}                        // the text window emptied
     virtual void slots_done() {}                        // (after a LOAD 3D's slots: their tiles)
     virtual void log(const char* what) = 0;
 };

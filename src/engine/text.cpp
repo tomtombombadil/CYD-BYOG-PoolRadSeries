@@ -222,7 +222,7 @@ void draw(pic::Canvas& c, const font::Font& f, const Menu& m, const MenuColors& 
             if (x >= font::kCols) continue;
             const int g = font::glyph_of(f, m.s[i]);
             if (sel >= 0 && i >= m.start[sel] && i <= m.end[sel])
-                font::draw_glyph(c, f, g, x * 8, row * 8, 0, col.highlight);
+                font::draw_glyph(c, f, g, x * 8, row * 8, col.plain_sel ? col.highlight : 0, col.plain_sel ? 0 : col.highlight);
             else
                 font::draw_glyph(c, f, g, x * 8, row * 8, is_key(m.s[i]) ? col.highlight : col.normal, 0);
             ++x;
@@ -237,7 +237,7 @@ void draw(pic::Canvas& c, const font::Font& f, const Menu& m, const MenuColors& 
     for (int i = 0; m.s[i] && x < font::kCols; ++i, ++x) {
         const int g = font::glyph_of(f, m.s[i]);
         if (sel >= 0 && i >= m.start[sel] && i <= m.end[sel])
-            font::draw_glyph(c, f, g, x * 8, kMenuRow * 8, 0, col.highlight);
+            font::draw_glyph(c, f, g, x * 8, kMenuRow * 8, col.plain_sel ? col.highlight : 0, col.plain_sel ? 0 : col.highlight);
         else
             font::draw_glyph(c, f, g, x * 8, kMenuRow * 8, is_key(m.s[i]) ? col.highlight : col.normal, 0);
     }

@@ -2371,7 +2371,7 @@ const Profile kProfiles[] = {
                .ids = {0, 0, 2, 9, 6, 5, 9, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .quiet_turns = true},
      .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .treasure_pic = 129, .camp_pic = 128, .appraise_div = 2,
                  .fight_unswapped = true, .vga = true, .darkness_files = true, .party_menu_col = 9,
-                 .tr = true, .pic_split = 78, .title_ega = {4, 5}},
+                 .tr = true, .pic_split = 78, .title_ega = {4, 5}, .camp_pic_in = 132},
      // (its font: 8X8D0 block 201 with BORD block 8's text glyphs - the front end)
      .joined = kTreasuresJoined, .n_joined = sizeof kTreasuresJoined / sizeof kTreasuresJoined[0],
      .vault = {.file = "TMPVAULT.DAT", .slot_file = "VAULT%c.DAT", .coins = 3, .item_size = 63}},
@@ -2408,12 +2408,18 @@ const ViewFacts& view_facts(games::Game g)
                                          kP | 0xB7BD, 0x26B9A, 0x26BA6, 0x26BB4, 0x26C9F, 0x26CAB, 0x26CBB,
                                          0x26CC9, kP | 0xB7E6},
                                         0x6D, 0x6E, kP | 0xCBC0};
+    // Treasures: Darkness's words found again (port facts P1)
+    static const ViewFacts kTreasures = {{0, 0, 0, 0, 0, 0, kP | 0xDAC0, kP | 0xDA96, kP | 0xD99A, kP | 0xDAEA,
+                                          kP | 0xDD8A, 0x2F753, 0x2F75F, 0x2F76D, 0x2F860, 0x2F86C, 0x2F87C,
+                                          0x2F88A, kP | 0xDDB4},
+                                         0x6D, 0x6E, kP | 0xF208};
     static const ViewFacts kNone = {};
     switch (g) {
     case games::Game::CurseOfTheAzureBonds: return kCurse;
     case games::Game::PoolOfRadiance: return kPool;
     case games::Game::SecretOfTheSilverBlades: return kSecret;
     case games::Game::PoolsOfDarkness: return kDarkness;
+    case games::Game::TreasuresOfTheSavageFrontier: return kTreasures;
     default: return kNone;
     }
 }

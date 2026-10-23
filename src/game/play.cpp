@@ -698,6 +698,17 @@ void put(pic::Canvas& c, const char* s, int col, int row, uint8_t fg)
     font::draw_text(c, d->font, s, col, row, fg, 0);
 }
 
+// A list's highlighted line: black on white (Treasures: white on black - DOSBox)
+void hl_text(pic::Canvas& c, const char* s, int col, int row)
+{
+    if (d->prof->variant.tr) {
+        put(c, s, col, row, 15);
+        return;
+    }
+    c.fill(col * 8, row * 8, static_cast<int>(strlen(s)) * 8, 8, 15);
+    font::draw_text(c, d->font, s, col, row, 0, -1);
+}
+
 uint8_t sky_colour()
 {
     const ecl::GameState& g = d->gs;
@@ -1071,7 +1082,9 @@ void show_menu_line(pic::Canvas& c)
         dirty_rows(text::kMenuRow - 1, text::kMenuRow - 1);
     }
     menu_was_two = text::two_rows(menu);
-    text::draw(c, d->font, menu);
+    text::MenuColors mc;
+    mc.plain_sel = d->prof->variant.tr;     // (Treasures: the chosen word white - DOSBox)
+    text::draw(c, d->font, menu, mc);
     dirty_rows(menu_was_two ? text::kMenuRow - 1 : text::kMenuRow, text::kMenuRow);
 }
 
@@ -1403,8 +1416,7 @@ void draw_party_menu(pic::Canvas& c)
     if (keys_used && pm_lines) {
         // the cursor keys' line, highlighted as the games' lists are
         const char* it = d->item[pm_item[pm_sel]];
-        c.fill(col0 * 8, (12 + pm_sel) * 8, static_cast<int>(strlen(it)) * 8, 8, 15);
-        font::draw_text(c, d->font, it, col0, 12 + pm_sel, 0, -1);
+        hl_text(c, it, col0, 12 + pm_sel);
     }
     pm_prompt(c);
     dirty(0, pic::kScreenH);
@@ -2086,7 +2098,7 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
         put(c, t, 7, 7, 15);
     }
     commas(static_cast<unsigned long>(ch.exp()), t, sizeof t);
-    right(t, 32, 7, 10);
+    right(t, d->prof->variant.tr ? 31 : 32, 7, 10);       // (Treasures: a column further left - DOSBox)
     for (int i = 0; i < 6; ++i) {
         put(c, d->v_stat[i], 1, 9 + i, 10);
         const int v = ch.stat(i);
@@ -2309,8 +2321,7 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
         if (l.top + r == l.index) {
             int lead = 0;
             while (line[lead] == ' ') ++lead;
-            c.fill((l.col0 + lead) * 8, row * 8, static_cast<int>(n - lead) * 8, 8, 15);
-            font::draw_text(c, d->font, line + lead, l.col0 + lead, row, 0, -1);
+            hl_text(c, line + lead, l.col0 + lead, row);
         } else {
             put(c, line, l.col0, row, screen == Screen::CreatePick && l.top + r == 0 ? 13 : 10);
         }
@@ -2989,6 +3000,13 @@ void save_tap(int x, int y, pic::Canvas& c)
 
 void draw_own_pic(int id);
 
+// The camp's picture (Treasures: its own indoors - PIC 132, DOSBox)
+int camp_pic()
+{
+    const auto& v = d->prof->variant;
+    return v.camp_pic_in && geo::flags(d->map, d->gs.x, d->gs.y) >= 0x80 ? v.camp_pic_in : v.camp_pic;
+}
+
 bool no_rest_here() { return darkness_files() && vm->get(0x2B) == 1 && vm->get(0x2C) >= 100; }
 
 // The camp menu's words (without Rest and Fix where no rest is possible)
@@ -3027,7 +3045,7 @@ void draw_camp(pic::Canvas& c)
     if (bigpic < 0) {
         draw_frame(c);
         draw_view(c);
-        if (d->prof->variant.camp_pic) draw_own_pic(d->prof->variant.camp_pic);
+        if (d->prof->variant.camp_pic) draw_own_pic(camp_pic());
         draw_panel(c);
     }
     text::clear(c, text::kTextArea);
@@ -6308,8 +6326,7 @@ void draw_spells(pic::Canvas& c)
         if (sl.count[i] > 1) snprintf(line, sizeof line, "  %s (%d)", spell_name(sl.id[i]), sl.count[i]);
         else snprintf(line, sizeof line, "  %s", spell_name(sl.id[i]));
         if (i == sl.sel && !sl.learning) {
-            c.fill(3 * 8, row * 8, static_cast<int>(strlen(line) - 2) * 8, 8, 15);
-            font::draw_text(c, d->font, line + 2, 3, row, 0, -1);
+            hl_text(c, line + 2, 3, row);
         } else {
             put(c, line, 1, row, 10);
         }
@@ -7145,7 +7162,7 @@ void draw_whom(pic::Canvas& c)
         draw_frame(c);
         draw_view(c);
         // (Darkness: the camp's picture in the view again - DOSBox)
-        if (camping && darkness_files() && d->prof->variant.camp_pic) draw_own_pic(d->prof->variant.camp_pic);
+        if (camping && darkness_files() && d->prof->variant.camp_pic) draw_own_pic(camp_pic());
         draw_panel(c);
         text::clear(c, text::kTextArea);
         dirty_rows(17, 22);
@@ -7577,8 +7594,7 @@ void draw_effects(pic::Canvas& c)
         if (r == last) {
             const char* u = t[0] == ' ' ? t + 1 : t;
             const int col = t[0] == ' ' ? 2 : 1;
-            c.fill(col * 8, (4 + r) * 8, static_cast<int>(strlen(u)) * 8, 8, 15);
-            font::draw_text(c, d->font, u, col, 4 + r, 0, -1);
+            hl_text(c, u, col, 4 + r);
         } else {
             put(c, t, 1, 4 + r, el->colour[el->top + r]);
         }
@@ -8925,6 +8941,12 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
     if (!d->ac_hp_head[0]) strcpy(d->ac_hp_head, "AC  HP");
     if (!d->v_exit[0]) strcpy(d->v_exit, "Exit");
     if (pp.camp_menu) text::read_pascal(exe, info, pp.camp_menu, d->w_camp_menu, sizeof d->w_camp_menu);
+    if (d->prof->variant.tr) {
+        // Treasures: its menus show only the words their callers enable (its
+        // o121+0x1134) - the camp's lone "C" never (DOSBox)
+        char* t = strstr(d->w_camp_menu, " C ");
+        if (t) memmove(t, t + 2, strlen(t + 2) + 1);
+    }
     if (d->prof->variant.dk_overland_pics &&
         exepack::read(exe, info, d->prof->create.ds_image + d->prof->variant.dk_overland_pics, d->dk_ov_pics, 5) !=
             exepack::Status::Ok)
@@ -9313,6 +9335,13 @@ struct Host : ecl::Host {
         d->gs.roof = geo::flags(d->map, d->gs.x, d->gs.y);
         draw_view(*cv);
         draw_position(*cv);
+    }
+    void clear_text() override
+    {
+        text::clear(*cv, text::kTextArea);
+        w.col = w.r.x0;
+        w.row = w.r.y0;
+        dirty_rows(17, 22);
     }
     void clear_box() override
     {
@@ -9948,8 +9977,7 @@ void draw_list_menu(pic::Canvas& c)
         if (row > text::kTextArea.y1) break;
         c.fill(8, row * 8, 38 * 8, 8, 0);
         if (i == list_sel) {
-            c.fill(8, row * 8, static_cast<int>(strlen(vm->item(i))) * 8, 8, 15);
-            font::draw_text(c, d->font, vm->item(i), 1, row, 0, -1);
+            hl_text(c, vm->item(i), 1, row);
         } else {
             put(c, vm->item(i), 1, row, 10);
         }

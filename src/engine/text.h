@@ -122,6 +122,7 @@ constexpr int kMaxItems = 20;
 
 struct MenuColors {
     uint8_t highlight = 15, normal = 10, prompt = 13;   // the games' usual menu colours
+    bool    plain_sel = false;      // Treasures: the chosen word white on black, not black on white
 };
 
 // A menu on two rows (Pools of Darkness's fight menu, "Move Aim Use Cast

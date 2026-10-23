@@ -651,6 +651,8 @@ struct Profile {
         // The title's picture shown in the 16-colour mode instead of
         // title_ega[0] (Treasures: block 5 for 4; 0: none)
         uint8_t  title_ega[2] = {};
+        // The camp's picture indoors (0: camp_pic everywhere; Treasures 132)
+        uint8_t  camp_pic_in = 0;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;
