@@ -1714,8 +1714,8 @@ segment at image 0x4C70; run as `GAME UseStart`) + GAME.OVR (51 overlays),
   (`variant.field_swap`; the icon editor's 8 black, `eight_black`), the
   treasure's picture (PIC 1) and menu. A fight's screens, pages and
   results match DOSBox. The budget fight (`RUNAT=91B1 FIGHT=1`, 6
-  bandits): 137.0 KB at its highest; 30 goblins (MONSWAP=6:8:30, 22
-  placed): 135.5 KB.
+  bandits): 137.4 KB at its highest; 30 goblins (MONSWAP=6:8:30, 22
+  placed): 135.9 KB (sounds included).
 - **Behaviour checks:** sweep's `behave gateway` (-DCYD_TEST_HOOKS
   -DBEHAVE_GATEWAY, GAME=8; ONLY= create, menus): every race / class /
   alignment / sex made with the dice high and low (experience, platinum,
@@ -1738,7 +1738,7 @@ segment at image 0x4C70; run as `GAME UseStart`) + GAME.OVR (51 overlays),
   Matches DOSBox pixel for pixel (the map, the arrow, the position and
   clock, the move mode's line) along the same walk and back into Yartar
   (0,7 E at the west gate); encounters and outdoor fights run (the
-  snakes' fight 124.5 KB at its highest). Open: after the wilderness's
+  snakes' fight 129.3 KB at its highest, its sounds included). Open: after the wilderness's
   start the original has MERL selected, the engine ARNOLD.
 - **The vault** (Yartar's, 9,5: SAVE 1 [4CFC] + COMBAT as Secret's;
   GAME.OVR overlay 0x4E7F): the treasure screen under the keeper's head and
