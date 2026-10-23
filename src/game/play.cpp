@@ -81,6 +81,7 @@ struct Data {
     uint8_t*       tr_frame = nullptr;
     uint8_t*       tr_pieces = nullptr;
     uint8_t        tr_over = 0;             // Treasures: the overland's OVER.DAX map (0: none)
+    uint16_t       tr_max_age[8] = {};      // Treasures: the races' greatest ages (old age after a fight)
     font::Font     font;
     font::Font*    alt_font = nullptr;      // the player's Pools of Darkness font while it's chosen
     bool           alt_tried = false;       // (its file was looked for)
@@ -9521,6 +9522,12 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
     if (pp.camp_menu) text::read_pascal(exe, info, pp.camp_menu, d->w_camp_menu, sizeof d->w_camp_menu);
     if (d->prof->variant.tr_crown_menu)
         text::read_pascal(exe, info, d->prof->variant.tr_crown_menu, d->w_crown_menu, sizeof d->w_crown_menu);
+    if (d->prof->variant.tr_max_age) {
+        uint8_t ages[16];
+        if (exepack::read(exe, info, d->prof->create.ds_image + d->prof->variant.tr_max_age, ages, sizeof ages) ==
+            exepack::Status::Ok)
+            for (int k = 0; k < 8; ++k) d->tr_max_age[k] = static_cast<uint16_t>(ages[2 * k] | ages[2 * k + 1] << 8);
+    }
     if (d->prof->variant.tr) {
         // Treasures: its menus show only the words their callers enable (its
         // o121+0x1134) - the camp's lone "C" never (DOSBox)
