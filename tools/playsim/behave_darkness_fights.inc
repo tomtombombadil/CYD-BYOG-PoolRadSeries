@@ -588,6 +588,10 @@ void ability_checks()
             want += " " + std::to_string(j < 6 ? fv("kalistes", 2 * j) * fv("kalistes", 2 * j + 1) + fv("kalistes", 12) : 6);
         expect(F_, "Kalistes: seven blows - the six weapons by number (highest dice), then its own 1d6", got == want,
                "%s, the original's%s", got.c_str(), want.c_str());
+        // (each of the six blows names its weapon - with "+4" in the panel, facts L7)
+        std::string wn;
+        for (int j = 0; j < at.n; ++j) wn += " " + std::to_string(at.hits[j].weapon);
+        expect(F_, "Kalistes: the blows' weapons shown (1-6, the seventh none)", wn == " 1 2 3 4 5 6 0", "%s", wn.c_str());
     }
 
     // Vorpal (0x73, ovr 0x1D8C0): after attack 1's hit a d20 of 17+ beheads -
@@ -644,6 +648,18 @@ void ability_checks()
             snprintf(w, sizeof w, "paralysing gaze: a d20 of %d, save 15 at +3%s", d20, proof ? ", gaze-proof" : "");
             expect(F_, w, events(ev, n, combat::Ev::ParaGazes, A) == 1 && (aff_time(C, fx.mon.paralyzed) == fv("pgaze", 2)) == fails,
                    "gazes %d, paralysed for %d", events(ev, n, combat::Ev::ParaGazes, A), aff_time(C, fx.mon.paralyzed));
+            // (the picture in flight: the program's slot 18 - COMSPR 13 + 5, the lightning's - no sound, 45 a step: L7)
+            int pic = -1, delay = -1, silent = -1;
+            for (int j = 0; j < n; ++j)
+                if (ev[j].ev == combat::Ev::Fly) {
+                    pic = play::comspr(ev[j].pic);
+                    delay = ev[j].delay;
+                    silent = ev[j].kind;
+                }
+            if (d20 == 11 && !proof)
+                expect(F_, "the paralysing gaze flies COMSPR slot 18's picture, silent, 45 a step",
+                       pic + 13 == fv("gaze_fly", 0) && delay == fv("gaze_fly", 2) && silent == 1, "COMSPR %d delay %d silent %d",
+                       pic, delay, silent);
         }
     }
 
@@ -663,6 +679,14 @@ void ability_checks()
             }
         expect(F_, "the vampire's gaze: Charm Person (spell 0x0A) at its pick, the turn over",
                events(ev, n, combat::Ev::VampGazes, A) == 1 && cast_at == C && sp == 0x0A && ends, "at %d spell %d", cast_at, sp);
+        int pic = -1, delay = -1;
+        for (int j = 0; j < n; ++j)
+            if (ev[j].ev == combat::Ev::Fly) {
+                pic = play::comspr(ev[j].pic);
+                delay = ev[j].delay;
+            }
+        expect(F_, "the vampire's gaze flies COMSPR slot 17's picture (the spell's), 50 a step",
+               pic + 13 == fv("gaze_fly", 1) && delay == fv("gaze_fly", 3), "COMSPR %d delay %d", pic, delay);
     }
 
     // The beholder (0x75, ovr 0x23275): the rays by distance - 2 disintegrate
@@ -682,6 +706,27 @@ void ability_checks()
                             : events(ev, n, combat::Ev::RayStone, A) == 1 && events(ev, n, combat::Ev::RayStoned, C) == 1 &&
                                   F(C).status() == party::Stoned;
         expect(F_, w, ok, "status %d, %d events", F(C).status(), n);
+    }
+    // ... its target its own pick (ovr 0x23130: a random one in sight, any
+    // distance, kept while it stands): the dice at their highest pick the
+    // last in the list - the farther one, stoned first; then the other
+    {
+        two(0);
+        put(A, 1, 14, 10, 200);
+        put(C, 0, 12, 10, 200);
+        put(1, 0, 11, 10, 200);
+        add_aff(A, fx.mon.rays, 0);
+        dice(1, 1);
+        combat::Event ev[16];
+        bool ends = false;
+        const int n = combat::special(BT, play::fg->t, A, play::rng, ev, 16, &ends);
+        dice_off();
+        int first = -1;
+        for (int j = 0; j < n && first < 0; ++j)
+            if (ev[j].ev == combat::Ev::RayStone || ev[j].ev == combat::Ev::RayDisintegrate) first = static_cast<int>(ev[j].ev);
+        expect(F_, "the beholder's own pick: the farther one (the dice's) stoned first, then the nearer disintegrated",
+               first == static_cast<int>(combat::Ev::RayStone) && F(1).status() == party::Stoned && F(C).status() == party::Gone,
+               "first ray %d, status %d / %d", first, F(1).status(), F(C).status());
     }
 #undef BT
 }
