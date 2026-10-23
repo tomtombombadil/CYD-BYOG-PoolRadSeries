@@ -6999,9 +6999,16 @@ void say_line(pic::Canvas& c, int who, const char* text)
 {
     char nm[20], t[64];
     pt->m[who].name(nm, sizeof nm);
-    snprintf(t, sizeof t, "%s %s", nm, text);
     c.fill(8, 17 * 8, 38 * 8, 6 * 8, 0);
-    put(c, t, 1, 19, 10);
+    if (darkness_files()) {
+        // (Darkness: the name in cyan on a line of its own, the words under
+        // it - DOSBox, camp Neutralize Poison "DOMINIC" / "IS UNAFFECTED")
+        put(c, nm, 1, 18, 11);
+        put(c, text, 1, 19, 10);
+    } else {
+        snprintf(t, sizeof t, "%s %s", nm, text);
+        put(c, t, 1, 19, 10);
+    }
     dirty_rows(17, 22);
 }
 
@@ -7067,6 +7074,8 @@ void draw_whom(pic::Canvas& c)
         cr.on_camp = true;
         draw_frame(c);
         draw_view(c);
+        // (Darkness: the camp's picture in the view again - DOSBox)
+        if (camping && darkness_files() && d->prof->variant.camp_pic) draw_own_pic(d->prof->variant.camp_pic);
         draw_panel(c);
         text::clear(c, text::kTextArea);
         dirty_rows(17, 22);
@@ -7176,9 +7185,11 @@ void choose_spell(int spell, pic::Canvas& c)
     snprintf(t, sizeof t, "%s %s", nm, w1);
     c.fill(8, 17 * 8, 38 * 8, 6 * 8, 0);
     put(c, t, 1, 19, 10);
+    if (darkness_files()) put(c, nm, 1, 19, 11);        // (Darkness: the name in cyan - DOSBox)
     put(c, spell_name(spell), 1, 20, 10);
     dirty_rows(17, 22);
-    clear_menu_line(c);
+    if (darkness_files()) menu_on = false;      // (Darkness: its menu line stays drawn meanwhile - DOSBox)
+    else clear_menu_line(c);
     screen = Screen::Cast;
     cr.stage = CastRun::Casts;
     if (miscast) {

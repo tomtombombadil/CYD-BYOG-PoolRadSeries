@@ -1566,7 +1566,11 @@ the scripts' changed ops, the rule tables, fights, the rest.
   of the best hit points and experience), Protection from Fire (a ranger
   its own effect, others Resist Fire's); the time routine's rolled times
   (Mind Blank 1440). Checks: ONLY=camp (oracle: the program's rows and the
-  handlers' own words, Restoration worked out in scratch).
+  handlers' own words, Restoration worked out in scratch). On screen as
+  DOSBox shows it (Neutralize Poison on Dominic, save A: pixel for pixel):
+  "NAME casts" with the name in cyan and the menu line left up, the camp's
+  picture in the view while it asks whom, each result as the name (cyan)
+  on a line of its own and the words under it.
 - **The fights' smaller gaps** (facts L7): the gazes (stone, confusion,
   paralysis) fly the lightning's picture (COMSPR 5) without its sound; the
   vampire's the spell's at 50 a step; Kalistes' blow shows its weapon and
