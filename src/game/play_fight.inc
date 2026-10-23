@@ -899,6 +899,15 @@ void load_tiles(bool indoors)
 {
     for (uint8_t* t : fg->tile)
         if (t) memset(t, 0, tile_bytes());
+    if (d->prof->variant.tr) {
+        // Treasures (its ovl 0x68 +0xEFA): in 3D and not the overland (game
+        // byte 0x3F) DUNGCOM block = game byte 0x51, or wall slot 0's block;
+        // else WILDCOM block 0
+        const uint8_t* gb = d->gs.area1;
+        if (gb[0x21] && !gb[0x3F]) load_vga_frames("DUNGCOM.DAX", gb[0x51] ? gb[0x51] : d->save.look & 0xFF);     // (the slots kept in save.look)
+        else load_vga_frames("WILDCOM.DAX", 0);
+        return;
+    }
     if (d->prof->variant.vga) {
         const int region = vm->get(0x3A) & 0xFF;
         if (indoors) load_vga_frames("DUNGCOM.DAX", d->save.look ? d->save.look : 1);
