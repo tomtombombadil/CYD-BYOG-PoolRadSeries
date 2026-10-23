@@ -283,6 +283,95 @@ void build_indoors(Battle& b, const Tables& t, const geo::Map& m, int px, int py
         for (int ddx = -6; ddx <= 6; ++ddx) draw_block(b, s, px + ddx, py + ddy, ddx, ddy, d);
 }
 
+void build_outdoors_dk(Battle& b, const Tables& t, bool river, create::Dice& d)
+{
+    b.indoors = false;
+    const int W = 50, H = 25;
+    auto at = [&](int x, int y) -> uint8_t& { return b.ground[y][x]; };
+    // (a square's picture: the ground entry's fourth byte - 0x25 the plain grass)
+    auto plain = [&](int x, int y) { const uint8_t* g = tile(b, t, x, y); return g && g[3] == 0x25; };
+    for (int y = 0; y < kH; ++y)
+        for (int x = 0; x < kW; ++x) b.ground[y][x] = 0x45;
+    const int f = t.terrain[15];
+    // The river (ovr 0xBEE9): from a column 34 - 5d4 (brought down to one 2
+    // short of a multiple of 7) running down and right; a ford (0xBE24)
+    // when a d20 is at most the rows since the last one
+    if (river) {
+        int col = 0x22 - d.roll(4, 5);
+        while ((col + 2) % 7 > 0) --col;
+        int since = 1;
+        for (int y = 0; y < H; ++y) {
+            if (col > 0x31) continue;
+            if (col >= 0) at(col, y) = 0x34;
+            if (col < 0x31) {
+                if (d.roll(20, 1) <= since) {
+                    const int c = col + 1;
+                    if (c >= 0) at(c, y) = 0x3A;
+                    if (c < 0x31) at(c + 1, y) = static_cast<uint8_t>(0x3A + d.roll(2, 1));
+                    if (c + 1 < 0x31) at(c + 2, y) = static_cast<uint8_t>(0x3A + d.roll(2, 1));
+                    if (c + 2 < 0x31) at(c + 3, y) = 0x3D;
+                    since = 1;
+                } else {
+                    ++since;
+                    if (col + 1 >= 0) at(col + 1, y) = static_cast<uint8_t>(0x34 + d.roll(2, 1));
+                    if (col + 1 < 0x31 && col + 2 >= 0) at(col + 2, y) = 0x37;
+                    if (col + 2 < 0x31 && col + 3 >= 0) at(col + 3, y) = 0x37;
+                    if (col + 3 < 0x31 && col + 4 >= 0) at(col + 4, y) = static_cast<uint8_t>(0x37 + d.roll(2, 1));
+                }
+            }
+            if (col + 4 < 0x31 && col + 5 >= 0) at(col + 5, y) = 0x34;
+            ++col;
+        }
+    }
+    // Trees and logs (ovr 0xC087): column by column
+    if (!(f & 0x80)) {
+        int n = 5;
+        if (f & 0x02) n -= 3;
+        if (f & 0x04) n -= 3;
+        if (f & 0x40) n += 2;
+        if (f & 0x08) n += 5;
+        if (n < 0) n = 1;
+        for (int x = 0; x < W; ++x)
+            for (int y = 1; y < H; ++y) {
+                if (!plain(x, y) || !plain(x, y - 1) || n < d.roll(100, 1)) continue;
+                if (n < d.roll(100, 1)) {
+                    at(x, y - 1) = static_cast<uint8_t>(0x1F + d.roll(5, 1));
+                    at(x, y) = static_cast<uint8_t>(0x24 + d.roll(5, 1));
+                } else {
+                    at(x, y) = static_cast<uint8_t>(0x29 + d.roll(2, 1));
+                }
+            }
+    }
+    // Scattered ground (ovr 0xC39C, a square 0xC21E): by the density's band
+    int D = 50;
+    if (f & 0x10) D += 10;
+    if (f & 0x20) D += 30;
+    if (f & 0x40) D += 20;
+    if (f & 0x04) D -= 10;
+    if (f & 0x02) D -= 20;
+    if (f & 0x80) D -= 50;
+    static const uint8_t kBand[5][5] = {{0, 0, 0, 0x1E, 0x0F}, {0, 1, 5, 0x14, 0x0A}, {0, 2, 5, 0x0A, 5},
+                                        {0x0A, 2, 0x0A, 0x0A, 1}, {0x0F, 5, 0x0F, 0x0A, 1}};
+    int band = -1;
+    if (D >= -30 && D <= 9) band = 0;
+    else if (D >= 10 && D <= 29) band = 1;
+    else if (D >= 30 && D <= 69) band = 2;
+    else if (D >= 70 && D <= 89) band = 3;
+    else if (D >= 90 && D <= 110) band = 4;
+    if (band < 0) return;
+    const uint8_t* k = kBand[band];
+    for (int x = 0; x < W; ++x)
+        for (int y = 0; y < H; ++y) {
+            if (!plain(x, y)) continue;
+            const int r = d.roll(100, 1);
+            if (r <= k[0]) at(x, y) = static_cast<uint8_t>(0x31 + d.roll(2, 1));
+            else if (r <= k[0] + k[1]) at(x, y) = 0x2C;
+            else if (r <= k[0] + k[1] + 1) at(x, y) = static_cast<uint8_t>(0x2C + d.roll(5, 1));
+            else if (r <= k[0] + k[1] + k[2] + k[3]) at(x, y) = 0x44;
+            else if (r <= k[0] + k[1] + k[2] + k[3] + k[4]) at(x, y) = static_cast<uint8_t>(0x3D + d.roll(6, 1));
+        }
+}
+
 void build_outdoors(Battle& b, const Tables& t, int city, create::Dice& d)
 {
     b.indoors = false;

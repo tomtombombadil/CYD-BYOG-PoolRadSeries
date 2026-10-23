@@ -483,6 +483,38 @@ void menu_checks()
     }
 }
 
+
+// ---- The outdoor field (facts L9; GAME.OVR 0xC51A): plain grass 0x45, the
+// river (0x34 banks, 0x35-0x39 water, fords 0x3A-0x3D) only when the
+// area's script place 0x33 says so, trees / logs (0x20-0x2B) and scattered
+// ground; every fighter placed on it
+void field_checks()
+{
+    if (!dkfight::new_fight()) {
+        expect(D_, "a fight for the outdoor field", false);
+        return;
+    }
+    combat::Battle& b = play::fg->b;
+    for (bool river : {false, true}) {
+        combat::build_outdoors_dk(b, play::fg->t, river, play::rng);
+        int water = 0, plain = 0, rows = 0;
+        for (int y = 0; y < 25; ++y) {
+            bool bank = false;
+            for (int x = 0; x < 50; ++x) {
+                const int g = b.ground[y][x];
+                if (g >= 0x34 && g <= 0x39) ++water;
+                if (g == 0x34) bank = true;
+                if (g == 0x45) ++plain;
+            }
+            rows += bank;
+        }
+        char w[120];
+        snprintf(w, sizeof w, "the outdoor field %s a river: plain grass the most%s", river ? "with" : "without",
+                 river ? ", banks down the field" : ", no water");
+        expect(D_, w, plain > 600 && (river ? rows >= 20 : water == 0), "plain %d water %d rows %d", plain, water, rows);
+    }
+}
+
 void checks(bool (*want)(const char*))
 {
     if (want("drain")) {
@@ -492,6 +524,7 @@ void checks(bool (*want)(const char*))
     if (want("fixes")) fixes_checks();
     if (want("camp")) camp_checks();
     if (want("menus")) menu_checks();
+    if (want("field")) field_checks();
 }
 
 } // namespace dkleft

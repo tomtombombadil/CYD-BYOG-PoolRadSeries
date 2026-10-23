@@ -3323,6 +3323,10 @@ void fight_start(pic::Canvas& c)
     if (d->prof->variant.overland_map && (d->gs.script < over || d->gs.script > over + 2)) b.indoors = true;
     if (b.indoors) combat::build_indoors(b, fg->t, d->map, d->gs.x, d->gs.y, rng);
     else if (d->prof->variant.overland_map) combat::build_outdoors_pool(b, pool_place_flags(), rng);
+    else if (darkness_files()) {
+        combat::build_outdoors_dk(b, fg->t, vm->get(0x33) != 0, rng);   // (its own: facts L9)
+        plat::log("[fight] outdoors: river %d, region %d\n", vm->get(0x33), vm->get(0x3A));
+    }
     else combat::build_outdoors(b, fg->t, vm->get(0x4CA1) & 0xFF, rng);
     load_tiles(b.indoors);
     // The fighters: the party, then the monsters
@@ -3459,7 +3463,8 @@ void fight_back_to_game(pic::Canvas& c)
     bigpic = -1;
     pic_shown = false;
     head_shown = body_shown = -1;
-    if (!vm->get(0x4BE6) && !pool_overland()) host->picture(0x79, 0xFF);     // (Curse's wilderness map)
+    // (Curse's wilderness map; Darkness's overland draws its own map - draw_view)
+    if (!vm->get(0x4BE6) && !pool_overland() && !darkness_files()) host->picture(0x79, 0xFF);
     draw_frame(c);
     draw_view(c);
     draw_panel(c);

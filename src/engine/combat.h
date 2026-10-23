@@ -657,6 +657,11 @@ int squares(int size, int* sx, int* sy);
 // Builds the field
 void build_indoors(Battle& b, const Tables& t, const geo::Map& m, int px, int py, create::Dice& d);
 void build_outdoors(Battle& b, const Tables& t, int city, create::Dice& d);
+// Pools of Darkness's own (GAME.OVR 0xC51A; facts L9): the field plain
+// (0x45), a river (when the area's script place 0x33 says so) with its
+// fords, trees and logs, then scattered ground - by the terrain flags its
+// program always takes (the table's entry 15)
+void build_outdoors_dk(Battle& b, const Tables& t, bool river, create::Dice& d);
 // Pool of Radiance (poolrad_combat_facts.md 1.2): no terrain table - the
 // field's flags come from the place on its overland map (a byte of the
 // program's map; `special`: the area's word says so) and its own

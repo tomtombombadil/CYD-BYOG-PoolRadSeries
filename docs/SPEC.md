@@ -1579,6 +1579,13 @@ the scripts' changed ops, the rule tables, fights, the rest.
   (`play::hl_own / hl_first / hl_inherit`, the place following each tap);
   "Lose it?" starts on Yes; the party menu's Drop asks "Pick Character
   Select" first. Checks: ONLY=menus.
+- **The outdoor field** (facts L9): Darkness's own builder
+  (`combat::build_outdoors_dk`: plain grass, a river with fords when the
+  area's script place 0x33 says so, trees and logs, scattered ground - by
+  its fixed terrain flags) in place of Curse's, whose values its ground
+  table read as river everywhere (the overland arena had no room for the
+  monsters); after an overland fight the map comes back (not Curse's
+  wilderness picture). Checks: ONLY=field.
 - **Alter and the icon editor** (scratch facts
   /tmp/claude-0/dks_alter/facts_alter.md, for the Project's Darkness
   facts; its camp overlay GAME.OVR 0xDCC8 +0x172B, the editor 0x17E16).
