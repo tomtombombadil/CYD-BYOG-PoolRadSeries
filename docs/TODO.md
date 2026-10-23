@@ -134,6 +134,18 @@ the Project as claude/TODO.md.
       field tiles (23 KB) in internal RAM - one block would go to PSRAM;
       a Settings switch for EGA on the S3 / C5 (Claude: not now - Tom's
       rule is 256 colours there).
+- [ ] Treasures of the Savage Frontier (v0.143.0, SPEC 6f; Darkness's
+      engine): plays in the playsim from the party menu through exploring,
+      camp, fights, the overland, LUCK texts, romance, Crown, the lucky
+      paper, weather, old age; Load / Add from Gateway; matches DOSBox
+      (EGA) screen by screen; behave treasures 155. Play still off. Left,
+      in order: the 256-colour parchment (BORD 1) behind the frame; the
+      journal (the PDF reader: several images a page; then its table);
+      DOSBox checks with late-game saves (romance, Crown, PROGRAM 4, the
+      lucky paper, old age, VGA screens); long rests age characters
+      (ovl 0xCB); LUCK 51-61's other readers; a Gateway half-orc's race;
+      the outdoor camp / treasure pictures (128 / 129 assumed); the masks
+      table's multi-class index; the fight menu's hidden "Z"; then Play on.
 - [x] Journal tables (v0.142.0): Secret 72 entries, Darkness 99 (its
       book has no entry 13), Gateway 62 - checked by eye; Darkness's
       mentions now offered at a key wait too. Small leftovers: neighbouring
