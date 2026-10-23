@@ -241,7 +241,7 @@ int jewel_value(int d100, create::Dice& d, int div = 1);
 // (script word 0x7F6D: 1 = 1/16 ... 0x10 normal ... 0x80 = x8)
 int price(const uint8_t* item, int factor);
 
-// The originals' rule mistakes fixed (Tom's Item Fixes switch, CYD_ITEM_FIXES:
+// The originals' rule mistakes fixed (Tom's Game Fixes switch - Item Fixes until v0.139.0 - CYD_ITEM_FIXES:
 // on by default): where a game's program never applies a rule AD&D has (e.g.
 // Secret's phase lists leaving an effect out), the engine applies it while
 // this is on and does as the original when it is off. Each such place says

@@ -373,7 +373,7 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   (Brightness, Volume, Game Sound, Invert, Swap Red/Blue, Rotate 180,
   Recalibrate Touch, Asset Viewer 1.5x on 480x320 outside the game,
   Logs, the version / board / memory lines) then the comforts; a game's
-  own keys (Item Fixes, for a game with fixes) only with a game in hand;
+  own keys (Game Fixes, for a game with fixes) only with a game in hand;
   bottom: As Original, + Dev Tools (game page) or Back to Game (in game);
   2 x 4 a page, arrows bottom right (viewer.cpp `set_entries`, SetFrom).
 - Clear font (Tom, 2026-10-11, v0.73.0): the engine's OWN 8x8 font
@@ -387,7 +387,9 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   key is **Game Font** - Original / Clear / Darkness (the player's own
   Pools of Darkness 8X8D0.DAX, only when that game is on the card);
   v0.84.0 (Tom) adds **Clear Caps** (Clear's capitals, no lower case).
-- Item Fixes (Tom, 2026-10-12, v0.90.0; `CYD_ITEM_FIXES`): items the
+- Game Fixes (Tom, 2026-10-12, v0.90.0; `CYD_ITEM_FIXES`; named Item
+  Fixes until v0.139.0 - Tom, 2026-10-23: keep the originals' behaviour in
+  the game, every fix of theirs behind this switch): items the
   originals got wrong made as AD&D describes them, behind a switch (on by
   default) - Pool's Flame Tongue becomes Curse's / AD&D's sword
   (`items::fix_item`, the facts in `profile.items.flame`); the save files
@@ -741,6 +743,20 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   at run time; output on the DAC (GPIO 26, `hal/audio.*`).
 
 ## Versions and releases
+- **Development mode** (Tom, 2026-10-23: "limit the number of tokens spent
+  on pushing new releases, and focus on development ... Once we get back
+  to a stage when I'm doing a lot of testing of the games, we'll revert"):
+  merge and commit locally as work lands, but push to main (and sync SPEC
+  / TODO to the Project) only at milestones - a game or a big chunk of
+  one done - not after every merge; keep docs edits brief. Game order
+  now: finish Pools of Darkness, then the Savage Frontier games (Gateway,
+  then Treasures) without waiting for Tom's input on routine choices
+  (follow the originals; fixes behind Game Fixes; note open questions in
+  TODO), then the Krynn games (Tom, 2026-10-23).
+- **Standing answer for originals' mistakes** (Tom, 2026-10-23): the game
+  keeps the original's behaviour; the fixed (AD&D) version goes behind
+  Game Fixes - don't ask, just do it and list each such case in the
+  summary to Tom (and SPEC 12).
 - Semantic versioning from `VERSION` (started 0.1.0, 2026-10-06). Bump it in
   every push to main that changes the firmware (fix = Z, feature = Y).
 - Every push to main: CI runs host tests, builds every board, redeploys the

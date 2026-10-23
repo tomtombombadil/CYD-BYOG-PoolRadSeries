@@ -54,7 +54,7 @@ bool      dirty = true;            // redraw the current screen
 // menu's Settings tab the same keys - the board's (brightness, volume,
 // game sound, colours, rotation, touch, logs, the board / memory line),
 // the engine comforts (all games), and where a game is in hand its own
-// (Item Fixes, for a game the engine fixes items of). Below them As
+// (Game Fixes, for a game the engine fixes mistakes of). Below them As
 // Original / All On; Dev Tools from a game's page, Back to Game in the
 // game; pages with arrows bottom right. (The code: after Dev Tools.)
 enum class SetFrom : uint8_t { Home, Game, InGame };
@@ -116,6 +116,7 @@ int                block_sel = 0;    // entry number in index_
 const char* walk_error = nullptr;
 // Play test
 const char* play_error = nullptr;
+int play_depth = 4;                 // the game screen's depth while the Play Test is open (play::canvas_depth)
 
 // Screen test
 int         look_page = 0;
@@ -155,8 +156,9 @@ void go(Screen s)
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 #endif
     // (the canvas is 4 bits a pixel except while the Resource Test shows a
-    // 256-colour picture: back to 4 anywhere else)
-    if (s != Screen::View) frame::set_depth(4);
+    // 256-colour picture, and while a VGA game plays in 256 colours - its
+    // depth until the Play Test closes; back to 4 anywhere else)
+    if (s != Screen::View) frame::set_depth(play_depth);
     const bool assets = s == Screen::Resources || s == Screen::Blocks || s == Screen::View;
     if (assets && !A) {
         A = new (std::nothrow) Assets;
@@ -1418,6 +1420,15 @@ bool darkness_dir(char* out, size_t cap)
 }
 
 void present_play();
+// The VGA palette of a game in 256 colours (play::palette) to the panel's
+// colours; true: they changed (all: whenever there is one)
+bool play_palette(bool all)
+{
+    const pic::Rgb* pal = nullptr;
+    if (!play::palette(&pal, all)) return false;
+    for (int i = 0; i < 256; ++i) frame::set_palette(i, pal[i]);
+    return true;
+}
 void start_play()
 {
     if (frame::parked()) {
@@ -1461,6 +1472,11 @@ void start_play()
             play::set_import_dir(sd_fs().exists(sv) ? sv : pd);
             break;
         }
+    // The game screen's depth: a byte a pixel for a VGA game in 256 colours
+    // (Pools of Darkness on the boards with PSRAM; short of memory: its EGA
+    // mode on the 4-bit canvas)
+    play_depth = play::canvas_depth(here);
+    if (!frame::set_depth(play_depth)) play_depth = 4;
     play_error = play::open(game_dirs[game_sel].data_dir, game_dirs[game_sel].game, frame::canvas(), cdir);
     play::set_present_now(present_play);       // (a message up before slow work - "Saving to slot A...")
     go(Screen::Play);
@@ -2670,7 +2686,7 @@ ui::Rect comfort_qmark(const ui::Rect& cell)
 }
 
 const char* const kComfortNames[kComforts] = {"Game Font",        "Icon Gallery",    "Large Icon",    "Journal Pop-Up",
-                                              "Tap to Stop Demo", "More Characters", "Icon Portrait", "Item Fixes"};
+                                              "Tap to Stop Demo", "More Characters", "Icon Portrait", "Game Fixes"};
 
 // What each option does (sentence case; Tom, v0.84.0)
 const char* comfort_help_text(int c)
@@ -2708,14 +2724,19 @@ const char* comfort_help_text(int c)
                "action pose. Off: as the original.";
     case kCItemFixes:
         // (the game in hand's own fixes: the whole list doesn't fit a 320x240 screen)
+        if (game_dirs[game_sel].game == games::Game::PoolsOfDarkness)
+            return "The original game's mistakes made as AD&D has them: the races' stat adjustments at "
+                   "character creation (the original never applies them); a cleric's experience bonus from "
+                   "Wisdom 16; Power Word Blind lasts its worked-out time (the original blinds for good). "
+                   "Off: as the original.";
         if (game_dirs[game_sel].game == games::Game::SecretOfTheSilverBlades)
-            return "The original game's rules mistakes made as AD&D has them: the elves' +1 to hit with their "
+            return "The original game's mistakes made as AD&D has them: the elves' +1 to hit with their "
                    "weapons for elves alone; a dwarf's or gnome's -4 when giants attack, and the Constitution "
                    "save bonus; Invisibility, Blink, Displacement and Dispel Evil when a monster rolls to hit; "
                    "a paladin's spells and Strength; a cleric's experience bonus from Wisdom 16; Harm; the "
                    "Periapt of Health; a multi-class character's hit points; Sell's weight of coins. "
                    "Off: as the original.";
-        return "Items the original games got wrong, made as AD&D describes them. Pool of Radiance's Flame Tongue: "
+        return "Items the original game got wrong, made as AD&D describes them. Pool of Radiance's Flame Tongue: "
                "in the original it is a plain long sword +2 whose blows aren't fire, so a troll it fells gets back "
                "up (and Use casts Find Traps). Fixed it is a long sword +1 Flame Tongue, as in Curse: +2 against "
                "regenerating creatures such as trolls, +3 against cold-using and flying ones, +4 against undead, "
@@ -3694,6 +3715,7 @@ void leave_play()
     jv = nullptr;
     play::close();
     play_error = nullptr;
+    play_depth = 4;
     if (frame::parked()) {
         // Left on the card after the journal book (no memory then): the
         // Play Test's memory is free now
@@ -3748,6 +3770,11 @@ void draw_big_icon()
 
 void present_play()
 {
+    // A VGA game in 256 colours: its palette changed - the whole screen again
+    if (play_palette(false)) {
+        frame::present();
+        big_force = true;
+    }
     // A fight swaps colours 0 and 8 (the field's black shows dark grey)
     static bool fight_colours = false;
     if (play::fight_colours() != fight_colours) {
@@ -3820,6 +3847,7 @@ void draw_play()
     big_force = true;
     frame::set_ega_palette();
     play::draw(frame::canvas());
+    play_palette(true);                  // (a VGA game in 256 colours: its palette)
     ui::clear();
     frame::present();
     int y0, y1;
@@ -3994,7 +4022,7 @@ void tap_play(const ui::Tap& t)
 int set_page = 0;
 constexpr int kSetMax = 24;
 
-// Whether the game in hand has items the engine fixes (Item Fixes)
+// Whether the game in hand has mistakes the engine fixes (Game Fixes)
 bool game_has_fixes() { return set_from != SetFrom::Home && profile::has_item_fixes(game_dirs[game_sel].game); }
 
 int set_entries(SetEntry* out)

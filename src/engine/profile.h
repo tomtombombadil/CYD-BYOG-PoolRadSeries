@@ -693,6 +693,20 @@ struct ViewFacts {
 // The game's (all zero: none of it)
 const ViewFacts& view_facts(games::Game g);
 
+// A VGA game's colour cycling (darkness_facts.md 7 4.3; its VGA mode only):
+// the program's table at DS `table` - 15 entries of up to 4 ranges (first
+// entry, count, speed in 5/100 s), a byte each - and which entry a picture
+// takes: the event pictures pic[i] (PIC ids) take entry i, the big pictures
+// big .. big + bigs - 1 entries n_pic on (ov111+0x0, a test per picture)
+struct CycleFacts {
+    uint16_t table;
+    uint8_t  pic[8];
+    uint8_t  n_pic;
+    uint8_t  big, bigs;
+};
+// The game's (nullptr: no cycling)
+const CycleFacts* cycle_facts(games::Game g);
+
 // Whether title step `step` is the one with the lightning (the last
 // picture, when the profile has variant.title_flash)
 bool title_flash_step(const Profile& p, int step);

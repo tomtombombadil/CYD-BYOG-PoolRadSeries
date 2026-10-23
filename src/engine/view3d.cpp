@@ -231,34 +231,66 @@ void back_free(World& w)
     w.back_id = 0;
 }
 
+void vga_free(World& w)
+{
+    back_free(w);
+    free(w.vga_px);
+    w.vga_px = nullptr;
+}
+
 namespace {
-// A VGA block's header, palette skipped and its EGA nibbles read into map
-bool vga_start(dax::RleReader& r, const dax::Entry& e, pic::VgaHeader& h, uint8_t map[256])
+// A VGA block's header, its palette (into pal; nullptr: skipped) and its
+// EGA nibbles read into map (vga: map = the values themselves)
+bool vga_start(dax::RleReader& r, const dax::Entry& e, pic::VgaHeader& h, uint8_t map[256], pic::VgaPalette* pal,
+               bool vga)
 {
     uint8_t hdr[pic::kVgaHeaderSize];
     for (int i = 0; i < 256; ++i) map[i] = static_cast<uint8_t>(i & 15);
-    return r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_vga_header(hdr, e.raw_size, h) &&
-           r.skip(h.count * 3u) == h.count * 3u && pic::read_vga_ega(r, h, map) &&
+    if (r.read(hdr, sizeof hdr) != sizeof hdr || !pic::parse_vga_header(hdr, e.raw_size, h)) return false;
+    if (pal ? !pic::read_vga_palette(r, h, pal->rgb) : r.skip(h.count * 3u) != h.count * 3u) return false;
+    if (pal) {
+        pal->first = h.first;
+        pal->count = h.count;
+    }
+    if (!pic::read_vga_ega(r, h, map)) return false;
+    if (vga)
+        for (int i = 0; i < 256; ++i) map[i] = static_cast<uint8_t>(i);
+    return
            r.skip(h.pixels_at - (pic::kVgaHeaderSize + h.count * 3u + (h.count + 1) / 2u)) ==
                h.pixels_at - (pic::kVgaHeaderSize + h.count * 3u + (h.count + 1) / 2u);
 }
 } // namespace
 
-bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, World& w)
+bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, World& w, pic::VgaPalette* pal)
 {
     w.dk = true;
     w.common.count = 0;
     for (auto& ts : w.sets) ts.count = 0;
     const dax::Entry* e = idx.find(block);
     if (!e) return false;
+    if (w.vga && !w.vga_px) {
+        w.vga_px = static_cast<uint8_t*>(malloc(kVgaTiles * 64));
+        if (!w.vga_px) return false;
+    }
     dax::RleReader r(src, idx, *e);
     pic::VgaHeader h;
     uint8_t map[256];
-    if (!vga_start(r, *e, h, map) || h.height != 8 || h.width_cols != 1) return false;
+    if (!vga_start(r, *e, h, map, pal, w.vga) || h.height != 8 || h.width_cols != 1) return false;
     for (int t = 0; t < h.frames && t < 256; ++t) {
         uint8_t px[64];
         if (r.read(px, sizeof px) != sizeof px) return false;
         if (t == 0) continue;                       // (tile 0: never drawn)
+        if (w.vga) {
+            // (a byte a pixel; the counts as for the 4-bit sets)
+            memcpy(w.vga_px + (t - 1) * 64, px, 64);
+            if (t <= kCommonTiles) {
+                w.common.count = t;
+            } else {
+                const int k = t - (kCommonTiles + 1);
+                w.sets[k / kSetTiles].count = k % kSetTiles + 1;
+            }
+            continue;
+        }
         uint8_t* out;
         if (t <= kCommonTiles) {
             out = w.common.px[t - 1];
@@ -274,7 +306,7 @@ bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, 
     return true;
 }
 
-bool load_back(dax::ByteSource& src, const dax::Index& idx, uint8_t block, uint8_t id, World& w)
+bool load_back(dax::ByteSource& src, const dax::Index& idx, uint8_t block, uint8_t id, World& w, pic::VgaPalette* pal)
 {
     if (w.back && w.back_id == id) return true;
     const dax::Entry* e = idx.find(block);
@@ -282,10 +314,16 @@ bool load_back(dax::ByteSource& src, const dax::Index& idx, uint8_t block, uint8
     dax::RleReader r(src, idx, *e);
     pic::VgaHeader h;
     uint8_t map[256];
-    if (!vga_start(r, *e, h, map) || h.height != kCells * 8 || h.width_px() != kCells * 8) return false;
-    if (!w.back) w.back = static_cast<uint8_t*>(malloc(kCells * 8 * kCells * 4));
+    if (!vga_start(r, *e, h, map, pal, w.vga) || h.height != kCells * 8 || h.width_px() != kCells * 8) return false;
+    if (!w.back) w.back = static_cast<uint8_t*>(malloc(kCells * 8 * kCells * (w.vga ? 8 : 4)));
     if (!w.back) return false;
     w.back_id = 0;
+    if (w.vga) {
+        // (a byte a pixel)
+        if (r.read(w.back, kCells * 8 * kCells * 8) != kCells * 8 * kCells * 8) return false;
+        w.back_id = id;
+        return true;
+    }
     for (int i = 0; i < kCells * 8 * kCells * 4; ++i) {
         const int a = r.next(), b = r.next();
         if (a < 0 || b < 0) return false;
@@ -298,7 +336,17 @@ bool load_back(dax::ByteSource& src, const dax::Index& idx, uint8_t block, uint8
 void draw_tile(pic::Canvas& c, const World& w, int id, int row, int col)
 {
     const int x0 = (kCell0 + col) * 8, y0 = (kCell0 + row) * 8;
-    if (id >= 1 && id <= kCommonTiles) {
+    if (w.vga_px && id >= 1 && id < kFrameBase) {
+        // (a VGA screen: the values, 13 see-through - darkness_facts.md 7.2)
+        const int k = id - (kCommonTiles + 1);
+        if (id <= kCommonTiles ? id - 1 >= w.common.count : k % kSetTiles >= w.sets[k / kSetTiles].count) return;
+        const uint8_t* p = w.vga_px + (id - 1) * 64;
+        for (int y = 0; y < 8; ++y)
+            for (int x = 0; x < 8; ++x) {
+                const uint8_t v = p[y * 8 + x];
+                if (v != kMask && x0 + x >= 0 && x0 + x < c.w && y0 + y >= 0 && y0 + y < c.h) c.set(x0 + x, y0 + y, v);
+            }
+    } else if (id >= 1 && id <= kCommonTiles) {
         if (id - 1 < w.common.count) put_packed(c, w.common.px[id - 1], x0, y0, kMask, kMask);
     } else if (id > kCommonTiles && id < kFrameBase) {
         const int k = id - (kCommonTiles + 1);
@@ -328,6 +376,11 @@ void walls(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int 
 void draw(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int dir, uint8_t sky)
 {
     const int x0 = kCell0 * 8, y0 = kCell0 * 8, wpx = kCells * 8;
+    if (w.dk && w.back && w.vga) {
+        for (int row = 0; row < wpx; ++row) c.put_row(x0, y0 + row, wpx, w.back + row * wpx);
+        walls(c, w, m, x, y, dir);
+        return;
+    }
     if (w.dk && w.back) {
         // Darkness: the background picture, then the walls over it
         for (int row = 0; row < wpx; ++row)

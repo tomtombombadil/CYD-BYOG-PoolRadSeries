@@ -250,7 +250,7 @@ stay in the session's scratch space, never in the repo.
   screens), Asset Viewer 1:1 / 1.5x (480x320, not in the game - the game
   is always 1:1), Logs (in the game: the Logs tab's screen), then the
   engine comforts (all games), then the game's own keys where a game is
-  in hand - Item Fixes for a game with fixes (Pool) - and the version,
+  in hand - Game Fixes for a game with fixes (Pool) - and the version,
   board and memory lines. Every switch has its "?". Bottom: As Original /
   All On (the comforts), and Dev Tools (a game's page) or Back to Game (in
   the game). The keys before v0.91.0, kept below for their history:
@@ -355,9 +355,11 @@ can't get the memory says "Not enough memory to show this log."
   2.8" ST7789 resistive C5 board (`cyd28c5_st7789_res`: ESP32-C5, 8 MB
   PSRAM; display, touch and card share one SPI bus; sound as I2S PDM on
   GPIO 26 into the amplifier's filter - the C5 has no DAC). Blocks over
-  4 KB go to PSRAM by themselves (Arduino's malloc); later the VGA games
-  run there in 256 colours (the 8-bit canvas). Flasher entries carry the
-  chip (ESP Web Tools' chipFamily).
+  4 KB go to PSRAM by themselves (Arduino's malloc); the VGA games run
+  there in 256 colours (the 8-bit canvas - Pools of Darkness since this
+  branch: `BOARD_PSRAM` in board_select.h, `plat::vga_screen()`,
+  `play::canvas_depth`; 6d). Flasher entries carry the chip (ESP Web
+  Tools' chipFamily).
 - Board facts: the Project's claude/board_facts.md; the games' needs:
   claude/other_games_facts.md.
 
@@ -397,7 +399,7 @@ can't get the memory says "Not enough memory to show this log."
    set for all games, saved with the engine's settings) holds the engine
    comforts' switches - Game Font (v0.73.0; Original / Clear / Darkness since v0.74.0, Clear Caps
    since v0.84.0), Icon Gallery, Large Icon, Journal Pop-Up, Tap to Stop Demo (v0.84.0; was Demo Tap
-   Stops), More Characters, Icon Portrait (v0.84.0), Item Fixes (v0.90.0) - and Game Sound (Tandy /
+   Stops), More Characters, Icon Portrait (v0.84.0), Game Fixes (v0.90.0) - and Game Sound (Tandy /
    PC Speaker / Off; more than 8 keys: pages, arrows bottom right since v0.90.0), each
    key lit when on, with a circled "?" at its right (Tom, v0.84.0) that opens what the option does
    (the next tap closes it; Game Font's shows a line in each font, the player's own fonts read from
@@ -888,7 +890,7 @@ Steps (each pushed when it works; Curse stays as it is):
    v0.90.0 (Tom): Pool's "Long Sword +2 Flame Tongue" is, in the original,
    a +2 long sword whose Use casts Find Traps (its record has 0x3D 0x16
    and no effect code, where Curse's same sword has the effect 0x06 with
-   0x80) - no fire, so a troll it fells gets up again. The **Item Fixes**
+   0x80) - no fire, so a troll it fells gets up again. The **Game Fixes**
    comfort (section 11, on unless switched off) makes it the AD&D sword,
    as Curse's: Long Sword +1 Flame Tongue. Also fixed in both games: the
    Flame Tongue's blows are fire and magic (kind 9, its handler's), so a
@@ -1223,7 +1225,7 @@ full behaviour checks (every spell, monster, class, item, situation).
   range 6 and its reflection (0x48), the umber hulk and slug's reach,
   the phase spider's poison and the dreadlord's paralysis on attack 1
   (10 rounds), the weapon's +1 for type 26 too; two of Secret's own
-  mistakes go with Item Fixes (SPEC 12). secret_facts_2.md 29.
+  mistakes go with Game Fixes (SPEC 12). secret_facts_2.md 29.
 - **v0.121.1 - its spells checked**: all 117 against its handlers
   (ONLY=allspells, 432 checks). Fixed: camp spells on the whole party
   (its table's 3, not Curse's 4: Bless, Prayer, Haste, the
@@ -1234,7 +1236,7 @@ full behaviour checks (every spell, monster, class, item, situation).
   Strength 23 from 12th level, the Globe up to 4th level, Mirror Image
   takes blows, Barkskin heals as Heal, the Elixir its user only, Slow
   Poison's revival and time, Entangle nothing; the clouds' ground values
-  0x1D / 0x1B; words. Four of Secret's mistakes with Item Fixes (SPEC 12).
+  0x1D / 0x1B; words. Four of Secret's mistakes with Game Fixes (SPEC 12).
 - **v0.124.0 - its items and situations checked** (5,412 Secret checks,
   0 failed). Items (every one of its 273 item records): the Gauntlets of
   Ogre Power (18/00 by Secret's code table, `items::kSecretPassive`), the
@@ -1250,7 +1252,7 @@ full behaviour checks (every spell, monster, class, item, situation).
   hit point limits, Sell's bundle prices and its platinum-first payment.
   The original reads the engine's saves (DOSBox). The ITEMTEST
   characters for Tom (sweep `testchars`, GAME=3). secret_facts_2.md
-  29.items / 29.situations. The Item Fixes key shows on Secret's
+  29.items / 29.situations. The Game Fixes key shows on Secret's
   Settings (its own help text); the magic tables are read straight into
   their block (no 4.5 KB copy at a fight's peak).
 
@@ -1604,6 +1606,41 @@ the scripts' changed ops, the rule tables, fights, the rest.
   run's place / time line aside): every Alter screen, Drop's questions and
   messages, the editor through 29 steps (parts, colours, size, Keep /
   Exit, another pass), from creation and its "is this icon ok?".
+- **256 colours on the boards with PSRAM** (Tom, 2026-10-12; scratch
+  facts /tmp/claude-0/dks_vga/facts_vga.md): `play::canvas_depth` - 8 for
+  Darkness where `plat::vga_screen()` (BOARD_PSRAM and PSRAM found; the
+  playsim's VGA=1), the viewer makes the canvas so for the Play Test
+  (`frame::set_depth(8)` sets `Canvas::vga`; short of memory: EGA). On a
+  VGA canvas every VGA block draws its values (`draw_vga_block`,
+  `draw_dk_anim`, layout / view3d / the fight's loaders - a byte a pixel:
+  `World::vga_px`, `back`, `px8()` pictures) and its palette entries go
+  to the screen as it's shown (`pic::VgaPalette`; play's `Vga`: `now` =
+  the DAC, `vga_take` / `vga_send`), as the original's VGA mode
+  (darkness_facts.md 7 5.1): BORDERS 16-31, the walls 32-143 and the
+  background 144-175 kept and sent again when the 3D view is drawn
+  (after a picture or a fight), the titles all 256 (16-31 again after
+  them), PIC / BIGPIC 32-255, sprites 176-255 only, the fight's ground
+  32-63, COMSPR 64-95, the party 96-143, monsters 144-255; the frame's
+  colour 13 drawn (EGA leaves it out). Party icons: the head's pixels
+  that aren't see-through replace the body's, then values under 16
+  recoloured (GAME.OVR 0x10F8F; img 0x1C30+0x18B0). Colour cycling: the
+  program's table (DS 0x0CB0, `profile::cycle_facts`: PICs 7, 128, 133,
+  136, 137, 139, 142, 149 and BIGPIC 240-246), each range turning one
+  place every speed x 5 / 100 s while the picture shows. `play::palette`
+  hands the 256 colours to the front end. Checked pixel for pixel against
+  DOSBox in VGA (POOL4.CFG V; the mouse pointer aside): the three titles,
+  the party menu, the docks' 3D view, Rolf, the debug arena's picture
+  with its cycling, sprite (middle range), fight start (party icons,
+  turn box, frame), a monster (CPIC), the results and the view after the
+  fight, the overland (BIGPIC + marker + cycling), the icon editor.
+  The 4-bit path unchanged (Curse / Pool / Secret / Darkness EGA
+  snapshots identical; CANVAS8=1 now draws Darkness in EGA too); the
+  budget fights 128,505 / 129,969 / 145,337 (+6 bytes); classic static
+  RAM +24 bytes. The VGA budget fight: 236,963 bytes at its highest
+  (the 64 KB canvas, 16 KB tiles, the fight's 40 tiles 23 KB - each 576
+  bytes, so internal RAM -, the 3D view not parked) - PSRAM boards only.
+  The canvas parks to the card through a 2 KB internal buffer (the S3's
+  SD/MMC DMA rule). The Look / Walk tests stay in EGA.
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -1896,7 +1933,7 @@ a PC, PortMaster handhelds):
     characters are read (`play::character_read`), items are taken
     (`rules::add_item`) and the switch turns mid-game; the files keep the
     original's bytes (`write_character_files` writes a copy put back, its
-    effect gone). Settings key **Item Fixes** (on by default; As Original
+    effect gone). Settings key **Game Fixes** (on by default; As Original
     turns it off).
   - `CYD_ICON_GALLERY` (v0.71.0, Tom: making icons a value at a time is
     "one of the worst parts of the game"): the icon editor (Alter -> Icon,
@@ -1976,7 +2013,7 @@ the game's Settings (As Original: all of them).
   always hitting - the AD&D rule, Curse's code too; Pool's code was read as
   level / 2 (nothing at first level). All on one target, as both games.
 - **View Character's icon portrait** (switch `CYD_ICON_PORTRAIT`).
-- **Item Fixes** (switch `CYD_ITEM_FIXES`, Tom, v0.90.0): Pool's Flame
+- **Game Fixes** (switch `CYD_ITEM_FIXES`, Tom, v0.90.0; named Item Fixes until v0.139.0 - Tom, 2026-10-23: the originals' behaviour stays in the game, every fix behind this switch): Pool's Flame
   Tongue is the AD&D sword (Long Sword +1 Flame Tongue, as Curse's); the
   original's is a plain +2 sword whose Use casts Find Traps.
 - **Pool's race checks** (Tom, v0.85.1): Pool's program never gives its
@@ -2071,12 +2108,12 @@ the game's Settings (As Original: all of them).
   only in that mode (the menu line just "Exit") do the original's arrow
   keys move the party; the engine shows the same menu and mode, but its
   movement keys move the party in either (the cursor keys work the menu).
-- **Secret's own mistakes, fixed with Item Fixes on** (v0.120.1;
-  `rules::fixes()` - Item Fixes off plays them as the original):
+- **Secret's own mistakes, fixed with Game Fixes on** (v0.120.1;
+  `rules::fixes()` - Game Fixes off plays them as the original):
   the +1 to hit with bows and short / long swords goes to elves only
   (Secret's program gives it to every race); a cleric's +10% experience
   needs Wisdom 16 (Secret's and Darkness's: 15 - v0.136.0, Darkness
-  the same with Item Fixes); a paladin casts at his level - 8
+  the same with Game Fixes); a paladin casts at his level - 8
   (Secret's: 6th level always); Harm leaves 1d4 HP (Secret's wraps to
   250+ damage when HP is under the roll); Invisibility's -4, Blink's
   miss and Dispel Evil's -7 count at the attack roll (Secret's phases
@@ -2096,7 +2133,7 @@ the game's Settings (As Original: all of them).
 - **Darkness's race adjustments at creation** (`rules::fixes()`): its
   program tests the race list's last line (human) instead of the race
   picked, so dwarves' Con +1 Cha -1, elves' Dex +1 Con -1 and halflings'
-  Str -1 Dex +1 never happen; with Item Fixes on the engine applies them
+  Str -1 Dex +1 never happen; with Game Fixes on the engine applies them
   (AD&D's), off as the original.
 - **Darkness's new characters' item count** (record 0x1A6): the original
   writes 3 whatever its kit holds (a magic-user's 4); the engine writes
@@ -2111,7 +2148,7 @@ the game's Settings (As Original: all of them).
 - **Darkness's Power Word Blind** (`rules::fixes()`): the original's
   handler works out (1d4 + 1) rounds, x 10 when the HP total is under 51,
   and never uses it - the blindness gets the spell row's time, 0: for
-  good. With Item Fixes on the engine uses the worked-out time; off as
+  good. With Game Fixes on the engine uses the worked-out time; off as
   the original.
 - **Darkness's Power Word Kill** (`rules::fixes()`; Tom, 2026-10-23): the
   original goes by HP max - the first target of 11-60 alone, else every
@@ -2139,5 +2176,10 @@ the game's Settings (As Original: all of them).
 - **Darkness's exploring menu's place** after a script: taken from the
   last menu's (its routine's restart as the engine sees it - not checked
   in DOSBox).
+- **Darkness in 256 colours** (the boards with PSRAM): the original's
+  VGA mode; on the classic boards its EGA mode (both the originals'
+  own). The palette changes with the canvas (the whole screen shown
+  again), as the VGA DAC does. The Gold Box Companion's icons (EGA) in
+  the icon gallery use the palette's first 16 entries.
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.

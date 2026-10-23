@@ -118,6 +118,14 @@ the Project as claude/TODO.md.
       gazes' pictures (COMSPR 0x2D / 0x32); Kalistes' weapon on row 23;
       the beholder's ray target (the original's picker, ovr 0x23130); an
       Energy Drain check.
+- [ ] Darkness 256 colours on the S3 / C5 (merged, branch darkness-vga):
+      matches DOSBox's VGA mode. Open: the overland arena fight (jumper ->
+      Arena -> Overland -> Prime, river No, monster 10 x 1) gives an
+      all-river field with no monster and an empty frame after (EGA
+      too; DOSBox: grass, the monster, the map back); the VGA fight's 40
+      field tiles (23 KB) in internal RAM - one block would go to PSRAM;
+      a Settings switch for EGA on the S3 / C5 (Claude: not now - Tom's
+      rule is 256 colours there).
 - [x] Darkness's fight memory (v0.136.1): the 30-monster test fight 169
       -> 150.6 KB (Curse 146 -> 132, Pool 147 -> 133): the script's code
       parked during fights and its memory the fight's arena, the monster
@@ -131,25 +139,21 @@ the Project as claude/TODO.md.
       +0x5FB8); a ranged attack's one sound: 12 for the item types 4, 5,
       7, 0x0C, 0x1E, 0x42, 0x4A, else 9 (+0x2800 of GAME.OVR 0x1E642 -
       check Darkness's shot kinds give that). darkness_sound_facts.md 4.
-- [ ] Tom: Darkness's creation never applies the race adjustments (its
-      program tests the race list's last line, human, not the race
-      picked); the engine applies AD&D's behind Item Fixes (on by
-      default; off = the original) - OK? (SPEC 12)
-- [ ] Tom: Darkness's fights, the original's own ways (SPEC 12): Power
-      Word Blind blinds for good in the original (its time 0) - Item Fixes
-      on uses the 1d4+1 x 10 it works out, OK? Kept as the original:
-      Energy Drain takes one level (AD&D two), Power Word Kill has no 120
-      HP total, Resurrection no Constitution loss - want AD&D's behind
-      Item Fixes? Dragon fear (-2 / -2) outlasts the fight (not cleared
-      at a fight's end) - keep? The bulette's rake never takes in the
-      original (its count overwritten) - the engine has none; want one?
-- [ ] Tom: Darkness's sounds - listen on a board (Game menu - Sounds;
-      Rolf's tour; steps). Decide: Tandy as the SL / TL DAC (the samples
-      as they are, as the GOG Sound Blaster) - or the EX / TX chip's 16
-      volumes (TANEXTX.COM; grainier) as a third choice? Tom
-      (2026-10-19): unsure - asked for samples; sent 2026-10-19 (WAVs:
-      DAC, EX / TX chip, PC speaker, side by side) - his pick open.
-      (The game going on while a sound plays: Tom OK, 2026-10-19.)
+- [x] Tom (2026-10-23): yes - Darkness's race adjustments and the
+      cleric's experience bonus from Wisdom 16 behind Game Fixes.
+- [x] Tom (2026-10-23), Darkness's fights: Power Word Blind's worked-out
+      time behind Game Fixes - yes; Energy Drain stays one level (no
+      switch); Power Word Kill and Resurrection as AD&D behind Game Fixes;
+      dragon fear ends with the fight behind Game Fixes. (Claude: the
+      last three on branch darkness-leftovers.)
+- [x] Tom (2026-10-23): the bulette's leap - the original's way (never
+      happens) in the game, the working leap behind Game Fixes; the same
+      answer for every future question of this kind (CLAUDE.md).
+- [x] Darkness's sounds (Tom, 2026-10-23): Claude's recommendation -
+      two choices, Tandy = the recordings as they are (the SL / TL DAC,
+      the GOG Sound Blaster), and the PC speaker; no EX / TX chip choice
+      (it differs only by a little grain). The game goes on while a
+      sound plays (Tom OK, 2026-10-19).
 - [ ] Tom: flash v0.104.0 on the 4.0" S3: the touch (keys now light as
       the stylus touches; light taps after a pause, finger and stylus;
       small keys) and the sounds (Settings' sound test - Step, Hit; Pool's
@@ -175,12 +179,13 @@ the Project as claude/TODO.md.
       its files into Secret's folder on the card beside SAVGAMA.DAT
       (README inside), then Add Character -> Secret -> ITEMTEST1 ... 6
       (every magic item of the game between them); say what looks wrong.
-- [ ] Tom: the Settings key "Item Fixes" now also switches Secret's
-      rules mistakes (SPEC 12) - keep the name, or rename it "Game
-      Fixes"?
-- [ ] Tom: Secret's Barkskin - the original runs Heal's routine for it
-      (the AC effect AND nearly full hit points; v0.105.0 does the same).
-      Keep it as the original, or fix it (AC only) behind Item Fixes?
+- [x] Tom (2026-10-23): the switch is **Game Fixes** (was Game Fixes) -
+      the originals' behaviour in the game, the engine's fixes behind it
+      (v0.139.0).
+- [ ] Claude: Secret's Barkskin - the original runs Heal's routine for it
+      (the AC effect AND nearly full hit points). Tom's rule (2026-10-23:
+      "Keep original game behaviors in the game and keep our fixes under
+      the ... toggle"): fix it (AC only) behind Game Fixes.
 - [ ] Tom: try the new library page (v0.103.0) on a board - the art,
       the header keys, the thirds and the triangles.
 - [ ] Tom: when you have a moment, Secret's Screen Test and Walk Test
@@ -331,7 +336,7 @@ the Project as claude/TODO.md.
 - v0.91.0: one Settings screen everywhere (Home, the game's page, the
   Game menu's Settings tab): board keys + comforts + the game's own.
 - v0.90.0: Tom's questions on the Cloak of Elvenkind (95 in 100 is the
-  originals' own code - answered) and the Flame Tongue: the Item Fixes
+  originals' own code - answered) and the Flame Tongue: the Game Fixes
   switch (Pool's Flame Tongue as AD&D, files kept as the original's), the
   Flame Tongue's blows fire in both games; Settings switches in pages.
 - v0.89.1: every item of both games tested (equip, the class / alignment

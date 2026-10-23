@@ -47,6 +47,9 @@ void log(const char* fmt, ...)
 size_t free_heap() { return heap_caps_get_free_size(MALLOC_CAP_8BIT); }
 size_t largest_block() { return heap_caps_get_largest_free_block(MALLOC_CAP_8BIT); }
 
+// (BOARD_PSRAM: board_select.h - and the PSRAM found at start-up)
+bool vga_screen() { return BOARD_PSRAM && psramFound(); }
+
 namespace {
 
 #if defined(BOARD_SD_MMC)

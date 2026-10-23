@@ -103,6 +103,9 @@
 // turned). 0: as the original. Where: engine/items.* (fix_item),
 // rules.cpp (add_item, fix_items), play.cpp (character_read, set_options,
 // write_character_files), profile.cpp (Pool's items.flame).
+// The Settings key is "Game Fixes" (Tom, 2026-10-23; "Item Fixes" until
+// v0.139.0): every fix of an original game's mistake - items and rules -
+// with the originals' behaviour when off.
 #ifndef CYD_ITEM_FIXES
 #define CYD_ITEM_FIXES 1
 #endif

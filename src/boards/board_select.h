@@ -14,6 +14,7 @@
 //   BOARD_PIN_BOOT_BTN                      held at power-up to recalibrate touch
 //   BOARD_SD_USABLE                         1 = SD slot works (needs BOARD_PIN_SD_*)
 //   BOARD_PORTRAIT_W                        panel width in portrait: 240 or 320
+//   BOARD_PSRAM                             1 = PSRAM (the VGA games in 256 colours), else 0
 // Optional: BOARD_PIN_LED_*, BOARD_LED_ACTIVE_LOW, BOARD_PIN_LDR, BOARD_PIN_SPEAKER,
 //           BOARD_PIN_SD_CS/SCK/MISO/MOSI, BOARD_PIN_AUDIO_EN, BOARD_PIN_BATTERY_ADC
 // The card (hal/sdcard.cpp): SPI on a bus of its own (VSPI, the classic
@@ -73,6 +74,7 @@
 #elif defined(CYD_BOARD_40_ST7796_CAP_S3)
   #include "esp32s3_40_cap.hpp"
   #define BOARD_NAME "4.0\" ST7796 Capacitive (ESP32-S3)"
+  #define BOARD_PSRAM 1
   #define BOARD_PORTRAIT_W 320
   // Not yet tested on hardware
   class LGFX : public LGFX_S3_40_Cap {};
@@ -80,10 +82,15 @@
 #elif defined(CYD_BOARD_28_ST7789_RES_C5)
   #include "esp32c5_28_res.hpp"
   #define BOARD_NAME "2.8\" ST7789 Resistive (ESP32-C5)"
+  #define BOARD_PSRAM 1
   #define BOARD_PORTRAIT_W 240
   // Not yet tested on hardware
   class LGFX : public LGFX_C5_28_Res {};
 
 #else
   #error "No CYD_BOARD_* flag set. Build one of the [env:...] targets in platformio.ini."
+#endif
+
+#ifndef BOARD_PSRAM
+#define BOARD_PSRAM 0                 // (the classic ESP32 boards: GPIO 16 / 17 drive the RGB LED)
 #endif
