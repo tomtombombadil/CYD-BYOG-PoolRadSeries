@@ -3330,6 +3330,10 @@ void fight_start(pic::Canvas& c)
     memcpy(b.level_exp, level_exp, sizeof level_exp);
     combat::g_dk_drain = darkness_files() ? dk_drain_hook : nullptr;     // (its own drain: facts L1)
     b.indoors = vm->get(0x4BE6) != 0;
+    if (d->prof->variant.tr) {
+        b.weather = d->gs.area1[0x52];
+        b.weather_free = 0x9E;
+    }
     // Pool: only its wilderness areas are fought outdoors (the rest from the 3D map)
     const int over = d->prof->variant.overland_area;
     if (d->prof->variant.overland_map && (d->gs.script < over || d->gs.script > over + 2)) b.indoors = true;
@@ -3454,12 +3458,17 @@ void fight_start(pic::Canvas& c)
     fg->cur = -1;
     draw_fight(c);
     clear_menu_line(c);
-    put(c, fw(profile::kBattleBegins), 0, text::kMenuRow, 10);
+    if (b.weather < 2) {
+        // Treasures: "Battle in snow! / rain! Movement restricted." (ovl 0x68 +0x1E4C)
+        char t[40];
+        ow(d->prof->variant.tr_weather[b.weather], t, sizeof t);
+        put(c, t, 0, text::kMenuRow, 10);
+    } else put(c, fw(profile::kBattleBegins), 0, text::kMenuRow, 10);
     fg->st = FSt::Begin;
     fg->until = plat::now_ms() + game_delay_ms() * 3;
     if (!fg->until) fg->until = 1;
-    plat::log("[play] a fight: %d against %d (%s)\n", combat::standing(b, 0), combat::standing(b, 1),
-                  b.indoors ? "indoors" : "outdoors");
+    plat::log("[play] a fight: %d against %d (%s%s)\n", combat::standing(b, 0), combat::standing(b, 1),
+                  b.indoors ? "indoors" : "outdoors", b.weather == 0 ? ", snow" : b.weather == 1 ? ", rain" : "");
     sound_hold(true);                        // (Hit / Miss: the output ready all fight)
     char t[48];
     snprintf(t, sizeof t, "fight start, %d against %d%s", combat::standing(b, 0), combat::standing(b, 1),

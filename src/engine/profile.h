@@ -659,6 +659,10 @@ struct Profile {
         // the camp menu with Crown, "The party has acquired the...", the
         // crystals' names, the romance's "Accept Reject" and "HIS" / "HER"
         uint32_t tr_crown_menu = 0, tr_acquired = 0, tr_crystal[3] = {}, tr_accept = 0, tr_his = 0, tr_her = 0;
+        // "The lucky paper of " / " reads:" (GAME.OVR)
+        uint32_t tr_paper[2] = {};
+        // "Battle in snow! Movement restricted." / "... rain! ..." (GAME.OVR)
+        uint32_t tr_weather[2] = {};
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

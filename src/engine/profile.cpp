@@ -2374,7 +2374,8 @@ const Profile kProfiles[] = {
                  .tr = true, .pic_split = 78, .title_ega = {4, 5}, .camp_pic_in = 132, .demo_block = 4,
                  .tr_crown_menu = 0xF776, .tr_acquired = 0x145D8,
                  .tr_crystal = {0x145F6, 0x14602, 0x14610}, .tr_accept = 0x1545E, .tr_his = 0x14D01,
-                 .tr_her = 0x14D05},
+                 .tr_her = 0x14D05, .tr_paper = {0x2DEA8, 0x2DEBC},
+                 .tr_weather = {0xE2A5, 0xE2CA}},
      // (its font: 8X8D0 block 201 with BORD block 8's text glyphs - the front end)
      .joined = kTreasuresJoined, .n_joined = sizeof kTreasuresJoined / sizeof kTreasuresJoined[0],
      .vault = {.file = "TMPVAULT.DAT", .slot_file = "VAULT%c.DAT", .coins = 3, .item_size = 63}},

@@ -3309,7 +3309,7 @@ void leave_party(int i)
 // two characters' names, a third member's, "HIS" / "HER".
 struct LuckRun {
     bool     on = false, romance = false, prompt = false;
-    enum class Then : uint8_t { Vm, Romance, Crown } then = Then::Vm;
+    enum class Then : uint8_t { Vm, Romance, Crown, Paper } then = Then::Vm;
     uint8_t* buf = nullptr;
     uint32_t len = 0, pos = 0;
     char     page[720] = {};
@@ -3452,6 +3452,12 @@ void lk_end(pic::Canvas& c)
         handle(vm->resume());
         break;
     case LuckRun::Then::Romance: rom_next(c); break;
+    case LuckRun::Then::Paper:
+        screen = Screen::Items;
+        draw_frame(c);
+        draw_panel(c);
+        back_to_items(c);
+        break;
     case LuckRun::Then::Crown:
         // (the crown's text over its picture; the picture goes after - ovl 0x74 +0x2C5A)
         text::clear(c, text::kTextArea);
@@ -3504,8 +3510,11 @@ void lk_tap(pic::Canvas& c)
         return;
     }
     clear_menu_line(c);
+    if (lk.then == LuckRun::Then::Paper) {
+        lk_end(c);
+        return;
+    }
     if (w.state == text::State::PageFull) {
-        text::next_page(w, c);
         dirty_rows(17, 22);
         lk.prompt = false;
         t_last = plat::now_ms();
@@ -3513,6 +3522,57 @@ void lk_tap(pic::Canvas& c)
     }
     if (lk_page()) lk_show(c);
     else lk_end(c);
+}
+
+// The lucky paper (an item whose byte 0x3E is 0x0E; ovl 0xC3 +0x22A7): the
+// border screen, "The lucky paper of <its name word> reads:" at (2,2),
+// white, then LUCK block 50 + its byte 0x3D a line (LF) every second row
+// from row 7, yellow - each letter shown only with its crystal (game byte
+// 0x3B: letters take the bits 1, 2, 4 in turn), else "@"
+void back_to_items(pic::Canvas& c);
+void lucky_paper(const uint8_t* it, pic::Canvas& c)
+{
+    const int block = 50 + it[0x3D];
+    if (!lk_load(block)) return;
+    plat::log("[play] LUCK %d (lucky paper)\n", block);
+    c.clear(0);
+    layout::outer(c, d->tables, d->frame_tiles);
+    char t[64], wd[24];
+    ow(d->prof->variant.tr_paper[0], t, sizeof t);
+    snprintf(wd, sizeof wd, "%s", names->word(it[0x2F]));
+    size_t o = strlen(t);
+    snprintf(t + o, sizeof t - o, "%s", wd);
+    o = strlen(t);
+    ow(d->prof->variant.tr_paper[1], t + o, sizeof t - o);
+    put(c, t, 2, 2, 15);
+    char line[48];
+    size_t n = 0;
+    int row = 7, mask = 1;
+    for (uint32_t k = 0; k < lk.len; ++k) {
+        const uint8_t ch = lk.buf[k];
+        if (ch == 0x0A) {
+            line[n] = 0;
+            if (row < 25) put(c, line, 2, row, 14);
+            row += 2;
+            n = 0;
+            continue;
+        }
+        if (ch == 0x0D || ch == 0x1A) continue;
+        char shown = ' ';
+        if (ch != ' ') {
+            shown = d->gs.area1[0x3B] & mask ? static_cast<char>(ch) : '@';
+            mask = mask >= 4 ? 1 : mask * 2;
+        }
+        if (n + 1 < sizeof line) line[n++] = shown;
+    }
+    lk_free();
+    dirty(0, pic::kScreenH);
+    clear_menu_line(c);
+    put(c, d->press_key, 0, text::kMenuRow, 13);
+    lk.on = true;
+    lk.prompt = true;
+    lk.len = 1;
+    lk.then = LuckRun::Then::Paper;
 }
 
 // PROGRAM 3's block (ovl 0x74 +0x2A75)
@@ -7999,6 +8059,10 @@ void use_item(int i, pic::Canvas& c)
     if (!can_use_items(ch)) return;
     if (!items::Item{it}.readied()) {
         note(c, iw(profile::kMustReady));
+        return;
+    }
+    if (d->prof->variant.tr && it[0x3D] && it[0x3E] == 0x0E) {
+        lucky_paper(it, c);
         return;
     }
     const magic::Scrolls sc = scroll_facts();
