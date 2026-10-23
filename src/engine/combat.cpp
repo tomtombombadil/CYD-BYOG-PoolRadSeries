@@ -4081,6 +4081,24 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             f.rec[kHealth] = party::Dead;
             say(who[k], Did::Fallen, 0);
         };
+        // With the rules fixes AD&D's (1st edition; Tom, 2026-10-23 - SPEC
+        // 12): by hit points now - the first of 11-60 alone, else those of
+        // 10 or less while their total stays at 120 or less
+        if (rules::fixes()) {
+            const int h0 = b.f[who[0]].hp();
+            if (h0 > 10 && h0 <= 60) {
+                if (b.f[who[0]].up()) slay(0);
+                break;
+            }
+            int total = 0;
+            for (int k = 0; k < m; ++k) {
+                const int h = b.f[who[k]].hp();
+                if (!b.f[who[k]].up() || h > 10 || total + h > 120) continue;
+                total += h;
+                slay(k);
+            }
+            break;
+        }
         if (b.f[who[0]].hp_max() > 10 && b.f[who[0]].hp_max() <= 60) {
             if (b.f[who[0]].up()) slay(0);
             break;

@@ -121,10 +121,6 @@ void energy_drain()
 void checks(bool (*want)(const char*))
 {
     if (!want("drain")) return;
-    if (!b_oracle_load("darkness_left")) {
-        expect(D_, "oracle file", false, "no oracle_darkness_left.txt");
-        return;
-    }
     drain_cases();
     energy_drain();
 }

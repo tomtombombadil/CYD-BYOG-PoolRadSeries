@@ -344,15 +344,19 @@ void spell_checks()
                "%d %d %d, the original's %d", aff_time(A, fx.blinded), aff_time(B, fx.blinded), aff_time(D, fx.blinded), want);
     }
 
-    // Power Word Kill (R9)
+    // Power Word Kill (R9): the original (rules fixes off) by HP max
     {
+        const bool was = rules::fixes();
+        rules::set_fixes(false);
         reset();
+        rules::set_fixes(false);
         put(A, 1, 12, 10, 50);
         put(B, 1, 13, 10, 8);
         cast(C, 0x7D, {A, B});
         expect(F_, "Power Word Kill: the first of 11-60 HP max alone", F(A).status() == party::Dead && F(B).up(),
                "%d %d", F(A).status(), F(B).status());
         reset();
+        rules::set_fixes(false);
         put(A, 1, 12, 10, 70);
         put(B, 1, 13, 10, 8);
         put(D, 1, 14, 10, 10);
@@ -360,6 +364,55 @@ void spell_checks()
         cast(C, 0x7D, {A, B, D, E});
         expect(F_, "Power Word Kill: the first over 60: all of 10 or less", F(A).up() && !F(B).up() && !F(D).up() && F(E).up(),
                "%d %d %d %d", F(A).status(), F(B).status(), F(D).status(), F(E).status());
+        // HP max 70 with 50 left: by HP max the first is over 60
+        reset();
+        rules::set_fixes(false);
+        put(A, 1, 12, 10, 70);
+        F(A).rec[0x1A4] = 50;
+        put(B, 1, 13, 10, 8);
+        cast(C, 0x7D, {A, B});
+        expect(F_, "Power Word Kill (fixes off): HP max 70, 50 left - the 8 slain, not it", F(A).up() && !F(B).up(),
+               "%d %d", F(A).status(), F(B).status());
+        rules::set_fixes(was);
+    }
+    // ... and AD&D's with the rules fixes (Tom, 2026-10-23): by hit points
+    // now - one of 11-60 alone, else those of 10 or less up to 120 in all
+    // (the oracle's pwk_fix: 10 60 10 120)
+    {
+        const bool was = rules::fixes();
+        rules::set_fixes(true);
+        reset();
+        rules::set_fixes(true);
+        put(A, 1, 12, 10, 70);
+        F(A).rec[0x1A4] = 50;
+        put(B, 1, 13, 10, 8);
+        cast(C, 0x7D, {A, B});
+        expect(F_, "Power Word Kill (fixes on): 50 hit points now - slain alone", !F(A).up() && F(B).up(), "%d %d",
+               F(A).status(), F(B).status());
+        reset();
+        rules::set_fixes(true);
+        const int lim = fv("pwk_fix", 3), each = fv("pwk_fix", 2);
+        std::vector<int> tg;
+        int want_dead = 0, total = 0;
+        for (int k = 0; k < 13 && A + k < BT.n; ++k) {
+            put(A + k, 1, 12 + k % 8, 8 + k / 8, k == 0 ? 5 : each);
+            tg.push_back(A + k);
+            const int h = k == 0 ? 5 : each;
+            if (total + h <= lim) {
+                total += h;
+                ++want_dead;
+            }
+        }
+        int t[24], n = 0;
+        for (int i : tg) t[n++] = i;
+        const auto& fl = play::d->prof->fight;
+        nl = combat::cast(BT, play::mrules->tables, C, 0x7D, *combat::fight_spell(fl.spells, fl.n_spells, 0x7D), t, n, play::rng, L,
+                          24, 0);
+        int dead = 0;
+        for (int i : tg) dead += !F(i).up();
+        snprintf(w, sizeof w, "Power Word Kill (fixes on): %d of 5 and 10 hit points - %d slain (120 in all)", n, want_dead);
+        expect(F_, w, dead == want_dead, "%d slain", dead);
+        rules::set_fixes(was);
     }
 
     // Meteor Swarm (R8): four meteors on the diagonals of the square aimed

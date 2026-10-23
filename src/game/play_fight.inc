@@ -3415,6 +3415,10 @@ void fight_cleanup_party(combat::Result r)
         ch.rec[0x197] = 0;                              // (whatever happened: the party's side after a fight)
         for (uint8_t t : d->prof->fight.ends)
             if (t) rules::remove_affects(ch, t);
+        // Darkness's dragon fear (0x78, R17): the original keeps its -2 / -2
+        // after the fight (no time, not in the list); with the fixes it ends
+        // with the fight (Tom, 2026-10-23; SPEC 12)
+        if (rules::fixes() && d->prof->fight.facts.dk.feared) rules::remove_affects(ch, d->prof->fight.facts.dk.feared);
         rules::keep_hammer(ch, *names, d->facts);       // (its effect ended: the hammer goes)
         // Animated dead: they collapse - dead, on their own side again
         const uint8_t anim = d->prof->fight.facts.sp.animated;

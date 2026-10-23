@@ -2088,6 +2088,15 @@ the game's Settings (As Original: all of them).
   and never uses it - the blindness gets the spell row's time, 0: for
   good. With Item Fixes on the engine uses the worked-out time; off as
   the original.
+- **Darkness's Power Word Kill** (`rules::fixes()`; Tom, 2026-10-23): the
+  original goes by HP max - the first target of 11-60 alone, else every
+  one of 10 or less, no total. With Game Fixes on the engine uses AD&D's
+  rule by hit points now: the first of 11-60 alone, else those of 10 or
+  less up to 120 in all; off as the original.
+- **Darkness's dragon fear** (`rules::fixes()`; Tom, 2026-10-23): the
+  original's "terrified" (-2 to hit and damage) has no time and isn't
+  among the effects a fight's end takes away, so it stays after the
+  fight. With Game Fixes on it ends with the fight; off as the original.
 - **Darkness's gazes' pictures**: the paralysing gaze flies COMSPR
   picture 0x2D, the vampire's 0x32 in the original; the engine flies the
   spell's picture. Kalistes' blows: the original shows the weapon's name

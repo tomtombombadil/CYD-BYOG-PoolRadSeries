@@ -574,6 +574,7 @@ static void behave_darkness()
         return;
     }
     if (!b_oracle_load("darkness_fights")) expect(P, "oracle file", false, "no oracle_darkness_fights.txt");
+    if (!b_oracle_load("darkness_left")) expect(P, "oracle file", false, "no oracle_darkness_left.txt");
     if (!open_game()) {
         expect(P, "the game opened", false);
         return;
