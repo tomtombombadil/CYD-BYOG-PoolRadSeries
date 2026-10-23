@@ -118,6 +118,14 @@ the Project as claude/TODO.md.
       gazes' pictures (COMSPR 0x2D / 0x32); Kalistes' weapon on row 23;
       the beholder's ray target (the original's picker, ovr 0x23130); an
       Energy Drain check.
+- [ ] Darkness 256 colours on the S3 / C5 (merged, branch darkness-vga):
+      matches DOSBox's VGA mode. Open: the overland arena fight (jumper ->
+      Arena -> Overland -> Prime, river No, monster 10 x 1) gives an
+      all-river field with no monster and an empty frame after (EGA
+      too; DOSBox: grass, the monster, the map back); the VGA fight's 40
+      field tiles (23 KB) in internal RAM - one block would go to PSRAM;
+      a Settings switch for EGA on the S3 / C5 (Claude: not now - Tom's
+      rule is 256 colours there).
 - [x] Darkness's fight memory (v0.136.1): the 30-monster test fight 169
       -> 150.6 KB (Curse 146 -> 132, Pool 147 -> 133): the script's code
       parked during fights and its memory the fight's arena, the monster
