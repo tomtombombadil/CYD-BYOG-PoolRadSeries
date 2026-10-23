@@ -172,6 +172,11 @@ static void settle(int choice = 0, int max_ms = 60000)
         play::tick(g_now, C);
         { char jk; int jn; if (play::journal_request(&jk, &jn)) printf("  JOURNAL %c %d\n", jk, jn); }
         using namespace play;
+        if (play::lk.on) {                // (Treasures' LUCK texts: a tap at each page's end)
+            if (play::lk.prompt) { shot("luck"); play::tap(10, 10, C); }
+            else if (play::rom.asking) { shot("ask"); play::tap((int)strlen(play::menu.prompt) * 8 + 2 + (getenv("ROMREJECT") ? play::menu.start[1] * 8 : 0), text::kMenuRow * 8 + 2, C); }
+            continue;
+        }
         if (!waiting) return;
         const auto wt = vm->wait();
         if (play::input() != play::Input::None) {
@@ -1062,6 +1067,24 @@ int main(int argc, char** argv)
     }
     if (getenv("FINDLOCK")) for (int y = 0; y < 16; ++y) for (int x = 0; x < 16; ++x) for (int dd = 0; dd < 8; dd += 2) if (geo::passage(play::d->map, x, y, dd) >= 2) printf("locked %d,%d,%d\n", x, y, dd);
     if (getenv("SEARCH")) play::vm->set(0x7ECA, play::vm->get(0x7ECA) | 1);     // SEARCH=1: Search on before the moves
+    // GBYTES=off=value,...: the game block's bytes (hex offsets) before the
+    // moves; GNAME=off:NAME,...: a name there (Treasures' romance)
+    for (const char* q = getenv("GBYTES"); q && *q;) {
+        unsigned o, v;
+        if (sscanf(q, "%x=%u", &o, &v) == 2 && o < sizeof play::d->gs.area1) play::d->gs.area1[o] = (uint8_t)v;
+        q = strchr(q, ',');
+        if (q) ++q;
+    }
+    for (const char* q = getenv("GNAME"); q && *q;) {
+        unsigned o;
+        char nm[20] = {};
+        if (sscanf(q, "%x:%19[^,]", &o, nm) == 2 && o + 16 < sizeof play::d->gs.area1) {
+            memset(play::d->gs.area1 + o, 0, 16);
+            memcpy(play::d->gs.area1 + o, nm, strlen(nm));
+        }
+        q = strchr(q, ',');
+        if (q) ++q;
+    }
     if (getenv("TELE")) { int x, y, dd; sscanf(getenv("TELE"), "%d,%d,%d", &x, &y, &dd); play::d->gs.x = x; play::d->gs.y = y; play::d->gs.dir = dd; play::after_move_redraw(); }
     const char* moves = argc > 2 ? argv[2] : "FFFF";
     for (const char* m = moves; *m; ++m) {

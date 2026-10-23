@@ -154,7 +154,7 @@ struct Data {
     char           w_these[16] = {};                        // Secret: " these spells?" after Memorize / Scribe
     char           w_alter[36] = {}, w_select[14] = {}, w_place[14] = {};   // Alter's menus
     char           w_speed[24] = {};           // Darkness: Speed's word list ("Faster Slower Exit")
-    char           w_save_which[24] = {}, w_slots[24] = {}, w_saving[24] = {}, w_camp_menu[40] = {},
+    char           w_save_which[24] = {}, w_slots[24] = {}, w_saving[24] = {}, w_camp_menu[40] = {}, w_crown_menu[44] = {},
                    w_camp[8] = {}, w_makes_camp[28] = {};
 
     // View Character's words (from the program and GAME.OVR)
@@ -3091,9 +3091,14 @@ int camp_pic()
 bool no_rest_here() { return darkness_files() && vm->get(0x2B) == 1 && vm->get(0x2C) >= 100; }
 
 // The camp menu's words (without Rest and Fix where no rest is possible)
+bool tr_crown()
+{
+    // (its camp, ovl 0x74 +0x2EDE: game byte 0x3E set and 0x25B not 2)
+    return d->prof->variant.tr && d->w_crown_menu[0] && d->gs.area1[0x3E] && d->gs.area1[0x25B] != 2;
+}
 void camp_words(char* out, size_t cap)
 {
-    snprintf(out, cap, "%s", d->w_camp_menu);
+    snprintf(out, cap, "%s", tr_crown() ? d->w_crown_menu : d->w_camp_menu);
     if (!no_rest_here()) return;
     // word 3 (Rest) and 5 (Fix) of "Save View Magic Rest Alter Fix Exit"
     char tmp[sizeof d->w_camp_menu];
@@ -3115,10 +3120,9 @@ void camp_words(char* out, size_t cap)
     snprintf(out, cap, "%s", tmp);
 }
 
-void draw_camp(pic::Canvas& c)
+void draw_camp_screen(pic::Canvas& c)
 {
-    // The exploring screen; the party's camp in the text window (Secret:
-    // its camp picture in the view)
+    // The exploring screen (Secret: its camp picture in the view)
     anim_stop();
     pic_shown = false;
     head_shown = body_shown = -1;
@@ -3129,8 +3133,26 @@ void draw_camp(pic::Canvas& c)
         if (d->prof->variant.camp_pic) draw_own_pic(camp_pic());
         draw_panel(c);
     }
+}
+
+void draw_camp(pic::Canvas& c)
+{
+    // The party's camp in the text window
+    draw_camp_screen(c);
     text::clear(c, text::kTextArea);
-    put(c, d->w_makes_camp, 1, 18, 10);
+    const auto& tv = d->prof->variant;
+    if (tv.tr && d->gs.area1[0x3B]) {
+        // Treasures: "The party has acquired the..." and each crystal (game
+        // byte 0x3B's bits; ovl 0x74 +0x2D1E)
+        char t[40];
+        ow(tv.tr_acquired, t, sizeof t);
+        put(c, t, 1, 17, 10);
+        for (int k = 0; k < 3; ++k)
+            if (d->gs.area1[0x3B] & (1 << k)) {
+                ow(tv.tr_crystal[k], t, sizeof t);
+                put(c, t, 11, 18 + k, 15);
+            }
+    } else put(c, d->w_makes_camp, 1, 18, 10);
     dirty_rows(17, 22);
     // Darkness takes Rest and Fix off when resting can't be done here
     // (its camp at ovr 0x104F1: byte 0x2B = 1 and 0x2C >= 100 - the town's)
@@ -3149,11 +3171,18 @@ bool camp_from_script = false;     // PROGRAM 9: breaking camp lets the script g
 // rest's 0x2BEB9 counts on from rest to rest: 288 five-minute steps)
 int camp_heal_steps = 0;
 
+bool tr_romance(pic::Canvas& c);
+void tr_crown_used(pic::Canvas& c);
+
 void open_camp(pic::Canvas& c)
 {
     camp_heal_steps = 0;
     dk_own[kDkCamp] = 0;
     screen = Screen::Camp;
+    if (d->prof->variant.tr) {
+        draw_camp_screen(c);
+        if (tr_romance(c)) return;          // (its texts first, then the camp - ovl 0x74 +0x2D08)
+    }
     draw_camp(c);
 }
 
@@ -3204,6 +3233,9 @@ void camp_tap(int x, int y, pic::Canvas& c)
         case 'R': open_rest(c, false); break;
         case 'A': open_alter(c); break;
         case 'F': fix_party(c); break;
+        case 'C':
+            if (tr_crown()) tr_crown_used(c);
+            break;
         case 'E': leave_camp(c); break;
         case 0: break;
         default: error(c, "Not in the engine yet."); break;
@@ -3265,6 +3297,377 @@ void leave_party(int i)
     --pt->count;
     pt->selected = i > 0 ? i - 1 : 0;
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
+}
+
+// ---- Treasures' LUCK.DAX texts ------------------------------------------------------
+// PROGRAM 3 (ovl 0x74 +0x2A75): the news - block 0 when game byte 0x25B is
+// 1 (then 2: the crown), 12 when 0x1F7 is 0xFF, else the first k of 1-10
+// whose byte 0x125 + k isn't 1 (11 when all are); a page (0x0C) at a time
+// in the script's text window, green, "press a key" after each; CR / LF /
+// ^Z left out; the window cleared at the end. The camp's romance (ovl 0x79
+// +0x3CC) prints line by line ("line " - the lines run on), \x02 - \x08 the
+// two characters' names, a third member's, "HIS" / "HER".
+struct LuckRun {
+    bool     on = false, romance = false, prompt = false;
+    enum class Then : uint8_t { Vm, Romance, Crown } then = Then::Vm;
+    uint8_t* buf = nullptr;
+    uint32_t len = 0, pos = 0;
+    char     page[720] = {};
+} lk;
+
+// The romance's state: the two (party indices), what's still to do
+struct Romance {
+    int a = -1, b = -1;                 // the characters named at game bytes 0xF4 / 0xE4
+    int acts[6] = {}, n = 0, i = 0;     // LUCK blocks (> 0) and steps (kLeave ...)
+    int witness = -1;                   // \x06: a member who isn't one of them (its [0xA44])
+    bool asking = false, pic = false;   // "Accept Reject" up; PIC 131 shown
+} rom;
+constexpr int kRomLeave = -1, kRomAsk = -2, kRomPic = -3;
+
+void lk_free()
+{
+    free(lk.buf);
+    lk.buf = nullptr;
+    lk.on = false;
+}
+
+bool lk_load(int block)
+{
+    lk_free();
+    plat::File f;
+    if (!open_dax("LUCK.DAX", f)) return false;
+    plat::FileSource src(f);
+    const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
+    if (e) lk.buf = static_cast<uint8_t*>(malloc(e->raw_size + 16));
+    lk.len = e && lk.buf ? dax::load_block(src, d->idx, *e, lk.buf) : 0;
+    f.close();
+    if (!lk.len) {
+        lk_free();
+        plat::log("[play] LUCK %d: not read\n", block);
+        return false;
+    }
+    lk.pos = 0;
+    return true;
+}
+
+// The name in the game block from `at` (a byte a letter, 0 ends it)
+void game_name(int at, char* out, size_t cap)
+{
+    size_t o = 0;
+    for (int k = 0; k < 16 && d->gs.area1[at + k] && o + 1 < cap; ++k) out[o++] = static_cast<char>(d->gs.area1[at + k]);
+    out[o] = 0;
+}
+
+// \x02 - \x08 (ovl 0x79 +0x122 ... +0x2CE): the one whose count is the
+// higher first (0x105 > 0x106: B), the other, A's name, B's, a witness,
+// his / her of the first, of the second
+void rom_word(int code, char* out, size_t cap)
+{
+    out[0] = 0;
+    const bool b_first = d->gs.area1[0x105] > d->gs.area1[0x106];
+    auto sex_word = [&](int who) {
+        const party::Character* ch = who >= 0 && who < pt->count ? &pt->m[who] : nullptr;
+        const bool her = ch && party::darkness_byte(ch->rec, ch->ext, ch->n_items, 0x166);
+        ow(her ? d->prof->variant.tr_her : d->prof->variant.tr_his, out, cap);
+    };
+    switch (code) {
+    case 2: game_name(b_first ? 0xE4 : 0xF4, out, cap); break;
+    case 3: game_name(b_first ? 0xF4 : 0xE4, out, cap); break;
+    case 4: game_name(0xF4, out, cap); break;
+    case 5: game_name(0xE4, out, cap); break;
+    case 6:
+        if (rom.witness >= 0 && rom.witness < pt->count) pt->m[rom.witness].name(out, cap);
+        break;
+    case 7: sex_word(b_first ? rom.b : rom.a); break;
+    case 8: sex_word(b_first ? rom.a : rom.b); break;
+    default: break;
+    }
+}
+
+// The next page's text from the block (false: none left)
+bool lk_page()
+{
+    size_t o = 0;
+    bool any = false;
+    while (lk.pos < lk.len) {
+        const uint8_t ch = lk.buf[lk.pos++];
+        if (ch == 0x0C) {
+            if (any) break;
+            continue;
+        }
+        if (ch == 0x1A || ch == 0x0A) continue;
+        if (ch == 0x0D) {
+            if (lk.romance && o && o + 1 < sizeof lk.page && lk.page[o - 1] != ' ') lk.page[o++] = ' ';
+            continue;
+        }
+        if (lk.romance && ch >= 2 && ch <= 8) {
+            char t[24];
+            rom_word(ch, t, sizeof t);
+            for (const char* q = t; *q && o + 1 < sizeof lk.page; ++q) lk.page[o++] = *q;
+            any = true;
+            continue;
+        }
+        if (o + 1 < sizeof lk.page) lk.page[o++] = static_cast<char>(ch);
+        if (ch != ' ') any = true;
+    }
+    lk.page[o] = 0;
+    return any;
+}
+
+void lk_show(pic::Canvas& c)
+{
+    text::begin(w, c, lk.page, script_area(), 10, true);
+    dirty_rows(17, 22);
+    t_started = false;
+    lk.prompt = false;
+}
+
+void lk_start(pic::Canvas& c, int block, bool romance, LuckRun::Then then)
+{
+    lk.romance = romance;
+    lk.then = then;
+    plat::log("[play] LUCK %d\n", block);
+    if (!lk_load(block) || !lk_page()) {
+        lk_free();
+        lk.on = true;               // (nothing to show: straight on)
+        lk.prompt = true;
+        lk.pos = lk.len = 0;
+        lk.page[0] = 0;
+        return;
+    }
+    lk.on = true;
+    lk_show(c);
+}
+
+void rom_next(pic::Canvas& c);
+void lk_end(pic::Canvas& c)
+{
+    lk_free();
+    clear_menu_line(c);
+    switch (lk.then) {
+    case LuckRun::Then::Vm:
+        text::clear(c, text::kTextArea);
+        dirty_rows(17, 22);
+        waiting = false;
+        handle(vm->resume());
+        break;
+    case LuckRun::Then::Romance: rom_next(c); break;
+    case LuckRun::Then::Crown:
+        // (the crown's text over its picture; the picture goes after - ovl 0x74 +0x2C5A)
+        text::clear(c, text::kTextArea);
+        c.fill(24, 24, 88, 88, 0);
+        dirty_rows(3, 22);
+        pic_shown = false;
+        draw_view(c);
+        draw_camp(c);
+        break;
+    }
+}
+
+void lk_tick(uint32_t now, pic::Canvas& c)
+{
+    if (lk.prompt) {
+        if (!lk.len) lk_end(c);            // (an empty text)
+        else if (in_demo) {
+            auto_tap = true;
+            tap(0, 0, c);
+            auto_tap = false;
+        }
+        return;
+    }
+    if (w.state == text::State::Writing) {
+        if (!t_started) {
+            t_last = now;
+            t_started = true;
+        }
+        const int n = static_cast<int>((now - t_last) / kCharMs);
+        if (n > 0) {
+            t_last += static_cast<uint32_t>(n) * kCharMs;
+            text::step(w, c, d->font, n);
+            dirty_rows(17, 22);
+        }
+    }
+    if (w.state == text::State::PageFull || w.state == text::State::Done) {
+        clear_menu_line(c);
+        put(c, d->press_key, 0, text::kMenuRow, 13);
+        lk.prompt = true;
+    }
+}
+
+void lk_tap(pic::Canvas& c)
+{
+    if (!lk.prompt) {
+        if (w.state == text::State::Writing) {
+            text::step(w, c, d->font, -1);      // a tap prints the rest of the page
+            dirty_rows(17, 22);
+        }
+        return;
+    }
+    clear_menu_line(c);
+    if (w.state == text::State::PageFull) {
+        text::next_page(w, c);
+        dirty_rows(17, 22);
+        lk.prompt = false;
+        t_last = plat::now_ms();
+        return;
+    }
+    if (lk_page()) lk_show(c);
+    else lk_end(c);
+}
+
+// PROGRAM 3's block (ovl 0x74 +0x2A75)
+int luck_news_block()
+{
+    uint8_t* g = d->gs.area1;
+    if (g[0x25B] == 1) {
+        g[0x25B] = 2;
+        return 0;
+    }
+    if (g[0x1F7] == 0xFF) return 12;
+    int k = 1;
+    while (k <= 10 && g[0x125 + k] == 1) ++k;
+    return k;
+}
+
+// The camp's Crown: its picture (PIC 130) and PROGRAM 3's text
+void tr_crown_used(pic::Canvas& c)
+{
+    anim_stop();
+    c.fill(24, 24, 88, 88, 0);
+    draw_own_pic(130);
+    pic_shown = true;
+    clear_menu_line(c);
+    lk_start(c, luck_news_block(), false, LuckRun::Then::Crown);
+}
+
+// The romance (ovl 0x79 +0x742, +0x8E6): with game byte 0x104 set, the
+// two named characters get effect 0x83 (anyone else loses it); when both
+// are up and the stages of bytes 0x105 / 0x106 (count / 25, at most 4)
+// have changed since bytes 0x4C / 0x4B, the stages' text (LUCK 101-117)
+bool tr_romance(pic::Canvas& c)
+{
+    uint8_t* g = d->gs.area1;
+    rom = Romance{};
+    if (!g[0x104] || !pt || !names) return false;
+    char an[20], bn[20], nm[20];
+    game_name(0xF4, an, sizeof an);
+    game_name(0xE4, bn, sizeof bn);
+    for (int i = 0; i < pt->count; ++i) {
+        pt->m[i].name(nm, sizeof nm);
+        if (rom.a < 0 && an[0] && strcmp(nm, an) == 0) rom.a = i;
+        if (rom.b < 0 && bn[0] && strcmp(nm, bn) == 0) rom.b = i;
+    }
+    constexpr uint8_t kFx = 0x83;
+    for (int i = 0; i < pt->count; ++i) {
+        party::Character& ch = pt->m[i];
+        const bool one = i == rom.a || i == rom.b;
+        if (one && !ch.has_affect(kFx)) spells::add_affect(ch, kFx, 0, 0, false);
+        else if (!one && ch.has_affect(kFx)) rules::remove_affects(ch, kFx);
+    }
+    if (rom.a < 0 || rom.b < 0) return false;
+    auto up = [&](int i) { return party::darkness_byte(pt->m[i].rec, pt->m[i].ext, pt->m[i].n_items, 0x1EE) != 0; };
+    if (!up(rom.a) || !up(rom.b)) return false;
+    auto stage = [](int v) { return v / 25 < 4 ? v / 25 : 4; };
+    const int sa = stage(g[0x105]), sb = stage(g[0x106]);
+    if (sb == g[0x4B] && sa == g[0x4C]) return false;
+    g[0x4B] = static_cast<uint8_t>(sb);
+    g[0x4C] = static_cast<uint8_t>(sa);
+    for (int i = 0; i < pt->count; ++i)
+        if (i != rom.a && i != rom.b && up(i)) {
+            rom.witness = i;
+            break;
+        }
+    // The text for each pair of stages (ovl 0x79 +0x9A9 ...)
+    static const int8_t kText[5][5] = {{0, 1, 2, 3, 4}, {1, 5, 6, 7, 8}, {2, 6, 9, 10, 11}, {3, 7, 10, 12, 13},
+                                       {4, 8, 11, 12, 0}};
+    auto add = [&](int v) {
+        if (rom.n < 6) rom.acts[rom.n++] = v;
+    };
+    if (sa == 4 && sb == 4) {
+        add(kRomPic);
+        add(114);
+        add(kRomAsk);
+    } else if (kText[sa][sb]) {
+        add(100 + kText[sa][sb]);
+        if (kText[sa][sb] == 4) add(kRomLeave);         // (104: A leaves the party)
+    } else return false;
+    text::clear(c, text::kTextArea);
+    dirty_rows(17, 22);
+    rom_next(c);
+    return true;
+}
+
+void rom_leave(pic::Canvas& c)
+{
+    if (rom.a < 0) return;
+    if (rom.b > rom.a) --rom.b;
+    leave_party(rom.a);
+    rom.a = -1;
+    draw_party(c, 17);
+}
+
+void rom_next(pic::Canvas& c)
+{
+    while (rom.i < rom.n) {
+        const int a = rom.acts[rom.i++];
+        if (a > 0) {
+            lk_start(c, a, true, LuckRun::Then::Romance);
+            return;
+        }
+        if (a == kRomLeave) rom_leave(c);
+        else if (a == kRomPic) {
+            anim_stop();
+            c.fill(24, 24, 88, 88, 0);
+            draw_own_pic(131);
+            pic_shown = true;
+            rom.pic = true;
+        } else if (a == kRomAsk) {
+            char words[24];
+            ow(d->prof->variant.tr_accept, words, sizeof words);
+            text::build(menu, "", words);
+            menu.selected = 0;
+            show_menu_line(c);
+            lk.on = true;               // (the answer comes to lk_tap's menu)
+            lk.prompt = false;
+            lk.then = LuckRun::Then::Romance;
+            rom.asking = true;
+            return;
+        }
+    }
+    // Done: the camp as usual
+    if (rom.pic) {
+        rom.pic = false;
+        pic_shown = false;
+        c.fill(24, 24, 88, 88, 0);
+        draw_view(c);
+    }
+    draw_camp(c);
+}
+
+// "Accept Reject" (ovl 0x79 +0xC76): Accept - LUCK 115; Reject - 116, A
+// leaves, 117, and B's Charisma (its own and in use) 6 lower (0 at least),
+// B's effect 0x83 marked (byte 3 = 1)
+void rom_answer(int k, pic::Canvas& c)
+{
+    clear_menu_line(c);
+    lk.on = false;
+    rom.asking = false;
+    rom.n = rom.i = 0;
+    if (k == 0) {
+        rom.acts[rom.n++] = 115;
+    } else {
+        rom.acts[rom.n++] = 116;
+        rom.acts[rom.n++] = kRomLeave;
+        rom.acts[rom.n++] = 117;
+        if (rom.b >= 0) {
+            party::Character& ch = pt->m[rom.b];
+            for (int o = 0x1A; o <= 0x1B; ++o) ch.rec[o] = ch.rec[o] > 6 ? static_cast<uint8_t>(ch.rec[o] - 6) : 0;
+            for (int i = 0; i < ch.n_affects; ++i)
+                if (ch.affects[i][0] == 0x83) ch.affects[i][3] = 1;
+            rules::recalc(ch, *names, d->facts);
+        }
+    }
+    rom_next(c);                        // (the picture stays up until the end)
 }
 
 void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt)
@@ -6758,6 +7161,7 @@ struct RestRun {
     int  unit = 2;                  // being set: 2 minutes, 3 hours, 4 days
     bool running = false, from_magic = false, interrupted = false;
     bool fix = false;               // Fix's rest: `fix_heal` shared out at its end
+    bool ship = false;              // Treasures' PROGRAM 4: the script goes on after it
     int  fix_heal = 0;
     uint32_t pause_until = 0;       // a message stays a moment
     int  shown = 0;                 // steps since the time was shown
@@ -6821,6 +7225,17 @@ void end_rest(pic::Canvas& c)
     rest.running = false;
     text::clear(c, text::kTextArea);
     dirty_rows(17, 22);
+    if (rest.ship) {
+        // (Treasures' PROGRAM 4: an interruption only ends it - its result
+        // isn't looked at by the script's PROGRAM)
+        rest.ship = rest.interrupted = false;
+        clear_menu_line(c);
+        screen = Screen::Game;
+        draw_position(c);
+        waiting = false;
+        handle(vm->resume());
+        return;
+    }
     if (rest.interrupted) {
         // The camp breaks up; the area's camp-interrupted script runs
         rest.interrupted = false;
@@ -6985,6 +7400,22 @@ void fix_party(pic::Canvas& c)
     rest.r.paladin_cure = profile::view_facts(d->prof->game).paladin_cure;
     clear_menu_line(c);
     draw_rest_time(c);
+}
+
+// Treasures' PROGRAM 4 (ovl 0x74 +0x292C): on a ship's passage the party
+// heals itself as the camp's Fix does when anyone is hurt (not with game
+// byte 1 set), then the script goes on
+void ship_rest(pic::Canvas& c)
+{
+    if (!d->gs.area1[1] && spells::hp_lost(*pt) > 0) {
+        fix_party(c);
+        if (screen == Screen::Rest && rest.running) {
+            rest.ship = true;
+            return;
+        }
+    }
+    waiting = false;
+    handle(vm->resume());
 }
 
 void show_memory(pic::Canvas& c);
@@ -9024,6 +9455,8 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
     if (!d->ac_hp_head[0]) strcpy(d->ac_hp_head, "AC  HP");
     if (!d->v_exit[0]) strcpy(d->v_exit, "Exit");
     if (pp.camp_menu) text::read_pascal(exe, info, pp.camp_menu, d->w_camp_menu, sizeof d->w_camp_menu);
+    if (d->prof->variant.tr_crown_menu)
+        text::read_pascal(exe, info, d->prof->variant.tr_crown_menu, d->w_crown_menu, sizeof d->w_crown_menu);
     if (d->prof->variant.tr) {
         // Treasures: its menus show only the words their callers enable (its
         // o121+0x1134) - the camp's lone "C" never (DOSBox)
@@ -9731,6 +10164,12 @@ void begin_wait(pic::Canvas& c)
         break;
     case ecl::Wait::Won:                // PROGRAM 8: the game won
         start_won(c);
+        break;
+    case ecl::Wait::Luck:               // Treasures' PROGRAM 3: the news
+        lk_start(c, luck_news_block(), false, LuckRun::Then::Vm);
+        break;
+    case ecl::Wait::ShipRest:           // Treasures' PROGRAM 4: healing on the way
+        ship_rest(c);
         break;
     case ecl::Wait::Key:                // "press <enter>/<return> to continue"
         journal_ready();                // (Darkness: JOURNAL n's sentence waits for a key)
@@ -13000,6 +13439,18 @@ void tap(int x, int y, pic::Canvas& c)
     if (!d) return;
     cv = &c;
     if (demo_input(c)) return;
+    if (lk.on) {
+        if (rom.asking) {
+            // (the romance's "Accept Reject")
+            if (y >= text::kMenuTapTop) {
+                const int k = text::hit(menu, x / 8);
+                if (k >= 0) rom_answer(k, c);
+            }
+            return;
+        }
+        lk_tap(c);
+        return;
+    }
     // (Darkness: the menu's place follows the word picked - facts L8)
     if (kept_hl() && menu_on && y >= text::kMenuTapTop && menu.count > 0) hl_picked(text::hit(menu, x / 8));
     if (screen != Screen::Game) {
@@ -13243,6 +13694,10 @@ void effects_clock(int m, pic::Canvas& c)
 // What each screen does as time passes
 void tick_screens(uint32_t now, pic::Canvas& c)
 {
+    if (lk.on) {
+        if (!rom.asking) lk_tick(now, c);
+        return;
+    }
     if (screen == Screen::Rest) {
         cv = &c;
         rest_tick(now, c);

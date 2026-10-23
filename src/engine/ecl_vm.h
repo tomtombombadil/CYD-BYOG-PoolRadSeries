@@ -94,6 +94,8 @@ enum class Wait : uint8_t {
     Camp,         // PROGRAM 9: the camp; resume() when the party breaks camp (the script has ended)
     Vault,        // COMBAT with Secret's vault word set: its vault (VAULT.DAT); resume() when the party leaves
     Won,          // PROGRAM 8: the game won - the ending, then the party menu (the script has ended; Pool: the ending, then resume())
+    Luck,         // Treasures' PROGRAM 3: a LUCK.DAX text (news / the crown's end), page by page; resume() after
+    ShipRest,     // Treasures' PROGRAM 4: the party heals itself on the way (Fix, then a rest); resume() after
 };
 
 enum class Stop : uint8_t { Running, Waiting, Stopped, NewScript, Error };

@@ -655,6 +655,10 @@ struct Profile {
         uint8_t  camp_pic_in = 0;
         // The demo's ECL1 block (0: 0x52; Treasures 4 - its CONTROL "INTRO 1")
         uint8_t  demo_block = 0;
+        // Treasures' camp words (GAME.OVR / the program, text::kInProgram):
+        // the camp menu with Crown, "The party has acquired the...", the
+        // crystals' names, the romance's "Accept Reject" and "HIS" / "HER"
+        uint32_t tr_crown_menu = 0, tr_acquired = 0, tr_crystal[3] = {}, tr_accept = 0, tr_his = 0, tr_her = 0;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

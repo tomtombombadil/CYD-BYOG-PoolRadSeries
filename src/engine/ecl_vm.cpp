@@ -1775,6 +1775,8 @@ Stop Vm::step()
             stop_script();
             return wait_for(Wait::Camp);
         }
+        if (set_.tr_ops && (v == 3 || v == 4))             // (Treasures: its ovl 0x74 +0x2A75 / +0x292C)
+            return wait_for(v == 3 ? Wait::Luck : Wait::ShipRest);
         if (v == 3 && set_.program_kills) {                 // the party is killed
             stop_script();
             h_.party_killed();
