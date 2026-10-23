@@ -64,6 +64,10 @@ struct Host;
 // ~13 KB, and the script memory, ~13 KB) are blocks of their own: the
 // heap is in pieces and no one piece has room for all of it (v0.21.1)
 struct Data {
+    // Gateway: the experience for levels 2-12 of each class (its program's
+    // class records, 8 x 11) - the party list shows who can train (null:
+    // not Gateway)
+    int32_t* gw_xp = nullptr;
     Data(view3d::World& w, ecl::GameState& g) : world(w), gs(g) {}
     ~Data()
     {
@@ -966,6 +970,20 @@ void draw_position(pic::Canvas& c)
 // row 4 - the selected one's name white, the others cyan (red: out of the
 // fights, yellow: on the other side); AC and HP right-aligned at columns
 // 34 and 38, HP yellow when below the most (as the games print it)
+// Gateway: one with the experience for a class's next level (its party
+// list shows them magenta)
+bool gw_trainable(const party::Character& ch)
+{
+    if (!d->gw_xp) return false;
+    for (int k = 0; k < 8; ++k) {
+        const int lv = ch.level(k);
+        if (lv <= 0 || lv >= 12) continue;
+        const int32_t need = d->gw_xp[k * 11 + lv - 1];
+        if (need > 0 && static_cast<int64_t>(ch.exp()) >= need) return true;
+    }
+    return false;
+}
+
 void draw_party(pic::Canvas& c, int col)
 {
     c.fill(col * 8, 2 * 8, (39 - col) * 8, 8, 0);      // (a "no party yet" line goes)
@@ -977,7 +995,7 @@ void draw_party(pic::Canvas& c, int col)
         c.fill(col * 8, row * 8, (39 - col) * 8, 8, 0);
         char t[24];
         ch.name(t, sizeof t);
-        const uint8_t fg = i == pt->selected ? 15 : !ch.in_combat() ? 12 : ch.enemy() ? 14 : 11;
+        const uint8_t fg = i == pt->selected ? 15 : !ch.in_combat() ? 12 : ch.enemy() ? 14 : gw_trainable(ch) ? 13 : 11;
         put(c, t, col, row, fg);
         const int ac = ch.ac_raw();
         const int aw = ac <= 0x32 ? 1 : ac <= 0x3C ? 2 : ac <= 0x45 ? 1 : 0;
@@ -9082,6 +9100,25 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             names->read_types(src, pi.types_head, pi.types_stride);
             tf.close();
         }
+        if (gateway()) {
+            // (Gateway's party list: a name that may train is magenta - DOSBox)
+            const auto& pc = d->prof->create;
+            uint8_t raw[44];
+            d->gw_xp = static_cast<int32_t*>(malloc(8 * 11 * sizeof(int32_t)));
+            for (int k = 0; d->gw_xp && k < 8; ++k) {
+                if (exepack::read(exe, info, pc.ds_image + pc.tables.class_records + k * 99u, raw, sizeof raw) !=
+                    exepack::Status::Ok) {
+                    free(d->gw_xp);
+                    d->gw_xp = nullptr;
+                    break;
+                }
+                for (int i = 0; i < 11; ++i) {
+                    const uint8_t* p = raw + i * 4;
+                    d->gw_xp[k * 11 + i] =
+                        static_cast<int32_t>(p[0] | p[1] << 8 | p[2] << 16 | static_cast<uint32_t>(p[3]) << 24);
+                }
+            }
+        }
     }
     d->items = 0;
     if (pp.items && pp.count <= Data::kItems && pp.stride >= 41) {
@@ -12434,6 +12471,7 @@ void close()
         view3d::vga_free(*w);                   // (Darkness's background picture, VGA tiles)
         for (view3d::TileSet& ts : w->sets) view3d::free_extra(ts);     // (Gateway's big wall sets)
         delete d->alt_font;
+        free(d->gw_xp);
         delete d;
         delete w;
         delete g;

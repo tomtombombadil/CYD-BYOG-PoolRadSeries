@@ -1692,6 +1692,33 @@ segment at image 0x4C70; run as `GAME UseStart`) + GAME.OVR (51 overlays),
   Icon Select (the icon editor), no Add past 6. Loading a save made by the
   original (Curse's format), Begin into Yartar (PIC 5, the texts, the
   prompt, the room at 1,10) and the start room's view match DOSBox.
+- **View, items, character rules, creation.** View Character in its own
+  layout (`layout::character`: bars at rows 8 / 16 / 20, the split column
+  from DS 0x16C8). ITEMS.1's rows are 24 bytes (`items.types_stride`).
+  Curse's rule tables at Gateway's places; a new character has 3,000
+  experience shared by its classes and 35 platinum (`create.start_xp`,
+  `platinum`). Its questions start on Yes, a few with a yellow prompt
+  (`ask_yellow`); "Reroll stats?" on No.
+- **Party menu, training.** A member's functions ask "Pick Character
+  Select Exit" first (`party.pick`); training asks who pays its 1000 gp
+  when the trainee can't (`party.who_pays`).
+- **Shops, temple, magic, camp.** Their menus built from words that apply
+  (`kGatewayJoined` + `keep_words`): the shop's Items (the items screen,
+  Sell / Id / Trade, back to the shop), the temple's Heal list with its bar,
+  the price in the text rows. Magic's headings "1st Level Magic-User
+  Spells" (`magic.kind_names`, `heading_word`), lists starting on their last
+  spell, "to memorize" shown before the question. The camp's picture (PIC
+  29), Alter with Level. All match DOSBox's screens.
+- **Fights.** Curse's rules and tables at Gateway's places, Darkness's
+  two-row menu shape, the field's pictures drawn with 0 and 8 swapped
+  (`variant.field_swap`; the icon editor's 8 black, `eight_black`), the
+  treasure's picture (PIC 1) and menu. A fight's screens, pages and
+  results match DOSBox. The budget fight (`RUNAT=91B1 FIGHT=1`, 6
+  bandits): 137.0 KB at its highest; 30 goblins (MONSWAP=6:8:30, 22
+  placed): 135.5 KB.
+- **Not yet:** the vault (Yartar's: Deposit / Withdraw / Vault, vault.dat),
+  the wilderness (area 6: tile sets only, its drawing not seen yet), the
+  sounds (TSR drivers, ZOUNDS.DAX), the journal, `behave gateway`.
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -2033,6 +2060,12 @@ the game's Settings (As Original: all of them).
   Heal's two lines show together (rows 21-22), the original one after the
   other. (v0.109.0's Delayed Blast Fireball at once: as the original
   since v0.116.0.)
+- **Gateway to the Savage Frontier** (being built): its party menu's
+  "initialize JoyStick/Mouse" isn't shown (its rows stay where the
+  original puts them) and the menu's own "SELECT" isn't printed; the
+  party menu's selected member is drawn white, the cursor line as the
+  other games'. Add also lists saved games' members (as Curse's). No
+  original mistake against AD&D found so far (none behind Game Fixes yet).
 - **Controls and screens**: taps on menu words, list lines and combat
   squares; on-screen keys (movement pad, cursor keys - Up / Down / Left /
   Right / Select - Game, Look, and on 320x240 Map: the area map over
