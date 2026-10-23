@@ -561,10 +561,6 @@ struct Battle {
     // The experience each class's level needs ([class][level], from the
     // rule tables; set by the caller when a level can be drained - Pool)
     int32_t level_exp[8][13] = {};
-    // Darkness's own level drain (its ovr 0x1CF3B): the caller's work on
-    // the fighter's record (create::dk_drain) - 0 lives, 1 collapses, 2 dies
-    int   (*dk_drain)(void* ctx, int fighter, int n) = nullptr;
-    void* dk_ctx = nullptr;
     BoltSeg bolt[16];
     int     n_bolt = 0;
     Cloud   clouds[kMaxClouds];
@@ -633,7 +629,7 @@ enum class Ev : uint8_t {
     // bolt), the paralysing gaze's "gazes...", the beholder's "is Stoned",
     // the vampire's "gazes" (then Cast at `to`)
     Terrified, Beheaded, SlainBolt, ParaGazes, RayStoned, VampGazes,
-    // Darkness's level drain (Battle::dk_drain): "gets drained" (amount: the
+    // Darkness's level drain (combat::g_dk_drain): "gets drained" (amount: the
     // levels), "dies from drainning", "collapses from drainning"
     DkDrained, DkDrainDies, DkDrainCollapses,
 };
@@ -725,8 +721,8 @@ void recount_attacks(Battle& b, int i);
 
 // ---- Attacking
 struct Hit {
-    bool hit = false;
     int  damage = 0;
+    bool hit = false;
     uint8_t weapon = 0;                 // Darkness's Kalistes: the blow's weapon (1-6, R14), shown with "+4"
 };
 struct Attack {
@@ -778,8 +774,12 @@ Attack bite_attack(Battle& b, int a, int c, const items::Names* names, create::D
 // highest level (by its experience) a level less, the experience the new
 // level needs; at level 1: dead forever. The class values (THAC0, saves,
 // slots) are the caller's to work out again (a party member). Darkness
-// (Battle::dk_drain set): its own routine through the caller, its words.
+// (g_dk_drain set): its own routine through the caller, its words.
 void drain(Battle& b, int c, int n, Event* out, int cap, int* n_out, int hit = -1);
+// Darkness's own level drain (its ovr 0x1CF3B; set by the caller for its
+// fights, nullptr otherwise - not in the Battle: its memory): the work on
+// fighter c's record (create::dk_drain) - 0 lives, 1 collapses, 2 dies
+extern int (*g_dk_drain)(Battle& b, int c, int n);
 // Damage: HP 0 unconscious, -1..-9 dying (bleeding), -10 dead (HP kept 0
 // when down); true when they went down
 bool damage(Battle& b, int c, int amount);

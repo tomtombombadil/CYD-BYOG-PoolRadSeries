@@ -82,7 +82,7 @@ void energy_drain()
         return;
     }
     combat::Battle& b = play::fg->b;
-    expect(D_, "the fight drains through Darkness's own routine", b.dk_drain != nullptr);
+    expect(D_, "the fight drains through Darkness's own routine", combat::g_dk_drain != nullptr);
     int mon = -1;
     for (int i = 0; i < b.n && mon < 0; ++i)
         if (b.f[i].member < 0) mon = i;

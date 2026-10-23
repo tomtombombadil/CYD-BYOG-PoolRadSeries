@@ -481,9 +481,9 @@ constexpr int kPageText = 2048;
 struct Page {
     uint16_t line_at[5];                // where each line starts in Fight::ptext
     uint8_t colour[5];
+    uint8_t weapon = 0;                 // Darkness's Kalistes: its blow's weapon + "+4" in the panel's rows 7-9
     int     lines = 0;
     uint8_t sound = 0;                  // the game's sound effect as it shows (0: none)
-    uint8_t weapon = 0;                 // Darkness's Kalistes: its blow's weapon + "+4" in the panel's rows 7-9
     Fx      fx[2];                      // then these, one after the other; then the page's wait
 };
 
@@ -1447,8 +1447,11 @@ void show_page(pic::Canvas& c)
     if (p.weapon) {
         // Kalistes' blow (GAME.OVR 0x1D924): the weapon and "+4" in the
         // attacker's weapon rows - the window 23-38 x 7-9 cleared, colour 10
-        char t[40];
-        snprintf(t, sizeof t, "%s%s", fw(profile::kKalistesW1 + p.weapon - 1), fw(profile::kPlus4Dk));
+        char t[40], a[24], b4[8];
+        const auto& kw = d->prof->fight.kalistes_words;
+        ow(kw[p.weapon - 1], a, sizeof a);
+        ow(kw[6], b4, sizeof b4);
+        snprintf(t, sizeof t, "%s%s", a, b4);
         clear_panel(c, 7, 9);
         panel_text(c, t, 7, 10, 9);
     }
@@ -1664,7 +1667,7 @@ void drained_member(int who)
     if (!had) end_magic();
 }
 
-// Darkness's own level drain (its GAME.OVR 0x1CF3B; Battle::dk_drain): the
+// Darkness's own level drain (its GAME.OVR 0x1CF3B; combat::g_dk_drain): the
 // record's work by create::dk_drain - a party member's own (with its best
 // levels / experience / HP), a monster's whole record; the hit dice from
 // the program (DS hp_count / hp_dice). 0 lives, 1 collapses, 2 dies
@@ -1685,7 +1688,7 @@ bool read_hp_facts(create::Facts& fa)
     return ok;
 }
 
-__attribute__((noinline)) int dk_drain_hook(void*, int who, int n)
+__attribute__((noinline)) int dk_drain_hook(combat::Battle&, int who, int n)
 {
     combat::Fighter& f = fg->b.f[who];
     const bool had = mrules != nullptr;
@@ -3264,7 +3267,7 @@ void fight_start(pic::Canvas& c)
     b.cap = n_fighters;
     b.tables = &fg->t;
     memcpy(b.level_exp, level_exp, sizeof level_exp);
-    if (darkness_files()) b.dk_drain = dk_drain_hook;     // (its own drain: facts L1)
+    combat::g_dk_drain = darkness_files() ? dk_drain_hook : nullptr;     // (its own drain: facts L1)
     b.indoors = vm->get(0x4BE6) != 0;
     // Pool: only its wilderness areas are fought outdoors (the rest from the 3D map)
     const int over = d->prof->variant.overland_area;

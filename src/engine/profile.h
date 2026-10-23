@@ -213,8 +213,6 @@ enum FightWord {
     // Darkness's level drain (its ovr 0x1CF3B): "collapses from drainning"
     // ("gets drained" / "dies from drainning" are kIsDrained / kDeadForever)
     kCollapsesDrainDk,
-    // Kalistes' six weapons and their "+4" (R14; the panel's weapon rows 7-9 at each blow - facts L7)
-    kKalistesW1, kKalistesW2, kKalistesW3, kKalistesW4, kKalistesW5, kKalistesW6, kPlus4Dk,
     kFightWords
 };
 
@@ -531,6 +529,9 @@ struct Profile {
         // sparkles, 10 burst; all 0: Curse's), its marks
         uint8_t         comspr[16] = {};
         combat::Comspr  marks = {};
+        // Darkness's Kalistes: its six weapons' names and "+4" (R14; shown in
+        // the panel's weapon rows at each blow - read when shown, facts L7)
+        uint32_t        kalistes_words[7] = {};
     } fight;
 
     // The script machine's own words (GAME.OVR), in ecl::ScriptWord's order

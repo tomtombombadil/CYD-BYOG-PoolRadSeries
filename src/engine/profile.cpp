@@ -1826,10 +1826,7 @@ const Profile kProfiles[] = {
                // (R14) "is terrified", "is beheaded", "is slain", "gazes...", "is Stoned"
                0x1CC3E, 0x1D8B4, 0x1C98B, 0x1D694, 0x23239,
                // (facts L1) "collapses from drainning"
-               0x1CF22,
-               // (L7) Kalistes' weapons: "Two-Handed Sword", "Bastard Sword", "Long Sword",
-               // "Scimitar", "Dagger", "Spear" (DS 0x34E3 ...), "+4" (DS 0x3C99)
-               kP | 0xD353, kP | 0xD2FF, kP | 0xD329, kP | 0xD2C0, kP | 0xD203, kP | 0xD2D5, kP | 0xDB09
+               0x1CF22
                },
                {0x03, 0x06, 0x0B, 0x15, 0x17, 0x1B, 0x1E, 0x1F, 0x23, 0x34, 0x35, 0x4D, 0x6A, 0x6B, 0x6F, 0x76},
                {.held = {0x33, 0x34, 0x35, 0x1F}, .bless = 0x01, .curse = 0x02, .prayer = 0x31, .haste = 0x27,
@@ -1882,7 +1879,10 @@ const Profile kProfiles[] = {
                // sparkles, 9 the skull, 10 a burst; no flask (a rock); its marks:
                // the grey square under the one whose turn it is (15), the skull (9),
                // the ring round a target (14)
-               {0, 1, 2, 3, 6, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15}, {15, 9, 14}},
+               {0, 1, 2, 3, 6, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15}, {15, 9, 14},
+               // (L7) Kalistes' weapons: "Two-Handed Sword", "Bastard Sword", "Long Sword",
+               // "Scimitar", "Dagger", "Spear" (DS 0x34E3 ...), "+4" (DS 0x3C99)
+               {kP | 0xD353, kP | 0xD2FF, kP | 0xD329, kP | 0xD2C0, kP | 0xD203, kP | 0xD2D5, kP | 0xDB09}},
      // The script machine's words (darkness_facts.md S10): DAMAGE's lines,
      // PRESS KEY's prompt, JOURNAL's sentence, WHAT MENU's question, "Yes No"
      .script_words = {0, 0, 0x7B42, 0x7B4A, 0x7B57, 0x19C2, kP | 0xAC82, 0x261D, 0x2640, 0x1212, kP | 0xC9D4},
