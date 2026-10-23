@@ -743,6 +743,16 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   at run time; output on the DAC (GPIO 26, `hal/audio.*`).
 
 ## Versions and releases
+- **Development mode** (Tom, 2026-10-23: "limit the number of tokens spent
+  on pushing new releases, and focus on development ... Once we get back
+  to a stage when I'm doing a lot of testing of the games, we'll revert"):
+  merge and commit locally as work lands, but push to main (and sync SPEC
+  / TODO to the Project) only at milestones - a game or a big chunk of
+  one done - not after every merge; keep docs edits brief. Game order
+  now: finish Pools of Darkness, then the Savage Frontier games (Gateway,
+  then Treasures) without waiting for Tom's input on routine choices
+  (follow the originals; fixes behind Game Fixes; note open questions in
+  TODO).
 - Semantic versioning from `VERSION` (started 0.1.0, 2026-10-06). Bump it in
   every push to main that changes the firmware (fix = Z, feature = Y).
 - Every push to main: CI runs host tests, builds every board, redeploys the

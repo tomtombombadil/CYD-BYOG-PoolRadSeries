@@ -144,16 +144,11 @@ the Project as claude/TODO.md.
       bulette leaping and striking with all four feet - but the program
       overwrites it at once, so it never happens. Make it work behind
       Game Fixes, or leave it as the original?
-- [ ] Tom: Darkness's sounds - listen on a board (Game menu - Sounds;
-      Rolf's tour; steps). Decide: Tandy as the SL / TL DAC (the samples
-      as they are, as the GOG Sound Blaster) - or the EX / TX chip's 16
-      volumes (TANEXTX.COM; grainier) as a third choice? Tom
-      (2026-10-19): unsure - asked for samples; sent 2026-10-19 (WAVs:
-      DAC, EX / TX chip, PC speaker, side by side) - Tom (2026-10-23):
-      "absolutely identical" - checked: the three differ, but only a
-      little (same recordings; rms difference 4-9 of ~19); Claude to
-      explain and send the differences alone.
-      (The game going on while a sound plays: Tom OK, 2026-10-19.)
+- [x] Darkness's sounds (Tom, 2026-10-23): Claude's recommendation -
+      two choices, Tandy = the recordings as they are (the SL / TL DAC,
+      the GOG Sound Blaster), and the PC speaker; no EX / TX chip choice
+      (it differs only by a little grain). The game goes on while a
+      sound plays (Tom OK, 2026-10-19).
 - [ ] Tom: flash v0.104.0 on the 4.0" S3: the touch (keys now light as
       the stylus touches; light taps after a pause, finger and stylus;
       small keys) and the sounds (Settings' sound test - Step, Hit; Pool's
