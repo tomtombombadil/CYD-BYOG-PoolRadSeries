@@ -1757,7 +1757,15 @@ segment at image 0x4C70; run as `GAME UseStart`) + GAME.OVR (51 overlays),
   as 9 (`as_nine`); the program's numbers are Curse's (steps and turns 10,
   hit 7, miss 9 ...). A script's CALL 0xB200 plays the effect 0x03DE holds
   (`OpSet::sound_word`; 0x80 up is music, not played). No music (MUSIC.DAX).
-- **Not yet:** the journal.
+- **The journal.** The Steam / SNEG release's companion (GBC/Games/08.
+  Gateway to the Savage Frontier/Game.dat in the game's folder) makes it
+  with the existing code (62 entries; checked on the GOG companion's copy of
+  Game.dat); its "...AS JOURNAL" "ENTRY #32." mentions are found. The GOG
+  release: the PDF's book view when the PDF is on the card - no entry table
+  for its PDF yet (`journal_tables.cpp` has Curse's and Pool's), and the GOG
+  companion at /GOLDBOX/GBC isn't used for journals (no JE pictures there;
+  a choice for Tom).
+- **Not yet:** no music (MUSIC.DAX: the original's "0x80 up" sounds).
 
 ## 7. The journal (Tom, 2026-10-06)
 
