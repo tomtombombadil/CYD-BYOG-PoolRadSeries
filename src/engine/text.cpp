@@ -71,6 +71,7 @@ bool read_pascal(dax::ByteSource& exe, const exepack::Info& info, uint32_t pos, 
 {
     if (cap == 0) return false;
     out[0] = 0;
+    pos &= ~kInProgram;                 // (Gateway's version line is at image 0: marked kInProgram so it isn't "none")
     if (pos >= info.image_size) return false;
     uint8_t buf[kMaxString];
     uint32_t want = info.image_size - pos;

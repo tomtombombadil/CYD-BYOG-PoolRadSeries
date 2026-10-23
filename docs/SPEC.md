@@ -1566,6 +1566,33 @@ the scripts' changed ops, the rule tables, fights, the rest.
   messages, the editor through 29 steps (parts, colours, size, Keep /
   Exit, another pass), from creation and its "is this icon ok?".
 
+## 6e. Gateway to the Savage Frontier (Tom, 2026-10-23: started after Darkness)
+
+Facts in the Project's claude/gateway_facts.md (from the player's GOG
+files, its program and the original in DOSBox, EGA; nothing from the game
+in the repo). Its program is Curse's one step on: GAME.EXE (EXEPACK, data
+segment at image 0x4C70; run as `GAME UseStart`) + GAME.OVR (51 overlays),
+422-byte records, Curse's words and tables at other places. Areas 2-6
+(ECL2-6 ...) and shared files without a number (PIC, BIGPIC, WALLDEF,
+8X8D). Built a chunk a commit, Play off its page until it plays
+(`variant.unfinished`).
+
+- **The profile, pictures, title, party menu.** GAME.EXE (36,603 / 41,168
+  bytes) is recognised. Its pictures are its own format (`variant.sf_pics`,
+  picture.h): the 4-bit header's first 9 bytes, a flags byte and its parts
+  - an EGA colour map of 32 nibbles among them - then five bit planes a row
+  (5 bits a pixel, drawn through the map; a picture without a map uses the
+  last one read); its animations the same a frame, frames past the first
+  XORed with the first. `pic::draw`, `read_frame` / `begin_frames` /
+  `next_frame` and the animations read both formats. Its frame is Curse's
+  tables with the tiles from 20 (`variant.frame_base`). The title: TITLE 1-5
+  (Beyond, SSI, Forgotten Realms, the game's, the credits - a picture),
+  3 / 3 / 10 / 20 / 20 s, then "Gateway v1.2 " "Play Demo". The party menu
+  from row 15 (`variant.party_menu_row`), 14 entries (Icon Select;
+  "initialize JoyStick/Mouse" - its key is J, left out as Secret's). The
+  title pictures, the version line and the party menu's frame, prompt and
+  lines match DOSBox's EGA screens pixel for pixel.
+
 ## 7. The journal (Tom, 2026-10-06)
 
 The games tell the player to "read journal entry N" from the printed

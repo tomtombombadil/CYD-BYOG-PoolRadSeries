@@ -1057,6 +1057,30 @@ constexpr TitleStep kDarknessTitle[] = {
     {3, 0, 0, true, 10000, 0},
 };
 
+// Gateway to the Savage Frontier (gateway_facts.md 2, 5): its title
+// (GAME.OVR overlay 0x807): TITLE 1 (Beyond Software), each next one 3, 3,
+// 10 and 20 seconds after the one before was shown - 2 (SSI), 3 (Forgotten
+// Realms), 4 (the game's), 5 (the credits, a picture), then 20 seconds; a
+// key ends it. Its scripts' interpreter (overlay 0xAB8, operand loader seg
+// 0x53): Curse's operand counts but 0x32 FIND ITEM and 0x40 DESTROY ITEMS
+// 4 (Curse 1) and 0x41 2 - every block of ECL2-6 decodes, followed from its
+// entry points
+constexpr TitleStep kGatewayTitle[] = {
+    {1, 0, 0, true, 3000, 0},
+    {2, 0, 0, true, 3000, 0},
+    {3, 0, 0, true, 10000, 0},
+    {4, 0, 0, true, 20000, 0},
+    {5, 0, 0, true, 20000, 0},
+};
+
+constexpr ecl::OpSet kGatewayEcl = [] {
+    ecl::OpSet s = kCurseEcl;
+    s.sizes[0x32] = 4;
+    s.sizes[0x40] = 4;
+    s.sizes[0x41] = 2;
+    return s;
+}();
+
 const Profile kProfiles[] = {
     {games::Game::CurseOfTheAzureBonds, "GOG", "START.EXE", 57789, 62432, 0x48D0,
      {0x6E60, 0x6E88, 0x6EB0, 0x6EF2, 0x6F1B, 0x6F0A, 0x6ED6, 0x6EE3, 0x6F31, 0x6F3E, 0x6F4D, 0x6F64, 0x6F7B},
@@ -1819,6 +1843,36 @@ const Profile kProfiles[] = {
      .joined = kDarknessJoined, .n_joined = sizeof kDarknessJoined / sizeof kDarknessJoined[0],
      // Its vault (facts_shops.md 5): VAULTx.DAT a save slot, TMPVAULT.DAT while playing
      .vault = {.file = "TMPVAULT.DAT", .slot_file = "VAULT%c.DAT", .coins = 3, .item_size = 63}},
+    // Gateway to the Savage Frontier, GOG release (gateway_facts.md; being
+    // built - Tom, 2026-10-23): GAME.EXE 36,603 bytes, EXEPACK, unpacked
+    // 41,168, its data segment at image 0x4C70 (Curse's program one step on:
+    // its words and tables are Curse's at other places); GAME.OVR 347,622
+    // bytes; areas 2-6 (ECL2-6 ...) and files without a number; its own
+    // picture format (picture.h)
+    {.game = games::Game::GatewayToTheSavageFrontier, .release = "GOG", .program = "GAME.EXE",
+     .program_size = 36603, .image_size = 41168, .data_base = 0x4C70,
+     // The frame tables (DS 0x1596 on, tile 20 + value - gateway_facts.md 4):
+     // top, bar, bottom, left, right, column 16, the 3D view's four sides
+     // (from column / row 0), the fight's columns 0, 22, 39
+     .frame = {0x1596, 0x15E6, 0x15BE, 0x160E, 0x1638, 0x1626, 0x1696, 0x16A4, 0x16B2, 0x16C0, 0x1650, 0x1668, 0x1680},
+     .tiles_file = "8X8D1.DAX", .tiles_block = 202,
+     .press_any_key = 0x1D1F,
+     .title_file = "TITLE.DAX", .title = kGatewayTitle, .title_steps = sizeof kGatewayTitle / sizeof kGatewayTitle[0],
+     .title_version = kP | 0x0000, .title_menu = 0x000E,
+     .overlay = "GAME.OVR", .overlay_size = 347622,
+     .first_area = 2, .last_area = 6, .common_tiles_block = 203, .sky_file = "SKY.DAX", .horizon_block = 252,
+     .ecl_ops = &kGatewayEcl,
+     .sky_colours = 0x14B0, .start_area = 2, .start_script = 1,
+     .wild = {},
+     // The party menu: 14 entries (Icon Select, Initialize JoyStick/Mouse
+     // more than Curse's), the words Curse has in its GAME.OVR (gateway_facts.md 6)
+     .party = {0x5988, 14, 42, 0x26840, 0x252D6, 0x3F3C9, 0x3F3CE, "GAME.CFG", 0x25A73, 0x25A85, 0x25B3B, 0x585E,
+               0x217A1, 0, 0, 0, 0x29E5A, 0x29E6C, 0x29E71, 0, 0x29E9B, 0x29EB5,
+               0x22844, 0x2284F, 0x28D1C, 0x28D22, 0x28D2D, 0, 0, 0x28D48, 0x28D5C, kP | 0x6118,
+               0, 0x29066, 0, 0x21DBB, 0x22852},
+     .view = {{0x6434, 27, 18}, {0x661A, 10, 8}, {0x666A, 17, 9}, {0x6704, 7, 2}, {0x6712, 11, 7}, {0x6760, 13, 9}},
+     .variant = {.unfinished = true, .program_words = true, .party_menu_col = 9, .sf_pics = true, .frame_base = 20,
+                 .common_files = true, .party_menu_row = 15}},
 };
 
 } // namespace

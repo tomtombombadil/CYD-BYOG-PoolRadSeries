@@ -87,6 +87,9 @@ struct Tables {
     // in slots 20-30 (0-3 corners, 4 / 5 the bars, 6 / 7 junctions, 9 the
     // row-16 bar's left end - darkness_facts.md 7.1)
     bool chain = false;
+    // The frame tables' tile = this + value (Curse 30; Gateway 20 - its
+    // values 0-13 for the frame, 14-19 the 3D view's: gateway_facts.md 4)
+    uint8_t frame_base = kFrameTile;
     bool loaded = false;
 };
 

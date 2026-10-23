@@ -419,7 +419,7 @@ uint8_t* load_pic4(const char* file, int block, int frame, int* w, int* h)
             const uint32_t fb = ph.frame_bytes();
             out = static_cast<uint8_t*>(malloc(fb));
             bool ok = out != nullptr;
-            for (int k = 0; ok && k <= frame; ++k) ok = r.read(out, fb) == fb;
+            ok = ok && pic::read_frame(r, ph, frame, out);
             if (!ok) {
                 free(out);
                 out = nullptr;
@@ -837,8 +837,12 @@ void load_frames(const char* file, int at, int n)
         pic::Header ph;
         if (r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_header(hdr, e->raw_size, ph) && ph.width_px() == kSq &&
             ph.height == kSq)
-            for (int k = 0; k < n && k < ph.frames && at + k < 40; ++k)
-                if (r.read(fg->tile[at + k], kTileBytes) != kTileBytes) break;
+        {
+            uint8_t map[16];
+            if (pic::begin_frames(r, ph, map))
+                for (int k = 0; k < n && k < ph.frames && at + k < 40; ++k)
+                    if (!pic::next_frame(r, ph, map, fg->tile[at + k])) break;
+        }
     }
     f.close();
 }

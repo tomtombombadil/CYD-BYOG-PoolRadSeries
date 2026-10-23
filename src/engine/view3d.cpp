@@ -169,8 +169,10 @@ bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tile
     if (r.read(hdr, sizeof hdr) != sizeof hdr || !pic::parse_header(hdr, e->raw_size, h)) return false;
     if (h.height != 8 || h.width_cols != 1 || h.frames < 1) return false;
     const int n = h.frames < kSetTiles ? h.frames : kSetTiles;
+    uint8_t map[16];
+    if (!pic::begin_frames(r, h, map)) return false;
     for (int i = 0; i < n; ++i)
-        if (r.read(out.px[i], 32) != 32) return false;
+        if (!pic::next_frame(r, h, map, out.px[i])) return false;
     out.count = n;
     return true;
 }
@@ -219,7 +221,7 @@ bool load_horizon(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Wo
     uint8_t hdr[pic::kHeaderSize];
     if (r.read(hdr, sizeof hdr) != sizeof hdr || !pic::parse_header(hdr, e->raw_size, w.horizon_hdr)) return false;
     if (w.horizon_hdr.frame_bytes() > sizeof w.horizon) return false;
-    if (r.read(w.horizon, w.horizon_hdr.frame_bytes()) != w.horizon_hdr.frame_bytes()) return false;
+    if (!pic::read_frame(r, w.horizon_hdr, 0, w.horizon)) return false;
     w.has_horizon = true;
     return true;
 }

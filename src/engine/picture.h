@@ -67,28 +67,68 @@ struct Canvas {
 
 constexpr size_t kHeaderSize = 17;
 
+// Gateway to the Savage Frontier's pictures (gateway_facts.md 3; the same
+// first 9 bytes, then):
+//   u8  flags         bit 0: 8 bytes follow (not used on EGA), bit 1: the EGA
+//                     colour map follows, bit 3: 24 bytes follow (VGA
+//                     colours, not used on EGA); bit 2 always set
+//   [8 bytes]         (bit 0)
+//   [16 bytes]        (bit 1) the colour map: 32 nibbles, low nibble first -
+//                     pixel value v (0-31) is drawn in EGA colour map[v]
+//   [24 bytes]        (bit 3)
+//   frames x height x width x 5 bytes: each row's five bit planes (plane 0
+//   first, w bytes each, the leftmost pixel in a byte's top bit) - a pixel's
+//   value is the planes' bits (plane p = bit p)
+// A picture without a map is drawn with the last map read (its program
+// keeps one: sf_map). Checked pixel for pixel against the original in
+// DOSBox (EGA): TITLE.DAX's pictures.
 struct Header {
     uint16_t height = 0;
     uint16_t width_cols = 0;
     uint16_t x_cell = 0, y_cell = 0;
     uint8_t  frames = 0;
     uint8_t  extra[8] = {};
+    uint8_t  sf = 0;                 // Savage Frontier: its flags byte (0: the 4-bit format)
+    uint8_t  pre = 0;                // SF: header bytes past the first 17 (the colour map's rest ...)
 
     int width_px() const { return width_cols * 8; }
+    // One frame's pixels as packed nibbles (in memory: draw_pixels)
     uint32_t frame_bytes() const { return static_cast<uint32_t>(height) * width_cols * 4; }
+    // One frame as stored in the block (SF: five planes a row)
+    uint32_t stored_bytes() const { return static_cast<uint32_t>(height) * width_cols * (sf ? 5 : 4); }
 };
 
 // Parses the 17 header bytes. True only if the sizes make sense for a block
 // of raw_size bytes and the frames fill it exactly (true of every picture in
 // Tom's PoolRad, Curse and Secret files; looser checks took some Pools of
 // Darkness blocks for pictures). *extra_bytes is always 0 when it's true.
+// A Savage Frontier picture (above) is taken too: sf set.
 bool parse_header(const uint8_t* p, uint32_t raw_size, Header& out, uint32_t* extra_bytes = nullptr);
+
+// The Savage Frontier header's flags: the bytes its parts take
+int sf_extra(uint8_t flags);
+// The colour map last read (SF pictures without one are drawn with it):
+// 16 bytes, 32 nibbles; reset to colours 0-15 as themselves, 16-31 black
+uint8_t* sf_map();
+void sf_map_reset();
+// Five planes of `cols` bytes (one row) as packed nibbles (cols * 4 bytes)
+// through a colour map
+void sf_row(const uint8_t* planes, int cols, const uint8_t* map, uint8_t* packed);
 
 // Draws frame `frame` of a picture whose header has been read from r (r is
 // positioned just after the header). Pixels equal to mask (0-15) are left
 // out; pass -1 to draw every pixel. Clipped to the canvas.
 // Returns false if the block ran out of data.
 bool draw(dax::RleReader& r, const Header& h, int frame, Canvas& c, int x, int y, int mask = -1);
+
+// Reads frame `frame` into out (h.frame_bytes(): packed nibbles), r
+// positioned just after the 17 header bytes (an SF picture's colour map
+// read on the way and converted through)
+bool read_frame(dax::RleReader& r, const Header& h, int frame, uint8_t* out);
+// The same frame by frame: begin_frames after the 17 header bytes (an SF
+// picture's colour map into map, 16 bytes), then next_frame for each
+bool begin_frames(dax::RleReader& r, const Header& h, uint8_t* map);
+bool next_frame(dax::RleReader& r, const Header& h, const uint8_t* map, uint8_t* out);
 
 // Packed pixels already in memory (h.frame_bytes() bytes of one frame).
 // mask: a colour left out (-1: none); from / to: a colour drawn as another
@@ -109,6 +149,10 @@ void draw_pixels(const uint8_t* data, const Header& h, Canvas& c, int x, int y, 
 // In PIC and FINAL files every frame after the first is stored XORed with
 // the first frame's packed bytes (all but the last byte, as the original
 // program does it) - only the changes from the first frame are non-zero.
+// Gateway's (the Savage Frontier format above): per frame u32 delay, the
+// first 9 header bytes, the flags and their parts, the planes; frames past
+// the first carry no colour map (the first frame's) and are stored XORed
+// with the first frame's planes.
 constexpr size_t kAnimFrameHeader = 21;
 constexpr int kMaxAnimFrames = 32;
 
@@ -117,11 +161,12 @@ struct Anim {
     Header   frame[kMaxAnimFrames];      // frames = 1 in each
     uint32_t delay[kMaxAnimFrames];
     uint32_t data_at[kMaxAnimFrames];    // offset of the frame's pixels in the block
+    uint8_t  map[16] = {};               // SF: the colour map (frame[0].sf set)
 };
 
 // Reads the whole block from r (positioned at its start). True only if the
-// frame headers chain up to exactly raw_size bytes.
-bool parse_anim(dax::RleReader& r, uint32_t raw_size, Anim& out);
+// frame headers chain up to exactly raw_size bytes. sf: Gateway's format
+bool parse_anim(dax::RleReader& r, uint32_t raw_size, Anim& out, bool sf = false);
 
 // Draws one frame. xor_first: the block is from a PIC / FINAL file.
 // Needs a scratch buffer of the first frame's size when xor_first and

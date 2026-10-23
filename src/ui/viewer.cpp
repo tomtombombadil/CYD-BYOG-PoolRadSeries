@@ -195,6 +195,17 @@ int wrap_text(int x, int y, int w, const char* s, ui::Font font, uint16_t col, b
 
 void rescan();
 
+// An animation block in either format (the 4-bit games', Gateway's)
+bool any_anim(const dax::Entry& en, pic::Anim& a)
+{
+    {
+        dax::RleReader r(*src, A->index_, en);
+        if (pic::parse_anim(r, en.raw_size, a)) return true;
+    }
+    dax::RleReader r(*src, A->index_, en);
+    return pic::parse_anim(r, en.raw_size, a, true);
+}
+
 bool open_file(int i)
 {
     close_file();
@@ -235,8 +246,7 @@ bool open_file(int i)
             }
         }
         if (!A->is_pic[e]) {
-            dax::RleReader r(*src, A->index_, en);
-            if (pic::parse_anim(r, en.raw_size, A->cur_anim)) {
+            if (any_anim(en, A->cur_anim)) {
                 A->is_pic[e] = A->is_anim[e] = true;
                 A->pic_hdr[e] = A->cur_anim.frame[0];
                 A->pic_hdr[e].frames = static_cast<uint8_t>(A->cur_anim.frames);
@@ -1756,8 +1766,7 @@ void draw_picture()
         }
     } else if (A->is_anim[block_sel]) {
         if (cur_anim_block != block_sel) {
-            dax::RleReader r(*src, A->index_, A->index_.entries[block_sel]);
-            pic::parse_anim(r, A->index_.entries[block_sel].raw_size, A->cur_anim);
+            any_anim(A->index_.entries[block_sel], A->cur_anim);
             cur_anim_block = block_sel;
         }
         // Frames keep their positions relative to the first frame

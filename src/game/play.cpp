@@ -112,7 +112,7 @@ struct Data {
     int            cities = 0;
 
     // The party menu's words (from the program and GAME.OVR)
-    static constexpr int kItems = 13;        // (Secret: 13 with Initialize Mouse/Joystick)
+    static constexpr int kItems = 14;        // (Secret: 13 with Initialize Mouse/Joystick; Gateway 14 with Icon Select)
     char           item[kItems][41] = {};
     bool           item_on[kItems] = {};   // the program's own starting flags
     int            items = 0;
@@ -1065,7 +1065,7 @@ bool anim_start(int id, const char* stem = "PIC", int x = 24, int y = 24)
         d->dk_anim = nullptr;
     } else if (e) {
         dax::RleReader r(src, *d->anim_idx, *e);
-        if (pic::parse_anim(r, e->raw_size, d->anim) && d->anim.frames > 0) {
+        if (pic::parse_anim(r, e->raw_size, d->anim, d->prof->variant.sf_pics) && d->anim.frames > 0) {
             anim_block = id;
             anim_frame = 0;
             anim_at = plat::now_ms();
@@ -1118,7 +1118,15 @@ void cursor_show()
 // entries are on follows the party, as in the games. A tap on a line
 // picks it; a tap on a character selects them.
 
-char pm_key(int i) { return static_cast<char>(toupper(static_cast<unsigned char>(d->item[i][0]))); }
+// An entry's key: its first capital (Gateway's "initialize JoyStick/Mouse" is J)
+char pm_key(int i)
+{
+    for (const char* q = d->item[i]; *q; ++q)
+        if (*q >= 'A' && *q <= 'Z') return *q;
+    return static_cast<char>(toupper(static_cast<unsigned char>(d->item[i][0])));
+}
+// The party menu's first row (Gateway's from row 15 - DOSBox)
+int pm_row0() { return d->prof->variant.party_menu_row ? d->prof->variant.party_menu_row : 12; }
 
 void pm_flags(bool on[Data::kItems])
 {
@@ -1129,6 +1137,7 @@ void pm_flags(bool on[Data::kItems])
             on[i] = pt->count > 0;
             break;
         case 'I':                               // Secret's Initialize Mouse/Joystick: nothing to set up here
+        case 'J':                               // (Gateway's "initialize JoyStick/Mouse")
             on[i] = false;
             break;
         case 'T':                               // training: only where the game offers it
@@ -1167,7 +1176,7 @@ void draw_party_menu(pic::Canvas& c)
     const int col0 = d->prof->variant.party_menu_col ? d->prof->variant.party_menu_col : 2;
     for (int i = 0; i < d->items; ++i) {
         if (!on[i]) continue;
-        const int row = 12 + pm_lines;
+        const int row = pm_row0() + pm_lines;
         char first[2] = {d->item[i][0], 0};
         put(c, first, col0, row, d->prof->variant.party_menu_col ? 10 : 15);
         put(c, d->item[i] + 1, col0 + 1, row, 10);
@@ -1177,8 +1186,8 @@ void draw_party_menu(pic::Canvas& c)
     if (keys_used && pm_lines) {
         // the cursor keys' line, highlighted as the games' lists are
         const char* it = d->item[pm_item[pm_sel]];
-        c.fill(col0 * 8, (12 + pm_sel) * 8, static_cast<int>(strlen(it)) * 8, 8, 15);
-        font::draw_text(c, d->font, it, col0, 12 + pm_sel, 0, -1);
+        c.fill(col0 * 8, (pm_row0() + pm_sel) * 8, static_cast<int>(strlen(it)) * 8, 8, 15);
+        font::draw_text(c, d->font, it, col0, pm_row0() + pm_sel, 0, -1);
     }
     pm_prompt(c);
     dirty(0, pic::kScreenH);
@@ -8402,7 +8411,7 @@ void pm_tap(int x, int y, pic::Canvas& c)
         draw_party_menu(c);
         return;
     }
-    const int line = row - 12;
+    const int line = row - pm_row0();
     if (line >= 0 && line < pm_lines && y < text::kMenuTapTop) {
         pm_prompt(c);
         pm_choose(pm_item[line], c);
@@ -9017,7 +9026,7 @@ struct Host : ecl::Host {
             }
         } else if (e) {
             dax::RleReader r(src, d->idx, *e);
-            if (pic::parse_anim(r, e->raw_size, d->sprite) && distance >= 0 && distance < d->sprite.frames) {
+            if (pic::parse_anim(r, e->raw_size, d->sprite, d->prof->variant.sf_pics) && distance >= 0 && distance < d->sprite.frames) {
                 const pic::Header& h = d->sprite.frame[distance];
                 pic::draw_anim(src, d->idx, *e, d->sprite, distance, false, c, (h.x_cell + 3) * 8, (h.y_cell + 3) * 8, 0,
                                13, 0);
@@ -10379,7 +10388,7 @@ bool gal_load(uint8_t** parts, int n, const char* file, int add)
         }
         memset(p, 0, kTileBytes);
         const uint32_t fb = ph.frame_bytes();
-        if (fb > kTileBytes || r.read(p, fb) != fb) {
+        if (fb > kTileBytes || !pic::read_frame(r, ph, 0, p)) {
             free(p);
             continue;
         }
@@ -11608,6 +11617,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
 {
     close();
     cv = &c;
+    pic::sf_map_reset();                // (Gateway's pictures without a colour map: the last one read)
     const char* prog = profile::program_name(g);
     if (!prog) {
         snprintf(msg, sizeof msg, "No play test for %s yet.", games::title(g));
@@ -12133,7 +12143,7 @@ bool nav_point(int* x, int* y)
     if (screen == Screen::PartyMenu) {
         if (!pm_lines) return false;
         *x = ((d->prof->variant.party_menu_col ? d->prof->variant.party_menu_col : 2) + 1) * 8 + 2;
-        *y = (12 + pm_sel) * 8 + 2;
+        *y = (pm_row0() + pm_sel) * 8 + 2;
         return true;
     }
     if (menu_on && menu.count) return at_word();
@@ -12201,7 +12211,7 @@ bool tap_target(int x, int y, int* row, int* c0, int* c1)
         }
         return false;
     }
-    if (screen == Screen::PartyMenu && r >= 12 && r < 12 + pm_lines) {
+    if (screen == Screen::PartyMenu && r >= pm_row0() && r < pm_row0() + pm_lines) {
         *row = r;
         *c0 = 1;
         *c1 = 38;

@@ -279,6 +279,114 @@ static void test_picture()
     CHECK(!pic::parse_header(wide.data(), static_cast<uint32_t>(wide.size()), h));    // wider than the screen
 }
 
+// Gateway to the Savage Frontier's pictures: five bit planes a row, a
+// 32-entry colour map (picture.h)
+static int sf_value(int f, int r, int x) { return (f * 5 + r * 3 + x) % 32; }
+static uint8_t sf_mapped(int v) { return static_cast<uint8_t>((v * 7 + 3) % 16); }
+static void sf_planes(Bytes& raw, int f, int height, int cols, int xor_with = -1)
+{
+    for (int r = 0; r < height; ++r)
+        for (int p = 0; p < 5; ++p)
+            for (int c = 0; c < cols; ++c) {
+                uint8_t b = 0;
+                for (int k = 0; k < 8; ++k) {
+                    int v = sf_value(f, r, c * 8 + k);
+                    if (xor_with >= 0) v ^= sf_value(xor_with, r, c * 8 + k);
+                    if ((v >> p) & 1) b = static_cast<uint8_t>(b | (0x80 >> k));
+                }
+                raw.push_back(b);
+            }
+}
+static void sf_header(Bytes& raw, int height, int cols, int frames, uint8_t flags)
+{
+    put16(raw, height);
+    put16(raw, cols);
+    put16(raw, 0);
+    put16(raw, 0);
+    raw.push_back(static_cast<uint8_t>(frames));
+    raw.push_back(flags);
+    if (flags & 1) for (int i = 0; i < 8; ++i) raw.push_back(0xAA);
+    if (flags & 2)
+        for (int v = 0; v < 32; v += 2) raw.push_back(static_cast<uint8_t>(sf_mapped(v) | sf_mapped(v + 1) << 4));
+    if (flags & 8) for (int i = 0; i < 24; ++i) raw.push_back(0x55);
+}
+
+static void test_sf_picture()
+{
+    pic::sf_map_reset();
+    Bytes a, b;
+    sf_header(a, 3, 2, 2, 0x0F);          // every part, the map
+    sf_planes(a, 0, 3, 2);
+    sf_planes(a, 1, 3, 2);
+    sf_header(b, 3, 2, 1, 0x0C);          // no map: the last one read
+    sf_planes(b, 0, 3, 2);
+    const Bytes file = make_dax({{1, a}, {2, b}});
+    dax::MemorySource src(file.data(), static_cast<uint32_t>(file.size()));
+    static dax::Index idx;
+    CHECK(dax::read_index(src, idx) == dax::Status::Ok);
+    static uint8_t px[pic::kScreenW * pic::kScreenH];
+    pic::Canvas c{px, pic::kScreenW, pic::kScreenH};
+    for (int blk = 0; blk < 2; ++blk)
+        for (int frame = 0; frame < 2 - blk; ++frame) {
+            const dax::Entry& e = idx.entries[blk];
+            dax::RleReader r(src, idx, e);
+            uint8_t hdr[pic::kHeaderSize];
+            CHECK(r.read(hdr, sizeof hdr) == sizeof hdr);
+            pic::Header h;
+            CHECK(pic::parse_header(hdr, e.raw_size, h));
+            CHECK(h.sf && h.height == 3 && h.width_px() == 16 && h.frame_bytes() == 24 && h.stored_bytes() == 30);
+            c.clear(pic::kTransparent);
+            CHECK(pic::draw(r, h, frame, c, 10, 20));
+            bool ok = true;
+            for (int row = 0; row < 3; ++row)
+                for (int x = 0; x < 16; ++x)
+                    if (px[(20 + row) * pic::kScreenW + 10 + x] != sf_mapped(sf_value(frame, row, x))) ok = false;
+            CHECK(ok);
+            // read_frame: the same as packed nibbles
+            dax::RleReader r2(src, idx, e);
+            r2.skip(pic::kHeaderSize);
+            uint8_t buf[24];
+            CHECK(pic::read_frame(r2, h, frame, buf));
+            CHECK((buf[0] >> 4) == sf_mapped(sf_value(frame, 0, 0)) && (buf[23] & 15) == sf_mapped(sf_value(frame, 2, 15)));
+        }
+    // A 4-bit picture isn't taken for one, nor the other way round
+    pic::Header h;
+    Bytes classic = make_picture(3, 2, 1, 0, 0);
+    CHECK(pic::parse_header(classic.data(), static_cast<uint32_t>(classic.size()), h) && !h.sf);
+    CHECK(!pic::parse_header(a.data(), static_cast<uint32_t>(a.size() - 1), h));
+    pic::sf_map_reset();
+    CHECK(pic::sf_map()[0] == 0x10 && pic::sf_map()[8] == 0);
+
+    // An animation: 2 frames, the second XORed with the first, no map of its own
+    Bytes an;
+    an.push_back(2);
+    put32(an, 7);
+    sf_header(an, 3, 2, 1, 0x0E);
+    sf_planes(an, 0, 3, 2);
+    put32(an, 9);
+    sf_header(an, 3, 2, 1, 0x04);
+    sf_planes(an, 1, 3, 2, 0);
+    const Bytes af = make_dax({{3, an}});
+    dax::MemorySource asrc(af.data(), static_cast<uint32_t>(af.size()));
+    static dax::Index aidx;
+    CHECK(dax::read_index(asrc, aidx) == dax::Status::Ok);
+    static pic::Anim anim;
+    {
+        dax::RleReader r(asrc, aidx, aidx.entries[0]);
+        CHECK(pic::parse_anim(r, aidx.entries[0].raw_size, anim, true));
+    }
+    CHECK(anim.frames == 2 && anim.delay[1] == 9 && anim.frame[1].sf == 4);
+    for (int f = 0; f < 2; ++f) {
+        c.clear(pic::kTransparent);
+        CHECK(pic::draw_anim(asrc, aidx, aidx.entries[0], anim, f, true, c, 0, 0));
+        bool ok = true;
+        for (int row = 0; row < 3; ++row)
+            for (int x = 0; x < 16; ++x)
+                if (px[row * pic::kScreenW + x] != sf_mapped(sf_value(f, row, x))) ok = false;
+        CHECK(ok);
+    }
+}
+
 // Animation block: 3 frames of 8x2 px (1 column, 2 rows = 8 bytes each);
 // frames 1-2 stored XORed with frame 0 except the last byte.
 static void test_anim()
@@ -7387,6 +7495,7 @@ int main()
     test_round_trip();
     test_bad_files();
     test_picture();
+    test_sf_picture();
     test_anim();
     test_vga();
     test_dk_anim();

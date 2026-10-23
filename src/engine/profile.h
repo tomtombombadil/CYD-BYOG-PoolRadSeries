@@ -631,6 +631,15 @@ struct Profile {
         uint16_t dk_overland_pics = 0;
         const char* marker_file = nullptr;
         uint8_t  marker_block = 0;
+        // Gateway to the Savage Frontier (gateway_facts.md): its pictures and
+        // animations in its own format (picture.h: five bit planes, a colour
+        // map), its frame tables' values from tile 20 (0: Curse's 30), and a
+        // family's file without a number (PIC.DAX, 8X8D.DAX, WALLDEF.DAX,
+        // BIGPIC.DAX) looked in when the area's hasn't the block
+        bool     sf_pics = false;
+        uint8_t  frame_base = 0;
+        bool     common_files = false;
+        uint8_t  party_menu_row = 0;       // the party menu's first row (0: 12; Gateway 15)
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;
