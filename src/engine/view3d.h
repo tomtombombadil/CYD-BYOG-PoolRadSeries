@@ -129,6 +129,15 @@ bool load_tr_tiles(dax::ByteSource& src, const dax::Index& idx, int slot, uint8_
 // The pool's memory let go (tr_more)
 void tr_free(World& w);
 
+// Treasures' overland (its o144+0x8C2): a w x h window of VGA block
+// `block`'s first frame from (sx, sy) drawn at (dx, dy) - its EGA colours,
+// or (vga) its values; pal: the block's palette entries (nullptr: not wanted)
+bool draw_vga_window(dax::ByteSource& src, const dax::Index& idx, uint8_t block, pic::Canvas& c, int sx, int sy, int w,
+                     int h, int dx, int dy, bool vga, pic::VgaPalette* pal = nullptr);
+// The area map's tile n (8X8D0 block 202: 16-19 the arrows) at pixel (x, y),
+// colours 8 and 13 see-through (the party's marker)
+void draw_marker(pic::Canvas& c, const World& w, int n, int x, int y);
+
 // Draws tile number `id` at view cell (row, col) (0-10), colour 13 not drawn.
 void draw_tile(pic::Canvas& c, const World& w, int id, int row, int col);
 

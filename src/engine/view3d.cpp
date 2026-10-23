@@ -427,6 +427,32 @@ bool load_tr_tiles(dax::ByteSource& src, const dax::Index& idx, int slot, uint8_
     return true;
 }
 
+bool draw_vga_window(dax::ByteSource& src, const dax::Index& idx, uint8_t block, pic::Canvas& c, int sx, int sy, int w,
+                     int h, int dx, int dy, bool vga, pic::VgaPalette* pal)
+{
+    const dax::Entry* e = idx.find(block);
+    if (!e) return false;
+    dax::RleReader r(src, idx, *e);
+    pic::VgaHeader hd;
+    uint8_t map[256];
+    if (!vga_start(r, *e, hd, map, pal, vga)) return false;
+    const int pw = hd.width_px();
+    if (sx < 0 || sy < 0 || sx + w > pw || sy + h > hd.height) return false;
+    if (r.skip(static_cast<size_t>(sy) * pw) != static_cast<size_t>(sy) * pw) return false;
+    uint8_t row[320];
+    if (pw > static_cast<int>(sizeof row)) return false;
+    for (int y = 0; y < h; ++y) {
+        if (r.read(row, static_cast<size_t>(pw)) != static_cast<size_t>(pw)) return false;
+        for (int x = 0; x < w; ++x) c.set(dx + x, dy + y, map[row[sx + x]]);
+    }
+    return true;
+}
+
+void draw_marker(pic::Canvas& c, const World& w, int n, int x, int y)
+{
+    if (w.frame) put_frame_tile(c, *w.frame, n, x, y, 8, kMask);
+}
+
 bool load_back(dax::ByteSource& src, const dax::Index& idx, uint8_t block, uint8_t id, World& w, pic::VgaPalette* pal)
 {
     if (w.back && w.back_id == id) return true;

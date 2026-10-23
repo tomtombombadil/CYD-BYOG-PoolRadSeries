@@ -2371,7 +2371,7 @@ const Profile kProfiles[] = {
                .ids = {0, 0, 2, 9, 6, 5, 9, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .quiet_turns = true},
      .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .treasure_pic = 129, .camp_pic = 128, .appraise_div = 2,
                  .fight_unswapped = true, .vga = true, .darkness_files = true, .party_menu_col = 9,
-                 .tr = true, .pic_split = 78, .title_ega = {4, 5}, .camp_pic_in = 132},
+                 .tr = true, .pic_split = 78, .title_ega = {4, 5}, .camp_pic_in = 132, .demo_block = 4},
      // (its font: 8X8D0 block 201 with BORD block 8's text glyphs - the front end)
      .joined = kTreasuresJoined, .n_joined = sizeof kTreasuresJoined / sizeof kTreasuresJoined[0],
      .vault = {.file = "TMPVAULT.DAT", .slot_file = "VAULT%c.DAT", .coins = 3, .item_size = 63}},

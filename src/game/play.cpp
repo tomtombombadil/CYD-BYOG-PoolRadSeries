@@ -80,6 +80,7 @@ struct Data {
     // (BORD block 7) - layout::Tables tr
     uint8_t*       tr_frame = nullptr;
     uint8_t*       tr_pieces = nullptr;
+    uint8_t        tr_over = 0;             // Treasures: the overland's OVER.DAX map (0: none)
     font::Font     font;
     font::Font*    alt_font = nullptr;      // the player's Pools of Darkness font while it's chosen
     bool           alt_tried = false;       // (its file was looked for)
@@ -879,6 +880,28 @@ void draw_overland(pic::Canvas& c)
     dirty_rows(1, 15);
 }
 
+// Treasures' overland (its o144+0x8C2; the demo's): 11 x 11 squares of
+// its OVER.DAX map (8 pixels a square, 16 x 16) round the party - the
+// window kept on the map - and the party's arrow (8X8D0 202's 16-19)
+void draw_tr_overland(pic::Canvas& c)
+{
+    auto clamp = [](int v) { return v < 0 ? 0 : v > 5 ? 5 : v; };
+    const int x0 = clamp(d->gs.x - 5), y0 = clamp(d->gs.y - 5);
+    plat::File f;
+    if (!open_dax("OVER.DAX", f)) {
+        c.fill(24, 24, 88, 88, 0);
+        return;
+    }
+    plat::FileSource src(f);
+    if (!view3d::draw_vga_window(src, d->idx, d->tr_over, c, x0 * 8, y0 * 8, 88, 88, 24, 24, vga != nullptr, vga_load())) {
+        c.fill(24, 24, 88, 88, 0);
+    }
+    vga_take();
+    f.close();
+    view3d::draw_marker(c, d->world, 16 + ((d->gs.dir & 7) >> 1), (3 + d->gs.x - x0) * 8, (3 + d->gs.y - y0) * 8);
+    dirty_rows(3, 13);
+}
+
 bool world_parked = false;           // the 3D view's walls on the card during a fight (play_fight.inc)
 // The scripts' text colour: light green (Darkness: game byte 0x39 - its
 // scripts give speech 14, yellow; 0 or past 15 is 10 - darkness_facts.md S2)
@@ -933,6 +956,8 @@ void dk_background()
     }
 }
 
+extern int tr_lattice_drawn;
+void tr_lattice(pic::Canvas& c);
 void draw_view(pic::Canvas& c)
 {
     if (world_parked) return;
@@ -953,6 +978,11 @@ void draw_view(pic::Canvas& c)
     if (pic_shown) return;
     if (pool_overland()) {
         draw_overland(c);
+        return;
+    }
+    if (d->prof->variant.tr && tr_lattice_drawn != (d->gs.area1[0x3F] ? 2 : 1)) tr_lattice(c);
+    if (d->prof->variant.tr && d->gs.area1[0x3F] && d->tr_over) {
+        draw_tr_overland(c);
         return;
     }
     if (!d->map.loaded) {
@@ -1041,19 +1071,25 @@ void draw_panel(pic::Canvas& c)
 
 // Treasures: the lattice round the picture box (its img 0x199B): BORD 3's
 // frames 0 / 1 along the top and bottom, BORD 5's down the sides
+// Treasures' lattice round the view: BORD 3 / 5, the overland's BORD 4 /
+// 6 (its parchment; resident 0x15D:0x474 - [0x7025] the style drawn)
+int tr_lattice_drawn = 0;
 void tr_lattice(pic::Canvas& c)
 {
+    const int style = d->gs.area1[0x3F] ? 2 : 1;
+    tr_lattice_drawn = style;
     plat::File f;
     if (!open_dax("BORD.DAX", f)) return;
     plat::FileSource src(f);
     struct Part { uint8_t block, frame; int16_t x, y; };
     static const Part kParts[] = {{3, 0, 0, 0}, {3, 1, 0, 112}, {5, 0, 0, 24}, {5, 1, 112, 24}};
     for (const Part& p : kParts) {
-        const dax::Entry* e = d->idx.find(p.block);
+        const dax::Entry* e = d->idx.find(static_cast<uint8_t>(p.block + style - 1));
         if (e) pic::draw_vga_block(src, d->idx, *e, p.frame, c, p.x, p.y, 13, vga_load());
         vga_take();
     }
     f.close();
+    dirty_rows(0, 16);
 }
 
 void draw_frame(pic::Canvas& c)
@@ -9230,6 +9266,17 @@ struct Host : ecl::Host {
     // tiles of that number (darkness_facts.md 7.3); kept for saving
     void load_look(int look) override
     {
+        if (d->prof->variant.tr && d->gs.area1[0x3F]) {
+            // Treasures' overland (game byte 0x3F): the look is its map
+            // picture, OVER.DAX (o144+0xA70)
+            d->tr_over = static_cast<uint8_t>(look);
+            if (screen == Screen::Game && bigpic < 0) {
+                anim_stop();
+                pic_shown = false;
+                draw_view(*cv);
+            }
+            return;
+        }
         if (d->prof->variant.tr) {
             // Treasures: slot 0 takes the look, slots 1 and 2 let go of
             // their tiles (ov43+0xE54)
@@ -9261,6 +9308,10 @@ struct Host : ecl::Host {
     // in slots_done (the saves keep the three blocks)
     void load_slot(int slot, int block) override
     {
+        if (d->gs.area1[0x3F]) {
+            if (block >= 0) d->tr_over = static_cast<uint8_t>(block);     // (the overland's map: o144+0x1511)
+            return;
+        }
         view3d::World& wd = d->world;
         plat::File f;
         if (block >= 0 && open_dax("WALLDEF1.DAX", f)) {
@@ -9360,7 +9411,9 @@ struct Host : ecl::Host {
             dirty_rows(3, 13);
         }
         pic_shown = true;
-        if (d->prof->variant.vga && bigpic < 0) {       // (Darkness: no position line under an event's picture)
+        if (d->prof->variant.vga && !d->prof->variant.tr && bigpic < 0) {
+            // (Darkness: no position line under an event's picture; Treasures
+            // keeps it - DOSBox, the demo)
             c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);
             dirty_rows(15, 15);
         }
@@ -11697,7 +11750,7 @@ void start_demo(pic::Canvas& c)
     gs.x = 7;
     gs.y = 13;
     gs.dir = 2;
-    gs.script = 0x52;
+    gs.script = d->prof->variant.demo_block ? d->prof->variant.demo_block : 0x52;    // (Treasures: block 4)
     d->loaded = false;
     c.clear(0);
     screen = Screen::Game;
