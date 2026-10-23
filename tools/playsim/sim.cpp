@@ -12,6 +12,8 @@
 // (fighter m's weapon becomes that type), FXSHOTS=n (snapshots of the pages'
 // pictures in flight), PAGELOG (each fight page's lines), MONSWAP=area:id[:copies[:icon]]
 // (the LOAD MONSTER at RUNAT loads that monster; its picture: CPIC block icon, else id). Needs an out/ folder.
+// VGA=1: a VGA game (Darkness) in 256 colours, as on the boards with PSRAM (snapshots in its palette);
+// SEARCH=1: Search on before the moves (Darkness's debug arena: a step asks "FIGHT HERE?").
 #include "game/play.cpp"
 #include "host.h"
 #include "engine/rules.h"
