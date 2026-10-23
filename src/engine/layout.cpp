@@ -20,7 +20,7 @@ void put(pic::Canvas& c, const Tiles& t, int n, int col, int row)
         for (int x = 0; x < 8; ++x) {
             const int px = col * 8 + x;
             const uint8_t v = s[y * 8 + x];
-            if (px >= 0 && px < c.w && v != kMask) c.set(px, py, v);
+            if (px >= 0 && px < c.w && (v != kMask || t.vga)) c.set(px, py, v);
         }
     }
 }
@@ -78,7 +78,8 @@ const char* status_text(Status s)
     return "?";
 }
 
-bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, int slot0, int n, bool ega)
+bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, int slot0, int n, bool ega,
+                    pic::VgaPalette* pal)
 {
     const dax::Entry* e = idx.find(block);
     if (!e) return false;
@@ -88,8 +89,13 @@ bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, 
     for (int i = 0; i < 256; ++i) map[i] = static_cast<uint8_t>(ega ? i & 15 : i);
     dax::RleReader r(src, idx, *e);
     if (r.read(hdr, sizeof hdr) != sizeof hdr || !pic::parse_vga_header(hdr, e->raw_size, h) || h.height != 8 ||
-        h.width_cols != 1 || r.skip(h.count * 3u) != h.count * 3u)
+        h.width_cols != 1)
         return false;
+    if (pal ? !pic::read_vga_palette(r, h, pal->rgb) : r.skip(h.count * 3u) != h.count * 3u) return false;
+    if (pal) {
+        pal->first = h.first;
+        pal->count = h.count;
+    }
     if (ega && !pic::read_vga_ega(r, h, map)) return false;
     if (!ega && r.skip((h.count + 1) / 2u) != (h.count + 1) / 2u) return false;
     const uint32_t gap = h.pixels_at - (pic::kVgaHeaderSize + h.count * 3u + (h.count + 1) / 2u);
@@ -103,12 +109,14 @@ bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, 
     if (slot0 + k > out.count) out.count = static_cast<uint8_t>(slot0 + k);
     out.first = 20;
     out.loaded = true;
+    out.vga = !ega;
     return k > 0;
 }
 
 bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, uint8_t first)
 {
     out.loaded = false;
+    out.vga = false;
     out.first = first < 20 ? 20 : first;
     const dax::Entry* e = idx.find(block);
     if (!e) return false;

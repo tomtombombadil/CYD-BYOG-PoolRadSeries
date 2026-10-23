@@ -180,6 +180,54 @@ alignas(ecl::Vm) uint8_t vm_mem[sizeof(ecl::Vm)];
 char msg[160];
 pic::Canvas* cv = nullptr;
 
+// ---- The VGA palette (Pools of Darkness on a 256-colour screen: the boards
+// with PSRAM - canvas_depth; darkness_facts.md 7 5.1). As the original's
+// VGA mode: a picture's palette entries go to the screen as it's shown
+// (vga_take - `now` is what the screen shows); the frame's (16-31), the
+// walls' (32-143) and the background's (144-175) are also kept, and sent
+// again when their screens come back after a picture or a fight used
+// those entries (vga_send). Entries 0-15 are the EGA colours (the text).
+// Only on a VGA canvas (nullptr: the original's EGA mode, no palette).
+struct Vga {
+    pic::Rgb now[256];
+    pic::Rgb kept[256];
+    pic::VgaPalette load;          // a block's entries as it's read
+    bool changed = true;
+};
+Vga* vga = nullptr;
+// A block's palette is to be read (nullptr: not on this screen)
+pic::VgaPalette* vga_load()
+{
+    if (!vga) return nullptr;
+    vga->load.first = vga->load.count = 0;
+    return &vga->load;
+}
+// The block just read: its entries first .. first + count - 1 (from, n:
+// only these of them) to the screen, and kept for their screen (keep)
+void vga_take(bool keep = false, int from = 0, int n = 256)
+{
+    if (!vga) return;
+    const pic::VgaPalette& p = vga->load;
+    const int a = p.first > from ? p.first : from;
+    const int b = p.first + p.count < from + n ? p.first + p.count : from + n;
+    for (int i = a; i < b && i < 256; ++i) {
+        vga->now[i] = p.rgb[i];
+        if (keep) vga->kept[i] = p.rgb[i];
+        vga->changed = true;
+    }
+    vga->load.count = 0;
+}
+// Kept entries first .. first + n - 1 to the screen again
+void vga_send(int first, int n)
+{
+    if (!vga) return;
+    for (int i = first; i < first + n && i < 256; ++i)
+        if (memcmp(&vga->now[i], &vga->kept[i], sizeof(pic::Rgb)) != 0) {
+            vga->now[i] = vga->kept[i];
+            vga->changed = true;
+        }
+}
+
 // Which screen: the party menu (the games' first screen), its "Load Which
 // Game" question, or the game itself
 enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich, AddFrom,
@@ -633,7 +681,8 @@ void draw_dk_overland(pic::Canvas& c)
     if (d->prof->variant.marker_file && open_dax(d->prof->variant.marker_file, f)) {
         plat::FileSource src(f);
         const dax::Entry* e = d->idx.find(d->prof->variant.marker_block);
-        if (e) pic::draw_vga_block(src, d->idx, *e, 0, c, (vm->get(0x25) + 1) * 8, (vm->get(0x26) + 1) * 8, 13);
+        if (e) pic::draw_vga_block(src, d->idx, *e, 0, c, (vm->get(0x25) + 1) * 8, (vm->get(0x26) + 1) * 8, 13, vga_load());
+        vga_take();
         f.close();
     }
     dirty(0, 17 * 8);
@@ -786,7 +835,8 @@ void dk_background()
     plat::File f;
     if (block > 0 && open_dax(in ? "BACK1.DAX" : "SKYGRND.DAX", f)) {
         plat::FileSource src(f);
-        view3d::load_back(src, d->idx, static_cast<uint8_t>(block), id, d->world);
+        view3d::load_back(src, d->idx, static_cast<uint8_t>(block), id, d->world, vga_load());
+        vga_take(true);              // (a VGA screen: entries 144-175, kept for the view)
         f.close();
     }
 }
@@ -825,6 +875,9 @@ void draw_view(pic::Canvas& c)
         } else {
             if (d->world.dk) dk_background();
             view3d::draw(c, d->world, d->map, d->gs.x, d->gs.y, d->gs.dir, sky_colour());
+            // (a VGA screen: the walls' and the background's entries again
+            // after a picture or a fight used them - ovr 0x3C671+0xEF5)
+            vga_send(32, 144);
         }
     }
     dirty_rows(3, 13);
@@ -975,7 +1028,8 @@ bool draw_block(pic::Canvas& c, const char* stem, int block, int x, int y)
     bool ok = false;
     const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
     if (e && d->prof->variant.vga) {
-        ok = pic::draw_vga_block(src, d->idx, *e, 0, c, x, y);       // (Darkness's BIGPIC1)
+        ok = pic::draw_vga_block(src, d->idx, *e, 0, c, x, y, -1, vga_load());   // (Darkness's BIGPIC1)
+        vga_take();
     } else if (e) {
         dax::RleReader r(src, d->idx, *e);
         uint8_t hdr[pic::kHeaderSize];
@@ -1050,7 +1104,8 @@ bool anim_start(int id, const char* stem = "PIC", int x = 24, int y = 24)
         // Darkness: its own animation format (pic::DkAnim; delays in tenths)
         d->dk_anim = new (std::nothrow) pic::DkAnim;
         dax::RleReader r(src, *d->anim_idx, *e);
-        if (d->dk_anim && pic::parse_dk_anim(r, e->raw_size, *d->dk_anim)) {
+        if (d->dk_anim && pic::parse_dk_anim(r, e->raw_size, *d->dk_anim, vga_load())) {
+            vga_take();                  // (a VGA screen: its entries, 32-255)
             d->anim.frames = d->dk_anim->frames;
             for (int k = 0; k < d->dk_anim->frames && k < pic::kMaxAnimFrames; ++k) d->anim.delay[k] = d->dk_anim->delay[k];
             anim_block = id;
@@ -8870,7 +8925,8 @@ struct Host : ecl::Host {
         bool tiles = false;
         if (open_dax("8X8D1.DAX", f)) {
             plat::FileSource src(f);
-            tiles = view3d::load_vga_tiles(src, d->idx, static_cast<uint8_t>(look), wd);
+            tiles = view3d::load_vga_tiles(src, d->idx, static_cast<uint8_t>(look), wd, vga_load());
+            vga_take(true);              // (a VGA screen: the walls' entries, 32-143, sent and kept)
             f.close();
         }
         d->save.look = static_cast<uint16_t>(look);
@@ -8883,7 +8939,8 @@ struct Host : ecl::Host {
         plat::File f;
         if (open_dax("BORDERS.DAX", f)) {
             plat::FileSource src(f);
-            layout::load_vga_tiles(src, d->idx, static_cast<uint8_t>(v), d->frame_tiles, 20, 11, cv->bpp == 4);
+            layout::load_vga_tiles(src, d->idx, static_cast<uint8_t>(v), d->frame_tiles, 20, 11, !vga, vga_load());
+            vga_take(true);              // (a VGA screen: 16-31 sent and kept - ovr 0x6E4E)
             f.close();
         }
         if (screen == Screen::Game) {
@@ -9009,7 +9066,8 @@ struct Host : ecl::Host {
             pic::DkAnim* a = new (std::nothrow) pic::DkAnim;
             if (a) {
                 dax::RleReader r(src, d->idx, *e);
-                if (pic::parse_dk_anim(r, e->raw_size, *a)) {
+                if (pic::parse_dk_anim(r, e->raw_size, *a, vga_load())) {
+                    vga_take(false, 176, 80);       // (a VGA screen: entries 176-255 only - ov111+0x920)
                     const int fr = distance < 0 ? 0 : distance >= a->frames ? a->frames - 1 : distance;
                     pic::draw_dk_anim(src, d->idx, *e, *a, fr, c, 24 + a->x, 24 + a->y, true);
                 }
@@ -10641,7 +10699,8 @@ bool title_picture(pic::Canvas& c, int block, int row, int col)
     const dax::Entry* e = d->idx.find(static_cast<uint8_t>(block));
     if (e && d->prof->variant.vga) {
         // (Darkness: a VGA picture - its EGA colours on the 4-bit canvas)
-        ok = pic::draw_vga_block(src, d->idx, *e, 0, c, col * 8, row * 8);
+        ok = pic::draw_vga_block(src, d->idx, *e, 0, c, col * 8, row * 8, -1, vga_load());
+        vga_take();                      // (a VGA screen: all 256 entries)
     } else if (e) {
         dax::RleReader r(src, d->idx, *e);
         uint8_t hdr[pic::kHeaderSize];
@@ -10697,6 +10756,7 @@ void end_title(pic::Canvas& c)
 void title_prompt(pic::Canvas& c)
 {
     title_run->prompt = true;
+    vga_send(16, 16);       // (a VGA screen: the frame's colours again after the titles - img 0x172)
     c.clear(0);
     dirty_rows(0, 24);
     if (!title_run->words[0]) {
@@ -11555,13 +11615,16 @@ __attribute__((noinline)) bool open_tiles()
         // style from BORDERS (the gold chain to start with); every wall
         // tile comes with an area's look (darkness_facts.md 7)
         plat::FileSource src(f);
-        ok = layout::load_vga_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, 0, 20, true) &&
+        // (a VGA screen: their values; the frame's colours, 16-31, sent and
+        // kept - the area map's are the text's EGA ones)
+        ok = layout::load_vga_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, 0, 20, !vga) &&
              font::load(src, d->idx, d->font);
         f.close();
         if (ok) ok = open_dax("BORDERS.DAX", f);
         if (ok) {
             plat::FileSource bsrc(f);
-            ok = layout::load_vga_tiles(bsrc, d->idx, 0, d->frame_tiles, 20, 11, true);
+            ok = layout::load_vga_tiles(bsrc, d->idx, 0, d->frame_tiles, 20, 11, !vga, vga_load());
+            vga_take(true);
             f.close();
         }
         d->world.dk = true;
@@ -11631,6 +11694,17 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     if (!open_program(g, prog)) {
         close();
         return msg;
+    }
+    if (c.vga && c.bpp == 8 && d->prof->variant.vga) {
+        // Darkness on a 256-colour screen (canvas_depth): its VGA palette,
+        // the 3D view's tiles a byte a pixel
+        vga = new (std::nothrow) Vga;
+        if (!vga) {
+            close();
+            return no_memory("the VGA palette");
+        }
+        for (int i = 0; i < 256; ++i) vga->now[i] = vga->kept[i] = i < 16 ? pic::kEga[i] : pic::Rgb{0, 0, 0};
+        d->world.vga = true;
     }
     if (!open_tiles()) {
         snprintf(msg, sizeof msg, "%s: the tiles or font didn't load.", d->prof->tiles_file);
@@ -11742,13 +11816,15 @@ void close()
     if (d) {
         view3d::World* w = &d->world;
         ecl::GameState* g = &d->gs;
-        view3d::back_free(*w);                  // (Darkness's background picture)
+        view3d::vga_free(*w);                   // (Darkness's background picture, VGA tiles)
         delete d->alt_font;
         delete d;
         delete w;
         delete g;
     }
     d = nullptr;
+    delete vga;
+    vga = nullptr;
 }
 
 void draw(pic::Canvas& c)
@@ -12883,6 +12959,20 @@ bool journal_seen(int i, char* kind, int* number)
 }
 
 bool fight_colours() { return d && fight_palette_on; }
+
+int canvas_depth(games::Game g)
+{
+    // (the VGA games: Pools of Darkness - profile variant.vga)
+    return g == games::Game::PoolsOfDarkness && plat::vga_screen() ? 8 : 4;
+}
+
+bool palette(const pic::Rgb** rgb, bool all)
+{
+    if (!vga || (!vga->changed && !all)) return false;
+    vga->changed = false;
+    *rgb = vga->now;
+    return true;
+}
 
 bool exit_requested()
 {

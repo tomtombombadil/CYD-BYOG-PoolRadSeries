@@ -19,8 +19,9 @@ enum class Scale : uint8_t { One, OneAndHalf };
 // Allocates the canvas: 4 bits a pixel (32,000 bytes - v0.87.0, Tom: "focus
 // on memory"; the games' EGA screens have 16 colours). False if memory is short.
 bool begin();
-// 8 bits a pixel (64,000 bytes) for a 256-colour picture (the Resource
-// Test's VGA blocks), or back to 4: the canvas is made again (blank).
+// 8 bits a pixel (64,000 bytes) for 256 colours (the Resource Test's VGA
+// blocks; Pools of Darkness on the boards with PSRAM - play::canvas_depth),
+// the canvas's vga set; or back to 4: the canvas is made again (blank).
 // False: no memory for it (the canvas stays as it was).
 bool set_depth(int bpp);
 

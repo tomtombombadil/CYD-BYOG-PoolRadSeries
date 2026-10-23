@@ -32,6 +32,7 @@ namespace view3d {
 
 constexpr int kCell0 = 3;            // the view's first cell (row and column)
 constexpr int kCells = 11;
+constexpr int kVgaTiles = 255;       // Darkness: tiles 1-255 of an 8X8D1 block
 constexpr int kSetTiles = 70;
 constexpr int kCommonTiles = 45;
 constexpr int kPieces = 5;           // wall pieces in a set
@@ -62,10 +63,17 @@ struct World {
     // and an 88 x 88 background (BACK1 indoors, SKYGRND outdoors; 4-bit
     // packed, on the heap: back_free)
     bool     dk = false;
+    // On a VGA screen (Darkness on the boards with PSRAM; set before the
+    // loads): the tiles a byte a pixel in vga_px (255 x 64 bytes, heap)
+    // instead of the sets above, `back` a byte a pixel too
+    bool     vga = false;
+    uint8_t* vga_px = nullptr;
     uint8_t* back = nullptr;
     uint8_t  back_id = 0;                    // which background `back` holds (file kind << 4 | block; 0 none)
 };
 void back_free(World& w);
+// The VGA tiles' memory let go (vga_px; the background too)
+void vga_free(World& w);
 
 // An 8x8 tile block (a picture block 8 high, 1 column, N frames).
 bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, TileSet& out);
@@ -82,12 +90,15 @@ int tiles_block(uint8_t walldef_block, int n, int i);
 bool load_horizon(dax::ByteSource& src, const dax::Index& idx, uint8_t block, World& w);
 
 // Darkness: 8X8D1 block `block` (VGA, 256 tiles) into w's tile sets, in
-// their EGA colours; w.dk set
-bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, World& w);
+// their EGA colours (w.vga: their values, in vga_px); w.dk set. pal: the
+// block's palette entries (nullptr: not wanted)
+bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, World& w,
+                    pic::VgaPalette* pal = nullptr);
 // Darkness: a background picture (BACK1 / SKYGRND, 88 x 88 VGA) into
-// w.back in its EGA colours, remembered as `id` (not read again while
-// it's the one held)
-bool load_back(dax::ByteSource& src, const dax::Index& idx, uint8_t block, uint8_t id, World& w);
+// w.back in its EGA colours (w.vga: its values), remembered as `id` (not
+// read again while it's the one held - pal then untouched)
+bool load_back(dax::ByteSource& src, const dax::Index& idx, uint8_t block, uint8_t id, World& w,
+               pic::VgaPalette* pal = nullptr);
 
 // Draws tile number `id` at view cell (row, col) (0-10), colour 13 not drawn.
 void draw_tile(pic::Canvas& c, const World& w, int id, int row, int col);

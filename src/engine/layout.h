@@ -53,6 +53,10 @@ struct Tiles {
     uint8_t count = 0;               // slots filled (Curse 40, Pool 31)
     uint8_t first = 20;              // the block's tile in slot 20 (Secret 40: slots 20-39 = tiles 40-59)
     bool loaded = false;
+    // VGA values (Darkness on a 256-colour screen): colour 13 is drawn too -
+    // only the original's EGA mode leaves it out of the frame
+    // (darkness_facts.md 7 1.5)
+    bool vga = false;
     // The slot of the block's tile n (-1: not kept)
     int slot(int n) const {
         if (n < 20) return n;
@@ -67,10 +71,12 @@ struct Tiles {
 bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, uint8_t first = 20);
 
 // Loads a VGA block of 8 x 8 tiles (Darkness: 8X8D0's area map tiles, a
-// BORDERS style) into slots slot0.. (at most n): on a 4-bit canvas (ega) in
-// their EGA colours, values under the block's first entry as they are
+// BORDERS style) into slots slot0.. (at most n): ega - in their EGA
+// colours, values under the block's first entry as they are (the
+// original's EGA mode); else their values (a VGA screen: out.vga). pal: the
+// block's palette entries (nullptr: not wanted)
 bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, int slot0, int n,
-                    bool ega);
+                    bool ega, pic::VgaPalette* pal = nullptr);
 
 struct Tables {
     uint8_t top[40], bar[40], bottom[40];

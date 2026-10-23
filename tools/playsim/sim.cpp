@@ -57,7 +57,9 @@ static void save_wav()
 }
 uint32_t g_now = 1000;
 static std::vector<uint8_t> px(getenv("CANVAS8") ? 320 * 200 : 320 * 200 / 2);   // (exactly the canvas: ASan sees an overrun)
-// (4 bits a pixel as on the board since v0.87.0; CANVAS8=1: a byte a pixel)
+// (4 bits a pixel as on the board since v0.87.0; CANVAS8=1: a byte a pixel;
+// VGA=1: a VGA game - Darkness - in 256 colours as on the boards with
+// PSRAM, a byte a pixel with the game's palette - play::canvas_depth)
 static pic::Canvas C{px.data(), 320, 200, static_cast<uint8_t>(getenv("CANVAS8") ? 8 : 4)};
 static int shot_n = 0;
 static void shot(const char* tag)
@@ -77,6 +79,12 @@ static void shot(const char* tag)
         int y0, y1;
         play::take_dirty(y0, y1);
         if (y1 > y0) memcpy(lcd.data() + y0 * 320, all.data() + y0 * 320, (size_t)(y1 - y0) * 320);
+    }
+    const pic::Rgb* vpal = nullptr;
+    if (C.vga && play::palette(&vpal, true)) {
+        for (uint8_t v : (getenv("LCD") ? lcd : all)) { const pic::Rgb& c = vpal[v]; fputc(c.r, f); fputc(c.g, f); fputc(c.b, f); }
+        fclose(f);
+        return;
     }
     for (uint8_t v : (getenv("LCD") ? lcd : all)) { int k = v & 15; if (swap && (k == 0 || k == 8)) k ^= 8; const pic::Rgb& c = pic::kEga[k]; fputc(c.r, f); fputc(c.g, f); fputc(c.b, f); }
     fclose(f);
@@ -503,6 +511,12 @@ int main(int argc, char** argv)
     const char* dir = folder.c_str();
     // GAME=n: another game (games::Game's number: 1 Pool of Radiance)
     const games::Game game = getenv("GAME") ? (games::Game)atoi(getenv("GAME")) : games::Game::CurseOfTheAzureBonds;
+    if (play::canvas_depth(game) == 8) {
+        px.assign(320 * 200, 0);
+        C.px = px.data();
+        C.bpp = 8;
+        C.vga = true;
+    }
     // SOUNDMODE=2: the PC speaker's sounds (1 Tandy, the default)
     if (getenv("SOUNDMODE")) play::set_sound(static_cast<uint8_t>(atoi(getenv("SOUNDMODE"))), 230);
     const char* e = play::open(dir, game, C, getenv("CACHE"));

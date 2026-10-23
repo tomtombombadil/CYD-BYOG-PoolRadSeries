@@ -58,9 +58,11 @@ bool set_depth(int bpp)
     heap_caps_free(pixels);
     const uint8_t was = cv.bpp;
     cv.bpp = static_cast<uint8_t>(bpp);
+    cv.vga = bpp == 8;                   // (a byte a pixel: VGA pictures in their own colours)
     pixels = static_cast<uint8_t*>(heap_caps_malloc(cv.bytes(), MALLOC_CAP_8BIT));
     if (!pixels) {
         cv.bpp = was;                    // (the smaller one comes back: it was just freed)
+        cv.vga = was == 8;
         pixels = static_cast<uint8_t*>(heap_caps_malloc(cv.bytes(), MALLOC_CAP_8BIT));
         cv.px = pixels;
         if (pixels) cv.clear(0);
