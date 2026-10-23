@@ -296,6 +296,9 @@ bool camping = false;              // the camp is open (the position line says s
 int  pm_item[Data::kItems];   // the menu item on each list line
 int  pm_lines = 0;
 bool pm_picking = false;          // Darkness's Drop: "Pick Character Select" on the party menu
+char pm_pick_for = 0;               // Gateway: the function a member is being picked for ('P': who pays)
+int  train_payer = -1, train_who = -1;      // Gateway: who pays for the training, the trainee
+bool pm_picked = false;             // ... picked: the function goes on
 int  pm_sel = 0;              // the party menu line the cursor keys highlight
 bool keys_used = false;       // a cursor key was used: highlights where the games had none (the party menu)
 char pm_saves[12];            // save slots found ("AB")
@@ -1305,8 +1308,8 @@ int pm_row0()
     for (int i = 0; i < d->items; ++i) n += on[i];
     // (Gateway's "initialize JoyStick/Mouse", always there in the original,
     // counts though the engine leaves it out: the lines above it stay where
-    // the original has them - DOSBox)
-    if (gateway()) ++n;
+    // the original has them - DOSBox; a script's party menu has none)
+    if (gateway() && !in_game_menu) ++n;
     const int r = 23 - n;
     return r > d->prof->variant.party_menu_row ? d->prof->variant.party_menu_row : r < 12 ? 12 : r;
 }
@@ -2266,7 +2269,7 @@ void redraw_menu(pic::Canvas& c)
 {
     note_until = 0;
     note_held = false;
-    if (screen == Screen::PartyMenu) pm_prompt(c);      // the party menu's own prompt
+    if (screen == Screen::PartyMenu && !pm_pick_for) pm_prompt(c);      // the party menu's own prompt
     else if (fight_moving()) fight_move_prompt(c);      // a fight's Move: its own prompt
     else show_menu_line(c);
     if (resume_after_note) {
@@ -8359,8 +8362,20 @@ void train_character(pic::Canvas& c)
     }
     // (free once the game is won; Pool rounds; Secret's halls are free - no
     // "Training costs" word: secret_facts_2.md 18)
-    if (!game_won && d->prof->shop_words[profile::kTrainCost] && rules::gold_worth(ch, pool_files()) < 1000) {
+    if (!game_won && d->prof->shop_words[profile::kTrainCost] && train_payer < 0 &&
+        rules::gold_worth(ch, pool_files()) < 1000) {
         train_note(profile::kTrainCost, c);
+        if (d->prof->party.who_pays) {
+            // Gateway: "Training costs 1000 gp." then "Who pays 1000 gp
+            // Select Exit" over the party (GAME.OVR 0x2650E +0x51B3)
+            char prompt[24], words[16];
+            ow(d->prof->party.who_pays, prompt, sizeof prompt);
+            ow(d->prof->party.pick_menu, words, sizeof words);
+            train_who = pt->selected;
+            pm_pick_for = 'P';
+            text::build(menu, prompt, words);
+            menu.selected = 0;
+        }
         return;
     }
     if (!trainer && !load_rules(trainer)) {
@@ -8417,7 +8432,9 @@ bool train_yes_no(Ask what, char k, pic::Canvas& c)
     screen = Screen::PartyMenu;
     party::Character* ch = pt->sel();
     if (k == 'Y' && ch && trainer && train_mask) {
-        if (!game_won && d->prof->shop_words[profile::kTrainCost]) rules::pay(*ch, 1000);
+        if (!game_won && d->prof->shop_words[profile::kTrainCost])
+            rules::pay(train_payer >= 0 && train_payer < pt->count ? pt->m[train_payer] : *ch, 1000);
+        train_payer = -1;
         const int mu = ch->level(classes::MagicUser);
         create::train_classes(*ch, trainer->tables, trainer->facts, trainer->dice, train_mask, false);
         rules::recalc(*ch, *names, d->facts);
@@ -8648,6 +8665,19 @@ void pm_choose_key(char key, pic::Canvas& c);
 void pm_choose(int i, pic::Canvas& c) { pm_choose_key(pm_key(i), c); }
 void pm_choose_key(char key, pic::Canvas& c)
 {
+    // Gateway: a member's functions ask "Pick Character Select Exit" first
+    // (its party menu overlay GAME.OVR 0x2650E +0x27E; DOSBox)
+    if (d->prof->party.pick && !pm_picked && pt->count && strchr("DMITHVR", key)) {
+        char prompt[20], words[16];
+        ow(d->prof->party.pick, prompt, sizeof prompt);
+        ow(d->prof->party.pick_menu, words, sizeof words);
+        pm_pick_for = key;
+        text::build(menu, prompt, words);
+        menu.selected = 0;
+        show_menu_line(c);
+        return;
+    }
+    pm_picked = false;
     switch (key) {
     case 'L':
         if (darkness_files() && d->prof->party.load_from && !load_where) {
@@ -8916,6 +8946,46 @@ void pm_tap(int x, int y, pic::Canvas& c)
         draw_party_menu(c);
         if (load_problem) error(c, load_problem);
         return;
+    }
+    if (pm_pick_for) {
+        // Gateway: a member picked on the list, Select goes on with the
+        // function, Exit (or the party menu's lines) leaves it
+        if (y >= text::kMenuTapTop) {
+            const char k = text::key(menu, text::hit(menu, col));
+            const char f = pm_pick_for;
+            if (k == 'S' && pt->sel() && f == 'P') {
+                // who pays: one with 1000 gp's worth, else asked again
+                if (rules::gold_worth(*pt->sel(), pool_files()) < 1000) {
+                    char t[48];
+                    sw(profile::kTrainCost, t, sizeof t);
+                    note(c, t);
+                    return;
+                }
+                pm_pick_for = 0;
+                train_payer = pt->selected;
+                if (train_who >= 0 && train_who < pt->count) pt->selected = train_who;
+                pm_prompt(c);
+                train_character(c);
+                if (screen == Screen::PartyMenu && !pm_pick_for) train_payer = -1;
+            } else if (k == 'S' && pt->sel()) {
+                pm_pick_for = 0;
+                pm_picked = true;
+                pm_prompt(c);
+                pm_choose_key(f, c);
+            } else if (k == 'E') {
+                pm_pick_for = 0;
+                train_payer = -1;
+                draw_party_menu(c);
+            }
+            return;
+        }
+        if (row >= 4 && row < 4 + pt->count && col >= 1) {
+            pt->selected = row - 4;
+            draw_party_menu(c);
+            show_menu_line(c);
+            return;
+        }
+        pm_pick_for = 0;
     }
     if (pm_picking) {
         // Darkness's Drop: "Pick Character Select" - a member picked on the

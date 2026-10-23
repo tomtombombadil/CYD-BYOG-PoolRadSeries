@@ -309,6 +309,10 @@ struct Profile {
         uint32_t new_file;
         // Darkness: Load asks "Load from where? " "Pools Secret Exit" first (0: no question)
         uint32_t load_from = 0, load_sources = 0;
+        // Gateway: the party menu's functions for a member ask "Pick
+        // Character " "Select Exit" first (GAME.OVR; 0: the selected one);
+        // training's "Who pays 1000 gp " (0: the trainee pays)
+        uint32_t pick = 0, pick_menu = 0, who_pays = 0;
     } party;
 
     // View Character: name tables in the program and the screen's words
