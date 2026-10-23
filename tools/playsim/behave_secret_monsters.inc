@@ -1123,7 +1123,7 @@ void all_monsters()
     b_oracle_load("secret_monsters");
     if (mons::part("a")) {
         mons::every_monster(false);         // the original's
-        mons::every_monster(true);          // the Item Fixes on (the default)
+        mons::every_monster(true);          // Game Fixes on (the default)
         mons::every_level();
     }
     if (mons::part("b")) mons::effects();

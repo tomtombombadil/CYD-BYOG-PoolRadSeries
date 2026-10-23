@@ -250,7 +250,7 @@ stay in the session's scratch space, never in the repo.
   screens), Asset Viewer 1:1 / 1.5x (480x320, not in the game - the game
   is always 1:1), Logs (in the game: the Logs tab's screen), then the
   engine comforts (all games), then the game's own keys where a game is
-  in hand - Item Fixes for a game with fixes (Pool) - and the version,
+  in hand - Game Fixes for a game with fixes (Pool) - and the version,
   board and memory lines. Every switch has its "?". Bottom: As Original /
   All On (the comforts), and Dev Tools (a game's page) or Back to Game (in
   the game). The keys before v0.91.0, kept below for their history:
@@ -397,7 +397,7 @@ can't get the memory says "Not enough memory to show this log."
    set for all games, saved with the engine's settings) holds the engine
    comforts' switches - Game Font (v0.73.0; Original / Clear / Darkness since v0.74.0, Clear Caps
    since v0.84.0), Icon Gallery, Large Icon, Journal Pop-Up, Tap to Stop Demo (v0.84.0; was Demo Tap
-   Stops), More Characters, Icon Portrait (v0.84.0), Item Fixes (v0.90.0) - and Game Sound (Tandy /
+   Stops), More Characters, Icon Portrait (v0.84.0), Game Fixes (v0.90.0) - and Game Sound (Tandy /
    PC Speaker / Off; more than 8 keys: pages, arrows bottom right since v0.90.0), each
    key lit when on, with a circled "?" at its right (Tom, v0.84.0) that opens what the option does
    (the next tap closes it; Game Font's shows a line in each font, the player's own fonts read from
@@ -888,7 +888,7 @@ Steps (each pushed when it works; Curse stays as it is):
    v0.90.0 (Tom): Pool's "Long Sword +2 Flame Tongue" is, in the original,
    a +2 long sword whose Use casts Find Traps (its record has 0x3D 0x16
    and no effect code, where Curse's same sword has the effect 0x06 with
-   0x80) - no fire, so a troll it fells gets up again. The **Item Fixes**
+   0x80) - no fire, so a troll it fells gets up again. The **Game Fixes**
    comfort (section 11, on unless switched off) makes it the AD&D sword,
    as Curse's: Long Sword +1 Flame Tongue. Also fixed in both games: the
    Flame Tongue's blows are fire and magic (kind 9, its handler's), so a
@@ -1223,7 +1223,7 @@ full behaviour checks (every spell, monster, class, item, situation).
   range 6 and its reflection (0x48), the umber hulk and slug's reach,
   the phase spider's poison and the dreadlord's paralysis on attack 1
   (10 rounds), the weapon's +1 for type 26 too; two of Secret's own
-  mistakes go with Item Fixes (SPEC 12). secret_facts_2.md 29.
+  mistakes go with Game Fixes (SPEC 12). secret_facts_2.md 29.
 - **v0.121.1 - its spells checked**: all 117 against its handlers
   (ONLY=allspells, 432 checks). Fixed: camp spells on the whole party
   (its table's 3, not Curse's 4: Bless, Prayer, Haste, the
@@ -1234,7 +1234,7 @@ full behaviour checks (every spell, monster, class, item, situation).
   Strength 23 from 12th level, the Globe up to 4th level, Mirror Image
   takes blows, Barkskin heals as Heal, the Elixir its user only, Slow
   Poison's revival and time, Entangle nothing; the clouds' ground values
-  0x1D / 0x1B; words. Four of Secret's mistakes with Item Fixes (SPEC 12).
+  0x1D / 0x1B; words. Four of Secret's mistakes with Game Fixes (SPEC 12).
 - **v0.124.0 - its items and situations checked** (5,412 Secret checks,
   0 failed). Items (every one of its 273 item records): the Gauntlets of
   Ogre Power (18/00 by Secret's code table, `items::kSecretPassive`), the
@@ -1250,7 +1250,7 @@ full behaviour checks (every spell, monster, class, item, situation).
   hit point limits, Sell's bundle prices and its platinum-first payment.
   The original reads the engine's saves (DOSBox). The ITEMTEST
   characters for Tom (sweep `testchars`, GAME=3). secret_facts_2.md
-  29.items / 29.situations. The Item Fixes key shows on Secret's
+  29.items / 29.situations. The Game Fixes key shows on Secret's
   Settings (its own help text); the magic tables are read straight into
   their block (no 4.5 KB copy at a fight's peak).
 
@@ -1857,7 +1857,7 @@ a PC, PortMaster handhelds):
     characters are read (`play::character_read`), items are taken
     (`rules::add_item`) and the switch turns mid-game; the files keep the
     original's bytes (`write_character_files` writes a copy put back, its
-    effect gone). Settings key **Item Fixes** (on by default; As Original
+    effect gone). Settings key **Game Fixes** (on by default; As Original
     turns it off).
   - `CYD_ICON_GALLERY` (v0.71.0, Tom: making icons a value at a time is
     "one of the worst parts of the game"): the icon editor (Alter -> Icon,
@@ -1937,7 +1937,7 @@ the game's Settings (As Original: all of them).
   always hitting - the AD&D rule, Curse's code too; Pool's code was read as
   level / 2 (nothing at first level). All on one target, as both games.
 - **View Character's icon portrait** (switch `CYD_ICON_PORTRAIT`).
-- **Item Fixes** (switch `CYD_ITEM_FIXES`, Tom, v0.90.0): Pool's Flame
+- **Game Fixes** (switch `CYD_ITEM_FIXES`, Tom, v0.90.0; named Item Fixes until v0.139.0 - Tom, 2026-10-23: the originals' behaviour stays in the game, every fix behind this switch): Pool's Flame
   Tongue is the AD&D sword (Long Sword +1 Flame Tongue, as Curse's); the
   original's is a plain +2 sword whose Use casts Find Traps.
 - **Pool's race checks** (Tom, v0.85.1): Pool's program never gives its
@@ -2032,12 +2032,12 @@ the game's Settings (As Original: all of them).
   only in that mode (the menu line just "Exit") do the original's arrow
   keys move the party; the engine shows the same menu and mode, but its
   movement keys move the party in either (the cursor keys work the menu).
-- **Secret's own mistakes, fixed with Item Fixes on** (v0.120.1;
-  `rules::fixes()` - Item Fixes off plays them as the original):
+- **Secret's own mistakes, fixed with Game Fixes on** (v0.120.1;
+  `rules::fixes()` - Game Fixes off plays them as the original):
   the +1 to hit with bows and short / long swords goes to elves only
   (Secret's program gives it to every race); a cleric's +10% experience
   needs Wisdom 16 (Secret's and Darkness's: 15 - v0.136.0, Darkness
-  the same with Item Fixes); a paladin casts at his level - 8
+  the same with Game Fixes); a paladin casts at his level - 8
   (Secret's: 6th level always); Harm leaves 1d4 HP (Secret's wraps to
   250+ damage when HP is under the roll); Invisibility's -4, Blink's
   miss and Dispel Evil's -7 count at the attack roll (Secret's phases
@@ -2057,7 +2057,7 @@ the game's Settings (As Original: all of them).
 - **Darkness's race adjustments at creation** (`rules::fixes()`): its
   program tests the race list's last line (human) instead of the race
   picked, so dwarves' Con +1 Cha -1, elves' Dex +1 Con -1 and halflings'
-  Str -1 Dex +1 never happen; with Item Fixes on the engine applies them
+  Str -1 Dex +1 never happen; with Game Fixes on the engine applies them
   (AD&D's), off as the original.
 - **Darkness's new characters' item count** (record 0x1A6): the original
   writes 3 whatever its kit holds (a magic-user's 4); the engine writes
@@ -2072,7 +2072,7 @@ the game's Settings (As Original: all of them).
 - **Darkness's Power Word Blind** (`rules::fixes()`): the original's
   handler works out (1d4 + 1) rounds, x 10 when the HP total is under 51,
   and never uses it - the blindness gets the spell row's time, 0: for
-  good. With Item Fixes on the engine uses the worked-out time; off as
+  good. With Game Fixes on the engine uses the worked-out time; off as
   the original.
 - **Darkness's level drain** (Energy Drain, the drainers 0x65 / 0x66):
   the engine drains as Pool's routine does (a level's share of the hit

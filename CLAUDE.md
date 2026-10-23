@@ -373,7 +373,7 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   (Brightness, Volume, Game Sound, Invert, Swap Red/Blue, Rotate 180,
   Recalibrate Touch, Asset Viewer 1.5x on 480x320 outside the game,
   Logs, the version / board / memory lines) then the comforts; a game's
-  own keys (Item Fixes, for a game with fixes) only with a game in hand;
+  own keys (Game Fixes, for a game with fixes) only with a game in hand;
   bottom: As Original, + Dev Tools (game page) or Back to Game (in game);
   2 x 4 a page, arrows bottom right (viewer.cpp `set_entries`, SetFrom).
 - Clear font (Tom, 2026-10-11, v0.73.0): the engine's OWN 8x8 font
@@ -387,7 +387,9 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   key is **Game Font** - Original / Clear / Darkness (the player's own
   Pools of Darkness 8X8D0.DAX, only when that game is on the card);
   v0.84.0 (Tom) adds **Clear Caps** (Clear's capitals, no lower case).
-- Item Fixes (Tom, 2026-10-12, v0.90.0; `CYD_ITEM_FIXES`): items the
+- Game Fixes (Tom, 2026-10-12, v0.90.0; `CYD_ITEM_FIXES`; named Item
+  Fixes until v0.139.0 - Tom, 2026-10-23: keep the originals' behaviour in
+  the game, every fix of theirs behind this switch): items the
   originals got wrong made as AD&D describes them, behind a switch (on by
   default) - Pool's Flame Tongue becomes Curse's / AD&D's sword
   (`items::fix_item`, the facts in `profile.items.flame`); the save files

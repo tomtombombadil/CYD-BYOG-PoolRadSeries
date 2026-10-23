@@ -54,7 +54,7 @@ bool      dirty = true;            // redraw the current screen
 // menu's Settings tab the same keys - the board's (brightness, volume,
 // game sound, colours, rotation, touch, logs, the board / memory line),
 // the engine comforts (all games), and where a game is in hand its own
-// (Item Fixes, for a game the engine fixes items of). Below them As
+// (Game Fixes, for a game the engine fixes mistakes of). Below them As
 // Original / All On; Dev Tools from a game's page, Back to Game in the
 // game; pages with arrows bottom right. (The code: after Dev Tools.)
 enum class SetFrom : uint8_t { Home, Game, InGame };
@@ -2670,7 +2670,7 @@ ui::Rect comfort_qmark(const ui::Rect& cell)
 }
 
 const char* const kComfortNames[kComforts] = {"Game Font",        "Icon Gallery",    "Large Icon",    "Journal Pop-Up",
-                                              "Tap to Stop Demo", "More Characters", "Icon Portrait", "Item Fixes"};
+                                              "Tap to Stop Demo", "More Characters", "Icon Portrait", "Game Fixes"};
 
 // What each option does (sentence case; Tom, v0.84.0)
 const char* comfort_help_text(int c)
@@ -2708,14 +2708,19 @@ const char* comfort_help_text(int c)
                "action pose. Off: as the original.";
     case kCItemFixes:
         // (the game in hand's own fixes: the whole list doesn't fit a 320x240 screen)
+        if (game_dirs[game_sel].game == games::Game::PoolsOfDarkness)
+            return "The original game's mistakes made as AD&D has them: the races' stat adjustments at "
+                   "character creation (the original never applies them); a cleric's experience bonus from "
+                   "Wisdom 16; Power Word Blind lasts its worked-out time (the original blinds for good). "
+                   "Off: as the original.";
         if (game_dirs[game_sel].game == games::Game::SecretOfTheSilverBlades)
-            return "The original game's rules mistakes made as AD&D has them: the elves' +1 to hit with their "
+            return "The original game's mistakes made as AD&D has them: the elves' +1 to hit with their "
                    "weapons for elves alone; a dwarf's or gnome's -4 when giants attack, and the Constitution "
                    "save bonus; Invisibility, Blink, Displacement and Dispel Evil when a monster rolls to hit; "
                    "a paladin's spells and Strength; a cleric's experience bonus from Wisdom 16; Harm; the "
                    "Periapt of Health; a multi-class character's hit points; Sell's weight of coins. "
                    "Off: as the original.";
-        return "Items the original games got wrong, made as AD&D describes them. Pool of Radiance's Flame Tongue: "
+        return "Items the original game got wrong, made as AD&D describes them. Pool of Radiance's Flame Tongue: "
                "in the original it is a plain long sword +2 whose blows aren't fire, so a troll it fells gets back "
                "up (and Use casts Find Traps). Fixed it is a long sword +1 Flame Tongue, as in Curse: +2 against "
                "regenerating creatures such as trolls, +3 against cold-using and flying ones, +4 against undead, "
@@ -3994,7 +3999,7 @@ void tap_play(const ui::Tap& t)
 int set_page = 0;
 constexpr int kSetMax = 24;
 
-// Whether the game in hand has items the engine fixes (Item Fixes)
+// Whether the game in hand has mistakes the engine fixes (Game Fixes)
 bool game_has_fixes() { return set_from != SetFrom::Home && profile::has_item_fixes(game_dirs[game_sel].game); }
 
 int set_entries(SetEntry* out)
