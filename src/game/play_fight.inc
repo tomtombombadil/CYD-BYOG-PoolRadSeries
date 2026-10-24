@@ -1839,10 +1839,16 @@ void event_page(const combat::Event& e)
     };
     switch (e.ev) {
     case combat::Ev::Engulfs:
-    case combat::Ev::Hugs: {
+    case combat::Ev::Hugs:
+    case combat::Ev::DrainsBlood:
+    case combat::Ev::Constricts: {
         char nm[20];
         fighter_name(fg->b.f[e.to >= 0 ? e.to : who], nm, sizeof nm);
-        snprintf(t, sizeof t, "%s%s", fw(e.ev == combat::Ev::Engulfs ? profile::kEngulfs : profile::kHugs), nm);
+        const int w = e.ev == combat::Ev::Engulfs ? profile::kEngulfs
+                      : e.ev == combat::Ev::Hugs ? profile::kHugs
+                      : e.ev == combat::Ev::DrainsBlood ? profile::kDrainsBloodGw
+                                                         : profile::kConstrictsGw;
+        snprintf(t, sizeof t, "%s%s", fw(w), nm);
         add_page(who, t);
         break;
     }
@@ -1980,6 +1986,8 @@ void event_page(const combat::Event& e)
     case combat::Ev::FearParalyzed: said(profile::kFearParalyzed); break;
     case combat::Ev::FearWeakened: said(profile::kFearWeakened); break;
     case combat::Ev::Weakened: said(profile::kIsWeakened); break;
+    case combat::Ev::Regenerates: said(profile::kRegeneratesGw); break;
+    case combat::Ev::FallsDead: fallen(profile::kFallsDeadGw); break;
     case combat::Ev::Ages:
         said(profile::kAges);
         age_check = true;               // (old age is looked at when the fight ends - Treasures' [0x9318])
@@ -2371,8 +2379,15 @@ void start_turn(pic::Canvas& c)
         // Pool's holds: the stirge drinks, the mantis bites the one it holds
         combat::Event hev[4];
         int bite = -1;
-        const int nh = combat::turn_holds(b, fg->cur, rng, hev, 4, &bite);
-        if (nh > 0 || bite >= 0) {
+        bool go_on = false;
+        const int nh = combat::turn_holds(b, fg->cur, rng, hev, 4, &bite, &go_on);
+        if (go_on) {
+            // (Gateway's squid with the fixes: its squeeze, then its turn)
+            if (!on_screen(fg->cur)) focus(fg->cur, 3);
+            draw_fight(c);
+            for (int k = 0; k < nh; ++k) event_page(hev[k]);
+            draw_fight(c);
+        } else if (nh > 0 || bite >= 0) {
             if (!on_screen(fg->cur)) focus(fg->cur, 3);
             draw_fight(c);
             for (int k = 0; k < nh; ++k) event_page(hev[k]);
@@ -3142,6 +3157,12 @@ void ai_step(pic::Canvas& c)
             f.size = 0;
             combat::occupancy(b);
             add_page(i, fw(profile::kSurrenders));
+            // (Gateway's black dragon: its script counts it - area word 0x4D03)
+            if (b.yielded && b.fx && b.fx->gw.surrender_word) {
+                const uint16_t w = b.fx->gw.surrender_word;
+                vm->set(w, static_cast<uint16_t>(vm->get(w) + 1));
+            }
+            b.yielded = false;
             draw_fight(c);
             say(c, FSt::Next);
             return;
