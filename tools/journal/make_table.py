@@ -302,8 +302,248 @@ LAYOUTS = {
 }
 
 
+# ---- Treasures of the Savage Frontier: several pictures a PDF page ----------
+# Its GOG journal is a book spread a PDF page, each book page a picture of
+# its own (72 dpi, grayscale) with the pages' heading strips as more small
+# pictures. The table's pieces say which picture: [page, x, y, w, h, image],
+# image = the index in the page's /XObject dictionary (the order the
+# engine's pdf::page_image counts). Run on the PDF itself:
+#     python3 -I tools/journal/make_table.py treasures <journal.pdf> src/engine/journal_tables.cpp
+# (its pictures are written beside the PDF, in <pdf>_pictures/, for the
+# contact sheets).
+
+TREASURES = {
+    'pdf_size': 2214499,
+    'pdf_id': '85ba1d9c69464c31353b7ac318df3153',
+    'game': 'TREASURES',
+    'title': "Treasures of the Savage Frontier - Adventurer's Journal (GOG, the copy in the game folder)",
+    'first': (13, 0), 'last': (27, 2),           # the book pages with the entries: PDF page, picture
+    'not_entries': [(15, 0), (16, 2)],           # the Savage Frontier map across them (no entry's)
+    'top': 30, 'bottom': 548,                    # below the heading strip
+}
+
+
+def pdf_pictures(path, out_dir):
+    """Each page's pictures in its /XObject order: [(page, index, w, h, x)]
+    (x: where the page puts it), the JPEGs written to out_dir"""
+    import re
+    import zlib
+    pdf = open(path, 'rb').read()
+    objs = {}
+    for m in re.finditer(rb'(?<![0-9])(\d+) 0 obj', pdf):
+        objs.setdefault(int(m.group(1)), m.end())
+
+    def body(n):
+        return pdf[objs[n]:pdf.find(b'endobj', objs[n])]
+
+    def stream(n):
+        b = body(n)
+        d = b[b.find(b'stream') + 6:]
+        d = d[2:] if d[:2] == b'\r\n' else d[1:] if d[:1] in (b'\r', b'\n') else d
+        return b, d[:int(re.search(rb'/Length (\d+)', b).group(1))]
+
+    def kids(n):
+        b = body(n)
+        if re.search(rb'/Type\s*/Page(?!s)', b):
+            return [n]
+        return [q for x in re.findall(rb'(\d+) 0 R', re.search(rb'/Kids\s*\[([^\]]*)\]', b).group(1))
+                for q in kids(int(x))]
+
+    root = int(re.search(rb'/Root (\d+) 0 R', pdf[pdf.rfind(b'trailer'):]).group(1))
+    pages = kids(int(re.search(rb'/Pages (\d+) 0 R', body(root)).group(1)))
+    os.makedirs(out_dir, exist_ok=True)
+    res = []
+    for pi, pn in enumerate(pages):
+        pb = body(pn)
+        rm = re.search(rb'/Resources (\d+) 0 R', pb)
+        rs = body(int(rm.group(1))) if rm else pb
+        names = re.findall(rb'/(\w+) (\d+) 0 R', re.search(rb'/XObject\s*<<(.*?)>>', rs, re.S).group(1))
+        hdr, cs = stream(int(re.search(rb'/Contents (\d+) 0 R', pb).group(1)))
+        if b'FlateDecode' in hdr:
+            cs = zlib.decompress(cs)
+        place = {m.group(2): float(m.group(1)) for m in
+                 re.finditer(rb'(?:[-\d.]+ ){4}([-\d.]+) [-\d.]+ cm\s*/(\w+) Do', cs)}
+        for k, (nm, on) in enumerate(names):
+            ib, data = stream(int(on))
+            w = int(re.search(rb'/Width (\d+)', ib).group(1))
+            h = int(re.search(rb'/Height (\d+)', ib).group(1))
+            open(os.path.join(out_dir, 't-%02d-%d.jpg' % (pi + 1, k)), 'wb').write(data)
+            res.append((pi + 1, k, w, h, place.get(nm, 0.0)))
+    return res
+
+
+def treasures_main(pdf_path):
+    import re
+    import subprocess
+    L = TREASURES
+    out_dir = pdf_path + '_pictures'
+    pics = pdf_pictures(pdf_path, out_dir)
+    # The book pages in reading order: each PDF page's big pictures, left first
+    book = sorted([(p, x, k) for p, k, w, h, x in pics if h >= 500], key=lambda a: (a[0], a[1]))
+    book = [(p, k) for p, x, k in book]
+    book = book[book.index(L['first']):book.index(L['last']) + 1]
+    book = [b for b in book if b not in L['not_entries']]
+    files = {b: os.path.join(out_dir, 't-%02d-%d.jpg' % b) for b in book}
+    grey = {b: np.asarray(Image.open(files[b]).convert('L')).astype(int) for b in book}
+
+    # Each book page's two columns: split at the gutter, out to the ink (a
+    # page where a map crosses the gutter: the others' usual split)
+    cols = {}
+    for b in book:
+        c = (grey[b] < 160)[60:520].sum(axis=0)
+        # (the gutter: the widest run of empty columns there; none - a map
+        # crosses it - the others' split)
+        runs, start = [], None
+        for x in range(140, 221):
+            if x < 220 and c[x] == 0:
+                start = x if start is None else start
+            elif start is not None:
+                runs.append((x - start, start, x - 1))
+                start = None
+        xs = np.nonzero((c > 0) & (c < 300))[0]       # (not the scan's dark edge)
+        edges = (max(0, int(xs[0]) - 4), min(grey[b].shape[1], int(xs[-1]) + 5))
+        if runs and max(runs)[0] >= 3:
+            _, a, z = max(runs)
+            cols[b] = [(edges[0], (a + z + 1) // 2), ((a + z + 1) // 2, edges[1])]
+        else:
+            cols[b] = [edges]
+    usual = int(np.median([cols[b][0][1] for b in cols if len(cols[b]) == 2]))
+    for b in book:
+        if len(cols[b]) == 1:
+            cols[b] = [(cols[b][0][0], usual), (usual, cols[b][0][1])]
+
+    # The quote boxes between a column's text (a picture and a saying between
+    # two dark rules across the column): no entry's
+    skip = {}
+    for b in book:
+        ink = grey[b] < 180             # (some pages' rules are a light grey)
+        for c, (x0, x1) in enumerate(cols[b]):
+            runs = []
+            for y in range(L['top'], grey[b].shape[0]):
+                if ink[y, x0 + 5:x1 - 5].sum() >= 0.75 * (x1 - x0 - 20):
+                    if runs and y - runs[-1][1] <= 2:
+                        runs[-1][1] = y
+                    else:
+                        runs.append([y, y])
+            i = 0
+            while i < len(runs):
+                pair = [r for r in runs[i + 1:] if 90 <= r[0] - runs[i][0] <= 130]
+                if pair:
+                    skip.setdefault((b, c), []).append((runs[i][0] - 4, pair[0][1] + 5))
+                    i = runs.index(pair[0]) + 1
+                else:
+                    i += 1
+
+    # The headings: "JOURNAL ENTRY N" at a line's start (tesseract on the
+    # picture at 3x); numbers read wrong are put right by the book's order
+    heads = []
+    for b in book:
+        big = files[b][:-4] + '_3x.png'
+        if not os.path.exists(big):
+            Image.open(files[b]).convert('L').resize((grey[b].shape[1] * 3, grey[b].shape[0] * 3),
+                                                     Image.LANCZOS).save(big)
+        if not os.path.exists(big + '.tsv'):
+            with open(big + '.tsv', 'w') as f:
+                f.write(subprocess.run(['tesseract', big, '-', 'tsv'], capture_output=True, text=True).stdout)
+        lines = {}
+        for row in open(big + '.tsv').read().splitlines()[1:]:
+            f = row.split('\t')
+            if len(f) < 12 or not f[11].strip():
+                continue
+            lines.setdefault((f[2], f[3], f[4]), []).append((int(f[6]) // 3, int(f[7]) // 3, f[11]))
+        for ws in lines.values():
+            ws.sort()
+            toks = [w[2] for w in ws]
+            for i, t in enumerate(toks[:3]):
+                m = (re.fullmatch(r'(\d+)[.:]?', toks[i + 1])
+                     if re.fullmatch(r'(?i)entry', t) and i + 1 < len(toks) else None)
+                if m:
+                    j = i - 1 if i > 0 and re.search(r'(?i)rnal$', toks[i - 1]) else i   # (not a junk mark before it)
+                    c = 0 if ws[j][0] < 140 else 1
+                    heads.append((book.index(b), c, ws[j][1], int(m.group(1))))
+                    break
+    heads.sort()
+    for i in range(1, len(heads) - 1):
+        a, n, z = heads[i - 1][3], heads[i][3], heads[i + 1][3]
+        if n != a + 1 and z == a + 2:
+            heads[i] = heads[i][:3] + (a + 1,)
+    got = [h[3] for h in heads]
+    print('J', len(got), 'missing', sorted(set(range(1, max(got) + 1)) - set(got)),
+          'out of order', [n for i, n in enumerate(got) if i and n != got[i - 1] + 1])
+
+    def pieces(bi, c, y, end):
+        out = []
+        while True:
+            b = book[bi]
+            last = end is not None and end[:2] == (bi, c)
+            y1 = end[2] - 4 if last else L['bottom']
+            x0, x1 = cols[b][c]
+            parts = [(y, y1)]
+            for s0, s1 in skip.get((b, c), []):
+                parts = [q for a, z in parts for q in ((a, min(z, s0)), (max(a, s1), z)) if q[1] - q[0] >= 12]
+            out += [[b[0], x0, a, x1 - x0, z - a, b[1]] for a, z in parts if z - a >= 12]
+            if last or (end is None and bi == len(book) - 1 and c == 1):
+                return out
+            c += 1
+            if c == 2:
+                c, bi = 0, bi + 1
+            y = L['top']
+
+    entries = []
+    for i, (bi, c, y, n) in enumerate(heads):
+        ps = []
+        for p, x, y0, w, h, k in pieces(bi, c, y - 4, heads[i + 1] if i + 1 < len(heads) else None):
+            g = grey[(p, k)]
+            m = g[y0:y0 + h, x + 3:x + w - 3] < 160
+            low = max(0, 533 - y0)          # (a page number at the foot's outer corner: not the entry's)
+            m[low:, :24] = False
+            m[low:, -24:] = False
+            rows = np.nonzero(m.sum(axis=1) >= 2)[0]
+            if len(rows) == 0:
+                continue
+            a = max(y0, y0 + int(rows[0]) - 3)
+            z = min(y0 + h, y0 + int(rows[-1]) + 4)
+            ps.append([p, x, a, w, z - a, k])
+        entries.append({'k': 'J', 'n': n, 'p': ps})
+    # Checked by eye: entry 2 ends at its column's foot; maps wider than a
+    # column: entry 65's under its heading (82's map in its column whole)
+    # on PDF page 24's left page (67's text wraps round it - its column
+    # starts right of the map there), 83's on page 27's left page
+    for e in entries:
+        if e['n'] == 2:             # (the right column's top is the section's title)
+            e['p'] = e['p'][:1]
+        if e['n'] == 65:
+            p = e['p'][0]
+            e['p'] = [[24, p[1], p[2], 189 - p[1], 488 - p[2], 2]]
+        if e['n'] == 67:
+            e['p'] = [[q[0], 189, q[2], q[1] + q[3] - 189, q[4], q[5]] if q[0] == 24 and q[5] == 2 else q
+                      for q in e['p']]
+        if e['n'] == 82:            # (its map's long walls are no quote box's rules)
+            p = e['p'][0]
+            e['p'] = [[26, p[1], p[2], p[3], 462 - p[2], 0]]
+        if e['n'] == 83:
+            p = e['p'][0]
+            e['p'] = [[27, p[1], p[2], 336 - p[1], 420 - p[2], 2]]
+    return entries
+
+
 def main():
     name, img_dir, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
+    if name == 'treasures':
+        import hashlib
+        L = TREASURES
+        entries = treasures_main(img_dir)
+        store = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tables.json')
+        table = json.load(open(store))
+        table['journals'] = [j for j in table['journals'] if j['name'] != name]
+        table['journals'].append({'name': name, 'game': L['game'], 'title': L['title'],
+                                  'sha256': hashlib.sha256(open(img_dir, 'rb').read()).hexdigest(),
+                                  'pdf_size': L['pdf_size'], 'pdf_id': L['pdf_id'], 'entries': entries})
+        with open(store, 'w') as f:
+            json.dump(table, f, separators=(',', ':'))
+        write_cpp(table, out_path)
+        print(f"{name}: {len(entries)} journal entries")
+        return
     L = LAYOUTS[name]
     cols = L['cols']
     files = sorted(glob.glob(img_dir + '/p-*.jpg'))
@@ -438,8 +678,9 @@ def write_cpp(table, path):
         pieces, defs = [], []
         for e in j['entries']:
             defs.append(f"    {{'{e['k']}', {e['n']}, {len(pieces)}, {len(e['p'])}}},")
-            for p, x, y, w, h in e['p']:
-                pieces.append(f'    {{{p}, {x}, {y}, {w}, {h}}},')
+            for q in e['p']:
+                # (a 6th number: which of the page's pictures - Treasures)
+                pieces.append('    {' + ', '.join(str(v) for v in q) + '},')
         out.append(f"// {j['title']}")
         out.append(f'const Piece k_{n}_pieces[] = {{')
         out += pieces

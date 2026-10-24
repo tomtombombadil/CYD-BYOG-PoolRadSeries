@@ -2554,7 +2554,10 @@ const Profile kProfiles[] = {
                  .fight_unswapped = true, .vga = true, .darkness_files = true, .party_menu_col = 9,
                  // (the overland: DS 0x7D08's regions 0-4 -> BIGPIC 240, 241, 242,
                  // 242, 245; the marker CURSOR.DAX block 1 - DOSBox)
-                 .dk_overland_pics = 0x7D08, .marker_file = "CURSOR.DAX", .marker_block = 1},
+                 .dk_overland_pics = 0x7D08, .marker_file = "CURSOR.DAX", .marker_block = 1,
+                 // (old age after a fight: Treasures' routine, here ovr 0x864B)
+                 .tr_max_age = 0x08E2,
+                 .tr_age_words = {0x84E3, 0x84F7, 0x852B, 0x852F, 0x8532, 0x8536, 0x857F, 0x85BD, 0x85EF, 0x8634}},
      .font_file = "8X8D0.DAX",
      .joined = kDarknessJoined, .n_joined = sizeof kDarknessJoined / sizeof kDarknessJoined[0],
      // Its vault (facts_shops.md 5): VAULTx.DAT a save slot, TMPVAULT.DAT while playing
@@ -2600,7 +2603,9 @@ const Profile kProfiles[] = {
                0x8949, 0x8951, 0x45D5C, 0x45D62, 0x45D68, kJ | 4, kJ | 4, 0x8D88, 0x2F863,
                0x2EA77, 0x2EA7D, 0x2EA3F, 0x3F04B, 0x3F052, 0x2F5E1, 0x2F5ED, 0x2F5F9, 0x2F608, 0x4084B,
                0x2DA43, 0x2DA4A, {0x26, 0x92, 0x0C, 0x0E, 0x44, 0x3E},
-               {0x17, 20, 20, 243}, {0x05, 0x05, 0x0B, 0x4D}, 0x4D, .types_stride = 24},
+               {0x17, 20, 20, 243}, {0x05, 0x05, 0x0B, 0x4D}, 0x4D,
+               // (positional to types_stride: C++20 doesn't mix designators)
+               nullptr, 0xFF, 0xA0, 0, 0, {}, {}, {}, false, 0, false, 2, 24},
      // Character rules: Curse's tables at a shift (DS 0x435E on; stat limits
      // 28 bytes further - gateway_facts.md 6), its effects and words
      .create = {0x4C70,
@@ -2611,7 +2616,8 @@ const Profile kProfiles[] = {
                 {0x0B, 0x12, 0x0C, 0x15}, 0x0F, {0x22, 0x0A}, 0x1F, 0x2F,
                 0x26DB7, 0x26DCC, 0x26DD8, 0x26DE3, 0x26DC5, 0x26E14, 0x26E23, 0x26E34, 0x26E3A,
                 {0x0B, 0x12, 0x0C, 0x15}, 0x4376E, 0x4375C, 0x4377E, 0x43785, 0x4379A,
-                .start_xp = 3000, .platinum = 35},
+                // (positional to start_xp / platinum: C++20 doesn't mix designators)
+                0, false, 0, 0, 0, nullptr, nullptr, 0, 0, nullptr, 0, 0, 0, 0, 0, 0, 3000, 35},
      .item_words = {0x2EA45, 0x2EA4A, 0x2EA5A, 0x2EA60, 0x2EA67, 0x2EA6D, 0x2EA73, 0x2E8D1, 0x2EA88, 0x2F93E, 0x2EA98,
                     0x2EAB8, 0x2EACD, 0x2F852, 0x2FEF6, 0x2FF05, 0x2FF1C, 0x2FF2B, 0x2FF31, 0x3013E, 0x30186, 0x301AC,
                     0x30175, 0x33431, 0x2EA51},
@@ -2642,7 +2648,9 @@ const Profile kProfiles[] = {
                 {{0x28, 1, 6, 0, 10}, {0x39, 5, 4, 0, 1}, {0x3D, 5, 4, 0, 1}, {0x3B, 1, 4, 4, 10}, {0x3F, 1, 10, 10, 10},
                  {0x43, 0, 0, 1440, 1}}},
                kCurseSpellNamed, sizeof kCurseSpellNamed, kCurseNamed, sizeof kCurseNamed / sizeof kCurseNamed[0],
-               0xD2, 0x10, .kind_names = {0x5EAA, 12, 3}, .heading_word = 0x354FE},
+               0xD2, 0x10,
+               // (positional to kind_names / heading_word: C++20 doesn't mix designators)
+               0, {}, 0, {}, 0x30, false, 0, {0x5EAA, 12, 3}, 0x354FE},
      // Alter: "Order Drop Speed Icon Level Exit" (Level as Secret's: "Novice
      // ... Champion"), the icon editor's menus as Curse's
      .alter = {.menu = kP | 0x58B0, .select = kP | 0x58DA, .place = kP | 0x5903,
@@ -2931,9 +2939,9 @@ const Profile kProfiles[] = {
      .sound = {.fireball_spell = 0x2F, .lightning_spell = 0x33, .burst_spells = {0x22, 0x2F, 0x40, 0x57, 0x5B, 0x73, 0x7C}},
      .clips ={.file = "ZOUNDS.DAX", .hz = 9000, .first = 2, .last = 12,
                .ids = {0, 0, 2, 9, 6, 5, 9, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .quiet_turns = true},
-     .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .treasure_pic = 129, .camp_pic = 128, .appraise_div = 2,
+     .variant = {.program_words = true, .bigpic_from = 0xF0, .treasure_pic = 129, .camp_pic = 128, .appraise_div = 2,
                  .fight_unswapped = true, .vga = true, .darkness_files = true, .party_menu_col = 9,
-                 .tr = true, .pic_split = 78, .title_ega = {4, 5}, .camp_pic_in = 132, .demo_block = 4,
+                 .tr = true, .pic_split = 78, .title_ega = {4, 5}, .camp_pic_byte = true, .demo_block = 4,
                  .tr_crown_menu = 0xF776, .tr_acquired = 0x145D8,
                  .tr_crystal = {0x145F6, 0x14602, 0x14610}, .tr_accept = 0x1545E, .tr_his = 0x14D01,
                  .tr_her = 0x14D05, .tr_paper = {0x2DEA8, 0x2DEBC},

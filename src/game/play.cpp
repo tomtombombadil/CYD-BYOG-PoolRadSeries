@@ -75,6 +75,8 @@ struct Data {
         delete anim_idx;
         free(tr_frame);
         free(tr_pieces);
+        free(tr_bg);
+        free(tr_shade);
     }
     Data(const Data&) = delete;
     Data& operator=(const Data&) = delete;
@@ -84,6 +86,10 @@ struct Data {
     // (BORD block 7) - layout::Tables tr
     uint8_t*       tr_frame = nullptr;
     uint8_t*       tr_pieces = nullptr;
+    // Treasures in 256 colours: its background picture (BORD block 1,
+    // 320 x 192 bytes; the canvas's bg) - nullptr in its EGA mode
+    uint8_t*       tr_bg = nullptr;
+    uint8_t      (*tr_shade)[8] = nullptr;  // (and its font's black pixels: font::Font shade)
     uint8_t        tr_over = 0;             // Treasures: the overland's OVER.DAX map (0: none)
     uint16_t       tr_max_age[8] = {};      // Treasures: the races' greatest ages (old age after a fight)
     font::Font     font;
@@ -1023,6 +1029,29 @@ void draw_tr_overland(pic::Canvas& c)
         c.fill(24, 24, 88, 88, 0);
     }
     vga_take();
+    // 256 colours: the season's colours, entries 32-255 of OVER block game
+    // byte 0x41 + 1 (blocks 1-4, palettes only; o144+0x9F4 reads them,
+    // o144+0x9C0 sends them after the map's drawn - DOSBox VGA: the
+    // demo's autumn snows)
+    if (vga) {
+        const dax::Entry* e = d->idx.find(static_cast<uint8_t>(d->gs.area1[0x41] + 1));
+        uint8_t hdr[pic::kVgaHeaderSize];
+        pic::VgaHeader h;
+        if (e) {
+            dax::RleReader r(src, d->idx, *e);
+            pic::VgaPalette* p = vga_load();
+            // (a palette-only block: no picture - height and width 0)
+            const bool ok = r.read(hdr, sizeof hdr) == sizeof hdr;
+            h.first = hdr[8];
+            h.count = static_cast<uint16_t>(hdr[9] + 1);
+            if (ok && h.first + h.count <= 256 && pic::kVgaHeaderSize + h.count * 3u <= e->raw_size &&
+                pic::read_vga_palette(r, h, p->rgb)) {
+                p->first = h.first;
+                p->count = h.count;
+                vga_take();
+            }
+        }
+    }
     f.close();
     view3d::draw_marker(c, d->world, 16 + ((d->gs.dir & 7) >> 1), (3 + d->gs.x - x0) * 8, (3 + d->gs.y - y0) * 8);
     dirty_rows(3, 13);
@@ -1084,6 +1113,14 @@ void dk_background()
 
 extern int tr_lattice_drawn;
 void tr_lattice(pic::Canvas& c);
+// Treasures: after BEGIN the position line shows once the view has been
+// drawn (the start's pictures come before - DOSBox: none under them; a
+// picture shown later leaves it, and the demo has it from its start)
+bool tr_position = false;
+void tr_background(bool on);
+// Darkness / Treasures: someone aged (haste, the clock) - the next fight's
+// end looks at old age (their DS 0x9CFE / 0x9318; not in the saves)
+bool age_check = false;
 void draw_view(pic::Canvas& c)
 {
     if (world_parked) return;
@@ -1106,6 +1143,7 @@ void draw_view(pic::Canvas& c)
         draw_panel(c);
     }
     if (pic_shown) return;
+    tr_position = true;
     if (pool_overland()) {
         draw_overland(c);
         return;
@@ -1145,8 +1183,11 @@ bool dk_overland();
 void draw_position(pic::Canvas& c)
 {
     if (marker_overland()) return;
+    if (d->prof->variant.tr && !tr_position) return;
     const ecl::GameState& g = d->gs;
-    c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);
+    // (Treasures clears columns 18-38 only - ovr 0x41207)
+    if (d->prof->variant.tr) c.fill(18 * 8, 15 * 8, 21 * 8, 8, 0);
+    else c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);
     char line[40];
     const int hours = vm->get(0x4BC9), tens = vm->get(0x4BC8), ones = vm->get(0x4BC7);
     int x = g.x, y = g.y;
@@ -1949,6 +1990,7 @@ bool load_game(char slot)
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
     vm->set(0x7F12, d->gs.game_area);
     d->loaded = true;
+    age_check = false;
     {
         char m[32];
         snprintf(m, sizeof m, "loaded saved game %c", slot);
@@ -3475,11 +3517,12 @@ void save_tap(int x, int y, pic::Canvas& c)
 
 void draw_own_pic(int id);
 
-// The camp's picture (Treasures: its own indoors - PIC 132, DOSBox)
+// The camp's picture (Treasures: game byte 0x4F's when its scripts set one -
+// 132 indoors; ov105+0x3149)
 int camp_pic()
 {
     const auto& v = d->prof->variant;
-    return v.camp_pic_in && geo::flags(d->map, d->gs.x, d->gs.y) >= 0x80 ? v.camp_pic_in : v.camp_pic;
+    return v.camp_pic_byte && d->gs.area1[0x4F] ? d->gs.area1[0x4F] : v.camp_pic;
 }
 
 bool no_rest_here() { return darkness_files() && vm->get(0x2B) == 1 && vm->get(0x2C) >= 100; }
@@ -3811,6 +3854,7 @@ bool lk_page()
 void lk_show(pic::Canvas& c)
 {
     text::begin(w, c, lk.page, script_area(), 10, true);
+    w.codes = d->prof->variant.tr;      // (the scripts' printer, img 0x6A8A: a word's trailing space may hang - DOSBox: the Crown)
     dirty_rows(17, 22);
     t_started = false;
     lk.prompt = false;
@@ -3889,7 +3933,7 @@ void lk_tick(uint32_t now, pic::Canvas& c)
     }
     if (w.state == text::State::PageFull || w.state == text::State::Done) {
         clear_menu_line(c);
-        put(c, d->press_key, 0, text::kMenuRow, 13);
+        put(c, d->press_key, 0, text::kMenuRow, 15);     // (white, as PRESSKEY's - DOSBox: the romance)
         lk.prompt = true;
     }
 }
@@ -3962,7 +4006,7 @@ void lucky_paper(const uint8_t* it, pic::Canvas& c)
     lk_free();
     dirty(0, pic::kScreenH);
     clear_menu_line(c);
-    put(c, d->press_key, 0, text::kMenuRow, 13);
+    put(c, d->press_key, 0, text::kMenuRow, 15);      // (white - DOSBox)
     lk.on = true;
     lk.prompt = true;
     lk.len = 1;
@@ -10565,6 +10609,24 @@ struct Host : ecl::Host {
         if (screen == Screen::Game) draw_view(*cv);
     }
     // Darkness: the frame's style (BORDERS block 0-3), the screen's frame again
+    void age_party(int years) override
+    {
+        // (every member in the party's list, as the original's loop)
+        for (int i = 0; i < pt->count; ++i) {
+            party::Character& ch = pt->m[i];
+            const int age = (ch.rec[0x76] | ch.rec[0x77] << 8) + years;
+            ch.rec[0x76] = static_cast<uint8_t>(age);
+            ch.rec[0x77] = static_cast<uint8_t>(age >> 8);
+        }
+        age_check = true;
+        plat::log("[play] the clock: everyone %d year(s) older\n", years);
+    }
+    void season() override
+    {
+        // (the overland drawn again in the season's colours - DOSBox VGA:
+        // the demo's "autumn snows" text has the snowy map beside it)
+        if (vga && screen == Screen::Game && d->gs.area1[0x3F] && d->tr_over && !pic_shown) draw_tr_overland(*cv);
+    }
     void style(int v) override
     {
         plat::File f;
@@ -11438,6 +11500,7 @@ void begin_adventuring()
         pm_prompt(c, msg);
         return;
     }
+    tr_position = false;         // (Treasures: none under the start's pictures - DOSBox)
     // (Gateway's wilderness: saved there, its 0x4BE6 = 0 stays - the map and
     // tile sets load as the original's, and the view is the map)
     if (resume && !dungeon && d->prof->variant.tile_wild) vm->set(0x4BE6, 0);
@@ -13057,6 +13120,7 @@ void start_demo(pic::Canvas& c)
         return;
     }
     draw_frame(c);
+    tr_position = true;          // (Treasures: its first picture has it under it - DOSBox)
     draw_panel(c);
     run_entry(4, Then::Begun);
 }
@@ -13384,6 +13448,16 @@ __attribute__((noinline)) bool open_program(games::Game g, const char* prog)
     return true;
 }
 
+// Treasures in 256 colours: its background picture behind the screen's
+// clears and text (on), or black - a fight's time (off)
+void tr_background(bool on)
+{
+    if (cv && d && d->tr_bg) {
+        cv->bg = on ? d->tr_bg : nullptr;
+        cv->bg_rows = 192;
+    }
+}
+
 // Treasures: its frame (port facts P7) - BORD.DAX block 0's tiles and
 // block 7's pieces, kept while playing
 __attribute__((noinline)) bool open_tr_frame()
@@ -13408,19 +13482,43 @@ __attribute__((noinline)) bool open_tr_frame()
         // Its text font: BORD block 8's 64 glyphs (white on magenta - '@',
         // A-Z ... in the order of the font's glyphs 0-63; DOSBox) in place
         // of 8X8D0's (whose other glyphs stay)
+        // - in 256 colours drawn over the background, the glyphs' black
+        // pixels their shadow (DOSBox VGA)
         uint8_t* g = static_cast<uint8_t*>(malloc(64 * 64));
+        if (vga && cv && cv->bpp == 8) d->tr_shade = static_cast<uint8_t(*)[8]>(malloc(64 * 8));
         if (g && layout::load_tr_tiles(src, d->idx, 8, g, true)) {
             for (int k = 0; k < 64; ++k)
                 for (int y = 0; y < 8; ++y) {
-                    uint8_t bits = 0;
+                    uint8_t bits = 0, shade = 0;
                     for (int x = 0; x < 8; ++x) {
                         const uint8_t v = g[k * 64 + y * 8 + x];
                         if (v != 13 && v != 0) bits = static_cast<uint8_t>(bits | 0x80 >> x);
+                        if (v == 0) shade = static_cast<uint8_t>(shade | 0x80 >> x);
                     }
                     d->font.glyph[k][y] = bits;
+                    if (d->tr_shade) d->tr_shade[k][y] = shade;
                 }
+            d->font.shade = d->tr_shade;
         }
         free(g);
+        // 256 colours: the red background (BORD block 1, 320 x 192, its
+        // entries 16-21 the frame's) behind the frame - every clear puts it
+        // back (the original's img 0x17A3); the EGA mode's is black
+        const dax::Entry* b = d->idx.find(1);
+        if (vga && cv && cv->bpp == 8 && b) {
+            d->tr_bg = static_cast<uint8_t*>(malloc(pic::kScreenW * 192));
+            pic::Canvas bc{d->tr_bg, pic::kScreenW, 192, 8};
+            bc.vga = true;
+            if (d->tr_bg && pic::draw_vga_block(src, d->idx, *b, 0, bc, 0, 0, -1, vga_load())) {
+                vga_take(true);
+                cv->bg = d->tr_bg;
+                cv->bg_rows = 192;
+            } else {
+                vga_take(true);
+                free(d->tr_bg);
+                d->tr_bg = nullptr;
+            }
+        }
     }
     f.close();
     return ok;
@@ -13522,6 +13620,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
 {
     close();
     cv = &c;
+    age_check = false;
     pic::sf_map_reset();                // (Gateway's pictures without a colour map: the last one read)
     const char* prog = profile::program_name(g);
     if (!prog) {
@@ -13685,6 +13784,7 @@ void close()
         view3d::World* w = &d->world;
         ecl::GameState* g = &d->gs;
         view3d::vga_free(*w);                   // (Darkness's background picture, VGA tiles)
+        if (cv && d->tr_bg && cv->bg == d->tr_bg) cv->bg = nullptr;
         for (view3d::TileSet& ts : w->sets) view3d::free_extra(ts);     // (Gateway's big wall sets)
         delete d->alt_font;
         free(d->gw_xp);

@@ -435,6 +435,15 @@ static void run_fight()
                     if (!tap_word('T')) tap_word('E');
                     continue;
                 }
+                if (play::fg->st == play::FSt::OldAge) {     // (old age's sentences: a key each)
+                    static int olds = 0;
+                    char t[16];
+                    snprintf(t, 16, "oldage%d", olds++);
+                    shot(t);
+                    printf("  [old age: a key]\n");
+                    play::tap(2, 2, C);
+                    continue;
+                }
                 if (play::fg->st == play::FSt::ContinueAsk) {
                     printf("  [Continue Battle: No]\n");
                     tap_word('N');
@@ -1020,6 +1029,18 @@ int main(int argc, char** argv)
     }
     if (getenv("TELE")) { int x, y, dd; sscanf(getenv("TELE"), "%d,%d,%d", &x, &y, &dd); play::d->gs.x = x; play::d->gs.y = y; play::d->gs.dir = dd; play::after_move_redraw(); }
     if (getenv("TELE0")) { int x, y, dd; sscanf(getenv("TELE0"), "%d,%d,%d", &x, &y, &dd); play::d->gs.x = x; play::d->gs.y = y; play::d->gs.dir = dd; play::after_move_redraw(); }
+    // SETAGE=m:age,...: member m that old; AGEUP=n: the clock's years make
+    // everyone n older (Darkness / Treasures - old age at the next fight's end)
+    for (const char* q = getenv("SETAGE"); q && *q;) {
+        int m, age;
+        if (sscanf(q, "%d:%d", &m, &age) == 2 && m >= 0 && m < play::pt->count) {
+            play::pt->m[m].rec[0x76] = (uint8_t)age;
+            play::pt->m[m].rec[0x77] = (uint8_t)(age >> 8);
+        }
+        q = strchr(q, ',');
+        if (q) ++q;
+    }
+    if (getenv("AGEUP")) play::host->age_party(atoi(getenv("AGEUP")));
     if (getenv("RUNAT")) {
         // Run the script from an address (e.g. a shop), then BUY=n,n,...
         // buys those goods for character 0, READY=i readies their item i

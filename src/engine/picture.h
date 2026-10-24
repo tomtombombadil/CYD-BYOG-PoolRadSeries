@@ -46,6 +46,13 @@ struct Canvas {
     // the VGA palette's entries); false: in their EGA colours, as the
     // original's EGA mode (any depth - darkness_facts.md 7)
     bool vga = false;
+    // Treasures in 256 colours: its background picture (BORD 1, w bytes a
+    // row, bg_rows rows) - a fill with colour 0 puts the picture back there
+    // instead of black, as the original's clear (its img 0x17A3; rows from
+    // bg_rows on stay black); fill_black is black always. 8-bit canvas only;
+    // nullptr: none
+    const uint8_t* bg = nullptr;
+    int bg_rows = 0;
     int stride() const { return bpp == 4 ? (w + 1) >> 1 : w; }
     size_t bytes() const { return static_cast<size_t>(stride()) * h; }
     uint8_t get(int x, int y) const
@@ -68,6 +75,13 @@ struct Canvas {
     void put_row(int x, int y, int n, const uint8_t* in);
     void clear(uint8_t c);
     void fill(int x, int y, int w, int h, uint8_t c);
+    void fill_black(int x, int y, int fw, int fh)
+    {
+        const uint8_t* was = bg;
+        bg = nullptr;
+        fill(x, y, fw, fh, 0);
+        bg = was;
+    }
 };
 
 constexpr size_t kHeaderSize = 17;

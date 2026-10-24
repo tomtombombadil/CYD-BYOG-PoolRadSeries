@@ -156,6 +156,11 @@ public:
     virtual void shop_items(int n, items::Ground& g) { (void)n; (void)g; }
     virtual void item_row(int row, items::Ground& g) { (void)row; (void)g; }
     virtual void style(int v) { (void)v; }
+    // Treasures: the overland's season colours to read again (game byte 0x41)
+    virtual void season() {}
+    // Darkness / Treasures: the clock's years made every member `years`
+    // older (advance_clock)
+    virtual void age_party(int years) { (void)years; }
     // Treasures (op 0x42): WALLDEF1 block `block` into wall slot `slot`
     // (0-2) and on, with its own 8X8D1 tiles; block < 0 empties the slot
     virtual void load_slot(int slot, int block) { (void)slot; (void)block; }

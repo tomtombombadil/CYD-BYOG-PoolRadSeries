@@ -704,6 +704,11 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   that, a sound may be left out when memory is low, but never Hit or Miss.
 - Toolchain: pioarduino platform 55.03.312-1 (Arduino-ESP32 3.3.x), LovyanGFX
   1.2.x, huge_app.csv (no OTA - the web flasher is the update path).
+- The boards compile C++ as gnu++2b: an aggregate's initializer is all
+  designated or all positional, never mixed (v0.144.0's Gateway profile
+  broke every board build while the host tests passed). Before a push:
+  `g++ -std=gnu++2b -fsyntax-only -Isrc` on src/engine/*.cpp and
+  src/game/{play,look,walk}.cpp - and check CI's result after it.
 - Claude's local builds: PlatformIO in a venv; the proxy CA must be appended to
   the certifi bundles under the venv and `~/.platformio/penv` or downloads fail.
 

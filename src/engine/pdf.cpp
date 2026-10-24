@@ -1,5 +1,7 @@
 #include "pdf.h"
 
+#include "inflate.h"
+
 #include <cstdlib>
 #include <cstring>
 #include <new>
@@ -434,8 +436,9 @@ int pages(dax::ByteSource& src, const Doc& doc, int* page_obj, int max)
     return n;
 }
 
-bool page_image(dax::ByteSource& src, const Doc& doc, int page_obj, Image& out)
+bool page_image(dax::ByteSource& src, const Doc& doc, int page_obj, Image& out, int index)
 {
+    out.images = 0;
     Obj* a = new (std::nothrow) Obj;
     Obj* b = new (std::nothrow) Obj;
     bool ok = false;
@@ -459,9 +462,19 @@ bool page_image(dax::ByteSource& src, const Doc& doc, int page_obj, Image& out)
             Obj* spare = (holder == a) ? b : a;
             if (xo >= 0 && deref(src, doc, *holder, xo, *spare, &xo_o, &xo_n) && xo_n >= 0 &&
                 xo_o->node[xo_n].t == T::Dict) {
-                const int first_val = xo_o->node[xo_n].first >= 0 ? xo_o->node[xo_o->node[xo_n].first].next : -1;
-                if (first_val >= 0 && xo_o->node[first_val].t == T::Ref) {
-                    const int img = xo_o->node[first_val].v;
+                // (the index-th of the dictionary's values, in the file's
+                // order - the Treasures journal: several pictures a page)
+                int img = -1;
+                for (int k = xo_o->node[xo_n].first; k >= 0;) {
+                    const int v = xo_o->node[k].next;
+                    if (v < 0) break;
+                    if (xo_o->node[v].t == T::Ref) {
+                        if (out.images == index) img = xo_o->node[v].v;
+                        ++out.images;
+                    }
+                    k = xo_o->node[v].next;
+                }
+                if (img > 0) {
                     if (load(src, doc, img, *a) && a->stream_at) {
                         const int st = get(*a, a->root, "Subtype");
                         const int w = get(*a, a->root, "Width");
@@ -490,6 +503,166 @@ bool page_image(dax::ByteSource& src, const Doc& doc, int page_obj, Image& out)
     delete a;
     delete b;
     return ok;
+}
+
+namespace {
+
+// A stream's bytes one at a time (inflate's input)
+struct StreamIn : inflate::Input {
+    dax::ByteSource& src;
+    uint32_t at, end;
+    uint8_t buf[256];
+    uint32_t buf_at = 0, buf_n = 0;
+    StreamIn(dax::ByteSource& s, uint32_t a, uint32_t e) : src(s), at(a), end(e) {}
+    int byte() override
+    {
+        if (at >= end) return -1;
+        if (at < buf_at || at >= buf_at + buf_n) {
+            buf_at = at;
+            buf_n = static_cast<uint32_t>(src.read_at(at, buf, sizeof buf));
+            if (!buf_n) return -1;
+        }
+        return buf[at++ - buf_at];
+    }
+};
+struct BufOut : inflate::Output {
+    char* p;
+    size_t cap, n = 0;
+    BufOut(char* b, size_t c) : p(b), cap(c) {}
+    bool put(uint8_t b) override
+    {
+        if (n >= cap) return false;
+        p[n++] = static_cast<char>(b);
+        return true;
+    }
+};
+
+constexpr size_t kContentCap = 8192;
+
+} // namespace
+
+int page_pictures(dax::ByteSource& src, const Doc& doc, int page_obj, Picture* out, int max)
+{
+    Obj* a = new (std::nothrow) Obj;
+    Obj* b = new (std::nothrow) Obj;
+    char* text = static_cast<char*>(malloc(kContentCap));
+    uint8_t* window = static_cast<uint8_t*>(malloc(inflate::kWindow));
+    // (each picture's name in the /XObject dictionary - a span of b's buffer copied out)
+    char names[kMaxPictures][24] = {};
+    int refs[kMaxPictures] = {}, n = 0;
+    int contents = 0;
+    if (a && b && text && window && load(src, doc, page_obj, *a)) {
+        const int c = get(*a, a->root, "Contents");
+        if (c >= 0 && a->node[c].t == T::Ref) contents = a->node[c].v;
+        int res = get(*a, a->root, "Resources");
+        for (int up = 0; res < 0 && up < 8; ++up) {
+            const int parent = get(*a, a->root, "Parent");
+            if (parent < 0 || a->node[parent].t != T::Ref || !load(src, doc, a->node[parent].v, *a)) break;
+            res = get(*a, a->root, "Resources");
+        }
+        const Obj* ro = nullptr;
+        int rn = -1;
+        if (res >= 0 && deref(src, doc, *a, res, *b, &ro, &rn)) {
+            const int xo = get(*ro, rn, "XObject");
+            Obj* holder = (ro == b) ? b : a;
+            Obj* spare = (holder == a) ? b : a;
+            const Obj* xo_o = nullptr;
+            int xo_n = -1;
+            if (xo >= 0 && deref(src, doc, *holder, xo, *spare, &xo_o, &xo_n) && xo_n >= 0 &&
+                xo_o->node[xo_n].t == T::Dict) {
+                for (int k = xo_o->node[xo_n].first; k >= 0 && n < kMaxPictures;) {
+                    const int v = xo_o->node[k].next;
+                    if (v < 0) break;
+                    if (xo_o->node[v].t == T::Ref) {
+                        const Node& nm = xo_o->node[k];
+                        const size_t len = nm.n < sizeof names[0] - 1 ? nm.n : sizeof names[0] - 1;
+                        memcpy(names[n], xo_o->buf + nm.s, len);
+                        names[n][len] = 0;
+                        refs[n++] = xo_o->node[v].v;
+                    }
+                    k = xo_o->node[v].next;
+                }
+            }
+        }
+    }
+    int got = 0;
+    for (int i = 0; i < n && got < max; ++i) {
+        if (!load(src, doc, refs[i], *a)) continue;
+        const int st = get(*a, a->root, "Subtype"), w = get(*a, a->root, "Width"), h = get(*a, a->root, "Height");
+        if (!name_is(*a, st, "Image") || w < 0 || h < 0) continue;
+        Picture& p = out[got++];
+        p = Picture{};
+        p.index = i;                    // (page_image counts every reference)
+        p.width = a->node[w].v;
+        p.height = a->node[h].v;
+    }
+    // Where the content stream puts them: "a b c d e f cm /Name Do"
+    size_t len = 0;
+    if (got && contents && load(src, doc, contents, *a) && a->stream_at) {
+        int32_t length = -1;
+        const int ln = get(*a, a->root, "Length");
+        if (ln >= 0 && a->node[ln].t == T::Num) length = a->node[ln].v;
+        const bool flate = name_is(*a, get(*a, a->root, "Filter"), "FlateDecode");
+        const uint32_t from = a->stream_at;
+        if (ln >= 0 && a->node[ln].t == T::Ref && load(src, doc, a->node[ln].v, *b) && b->node[b->root].t == T::Num)
+            length = b->node[b->root].v;
+        if (length > 0 && from + static_cast<uint32_t>(length) <= src.size()) {
+            if (flate) {
+                StreamIn in(src, from + 2, from + static_cast<uint32_t>(length));     // (past the zlib header)
+                BufOut o(text, kContentCap);
+                inflate::raw(in, o, window);
+                len = o.n;
+            } else {
+                len = src.read_at(from, reinterpret_cast<uint8_t*>(text), static_cast<size_t>(length) < kContentCap ? static_cast<size_t>(length) : kContentCap);
+            }
+        }
+    }
+    double nums[6] = {};
+    int nn = 0;
+    double e = 0;
+    for (size_t i = 0; i < len;) {
+        const char ch = text[i];
+        if (is_ws(ch)) {
+            ++i;
+            continue;
+        }
+        const size_t s = i;
+        if (ch == '/') ++i;
+        while (i < len && !is_ws(text[i]) && (i == s || !is_delim(text[i]))) ++i;
+        if (i == s) ++i;
+        const size_t tl = i - s;
+        if ((text[s] >= '0' && text[s] <= '9') || text[s] == '-' || text[s] == '.') {
+            for (int k = 0; k < 5; ++k) nums[k] = nums[k + 1];
+            char num[24];
+            const size_t k = tl < sizeof num - 1 ? tl : sizeof num - 1;
+            memcpy(num, text + s, k);
+            num[k] = 0;
+            nums[5] = strtod(num, nullptr);
+            ++nn;
+        } else if (tl == 2 && text[s] == 'c' && text[s + 1] == 'm' && nn >= 6) {
+            e = nums[4];
+        } else if (text[s] == '/') {
+            // "/Name Do": that picture's place
+            size_t j = i;
+            while (j < len && is_ws(text[j])) ++j;
+            if (j + 1 < len && text[j] == 'D' && text[j + 1] == 'o')
+                for (int k = 0; k < got; ++k)
+                    if (strlen(names[out[k].index]) == tl - 1 && memcmp(names[out[k].index], text + s + 1, tl - 1) == 0)
+                        out[k].x = static_cast<int>(e);
+        }
+    }
+    // Left to right (the dictionary's order for equal places)
+    for (int i = 1; i < got; ++i)
+        for (int k = i; k > 0 && out[k - 1].x > out[k].x; --k) {
+            const Picture t = out[k - 1];
+            out[k - 1] = out[k];
+            out[k] = t;
+        }
+    free(window);
+    free(text);
+    delete a;
+    delete b;
+    return got;
 }
 
 } // namespace pdf
