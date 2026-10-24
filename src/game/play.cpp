@@ -1181,8 +1181,10 @@ void draw_view(pic::Canvas& c)
 }
 
 bool dk_overland();
+void krynn_moons(pic::Canvas* c = nullptr);
 void draw_position(pic::Canvas& c)
 {
+    krynn_moons(&c);            // (Champions: a day passed - the moons' tiles; its clock routine)
     if (marker_overland()) return;
     if (d->prof->variant.tr && !tr_position) return;
     const ecl::GameState& g = d->gs;
@@ -1286,10 +1288,11 @@ void tr_lattice(pic::Canvas& c)
 // white at column 8, red at 19, black at 30 - the top table's value there is
 // the phase (area words 0x4CF9-0x4CFB, 0-3) + 10 / 6 / 14 (its START image
 // 0x1280). c: also redraw the three cells now (the top bar is on screen).
-void krynn_moons(pic::Canvas* c = nullptr)
+void krynn_moons(pic::Canvas* c)
 {
     if (!d->prof->variant.krynn || !vm || !d->tables.top_row) return;
     static const uint8_t kCol[3] = {8, 19, 30}, kAdd[3] = {10, 6, 14};
+    magic::set_moons(vm->get(0x4CF9) & 3, vm->get(0x4CFA) & 3, vm->get(0x4CFB) & 3);
     for (int i = 0; i < 3; ++i) {
         const uint8_t v = static_cast<uint8_t>(kAdd[i] + (vm->get(static_cast<uint16_t>(0x4CF9 + i)) & 3));
         if (d->tables.top[kCol[i]] == v) continue;
