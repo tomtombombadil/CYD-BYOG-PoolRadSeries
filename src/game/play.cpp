@@ -10165,8 +10165,10 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         f.close();
         if (n > 0) {
             char got[64];
-            // (Darkness's POOL4.CFG: its own save folder first, then Secret's)
-            savegame::save_dir(cfg, static_cast<size_t>(n), got, sizeof got, darkness_files() ? 0 : -1);
+            // (Darkness's POOL4.CFG: its own save folder first, then Secret's;
+            // Gateway's GAME.CFG: the save folder first, then the game's - the
+            // SNEG copy's "C:\GATEWAY\SAVE\" then "C:\GATEWAY\")
+            savegame::save_dir(cfg, static_cast<size_t>(n), got, sizeof got, darkness_files() || gateway() ? 0 : -1);
             if (got[0]) strcpy(sub, got);
         }
     }
