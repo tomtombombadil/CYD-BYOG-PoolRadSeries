@@ -2727,9 +2727,11 @@ void dk_words(const char* all, const bool* on, int n, char* words, size_t cap)
     words[o] = 0;
 }
 
+bool kr_can_yell(const combat::Fighter& f);
+
 void fight_menu_dk(char* words, size_t cap, const combat::Fighter& f, bool spells)
 {
-    bool on[12] = {};
+    bool on[13] = {};
     on[0] = f.moves > 1;
     on[1] = true;
     on[2] = f.n_items && f.can_use;
@@ -2742,14 +2744,23 @@ void fight_menu_dk(char* words, size_t cap, const combat::Fighter& f, bool spell
     on[5] = can_guard(f);
     on[6] = on[7] = on[9] = on[10] = on[11] = true;
     on[8] = combat::anyone_dying(fg->b);
+    if (dkk()) {
+        // (Death Knights, its GAME.OVR 0x04B +0xCCD: Yell 10th - a kender
+        // while no one taunts; View Speed End after it)
+        on[12] = true;
+        on[9] = kr_can_yell(f);
+        dk_words(fw(profile::kFMenuDk), on, 13, words, cap);
+        return;
+    }
     dk_words(fw(profile::kFMenuDk), on, 12, words, cap);
 }
 
 // Champions: a kender (its own race 5) may Yell while no one has (its
-// GAME.OVR ovl 0x58 +0xA45: the taunter pointer DS 0x71A7 nil)
+// GAME.OVR ovl 0x58 +0xA45: the taunter pointer DS 0x71A7 nil); Death
+// Knights' the same (its Yell in the menu's string)
 bool kr_can_yell(const combat::Fighter& f)
 {
-    return krynn() && d->w_yell[0] && f.member >= 0 && pt->m[f.member].ext[party::kExtRace] == 5 &&
+    return (dkk() || (krynn() && d->w_yell[0])) && f.member >= 0 && pt->m[f.member].ext[party::kExtRace] == 5 &&
            fg->b.taunter < 0 && d->prof->fight.facts.taunted;
 }
 
