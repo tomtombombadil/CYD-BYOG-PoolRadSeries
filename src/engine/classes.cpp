@@ -303,6 +303,15 @@ void saving_throws(party::Character& c, const Tables& t)
             const int v = t.save(cls, lv, kind);
             if (v < best) best = v;
         }
+        // Champions (GAME.OVR 0x3A8E2): after its class loop the former
+        // class's check runs with the loop's last index - the knight's - and
+        // its former level, so a knight above it (every knight: no former
+        // level) takes row 7's entry for that level (level 0: 11 10 10 14
+        // 11) when lower. Game Fixes: not (SPEC 12)
+        if (t.lay.krynn && !rules::fixes() && c.level(Monk) > c.old_level(Monk)) {
+            const int v = t.save(Monk, c.old_level(Monk), kind);
+            if (v < best) best = v;
+        }
         c.rec[kSaves + kind] = static_cast<uint8_t>(best);
     }
     // Dwarves and halflings: a poison bonus by their constitution (added to

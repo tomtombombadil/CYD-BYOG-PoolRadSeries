@@ -2478,6 +2478,11 @@ the game's Settings (As Original: all of them).
   reads each race's thief adjustments from the row of the race before it
   (DS 0x3970); with Game Fixes on each race takes its own row; off as
   the original.
+- **Champions' knights' saves** (`rules::fixes()`): after its class loop
+  the original's former-class check runs with the loop's last index (the
+  knight's) and a former level of 0, so every knight takes row 7's level-0
+  saves (11 10 10 14 11) when lower; with Game Fixes on the knight's own
+  level's row; off as the original.
 - **Champions' bozak stun**: the original gives the stun lasting (no
   time); the engine ends it with the fight (added to the fight's end
   list) - its own end isn't traced.
