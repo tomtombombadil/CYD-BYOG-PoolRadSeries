@@ -4,7 +4,7 @@
 // program: its race / class / alignment tables and experience rows, and the
 // constants of its createPlayer, gods, Modify and steel code) - never
 // against the engine's own code.
-// ONLY= create, train, modify, moons, knights, acid
+// ONLY= create (with the stats rolled), train, modify, moons, knights, acid
 #include "behave_oracle.inc"
 
 namespace bchamp {
@@ -402,6 +402,7 @@ static void behave_champions()
     const char* only = getenv("ONLY");
     auto want = [&](const char* s) { return !only || strstr(only, s); };
     if (want("create")) creation();
+    if (want("create")) b_krynn_stats_check(bchamp::m, P);
     if (want("train")) training();
     if (want("modify")) modify();
     if (want("moons")) moons();
