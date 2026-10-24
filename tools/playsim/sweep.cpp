@@ -337,6 +337,7 @@ static bool boot(char slot = 0)
         play::tap(2, 2, C);
     }
     play::tap(24, (play::pm_row0() + pm_line('L')) * 8 + 2, C);
+    if (play::load_where) tap_item(0);          // (Darkness, Death Knights: "Load from where?" - the game's own)
     const char* p = strchr(play::pm_saves, slot);
     if (!p) return false;
     tap_item(static_cast<int>(p - play::pm_saves));
@@ -883,7 +884,10 @@ static void sweep_items(const char* file)
 // ---- classes
 static void sweep_classes()
 {
-    if (!boot()) return;
+    if (!boot()) {
+        problem("boot");
+        return;
+    }
     using namespace play;
     Making* m = nullptr;
     if (!load_rules(m)) {
@@ -891,7 +895,9 @@ static void sweep_classes()
         return;
     }
     int races[16];
-    const int nr = create::races(races, 16);
+    int nr = create::races(races, 16);
+    if (m->tables.lay.krynn)        // (the Krynn games: their own seven races)
+        for (nr = 0; nr < 7; ++nr) races[nr] = classes::kKrynnRace + nr;
     for (int ri = 0; ri < nr; ++ri) {
         int cl[32];
         const int nc = create::classes_for(m->tables, races[ri], cl, 32);
