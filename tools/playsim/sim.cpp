@@ -533,6 +533,7 @@ static void shop_run(const char* ops)
 int main(int argc, char** argv)
 {
     setvbuf(stdout, nullptr, _IOLBF, 0);       // (lines out at once: a hang or a crash keeps them)
+    if (getenv("NOFIXES")) rules::set_fixes(false);    // NOFIXES=1: Game Fixes off (the originals' ways)
     if (getenv("SEED")) play::rng = create::Dice(static_cast<uint32_t>(strtoul(getenv("SEED"), nullptr, 10)));   // SEED=n: the game's dice
     // SIZES: the fight's blocks' sizes
     if (getenv("SIZES")) { printf("Fight %zu Battle %zu Page %zu Monster %zu Data %zu World %zu GameState %zu Party %zu Names %zu Ground %zu\n", sizeof(play::Fight), sizeof(combat::Battle), sizeof(play::Page), sizeof(combat::Monster), sizeof(play::Data), sizeof(view3d::World), sizeof(ecl::GameState), sizeof(party::Party), sizeof(items::Names), sizeof(*play::ground));
@@ -732,6 +733,7 @@ int main(int argc, char** argv)
         }
         if (getenv("RULECHECK")) {      // RULECHECK: each member's class values as the tables make them, against the record's
             play::MagicRules* mr = nullptr;
+            if (getenv("NOFIXES")) rules::set_fixes(false);
             if (play::load_rules(mr))
                 for (int i = 0; i < play::pt->count; ++i) {
                     const party::Character& o = play::pt->m[i];
@@ -750,7 +752,7 @@ int main(int argc, char** argv)
                     cmp("classflags", o.rec[0x12B], cc->rec[0x12B]);
                     for (int k = 0; k < 3; ++k)
                         for (int lv = 1; lv <= 9; ++lv) cmp(k == 0 ? "clslot" : k == 1 ? "drslot" : "muslot", classes::slots(o, k, lv), classes::slots(*cc, k, lv));
-                    for (int sp = 1; sp <= 126; ++sp) cmp("book", classes::in_book(o, sp), classes::in_book(*cc, sp));
+                    for (int sp = 1; sp <= 126; ++sp) { char bw[16]; snprintf(bw, sizeof bw, "book%d", sp); cmp(bw, classes::in_book(o, sp), classes::in_book(*cc, sp)); }
                     printf("  rules %d %s:%s\n", i, nm, diffs.empty() ? " all the same" : diffs.c_str());
                     for (int cls = 0; cls < 7; ++cls)
                         if (o.level(cls) > 0) printf("    class %d level %d: next at %d (has %u)\n", cls, o.level(cls), (int)mr->tables.exp_needed(cls, o.level(cls)), (unsigned)o.exp());

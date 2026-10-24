@@ -2180,12 +2180,12 @@ const Profile kProfiles[] = {
      // (classes::Tables::xp_row), the thief race table as the original reads
      // it (ovl 0xF7 +0xCC5)
      .create = {.ds_image = 0xBC60,
-                .tables = {.lo = 0x31B3, .hi = 0x4240, .spells = 0x31B3, .spell_count = 108, .thac0 = 0x3882,
+                .tables = {.lo = 0x31B3, .hi = 0x4262, .spells = 0x31B3, .spell_count = 108, .thac0 = 0x3882,
                            .class_flags = 0x38EA, .class_masks = 0x38F2, .max_hit_dice = 0x3903, .thief_base = 0x3908,
                            .thief_race = 0x3970, .thief_dex = 0x397B, .stat_limits = 0x39E0, .race_classes = 0x3A50,
                            .race_ages = 0x3AB9, .age_brackets = 0x3B99, .class_min = 0x3BDF,
                            .class_alignments = 0x3C45, .class_records = 0x3C6D, .saves = 0x4056, .pool = false,
-                           .money_dice = 0, .lo2 = 0x0A9A, .hi2 = 0x0AA0, .krynn = true},
+                           .money_dice = 0, .lo2 = 0x0A9A, .hi2 = 0x0AA0, .krynn = true, .cleric_lists = 0x4230},
                 .hp_count = 0x0B6E, .hp_dice = 0x0B76, .icon_colours = 0x390B,
                 .con_save = 0x5E, .dwarf_orc = 0x1A, .giants = 0x2F, .gnome_giant = 0x12, .gnome_extra = 0x30,
                 .elf_sleep = 0x5F, .halfelf = 0x12, .prot_evil = 0x08, .ranger_giant = 0x69,

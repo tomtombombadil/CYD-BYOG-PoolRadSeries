@@ -80,6 +80,10 @@ struct Layout {
     // original's place - the row of the race before (with rules::fixes():
     // the row of Curse's race it maps to)
     bool     krynn = false;
+    // Champions (GAME.OVR 0x3A03A): the spells a cleric knows - for each
+    // spell level 1-4 it has slots for, the list at this + level x 10
+    // (from the 2nd byte, 10 at most, 0 ends)
+    uint16_t cleric_lists = 0;
 };
 
 // Champions: a race in creation's lists (the Curse number can't tell its two

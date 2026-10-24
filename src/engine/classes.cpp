@@ -182,6 +182,22 @@ static void dk_slots(party::Character& c, const Tables& t)
     }
 }
 
+namespace {
+// Champions' cleric spells (GAME.OVR 0x3A03A): for each spell level 1-4
+// with cleric slots, the spells of that level's list
+void krynn_cleric_spells(party::Character& c, const Tables& t)
+{
+    for (int L = 1; L <= 4 && t.lay.cleric_lists; ++L) {
+        if (cast(c, 0, L - 1) <= 0) continue;
+        for (int i = 1; i <= 10; ++i) {
+            const int s = t.u8(static_cast<uint16_t>(t.lay.cleric_lists + L * 10 + i));
+            if (!s) break;
+            learn(c, s);
+        }
+    }
+}
+} // namespace
+
 void spell_slots(party::Character& c, const Tables& t)
 {
     if (t.lay.pool) {
@@ -202,9 +218,17 @@ void spell_slots(party::Character& c, const Tables& t)
         switch (cls) {
         case Cleric:
             cast(c, 0, 0) += 1;
+            // (Champions: a neutral god's new cleric's 2nd slot, made at its
+            // creation - GAME.OVR 0x2237E - stays until the slots are worked
+            // out again at its training)
+            if (t.lay.krynn && lv == 1 && c.ext[party::kExtGod] > 4) cast(c, 0, 0) += 1;
             for (int L = 2; L <= lv && L <= top; ++L)
                 for (int k = 0; k < cols; ++k) cast(c, 0, k) += t.slots_gained(t.xp_row(&c, Cleric), L, k);
             wisdom_spells(c);
+            if (t.lay.krynn) {
+                krynn_cleric_spells(c, t);
+                break;
+            }
             // Secret (GAME.OVR 0x3C5DD): no 6th level spells under Wisdom 17,
             // no 7th under 18
             if (t.lay.secret && c.rec[kWisFull] < 17) cast(c, 0, 5) = 0;
@@ -241,6 +265,17 @@ void spell_slots(party::Character& c, const Tables& t)
                     if (lvl < 1 || lvl > t.slot_levels()) continue;
                     if ((k == 1 || (k == 2 && t.lay.secret)) && cast(c, k, lvl - 1) > 0) learn(c, s);
                 }
+            }
+            break;
+        case Monk:
+            // Champions' knights of the Sword / Rose past 5th level: cleric
+            // slots by their order's row from 6th, the cleric's lists
+            // (GAME.OVR 0x3A065)
+            if (t.lay.krynn && lv > 5 && c.ext[party::kExtKnight] >= 2) {
+                const int row = c.ext[party::kExtKnight] == 2 ? 4 : 5;
+                for (int L = 6; L <= lv && L <= top; ++L)
+                    for (int k = 0; k < cols; ++k) cast(c, 0, k) += t.slots_gained(row, L, k);
+                krynn_cleric_spells(c, t);
             }
             break;
         case MagicUser:
