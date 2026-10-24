@@ -1,32 +1,25 @@
 # Gold Box Game Engine for Cheap Yellow Displays
-**I really need to change the name of this repo to "CYD-GoldBoxGameEngine"
+**I really need to change the name of this repo to "CYD-GoldBoxGameEngine"**
 
-Play SSI's Gold Box games - **Pool of Radiance**, **Curse of the Azure Bonds**, **Secret of the Silver Blades** and **Pools of Darkness** (and maybe MORE!) on an ESP32 "Cheap Yellow Display". Your own legitimate copy of each game is required!
+Play SSI's Gold Box games on an ESP32 "Cheap Yellow Display". Your own legitimate copy of each game is required!
+- **Pool of Radiance**
+- **Curse of the Azure Bonds**
+- **Secret of the Silver Blades**
+- **Pools of Darkness**
+- **Gateway to the Savage Frontier**
+- **Treasures of the Savage Frontier**
+- **Champions of Krynn**
+- **Death Knights of Krynn**
+- **The Dark Queen of Krynn**
 
-**Bring Your Own Game (BYOG):** this is a game engine only. Nothing from the original games is included; you copy the original DOS game files to a microSD card and the board reads them and runs the game from them.
+**Bring Your Own Game (BYOG):** this is a game engine only. Nothing from the original games is included; you copy the original DOS game files to a microSD card and the board reads them and runs the game from them. The experience is best from the Steam collections of the games, but also works with the GOG versions of the games.
 
-> **Early development.** This repo is in early development and testing stages.
-> Currently Curse and PoolRad are working and being tested.
-> Roadmap:
-> [docs/SPEC.md](docs/SPEC.md).
-
-A stretch goal of this repo is to include all of the Gold Box games that were based on the same Pool of Radiance game engine. That includes:
- - Pool of Radiance (currently runs, but is in testing)
- - Curse of the Azure Bonds (currently runs, but is in testing)
- - Secret of the Silver Blades
- - Pools of Darkness
- - Champions of Krynn
- - Death Knights of Krynn
- - The Dark Queen of Krynn
- - Gateway to the Savage Frontier
- - Treasures of the Savage Frontier
-
-Unlimited Adventures is not on the menu because of the very tight memory constraints of the original ESP32 (most base CYD models). The ESP32-S3 and ESP32-C5 models might be able to support it. As it is: VGA modes are not supported on the base CYD models. The original ESP32 just doesn't have enough available SRAM for VGA. Frankly it's a miracle we have these games working with only about 320KB of sram available.
+Unlimited Adventures is not on the menu because of the very tight memory constraints of the original ESP32 (most base CYD models). The ESP32-S3 and ESP32-C5 models might be able to support it. As it is: VGA modes are not supported on the base ESP32 CYD models. The original ESP32 just doesn't have enough available SRAM for the game and VGA. Frankly it's a miracle we have these games working with only about 320KB of sram available.
 
 ## Install
 
-Easiest: **https://tomtombombadil.github.io/CYD-BYOG-PoolRadSeries/** in Chrome
-or Edge on a computer - pick your board, click Install.
+Easiest method: Use the web flasher!
+**https://tomtombombadil.github.io/CYD-BYOG-PoolRadSeries/** in Chrome or Edge on a computer - pick your board, click Install.
 
 | Board (what's printed on the back) | Firmware |
 |---|---|
@@ -38,20 +31,54 @@ or Edge on a computer - pick your board, click Install.
 | 4.0" ESP32-S3, 480x320 capacitive touch (FNK0104, ST7796 model) | `TTB-CYD-PRS_4.0in_ST7796_Capacitive_ESP32-S3` |
 | 2.8" ESP32-C5, two USB-C (NM-CYD-C5) | `TTB-CYD-PRS_2.8in_ST7789_Resistive_ESP32-C5` |
 
-The five ESP32 boards, the ESP32-C5 board and the ESP32-S3 board are
-tested with this firmware.
+These five ESP32 boards, the ESP32-C5 board and the ESP32-S3 board are tested with this firmware. The base ESP32 CYD boards I tested with were all purchased through Amazon and are 'Freenove' brand. Links below.
 
-**Testing and development for ESP32-S3 and NM-CYD-C5 boards is under way!**
-
-## Your games on the SD card
+## Prepare Your SD Card
 
 1. Format a microSD card as FAT32.
-2. Make a folder `GOLDBOX` at the root of the card.
-3. Copy each game's whole GOG install folder into it, as it is: `GOLDBOX/Pool of Radiance`, `GOLDBOX/Curse of the Azure Bonds`, `GOLDBOX/Secret of the Silver Blades`, `GOLDBOX/Pools of Darkness`. (Any folder name containing the game's name works.) NOTE: It doesn't HAVE to be the GOG version of the game, but that is what we are using in development and testing. The Steam versions of the game should work just fine as well. Also, other Gold Box games are planned, so you may as well copy over Champions of Krynn, Death Knights of Krynn, The Dark Queen of Krynn, Gateway to the Savage Frontier, and Treasures of the Savage Frontier game folders as well. The games are relatively small (less than 400MB all totaled) so you don't even need a big SD card.
-4. Remove the SD card and put it in your CYD and apply power.
-5. When the CYD boots, it will scan the SD card for the games, letting you know what it finds. It will also process the Adventurer's Journal PDFs from the games so the game can show the journal entries as they are referenced in-game. It will also pull the game icon art from the GOG .dll files and display it in the game chooser interface on the CYD. Without those GOG files, the games would just show by title (no art).
-6. Once your SD card is scanned and processed, you'll be in the game chooser where you navigate left and right to select which Gold Box game you want to play.
+2. Make a folder **`GOLDBOX`** at the root of the card. Then choose below, the Steam versions of the games, or the GOG versions. You can even mix and match. It doesn't really matter where you pull the game folders from as long as you put them in the SD card's GOLDBOX folder with the proper folder names. (See below.)
+   (If you have trouble formatting a larger SD card as FAT32, use the SD Association's official formatter from https://www.sdcard.org/downloads/formatter/ )
 
+## Copy the Games to Your SD Card (STEAM VERSION)
+
+3. Go to the folder on your PC where Steam stores your games (typically **C:\Programs Files (x86)\Steam\steamapps\common**)
+4. There you will see the folders where your Steam games are stored. The Gold Box games come in various Collections. Look for "Forgotten Realms The Archives - Collection Two" and open that folder.
+5. Inside that folder you will find a **games** folder and a **Launcher** folder. Copy the Launcher folder to your SD card's GOLDBOX folder.
+6. Go into the games folder and copy each game's folder to the GOLDBOX folder on your SD card. (You do NOT need to copy the Hillsfar folder or the Unlimited Adventures folder, but it won't hurt anything if you do.)
+7. Your SD card should now have these folders:
+        GOLDBOX\CURSE
+        GOLDBOX\Gateway to the Savage Frontier
+        GOLDBOX\POOLRAD
+        GOLDBOX\Pools of Darkness
+        GOLDBOX\SECRET
+        GOLDBOX\Treasures of the Savage Frontier
+9. Go back twice, up to the steamapps\common folder and look for "Dungeons & Dragons Krynn Series". Inside that folder you will find another set of games and Launcher folders. You do not need to copy the Launcher folder again if you already did so from the "Forgotten Realms Archive - Collection Two" folder. Go into the "Dungeons & Dragons Krynn Series" games folder.
+10. Copy each of the game folders to your SD card's GOLDBOX folder. Your SD card should now have these folders:
+        GOLDBOX\Champions of Krynn
+        GOLDBOX\Death Knights of Krynn
+        GOLDBOX\The Dark Queen of Krynn
+12. Copying the whole game folders from Steam will ensure that you have the journal PDF files, logo, and graphics files, as well as the necessary game resource files. This will include any savegame and character files you may have from playing these games on your PC.
+13. All said and done, these folders should take up approximately 400 MB of your SD card. So you don't need a huge SD card. The CYD's only support up to 32 GB cards, so there's plenty of room.
+14. Eject the SD card from your PC (so it doesn't get corrupted) and insert it into your CYD. After you flash this repo to your CYD, the CYD will scan the SD card for the games and do some file processing. This will take a few minutes, but only needs to be done once. If you add or remove any games from the SD card, you will need to run the scan again with the Rescan button on the CYD.
+
+## Copy the Games to Your SD Card (GOG VERSION)
+
+3. Go to the folder on your PC where GOG stores your games (typically **C:\GOG Games\**)
+4. There you will see the folders where your GOG games are stored.
+5. Go into the games folder and copy each game's folder to the GOLDBOX folder on your SD card. (You do NOT need to copy the Hillsfar folder or the Unlimited Adventures folder, but it won't hurt anything if you do.)
+6. Your SD card should now have these folders:
+        GOLDBOX\Champions of Krynn
+        GOLDBOX\Curse of the Azure Bonds
+        GOLDBOX\Death Knights of Krynn
+        GOLDBOX\Gateway to the Savage Frontier
+        GOLDBOX\Pool of Radiance
+        GOLDBOX\Pools of Darkness
+        GOLDBOX\Secret of the Silver Blades
+        GOLDBOX\The Dark Queen of Krynn
+        GOLDBOX\Treasures of the Savage Frontier
+7. Copying the whole game folders from GOG will ensure that you have the journal PDF files, logo, and graphics files, as well as the necessary game resource files. This will include any savegame and character files you may have from playing these games on your PC.
+8. All said and done, these folders should take up approximately 400 MB of your SD card. So you don't need a huge SD card. The CYD's only support up to 32 GB cards, so there's plenty of room.
+9. Eject the SD card from your PC (so it doesn't get corrupted) and insert it into your CYD. After you flash this repo to your CYD, the CYD will scan the SD card for the games and do some file processing. This will take a few minutes, but only needs to be done once. If you add or remove any games from the SD card, you will need to run the scan again with the Rescan button on the CYD.
 
 ## Settings and logs
 
@@ -82,7 +109,7 @@ Build / Upload. Host tests of the file-format code run in CI
   reimplementation of Curse of the Azure Bonds (no code copied).
 - Graphics: [LovyanGFX](https://github.com/lovyan03/LovyanGFX) (FreeBSD license).
 
-Pool of Radiance, Curse of the Azure Bonds, Secret of the Silver Blades, Pools of Darkness, Champions of Krynn, Death Knights of Krynn, The Dark Queen of Krynn, Gateway to the Savage Frontier, and Treasures of the Savage Frontier are the property of their owners. This project is not affiliated with them and includes none of their files or copyrighted material.
+**Pool of Radiance, Curse of the Azure Bonds, Secret of the Silver Blades, Pools of Darkness, Champions of Krynn, Death Knights of Krynn, The Dark Queen of Krynn, Gateway to the Savage Frontier, and Treasures of the Savage Frontier are the property of their owners. This project is not affiliated with them and includes none of their files or copyrighted material.**
 
 ## LICENSE
 MIT license.
