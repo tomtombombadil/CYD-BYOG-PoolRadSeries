@@ -1558,6 +1558,7 @@ constexpr ecl::OpSet kQueenEcl = [] {
     ecl::OpSet s = kDarknessEcl;
     s.code_size = 12000;
     s.no_prefix = true;
+    s.krynn_race = true;
     return s;
 }();
 

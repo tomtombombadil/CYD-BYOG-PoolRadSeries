@@ -176,6 +176,7 @@ struct Data {
     char           w_save_which[24] = {}, w_slots[24] = {}, w_saving[24] = {}, w_camp_menu[40] = {}, w_crown_menu[44] = {},
                    w_camp[8] = {}, w_makes_camp[28] = {};
     char           q_order[3][16] = {};        // Dark Queen: " of the Crown" ... (View Character)
+    char           q_src = 0;                  // Dark Queen: the saved game loaded (its records' and rest's source)
     char           w_press[2][36] = {};        // Champions: a one-choice menu's word shown as the other (variant.press_words)
     char           gods[8][12] = {};           // Champions: its gods' names (create.god_names; 0 None)
     char           w_order[3][16] = {};        // Champions: " of the Crown" / Sword / Rose (variant.order_words)
@@ -2339,6 +2340,7 @@ bool load_game(char slot)
                                 : savegame::read(src, d->gs, d->save, !pool_files(), !short_saves());
     }
     f.close();
+    if (hl() && ok) d->q_src = slot;        // (Dark Queen: the source of its next save's records)
     // Whatever was going on is over now (a script's party menu, a wait)
     in_game_menu = false;
     waiting = false;
@@ -3864,6 +3866,15 @@ bool save_game(char slot)
     save_file_name(slot, name, sizeof name);
     save_path(name, path, sizeof path);
     if (!plat::exists(d->save_dir)) plat::mkdir(d->save_dir);
+    if (hl()) {
+        // (Dark Queen: one file, the characters inside - play_queen_late.inc)
+        h.state = h.last_state = static_cast<uint8_t>(d->save.state ? d->save.state : 4);
+        h.look = d->save.look;
+        h.look_slot = d->save.look_slot;
+        const bool ok = q_save(slot, h, path);
+        plat::log("[play] saved game %c: %s\n", slot, ok ? "ok" : "FAILED");
+        return ok;
+    }
     plat::File f = plat::open(path, "w");
     if (!f) return false;
     bool ok;

@@ -237,6 +237,8 @@ void from_queen(const uint8_t* q, Character& out);               // out.rec and 
 // Its effects are Curse's 9-byte ones (the next one's far pointer last).
 constexpr size_t kQueenItemSize = 17;
 void queen_item_in(const uint8_t* q, uint8_t* item);             // into a 63-byte record
+// The record back (over q: the fields the engine doesn't keep are left)
+void to_queen(const Character& c, uint8_t* q);
 void queen_item_out(const uint8_t* item, uint8_t* q);
 // Record format: Curse's, Pool's, Secret's, Darkness's, Champions' or Death Knights'
 // (KrynnToDkk: a Champions record as Death Knights takes one in - krynn_to_dkk)

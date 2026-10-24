@@ -177,6 +177,27 @@ constexpr uint8_t kQueenItemRuns[][3] = {
     {0, 0x2E, 4}, {4, 0x37, 2}, {6, 0x3A, 2}, {8, 0x32, 5}, {13, 0x39, 1}, {14, 0x3C, 3},
 };
 
+void to_queen(const Character& c, uint8_t* q)
+{
+    const uint8_t* r = c.rec;
+    for (const auto& run : kQueenRuns) memcpy(q + run[0], r + run[1], run[2]);
+    for (const auto& run : kQueenExt) memcpy(q + run[0], c.ext + run[1], run[2]);
+    memset(q + 0x68, 0, 16);
+    const size_t n = r[0] < 15 ? r[0] : 15;
+    memcpy(q + 0x68, r + 1, n);
+    q[0x58] = c.ext[kExtRace];
+    q[0x5A] = r[0x75] == 7 ? 1 : r[0x75];
+    static const int8_t kLevelTo[7] = {0, 7, 2, 3, 4, 5, 6};
+    for (int i = 0; i < 7; ++i) {
+        q[0xA5 + i] = r[0x109 + kLevelTo[i]];
+        q[0xAC + i] = r[0x111 + kLevelTo[i]];
+    }
+    q[0xC9] = static_cast<uint8_t>(c.n_items);
+    // (the effects pointer: only whether there are any matters to a load)
+    if (!c.n_affects) memset(q + 4, 0, 4);
+    else if (!(q[4] | q[5] | q[6] | q[7])) q[7] = 0x5E;
+}
+
 void queen_item_in(const uint8_t* q, uint8_t* it)
 {
     memset(it, 0, kItemSize);

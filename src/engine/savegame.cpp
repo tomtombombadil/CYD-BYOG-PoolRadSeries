@@ -208,6 +208,88 @@ bool read_queen(dax::ByteSource& src, ecl::GameState& gs, Header& h, party::Part
 
 void file_name_queen(char slot, char* out, size_t cap) { snprintf(out, cap, "SAVGAM%c.QSV", slot); }
 
+namespace {
+// A QSV's records (where each starts) and where its rest starts; false: not one
+bool queen_layout(dax::ByteSource& src, uint32_t* at, char (*names)[16], int* count, uint32_t* rest)
+{
+    uint8_t b[15];
+    if (src.read_at(kDarknessBlock, b, sizeof b) != sizeof b) return false;
+    const int n = b[13] | b[14] << 8;
+    if (n > party::kMaxParty) return false;
+    uint32_t p = kQueenHead;
+    for (int i = 0; i < n; ++i) {
+        uint8_t r[0xD0];
+        if (src.read_at(p, r, sizeof r) != sizeof r) return false;
+        at[i] = p;
+        memcpy(names[i], r + 0x68, 15);
+        names[i][15] = 0;
+        p += party::kQueenRecordSize + kQueenItem * r[0xC9];
+        bool more = r[4] || r[5] || r[6] || r[7];
+        for (int k = 0; more && k < 64; ++k) {
+            uint8_t e[kQueenEffect];
+            if (src.read_at(p, e, sizeof e) != sizeof e) return false;
+            p += kQueenEffect;
+            more = e[5] || e[6] || e[7] || e[8];
+        }
+    }
+    *count = n;
+    *rest = p;
+    return p <= src.size();
+}
+} // namespace
+
+bool write_queen(Sink& out, const ecl::GameState& gs, const Header& h, const party::Party& p, dax::ByteSource* src)
+{
+    uint32_t at[party::kMaxParty] = {}, rest = 0;
+    char names[party::kMaxParty][16] = {};
+    int n_src = 0;
+    if (src && !queen_layout(*src, at, names, &n_src, &rest)) src = nullptr;
+    const uint8_t b[15] = {static_cast<uint8_t>(gs.x), static_cast<uint8_t>(gs.y), static_cast<uint8_t>(gs.dir),
+                           gs.wall_ahead, gs.roof, h.last_state, h.state, static_cast<uint8_t>(h.look),
+                           static_cast<uint8_t>(h.look >> 8), static_cast<uint8_t>(h.look_slot),
+                           static_cast<uint8_t>(h.look_slot >> 8), 0, 0, static_cast<uint8_t>(p.count), 0};
+    if (!out.put(gs.area1, kDarknessBlock) || !out.put(b, sizeof b)) return false;
+    uint8_t* q = new (std::nothrow) uint8_t[party::kQueenRecordSize];
+    if (!q) return false;
+    bool ok = true;
+    for (int i = 0; ok && i < p.count; ++i) {
+        const party::Character& c = p.m[i];
+        char nm[20];
+        c.name(nm, sizeof nm);
+        memset(q, 0, party::kQueenRecordSize);
+        for (int k = 0; src && k < n_src; ++k)
+            if (strcmp(names[k], nm) == 0) {
+                if (src->read_at(at[k], q, party::kQueenRecordSize) != party::kQueenRecordSize)
+                    memset(q, 0, party::kQueenRecordSize);
+                break;
+            }
+        party::to_queen(c, q);
+        ok = out.put(q, party::kQueenRecordSize);
+        for (int k = 0; ok && k < c.n_items; ++k) {
+            uint8_t it[kQueenItem];
+            party::queen_item_out(c.items[k], it);
+            ok = out.put(it, sizeof it);
+        }
+        for (int k = 0; ok && k < c.n_affects; ++k) {
+            uint8_t e[kQueenEffect];
+            memcpy(e, c.affects[k], kQueenEffect);
+            // (the chain: a non-zero pointer but on the last)
+            memset(e + 5, 0, 4);
+            if (k + 1 < c.n_affects) e[8] = 0x5E;
+            ok = out.put(e, sizeof e);
+        }
+    }
+    delete[] q;
+    // the rest, as it was
+    for (uint32_t pos = rest; ok && src && pos < src->size();) {
+        uint8_t buf[256];
+        const uint32_t n = src->size() - pos < sizeof buf ? src->size() - pos : static_cast<uint32_t>(sizeof buf);
+        ok = src->read_at(pos, buf, n) == n && out.put(buf, n);
+        pos += n;
+    }
+    return ok;
+}
+
 bool write_darkness(Sink& out, const ecl::GameState& gs, const Header& h)
 {
     const uint8_t b[11] = {static_cast<uint8_t>(gs.x), static_cast<uint8_t>(gs.y), static_cast<uint8_t>(gs.dir),

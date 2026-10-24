@@ -532,3 +532,4 @@ __attribute__((noinline)) void q_screen(pic::Canvas& c, const QBox* boxes, int n
 // (play_queen_late.inc)
 void q_draw_character(pic::Canvas& c, const party::Character& ch);
 void q_name_tables(dax::ByteSource& exe, const exepack::Info& info);
+bool q_save(char slot, const savegame::Header& h, const char* path);

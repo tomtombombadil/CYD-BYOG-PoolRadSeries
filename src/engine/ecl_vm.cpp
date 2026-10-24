@@ -401,6 +401,7 @@ uint16_t Vm::dk_read(uint16_t a, int size) const
         if (const uint8_t* mr = sel_rec()) return party::darkness_byte(mr, nullptr, 0, off);
         if (party_ && party_->sel()) {
             const party::Character& c = *party_->sel();
+            if (off == 0xAD && set_.krynn_race) return c.ext[party::kExtRace];
             return party::darkness_byte(c.rec, c.ext, c.n_items, off);
         }
         return 0;

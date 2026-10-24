@@ -139,6 +139,10 @@ struct OpSet {
     // The Dark Queen of Krynn: its scripts are stored without the DAX
     // blocks' 2-byte prefix (ECL.GLB's entries: the code from the first byte)
     bool     no_prefix = false;
+    // ... its scripts name the selected character's fields by Darkness's
+    // record offsets (0x401 + offset - queen_facts_3.md 6), but the race
+    // (0xAD) in Krynn's numbers (the record's own)
+    bool     krynn_race = false;
     uint8_t  shops = 11;
     bool     tr_ops = false;
     // Gateway (its interpreter, GAME.OVR overlay 0xAB8 +0x29BD / +0x361F):

@@ -90,11 +90,17 @@ bool write_dkk(Sink& out, const ecl::GameState& gs, const Header& h);
 // (17 bytes each, as many as the record's count) and its effects (9 bytes
 // each, a chain: the last 4 bytes of each its successor's pointer, 0 at the
 // end; none when the record's effects pointer is 0). The rest of the file
-// (the area's state ...) isn't read yet. Characters into p (their items and
-// effects not kept yet).
+// (queen_facts_3.md 7: a row of 17 0xFF, then 17-byte items - ITEM.DAT's
+// rows and magic ones) isn't read. Characters into p with their items and
+// effects.
 constexpr uint32_t kQueenHead = kDarknessBlock + 15;
 constexpr uint32_t kQueenItem = 17, kQueenEffect = 9;
 bool read_queen(dax::ByteSource& src, ecl::GameState& gs, Header& h, party::Party& p);
+// Writes one: gs and h as read_queen reads them, the party's records - each
+// laid over its own record in `src` (a saved game holding the character by
+// that name: what the engine doesn't keep stays; else over zeros) - their
+// items and effects, then src's rest (none without a src).
+bool write_queen(Sink& out, const ecl::GameState& gs, const Header& h, const party::Party& p, dax::ByteSource* src);
 void file_name_queen(char slot, char* out, size_t cap);         // "SAVGAMA.QSV"
 
 // The save file's name for slot 'A'..'J' ("SAVGAMA.DAT"), and the n-th
