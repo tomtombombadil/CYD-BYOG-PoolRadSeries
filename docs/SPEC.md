@@ -1906,7 +1906,10 @@ GAME=5); `variant.krynn`. Play on since 2026-10-24 (branch champions).
   kender's Yell (taunts: they attack the kender), draconians dying - a
   bozak explodes (3d6 within a square, a save or stunned), a baaz keeps
   the weapon that slew it (a d20 at least Dexterity - 3) till the fight's
-  end. Not yet: the kapak's acid pool (effect 0x46: a ground zone).
+  end; a kapak "dissolves into acid!" (effect 0x46, GAME.OVR 0x12C1F): its
+  square ground 0x1D for 1d6 rounds ("The acid drains away.."), 1d6 (no
+  save) on whoever has a square in it as they step in and as each round
+  ends (GAME.OVR 0x34F7F) - `combat::lay_acid`, `on_acid`, `acid_burn`.
 - **Checks**: sweep `behave champions` (creation, training, Modify, the
   moons; oracle from scratch `champions_oracle.py`), saveload, events and
   monkey runs clean (knights' petitions checked too); budget fight (Throtl, AREA=2 BLOCK=34 RUNAT=8441)
@@ -2527,7 +2530,12 @@ the game's Settings (As Original: all of them).
   list) - its own end isn't traced.
 - **Champions' baaz**: the weapon comes back after the fight unreadied
   (the original copies it back as it was).
-- **Champions' kapak**: dying it doesn't leave its acid pool yet.
+- **Champions' kapak**: its acid pool (a ground of its own, 1d6 rounds)
+  lives in the engine's cloud list: where it lay on a stinking cloud and
+  goes first, the cloud's ground comes back there (the original shows the
+  ground under both); a cloud and a pool going in the same round show only
+  "The air clears a little..." (the original says each). The computer's
+  fighters walk into acid as the original's do (no check).
 - **Champions' sound**: silent (its sound driver isn't read yet).
 - **Gateway's stirge and squid** (Game Fixes): their holds never hurt in
   the original (the stirge's goes at its next step, the squid's per-turn

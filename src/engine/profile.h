@@ -745,6 +745,9 @@ struct Profile {
     // Champions: "explodes!", "is stunned" (a bozak's death), "loses his
     // weapon" (a baaz's) - GAME.OVR
     uint32_t burst_words[3] = {};
+    // Champions: "dissolves into acid!" (a kapak's death), "The acid drains
+    // away.." - GAME.OVR
+    uint32_t acid_words[2] = {};
     // Champions' Knight Change Classes (GAME.OVR): "Exit", "is petitioning to
     // become a", "sword", "rose", "Knight Of The ", " is too inexperienced.",
     // " does not qualify.", " may become a", "Knight Of The Sword", "Change

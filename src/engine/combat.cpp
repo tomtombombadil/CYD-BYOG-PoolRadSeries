@@ -5174,15 +5174,17 @@ int cloud_squares(bool poison) { return poison ? 9 : 4; }
 int sq_dx(bool poison, int k) { return poison ? kDx[(k + 8) % 9] : kCloudDx[k]; }
 int sq_dy(bool poison, int k) { return poison ? kDy[(k + 8) % 9] : kCloudDy[k]; }
 uint8_t knives_g(const Battle& b) { return b.fx ? b.fx->dk.knives : 0; }
+uint8_t acid_g(const Battle& b) { return b.fx ? b.fx->acid_ground : 0; }
 uint8_t ground_of(const Battle& b, const Battle::Cloud& cl)
 {
-    return cl.poison ? poison_g(b) : cl.knives ? knives_g(b) : cloud_g(b);
+    return cl.poison ? poison_g(b) : cl.knives ? knives_g(b) : cl.acid ? acid_g(b) : cloud_g(b);
 }
 // What the ground under a cloud square really is (another cloud's memory)
 int ground_under(const Battle& b, int x, int y)
 {
     const int g = b.ground[y][x];
-    if (g != cloud_g(b) && g != poison_g(b) && (!knives_g(b) || g != knives_g(b))) return g;
+    if (g != cloud_g(b) && g != poison_g(b) && (!knives_g(b) || g != knives_g(b)) && (!acid_g(b) || g != acid_g(b)))
+        return g;
     for (int c = 0; c < b.n_clouds; ++c) {
         const Battle::Cloud& cl = b.clouds[c];
         for (int k = 0; k < cloud_squares(cl.poison); ++k)
@@ -5289,9 +5291,51 @@ int knives_cut(Battle& b, int i, create::Dice& d, bool* down)
     return harm(b, i, d.roll(b.fx->dk.knife_sides, b.fx->dk.knife_n) & 0xFF, h, d, down);
 }
 
+// Champions' kapak's acid pool (GAME.OVR 0x12C1F)
+bool lay_acid(Battle& b, const Tables& t, int x, int y, create::Dice& d)
+{
+    (void)t;
+    if (!acid_g(b) || b.n_clouds >= Battle::kMaxClouds || !on_field(x, y) || !b.ground[y][x]) return false;
+    Battle::Cloud& cl = b.clouds[b.n_clouds++];
+    cl = Battle::Cloud{};
+    cl.x = static_cast<uint8_t>(x);
+    cl.y = static_cast<uint8_t>(y);
+    cl.acid = true;
+    cl.rounds = static_cast<uint8_t>(d.roll(6, 1));      // (its effect 0x50's time: 1d6)
+    int g = ground_under(b, x, y);
+    // (a fallen party member's body there: the ground under it - the bodies' table)
+    for (int j = 0; j < b.n && g == 0x1F; ++j)
+        if (b.f[j].member >= 0 && !b.f[j].size && b.f[j].x == x && b.f[j].y == y && b.f[j].ground) g = b.f[j].ground;
+    cl.ground[0] = static_cast<uint8_t>(g);
+    cl.present = 1;
+    b.ground[y][x] = acid_g(b);
+    return true;
+}
+
+bool on_acid(const Battle& b, int i)
+{
+    const Fighter& f = b.f[i];
+    if (!acid_g(b) || !f.size) return false;
+    int sx[4], sy[4];
+    const int n = squares(f.size, sx, sy);
+    for (int k = 0; k < n; ++k)
+        if (on_field(f.x + sx[k], f.y + sy[k]) && b.ground[f.y + sy[k]][f.x + sx[k]] == acid_g(b)) return true;
+    return false;
+}
+
+int acid_burn(Battle& b, int i, create::Dice& d, bool* down)
+{
+    *down = false;
+    if (!b.f[i].up()) return 0;
+    const int dmg = d.roll(6, 1);
+    *down = damage(b, i, dmg);
+    return dmg;
+}
+
 int clouds_round(Battle& b)
 {
     int gone = 0;
+    b.acid_gone = 0;
     for (int c = 0; c < b.n_clouds;) {
         Battle::Cloud& cl = b.clouds[c];
         if (cl.rounds > 1) {
@@ -5315,12 +5359,14 @@ int clouds_round(Battle& b)
                 }
             }
         }
+        const bool acid = cl.acid;
         for (int j = c; j + 1 < b.n_clouds; ++j) b.clouds[j] = b.clouds[j + 1];
         --b.n_clouds;
-        ++gone;
+        if (acid) ++b.acid_gone;
+        else ++gone;
     }
     // The clouds still there stay cloud where they overlapped the one gone
-    for (int c = 0; gone && c < b.n_clouds; ++c) {
+    for (int c = 0; (gone || b.acid_gone) && c < b.n_clouds; ++c) {
         const Battle::Cloud& cl = b.clouds[c];
         for (int k = 0; k < cloud_squares(cl.poison); ++k)
             if (cl.present >> k & 1)
@@ -5347,7 +5393,7 @@ int dispel_clouds(Battle& b, int x, int y, int level, create::Dice& d)
     int ended = 0;
     for (int c = 0; c < b.n_clouds; ++c) {
         Battle::Cloud& cl = b.clouds[c];
-        if (cl.resisted || cl.rounds <= 1) continue;
+        if (cl.resisted || cl.rounds <= 1 || cl.acid) continue;     // (the acid: no spell's)
         bool near = false;
         for (int k = 0; k < cloud_squares(cl.poison) && !near; ++k) {
             if (!(cl.present >> k & 1)) continue;

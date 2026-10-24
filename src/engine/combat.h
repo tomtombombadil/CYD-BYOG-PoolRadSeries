@@ -224,6 +224,9 @@ struct MonFx {
     // bozak explodes (0x44), the baaz turns to stone with the weapon that
     // slew it (0x43)
     uint8_t explode = 0, stone_death = 0;
+    // ... and the kapak dissolves into acid (0x46; GAME.OVR 0x12C1F): its
+    // square becomes an acid pool for a while (lay_acid)
+    uint8_t acid_pool = 0;
 };
 
 // More spells' effects (spell_facts.md 2): Enlarge, Confusion (and going
@@ -350,6 +353,8 @@ struct Facts {
     // The clouds' ground values (0: Curse's 0x1E / 0x1C - kCloudGround, kPoisonGround;
     // Secret's 0x1D / 0x1B, its ground table's pictures 28 / 26 - GAME.OVR 0x2F39F, 0x31A43)
     uint8_t cloud_ground = 0, poison_ground = 0;
+    // Champions' kapak acid pool's ground (0x1D - GAME.OVR 0x12F1F; 0: none)
+    uint8_t acid_ground = 0;
     // The cleric's +10% experience from this Wisdom in use (0: AD&D's 16;
     // Secret's program 15 - GAME.OVR 0x6E04 - the original's mistake,
     // applied with rules::fixes() off)
@@ -607,6 +612,7 @@ struct Battle {
         uint8_t  x = 0, y = 0, rounds = 0;
         bool     poison = false;        // Cloudkill (3 x 3, ground 0x1C), else Stinking Cloud (2 x 2, 0x1E)
         bool     knives = false;        // Darkness's Blade Barrier (2 x 2, its ground: fx->dk.knives)
+        bool     acid = false;          // Champions' kapak's acid pool (its one square, fx->acid_ground)
         uint8_t  level = 0;             // its caster's (Dispel Magic)
         bool     resisted = false;      // a Dispel Magic failed on it
         uint16_t present = 0;           // bit k = square k is cloud
@@ -630,6 +636,7 @@ struct Battle {
     int     n_bolt = 0;
     Cloud   clouds[kMaxClouds];
     int     n_clouds = 0;
+    int     acid_gone = 0;              // clouds_round(): acid pools that went (not counted as clouds)
     // Darkness's Meteor Swarm: where its meteors landed (the pictures)
     uint8_t meteor_x[4] = {}, meteor_y[4] = {};
     int     n_meteors = 0;
@@ -1077,8 +1084,19 @@ bool breathe_poison(Battle& b, int i, create::Dice& d);
 // helpless d4 + 1 rounds (Word), saved (Word2: "starts to cough");
 // Unaffected: already helpless or out
 Did breathe_cloud(Battle& b, int i, create::Dice& d);
+// Champions' kapak dying (GAME.OVR 0x12C1F): "dissolves into acid!" - its
+// square becomes acid (fx->acid_ground; what was there kept, a stinking
+// cloud's memory too) for 1d6 rounds ("The acid drains away.." when it
+// goes - GAME.OVR 0x13894). Those with a square in it take 1d6 (no save)
+// when they step in and as each round ends (GAME.OVR 0x34F7F; the
+// footprint's grounds, ovl 0x116 +0xDBD). False: no room, or not on the field.
+bool lay_acid(Battle& b, const Tables& t, int x, int y, create::Dice& d);
+// Fighter i stands with a square in acid
+bool on_acid(const Battle& b, int i);
+// The acid's 1d6 on fighter i (the damage; *down when it fell)
+int acid_burn(Battle& b, int i, create::Dice& d, bool* down);
 // A round over: clouds run out, their ground comes back (a fallen party
-// member's body where one lies); how many went
+// member's body where one lies); how many went (acid pools gone: b.acid_gone)
 int clouds_round(Battle& b);
 
 // Dimension Door: fighter i to the square (x, y) when it can stand there
