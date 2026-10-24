@@ -180,9 +180,13 @@ the Project as claude/TODO.md.
       shipped; cleaned-up picture / the Companion's own pictures instead);
       Settings' Volume as one key: tap left -, right +, 5% steps, the small
       "Volume" label, the percentage between - and +, a mute symbol at 0.
-- [ ] Tom (2026-10-24, 12:21): the C5's Curse / Secret sounds are also
-      very distorted (still recognisable) - the output, not the sample
-      games; v0.149.1's quarter-scale PDM to be listened to. Tom's idea:
+- [x] v0.149.1 (Tom, 2026-10-24 12:41: C5 sound fixed in every playable
+      game): the C5's Curse / Secret sounds were also distorted - the
+      output (PDM up-sampling / quarter scale).
+- [ ] Tom (2026-10-24, 12:21; 12:34 Settings: one Game Sound key naming
+      the mode, tap to change - Tandy / PC Speaker / Darkness / Gateway /
+      Treasures by what's on the card; in those three games just the game;
+      Volume -/+ wider, half-width Mute toggle - agent ui-small). Tom's idea:
       the later games' better sounds on the early games - Claude's plan: a
       Game Sound choice "Recorded" that plays the player's own Pools of
       Darkness (or Treasures / Gateway) ZOUNDS.DAX samples for Curse, Pool,
