@@ -8,7 +8,10 @@
 //
 // JOURNAL.DAT (in /GOLDBOX/_CYD/<game folder>/, little-endian):
 //   "GBJ2"                          written last: a half-made file has none
-//   u8 version (1), u8 0, u16 entries, u16 pieces, u16 0
+//   u8 version (1), u8 revision, u16 entries, u16 pieces, u16 maps
+//                                   revision 1 (v0.150.0): light greys kept
+//                                   (paper only from 232 up); maps: entries
+//                                   made from the Companion's map pictures
 //   char pdf_id[32]                 the PDF's /ID (which PDF it came from)
 //   u8 palette[256][3]              RGB
 //   entries x { u8 kind ('J' journal entry, 'T' tavern tale), u8 0,
@@ -43,7 +46,9 @@ struct EntryDef {
     uint8_t  number;
     uint16_t first;                // into the pieces
     uint8_t  count;
+    uint8_t  flags = 0;            // kMap: a map (checked by eye; the viewer's Turn key)
 };
+constexpr uint8_t kMap = 1;
 
 struct Table {
     const char*     name;          // for the scan log
@@ -57,6 +62,10 @@ struct Table {
 
 // The table for a PDF of this size and /ID, or nullptr.
 const Table* find_table(uint32_t pdf_size, const char* pdf_id);
+// By the /ID alone (what JOURNAL.DAT keeps), or nullptr
+const Table* find_table(const char* pdf_id);
+// Whether the table marks that entry as a map
+bool is_map(const Table& t, char kind, int number);
 extern const Table* const kTables[];
 extern const int kTableCount;
 
@@ -71,18 +80,43 @@ public:
 // Pages done so far of all the pages it needs
 using Progress = void (*)(int done, int total, void* ctx);
 
+struct GbcPictures;
+
 // Reads the PDF's page pictures and writes JOURNAL.DAT. False on a PDF it
 // can't read (or no memory); the file is then left without its "GBJ2".
-bool make(dax::ByteSource& pdf, const Table& t, Output& out, Progress progress, void* ctx);
+// maps (optional): the Gold Box Companion's pictures (JE_NNN.jpg) - an
+// entry the table marks as a map is made from its picture when there is
+// one (the Companion's are often sharper than the PDF's scans).
+bool make(dax::ByteSource& pdf, const Table& t, Output& out, Progress progress, void* ctx,
+          GbcPictures* maps = nullptr);
+constexpr int kRevision = 1;
 
 // The palette (index -> RGB) and the colour a scanned pixel is stored as:
 // paper and the faint print from the other side of the page become white
 void palette_rgb(int index, uint8_t* r, uint8_t* g, uint8_t* b);
 uint8_t index_of(int r, int g, int b);
+constexpr uint8_t kPaper = 215;
+
+// Levels for showing a picture piece: the darkest ink the piece really
+// has (from a histogram of its palette indexes) is drawn black and the
+// rest stretched up to the paper - the 72 dpi scans' grey print (the
+// Treasures journal) gets its contrast back. 0: no change.
+int black_point(const uint32_t hist[256]);
+void level_rgb(int index, int black, uint8_t* r, uint8_t* g, uint8_t* b);
+
+// ---- the book's columns -------------------------------------------------------
+// Where a scanned page's columns of print are (Tom, 2026-10-24: "divide
+// them into columns, two per page, just like the text"): ink[x] = how much
+// print column x of the (scaled down) page has; the columns are the runs
+// of print between the white gutters, as [x0, x1) - narrow runs join their
+// neighbours, the margins are left out. Returns how many (1 at least when
+// n > 0; at most max).
+int find_columns(const uint32_t* ink, int n, int* x0, int* x1, int max);
 
 // ---- reading it -------------------------------------------------------------
 
 struct Info {
+    int      version = 0, revision = 0, maps = 0;
     int      entries = 0, pieces = 0;
     char     pdf_id[33] = {};
     uint8_t  palette[256][3] = {};
@@ -98,6 +132,9 @@ bool read_info(dax::ByteSource& src, Info& out);
 // The entry's pieces: first index and count. False if it isn't there.
 bool find(dax::ByteSource& src, const Info& info, char kind, int number, int* first, int* count);
 bool piece(dax::ByteSource& src, const Info& info, int i, PieceInfo& out);
+// A picture piece's black point (black_point of up to 48 of its rows,
+// evenly spread; row: a buffer of the piece's width)
+int piece_black(dax::ByteSource& src, const PieceInfo& p, uint8_t* row);
 
 // ---- the Steam / SNEG releases: the Gold Box Companion's journal ------------
 // GBC/Games/<nn. Title>/Game.dat (the player's own copy) holds each entry's

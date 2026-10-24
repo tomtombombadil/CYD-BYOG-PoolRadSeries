@@ -64,7 +64,10 @@ uint8_t index_of(int r, int g, int b)
 {
     const int lum = (r + g + b) / 3;
     const bool blue = b - r > 30;
-    if ((!blue && lum > 185) || (blue && lum > 225)) return 215;        // paper: white
+    // Paper (and the faint print from the other side of the page): white.
+    // From 232 up (185 until v0.150.0, which turned the light grey of the
+    // Treasures maps' shading into specks and thinned the print's edges)
+    if ((!blue && lum > 231) || (blue && lum > 225)) return kPaper;
     const int mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
     const int mn = r < g ? (r < b ? r : b) : (g < b ? g : b);
     if (mx - mn < 14) return static_cast<uint8_t>(216 + (lum * 39 + 127) / 255);
@@ -76,6 +79,182 @@ const Table* find_table(uint32_t pdf_size, const char* pdf_id)
     for (int i = 0; i < kTableCount; ++i)
         if (kTables[i]->pdf_size == pdf_size && strcmp(kTables[i]->pdf_id, pdf_id) == 0) return kTables[i];
     return nullptr;
+}
+
+const Table* find_table(const char* pdf_id)
+{
+    for (int i = 0; i < kTableCount; ++i)
+        if (strcmp(kTables[i]->pdf_id, pdf_id) == 0) return kTables[i];
+    return nullptr;
+}
+
+bool is_map(const Table& t, char kind, int number)
+{
+    for (int e = 0; e < t.n_entries; ++e)
+        if (t.entries[e].kind == kind && t.entries[e].number == number) return (t.entries[e].flags & kMap) != 0;
+    return false;
+}
+
+// ---- levels -----------------------------------------------------------------
+
+namespace {
+int lum_of(int index)
+{
+    uint8_t r, g, b;
+    palette_rgb(index, &r, &g, &b);
+    return (r + g + b) / 3;
+}
+} // namespace
+
+int black_point(const uint32_t hist[256])
+{
+    // The darkest 2% of what isn't paper
+    uint32_t by_lum[256] = {};
+    uint64_t ink = 0, colour = 0;
+    for (int i = 0; i < 256; ++i) {
+        if (i == kPaper || !hist[i]) continue;
+        by_lum[lum_of(i)] += hist[i];
+        ink += hist[i];
+        if (i < 216) {
+            uint8_t r, g, b;
+            palette_rgb(i, &r, &g, &b);
+            if (r != g || g != b) colour += hist[i];
+        }
+    }
+    // (grey print only: a coloured picture keeps its colours)
+    if (ink < 50 || colour * 10 > ink) return 0;
+    const uint64_t want = ink / 50;
+    uint64_t seen = 0;
+    int black = 0;
+    for (int v = 0; v < 256; ++v) {
+        seen += by_lum[v];
+        if (seen > want) {
+            black = v;
+            break;
+        }
+    }
+    // Only for grey print: real black needs nothing, and a picture with
+    // little dark in it isn't made darker than its own look
+    if (black < 24) return 0;
+    return black > 112 ? 112 : black;
+}
+
+void level_rgb(int index, int black, uint8_t* r, uint8_t* g, uint8_t* b)
+{
+    palette_rgb(index, r, g, b);
+    if (black <= 0 || index == kPaper) return;
+    constexpr int kWhite = 248;
+    auto st = [&](uint8_t v) {
+        const int o = (v - black) * 255 / (kWhite - black);
+        return static_cast<uint8_t>(o < 0 ? 0 : o > 255 ? 255 : o);
+    };
+    *r = st(*r);
+    *g = st(*g);
+    *b = st(*b);
+}
+
+// ---- the book's columns -------------------------------------------------------
+
+int find_columns(const uint32_t* ink, int n, int* x0, int* x1, int max)
+{
+    if (n <= 0 || max <= 0) return 0;
+    // The level that counts as print: a fraction of a busy column's
+    uint32_t hi = 0;
+    {
+        // the 80th percentile of the columns with any print (a rough sort
+        // by counting: 64 buckets of the largest value)
+        uint32_t top = 0;
+        for (int x = 0; x < n; ++x) top = ink[x] > top ? ink[x] : top;
+        if (top == 0) {
+            x0[0] = 0;
+            x1[0] = n;
+            return 1;
+        }
+        int bucket[64] = {};
+        int used = 0;
+        for (int x = 0; x < n; ++x)
+            if (ink[x] > top / 64) {
+                ++bucket[static_cast<uint64_t>(ink[x]) * 63 / top];
+                ++used;
+            }
+        int seen = 0, b = 0;
+        for (; b < 64; ++b) {
+            seen += bucket[b];
+            if (seen * 5 >= used * 4) break;
+        }
+        hi = static_cast<uint32_t>(static_cast<uint64_t>(top) * (b + 1) / 64);
+    }
+    const uint32_t gap = hi / 8;
+    // Runs of print
+    int nr = 0;
+    int rs[64], re[64];
+    for (int x = 0; x < n;) {
+        while (x < n && ink[x] <= gap) ++x;
+        if (x >= n) break;
+        const int s = x;
+        while (x < n && ink[x] > gap) ++x;
+        if (nr < 64) {
+            rs[nr] = s;
+            re[nr] = x;
+            ++nr;
+        } else {
+            re[nr - 1] = x;
+        }
+    }
+    if (nr == 0) {
+        x0[0] = 0;
+        x1[0] = n;
+        return 1;
+    }
+    // Join runs split by a narrow gap (a picture's white, a short line)
+    // and narrow runs (a page number, a rule, specks) to their neighbour
+    const int min_gap = n / 80 > 1 ? n / 80 : 1;
+    const int min_w = n / 14 > 2 ? n / 14 : 2;
+    for (bool changed = true; changed && nr > 1;) {
+        changed = false;
+        int best = -1, best_cost = 1 << 30;
+        for (int i = 0; i + 1 < nr; ++i) {
+            const int g = rs[i + 1] - re[i];
+            const int narrow = (re[i] - rs[i] < min_w) || (re[i + 1] - rs[i + 1] < min_w);
+            if (g < min_gap || narrow) {
+                const int cost = g - (narrow ? n : 0);
+                if (cost < best_cost) {
+                    best_cost = cost;
+                    best = i;
+                }
+            }
+        }
+        if (best >= 0) {
+            re[best] = re[best + 1];
+            for (int i = best + 1; i + 1 < nr; ++i) {
+                rs[i] = rs[i + 1];
+                re[i] = re[i + 1];
+            }
+            --nr;
+            changed = true;
+        }
+    }
+    // Too many: join across the narrowest gaps
+    while (nr > max) {
+        int best = 0;
+        for (int i = 1; i + 1 < nr; ++i)
+            if (rs[i + 1] - re[i] < rs[best + 1] - re[best]) best = i;
+        re[best] = re[best + 1];
+        for (int i = best + 1; i + 1 < nr; ++i) {
+            rs[i] = rs[i + 1];
+            re[i] = re[i + 1];
+        }
+        --nr;
+    }
+    // A little of each gutter with each column (so no letter is cut)
+    for (int i = 0; i < nr; ++i) {
+        const int left = i == 0 ? rs[i] : (rs[i] - re[i - 1]) / 2;
+        const int right = i + 1 == nr ? n - re[i] : (rs[i + 1] - re[i]) / 2;
+        const int pad = n / 100 + 1;
+        x0[i] = rs[i] - (left < pad ? left : pad);
+        x1[i] = re[i] + (right < pad ? right : pad);
+    }
+    return nr;
 }
 
 // ---- making JOURNAL.DAT -----------------------------------------------------
@@ -157,7 +336,14 @@ bool got_block(int x, int y, int bw_, int bh, const uint8_t* rgb, void* ctx)
 
 } // namespace
 
-bool make(dax::ByteSource& src, const Table& t, Output& out, Progress progress, void* ctx)
+namespace {
+// A whole JPEG (a Companion picture) as a piece at `at`; its size in *w, *h
+bool write_whole(dax::ByteSource& js, void* pool, Output& out, uint32_t at, int* w, int* h);
+// Whether a Companion picture for map entry e opens as a JPEG this can take
+bool gbc_picture_ok(GbcPictures& pics, int number, void* pool, int* w, int* h);
+} // namespace
+
+bool make(dax::ByteSource& src, const Table& t, Output& out, Progress progress, void* ctx, GbcPictures* maps)
 {
     pdf::Doc* doc = new (std::nothrow) pdf::Doc;
     int* pages = new (std::nothrow) int[pdf::kMaxPages];
@@ -166,23 +352,63 @@ bool make(dax::ByteSource& src, const Table& t, Output& out, Progress progress, 
     bool ok = doc && pages && base && pool && pdf::open(src, *doc);
     int n_pages = ok ? pdf::pages(src, *doc, pages, pdf::kMaxPages) : 0;
 
+    // Map entries the Companion has a picture of: that picture is the entry
+    // (a piece after the table's)
+    int n_sub = 0;
+    uint32_t sub_bytes = 0;
+    if (ok && maps)
+        for (int e = 0; e < t.n_entries; ++e) {
+            int w = 0, h = 0;
+            if ((t.entries[e].flags & kMap) && t.entries[e].kind == 'J' && gbc_picture_ok(*maps, t.entries[e].number, pool, &w, &h)) {
+                ++n_sub;
+                sub_bytes += static_cast<uint32_t>(w) * h;
+            }
+        }
+    const int n_pieces = t.n_pieces + n_sub;
+
     // The header (without its "GBJ2") and the tables
-    uint32_t at = kHeader + 8u * static_cast<uint32_t>(t.n_entries) + 8u * static_cast<uint32_t>(t.n_pieces);
+    uint32_t at = kHeader + 8u * static_cast<uint32_t>(t.n_entries) + 8u * static_cast<uint32_t>(n_pieces);
+    uint32_t sub_at = 0;
     if (ok) {
         uint8_t h[kHeader] = {};
         h[4] = 1;
+        h[5] = kRevision;
         put16(h + 6, static_cast<unsigned>(t.n_entries));
-        put16(h + 8, static_cast<unsigned>(t.n_pieces));
+        put16(h + 8, static_cast<unsigned>(n_pieces));
+        put16(h + 10, static_cast<unsigned>(n_sub));
         memcpy(h + 12, t.pdf_id, strlen(t.pdf_id) < 32 ? strlen(t.pdf_id) : 32);
         for (int i = 0; i < 256; ++i) palette_rgb(i, h + 44 + 3 * i, h + 45 + 3 * i, h + 46 + 3 * i);
         ok = out.write_at(0, h, sizeof h);
+        for (int i = 0; i < t.n_pieces; ++i) sub_at += static_cast<uint32_t>(t.pieces[i].w) * t.pieces[i].h;
+        sub_at += at;
+        // The Companion's pictures first (written now: the PDF's pages after)
+        int k = 0;
+        uint32_t pos = sub_at;
         for (int e = 0; ok && e < t.n_entries; ++e) {
             uint8_t r[8] = {static_cast<uint8_t>(t.entries[e].kind), 0};
             put16(r + 2, t.entries[e].number);
             put16(r + 4, t.entries[e].first);
             put16(r + 6, t.entries[e].count);
-            ok = out.write_at(kHeader + 8u * static_cast<uint32_t>(e), r, 8);
+            int w = 0, hh = 0;
+            if (k < n_sub && (t.entries[e].flags & kMap) && t.entries[e].kind == 'J' &&
+                gbc_picture_ok(*maps, t.entries[e].number, pool, &w, &hh)) {
+                dax::ByteSource* js = maps->open(t.entries[e].number);
+                int ww = 0, wh = 0;
+                ok = js && write_whole(*js, pool, out, pos, &ww, &wh) && ww == w && wh == hh;
+                uint8_t pr[8];
+                put16(pr, static_cast<unsigned>(w));
+                put16(pr + 2, static_cast<unsigned>(hh));
+                put32(pr + 4, pos);
+                ok = ok && out.write_at(kHeader + 8u * static_cast<uint32_t>(t.n_entries) +
+                                            8u * static_cast<uint32_t>(t.n_pieces + k), pr, 8);
+                put16(r + 4, static_cast<unsigned>(t.n_pieces + k));
+                put16(r + 6, 1);
+                pos += static_cast<uint32_t>(w) * hh;
+                ++k;
+            }
+            ok = ok && out.write_at(kHeader + 8u * static_cast<uint32_t>(e), r, 8);
         }
+        ok = ok && k == n_sub && pos == sub_at + sub_bytes;
         for (int i = 0; ok && i < t.n_pieces; ++i) {
             base[i] = at;
             uint8_t r[8];
@@ -421,6 +647,42 @@ bool whole_block(int x, int y, int bw, int bh, const uint8_t* rgb, void* ctx)
     return w.ok;
 }
 
+bool write_whole(dax::ByteSource& js, void* pool, Output& out, uint32_t at, int* w, int* h)
+{
+    jpeg::Info ji;
+    if (!jpeg::probe(js, 0, js.size(), pool, ji) || ji.width <= 0 || ji.width > 1700 || ji.height <= 0 ||
+        ji.height >= 65536)
+        return false;
+    WholeWork ww;
+    ww.out = &out;
+    ww.base = at;
+    ww.w = ji.width;
+    ww.h = ji.height;
+    ww.band_h = ji.mcu_h;
+    ww.band = static_cast<uint8_t*>(malloc(static_cast<size_t>(ww.w) * ww.band_h));
+    bool ok = ww.band && jpeg::decode(js, 0, js.size(), pool, nullptr, whole_block, &ww) && ww.ok;
+    if (ok) {
+        whole_flush(ww);
+        ok = ww.ok;
+    }
+    free(ww.band);
+    *w = ji.width;
+    *h = ji.height;
+    return ok;
+}
+
+bool gbc_picture_ok(GbcPictures& pics, int number, void* pool, int* w, int* h)
+{
+    dax::ByteSource* js = pics.open(number);
+    jpeg::Info ji;
+    if (!js || !jpeg::probe(*js, 0, js->size(), pool, ji) || ji.width <= 0 || ji.width > 1700 || ji.height <= 0 ||
+        ji.height >= 65536)
+        return false;
+    *w = ji.width;
+    *h = ji.height;
+    return true;
+}
+
 } // namespace
 
 namespace {
@@ -499,25 +761,14 @@ bool make_gbc(dax::ByteSource& dat, GbcPictures& pics, const char* id, Output& o
             jpeg::Info ji;
             if (js && jpeg::probe(*js, 0, js->size(), pool, ji) && ji.width > 0 && ji.width <= 1700 && ji.height > 0 &&
                 ji.height < 65536) {
-                WholeWork w;
-                w.out = &out;
-                w.base = at;
-                w.w = ji.width;
-                w.h = ji.height;
-                w.band_h = ji.mcu_h;
-                w.band = static_cast<uint8_t*>(malloc(static_cast<size_t>(w.w) * w.band_h));
-                ok = w.band && jpeg::decode(*js, 0, js->size(), pool, nullptr, whole_block, &w) && w.ok;
-                if (ok) {
-                    whole_flush(w);
-                    ok = w.ok;
-                }
-                free(w.band);
+                int pw = 0, ph = 0;
+                ok = write_whole(*js, pool, out, at, &pw, &ph);
                 if (ok) {
                     uint8_t* pr = table + 8 * n + 8 * pi++;
-                    put16(pr, static_cast<unsigned>(w.w));
-                    put16(pr + 2, static_cast<unsigned>(w.h));
+                    put16(pr, static_cast<unsigned>(pw));
+                    put16(pr + 2, static_cast<unsigned>(ph));
                     put32(pr + 4, at);
-                    at += static_cast<uint32_t>(w.w) * w.h;
+                    at += static_cast<uint32_t>(pw) * ph;
                     done = true;
                 }
             }
@@ -532,6 +783,7 @@ bool make_gbc(dax::ByteSource& dat, GbcPictures& pics, const char* id, Output& o
     if (ok) {
         uint8_t h[kHeader] = {};
         h[4] = 2;
+        h[5] = kRevision;
         put16(h + 6, static_cast<unsigned>(n));
         put16(h + 8, static_cast<unsigned>(pi));
         const size_t il = strlen(id);
@@ -554,8 +806,11 @@ bool read_info(dax::ByteSource& src, Info& out)
 {
     uint8_t h[kHeader];
     if (src.read_at(0, h, sizeof h) != sizeof h || memcmp(h, "GBJ2", 4) != 0 || (h[4] != 1 && h[4] != 2)) return false;
+    out.version = h[4];
+    out.revision = h[5];
     out.entries = u16(h + 6);
     out.pieces = u16(h + 8);
+    out.maps = u16(h + 10);
     memcpy(out.pdf_id, h + 12, 32);
     out.pdf_id[32] = 0;
     memcpy(out.palette, h + 44, 768);
@@ -585,6 +840,20 @@ bool piece(dax::ByteSource& src, const Info& info, int i, PieceInfo& out)
     out.offset = u32(r + 4);
     if (out.w == 0) return out.h > 0 && out.offset + static_cast<uint32_t>(out.h) <= src.size();     // text
     return out.h > 0 && out.offset + static_cast<uint32_t>(out.w) * out.h <= src.size();
+}
+
+int piece_black(dax::ByteSource& src, const PieceInfo& p, uint8_t* row)
+{
+    if (p.text() || p.w <= 0 || p.h <= 0) return 0;
+    uint32_t hist[256] = {};
+    const int n = p.h < 48 ? p.h : 48;
+    for (int k = 0; k < n; ++k) {
+        const int y = static_cast<int>((static_cast<int64_t>(k) * 2 + 1) * p.h / (2 * n));
+        if (src.read_at(p.offset + static_cast<uint32_t>(y) * p.w, row, static_cast<size_t>(p.w)) != static_cast<size_t>(p.w))
+            return 0;
+        for (int x = 0; x < p.w; ++x) ++hist[row[x]];
+    }
+    return black_point(hist);
 }
 
 char find_mention(const char* text, int* number)

@@ -5,6 +5,8 @@ never on files in the repo. Extract the page images first:
     pdfimages -j "<journal>.pdf" <dir>/p
 then
     python3 -I tools/journal/make_table.py curse <dir> src/engine/journal_tables.cpp
+The map entries (found by eye on the rendered entries) are marked with
+    python3 -I tools/journal/make_table.py maps curse 4,20,52,59 src/engine/journal_tables.cpp
 It rewrites the whole file from all the journals' saved tables
 (tools/journal/tables.json, coordinates only), adding or replacing this one.
 
@@ -608,7 +610,32 @@ def treasures_main(pdf_path):
     return [{'k': 'J', 'n': 0, 'p': L['intro']}] + entries
 
 
+def mark_maps(name, numbers, out_path):
+    """The map entries (checked by eye): the viewer offers Turn on them and
+    the scan prefers the Gold Box Companion's picture of them."""
+    store = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tables.json')
+    table = json.load(open(store))
+    want = {int(n) for n in numbers.split(',') if n}
+    for j in table['journals']:
+        if j['name'] != name:
+            continue
+        for e in j['entries']:
+            e.pop('map', None)
+            if e['k'] == 'J' and e['n'] in want:
+                e['map'] = 1
+                want.discard(e['n'])
+    if want:
+        sys.exit(f'{name}: no journal entries {sorted(want)}')
+    with open(store, 'w') as f:
+        json.dump(table, f, separators=(',', ':'))
+    write_cpp(table, out_path)
+
+
 def main():
+    if sys.argv[1] == 'maps':
+        # make_table.py maps <name> 4,20,52 src/engine/journal_tables.cpp
+        mark_maps(sys.argv[2], sys.argv[3], sys.argv[4])
+        return
     name, img_dir, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
     if name == 'treasures':
         import hashlib
@@ -765,7 +792,8 @@ def write_cpp(table, path):
         names.append(n)
         pieces, defs = [], []
         for e in j['entries']:
-            defs.append(f"    {{'{e['k']}', {e['n']}, {len(pieces)}, {len(e['p'])}}},")
+            flags = ', kMap' if e.get('map') else ''
+            defs.append(f"    {{'{e['k']}', {e['n']}, {len(pieces)}, {len(e['p'])}{flags}}},")
             for q in e['p']:
                 # (a 6th number: which of the page's pictures - Treasures)
                 pieces.append('    {' + ', '.join(str(v) for v in q) + '},')
