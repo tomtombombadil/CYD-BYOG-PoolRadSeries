@@ -3620,7 +3620,7 @@ const Profile kProfiles[] = {
      .party = {.load_which = qw(0x4E25), .name = qw(0x5E59), .save_which = qw(0x4E37), .saving = qw(0x604D),
                .load_from = qw(0x4E13), .load_sources = qw(0x500C),
                .words = kQueenPartyMenu, .n_words = sizeof kQueenPartyMenu / sizeof kQueenPartyMenu[0]},
-     .variant = {.unfinished = true, .hlib = true}},
+     .variant = {.unfinished = true, .bigpic_from = 0xF0, .hlib = true}},     // (BIGPIC ids 240-242)
 };
 
 } // namespace

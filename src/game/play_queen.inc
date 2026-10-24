@@ -150,3 +150,33 @@ __attribute__((noinline)) void q_load_map(int id)
     }
     plat::log("[play] map %d of GEO.GLB: %s (%dx%d)\n", id, d->map.loaded ? "ok" : "missing", d->map.w, d->map.h);
 }
+
+// An event picture (PICTURE id): PICA / PICB / PICC.TLB's picture of that id
+// (ids are each file's own - 5-116, 128-150, 151-239), its first part (88 x
+// 88, run-length) in the view's box; a big one (240 up: BIGPIC.TLB, 304 x
+// 120) at the screen's top left inside the frame. Its other parts are its
+// animation's frames (sprites over the first) - not shown yet.
+__attribute__((noinline)) bool q_picture(pic::Canvas& c, int id, bool big)
+{
+    static const char* const kFiles[] = {"PICA.TLB", "PICB.TLB", "PICC.TLB"};
+    const char* const* files = kFiles;
+    int n = 3;
+    static const char* const kBig[] = {"BIGPIC.TLB"};
+    if (big) files = kBig, n = 1;
+    bool ok = false;
+    for (int k = 0; k < n && !ok; ++k) {
+        plat::File f;
+        if (!open_hl(files[k], f)) continue;
+        {
+            plat::FileSource src(f);
+            uint32_t pos, len;
+            if (hlib::find_entry(src, static_cast<uint16_t>(id), pos, len)) {
+                const int x = big ? 8 : 24, y = big ? 8 : 24;
+                ok = hlpic::draw_picture_part(src, pos, len, 1, q_col(), nullptr, c, x, y);
+            }
+        }
+        f.close();
+    }
+    plat::log("[play] picture %d%s: %s\n", id, big ? " (big)" : "", ok ? "shown" : "missing");
+    return ok;
+}

@@ -11169,6 +11169,17 @@ struct Host : ecl::Host {
             return;
         }
         const int big = d->prof->variant.bigpic_from ? d->prof->variant.bigpic_from : 0x78;
+        if (hl()) {
+            // (Dark Queen: its PIC / BIGPIC libraries - play_queen.inc)
+            anim_stop();
+            const bool large = id >= big;
+            bigpic = large ? id : -1;
+            if (!large) c.fill(24, 24, 88, 88, 0);
+            q_picture(c, id, large);
+            pic_shown = true;
+            dirty(0, large ? 17 * 8 : 14 * 8);
+            return;
+        }
         if (head == 0xFF && id >= big && dk_overland()) {
             // Darkness's overland map: with the party's marker, the screen it is
             anim_stop();
