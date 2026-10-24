@@ -5693,7 +5693,8 @@ void open_shop(pic::Canvas& c)
 {
     screen = Screen::Shop;
     dk_own[kDkShopMain] = 0;
-    if (!darkness_files()) {                // (Darkness: the script's words stay - DOSBox)
+    // (Darkness, Champions: the script's words stay - DOSBox)
+    if (!darkness_files() && !d->prof->variant.shop_words_stay) {
         text::clear(c, text::kTextArea);
         dirty_rows(17, 22);
     }

@@ -731,6 +731,10 @@ struct Profile {
         // on the frame's top bar (frame.top: its top row's tiles, the moons'
         // cells from their phases)
         bool     krynn = false;
+        // A shop or temple opens over the script's words (Champions: its
+        // "WHERE DO YOU WISH TO GO?" stays - DOSBox; back from Buy / Heal the
+        // area is clear as the others')
+        bool     shop_words_stay = false;
         // Champions' interpreter (GAME.OVR ovl 0x3E +0x11B5): a one-choice
         // menu whose choice is the first of these words shows the second
         // instead ("PRESS BUTTON OR RETURN TO CONTINUE." -> "PRESS

@@ -1902,6 +1902,9 @@ GAME=5); `variant.krynn`. Play on since 2026-10-24 (branch champions).
   order's experience for it (`create::knight_petition` / `knight_change`).
 - **Overland** (area word 0x4BE6 = 0): the map picture with CURSOR.DAX's
   marker, eight directions, 12 hours a step.
+- **Shops and the temple** open over the script's words (the outpost's
+  "WHERE DO YOU WISH TO GO?" stays - DOSBox; `variant.shop_words_stay`);
+  back from Buy / Heal the text area is clear, as the original's.
 - **Fights**: its effect numbers (mostly Secret's), Done's Auto, the
   kender's Yell (taunts: they attack the kender), draconians dying - a
   bozak explodes (3d6 within a square, a save or stunned), a baaz keeps
