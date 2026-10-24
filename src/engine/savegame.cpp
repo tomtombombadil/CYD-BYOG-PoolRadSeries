@@ -1,5 +1,7 @@
 #include "savegame.h"
 
+#include <new>
+
 #include <cstdio>
 #include <cstring>
 
@@ -144,6 +146,60 @@ bool read_darkness(dax::ByteSource& src, ecl::GameState& gs, Header& h)
     gs.game_area = h.game_area = 1;         // (one file a kind: ECL1 ...)
     return names_in(src, kDarknessBlock + 11, h);
 }
+
+bool read_queen(dax::ByteSource& src, ecl::GameState& gs, Header& h, party::Party& p)
+{
+    if (src.size() < kQueenHead) return false;
+    h = Header{};
+    p.clear();
+    if (src.read_at(0, gs.area1, kDarknessBlock) != kDarknessBlock) return false;
+    uint8_t b[15];
+    if (src.read_at(kDarknessBlock, b, sizeof b) != sizeof b) return false;
+    gs.x = b[0];
+    gs.y = b[1];
+    gs.dir = b[2] & 7;
+    gs.wall_ahead = b[3];
+    gs.roof = b[4];
+    h.last_state = b[5];
+    h.state = b[6];
+    h.look = static_cast<uint16_t>(b[7] | b[8] << 8);
+    h.look_slot = static_cast<uint16_t>(b[9] | b[10] << 8);
+    const int count = b[13] | b[14] << 8;
+    if (count > party::kMaxParty) return false;
+    gs.code_len = 0;
+    gs.moved = false;
+    gs.game_area = h.game_area = 1;
+    uint32_t at = kQueenHead;
+    uint8_t* rec = new (std::nothrow) uint8_t[party::kQueenRecordSize];
+    if (!rec) return false;
+    bool ok = true;
+    for (int i = 0; ok && i < count; ++i) {
+        ok = src.read_at(at, rec, party::kQueenRecordSize) == party::kQueenRecordSize;
+        if (!ok) break;
+        at += party::kQueenRecordSize;
+        party::Character& c = p.m[p.count];
+        party::from_queen(rec, c);
+        c.name(h.names[i], sizeof h.names[i]);
+        at += kQueenItem * rec[0xC9];                       // (its items: not kept yet)
+        // its effects: a chain from the record's pointer
+        bool more = rec[4] || rec[5] || rec[6] || rec[7];
+        for (int k = 0; more && k < 64; ++k) {
+            uint8_t e[kQueenEffect];
+            ok = src.read_at(at, e, sizeof e) == sizeof e;
+            if (!ok) break;
+            at += kQueenEffect;
+            more = e[5] || e[6] || e[7] || e[8];
+        }
+        if (ok && at > src.size()) ok = false;
+        if (ok) ++p.count;
+    }
+    delete[] rec;
+    h.count = p.count;
+    if (!ok) p.clear();
+    return ok;
+}
+
+void file_name_queen(char slot, char* out, size_t cap) { snprintf(out, cap, "SAVGAM%c.QSV", slot); }
 
 bool write_darkness(Sink& out, const ecl::GameState& gs, const Header& h)
 {

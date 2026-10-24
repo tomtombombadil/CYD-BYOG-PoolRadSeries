@@ -216,6 +216,21 @@ bool script_value_dkk(const uint8_t* rec, const uint8_t* ext, int index, uint16_
 bool script_value_dkk(const Party& p, uint16_t off, uint16_t* out);
 void script_set_dkk(uint8_t* rec, uint8_t* ext, uint16_t off, uint16_t v);
 void script_set_dkk(Character& c, uint16_t off, uint16_t v);
+// The Dark Queen of Krynn's characters (queen_facts_2.md 8; the Gold Box
+// Companion's record list "07"): a C struct of 414 bytes - pointers first
+// (next, effects, items, the 13 worn slots, combat), experience, coins
+// (steel, gems, jewelry: Darkness's three, steel in platinum's place),
+// race / class as Champions' (but the knight class 1 and its level in the
+// druid's place - the engine keeps a knight as class 7, its level in the
+// monk's), the name a C string at 0x68, stats own / in use in pairs,
+// levels cleric knight fighter paladin ranger magic-user thief; knight
+// order, god, robe at 0x19A-0x19D (Ext). Kept in Curse's layout: the
+// name, stats, race, class, age, HP, saves, movement, thief skills, NPC,
+// coins, levels, sex, alignment, experience, hands, encumbrance, the item
+// count and the fight's figures (THAC0, AC, attacks, damage, HP now);
+// its spells, items and effects aren't read yet.
+constexpr size_t kQueenRecordSize = 0x19E;
+void from_queen(const uint8_t* q, Character& out);               // out.rec and out.ext
 // Record format: Curse's, Pool's, Secret's, Darkness's, Champions' or Death Knights'
 // (KrynnToDkk: a Champions record as Death Knights takes one in - krynn_to_dkk)
 enum class Format : uint8_t { Curse, Pool, Secret, Darkness, Krynn, DeathKnights, KrynnToDkk };

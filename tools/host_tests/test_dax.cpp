@@ -4442,6 +4442,61 @@ static void test_party()
         savegame::file_name_darkness('B', name2, sizeof name2);
         CHECK(strcmp(name2, "SAVGAMB.PTY") == 0);
     }
+    // Dark Queen's .QSV: the game block, Darkness's position and modes, a
+    // count, then each character's record, items (17) and effects (a chain of 9)
+    {
+        std::vector<uint8_t> q(savegame::kQueenHead, 0);
+        for (uint32_t i = 0; i < savegame::kDarknessBlock; ++i) q[i] = static_cast<uint8_t>(i * 7);
+        const uint8_t pos[15] = {30, 21, 6, 1, 0x80, 4, 0, 2, 0, 0, 0, 0, 0, 2, 0};   // (a map wider than 16)
+        memcpy(q.data() + savegame::kDarknessBlock, pos, sizeof pos);
+        auto add = [&](const char* nm, int race, int cls, int items, int effects) {
+            std::vector<uint8_t> r(party::kQueenRecordSize, 0);
+            memcpy(&r[0x68], nm, strlen(nm));
+            r[0x58] = static_cast<uint8_t>(race);
+            r[0x5A] = static_cast<uint8_t>(cls);
+            r[0x78] = 17, r[0x79] = 18;                 // Str own / in use
+            r[0x84] = 50, r[0x85] = 60;                 // Str00 own / in use
+            r[0x89] = 77, r[0x198] = 70;                // HP max / now
+            r[0x18E] = 64;                              // AC 60 - 64 = -4
+            r[0xA6] = 9, r[0xA5] = 3, r[0xAB] = 5;      // knight 9, cleric 3, thief 5
+            r[0x44] = 0x40, r[0x45] = 0x42, r[0x46] = 0x0F;   // 1,000,000 experience
+            r[0x4C] = 0x10, r[0x4D] = 0x27;            // 10,000 steel
+            r[0x19A] = 2;                               // the Sword
+            r[0xC9] = static_cast<uint8_t>(items);
+            if (effects) r[4] = 0x51, r[6] = 0xF0, r[7] = 0x5E;
+            q.insert(q.end(), r.begin(), r.end());
+            for (int i = 0; i < items; ++i) q.insert(q.end(), savegame::kQueenItem, static_cast<uint8_t>(0x20 + i));
+            for (int e = 0; e < effects; ++e) {
+                uint8_t ef[savegame::kQueenEffect] = {0x5F, 0, 0, 0xFF, 0, 0, 0, 0, 0};
+                if (e + 1 < effects) ef[5] = 9, ef[7] = 0x5E;      // a successor
+                q.insert(q.end(), ef, ef + sizeof ef);
+            }
+        };
+        add("SIR TEST", 6, 1, 2, 2);
+        add("neacail", 5, 12, 1, 0);
+        q.insert(q.end(), 50, 0xAA);                    // (the file goes on)
+        dax::MemorySource qs(q.data(), static_cast<uint32_t>(q.size()));
+        static ecl::GameState qgs;
+        static party::Party qp;
+        savegame::Header qh;
+        CHECK(savegame::read_queen(qs, qgs, qh, qp));
+        CHECK(qgs.area1[3] == 21 && qgs.x == 30 && qgs.y == 21 && qgs.dir == 6 && qgs.roof == 0x80 && qh.last_state == 4 &&
+              qh.look == 2 && qh.count == 2 && qp.count == 2 && !strcmp(qh.names[1], "neacail"));
+        const party::Character& k = qp.m[0];
+        char nm[20];
+        k.name(nm, sizeof nm);
+        CHECK(!strcmp(nm, "SIR TEST") && k.race() == party::race_from_krynn(6) && k.cls() == 7 && k.stat(0) == 18 &&
+              k.stat_now(0) == 17 && k.str00() == 60 && k.hp() == 70 && k.hp_max() == 77 && k.ac() == -4);
+        CHECK(k.level(7) == 9 && k.level(0) == 3 && k.level(6) == 5 && k.level(1) == 0 && k.exp() == 1000000 &&
+              k.money(4) == 10000 && k.ext[party::kExtKnight] == 2 && k.ext[party::kExtRace] == 6);
+        CHECK(qp.m[1].cls() == 12 && qp.m[1].race() == party::race_from_krynn(5));
+        // short: the second character cut
+        q.resize(q.size() - 60);
+        dax::MemorySource qs2(q.data(), static_cast<uint32_t>(q.size()));
+        CHECK(!savegame::read_queen(qs2, qgs, qh, qp) && qp.count == 0);
+        savegame::file_name_queen('C', name2, sizeof name2);
+        CHECK(strcmp(name2, "SAVGAMC.QSV") == 0);
+    }
     // Steam / SNEG: "C:\CURSE\SAVE\" with the files in <folder>/GAME/CURSE
     char sub[32] = "CURSE/SAVE";
     CHECK(savegame::drop_own_folder("CURSE/GAME/CURSE", sub) && strcmp(sub, "SAVE") == 0);
