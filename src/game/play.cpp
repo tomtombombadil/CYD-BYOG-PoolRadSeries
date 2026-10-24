@@ -2228,7 +2228,12 @@ const Earlier& earlier()
                                     party::kSecretItemSize, ".SFX", 0x1414, 0xFF};
     static const Earlier kGateway = {".GUY", party::kRecordSize, party::Format::Curse, ".SWG", party::kItemSize, ".FX",
                                      0x3214, 0xF7};
-    return d->prof->variant.tr ? kGateway : kSecret;
+    // (Death Knights: Champions' 409-byte .WHO / CHRDATxn.SAV, items .STF of
+    // 63 bytes, effects .SFX, a saved game's names at 0x1414 as Secret's;
+    // its control byte 0xE7)
+    static const Earlier kChampions = {".WHO", party::kKrynnRecordSize, party::Format::KrynnToDkk, ".STF",
+                                       party::kItemSize, ".SFX", 0x1414, 0xE7};
+    return dkk() ? kChampions : d->prof->variant.tr ? kGateway : kSecret;
 }
 
 // A Gateway character as Treasures takes one in (its ovl 0x7C +0x16E6): its
@@ -2247,6 +2252,10 @@ void gateway_to_treasures(party::Character& ch)
 }
 void import_convert(party::Character& ch)
 {
+    if (dkk()) {
+        rules::recalc(ch, *names, d->facts);    // (Death Knights takes the record as copied - party::krynn_to_dkk)
+        return;
+    }
     if (d->prof->variant.tr) gateway_to_treasures(ch);
     else secret_to_darkness(ch);
 }
@@ -4894,7 +4903,7 @@ void add_from_tap(int x, int y, pic::Canvas& c)
         draw_add_list(c);
         return;
     }
-    if (darkness_files() && k == (d->prof->variant.tr ? 'G' : 'S')) {
+    if (darkness_files() && k == (d->prof->variant.tr ? 'G' : dkk() ? 'C' : 'S')) {   // (Death Knights: Champions')
         // (Darkness: Secret's characters - its folder on the card; Treasures:
         // Gateway's)
         d->guys = 0;

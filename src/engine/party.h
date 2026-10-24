@@ -217,8 +217,16 @@ bool script_value_dkk(const Party& p, uint16_t off, uint16_t* out);
 void script_set_dkk(uint8_t* rec, uint8_t* ext, uint16_t off, uint16_t v);
 void script_set_dkk(Character& c, uint16_t off, uint16_t v);
 // Record format: Curse's, Pool's, Secret's, Darkness's, Champions' or Death Knights'
-enum class Format : uint8_t { Curse, Pool, Secret, Darkness, Krynn, DeathKnights };
+// (KrynnToDkk: a Champions record as Death Knights takes one in - krynn_to_dkk)
+enum class Format : uint8_t { Curse, Pool, Secret, Darkness, Krynn, DeathKnights, KrynnToDkk };
 bool read_record(dax::ByteSource& src, Character& out, Format f);
+// Death Knights' Load / Add from Champions (its GAME.OVR ovl 0x5A +0x1217):
+// a 409-byte Champions record copied into its 216-byte record and spell
+// part by runs (the spells only for a class with any - not a fighter, a
+// thief or a fighter / thief), the pointers cleared, the age held under its
+// race's limit (elves 1,200, half-elves 200, dwarves 300, kender over 199
+// made 70, humans 50)
+void krynn_to_dkk(const uint8_t* k, uint8_t* rec, uint8_t* wiz);
 void from_pool(const uint8_t* pool, Character& out);              // out.rec only
 void from_pool(const uint8_t* pool, uint8_t* rec);                 // a record (kRecordSize bytes) of Curse's layout
 void to_pool(const Character& c, uint8_t out[kPoolRecordSize]);

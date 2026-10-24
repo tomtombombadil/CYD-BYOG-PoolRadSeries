@@ -126,6 +126,35 @@ constexpr uint16_t kDkkWizExt[][3] = {
 
 } // namespace
 
+void krynn_to_dkk(const uint8_t* k, uint8_t* p, uint8_t* w)
+{
+    static const uint16_t kRuns[][3] = {{0x000, 0x00, 0x1E}, {0x058, 0x1E, 0x0B}, {0x0CF, 0x29, 0x08}, {0x0DA, 0x31, 0x0C},
+                                        {0x0F3, 0x3F, 0x27}, {0x11A, 0x6B, 0x02}, {0x130, 0x6D, 0x03}, {0x135, 0x70, 0x0C},
+                                        {0x142, 0x7C, 0x46}, {0x188, 0xC7, 0x11}};
+    memset(p, 0, kDkkRecordSize);
+    memset(w, 0, kDkkSpellSize);
+    for (const auto& r : kRuns) memcpy(p + r[1], k + r[0], r[2]);
+    // (its pointers: 0x3A, 0x7D, 0xB9, 0xBD, 0xC2 - nothing here to clear)
+    const uint8_t cls = p[0x21];
+    if (cls != 2 && cls != 6 && cls != 0x0E) {
+        memcpy(w, k + 0x1E, 0x3A);              // memorized
+        memcpy(w + 0x4A, k + 0x63, 0x6B);       // the book
+        for (int i = 0; i < 4; ++i) memcpy(w + 0xBC + 8 * i, k + 0x11C + 5 * i, 5);   // the slots
+    }
+    const uint16_t age = static_cast<uint16_t>(p[0x26] | p[0x27] << 8);
+    uint16_t a = age;
+    switch (p[0x20]) {
+    case 0: case 1: if (a > 1200) a = 1200; break;
+    case 2: if (a > 200) a = 200; break;
+    case 3: case 4: if (a > 300) a = 300; break;
+    case 5: if (a > 199) a = 70; break;
+    case 6: if (a > 50) a = 50; break;
+    default: break;
+    }
+    p[0x26] = static_cast<uint8_t>(a);
+    p[0x27] = static_cast<uint8_t>(a >> 8);
+}
+
 void from_dkk(const uint8_t* p, const uint8_t* w, uint8_t* r)
 {
     memset(r, 0, kRecordSize);
@@ -512,6 +541,14 @@ bool read_record(dax::ByteSource& src, Character& out, Format f)
         out = Character{};
         if (src.read_at(0, k, kKrynnRecordSize) != kKrynnRecordSize) return false;
         from_krynn(k, out);
+        return true;
+    }
+    if (f == Format::KrynnToDkk) {
+        uint8_t k[kKrynnRecordSize], dk[kDkkRecordSize], wiz[kDkkSpellSize];
+        out = Character{};
+        if (src.read_at(0, k, kKrynnRecordSize) != kKrynnRecordSize) return false;
+        krynn_to_dkk(k, dk, wiz);
+        from_dkk(dk, wiz, out);
         return true;
     }
     if (f == Format::DeathKnights) {
