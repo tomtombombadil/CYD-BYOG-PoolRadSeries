@@ -4949,10 +4949,15 @@ void find_secret_guys()
         if (slash) nm = slash + 1;
         const size_t n = strlen(nm);
         const Earlier& ea = earlier();
-        if (f.isDirectory() || n < 5 || n > 12 || strcasecmp(nm + n - 4, ea.guy) != 0 || f.size() != ea.rec_size)
+        // (Dark Queen: Death Knights' saved games' members too - CHRDATxn.GAM,
+        // "NAME from saved game A", as the engine lists Curse's)
+        const bool member = hl() && n == 12 && strncasecmp(nm, "CHRDAT", 6) == 0 && strcasecmp(nm + 8, ea.member) == 0;
+        if (f.isDirectory() || n < 5 || n > 12 || (strcasecmp(nm + n - strlen(ea.guy), ea.guy) != 0 && !member) ||
+            f.size() != ea.rec_size)
             continue;
         uint8_t rec[0x100];
-        if (f.read(rec, sizeof rec) != sizeof rec || rec[ea.ctl] > 0x7F) continue;
+        const int want = ea.rec_size < sizeof rec ? static_cast<int>(ea.rec_size) : static_cast<int>(sizeof rec);
+        if (f.read(rec, static_cast<size_t>(want)) != want || rec[ea.ctl] > 0x7F) continue;
         char name[16];
         const size_t len = rec[0] > 15 ? 15 : rec[0];
         memcpy(name, rec + 1, len);
@@ -4962,10 +4967,11 @@ void find_secret_guys()
         strcpy(d->guy_name[d->guys], name);
         d->guy_added[d->guys] = false;
         d->guy_src[d->guys] = 5;
-        d->guy_letter[d->guys] = 0;
+        d->guy_letter[d->guys] = member ? static_cast<char>(toupper(static_cast<unsigned char>(nm[6]))) : 0;
         ++d->guys;
     }
     dir.close();
+    if (hl()) sort_guys();
 }
 
 void secret_to_darkness(party::Character& ch);
@@ -5157,7 +5163,8 @@ void add_from_tap(int x, int y, pic::Canvas& c)
         draw_add_list(c);
         return;
     }
-    if (darkness_files() && k == (d->prof->variant.tr ? 'G' : dkk() ? 'C' : 'S')) {   // (Death Knights: Champions')
+    if ((darkness_files() && k == (d->prof->variant.tr ? 'G' : dkk() ? 'C' : 'S')) || (hl() && k == 'D')) {
+        // (Death Knights: Champions'; Dark Queen: Death Knights')
         // (Darkness: Secret's characters - its folder on the card; Treasures:
         // Gateway's)
         d->guys = 0;
