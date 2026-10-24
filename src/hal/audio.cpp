@@ -98,13 +98,20 @@ constexpr bool kRamps = false;
 // were still queued ate the end; the codec too came back with each restart
 // of its clocks. With nothing written the I2S sends silence (auto_clear).
 constexpr bool kKeep = true;
+#else
+// The C5's PDM line the same way (2026-10-24, Tom's C5: Gateway's sounds
+// had "a really harsh attack and a very distorted ending", and Volume and
+// Tandy / PC Speaker seemed to do nothing): each sound ramped the line
+// from 0 V to the middle and back, so the short sounds were mostly those
+// two thumps. Now the line goes up to the middle once, at Play's start
+// (audio_prepare), and stays there - the I2S sends the middle by itself
+// (auto_clear's 0) between sounds.
+constexpr bool kKeep = true;
+constexpr bool kRamps = false;
+#endif
 bool codec_tried = false;
 bool enabled = false;
 void codec_setup();
-#else
-constexpr bool kKeep = false;
-constexpr bool kRamps = true;
-#endif
 i2s_chan_handle_t h = nullptr;
 int16_t* wide = nullptr;                // the samples as 16 bits
 
@@ -155,13 +162,9 @@ bool out_open()
 }
 bool out_enable()
 {
-#if defined(BOARD_AUDIO_ES8311)
     if (enabled) return true;
     enabled = i2s_channel_enable(h) == ESP_OK;
     return enabled;
-#else
-    return i2s_channel_enable(h) == ESP_OK;
-#endif
 }
 void out_write(const uint8_t* buf, int n)
 {
@@ -169,10 +172,15 @@ void out_write(const uint8_t* buf, int n)
     size_t done = 0;
     i2s_channel_write(h, wide, n * sizeof(int16_t), &done, portMAX_DELAY);
 }
-void out_disable() { i2s_channel_disable(h); }
+void out_disable()
+{
+    i2s_channel_disable(h);
+    enabled = false;
+}
 void out_close()
 {
     i2s_del_channel(h);
+    enabled = false;
     h = nullptr;
     free(wide);
     wide = nullptr;
@@ -202,6 +210,29 @@ void codec_setup()
         }
     }
     if (!ok) memlog::note("sound: the ES8311 codec didn't answer - no sound");
+}
+#else
+// The PDM line, once: open, on, and a slow ramp from 0 V to the middle (the
+// only one - it stays there)
+void codec_setup()
+{
+    if (codec_tried) return;
+    codec_tried = true;
+    bool ok = out_open() && out_enable();
+    if (ok) {
+        uint8_t* b = static_cast<uint8_t*>(malloc(kBuf));
+        if (b) {
+            for (int i = 0; i < kBuf; ++i) b[i] = static_cast<uint8_t>(i * 128 / kBuf);
+            out_write(b, kBuf);
+            memset(b, 128, kBuf);
+            out_write(b, kBuf);
+            free(b);
+        }
+        amp(true);
+    } else {
+        if (h) out_close();
+        memlog::note("sound: the PDM output didn't start - no sound");
+    }
 }
 #endif
 
@@ -287,7 +318,7 @@ bool start_task()
 {
     ending = false;
     stop_wanted = false;
-#if defined(BOARD_AUDIO_ES8311)
+#if defined(BOARD_AUDIO_ES8311) || defined(BOARD_AUDIO_PDM)
     codec_setup();
 #endif
 #if defined(BOARD_AUDIO_DAC)
@@ -360,7 +391,7 @@ bool audio_held() { return held && task != nullptr; }
 
 void audio_prepare()
 {
-#if defined(BOARD_AUDIO_ES8311) && !defined(CYD_QEMU)
+#if (defined(BOARD_AUDIO_ES8311) || defined(BOARD_AUDIO_PDM)) && !defined(CYD_QEMU)
     codec_setup();
 #else
     amp(true);          // (awake long before the first sound; it stays on)
