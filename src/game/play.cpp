@@ -9414,6 +9414,34 @@ void draw_modify(pic::Canvas& c)
         show_menu_line(c);
         return;
     }
+    if (gateway()) {
+        // Gateway's View (draw_character_gateway): the stats from row 9 at
+        // column 5, the hit points "13/13" right-aligned to column 37 of row 3
+        // (Tom, 2026-10-24: Curse's rows put the changing number on the
+        // wrong lines)
+        if (mod_item < 6) {
+            const int v = ch->stat(mod_item);
+            c.fill(5 * 8, (9 + mod_item) * 8, 7 * 8, 8, 0);
+            if (mod_item == 0 && v == 18 && ch->str00() > 0) {
+                if (ch->str00() == 100) snprintf(t, sizeof t, "18(00)");
+                else snprintf(t, sizeof t, "18(%02d)", ch->str00());
+            } else {
+                snprintf(t, sizeof t, "%d", v);
+            }
+            put(c, t, 5, 9 + mod_item, 13);
+        } else if (mod_item == 6) {
+            c.fill(31 * 8, 3 * 8, 7 * 8, 8, 0);
+            snprintf(t, sizeof t, "%d/%d", ch->hp(), ch->hp_max());
+            put(c, t, 38 - static_cast<int>(strlen(t)), 3, 13);
+        } else {
+            ch->name(t, sizeof t);
+            put(c, t, 1, 1, 13);
+        }
+        text::build(menu, rw(Data::kModify), rw(Data::kKeepExit));
+        menu.selected = 0;
+        show_menu_line(c);
+        return;
+    }
     if (mod_item < 6) {
         const int v = ch->stat(mod_item);
         c.fill(5 * 8, (7 + mod_item) * 8, 6 * 8, 8, 0);
@@ -9507,7 +9535,7 @@ void modify_name(pic::Canvas& c)
 // The item a tap at (row, col) picks (-1: none)
 int modify_item_at(int row, int col)
 {
-    if (secret_files() || darkness_files()) {
+    if (secret_files() || darkness_files() || gateway()) {
         if (row >= 9 && row <= 14 && col >= 1 && col <= 12) return row - 9;
         if (row == 3 && col >= 20 && col <= 38) return 6;
         if (row == 1 && col >= 1 && col <= 16) return 7;

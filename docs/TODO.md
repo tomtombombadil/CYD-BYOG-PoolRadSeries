@@ -146,6 +146,8 @@ the Project as claude/TODO.md.
       after Select - SPEC 12); Treasures' Valhala Inn (a script CALL's
       operand - Darkness's Rolf tour fixed by it too). Tandy / PC Speaker
       in the recorded-sample games: only grain differs (told Tom).
+- [x] Tom (2026-10-24): Gateway's Modify drew the changing number on
+      Curse's rows - Gateway's View layout now (v0.146.1).
 - [ ] Claude: game starts are slow because every exepack::read unpacks
       the program backwards from its end (Darkness 9.1 MB read at start,
       Secret 4 MB, Curse 1.7 MB) - unpack the data segment once (at Play or
