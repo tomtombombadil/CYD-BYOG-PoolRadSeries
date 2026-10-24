@@ -1051,7 +1051,11 @@ bool Vm::dk_step(Stop& r)
     }
     case 0x2D: {                                // CALL 1 / 2 / 3
         if (!need(1)) return true;
-        const int w = value(o[0]);
+        // (the scripts write it as an address - CALL [0001] - and the
+        // number is that address, as a jump's: not what memory holds there.
+        // Treasures' inns: No puts the party back a square, CALL 1, and the
+        // step script runs again on the square it is back on - DOSBox)
+        const int w = o[0].code == 1 || o[0].code == 3 ? o[0].word() : value(o[0]);
         if (w == 1) {
             h_.redraw();
         } else if (w == 2) {                    // a step ahead
