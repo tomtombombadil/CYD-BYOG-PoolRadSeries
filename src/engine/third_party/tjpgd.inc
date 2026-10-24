@@ -1031,6 +1031,9 @@ JRESULT jd_prepare (
 				jd->qtid[i] = seg[8 + 3 * i];				/* Get dequantizer table ID for this component */
 				if (jd->qtid[i] > 3) return JDR_FMT3;		/* Err: Invalid ID */
 			}
+			/* CYD BYOG: a one-component (grayscale) scan is not interleaved - its MCU is one
+			   block whatever sampling factor the frame gives (T.81 A.2.2; the Treasures journal) */
+			if (jd->ncomp == 1) jd->msx = jd->msy = 1;
 			break;
 
 		case 0xDD:	/* DRI - Define Restart Interval */

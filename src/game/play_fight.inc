@@ -520,12 +520,15 @@ inline int tile_bytes() { return px8() ? kSq * kSq : kTileBytes; }
 // monsters, ran out on the 2.8")
 struct Fight {
     combat::Battle& b;                  // (its own block: make_fight)
-    bool   aged = false;                // Treasures: someone aged (haste) - old age at the end
     int8_t old[12][3] = {};             // its old-age steps (kind, member, the weeping one)
     int    old_n = 0, old_i = 0;
-    explicit Fight(combat::Battle& battle) : b(battle) {}
+    // (Treasures in 256 colours: no background picture while the fight
+    // lasts - its ovl 0x62 +0xF4 lets it go, the script's COMBAT reads it
+    // again after, ov43+0x1643; DOSBox VGA: the fight's panel black)
+    explicit Fight(combat::Battle& battle) : b(battle) { tr_background(false); }
     ~Fight()
     {
+        tr_background(true);
         for (uint8_t*& t : tile) {
             free(t);
             t = nullptr;
@@ -1979,7 +1982,7 @@ void event_page(const combat::Event& e)
     case combat::Ev::Weakened: said(profile::kIsWeakened); break;
     case combat::Ev::Ages:
         said(profile::kAges);
-        fg->aged = true;                // (Treasures: old age is looked at when the fight ends - [0x9318])
+        age_check = true;               // (old age is looked at when the fight ends - Treasures' [0x9318])
         break;
     case combat::Ev::Regen: {
         char w[24];
@@ -3595,7 +3598,8 @@ bool no_exp_lines()
     return darkness_files() && vm->get(0x1F) != 0;
 }
 
-// Treasures' old age (ovl 0x62 +0x3F0), when someone aged in the fight:
+// Treasures' and Darkness's old age (Treasures' ovl 0x62 +0x3F0, Darkness's
+// ovr 0x864B), when someone aged since the last look (haste, the clock):
 // each member not dead past the race's greatest age dies of it - "The
 // strain of this last battle has worn heavily on NAME.", "He / She breathes
 // deeply one last time and crumples to the ground." (white, the panel's
@@ -3701,8 +3705,8 @@ void old_age_next(pic::Canvas& c)
 void end_fight(pic::Canvas& c)
 {
     combat::Battle& b = fg->b;
-    if (d->prof->variant.tr && fg->aged && !in_demo) {
-        fg->aged = false;
+    if (d->prof->variant.tr_max_age && age_check && !in_demo) {
+        age_check = false;
         if (old_age_begin(c)) return;
     }
     fg->out = combat::finish(b, ml ? ml->m : nullptr);

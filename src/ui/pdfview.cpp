@@ -20,6 +20,12 @@ struct State {
     pdf::Doc  doc;
     int       page_obj[pdf::kMaxPages];
     int       n = 0;
+    // The book's pages: a PDF page and its picture (page_image's index) -
+    // one a PDF page, or (the Treasures journal: a spread a PDF page, a
+    // picture a book page) each big picture, left to right
+    uint8_t   bp_page[pdf::kMaxPages * 2];
+    uint8_t   bp_img[pdf::kMaxPages * 2];
+    int       nbp = 0;
     int       size_page = 0, size_w = 0, size_h = 0;  // the last page drawn's size (no PDF work on loop()'s stack)
 };
 State* st = nullptr;
@@ -162,7 +168,26 @@ bool open(const char* path)
         close();
         return false;
     }
-    return true;
+    // Several pictures on the first page: the book's pages are the big ones
+    pdf::Image first;
+    pdf::page_image(*st->src, st->doc, st->page_obj[0], first);
+    for (int p = 0; p < st->n; ++p) {
+        if (first.images <= 1) {
+            st->bp_page[st->nbp] = static_cast<uint8_t>(p);
+            st->bp_img[st->nbp++] = 0;
+            continue;
+        }
+        pdf::Picture pics[pdf::kMaxPictures];
+        const int k = pdf::page_pictures(*st->src, st->doc, st->page_obj[p], pics, pdf::kMaxPictures);
+        int tall = 0;
+        for (int i = 0; i < k; ++i) tall = pics[i].height > tall ? pics[i].height : tall;
+        for (int i = 0; i < k && st->nbp < pdf::kMaxPages * 2; ++i)
+            if (pics[i].height * 10 >= tall * 6) {
+                st->bp_page[st->nbp] = static_cast<uint8_t>(p);
+                st->bp_img[st->nbp++] = static_cast<uint8_t>(pics[i].index);
+            }
+    }
+    return st->nbp > 0;
 }
 
 void close()
@@ -175,18 +200,19 @@ void close()
 }
 
 bool is_open() { return st != nullptr; }
-int pages() { return st ? st->n : 0; }
+int pages() { return st ? st->nbp : 0; }
 
 bool page_size(int page, int* w, int* h)
 {
-    if (!st || page < 1 || page > st->n) return false;
+    if (!st || page < 1 || page > st->nbp) return false;
     if (page == st->size_page) {
         *w = st->size_w;
         *h = st->size_h;
         return true;
     }
     pdf::Image img;
-    if (!pdf::page_image(*st->src, st->doc, st->page_obj[page - 1], img) || !img.jpeg) return false;
+    if (!pdf::page_image(*st->src, st->doc, st->page_obj[st->bp_page[page - 1]], img, st->bp_img[page - 1]) || !img.jpeg)
+        return false;
     *w = img.width;
     *h = img.height;
     return true;
@@ -204,9 +230,9 @@ bool shown_size(int page, const ui::Rect& r, Fit fit, int* w, int* h)
 
 Result draw(int page, const ui::Rect& r, Fit fit, int* vx, int* vy, ui::Rect* fit_rect)
 {
-    if (!st || page < 1 || page > st->n) return Result::NoPicture;
+    if (!st || page < 1 || page > st->nbp) return Result::NoPicture;
     pdf::Image img;
-    if (!pdf::page_image(*st->src, st->doc, st->page_obj[page - 1], img) || !img.jpeg)
+    if (!pdf::page_image(*st->src, st->doc, st->page_obj[st->bp_page[page - 1]], img, st->bp_img[page - 1]) || !img.jpeg)
         return img.no_memory ? Result::NoMemory : Result::NoPicture;
     uint8_t* pool = static_cast<uint8_t*>(malloc(jpeg::kPoolSize));
     Draw* d = new (std::nothrow) Draw;

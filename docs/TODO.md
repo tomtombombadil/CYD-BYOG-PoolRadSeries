@@ -134,6 +134,16 @@ the Project as claude/TODO.md.
       field tiles (23 KB) in internal RAM - one block would go to PSRAM;
       a Settings switch for EGA on the S3 / C5 (Claude: not now - Tom's
       rule is 256 colours there).
+- [ ] Krynn (survey 2026-10-24, the Project's claude/krynn_facts.md):
+      Champions = Secret's engine (port started, branch champions); Death
+      Knights = Darkness's engine at 4 bits (LOAD FILES / PIECES 3
+      operands, a 216 + 220-byte record); Dark Queen = a new C program
+      with HLIB .TLB / .GLB libraries, only the scripts (Darkness's ECL)
+      shared - a near-new port. Dark Queen on classic boards: GOG ships
+      VGA files; its EGA mode comes from its installer rewriting every
+      .TLB dithered - Claude to choose then (the player's EGA install vs
+      the scan converting). Also: the Krynn games' sound is an EA driver
+      (SOUND.DAX / MIDI.DAX), not decoded yet.
 - [ ] Gateway to the Savage Frontier (v0.144.0, SPEC 6e): PLAYABLE (Play
       on) - matches DOSBox through Yartar, the wilderness, the vault, shops,
       fights; its GOG journal table (v0.142.0). behave gateway is light
@@ -141,18 +151,14 @@ the Project as claude/TODO.md.
       pass (spells, monsters, items, as Curse's sweeps). Open: music
       (MUSIC.DAX, sounds 0x80 up - no game plays music yet); the
       wilderness start selects ARNOLD where the original has MERL.
-- [ ] Treasures of the Savage Frontier (v0.143.0, SPEC 6f; Darkness's
-      engine): plays in the playsim from the party menu through exploring,
-      camp, fights, the overland, LUCK texts, romance, Crown, the lucky
-      paper, weather, old age; Load / Add from Gateway; matches DOSBox
-      (EGA) screen by screen; behave treasures 155. Play still off. Left,
-      in order: the 256-colour parchment (BORD 1) behind the frame; the
-      journal (the PDF reader: several images a page; then its table);
-      DOSBox checks with late-game saves (romance, Crown, PROGRAM 4, the
-      lucky paper, old age, VGA screens); long rests age characters
-      (ovl 0xCB); LUCK 51-61's other readers; a Gateway half-orc's race;
-      the outdoor camp / treasure pictures (128 / 129 assumed); the masks
-      table's multi-class index; the fight menu's hidden "Z"; then Play on.
+- [ ] Treasures of the Savage Frontier: PLAYABLE since v0.145.0 (Play
+      on) - the 256-colour parchment, the clock's years and old age, the
+      journal (83 entries; the PDF reader takes several pictures a page),
+      the camp picture, LUCK texts as DOSBox; late-game screens checked
+      in DOSBox from edited saves. Game Fixes: everyone ages a year each
+      game year (the originals - Darkness too - age no one until year 100).
+      Open: the VGA colour cycling of PIC 130's crown sparkles (no cycle
+      facts yet); the post-fight old-age texts in DOSBox.
 - [x] Journal tables (v0.142.0): Secret 72 entries, Darkness 99 (its
       book has no entry 13), Gateway 62 - checked by eye; Darkness's
       mentions now offered at a key wait too. Small leftovers: neighbouring

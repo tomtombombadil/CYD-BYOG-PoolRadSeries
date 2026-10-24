@@ -131,14 +131,21 @@ void draw_glyph(pic::Canvas& c, const Font& f, int g, int x, int y, uint8_t fg, 
 {
     const bool lower = f.clear && g >= kGlyphs && g < kGlyphs + 26;
     if (g < 0 || (g >= kGlyphs && !lower)) return;
+    const bool shadowed = bg == 0 && c.bg && c.bpp == 8;
+    const bool own_shade = shadowed && f.shade && !lower && g < 64 && f.letters == kGameLetters;
+    uint8_t above = 0;
     for (int row = 0; row < 8; ++row) {
         const int py = y + row;
-        if (py < 0 || py >= c.h) continue;
         const uint8_t bits = lower ? kClearLower[g - kGlyphs][row] : f.glyph[g][row];
+        const uint8_t shade = own_shade ? f.shade[g][row]
+                                        : static_cast<uint8_t>(((bits >> 1) | (above >> 1) | above) & ~bits);
+        above = bits;
+        if (py < 0 || py >= c.h) continue;
         for (int col = 0; col < 8; ++col) {
             const int px = x + col;
             if (px < 0 || px >= c.w) continue;
             if (bits & (0x80 >> col)) c.set(px, py, fg);
+            else if (shadowed) c.set(px, py, (shade & (0x80 >> col)) || py >= c.bg_rows ? 0 : c.bg[py * c.w + px]);
             else if (bg >= 0) c.set(px, py, static_cast<uint8_t>(bg));
         }
     }
