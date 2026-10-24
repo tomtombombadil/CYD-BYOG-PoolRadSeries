@@ -628,7 +628,7 @@ int main(int argc, char** argv)
         auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } return false; };
         pm_tap_line('C');
         const char* q = getenv("CREATE");
-        for (int stage = 0; stage < 4 && play::screen == play::Screen::CreatePick; ++stage) {
+        for (int stage = 0; stage < 5 && play::screen == play::Screen::CreatePick; ++stage) {
             printf("  pick:"); for (int i = 0; i < play::mk->n_opt; ++i) { char l[40]; play::pick_line(i + 1, l, 40); printf(" [%s]", l); } printf("\n");
             { char t[16]; snprintf(t, 16, "pick%d", stage); shot(t); }
             play::plist.index = 1 + atoi(q);

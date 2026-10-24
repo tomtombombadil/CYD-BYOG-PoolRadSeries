@@ -165,18 +165,22 @@ void secret_hp(party::Character& c, const classes::Tables& t, const Facts& f, Di
     uint8_t* r = c.rec;
     int rolled = 0, con = 0;
     const int cv = stat_full(c, 4);
-    for (int k = 0; k < 7; ++k) {
+    // (Champions' the same, GAME.OVR 0x24D43: its knights too - fighters'
+    // Constitution and figure past the hit dice, not paladins' -, and a
+    // neutral god's cleric one die at level 1)
+    const bool kr = t.lay.krynn;
+    for (int k = 0; k < (kr ? 8 : 7); ++k) {
         const int lv = c.level(k);
         if (lv <= 0 || !(t.u8(static_cast<uint16_t>(t.lay.class_masks + k)) & mask)) continue;
         if (lv < t.max_hit_dice(k)) {
-            const int n = lv > 1 ? 1 : f.hp_count[k];
+            const int n = lv > 1 || (kr && k == 0 && c.ext[party::kExtGod] > 4) ? 1 : f.hp_count[k];
             const int a = d.roll(f.hp_dice[k], n), b = d.roll(f.hp_dice[k], n);
             rolled += a > b ? a : b;
             int cb = cv >= 0 && cv < 26 ? kConHp[cv] : 0;
-            if (k == 2 || k == 3 || k == 4)
+            if (k == 2 || k == 4 || (kr ? k == 7 : k == 3))
                 cb += cv == 17 ? 1 : cv == 18 ? 2 : cv == 19 || cv == 20 ? 3 : cv >= 21 && cv <= 23 ? 4 : cv >= 24 && cv <= 25 ? 5 : 0;
             con += cb * n;
-        } else if (k == 2 || k == 3) {
+        } else if (k == 2 || (kr ? k == 7 : k == 3)) {
             rolled = 3;
         } else if (k == 4 || k == 0 || k == 6) {
             rolled = 2;
@@ -649,6 +653,13 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
         if (t.lay.dk && c.level(classes::MagicUser) > 0) dk_mu_book(c, t, f);
         return;
     }
+    if (t.lay.krynn) {
+        // Champions' creation: Secret's hit point routine on nothing (GAME.OVR 0x224C9)
+        r[kHpMax] = r[kHp] = r[kHpRolled] = 0;
+        secret_hp(c, t, f, d, 0xFF, held);
+        classes::class_bonuses(c, t);
+        return;
+    }
     const int rolled = hp_roll(c, t, f, d, 0xFF);
     int hp = rolled;
     const int adj = con_hp_adj(c, t);
@@ -661,7 +672,7 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
     r[kHpRolled] = static_cast<uint8_t>(rolled / held);
 
     classes::class_bonuses(c, t);
-    if (!pool && !t.lay.krynn)          // (Champions: no silent training - its levels are set)
+    if (!pool)
         while (train(c, t, f, d, true)) {
         }
 }
@@ -767,7 +778,7 @@ void train_classes(party::Character& c, const classes::Tables& t, const Facts& f
                 if (s) learn(c, s);
     }
     if (r[kHitDice] <= r[kMultiLevel]) return;
-    if (t.lay.secret) {
+    if (t.lay.secret || t.lay.krynn) {
         secret_hp(c, t, f, d, mask, held);
         return;
     }

@@ -169,6 +169,7 @@ struct Data {
     char           w_save_which[24] = {}, w_slots[24] = {}, w_saving[24] = {}, w_camp_menu[40] = {}, w_crown_menu[44] = {},
                    w_camp[8] = {}, w_makes_camp[28] = {};
     char           w_press[2][36] = {};        // Champions: a one-choice menu's word shown as the other (variant.press_words)
+    char           gods[8][12] = {};           // Champions: its gods' names (create.god_names; 0 None)
     char           w_order[3][16] = {};        // Champions: " of the Crown" / Sword / Rose (variant.order_words)
     char           w_yell[8] = {}, w_wants[16] = {};   // Champions: "Yell ", "wants to kill " (variant.yell_words)
 
@@ -2449,10 +2450,18 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
     put(c, name_of(d->alignment[0], 17, 9, ch.alignment()), 1, 4, 15);
     put(c, race_name(ch), 20, 4, 15);
     {
+        // (Champions: a cleric's god before the class - "Paladine Cleric"; a
+        // knight's order after it)
+        const int god = kr ? ch.ext[party::kExtGod] : 0;
+        int col = 1;
+        if (god >= 1 && god <= 7 && d->gods[god][0]) {
+            put(c, d->gods[god], col, 5, 15);
+            col += static_cast<int>(strlen(d->gods[god])) + 1;
+        }
         const char* cn = name_of(d->cls[0], 27, 18, ch.cls());
-        put(c, cn, 1, 5, 15);
+        put(c, cn, col, 5, 15);
         const int order = ch.ext[party::kExtKnight];
-        if (kr && order >= 1 && order <= 3) put(c, d->w_order[order - 1], 1 + static_cast<int>(strlen(cn)), 5, 15);
+        if (kr && order >= 1 && order <= 3) put(c, d->w_order[order - 1], col + static_cast<int>(strlen(cn)), 5, 15);
     }
     if (kr) {
         snprintf(t, sizeof t, "%s%lu", d->v_exp, static_cast<unsigned long>(ch.exp()));
@@ -4873,6 +4882,18 @@ bool load_rules(Making*& m)
                      exepack::Status::Ok;
             memcpy(m->facts.hp_count, hp, 8);
             memcpy(m->facts.hp_dice, hp + 8, 8);
+            // (Champions: a new cleric's spells, the gods' names)
+            if (pc.cleric_first &&
+                exepack::read(src, info, pc.ds_image + pc.cleric_first + 1, m->facts.cleric_first, 10) !=
+                    exepack::Status::Ok)
+                memset(m->facts.cleric_first, 0, 10);
+            for (int g = 0; pc.god_names && g < 8; ++g) {
+                uint8_t nm[12] = {};
+                if (exepack::read(src, info, pc.ds_image + pc.god_names + g * 12, nm, 12) != exepack::Status::Ok) break;
+                const int n = nm[0] > 11 ? 11 : nm[0];
+                memcpy(m->gods[g], nm + 1, n);
+                m->gods[g][n] = 0;
+            }
             if (pc.head_blocks && pc.body_blocks &&
                 (exepack::read(src, info, pc.ds_image + pc.head_blocks, m->head_map, sizeof m->head_map) !=
                      exepack::Status::Ok ||
@@ -4910,9 +4931,6 @@ bool load_rules(Making*& m)
     fa.start_xp = pc.start_xp;
     fa.platinum = pc.platinum;
     fa.kender_fear = pc.kender_fear;
-    if (pc.cleric_first)
-        for (int i = 0; i < 10; ++i)
-            fa.cleric_first[i] = m->tables.u8(static_cast<uint16_t>(pc.cleric_first + 1 + i));
     const uint32_t at[9] = {pc.pick_race, pc.pick_gender, pc.pick_class, pc.pick_alignment, pc.select,
                             pc.reroll,    pc.char_name,   pc.save_q,     pc.qmark};
     const uint32_t ch_at[5] = {pc.pick_new, pc.no_qualify, pc.change_select, pc.now_first, pc.dot};
@@ -4925,13 +4943,7 @@ bool load_rules(Making*& m)
         if (pc.portrait_menu) text::read_pascal(src, pc.portrait_menu, m->portrait_menu, sizeof m->portrait_menu);
         if (pc.pick_god) text::read_pascal(src, pc.pick_god, m->pick_god, sizeof m->pick_god);
     }
-    for (int g = 0; pc.god_names && g < 8; ++g) {
-        const uint16_t at = static_cast<uint16_t>(pc.god_names + g * 12);
-        int n = m->tables.u8(at);
-        if (n > 11) n = 11;
-        for (int i = 0; i < n; ++i) m->gods[g][i] = static_cast<char>(m->tables.u8(static_cast<uint16_t>(at + 1 + i)));
-        m->gods[g][n] = 0;
-    }
+
     return ok;
 }
 
@@ -5019,7 +5031,7 @@ const char* option_name(int i)
 {
     const int v = mk->opt[i];
     switch (mk->stage) {
-    case 0: return name_of(d->race[0], 16, 8, v);
+    case 0: return name_of(d->race[0], 16, 8, v >= classes::kKrynnRace ? v - classes::kKrynnRace : v);
     case 1: return name_of(d->sex[0], 7, 2, v);
     case 5: return v >= 0 && v < 8 ? mk->gods[v] : "";
     case 2:
@@ -10129,6 +10141,14 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
                     memcpy(out, e + 1, n);
                     out[n] = 0;
                 }
+            }
+            // (Champions: the gods' names - in the same range)
+            const uint32_t g0 = d->prof->create.god_names ? d->prof->create.ds_image + d->prof->create.god_names : 0;
+            for (int g = 0; g0 && g < 8 && g0 >= lo && g0 + (g + 1) * 12 <= hi; ++g) {
+                const uint8_t* e = buf + (g0 - lo) + g * 12;
+                const size_t n = e[0] > 11 ? 11 : e[0];
+                memcpy(d->gods[g], e + 1, n);
+                d->gods[g][n] = 0;
             }
         }
         free(buf);
