@@ -175,6 +175,7 @@ struct Data {
     char           w_speed[24] = {};           // Darkness: Speed's word list ("Faster Slower Exit")
     char           w_save_which[24] = {}, w_slots[24] = {}, w_saving[24] = {}, w_camp_menu[40] = {}, w_crown_menu[44] = {},
                    w_camp[8] = {}, w_makes_camp[28] = {};
+    char           q_order[3][16] = {};        // Dark Queen: " of the Crown" ... (View Character)
     char           w_press[2][36] = {};        // Champions: a one-choice menu's word shown as the other (variant.press_words)
     char           gods[8][12] = {};           // Champions: its gods' names (create.god_names; 0 None)
     char           w_order[3][16] = {};        // Champions: " of the Crown" / Sword / Rose (variant.order_words)
@@ -197,7 +198,7 @@ struct Data {
     char           vw[profile::kViewWords][28] = {};   // View's menu and its questions (profile::view_facts)
     uint8_t        fx_shown[32] = {};                   // Darkness: the effects Display lists (magic.effects_shown)
     uint8_t        dk_ov_pics[5] = {};                  // Darkness: the overland's map picture by region
-    char           v_npc[8] = {}, v_age[8] = {}, v_stat[6][8] = {}, v_level[8] = {}, v_exp[12] = {}, v_status[8] = {},
+    char           v_npc[8] = {}, v_age[16] = {}, v_stat[6][8] = {}, v_level[8] = {}, v_exp[12] = {}, v_status[8] = {},
                    v_ac[12] = {}, v_hp[12] = {}, v_thac0[12] = {}, v_damage[20] = {}, v_enc[24] = {}, v_move[16] = {},
                    v_exit[8] = {};
 };
@@ -2702,6 +2703,10 @@ void draw_character_gateway(pic::Canvas& c, const party::Character& ch);
 void draw_character(pic::Canvas& c)
 {
     const party::Character* ch = new_char ? new_char : pt->sel();
+    if (ch && hl()) {
+        q_draw_character(c, *ch);
+        return;
+    }
     if (ch && (secret_files() || darkness_files() || krynn())) {
         draw_character_secret(c, *ch);
         return;
@@ -3258,7 +3263,7 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
             while (line[lead] == ' ') ++lead;
             hl_text(c, line + lead, l.col0 + lead, row);
         } else {
-            put(c, line, l.col0, row, screen == Screen::CreatePick && l.top + r == 0 ? 13 : 10);
+            put(c, line, l.col0, row, screen == Screen::CreatePick && l.top + r == 0 ? 13 : hl() ? 7 : 10);
         }
     }
     char keys[60];
@@ -3356,17 +3361,24 @@ void item_name(int i, char* out, size_t cap) { names->name(items::Item{pt->sel()
 void draw_items(pic::Canvas& c)
 {
     const party::Character* ch = pt->sel();
-    c.clear(0);
-    layout::outer(c, d->tables, d->frame_tiles);
-    if (!darkness_files()) layout::bar(c, d->tables, d->frame_tiles, 2);      // (Darkness: the outer frame alone)
+    if (hl()) {
+        // (Dark Queen: two boxes on the marble - the title's, the list's)
+        static const QBox kBoxes[] = {{8, 8, 311, 15}, {8, 23, 311, 183}};
+        q_screen(c, kBoxes, 2, false);
+    } else {
+        c.clear(0);
+        layout::outer(c, d->tables, d->frame_tiles);
+    }
+    if (!darkness_files() && !hl()) layout::bar(c, d->tables, d->frame_tiles, 2);      // (Darkness: the outer frame alone)
     char t[40];
     ch->name(t, sizeof t);
     strncat(t, d->w_s, sizeof t - strlen(t) - 1);
-    put(c, t, 1, 1, !ch->in_combat() ? 12 : ch->enemy() ? 14 : 11);
+    // (Dark Queen: "NAME's Items" grey, "Ready Item" cyan - DOSBox)
+    put(c, t, 1, 1, hl() ? 7 : !ch->in_combat() ? 12 : ch->enemy() ? 14 : 11);
     char nm[20];
     ch->name(nm, sizeof nm);
-    put(c, d->w_title, static_cast<int>(strlen(nm)) + 4, 1, 10);
-    put(c, d->w_heading, 1, 3, 15);
+    put(c, d->w_title, static_cast<int>(strlen(nm)) + 4, 1, hl() ? 7 : 10);
+    put(c, d->w_heading, 1, 3, hl() ? 11 : 15);
     plist.row0 = 5;
     plist.row1 = 22;
     plist.col0 = 1;
@@ -10586,9 +10598,28 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
     // Item names: the words in the program, the types in ITEMS
     const auto& pi = d->prof->items;
     if (!names) names = new (std::nothrow) items::Names;
+    if (names && pi.words.at && pi.words_far) {
+        // (Dark Queen: C strings through far pointers - made Pascal ones in
+        // 24-byte slots for set_words)
+        constexpr size_t kSlot = 24;
+        const int count = pi.words.count;
+        uint8_t* buf = static_cast<uint8_t*>(calloc(static_cast<size_t>(count), kSlot));
+        for (int i = 0; buf && i < count; ++i) {
+            uint8_t p[2], s[kSlot];
+            if (exepack::read(exe, info, pi.words.at + 4u * i, p, 2) != exepack::Status::Ok) continue;
+            const uint32_t at = d->prof->data_base + (p[0] | p[1] << 8);
+            if (exepack::read(exe, info, at, s, kSlot - 1) != exepack::Status::Ok) continue;
+            size_t n = 0;
+            while (n < kSlot - 1 && s[n]) ++n;
+            buf[i * kSlot] = static_cast<uint8_t>(n);
+            memcpy(buf + i * kSlot + 1, s, n);
+        }
+        if (buf) names->set_words(buf, count, static_cast<int>(kSlot));
+        free(buf);
+    }
     if (names && pi.words.at) {
         const size_t n = static_cast<size_t>(pi.words.stride) * pi.words.count;
-        uint8_t* buf = static_cast<uint8_t*>(malloc(n));
+        uint8_t* buf = pi.words_far ? nullptr : static_cast<uint8_t*>(malloc(n));
         if (buf && exepack::read(exe, info, pi.words.at, buf, n) == exepack::Status::Ok)
             names->set_words(buf, pi.words.count, pi.words.stride);
         free(buf);
@@ -10598,6 +10629,7 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         // "Two-Handed Sword of Giant Slaying" shows as "Two-Handed Sword of
         // vs Giants" - DOSBox; secret_facts_2.md 25)
         names->stored_names = false;
+        names->plural_first = pi.words_far;         // (Dark Queen's rule)
         d->facts.arrow = pi.arrow;
         d->facts.quarrel = pi.quarrel;
         memcpy(d->facts.elf_bonus, pi.elf_bonus, sizeof d->facts.elf_bonus);
@@ -10697,7 +10729,8 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         if (nt->at < lo) lo = nt->at;
         if (nt->at + nt->stride * nt->count > hi) hi = nt->at + nt->stride * nt->count;
     }
-    if (hi > lo && hi - lo <= 2048) {
+    if (d->prof->items.words_far) q_name_tables(exe, info);
+    else if (hi > lo && hi - lo <= 2048) {
         uint8_t* buf = static_cast<uint8_t*>(malloc(hi - lo));
         if (buf && exepack::read(exe, info, lo, buf, hi - lo) == exepack::Status::Ok) {
             for (int t = 0; t < 6; ++t) {
@@ -10809,6 +10842,15 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         };
         for (auto& wd : words)
             if (wd.at) read_word(src, wd.at, wd.out, wd.cap);
+        if (hl()) {
+            // (Dark Queen's " Yes" / " No" stand before a tab: the names from
+            // column 6 - DOSBox)
+            char t[8];
+            snprintf(t, sizeof t, "%-5s", d->w_yes);
+            snprintf(d->w_yes, sizeof d->w_yes, "%s", t);
+            snprintf(t, sizeof t, "%-5s", d->w_no);
+            snprintf(d->w_no, sizeof d->w_no, "%s", t);
+        }
         for (int i = 0; i < profile::kItemWords; ++i)
             if (d->prof->item_words[i]) text::read_pascal(src, d->prof->item_words[i], d->iw[i], sizeof d->iw[i]);
         if (d->prof->magic.effects_shown && src.read_at(d->prof->magic.effects_shown, d->fx_shown, 32) != 32)
@@ -13939,6 +13981,8 @@ bool start_title(pic::Canvas& c, uint32_t timeout_ms)
     title_show(0, c);
     return true;
 }
+
+#include "play_queen_late.inc"
 
 } // namespace
 

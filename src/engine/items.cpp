@@ -83,6 +83,11 @@ void Names::name(const Item& it, char* out, size_t cap, bool all_words) const
         first = false;
         add(word(it.word(i)));
         if (it.count() < 2 || plural) continue;
+        if (plural_first) {
+            add("s");
+            plural = true;
+            continue;
+        }
         if ((1 << (i - 1)) == shown || (i == 1 && shown > 4 && t != plural_.flask) || (i == 2 && !(shown & 1)) ||
             (i == 3 && t == plural_.flask) || (missile && it.word(3) != plural_.keep1 && it.word(3) != plural_.keep2)) {
             add("s");

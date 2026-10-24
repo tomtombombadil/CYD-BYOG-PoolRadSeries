@@ -172,6 +172,23 @@ void from_queen(const uint8_t* q, Character& c)
     }
 }
 
+// Item: Dark Queen place, 63-byte record place, length
+constexpr uint8_t kQueenItemRuns[][3] = {
+    {0, 0x2E, 4}, {4, 0x37, 2}, {6, 0x3A, 2}, {8, 0x32, 5}, {13, 0x39, 1}, {14, 0x3C, 3},
+};
+
+void queen_item_in(const uint8_t* q, uint8_t* it)
+{
+    memset(it, 0, kItemSize);
+    for (const auto& r : kQueenItemRuns) memcpy(it + r[1], q + r[0], r[2]);
+}
+
+void queen_item_out(const uint8_t* it, uint8_t* q)
+{
+    memset(q, 0, kQueenItemSize);
+    for (const auto& r : kQueenItemRuns) memcpy(q + r[0], it + r[1], r[2]);
+}
+
 void krynn_to_dkk(const uint8_t* k, uint8_t* p, uint8_t* w)
 {
     static const uint16_t kRuns[][3] = {{0x000, 0x00, 0x1E}, {0x058, 0x1E, 0x0B}, {0x0CF, 0x29, 0x08}, {0x0DA, 0x31, 0x0C},

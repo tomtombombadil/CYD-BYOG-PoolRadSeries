@@ -400,6 +400,10 @@ struct Profile {
         // Death Knights: DS goods_last + n is how many (from the first), SHOP's n
         // 1-8 (else 1)
         bool        goods_count = false;
+        // Dark Queen: the words are C strings through a table of far pointers
+        // (words.at: the table's word 1, 4 bytes a word; the pointers' offsets
+        // in the data segment at data_base; words.stride unused)
+        bool        words_far = false;
     } items;
 
     // Character rules (making and training characters): the rule tables in
@@ -784,6 +788,10 @@ struct Profile {
     // plain MZ (exepack Info::plain: offsets are DQK.EXE's own) with C
     // strings
     bool     hlib = false;
+        // Dark Queen: its knights' orders' words (" of the Crown", " of the
+        // Sword", " of the Rose": three C strings one after another; a file
+        // offset)
+        uint32_t queen_orders = 0;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

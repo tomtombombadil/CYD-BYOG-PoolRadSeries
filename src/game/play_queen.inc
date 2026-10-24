@@ -475,3 +475,60 @@ void q_centred(pic::Canvas& c, const char* s, int y, uint8_t fg)
     const int n = static_cast<int>(strlen(s)), x = (font::kCols - n) / 2 * 8;
     for (int i = 0; i < n; ++i) font::draw_glyph(c, d->font, font::glyph_of(d->font, s[i]), x + i * 8, y, fg, 0);
 }
+
+// ---- Screens of boxes (queen_facts_3.md 5) -----------------------------------
+// The original's character screens: grey boxes (the frame's colour 23) sunk
+// into the marble - each box's inside x0-x1 / y0-y1, black above and left,
+// light (17) below and right; the marble between them FRAME.TLB's 320 x 7
+// strip (part 7) at the gaps above row 110 and its 8 x 94 bar (part 11,
+// x 152-159, rows 69-162) between side-by-side boxes; the lower marble
+// (GEN.TLB) and the bars as the party menu's.
+struct QBox { int16_t x0, y0, x1, y1; };
+
+void q_box(pic::Canvas& c, const QBox& b)
+{
+    c.fill(b.x0, b.y0, b.x1 - b.x0 + 1, b.y1 - b.y0 + 1, 0);
+    const uint8_t light = c.vga && c.bpp == 8 ? 17 : q_col().ega[17];
+    for (int x = b.x0 - 1; x <= b.x1 + 1; ++x) {
+        c.set(x, b.y0 - 1, 0);
+        c.set(x, b.y1 + 1, light);
+    }
+    for (int y = b.y0 - 1; y <= b.y1 + 1; ++y) {
+        c.set(b.x0 - 1, y, 0);
+        c.set(b.x1 + 1, y, light);
+    }
+}
+
+// FRAME.TLB's part i drawn with its top left at (x, y)
+void q_frame_part_at(pic::Canvas& c, plat::FileSource& src, const hlib::Library& lib, int i, int x, int y)
+{
+    uint32_t pos, len;
+    hlib::Part p;
+    if (hlib::entry(src, lib, i, pos, len) && hlib::read_part(src, pos, len, p)) hlpic::draw(src, p, q_col(), c, x, y);
+}
+
+__attribute__((noinline)) void q_screen(pic::Canvas& c, const QBox* boxes, int n, bool divider)
+{
+    q_draw_frame(c, false);             // (the bars, the lower marble, the party menu's box)
+    plat::File f;
+    if (open_hl("FRAME.TLB", f)) {
+        plat::FileSource src(f);
+        hlib::Library lib;
+        const int16_t paper = c.paper;
+        c.paper = -1;
+        if (hlib::open(src, 0, src.size(), lib) == hlib::Status::Ok) {
+            // (the party menu's box away: marble strips over rows 8-109)
+            for (int y = 8; y < 110; y += 7) q_frame_part_at(c, src, lib, 7, 0, y);
+            if (divider) q_frame_part_at(c, src, lib, 11, 152, 69);
+        }
+        c.paper = paper;
+        f.close();
+    }
+    for (int k = 0; k < n; ++k) q_box(c, boxes[k]);
+    dirty(0, pic::kScreenH);
+}
+
+
+// (play_queen_late.inc)
+void q_draw_character(pic::Canvas& c, const party::Character& ch);
+void q_name_tables(dax::ByteSource& exe, const exepack::Info& info);

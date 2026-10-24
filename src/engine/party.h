@@ -228,9 +228,16 @@ void script_set_dkk(Character& c, uint16_t off, uint16_t v);
 // name, stats, race, class, age, HP, saves, movement, thief skills, NPC,
 // coins, levels, sex, alignment, experience, hands, encumbrance, the item
 // count and the fight's figures (THAC0, AC, attacks, damage, HP now);
-// its spells, items and effects aren't read yet.
+// its spells aren't read yet.
 constexpr size_t kQueenRecordSize = 0x19E;
 void from_queen(const uint8_t* q, Character& out);               // out.rec and out.ext
+// Its items (queen_facts_3.md 4): 17 bytes - the 63-byte records' last 17
+// in another order: type, words 1-3, weight (u16), value (u16), plus, plus
+// vs saves, readied, hidden words, cursed, count, the effects (3); no name.
+// Its effects are Curse's 9-byte ones (the next one's far pointer last).
+constexpr size_t kQueenItemSize = 17;
+void queen_item_in(const uint8_t* q, uint8_t* item);             // into a 63-byte record
+void queen_item_out(const uint8_t* item, uint8_t* q);
 // Record format: Curse's, Pool's, Secret's, Darkness's, Champions' or Death Knights'
 // (KrynnToDkk: a Champions record as Death Knights takes one in - krynn_to_dkk)
 enum class Format : uint8_t { Curse, Pool, Secret, Darkness, Krynn, DeathKnights, KrynnToDkk };

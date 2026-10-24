@@ -51,6 +51,10 @@ bool read_c(dax::ByteSource& src, uint32_t pos, char* out, size_t cap)
     size_t n = 0;
     while (n < got && buf[n]) ++n;
     if (n == 0 || n == got) return false;
+    // (a tab ends the word: Dark Queen's "THAC0\t " lays out a column)
+    for (size_t k = 0; k < n; ++k)
+        if (buf[k] == '\t') n = k;
+    if (n == 0) return false;
     memcpy(out, buf, n);
     out[n] = 0;
     if (!printable(out, n)) {

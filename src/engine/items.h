@@ -81,6 +81,9 @@ public:
     // keeps (a Pascal string at 0x00, as its files have it: count, words
     // and all - "Two-Handed Sword of Giant Slaying" isn't made of its words)
     bool stored_names = false;
+    // Dark Queen: the "s" on the first word printed ("2 Javelins +2" -
+    // DOSBox), whatever the words
+    bool plural_first = false;
     int flask() const { return plural_.flask; }      // the flask of oil's item type
 
     // The item's name as the games print it ("Long Sword", "3 Arrows",

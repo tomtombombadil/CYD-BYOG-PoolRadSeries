@@ -3636,9 +3636,34 @@ const Profile kProfiles[] = {
      .party = {.load_which = qw(0x4E25), .name = qw(0x5E59), .save_which = qw(0x4E37), .saving = qw(0x604D),
                .load_from = qw(0x4E13), .load_sources = qw(0x500C),
                .words = kQueenPartyMenu, .n_words = sizeof kQueenPartyMenu / sizeof kQueenPartyMenu[0]},
+     // View Character (queen_facts_3.md 5): its name tables are far pointers
+     // to C strings (stride 4: a pointer each) - classes DS 0x3B3E (the long
+     // names, Magic-User; its numbers, the knight 1), races 0x3B86 in its own
+     // order, alignments 0x3BA6, sexes 0x3BCA, Steel Gems Jewelry 0x3BD2, the
+     // health words 0x3BDE; its words "Status:", "%d years", "Level",
+     // "Experience:", "STR " ... (5 apart), "Hit Points ", "Armor Class",
+     // "Encumbrance", "THAC0", "Movement", "Damage", "Exit"
+     .view = {.cls = {kQueenDs + 0x3B3E, 4, 18}, .race = {kQueenDs + 0x3B86, 4, 8},
+              .alignment = {kQueenDs + 0x3BA6, 4, 9}, .sex = {kQueenDs + 0x3BCA, 4, 2},
+              .money = {kQueenDs + 0x3BD2, 4, 3}, .health = {kQueenDs + 0x3BDE, 4, 9},
+              .npc = 0, .age = qw(0x8D7A), .stats = qw(0x8DCB), .level = qw(0x8DB5), .exp = qw(0x8DBF),
+              .status = qw(0x8D72), .ac = qw(0x8DF5), .hp = qw(0x8DE9), .thac0 = qw(0x8E0D), .damage = qw(0x8E30),
+              .encumbrance = qw(0x8E01), .movement = qw(0x8E15), .exit = qw(0x8CE8), .stats_stride = 5},
+     // Items (queen_facts_3.md 4): 154 name words, C strings through far
+     // pointers (DS 0x3F59 word 1 - "Battle Axe"; word 0 at 0x3F55 empty);
+     // the type table DISK1/ITEMS.DAT, Death Knights' rows with no head
+     // (its arrows 30, quarrels 12, darts 5)
+     // The items screen's words: "Overloaded", "Items", "Ready Item", " Yes",
+     // " No" (each before a tab), "It's Cursed!", "Wrong Class", "Your hands
+     // are full!", "'s"; its menu one string "Rdy Use Trade Deposit Drop
+     // Halve Join Sell Id Exit" (DS 0x4FB0)
+     .items = {.words = {kQueenDs + 0x3F59, 4, 154}, .types_file = "DISK1/ITEMS.DAT", .arrow = 30, .quarrel = 12,
+               .dart = 5, .overloaded = qw(0x8FC9), .title = qw(0x4689), .heading = qw(0x468F), .yes = qw(0x21C),
+               .no = qw(0x222), .cursed = qw(0x8F3B), .wrong_class = qw(0x8F48), .hands_full = qw(0x8F65),
+               .plural_s = qw(0x260), .types_head = 0, .menu = qw(0x4FB0), .words_far = true},
      .variant = {.unfinished = true, .bigpic_from = 0xF0,
                  // ("Press        to continue." with the button "Return" in its gap)
-                 .press_words = {qw(0x1D19), qw(0x1D33)}, .hlib = true},     // (BIGPIC ids 240-242)
+                 .press_words = {qw(0x1D19), qw(0x1D33)}, .hlib = true, .queen_orders = kQueenDs + 0x8D8C},     // (BIGPIC ids 240-242)
      .title_name = qw(0x4D73)},
 };
 
@@ -3694,8 +3719,13 @@ const ViewFacts& view_facts(games::Game g)
                                              kP | 0xCF02, 0x26BBE, 0x26BCA, 0x26BD8, 0x26CAC, kP | 0xD6F3, kP | 0xD6A9,
                                              kP | 0xD6D3, kP | 0xCF17},
                                             0x6D, 0x6E, kP | 0xEF56};
+    // Dark Queen: its menu one string (DS 0x4F82 "Items Spells Trade Deposit
+    // Drop Lay Cure Exit"); its questions are printf formats - not taken yet
+    static const ViewFacts kQueen = {{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0, 0,
+                                     text::kCString | (kQueenDs + 0x4F82)};
     static const ViewFacts kNone = {};
     switch (g) {
+    case games::Game::DarkQueenOfKrynn: return kQueen;
     case games::Game::DeathKnightsOfKrynn: return kDeathKnights;
     case games::Game::ChampionsOfKrynn: return kChampions;
     case games::Game::CurseOfTheAzureBonds: return kCurse;

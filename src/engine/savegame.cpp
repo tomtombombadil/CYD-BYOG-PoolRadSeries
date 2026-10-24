@@ -180,15 +180,22 @@ bool read_queen(dax::ByteSource& src, ecl::GameState& gs, Header& h, party::Part
         party::Character& c = p.m[p.count];
         party::from_queen(rec, c);
         c.name(h.names[i], sizeof h.names[i]);
-        at += kQueenItem * rec[0xC9];                       // (its items: not kept yet)
-        // its effects: a chain from the record's pointer
+        // its items (17 bytes each - party::queen_item_in)
+        for (int k = 0; ok && k < rec[0xC9]; ++k) {
+            uint8_t q[kQueenItem];
+            ok = src.read_at(at, q, sizeof q) == sizeof q;
+            at += kQueenItem;
+            if (ok && c.n_items < party::kMaxItems) party::queen_item_in(q, c.items[c.n_items++]);
+        }
+        // its effects: a chain from the record's pointer (Curse's 9 bytes)
         bool more = rec[4] || rec[5] || rec[6] || rec[7];
-        for (int k = 0; more && k < 64; ++k) {
+        for (int k = 0; ok && more && k < 64; ++k) {
             uint8_t e[kQueenEffect];
             ok = src.read_at(at, e, sizeof e) == sizeof e;
             if (!ok) break;
             at += kQueenEffect;
             more = e[5] || e[6] || e[7] || e[8];
+            if (c.n_affects < party::kMaxAffects) memcpy(c.affects[c.n_affects++], e, party::kAffectSize);
         }
         if (ok && at > src.size()) ok = false;
         if (ok) ++p.count;
