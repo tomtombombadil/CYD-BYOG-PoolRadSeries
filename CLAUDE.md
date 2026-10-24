@@ -772,7 +772,7 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   got the previous build while the page showed the new version).
 - **The web flasher's game list** (Tom, 2026-10-24): `web/index.html`'s
   "Games" section lists every game by series, in order, with its status -
-  playable (Tom has played it), in play testing (Play on, Tom testing),
+  playable (Tom has played it), in testing (Play on, Tom testing),
   in development, planned. Update it in the push that changes a status.
 - **Don't publish a release unless Tom asks for one.** Releases: Actions ->
   Build -> Run workflow with `release_tag` = `v` + VERSION (API
