@@ -585,9 +585,18 @@ void dirty_rows(int r0, int r1) { dirty(r0 * 8, (r1 + 1) * 8); }
 
 // ---- files --------------------------------------------------------------------
 
+// The program read from its unpacked copy this session (prepare_program;
+// nullptr: from the packed program)
+const char* copy_of = nullptr;
+
 bool open_file(const char* name, plat::File& f)
 {
     char path[160];
+    if (copy_of && d->cache_dir[0] && strcmp(name, copy_of) == 0) {
+        snprintf(path, sizeof path, "%s/PROGRAM.BIN", d->cache_dir);
+        f = plat::open(path, "r");
+        if (f) return true;
+    }
     games::path_of(d->data_dir, name, path, sizeof path);
     f = plat::open(path, "r");
     return static_cast<bool>(f);
@@ -13301,7 +13310,7 @@ __attribute__((noinline)) bool open_program(games::Game g, const char* prog)
     plat::FileSource src(f);
     exepack::Info info;
     const profile::Profile* p = nullptr;
-    if (exepack::parse(src, info) == exepack::Status::Ok) p = profile::find(g, src.size(), info.image_size);
+    if (exepack::parse(src, info) == exepack::Status::Ok) p = profile::find(g, info.file_size, info.image_size);
     if (p && layout::load_tables(src, info, *p, d->tables) != layout::Status::Ok) p = nullptr;
     if (p) {
         exepack::read(src, info, p->data_base + p->sky_colours, d->sky, sizeof d->sky);
@@ -13496,7 +13505,67 @@ __attribute__((noinline)) void open_script_words()
     }
 }
 
+// The copy's bytes into its file
+class CopyOut : public exepack::Sink {
+public:
+    explicit CopyOut(plat::File& f) : f_(f) {}
+    bool put(const uint8_t* p, size_t n) override { return f_.write(p, n) == n; }
+private:
+    plat::File& f_;
+};
+
 } // namespace
+
+bool prepare_program(const char* data_dir, games::Game g, const char* cache_dir, bool* made)
+{
+    if (made) *made = false;
+    const char* prog = profile::program_name(g);
+    if (!prog || !cache_dir || !cache_dir[0] || !plat::card_ready()) return false;
+    const uint32_t t0 = plat::now_ms();
+    char path[160], copy[200];
+    games::path_of(data_dir, prog, path, sizeof path);
+    snprintf(copy, sizeof copy, "%s/PROGRAM.BIN", cache_dir);
+    plat::File pf = plat::open(path, "r");
+    if (!pf) return false;
+    // (the 512-byte read buffers on the heap: this runs at the bottom of Play's start)
+    plat::FileSource* ps = new (std::nothrow) plat::FileSource(pf);
+    bool ok = false, fresh = false;
+    exepack::Info info;
+    if (ps && exepack::parse(*ps, info) == exepack::Status::Ok && !info.copy_at) {
+        const uint32_t sum = exepack::checksum(*ps);
+        plat::File cf = plat::exists(copy) ? plat::open(copy, "r") : plat::File();
+        if (cf) {
+            plat::FileSource* cs = new (std::nothrow) plat::FileSource(cf);
+            ok = cs && exepack::copy_matches(*cs, info.file_size, sum);
+            delete cs;
+            cf.close();
+        }
+        if (!ok) {
+            plat::mkdir(cache_dir);
+            plat::File out = plat::open(copy, "w");
+            if (out) {
+                CopyOut o(out);
+                const exepack::Status st = exepack::write_copy(*ps, info, sum, o);
+                out.close();
+                ok = st == exepack::Status::Ok;
+                if (ok) {
+                    // (written whole? the card full cuts it short)
+                    plat::File back = plat::open(copy, "r");
+                    ok = back && back.size() == exepack::kCopyHeader + info.image_size;
+                    back.close();
+                }
+                if (!ok) plat::remove(copy);
+                fresh = ok;
+                plat::log("[play] %s's unpacked copy: %s (%s), %u ms\n", prog, ok ? "made" : "not made",
+                          exepack::status_text(st), static_cast<unsigned>(plat::now_ms() - t0));
+            }
+        }
+    }
+    delete ps;
+    pf.close();
+    if (made) *made = fresh;
+    return ok;
+}
 
 const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char* cache_dir)
 {
@@ -13510,6 +13579,9 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
         return msg;
     }
     if (!plat::card_ready()) return "No SD card found.";
+    // The program's facts from its unpacked copy (made now if it must be),
+    // before the game's big blocks are taken
+    if (prepare_program(data_dir, g, cache_dir)) copy_of = prog;
     {
         view3d::World* w = new (std::nothrow) view3d::World;
         ecl::GameState* st = ecl::new_game_state(profile::code_cap(g));
@@ -13612,6 +13684,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
 
 void close()
 {
+    copy_of = nullptr;
     audio_stop();
     delete snd;
     snd = nullptr;

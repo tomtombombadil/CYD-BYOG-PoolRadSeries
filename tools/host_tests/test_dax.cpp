@@ -944,6 +944,66 @@ static Bytes test_image()
     return img;
 }
 
+// The unpacked copy (exepack::write_copy): made, read back identical,
+// stale or damaged copies told apart
+struct VecSink : exepack::Sink {
+    Bytes b;
+    size_t fail_after = SIZE_MAX;
+    bool put(const uint8_t* p, size_t n) override
+    {
+        if (b.size() + n > fail_after) return false;
+        b.insert(b.end(), p, p + n);
+        return true;
+    }
+};
+
+static void test_exepack_copy(const Bytes& exe, const Bytes& img)
+{
+    dax::MemorySource src(exe.data(), static_cast<uint32_t>(exe.size()));
+    exepack::Info in;
+    CHECK(exepack::parse(src, in) == exepack::Status::Ok);
+    const uint32_t sum = exepack::checksum(src);
+    VecSink s;
+    CHECK(exepack::write_copy(src, in, sum, s) == exepack::Status::Ok);
+    CHECK(s.b.size() == exepack::kCopyHeader + img.size());
+    dax::MemorySource cs(s.b.data(), static_cast<uint32_t>(s.b.size()));
+    CHECK(exepack::copy_matches(cs, static_cast<uint32_t>(exe.size()), sum));
+    exepack::Info ci;
+    CHECK(exepack::parse(cs, ci) == exepack::Status::Ok);
+    CHECK(ci.copy_at == exepack::kCopyHeader && ci.image_size == in.image_size && ci.file_size == exe.size() &&
+          ci.ip == in.ip && ci.cs == in.cs && ci.sp == in.sp && ci.ss == in.ss);
+    Bytes out(img.size());
+    CHECK(exepack::read(cs, ci, 0, out.data(), out.size()) == exepack::Status::Ok && out == img);
+    bool ok = true;
+    for (uint32_t pos = 0; pos + 50 <= img.size(); pos += 19) {
+        uint8_t a[50], b[50];
+        for (size_t n : {size_t(1), size_t(2), size_t(7), size_t(50)})
+            if (exepack::read(cs, ci, pos, a, n) != exepack::Status::Ok ||
+                exepack::read(src, in, pos, b, n) != exepack::Status::Ok || memcmp(a, b, n) != 0 ||
+                memcmp(a, img.data() + pos, n) != 0)
+                ok = false;
+    }
+    CHECK(ok);
+    uint8_t one;
+    CHECK(exepack::read(cs, ci, static_cast<uint32_t>(img.size()), &one, 1) == exepack::Status::BadData);
+    CHECK(exepack::write_copy(cs, ci, sum, s) == exepack::Status::BadData);     // (not a copy of a copy)
+    // Stale: another program (one byte changed, same size), or another size
+    Bytes other = exe;
+    other[40] ^= 0x5A;
+    dax::MemorySource os(other.data(), static_cast<uint32_t>(other.size()));
+    CHECK(exepack::checksum(os) != sum);
+    CHECK(!exepack::copy_matches(cs, static_cast<uint32_t>(other.size()), exepack::checksum(os)));
+    CHECK(!exepack::copy_matches(cs, static_cast<uint32_t>(exe.size()) + 16, sum));
+    // Cut short (a write that stopped): not taken, and parse says so
+    dax::MemorySource cut(s.b.data(), static_cast<uint32_t>(s.b.size() - 3));
+    CHECK(!exepack::copy_matches(cut, static_cast<uint32_t>(exe.size()), sum));
+    CHECK(exepack::parse(cut, ci) == exepack::Status::BadData);
+    // The card full: write_copy reports it
+    VecSink full;
+    full.fail_after = 100;
+    CHECK(exepack::write_copy(src, in, sum, full) == exepack::Status::ReadError);
+}
+
 static void test_exepack()
 {
     const Bytes img = test_image();
@@ -970,6 +1030,8 @@ static void test_exepack()
         uint8_t one;
         CHECK(exepack::read(src, in, static_cast<uint32_t>(img.size()) - 1, &one, 1) == exepack::Status::Ok && one == img.back());
         CHECK(exepack::read(src, in, static_cast<uint32_t>(img.size()), &one, 1) == exepack::Status::BadData);
+        CHECK(in.file_size == exe.size() && in.copy_at == 0);
+        test_exepack_copy(exe, img);
     }
     // Damaged: a command byte that isn't one
     Bytes bad = make_exe(img, 37, true);
@@ -982,6 +1044,8 @@ static void test_exepack()
         bad[p - 1] = 0x42;
         uint8_t b;
         CHECK(exepack::read(src, in, 0, &b, 1) == exepack::Status::BadData);
+        VecSink s;
+        CHECK(exepack::write_copy(src, in, 0, s) == exepack::Status::BadData);
     }
     // Not packed / not a program
     Bytes plain = make_exe(img, 37, true);
