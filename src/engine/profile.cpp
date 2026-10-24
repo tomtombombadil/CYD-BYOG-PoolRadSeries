@@ -2906,7 +2906,7 @@ const Profile kProfiles[] = {
      .clips = {},
      .door = {},
      .won = {},
-     .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0x70, .fight_unswapped = true,
+     .variant = {.program_words = true, .bigpic_from = 0x70, .fight_unswapped = true,
                  .darkness_files = true, .party_menu_col = 9, .marker_file = "8X8D1.DAX", .marker_block = 204,
                  .order_words = {0x23CB1, 0x23CBF, 0x23CCD}, .yell_words = {0, kP | 0xD8D1},
                  // (Knight Change Order, GAME.OVR 061:4F31: the order's name

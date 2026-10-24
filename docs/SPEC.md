@@ -1963,7 +1963,7 @@ bytes, data segment at image 0xBCE0) + GAME.OVR (35 overlays), DAX files,
 216-byte records + 220-byte spell parts (CHRDATxn.GAM / .WIZ / .JNK /
 .EFF), SAVGAMx.PTY. Game number 6 (playsim / sweep GAME=6); its front end
 `variant.darkness_files`, its rules `krynn_rules()` (Champions' and
-`variant.dkk`). Play still off (`variant.unfinished`; branch deathknights).
+`variant.dkk`). Play on since 2026-10-24 (branch deathknights).
 
 - **Screen**: the outer frame with the three moons (Champions' place, its
   red moon drawn whole - `Tiles.solid`), 8X8D1 block 202's tiles (window
