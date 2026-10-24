@@ -95,6 +95,11 @@ struct OpSet {
     // word). The engine's own calls with Curse's addresses (0x4BF2 the
     // block, 0x4BC6 the clock, 0xC04B x ...) are turned into its places.
     bool byte_map = false;
+    // Champions (its clock routine, GAME.OVR 0x2ACB7 / 0x2A87C): a day
+    // passing (the hours carrying) steps the moons - each its counter
+    // (0x4CFC white, 0x4CFD red, 0x4CFE black) up, or, at 8 / 1 / 6, back
+    // to 0 with its phase (0x4CF9-0x4CFB) on, 3 back to 0
+    bool moons = false;
     // Gateway (gateway_facts.md 10; its CALL handler, GAME.OVR 0xAB8 +
     // 0x3150): CALL 0x809 waits for a key ("Press Enter to continue."),
     // CALL 0x80C asks Yes / No - 0 / 1 into 0x7F79 (0: none of these)
