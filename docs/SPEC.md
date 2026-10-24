@@ -1766,6 +1766,7 @@ segment at image 0x4C70; run as `GAME UseStart`) + GAME.OVR (51 overlays),
   companion at /GOLDBOX/GBC isn't used for journals (no JE pictures there;
   a choice for Tom).
 - **Not yet:** no music (MUSIC.DAX: the original's "0x80 up" sounds).
+
 ## 6f. Treasures of the Savage Frontier (2026-10-23: started after Darkness)
 
 Facts: the Project's claude/treasures_facts.md (the survey) and

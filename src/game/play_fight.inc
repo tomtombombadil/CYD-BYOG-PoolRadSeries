@@ -696,8 +696,12 @@ bool park_code()
     f.close();
     if (!ok) return false;
     arena.code_parked = true;
-    arena.at[0] = ecl::code_of(d->gs);
-    arena.cap[0] = d->gs.code_cap;
+    // (from an 8-byte boundary: the code follows GameState's 4-byte
+    // code_cap, and the fighters' records hold pointers)
+    uint8_t* base = ecl::code_of(d->gs);
+    const uint32_t pad = static_cast<uint32_t>((8u - (reinterpret_cast<uintptr_t>(base) & 7u)) & 7u);
+    arena.at[0] = base + pad;
+    arena.cap[0] = d->gs.code_cap > pad ? d->gs.code_cap - pad : 0;
     arena.used[0] = 0;
     return true;
 }
