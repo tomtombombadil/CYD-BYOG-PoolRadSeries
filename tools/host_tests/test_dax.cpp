@@ -814,6 +814,24 @@ static void test_font()
     dax::MemorySource s2(nofont.data(), static_cast<uint32_t>(nofont.size()));
     CHECK(dax::read_index(s2, idx) == dax::Status::Ok);
     CHECK(!font::load(s2, idx, f));
+    // Dark Queen's GAME.FON: 96 glyphs of 12 rows; rows 0 2 3 5 7 8 9 10 drawn
+    {
+        Bytes fon(font::kFonBytes, 0);
+        for (int g = 0; g < 96; ++g)
+            for (int r = 0; r < 12; ++r) fon[g * 12 + r] = static_cast<uint8_t>(g + 16 * r);
+        dax::MemorySource fs(fon.data(), static_cast<uint32_t>(fon.size()));
+        static font::Font ff;
+        CHECK(font::load_fon(fs, ff) && ff.loaded);
+        const int a = 'A' - 0x20, zero = '0' - 0x20;
+        CHECK(ff.glyph[font::glyph_of('A')][0] == a && ff.glyph[font::glyph_of('A')][1] == a + 32 &&
+              ff.glyph[font::glyph_of('A')][6] == static_cast<uint8_t>(a + 144) &&
+              ff.glyph[font::glyph_of('A')][7] == static_cast<uint8_t>(a + 160));
+        CHECK(ff.glyph[font::glyph_of('0')][2] == zero + 48 && ff.glyph[font::glyph_of('@')][0] == '@' - 0x20);
+        CHECK(ff.glyph[font::glyph_of('?')][5] == '?' - 0x20 + 128);
+        fon.pop_back();
+        dax::MemorySource fs2(fon.data(), static_cast<uint32_t>(fon.size()));
+        CHECK(!font::load_fon(fs2, ff) && !ff.loaded);
+    }
 }
 
 static void test_games()
@@ -1053,7 +1071,16 @@ static void test_exepack()
     plain[plain.size() - 41] = 'X';     // the "B" of "RB"
     dax::MemorySource s2(plain.data(), static_cast<uint32_t>(plain.size()));
     exepack::Info in;
-    CHECK(exepack::parse(s2, in) == exepack::Status::NotPacked);
+    CHECK(exepack::parse(s2, in) == exepack::Status::Ok);
+    // (not packed: read as it is, the file's own offsets - Dark Queen's DQK.EXE)
+    CHECK(in.plain && !in.copy_at && in.image_size == plain.size() && in.file_size == plain.size());
+    uint8_t pb[4];
+    CHECK(exepack::read(s2, in, 0, pb, 2) == exepack::Status::Ok && pb[0] == 'M' && pb[1] == 'Z');
+    CHECK(exepack::read(s2, in, static_cast<uint32_t>(plain.size()) - 2, pb, 4) == exepack::Status::BadData);
+    {
+        VecSink ps;
+        CHECK(exepack::write_copy(s2, in, 0, ps) == exepack::Status::NotPacked);
+    }
     const Bytes junk(100, 7);
     dax::MemorySource s3(junk.data(), static_cast<uint32_t>(junk.size()));
     CHECK(exepack::parse(s3, in) == exepack::Status::NotExe);
@@ -1329,6 +1356,27 @@ static void test_text()
     CHECK(exepack::parse(es, in) == exepack::Status::Ok);
     CHECK(text::read_pascal(es, in, 0x150, out, sizeof out) && strcmp(out, msg) == 0);
     CHECK(!text::read_pascal(es, in, 0x1F0, out, sizeof out));
+    // C strings (text::kCString: Dark Queen's words) - from a source and a plain program
+    {
+        Bytes cb = {'L', 'o', 'a', 'd', ' ', 'G', 'a', 'm', 'e', 0, 0, 'X', 1, 0, 'Y', 'Z'};
+        dax::MemorySource cs(cb.data(), static_cast<uint32_t>(cb.size()));
+        CHECK(text::read_pascal(cs, text::kCString | 0, out, sizeof out) && strcmp(out, "Load Game") == 0);
+        CHECK(text::read_pascal(cs, text::kCString | 5, out, sizeof out) && strcmp(out, "Game") == 0);
+        CHECK(!text::read_pascal(cs, text::kCString | 10, out, sizeof out));    // empty
+        CHECK(!text::read_pascal(cs, text::kCString | 11, out, sizeof out));    // a control byte
+        CHECK(!text::read_pascal(cs, text::kCString | 14, out, sizeof out));    // no NUL before the end
+        CHECK(!text::read_pascal(cs, text::kCString | 0, out, 9));              // too long for the buffer
+        // a plain MZ program (no EXEPACK header where CS points): offsets are the file's
+        Bytes plain(0x200, 0);
+        plain[0] = 'M', plain[1] = 'Z', plain[8] = 2;          // a 32-byte header
+        plain[0x16] = 0x00, plain[0x17] = 0x10;                // CS far past the file
+        memcpy(&plain[0x120], "Begin Adventuring", 18);
+        dax::MemorySource ps(plain.data(), static_cast<uint32_t>(plain.size()));
+        exepack::Info pi;
+        CHECK(exepack::parse(ps, pi) == exepack::Status::Ok && pi.plain);
+        CHECK(text::read_pascal(ps, pi, text::kCString | 0x120, out, sizeof out) && strcmp(out, "Begin Adventuring") == 0);
+        CHECK(!text::read_pascal(ps, pi, text::kCString | 0x200, out, sizeof out));
+    }
 }
 
 static void test_menu()
@@ -3931,6 +3979,47 @@ static void test_geo_view()
     CHECK(geo::door(m, 5, 9, geo::East) == 2 && geo::flags(m, 3, 4) == 0x90);
     CHECK(geo::wall(m, 16, 16, geo::North) == 3 && geo::wall(m, -16, 0, geo::North) == 3);      // wraps
     CHECK(geo::dx(geo::East) == 1 && geo::dy(geo::North) == -1 && strcmp(geo::dir_name(5), "SW") == 0);
+    {
+        // A step wraps on a 16 x 16 map
+        int sx = 15, sy = 0;
+        CHECK(geo::step(m, sx, sy, geo::East) && sx == 0 && sy == 0);
+        CHECK(geo::step(m, sx, sy, geo::North) && sx == 0 && sy == 15);
+    }
+    // HLIB maps (Dark Queen's GEO.GLB entries): w, h, 6 header bytes, then
+    // four planes of w x h bytes; any size up to kMaxSquares, no wrapping
+    for (int big = 0; big < 2; ++big) {
+        const int w = big ? 30 : 10, h = big ? 21 : 12, n = w * h;
+        std::vector<uint8_t> g(geo::kHlibHeader + 4 * n + 2, 0);
+        g[0] = static_cast<uint8_t>(w), g[1] = static_cast<uint8_t>(h);
+        for (int k = 0; k < 6; ++k) g[2 + k] = static_cast<uint8_t>(k + 1);
+        auto sq = [&](int plane, int x, int y) -> uint8_t& { return g[geo::kHlibHeader + plane * n + x + y * w]; };
+        sq(0, w - 1, h - 1) = 0x52;          // north 5, east 2
+        sq(1, 3, 2) = 0x0C;                  // west 12
+        sq(2, 3, 2) = 0x85;
+        sq(3, 3, 2) = 0x80;                  // the west side locked
+        dax::MemorySource gs(g.data(), static_cast<uint32_t>(g.size()));
+        static geo::Map hm;
+        CHECK(geo::load_hlib(gs, 0, static_cast<uint32_t>(g.size()), hm) && hm.loaded && !hm.wraps);
+        CHECK(hm.w == w && hm.h == h && (hm.big != nullptr) == (n > 256) && hm.head[0] == 1 && hm.head[5] == 6);
+        CHECK(geo::wall(hm, w - 1, h - 1, geo::North) == 5 && geo::wall(hm, w - 1, h - 1, geo::East) == 2);
+        CHECK(geo::wall(hm, 3, 2, geo::West) == 12 && geo::passage(hm, 3, 2, geo::West) == 2 && geo::flags(hm, 3, 2) == 0x85);
+        CHECK(geo::wall(hm, w, h - 1, geo::North) == 0 && geo::flags(hm, -1, 0) == 0);     // off the map: nothing
+        int sx = w - 1, sy = 0;
+        CHECK(!geo::step(hm, sx, sy, geo::East) && sx == w - 1 && !geo::step(hm, sx, sy, geo::North) && sy == 0);
+        CHECK(geo::step(hm, sx, sy, geo::South) && sy == 1);
+        geo::unlock(hm, 3, 2, geo::West);
+        CHECK(geo::door(hm, 3, 2, geo::West) == 1 && geo::door(hm, 2, 2, geo::East) == 1);
+        CHECK(!geo::load_hlib(gs, 0, static_cast<uint32_t>(g.size()) - 4, hm) && !hm.loaded && !hm.big);   // short
+        geo::release(hm);
+        CHECK(hm.w == geo::kSize && hm.wraps);
+    }
+    {
+        std::vector<uint8_t> g(geo::kHlibHeader + 4 * 40 * 40, 0);
+        g[0] = g[1] = 40;                    // 1,600 squares: more than the engine takes
+        dax::MemorySource gs(g.data(), static_cast<uint32_t>(g.size()));
+        static geo::Map hm;
+        CHECK(!geo::load_hlib(gs, 0, static_cast<uint32_t>(g.size()), hm));
+    }
     // A locked door opened (Bash / Pick): this side and the next square's west side
     {
         static geo::Map u;
@@ -4352,6 +4441,61 @@ static void test_party()
         CHECK(savegame::write_darkness(ds, dgs, dh) && ds.v == pty);
         savegame::file_name_darkness('B', name2, sizeof name2);
         CHECK(strcmp(name2, "SAVGAMB.PTY") == 0);
+    }
+    // Dark Queen's .QSV: the game block, Darkness's position and modes, a
+    // count, then each character's record, items (17) and effects (a chain of 9)
+    {
+        std::vector<uint8_t> q(savegame::kQueenHead, 0);
+        for (uint32_t i = 0; i < savegame::kDarknessBlock; ++i) q[i] = static_cast<uint8_t>(i * 7);
+        const uint8_t pos[15] = {30, 21, 6, 1, 0x80, 4, 0, 2, 0, 0, 0, 0, 0, 2, 0};   // (a map wider than 16)
+        memcpy(q.data() + savegame::kDarknessBlock, pos, sizeof pos);
+        auto add = [&](const char* nm, int race, int cls, int items, int effects) {
+            std::vector<uint8_t> r(party::kQueenRecordSize, 0);
+            memcpy(&r[0x68], nm, strlen(nm));
+            r[0x58] = static_cast<uint8_t>(race);
+            r[0x5A] = static_cast<uint8_t>(cls);
+            r[0x78] = 17, r[0x79] = 18;                 // Str own / in use
+            r[0x84] = 50, r[0x85] = 60;                 // Str00 own / in use
+            r[0x89] = 77, r[0x198] = 70;                // HP max / now
+            r[0x18E] = 64;                              // AC 60 - 64 = -4
+            r[0xA6] = 9, r[0xA5] = 3, r[0xAB] = 5;      // knight 9, cleric 3, thief 5
+            r[0x44] = 0x40, r[0x45] = 0x42, r[0x46] = 0x0F;   // 1,000,000 experience
+            r[0x4C] = 0x10, r[0x4D] = 0x27;            // 10,000 steel
+            r[0x19A] = 2;                               // the Sword
+            r[0xC9] = static_cast<uint8_t>(items);
+            if (effects) r[4] = 0x51, r[6] = 0xF0, r[7] = 0x5E;
+            q.insert(q.end(), r.begin(), r.end());
+            for (int i = 0; i < items; ++i) q.insert(q.end(), savegame::kQueenItem, static_cast<uint8_t>(0x20 + i));
+            for (int e = 0; e < effects; ++e) {
+                uint8_t ef[savegame::kQueenEffect] = {0x5F, 0, 0, 0xFF, 0, 0, 0, 0, 0};
+                if (e + 1 < effects) ef[5] = 9, ef[7] = 0x5E;      // a successor
+                q.insert(q.end(), ef, ef + sizeof ef);
+            }
+        };
+        add("SIR TEST", 6, 1, 2, 2);
+        add("neacail", 5, 12, 1, 0);
+        q.insert(q.end(), 50, 0xAA);                    // (the file goes on)
+        dax::MemorySource qs(q.data(), static_cast<uint32_t>(q.size()));
+        static ecl::GameState qgs;
+        static party::Party qp;
+        savegame::Header qh;
+        CHECK(savegame::read_queen(qs, qgs, qh, qp));
+        CHECK(qgs.area1[3] == 21 && qgs.x == 30 && qgs.y == 21 && qgs.dir == 6 && qgs.roof == 0x80 && qh.last_state == 4 &&
+              qh.look == 2 && qh.count == 2 && qp.count == 2 && !strcmp(qh.names[1], "neacail"));
+        const party::Character& k = qp.m[0];
+        char nm[20];
+        k.name(nm, sizeof nm);
+        CHECK(!strcmp(nm, "SIR TEST") && k.race() == party::race_from_krynn(6) && k.cls() == 7 && k.stat(0) == 18 &&
+              k.stat_now(0) == 17 && k.str00() == 60 && k.hp() == 70 && k.hp_max() == 77 && k.ac() == -4);
+        CHECK(k.level(7) == 9 && k.level(0) == 3 && k.level(6) == 5 && k.level(1) == 0 && k.exp() == 1000000 &&
+              k.money(4) == 10000 && k.ext[party::kExtKnight] == 2 && k.ext[party::kExtRace] == 6);
+        CHECK(qp.m[1].cls() == 12 && qp.m[1].race() == party::race_from_krynn(5));
+        // short: the second character cut
+        q.resize(q.size() - 60);
+        dax::MemorySource qs2(q.data(), static_cast<uint32_t>(q.size()));
+        CHECK(!savegame::read_queen(qs2, qgs, qh, qp) && qp.count == 0);
+        savegame::file_name_queen('C', name2, sizeof name2);
+        CHECK(strcmp(name2, "SAVGAMC.QSV") == 0);
     }
     // Steam / SNEG: "C:\CURSE\SAVE\" with the files in <folder>/GAME/CURSE
     char sub[32] = "CURSE/SAVE";

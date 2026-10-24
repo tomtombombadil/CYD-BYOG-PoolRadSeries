@@ -39,6 +39,11 @@
 //   then the unpacked image TOP BYTE FIRST (byte k of the program at
 //   copy offset 32 + image size - 1 - k) - the unpacker makes it from the
 //   end down, so the file is written straight through with a small buffer.
+//
+// A program that isn't packed (The Dark Queen of Krynn's DQK.EXE: a plain
+// MZ program with .RTLink/Plus overlays and its data segment in the file
+// after them - queen_facts.md 7) is read as it is: Info::plain, its
+// "image" the whole file (an offset is a file offset), no copy.
 #pragma once
 
 #include <cstddef>
@@ -58,11 +63,13 @@ struct Info {
     uint16_t ip = 0, cs = 0, sp = 0, ss = 0;   // the real entry point / stack
     uint32_t file_size = 0;      // the program file's size (also when read from its copy)
     uint32_t copy_at = 0;        // a copy: where its image starts (0: the packed program)
+    bool     plain = false;      // not packed: the image is the file itself
 };
 
 constexpr uint32_t kCopyHeader = 32;
 
-// Reads the MZ and EXEPACK headers.
+// Reads the MZ and EXEPACK headers. An MZ program without EXEPACK's
+// header is Ok as plain (image = the file).
 Status parse(dax::ByteSource& exe, Info& out);
 
 // Copies bytes [pos, pos + n) of the unpacked program into buf. Walks the
@@ -82,6 +89,7 @@ uint32_t checksum(dax::ByteSource& exe);
 
 // The copy of the packed program exe (parsed into info, its checksum sum):
 // one walk through the packed data, the bytes out through a 256-byte buffer.
+// A plain program needs none (NotPacked).
 Status write_copy(dax::ByteSource& exe, const Info& info, uint32_t sum, Sink& out);
 
 // The copy is whole and of a program file of this size and checksum

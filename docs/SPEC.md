@@ -2254,6 +2254,16 @@ pixel) - so the engine reads the player's VGA files as GOG installs them and
 draws them in 16 colours itself, no EGA install and nothing made by the
 scan; 256 colours on the PSRAM boards. The scan finds the folder holding
 DISK1-3 (`data_dir`; a library saved before needs Rescan).
+Phase 2 (2026-10-24, the Project's claude/queen_facts_2.md): DQK.EXE is
+read as it is (`exepack` Info::plain; its C data segment at file 0x63A20,
+its words C strings - `text::kCString`); maps of any size (`geo::Map` w / h,
+`load_hlib`, no wrapping); the screen from FRAME / GEN.TLB's parts at the
+places their headers give, the 3D view from the wall sets' slots and BACK,
+the area map from TOPVIEW (`engine/hlpic.*`, `engine/qview.*`); its text
+GAME.FON's rows 0 2 3 5 7 8 9 10 (`font::load_fon`); its characters (a
+414-byte C struct, `party::from_queen`) and SAVGAMx.QSV saves
+(`savegame::read_queen`); the Play Test (Dev Tools only) runs ECL.GLB 4
+from the party menu (`src/game/play_queen.inc`).
 
 ## 10. Engine UI rules (carried over from CYD-Classic-Games)
 

@@ -83,6 +83,20 @@ bool write_darkness(Sink& out, const ecl::GameState& gs, const Header& h);
 bool read_dkk(dax::ByteSource& src, ecl::GameState& gs, Header& h);
 bool write_dkk(Sink& out, const ecl::GameState& gs, const Header& h);
 
+// The Dark Queen of Krynn's (queen_facts_2.md 9): SAVGAMx.QSV - one file:
+// the scripts' 1,024-byte game block (Darkness's), Darkness's 11 position
+// and mode bytes, a u16 (not known), a u16 count, then the characters one
+// after another: each its 414-byte record (party::from_queen), its items
+// (17 bytes each, as many as the record's count) and its effects (9 bytes
+// each, a chain: the last 4 bytes of each its successor's pointer, 0 at the
+// end; none when the record's effects pointer is 0). The rest of the file
+// (the area's state ...) isn't read yet. Characters into p (their items and
+// effects not kept yet).
+constexpr uint32_t kQueenHead = kDarknessBlock + 15;
+constexpr uint32_t kQueenItem = 17, kQueenEffect = 9;
+bool read_queen(dax::ByteSource& src, ecl::GameState& gs, Header& h, party::Party& p);
+void file_name_queen(char slot, char* out, size_t cap);         // "SAVGAMA.QSV"
+
 // The save file's name for slot 'A'..'J' ("SAVGAMA.DAT"), and the n-th
 // character's (1 ..: "CHRDATA1", + ".SAV" / ".SWG" / ".FX").
 void file_name(char slot, char* out, size_t cap);

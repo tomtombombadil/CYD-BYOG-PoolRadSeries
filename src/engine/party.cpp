@@ -124,7 +124,53 @@ constexpr uint16_t kDkkWizExt[][3] = {
     {0xCB, kExtDruid89, 1},    {0xD9, kExtMage67, 2},   {0xDB, kExtMage89, 1},   {0xCC, kExtDkThird, 8},
 };
 
+// Dark Queen offset, Curse offset, length (queen_facts_2.md 8; pointers left
+// out): stats (own / in use, Str00 below), THAC0 base, age, HP max, icon size and
+// saves, movement and the highest level, level vs undead, thief skills, NPC,
+// steel gems jewelry (Darkness's places), former levels, sex, alignment,
+// experience, xp award, icon, flags, hands, save bonus, the item count,
+// status, hostile, quick fight, the fight's figures to movement
+constexpr uint16_t kQueenRuns[][3] = {
+    {0x78, 0x10, 12},    {0x84, 0x1D, 1},     {0x85, 0x1C, 1},     {0x87, 0x73, 1},     {0x52, 0x76, 2},
+    {0x89, 0x78, 1},     {0x8A, 0xDE, 6},     {0x90, 0xE4, 2},     {0x5C, 0xE9, 1},     {0x93, 0xEA, 8},
+    {0x9B, 0xF7, 1},     {0x4C, 0x103, 2},    {0x4E, 0x105, 4},    {0x60, 0x119, 1},    {0x62, 0x11B, 1},
+    {0x44, 0x127, 4},    {0x54, 0x12B, 2},    {0xC4, 0x13C, 1},    {0xC7, 0x13D, 2},    {0xCA, 0x185, 2},
+    {0x56, 0x187, 2},    {0xC9, 0x14C, 1},    {0x64, 0x195, 1},    {0x66, 0x197, 1},    {0x18B, 0x196, 1},
+    {0x18C, 0x198, 1},   {0x18D, 0x199, 13},
+};
+// Dark Queen offset, Ext place, length
+constexpr uint16_t kQueenExt[][3] = {
+    {0x58, kExtRace, 1}, {0x19A, kExtKnight, 1}, {0x19B, kExtGod, 1}, {0x19D, kExtRobe, 1}, {0xCC, kExtMagicRes, 1},
+    {0x9E, kExtBestLevels, 7}, {0x48, kExtBestXp, 4}, {0xBE, kExtBestHp, 1}, {0xCD, kExtTrain, 1},
+};
+
 } // namespace
+
+void from_queen(const uint8_t* q, Character& c)
+{
+    uint8_t* r = c.rec;
+    memset(r, 0, kRecordSize);
+    memset(c.ext, 0, kExtSize);
+    c.n_items = c.n_affects = 0;
+    // The name: a C string of up to 15 at 0x68 - Curse's Pascal one
+    size_t n = 0;
+    while (n < kNameMax && n < 15 && q[0x68 + n]) ++n;
+    r[0] = static_cast<uint8_t>(n);
+    memcpy(r + 1, q + 0x68, n);
+    for (const auto& run : kQueenRuns) memcpy(r + run[1], q + run[0], run[2]);
+    for (const auto& run : kQueenExt) memcpy(c.ext + run[1], q + run[0], run[2]);
+    r[0x74] = race_from_krynn(q[0x58]);
+    // The class: its knight (1, the druid's place) is the engine's Krynn
+    // knight (7, the monk's place); the others as Curse's numbers
+    r[0x75] = q[0x5A] == 1 ? 7 : q[0x5A];
+    // Levels and former levels: cleric knight fighter paladin ranger
+    // magic-user thief - the knight's into the monk's place
+    static const int8_t kLevelTo[7] = {0, 7, 2, 3, 4, 5, 6};
+    for (int i = 0; i < 7; ++i) {
+        r[0x109 + kLevelTo[i]] = q[0xA5 + i];
+        r[0x111 + kLevelTo[i]] = q[0xAC + i];
+    }
+}
 
 void krynn_to_dkk(const uint8_t* k, uint8_t* p, uint8_t* w)
 {

@@ -107,9 +107,10 @@ bool entries(const uint8_t* c, uint32_t len, const OpSet& set, uint32_t out[5])
 MapLoad find_map_load(const uint8_t* block, uint32_t len, const OpSet& set)
 {
     MapLoad m;
-    if (len < 3) return m;
-    const uint8_t* c = block + 2;
-    const uint32_t n = len - 2;
+    const uint32_t pre = set.no_prefix ? 0 : 2;      // (Dark Queen's ECL.GLB entries: no prefix)
+    if (len < pre + 1) return m;
+    const uint8_t* c = block + pre;
+    const uint32_t n = len - pre;
     uint32_t start[5];
     if (!entries(c, n, set, start)) return m;
 

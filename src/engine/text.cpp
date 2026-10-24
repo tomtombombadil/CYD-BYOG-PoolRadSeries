@@ -38,10 +38,35 @@ int unit_end(const char* s, int len, int pos)
 
 // ---- Strings ---------------------------------------------------------------
 
+namespace {
+
+// A C string at pos (text::kCString): up to cap - 1 printable characters
+// before its NUL - false if it has none, no NUL in reach, or others
+bool read_c(dax::ByteSource& src, uint32_t pos, char* out, size_t cap)
+{
+    out[0] = 0;
+    uint8_t buf[kMaxString];
+    const size_t want = cap < sizeof buf ? cap : sizeof buf;
+    const size_t got = src.read_at(pos, buf, want);
+    size_t n = 0;
+    while (n < got && buf[n]) ++n;
+    if (n == 0 || n == got) return false;
+    memcpy(out, buf, n);
+    out[n] = 0;
+    if (!printable(out, n)) {
+        out[0] = 0;
+        return false;
+    }
+    return true;
+}
+
+} // namespace
+
 bool read_pascal(dax::ByteSource& src, uint32_t pos, char* out, size_t cap)
 {
     if (cap == 0) return false;
     out[0] = 0;
+    if (pos & kCString) return read_c(src, pos & ~kCString, out, cap);
     uint8_t n;
     if (src.read_at(pos, &n, 1) != 1 || n == 0 || static_cast<size_t>(n) + 1 > cap) return false;
     if (src.read_at(pos + 1, reinterpret_cast<uint8_t*>(out), n) != n) return false;
@@ -77,6 +102,17 @@ bool read_pascal(dax::ByteSource& exe, const exepack::Info& info, uint32_t pos, 
     if (cap == 0) return false;
     out[0] = 0;
     pos &= ~kInProgram;                 // (Gateway's version line is at image 0: marked kInProgram so it isn't "none")
+    if (pos & kCString) {
+        // (a plain program: the image is the file - exepack::read reads it as it is)
+        pos &= ~kCString;
+        if (pos >= info.image_size) return false;
+        uint8_t buf[kMaxString];
+        uint32_t want = info.image_size - pos;
+        if (want > sizeof buf) want = sizeof buf;
+        if (exepack::read(exe, info, pos, buf, want) != exepack::Status::Ok) return false;
+        dax::MemorySource m(buf, want);
+        return read_c(m, 0, out, cap);
+    }
     if (pos >= info.image_size) return false;
     uint8_t buf[kMaxString];
     uint32_t want = info.image_size - pos;

@@ -136,6 +136,9 @@ struct OpSet {
     // three new opcodes - 0x42 LOAD 3D (map, the wall slots' blocks), 0x43
     // FIND ITEM, 0x44 DESTROY ITEM (type, three name words)
     uint32_t code_size = 0;
+    // The Dark Queen of Krynn: its scripts are stored without the DAX
+    // blocks' 2-byte prefix (ECL.GLB's entries: the code from the first byte)
+    bool     no_prefix = false;
     uint8_t  shops = 11;
     bool     tr_ops = false;
     // Gateway (its interpreter, GAME.OVR overlay 0xAB8 +0x29BD / +0x361F):
@@ -191,7 +194,8 @@ struct MapLoad {
     bool has_walls() const { return walls[0] != kNone || walls[1] != kNone || walls[2] != kNone; }
 };
 
-// block = the whole ECL block as stored (with its 2-byte header).
+// block = the whole ECL block as stored (with its 2-byte header; none with
+// OpSet::no_prefix).
 MapLoad find_map_load(const uint8_t* block, uint32_t len, const OpSet& set);
 
 } // namespace ecl

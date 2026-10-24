@@ -318,6 +318,10 @@ struct Profile {
         // Character " "Select Exit" first (GAME.OVR; 0: the selected one);
         // training's "Who pays 1000 gp " (0: the trainee pays)
         uint32_t pick = 0, pick_menu = 0, who_pays = 0;
+        // Dark Queen: the party menu's entries as words (C strings -
+        // text::kCString) in the engine's list order, instead of `items`
+        const uint32_t* words = nullptr;
+        uint8_t n_words = 0;
     } party;
 
     // View Character: name tables in the program and the screen's words
@@ -772,6 +776,14 @@ struct Profile {
     // (ecl::OpSet::curse_bytes), its frame tables naming tiles directly
     // (layout::Tables::direct) with the three moons on the top row
     bool     dkk = false;
+    // The Dark Queen of Krynn (queen_facts.md): its files are HLIB libraries
+    // (.TLB pictures, .GLB data in DISK1-3 - hlib.h): the scripts ECL.GLB's
+    // entries by id (stored as they are, no DAX prefix), the maps GEO.GLB's
+    // (any size up to geo::kMaxSquares), its pictures VGA parts drawn
+    // through their own EGA tables on the 16-colour boards; its program a
+    // plain MZ (exepack Info::plain: offsets are DQK.EXE's own) with C
+    // strings
+    bool     hlib = false;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

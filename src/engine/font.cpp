@@ -17,6 +17,22 @@ bool load(dax::ByteSource& src, const dax::Index& idx, Font& out)
     return true;
 }
 
+bool load_fon(dax::ByteSource& src, Font& out)
+{
+    out.loaded = false;
+    if (src.size() != kFonBytes) return false;
+    static const uint8_t kRows[8] = {0, 2, 3, 5, 7, 8, 9, 10};
+    uint8_t g[12];
+    for (int slot = 0; slot < 64; ++slot) {
+        // (slot 0-31: '@' 'A' ... '_'; 32-63: ' ' ... '?' - glyph_of's)
+        const int ch = slot < 32 ? 0x40 + slot : slot;
+        if (src.read_at(static_cast<uint32_t>(ch - 0x20) * 12, g, sizeof g) != sizeof g) return false;
+        for (int r = 0; r < 8; ++r) out.glyph[slot][r] = g[kRows[r]];
+    }
+    out.loaded = true;
+    return true;
+}
+
 int glyph_of(char c)
 {
     return toupper(static_cast<unsigned char>(c)) % 64;
@@ -146,7 +162,7 @@ void draw_glyph(pic::Canvas& c, const Font& f, int g, int x, int y, uint8_t fg, 
             if (px < 0 || px >= c.w) continue;
             if (bits & (0x80 >> col)) c.set(px, py, fg);
             else if (shadowed) c.set(px, py, (shade & (0x80 >> col)) || py >= c.bg_rows ? 0 : c.bg[py * c.w + px]);
-            else if (bg >= 0) c.set(px, py, static_cast<uint8_t>(bg));
+            else if (bg >= 0) c.set(px, py, static_cast<uint8_t>(bg == 0 && c.paper >= 0 ? c.paper : bg));   // (Dark Queen's boxes)
         }
     }
 }

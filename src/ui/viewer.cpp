@@ -1627,6 +1627,7 @@ void start_play()
                               : here == games::Game::PoolsOfDarkness         ? games::Game::SecretOfTheSilverBlades
                               : here == games::Game::TreasuresOfTheSavageFrontier ? games::Game::GatewayToTheSavageFrontier
                               : here == games::Game::DeathKnightsOfKrynn     ? games::Game::ChampionsOfKrynn
+                              : here == games::Game::DarkQueenOfKrynn        ? games::Game::DeathKnightsOfKrynn
                                                                               : here;
     for (int g = 0; earlier != here && g < n_games; ++g)
         if (game_dirs[g].game == earlier && game_dirs[g].format == library::Format::Dax) {
