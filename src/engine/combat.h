@@ -386,6 +386,52 @@ struct Facts {
     // taunts the other side - this effect on each that fails its save
     // against spells (Intelligence over 3): their target is the kender
     uint8_t taunted = 0;
+    // Gateway to the Savage Frontier's (its effect handlers DS 0x826A on, the
+    // check lists of its work_on_00 - SPEC 6e; 0: none). `ways`: the deadly
+    // poison (0x40) after attack 1's hit, not attack 2's, the paralysing bite
+    // (0x43) after either; engulfing a d10 of 4 or less at each hit of attack
+    // 1 (not both hits), never one engulfing already; the hug never on one
+    // held fast; held fast, a turn starts with no moving and no spells (its
+    // check 15); Mirror Image takes weapon blows and the hostile spells at
+    // picked creatures (their row's byte 14) as Secret's images.
+    struct GateFx {
+        bool    ways = false;
+        // After attack 1's hit, a d10 of 4 or less (not on one held fast, not
+        // when it holds already): the stirge "drains blood from" its victim,
+        // the squid "constricts" it - the victim held fast (no moving, no
+        // spells), the holder's sucking / constricting effect on it. The
+        // computer's step lets the stirge's go (its list 0D 3A 8B 90 96); the
+        // squid's stays until it falls. Neither hurts after (the handler's
+        // per-turn damage is never reached) - with rules::fixes() the stirge
+        // drinks 1d4 a turn up to 12 (AD&D's, Pool's way) and the squid
+        // squeezes 2 x 1d2 a turn (its handler's dice)
+        uint8_t stirge = 0, sucking = 0, squid = 0, constrict = 0;
+        // After attack 1's hit: the harpy's charm (a save against spells, else
+        // charmed on its side: data side << 7 | 3), the mummy's disease (a
+        // save against poison, else "is diseased": weakness and sickness
+        // begin with a step each now - Cause Disease's course)
+        uint8_t harpy = 0, mummy = 0;
+        // The round's end: a hit point back while hurt ("regenerates")
+        uint8_t regen1 = 0;
+        // The morale check: under 20 hit points and alone on its side - it
+        // "Surrenders" (unconscious); the enemy's adds 1 to this area word
+        uint8_t surrender = 0;
+        uint16_t surrender_word = 0;
+        // A blow's damage: twice from a weapon with this name word (the
+        // Icewind Dale sword on fire creatures; stonecutting on stone),
+        // half from its own blows on one whose armour has this word (the
+        // Glacier armour - the attacker's effect)
+        uint8_t ice = 0, ice_word = 0, stone = 0, stone_word = 0, glacier = 0, glacier_word = 0;
+        // Half from a blow whose weapon type's byte 7 is 0 or 1 (0x73); holy
+        // water (this item type) does 1d6 + 1 (0x75) and gets past stop_normal
+        // (0x3C); boulders (these types) dodged half the time (0x78)
+        uint8_t half_edged = 0, holy = 0, holy_water = 0, boulder_dodge = 0, boulder[2] = {};
+        // Fallen dying (under 6 below) or unconscious: it gets up with 6 - that
+        // many hit points ("stands up and grins") and falls dead when its
+        // d4 + 1 rounds run out (the boar: 0x63, then 0x5F)
+        uint8_t fights_on = 0, falls_dead = 0;
+        bool    mirror = false;
+    } gw{};
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (the record its copies
@@ -571,6 +617,10 @@ struct Battle {
     // clouds), the fire shield's flame (1 hot, 2 cold, 0 the computer's pick)
     int     aim_x = -1, aim_y = -1, flame = 0;
     int     lost_image = -1;            // harm(): the one whose mirror image took it ("lost an image")
+    // Gateway: the one that just got up again as it fell (its 0x63 - "stands
+    // up and grins"; -1 none), a surrender that adds to the area word
+    int     risen = -1;
+    bool    yielded = false;
     // The fight's tables (set by the caller: a bolt's path), the last bolt's segments (its picture)
     const Tables* tables = nullptr;
     // The experience each class's level needs ([class][level], from the
@@ -647,6 +697,9 @@ enum class Ev : uint8_t {
     // Darkness's level drain (combat::g_dk_drain): "gets drained" (amount: the
     // levels), "dies from drainning", "collapses from drainning"
     DkDrained, DkDrainDies, DkDrainCollapses,
+    // Gateway's: "drains blood from" / "constricts" (to: the victim),
+    // "regenerates", "Falls dead"
+    DrainsBlood, Constricts, Regenerates, FallsDead,
 };
 struct Event {
     uint8_t who = 0;
@@ -784,8 +837,10 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
 // sucks 1d4 blood from its victim ("Sucks some Blood"; full - its effect's
 // time / 16 not over the blood - or either out of the fight: it lets go);
 // a mantis holding its victim: *bite = the victim (bite_attack makes its
-// one 3d4 attack), -1 none. The events said.
-int turn_holds(Battle& b, int i, create::Dice& d, Event* out, int cap, int* bite);
+// one 3d4 attack), -1 none. The events said. Gateway's with rules::fixes()
+// (GateFx): its stirge drinks so, its squid squeezes 2d2 and *go_on - the
+// turn goes on.
+int turn_holds(Battle& b, int i, create::Dice& d, Event* out, int cap, int* bite, bool* go_on = nullptr);
 // The mantis's bite while it holds its victim: one attack of 3d4 (its
 // attacks this round as they were); the victim out of the fight: it lets go
 Attack bite_attack(Battle& b, int a, int c, const items::Names* names, create::Dice& d);
@@ -814,6 +869,7 @@ struct Harm {
     int spell = 0, spell_level = 0;     // the spell (the minor globe)
     int save = -1, on_save = 0, bonus = 0;
     bool single = false;                // a spell at picked creatures (not an area): Mirror Image can take it
+    bool hostile = false;               // its row's byte 14 (the computer casts it at foes): Gateway's images take it
 };
 int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* down, bool* resisted = nullptr);
 // Magic resistance against a spell's effect on fighter c (`effect`: the
@@ -963,6 +1019,11 @@ enum class SpellDoes : uint8_t {
     Meteors,                            // Meteor Swarm: four meteors round the square aimed at (meteors())
     WordKill,                           // Power Word Kill: one of 11-60 HP max, else all of 10 or less (word)
     Summon,                             // Monster Summoning: the caller brings in the fight's reserve (word / word2)
+    // Gateway to the Savage Frontier (its spell table lets Strength be cast
+    // in fights: the camp's routine, coab's SpellStrength)
+    Strength,                           // + d4 / d6 / d8 by class (magic-user, cleric or thief, fighter - the last
+                                        // that fits), over 18 a fighter's / paladin's / ranger's 18/xx; the
+                                        // spell's effect only when more than theirs (nothing said)
 };
 struct FightSpell {
     uint8_t   spell;

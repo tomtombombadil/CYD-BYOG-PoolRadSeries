@@ -110,7 +110,7 @@ void creation()
                             s += s * 20 / 100;
                             if (c.money(3) != s) why += " steel " + std::to_string(c.money(3)) + "/" + std::to_string(s);
                             // a new character may be modified
-                            if (!create::can_modify(c, false, false, false, true)) why += " not modifiable";
+                            if (!create::can_modify(c, false, false, false, false, true)) why += " not modifiable";
                             if (!why.empty()) {
                                 if (nbad < 12) {
                                     char w[200];
@@ -198,7 +198,7 @@ void modify()
             for (int u : mx[0]) listed = listed || static_cast<uint32_t>(u) == xp;
             for (int i = 0; i < 4; ++i) c.rec[0x127 + i] = static_cast<uint8_t>(xp >> (8 * i));
             ++ncase;
-            if (create::can_modify(c, false, false, false, true) != listed) ++nbad;
+            if (create::can_modify(c, false, false, false, false, true) != listed) ++nbad;
         }
     char w[96];
     snprintf(w, sizeof w, "modify: %d experience figures allowed / refused as the original", ncase);

@@ -37,6 +37,9 @@ enum ScriptWord {
     // Secret's experience award (op 0x41): "Congratulations the party gains
     // experience!", "Congratulations " + NAME + " gains experience!"
     kWPartyGainsXp, kWCongrats, kWGainsXp,
+    // Gateway's (its interpreter's 0x41, GAME.OVR 0x41F2): the amount told,
+    // then " experience points!"
+    kWXpPoints,
     kScriptWords
 };
 
@@ -127,6 +130,16 @@ struct OpSet {
     uint32_t code_size = 0;
     uint8_t  shops = 11;
     bool     tr_ops = false;
+    // Gateway (its interpreter, GAME.OVR overlay 0xAB8 +0x29BD / +0x361F):
+    // 0x32 FIND ITEM and 0x40 DESTROY ITEMS take the item type (0 any) and
+    // three name words (the 2nd 0: any words) as Treasures' 0x43 / 0x44 -
+    // DESTROY takes the first such item only; its 0x41 award tells the
+    // amount (kWXpPoints)
+    bool     item_words = false;
+    bool     xp_number = false;
+    // Gateway: CALL 0x80F trades the selected member's coins up
+    // (rules::trade_up - before its scripts take a price in platinum)
+    uint16_t change_call = 0;
 };
 
 // A script's memory address as the engine's machine (Curse's map) knows

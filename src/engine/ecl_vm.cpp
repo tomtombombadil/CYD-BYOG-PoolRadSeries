@@ -1159,6 +1159,20 @@ bool Vm::dk_step(Stop& r)
     case 0x44: {                                // DESTROY ITEM: the first such item (ov43+0x1BDC, +0x2764)
         if (!set_.tr_ops) return false;
         if (!need(4)) return true;
+        find_item_words(o, op_ == 0x44);
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+// FIND ITEM / DESTROY ITEM by the item type (0 any) and three name words
+// (Treasures' 0x43 / 0x44, Gateway's 0x32 / 0x40): the party's items in
+// order; destroying takes the first such item only
+void Vm::find_item_words(const Op* o, bool destroy)
+{
+    {
         const int type = value(o[0]) & 0xFF;
         // (the three words compared as the program does: the item's 0x2F-0x31
         // against the 4th, 3rd and 2nd operands; the 2nd 0: any words)
@@ -1172,22 +1186,18 @@ bool Vm::dk_step(Stop& r)
                 if (type && it[0x2E] != type) continue;
                 if (w[2] && (it[0x2F] != w[0] || it[0x30] != w[1] || it[0x31] != w[2])) continue;
                 found = true;
-                if (op_ == 0x44) {
+                if (destroy) {
                     if (it[0x34]) rules::worn(c, k, false);
                     rules::remove_item(c, k);
                     h_.party_changed();
                 }
             }
         }
-        if (op_ == 0x43) {
+        if (!destroy) {
             for (bool& f : flags_) f = false;
             flags_[0] = found;
             flags_[1] = !found;
         }
-        return true;
-    }
-    default:
-        return false;
     }
 }
 
@@ -1676,6 +1686,13 @@ Stop Vm::step()
             prompt_ = "";
             dest_ = 0x7F79;
             return wait_for(Wait::Menu);
+        } else if (set_.change_call && w == set_.change_call) {
+            // Gateway: the selected member's coins traded up (its scripts then
+            // pay the price in platinum)
+            if (party_ && party_->count && party_->sel()) {
+                rules::trade_up(*party_->sel());
+                h_.party_changed();
+            }
         } else if (w == 0xC018) {
             // The wall type ahead (worked out anyway)
         } else if (w == 0xC01E) {
@@ -1779,6 +1796,12 @@ Stop Vm::step()
         return Stop::Running;
     case 0x32:                                  // FIND ITEM: anyone carries one of that type
     case 0x3F: {                                // FIND SPECIAL: the selected character has that effect
+        if (op_ == 0x32 && set_.item_words) {
+            // (Gateway: the type and three name words - GAME.OVR overlay 0xAB8 +0x29BD)
+            if (!need(4)) return Stop::Error;
+            find_item_words(o, false);
+            return Stop::Running;
+        }
         if (!need(1)) return Stop::Error;
         const int v = value(o[0]) & 0xFF;
         bool found = false;
@@ -1894,6 +1917,12 @@ Stop Vm::step()
         }
         return Stop::Running;
     case 0x40: {                                // DESTROY ITEMS: every item of that type, everyone's
+        if (set_.item_words) {
+            // (Gateway: the first item of the type and name words - overlay 0xAB8 +0x361F)
+            if (!need(4)) return Stop::Error;
+            find_item_words(o, true);
+            return Stop::Running;
+        }
         if (!need(1)) return Stop::Error;
         const int type = value(o[0]) & 0xFF;
         for (int i = 0; party_ && i < party_->count; ++i) {
@@ -1929,14 +1958,18 @@ Stop Vm::step()
             if (party_ && party_->count) {
                 if (all) {
                     for (int i = 0; i < party_->count; ++i) award(party_->m[i]);
-                    snprintf(xp_text_, sizeof xp_text_, "%s", word(kWPartyGainsXp));
+                    if (set_.xp_number) snprintf(xp_text_, sizeof xp_text_, "%s%u%s", word(kWPartyGainsXp), static_cast<unsigned>(amount), word(kWXpPoints));
+                    else snprintf(xp_text_, sizeof xp_text_, "%s", word(kWPartyGainsXp));
                 } else {
                     party::Character& c = *party_->sel();
                     char nm[20] = {};
                     c.name(nm, sizeof nm);
                     for (size_t n = strlen(nm); n > 0 && nm[n - 1] == ' '; --n) nm[n - 1] = 0;
                     award(c);
-                    snprintf(xp_text_, sizeof xp_text_, "%s%s%s", word(kWCongrats), nm, word(kWGainsXp));
+                    if (set_.xp_number)
+                        snprintf(xp_text_, sizeof xp_text_, "%s%s%s%u%s", word(kWCongrats), nm, word(kWGainsXp), static_cast<unsigned>(amount),
+                                 word(kWXpPoints));
+                    else snprintf(xp_text_, sizeof xp_text_, "%s%s%s", word(kWCongrats), nm, word(kWGainsXp));
                 }
                 h_.party_changed();
             }

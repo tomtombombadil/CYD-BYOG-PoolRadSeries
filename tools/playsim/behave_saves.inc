@@ -24,7 +24,9 @@ bool start(char slot, bool begin)
     static std::string folder, cache;
     folder = host.substr(s + 1);
     cache = "/GOLDBOX/_CYD/" + folder;
-    if (play::open(folder.c_str(), games::Game::CurseOfTheAzureBonds, C, cache.c_str())) return false;
+    // (GAME=8: Gateway, its saves in Curse's layout - gateway_facts.md 11)
+    const games::Game game = getenv("GAME") ? static_cast<games::Game>(atoi(getenv("GAME"))) : games::Game::CurseOfTheAzureBonds;
+    if (play::open(folder.c_str(), game, C, cache.c_str())) return false;
     for (int guard = 0; play::screen == play::Screen::Title && guard < 40; ++guard) {
         if (play::title_run && play::title_run->prompt) {
             tap_word('P');
@@ -350,6 +352,9 @@ void resave_sample()
     const size_t names = 1 + 0x800 * 2 + 0x400 + 0x1E00 + 5 + 2 + 12 + 1;
     for (size_t k = 0; k < a.size() && k < e.size(); ++k) {
         if (k == names - 15) continue;
+        // (a sample saved at camp - Gateway's test save A: state 2 - saved
+        // again from the party menu says 0, as the round trip below expects)
+        if (k == names - 14 && a[k] == 2 && e[k] == 0) continue;
         if (k >= names && k < names + 8 * 41) {
             const size_t slot = (k - names) / 41, at = (k - names) % 41;
             if (slot >= a[names - 1] || at > a[names + slot * 41]) continue;     // (unused slots too)

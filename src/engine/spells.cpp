@@ -67,6 +67,7 @@ Entry entry(const classes::Tables& t, int s)
     e.save = b(9);
     e.delay = b(12);
     e.priority = b(13);
+    e.foe = b(14);
     return e;
 }
 

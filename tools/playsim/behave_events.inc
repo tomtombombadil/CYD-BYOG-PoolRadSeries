@@ -494,8 +494,98 @@ static void b_ops()
                "%d %d %d %d want %d %d %d", b_get(0x4C00), b_get(0x4C01), b_get(0x4C02), b_get(0x4C03), lo, hi, sum / pt->count);
         expect(P, "CHECKPARTY [7CA5] (the scripts' own use): writes nothing", b_get(0x4C04) == 7, "%d", b_get(0x4C04));
     }
+    // ---- Gateway's FIND ITEM / DESTROY ITEM (its interpreter, GAME.OVR overlay
+    // 0xAB8 +0x29BD / +0x361F): the type (0 any) and three name words - the
+    // item's 0x2F-0x31 against the 4th, 3rd and 2nd operands, the 2nd 0 any
+    // words; DESTROY takes the first such item only
+    if (play::gateway()) {
+        party::Character keep1 = pt->m[1], keep4 = pt->m[4];
+        for (int i : {1, 4}) {
+            party::Character& c = pt->m[i];
+            memset(c.items[c.n_items], 0, party::kItemSize);
+            c.items[c.n_items][0x2E] = 0x2F;            // type 47, words 5 6 7 (none readied)
+            c.items[c.n_items][0x2F] = 5;
+            c.items[c.n_items][0x30] = 6;
+            c.items[c.n_items][0x31] = 7;
+            ++c.n_items;
+        }
+        auto count = [&]() {
+            int n = 0;
+            for (int i = 0; i < pt->count; ++i)
+                for (int k = 0; k < pt->m[i].n_items; ++k) n += pt->m[i].items[k][0x2E] == 0x2F && pt->m[i].items[k][0x31] == 7;
+            return n;
+        };
+        const int have = count();
+        BAsm a;
+        for (uint16_t w = 0x4C00; w <= 0x4C03; ++w) a.op(kSave).b(0).m(w);
+        a.op(kFindItem).b(0x2F).b(7).b(6).b(5);                    // the type and its words
+        a.op(kIfEq).op(kSave).b(1).m(0x4C00);
+        a.op(kFindItem).b(0x2F).b(5).b(6).b(7);                    // the words the other way round: none
+        a.op(kIfNe).op(kSave).b(1).m(0x4C01);
+        a.op(kFindItem).b(0).b(0).b(0).b(0);                       // any type, any words
+        a.op(kIfEq).op(kSave).b(1).m(0x4C02);
+        a.op(kDestroyItems).b(0x2F).b(7).b(6).b(5);
+        a.op(kExit);
+        b_run(a, 0x8000 + 20);
+        expect(P, "FIND ITEM (Gateway): the type and its three words, either any",
+               b_get(0x4C00) == 1 && b_get(0x4C01) == 1 && b_get(0x4C02) == 1, "%d %d %d", b_get(0x4C00), b_get(0x4C01), b_get(0x4C02));
+        expect(P, "DESTROY ITEM (Gateway): the first such item only", have == 2 && count() == 1 && pt->m[1].n_items == keep1.n_items &&
+                                                                          pt->m[4].n_items == keep4.n_items + 1,
+               "had %d left %d", have, count());
+        pt->m[1] = keep1;
+        pt->m[4] = keep4;
+        // CALL 0x80F (seg 0xCB entry 0x75 with 3; the rates DS 0x104C - the
+        // coins' AD&D worths): the selected's copper to gold traded up a kind
+        // at a time, before its scripts take a price in platinum
+        {
+            party::Character keep = pt->m[1];
+            const int coins[5] = {25, 9, 3, 12, 1};
+            for (int k = 0; k < 7; ++k) pt->m[1].rec[0xFB + 2 * k] = pt->m[1].rec[0xFC + 2 * k] = 0;
+            for (int k = 0; k < 5; ++k) pt->m[1].rec[0xFB + 2 * k] = static_cast<uint8_t>(coins[k]);
+            BAsm x;
+            x.op(kLoadChar).b(1);
+            x.op(kCall).w(0x80F);
+            x.op(kExit);
+            b_run(x, 0x8000 + 20);
+            // 25 cp -> 5 cp + 2 sp; 11 sp -> 1 sp + 1 ep; 4 ep -> 2 gp; 14 gp -> 4 gp + 2 pp
+            const party::Character& c = pt->m[1];
+            expect(P, "CALL 0x80F (Gateway): the selected's coins traded up to platinum",
+                   c.money(0) == 5 && c.money(1) == 1 && c.money(2) == 0 && c.money(3) == 4 && c.money(4) == 3, "%d %d %d %d %d",
+                   c.money(0), c.money(1), c.money(2), c.money(3), c.money(4));
+            pt->m[1] = keep;
+        }
+        // EXPERIENCE (0x41, overlay +0x3767): the amount to everyone (1st
+        // operand not 0) or the selected, each its share by the classes 0-6
+        // with a level, only those in the fight (record 0x196); its words tell
+        // the amount
+        {
+            party::Character keep[party::kMaxParty];
+            for (int i = 0; i < pt->count; ++i) keep[i] = pt->m[i];
+            pt->m[0].rec[0x109 + 5] = 1;                    // member 0 a fighter / magic-user: a half each
+            pt->m[2].rec[0x196] = 0;                        // member 2 out of the fight: none
+            uint32_t before[party::kMaxParty];
+            for (int i = 0; i < pt->count; ++i) before[i] = pt->m[i].exp();
+            BAsm x;
+            x.op(0x41).b(1).w(600);
+            x.op(kExit);
+            b_run(x, 0x8000 + 20);
+            const std::string said = vm->text();
+            bool ok = true;
+            for (int i = 0; i < pt->count; ++i) {
+                int classes = 0;
+                for (int k = 0; k < 7; ++k) classes += pt->m[i].rec[0x109 + k] > 0;
+                const uint32_t want = before[i] + (pt->m[i].rec[0x196] && classes ? 600 / classes : 0);
+                ok = ok && pt->m[i].exp() == want;
+            }
+            expect(P, "EXPERIENCE (Gateway): the party's shares by classes, not those out of the fight; the amount told",
+                   ok && said.find("600") != std::string::npos, "%u %u %u", pt->m[0].exp() - before[0], pt->m[1].exp() - before[1],
+                   pt->m[2].exp() - before[2]);
+            for (int i = 0; i < pt->count; ++i) pt->m[i] = keep[i];
+            for (int k = 0; k < 4 && vm->wait() != ecl::Wait::None; ++k) vm->resume();    // (its words shown: on to EXIT)
+        }
+    }
     // ---- FIND ITEM (anyone carries one of the type) / DESTROY ITEMS (all of it, everyone)
-    {
+    else {
         party::Character keep1 = pt->m[1], keep4 = pt->m[4];
         for (int i : {1, 4}) {
             party::Character& c = pt->m[i];
@@ -1390,6 +1480,7 @@ static std::string b_one_step(int area, int block, int x, int y, int dir)
         char t[48];
         if (wt == (int)ecl::Wait::Print) snprintf(t, sizeof t, " P:%06X", b_hash(vm->text()));
         else if (wt == (int)ecl::Wait::Menu || wt == (int)ecl::Wait::ListMenu) snprintf(t, sizeof t, " M%d", vm->items());
+        else if (wt == (int)ecl::Wait::Key && play::gateway()) snprintf(t, sizeof t, " K");   // (its CALL 0x809: a key, then on)
         else {
             snprintf(t, sizeof t, " W%d", wt);
             out += t;
@@ -1429,16 +1520,32 @@ static bool b_enter(int area, int block)
     return false;
 }
 
-static const int b_blocks[][2] = {{1, 80}, {1, 81}, {1, 82}, {2, 1},  {2, 2},  {2, 3},  {2, 4},  {3, 16}, {3, 17},
-                                  {3, 18}, {3, 21}, {4, 32}, {4, 33}, {4, 34}, {4, 35}, {4, 37}, {5, 48}, {5, 49},
-                                  {5, 50}, {5, 51}, {5, 53}, {6, 64}, {6, 66}, {6, 67}, {6, 69}};
+static const int b_blocks_curse[][2] = {{1, 80}, {1, 81}, {1, 82}, {2, 1},  {2, 2},  {2, 3},  {2, 4},  {3, 16}, {3, 17},
+                                        {3, 18}, {3, 21}, {4, 32}, {4, 33}, {4, 34}, {4, 35}, {4, 37}, {5, 48}, {5, 49},
+                                        {5, 50}, {5, 51}, {5, 53}, {6, 64}, {6, 66}, {6, 67}, {6, 69}};
+// Gateway's (GAME=8): its ECL2-6 blocks (gateway_facts.md 1) - the
+// wilderness's 21 is a map of its own (no 3D steps)
+static const int b_blocks_gateway[][2] = {{2, 1},  {2, 2},  {2, 3},  {2, 4},  {2, 82}, {3, 5},  {3, 6},  {3, 7},  {3, 9},
+                                          {3, 14}, {3, 15}, {4, 8},  {4, 10}, {4, 11}, {4, 12}, {4, 13}, {5, 16}, {5, 17},
+                                          {5, 18}, {5, 19}, {5, 98}, {5, 99}, {6, 20}, {6, 21}, {6, 27}, {6, 28}};
+struct BBlocks {
+    const int (*at)[2];
+    size_t n;
+    const int (*begin() const)[2] { return at; }
+    const int (*end() const)[2] { return at + n; }
+};
+static BBlocks b_block_list()
+{
+    if (getenv("GAME") && atoi(getenv("GAME")) == 8) return {b_blocks_gateway, sizeof b_blocks_gateway / sizeof b_blocks_gateway[0]};
+    return {b_blocks_curse, sizeof b_blocks_curse / sizeof b_blocks_curse[0]};
+}
 
 // Mode "events_dump": the states for the scratch reader (stdout)
 static void behave_events_dump(const char* path)
 {
     FILE* f = fopen(path, "w");
     if (!f) return;
-    for (auto& ab : b_blocks) {
+    for (auto& ab : b_block_list()) {
         if (getenv("BLOCK") && atoi(getenv("BLOCK")) != ab[1]) continue;
         const bool ok = b_enter(ab[0], ab[1]);
         if (!ok) {
@@ -1458,11 +1565,13 @@ static void b_triggers()
         expect(P, "triggers: the oracle file", false, "no ORACLE_DIR/oracle_events.txt");
         return;
     }
-    for (auto& ab : b_blocks) {
+    for (auto& ab : b_block_list()) {
         if (getenv("BLOCK") && atoi(getenv("BLOCK")) != ab[1]) continue;
         char key[48];
         snprintf(key, sizeof key, "BLOCK%d_%d", ab[0], ab[1]);
         if (ev_oracle.find(key) == ev_oracle.end()) continue;
+        // (Gateway's wilderness: a map of its own, no 3D steps to follow)
+        if (!ev_oracle[key].empty() && ev_oracle[key][0] == "wilderness") continue;
         const char* sp = getenv("EVSTATE");
         const std::string states = sp ? sp : "/tmp/claude-0/bt_events/states.txt";
         if (!b_enter(ab[0], ab[1]) || !b_restore(states.c_str(), ab[0], ab[1]) || !vm->init_script(true) ||
@@ -1527,7 +1636,7 @@ static void b_triggers()
                             char scr[24] = "";
                             // (the treasure step without a fight is shown on the fight's screen)
                             if (wt[k] == "W10" || wt[k] == "W11") snprintf(scr, sizeof scr, "SCREEN:%d", (int)Screen::Fight);
-                            if (wt[k] == "W7" || wt[k] == "W8") snprintf(scr, sizeof scr, "SCREEN:%d", (int)Screen::Shop);
+                            if (wt[k] == "W7" || wt[k] == "W8" || wt[k] == "VAULT") snprintf(scr, sizeof scr, "SCREEN:%d", (int)Screen::Shop);
                             if (wt[k] == "W9") snprintf(scr, sizeof scr, "SCREEN:%d", (int)Screen::PartyMenu);
                             if (wt[k] == "W14") snprintf(scr, sizeof scr, "SCREEN:%d", (int)Screen::Camp);
                             same = wt[k] == gt[k] || (scr[0] && gt[k] == scr);
@@ -1605,6 +1714,6 @@ static void behave_events()
     if (want("surprise")) b_surprise();
     if (want("steps")) b_steps();
     if (want("rest")) b_rest();
-    if (want("guild")) b_guild();
+    if (want("guild") && !(getenv("GAME") && atoi(getenv("GAME")) == 8)) b_guild();     // (Curse's Thieves' Guild)
     if (want("triggers")) b_triggers();
 }

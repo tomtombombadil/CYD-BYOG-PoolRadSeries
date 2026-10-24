@@ -63,11 +63,14 @@ static void problem(const char* what)
     printf("!! PROBLEM: %s\n", what);
 }
 
+// (a menu on two rows - Darkness's, Gateway's fights - the word's own row: text::item_cell)
 static bool tap_word(char k)
 {
     for (int i = 0; i < play::menu.count; ++i)
         if (text::key(play::menu, i) == k) {
-            play::tap((static_cast<int>(strlen(play::menu.prompt)) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C);
+            int col = 0, row = text::kMenuRow;
+            text::item_cell(play::menu, i, &col, &row);
+            play::tap(col * 8 + 2, row * 8 + 2, C);
             return true;
         }
     return false;
@@ -76,8 +79,9 @@ static bool tap_word(char k)
 static void tap_item(int i)
 {
     if (i < 0 || i >= play::menu.count) i = 0;
-    const int col = play::menu.count ? static_cast<int>(strlen(play::menu.prompt)) + play::menu.start[i] : 0;
-    play::tap(col * 8 + 2, text::kMenuRow * 8 + 2, C);
+    int col = 0, row = text::kMenuRow;
+    if (play::menu.count) text::item_cell(play::menu, i, &col, &row);
+    play::tap(col * 8 + 2, row * 8 + 2, C);
 }
 
 static int pm_line(char k)
@@ -349,7 +353,8 @@ static bool start_fight(int area = 0, int mon = 0, int copies = 0)
                        : game == 1       ? 0x85F9
                        : game == 3       ? 0x848A
                        : game == 4       ? 0x85BB
-                       : game == 9       ? 0x9C1D          // (Treasures: save A's 11-monster fight)
+                       : game == 8       ? 0x91B1          // (Gateway: save A's script, Yartar)
+                       : game == 9      ? 0x9C1D          // (Treasures: save A's 11-monster fight)
                                          : 0x8AC2;
     if (mon) {
         play::d->gs.game_area = static_cast<uint8_t>(area);

@@ -84,6 +84,7 @@ static const char* b_nm(const uint8_t* r)
 // with GAME=1: 0 a fighter, 3 a cleric, 4 a magic-user, 5 a thief)
 static bool b_pool = false;
 static int bm_mu = 5, bm_cl = 4, bm_th = 2;
+static int kA = 1;                          // a fighter: the attacker (Curse: MARK, a paladin; Gateway: ARNOLD)
 
 // What a readied item's code does in each game - from the facts
 // (curse_finish_facts.md 5.2, poolrad_combat_facts.md 2.2 /
@@ -344,7 +345,7 @@ static void b_readied_values()
         const uint8_t* ammo[2] = {(t.flags & 0x01) ? arrows1 : quarrels1, (t.flags & 0x01) ? arrows3 : nullptr};
         for (const uint8_t* a : ammo) {
             if (!a) continue;
-            party::Character& ch = b_fresh(1);
+            party::Character& ch = b_fresh(kA);
             b_give(ch, r, true);
             b_give(ch, a, true);
             rules::recalc(ch, *names, d->facts);
@@ -365,7 +366,7 @@ static void b_readied_values()
     {
         const uint8_t* bow = b_plain_of_type(43);
         if (bow && quarrels1) {
-            party::Character& ch = b_fresh(1);
+            party::Character& ch = b_fresh(kA);
             b_give(ch, bow, true);
             b_give(ch, quarrels1, true);
             rules::recalc(ch, *names, d->facts);
@@ -398,7 +399,7 @@ static void b_adnd_tables()
         const uint8_t* r = b_rec(k);
         const std::vector<int>* a = orow("armour", r[0x2E]);
         if (!a) continue;
-        party::Character& ch = b_fresh(1);
+        party::Character& ch = b_fresh(kA);
         ch.rec[0x16] = ch.rec[0x17] = 10;
         b_give(ch, r, true);
         rules::recalc(ch, *names, d->facts);
@@ -428,7 +429,7 @@ static void b_adnd_tables()
         const uint8_t* plain = b_plain_of_type(55);
         const uint8_t* magic = b_of_type(55, 1);
         if (ring3 && ring2 && plain && magic) {
-            party::Character& ch = b_fresh(1);
+            party::Character& ch = b_fresh(kA);
             ch.rec[0x16] = ch.rec[0x17] = 10;
             b_give(ch, ring3, true);
             rules::recalc(ch, *names, d->facts);
@@ -455,7 +456,7 @@ static void b_adnd_tables()
         const uint8_t* r = b_rec(k);
         if (r[0x2E] != 77) continue;
         const int plus = static_cast<int8_t>(r[0x32]);
-        party::Character& ch = b_fresh(1);
+        party::Character& ch = b_fresh(kA);
         ch.rec[0x16] = ch.rec[0x17] = 10;
         b_give(ch, r, true);
         rules::recalc(ch, *names, d->facts);
@@ -479,7 +480,7 @@ static void b_adnd_tables()
         const int want[] = {12, 12, 12, 12, 9, 9};
         const uint8_t* plate = b_plain_of_type(58);
         for (int j = 0; plate && j < 6; ++j) {
-            party::Character& ch = b_fresh(1);
+            party::Character& ch = b_fresh(kA);
             const int i = b_give(ch, plate, true);
             ch.items[i][0x37] = static_cast<uint8_t>(weights[j]);
             ch.items[i][0x38] = static_cast<uint8_t>(weights[j] >> 8);
@@ -491,7 +492,7 @@ static void b_adnd_tables()
     }
     // Carrying: past the Strength allowance + 512 movement 9, + 768 6, more 3
     {
-        party::Character& ch = b_fresh(1);
+        party::Character& ch = b_fresh(kA);
         const int grp = b_str_group(ch.rec[0x11], ch.rec[0x1C]);
         const int allow = ov("str_enc", grp);
         const int loads[] = {allow + 0x200, allow + 0x201, allow + 0x300, allow + 0x301, allow + 0x400, allow + 0x401};
@@ -544,7 +545,7 @@ static void b_ready_rules()
         int ok_for = 0, wrong = 0;
         for (int cl = 0; cl < 8; ++cl) {
             if (cl == 1 || cl == 7) continue;           // (no druids or monks among the player's classes)
-            party::Character& ch = b_fresh(1);
+            party::Character& ch = b_fresh(kA);
             ch.rec[0x12B] = static_cast<uint8_t>(ov("class_bits", cl));
             b_suit(ch, r);
             const int i = b_give(ch, r, false);
@@ -592,7 +593,7 @@ static void b_ready_rules()
         const uint8_t* r = b_rec(k);
         const items::TypeInfo& t = names->type(r[0x2E]);
         if (t.slot > 9 || (t.classes & 0x48) == 0) continue;
-        party::Character& ch = b_fresh(1);
+        party::Character& ch = b_fresh(kA);
         ch.rec[0x12B] = 0xFF;
         b_suit(ch, r);
         // the hands: a weapon and a shield may make 3 - keep to items of no hands for this
@@ -614,7 +615,7 @@ static void b_ready_rules()
     for (int type : {static_cast<int>(d->facts.arrow), static_cast<int>(d->facts.quarrel)}) {
         const uint8_t* r = b_plain_of_type(type);
         if (!r) continue;
-        party::Character& ch = b_fresh(1);
+        party::Character& ch = b_fresh(kA);
         const int a = b_give(ch, r, false), bb = b_give(ch, r, false);
         rules::recalc(ch, *names, d->facts);
         const bool first = b_ready(a), second = b_ready(bb);
@@ -631,19 +632,19 @@ static void b_ready_rules()
         for (int k = 0; k < b_n_items && !potion; ++k)
             if (b_rec(k)[0x2E] == 71 && b_rec(k)[0x3D]) potion = b_rec(k);
         if (two && shield && sword) {
-            party::Character& ch = b_fresh(1);
+            party::Character& ch = b_fresh(kA);
             int a = b_give(ch, two, false), bb = b_give(ch, shield, false);
             rules::recalc(ch, *names, d->facts);
             bool x = b_ready(a), y = b_ready(bb);
             expect("items", "two-handed sword, then a shield: \"Your hands are full!\"", x && !y, "%d %d", x, y);
-            ch = b_fresh(1);
+            ch = b_fresh(kA);
             a = b_give(ch, shield, false);
             bb = b_give(ch, two, false);
             rules::recalc(ch, *names, d->facts);
             x = b_ready(a);
             y = b_ready(bb);
             expect("items", "a shield, then a two-handed sword: hands full", x && !y, "%d %d", x, y);
-            ch = b_fresh(1);
+            ch = b_fresh(kA);
             a = b_give(ch, sword, false);
             bb = b_give(ch, shield, false);
             rules::recalc(ch, *names, d->facts);
@@ -662,7 +663,7 @@ static void b_ready_rules()
     for (int k = 0; k < b_n_items; ++k) {
         const uint8_t* r = b_rec(k);
         if (!r[0x36]) continue;
-        party::Character& ch = b_fresh(1);
+        party::Character& ch = b_fresh(kA);
         ch.rec[0x12B] = 0xFF;
         const int i = b_give(ch, r, false, true);
         rules::recalc(ch, *names, d->facts);
@@ -802,7 +803,7 @@ static void b_money()
     for (int k = 0; k < b_n_items; ++k) {
         const uint8_t* r = b_rec(k);
         if (r[0x39] < 2) continue;
-        party::Character& ch = b_fresh(1);
+        party::Character& ch = b_fresh(kA);
         const int i = b_give(ch, r, true);
         const int n = r[0x39];
         const bool ok = rules::halve(ch, i);
@@ -824,14 +825,14 @@ static void b_money()
         expect("items", what, ch.n_items == 1 && ch.items[0][0x39] == n, "%d piles, %d", ch.n_items, ch.items[0][0x39]);
     }
     {
-        party::Character& ch = b_fresh(1);
+        party::Character& ch = b_fresh(kA);
         const uint8_t* sword = b_plain_of_type(36);
         const int i = b_give(ch, sword, false);
         expect("items", "Halve a single long sword: can't", !rules::halve(ch, i) && ch.n_items == 1, "%d items", ch.n_items);
         // Join: the same items only (type, words, plus, saves, cursed, weight, effects; charges under 2)
         const uint8_t* a10 = b_plain_of_type(d->facts.arrow);
         const uint8_t* a1 = b_of_type(d->facts.arrow, 1);
-        ch = b_fresh(1);
+        ch = b_fresh(kA);
         b_give(ch, a10, false);
         b_give(ch, a10, false);
         b_give(ch, a1, false);
@@ -842,7 +843,7 @@ static void b_money()
         uint8_t big[63];
         memcpy(big, a10, 63);
         big[0x39] = 200;
-        ch = b_fresh(1);
+        ch = b_fresh(kA);
         b_give(ch, big, false);
         b_give(ch, big, false);
         rules::join(ch, 0);
@@ -857,7 +858,7 @@ static void b_money()
                 break;
             }
         pot[0x39] = 2;
-        ch = b_fresh(1);
+        ch = b_fresh(kA);
         b_give(ch, pot, false);
         b_give(ch, pot, false);
         rules::join(ch, 0);
@@ -865,7 +866,7 @@ static void b_money()
     }
     // Weight: each item's weight times its count (single items count 1), and the coins
     {
-        party::Character& ch = b_fresh(1);
+        party::Character& ch = b_fresh(kA);
         int want = 0;
         for (int k = 0; k < 16; ++k) {
             const uint8_t* r = b_rec(k * 12 % b_n_items);
@@ -881,7 +882,7 @@ static void b_money()
         memcpy(feather, b_rec(22), 63);
         feather[0x37] = feather[0x38] = 0;
         expect("items", "a 17th item: too many", rules::too_heavy(ch, feather, *names, d->facts));
-        ch = b_fresh(1);
+        ch = b_fresh(kA);
         rules::recalc(ch, *names, d->facts);
         const int room = rules::max_load(ch) - ch.encumbrance();
         uint8_t heavy[63];
@@ -901,7 +902,7 @@ static void b_money()
 // where they count - the hit roll needed, the damage against man-sized and
 // large, missiles (rate of fire, ammunition, range), the weapons' and
 // armour's own effects
-static const int kA = 1, kT = 6;            // the attacker (MARK, a paladin) and a monster
+static const int kT = 6;                    // a monster
 
 // Only fighters a and t on the field: a at (12, 12) facing east, t dx squares east of it
 static void b_place(int a, int t, int dx)
@@ -2028,6 +2029,10 @@ static int b_fu_menu()
             const bool ok = hurt <= most && (most == 0 || hurt >= 1) && (hurt == 0 || (hi <= want_hi && lo >= (want_lo > 16 ? 1 : 1)));
             expect("items", what, ok && (hurt == 0 || lo >= 1));
         }
+        // (checked: the monsters back to a point each, so the fight ends - Gateway's
+        // party of 2nd-3rd level would take a thousand rounds against 200 each)
+        for (int i = 0; i < fg->b.n; ++i)
+            if (fg->b.f[i].member < 0 && fg->b.f[i].up()) fg->b.f[i].rec[0x1A4] = 1;
     }
     return 0;
 }
@@ -2192,6 +2197,12 @@ static void behave_items()
         bm_cl = 3;
         bm_th = 5;
     }
+    if (gateway()) {                                // (its test save A: ARNOLD fighter, CLEO cleric, MERL
+        kA = 0;                                     // magic-user, THEA thief)
+        bm_mu = 4;
+        bm_cl = 1;
+        bm_th = 5;
+    }
     // The records as the player gets them: an item the original got wrong
     // fixed when that's on (CYD_ITEM_FIXES; Pool's Flame Tongue)
     for (int k = 0; k < b_n_items; ++k)
@@ -2205,7 +2216,7 @@ static void behave_items()
     {
         const uint8_t* plain = b_plain_of_type(36);
         if (!expect("items", "a plain long sword in the game's items", plain != nullptr)) return;
-        party::Character& ch = pt->m[1];             // a fighter of the sample party
+        party::Character& ch = pt->m[kA];            // a fighter of the sample party
         b_hold_only(ch, plain);
         const int hit0 = ch.rec[0x199], dmg0 = ch.damage_bonus(), dice0 = ch.dice(), sides0 = ch.dice_sides();
         uint8_t plus1[63];
@@ -2257,6 +2268,12 @@ static void behave_itemtest()
     if (b_pool) {
         bm_mu = 4;
         bm_cl = 3;
+        bm_th = 5;
+    }
+    if (gateway()) {                                // (its test save A: ARNOLD fighter, CLEO cleric, MERL
+        kA = 0;                                     // magic-user, THEA thief)
+        bm_mu = 4;
+        bm_cl = 1;
         bm_th = 5;
     }
     FILE* rep = getenv("ITEMTEST_REPORT") ? fopen(getenv("ITEMTEST_REPORT"), "w") : nullptr;

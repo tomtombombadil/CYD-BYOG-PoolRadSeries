@@ -214,6 +214,9 @@ enum FightWord {
     // Darkness's level drain (its ovr 0x1CF3B): "collapses from drainning"
     // ("gets drained" / "dies from drainning" are kIsDrained / kDeadForever)
     kCollapsesDrainDk,
+    // Gateway's monsters: "drains blood from " / "constricts " (the victim's
+    // name after), "regenerates", "Falls dead"
+    kDrainsBloodGw, kConstrictsGw, kRegeneratesGw, kFallsDeadGw,
     kFightWords
 };
 

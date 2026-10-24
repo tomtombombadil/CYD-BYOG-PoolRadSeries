@@ -935,9 +935,15 @@ void drop_aff(Fighter& f, int i)
 static uint8_t cloud_g(const Battle& b) { return b.fx && b.fx->cloud_ground ? b.fx->cloud_ground : kCloudGround; }
 static uint8_t poison_g(const Battle& b) { return b.fx && b.fx->poison_ground ? b.fx->poison_ground : kPoisonGround; }
 
+// An item's name words (0x2F-0x31) include w (0: never)
+static bool has_word(const uint8_t* it, uint8_t w)
+{
+    return w && (it[0x2F] == w || it[0x30] == w || it[0x31] == w);
+}
+
 static void lose_image(Battle& b, Fighter& f, int k)
 {
-    if (b.fx && b.fx->secret) {
+    if (b.fx && (b.fx->secret || b.fx->gw.mirror)) {
         const int images = (f.aff[k][3] >> 4) - 1;
         if (images <= 0) drop_aff(f, k);
         else f.aff[k][3] = static_cast<uint8_t>(images << 4 | (f.aff[k][3] & 0x0F));
@@ -985,6 +991,8 @@ void let_go(Battle& b, Fighter& holder, uint8_t type)
     if (type == b.fx->mon.engulfing && b.fx->mon.suffocate && j >= 0) drop_aff(vf, j);
 }
 
+bool stand_up(Battle& b, int i, bool full);
+
 // Out of the fight (down, stoned, gone): off the field (a party member
 // leaves a body), the holds it had let go, a troll's regeneration stops -
 // and fallen to anything but fire or acid, it gets up again later
@@ -1011,10 +1019,31 @@ void fall(Battle& b, int c)
     let_go(b, f, m.hugging);
     let_go(b, f, m.sucking);
     let_go(b, f, m.holding);
+    let_go(b, f, b.fx->gw.sucking);
+    let_go(b, f, b.fx->gw.constrict);
     const uint8_t regen[2] = {m.regen_wait, m.regen};
     for (uint8_t t : regen) {
         const int k = t ? find_aff(f, t) : -1;
         if (k >= 0) drop_aff(f, k);
+    }
+    // Gateway's boar (0x63 first in its death list - coab's sub_3BEE8):
+    // dying under 6 below, or unconscious, it gets up at once with 6 - that
+    // many hit points (6), its square free ("stands up and grins"), and falls
+    // dead d4 + 1 rounds on (0x5F); the 0x63 goes
+    const Facts::GateFx& gw = b.fx->gw;
+    const int fo = gw.fights_on && gw.falls_dead ? find_aff(f, gw.fights_on) : -1;
+    if (fo >= 0) {
+        int amount = 0;
+        if (f.status() == party::Dying && f.bleeding < 6) amount = 6 - f.bleeding;
+        if (f.status() == party::Unconscious) amount = 6;
+        if (amount > 0 && stand_up(b, c, false)) {
+            f.rec[kHp] = static_cast<uint8_t>(amount);
+            give_aff(f, gw.falls_dead, (g_dice ? g_dice->roll(4, 1) : 1) + 1, 0xFF, true);
+            const int k = find_aff(f, gw.fights_on);
+            if (k >= 0) drop_aff(f, k);
+            b.risen = c;
+            return;
+        }
     }
     if (hasx(f, m.troll_death) && m.troll_up && !(g_kind & 0x11) && f.status() != party::Stoned &&
         f.status() != party::Gone)
@@ -1049,7 +1078,8 @@ void end_effect(Battle& b, Fighter& f, int k)
         }
         // A hold taken away (dispelled): its victim (the data) goes free
         if ((fx.mon.engulfing && type == fx.mon.engulfing) || (fx.mon.hugging && type == fx.mon.hugging) ||
-            (fx.mon.sucking && type == fx.mon.sucking) || (fx.mon.holding && type == fx.mon.holding)) {
+            (fx.mon.sucking && type == fx.mon.sucking) || (fx.mon.holding && type == fx.mon.holding) ||
+            (fx.gw.sucking && type == fx.gw.sucking) || (fx.gw.constrict && type == fx.gw.constrict)) {
             if (data < b.n) {
                 Fighter& vf = b.f[data];
                 int j = fx.mon.held_fast ? find_aff(vf, fx.mon.held_fast) : -1;
@@ -1122,6 +1152,12 @@ TurnFx turn_effects(Battle& b, int i)
     if (fx.fumbling && f.has(fx.fumbling)) {
         f.moves = f.attacks[0] = f.attacks[1] = 0;
         return TurnFx::Fumbling;
+    }
+    // Gateway: held fast - no moving, no spells this turn (its turn-start
+    // list 15 1E 0B 0D 4D 3A; handler GAME.OVR 0x130DA)
+    if (fx.gw.ways && fx.mon.held_fast && hasx(f, fx.mon.held_fast)) {
+        f.moves = 0;
+        f.can_cast = false;
     }
     // Berserk (the Berserker sword; the turn-start list, after silence,
     // clouds, charm, suffocation): the listing's spl_berzerk (ovr013:17B3)
@@ -1244,7 +1280,7 @@ int tick(Battle& b, Event* out, int cap)
     int n = 0;
     for (int i = 0; i < b.n; ++i) {
         Fighter& f = b.f[i];
-        bool regen = false, rise = false, sting = false, slow_over = false, con_up = false;
+        bool regen = false, rise = false, sting = false, slow_over = false, con_up = false, dies = false;
         int weak_due = 0, sick_due = 0, ill_over = -1;
         for (int k = 0; f.n_aff && k < *f.n_aff;) {
             const int m = f.aff[k][1] | f.aff[k][2] << 8;
@@ -1265,6 +1301,7 @@ int tick(Battle& b, Event* out, int cap)
                 if (b.fx && b.fx->sp.poison_damage && f.aff[k][0] == b.fx->sp.poison_damage) sting = true;
                 if (b.fx && b.fx->sp.slow_poison && f.aff[k][0] == b.fx->sp.slow_poison) slow_over = true;
                 if (b.fx && b.fx->sp.con_regen && f.aff[k][0] == b.fx->sp.con_regen) con_up = true;
+                if (b.fx && b.fx->gw.falls_dead && f.aff[k][0] == b.fx->gw.falls_dead) dies = true;
                 end_effect(b, f, k);
             } else {
                 f.aff[k][1] = static_cast<uint8_t>(m - 1);
@@ -1358,6 +1395,18 @@ int tick(Battle& b, Event* out, int cap)
                 }
             }
         }
+        // Gateway's boar (0x5F, GAME.OVR - coab's sub_3BE06): its rounds over,
+        // still in the fight - "Falls dead"
+        if (dies && f.up()) {
+            f.rec[kHp] = 0;
+            f.rec[kHealth] = party::Dead;
+            fall(b, i);
+            if (n < cap) {
+                out[n] = Event{};
+                out[n].who = static_cast<uint8_t>(i);
+                out[n++].ev = Ev::FallsDead;
+            }
+        }
         // A troll: its wait over, it regenerates; fallen, it gets up again
         // with all its hit points when its square is free (else a round later)
         if (regen && mf.regen) give_aff(f, mf.regen, 0, 0xFF, false);
@@ -1380,6 +1429,18 @@ int tick(Battle& b, Event* out, int cap)
         if (!f.up() || !f.has(b.fx->mon.regen)) continue;
         const int hp = f.hp() + 3;
         f.rec[kHp] = static_cast<uint8_t>(hp > f.hp_max() ? f.hp_max() : hp);
+    }
+    // Gateway's Vaalgamon (0xA1, GAME.OVR 0x15365 - the round's end list's
+    // last): hurt, a hit point back - "regenerates"
+    for (int i = 0; b.fx && b.fx->gw.regen1 && i < b.n; ++i) {
+        Fighter& f = b.f[i];
+        if (!f.up() || !f.has(b.fx->gw.regen1) || f.hp() >= f.hp_max()) continue;
+        f.rec[kHp] = static_cast<uint8_t>(f.hp() + 1);
+        if (out && n < cap) {
+            out[n] = Event{};
+            out[n].who = static_cast<uint8_t>(i);
+            out[n++].ev = Ev::Regenerates;
+        }
     }
     return n;
 }
@@ -1764,10 +1825,13 @@ void after_hit(Battle& b, int a, int c, int slot, int roll, int hits1, create::D
         fall(b, c);
         out.down = true;
     };
-    // Held fast (engulfed, hugged): no more moving this turn
+    const Facts::GateFx& gw = b.fx->gw;
+    // Held fast (engulfed, hugged): no more moving this turn (Gateway's
+    // handler, called at once: no spells either)
     auto hold = [&](uint8_t holding) {
         give_aff(tg, m.held_fast, 0, c, false);
         tg.moves = 0;
+        if (gw.ways) tg.can_cast = false;
         give_aff(at, holding, 0, c, true);
     };
     // Pool's: a level or two drained; the mummy's disease (no save: the
@@ -1793,13 +1857,17 @@ void after_hit(Battle& b, int a, int c, int slot, int roll, int hits1, create::D
         pool_hit();
         if (hasx(at, m.fire_touch)) touch(d.roll(10, 2), 9);
         if (hasx(at, m.acid_bite)) touch(d.roll(4, 1), 0x10);
-        if (hasx(at, m.engulf) && hits1 == 2 && tg.up() && m.held_fast && m.suffocate && m.engulfing &&
+        // (Gateway's, GAME.OVR 0x1A47A: a d10 of 4 or less at each hit, not
+        // while it engulfs one already - Curse's both hits)
+        const bool engulf_ok = hasx(at, m.engulf) && (gw.ways ? d.roll(10, 1) <= 4 && !at.has(m.engulfing) : hits1 == 2);
+        if (engulf_ok && tg.up() && m.held_fast && m.suffocate && m.engulfing &&
             !tg.has(m.held_fast) && !tg.has(m.suffocate)) {
             add_event(out, a, Ev::Engulfs, c);
             hold(m.engulfing);
             give_aff(tg, m.suffocate, 0, d.roll(4, 2), false);
         }
-        if (hasx(at, m.hug) && roll >= 18 && tg.up() && m.held_fast && m.hugging && !at.has(m.hugging)) {
+        if (hasx(at, m.hug) && roll >= 18 && tg.up() && m.held_fast && m.hugging && !at.has(m.hugging) &&
+            !(gw.ways && tg.has(m.held_fast))) {
             add_event(out, a, Ev::Hugs, c);
             hold(m.hugging);
         }
@@ -1808,6 +1876,65 @@ void after_hit(Battle& b, int a, int c, int slot, int roll, int hits1, create::D
             add_event(out, c, Ev::ParalyzedLow);
         }
         if (hasx(at, m.chill)) touch(d.roll(8, 2), 0x0A);
+        // Gateway's after attack 1's hit (its list 4F 50 91 39 60 7A 7B 95 9A
+        // 9B 40 43 9F): the stirge's and the squid's holds (a d10 of 4 or
+        // less), the harpy's charm, the deadly poison, the paralysing bite,
+        // the mummy's disease
+        if (gw.ways) {
+            auto latch_gw = [&](uint8_t own, uint8_t holding, Ev said, int minutes) {
+                if (!hasx(at, own) || !holding || !m.held_fast) return;
+                if (d.roll(10, 1) > 4 || !at.up() || !tg.up() || at.has(holding) || tg.has(m.held_fast)) return;
+                add_event(out, a, said, c);
+                give_aff(tg, m.held_fast, 0, c, false);
+                tg.moves = 0;
+                tg.can_cast = false;
+                give_aff(at, holding, minutes, c, true);
+            };
+            // (with the fixes the stirge holds 12 hit points' blood: Pool's time / 16)
+            latch_gw(gw.stirge, gw.sucking, Ev::DrainsBlood, rules::fixes() ? 0xCF : 0);
+            if (hasx(at, gw.harpy) && tg.up() && b.fx->charm && !tg.has(b.fx->charm) && !saving_throw(tg, 4, 0, d)) {
+                give_aff(tg, b.fx->charm, 0, (at.team() ? 0x80 : 0) | 3, true);
+                tg.rec[kTeam] = static_cast<uint8_t>(at.team());
+                tg.target = -1;
+                add_event(out, c, Ev::Charmed);
+            }
+            latch_gw(gw.squid, gw.constrict, Ev::Constricts, 0);
+            if (hasx(at, m.poison)) poison(0);
+            if (hasx(at, m.kreen_bite) && m.paralyzed && tg.up() && !saving_throw(tg, 0, 0, d)) {
+                give_aff(tg, m.paralyzed, m.para_rounds ? m.para_rounds : d.roll(8, 2), 12, false);
+                add_event(out, c, Ev::Paralyzed);
+            }
+            // The mummy (GAME.OVR 0x152A3): a save against poison or "is
+            // diseased" - Cause Disease's handler at once: weakness (60, the
+            // Strength in use - 1 "is weakened", at 3 helpless) and sickness
+            // (10, a point of damage while over 1 HP, else helpless)
+            const SpellFx& ill = b.fx->sp;
+            if (hasx(at, gw.mummy) && tg.up() && ill.weak && ill.sick && !saving_throw(tg, 0, 0, d)) {
+                add_event(out, c, Ev::Diseased);
+                give_aff(tg, ill.weak, 60, 0, true);
+                give_aff(tg, ill.sick, 10, 0, true);
+                auto helpless_now = [&]() {
+                    const uint8_t hl = b.fx->held[3];
+                    if (hl && !tg.has(hl)) give_aff(tg, hl, 0, 0xFF, false);
+                };
+                if (tg.rec[0x11] > 3) {
+                    --tg.rec[0x11];
+                    add_event(out, c, Ev::Weakened);
+                } else {
+                    helpless_now();
+                }
+                if (tg.hp() > 1) {
+                    damage(b, c, 1);
+                    Event* e = add_event(out, c, Ev::Damage);
+                    if (e) {
+                        e->amount = 1;
+                        e->kind = 8;
+                    }
+                } else {
+                    helpless_now();
+                }
+            }
+        }
         // Secret's: the -2 poison and the paralysis after attack 1's hits
         // too (its list after attack 1: 0x41 0x56 0x58 - GAME.OVR 0x36289)
         if (m.secret_ways) {
@@ -1854,7 +1981,7 @@ void after_hit(Battle& b, int a, int c, int slot, int roll, int hits1, create::D
             add_event(out, c, Ev::HeldFast);
         }
     } else {
-        if (hasx(at, m.poison)) poison(0);
+        if (hasx(at, m.poison) && !b.fx->gw.ways) poison(0);
         if (hasx(at, m.poison_p4)) poison(4);
         if (hasx(at, m.poison_p2)) poison(2);
         if (!m.dk_ways && hasx(at, m.kreen_bite) && m.paralyzed && tg.up() && !saving_throw(tg, 0, 0, d)) {
@@ -1924,6 +2051,7 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
     set_actor(b, a);
     g_dice = &d;
     g_kind = 0;
+    b.risen = -1;
     b.no_action = b.round + 15;
     at.attacked = true;
     at.blows = 0;                               // (Darkness: counted from each attack - DS 0xAED7, zeroed at ovr 0x1FA62)
@@ -2177,9 +2305,17 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                 if (hasx(at, m.heat) && !hasx(tg, m.heat_proof[0]) && !hasx(tg, m.heat_proof[1]) &&
                     !hasx(tg, m.heat_proof[2]))
                     dmg += d.roll(6, 1);
+                const Facts::GateFx& gw = b.fx->gw;
+                // Gateway's (0x98, GAME.OVR 0x14FD8 - the attacker's list): half on
+                // one whose armour has the Glacier's name word
+                if (hasx(at, gw.glacier) && names) {
+                    const int ar = items::readied_in(tg.items, tg.n_items, *names, items::kSlotArmour);
+                    if (ar >= 0 && has_word(tg.items[ar], gw.glacier_word)) dmg /= 2;
+                }
                 // Secret: Mirror Image takes weapon blows too (its handler 0x11751 is
                 // in the blow's damage phase 5, GAME.OVR 0x15098) - d(images + 1) over 1
-                if (b.fx->secret && b.fx->mirror) {
+                // (Gateway's too: 0x123FD)
+                if ((b.fx->secret || gw.mirror) && b.fx->mirror) {
                     const int mi = find_aff(tg, b.fx->mirror);
                     if (mi >= 0 && d.roll((tg.aff[mi][3] >> 4) + 1, 1) > 1) {
                         lose_image(b, tg, mi);
@@ -2194,6 +2330,10 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                 bool dodged = false;
                 if (armed && far && hasx(tg, m.missile_proof) && item && plus == 0) dodged = true;
                 if (!dodged && armed && far && hasx(tg, m.missile_dodge) && d.roll(100, 1) <= 60) dodged = true;
+                // Gateway's giants (0x78): boulders dodged half the time
+                if (!dodged && armed && far && hasx(tg, gw.boulder_dodge) && item &&
+                    (item[0x2E] == gw.boulder[0] || item[0x2E] == gw.boulder[1]) && d.roll(100, 1) <= 50)
+                    dodged = true;
                 if (dodged) {
                     out.avoided[out.n] = true;
                     h.hit = false;
@@ -2201,8 +2341,15 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                     continue;
                 }
                 troll_hurt(tg, m);
+                // Gateway's skeletons (0x73, GAME.OVR 0x144ED): half from a weapon
+                // whose type's byte 7 is 0 or 1
+                if (hasx(tg, gw.half_edged) && item && names && names->type(item[0x2E]).blow <= 1) dmg /= 2;
                 if (hasx(tg, m.need_magic) && (!item || plus == 0) && (at.rec[0x74] > 0 || at.rec[kHd] < 4)) dmg = 0;
-                if (hasx(tg, m.stop_normal)) {
+                // Gateway's undead (0x75, GAME.OVR 0x1459C): holy water 1d6 + 1
+                const bool holy = gw.holy_water && item && item[0x2E] == gw.holy_water;
+                if (hasx(tg, gw.holy) && holy) dmg = d.roll(6, 1) + 1;
+                // (Gateway's 0x3C, GAME.OVR 0x13127: holy water gets through)
+                if (hasx(tg, m.stop_normal) && !holy) {
                     if (!item || plus <= 0) dmg = 0;
                     else if (plus <= 2) dmg /= 2;
                 }
@@ -2223,6 +2370,10 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                 // Secret's giant slug: a blunt weapon's blow (its type's byte 7 & 0x80) nothing
                 if (hasx(tg, m.blunt_proof) && item && names && (names->type(item[0x2E]).blow & 0x80)) dmg = 0;
                 if (hasx(tg, m.pierce_one) && item && names && names->type(item[0x2E]).blow == 1) dmg = 1;
+                // Gateway's (0x97 / 0x99, GAME.OVR 0x14F82 / 0x15052 - the target's
+                // list's last): twice from a weapon with that name word (a byte)
+                if (hasx(tg, gw.ice) && item && has_word(item, gw.ice_word)) dmg = (dmg * 2) & 0xFF;
+                if (hasx(tg, gw.stone) && item && has_word(item, gw.stone_word)) dmg = (dmg * 2) & 0xFF;
                 // Pool's undead: only magic (any plus) or silver hurts the
                 // wight; the wraith takes half from +0 silver, nothing from
                 // other +0 weapons or none; a flask of oil burns the mummy
@@ -2261,6 +2412,11 @@ Attack attack(Battle& b, int a, int c, const items::Names* names, create::Dice& 
                 fall(b, c);
             } else if (damage(b, c, dmg)) {
                 out.down = true;
+                // (Gateway's boar back up at once)
+                if (b.risen == c) {
+                    add_event(out, c, tg.team() ? Ev::StandsUp : Ev::GetsUp);
+                    b.risen = -1;
+                }
             }
             if (blow_kind) g_kind = 0;
             out.hits[out.n++] = h;
@@ -2414,9 +2570,10 @@ void drain(Battle& b, int c, int n, Event* out, int cap, int* n_out, int hit)
     }
 }
 
-int turn_holds(Battle& b, int i, create::Dice& d, Event* out, int cap, int* bite)
+int turn_holds(Battle& b, int i, create::Dice& d, Event* out, int cap, int* bite, bool* go_on)
 {
     *bite = -1;
+    if (go_on) *go_on = false;
     if (!b.fx || i < 0 || i >= b.n) return 0;
     Fighter& f = b.f[i];
     const MonFx& m = b.fx->mon;
@@ -2431,20 +2588,24 @@ int turn_holds(Battle& b, int i, create::Dice& d, Event* out, int cap, int* bite
         return &x;
     };
     // The stirge: blood while both are in the fight and it isn't full
-    const int s = m.sucking ? find_aff(f, m.sucking) : -1;
+    // (Gateway's with rules::fixes(): its 0x96 never drinks in the original)
+    const Facts::GateFx& gw = b.fx->gw;
+    const bool gw_fix = rules::fixes() && gw.ways;
+    const uint8_t suck = m.sucking ? m.sucking : gw_fix ? gw.sucking : 0;
+    const int s = suck ? find_aff(f, suck) : -1;
     if (s >= 0) {
         const int v = f.aff[s][3];
         if (!f.up() || v >= b.n || !b.f[v].up()) {
-            let_go(b, f, m.sucking);
+            let_go(b, f, suck);
         } else {
-            ev(i, Ev::SucksBlood, v);
+            ev(i, m.sucking ? Ev::SucksBlood : Ev::DrainsBlood, v);
             set_actor(b, i);
             const int amount = d.roll(4, 1);
             const bool dn = damage(b, v, amount);
             Event* e = ev(v, Ev::Damage);
             if (e) e->amount = static_cast<int16_t>(amount);
             if (dn) ev(v, Ev::Down);
-            const int k = find_aff(f, m.sucking);
+            const int k = find_aff(f, suck);
             if (k >= 0 && b.f[v].up()) {
                 const int t = f.aff[k][1] | f.aff[k][2] << 8;
                 if ((t >> 4) > amount) {
@@ -2452,11 +2613,31 @@ int turn_holds(Battle& b, int i, create::Dice& d, Event* out, int cap, int* bite
                     f.aff[k][1] = static_cast<uint8_t>(left);
                     f.aff[k][2] = static_cast<uint8_t>(left >> 8);
                 } else {
-                    let_go(b, f, m.sucking);
+                    let_go(b, f, suck);
                 }
             } else if (k >= 0) {
-                let_go(b, f, m.sucking);
+                let_go(b, f, suck);
             }
+        }
+    }
+    // Gateway's squid with rules::fixes(): it squeezes the one it holds - two
+    // of its handler's 1d2 (GAME.OVR 0x1ABA3, never reached in the original);
+    // its turn goes on
+    const int q = gw_fix && gw.constrict ? find_aff(f, gw.constrict) : -1;
+    if (q >= 0) {
+        const int v = f.aff[q][3];
+        if (!f.up() || v >= b.n || !b.f[v].up()) {
+            let_go(b, f, gw.constrict);
+        } else {
+            ev(i, Ev::Constricts, v);
+            set_actor(b, i);
+            const int amount = d.roll(2, 2);
+            const bool dn = damage(b, v, amount);
+            Event* e = ev(v, Ev::Damage);
+            if (e) e->amount = static_cast<int16_t>(amount);
+            if (dn) ev(v, Ev::Down);
+            if (!b.f[v].up()) let_go(b, f, gw.constrict);
+            if (go_on) *go_on = true;
         }
     }
     // The mantis: its bite on the one it holds
@@ -2494,6 +2675,17 @@ bool resists(Battle& b, int c, int effect, const Harm& h, create::Dice& d)
     const Facts& fx = *b.fx;
     const MonFx& m = fx.mon;
     const bool magic = effect != 0 || (h.kind & 8);
+    // Gateway: Mirror Image first in its magic resistance list (0x1C, GAME.OVR
+    // 0x123FD) - a hostile spell at picked creatures may take an image
+    // ("lost an image"; the spell's effect cancelled)
+    if (fx.gw.mirror && fx.mirror && h.spell > 0 && h.single && h.hostile) {
+        const int mi = find_aff(f, fx.mirror);
+        if (mi >= 0 && d.roll((f.aff[mi][3] >> 4) + 1, 1) > 1) {
+            lose_image(b, b.f[c], mi);
+            b.lost_image = c;
+            return true;
+        }
+    }
     // Magic resistance by the caster's level (byte sums: a high level wraps
     // round to always resisted, as in the original)
     auto chance = [&](uint8_t type, int base) {
@@ -2544,13 +2736,14 @@ int harm(Battle& b, int c, int amount, const Harm& h, create::Dice& d, bool* dow
     g_kind = h.kind;
     int dmg = amount;
     b.lost_image = -1;
+    b.risen = -1;
     if (b.fx && f.up() && dmg > 0) {
         const MonFx& m = b.fx->mon;
         bool safe = false;
         // Mirror Image: a spell at picked creatures may take an image instead
         // (d(images + 1) over 1) - the effect's whole data byte counts down,
         // gone at 0 (the original's; weapons never meet the images)
-        const int mi = b.fx->mirror && h.spell > 0 && h.single ? find_aff(f, b.fx->mirror) : -1;
+        const int mi = b.fx->mirror && h.spell > 0 && h.single && (!b.fx->gw.mirror || h.hostile) ? find_aff(f, b.fx->mirror) : -1;
         const int images = mi < 0 ? 0 : b.fx->mirror_plain ? f.aff[mi][3] : f.aff[mi][3] >> 4;
         if (mi >= 0 && d.roll(images + 1, 1) > 1) {
             b.lost_image = c;
@@ -2708,9 +2901,14 @@ int sweep(const Battle& b, int a, int target, int* out, int cap)
 
 int weapon(const Fighter& f, const items::Names& names)
 {
+    // (the last readied one: the original's recalculation puts each readied
+    // item in its slot in turn - coab reclac_player_values, rules::recalc -
+    // so a monster's record with two readied, Gateway's gnolls' long sword
+    // and short bow, fights with the bow)
+    int w = -1;
     for (int i = 0; f.items && i < f.n_items; ++i)
-        if (f.items[i][0x34] && names.type(f.items[i][0x2E]).slot == items::kSlotWeapon) return i;
-    return -1;
+        if (f.items[i][0x34] && names.type(f.items[i][0x2E]).slot == items::kSlotWeapon) w = i;
+    return w;
 }
 
 int missile(const Battle& b, const Fighter& f, int* ammo)
@@ -3350,11 +3548,14 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         // At picked creatures (aim 1-5, 15), not an area (the original's flag)
         const int aim = e.aim & 0x0F;
         hs.single = (aim >= 1 && aim <= 5) || aim == 0x0F;
+        hs.hostile = e.foe != 0;
     }
     // A spell's effect on fighter k: magic resistance first ("is Unaffected")
     auto resisted = [&](int k, int effect) {
+        b.lost_image = -1;
         if (!resists(b, who[k], effect ? effect : -1, hs, d)) return false;
-        say(who[k], Did::Unaffected, 0);
+        say(who[k], b.lost_image == who[k] ? Did::LostImage : Did::Unaffected, 0);
+        b.lost_image = -1;
         return true;
     };
     switch (fs.does) {
@@ -3593,6 +3794,8 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
             }
             say(who[k], Did::Damage, done);
             if (dn) say(who[k], Did::Down, 0);
+            if (b.risen == who[k]) say(who[k], Did::Risen, 0);
+            b.risen = -1;
         }
         break;
     case SpellDoes::Slay:
@@ -3789,6 +3992,30 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         if (more) say(caster, Did::Word, 0);
         break;
     }
+    case SpellDoes::Strength:
+        // (Gateway: the camp's Strength - spells.cpp Does::Strength, Curse's rules)
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up()) continue;
+            auto had = [&](int cl) { return f.rec[0x109 + cl] > 0 || f.rec[0x111 + cl] > 0; };
+            int die = 0;
+            if (had(classes::MagicUser)) die = 4;
+            if (had(classes::Cleric) || had(classes::Thief)) die = 6;
+            if (had(classes::Fighter)) die = 8;
+            if (!die) continue;
+            const int bonus = d.roll(die, 1);
+            int str = f.rec[0x11] + bonus, str00 = 0;
+            if (str > 18) {
+                if (had(classes::Fighter) || had(classes::Paladin) || had(classes::Ranger)) {
+                    str00 = f.rec[0x1C] + (str - 18) * 10;
+                    if (str00 > 100) str00 = 100;
+                }
+                str = 18;
+            }
+            if (!(str > f.rec[0x11] || (str == 18 && str00 > f.rec[0x1C]))) continue;
+            give_aff(f, e.affect, minutes, 100 + bonus, false);
+        }
+        break;
     case SpellDoes::Defoliate:
         // Plants (monster type 18) take it all, not saving; the rest as
         // when saved (the table's: nothing / half / all) - nothing said for none
@@ -4589,6 +4816,19 @@ Morale morale(Battle& b, const Tables& t, int i)
 {
     Fighter& f = b.f[i];
     if (f.rec[kControl] < 0x80) return Morale::Fight;
+    // Gateway's black dragon (0x9E, its morale list 01 02 0B 9E - GAME.OVR
+    // 0x15220): in the fight, under 20 hit points and its side's count (DS
+    // 0x824C + side: those in the fight) 1 or less - it "Surrenders"; the
+    // enemy's adds 1 to the area word (b.yielded: the caller's)
+    if (b.fx && hasx(f, b.fx->gw.surrender) && f.up() && f.hp() < 20) {
+        int count = 0;
+        for (int c = 0; c < b.n; ++c)
+            if (b.f[c].up() && b.f[c].size && b.f[c].team() == f.team()) ++count;
+        if (count <= 1) {
+            b.yielded = f.team() == 1;
+            return Morale::Surrender;
+        }
+    }
     int m = (f.rec[kControl] & 0x7F) * 2;
     if (m > 102) m = 0;
     int adj = 0;
@@ -5232,6 +5472,9 @@ void release_holds(Battle& b, int i)
     let_go(b, f, m.hugging);
     let_go(b, f, m.sucking);
     let_go(b, f, m.holding);
+    // (Gateway's list 0D 3A 8B 90 96 - GAME.OVR img 0x5F10: the stirge's hold
+    // goes before it can drink; with rules::fixes() it holds on and drinks)
+    if (!rules::fixes()) let_go(b, f, b.fx->gw.sucking);
     const uint8_t mine[2] = {m.suffocate, m.held_fast};
     for (uint8_t t : mine) {
         const int k = t ? find_aff(f, t) : -1;

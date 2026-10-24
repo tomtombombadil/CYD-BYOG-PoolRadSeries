@@ -1875,9 +1875,12 @@ static void sp_check_special()
             sp_cast(sp_c, 0x2F, {sp_t[0]});
         }
         const int hurt = 200 - F(sp_t[0]).hp(), data = sp_aff_data(sp_t[0], 0x1C);
+        // (Gateway's handler, GAME.OVR 0x123FD: the images - the high nibble - one fewer;
+        // Curse's whole data byte counts down)
+        const bool gw_images = getenv("GAME") && atoi(getenv("GAME")) == 8;
         if (pass == 0)
             expect(SP, "Mirror Image: Magic Missile with d3 over 1 - an image lost, no damage",
-                   hurt == 0 && data == (2 << 4) + 4 && sp_said(sp_t[0], combat::Did::LostImage) == 1, "damage %d data %02X", hurt, data);
+                   hurt == 0 && data == (gw_images ? (1 << 4) + 5 : (2 << 4) + 4) && sp_said(sp_t[0], combat::Did::LostImage) == 1, "damage %d data %02X", hurt, data);
         else if (pass == 1)
             expect(SP, "Mirror Image: Magic Missile with d3 = 1 - the caster is hit", hurt > 0 && data == (2 << 4) + 5, "damage %d data %02X",
                    hurt, data);

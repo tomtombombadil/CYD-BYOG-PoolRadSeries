@@ -34,6 +34,7 @@ struct Entry {
     int save = 4;                       // which save (0 poison ... 4 spells)
     int delay = 0;                      // casting time (fights: / 3 = rounds' delay)
     int priority = 0;
+    int foe = 0;                        // fights (byte 14): whom the computer casts it at (0 itself / its side)
 };
 Entry entry(const classes::Tables& t, int spell);
 

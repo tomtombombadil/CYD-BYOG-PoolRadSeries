@@ -1571,6 +1571,10 @@ constexpr ecl::OpSet kGatewayEcl = [] {
     s.facing_alias = 0x03B2;
     s.vault_word = 0x4CFC;          // (its vault: SAVE 1 [4CFC] + COMBAT - gateway_facts.md 12)
     s.sound_word = true;
+    s.item_words = true;            // (0x32 / 0x40: type and name words - overlay 0xAB8 +0x29BD, +0x361F)
+    s.xp_award = true;              // (0x41: the amount shared by the classes - overlay 0xAB8 +0x3767)
+    s.xp_number = true;
+    s.change_call = 0x80F;          // (coins traded up: seg 0xCB entry 0x75 with 3 - gateway_facts.md 10)
     return s;
 }();
 
@@ -1593,6 +1597,147 @@ constexpr profile::JoinedWord kGatewayJoined[] = {
     {0xC1DC, kJ | 15}, {0xC1E2, kJ | 16}, {0xC1E7, kJ | 17}, {0xC20C, kJ | 18}, {0xC212, kJ | 19},
     {0xC218, kJ | 20}, {0xC21F, kJ | 21}, {0xC226, kJ | 22}, {0xC22E, 0xC23A},
 };
+
+// Gateway's fights' effects: Curse's numbers (monster_fx_facts.md) and its
+// own (GateFx - its handlers DS 0x826A on; gateway_behave facts)
+constexpr combat::Facts kGatewayFacts = [] {
+    combat::Facts f =
+      {{0x33, 0x34, 0x35, 0x1F}, 0x01, 0x02, 0x31, 0x27, 0x2A, 0x19, 0x08, 0x09, 0x1C,
+       {0x07, 0x08, 0x23, 0x24, 0x25, 0x61}, 0x0B, 0x8E, 0x1E,
+       {9, 21, 100, 28, 31, 73}, {2, 7, 20}, {85, 86}, {47, 98, 101},     // (spinning: 20 the hammer - Curse's code tests 0x14)
+       0x24, 0x25, 0x1B, 0x15, 0x88, 0x03, 0x07, 0x21, 0x45, 0x44,
+       // The monsters' special abilities (monster_fx_facts.md)
+       {0x40, 0x46, 0x43, 0x7A, 0x7B, 0x4F, 0x50, 0x39, 0x60, 0x67, {0x14, 0x36, 0x3D},
+        0x3C, 0x77, 0x51, 0x55, 0x82, 0x29, 0x68,
+        0x70, 0x6E, 0x87, 0x54, 0x52, 0x71, 0x0A, 0x14, 0x85,
+        0x69, 0x6A, 0x81, 0x3F, 0x6B, 0x6C, 0x6D, 0x7D,
+        0x65, 0x3B, 0x62, 0x64, 0x66,
+        0x8A, 0x18, 0x2D,
+        0x5A, 0x80, 0x83, 0x84, 0x56, 0x79, 0x53, 0x7F, 0x57,
+        0x0D, 0x3A, 0x8B, 0x90, 0x34, 0x37, 0x35,
+        0x76, 0x87, {0x54, 0x37, 0x15}},
+       // More spells' effects (spell_facts.md 2): enlarge, confuse, berserk, dispel evil (0x04, 0x91),
+       // the fire shields (hot 0x32, cold 0x36, the zap 0x8F); Ray of Enfeeblement's 0x1D
+       {0x0C, 0x23, 0x89, 0x04, 0x91, 0x32, 0x36, 0x8F, 0x16, 0x0F, 0x17, 0x20, 0x3E, 0x92, 0x11, 0x1D, 0x22, 0x2B, 0x2C},
+       // The races' and rangers' effects (as created: Constitution saves, half-elf
+       // resistance, dwarf vs orcs, gnome's foes, vs giants, gnome's other, ranger vs giants)
+       {0x61, 0x7C, 0x1A, 0x12, 0x2F, 0x30, 0x86},
+       // The magic items' own effects: Flame Tongue, Dragon Slayer, Frost Brand, displacement,
+       // the ring's invisibility, the Robe of Vermin (behaviour_facts.md items)
+       {0x06, 0x4B, 0x4C, 0x59, 0x38, 0x4A, 0, 0x48},
+       0x4D};                                           // berserk (the Berserker sword's)
+    f.mon.no_poison = 0x6F;             // the mummy's: poison and paralysis (their saves made)
+    f.mon.no_breath = 0x49;             // the fire giant's: dragon breath "is unaffected"
+    combat::Facts::GateFx& g = f.gw;
+    g.ways = true;
+    g.stirge = 0x95;
+    g.sucking = 0x96;
+    g.squid = 0x9B;
+    g.constrict = 0x9C;
+    g.harpy = 0x9A;
+    g.mummy = 0x9F;
+    g.regen1 = 0xA1;
+    g.surrender = 0x9E;
+    g.surrender_word = 0x4D03;
+    g.ice = 0x97;
+    g.ice_word = 0x90;                  // "of Icewind Dale"
+    g.stone = 0x99;
+    g.stone_word = 0xFA;                // "of stonecutting"
+    g.glacier = 0x98;
+    g.glacier_word = 0x89;              // "of the Glacier"
+    g.half_edged = 0x73;
+    g.holy = 0x75;
+    g.holy_water = 0x55;                // Holy Water vial
+    g.boulder_dodge = 0x78;
+    g.boulder[0] = 0x57;
+    g.boulder[1] = 0x58;
+    g.fights_on = 0x63;
+    g.falls_dead = 0x5F;
+    g.mirror = true;
+    return f;
+}();
+
+// Gateway's words for Curse's spell and effect tables (kCurseCamp,
+// kCurseFight, kCurseNamed hold Curse's GAME.OVR offsets): each moved to the
+// same text in Gateway's GAME.OVR (the occurrence whose code around it is
+// Curse's - scratch wmap.py), Prayer's "is praying" to its own "is prayed
+// for"
+struct WordMove {
+    uint32_t from, to;
+};
+constexpr WordMove kGatewayWordMoves[] = {
+    {0x0FFAB, 0x11C9E}, {0x1045C, 0x12205}, {0x112D8, 0x13272}, {0x11465, 0x13441}, {0x19E88, 0x1FC15},
+    {0x19E94, 0x1FC21}, {0x19EA0, 0x1FC2D}, {0x19EA9, 0x1FC36}, {0x19EB2, 0x1FC3F}, {0x19EBB, 0x1FC48},
+    {0x19EC9, 0x1FC56}, {0x19ED9, 0x1FC66}, {0x19EEA, 0x1FC77}, {0x19EF3, 0x1FC80}, {0x19F00, 0x1FC8D},
+    {0x19F10, 0x1FC9D}, {0x19F2F, 0x1FCBC}, {0x19F39, 0x1FCC6}, {0x19F4E, 0x1FCDB}, {0x19F58, 0x1FCE5},
+    {0x19F64, 0x1FCF1}, {0x19F81, 0x1FD0E}, {0x19F89, 0x1FD16}, {0x2FD0A, 0x36925}, {0x2FD3C, 0x3695F},
+    {0x2FDE3, 0x36A1D}, {0x2FE1C, 0x36A5E}, {0x2FE56, 0x36AA0}, {0x2FECA, 0x36B24}, {0x2FED8, 0x36B32},
+    {0x2FFA0, 0x36C38}, {0x300DE, 0x36D7E}, {0x30183, 0x36E38}, {0x3022D, 0x36EF2}, {0x302AE, 0x36F83},
+    {0x303F1, 0x370CE}, {0x3044A, 0x3712F}, {0x30489, 0x37176}, {0x304C2, 0x371B7}, {0x30577, 0x372AF},
+    {0x3067C, 0x373CF}, {0x306EF, 0x37452}, {0x3074F, 0x374BA}, {0x30DC2, 0x37B2F}, {0x30F71, 0x37CE6},
+    {0x30FB6, 0x37D33}, {0x310A2, 0x37E41}, {0x3118D, 0x37F5C}, {0x31544, 0x383B0}, {0x31597, 0x3840E},
+    {0x315A4, 0x3841B}, {0x316BF, 0x3854F}, {0x316FD, 0x38595}, {0x31907, 0x387EB}, {0x31CD9, 0x38BDD},
+    {0x31D11, 0x38C1D}, {0x31ED7, 0x38DEB}, {0x31F60, 0x38E83}, {0x32033, 0x38F66}, {0x3206D, 0x38FA8},
+    {0x320C4, 0x39007}, {0x322FD, 0x39272}, {0x32422, 0x393AE}, {0x3259B, 0x39592}, {0x32663, 0x39662},
+    {0x3271D, 0x39724}, {0x3274C, 0x3975B}, {0x32786, 0x3979D}, {0x32816, 0x39835}, {0x328DC, 0x39903},
+    {0x32A7A, 0x39AD4}, {0x32BD4, 0x39C5B}, {0x32D97, 0x39E26}, {0x32DA1, 0x39E30}, {0x3379C, 0x3A87B},
+    {0x35E27, 0x3D0F6}, {0x35E37, 0x3D106}, {0x35E53, 0x3D122}, {0x36666, 0x3D9E3},
+};
+constexpr uint32_t gw_word(uint32_t w)
+{
+    for (const WordMove& m : kGatewayWordMoves)
+        if (m.from == w) return m.to;
+    return w;
+}
+// Its fights: Curse's, the words moved, and Strength (its spell table lets
+// it be cast in fights - row 0x23's "when" 2)
+constexpr size_t kGatewayFightN = sizeof kCurseFight / sizeof kCurseFight[0] + 1;
+struct GatewayFight {
+    combat::FightSpell s[kGatewayFightN];
+};
+constexpr GatewayFight kGatewayFight = [] {
+    GatewayFight t{};
+    size_t i = 0;
+    for (const combat::FightSpell& f : kCurseFight) {
+        t.s[i] = f;
+        t.s[i].word = gw_word(f.word);
+        t.s[i].word2 = gw_word(f.word2);
+        t.s[i].word3 = gw_word(f.word3);
+        t.s[i].word4 = gw_word(f.word4);
+        ++i;
+    }
+    t.s[i] = combat::FightSpell{0x23, SpellDoes::Strength, 0, 0, 0, 0, 0, 0};
+    return t;
+}();
+// Its camp: Curse's, the words moved, and Blink (castable in camp - row
+// 0x2D's "when" 2: "is blinking", coab's spell_blinking)
+constexpr size_t kGatewayCampN = sizeof kCurseCamp / sizeof kCurseCamp[0] + 1;
+struct GatewayCamp {
+    spells::CampSpell s[kGatewayCampN];
+};
+constexpr GatewayCamp kGatewayCamp = [] {
+    GatewayCamp t{};
+    size_t i = 0;
+    for (const spells::CampSpell& c : kCurseCamp) {
+        t.s[i] = c;
+        t.s[i].word = gw_word(c.word);
+        t.s[i].word2 = gw_word(c.word2);
+        t.s[i].word3 = gw_word(c.word3);
+        t.s[i].word4 = gw_word(c.word4);
+        ++i;
+    }
+    t.s[i] = spells::CampSpell{0x2D, Does::Affect, 0, 0, 0, gw_word(0x316FD)};
+    return t;
+}();
+constexpr size_t kGatewayNamedN = sizeof kCurseNamed / sizeof kCurseNamed[0];
+struct GatewayNamed {
+    profile::EffectName s[kGatewayNamedN];
+};
+constexpr GatewayNamed kGatewayNamed = [] {
+    GatewayNamed t{};
+    for (size_t i = 0; i < kGatewayNamedN; ++i) t.s[i] = profile::EffectName{kCurseNamed[i].type, gw_word(kCurseNamed[i].at)};
+    return t;
+}();
 
 // Treasures of the Savage Frontier (treasures_facts.md 3): Darkness's
 // opcodes and operand counts, plus 0x42 LOAD 3D (4: the map, the three
@@ -2618,7 +2763,11 @@ const Profile kProfiles[] = {
      // 28 bytes further - gateway_facts.md 6), its effects and words
      .create = {0x4C70,
                 {0x435E, 0x5351, 0x435E, 0x65, 0x49BC, 0x4A24, 0x4A2C, 0x4A3E, 0x4A43, 0x4AA3, 0x4AB6, 0x4B28, 0x4B9A,
-                 0x4BEE, 0x4CC4, 0x4D14, 0x4D7A, 0x4E3C, 0x515F},
+                 0x4BEE, 0x4CC4, 0x4D14, 0x4D7A, 0x4E3C, 0x515F,
+                 // (training: the classes' last levels at DS 0x1498 - cleric /
+                 // magic-user 6, ranger 7, the rest 8 - and its own race limits:
+                 // GAME.OVR overlay 0x3EB10)
+                 false, 0, 0x1498, 0x14A0, false, false, 0, 0x1498},
                 0x1032, 0x103A, 0x4A46,
                 0x61, 0x1A, 0x2F, 0x12, 0x30, 0x6B, 0x7C, 0x08, 0x86,
                 {0x0B, 0x12, 0x0C, 0x15}, 0x0F, {0x22, 0x0A}, 0x1F, 0x2F,
@@ -2651,11 +2800,11 @@ const Profile kProfiles[] = {
                 0x37CE6, 0x390CE, 0x39461, 0x3840E, 0x3841B, 0x1FD20, 0x34C61, 0x30C14, 0x30C35, 0x1F7FA, 0x1F812,
                 0x1F82D, 0x1F852, 0x1F7E4, 0x1F871, 0x1F033, 0x31E96, 0x30C1F, 0x34C68,
                 0x35DE2, 0x35DEC, 0x35E05, 0x2FBE9, 0x2FBF6, 0x2FBFC, 0x30C0A, 0x35E0E},
-               kCurseCamp, sizeof kCurseCamp / sizeof kCurseCamp[0],
+               kGatewayCamp.s, kGatewayCampN,
                {2, 0x2A, {0x22, 0x2B, 0x32}, {{0, 0}, {0x2C, 0x1F}, {0x39, 0}}, 0x0C, 0x17, 0x32, 0x36, 0x8F, 0x92,
                 {{0x28, 1, 6, 0, 10}, {0x39, 5, 4, 0, 1}, {0x3D, 5, 4, 0, 1}, {0x3B, 1, 4, 4, 10}, {0x3F, 1, 10, 10, 10},
                  {0x43, 0, 0, 1440, 1}}},
-               kCurseSpellNamed, sizeof kCurseSpellNamed, kCurseNamed, sizeof kCurseNamed / sizeof kCurseNamed[0],
+               kCurseSpellNamed, sizeof kCurseSpellNamed, kGatewayNamed.s, kGatewayNamedN,
                0xD2, 0x10,
                // (positional to kind_names / heading_word: C++20 doesn't mix designators)
                0, {}, 0, {}, 0x30, false, 0, {0x5EAA, 12, 3}, 0x354FE},
@@ -2687,43 +2836,19 @@ const Profile kProfiles[] = {
                0x1A830, 0x1A842, 0x1A85D, 0x1A867, 0x1A883, 0x14921, 0x13932, 0x1393F, 0x146AD, 0x3AA67, 0x3ABB1,
                0x3AD99, 0x3AF2E, 0x3B053, 0x3E8A7, 0x3E8BB, 0x39835, 0x126E2, 0x126F8, 0x12705, 0x14E6F, 0x14E7C,
                0x14DD8, 0x39C45, 0x39C52, 0x39C69, 0x39C77, 0x12205, 0x125B5, 0x12185, 0x36A1D, 0x123EF, 0x12E10,
-               0x12901, 0x136C2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-               kJ | 14},
+               0x12901, 0x136C2, 0, 0, 0, 0, 0x15297, 0, 0, 0, 0, 0x150A8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+               0, 0, 0, kJ | 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x1AE05, 0x1A5CB, 0x15359, 0x13FF4},
               {0x03, 0x0B, 0x0D, 0x15, 0x17, 0x1B, 0x23, 0x28, 0x33, 0x34, 0x35, 0x3A, 0x5B, 0x88, 0x89, 0x8B, 0x8E,
                0x90, 0x1F, 0x96},
-      {{0x33, 0x34, 0x35, 0x1F}, 0x01, 0x02, 0x31, 0x27, 0x2A, 0x19, 0x08, 0x09, 0x1C,
-       {0x07, 0x08, 0x23, 0x24, 0x25, 0x61}, 0x0B, 0x8E, 0x1E,
-       {9, 21, 100, 28, 31, 73}, {2, 7, 20}, {85, 86}, {47, 98, 101},     // (spinning: 20 the hammer - Curse's code tests 0x14)
-       0x24, 0x25, 0x1B, 0x15, 0x88, 0x03, 0x07, 0x21, 0x45, 0x44,
-       // The monsters' special abilities (monster_fx_facts.md)
-       {0x40, 0x46, 0x43, 0x7A, 0x7B, 0x4F, 0x50, 0x39, 0x60, 0x67, {0x14, 0x36, 0x3D},
-        0x3C, 0x77, 0x51, 0x55, 0x82, 0x29, 0x68,
-        0x70, 0x6E, 0x87, 0x54, 0x52, 0x71, 0x0A, 0x14, 0x85,
-        0x69, 0x6A, 0x81, 0x3F, 0x6B, 0x6C, 0x6D, 0x7D,
-        0x65, 0x3B, 0x62, 0x64, 0x66,
-        0x8A, 0x18, 0x2D,
-        0x5A, 0x80, 0x83, 0x84, 0x56, 0x79, 0x53, 0x7F, 0x57,
-        0x0D, 0x3A, 0x8B, 0x90, 0x34, 0x37, 0x35,
-        0x76, 0x87, {0x54, 0x37, 0x15}},
-       // More spells' effects (spell_facts.md 2): enlarge, confuse, berserk, dispel evil (0x04, 0x91),
-       // the fire shields (hot 0x32, cold 0x36, the zap 0x8F); Ray of Enfeeblement's 0x1D
-       {0x0C, 0x23, 0x89, 0x04, 0x91, 0x32, 0x36, 0x8F, 0x16, 0x0F, 0x17, 0x20, 0x3E, 0x92, 0x11, 0x1D, 0x22, 0x2B, 0x2C},
-       // The races' and rangers' effects (as created: Constitution saves, half-elf
-       // resistance, dwarf vs orcs, gnome's foes, vs giants, gnome's other, ranger vs giants)
-       {0x61, 0x7C, 0x1A, 0x12, 0x2F, 0x30, 0x86},
-       // The magic items' own effects: Flame Tongue, Dragon Slayer, Frost Brand, displacement,
-       // the ring's invisibility, the Robe of Vermin (behaviour_facts.md items)
-       {0x06, 0x4B, 0x4C, 0x59, 0x38, 0x4A, 0, 0x48},
-       0x4D},                                           // berserk (the Berserker sword's)
-              kCurseFight, sizeof kCurseFight / sizeof kCurseFight[0]},
-     .script_words = {0x2C54, 0x2C65, 0xB76A, 0xB772, 0xB77F, 0x357C, 0x3BE5, 0, 0, 0, 0x3BFF},
+              kGatewayFacts, kGatewayFight.s, kGatewayFightN},
+     .script_words = {0x2C54, 0x2C65, 0xB76A, 0xB772, 0xB77F, 0x357C, 0x3BE5, 0, 0, 0, 0x3BFF, 0x41D1, 0x4206, 0x4217, 0x41F2},
      .random_items = &kCurseRandom, .random_rows = 0x1058,
      // Its effects (gateway_facts.md 16): DigPak samples, ZOUNDS.DAX block n
      // = effect n (2-12; 3 and 6 played as 9 - seg 0x17B +0x18), each at its
      // own rate (DS 0x1794); Curse's numbers
      .clips = {.file = "ZOUNDS.DAX", .hz = 8000, .first = 2, .last = 12,
                .ids = {0, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .to_block = 0, .rate_table = 0x1794,
-               .as_nine = 1u << 3 | 1u << 6},
+               .as_nine = 1u << 3 | 1u << 6, .fixed_as = {0, 0, 0, 4, 0, 0, 12}},
      .door = {0x1C147, 0x1C14C, 0x1C152, 0x1C159, 0x1C15F, 0x1F},
      .variant = {.program_words = true, .treasure_pic = 1, .camp_pic = 29, .eight_black = true, .field_swap = true,
                  .party_menu_col = 9,
@@ -3059,8 +3184,9 @@ const Profile* find(games::Game g, uint32_t program_size, uint32_t image_size)
 bool has_item_fixes(games::Game g)
 {
     for (const Profile& p : kProfiles)
-        if (p.game == g && (p.items.flame.type || p.variant.secret_files || p.variant.darkness_files))
-            return true;                    // (Secret, Darkness: rules::fixes)
+        if (p.game == g && (p.items.flame.type || p.variant.secret_files || p.variant.darkness_files ||
+                            p.fight.facts.gw.ways || p.clips.as_nine))
+            return true;                    // (Secret, Darkness, Gateway: rules::fixes)
     return false;
 }
 

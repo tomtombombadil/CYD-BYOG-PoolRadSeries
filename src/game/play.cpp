@@ -391,7 +391,11 @@ __attribute__((noinline)) void play_clip(int v)
 {
     const sound::Clips& cl = d->prof->clips;
     if (v < cl.first || v > cl.last) return;            // (13 / 14: the game plays nothing)
-    if (cl.as_nine >> v & 1) v = 9;                     // (Gateway's player: 3 and 6 as 9)
+    // (Gateway's player: 3 and 6 as 9, the miss - GAME.OVR 0x54C9A; with the
+    // Game Fixes a fitting one of its own: Tom, 2026-10-24 - "You don't want
+    // the Miss sound played for a hit or a shot")
+    if ((cl.as_nine >> v & 1) && rules::fixes() && cl.fixed_as[v]) v = cl.fixed_as[v];
+    else if (cl.as_nine >> v & 1) v = 9;
     plat::File f;
     if (!open_file(cl.file, f)) return;
     plat::FileSource* src = new (std::nothrow) plat::FileSource(f);
@@ -1219,10 +1223,13 @@ void draw_position(pic::Canvas& c)
 // list shows them magenta)
 bool gw_trainable(const party::Character& ch)
 {
+    // (its routine, GAME.OVR overlay 0x3EB10: classes 0-6 below their last
+    // level - d->gw_xp[88 + class] - and not stopped by the race, by its own
+    // limits; then the experience the next level needs)
     if (!d->gw_xp) return false;
-    for (int k = 0; k < 8; ++k) {
+    for (int k = 0; k < 7; ++k) {
         const int lv = ch.level(k);
-        if (lv <= 0 || lv >= 12) continue;
+        if (lv <= 0 || lv >= 12 || lv >= d->gw_xp[88 + k] || create::gw_race_limited(ch, k, lv)) continue;
         const int32_t need = d->gw_xp[k * 11 + lv - 1];
         if (need > 0 && static_cast<int64_t>(ch.exp()) >= need) return true;
     }
@@ -9632,7 +9639,7 @@ void start_modify(pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
     if (!ch) return;
-    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files(), krynn())) {
+    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files(), gateway(), krynn())) {
         char t[60], nm[20];
         ch->name(nm, sizeof nm);
         snprintf(t, sizeof t, "%s%s", nm, rw(Data::kCantModify));
@@ -10166,7 +10173,14 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             // (Gateway's party list: a name that may train is magenta - DOSBox)
             const auto& pc = d->prof->create;
             uint8_t raw[44];
-            d->gw_xp = static_cast<int32_t*>(malloc(8 * 11 * sizeof(int32_t)));
+            // (and, after them, each class's last level - DS 0x1498: training
+            // stops there - GAME.OVR overlay 0x3EB10)
+            d->gw_xp = static_cast<int32_t*>(malloc((8 * 11 + 8) * sizeof(int32_t)));
+            uint8_t caps[8];
+            if (d->gw_xp && (!pc.tables.level_caps ||
+                             exepack::read(exe, info, pc.ds_image + pc.tables.level_caps, caps, sizeof caps) != exepack::Status::Ok))
+                memset(caps, 99, sizeof caps);
+            for (int k = 0; d->gw_xp && k < 8; ++k) d->gw_xp[88 + k] = caps[k];
             for (int k = 0; d->gw_xp && k < 8; ++k) {
                 if (exepack::read(exe, info, pc.ds_image + pc.tables.class_records + k * 99u, raw, sizeof raw) !=
                     exepack::Status::Ok) {
@@ -10457,8 +10471,10 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         f.close();
         if (n > 0) {
             char got[64];
-            // (Darkness's POOL4.CFG: its own save folder first, then Secret's)
-            savegame::save_dir(cfg, static_cast<size_t>(n), got, sizeof got, darkness_files() ? 0 : -1);
+            // (Darkness's POOL4.CFG: its own save folder first, then Secret's;
+            // Gateway's GAME.CFG: the save folder first, then the game's - the
+            // SNEG copy's "C:\GATEWAY\SAVE\" then "C:\GATEWAY\")
+            savegame::save_dir(cfg, static_cast<size_t>(n), got, sizeof got, darkness_files() || gateway() ? 0 : -1);
             if (got[0]) strcpy(sub, got);
         }
     }
@@ -11871,6 +11887,7 @@ struct IconEdit {
     int      glast = 0;                 // the page it was on (back to it after No)
     int      gsel = -1;                 // the choice picked
     int      gfirst = 0;                // the first choice on the page shown
+    bool     opened = false;            // the gallery shown once (a new character's starts on its first page)
     int      gsize = 0;                 // the size the parts below are for
     uint8_t* ghead[icon_looks::kHeads] = {};    // the parts' ready pictures, 24 x 24 (loaded as needed)
     uint8_t* gbody[icon_looks::kBodies] = {};
@@ -12484,7 +12501,11 @@ void gal_open(pic::Canvas& c, int page)
     const int pick = gal_pick_now();
     ie->gsel = pick ? (gal_page() == icon_looks::Page::Looks ? icon_looks::kLooks + pick - 1 : -1)
                     : icon_looks::match(gal_page(), ie->ch->rec);
-    gal_draw_page(c, 0);            // (its first page - Tom, 2026-10-24; the icon in use stays marked when there)
+    // (a new character's icon step: the first page, whichever look its icon
+    // matches - Tom, 2026-10-24: Gateway's opened on the second)
+    const bool first = ie->from == Screen::CreateName && !ie->opened;
+    ie->opened = true;
+    gal_draw_page(c, ie->gsel < 0 || first ? 0 : ie->gsel);
     gal_menu(c);
 }
 

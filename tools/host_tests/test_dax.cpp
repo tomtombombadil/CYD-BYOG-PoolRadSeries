@@ -3429,7 +3429,7 @@ static void test_journal()
         CHECK(strlen(t.pdf_id) == 32 && t.n_entries > 0 && t.n_pieces >= t.n_entries);
         for (int e = 0; e < t.n_entries; ++e) {
             const journal::EntryDef& d = t.entries[e];
-            CHECK((d.kind == 'J' || d.kind == 'T') && d.number > 0 && d.count > 0 &&
+            CHECK((d.kind == 'J' || d.kind == 'T' || d.kind == 'I') && d.number > 0 && d.count > 0 &&
                   d.first + d.count <= t.n_pieces);
             for (int k = 0; k < e; ++k)
                 CHECK(!(t.entries[k].kind == d.kind && t.entries[k].number == d.number));
@@ -3458,6 +3458,9 @@ static void test_journal()
     CHECK(journal::find_mention("LOG IT AS JOURNAL \nENTRY 5.", &n) == 'J' && n == 5);
     CHECK(journal::find_mention("YOU MAKE HASSAD AHWAL'S TALK ENTRY 55 IN YOUR JOURNAL.", &n) == 'J' && n == 55);   // (Pool)
     CHECK(journal::find_mention("THE ENTRY 4 TO THE CITY.", &n) == 0);
+    // (Gateway's start: the journal's Introduction)
+    CHECK(journal::find_mention("YOU RECORD THE HIGHLIGHTS OF THE EVENING AS THE INTRODUCTION TO YOUR JOURNAL.", &n) == 'I' &&
+          n == 1);
     CHECK(journal::find_mention("YOU OVERHEAR TAVERN TALE #12 ", &n) == 'T' && n == 12);
     CHECK(journal::find_mention("YOU OVERHEAR TAVERN TALE 7", &n) == 'T' && n == 7);
     CHECK(journal::find_mention("AND YOU RECORD IT IN JOURNAL ENTRY ", &n) == 0);
@@ -6162,6 +6165,7 @@ static void test_combat()
     itypes[2 + 41 * 16 + 12] = 10; itypes[2 + 41 * 16 + 14] = 0x0B;
     itypes[2 + 2 * 16 + 12] = 4; itypes[2 + 2 * 16 + 14] = 0x14;
     itypes[2 + 47 * 16 + 12] = 8; itypes[2 + 47 * 16 + 14] = 0x0A;
+    itypes[2 + 73 * 16] = 10;           // (the arrows' own slot, as the games' tables: not the weapon's)
     dax::MemorySource isrc2(itypes.data(), static_cast<uint32_t>(itypes.size()));
     CHECK(inames.read_types(isrc2));
     sb.names = &inames;

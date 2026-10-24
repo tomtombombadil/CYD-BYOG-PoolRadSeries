@@ -2952,7 +2952,8 @@ void draw_game_menu()
         int num;
         if (!play::journal_seen(k, &kind, &num)) break;
         char line[40];
-        snprintf(line, sizeof line, "%s %d", kind == 'T' ? "Tavern Tale" : "Journal Entry", num);
+        if (kind == 'I') snprintf(line, sizeof line, "Introduction");      // (Gateway's start)
+        else snprintf(line, sizeof line, "%s %d", kind == 'T' ? "Tavern Tale" : "Journal Entry", num);
         const int y = a.y + i * rh;
         ui::text(x, y + ui::gap(), line, k == n - 1 ? style::kGold : style::kText);
         if (i + 1 < r) ui::gfx().drawFastHLine(x, y + rh - 1, wdt, style::kKeyEdge);
@@ -3278,7 +3279,10 @@ bool open_journal(char kind, int number)
     const char* what = kind == 'T' ? "Tavern Tale" : "Journal Entry";
     // Without the pictures: as the original game, the printed journal - or
     // the PDF as a book
-    snprintf(jv->why, sizeof jv->why, "Read %s %d in your Adventurer's Journal.%s", what, number,
+    char named[24];
+    if (kind == 'I') snprintf(named, sizeof named, "the Introduction");
+    else snprintf(named, sizeof named, "%s %d", what, number);
+    snprintf(jv->why, sizeof jv->why, "Read %s in your Adventurer's Journal.%s", named,
              !g.journal[0] ? ""
                            : " The journal PDF in this game's folder isn't prepared (an edition the engine doesn't know, "
                              "or the card needs a rescan): Open Journal PDF shows its pages.");

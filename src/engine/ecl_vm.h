@@ -252,6 +252,7 @@ private:
     bool operands(int n, Op* out);
     void put(const Op& o, uint16_t v);          // a result written where the operand says (its size)
     bool dk_step(Stop& r);                      // Darkness's own opcodes (true: done)
+    void find_item_words(const Op* o, bool destroy);    // FIND / DESTROY ITEM by type and name words
     int  dest_size_ = 2;                        // (Darkness: an answer's size)
     Wait dk_then_ = Wait::None;                 // (Darkness: what waits after a text - JOURNAL's key, WHAT MENU's menu)
     char dk_text_[64] = {};
