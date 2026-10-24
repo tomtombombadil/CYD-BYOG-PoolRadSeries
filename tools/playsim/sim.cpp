@@ -918,6 +918,23 @@ int main(int argc, char** argv)
             show("after");
             shot("modify_end");
         }
+        if (getenv("KNIGHT")) {
+            // KNIGHT=n: a training hall's party menu (0x7EA8 set), character n,
+            // the Krynn games' Knight Change; KNIGHTYES=1 then takes Change
+            play::vm->set(0x7EA8, 0xFF);
+            play::tap(16, (4 + atoi(getenv("KNIGHT"))) * 8 + 2, C);
+            pm_tap_line('K');
+            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+            shot("knight");
+            printf("  knight menu [%s%s]\n", play::menu.prompt, play::menu.s);
+            if (getenv("KNIGHTYES")) {
+                tap_word('C');
+                shot("knight_end");
+                for (int i = 0; i < play::pt->count; ++i)
+                    printf("  %d: order %d knight level %d exp %d\n", i, play::pt->m[i].ext[party::kExtKnight],
+                           play::pt->m[i].level(classes::Monk), (int)play::pt->m[i].exp());
+            }
+        }
         if (getenv("VIEW")) {
             // Select a character (tap their line), View Character, back
             play::tap(16, (4 + atoi(getenv("VIEW"))) * 8 + 2, C);

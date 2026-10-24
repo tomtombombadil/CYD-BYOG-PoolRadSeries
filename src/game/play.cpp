@@ -9693,7 +9693,16 @@ void start_knight(pic::Canvas& c)
     snprintf(line, sizeof line, "%s%s", nm, what);
     const int len = static_cast<int>(strlen(line));
     put(c, line, (r == 0 || order == 1 ? 19 : 20) - len / 2, 9, 10);
-    if (r == 0) put(c, d->w_knight[order == 1 ? 8 : 11], 10, 11, 10);
+    if (r == 0) {
+        // (Death Knights has no word for the order's whole name: "knight of
+        // the " + "sword" / "rose", as its GAME.OVR 061:50E8 does)
+        const char* full = d->w_knight[order == 1 ? 8 : 11];
+        if (!full[0]) {
+            snprintf(line, sizeof line, "%s%s", d->w_knight[4], d->w_knight[order == 1 ? 2 : 3]);
+            full = line;
+        }
+        put(c, full, 10, 11, 10);
+    }
     dirty(0, pic::kScreenH);
     ask = Ask::Knight;
     screen = Screen::YesNo;

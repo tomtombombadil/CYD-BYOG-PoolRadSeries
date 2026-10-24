@@ -2908,7 +2908,12 @@ const Profile kProfiles[] = {
      .won = {},
      .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0x70, .fight_unswapped = true,
                  .darkness_files = true, .party_menu_col = 9, .marker_file = "8X8D1.DAX", .marker_block = 204,
-                 .order_words = {0x23CB1, 0x23CBF, 0x23CCD}, .yell_words = {0, kP | 0xD8D1}, .dkk = true},
+                 .order_words = {0x23CB1, 0x23CBF, 0x23CCD}, .yell_words = {0, kP | 0xD8D1},
+                 // (Knight Change Order, GAME.OVR 061:4F31: the order's name
+                 // made of "knight of the " + "sword" / "rose" - 8 / 11 none)
+                 .knight_words = {kP | 0xF128, kP | 0xD17A, kP | 0xD199, kP | 0xD1A4, kP | 0xD1AF, kP | 0xD1C4,
+                                  kP | 0xD1D9, kP | 0xD1EE, 0, kP | 0xF041, kP | 0xD1C4, 0},
+                 .dkk = true},
      .overland = nullptr,
      .font_file = "8X8D1.DAX",
      .joined = kDeathKnightsJoined, .n_joined = sizeof kDeathKnightsJoined / sizeof kDeathKnightsJoined[0]},

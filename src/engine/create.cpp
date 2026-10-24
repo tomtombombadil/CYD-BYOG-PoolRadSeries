@@ -391,11 +391,15 @@ void knight_change(party::Character& c, const classes::Tables& t)
         // (0x258D9: the level's share of the rolled hit points, and the
         // knight's Constitution figure, come off)
         --r[kLevels + classes::Monk];
-        const int share = r[kHpRolled] / (lv + 1);
+        // (Death Knights, GAME.OVR 061:4E02: a knight past 9th loses 2 hit
+        // points, nothing for Constitution - the levels with fixed points)
+        const bool fixed = t.lay.dkk && lv > 9;
+        const int share = fixed ? 2 : r[kHpRolled] / (lv + 1);
         r[kHpRolled] = static_cast<uint8_t>(r[kHpRolled] - share);
         const int con = stat_full(c, 4);
         int b = con == 3 ? -2 : con <= 6 ? -1 : con <= 14 ? 0 : con == 15 ? 1 : con == 16 ? 2 : 0;
         if (con >= 17 && con <= 19) b = con - 14;
+        if (fixed) b = 0;
         r[kHpMax] = static_cast<uint8_t>(r[kHpMax] - (share + b));
         if (r[kHp] >= r[kHpMax]) r[kHp] = r[kHpMax];
     }
