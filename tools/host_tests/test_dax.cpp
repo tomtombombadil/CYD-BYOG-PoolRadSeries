@@ -3128,6 +3128,43 @@ static Bytes make_pdf()
     return Bytes(s.begin(), s.end());
 }
 
+// A spread a page (the Treasures journal's way): two pictures, the right
+// one first in the dictionary, the content stream placing them
+static Bytes make_pdf2()
+{
+    std::string s = "%PDF-1.4\n";
+    std::vector<size_t> off(10, 0);
+    auto obj = [&](int n, const std::string& body) {
+        off[n] = s.size();
+        s += std::to_string(n) + " 0 obj\n" + body + "\nendobj\n";
+    };
+    auto image = [&](int n, int w, int h, const uint8_t* data, size_t len) {
+        off[n] = s.size();
+        s += std::to_string(n) + " 0 obj\n<</Type/XObject/Subtype/Image/Width " + std::to_string(w) + "/Height " +
+             std::to_string(h) + "/BitsPerComponent 8/Filter/DCTDecode/Length " + std::to_string(len) + ">>stream\r\n";
+        s.append(reinterpret_cast<const char*>(data), len);
+        s += "\r\nendstream\nendobj\n";
+    };
+    const std::string content = "q 1 i 0 0 cm\rq 31 0 0 23 300.5 8.5 cm/ImR DoQ q 23 0 0 17 18.4 8.6 cm\n/ImL Do Q";
+    obj(1, "<</Type/Catalog/Pages 2 0 R>>");
+    obj(2, "<</Type/Pages/Kids[3 0 R]/Count 1>>");
+    obj(3, "<</Type/Page/Parent 2 0 R/Contents 4 0 R/Resources<</XObject<</ImR 5 0 R/ImL 6 0 R>>>>>>");
+    off[4] = s.size();
+    s += "4 0 obj\n<</Length " + std::to_string(content.size()) + ">>stream\n" + content + "\nendstream\nendobj\n";
+    image(5, kJpeg0W, kJpeg0H, kJpeg0, sizeof kJpeg0);
+    image(6, kJpeg1W, kJpeg1H, kJpeg1, sizeof kJpeg1);
+    const size_t xref = s.size();
+    s += "xref\n0 7\n0000000000 65535 f \n";
+    for (int n = 1; n <= 6; ++n) {
+        char e[24];
+        snprintf(e, sizeof e, "%010zu 00000 n \n", off[n]);
+        s += e;
+    }
+    s += "trailer\n<</Size 7/Root 1 0 R/ID[<00000000000000000000000000000002><00>]>>\n";
+    s += "startxref\n" + std::to_string(xref) + "\n%%EOF\n";
+    return Bytes(s.begin(), s.end());
+}
+
 // The Gold Box Companion's journal (Steam / SNEG): a synthetic Game.dat
 // The icon gallery's tables: every choice in range, no see-through colour
 // 0, every look distinct; apply / match round trips, the size untouched
@@ -3311,6 +3348,33 @@ static void test_journal()
     CHECK(pdf::page_image(psrc, doc, 3, im) && im.jpeg && im.width == kJpeg0W && im.data_len == sizeof kJpeg0 &&
           memcmp(pdf_bytes.data() + im.data_at, kJpeg0, sizeof kJpeg0) == 0);
     CHECK(pdf::page_image(psrc, doc, 4, im) && im.width == kJpeg1W && im.data_len == sizeof kJpeg1);
+    // Several pictures a page: page_image's index, page_pictures left to right
+    {
+        Bytes two = make_pdf2();
+        dax::MemorySource tsrc(two.data(), two.size());
+        static pdf::Doc d2;
+        int p2[2];
+        CHECK(pdf::open(tsrc, d2) && pdf::pages(tsrc, d2, p2, 2) == 1);
+        CHECK(pdf::page_image(tsrc, d2, p2[0], im, 1) && im.width == kJpeg1W && im.images == 2);
+        CHECK(pdf::page_image(tsrc, d2, p2[0], im) && im.width == kJpeg0W);
+        CHECK(!pdf::page_image(tsrc, d2, p2[0], im, 2));
+        pdf::Picture pics[pdf::kMaxPictures];
+        CHECK(pdf::page_pictures(tsrc, d2, p2[0], pics, pdf::kMaxPictures) == 2);
+        CHECK(pics[0].index == 1 && pics[0].x == 18 && pics[0].width == kJpeg1W && pics[1].index == 0 && pics[1].x == 300);
+        // A table's piece on the second picture
+        static const journal::Piece kP2[] = {{1, 0, 0, kJpeg1W, kJpeg1H, 1}};
+        static const journal::EntryDef kE2[] = {{'J', 3, 0, 1}};
+        static const journal::Table kT2 = {"two", static_cast<uint32_t>(two.size()), "00000000000000000000000000000002",
+                                           kE2, 1, kP2, 1};
+        MemOut o2;
+        CHECK(journal::make(tsrc, kT2, o2, nullptr, nullptr));
+        dax::MemorySource j2(o2.b.data(), o2.b.size());
+        static journal::Info i2;
+        journal::PieceInfo pi2;
+        int f2 = 0, c2 = 0;
+        CHECK(journal::read_info(j2, i2) && journal::find(j2, i2, 'J', 3, &f2, &c2) && journal::piece(j2, i2, f2, pi2) &&
+              pi2.w == kJpeg1W && pi2.h == kJpeg1H);
+    }
     Bytes notpdf = {'%', 'P', 'S', '!'};
     dax::MemorySource nsrc(notpdf.data(), notpdf.size());
     CHECK(!pdf::open(nsrc, doc));
