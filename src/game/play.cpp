@@ -172,7 +172,8 @@ struct Data {
     char           gods[8][12] = {};           // Champions: its gods' names (create.god_names; 0 None)
     char           w_order[3][16] = {};        // Champions: " of the Crown" / Sword / Rose (variant.order_words)
     char           w_yell[8] = {}, w_wants[16] = {};
-    char           w_burst[3][20] = {};        // Champions: "explodes!", "is stunned", "loses his weapon" (variant.burst_words)   // Champions: "Yell ", "wants to kill " (variant.yell_words)
+    char           w_burst[3][20] = {};
+    char           w_knight[12][28] = {};      // Champions: Knight Change Classes' words (variant.knight_words)        // Champions: "explodes!", "is stunned", "loses his weapon" (variant.burst_words)   // Champions: "Yell ", "wants to kill " (variant.yell_words)
 
     // View Character's words (from the program and GAME.OVR)
     char           cls[18][27] = {}, race[8][16] = {}, alignment[9][17] = {}, sex[2][7] = {}, money[7][11] = {},
@@ -1671,6 +1672,11 @@ void pm_flags(bool on[])
         case 'H':                               // Human Change: with training, a human with no former class
             on[i] = pt->sel() && (vm->get(0x7EA8) & 0xFF) != 0 && create::can_change(*pt->sel());
             break;
+        case 'K':                               // Champions' Knight Change Classes: where training is, a knight below the Rose
+            on[i] = false;
+            for (int k = 0; krynn() && (vm->get(0x7EA8) & 0xFF) != 0 && k < pt->count; ++k)
+                on[i] = on[i] || (pt->m[k].level(classes::Monk) > 0 && pt->m[k].ext[party::kExtKnight] < 3);
+            break;
         case 'L':
             on[i] = pt->count == 0;
             break;
@@ -2856,13 +2862,15 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
 
 enum class Ask : uint8_t { None, Overwrite, Drop, DropSure, Reroll, SaveNew, OverwriteNew, DropItem, SellDeal, IdDeal,
                           LeaveCoins, CureAnyway, PayCure, Train, MemorizeThese, StopRest, LoseIt, AlterDrop, QuitDos,
-                          ScribeThese, ScribeThese2, UseIt, PaladinCure, AlterSure };
+                          ScribeThese, ScribeThese2, UseIt, PaladinCure, AlterSure, Knight };
 void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt);
 void ask_create(pic::Canvas& c, Ask what, const char* prompt);
 bool view_yes_no(Ask what, char k, pic::Canvas& c);
 
 bool shop_yes_no(Ask what, char k, pic::Canvas& c);
 bool train_yes_no(Ask what, char k, pic::Canvas& c);
+bool knight_yes_no(Ask what, char k, pic::Canvas& c);
+void start_knight(pic::Canvas& c);
 bool magic_yes_no(Ask what, char k, pic::Canvas& c);
 bool alter_yes_no(Ask what, char k, pic::Canvas& c);
 void open_magic(pic::Canvas& c);
@@ -4263,6 +4271,7 @@ void yes_no_tap(int x, int y, pic::Canvas& c)
 
 void yes_no_key(char k, pic::Canvas& c)
 {
+    if (ask == Ask::Knight) k = k == 'C' ? 'Y' : k == 'E' ? 'N' : 0;     // (Champions: "Change Exit" / "Exit")
     if (k != 'Y' && k != 'N') return;
     const Ask what = ask;
     ask = Ask::None;
@@ -4272,6 +4281,7 @@ void yes_no_key(char k, pic::Canvas& c)
     if (items_yes_no(what, k, c)) return;
     if (shop_yes_no(what, k, c)) return;
     if (train_yes_no(what, k, c)) return;
+    if (knight_yes_no(what, k, c)) return;
     if (magic_yes_no(what, k, c)) return;
     if (alter_yes_no(what, k, c)) return;
     party::Character* ch = pt->sel();
@@ -4891,6 +4901,10 @@ bool load_rules(Making*& m)
                 exepack::read(src, info, pc.ds_image + pc.cleric_first + 1, m->facts.cleric_first, 10) !=
                     exepack::Status::Ok)
                 memset(m->facts.cleric_first, 0, 10);
+            if (pc.knight_mins &&
+                exepack::read(src, info, pc.ds_image + pc.knight_mins, m->facts.knight_mins[0], 12) !=
+                    exepack::Status::Ok)
+                memset(m->facts.knight_mins, 0, 12);
             for (int g = 0; pc.god_names && g < 8; ++g) {
                 uint8_t nm[12] = {};
                 if (exepack::read(src, info, pc.ds_image + pc.god_names + g * 12, nm, 12) != exepack::Status::Ok) break;
@@ -9449,6 +9463,65 @@ bool train_yes_no(Ask what, char k, pic::Canvas& c)
     return true;
 }
 
+// ---- Champions' Knight Change Classes (GAME.OVR 0x25A1D; the party menu
+// where training is): "NAME" (row 3, centred on column 19), "is petitioning
+// to become a" (row 5, column 7), "Knight Of The sword / rose" (row 7,
+// column 10), then " is too inexperienced." / " does not qualify." under
+// the name (row 9; the Rose's a column further right, its "inexperienced"
+// without the full stop) and "Exit", or " may become a" and the order's
+// name (row 11, column 10) and "Change Exit" (create::knight_petition /
+// knight_change)
+void start_knight(pic::Canvas& c)
+{
+    party::Character* ch = pt->sel();
+    if (!ch || !krynn()) return;
+    if (!trainer && !load_rules(trainer)) {
+        end_training();
+        error(c, "Not in the engine yet.");
+        return;
+    }
+    const int order = ch->ext[party::kExtKnight];
+    const int r = ch->level(classes::Monk) > 0 ? create::knight_petition(*ch, trainer->tables, trainer->facts) : -1;
+    if (r < 0) {
+        end_training();
+        draw_party_menu(c);
+        return;
+    }
+    c.fill(8, 8, 38 * 8, 22 * 8, 0);
+    char nm[20], line[64];
+    ch->name(nm, sizeof nm);
+    const int n = static_cast<int>(strlen(nm));
+    put(c, nm, 19 - n / 2, 3, 10);
+    put(c, d->w_knight[1], 7, 5, 10);
+    snprintf(line, sizeof line, "%s%s", d->w_knight[4], d->w_knight[order == 1 ? 2 : 3]);
+    put(c, line, 10, 7, 10);
+    const char* what = r == 1 ? d->w_knight[order == 1 ? 5 : 10] : r == 2 ? d->w_knight[6] : d->w_knight[7];
+    snprintf(line, sizeof line, "%s%s", nm, what);
+    const int len = static_cast<int>(strlen(line));
+    put(c, line, (r == 0 || order == 1 ? 19 : 20) - len / 2, 9, 10);
+    if (r == 0) put(c, d->w_knight[order == 1 ? 8 : 11], 10, 11, 10);
+    dirty(0, pic::kScreenH);
+    ask = Ask::Knight;
+    screen = Screen::YesNo;
+    text::build(menu, "", r == 0 ? d->w_knight[9] : d->w_knight[0]);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+bool knight_yes_no(Ask what, char k, pic::Canvas& c)
+{
+    if (what != Ask::Knight) return false;
+    screen = Screen::PartyMenu;
+    party::Character* ch = pt->sel();
+    if (k == 'Y' && ch && trainer) {
+        create::knight_change(*ch, trainer->tables);
+        rules::recalc(*ch, *names, d->facts);
+    }
+    end_training();
+    draw_party_menu(c);
+    return true;
+}
+
 // ---- Modify Character (the party menu) --------------------------------------------
 // A character as made (no adventures yet) can have their stats, hit points
 // and name changed within the rules (engine/create: modify_*): View
@@ -9665,7 +9738,7 @@ void pm_choose_key(char key, pic::Canvas& c)
 {
     // Gateway: a member's functions ask "Pick Character Select Exit" first
     // (its party menu overlay GAME.OVR 0x2650E +0x27E; DOSBox)
-    if (d->prof->party.pick && !pm_picked && pt->count && strchr("DMITHVR", key)) {
+    if (d->prof->party.pick && !pm_picked && pt->count && strchr(krynn() ? "DMITHVRK" : "DMITHVR", key)) {
         char prompt[20], words[16];
         ow(d->prof->party.pick, prompt, sizeof prompt);
         ow(d->prof->party.pick_menu, words, sizeof words);
@@ -9780,6 +9853,12 @@ void pm_choose_key(char key, pic::Canvas& c)
     case 'H':
         start_change(c);
         return;
+    case 'K':
+        if (krynn()) {
+            start_knight(c);
+            return;
+        }
+        break;
     case 'I':                                   // (Gateway's Icon Select)
         if (gateway() && pt->sel()) {
             start_icon(c, Screen::PartyMenu);
@@ -10224,6 +10303,18 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             {d->prof->variant.burst_words[0], d->w_burst[0], sizeof d->w_burst[0]},
             {d->prof->variant.burst_words[1], d->w_burst[1], sizeof d->w_burst[1]},
             {d->prof->variant.burst_words[2], d->w_burst[2], sizeof d->w_burst[2]},
+            {d->prof->variant.knight_words[0], d->w_knight[0], sizeof d->w_knight[0]},
+            {d->prof->variant.knight_words[1], d->w_knight[1], sizeof d->w_knight[1]},
+            {d->prof->variant.knight_words[2], d->w_knight[2], sizeof d->w_knight[2]},
+            {d->prof->variant.knight_words[3], d->w_knight[3], sizeof d->w_knight[3]},
+            {d->prof->variant.knight_words[4], d->w_knight[4], sizeof d->w_knight[4]},
+            {d->prof->variant.knight_words[5], d->w_knight[5], sizeof d->w_knight[5]},
+            {d->prof->variant.knight_words[6], d->w_knight[6], sizeof d->w_knight[6]},
+            {d->prof->variant.knight_words[7], d->w_knight[7], sizeof d->w_knight[7]},
+            {d->prof->variant.knight_words[8], d->w_knight[8], sizeof d->w_knight[8]},
+            {d->prof->variant.knight_words[9], d->w_knight[9], sizeof d->w_knight[9]},
+            {d->prof->variant.knight_words[10], d->w_knight[10], sizeof d->w_knight[10]},
+            {d->prof->variant.knight_words[11], d->w_knight[11], sizeof d->w_knight[11]},
         };
         for (auto& wd : words)
             if (wd.at) read_word(src, wd.at, wd.out, wd.cap);
@@ -14924,7 +15015,7 @@ bool back(pic::Canvas& c)
         const Ask what = ask;
         ask = Ask::None;
         if (view_yes_no(what, 'N', c) || items_yes_no(what, 'N', c) || shop_yes_no(what, 'N', c) ||
-            train_yes_no(what, 'N', c) ||
+            train_yes_no(what, 'N', c) || knight_yes_no(what, 'N', c) ||
             magic_yes_no(what, 'N', c) || alter_yes_no(what, 'N', c))
             return true;
         ask = what;

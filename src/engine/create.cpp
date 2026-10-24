@@ -327,6 +327,40 @@ int gods_for(const classes::Tables& t, int race, int* out, int cap)
     return n;
 }
 
+int knight_petition(const party::Character& c, const classes::Tables& t, const Facts& f)
+{
+    const int order = c.ext[party::kExtKnight], lv = c.level(classes::Monk);
+    if (!t.lay.krynn || lv <= 0 || order < 1 || order > 2) return -1;
+    const int least = order == 1 ? 3 : 4;
+    const int32_t need = t.exp_needed(order == 1 ? 4 : 5, least - 1, true);
+    if (lv < least || static_cast<int64_t>(c.exp()) < need) return 1;
+    for (int i = 0; i < 6; ++i)
+        if (c.rec[kStats + i * 2] < f.knight_mins[order - 1][i]) return 2;
+    return 0;
+}
+
+void knight_change(party::Character& c, const classes::Tables& t)
+{
+    uint8_t* r = c.rec;
+    const int lv = c.level(classes::Monk), order = c.ext[party::kExtKnight];
+    if (lv <= 0 || order < 1 || order > 2) return;
+    const int32_t need = lv >= 2 ? t.exp_needed(order == 1 ? 4 : 5, lv - 1, true) : 0;
+    if (static_cast<int64_t>(c.exp()) < need) {
+        // (0x258D9: the level's share of the rolled hit points, and the
+        // knight's Constitution figure, come off)
+        --r[kLevels + classes::Monk];
+        const int share = r[kHpRolled] / (lv + 1);
+        r[kHpRolled] = static_cast<uint8_t>(r[kHpRolled] - share);
+        const int con = stat_full(c, 4);
+        int b = con == 3 ? -2 : con <= 6 ? -1 : con <= 14 ? 0 : con == 15 ? 1 : con == 16 ? 2 : 0;
+        if (con >= 17 && con <= 19) b = con - 14;
+        r[kHpMax] = static_cast<uint8_t>(r[kHpMax] - (share + b));
+        if (r[kHp] >= r[kHpMax]) r[kHp] = r[kHpMax];
+    }
+    c.ext[party::kExtKnight] = static_cast<uint8_t>(order + 1);
+    classes::class_bonuses(c, t);
+}
+
 int god_alignments(int god)
 {
     // (Paladine, Majere, Kiri-Jolith, Mishakal: the good ones; Sirrion,

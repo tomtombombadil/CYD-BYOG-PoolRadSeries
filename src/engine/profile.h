@@ -441,6 +441,8 @@ struct Profile {
         uint16_t        cleric_first = 0;
         uint32_t        pick_god = 0;
         uint16_t        god_names = 0;
+        // Champions: DS the least stats for the Order of the Sword, then the Rose's (6 each)
+        uint16_t        knight_mins = 0;
     } create;
 
     // Items: Use Trade Drop Halve Join Sell Id and their words (ItemWord order)
@@ -740,6 +742,11 @@ struct Profile {
     // Champions: "explodes!", "is stunned" (a bozak's death), "loses his
     // weapon" (a baaz's) - GAME.OVR
     uint32_t burst_words[3] = {};
+    // Champions' Knight Change Classes (GAME.OVR): "Exit", "is petitioning to
+    // become a", "sword", "rose", "Knight Of The ", " is too inexperienced.",
+    // " does not qualify.", " may become a", "Knight Of The Sword", "Change
+    // Exit", " is too inexperienced", "Knight Of The Rose"
+    uint32_t knight_words[12] = {};
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

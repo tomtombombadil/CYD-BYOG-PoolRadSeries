@@ -2195,7 +2195,7 @@ const Profile kProfiles[] = {
                 .select = 0x20865, .reroll = 0x208BD, .char_name = 0x208CC, .save_q = 0x208DD, .qmark = 0x1E2AB,
                 .mu_change = {0x0B, 0x12, 0x0C, 0x15}, .pick_new = 0, .no_qualify = 0, .change_select = 0x20865,
                 .now_first = 0, .dot = 0x1E246, .kender_fear = 0x5C, .cleric_first = 0x423A, .pick_god = 0x20883,
-                .god_names = 0x1259},
+                .god_names = 0x1259, .knight_mins = 0x0B7E},
      .item_words = {0x284F5, 0x284FA, 0x28501, 0x28507, 0x2850E, 0x28514, 0x2851A, 0x27DE6, 0x2852F, 0x28F8E,
                     0x2853F, 0x28545, 0x2855A, 0x28EC7, 0x29529, 0x29538, 0x29550, 0x2955F, 0x29565, 0x29741,
                     0x29782, 0x297A8, 0x29771, 0x20865},
@@ -2289,7 +2289,9 @@ const Profile kProfiles[] = {
                  .bigpic_from = 0x70, .fight_unswapped = true, .party_menu_col = 9, .krynn = true,
                  .press_words = {0x1A8E, 0x1AB2}, .order_words = {0x26DB3, 0x26DC1, 0x26DCF},
                  .yell_words = {0xB5DE, 0x33FBF},
-                 .burst_words = {0x1248C, 0x12496, 0x1299C}},
+                 .burst_words = {0x1248C, 0x12496, 0x1299C},
+                 .knight_words = {0x2595F, 0x25964, 0x2597F, 0x25985, 0x2598A, 0x25999, 0x259B0, 0x259C3, 0x259D1,
+                                  0x259E5, 0x259F1, 0x25A07}},
      .overland = nullptr},
     // Pools of Darkness, GOG release (darkness_facts.md; being built -
     // Tom, 2026-10-17): GAME.EXE 64,203 bytes, EXEPACK, unpacked 72,784; its

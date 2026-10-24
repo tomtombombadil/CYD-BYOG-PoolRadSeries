@@ -80,6 +80,8 @@ struct Facts {
     // spells (DS: a list from its second byte, 0 ends)
     uint8_t  kender_fear = 0;
     uint8_t  cleric_first[10] = {};
+    // Champions: the least stats for the Order of the Sword / Rose (DS)
+    uint8_t  knight_mins[2][6] = {};
 };
 
 // Starts a character: race, sex, class, alignment chosen. Sets the
@@ -93,6 +95,15 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
 // i-th of the six - 0x21371)
 int gods_for(const classes::Tables& t, int race, int* out, int cap);
 int god_alignments(int god);
+// Champions' Knight Change Classes (GAME.OVR 0x25A1D): a knight's petition
+// to the next order - 0 may become, 1 too inexperienced (Sword: 3rd level
+// and the Sword's 3rd level experience; Rose: 4th and the Rose's 4th), 2
+// doesn't qualify (a stat under the order's least), -1 none to go to
+int knight_petition(const party::Character& c, const classes::Tables& t, const Facts& f);
+// ... and the change (0x25888): below the new order's experience for the
+// level a level is lost (the rolled hit points' share, and the
+// Constitution figure, off the maximum), then the next order
+void knight_change(party::Character& c, const classes::Tables& t);
 
 // Rolls the stats (best of six 3d6 + 1 each, the age's effects, the race's
 // and sex's limits, the class's minimums, exceptional strength), hit
