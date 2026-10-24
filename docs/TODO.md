@@ -134,6 +134,16 @@ the Project as claude/TODO.md.
       field tiles (23 KB) in internal RAM - one block would go to PSRAM;
       a Settings switch for EGA on the S3 / C5 (Claude: not now - Tom's
       rule is 256 colours there).
+- [ ] Krynn (survey 2026-10-24, the Project's claude/krynn_facts.md):
+      Champions = Secret's engine (port started, branch champions); Death
+      Knights = Darkness's engine at 4 bits (LOAD FILES / PIECES 3
+      operands, a 216 + 220-byte record); Dark Queen = a new C program
+      with HLIB .TLB / .GLB libraries, only the scripts (Darkness's ECL)
+      shared - a near-new port. Dark Queen on classic boards: GOG ships
+      VGA files; its EGA mode comes from its installer rewriting every
+      .TLB dithered - Claude to choose then (the player's EGA install vs
+      the scan converting). Also: the Krynn games' sound is an EA driver
+      (SOUND.DAX / MIDI.DAX), not decoded yet.
 - [ ] Gateway to the Savage Frontier (v0.144.0, SPEC 6e): PLAYABLE (Play
       on) - matches DOSBox through Yartar, the wilderness, the vault, shops,
       fights; its GOG journal table (v0.142.0). behave gateway is light
