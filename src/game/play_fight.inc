@@ -2629,6 +2629,30 @@ void fight_menu_dk(char* words, size_t cap, const combat::Fighter& f, bool spell
     dk_words(fw(profile::kFMenuDk), on, 12, words, cap);
 }
 
+// Champions: a kender (its own race 5) may Yell while no one has (its
+// GAME.OVR ovl 0x58 +0xA45: the taunter pointer DS 0x71A7 nil)
+bool kr_can_yell(const combat::Fighter& f)
+{
+    return krynn() && d->w_yell[0] && f.member >= 0 && pt->m[f.member].ext[party::kExtRace] == 5 &&
+           fg->b.taunter < 0 && d->prof->fight.facts.taunted;
+}
+
+// Yell (ovl 0xDB +0x28): each of the other side that is taunted says it
+// "wants to kill" the kender; the kender's turn is over
+void kr_yell(pic::Canvas& c)
+{
+    const int i = fg->cur;
+    int out[24];
+    const int n = combat::taunt(fg->b, i, rng, out, 24);
+    char nm[20], t[48];
+    fighter_name(fg->b.f[i], nm, sizeof nm);
+    snprintf(t, sizeof t, "%s%s", d->w_wants, nm);
+    for (int k = 0; k < n; ++k) add_page(out[k], t);
+    fg->b.f[i].attacks[0] = fg->b.f[i].attacks[1] = 0;
+    draw_fight(c);
+    say(c, FSt::Next);
+}
+
 void fight_menu(pic::Canvas& c)
 {
     const combat::Fighter& f = fg->b.f[fg->cur];
@@ -2660,6 +2684,9 @@ void fight_menu(pic::Canvas& c)
         if (f.rec[magic::kListAt + k] && !(f.rec[magic::kListAt + k] & 0x80)) spells = true;
     if (spells && f.can_cast) strcat(words, fw(profile::kFCast));
     if (f.rec[0x109] > 0 && !f.turned_undead && fg->t.turn_known) strcat(words, fw(profile::kFTurn));
+    // (Champions, GAME.OVR ovl 0x58 +0xA45: Yell for a kender while no one
+    // taunts the enemy yet)
+    if (kr_can_yell(f)) strcat(words, d->w_yell);
     strcat(words, fw(profile::kFQuickDone));
     fg->st = FSt::Menu;
     text::build(menu, "", words);
@@ -4711,6 +4738,9 @@ void fight_menu_key(pic::Canvas& c, char key)
         break;
     case 'D': done_menu(c); break;
     case 0: break;
+    case 'Y':
+        if (kr_can_yell(f)) kr_yell(c);
+        break;
     case 'C': fight_cast_menu(c); break;
     case 'T': fight_turn_undead(c); break;
     case 'U':
@@ -4756,6 +4786,13 @@ void done_key(pic::Canvas& c, char key)
     }
     case 'S': speed_menu(c); break;
     case 'E': fight_menu(c); break;
+    case 'A':
+        // (Champions: its Done menu's Auto - Curse's Quick)
+        f.quick = true;
+        fg->st = FSt::Ai;
+        fg->until = plat::now_ms() + 200;
+        clear_menu_line(c);
+        break;
     default: break;
     }
 }

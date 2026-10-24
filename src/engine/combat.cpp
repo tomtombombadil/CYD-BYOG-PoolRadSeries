@@ -2842,6 +2842,13 @@ bool seen_enemy(const Battle& b, int i, int c)
 int pick_target(Battle& b, const Tables& t, int i, create::Dice& d)
 {
     Fighter& f = b.f[i];
+    // Champions' taunted (a kender's Yell; its GAME.OVR 0x18E07): the kender
+    // who yelled is the target while it can fight
+    if (b.fx && b.fx->taunted && b.taunter >= 0 && b.taunter < b.n && hasx(f, b.fx->taunted) &&
+        seen_enemy(b, i, b.taunter)) {
+        f.target = static_cast<int16_t>(b.taunter);
+        return f.target;
+    }
     if (seen_enemy(b, i, f.target) && range(b, t, i, f.target, false, nullptr)) return f.target;
     f.target = -1;
     int cand[kMaxFighters], n = 0;
@@ -2864,6 +2871,23 @@ int pick_target(Battle& b, const Tables& t, int i, create::Dice& d)
 }
 
 } // namespace
+
+int taunt(Battle& b, int kender, create::Dice& d, int* out, int cap)
+{
+    int n = 0;
+    if (!b.fx || !b.fx->taunted || kender < 0 || kender >= b.n) return 0;
+    b.taunter = kender;
+    const int side = b.f[kender].team() ? 1 : 0;
+    for (int c = 0; c < b.n; ++c) {
+        Fighter& f = b.f[c];
+        // (okay, Intelligence over 3, the other side, no save against spells)
+        if (!f.size || !f.up() || f.status() != 0 || f.rec[0x13] <= 3 || (f.team() ? 1 : 0) == side) continue;
+        if (saving_throw(f, 4, 0, d)) continue;
+        give_aff(f, b.fx->taunted, 0, 0xFF, false);
+        if (n < cap) out[n++] = c;
+    }
+    return n;
+}
 
 Plan think(Battle& b, const Tables& t, int i, create::Dice& d)
 {

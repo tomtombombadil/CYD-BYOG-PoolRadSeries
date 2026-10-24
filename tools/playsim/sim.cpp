@@ -443,7 +443,7 @@ static void run_fight()
                 if (play::fg->st == play::FSt::Menu) {
                     if (n < 6) { char t[16]; snprintf(t, 16, "fmenu%d", n++); shot(t); }
                     ++turns;
-                    tap_word('Q');
+                    if (!tap_word('Q') && tap_word('D')) tap_word('A');     // (Champions: Done's Auto)
                 } else if (play::fg->st == play::FSt::Results || play::fg->st == play::FSt::Destroyed) {
                     static bool told = false;
                     if (!told) { told = true; printf("  the 3D view's walls at the results: %s\n", world_hash() == w0 ? "as before" : "CHANGED"); }

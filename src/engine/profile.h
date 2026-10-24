@@ -726,6 +726,9 @@ struct Profile {
         // Champions' View: the knight's order after the class (" of the
         // Crown", " of the Sword", " of the Rose"; GAME.OVR)
         uint32_t order_words[3] = {};
+        // Champions' fights: a kender's "Yell " on the menu and what each
+        // taunted one says ("wants to kill " + the kender's name; GAME.OVR)
+        uint32_t yell_words[2] = {};
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

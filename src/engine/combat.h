@@ -378,6 +378,10 @@ struct Facts {
         // of Curse's numbers (6, the lightning's - COMSPR 5), with no sound; 0: the game's own
         uint8_t gaze_pic = 0;
     } dk{};
+    // Champions of Krynn's (champions_facts.md 5; 0: none): a kender's Yell
+    // taunts the other side - this effect on each that fails its save
+    // against spells (Intelligence over 3): their target is the kender
+    uint8_t taunted = 0;
 };
 
 // ---- Monsters (LOAD MONSTER): a group per load (the record its copies
@@ -539,6 +543,7 @@ struct Battle {
     int     to_hit_party = 0, to_hit_monsters = 0;  // the scripts' bonuses
     const Facts* fx = nullptr;
     int     morale_base = 0;            // the script's morale word (0x7EC6)
+    int     taunter = -1;               // Champions: the kender who yelled (-1: none - Yell offered)
     // Darkness's Turn Undead (R13): the undead loaded for the fight (each
     // cleric may turn that many times), the script's penalty (block +0x0E)
     int     undead_loaded = 0, turn_minus = 0;
@@ -1016,6 +1021,11 @@ bool teleport(Battle& b, const Tables& t, int i, int x, int y);
 // The fighters in an area: within r squares of (x, y)
 int in_area(const Battle& b, const Tables& t, int x, int y, int r, int* out, int cap);
 bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d);
+// Champions' Yell (its GAME.OVR ovl 0xDB +0x28): `kender` becomes the
+// taunter; each fighter of the other side that is okay, has Intelligence
+// over 3 and fails a save against spells gets Facts::taunted (into out, up
+// to cap: how many)
+int taunt(Battle& b, int kender, create::Dice& d, int* out, int cap);
 // The fighter whose turn it is and the damage's kind (saving throws look at
 // them: protection from evil / good, resist fire / cold)
 void set_actor(const Battle& b, int i);

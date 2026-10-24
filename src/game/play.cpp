@@ -164,6 +164,7 @@ struct Data {
                    w_camp[8] = {}, w_makes_camp[28] = {};
     char           w_press[2][36] = {};        // Champions: a one-choice menu's word shown as the other (variant.press_words)
     char           w_order[3][16] = {};        // Champions: " of the Crown" / Sword / Rose (variant.order_words)
+    char           w_yell[8] = {}, w_wants[16] = {};   // Champions: "Yell ", "wants to kill " (variant.yell_words)
 
     // View Character's words (from the program and GAME.OVR)
     char           cls[18][27] = {}, race[8][16] = {}, alignment[9][17] = {}, sex[2][7] = {}, money[7][11] = {},
@@ -10105,6 +10106,8 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             {d->prof->variant.order_words[0], d->w_order[0], sizeof d->w_order[0]},
             {d->prof->variant.order_words[1], d->w_order[1], sizeof d->w_order[1]},
             {d->prof->variant.order_words[2], d->w_order[2], sizeof d->w_order[2]},
+            {d->prof->variant.yell_words[0], d->w_yell, sizeof d->w_yell},
+            {d->prof->variant.yell_words[1], d->w_wants, sizeof d->w_wants},
         };
         for (auto& wd : words)
             if (wd.at) read_word(src, wd.at, wd.out, wd.cap);
