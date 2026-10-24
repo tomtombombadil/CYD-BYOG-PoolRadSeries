@@ -434,6 +434,13 @@ struct Profile {
         // Gateway: a new character's experience (one class's) and platinum (0: Curse's)
         uint32_t        start_xp = 0;
         uint16_t        platinum = 0;
+        // Champions: a kender's fearless effect; DS: a new cleric's spells
+        // (from the list's second byte, 0 ends); GAME.OVR "Pick God", DS the
+        // gods' names (12 bytes, 0 None)
+        uint8_t         kender_fear = 0;
+        uint16_t        cleric_first = 0;
+        uint32_t        pick_god = 0;
+        uint16_t        god_names = 0;
     } create;
 
     // Items: Use Trade Drop Halve Join Sell Id and their words (ItemWord order)

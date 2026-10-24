@@ -4712,7 +4712,7 @@ struct Making {
     create::Facts   facts{};
     create::Dice    dice;
     party::Character ch;
-    int  stage = 0;                 // 0 race, 1 gender, 2 class, 3 alignment
+    int  stage = 0;                 // 0 race, 1 gender, 2 class, 3 alignment (4 Human Change, 5 god)
     int  opt[17] = {};
     int  n_opt = 0;
     int  race = 0, sex = 0, cls = 0;
@@ -4723,6 +4723,11 @@ struct Making {
     char portrait_menu[24] = {};
     uint8_t head_map[15] = {}, body_map[13] = {};
     bool kit_given = false;         // Darkness: the starting kit (at the save)
+    // Champions: stage 5 Pick God (a cleric's, between class and
+    // alignment), its heading and the gods' names (DS, 12 bytes each)
+    int  god = 0;
+    char pick_god[16] = {};
+    char gods[8][12] = {};
 };
 Making* mk = nullptr;
 
@@ -4860,6 +4865,10 @@ bool load_rules(Making*& m)
     fa.mu_all_slot = pc.mu_all_slot;
     fa.start_xp = pc.start_xp;
     fa.platinum = pc.platinum;
+    fa.kender_fear = pc.kender_fear;
+    if (pc.cleric_first)
+        for (int i = 0; i < 10; ++i)
+            fa.cleric_first[i] = m->tables.u8(static_cast<uint16_t>(pc.cleric_first + 1 + i));
     const uint32_t at[9] = {pc.pick_race, pc.pick_gender, pc.pick_class, pc.pick_alignment, pc.select,
                             pc.reroll,    pc.char_name,   pc.save_q,     pc.qmark};
     const uint32_t ch_at[5] = {pc.pick_new, pc.no_qualify, pc.change_select, pc.now_first, pc.dot};
@@ -4870,6 +4879,14 @@ bool load_rules(Making*& m)
         for (int i = 0; i < 5; ++i)
             if (ch_at[i]) text::read_pascal(src, ch_at[i], m->change[i], sizeof m->change[i]);
         if (pc.portrait_menu) text::read_pascal(src, pc.portrait_menu, m->portrait_menu, sizeof m->portrait_menu);
+        if (pc.pick_god) text::read_pascal(src, pc.pick_god, m->pick_god, sizeof m->pick_god);
+    }
+    for (int g = 0; pc.god_names && g < 8; ++g) {
+        const uint16_t at = static_cast<uint16_t>(pc.god_names + g * 12);
+        int n = m->tables.u8(at);
+        if (n > 11) n = 11;
+        for (int i = 0; i < n; ++i) m->gods[g][i] = static_cast<char>(m->tables.u8(static_cast<uint16_t>(at + 1 + i)));
+        m->gods[g][n] = 0;
     }
     return ok;
 }
@@ -4960,6 +4977,7 @@ const char* option_name(int i)
     switch (mk->stage) {
     case 0: return name_of(d->race[0], 16, 8, v);
     case 1: return name_of(d->sex[0], 7, 2, v);
+    case 5: return v >= 0 && v < 8 ? mk->gods[v] : "";
     case 2:
     case 4: return name_of(d->cls[0], 27, 18, v);
     default: return name_of(d->alignment[0], 17, 9, v);
@@ -4968,7 +4986,7 @@ const char* option_name(int i)
 
 void pick_line(int i, char* out, size_t cap)
 {
-    if (i == 0) snprintf(out, cap, "%s", mk->stage == 4 ? mk->change[0] : mk->words[mk->stage]);
+    if (i == 0) snprintf(out, cap, "%s", mk->stage == 4 ? mk->change[0] : mk->stage == 5 ? mk->pick_god : mk->words[mk->stage]);
     else snprintf(out, cap, "  %s", option_name(i - 1));
 }
 
@@ -5042,14 +5060,26 @@ void pick_stage(int stage, pic::Canvas& c)
 {
     mk->stage = stage;
     switch (stage) {
-    case 0: mk->n_opt = create::races(mk->opt, 17, secret_files() || darkness_files()); break;
+    case 0:
+        if (krynn()) {
+            // (Champions: its seven races in its order - classes::kKrynnRace + its number)
+            for (int r = 0; r < 7; ++r) mk->opt[r] = classes::kKrynnRace + r;
+            mk->n_opt = 7;
+        } else {
+            mk->n_opt = create::races(mk->opt, 17, secret_files() || darkness_files());
+        }
+        break;
+    case 5: mk->n_opt = create::gods_for(mk->tables, mk->race, mk->opt, 17); break;
     case 1:
         mk->opt[0] = 0;
         mk->opt[1] = 1;
         mk->n_opt = 2;
         break;
     case 2: mk->n_opt = create::classes_for(mk->tables, mk->race, mk->opt, 17); break;
-    default: mk->n_opt = create::alignments_for(mk->tables, mk->cls, mk->opt, 17); break;
+    default:
+        mk->n_opt = create::alignments_for(mk->tables, mk->cls, mk->opt, 17,
+                                           krynn() ? create::god_alignments(mk->god) : 0xFF);
+        break;
     }
     screen = Screen::CreatePick;
     plist = PickList{};
@@ -5083,10 +5113,25 @@ void picked(int i, pic::Canvas& c)
     switch (mk->stage) {
     case 0: mk->race = v; pick_stage(1, c); return;
     case 1: mk->sex = v; pick_stage(2, c); return;
-    case 2: mk->cls = v; pick_stage(3, c); return;
+    case 2:
+        mk->cls = v;
+        mk->god = 0;
+        if (krynn() && (v == create::Cleric || (v >= create::ClericFighter && v <= create::ClericThief))) {
+            // (Champions: a cleric picks a god - a dwarf's is Reorx, unasked;
+            // GAME.OVR 0x211A6)
+            const int dwarf = mk->race == classes::kKrynnRace + 3 || mk->race == classes::kKrynnRace + 4;
+            if (!dwarf) {
+                pick_stage(5, c);
+                return;
+            }
+            mk->god = 6;
+        }
+        pick_stage(3, c);
+        return;
+    case 5: mk->god = v; pick_stage(3, c); return;
     case 4: change_picked(v, c); return;
     default:
-        create::begin(mk->ch, mk->tables, mk->facts, mk->dice, mk->race, mk->sex, mk->cls, v);
+        create::begin(mk->ch, mk->tables, mk->facts, mk->dice, mk->race, mk->sex, mk->cls, v, mk->god);
         create::roll(mk->ch, mk->tables, mk->facts, mk->dice);
         rules::recalc(mk->ch, *names, d->facts);
         show_new_character(c);

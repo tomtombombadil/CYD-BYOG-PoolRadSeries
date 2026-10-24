@@ -313,8 +313,58 @@ int con_hp_adj(const party::Character& c, const classes::Tables& t)
     return adj;
 }
 
+int gods_for(const classes::Tables& t, int race, int* out, int cap)
+{
+    int n = 0;
+    const bool dwarf = race == classes::kKrynnRace + 3 || race == classes::kKrynnRace + 4;
+    (void)t;
+    for (int g = 1; g <= 7 && n < cap; ++g)
+        if (!dwarf || g == 6) out[n++] = g;
+    return n;
+}
+
+int god_alignments(int god)
+{
+    // (Paladine, Majere, Kiri-Jolith, Mishakal: the good ones; Sirrion,
+    // Reorx, Shinare: the neutral ones - 0x15 / 0x2E; none: all)
+    return god >= 1 && god <= 4 ? 0x15 : god >= 5 && god <= 7 ? 0x2E : 0xFF;
+}
+
+namespace {
+// Champions' start (its createPlayer, GAME.OVR 0x20E3A-0x210DF and
+// 0x215D8-0x21687): fighters, rangers, mages and thieves start at 2nd level,
+// knights in the Order of the Crown; the experience by class, a cleric's
+// (none given by the class) 2,000 when good, 1,500 when neutral; a mage's
+// robe by the alignment (good White, neutral Red); the god's spell
+// (the knights' / gods' list, record 0xC7-0xCD)
+void krynn_start(party::Character& c, int god)
+{
+    uint8_t* r = c.rec;
+    static const uint16_t kXp[17] = {0, 0, 2001, 0, 2251, 5000, 1251, 2500, 2001, 5000, 2251, 5000, 0, 5000, 2001,
+                                     5000, 5000};
+    const int cls = r[kClass];
+    if (cls == Fighter || cls == Ranger || cls == MagicUser || cls == Thief) r[kLevels + cls] = 2;
+    uint32_t xp = cls >= 0 && cls < 17 ? kXp[cls] : 0;
+    const int a = r[kAlign];
+    if (xp == 0 && r[kLevels + classes::Cleric]) xp = a % 3 == 0 ? 2000 : a % 3 == 1 ? 1500 : 0;
+    put32(r, kExp, xp);
+    if (r[kLevels + classes::MagicUser]) c.ext[party::kExtRobe] = a % 3 == 0 ? 1 : a % 3 == 1 ? 2 : 0;
+    if (r[kLevels + classes::Monk]) c.ext[party::kExtKnight] = 1;
+    c.ext[party::kExtGod] = static_cast<uint8_t>(r[kLevels + classes::Cleric] ? god : 0);
+    switch (c.ext[party::kExtGod]) {
+    case 1: c.ext[party::kExtBook + 0] = 1; break;
+    case 2: c.ext[party::kExtBook + 1] = 1; break;
+    case 3: c.ext[party::kExtBook + 2] = 1; break;
+    case 4: c.ext[party::kExtBook + 3] = c.ext[party::kExtBook + 4] = c.ext[party::kExtBook + 5] = 1; break;
+    case 5: c.ext[party::kExtBook + 6] = 1; break;
+    case 7: c.ext[party::kExtBook + 5] = 1; break;
+    default: break;
+    }
+}
+} // namespace
+
 void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, int race, int sex, int cls,
-           int alignment)
+           int alignment, int god)
 {
     c = party::Character{};
     uint8_t* r = c.rec;
@@ -337,7 +387,23 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
     r[kIconSize] = race == 1 || race == 3 || race == 5 ? 1 : 2;
     r[0x13F] = r[0x140] = t.lay.pool ? 1 : 0;      // (Pool: the portrait's head and body, from 1)
     if (race == 1 || race == 5) add_affect(c, f.poison_save);     // (Pool's dwarves and halflings)
-    if (t.lay.dk) {
+    if (t.lay.krynn) {
+        // Champions' races' effects (GAME.OVR 0x20ABB on): kender 0x5C 0x5E,
+        // dwarves 0x5E 0x1A 0x2F, elves 0x5F, half-elves 0x12
+        switch (c.ext[party::kExtRace]) {
+        case 5: add_affect(c, f.kender_fear); add_affect(c, f.con_save); break;
+        case 3:
+        case 4:
+            add_affect(c, f.con_save);
+            add_affect(c, f.dwarf_orc);
+            add_affect(c, f.giants);
+            break;
+        case 0:
+        case 1: add_affect(c, f.elf_sleep); break;
+        case 2: add_affect(c, f.halfelf); break;
+        default: break;
+        }
+    } else if (t.lay.dk) {
         // Darkness's races' effects in its order (GAME.OVR 0x149AA): dwarves
         // 0x2F 0x1A 0x61, gnomes 0x30 0x07 0x61, halflings 0x61, elves 0x5F,
         // half-elves 0x12; its record's 0x1A4 / 0x1A5 (flags) are 2 (0x16217)
@@ -384,6 +450,7 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
     if (r[kLevels + classes::Ranger]) add_affect(c, f.ranger_giant);
 
     r[kAlign] = static_cast<uint8_t>(alignment);
+    if (t.lay.krynn) krynn_start(c, god);
     if (t.lay.dk) {
         // Darkness's first icon (GAME.OVR 0x179A5, before the editor): the
         // head - halflings 3, women 9 (small races 7), men 5 (small 0) -; the
@@ -435,6 +502,7 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
     memset(r + kMoney, 0, 14);
     const bool pool = t.lay.pool;
     put32(r, kExp, pool ? 0 : start_exp(cls, t.lay.secret, t.lay.dk, f.start_xp));
+    if (t.lay.krynn) krynn_start(c, c.ext[party::kExtGod]);
 
     // Secret adds its races' adjustments to each roll (GAME.OVR 0x1EA28):
     // dwarves Con +1 Cha -1, elves Dex +1 Con -1, halflings Str -1 Dex +1
@@ -513,7 +581,15 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
     for (int k = 0; k < 8; ++k) {
         if (!c.level(k)) continue;
         ++held;
-        if (k == classes::Cleric) {
+        if (k == classes::Cleric && t.lay.krynn) {
+            // Champions (GAME.OVR 0x2236F): a slot for a good god's cleric,
+            // two for a neutral one's; the spells of its list (DS 0x423A)
+            r[kCastCount] = c.ext[party::kExtGod] <= 4 ? 1 : 2;
+            classes::spell_slots(c, t);
+            for (uint8_t s : f.cleric_first)
+                if (s) learn(c, s);
+                else break;
+        } else if (k == classes::Cleric) {
             r[kCastCount] = 1;
             classes::spell_slots(c, t);
             for (int s = 1; s < t.lay.spell_count; ++s)
@@ -521,13 +597,30 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
         } else if (k == classes::MagicUser) {
             r[kCastCount + 10] = 1;
             for (uint8_t s : f.mu_first) learn(c, s);
+            if (t.lay.krynn) learn(c, f.mu_level2);         // (Champions: five - 0x22444)
         } else if (k == classes::Thief && t.lay.secret && !t.lay.dk) {
             // Secret's thieves start with 2d6 gold (GAME.OVR 0x1F589, record
             // 0x109; DOSBox: a new human thief with GOLD 7)
             put16(r, kMoney + 3 * 2, d.roll(6, 2));
         }
     }
-    if (pool) {
+    if (t.lay.krynn) {
+        // Champions' steel (GAME.OVR 0x22364): per class held clerics 3d6,
+        // fighters and rangers 5d4, mages 2d4, thieves 2d6, a knight 1d4 in
+        // place of the rest; the share by classes is never taken (the loop
+        // always ends at 7 - 0x22489); then 20% more
+        int s = 0;
+        for (int k = 0; k < 8; ++k) {
+            if (!c.level(k)) continue;
+            if (k == classes::Monk) s = d.roll(4, 1);
+            else if (k == classes::Fighter || k == classes::Ranger) s += d.roll(4, 5);
+            else if (k == classes::Cleric) s += d.roll(6, 3);
+            else if (k == classes::MagicUser) s += d.roll(4, 2);
+            else if (k == classes::Thief) s += d.roll(6, 2);
+        }
+        s &= 0xFF;
+        put16(r, kMoney + 3 * 2, (s + s * 20 / 100) & 0xFF);
+    } else if (pool) {
         // Pool: gold only, 10 x the classes' money dice (a byte), shared
         // by the classes held (create_facts.md 1.11)
         int sum = 0, n = 0;
@@ -568,7 +661,7 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
     r[kHpRolled] = static_cast<uint8_t>(rolled / held);
 
     classes::class_bonuses(c, t);
-    if (!pool)
+    if (!pool && !t.lay.krynn)          // (Champions: no silent training - its levels are set)
         while (train(c, t, f, d, true)) {
         }
 }

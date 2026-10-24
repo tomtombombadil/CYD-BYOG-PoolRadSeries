@@ -407,11 +407,18 @@ void class_bonuses(party::Character& c, const Tables& t)
     if (t.lay.pool) {
         // Pool (create_facts.md 2.1): a fighter's attacks set by the level, 3 / 2 over 6
         if (c.level(Fighter) > 0) c.rec[kAttacks] = c.level(Fighter) > 6 ? 3 : 2;
-    } else if (c.level(Fighter) >= 7 || c.level(Paladin) >= 7 || c.level(Ranger) >= 8) {
+    } else if (c.level(Fighter) >= 7 || c.level(Paladin) >= 7 || c.level(Ranger) >= 8 ||
+               (t.lay.krynn && c.level(Monk) >= 7)) {
+        // (Champions' knights as fighters - GAME.OVR 0x3A3DE)
         c.rec[kAttacks] = 3;
         // Secret's levels go on: 2 a round past 12th (rangers 14th) - GAME.OVR 0x3C249
         if (t.lay.secret && (c.level(Fighter) > 12 || c.level(Paladin) > 12 || c.level(Ranger) > 14)) c.rec[kAttacks] = 4;
     }
+    // Champions' gods (GAME.OVR 0x3A40A): Kiri-Jolith's clerics, and
+    // Reorx's dwarves, +1 to hit
+    if (t.lay.krynn && (c.ext[party::kExtGod] == 3 || (c.ext[party::kExtGod] == 6 &&
+                                                       (c.ext[party::kExtRace] == 3 || c.ext[party::kExtRace] == 4))))
+        ++c.rec[kThac0];
     spell_slots(c, t);
     saving_throws(c, t);
     if (c.level(Thief) > 0) thief_skills(c, t);

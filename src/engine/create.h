@@ -76,13 +76,23 @@ struct Facts {
     // platinum (0: the game's own - Curse's 25,000 and 300)
     uint32_t start_xp = 0;
     uint16_t platinum = 0;
+    // Champions: a kender's second effect (fearless) and a new cleric's
+    // spells (DS: a list from its second byte, 0 ends)
+    uint8_t  kender_fear = 0;
+    uint8_t  cleric_first[10] = {};
 };
 
 // Starts a character: race, sex, class, alignment chosen. Sets the
 // record's defaults, the race's and class's effects, experience, levels,
 // THAC0 / saves / thief skills for level 1, the age. Then roll().
+// (Champions: god = the cleric's god, 1-7, 0 for none - Pick God)
 void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, int race, int sex, int cls,
-           int alignment);
+           int alignment, int god = 0);
+// Champions' gods a new cleric of this race may pick (1-7; dwarves Reorx
+// only - GAME.OVR 0x211B2) and the alignments the god allows (bit i: the
+// i-th of the six - 0x21371)
+int gods_for(const classes::Tables& t, int race, int* out, int cap);
+int god_alignments(int god);
 
 // Rolls the stats (best of six 3d6 + 1 each, the age's effects, the race's
 // and sex's limits, the class's minimums, exceptional strength), hit
