@@ -2586,5 +2586,10 @@ the game's Settings (As Original: all of them).
   the originals: questions start on their game's word (No; Darkness's /
   Gateway's Yes; Treasures' scripts' Yes), Darkness's menus with a place of
   their own.
+  The party menu (Tom, 2026-10-24: Treasures showed no character, so
+  View's character was a guess): the selected member in the white box in
+  every game (Treasures' original marks none; the others white letters -
+  the exploring panel keeps those), and Treasures' menu line in the box
+  from the start (its original: white letters).
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.
