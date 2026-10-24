@@ -814,6 +814,24 @@ static void test_font()
     dax::MemorySource s2(nofont.data(), static_cast<uint32_t>(nofont.size()));
     CHECK(dax::read_index(s2, idx) == dax::Status::Ok);
     CHECK(!font::load(s2, idx, f));
+    // Dark Queen's GAME.FON: 96 glyphs of 12 rows; rows 0 2 3 5 7 8 9 10 drawn
+    {
+        Bytes fon(font::kFonBytes, 0);
+        for (int g = 0; g < 96; ++g)
+            for (int r = 0; r < 12; ++r) fon[g * 12 + r] = static_cast<uint8_t>(g + 16 * r);
+        dax::MemorySource fs(fon.data(), static_cast<uint32_t>(fon.size()));
+        static font::Font ff;
+        CHECK(font::load_fon(fs, ff) && ff.loaded);
+        const int a = 'A' - 0x20, zero = '0' - 0x20;
+        CHECK(ff.glyph[font::glyph_of('A')][0] == a && ff.glyph[font::glyph_of('A')][1] == a + 32 &&
+              ff.glyph[font::glyph_of('A')][6] == static_cast<uint8_t>(a + 144) &&
+              ff.glyph[font::glyph_of('A')][7] == static_cast<uint8_t>(a + 160));
+        CHECK(ff.glyph[font::glyph_of('0')][2] == zero + 48 && ff.glyph[font::glyph_of('@')][0] == '@' - 0x20);
+        CHECK(ff.glyph[font::glyph_of('?')][5] == '?' - 0x20 + 128);
+        fon.pop_back();
+        dax::MemorySource fs2(fon.data(), static_cast<uint32_t>(fon.size()));
+        CHECK(!font::load_fon(fs2, ff) && !ff.loaded);
+    }
 }
 
 static void test_games()
@@ -1338,6 +1356,27 @@ static void test_text()
     CHECK(exepack::parse(es, in) == exepack::Status::Ok);
     CHECK(text::read_pascal(es, in, 0x150, out, sizeof out) && strcmp(out, msg) == 0);
     CHECK(!text::read_pascal(es, in, 0x1F0, out, sizeof out));
+    // C strings (text::kCString: Dark Queen's words) - from a source and a plain program
+    {
+        Bytes cb = {'L', 'o', 'a', 'd', ' ', 'G', 'a', 'm', 'e', 0, 0, 'X', 1, 0, 'Y', 'Z'};
+        dax::MemorySource cs(cb.data(), static_cast<uint32_t>(cb.size()));
+        CHECK(text::read_pascal(cs, text::kCString | 0, out, sizeof out) && strcmp(out, "Load Game") == 0);
+        CHECK(text::read_pascal(cs, text::kCString | 5, out, sizeof out) && strcmp(out, "Game") == 0);
+        CHECK(!text::read_pascal(cs, text::kCString | 10, out, sizeof out));    // empty
+        CHECK(!text::read_pascal(cs, text::kCString | 11, out, sizeof out));    // a control byte
+        CHECK(!text::read_pascal(cs, text::kCString | 14, out, sizeof out));    // no NUL before the end
+        CHECK(!text::read_pascal(cs, text::kCString | 0, out, 9));              // too long for the buffer
+        // a plain MZ program (no EXEPACK header where CS points): offsets are the file's
+        Bytes plain(0x200, 0);
+        plain[0] = 'M', plain[1] = 'Z', plain[8] = 2;          // a 32-byte header
+        plain[0x16] = 0x00, plain[0x17] = 0x10;                // CS far past the file
+        memcpy(&plain[0x120], "Begin Adventuring", 18);
+        dax::MemorySource ps(plain.data(), static_cast<uint32_t>(plain.size()));
+        exepack::Info pi;
+        CHECK(exepack::parse(ps, pi) == exepack::Status::Ok && pi.plain);
+        CHECK(text::read_pascal(ps, pi, text::kCString | 0x120, out, sizeof out) && strcmp(out, "Begin Adventuring") == 0);
+        CHECK(!text::read_pascal(ps, pi, text::kCString | 0x200, out, sizeof out));
+    }
 }
 
 static void test_menu()

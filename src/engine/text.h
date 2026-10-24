@@ -52,6 +52,10 @@ constexpr uint32_t kJoined = 0x40000000u;
 // block 9, copied to the card's _CYD folder by the front end with effect 0's
 // room first - the name of effect n at 38 x n); the front end reads it
 constexpr uint32_t kInNames = 0x20000000u;
+// A C string (NUL-ended) at the offset, not a Pascal one (The Dark Queen of
+// Krynn's words: its C program's data segment, read where the profile says
+// - DQK.EXE's own offsets); read_pascal takes it so every word reader does
+constexpr uint32_t kCString = 0x10000000u;
 class Words : public dax::ByteSource {
 public:
     Words(dax::ByteSource& ovr, dax::ByteSource* exe, const exepack::Info* info) : ovr_(ovr), exe_(exe), info_(info) {}

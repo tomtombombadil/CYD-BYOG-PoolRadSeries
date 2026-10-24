@@ -379,12 +379,21 @@ const char* open(const char* data_dir, games::Game g)
     }
     if (d->prof->variant.hlib) {
         // Dark Queen: its screen from FRAME / GEN.TLB, the view from the
-        // wall sets and BACK; the engine's own letters for the test's lines
+        // wall sets and BACK; its GAME.FON's letters (the engine's own without it)
         d->hl = true;
         d->col.reset();
         memset(&d->font, 0, sizeof d->font);
-        font::set_letters(d->font, font::kClearLetters, nullptr);
-        d->font.loaded = true;
+        plat::File ff;
+        if (open_hl("GAME.FON", ff)) {
+            plat::FileSource fs(ff);
+            font::load_fon(fs, d->font);
+            ff.close();
+        }
+        if (!d->font.loaded) {
+            // (no GAME.FON: the engine's own letters)
+            font::set_letters(d->font, font::kClearLetters, nullptr);
+            d->font.loaded = true;
+        }
         find_maps();
         if (d->n_maps == 0) {
             close();

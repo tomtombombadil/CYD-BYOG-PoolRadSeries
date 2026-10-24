@@ -70,6 +70,16 @@ void set_letters(Font& f, int letters, const Font* alt, pic::Canvas* redraw = nu
 // block or it isn't 1416 bytes.
 bool load(dax::ByteSource& src, const dax::Index& idx, Font& out);
 
+// The Dark Queen of Krynn's GAME.FON (queen_facts_2.md 7): 96 glyphs for
+// the characters 0x20-0x7F, 12 bytes each (rows, bit 7 leftmost; 10 drawn,
+// 2 empty but the comma's tail); its text on the screen is 8 x 8 - rows 0,
+// 2, 3, 5, 7, 8, 9 and 10 of each glyph (DOSBox, every character read back).
+// Into the text glyphs 0-63 (capitals, digits, punctuation - the engine
+// prints capitals as the other games; the file's own lower case is mostly
+// the capitals drawn again). False: the file isn't 96 x 12 bytes.
+constexpr uint32_t kFonBytes = 96 * 12;
+bool load_fon(dax::ByteSource& src, Font& out);
+
 // The glyph a character prints with (the game's font: capitals only).
 int glyph_of(char c);
 // The same in font f: with the Clear font, lower case has glyphs of its own
