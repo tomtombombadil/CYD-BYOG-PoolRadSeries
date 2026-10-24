@@ -1765,7 +1765,26 @@ segment at image 0x4C70; run as `GAME UseStart`) + GAME.OVR (51 overlays),
   for its PDF yet (`journal_tables.cpp` has Curse's and Pool's), and the GOG
   companion at /GOLDBOX/GBC isn't used for journals (no JE pictures there;
   a choice for Tom).
-- **Not yet:** no music (MUSIC.DAX: the original's "0x80 up" sounds).
+- **Not yet:** no music (MUSIC.DAX: the original's "0x80 up" sounds -
+  block 0 is its own x86 driver (MicroMagic's), block 1 the one song, a
+  "GLBR" OPL2 / AdLib FM score: not the families the engine plays).
+- **The behaviour pass** (2026-10-24; checks: sweep's behave parts with
+  GAME=8 - classes, saves, spells, items, events, monsters, gateway):
+  training by its level caps (DS 0x1498) and race limits (the party list's
+  magenta, the hall's), its words for Curse's spell tables, Strength in
+  fights, Blink in camp, a fighter's weapon its last readied one, FIND /
+  DESTROY ITEM by name words, EXPERIENCE (0x41), CALL 0x80F's coins traded
+  up, Modify on a new character (experience 0 / 3000 / 1000 / 1500); its
+  fights' effects (`combat::Facts::gw`, its check lists and handlers): the
+  deadly poison after attack 1 only, the paralysing bite after either, the
+  held losing spells too, engulfing on a d10 of 4, the hug never on the
+  held, the stirge, squid, harpy, mummy, Vaalgamon, the black dragon's
+  surrender (area word 0x4D03), the Icewind Dale / Glacier / stonecutting
+  words, skeletons, holy water, boulders, the boar, Mirror Image on blows
+  and hostile spells. The save folder is GAME.CFG's first folder line (the
+  SNEG copy's GATEWAY/SAVE: its 12 ready-made characters in Add; neither
+  release has a saved game). The start's "introduction to your journal"
+  opens the journal's Introduction (the table's kind 'I').
 
 ## 6f. Treasures of the Savage Frontier (2026-10-23: started after Darkness)
 
@@ -2424,5 +2443,14 @@ the game's Settings (As Original: all of them).
 - **Treasures' romance**: a character the story sends away (LUCK 104 / 116)
   leaves the party as Remove would (the original's ovl 0x83 entry 0x2A,
   not traced further).
+- **Gateway's stirge and squid** (Game Fixes): their holds never hurt in
+  the original (the stirge's goes at its next step, the squid's per-turn
+  handler is in no list); with Game Fixes on the stirge drinks 1d4 a turn up
+  to 12 hit points (AD&D's) and the squid squeezes 2 x 1d2 a turn (its
+  handler's dice), its turn going on. Off: as the original.
+- **Gateway's sounds** (Game Fixes): its player plays a magic hit (3) and a
+  sling's shot (6) as the miss (ZOUNDS.DAX has no blocks 3 and 6); with
+  Game Fixes on the magic sound (4) and the missile's (12). Off: as the
+  original.
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.
