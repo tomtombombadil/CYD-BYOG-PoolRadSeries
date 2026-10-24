@@ -2252,7 +2252,9 @@ const Profile kProfiles[] = {
                 0x1600E, 0x17074, 0x2F004, 0x2F012, 0x305D1, 0x11BC4, 0, 0x12727, 0x116BC, 0x1128E, 0x10D3A},
                // the effects that end with a fight (Curse's list, in Champions'
                // numbers where they differ: frightened 0x77, taunted 0x5B)
-               {0x03, 0x0B, 0x15, 0x17, 0x1B, 0x1E, 0x1F, 0x23, 0x33, 0x34, 0x35, 0x5B, 0x6B, 0x77},
+               // (0x6A, a bozak's stun - given lasting - ends with the fight too:
+               // SPEC 12)
+               {0x03, 0x0B, 0x15, 0x17, 0x1B, 0x1E, 0x1F, 0x23, 0x33, 0x34, 0x35, 0x5B, 0x6A, 0x6B, 0x77},
                // Its effect numbers (the Gold Box Companion's list for Champions:
                // mostly Secret's - the knights' and draconians' own: 0x43-0x45,
                // 0x52, 0x54, 0x55, 0x58, 0x5B, 0x5E, 0x72-0x77)
@@ -2267,10 +2269,12 @@ const Profile kProfiles[] = {
                         .globe = 0x3F, .elf_sleep = 0x5F, .detect = 0x18, .prot_evil_near = 0x2D,
                         .acid_breath = 0x5A, .fire_breath = 0x68,
                         .paralyzed = 0x34, .poisoned = 0x37, .sleep = 0x35,
-                        .ghoul = 0x58, .lightning_breath = 0x55, .poison_p4 = 0x41, .no_fear = 0x5C},
+                        .ghoul = 0x58, .lightning_breath = 0x55, .poison_p4 = 0x41, .no_fear = 0x5C,
+                        .explode = 0x44, .stone_death = 0x43},
                 .sp = {.enlarge = 0x0C, .confuse = 0x23, .berserk = 0x4D, .evil_ward = 0x04, .hot = 0x32,
                        .cold = 0x36, .zap = 0x70, .slow_poison = 0x16, .poison_damage = 0x0F, .hammer = 0x17,
-                       .con_regen = 0x3E, .shield = 0x11, .enfeeble = 0x1D, .ill = 0x22, .weak = 0x2B, .sick = 0x2C},
+                       .con_regen = 0x3E, .shield = 0x11, .enfeeble = 0x1D, .ill = 0x22, .weak = 0x2B, .sick = 0x2C,
+                       .stun = 0x6A},
                 .race = {0x5E, 0x12, 0x1A, 0x07, 0x2F, 0x30, 0x69, true},
                 .items = {.displace = 0x59, .ring_invisible = 0x38, .fire_ring = 0x3D},
                 .berserk = 0x6B, .taunted = 0x5B},
@@ -2284,7 +2288,8 @@ const Profile kProfiles[] = {
      .variant = {.unfinished = true, .program_words = true, .bars = {20, 23, 24, 25, 20, 23, 24, 25},
                  .bigpic_from = 0x70, .fight_unswapped = true, .party_menu_col = 9, .krynn = true,
                  .press_words = {0x1A8E, 0x1AB2}, .order_words = {0x26DB3, 0x26DC1, 0x26DCF},
-                 .yell_words = {0xB5DE, 0x33FBF}},
+                 .yell_words = {0xB5DE, 0x33FBF},
+                 .burst_words = {0x1248C, 0x12496, 0x1299C}},
      .overland = nullptr},
     // Pools of Darkness, GOG release (darkness_facts.md; being built -
     // Tom, 2026-10-17): GAME.EXE 64,203 bytes, EXEPACK, unpacked 72,784; its

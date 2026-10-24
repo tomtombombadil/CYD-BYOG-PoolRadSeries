@@ -737,6 +737,9 @@ struct Profile {
         // Champions' fights: a kender's "Yell " on the menu and what each
         // taunted one says ("wants to kill " + the kender's name; GAME.OVR)
         uint32_t yell_words[2] = {};
+    // Champions: "explodes!", "is stunned" (a bozak's death), "loses his
+    // weapon" (a baaz's) - GAME.OVR
+    uint32_t burst_words[3] = {};
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

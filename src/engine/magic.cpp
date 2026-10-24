@@ -84,6 +84,8 @@ void set_moons(int white, int red, int black)
     g_moons[2] = black;
 }
 
+int moon(int i) { return i >= 0 && i < 3 ? g_moons[i] : 0; }
+
 int moon_bonus(const party::Character& c, const classes::Tables& t)
 {
     // (Champions' memorizing, GAME.OVR 0x1B31A: a mage's moon - the robe's

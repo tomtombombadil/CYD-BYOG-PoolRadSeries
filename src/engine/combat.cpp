@@ -3068,6 +3068,34 @@ int in_area(const Battle& b, const Tables& t, int x, int y, int r, int* out, int
     return n;
 }
 
+int bozak_burst(Battle& b, const Tables& t, int c, create::Dice& d, int* out, int* dmg, bool* dn, bool* st, int cap)
+{
+    const Fighter& bz = b.f[c];
+    int near[kMaxFighters];
+    const int n = in_area(b, t, bz.x, bz.y, 1, near, kMaxFighters);
+    int k = 0;
+    for (int i = 0; i < n && k < cap; ++i) {
+        const int j = near[i];
+        if (j == c || !b.f[j].up()) continue;
+        out[k] = j;
+        dmg[k] = d.roll(6, 3);
+        dn[k] = damage(b, j, dmg[k]);
+        st[k] = false;
+        if (!dn[k] && !saving_throw(b.f[j], 4, 0, d) && b.fx && b.fx->sp.stun) {
+            give_aff(b.f[j], b.fx->sp.stun, 0, 0xFF, false);
+            st[k] = true;
+        }
+        ++k;
+    }
+    return k;
+}
+
+bool baaz_keeps_weapon(const Fighter& slayer, create::Dice& d)
+{
+    const int r = d.roll(20, 1);
+    return slayer.rec[0x17] - 3 <= r;          // (its Dexterity in use)
+}
+
 bool teleport(Battle& b, const Tables& t, int i, int x, int y)
 {
     Fighter& f = b.f[i];
@@ -3098,6 +3126,11 @@ bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
     // (the effect works on the roll after the natural 1 / 20: a 1 still fails)
     if (g_fx && type == 0 && hasx(f, g_fx->mon.mind)) return true;
     if (g_fx && type == 0 && hasx(f, g_fx->mon.no_poison)) return true;     // (Secret's dreadlord)
+    // Champions' mages (GAME.OVR 0x3511B): their moon new -1, full +1
+    if (f.robe >= 1 && f.robe <= 3) {
+        const int ph = magic::moon(f.robe - 1);
+        bonus += ph == 0 ? -1 : ph == 2 ? 1 : 0;
+    }
     if (g_fx) {
         const Facts& fx = *g_fx;
         if (fx.bestow && f.has(fx.bestow)) bonus -= 4;

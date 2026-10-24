@@ -610,6 +610,12 @@ struct Fight {
     // Thrown weapons used up (a dagger, a spear, darts): onto the treasure after the fight
     uint8_t  thrown[6][items::kRecordSize];
     int      n_thrown = 0;
+    // Champions: weapons left in a baaz's stone body (back to their owners
+    // after the fight - GAME.OVR 0x7B5D) and the bozaks that have exploded
+    uint8_t  lost[6][items::kRecordSize];
+    int8_t   lost_who[6] = {};
+    int      n_lost = 0;
+    uint8_t  burst[(combat::kMaxFighters + 7) / 8] = {};
     // Secret's Delayed Blast Fireballs set to go off (secret_facts_2.md 26)
     struct Blast { int8_t caster = -1; uint8_t x = 0, y = 0, area = 0, rounds = 0, pw = 0; };
     Blast    blast[4];
@@ -1664,6 +1670,8 @@ void end_turn(pic::Canvas& c)
 }
 
 // Someone down: "goes down" / "and is Dying" / "is killed", the skull blinking on them
+void bozak_burst(int t);
+void damage_text(int amount, int kind, char* t, size_t cap);
 void down_page(int t)
 {
     if (fg->b.f[t].escaped) {
@@ -1676,6 +1684,53 @@ void down_page(int t)
     else if (dn == combat::Down::Dying) add_page(t, fw(profile::kGoesDown), fw(profile::kIsDying));
     else add_page(t, fw(profile::kGoesDown));
     page_fx_set(1, skull_fx(t));
+    bozak_burst(t);
+}
+
+// Champions' bozak going down (krynn_facts; GAME.OVR 0x124A1): "explodes!",
+// then each fighter within a square of it: the damage (3d6), down, or
+// "is stunned" when its save against spells fails
+void bozak_burst(int t)
+{
+    combat::Battle& b = fg->b;
+    const uint8_t ex = b.fx ? b.fx->mon.explode : 0;
+    if (!ex || !b.f[t].has(ex) || (fg->burst[t / 8] >> (t % 8) & 1) || !d->w_burst[0][0]) return;
+    fg->burst[t / 8] |= static_cast<uint8_t>(1 << (t % 8));
+    add_page(t, d->w_burst[0]);
+    int who[combat::kMaxFighters], dmg[combat::kMaxFighters];
+    bool dn[combat::kMaxFighters], st[combat::kMaxFighters];
+    const int n = combat::bozak_burst(b, fg->t, t, rng, who, dmg, dn, st, combat::kMaxFighters);
+    char line[48];
+    for (int k = 0; k < n; ++k) {
+        damage_text(dmg[k], 0, line, sizeof line);
+        add_page(who[k], line);
+        page_fx_set(1, hit_fx(who[k], false));
+        if (dn[k]) down_page(who[k]);                   // (another bozak: its own burst)
+        else if (st[k]) add_page(who[k], d->w_burst[1]);
+    }
+}
+
+// Champions' baaz slain by a party member's blow (GAME.OVR 0x129AD): a d20
+// at least the slayer's Dexterity - 3 leaves the weapon in the stone body -
+// "loses his weapon" - till the fight's end
+void baaz_weapon(int a, int t)
+{
+    combat::Battle& b = fg->b;
+    const uint8_t sd = b.fx ? b.fx->mon.stone_death : 0;
+    combat::Fighter& f = b.f[a];
+    if (!sd || !b.f[t].has(sd) || f.member < 0 || !names || fg->n_lost >= 6 || !d->w_burst[2][0]) return;
+    const int w = combat::weapon(f, *names);
+    if (w < 0 || !combat::baaz_keeps_weapon(f, rng)) return;
+    party::Character& ch = pt->m[f.member];
+    // (one kind of weapon never stays: type 6 with word 0x79 - 0x12A61)
+    if (ch.items[w][0x2E] == 6 && ch.items[w][0x31] == 0x79) return;
+    add_page(a, d->w_burst[2]);
+    memcpy(fg->lost[fg->n_lost], ch.items[w], items::kRecordSize);
+    fg->lost[fg->n_lost][0x34] = 0;
+    fg->lost_who[fg->n_lost++] = static_cast<int8_t>(f.member);
+    rules::remove_item(ch, w);
+    f.n_items = ch.n_items;
+    rules::recalc(ch, *names, d->facts);
 }
 
 // Stepping into a cloud: its save or nausea, as a page (the cloud spell's words)
@@ -1920,7 +1975,10 @@ void event_page(const combat::Event& e)
     case combat::Ev::Stoned: fallen(profile::kIsStonedR); break;
     case combat::Ev::GazeStoned: fallen(profile::kIsStonedG); break;
     case combat::Ev::Disintegrated: fallen(profile::kIsDisint); break;
-    case combat::Ev::Killed: fallen(profile::kIsKilled); break;
+    case combat::Ev::Killed:
+        fallen(profile::kIsKilled);
+        bozak_burst(who);
+        break;
     case combat::Ev::Suffocates: fallen(profile::kSuffocates); break;
     case combat::Ev::Damage:
         damage_text(e.amount, e.kind, t, sizeof t);
@@ -1938,6 +1996,7 @@ void event_page(const combat::Event& e)
         else if (dn == combat::Down::Dying) add_page(who, fw(profile::kGoesDownS), fw(profile::kIsDying));
         else add_page(who, fw(profile::kGoesDownS));
         page_fx_set(1, skull_fx(who));
+        bozak_burst(who);
         break;
     }
     case combat::Ev::StandsUp:
@@ -2096,7 +2155,10 @@ void attack_pages(int a, int t, const combat::Attack& at, bool behind, bool shot
     // (swallowed whole: its own pages said it - "is killed" among them)
     bool swallowed = false;
     for (int j = 0; j < at.n_ev; ++j) swallowed = swallowed || at.ev[j].ev == combat::Ev::Swallowed;
-    if (at.down && !swallowed) down_page(t);
+    if (at.down && !swallowed) {
+        down_page(t);
+        if (!shot) baaz_weapon(a, t);
+    }
 }
 
 // After an attack's pages: the turn ends unless attacks are left and the
@@ -3460,6 +3522,7 @@ void fight_start(pic::Canvas& c)
         f.max_aff = party::kMaxAffects;
         f.flags2 = ch.ext[party::kExtFlags2];
         f.magic_res = ch.ext[party::kExtMagicRes];
+        f.robe = krynn() && ch.level(classes::MagicUser) > 0 ? ch.ext[party::kExtRobe] : 0;
     }
     b.party_size = pt->count;
     // The original recalculates every combatant's values at the battle's
@@ -3756,6 +3819,13 @@ void old_age_next(pic::Canvas& c)
 void end_fight(pic::Canvas& c)
 {
     combat::Battle& b = fg->b;
+    // (Champions: the weapons left in stone bodies back to their owners)
+    for (int k = 0; k < fg->n_lost; ++k)
+        if (fg->lost_who[k] < pt->count && rules::add_item(pt->m[fg->lost_who[k]], fg->lost[k])) {
+            rules::recalc(pt->m[fg->lost_who[k]], *names, d->facts);
+            plat::log("[play] member %d's weapon back from the stone\n", fg->lost_who[k]);
+        }
+    fg->n_lost = 0;
     if (d->prof->variant.tr_max_age && age_check && !in_demo) {
         age_check = false;
         if (old_age_begin(c)) return;
@@ -4336,6 +4406,7 @@ void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::Fi
             else if (dn == combat::Down::Dying) add_page(l[k].who, fw(profile::kGoesDownS), fw(profile::kIsDying));
             else add_page(l[k].who, fw(profile::kGoesDownS));
             page_fx_set(1, skull_fx(l[k].who));
+            bozak_burst(l[k].who);
             break;
         }
         }

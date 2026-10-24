@@ -33,6 +33,7 @@ int room(const party::Character& c, const classes::Tables& t, int cls, int level
 // Champions: the moons' phases (white, red, black - its area words
 // 0x4CF9-0x4CFB) and a mage's extra spells by its moon (0: none)
 void set_moons(int white, int red, int black);
+int moon(int i);                    // (0 white, 1 red, 2 black: its phase)
 int moon_bonus(const party::Character& c, const classes::Tables& t);
 bool any_room(const party::Character& c, const classes::Tables& t);
 
