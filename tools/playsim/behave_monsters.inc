@@ -292,8 +292,12 @@ void every_monster()
             int half1 = r.rec[0x11C], half2 = r.rec[0x11D], missiles = 0;
             // A missile weapon readied that can shoot: the ITEMS file's attacks (at least 2), no more
             // than the missiles (coab reclac_attacks / GetCurrentAttackItem)
-            for (int k = 0; k < r.n_items; ++k) {
-                if (!r.item[k][0x34] || names->type(r.item[k][0x2E]).slot != 0) continue;
+            // (the weapon is the last readied one: the recalculation puts each
+            // readied item in its slot in turn - coab reclac_player_values)
+            int last = -1;
+            for (int k = 0; k < r.n_items; ++k)
+                if (r.item[k][0x34] && names->type(r.item[k][0x2E]).slot == 0) last = k;
+            for (int k = last; k >= 0 && k <= last; ++k) {
                 const items::TypeInfo& ti = names->type(r.item[k][0x2E]);
                 if (ti.range <= 1) continue;
                 const uint8_t* shot = (ti.flags & 0x10) ? r.item[k] : nullptr;
@@ -359,6 +363,11 @@ int M = 0;                              // the first monster
 bool arena(int area, int id, int copies = 1)
 {
     using namespace play;
+    // (Gateway: its lizard man for Curse's, MON2 #16)
+    if (getenv("GAME") && atoi(getenv("GAME")) == 8 && area == 1 && id == 83) {
+        area = 2;
+        id = 16;
+    }
     dice_usual();
     if (!boot() || !fight(area, id, copies)) {
         B = nullptr;
@@ -2001,6 +2010,361 @@ void computer_turns()
     }
 }
 
+// ---- Gateway's own monster effects (GAME=8; its handlers DS 0x826A on -
+// facts: the scratch gateway_behave_facts.md; GAME.OVR addresses below)
+bool gw_has(const combat::Fighter& f, int type) { return aff_index(f, type) >= 0; }
+// The first item type in this slot (a melee weapon: dice, no range)
+int gw_type(int slot)
+{
+    for (int t = 1; t < 128; ++t) {
+        const items::TypeInfo& ti = play::names->type(t);
+        if (ti.slot != slot) continue;
+        if (slot == items::kSlotWeapon && (ti.range > 1 || !ti.dice || ti.flags & 0x81)) continue;
+        return t;
+    }
+    return -1;
+}
+
+void gw_specials()
+{
+    using namespace play;
+    if (!boot()) return;
+    const combat::MonFx mx = d->prof->fight.facts.mon;
+    const combat::Facts::GateFx& gx = d->prof->fight.facts.gw;
+    const bool fix_was = rules::fixes();
+    // (the original's ways: Game Fixes off after each fight's start - boot() sets them from the options)
+    auto gvs = [&](int area, int id, int copies = 1) {
+        const bool ok = vs(area, id, copies);
+        rules::set_fixes(false);
+        return ok;
+    };
+    // attack 1's blow: a hit, each damage die 1, then these
+    auto blow1 = [&](std::initializer_list<int> after) {
+        std::vector<int> f{15};
+        for (int k = 0; k < B->f[M].rec[0x19E]; ++k) f.push_back(1);
+        f.insert(f.end(), after);
+        b_faces.assign(f.begin(), f.end());
+        b_face_at = 0;
+        combat::Battle& b = *B;
+        b.f[M].rec[0x199] = 100;
+        b.f[M].attacks[0] = 1;
+        b.f[M].attacks[1] = 0;
+        b.f[P].received = 0;
+        const combat::Attack at = combat::attack(b, M, P, play::names, play::rng);
+        dice_usual();
+        return at;
+    };
+    char w[160];
+    // -- The deadly poison (0x40) after attack 1's hit, not attack 2's (its
+    //    list after attack 1: 4F 50 91 39 60 7A 7B 95 9A 9B 40 43 9F; after
+    //    attack 2: 41 42 43 46 4F 57) - the wyvern (MON6 #45: 1 / 1 attacks)
+    if (gvs(6, 45)) {
+        combat::Battle& b = *B;
+        combat::Attack at = blow(1, {15, 1, 1, 10});
+        expect(kPart, "Gateway wyvern: attack 2's hit - no poison", !has_ev(at, combat::Ev::Poisoned) &&
+               b.f[P].status() == party::Okay, "status %d", b.f[P].status());
+        heal_p();
+        at = blow(0, {15, 1, 1, 10});
+        expect(kPart, "Gateway wyvern: attack 1's hit, save 10 - poisoned, killed", has_ev(at, combat::Ev::Poisoned) &&
+               b.f[P].status() == party::Dead, "status %d", b.f[P].status());
+        heal_p();
+        at = blow(0, {15, 1, 1, 11});
+        expect(kPart, "Gateway wyvern: save 11 made", b.f[P].status() == party::Okay);
+    }
+    // -- The paralysing bite (0x43) after either attack's hit (the ghoul, MON3 #14: 2 / 1)
+    if (gvs(3, 14)) {
+        combat::Battle& b = *B;
+        combat::Attack at = blow(0, {15, 1, 10, 3, 4});
+        expect(kPart, "Gateway ghoul: attack 1's hit, save 10 - paralysed", has_ev(at, combat::Ev::Paralyzed) &&
+               gw_has(b.f[P], mx.paralyzed));
+        heal_p();
+        at = blow(1, {15, 1, 10, 3, 4});
+        expect(kPart, "Gateway ghoul: attack 2's hit, save 10 - paralysed", has_ev(at, combat::Ev::Paralyzed) &&
+               gw_has(b.f[P], mx.paralyzed));
+    }
+    // -- The stirge (0x95, GAME.OVR 0x1AE18): attack 1's hit, a d10 of 4 or
+    //    less: "drains blood from" - the victim held fast (0x3A: no moving, no
+    //    spells), the stirge 0x96; nothing more (its holds go at its next step)
+    if (gvs(3, 13)) {
+        combat::Battle& b = *B;
+        combat::Attack at = blow(0, {15, 1, 5});
+        expect(kPart, "Gateway stirge: d10 5 - no hold", !has_ev(at, combat::Ev::DrainsBlood) &&
+               !gw_has(b.f[P], mx.held_fast));
+        heal_p();
+        const int hp0 = b.f[P].hp();
+        at = blow(0, {15, 1, 4});
+        const int k = aff_index(b.f[M], gx.sucking);
+        expect(kPart, "Gateway stirge: d10 4 - drains blood, the victim held, the stirge's 0x96 on it",
+               has_ev(at, combat::Ev::DrainsBlood) && gw_has(b.f[P], mx.held_fast) && k >= 0 && b.f[M].aff[k][3] == P &&
+               !b.f[P].can_cast && b.f[P].hp() == hp0 - at.hits[0].damage, "hp %d of %d", b.f[P].hp(), hp0);
+        at = blow(0, {15, 1, 1});
+        expect(kPart, "Gateway stirge: holding one - no second hold", !has_ev(at, combat::Ev::DrainsBlood));
+        combat::Event ev[4];
+        int bite = -1;
+        const int n = combat::turn_holds(b, M, rng, ev, 4, &bite);
+        expect(kPart, "Gateway stirge: its turn - no blood drunk (the original)", n == 0);
+        combat::release_holds(b, M);
+        expect(kPart, "Gateway stirge: its step lets go (0x96 in its list) - the victim free",
+               !gw_has(b.f[M], gx.sucking) && !gw_has(b.f[P], mx.held_fast));
+        // Game Fixes: it drinks 1d4 a turn (AD&D's)
+        rules::set_fixes(true);
+        heal_p();
+        blow(0, {15, 1, 4});
+        const int hp1 = b.f[P].hp();
+        combat::release_holds(b, M);
+        dice_faces({3});
+        const int n2 = combat::turn_holds(b, M, rng, ev, 4, &bite);
+        dice_usual();
+        expect(kPart, "Gateway stirge, Game Fixes: it holds on and drinks 1d4 (3)", gw_has(b.f[M], gx.sucking) && n2 >= 2 &&
+               ev[0].ev == combat::Ev::DrainsBlood && b.f[P].hp() == hp1 - 3, "events %d hp %d of %d", n2, b.f[P].hp(), hp1);
+        rules::set_fixes(false);
+    }
+    // -- Held fast at its turn's start (0x3A in the turn-start list, GAME.OVR
+    //    0x130DA): no moving, no spells
+    if (gvs(3, 13)) {
+        combat::Battle& b = *B;
+        blow(0, {15, 1, 4});
+        b.f[P].moves = 6;
+        b.f[P].can_cast = true;
+        combat::turn_effects(b, P);
+        expect(kPart, "Gateway: held fast - its turn starts with no moving and no spells", b.f[P].moves == 0 &&
+               !b.f[P].can_cast);
+    }
+    // -- The squid (0x9B, GAME.OVR 0x1A5D7): "constricts" on a d10 of 4 or
+    //    less; its hold isn't let go at its step, only when it falls
+    if (gvs(2, 68)) {
+        combat::Battle& b = *B;
+        combat::Attack at = blow(0, {15, 1, 4});
+        expect(kPart, "Gateway squid: d10 4 - constricts, the victim held", has_ev(at, combat::Ev::Constricts) &&
+               gw_has(b.f[P], mx.held_fast) && gw_has(b.f[M], gx.constrict));
+        combat::release_holds(b, M);
+        expect(kPart, "Gateway squid: its step keeps the hold", gw_has(b.f[P], mx.held_fast) && gw_has(b.f[M], gx.constrict));
+        combat::Event ev[4];
+        int bite = -1;
+        expect(kPart, "Gateway squid: no squeeze at its turn (the original)", combat::turn_holds(b, M, rng, ev, 4, &bite) == 0);
+        rules::set_fixes(true);
+        const int hp0 = b.f[P].hp();
+        bool go_on = false;
+        dice_faces({2, 1});
+        const int n = combat::turn_holds(b, M, rng, ev, 4, &bite, &go_on);
+        dice_usual();
+        expect(kPart, "Gateway squid, Game Fixes: it squeezes 2d2 (3) and its turn goes on", n >= 2 &&
+               ev[0].ev == combat::Ev::Constricts && go_on && b.f[P].hp() == hp0 - 3, "hp %d of %d", b.f[P].hp(), hp0);
+        rules::set_fixes(false);
+        b.f[M].rec[0x1A4] = 1;
+        combat::harm(b, M, 5, combat::Harm{}, rng, nullptr);
+        expect(kPart, "Gateway squid: fallen - the victim free", !gw_has(b.f[P], mx.held_fast));
+    }
+    // -- The harpy (0x9A, GAME.OVR 0x150B3): a save against spells, else
+    //    charmed onto its side ("is charmed"; data side << 7 | 3)
+    if (gvs(5, 84)) {
+        combat::Battle& b = *B;
+        const uint8_t charm = d->prof->fight.facts.charm;
+        combat::Attack at = blow(0, {15, 1, 11});
+        expect(kPart, "Gateway harpy: save 11 made - not charmed", !gw_has(b.f[P], charm) && b.f[P].team() == 0);
+        heal_p();
+        at = blow(0, {15, 1, 10});
+        const int k = aff_index(b.f[P], charm);
+        expect(kPart, "Gateway harpy: save 10 - charmed onto its side, data 0x83", has_ev(at, combat::Ev::Charmed) && k >= 0 &&
+               b.f[P].aff[k][3] == 0x83 && b.f[P].team() == b.f[M].team(), "data %02X", k >= 0 ? b.f[P].aff[k][3] : 0);
+        b.f[P].rec[0x197] = 0;
+    }
+    // -- The mummy (0x9F, GAME.OVR 0x152A3): a save against poison or "is
+    //    diseased" - weakness (60) and sickness (10) with a step each now
+    if (gvs(6, 91)) {
+        combat::Battle& b = *B;
+        const combat::SpellFx& sx = d->prof->fight.facts.sp;
+        const int str = b.f[P].rec[0x11];
+        const int hp0 = b.f[P].hp();
+        combat::Attack at = blow1({10});
+        expect(kPart, "Gateway mummy: save 10 - diseased, weakened (Strength - 1), a point of damage",
+               has_ev(at, combat::Ev::Diseased) && gw_has(b.f[P], sx.weak) && gw_has(b.f[P], sx.sick) &&
+               b.f[P].rec[0x11] == str - 1 && b.f[P].hp() == hp0 - at.hits[0].damage - 1,
+               "Str %d (was %d) hp %d of %d, blow %d", b.f[P].rec[0x11], str, b.f[P].hp(), hp0, at.hits[0].damage);
+        heal_p();
+        b.f[P].rec[0x11] = static_cast<uint8_t>(str);
+        at = blow1({11});
+        expect(kPart, "Gateway mummy: save 11 made - nothing", !has_ev(at, combat::Ev::Diseased) && !gw_has(b.f[P], sx.weak));
+        // its own: poison saves made (0x6F)
+        expect(kPart, "Gateway mummy: its saves against poison made (0x6F)", [&]() {
+            dice_faces({2});
+            const bool s = combat::saving_throw(b.f[M], 0, 0, rng);
+            dice_usual();
+            return s;
+        }());
+    }
+    // -- Vaalgamon (0xA1, GAME.OVR 0x15365): the round's end - hurt, a hit point back
+    if (gvs(6, 92)) {
+        combat::Battle& b = *B;
+        b.f[M].rec[0x1A4] = static_cast<uint8_t>(b.f[M].hp_max() - 5);
+        combat::Event ev[8];
+        const int n = combat::tick(b, ev, 8);
+        bool said = false;
+        for (int k = 0; k < n; ++k) said |= ev[k].ev == combat::Ev::Regenerates && ev[k].who == M;
+        expect(kPart, "Gateway Vaalgamon: the round's end, hurt - regenerates 1", said && b.f[M].hp() == b.f[M].hp_max() - 4,
+               "hp %d of %d", b.f[M].hp(), b.f[M].hp_max());
+        b.f[M].rec[0x1A4] = static_cast<uint8_t>(b.f[M].hp_max());
+        const int n2 = combat::tick(b, ev, 8);
+        said = false;
+        for (int k = 0; k < n2; ++k) said |= ev[k].ev == combat::Ev::Regenerates;
+        expect(kPart, "Gateway Vaalgamon: unhurt - nothing", !said && b.f[M].hp() == b.f[M].hp_max());
+    }
+    // -- The black dragon (MON5 #93, 0x9E - GAME.OVR 0x15220): under 20 hit
+    //    points and alone on its side - "Surrenders", the area word 0x4D03 + 1
+    for (int copies = 1; copies <= 2; ++copies)
+        if (gvs(5, 93, copies)) {
+            combat::Battle& b = *B;
+            if (copies == 2) put(M + 1, 30, 4, 6);
+            b.f[M].rec[0x1A4] = 19;
+            b.yielded = false;
+            const combat::Morale mo = combat::morale(b, fg->t, M);
+            snprintf(w, sizeof w, "Gateway black dragon: 19 hit points, %s - %s", copies == 1 ? "alone" : "another with it",
+                     copies == 1 ? "surrenders (the area word counts it)" : "fights on");
+            expect(kPart, w, copies == 1 ? mo == combat::Morale::Surrender && b.yielded && gx.surrender_word == 0x4D03
+                                         : mo != combat::Morale::Surrender, "morale %d", static_cast<int>(mo));
+        }
+    // -- Blows by name words (0x97 / 0x99 twice; 0x98 the attacker's half
+    //    against the Glacier's armour): the efreeti (MON4 #44), the margoyle (MON4 #71)
+    auto words_blow = [&](uint8_t word) {
+        combat::Battle& b = *B;
+        hold(P, gw_type(items::kSlotWeapon));
+        party::Character& ch = pt->m[P];
+        ch.items[0][0x2F] = word;
+        ch.items[0][0x32] = 1;                             // (+1: the margoyle needs magic)
+        b.f[P].attacks[0] = 1;
+        b.f[P].attacks[1] = 0;
+        b.f[P].rec[0x199] = 100;
+        b.f[M].received = 0;
+        dice_faces({15, 4, 4, 4});
+        const combat::Attack at = combat::attack(b, P, M, names, rng);
+        dice_usual();
+        bare(P);
+        return at.n ? at.hits[0].damage : -1;
+    };
+    if (gvs(4, 44)) {
+        const int plain = words_blow(0), ice = words_blow(gx.ice_word);
+        expect(kPart, "Gateway efreeti: a blow from a weapon \"of Icewind Dale\" twice another's", plain > 0 && ice == plain * 2,
+               "%d / %d", plain, ice);
+        combat::Battle& b = *B;
+        // its own blows on one in the Glacier's armour: half
+        auto e_blow = [&](uint8_t word) {
+            party::Character& ch = pt->m[P];
+            ch.n_items = 1;
+            memset(ch.items[0], 0, items::kRecordSize);
+            ch.items[0][0x2E] = static_cast<uint8_t>(gw_type(items::kSlotArmour));
+            ch.items[0][0x2F] = word;
+            ch.items[0][0x34] = 1;
+            b.f[P].items = ch.items;
+            b.f[P].n_items = 1;
+            heal_p();
+            const combat::Attack at = blow(0, {15, 6, 6, 6});
+            bare(P);
+            return at.n && at.hits[0].hit ? at.hits[0].damage : -1;
+        };
+        const int a0 = e_blow(0), a1 = e_blow(gx.glacier_word);
+        expect(kPart, "Gateway efreeti: its blow on armour \"of the Glacier\" half", a0 > 0 && a1 == a0 / 2, "%d / %d", a0, a1);
+    }
+    if (gvs(4, 71)) {
+        const int plain = words_blow(0), st = words_blow(gx.stone_word);
+        expect(kPart, "Gateway margoyle: a blow from a weapon \"of stonecutting\" twice another's", plain > 0 && st == plain * 2,
+               "%d / %d", plain, st);
+    }
+    // -- The skeleton (0x73): half from a weapon type whose byte 7 is 0 or 1
+    if (gvs(3, 12)) {
+        int ty[2] = {-1, -1};
+        for (int t = 1; t < 128 && (ty[0] < 0 || ty[1] < 0); ++t) {
+            const items::TypeInfo& ti = names->type(t);
+            if (ti.slot != items::kSlotWeapon || ti.range > 1 || !ti.dice) continue;
+            const int k = ti.blow <= 1 ? 0 : 1;
+            if (ty[k] < 0) ty[k] = t;
+        }
+        auto hit_with = [&](int t) {
+            combat::Battle& b = *B;
+            hold(P, t);
+            b.f[P].attacks[0] = 1;
+            b.f[P].attacks[1] = 0;
+            b.f[P].rec[0x199] = 100;
+            b.f[M].received = 0;
+            dice_faces({15, 4, 4, 4});
+            const combat::Attack at = combat::attack(b, P, M, names, rng);
+            dice_usual();
+            bare(P);
+            return at.n ? at.hits[0].damage : -1;
+        };
+        if (ty[0] > 0 && ty[1] > 0) {
+            const int a = hit_with(ty[0]), c = hit_with(ty[1]);
+            snprintf(w, sizeof w, "Gateway skeleton: type %d (byte 7 <= 1) half, type %d not", ty[0], ty[1]);
+            const int full_a = names->type(ty[0]).dice ? a * 2 : 0;
+            expect(kPart, w, a >= 0 && c > 0 && (a == (full_a / 2) || a * 2 <= c + 1), "%d / %d", a, c);
+        }
+    }
+    // -- The boar (0x63 / 0x5F): fallen dying 2 below - up again with 4 hit
+    //    points ("stands up and grins"), dead when its d4 + 1 rounds run out
+    if (gvs(6, 24)) {
+        combat::Battle& b = *B;
+        b.f[M].rec[0x1A4] = 3;
+        b.f[P].rec[0x199] = 100;
+        b.f[P].attacks[0] = 1;
+        b.f[P].attacks[1] = 0;
+        b.f[M].received = 0;
+        bare(P);
+        const int hp_dice = b.f[P].rec[0x19E];
+        b.f[P].rec[0x19E] = 1;
+        b.f[P].rec[0x1A0] = 5;
+        b.f[P].rec[0x1A2] = 0;
+        dice_faces({15, 5, 2});                             // a hit of 5 on 3: 2 below; its rounds d4 = 2 + 1
+        const combat::Attack at = combat::attack(b, P, M, names, rng);
+        dice_usual();
+        b.f[P].rec[0x19E] = static_cast<uint8_t>(hp_dice);
+        expect(kPart, "Gateway boar: fallen 2 below - up again with 4 hit points, \"stands up and grins\"",
+               has_ev(at, combat::Ev::StandsUp) && b.f[M].up() && b.f[M].hp() == 4 && gw_has(b.f[M], gx.falls_dead) &&
+               !gw_has(b.f[M], gx.fights_on), "up %d hp %d", (int)b.f[M].up(), b.f[M].hp());
+        combat::Event ev[8];
+        int dead_at = 0;
+        for (int r = 1; r <= 5 && !dead_at; ++r) {
+            const int n = combat::tick(b, ev, 8);
+            for (int k = 0; k < n; ++k)
+                if (ev[k].ev == combat::Ev::FallsDead && ev[k].who == M) dead_at = r;
+        }
+        expect(kPart, "Gateway boar: \"Falls dead\" as its 3 rounds run out", dead_at == 3 && b.f[M].status() == party::Dead,
+               "round %d status %d", dead_at, b.f[M].status());
+    }
+    // -- The frog (0x39 engulf, GAME.OVR 0x1A47A): a d10 of 4 or less at a
+    //    hit of attack 1 (Curse's both hits)
+    if (gvs(2, 7)) {
+        combat::Battle& b = *B;
+        combat::Attack at = blow(0, {15, 1, 5});
+        expect(kPart, "Gateway frog: d10 5 - no engulfing", !has_ev(at, combat::Ev::Engulfs));
+        heal_p();
+        at = blow(0, {15, 1, 4, 2, 3});
+        expect(kPart, "Gateway frog: d10 4 - engulfs (one hit)", has_ev(at, combat::Ev::Engulfs) &&
+               gw_has(b.f[P], mx.held_fast) && gw_has(b.f[P], mx.suffocate));
+    }
+    // -- The owlbear (0x60 hug, GAME.OVR 0x1AF35): never one held fast
+    if (gvs(3, 23)) {
+        combat::Battle& b = *B;
+        uint8_t* a = b.f[P].aff[(*b.f[P].n_aff)++];
+        memset(a, 0, party::kAffectSize);
+        a[0] = mx.held_fast;
+        a[3] = static_cast<uint8_t>(P);
+        combat::Attack at = blow(0, {19, 1, 1});
+        expect(kPart, "Gateway owlbear: a 19 on one held fast - no hug", !has_ev(at, combat::Ev::Hugs));
+        heal_p();
+        at = blow(0, {19, 1, 1});
+        expect(kPart, "Gateway owlbear: a 19 - hugs", has_ev(at, combat::Ev::Hugs));
+    }
+    // -- The fire giant (0x49): breath does nothing
+    if (gvs(4, 49)) {
+        combat::Battle& b = *B;
+        combat::Harm h;
+        h.kind = 0x20;
+        const int hp0 = b.f[M].hp();
+        combat::harm(b, M, 10, h, rng, nullptr);
+        expect(kPart, "Gateway fire giant: dragon breath does nothing (0x49)", b.f[M].hp() == hp0);
+    }
+    rules::set_fixes(fix_was);
+}
+
 void dump_items()
 {
     if (!boot()) return;
@@ -2025,10 +2389,14 @@ static void behave_monsters()
         bm::dump_items();
         return;
     }
+    // (Gateway, GAME=8: the rules with its lizard man; its own monsters'
+    // effects - Curse's special monsters and Red Plume aren't in its files)
+    const bool gw = getenv("GAME") && atoi(getenv("GAME")) == 8;
     if (!getenv("SKIP_A")) bm::every_monster();
     if (!getenv("SKIP_B")) bm::rules_checks();
     if (!getenv("SKIP_B")) bm::rules_more();
-    if (!getenv("SKIP_C")) bm::specials();
-    if (!getenv("SKIP_C")) bm::specials_more();
-    if (!getenv("SKIP_D")) bm::computer_turns();
+    if (!getenv("SKIP_C") && !gw) bm::specials();
+    if (!getenv("SKIP_C") && !gw) bm::specials_more();
+    if (!getenv("SKIP_C") && gw) bm::gw_specials();
+    if (!getenv("SKIP_D") && !gw) bm::computer_turns();
 }
