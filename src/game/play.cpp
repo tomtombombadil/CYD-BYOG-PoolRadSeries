@@ -11553,6 +11553,7 @@ struct IconEdit {
     int      glast = 0;                 // the page it was on (back to it after No)
     int      gsel = -1;                 // the choice picked
     int      gfirst = 0;                // the first choice on the page shown
+    bool     opened = false;            // the gallery shown once (a new character's starts on its first page)
     int      gsize = 0;                 // the size the parts below are for
     uint8_t* ghead[icon_looks::kHeads] = {};    // the parts' ready pictures, 24 x 24 (loaded as needed)
     uint8_t* gbody[icon_looks::kBodies] = {};
@@ -12166,7 +12167,11 @@ void gal_open(pic::Canvas& c, int page)
     const int pick = gal_pick_now();
     ie->gsel = pick ? (gal_page() == icon_looks::Page::Looks ? icon_looks::kLooks + pick - 1 : -1)
                     : icon_looks::match(gal_page(), ie->ch->rec);
-    gal_draw_page(c, ie->gsel < 0 ? 0 : ie->gsel);
+    // (a new character's icon step: the first page, whichever look its icon
+    // matches - Tom, 2026-10-24: Gateway's opened on the second)
+    const bool first = ie->from == Screen::CreateName && !ie->opened;
+    ie->opened = true;
+    gal_draw_page(c, ie->gsel < 0 || first ? 0 : ie->gsel);
     gal_menu(c);
 }
 
