@@ -229,7 +229,9 @@ stay in the session's scratch space, never in the repo.
   scan makes it, "Prepared the Curse program"; Play's start checks it
   against the program file and makes it again when missing or of another
   file - `play::prepare_program`; the program's facts are then read from
-  it with one read each instead of a walk through the packed program).
+  it with one read each instead of a walk through the packed program;
+  QEMU's 2.8" build: Play's start 7-35 s before, 0.6-1.6 s with the copy,
+  2.2-2.5 s when Play makes it; the scan's step 0.7-2.5 s a game).
 - The scan screen: header "Scanning Your Card", a scrolling list of what
   it does ("Searching for Gold Box games...", "Looking in CURSE..." ->
   "Found Curse of the Azure Bonds", "Found the Curse game icon", "Found the
