@@ -521,9 +521,13 @@ struct Fight {
     bool   aged = false;                // Treasures: someone aged (haste) - old age at the end
     int8_t old[12][3] = {};             // its old-age steps (kind, member, the weeping one)
     int    old_n = 0, old_i = 0;
-    explicit Fight(combat::Battle& battle) : b(battle) {}
+    // (Treasures in 256 colours: no background picture while the fight
+    // lasts - its ovl 0x62 +0xF4 lets it go, the script's COMBAT reads it
+    // again after, ov43+0x1643; DOSBox VGA: the fight's panel black)
+    explicit Fight(combat::Battle& battle) : b(battle) { tr_background(false); }
     ~Fight()
     {
+        tr_background(true);
         for (uint8_t*& t : tile) {
             free(t);
             t = nullptr;

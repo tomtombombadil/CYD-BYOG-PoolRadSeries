@@ -267,6 +267,9 @@ void Vm::dk_write(uint16_t a, uint16_t v, int size)
             return;
         }
         s_.area1[a - 1] = b;
+        // (Treasures: a write to 0x41 reads the season's colours, game
+        // byte 0x41 - its operand loader ovr 0x7D28 -> o144+0x9F3)
+        if (a == 0x41 && set_.tr_ops) h_.season();
         return;
     }
     if (a <= 0x5FE) {

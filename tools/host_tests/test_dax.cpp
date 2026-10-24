@@ -1508,6 +1508,44 @@ static void test_canvas4()
     CHECK(memcmp(back, row, 16) == 0);
 }
 
+// Treasures in 256 colours: a background picture behind clears and text
+static void test_canvas_bg()
+{
+    static uint8_t px[pic::kScreenW * pic::kScreenH], bg[pic::kScreenW * 192];
+    for (size_t i = 0; i < sizeof bg; ++i) bg[i] = uint8_t(16 + i % 6);
+    pic::Canvas c{px, pic::kScreenW, pic::kScreenH};
+    c.clear(7);
+    c.bg = bg;
+    c.bg_rows = 192;
+    c.fill(10, 180, 20, 20, 0);          // rows 180-191 the picture's, 192-199 black
+    CHECK(c.get(10, 180) == bg[180 * 320 + 10] && c.get(29, 191) == bg[191 * 320 + 29]);
+    CHECK(c.get(10, 192) == 0 && c.get(29, 199) == 0 && c.get(30, 185) == 7);
+    c.fill(40, 40, 4, 4, 9);             // other colours as they are
+    CHECK(c.get(41, 41) == 9);
+    c.fill_black(40, 40, 4, 4);
+    CHECK(c.get(41, 41) == 0 && c.bg == bg);
+    // A glyph with bg 0: the ink, its shadow (right / under / right-under)
+    // black, the picture elsewhere; f.shade's own when given
+    static font::Font f;
+    f = font::Font{};
+    f.glyph[1][2] = 0x10;                // one pixel: column 3, row 2
+    c.clear(7);
+    font::draw_glyph(c, f, 1, 80, 80, 15, 0);
+    CHECK(c.get(83, 82) == 15);
+    CHECK(c.get(84, 82) == 0 && c.get(83, 83) == 0 && c.get(84, 83) == 0);
+    CHECK(c.get(82, 82) == bg[82 * 320 + 82] && c.get(80, 80) == bg[80 * 320 + 80] && c.get(83, 81) == bg[81 * 320 + 83]);
+    static uint8_t shade[64][8];
+    shade[1][7] = 0x01;
+    f.shade = shade;
+    font::draw_glyph(c, f, 1, 80, 80, 15, 0);
+    CHECK(c.get(84, 82) == bg[82 * 320 + 84] && c.get(87, 87) == 0);
+    font::draw_glyph(c, f, 1, 80, 80, 15, 4);       // another paper: as before
+    CHECK(c.get(84, 82) == 4);
+    c.bg = nullptr;
+    font::draw_glyph(c, f, 1, 80, 80, 15, 0);
+    CHECK(c.get(84, 82) == 0 && c.get(80, 80) == 0);
+}
+
 // Fighters joining a fight: the spare slots, then none
 // Pool's item codes and its files' Strength (v0.89.0; synthetic records)
 static void test_pool_items()
@@ -7507,6 +7545,7 @@ int main()
     test_item_combat();
     test_log_pack();
     test_canvas4();
+    test_canvas_bg();
     test_add_fighter();
     test_pool_items();
     if (failures) {

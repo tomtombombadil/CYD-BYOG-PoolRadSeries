@@ -36,6 +36,9 @@ struct Font {
     uint8_t letters = 0;               // kGameLetters / kClearLetters / kAltLetters / kClearCapsLetters
     bool    clear = false;             // the Clear font's (lower case has glyphs of its own)
     uint8_t saved[26 + 32][8];         // the game's glyphs 1-26 and 32-63 while it is
+    // Treasures in 256 colours: its font's black pixels (BORD block 8) for
+    // glyphs 0-63 (nullptr: worked out from the ink - draw_glyph)
+    const uint8_t (*shade)[8] = nullptr;
 };
 
 // The engine's own Clear font (Tom, 2026-10-11: easier to read on the small
@@ -73,7 +76,10 @@ int glyph_of(char c);
 int glyph_of(const Font& f, char c);
 
 // Draws glyph g with its top-left at pixel (x, y). bg < 0 = leave the
-// paper pixels as they are.
+// paper pixels as they are. On a canvas with a background picture (c.bg:
+// Treasures in 256 colours) bg 0 is the original's VGA text: the ink, its
+// black shadow (f.shade, else the pixels right of / under / right-under the
+// ink) and the background picture's pixels elsewhere.
 void draw_glyph(pic::Canvas& c, const Font& f, int g, int x, int y, uint8_t fg, int bg);
 
 // Prints text from cell (col, row) rightwards; stops at the right edge.
