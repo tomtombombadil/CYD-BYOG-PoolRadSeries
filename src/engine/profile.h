@@ -437,6 +437,15 @@ struct Profile {
         // Gateway: a new character's experience (one class's) and platinum (0: Curse's)
         uint32_t        start_xp = 0;
         uint16_t        platinum = 0;
+        // Champions: a kender's fearless effect; DS: a new cleric's spells
+        // (from the list's second byte, 0 ends); GAME.OVR "Pick God", DS the
+        // gods' names (12 bytes, 0 None)
+        uint8_t         kender_fear = 0;
+        uint16_t        cleric_first = 0;
+        uint32_t        pick_god = 0;
+        uint16_t        god_names = 0;
+        // Champions: DS the least stats for the Order of the Sword, then the Rose's (6 each)
+        uint16_t        knight_mins = 0;
     } create;
 
     // Items: Use Trade Drop Halve Join Sell Id and their words (ItemWord order)
@@ -716,6 +725,31 @@ struct Profile {
         // loss ...", " The remaining party members ...", "'s body for valuables."
         uint16_t tr_max_age = 0;
         uint32_t tr_age_words[10] = {};
+        // Champions of Krynn (champions_facts.md): its characters (409-byte
+        // records .SAV / .WHO, items .STF of 63 bytes, effects .SFX; races,
+        // knight order, god, robe - party::from_krynn) and the three moons
+        // on the frame's top bar (frame.top: its top row's tiles, the moons'
+        // cells from their phases)
+        bool     krynn = false;
+        // Champions' interpreter (GAME.OVR ovl 0x3E +0x11B5): a one-choice
+        // menu whose choice is the first of these words shows the second
+        // instead ("PRESS BUTTON OR RETURN TO CONTINUE." -> "PRESS
+        // <ENTER>/<RETURN> TO CONTINUE"; GAME.OVR; 0: none)
+        uint32_t press_words[2] = {};
+        // Champions' View: the knight's order after the class (" of the
+        // Crown", " of the Sword", " of the Rose"; GAME.OVR)
+        uint32_t order_words[3] = {};
+        // Champions' fights: a kender's "Yell " on the menu and what each
+        // taunted one says ("wants to kill " + the kender's name; GAME.OVR)
+        uint32_t yell_words[2] = {};
+    // Champions: "explodes!", "is stunned" (a bozak's death), "loses his
+    // weapon" (a baaz's) - GAME.OVR
+    uint32_t burst_words[3] = {};
+    // Champions' Knight Change Classes (GAME.OVR): "Exit", "is petitioning to
+    // become a", "sword", "rose", "Knight Of The ", " is too inexperienced.",
+    // " does not qualify.", " may become a", "Knight Of The Sword", "Change
+    // Exit", " is too inexperienced", "Knight Of The Rose"
+    uint32_t knight_words[12] = {};
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

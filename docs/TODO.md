@@ -154,6 +154,17 @@ the Project as claude/TODO.md.
       the scan, into _CYD/<folder>/) or batch the lookups.
 - [ ] Tom: Gateway test characters (gateway_itemtest.zip, 2026-10-24):
       into Gateway's SAVE folder, then Add Character -> ITEMTST1-3.
+- [ ] Champions of Krynn (v0.147.0, SPEC 6g): Play on, in testing - plays
+      end to end in the playsim; moons, gods, knights (petitions, Change
+      Classes), kender Yell, draconian deaths (bozak, baaz), creation,
+      Modify, the overland; matches DOSBox (title, party menu, View, the
+      start); behave champions; budget fight 129.8 KB. Game Fixes: thief
+      skills by race (the original reads Curse's race rows), a knight's
+      saves (the original gives every knight row 7's level-0 saves).
+      Open, in order: the kapak's acid pool (ground 0x1D - stepping in not
+      traced); sound (SOUND.DAX driver + effects, MIDI.DAX - silent now);
+      its GOG journal table (the SNEG text journal works); "WHERE DO YOU
+      WISH TO GO?" cleared in shops / temple (the original keeps it).
 - [ ] Krynn (survey 2026-10-24, the Project's claude/krynn_facts.md):
       Champions = Secret's engine (port started, branch champions); Death
       Knights = Darkness's engine at 4 bits (LOAD FILES / PIECES 3

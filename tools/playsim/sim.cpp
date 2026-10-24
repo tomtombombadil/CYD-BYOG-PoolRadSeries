@@ -206,6 +206,7 @@ static void settle(int choice = 0, int max_ms = 60000)
             for (int i = 0; i < vm->items(); ++i) printf(" [%s]", vm->item(i));
             int c = vm->items() > 1 ? next_choice(choice) : 0;
             printf(" -> %d\n", c);
+            if (getenv("MENULINE")) printf("  menu line [%s%s] %d choices\n", menu.prompt, menu.s, menu.count);
             shot("menu");
             if (c >= vm->items()) c = 0;
             int col = 0;
@@ -451,7 +452,7 @@ static void run_fight()
                 if (play::fg->st == play::FSt::Menu) {
                     if (n < 6) { char t[16]; snprintf(t, 16, "fmenu%d", n++); shot(t); }
                     ++turns;
-                    tap_word('Q');
+                    if (!tap_word('Q') && tap_word('D')) tap_word('A');     // (Champions: Done's Auto)
                 } else if (play::fg->st == play::FSt::Results || play::fg->st == play::FSt::Destroyed) {
                     static bool told = false;
                     if (!told) { told = true; printf("  the 3D view's walls at the results: %s\n", world_hash() == w0 ? "as before" : "CHANGED"); }
@@ -532,6 +533,7 @@ static void shop_run(const char* ops)
 int main(int argc, char** argv)
 {
     setvbuf(stdout, nullptr, _IOLBF, 0);       // (lines out at once: a hang or a crash keeps them)
+    if (getenv("NOFIXES")) rules::set_fixes(false);    // NOFIXES=1: Game Fixes off (the originals' ways)
     if (getenv("SEED")) play::rng = create::Dice(static_cast<uint32_t>(strtoul(getenv("SEED"), nullptr, 10)));   // SEED=n: the game's dice
     // SIZES: the fight's blocks' sizes
     if (getenv("SIZES")) { printf("Fight %zu Battle %zu Page %zu Monster %zu Data %zu World %zu GameState %zu Party %zu Names %zu Ground %zu\n", sizeof(play::Fight), sizeof(combat::Battle), sizeof(play::Page), sizeof(combat::Monster), sizeof(play::Data), sizeof(view3d::World), sizeof(ecl::GameState), sizeof(party::Party), sizeof(items::Names), sizeof(*play::ground));
@@ -627,7 +629,7 @@ int main(int argc, char** argv)
         auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } return false; };
         pm_tap_line('C');
         const char* q = getenv("CREATE");
-        for (int stage = 0; stage < 4 && play::screen == play::Screen::CreatePick; ++stage) {
+        for (int stage = 0; stage < 5 && play::screen == play::Screen::CreatePick; ++stage) {
             printf("  pick:"); for (int i = 0; i < play::mk->n_opt; ++i) { char l[40]; play::pick_line(i + 1, l, 40); printf(" [%s]", l); } printf("\n");
             { char t[16]; snprintf(t, 16, "pick%d", stage); shot(t); }
             play::plist.index = 1 + atoi(q);
@@ -732,6 +734,7 @@ int main(int argc, char** argv)
         }
         if (getenv("RULECHECK")) {      // RULECHECK: each member's class values as the tables make them, against the record's
             play::MagicRules* mr = nullptr;
+            if (getenv("NOFIXES")) rules::set_fixes(false);
             if (play::load_rules(mr))
                 for (int i = 0; i < play::pt->count; ++i) {
                     const party::Character& o = play::pt->m[i];
@@ -750,7 +753,7 @@ int main(int argc, char** argv)
                     cmp("classflags", o.rec[0x12B], cc->rec[0x12B]);
                     for (int k = 0; k < 3; ++k)
                         for (int lv = 1; lv <= 9; ++lv) cmp(k == 0 ? "clslot" : k == 1 ? "drslot" : "muslot", classes::slots(o, k, lv), classes::slots(*cc, k, lv));
-                    for (int sp = 1; sp <= 126; ++sp) cmp("book", classes::in_book(o, sp), classes::in_book(*cc, sp));
+                    for (int sp = 1; sp <= 126; ++sp) { char bw[16]; snprintf(bw, sizeof bw, "book%d", sp); cmp(bw, classes::in_book(o, sp), classes::in_book(*cc, sp)); }
                     printf("  rules %d %s:%s\n", i, nm, diffs.empty() ? " all the same" : diffs.c_str());
                     for (int cls = 0; cls < 7; ++cls)
                         if (o.level(cls) > 0) printf("    class %d level %d: next at %d (has %u)\n", cls, o.level(cls), (int)mr->tables.exp_needed(cls, o.level(cls)), (unsigned)o.exp());
@@ -891,6 +894,7 @@ int main(int argc, char** argv)
             if (getenv("MODFRESH")) { ch.rec[0x127] = 0xA8; ch.rec[0x128] = 0x61; ch.rec[0x129] = 0; ch.rec[0x12A] = 0; ch.rec[0xE6] = 0; }
             if (getenv("MODFRESH") && play::gateway()) { ch.rec[0x127] = 0xB8; ch.rec[0x128] = 0x0B; }   // (Gateway: 3,000)
             if (getenv("MODFRESH") && play::darkness_files()) { ch.rec[0x127] = 0x61; ch.rec[0x128] = 0xE3; ch.rec[0x129] = 0x16; }   // (Darkness: 1,500,001)
+            if (getenv("MODFRESH") && play::krynn()) { ch.rec[0x127] = 0xD1; ch.rec[0x128] = 0x07; }   // (Champions: 2,001)
             auto show = [&](const char* tag) { char n[20]; ch.name(n, 20); printf("  %s: %s Str %d/%d Int %d Wis %d Dex %d Con %d Cha %d HP %d/%d AC %d screen %d menu [%s%s]\n", tag, n, ch.stat(0), ch.str00(), ch.stat(1), ch.stat(2), ch.stat(3), ch.stat(4), ch.stat(5), ch.hp(), ch.hp_max(), ch.ac(), (int)play::screen, play::menu.prompt, play::menu.s); };
             show("before");
             pm_tap_line('M');
@@ -901,14 +905,14 @@ int main(int argc, char** argv)
                 case '>': play::act(play::Act::StepRight, C); break;
                 case 'u': play::act(play::Act::Forward, C); break;
                 case 'd': play::act(play::Act::TurnAround, C); break;
-                case 'h': if (play::secret_files() || play::darkness_files() || play::gateway()) play::tap(31 * 8 + 2, 3 * 8 + 2, C); else play::tap(2 * 8 + 2, 18 * 8 + 2, C); break;
+                case 'h': if (play::secret_files() || play::darkness_files() || play::gateway() || play::krynn()) play::tap(31 * 8 + 2, 3 * 8 + 2, C); else play::tap(2 * 8 + 2, 18 * 8 + 2, C); break;
                 case 'A': case 'S': tap_word(*q); break;          // (Secret's Add / Subtract)
                 case 'n': play::tap(2 * 8 + 2, 1 * 8 + 2, C);
                     if (play::input_mode != play::Input::None && getenv("TYPE")) { for (const char* t = getenv("TYPE"); *t; ++t) play::input_key(*t, C); play::input_key('\n', C); }
                     break;
                 case '#': shot("modify"); show("#"); break;
                 case 'K': case 'E': tap_word(*q); break;
-                default: if (*q >= '0' && *q <= '5') play::tap(2 * 8 + 2, ((play::secret_files() || play::darkness_files() || play::gateway() ? 9 : 7) + *q - '0') * 8 + 2, C); break;
+                default: if (*q >= '0' && *q <= '5') play::tap(2 * 8 + 2, ((play::secret_files() || play::darkness_files() || play::gateway() || play::krynn() ? 9 : 7) + *q - '0') * 8 + 2, C); break;
                 }
             }
             show("after");

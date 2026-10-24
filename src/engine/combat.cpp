@@ -3040,6 +3040,13 @@ bool seen_enemy(const Battle& b, int i, int c)
 int pick_target(Battle& b, const Tables& t, int i, create::Dice& d)
 {
     Fighter& f = b.f[i];
+    // Champions' taunted (a kender's Yell; its GAME.OVR 0x18E07): the kender
+    // who yelled is the target while it can fight
+    if (b.fx && b.fx->taunted && b.taunter >= 0 && b.taunter < b.n && hasx(f, b.fx->taunted) &&
+        seen_enemy(b, i, b.taunter)) {
+        f.target = static_cast<int16_t>(b.taunter);
+        return f.target;
+    }
     if (seen_enemy(b, i, f.target) && range(b, t, i, f.target, false, nullptr)) return f.target;
     f.target = -1;
     int cand[kMaxFighters], n = 0;
@@ -3062,6 +3069,23 @@ int pick_target(Battle& b, const Tables& t, int i, create::Dice& d)
 }
 
 } // namespace
+
+int taunt(Battle& b, int kender, create::Dice& d, int* out, int cap)
+{
+    int n = 0;
+    if (!b.fx || !b.fx->taunted || kender < 0 || kender >= b.n) return 0;
+    b.taunter = kender;
+    const int side = b.f[kender].team() ? 1 : 0;
+    for (int c = 0; c < b.n; ++c) {
+        Fighter& f = b.f[c];
+        // (okay, Intelligence over 3, the other side, no save against spells)
+        if (!f.size || !f.up() || f.status() != 0 || f.rec[0x13] <= 3 || (f.team() ? 1 : 0) == side) continue;
+        if (saving_throw(f, 4, 0, d)) continue;
+        give_aff(f, b.fx->taunted, 0, 0xFF, false);
+        if (n < cap) out[n++] = c;
+    }
+    return n;
+}
 
 Plan think(Battle& b, const Tables& t, int i, create::Dice& d)
 {
@@ -3242,6 +3266,34 @@ int in_area(const Battle& b, const Tables& t, int x, int y, int r, int* out, int
     return n;
 }
 
+int bozak_burst(Battle& b, const Tables& t, int c, create::Dice& d, int* out, int* dmg, bool* dn, bool* st, int cap)
+{
+    const Fighter& bz = b.f[c];
+    int near[kMaxFighters];
+    const int n = in_area(b, t, bz.x, bz.y, 1, near, kMaxFighters);
+    int k = 0;
+    for (int i = 0; i < n && k < cap; ++i) {
+        const int j = near[i];
+        if (j == c || !b.f[j].up()) continue;
+        out[k] = j;
+        dmg[k] = d.roll(6, 3);
+        dn[k] = damage(b, j, dmg[k]);
+        st[k] = false;
+        if (!dn[k] && !saving_throw(b.f[j], 4, 0, d) && b.fx && b.fx->sp.stun) {
+            give_aff(b.f[j], b.fx->sp.stun, 0, 0xFF, false);
+            st[k] = true;
+        }
+        ++k;
+    }
+    return k;
+}
+
+bool baaz_keeps_weapon(const Fighter& slayer, create::Dice& d)
+{
+    const int r = d.roll(20, 1);
+    return slayer.rec[0x17] - 3 <= r;          // (its Dexterity in use)
+}
+
 bool teleport(Battle& b, const Tables& t, int i, int x, int y)
 {
     Fighter& f = b.f[i];
@@ -3272,6 +3324,11 @@ bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d)
     // (the effect works on the roll after the natural 1 / 20: a 1 still fails)
     if (g_fx && type == 0 && hasx(f, g_fx->mon.mind)) return true;
     if (g_fx && type == 0 && hasx(f, g_fx->mon.no_poison)) return true;     // (Secret's dreadlord)
+    // Champions' mages (GAME.OVR 0x3511B): their moon new -1, full +1
+    if (f.robe >= 1 && f.robe <= 3) {
+        const int ph = magic::moon(f.robe - 1);
+        bonus += ph == 0 ? -1 : ph == 2 ? 1 : 0;
+    }
     if (g_fx) {
         const Facts& fx = *g_fx;
         if (fx.bestow && f.has(fx.bestow)) bonus -= 4;

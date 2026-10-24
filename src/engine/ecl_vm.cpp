@@ -131,6 +131,19 @@ void Vm::advance_clock(int slot, int amount)
         const int v = get(static_cast<uint16_t>(0x4BC6 + slot)) + carry;
         set(static_cast<uint16_t>(0x4BC6 + slot), static_cast<uint16_t>(v % scale));
         carry = v / scale;
+        if (slot == 3 && set_.moons)
+            for (int day = 0; day < carry && day < 64; ++day) {
+                static const uint8_t kAt[3] = {8, 1, 6};
+                for (int m = 0; m < 3; ++m) {
+                    const uint16_t ctr = static_cast<uint16_t>(0x4CFC + m), ph = static_cast<uint16_t>(0x4CF9 + m);
+                    if (get(ctr) >= kAt[m]) {
+                        set(ph, static_cast<uint16_t>(get(ph) >= 3 ? 0 : get(ph) + 1));
+                        set(ctr, 0);
+                    } else {
+                        set(ctr, static_cast<uint16_t>(get(ctr) + 1));
+                    }
+                }
+            }
     }
 }
 

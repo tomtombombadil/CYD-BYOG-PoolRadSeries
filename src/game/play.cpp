@@ -168,9 +168,15 @@ struct Data {
     char           w_speed[24] = {};           // Darkness: Speed's word list ("Faster Slower Exit")
     char           w_save_which[24] = {}, w_slots[24] = {}, w_saving[24] = {}, w_camp_menu[40] = {}, w_crown_menu[44] = {},
                    w_camp[8] = {}, w_makes_camp[28] = {};
+    char           w_press[2][36] = {};        // Champions: a one-choice menu's word shown as the other (variant.press_words)
+    char           gods[8][12] = {};           // Champions: its gods' names (create.god_names; 0 None)
+    char           w_order[3][16] = {};        // Champions: " of the Crown" / Sword / Rose (variant.order_words)
+    char           w_yell[8] = {}, w_wants[16] = {};
+    char           w_burst[3][20] = {};
+    char           w_knight[12][28] = {};      // Champions: Knight Change Classes' words (variant.knight_words)        // Champions: "explodes!", "is stunned", "loses his weapon" (variant.burst_words)   // Champions: "Yell ", "wants to kill " (variant.yell_words)
 
     // View Character's words (from the program and GAME.OVR)
-    char           cls[18][27] = {}, race[8][10] = {}, alignment[9][17] = {}, sex[2][7] = {}, money[7][11] = {},
+    char           cls[18][27] = {}, race[8][16] = {}, alignment[9][17] = {}, sex[2][7] = {}, money[7][11] = {},
                    health[9][13] = {};
     // Items: shop and item list words (GAME.OVR)
     rules::ItemFacts facts{};
@@ -769,6 +775,11 @@ int ov_area()
 bool pool_overland() { return d && vm && ov_area() >= 0; }
 // Darkness's overland (darkness_facts.md S4 / S7): byte 0x24 = 1 and not 3D
 bool dk_overland() { return d && vm && d->prof->variant.dk_overland_pics && vm->get(0x24) == 1 && !vm->get(0x22); }
+// Champions' overland (champions_facts.md 3): area word 0x4BE6 = 0 - the
+// big picture the scripts show (the region's map) with the party's marker
+bool kr_overland() { return d && vm && d->prof->variant.krynn && !vm->get(0x4BE6); }
+// Either game's overland with a marker on a map picture
+bool marker_overland() { return dk_overland() || kr_overland(); }
 // Gateway's wilderness (gateway_facts.md 14): area word 0x4BE6 = 0
 bool gw_wild() { return d && vm && d->prof->variant.tile_wild && !vm->get(0x4BE6); }
 // Gateway's way ahead (GAME.OVR 0x4712F +0x82A, kept in area word 0x4CF6 as
@@ -838,6 +849,55 @@ void draw_dk_overland(pic::Canvas& c)
         vga_take();
         f.close();
     }
+    dirty(0, 17 * 8);
+}
+
+// Champions' overland marker (GAME.OVR ovl 0x96: CURSOR.DAX's picture at
+// cell (x + 1, y + 1) of area words 0x4BC3 / 0x4BC4, what was under it kept
+// and put back when it moves): on - drawn at the party's square; off - the
+// square under it put back
+int kr_mx = -1, kr_my = -1;
+uint8_t kr_under[64];
+void kr_marker(pic::Canvas& c, bool on)
+{
+    if (kr_mx >= 0) {
+        for (int i = 0; i < 64; ++i) c.set(kr_mx + i % 8, kr_my + i / 8, kr_under[i]);
+        dirty_rows(kr_my / 8, kr_my / 8 + 1);
+        kr_mx = -1;
+    }
+    if (!on || !kr_overland()) return;
+    const int x = ((vm->get(0x4BC3) & 0xFF) + 1) * 8, y = ((vm->get(0x4BC4) & 0xFF) + 1) * 8;
+    if (x > pic::kScreenW - 8 || y > 17 * 8) return;
+    for (int i = 0; i < 64; ++i) kr_under[i] = c.get(x + i % 8, y + i / 8);
+    kr_mx = x;
+    kr_my = y;
+    plat::File f;
+    if (open_dax("CURSOR.DAX", f)) {
+        plat::FileSource src(f);
+        const dax::Entry* e = d->idx.find(1);
+        if (e) {
+            dax::RleReader r(src, d->idx, *e);
+            uint8_t hdr[pic::kHeaderSize];
+            pic::Header h;
+            if (r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_header(hdr, e->raw_size, h)) pic::draw(r, h, 0, c, x, y);
+        }
+        f.close();
+    }
+    dirty_rows(y / 8, y / 8 + 1);
+}
+// The marker forgotten (the screen under it drawn again)
+void kr_marker_lost() { kr_mx = -1; }
+
+// The map picture the scripts showed last while in the overland (the screen
+// drawn again after a camp or a menu: the frame with a bar at row 16, the
+// picture at 8, 8 - DOSBox)
+int kr_map_pic = -1;
+void draw_kr_overland(pic::Canvas& c)
+{
+    kr_marker_lost();
+    layout::outer(c, d->tables, d->frame_tiles);
+    layout::bar(c, d->tables, d->frame_tiles, 16);
+    if (kr_map_pic >= 0) draw_block(c, "BIGPIC", kr_map_pic, 8, 8);
     dirty(0, 17 * 8);
 }
 
@@ -1078,6 +1138,10 @@ void draw_view(pic::Canvas& c)
         draw_dk_overland(c);
         return;
     }
+    if (kr_overland() && !pic_shown && bigpic < 0) {
+        draw_kr_overland(c);
+        return;
+    }
     if (bigpic >= 0) {
         // A big picture covers the screen: outdoors it stays (the wilderness
         // map); in a 3D area the exploring screen comes back
@@ -1125,9 +1189,11 @@ void draw_view(pic::Canvas& c)
 }
 
 bool dk_overland();
+void krynn_moons(pic::Canvas* c = nullptr);
 void draw_position(pic::Canvas& c)
 {
-    if (dk_overland()) return;
+    krynn_moons(&c);            // (Champions: a day passed - the moons' tiles; its clock routine)
+    if (marker_overland()) return;
     if (d->prof->variant.tr && !tr_position) return;
     const ecl::GameState& g = d->gs;
     // (Treasures clears columns 18-38 only - ovr 0x41207)
@@ -1199,7 +1265,7 @@ void draw_party(pic::Canvas& c, int col, bool mark_sel = true)
 
 void draw_panel(pic::Canvas& c)
 {
-    if (dk_overland()) return;              // (Darkness's overland: its map in the panel's place)
+    if (marker_overland()) return;          // (Darkness's / Champions' overland: its map in the panel's place)
     c.fill(17 * 8, 8, 22 * 8, 14 * 8, 0);
     if (pt->count) draw_party(c, 17);
     else put(c, "NO PARTY YET", 18, 2, 8);
@@ -1229,10 +1295,32 @@ void tr_lattice(pic::Canvas& c)
     dirty_rows(0, 16);
 }
 
+// Champions' three moons on the frame's top bar (champions_facts.md 1, A6):
+// white at column 8, red at 19, black at 30 - the top table's value there is
+// the phase (area words 0x4CF9-0x4CFB, 0-3) + 10 / 6 / 14 (its START image
+// 0x1280). c: also redraw the three cells now (the top bar is on screen).
+void krynn_moons(pic::Canvas* c)
+{
+    if (!d->prof->variant.krynn || !vm || !d->tables.top_row) return;
+    static const uint8_t kCol[3] = {8, 19, 30}, kAdd[3] = {10, 6, 14};
+    magic::set_moons(vm->get(0x4CF9) & 3, vm->get(0x4CFA) & 3, vm->get(0x4CFB) & 3);
+    for (int i = 0; i < 3; ++i) {
+        const uint8_t v = static_cast<uint8_t>(kAdd[i] + (vm->get(static_cast<uint16_t>(0x4CF9 + i)) & 3));
+        if (d->tables.top[kCol[i]] == v) continue;
+        d->tables.top[kCol[i]] = v;
+        if (c) {
+            layout::tile(*c, d->frame_tiles, layout::kViewTile + v, kCol[i], 0);
+            dirty_rows(0, 1);
+        }
+    }
+}
+
 void draw_frame(pic::Canvas& c)
 {
     c.clear(0);
-    if (dk_overland()) {
+    krynn_moons();
+    kr_marker_lost();
+    if (marker_overland()) {
         layout::outer(c, d->tables, d->frame_tiles);
         layout::bar(c, d->tables, d->frame_tiles, 16);
     } else {
@@ -1400,15 +1488,18 @@ bool moving = false;
 bool secret_files();
 bool darkness_files();
 bool gateway();
-bool move_menu() { return secret_files() || darkness_files() || gateway(); }
+bool krynn();
+bool move_menu() { return secret_files() || darkness_files() || gateway() || krynn(); }
 void ow(uint32_t at, char* out, size_t cap);
 void idle_menu(pic::Canvas& c)
 {
-    if (dk_overland()) {
-        // Darkness's overland: Move and Encamp (DOSBox)
+    if (marker_overland()) {
+        // Darkness's / Champions' overland: Move and Encamp (DOSBox; Champions'
+        // GAME.OVR 0x19CA5); Champions' marker shows meanwhile
         text::build(menu, "", moving ? "Exit" : "Move Encamp");
         menu.selected = 0;
         show_menu_line(c);
+        if (kr_overland()) kr_marker(c, true);
     } else if (move_menu() && vm->get(0x4BE6)) {
         // (Gateway's move mode: "Move (Use arrow keys):" before Exit - DOSBox)
         static char prompt3d[32];
@@ -1661,6 +1752,11 @@ void pm_flags(bool on[])
         case 'H':                               // Human Change: with training, a human with no former class
             on[i] = pt->sel() && (vm->get(0x7EA8) & 0xFF) != 0 && create::can_change(*pt->sel());
             break;
+        case 'K':                               // Champions' Knight Change Classes: where training is, a knight below the Rose
+            on[i] = false;
+            for (int k = 0; krynn() && (vm->get(0x7EA8) & 0xFF) != 0 && k < pt->count; ++k)
+                on[i] = on[i] || (pt->m[k].level(classes::Monk) > 0 && pt->m[k].ext[party::kExtKnight] < 3);
+            break;
         case 'L':
             on[i] = pt->count == 0;
             break;
@@ -1683,6 +1779,7 @@ void pm_prompt(pic::Canvas& c, const char* note = nullptr)
 void draw_party_menu(pic::Canvas& c)
 {
     c.clear(0);
+    krynn_moons();
     layout::outer(c, d->tables, d->frame_tiles);
     // (Treasures: no member marked on its party menu, its menu's line white
     // - DOSBox)
@@ -1760,23 +1857,30 @@ bool gateway() { return d->prof->game == games::Game::GatewayToTheSavageFrontier
 // Darkness's (variant.darkness_files): 510-byte records (NAME.PC), items
 // .THG (63 bytes), effects .EFX; its saves SAVGAMx.PTY
 bool darkness_files() { return d->prof->variant.darkness_files; }
+// Champions of Krynn's (variant.krynn): 409-byte records (NAME.WHO), items
+// .STF (63 bytes), effects .SFX; saves as Secret's (no script bytes)
+bool krynn() { return d->prof->variant.krynn; }
 party::Format rec_format()
 {
     return pool_files()       ? party::Format::Pool
            : secret_files()   ? party::Format::Secret
            : darkness_files() ? party::Format::Darkness
+           : krynn()          ? party::Format::Krynn
                               : party::Format::Curse;
 }
-const char* ext_guy() { return pool_files() ? ".CHA" : secret_files() ? ".WHO" : darkness_files() ? ".PC" : ".GUY"; }
-const char* ext_items() { return pool_files() ? ".ITM" : secret_files() ? ".STF" : darkness_files() ? ".THG" : ".SWG"; }
-const char* ext_fx() { return pool_files() ? ".SPC" : secret_files() ? ".SFX" : darkness_files() ? ".EFX" : ".FX"; }
+const char* ext_guy() { return pool_files() ? ".CHA" : secret_files() || krynn() ? ".WHO" : darkness_files() ? ".PC" : ".GUY"; }
+const char* ext_items() { return pool_files() ? ".ITM" : secret_files() || krynn() ? ".STF" : darkness_files() ? ".THG" : ".SWG"; }
+const char* ext_fx() { return pool_files() ? ".SPC" : secret_files() || krynn() ? ".SFX" : darkness_files() ? ".EFX" : ".FX"; }
 size_t rec_file_size()
 {
     return pool_files()       ? party::kPoolRecordSize
            : secret_files()   ? party::kSecretRecordSize
            : darkness_files() ? party::kDarknessRecordSize
+           : krynn()          ? party::kKrynnRecordSize
                               : party::kRecordSize;
 }
+// Saves without the running script's bytes (Secret's, Champions')
+bool short_saves() { return secret_files() || krynn(); }
 void save_file_name(char slot, char* out, size_t cap)
 {
     if (darkness_files()) savegame::file_name_darkness(slot, out, cap);
@@ -1925,7 +2029,7 @@ bool load_game(char slot)
     {
         plat::FileSource src(f);
         ok = darkness_files() ? savegame::read_darkness(src, d->gs, d->save)
-                              : savegame::read(src, d->gs, d->save, !pool_files(), !secret_files());
+                              : savegame::read(src, d->gs, d->save, !pool_files(), !short_saves());
     }
     f.close();
     // Whatever was going on is over now (a script's party menu, a wait)
@@ -2181,6 +2285,12 @@ const char* name_of(const char* table, int stride, int count, int i)
     return i >= 0 && i < count ? table + i * stride : "";
 }
 
+// A character's race's name (Champions: its own race, kept in ext)
+const char* race_name(const party::Character& ch)
+{
+    return name_of(d->race[0], 16, 8, krynn() ? ch.ext[party::kExtRace] : ch.race());
+}
+
 const party::Character* new_char = nullptr;   // the character being made (Create New Character)
 
 void view_box(pic::Canvas& c, const party::Character& ch);
@@ -2255,7 +2365,7 @@ void draw_character_gateway(pic::Canvas& c, const party::Character& ch);
 void draw_character(pic::Canvas& c)
 {
     const party::Character* ch = new_char ? new_char : pt->sel();
-    if (ch && (secret_files() || darkness_files())) {
+    if (ch && (secret_files() || darkness_files() || krynn())) {
         draw_character_secret(c, *ch);
         return;
     }
@@ -2276,7 +2386,7 @@ void draw_character(pic::Canvas& c)
     const char* sx = name_of(d->sex[0], 7, 2, ch->sex());
     put(c, sx, col, 3, 15);
     col += static_cast<int>(strlen(sx)) + 1;
-    const char* rc = name_of(d->race[0], 10, 8, ch->race());
+    const char* rc = race_name(*ch);
     put(c, rc, col, 3, 15);
     col += static_cast<int>(strlen(rc)) + 1;
     snprintf(t, sizeof t, "%s%d", d->v_age, ch->age());
@@ -2413,8 +2523,11 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
     auto right = [&](const char* s, int end_col, int row, uint8_t fg) {
         put(c, s, end_col + 1 - static_cast<int>(strlen(s)), row, fg);
     };
+    // (Champions, DOSBox: the name cyan, the class with the knight's order,
+    // "Experience " and the number on row 7 from column 20, no commas)
+    const bool kr = krynn();
     ch.name(t, sizeof t);
-    put(c, t, 1, 1, !ch.in_combat() ? 12 : ch.enemy() ? 14 : 11);
+    put(c, t, 1, 1, kr ? 11 : !ch.in_combat() ? 12 : ch.enemy() ? 14 : 11);
     put(c, d->v_status, 20, 1, 15);
     put(c, name_of(d->health[0], 13, 9, ch.health()), 27, 1, 10);
     const char* sx = name_of(d->sex[0], 7, 2, ch.sex());
@@ -2425,9 +2538,27 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
     snprintf(t, sizeof t, "%d/%d", ch.hp(), ch.hp_max());
     put(c, t, 31, 3, ch.hp() < ch.hp_max() ? 14 : 10);
     put(c, name_of(d->alignment[0], 17, 9, ch.alignment()), 1, 4, 15);
-    put(c, name_of(d->race[0], 10, 8, ch.race()), 20, 4, 15);
-    put(c, name_of(d->cls[0], 27, 18, ch.cls()), 1, 5, 15);
-    put(c, d->v_exp, 24, 6, 15);
+    put(c, race_name(ch), 20, 4, 15);
+    {
+        // (Champions: a cleric's god before the class - "Paladine Cleric"; a
+        // knight's order after it)
+        const int god = kr ? ch.ext[party::kExtGod] : 0;
+        int col = 1;
+        if (god >= 1 && god <= 7 && d->gods[god][0]) {
+            put(c, d->gods[god], col, 5, 15);
+            col += static_cast<int>(strlen(d->gods[god])) + 1;
+        }
+        const char* cn = name_of(d->cls[0], 27, 18, ch.cls());
+        put(c, cn, col, 5, 15);
+        const int order = ch.ext[party::kExtKnight];
+        if (kr && order >= 1 && order <= 3) put(c, d->w_order[order - 1], col + static_cast<int>(strlen(cn)), 5, 15);
+    }
+    if (kr) {
+        snprintf(t, sizeof t, "%s%lu", d->v_exp, static_cast<unsigned long>(ch.exp()));
+        put(c, t, 20, 7, 15);
+    } else {
+        put(c, d->v_exp, 24, 6, 15);
+    }
     put(c, d->v_level, 1, 7, 15);
     {
         int top = 0;
@@ -2444,8 +2575,10 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
         }
         put(c, t, 7, 7, 15);
     }
-    commas(static_cast<unsigned long>(ch.exp()), t, sizeof t);
-    right(t, d->prof->variant.tr ? 31 : 32, 7, 10);       // (Treasures: a column further left - DOSBox)
+    if (!kr) {
+        commas(static_cast<unsigned long>(ch.exp()), t, sizeof t);
+        right(t, d->prof->variant.tr ? 31 : 32, 7, 10);   // (Treasures: a column further left - DOSBox)
+    }
     for (int i = 0; i < 6; ++i) {
         put(c, d->v_stat[i], 1, 9 + i, 10);
         const int v = ch.stat(i);
@@ -2492,8 +2625,13 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
     // The money in the panel right of the stats (rows 9-15): copper first,
     // the number ending at column 37 (GAME.OVR 0x2779B: column 38 - its length)
     {
+        // (Champions: its own order - copper, bronze, platinum, steel, gems,
+        // jewelry - from where party::from_krynn keeps them)
+        static const int8_t kCurse[7] = {0, 1, 2, 3, 4, 5, 6}, kKrynn[7] = {0, 1, 4, 3, 5, 6, -1};
         int row = 9;
-        for (int coin = 0; coin < 7 && row <= 15; ++coin) {
+        for (int k = 0; k < 7 && row <= 15; ++k) {
+            const int coin = kr ? kKrynn[k] : kCurse[k];
+            if (coin < 0) break;
             const int n = ch.money(coin);
             if (n <= 0) continue;
             put(c, name_of(d->money[0], 11, 7, coin), 20, row, 10);
@@ -2537,7 +2675,7 @@ void draw_character_gateway(pic::Canvas& c, const party::Character& ch)
     snprintf(t, sizeof t, "%d/%d", ch.hp(), ch.hp_max());
     right(t, 37, 3, ch.hp() < ch.hp_max() ? 14 : 10);
     put(c, name_of(d->alignment[0], 17, 9, ch.alignment()), 1, 4, 15);
-    put(c, name_of(d->race[0], 10, 8, ch.race()), 20, 4, 15);
+    put(c, race_name(ch), 20, 4, 15);
     put(c, name_of(d->cls[0], 27, 18, ch.cls()), 1, 5, 15);
     put(c, d->v_level, 1, 7, 15);
     {
@@ -2804,13 +2942,15 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
 
 enum class Ask : uint8_t { None, Overwrite, Drop, DropSure, Reroll, SaveNew, OverwriteNew, DropItem, SellDeal, IdDeal,
                           LeaveCoins, CureAnyway, PayCure, Train, MemorizeThese, StopRest, LoseIt, AlterDrop, QuitDos,
-                          ScribeThese, ScribeThese2, UseIt, PaladinCure, AlterSure };
+                          ScribeThese, ScribeThese2, UseIt, PaladinCure, AlterSure, Knight };
 void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt);
 void ask_create(pic::Canvas& c, Ask what, const char* prompt);
 bool view_yes_no(Ask what, char k, pic::Canvas& c);
 
 bool shop_yes_no(Ask what, char k, pic::Canvas& c);
 bool train_yes_no(Ask what, char k, pic::Canvas& c);
+bool knight_yes_no(Ask what, char k, pic::Canvas& c);
+void start_knight(pic::Canvas& c);
 bool magic_yes_no(Ask what, char k, pic::Canvas& c);
 bool alter_yes_no(Ask what, char k, pic::Canvas& c);
 void open_magic(pic::Canvas& c);
@@ -3385,7 +3525,7 @@ bool save_game(char slot)
             h.look_slot = d->save.look_slot;
             ok = savegame::write_darkness(sink, d->gs, h);
         } else {
-            ok = savegame::write(sink, d->gs, h, !pool_files(), !secret_files());
+            ok = savegame::write(sink, d->gs, h, !pool_files(), !short_saves());
         }
     }
     f.close();
@@ -4211,6 +4351,7 @@ void yes_no_tap(int x, int y, pic::Canvas& c)
 
 void yes_no_key(char k, pic::Canvas& c)
 {
+    if (ask == Ask::Knight) k = k == 'C' ? 'Y' : k == 'E' ? 'N' : 0;     // (Champions: "Change Exit" / "Exit")
     if (k != 'Y' && k != 'N') return;
     const Ask what = ask;
     ask = Ask::None;
@@ -4220,6 +4361,7 @@ void yes_no_key(char k, pic::Canvas& c)
     if (items_yes_no(what, k, c)) return;
     if (shop_yes_no(what, k, c)) return;
     if (train_yes_no(what, k, c)) return;
+    if (knight_yes_no(what, k, c)) return;
     if (magic_yes_no(what, k, c)) return;
     if (alter_yes_no(what, k, c)) return;
     party::Character* ch = pt->sel();
@@ -4717,7 +4859,7 @@ struct Making {
     create::Facts   facts{};
     create::Dice    dice;
     party::Character ch;
-    int  stage = 0;                 // 0 race, 1 gender, 2 class, 3 alignment
+    int  stage = 0;                 // 0 race, 1 gender, 2 class, 3 alignment (4 Human Change, 5 god)
     int  opt[17] = {};
     int  n_opt = 0;
     int  race = 0, sex = 0, cls = 0;
@@ -4728,6 +4870,11 @@ struct Making {
     char portrait_menu[24] = {};
     uint8_t head_map[15] = {}, body_map[13] = {};
     bool kit_given = false;         // Darkness: the starting kit (at the save)
+    // Champions: stage 5 Pick God (a cleric's, between class and
+    // alignment), its heading and the gods' names (DS, 12 bytes each)
+    int  god = 0;
+    char pick_god[16] = {};
+    char gods[8][12] = {};
 };
 Making* mk = nullptr;
 
@@ -4829,6 +4976,22 @@ bool load_rules(Making*& m)
                      exepack::Status::Ok;
             memcpy(m->facts.hp_count, hp, 8);
             memcpy(m->facts.hp_dice, hp + 8, 8);
+            // (Champions: a new cleric's spells, the gods' names)
+            if (pc.cleric_first &&
+                exepack::read(src, info, pc.ds_image + pc.cleric_first + 1, m->facts.cleric_first, 10) !=
+                    exepack::Status::Ok)
+                memset(m->facts.cleric_first, 0, 10);
+            if (pc.knight_mins &&
+                exepack::read(src, info, pc.ds_image + pc.knight_mins, m->facts.knight_mins[0], 12) !=
+                    exepack::Status::Ok)
+                memset(m->facts.knight_mins, 0, 12);
+            for (int g = 0; pc.god_names && g < 8; ++g) {
+                uint8_t nm[12] = {};
+                if (exepack::read(src, info, pc.ds_image + pc.god_names + g * 12, nm, 12) != exepack::Status::Ok) break;
+                const int n = nm[0] > 11 ? 11 : nm[0];
+                memcpy(m->gods[g], nm + 1, n);
+                m->gods[g][n] = 0;
+            }
             if (pc.head_blocks && pc.body_blocks &&
                 (exepack::read(src, info, pc.ds_image + pc.head_blocks, m->head_map, sizeof m->head_map) !=
                      exepack::Status::Ok ||
@@ -4865,6 +5028,7 @@ bool load_rules(Making*& m)
     fa.mu_all_slot = pc.mu_all_slot;
     fa.start_xp = pc.start_xp;
     fa.platinum = pc.platinum;
+    fa.kender_fear = pc.kender_fear;
     const uint32_t at[9] = {pc.pick_race, pc.pick_gender, pc.pick_class, pc.pick_alignment, pc.select,
                             pc.reroll,    pc.char_name,   pc.save_q,     pc.qmark};
     const uint32_t ch_at[5] = {pc.pick_new, pc.no_qualify, pc.change_select, pc.now_first, pc.dot};
@@ -4875,7 +5039,9 @@ bool load_rules(Making*& m)
         for (int i = 0; i < 5; ++i)
             if (ch_at[i]) text::read_pascal(src, ch_at[i], m->change[i], sizeof m->change[i]);
         if (pc.portrait_menu) text::read_pascal(src, pc.portrait_menu, m->portrait_menu, sizeof m->portrait_menu);
+        if (pc.pick_god) text::read_pascal(src, pc.pick_god, m->pick_god, sizeof m->pick_god);
     }
+
     return ok;
 }
 
@@ -4963,8 +5129,9 @@ const char* option_name(int i)
 {
     const int v = mk->opt[i];
     switch (mk->stage) {
-    case 0: return name_of(d->race[0], 10, 8, v);
+    case 0: return name_of(d->race[0], 16, 8, v >= classes::kKrynnRace ? v - classes::kKrynnRace : v);
     case 1: return name_of(d->sex[0], 7, 2, v);
+    case 5: return v >= 0 && v < 8 ? mk->gods[v] : "";
     case 2:
     case 4: return name_of(d->cls[0], 27, 18, v);
     default: return name_of(d->alignment[0], 17, 9, v);
@@ -4973,7 +5140,7 @@ const char* option_name(int i)
 
 void pick_line(int i, char* out, size_t cap)
 {
-    if (i == 0) snprintf(out, cap, "%s", mk->stage == 4 ? mk->change[0] : mk->words[mk->stage]);
+    if (i == 0) snprintf(out, cap, "%s", mk->stage == 4 ? mk->change[0] : mk->stage == 5 ? mk->pick_god : mk->words[mk->stage]);
     else snprintf(out, cap, "  %s", option_name(i - 1));
 }
 
@@ -5047,14 +5214,26 @@ void pick_stage(int stage, pic::Canvas& c)
 {
     mk->stage = stage;
     switch (stage) {
-    case 0: mk->n_opt = create::races(mk->opt, 17, secret_files() || darkness_files()); break;
+    case 0:
+        if (krynn()) {
+            // (Champions: its seven races in its order - classes::kKrynnRace + its number)
+            for (int r = 0; r < 7; ++r) mk->opt[r] = classes::kKrynnRace + r;
+            mk->n_opt = 7;
+        } else {
+            mk->n_opt = create::races(mk->opt, 17, secret_files() || darkness_files());
+        }
+        break;
+    case 5: mk->n_opt = create::gods_for(mk->tables, mk->race, mk->opt, 17); break;
     case 1:
         mk->opt[0] = 0;
         mk->opt[1] = 1;
         mk->n_opt = 2;
         break;
     case 2: mk->n_opt = create::classes_for(mk->tables, mk->race, mk->opt, 17); break;
-    default: mk->n_opt = create::alignments_for(mk->tables, mk->cls, mk->opt, 17); break;
+    default:
+        mk->n_opt = create::alignments_for(mk->tables, mk->cls, mk->opt, 17,
+                                           krynn() ? create::god_alignments(mk->god) : 0xFF);
+        break;
     }
     screen = Screen::CreatePick;
     plist = PickList{};
@@ -5088,10 +5267,25 @@ void picked(int i, pic::Canvas& c)
     switch (mk->stage) {
     case 0: mk->race = v; pick_stage(1, c); return;
     case 1: mk->sex = v; pick_stage(2, c); return;
-    case 2: mk->cls = v; pick_stage(3, c); return;
+    case 2:
+        mk->cls = v;
+        mk->god = 0;
+        if (krynn() && (v == create::Cleric || (v >= create::ClericFighter && v <= create::ClericThief))) {
+            // (Champions: a cleric picks a god - a dwarf's is Reorx, unasked;
+            // GAME.OVR 0x211A6)
+            const int dwarf = mk->race == classes::kKrynnRace + 3 || mk->race == classes::kKrynnRace + 4;
+            if (!dwarf) {
+                pick_stage(5, c);
+                return;
+            }
+            mk->god = 6;
+        }
+        pick_stage(3, c);
+        return;
+    case 5: mk->god = v; pick_stage(3, c); return;
     case 4: change_picked(v, c); return;
     default:
-        create::begin(mk->ch, mk->tables, mk->facts, mk->dice, mk->race, mk->sex, mk->cls, v);
+        create::begin(mk->ch, mk->tables, mk->facts, mk->dice, mk->race, mk->sex, mk->cls, v, mk->god);
         create::roll(mk->ch, mk->tables, mk->facts, mk->dice);
         rules::recalc(mk->ch, *names, d->facts);
         show_new_character(c);
@@ -9349,6 +9543,65 @@ bool train_yes_no(Ask what, char k, pic::Canvas& c)
     return true;
 }
 
+// ---- Champions' Knight Change Classes (GAME.OVR 0x25A1D; the party menu
+// where training is): "NAME" (row 3, centred on column 19), "is petitioning
+// to become a" (row 5, column 7), "Knight Of The sword / rose" (row 7,
+// column 10), then " is too inexperienced." / " does not qualify." under
+// the name (row 9; the Rose's a column further right, its "inexperienced"
+// without the full stop) and "Exit", or " may become a" and the order's
+// name (row 11, column 10) and "Change Exit" (create::knight_petition /
+// knight_change)
+void start_knight(pic::Canvas& c)
+{
+    party::Character* ch = pt->sel();
+    if (!ch || !krynn()) return;
+    if (!trainer && !load_rules(trainer)) {
+        end_training();
+        error(c, "Not in the engine yet.");
+        return;
+    }
+    const int order = ch->ext[party::kExtKnight];
+    const int r = ch->level(classes::Monk) > 0 ? create::knight_petition(*ch, trainer->tables, trainer->facts) : -1;
+    if (r < 0) {
+        end_training();
+        draw_party_menu(c);
+        return;
+    }
+    c.fill(8, 8, 38 * 8, 22 * 8, 0);
+    char nm[20], line[64];
+    ch->name(nm, sizeof nm);
+    const int n = static_cast<int>(strlen(nm));
+    put(c, nm, 19 - n / 2, 3, 10);
+    put(c, d->w_knight[1], 7, 5, 10);
+    snprintf(line, sizeof line, "%s%s", d->w_knight[4], d->w_knight[order == 1 ? 2 : 3]);
+    put(c, line, 10, 7, 10);
+    const char* what = r == 1 ? d->w_knight[order == 1 ? 5 : 10] : r == 2 ? d->w_knight[6] : d->w_knight[7];
+    snprintf(line, sizeof line, "%s%s", nm, what);
+    const int len = static_cast<int>(strlen(line));
+    put(c, line, (r == 0 || order == 1 ? 19 : 20) - len / 2, 9, 10);
+    if (r == 0) put(c, d->w_knight[order == 1 ? 8 : 11], 10, 11, 10);
+    dirty(0, pic::kScreenH);
+    ask = Ask::Knight;
+    screen = Screen::YesNo;
+    text::build(menu, "", r == 0 ? d->w_knight[9] : d->w_knight[0]);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
+bool knight_yes_no(Ask what, char k, pic::Canvas& c)
+{
+    if (what != Ask::Knight) return false;
+    screen = Screen::PartyMenu;
+    party::Character* ch = pt->sel();
+    if (k == 'Y' && ch && trainer) {
+        create::knight_change(*ch, trainer->tables);
+        rules::recalc(*ch, *names, d->facts);
+    }
+    end_training();
+    draw_party_menu(c);
+    return true;
+}
+
 // ---- Modify Character (the party menu) --------------------------------------------
 // A character as made (no adventures yet) can have their stats, hit points
 // and name changed within the rules (engine/create: modify_*): View
@@ -9382,7 +9635,7 @@ void draw_modify(pic::Canvas& c)
             if (changed) put(c, "*", 12, 9 + i, mod_item == i ? 13 : 10);
         }
     }
-    if (secret_files() || darkness_files()) {
+    if (secret_files() || darkness_files() || krynn()) {
         // Secret's View: the stats from row 9 (the number at column 5), the
         // hit points "95/95" at row 3, column 31; its menu "Add Subtract
         // Keep Exit" (Add / Subtract: the arrows' up / down)
@@ -9487,7 +9740,7 @@ void start_modify(pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
     if (!ch) return;
-    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files(), gateway())) {
+    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files(), gateway(), krynn())) {
         char t[60], nm[20];
         ch->name(nm, sizeof nm);
         snprintf(t, sizeof t, "%s%s", nm, rw(Data::kCantModify));
@@ -9535,7 +9788,7 @@ void modify_name(pic::Canvas& c)
 // The item a tap at (row, col) picks (-1: none)
 int modify_item_at(int row, int col)
 {
-    if (secret_files() || darkness_files() || gateway()) {
+    if (secret_files() || darkness_files() || gateway() || krynn()) {
         if (row >= 9 && row <= 14 && col >= 1 && col <= 12) return row - 9;
         if (row == 3 && col >= 20 && col <= 38) return 6;
         if (row == 1 && col >= 1 && col <= 16) return 7;
@@ -9593,7 +9846,7 @@ void pm_choose_key(char key, pic::Canvas& c)
 {
     // Gateway: a member's functions ask "Pick Character Select Exit" first
     // (its party menu overlay GAME.OVR 0x2650E +0x27E; DOSBox)
-    if (d->prof->party.pick && !pm_picked && pt->count && strchr("DMITHVR", key)) {
+    if (d->prof->party.pick && !pm_picked && pt->count && strchr(krynn() ? "DMITHVRK" : "DMITHVR", key)) {
         char prompt[20], words[16];
         ow(d->prof->party.pick, prompt, sizeof prompt);
         ow(d->prof->party.pick_menu, words, sizeof words);
@@ -9708,6 +9961,12 @@ void pm_choose_key(char key, pic::Canvas& c)
     case 'H':
         start_change(c);
         return;
+    case 'K':
+        if (krynn()) {
+            start_knight(c);
+            return;
+        }
+        break;
     case 'I':                                   // (Gateway's Icon Select)
         if (gateway() && pt->sel()) {
             start_icon(c, Screen::PartyMenu);
@@ -10059,7 +10318,7 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
     const auto& pv = d->prof->view;
     const profile::NameTable* tabs[6] = {&pv.cls, &pv.race, &pv.alignment, &pv.sex, &pv.money, &pv.health};
     char* outs[6] = {d->cls[0], d->race[0], d->alignment[0], d->sex[0], d->money[0], d->health[0]};
-    const int caps[6][2] = {{27, 18}, {10, 8}, {17, 9}, {7, 2}, {11, 7}, {13, 9}};
+    const int caps[6][2] = {{27, 18}, {16, 8}, {17, 9}, {7, 2}, {11, 7}, {13, 9}};
     uint32_t lo = 0xFFFFFFFFu, hi = 0;
     for (const profile::NameTable* nt : tabs) {
         if (!nt->at) continue;
@@ -10081,12 +10340,20 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
                     out[n] = 0;
                 }
             }
+            // (Champions: the gods' names - in the same range)
+            const uint32_t g0 = d->prof->create.god_names ? d->prof->create.ds_image + d->prof->create.god_names : 0;
+            for (int g = 0; g0 && g < 8 && g0 >= lo && g0 + (g + 1) * 12 <= hi; ++g) {
+                const uint8_t* e = buf + (g0 - lo) + g * 12;
+                const size_t n = e[0] > 11 ? 11 : e[0];
+                memcpy(d->gods[g], e + 1, n);
+                d->gods[g][n] = 0;
+            }
         }
         free(buf);
         if (secret_files()) {
             // Secret's races in its own order: put them in Curse's (the
             // record's numbers; party::race_from_secret)
-            char tmp[8][10];
+            char tmp[8][16];
             memcpy(tmp, d->race, sizeof tmp);
             for (int i = 0; i < 8; ++i) memcpy(d->race[i], tmp[party::race_to_secret(static_cast<uint8_t>(i))], sizeof tmp[0]);
         }
@@ -10094,11 +10361,24 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             // Darkness's races in its own order (0 elf ... 6 monster;
             // party::race_from_darkness) and its three coins - platinum,
             // gems, jewelry - in Curse's places 4-6
-            char tmp[8][10];
+            char tmp[8][16];
             memcpy(tmp, d->race, sizeof tmp);
             for (int i = 0; i < 8; ++i) memcpy(d->race[i], tmp[party::race_to_darkness(static_cast<uint8_t>(i))], sizeof tmp[0]);
             for (int i = 6; i >= 4; --i) memcpy(d->money[i], d->money[i - 4], sizeof d->money[0]);
             for (int i = 0; i < 4; ++i) d->money[i][0] = 0;
+        }
+        if (krynn()) {
+            // Champions' coin names (Silver, Copper, Bronze, Platinum, Steel,
+            // Gems, Jewelry) in the places party::from_krynn keeps its coins:
+            // copper, bronze (silver's), -, steel (gold's), platinum, gems,
+            // jewelry; its races stay in its own order (race_name)
+            char tmp[7][11];
+            memcpy(tmp, d->money, sizeof tmp);
+            static const int8_t kFrom[7] = {1, 2, -1, 4, 3, 5, 6};
+            for (int i = 0; i < 7; ++i) {
+                if (kFrom[i] >= 0) memcpy(d->money[i], tmp[kFrom[i]], sizeof tmp[0]);
+                else d->money[i][0] = 0;
+            }
         }
     }
     // (its files closed before the roster's words open theirs: the card
@@ -10128,6 +10408,28 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             {pp.saving, d->w_saving, sizeof d->w_saving}, {pp.camp, d->w_camp, sizeof d->w_camp},
             {pp.makes_camp, d->w_makes_camp, sizeof d->w_makes_camp},
             {d->prof->magic.heading_word, d->w_spells_word, sizeof d->w_spells_word},
+            {d->prof->variant.press_words[0], d->w_press[0], sizeof d->w_press[0]},
+            {d->prof->variant.press_words[1], d->w_press[1], sizeof d->w_press[1]},
+            {d->prof->variant.order_words[0], d->w_order[0], sizeof d->w_order[0]},
+            {d->prof->variant.order_words[1], d->w_order[1], sizeof d->w_order[1]},
+            {d->prof->variant.order_words[2], d->w_order[2], sizeof d->w_order[2]},
+            {d->prof->variant.yell_words[0], d->w_yell, sizeof d->w_yell},
+            {d->prof->variant.yell_words[1], d->w_wants, sizeof d->w_wants},
+            {d->prof->variant.burst_words[0], d->w_burst[0], sizeof d->w_burst[0]},
+            {d->prof->variant.burst_words[1], d->w_burst[1], sizeof d->w_burst[1]},
+            {d->prof->variant.burst_words[2], d->w_burst[2], sizeof d->w_burst[2]},
+            {d->prof->variant.knight_words[0], d->w_knight[0], sizeof d->w_knight[0]},
+            {d->prof->variant.knight_words[1], d->w_knight[1], sizeof d->w_knight[1]},
+            {d->prof->variant.knight_words[2], d->w_knight[2], sizeof d->w_knight[2]},
+            {d->prof->variant.knight_words[3], d->w_knight[3], sizeof d->w_knight[3]},
+            {d->prof->variant.knight_words[4], d->w_knight[4], sizeof d->w_knight[4]},
+            {d->prof->variant.knight_words[5], d->w_knight[5], sizeof d->w_knight[5]},
+            {d->prof->variant.knight_words[6], d->w_knight[6], sizeof d->w_knight[6]},
+            {d->prof->variant.knight_words[7], d->w_knight[7], sizeof d->w_knight[7]},
+            {d->prof->variant.knight_words[8], d->w_knight[8], sizeof d->w_knight[8]},
+            {d->prof->variant.knight_words[9], d->w_knight[9], sizeof d->w_knight[9]},
+            {d->prof->variant.knight_words[10], d->w_knight[10], sizeof d->w_knight[10]},
+            {d->prof->variant.knight_words[11], d->w_knight[11], sizeof d->w_knight[11]},
         };
         for (auto& wd : words)
             if (wd.at) read_word(src, wd.at, wd.out, wd.cap);
@@ -10602,6 +10904,9 @@ struct Host : ecl::Host {
         if (head == 0xFF && id >= big) {
             anim_stop();
             bigpic = id;
+            // (Champions' overland: the map the marker goes on)
+            kr_marker_lost();
+            if (kr_overland()) kr_map_pic = id;
             // Big picture: the frame with a bar at row 16, the picture inside
             layout::outer(c, d->tables, d->frame_tiles);
             layout::bar(c, d->tables, d->frame_tiles, 16);
@@ -10610,6 +10915,7 @@ struct Host : ecl::Host {
         } else if (head == 0xFF) {
             // Pool with Monsters off: no picture in the 3D areas (the view stays)
             if (!monster_pics_on() && !pool_overland()) return;
+            kr_marker_lost();
             // (Pool's wilderness: the 3D view's frame drawn over the map first)
             if (pool_overland()) layout::box(c, d->tables, d->frame_tiles, 2, 2, 14, 14);
             c.fill(24, 24, 88, 88, 0);
@@ -10889,6 +11195,9 @@ void begin_wait(pic::Canvas& c)
         int at[text::kMaxItems + 1] = {}, until[text::kMaxItems + 1] = {};
         for (int i = 0; i < vm->items() && o + 2 < sizeof menu_text; ++i) {
             const char* it = vm->item(i);
+            // (Champions: "PRESS BUTTON OR RETURN TO CONTINUE." alone shows
+            // as its program's "PRESS <ENTER>/<RETURN> TO CONTINUE")
+            if (vm->items() == 1 && d->w_press[0][0] && strcmp(it, d->w_press[0]) == 0) it = d->w_press[1];
             if (i) menu_text[o++] = ' ';
             if (i <= text::kMaxItems) at[i] = static_cast<int>(o);
             for (int k = 0; it[k] && o + 1 < sizeof menu_text; ++k) {
@@ -11087,6 +11396,27 @@ bool do_move()
         after_move_redraw();
         return true;
     }
+    if (kr_overland()) {
+        // Champions' overland (GAME.OVR ovl 0x92 +0x8D5): the square before
+        // the step in 0x4BF0 / 0x4BF1, eight directions (DS 0x1ED6 / 0x1EDF),
+        // held to 0-37 / 0-14, twelve hours a step (clock slot 3), the marker
+        // moved
+        static const int8_t kDx[8] = {0, 1, 1, 1, 0, -1, -1, -1}, kDy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
+        const int x = vm->get(0x4BC3) & 0xFF, y = vm->get(0x4BC4) & 0xFF;
+        vm->set(0x4BF0, static_cast<uint16_t>(x));
+        vm->set(0x4BF1, static_cast<uint16_t>(y));
+        if (vm->get(0x7EC9) < 0xFF) {
+            int nx = x + kDx[step_dir & 7], ny = y + kDy[step_dir & 7];
+            nx = nx < 0 ? 0 : nx > 37 ? 37 : nx;
+            ny = ny < 0 ? 0 : ny > 14 ? 14 : ny;
+            vm->set(0x4BC3, static_cast<uint16_t>(nx));
+            vm->set(0x4BC4, static_cast<uint16_t>(ny));
+            vm->advance_clock(3, 12);
+        }
+        vm->set(0x7EC9, 0);
+        kr_marker(*cv, true);
+        return true;
+    }
     if (pool_overland()) {
         if (vm->get(0x7EC9) < 0xFF && ov_load()) ov_step();
         vm->set(0x7EC9, 0);
@@ -11271,7 +11601,7 @@ void handle(ecl::Stop r)
         look_pending = false;
         vm->set(0x7ECA, look_search);
     }
-    if (!vm->get(0x4BE6) && !pool_overland() && !dk_overland() && !gw_wild()) {
+    if (!vm->get(0x4BE6) && !pool_overland() && !marker_overland() && !gw_wild()) {
         // Outdoors the scripts run the show: go round again, unless nothing
         // happened (a script with nothing to do would spin forever)
         if (++idle_cycles < 3) {
@@ -11298,7 +11628,7 @@ void step(int dir_of_step)
         const ecl::GameState& g = d->gs;
         const int nx = g.x + geo::dx(dir_of_step), ny = g.y + geo::dy(dir_of_step);
         const bool off = nx < 0 || nx > 15 || ny < 0 || ny > 15;
-        vm->set(0x7ED5, d->map.loaded && off && !pool_overland() && !dk_overland() &&
+        vm->set(0x7ED5, d->map.loaded && off && !pool_overland() && !marker_overland() &&
                             way(g.x, g.y, dir_of_step) != 0
                             ? 1 : 0);
     }
@@ -13575,7 +13905,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     }
     d->world.frame = &d->frame_tiles;
     d->world.per_set = d->prof->variant.per_set_walls;
-    text::set_hanging_space(gateway());
+    text::set_hanging_space(gateway() || krynn());          // (Champions too - DOSBox)
     open_sky();
     open_names();
 
@@ -13604,6 +13934,8 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     gs.y = 13;
     gs.dir = 0;
     vm->set(0x7F12, gs.game_area);
+    if (d->prof->variant.krynn)             // (Champions: a new game's moons all at phase 2 - GAME.OVR 0x104AB)
+        for (uint16_t w = 0x4CF9; w <= 0x4CFB; ++w) vm->set(w, 2);
     if (d->prof->variant.tr) {
         // Treasures' game block as its start sets it (ovl 0x87 +0x54E): the
         // difficulty 3, in 3D, the text green, BACK1 block 3 ...
@@ -13742,6 +14074,24 @@ bool act(Act a, pic::Canvas& c)
     }
     if (then != Then::Idle) return false;
     ecl::GameState& g = d->gs;
+    if (kr_overland()) {
+        // Champions' overland: the arrow keys step that way (DOSBox: Right a
+        // square east); the pad's turn keys the diagonals ahead (7 north-west,
+        // 9 north-east - SPEC 12)
+        int dir = -1;
+        switch (a) {
+        case Act::Forward:    dir = 0; break;
+        case Act::TurnRight:  dir = 1; break;
+        case Act::StepRight:  dir = 2; break;
+        case Act::TurnAround: dir = 4; break;
+        case Act::StepLeft:   dir = 6; break;
+        case Act::TurnLeft:   dir = 7; break;
+        default: return false;
+        }
+        g.dir = static_cast<uint8_t>(dir);
+        step(dir);
+        return true;
+    }
     if (dk_overland()) {
         // Darkness's overland: eight directions - a turn is 45 degrees (its
         // move mode: up a step, down a turn round)
@@ -14449,7 +14799,7 @@ void tap(int x, int y, pic::Canvas& c)
         return;
     }
     // The exploring menu: Area Cast View Encamp Search Look (Secret: Move first)
-    if (y >= text::kMenuTapTop && (vm->get(0x4BE6) || pool_overland() || dk_overland() || gw_wild())) {
+    if (y >= text::kMenuTapTop && (vm->get(0x4BE6) || pool_overland() || marker_overland() || gw_wild())) {
         const char k = text::key(menu, text::hit(menu, col));
         if (moving || (k == 'M' && move_menu())) {
             if (moving && k != 'E') return;
@@ -14790,7 +15140,7 @@ bool back(pic::Canvas& c)
         const Ask what = ask;
         ask = Ask::None;
         if (view_yes_no(what, 'N', c) || items_yes_no(what, 'N', c) || shop_yes_no(what, 'N', c) ||
-            train_yes_no(what, 'N', c) ||
+            train_yes_no(what, 'N', c) || knight_yes_no(what, 'N', c) ||
             magic_yes_no(what, 'N', c) || alter_yes_no(what, 'N', c))
             return true;
         ask = what;

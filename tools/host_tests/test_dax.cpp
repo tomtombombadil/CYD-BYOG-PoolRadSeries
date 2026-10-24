@@ -4142,6 +4142,26 @@ static void test_items()
         vd.advance_clock(5, 24);
         CHECK(vd.get(0x4BCC) == 2 && hd.aged == 3);
     }
+    // Champions: a day passing steps the moons - each counter up, or at
+    // 8 / 1 / 6 back to 0 with the phase on (3 back to 0)
+    const profile::Profile* ck = profile::find(games::Game::ChampionsOfKrynn, 61607, 65568);
+    CHECK(ck && ck->ecl_ops);
+    if (ck && ck->ecl_ops) {
+        ecl::GameState gk;
+        TestHost hk;
+        ecl::Vm vk(gk, hk, *ck->ecl_ops);
+        for (int m = 0; m < 3; ++m) vk.set(static_cast<uint16_t>(0x4CF9 + m), 2);
+        vk.advance_clock(3, 23);                      // (no day yet)
+        CHECK(vk.get(0x4CFC) == 0 && vk.get(0x4CFD) == 0);
+        vk.advance_clock(3, 1);                       // day 1: every counter 1
+        CHECK(vk.get(0x4CFC) == 1 && vk.get(0x4CFD) == 1 && vk.get(0x4CFE) == 1 && vk.get(0x4CFA) == 2);
+        vk.advance_clock(3, 24);                      // day 2: red's counter was 1 - its phase on
+        CHECK(vk.get(0x4CFA) == 3 && vk.get(0x4CFD) == 0 && vk.get(0x4CFC) == 2);
+        vk.advance_clock(3, 48);                      // days 3, 4: red 3 -> 0
+        CHECK(vk.get(0x4CFA) == 0 && vk.get(0x4CF9) == 2);
+        vk.advance_clock(3, 24 * 5);                  // days 5-9: white's counter reaches 8, then on
+        CHECK(vk.get(0x4CF9) == 3 && vk.get(0x4CFC) == 0 && vk.get(0x4CFB) == 3);
+    }
 }
 
 // Darkness's table shapes (darkness_facts.md 37): THAC0 rows of 22, saves

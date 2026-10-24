@@ -45,7 +45,10 @@ enum ClassId {
 int races(int* out, int cap, bool secret = false);
 // The classes a race allows, the alignments a class allows (from the tables)
 int classes_for(const classes::Tables& t, int race, int* out, int cap);
-int alignments_for(const classes::Tables& t, int cls, int* out, int cap);
+// (Champions: its class masks and the god's - god_mask, GAME.OVR 0x21371)
+int alignments_for(const classes::Tables& t, int cls, int* out, int cap, int god_mask = 0xFF);
+// The race the tables' rows go by (Champions: classes::kKrynnRace + its own)
+int race_code(const party::Character& c, const classes::Tables& t);
 
 // Per-game facts that aren't tables (affect ids, spell ids, starting
 // values) - from the profile
@@ -73,13 +76,34 @@ struct Facts {
     // platinum (0: the game's own - Curse's 25,000 and 300)
     uint32_t start_xp = 0;
     uint16_t platinum = 0;
+    // Champions: a kender's second effect (fearless) and a new cleric's
+    // spells (DS: a list from its second byte, 0 ends)
+    uint8_t  kender_fear = 0;
+    uint8_t  cleric_first[10] = {};
+    // Champions: the least stats for the Order of the Sword / Rose (DS)
+    uint8_t  knight_mins[2][6] = {};
 };
 
 // Starts a character: race, sex, class, alignment chosen. Sets the
 // record's defaults, the race's and class's effects, experience, levels,
 // THAC0 / saves / thief skills for level 1, the age. Then roll().
+// (Champions: god = the cleric's god, 1-7, 0 for none - Pick God)
 void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, int race, int sex, int cls,
-           int alignment);
+           int alignment, int god = 0);
+// Champions' gods a new cleric of this race may pick (1-7; dwarves Reorx
+// only - GAME.OVR 0x211B2) and the alignments the god allows (bit i: the
+// i-th of the six - 0x21371)
+int gods_for(const classes::Tables& t, int race, int* out, int cap);
+int god_alignments(int god);
+// Champions' Knight Change Classes (GAME.OVR 0x25A1D): a knight's petition
+// to the next order - 0 may become, 1 too inexperienced (Sword: 3rd level
+// and the Sword's 3rd level experience; Rose: 4th and the Rose's 4th), 2
+// doesn't qualify (a stat under the order's least), -1 none to go to
+int knight_petition(const party::Character& c, const classes::Tables& t, const Facts& f);
+// ... and the change (0x25888): below the new order's experience for the
+// level a level is lost (the rolled hit points' share, and the
+// Constitution figure, off the maximum), then the next order
+void knight_change(party::Character& c, const classes::Tables& t);
 
 // Rolls the stats (best of six 3d6 + 1 each, the age's effects, the race's
 // and sex's limits, the class's minimums, exceptional strength), hit
@@ -163,7 +187,9 @@ void change_class(party::Character& c, const classes::Tables& t, const Facts& f,
 // Pool (pool = true; poolrad_create_facts.md 5): experience 0 only.
 // Darkness (dk; GAME.OVR 0x1675F): experience exactly 1,500,001, 750,000 or
 // 500,000 (its former class not looked at).
-bool can_modify(const party::Character& c, bool pool = false, bool secret = false, bool dk = false, bool gw = false);
+// (gw: Gateway's; krynn: Champions' - its starting experience figures, GAME.OVR 0x22B1A)
+bool can_modify(const party::Character& c, bool pool = false, bool secret = false, bool dk = false, bool gw = false,
+                bool krynn = false);
 // A stat (0 Str ... 5 Cha) a step up (dir > 0) or down: within the race's
 // and sex's limits, down no lower than the class's minimums; a fighter,
 // ranger or paladin at Strength 18 goes on into 18/01 ... 18/00 (and back

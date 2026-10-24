@@ -73,10 +73,44 @@ int held(const party::Character& c, const classes::Tables& t, int cls, int level
     return n;
 }
 
+namespace {
+int g_moons[3] = {};
+}
+
+void set_moons(int white, int red, int black)
+{
+    g_moons[0] = white;
+    g_moons[1] = red;
+    g_moons[2] = black;
+}
+
+int moon(int i) { return i >= 0 && i < 3 ? g_moons[i] : 0; }
+
+int moon_bonus(const party::Character& c, const classes::Tables& t)
+{
+    // (Champions' memorizing, GAME.OVR 0x1B31A: a mage's moon - the robe's
+    // - one phase from full gives 1 more spell, full 2, among levels 1-5;
+    // what is already over the slots there is taken from it, all of it
+    // when more)
+    if (!t.lay.krynn || c.level(classes::MagicUser) <= 0) return 0;
+    const int robe = c.ext[party::kExtRobe];
+    if (robe < 1 || robe > 3) return 0;
+    const int ph = g_moons[robe - 1];
+    int bonus = ph == 1 ? 1 : ph == 2 ? 2 : 0;
+    for (int lv = 1; lv <= 5 && bonus > 0; ++lv) {
+        const int over = held(c, t, MagicUser, lv) - cast_count(c, t, MagicUser, lv);
+        if (over <= 0) continue;
+        bonus = over > bonus ? 0 : bonus - over;
+    }
+    return bonus;
+}
+
 int room(const party::Character& c, const classes::Tables& t, int cls, int level)
 {
-    const int r = cast_count(c, t, cls, level) - held(c, t, cls, level);
-    return r > 0 ? r : 0;
+    int r = cast_count(c, t, cls, level) - held(c, t, cls, level);
+    if (r < 0) r = 0;
+    if (cls == MagicUser && level <= 5 && cast_count(c, t, cls, level) > 0) r += moon_bonus(c, t);
+    return r;
 }
 
 bool any_room(const party::Character& c, const classes::Tables& t)
