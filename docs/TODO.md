@@ -167,6 +167,16 @@ the Project as claude/TODO.md.
       shops / temple, its sound effects (the SSI driver in START.EXE, as
       Secret's). Open: the title music (SOUND.DAX / MIDI.DAX, not played);
       an in-game effect not yet compared with DOSBox.
+- [x] v0.151.0: the journal viewer (Column / Whole, Turn for maps,
+      pieces at their own widths - Treasures' introduction; the book a
+      column at a time; grey print to black, paper threshold 232, cubic
+      scaling; GOG map entries from the Companion's JE pictures when
+      there; a Rescan remakes JOURNAL.DAT) and the party menu box
+      (v0.150.0) from the list below. Tom: check Treasures' map J1.
+- [ ] Secret J45's piece takes in the "Journal Entry 47" heading (the
+      map overlaps it; a rectangle can't separate them).
+- [ ] Check: pdfview's State (FileSource cache, >4 KB) lands in PSRAM on
+      the S3 - its card reads must go through the internal bounce.
 - [ ] Tom's tests 2026-10-24 (12:14): Treasures' party menu shows no
       highlighted character (View then shows whom?); the C5's sound still
       distorted, harsh, like static (v0.145.1's fix didn't cure it); the
