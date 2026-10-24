@@ -152,7 +152,11 @@ the Project as claude/TODO.md.
       menus start on their last word - start on the first.
       All games: a "Loading..." screen after Play (starts are slow); the
       creation questions (Reroll Stats? Yes / No) put the highlight back
-      on each Select - keep it where it was.
+      on each Select - keep it where it was. Tom (2026-10-24, 06:21): the
+      highlight rules are for ALL games - a white background round the
+      whole word, menus starting on the first word, the highlight staying
+      where it was after Select - unless decided otherwise earlier for a
+      case. (Branch ui-fixes.)
 - [ ] Krynn (survey 2026-10-24, the Project's claude/krynn_facts.md):
       Champions = Secret's engine (port started, branch champions); Death
       Knights = Darkness's engine at 4 bits (LOAD FILES / PIECES 3
