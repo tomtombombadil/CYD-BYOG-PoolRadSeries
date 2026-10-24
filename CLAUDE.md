@@ -41,8 +41,9 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   palette programming (checked pixel for pixel in DOSBox, v0.118.0:
   Darkness with POOL4.CFG's graphics line E; `pic::draw_vga_block`) - the
   engine does what the original's EGA mode does (facts from the player's
-  EGA.DRV / program, never copied). Unlimited Adventures: NOT on the
-  classic boards. **Dark Queen** (Tom, 2026-10-12: "not completely wipe
+  EGA.DRV / program, never copied). Unlimited Adventures: on NO board
+  (Tom, 2026-10-24) - its folder is passed over by the scan and an old
+  scan's library entry dropped (`library.cpp`). **Dark Queen** (Tom, 2026-10-12: "not completely wipe
   Dark Queen off the basic CYD builds just yet"): it has an EGA choice
   at install - try it there in its EGA mode when we get to it. **ESP32-S3
   and ESP32-C5 boards with PSRAM are added (v0.88.0)**: the 4.0" ST7796

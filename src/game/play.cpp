@@ -1275,7 +1275,9 @@ bool gw_trainable(const party::Character& ch)
     return false;
 }
 
-void draw_party(pic::Canvas& c, int col, bool mark_sel = true)
+// box: the selected member in the engine's white box (the party menu's
+// list - CYD_MENU_HIGHLIGHT), else in white letters as the originals
+void draw_party(pic::Canvas& c, int col, bool mark_sel = true, bool box = false)
 {
     c.fill(col * 8, 2 * 8, (39 - col) * 8, 8, 0);      // (a "no party yet" line goes)
     put(c, d->name_head, col, 2, 15);
@@ -1286,8 +1288,10 @@ void draw_party(pic::Canvas& c, int col, bool mark_sel = true)
         c.fill(col * 8, row * 8, (39 - col) * 8, 8, 0);
         char t[24];
         ch.name(t, sizeof t);
-        const uint8_t fg = i == pt->selected && mark_sel ? 15 : !ch.in_combat() ? 12 : ch.enemy() ? 14 : gw_trainable(ch) ? 13 : 11;
-        put(c, t, col, row, fg);
+        const bool sel = i == pt->selected && mark_sel;
+        const uint8_t fg = sel ? 15 : !ch.in_combat() ? 12 : ch.enemy() ? 14 : gw_trainable(ch) ? 13 : 11;
+        if (sel && box) hl_text(c, t, col, row);
+        else put(c, t, col, row, fg);
         const int ac = ch.ac_raw();
         const int aw = ac <= 0x32 ? 1 : ac <= 0x3C ? 2 : ac <= 0x45 ? 1 : 0;
         snprintf(t, sizeof t, "%s%d", ac > 60 ? "-" : "", ac > 60 ? ac - 60 : 60 - ac);
@@ -1830,9 +1834,10 @@ void draw_party_menu(pic::Canvas& c)
     krynn_moons();
     layout::outer(c, d->tables, d->frame_tiles);
     // (Treasures: no member marked on its party menu, its menu's line white
-    // - DOSBox)
+    // - DOSBox; the engine marks the selected one in every game, Tom
+    // 2026-10-24 - CYD_MENU_HIGHLIGHT)
     const bool tr = d->prof->variant.tr;
-    if (pt->count) draw_party(c, 1, !tr);
+    if (pt->count) draw_party(c, 1, !tr || CYD_MENU_HIGHLIGHT, CYD_MENU_HIGHLIGHT);
     bool on[Data::kItems];
     pm_flags(on);
     pm_lines = 0;
@@ -1851,8 +1856,10 @@ void draw_party_menu(pic::Canvas& c)
         pm_item[pm_lines++] = i;
     }
     if (pm_sel >= pm_lines) pm_sel = pm_lines ? pm_lines - 1 : 0;
-    if (keys_used && pm_lines) {
+    if ((keys_used || (tr && CYD_MENU_HIGHLIGHT)) && pm_lines) {
         // the cursor keys' line, highlighted as the games' lists are
+        // (Treasures shows its line from the start - DOSBox - in the
+        // engine's white box, CYD_MENU_HIGHLIGHT)
         const char* it = d->item[pm_item[pm_sel]];
         hl_text(c, it, col0, pm_row0() + pm_sel);
     }

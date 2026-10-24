@@ -144,8 +144,13 @@ bool out_open()
 #else
     i2s_pdm_tx_config_t pc = {};
     pc.clk_cfg = I2S_PDM_TX_CLK_DAC_DEFAULT_CONFIG(kAudioHz);
+    // (v0.149.1, Tom's C5: still "distorted ... more like static" after the
+    // line stayed at the middle - the DAC default's up-sampling fs is rate /
+    // 100, 220 for 22,050 Hz (truncated); fs 480 is the other setting the
+    // driver allows for any rate)
+    pc.clk_cfg.up_sample_fs = 480;
     pc.slot_cfg = I2S_PDM_TX_SLOT_DAC_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
-    pc.slot_cfg.hp_en = false;                      // (the ramps to and from 0 V must stay)
+    pc.slot_cfg.hp_en = true;                       // (the line stays at the middle now: no ramps to keep)
     pc.gpio_cfg.clk = I2S_GPIO_UNUSED;
     pc.gpio_cfg.dout = static_cast<gpio_num_t>(BOARD_PIN_SPEAKER);
 #if SOC_I2S_PDM_MAX_TX_LINES > 1
@@ -168,7 +173,14 @@ bool out_enable()
 }
 void out_write(const uint8_t* buf, int n)
 {
-    for (int i = 0; i < n; ++i) wide[i] = static_cast<int16_t>((static_cast<int>(buf[i]) - 128) * 256);
+#if defined(BOARD_AUDIO_PDM)
+    // (the PDM modulator overloads - noise, "like static" - near full scale:
+    // a quarter of it, the volume key then working below that)
+    constexpr int kScale = 64;
+#else
+    constexpr int kScale = 256;
+#endif
+    for (int i = 0; i < n; ++i) wide[i] = static_cast<int16_t>((static_cast<int>(buf[i]) - 128) * kScale);
     size_t done = 0;
     i2s_channel_write(h, wide, n * sizeof(int16_t), &done, portMAX_DELAY);
 }

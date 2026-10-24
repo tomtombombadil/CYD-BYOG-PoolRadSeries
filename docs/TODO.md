@@ -167,6 +167,36 @@ the Project as claude/TODO.md.
       shops / temple, its sound effects (the SSI driver in START.EXE, as
       Secret's). Open: the title music (SOUND.DAX / MIDI.DAX, not played);
       an in-game effect not yet compared with DOSBox.
+- [ ] Tom's tests 2026-10-24 (12:14): Treasures' party menu shows no
+      highlighted character (View then shows whom?); the C5's sound still
+      distorted, harsh, like static (v0.145.1's fix didn't cure it); the
+      Treasures introduction entry in two pictures - the full-width first
+      paragraph, then the rest ("Dear Friends...") at one column's width;
+      the journal viewer for ALL games: scans are whole facing pages - cut
+      into columns (two a page), default one column wide, Whole for maps,
+      no "Full Size", a 90-degree turn for map entries filling the screen;
+      Treasures' first map illegible - clean it up (Tom: replace its text
+      with readable font text - not allowed: the journal's text can't be
+      shipped; cleaned-up picture / the Companion's own pictures instead);
+      Settings' Volume as one key: tap left -, right +, 5% steps, the small
+      "Volume" label, the percentage between - and +, a mute symbol at 0.
+- [x] v0.149.1 (Tom, 2026-10-24 12:41: C5 sound fixed in every playable
+      game): the C5's Curse / Secret sounds were also distorted - the
+      output (PDM up-sampling / quarter scale).
+- [ ] Tom (2026-10-24 12:57): review in testing - the exploring / camp
+      panels keep the originals' white name for the selected member (the
+      party menu has the white box since v0.150.0); box them too?
+- [ ] Tom (2026-10-24, 12:21; 12:34 Settings: one Game Sound key naming
+      the mode, tap to change - Tandy / PC Speaker / Darkness / Gateway /
+      Treasures by what's on the card; in those three games just the game;
+      Volume -/+ wider, half-width Mute toggle - done v0.150.0; the game
+      modes play Tandy until the recordings are wired). Tom's idea:
+      the later games' better sounds on the early games - Claude's plan: a
+      Game Sound choice "Recorded" that plays the player's own Pools of
+      Darkness (or Treasures / Gateway) ZOUNDS.DAX samples for Curse, Pool,
+      Secret and Champions' effects, when one of those games is on the card
+      (effect numbers already mapped as Darkness's; the player's files read
+      at run time, nothing shipped).
 - [ ] Krynn (survey 2026-10-24, the Project's claude/krynn_facts.md):
       Champions = Secret's engine (port started, branch champions); Death
       Knights = Darkness's engine at 4 bits (LOAD FILES / PIECES 3
