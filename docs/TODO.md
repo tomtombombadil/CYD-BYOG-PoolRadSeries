@@ -186,7 +186,8 @@ the Project as claude/TODO.md.
 - [ ] Tom (2026-10-24, 12:21; 12:34 Settings: one Game Sound key naming
       the mode, tap to change - Tandy / PC Speaker / Darkness / Gateway /
       Treasures by what's on the card; in those three games just the game;
-      Volume -/+ wider, half-width Mute toggle - agent ui-small). Tom's idea:
+      Volume -/+ wider, half-width Mute toggle - done v0.150.0; the game
+      modes play Tandy until the recordings are wired). Tom's idea:
       the later games' better sounds on the early games - Claude's plan: a
       Game Sound choice "Recorded" that plays the player's own Pools of
       Darkness (or Treasures / Gateway) ZOUNDS.DAX samples for Curse, Pool,
