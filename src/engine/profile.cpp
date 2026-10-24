@@ -2516,7 +2516,25 @@ const Profile kProfiles[] = {
      // darts 5), the ITEMS type file without a head
      .items = {.words = {0xF4DF, 21, 125}, .types_file = "ITEMS", .arrow = 30, .quarrel = 12, .dart = 5,
                .types_head = 0},
-     .create = {},
+     // Character rules (deathknights_facts.md 4): Champions' tables at Death
+     // Knights' places with its own extents (classes::Layout dkk: levels to
+     // 18, 115 spells in Secret's shape, 204-byte class records in 11 rows,
+     // the paladins' / rangers' slots tables, its race x class limits) - the
+     // code reading them: GAME.OVR ovl 0xE5 (slots, saves, thief skills,
+     // THAC0), ovl 0x61 (training)
+     .create = {.ds_image = 0xBCE0,
+                .tables = {.lo = 0x6A7F, .hi = 0x830C, .spells = 0x6A7F, .spell_count = 115, .thac0 = 0x71F2,
+                           .class_flags = 0x728A, .class_masks = 0x7293, .max_hit_dice = 0x72A4, .thief_base = 0x72AB,
+                           .thief_race = 0x7343, .thief_dex = 0x734E, .stat_limits = 0x73B3, .race_classes = 0x7423,
+                           .race_ages = 0x748C, .age_brackets = 0x756C, .class_min = 0x75B2,
+                           .class_alignments = 0x7618, .class_records = 0x7638, .saves = 0x7F0F, .pool = false,
+                           .money_dice = 0, .lo2 = 0x0584, .hi2 = 0x058A, .krynn = true, .cleric_lists = 0x81D9,
+                           .dkk = true, .paladin_slots = 0x7E6B, .ranger_slots = 0x7B3B, .race_caps = 0x82D4},
+                .hp_count = 0x0656, .hp_dice = 0x065E, .icon_colours = 0x72AE,
+                .pick_race = kP | 0xCF60, .pick_gender = kP | 0xCF6B, .pick_class = kP | 0xCF80,
+                .pick_alignment = kP | 0xCF96, .select = kP | 0xEEB6, .reroll = kP | 0xCFAB, .char_name = kP | 0xCFC0,
+                .save_q = kP | 0xCFD5, .qmark = kP | 0xD339, .change_select = kP | 0xEEB6, .cleric_first = 0x81E3,
+                .pick_god = kP | 0xCF8B, .god_names = 0x0BAC, .knight_mins = 0x05A4},
      .item_words = {},
      .shop_words = {},
      .cures = {},

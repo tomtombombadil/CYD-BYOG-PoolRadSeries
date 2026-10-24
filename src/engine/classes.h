@@ -89,6 +89,18 @@ struct Layout {
     // spell level 1-4 it has slots for, the list at this + level x 10
     // (from the 2nd byte, 10 at most, 0 ends)
     uint16_t cleric_lists = 0;
+    // Death Knights of Krynn's (deathknights_facts.md 4; set with krynn,
+    // whose race tables and rules it keeps unless these say otherwise):
+    // levels to 18 - THAC0 [class][19 levels 0-18], saves + class * 90 +
+    // level * 5 (Secret's), class records of 204 bytes (u32 experience by the
+    // level reached at + level x 4, levels 2-14; the slots gained at + 0x3C +
+    // level x 8 + spell level - 1, eight a level), 11 rows (xp_row: a
+    // paladin's 10), 115 spells in Secret's shape and codes, the cleric lists
+    // for spell levels 1-7, the paladins' and rangers' slots gained in tables
+    // of their own (+ level x 8 + spell level), and its level limits by race
+    // and class (+ its race x 8 + class: training stops at that level)
+    bool     dkk = false;
+    uint16_t paladin_slots = 0, ranger_slots = 0, race_caps = 0;
 };
 
 // Champions: a race in creation's lists (the Curse number can't tell its two
@@ -120,12 +132,12 @@ public:
 
     // The highest level the tables have (Curse 12, Pool 9, Secret 18; THAC0
     // one more row in Pool)
-    int  top_level() const { return lay.dk ? 40 : lay.pool ? 9 : lay.secret ? 18 : 12; }
+    int  top_level() const { return lay.dk ? 40 : lay.pool ? 9 : lay.secret || lay.dkk ? 18 : 12; }
     // Classes with rows in the tables (Secret has no monk's)
     int  classes() const { return lay.secret ? 7 : kClasses; }
     int  thac0(int cls, int level) const
     {
-        const int n = lay.dk ? 22 : lay.pool ? 11 : lay.secret ? 19 : 13;
+        const int n = lay.dk ? 22 : lay.pool ? 11 : lay.secret || lay.dkk ? 19 : 13;
         if (cls >= classes()) return 0;
         if (level > n - 1) level = n - 1;
         return s8(static_cast<uint16_t>(lay.thac0 + cls * n + level));
@@ -139,11 +151,13 @@ public:
         if (cls >= classes()) return 20;
         if (lay.dk) return u8(static_cast<uint16_t>(lay.saves + cls * 105 + (level > 21 ? 21 : level) * 5 + kind));
         if (level > top_level()) level = top_level();
-        return u8(static_cast<uint16_t>(lay.saves + cls * (lay.pool ? 45 : lay.secret ? 90 : 60) + level * 5 + kind));
+        return u8(static_cast<uint16_t>(lay.saves + cls * (lay.pool ? 45 : lay.secret || lay.dkk ? 90 : 60) + level * 5 +
+                                        kind));
     }
-    int  record_size() const { return lay.dk ? 301 : lay.pool ? 56 : lay.secret ? 187 : 99; }
-    // Spell levels a class record's slot rows have (Curse 5, Secret 7, Darkness 9)
-    int  slot_levels() const { return lay.dk ? 9 : lay.secret ? 7 : 5; }
+    int  record_size() const { return lay.dk ? 301 : lay.pool ? 56 : lay.secret ? 187 : lay.dkk ? 204 : 99; }
+    // Spell levels a class record's slot rows have (Curse 5, Secret 7, Death
+    // Knights 8, Darkness 9)
+    int  slot_levels() const { return lay.dk ? 9 : lay.secret ? 7 : lay.dkk ? 8 : 5; }
     // Darkness: the slots of spell level `sl` (1-9) a class has in all at `level`
     int  slots_at(int cls, int level, int sl) const
     {
@@ -155,6 +169,10 @@ public:
     // (Champions: cls is its row - xp_row)
     int  slots_gained(int cls, int level, int col) const
     {
+        if (lay.dkk)
+            return cls < 11 && level >= 2 && level <= 17
+                       ? u8(static_cast<uint16_t>(lay.class_records + cls * 204 + 0x3C + level * 8 + col))
+                       : 0;
         if (cls >= (lay.krynn ? 10 : classes())) return 0;
         return u8(static_cast<uint16_t>(lay.class_records + cls * record_size() + (top_level() - 1) * 4 +
                                         (level - 2) * slot_levels() + col));
@@ -176,13 +194,15 @@ public:
     // for this character - a cleric's by its god (Paladine ... Mishakal 0,
     // the others 1), fighter 2, a knight's by the order (Crown 3, Sword 4,
     // Rose 5), ranger 6, a magic-user's by the robe (White 7, else 8), thief
-    // 9 (the others: the class); not Champions: the class
+    // 9 (the others: the class); not Champions: the class. (Death Knights,
+    // its GAME.OVR ovl 0xCF +0x382C: the same, a paladin 10)
     int  xp_row(const party::Character* c, int cls) const
     {
         if (!lay.krynn || !c) return cls;
         switch (cls) {
         case 0: return c->ext[party::kExtGod] <= 4 ? 0 : 1;
         case 2: return 2;
+        case 3: return lay.dkk ? 10 : 3;
         case 7: return c->ext[party::kExtKnight] == 2 ? 4 : c->ext[party::kExtKnight] == 3 ? 5 : 3;
         case 4: return 6;
         case 5: return c->ext[party::kExtRobe] == 1 ? 7 : 8;
@@ -199,6 +219,12 @@ public:
     }
     int32_t exp_needed(int cls, int level, bool row = false) const
     {
+        if (lay.dkk) {
+            // (its training, ovl 0x61 +0x44B0: the row's value at the level
+            // reached - none past 14th; 0 or less: no more)
+            if (level < 1 || level + 1 > 14 || cls >= (row ? 11 : classes())) return -1;
+            return i32(static_cast<uint16_t>(lay.class_records + cls * 204 + (level + 1) * 4));
+        }
         if (level < 1 || level > top_level() - 1 || cls >= (row && lay.krynn ? 10 : classes())) return -1;
         if (lay.dk) {
             // (Darkness, ovr 0x39349: the table to 11th level, then steps)
@@ -212,12 +238,15 @@ public:
     // 0 cleric, 1 druid, 2 magic-user, 3 the items' and monsters' (Pool's numbers moved to these)
     // (Secret's rows start with a byte of their own: Curse's 15 follow; its
     // class codes 0 cleric, 1 druid, 3 magic-user, 4 the items' and monsters')
-    uint16_t spell_row(int spell) const { return static_cast<uint16_t>(lay.spells + spell * 16 + (lay.secret ? 1 : 0)); }
+    uint16_t spell_row(int spell) const
+    {
+        return static_cast<uint16_t>(lay.spells + spell * 16 + (lay.secret || lay.dkk ? 1 : 0));
+    }
     int  spell_class(int spell) const
     {
         const int v = u8(spell_row(spell));
         if (lay.dk) return v;               // (Darkness's own codes are these)
-        if (lay.secret) return v >= 3 ? v - 1 : v;
+        if (lay.secret || lay.dkk) return v >= 3 ? v - 1 : v;
         return lay.pool && v > 0 ? v + 1 : v;
     }
     int  spell_level(int spell) const { return u8(static_cast<uint16_t>(spell_row(spell) + 1)); }

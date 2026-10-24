@@ -755,8 +755,8 @@ int main(int argc, char** argv)
                         for (int lv = 1; lv <= 9; ++lv) cmp(k == 0 ? "clslot" : k == 1 ? "drslot" : "muslot", classes::slots(o, k, lv), classes::slots(*cc, k, lv));
                     for (int sp = 1; sp <= 126; ++sp) { char bw[16]; snprintf(bw, sizeof bw, "book%d", sp); cmp(bw, classes::in_book(o, sp), classes::in_book(*cc, sp)); }
                     printf("  rules %d %s:%s\n", i, nm, diffs.empty() ? " all the same" : diffs.c_str());
-                    for (int cls = 0; cls < 7; ++cls)
-                        if (o.level(cls) > 0) printf("    class %d level %d: next at %d (has %u)\n", cls, o.level(cls), (int)mr->tables.exp_needed(cls, o.level(cls)), (unsigned)o.exp());
+                    for (int cls = 0; cls < 8; ++cls)
+                        if (o.level(cls) > 0) printf("    class %d level %d: next at %d (has %u)\n", cls, o.level(cls), (int)mr->tables.exp_needed(cls, o.level(cls), &o), (unsigned)o.exp());
                     delete cc;
                 }
             delete mr;

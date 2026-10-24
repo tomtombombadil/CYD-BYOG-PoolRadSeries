@@ -127,6 +127,10 @@ bool gw_race_limited(const party::Character& c, int cls, int lvl)
 // race's limit
 static bool train_limited(const party::Character& c, const classes::Tables& t, int cls, int lvl)
 {
+    // (Death Knights, its training ovl 0x61 +0x447E: its race x class table -
+    // training goes on while the limit is above the level)
+    if (t.lay.dkk && t.lay.race_caps)
+        return t.u8(static_cast<uint16_t>(t.lay.race_caps + (c.ext[party::kExtRace] & 7) * 8 + cls)) <= lvl;
     if (t.lay.level_caps && lvl >= t.u8(static_cast<uint16_t>(t.lay.level_caps + cls))) return true;
     return race_limited(c, cls, lvl, t.lay.pool, t.lay.secret, t.lay.dk);
 }

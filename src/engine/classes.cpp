@@ -185,9 +185,9 @@ static void dk_slots(party::Character& c, const Tables& t)
 namespace {
 // Champions' cleric spells (GAME.OVR 0x3A03A): for each spell level 1-4
 // with cleric slots, the spells of that level's list
-void krynn_cleric_spells(party::Character& c, const Tables& t)
+void krynn_cleric_spells(party::Character& c, const Tables& t, int top = 4)
 {
-    for (int L = 1; L <= 4 && t.lay.cleric_lists; ++L) {
+    for (int L = 1; L <= top && t.lay.cleric_lists; ++L) {
         if (cast(c, 0, L - 1) <= 0) continue;
         for (int i = 1; i <= 10; ++i) {
             const int s = t.u8(static_cast<uint16_t>(t.lay.cleric_lists + L * 10 + i));
@@ -196,10 +196,72 @@ void krynn_cleric_spells(party::Character& c, const Tables& t)
         }
     }
 }
+// Death Knights (its GAME.OVR ovl 0xE5 +0, the cleric's part +0x71E): a
+// cleric 1 slot of 1st level (2 with a god past the fourth), the gains of
+// its row from 2nd level, the Wisdom bonus, the lists' spells of the levels
+// it has; a paladin past 8th its table's cleric slots 1-4 and their lists; a
+// knight of the Sword / Rose past 5th its order's row (1-7) and the lists; a
+// ranger past 7th its table's druid 1-4 and magic-user 1-4, and every druid
+// spell of the levels it has slots for; a magic-user 1 slot of 1st level and
+// its robe's row (1-8)
+void dkk_slots(party::Character& c, const Tables& t)
+{
+    clear_slots(c, t);
+    int lv = c.level(Cleric);
+    if (lv > 0) {
+        const int row = t.xp_row(&c, Cleric);
+        cast(c, 0, 0) = static_cast<uint8_t>(row ? 2 : 1);
+        for (int L = 2; L <= lv; ++L)
+            for (int k = 0; k < 7; ++k) cast(c, 0, k) = static_cast<uint8_t>(cast(c, 0, k) + t.slots_gained(row, L, k));
+        wisdom_spells(c);
+        krynn_cleric_spells(c, t, 7);
+    }
+    lv = c.level(Paladin);
+    if (lv > 8 && t.lay.paladin_slots) {
+        for (int L = 9; L <= lv; ++L)
+            for (int k = 0; k < 4; ++k)
+                cast(c, 0, k) = static_cast<uint8_t>(cast(c, 0, k) +
+                                                     t.u8(static_cast<uint16_t>(t.lay.paladin_slots + L * 8 + k + 1)));
+        krynn_cleric_spells(c, t, 4);
+    }
+    lv = c.level(Monk);
+    if (lv > 5 && c.ext[party::kExtKnight] != 1) {
+        const int row = c.ext[party::kExtKnight] == 2 ? 4 : 5;
+        for (int L = 6; L <= lv; ++L)
+            for (int k = 0; k < 7; ++k) cast(c, 0, k) = static_cast<uint8_t>(cast(c, 0, k) + t.slots_gained(row, L, k));
+        krynn_cleric_spells(c, t, 7);
+    }
+    lv = c.level(Ranger);
+    if (lv > 7 && t.lay.ranger_slots) {
+        for (int L = 8; L <= lv; ++L)
+            for (int k = 0; k < 8; ++k) {
+                const int v = t.u8(static_cast<uint16_t>(t.lay.ranger_slots + L * 8 + k + 1));
+                if (k < 4) cast(c, 1, k) = static_cast<uint8_t>(cast(c, 1, k) + v);
+                else cast(c, 2, k - 4) = static_cast<uint8_t>(cast(c, 2, k - 4) + v);
+            }
+        for (int s = 1; s < t.lay.spell_count; ++s) {
+            const int lvl = t.spell_level(s);
+            if (t.spell_class(s) == 1 && lvl >= 1 && lvl <= 8 && cast(c, 1, lvl - 1) > 0) learn(c, s);
+        }
+    }
+    lv = c.level(MagicUser);
+    if (lv > 0) {
+        const int row = t.xp_row(&c, MagicUser);
+        cast(c, 2, 0) = static_cast<uint8_t>(cast(c, 2, 0) + 1);
+        for (int L = 2; L <= lv; ++L)
+            for (int k = 0; k < 8; ++k) cast(c, 2, k) = static_cast<uint8_t>(cast(c, 2, k) + t.slots_gained(row, L, k));
+    }
+}
 } // namespace
 
 void spell_slots(party::Character& c, const Tables& t)
 {
+    if (t.lay.dkk) {
+        dkk_slots(c, t);
+        for (int i = 0; i < c.n_items; ++i)
+            if (c.items[i][0x34] && items::passive(c.items[i]) == items::Passive::Wizardry) wizardry(c, t, true);
+        return;
+    }
     if (t.lay.pool) {
         pool_slots(c, t);
         return;
@@ -343,7 +405,7 @@ void saving_throws(party::Character& c, const Tables& t)
         // its former level, so a knight above it (every knight: no former
         // level) takes row 7's entry for that level (level 0: 11 10 10 14
         // 11) when lower. Game Fixes: not (SPEC 12)
-        if (t.lay.krynn && !rules::fixes() && c.level(Monk) > c.old_level(Monk)) {
+        if (t.lay.krynn && !t.lay.dkk && !rules::fixes() && c.level(Monk) > c.old_level(Monk)) {
             const int v = t.save(Monk, c.old_level(Monk), kind);
             if (v < best) best = v;
         }
@@ -390,7 +452,7 @@ void thief_skills(party::Character& c, const Tables& t)
 {
     int lv = skill_level(c, Thief);
     if (lv > t.top_level()) lv = t.top_level();
-    if (t.lay.dk && lv > 18) lv = 18;           // (Darkness's table: to 18th level, ovr 0x38A11)
+    if ((t.lay.dk || t.lay.dkk) && lv > 18) lv = 18;   // (Darkness's table: to 18th level, ovr 0x38A11; Death Knights' too)
     const int dex = c.rec[kDexFull];
     // The first readied Gauntlets of Dexterity (item effect 0x82) or Gloves
     // of Thievery (0x8B; curse_finish_facts.md 5.4)
@@ -457,6 +519,8 @@ void class_bonuses(party::Character& c, const Tables& t)
         c.rec[kAttacks] = 3;
         // Secret's levels go on: 2 a round past 12th (rangers 14th) - GAME.OVR 0x3C249
         if (t.lay.secret && (c.level(Fighter) > 12 || c.level(Paladin) > 12 || c.level(Ranger) > 14)) c.rec[kAttacks] = 4;
+        // (Death Knights, ovl 0xE5 +0x570: fighters, paladins and knights past 12th; no ranger's)
+        if (t.lay.dkk && (c.level(Fighter) > 12 || c.level(Paladin) > 12 || c.level(Monk) > 12)) c.rec[kAttacks] = 4;
     }
     // Champions' gods (GAME.OVR 0x3A40A): Kiri-Jolith's clerics, and
     // Reorx's dwarves, +1 to hit
