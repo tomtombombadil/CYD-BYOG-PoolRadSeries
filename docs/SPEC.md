@@ -1912,7 +1912,8 @@ GAME=5); `variant.krynn`. Play on since 2026-10-24 (branch champions).
   monkey runs clean (knights' petitions checked too); budget fight (Throtl, AREA=2 BLOCK=34 RUNAT=8441)
   128.9 KB of 150. Sound: silent (its EA driver not surveyed).
 - **Journal**: the SNEG release's Gold Box Companion text (88 entries)
-  works through `journal::make_gbc`; the GOG PDF's table is not made yet.
+  works through `journal::make_gbc`; the GOG PDF (88 entries, 57 tavern
+  tales) has its table since branch champions-finish (section 7).
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -1971,6 +1972,19 @@ words as the introduction to your journal" (Tom, 2026-10-24) is entry
 J 0: the book's Introduction (PDF page 1's right page, page 2's left - 5
 pieces, its opening full width), listed as "Introduction"; a card scanned
 before needs Rescan for it (the entry count changed).
+2026-10-24 (branch champions-finish): **Champions of Krynn** (88 entries,
+57 tavern tales, 157 pieces; 8,017,944 bytes, /ID d589480a...). Its PDF
+(OmniPage, PDF 1.6) keeps its cross-reference table in a stream and its
+pages in object streams: `engine/pdf.*` reads both now (FlateDecode, PNG
+row predictors; an object in a stream is inflated up to its own bytes
+only, a 32 KB window while it's read). `make_table.py champions`: its
+headings ("Journal Entry N", "Tavern Tale N") are a light gold and sit
+close under the text before them, so a heading's boundary is the first
+blank row above it (`snap_heads`); the maps across a page's columns (13,
+23, 45, 72) and the pictures over a column's top set by hand; every entry
+checked by eye. Its scripts say "... JOURNAL ENTRY " / "YOU HEAR TAVERN
+TALE " with the number printed after (found as Secret's). No introduction
+is mentioned by the game (the book's letter from Mothus has no entry).
 
 v0.10.0 did this in a browser page (pdf.js) on the player's PC; Tom
 (2026-10-09) wants no PC step: since v0.12.0 the board does it.
@@ -1978,7 +1992,7 @@ v0.10.0 did this in a browser page (pdf.js) on the player's PC; Tom
 How it works (v0.12.0, Curse):
 - The card scan finds a .pdf with "journal" in its name in the game's
   folder, reads its cross-reference table and page tree (`engine/pdf.*`,
-  classic xref only) and recognises the edition by file size + the
+  classic xref tables or xref streams) and recognises the edition by file size + the
   trailer's /ID (`journal::find_table`). Curse install-folder PDF: 6779800
   bytes, /ID 36ce730a4edce39469cb5215e05df63d.
 - `engine/journal_tables.cpp` (made by `tools/journal/make_table.py`, which

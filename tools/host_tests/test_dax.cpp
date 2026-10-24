@@ -3165,6 +3165,60 @@ static Bytes make_pdf2()
     return Bytes(s.begin(), s.end());
 }
 
+// PDF 1.5 the Champions of Krynn journal's way: a cross-reference stream
+// (PNG Up rows) and the catalog, page tree and pages inside an object stream;
+// the streams zlib with one stored DEFLATE block (no compression needed)
+static std::string zstored(const std::string& d)
+{
+    std::string z = "\x78\x01";
+    z += '\x01';                                            // final, stored
+    const uint16_t n = static_cast<uint16_t>(d.size());
+    z += static_cast<char>(n & 255);
+    z += static_cast<char>(n >> 8);
+    z += static_cast<char>(~n & 255);
+    z += static_cast<char>((~n >> 8) & 255);
+    return z + d + std::string("\0\0\0\0", 4);             // (the Adler-32 isn't checked)
+}
+
+static Bytes make_pdf3()
+{
+    std::string s = "%PDF-1.5\n";
+    std::vector<size_t> off(8, 0);
+    // object stream 5: objects 1 (catalog), 2 (pages), 3 (the page)
+    const std::string o1 = "<</Type/Catalog/Pages 2 0 R>>", o2 = "<</Type/Pages/Kids[3 0 R]/Count 1>>",
+                      o3 = "<</Type/Page/Parent 2 0 R/Resources<</XObject<</Im0 4 0 R>>>>>>";
+    const std::string head = "1 0 2 " + std::to_string(o1.size() + 1) + " 3 " + std::to_string(o1.size() + o2.size() + 2) + " ";
+    const std::string body = o1 + "\n" + o2 + "\n" + o3;
+    off[4] = s.size();
+    s += "4 0 obj\n<</Type/XObject/Subtype/Image/Width " + std::to_string(kJpeg1W) + "/Height " + std::to_string(kJpeg1H) +
+         "/BitsPerComponent 8/Filter/DCTDecode/Length " + std::to_string(sizeof kJpeg1) + ">>stream\n";
+    s.append(reinterpret_cast<const char*>(kJpeg1), sizeof kJpeg1);
+    s += "\nendstream\nendobj\n";
+    const std::string zs = zstored(head + body);
+    off[5] = s.size();
+    s += "5 0 obj\n<</Type/ObjStm/N 3/First " + std::to_string(head.size()) + "/Filter/FlateDecode/Length " +
+         std::to_string(zs.size()) + ">>stream\n" + zs + "\nendstream\nendobj\n";
+    off[6] = s.size();
+    // the xref stream: W [1 3 1]; rows type 0 (free), 2 x3 (in stream 5), 1 (4, 5, 6)
+    const uint32_t rows[7][3] = {{0, 0, 0}, {2, 5, 0}, {2, 5, 1}, {2, 5, 2}, {1, static_cast<uint32_t>(off[4]), 0},
+                                 {1, static_cast<uint32_t>(off[5]), 0}, {1, static_cast<uint32_t>(off[6]), 0}};
+    std::string x;
+    uint8_t up[5] = {};
+    for (const auto& r : rows) {
+        const uint8_t raw[5] = {static_cast<uint8_t>(r[0]), static_cast<uint8_t>(r[1] >> 16), static_cast<uint8_t>(r[1] >> 8),
+                                static_cast<uint8_t>(r[1]), static_cast<uint8_t>(r[2])};
+        x += '\x02';                                        // PNG Up
+        for (int i = 0; i < 5; ++i) x += static_cast<char>(static_cast<uint8_t>(raw[i] - up[i]));
+        memcpy(up, raw, 5);
+    }
+    const std::string zx = zstored(x);
+    s += "6 0 obj\n<</Type/XRef/Size 7/W[1 3 1]/Root 1 0 R/ID[<00000000000000000000000000000003><00>]"
+         "/DecodeParms<</Columns 5/Predictor 12>>/Filter/FlateDecode/Length " + std::to_string(zx.size()) + ">>stream\n" +
+         zx + "\nendstream\nendobj\n";
+    s += "startxref\n" + std::to_string(off[6]) + "\n%%EOF\n";
+    return Bytes(s.begin(), s.end());
+}
+
 // The Gold Box Companion's journal (Steam / SNEG): a synthetic Game.dat
 // The icon gallery's tables: every choice in range, no see-through colour
 // 0, every look distinct; apply / match round trips, the size untouched
@@ -3375,6 +3429,26 @@ static void test_journal()
         CHECK(journal::read_info(j2, i2) && journal::find(j2, i2, 'J', 3, &f2, &c2) && journal::piece(j2, i2, f2, pi2) &&
               pi2.w == kJpeg1W && pi2.h == kJpeg1H);
     }
+    // A cross-reference stream and an object stream (Champions' journal)
+    {
+        Bytes three = make_pdf3();
+        dax::MemorySource s3(three.data(), three.size());
+        static pdf::Doc d3;
+        int p3[2];
+        CHECK(pdf::open(s3, d3) && d3.root == 1 && strcmp(d3.id, "00000000000000000000000000000003") == 0);
+        CHECK((d3.offset[2] & pdf::kInStream) && !(d3.offset[4] & pdf::kInStream));
+        CHECK(pdf::pages(s3, d3, p3, 2) == 1 && p3[0] == 3);
+        CHECK(pdf::page_image(s3, d3, p3[0], im) && im.jpeg && im.width == kJpeg1W && im.data_len == sizeof kJpeg1 &&
+              memcmp(three.data() + im.data_at, kJpeg1, sizeof kJpeg1) == 0);
+        // (a damaged row filter: not read)
+        Bytes bad = three;
+        const std::string bs(bad.begin(), bad.end());
+        const size_t at = bs.find("stream\n", bs.find("/Type/XRef"));
+        CHECK(at != std::string::npos);
+        if (at != std::string::npos) bad[at + 7 + 2 + 5] = 9;       // (past the zlib and stored-block headers: row 0's filter)
+        dax::MemorySource sb(bad.data(), bad.size());
+        CHECK(!pdf::open(sb, d3));
+    }
     Bytes notpdf = {'%', 'P', 'S', '!'};
     dax::MemorySource nsrc(notpdf.data(), notpdf.size());
     CHECK(!pdf::open(nsrc, doc));
@@ -3464,6 +3538,21 @@ static void test_journal()
     CHECK(journal::find_mention("YOU RECORD HIS WORDS AS THE INTRODUCTION TO YOUR JOURNAL.", &n) == 'I' && n == 1);   // (Treasures)
     CHECK(journal::find_mention("YOU OVERHEAR TAVERN TALE #12 ", &n) == 'T' && n == 12);
     CHECK(journal::find_mention("YOU OVERHEAR TAVERN TALE 7", &n) == 'T' && n == 7);
+    // (Champions: the number printed after the words; "AS JOURNAL ENTRY")
+    CHECK(journal::find_mention("YOU HEAR TAVERN TALE 17", &n) == 'T' && n == 17);
+    CHECK(journal::find_mention("RECORD IT AS JOURNAL ENTRY 29.", &n) == 'J' && n == 29);
+    CHECK(journal::find_mention("AND YOU NOTE THIS AS JOURNAL ENTRY 42.", &n) == 'J' && n == 42);
+    // Champions' GOG journal (8,017,944 bytes): 88 entries and 57 tavern tales
+    {
+        const journal::Table* ck = journal::find_table(8017944u, "d589480a8abe1017dfb963d1fe03217a");
+        CHECK(ck != nullptr);
+        int js = 0, ts = 0;
+        for (int e = 0; ck && e < ck->n_entries; ++e) {
+            js += ck->entries[e].kind == 'J' && ck->entries[e].number <= 88;
+            ts += ck->entries[e].kind == 'T' && ck->entries[e].number <= 57;
+        }
+        CHECK(ck && js == 88 && ts == 57 && ck->n_entries == 145);
+    }
     CHECK(journal::find_mention("AND YOU RECORD IT IN JOURNAL ENTRY ", &n) == 0);
     // (Secret prints the number as a text of its own; play::heard joins them)
     CHECK(journal::find_mention(" AND YOU NOTE IT IN JOURNAL ENTRY 37.", &n) == 'J' && n == 37);
