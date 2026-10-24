@@ -5130,6 +5130,7 @@ bool load_rules(Making*& m)
     fa.mu_all_levels = pc.mu_all_levels;
     fa.mu_all_slot = pc.mu_all_slot;
     fa.start_xp = pc.start_xp;
+    memcpy(fa.mu_more, pc.mu_more, 4);
     fa.platinum = pc.platinum;
     fa.kender_fear = pc.kender_fear;
     const uint32_t at[9] = {pc.pick_race, pc.pick_gender, pc.pick_class, pc.pick_alignment, pc.select,
@@ -5405,7 +5406,7 @@ void create_after_icon(pic::Canvas& c);
 void ask_create(pic::Canvas& c, Ask what, const char* prompt)
 {
     ask_yes_no(c, what, prompt);
-    if (darkness_files()) {
+    if (darkness_files() && !dkk()) {       // (Death Knights' start on No - DOSBox)
         menu.selected = 0;
         show_menu_line(c);
     } else if (gateway() && what == Ask::Reroll) {

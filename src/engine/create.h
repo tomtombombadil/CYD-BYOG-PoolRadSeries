@@ -82,6 +82,8 @@ struct Facts {
     uint8_t  cleric_first[10] = {};
     // Champions: the least stats for the Order of the Sword / Rose (DS)
     uint8_t  knight_mins[2][6] = {};
+    // Death Knights: a new magic-user's spells beside mu_first (0 ends)
+    uint8_t  mu_more[4] = {};
 };
 
 // Starts a character: race, sex, class, alignment chosen. Sets the

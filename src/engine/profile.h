@@ -451,6 +451,8 @@ struct Profile {
         uint16_t        god_names = 0;
         // Champions: DS the least stats for the Order of the Sword, then the Rose's (6 each)
         uint16_t        knight_mins = 0;
+        // Death Knights: a new magic-user's other three spells (with mu_first)
+        uint8_t         mu_more[4] = {};
     } create;
 
     // Items: Use Trade Drop Halve Join Sell Id and their words (ItemWord order)

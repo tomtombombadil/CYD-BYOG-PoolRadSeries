@@ -2761,10 +2761,18 @@ const Profile kProfiles[] = {
                            .money_dice = 0, .lo2 = 0x0584, .hi2 = 0x058A, .krynn = true, .cleric_lists = 0x81D9,
                            .dkk = true, .paladin_slots = 0x7E6B, .ranger_slots = 0x7B3B, .race_caps = 0x82D4},
                 .hp_count = 0x0656, .hp_dice = 0x065E, .icon_colours = 0x72AE,
+                // its createPlayer (GAME.OVR ovl 0x61): the races' effects as
+                // Champions', a paladin's 0x2D, a ranger's 0x69; a magic-user's
+                // seven spells (with mu_more)
+                .con_save = 0x5E, .dwarf_orc = 0x1A, .giants = 0x2F, .elf_sleep = 0x5F, .halfelf = 0x12,
+                .prot_evil = 0x2D, .ranger_giant = 0x69, .mu_first = {0x0A, 0x0B, 0x0C, 0x0F},
                 .pick_race = kP | 0xCF60, .pick_gender = kP | 0xCF6B, .pick_class = kP | 0xCF80,
                 .pick_alignment = kP | 0xCF96, .select = kP | 0xEEB6, .reroll = kP | 0xCFAB, .char_name = kP | 0xCFC0,
-                .save_q = kP | 0xCFD5, .qmark = kP | 0xD339, .change_select = kP | 0xEEB6, .cleric_first = 0x81E3,
-                .pick_god = kP | 0xCF8B, .god_names = 0x0BAC, .knight_mins = 0x05A4},
+                .save_q = kP | 0xCFD5, .qmark = kP | 0xD339, .change_select = kP | 0xEEB6,
+                // 210,003 experience shared by the classes, then trained to it;
+                // 500 steel
+                .start_xp = 210003, .platinum = 500, .kender_fear = 0x5C, .cleric_first = 0x81E3,
+                .pick_god = kP | 0xCF8B, .god_names = 0x0BAC, .knight_mins = 0x05A4, .mu_more = {0x10, 0x12, 0x13}},
      // The items screen's other words (its data segment's, else GAME.OVR)
      .item_words = {0, 0, 0, 0, 0, 0, 0, 0x24B89, kP | 0xCDFF, 0x2578E, kP | 0xCDDF, kP | 0xCDEA, 0, 0x256AC,
                     // Sell and Id: "I'll give you " " steel pieces for your " "is it a deal? "

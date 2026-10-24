@@ -53,7 +53,12 @@ void learn(party::Character& c, int spell) { classes::to_book(c, spell); }
 uint32_t start_exp(int cls, bool secret = false, bool dk = false, uint32_t xp = 0)
 {
     // (Gateway's: 3,000 shared by the classes - the magic-user / thief's too)
-    if (xp) return xp / (cls < ClericFighter ? 1 : (cls == ClericFighterMU || cls == FighterMUThief) ? 3 : 2);
+    // (Death Knights' 210,003: 105,002 and 70,001 - the share rounded up, its
+    // createPlayer GAME.OVR ovl 0x61 +0xBA3; Gateway's divide evenly)
+    if (xp) {
+        const uint32_t n = cls < ClericFighter ? 1 : (cls == ClericFighterMU || cls == FighterMUThief) ? 3 : 2;
+        return (xp + n - 1) / n;
+    }
     // (Darkness's, GAME.OVR 0x14D74: 1,500,001; two classes 750,000 - the
     // magic-user / thief too -, cleric / fighter / magic-user and fighter /
     // magic-user / thief 500,000)
@@ -412,9 +417,19 @@ namespace {
 // (none given by the class) 2,000 when good, 1,500 when neutral; a mage's
 // robe by the alignment (good White, neutral Red); the god's spell
 // (the knights' / gods' list, record 0xC7-0xCD)
-void krynn_start(party::Character& c, int god)
+void krynn_start(party::Character& c, int god, uint32_t dkk_xp = 0)
 {
     uint8_t* r = c.rec;
+    if (dkk_xp) {
+        // Death Knights (its createPlayer, GAME.OVR ovl 0x61 +0xB9F): every
+        // class at 1st level - a ranger alone at 2nd -, the experience shared
+        // (start_exp), the robe, the order and the god's spell as Champions'
+        const int a = r[kAlign];
+        if (r[kClass] == Ranger) r[kLevels + classes::Ranger] = 2;
+        put32(r, kExp, dkk_xp);
+        if (r[kLevels + classes::MagicUser]) c.ext[party::kExtRobe] = a % 3 == 0 ? 1 : a % 3 == 1 ? 2 : 0;
+        if (r[kLevels + classes::Monk]) c.ext[party::kExtKnight] = 1;
+    } else {
     static const uint16_t kXp[17] = {0, 0, 2001, 0, 2251, 5000, 1251, 2500, 2001, 5000, 2251, 5000, 0, 5000, 2001,
                                      5000, 5000};
     const int cls = r[kClass];
@@ -425,6 +440,7 @@ void krynn_start(party::Character& c, int god)
     put32(r, kExp, xp);
     if (r[kLevels + classes::MagicUser]) c.ext[party::kExtRobe] = a % 3 == 0 ? 1 : a % 3 == 1 ? 2 : 0;
     if (r[kLevels + classes::Monk]) c.ext[party::kExtKnight] = 1;
+    }
     c.ext[party::kExtGod] = static_cast<uint8_t>(r[kLevels + classes::Cleric] ? god : 0);
     switch (c.ext[party::kExtGod]) {
     case 1: c.ext[party::kExtBook + 0] = 1; break;
@@ -525,7 +541,7 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
     if (r[kLevels + classes::Ranger]) add_affect(c, f.ranger_giant);
 
     r[kAlign] = static_cast<uint8_t>(alignment);
-    if (t.lay.krynn) krynn_start(c, god);
+    if (t.lay.krynn) krynn_start(c, god, t.lay.dkk ? start_exp(cls, false, false, f.start_xp) : 0);
     if (t.lay.dk) {
         // Darkness's first icon (GAME.OVR 0x179A5, before the editor): the
         // head - halflings 3, women 9 (small races 7), men 5 (small 0) -; the
@@ -577,11 +593,23 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
     memset(r + kMoney, 0, 14);
     const bool pool = t.lay.pool;
     put32(r, kExp, pool ? 0 : start_exp(cls, t.lay.secret, t.lay.dk, f.start_xp));
-    if (t.lay.krynn) krynn_start(c, c.ext[party::kExtGod]);
+    if (t.lay.krynn) krynn_start(c, c.ext[party::kExtGod], t.lay.dkk ? start_exp(cls, false, false, f.start_xp) : 0);
 
     // Secret adds its races' adjustments to each roll (GAME.OVR 0x1EA28):
     // dwarves Con +1 Cha -1, elves Dex +1 Con -1, halflings Str -1 Dex +1
     auto race_adj = [&](int i) {
+        if (t.lay.dkk) {
+            // Death Knights (GAME.OVR ovl 0x61 +0x1586 - Champions' code has the
+            // same): its races' own - dwarves Con +1 Cha -1, elves Dex +1 Con
+            // -1, half-elves Dex +2, kender Str -1 Dex +2
+            switch (c.ext[party::kExtRace]) {
+            case 3: case 4: return i == 4 ? 1 : i == 5 ? -1 : 0;
+            case 0: case 1: return i == 3 ? 1 : i == 4 ? -1 : 0;
+            case 2: return i == 3 ? 2 : 0;
+            case 5: return i == 0 ? -1 : i == 3 ? 2 : 0;
+            default: return 0;
+            }
+        }
         if (!t.lay.secret) return 0;
         // (Darkness's program tests the race list's last line - human - not
         // the race picked (GAME.OVR 0x15449: [bp-0x17]), so it never adds
@@ -672,14 +700,22 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
         } else if (k == classes::MagicUser) {
             r[kCastCount + 10] = 1;
             for (uint8_t s : f.mu_first) learn(c, s);
-            if (t.lay.krynn) learn(c, f.mu_level2);         // (Champions: five - 0x22444)
+            if (t.lay.dkk) {
+                // (Death Knights, ovl 0x61 +0x20E6: seven - mu_first and these)
+                for (uint8_t s : f.mu_more)
+                    if (s) learn(c, s);
+            } else if (t.lay.krynn) {
+                learn(c, f.mu_level2);         // (Champions: five - 0x22444)
+            }
         } else if (k == classes::Thief && t.lay.secret && !t.lay.dk) {
             // Secret's thieves start with 2d6 gold (GAME.OVR 0x1F589, record
             // 0x109; DOSBox: a new human thief with GOLD 7)
             put16(r, kMoney + 3 * 2, d.roll(6, 2));
         }
     }
-    if (t.lay.krynn) {
+    if (t.lay.dkk) {
+        put16(r, kMoney + 4 * 2, f.platinum);   // Death Knights: 500 steel (ovl 0x61 +0x2154)
+    } else if (t.lay.krynn) {
         // Champions' steel (GAME.OVR 0x22364): per class held clerics 3d6,
         // fighters and rangers 5d4, mages 2d4, thieves 2d6, a knight 1d4 in
         // place of the rest; the share by classes is never taken (the loop
@@ -729,6 +765,11 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
         r[kHpMax] = r[kHp] = r[kHpRolled] = 0;
         secret_hp(c, t, f, d, 0xFF, held);
         classes::class_bonuses(c, t);
+        // (Death Knights: then trained as far as the experience goes - its
+        // ovl 0x92 +0x66, silent)
+        if (t.lay.dkk)
+            while (train(c, t, f, d, true)) {
+            }
         return;
     }
     const int rolled = hp_roll(c, t, f, d, 0xFF);
