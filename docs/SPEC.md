@@ -2424,5 +2424,10 @@ the game's Settings (As Original: all of them).
 - **Treasures' romance**: a character the story sends away (LUCK 104 / 116)
   leaves the party as Remove would (the original's ovl 0x83 entry 0x2A,
   not traced further).
+- **A repeated question keeps its highlight** (all games; Tom,
+  2026-10-24; features.h `CYD_KEEP_ANSWER_PLACE`): creation's "Reroll
+  stats?" (Pool's "Keep this character?") asked again after a reroll
+  starts with the highlight on the word last answered; the originals
+  start it afresh each time.
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.

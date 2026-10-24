@@ -640,6 +640,7 @@ int main(int argc, char** argv)
             for (int k = 0; k < 8; ++k) printf(" %d", ch.level(k));
             printf(" age %d thac0 %d ac %d xp %u align %d\n", ch.age(), ch.thac0(), ch.ac(), ch.exp(), ch.alignment());
             shot("rolled");
+            printf("  ask [%s%s] highlight %d\n", play::menu.prompt, play::menu.s, play::menu.selected);
             // (Curse: "Reroll stats?" Yes then No; Pool: "Keep this character?" No then Yes)
             const bool keepq = play::d->prof->create.keep_question;
             tap_word(r == 0 ? (keepq ? 'N' : 'Y') : (keepq ? 'Y' : 'N'));

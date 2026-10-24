@@ -110,6 +110,17 @@
 #define CYD_ITEM_FIXES 1
 #endif
 
+// The highlight kept on a repeated question (Tom, 2026-10-24): character
+// creation's "Reroll stats?" (Pool's "Keep this character?") is asked again
+// after every reroll, and the originals start its highlight afresh each
+// time - a Select on the cursor keys then lands on the other word. Here a
+// question asked again straight after its answer starts with the highlight
+// where that answer was. Built in (no Settings key: it changes no play).
+// 0: as the originals. Where: play.cpp (ask_create, yes_no_last).
+#ifndef CYD_KEEP_ANSWER_PLACE
+#define CYD_KEEP_ANSWER_PLACE 1
+#endif
+
 // Each comfort compiled in can also be switched off by the player: the
 // game's Settings page (Tom, 2026-10-11, v0.72.0; one set for all games,
 // settings.h comforts_off), the one Settings screen (Home, a game's page, the

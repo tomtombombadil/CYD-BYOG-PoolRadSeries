@@ -4122,6 +4122,7 @@ void yes_no_key(char k, pic::Canvas& c);
 // after creation's "Reroll stats?" starts with that place lit (its menus
 // keep the highlight's place - alter.kept_highlight)
 int yes_no_place = 0;
+Ask yes_no_last = Ask::None;        // the question that answer was to
 
 void yes_no_tap(int x, int y, pic::Canvas& c)
 {
@@ -4135,6 +4136,7 @@ void yes_no_key(char k, pic::Canvas& c)
     const Ask what = ask;
     ask = Ask::None;
     yes_no_place = k == 'N' ? 1 : 0;
+    yes_no_last = what;
     if (create_yes_no(what, k, c)) return;
     if (view_yes_no(what, k, c)) return;
     if (items_yes_no(what, k, c)) return;
@@ -5015,6 +5017,7 @@ void picked(int i, pic::Canvas& c)
         create::roll(mk->ch, mk->tables, mk->facts, mk->dice);
         rules::recalc(mk->ch, *names, d->facts);
         show_new_character(c);
+        yes_no_last = Ask::None;            // (a new character's first ask: from the start)
         ask_create(c, Ask::Reroll, mk->words[5]);
         return;
     }
@@ -5035,6 +5038,15 @@ void ask_create(pic::Canvas& c, Ask what, const char* prompt)
         menu.selected = 1;          // (Gateway's "Reroll stats?" is a menu of its own on No - DOSBox)
         show_menu_line(c);
     }
+#if CYD_KEEP_ANSWER_PLACE
+    // The same question asked again (Reroll after a reroll): the highlight
+    // where the last answer was, not back at the start (Tom, 2026-10-24 -
+    // the originals start it afresh each time; features.h)
+    if (what == yes_no_last && menu.selected != yes_no_place) {
+        menu.selected = yes_no_place;
+        show_menu_line(c);
+    }
+#endif
 }
 
 // The name, then the icon editor (as the games do), then "save NAME?"
