@@ -3735,6 +3735,7 @@ bool lk_page()
 void lk_show(pic::Canvas& c)
 {
     text::begin(w, c, lk.page, script_area(), 10, true);
+    w.codes = d->prof->variant.tr;      // (the scripts' printer, img 0x6A8A: a word's trailing space may hang - DOSBox: the Crown)
     dirty_rows(17, 22);
     t_started = false;
     lk.prompt = false;
@@ -3813,7 +3814,7 @@ void lk_tick(uint32_t now, pic::Canvas& c)
     }
     if (w.state == text::State::PageFull || w.state == text::State::Done) {
         clear_menu_line(c);
-        put(c, d->press_key, 0, text::kMenuRow, 13);
+        put(c, d->press_key, 0, text::kMenuRow, 15);     // (white, as PRESSKEY's - DOSBox: the romance)
         lk.prompt = true;
     }
 }
@@ -3886,7 +3887,7 @@ void lucky_paper(const uint8_t* it, pic::Canvas& c)
     lk_free();
     dirty(0, pic::kScreenH);
     clear_menu_line(c);
-    put(c, d->press_key, 0, text::kMenuRow, 13);
+    put(c, d->press_key, 0, text::kMenuRow, 15);      // (white - DOSBox)
     lk.on = true;
     lk.prompt = true;
     lk.len = 1;
