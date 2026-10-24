@@ -2029,6 +2029,10 @@ static int b_fu_menu()
             const bool ok = hurt <= most && (most == 0 || hurt >= 1) && (hurt == 0 || (hi <= want_hi && lo >= (want_lo > 16 ? 1 : 1)));
             expect("items", what, ok && (hurt == 0 || lo >= 1));
         }
+        // (checked: the monsters back to a point each, so the fight ends - Gateway's
+        // party of 2nd-3rd level would take a thousand rounds against 200 each)
+        for (int i = 0; i < fg->b.n; ++i)
+            if (fg->b.f[i].member < 0 && fg->b.f[i].up()) fg->b.f[i].rec[0x1A4] = 1;
     }
     return 0;
 }
