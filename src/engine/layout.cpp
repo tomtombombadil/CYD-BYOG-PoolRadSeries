@@ -28,6 +28,12 @@ void put(pic::Canvas& c, const Tiles& t, int n, int col, int row)
 // Secret's bars (secret_facts.md 3): a horizontal bar, full width
 void hbar(pic::Canvas& c, const Tables& tb, const Tiles& t, int row)
 {
+    // (Champions: its top bar from its table - the moons' cells set by the
+    // game - tile 20 + value)
+    if (row == 0 && tb.top_row) {
+        for (int col = 0; col < kCols; ++col) put(c, t, kViewTile + tb.top[col], col, row);
+        return;
+    }
     for (int col = 0; col < kCols; ++col) put(c, t, tb.bars[0], col, row);
 }
 
@@ -201,6 +207,17 @@ Status load_tables(dax::ByteSource& program, const exepack::Info& info, const pr
         memcpy(out.box, p.variant.box, sizeof out.box);
         memcpy(out.bars, p.variant.bars, sizeof out.bars);
         out.chain = p.variant.vga;
+        if (p.variant.bars[0] && p.frame.top) {
+            // (Champions: the top bar's own table - champions_facts.md 1)
+            switch (exepack::read(program, info, p.data_base + p.frame.top, out.top, sizeof out.top)) {
+            case exepack::Status::Ok:        break;
+            case exepack::Status::ReadError: return Status::ReadError;
+            case exepack::Status::BadData:   return Status::BadData;
+            default:                         return Status::NotPacked;
+            }
+            if (!all_below(out.top, 0, 40, kTiles - kViewTile)) return Status::BadTables;
+            out.top_row = true;
+        }
         out.loaded = true;
         return Status::Ok;
     }
@@ -494,8 +511,7 @@ void combat(pic::Canvas& c, const Tables& tb, const Tiles& t)
     if (tb.bars[0]) {
         // (Secret's fight screen not seen yet: bars at rows 0 and 22 and
         // verticals at columns 0, 22 and 39, as Curse's)
-        for (int row : {0, 22})
-            for (int col = 0; col < kCols; ++col) put(c, t, tb.bars[0], col, row);
+        for (int row : {0, 22}) hbar(c, tb, t, row);
         for (int col : {0, 22, kCols - 1}) vbar(c, tb, t, col, 0, 22);
         return;
     }
@@ -545,6 +561,19 @@ void bars_col(pic::Canvas& c, const Tables& tb, const Tiles& t, int col, int r0,
 
 void credits(pic::Canvas& c, const Tables& tb, const Tiles& t, const uint8_t rows[2])
 {
+    if (tb.bars[0] && tb.top_row) {
+        // Champions (its START image 0x13B0): plain bars at rows 0, rows[0],
+        // rows[1] and 23 (no moons), the sides capped under and over each
+        c.fill(0, 0, pic::kScreenW, pic::kScreenH, 0);
+        const int r[4] = {0, rows[0], rows[1], 23};
+        for (int i = 0; i < 4; ++i)
+            for (int col = 0; col < kCols; ++col) put(c, t, tb.bars[0], col, r[i]);
+        for (int i = 0; i < 3; ++i) {
+            vbar(c, tb, t, 0, r[i], r[i + 1]);
+            vbar(c, tb, t, kCols - 1, r[i], r[i + 1]);
+        }
+        return;
+    }
     if (tb.bars[0]) {
         // Secret (secret_facts.md 3): the title on row 0, a bar at rows[0]
         // and row 23, the sides with no caps

@@ -71,6 +71,12 @@ enum Ext : uint8_t {
     kExtBestXp = 114,                   // best experience before a drain (4)
     kExtBestHp = 118,
     kExtTrain = 119,                    // able to train (0x1EC)
+    // Champions of Krynn only (in Darkness's places: never both)
+    kExtKnight = 35, kExtGod = 36, kExtRobe = 37,   // its record's 0x5C-0x5E: knight order, god, robe
+    kExtK5F = 38,                       // 0x5F (not known yet)
+    kExtKE9 = 39,                       // 0xE9-0xEC (4; not known yet)
+    kExtKSlots = 43,                    // 0x126-0x12A: a third group of spell slots (5)
+    kExtK141 = 48,                      // 0x141 (not known yet)
 };
 
 struct Character {
@@ -166,8 +172,25 @@ uint8_t race_from_darkness(uint8_t dk);
 uint8_t race_to_darkness(uint8_t curse);
 constexpr size_t kDarknessRecordSize = 0x1FE;
 constexpr int    kDarknessMemorized = 141;
-// Record format: Curse's, Pool's, Secret's or Darkness's
-enum class Format : uint8_t { Curse, Pool, Secret, Darkness };
+// Champions of Krynn's characters (champions_facts.md 2; the Gold Box
+// Companion's record list): a 409-byte record (.SAV / .WHO) in Curse's order
+// with fewer memorized places (58), spells 1-100 as Curse's (its 101-107 the
+// knights' in ext), six coins (copper, bronze, platinum, steel, gems,
+// jewelry: kept in Curse's copper, silver, platinum, gold, gems, jewellery
+// places), the knight's order, god and robe (ext); items .STF (63 bytes, as
+// Curse's), effects .SFX (9). Its races 0 Silvanesti elf, Qualinesti elf,
+// half-elf, mountain dwarf, hill dwarf, kender, human, 7 monster: the
+// record gets Curse's number (elves elf, dwarves dwarf, kender halfling),
+// its own kept in ext.
+uint8_t race_from_krynn(uint8_t k);
+uint8_t race_to_krynn(uint8_t curse);
+constexpr size_t kKrynnRecordSize = 0x199;
+constexpr int    kKrynnMemorized = 58;
+void from_krynn(const uint8_t* k, Character& out);               // out.rec and out.ext
+void from_krynn(const uint8_t* k, uint8_t* rec);                  // a record of Curse's layout (no ext)
+void to_krynn(const Character& c, uint8_t out[kKrynnRecordSize]);
+// Record format: Curse's, Pool's, Secret's, Darkness's or Champions'
+enum class Format : uint8_t { Curse, Pool, Secret, Darkness, Krynn };
 bool read_record(dax::ByteSource& src, Character& out, Format f);
 void from_pool(const uint8_t* pool, Character& out);              // out.rec only
 void from_pool(const uint8_t* pool, uint8_t* rec);                 // a record (kRecordSize bytes) of Curse's layout

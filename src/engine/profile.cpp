@@ -1317,6 +1317,30 @@ constexpr ecl::OpSet kSecretEcl = [] {
     return s;
 }();
 
+// Champions of Krynn (champions_facts.md 1-2): its title (DOSBox) - TITLE 1
+// (SSI) for 5 s, 2 (the game's picture) with 3 (its name) on it for 8 s, 4
+// over them from row 1 (the Dragonlance words) for 7 s, then the credits
+// for 8 s (32-byte print calls in GAME.OVR from 0x34C, the code segment at
+// 0xDA; its box routine's bars at rows 4 and 20). Its scripts: Secret's
+// opcodes and areas (0x3C reads none, 0x41 two; areas 1-6 two to a numbered
+// file, blocks numbered across the files) - every block of ECL1-3 decodes
+// from its entry points.
+constexpr TitleStep kChampionsTitle[] = {
+    {1, 0, 0, true, 5000, 0},
+    {2, 0, 0, true, 0, 0},
+    {3, 1, 5, false, 8000, 0},
+    {4, 1, 0, false, 7000, 0},
+    {0, 0, 0, true, 8000, 0},
+};
+
+constexpr ecl::OpSet kChampionsEcl = [] {
+    ecl::OpSet s = kCurseEcl;
+    s.sizes[0x3C] = 0;
+    s.sizes[0x41] = 2;
+    s.area_by_block = true;
+    return s;
+}();
+
 // Pools of Darkness (darkness_facts.md 5; its interpreter, GAME.OVR overlay
 // at 0x246): Curse's operand counts but 0x0C 4 (SETUP MONSTER's sides),
 // 0x1D none (PRESS KEY), 0x1F 1 (JOURNAL n), 0x21 2 (LOAD FILES: map,
@@ -1934,6 +1958,135 @@ const Profile kProfiles[] = {
      // the name at row 22 and the version at 23, colour 0 on 10, then the
      // menu with the prompt at 0x55)
      .title_name = 0x05, .title_prompt = 0x55},
+    // Champions of Krynn, GOG release (champions_facts.md; being built):
+    // START.EXE 61,607 bytes, EXEPACK, unpacked 65,568; its data segment at
+    // image 0xBC60 (DS offsets below from there). Curse's program shape and
+    // words at Champions' places; Secret's scripts and areas.
+    // - frame: bars drawn by code (its START image 0x1280 - 0x1870) with
+    //   block 202's tiles 20 (every bar), 23 / 24 / 25 (a vertical's cap under
+    //   a bar, side, cap over a bar), the view frame the same; the top bar
+    //   its own table (DS 0x0E3A: tile 20 + value) with the three moons;
+    // - the font: 8X8D1.DAX block 201 (Curse's).
+    {.game = games::Game::ChampionsOfKrynn, .release = "GOG", .program = "START.EXE",
+     .program_size = 61607, .image_size = 65568, .data_base = 0xBC60,
+     .frame = {.top = 0x0E3A, .bar = 0, .bottom = 0, .left = 0, .right = 0, .view_split = 0, .view_top = 0,
+               .view_bottom = 0, .view_left = 0, .view_right = 0, .combat_left = 0, .combat_split = 0,
+               .combat_right = 0},
+     .tiles_file = "8X8D1.DAX", .tiles_block = 202,
+     .press_any_key = 0x56A2,
+     .title_file = "TITLE.DAX", .title = kChampionsTitle,
+     .title_steps = sizeof kChampionsTitle / sizeof kChampionsTitle[0],
+     .title_version = 0x05, .title_menu = 0x1D,
+     .overlay = "GAME.OVR", .overlay_size = 269031, .credits_at = 0x34C, .credits_base = 0xDA, .credits_bars = {4, 20},
+     .first_area = 1, .last_area = 3, .common_tiles_block = 203, .sky_file = "SKY.DAX", .horizon_block = 252,
+     .ecl_ops = &kChampionsEcl,
+     .sky_colours = 0x0DC4, .start_area = 1, .start_script = 36,
+     .wild = {},
+     // The party menu (13 entries: Knight Change Classes in Curse's Human
+     // Change's place; Initialize Mouse/Joystick the 12th); KRYNN.CFG names the
+     // save folder; a member's functions ask "Pick Character " "Select Exit"
+     // first (DOSBox; as Gateway's)
+     .party = {0xC4D8, 13, 42, 0x20333, 0x1F1A9, 0x36D54, 0x36D59, "KRYNN.CFG", 0x1F8B2, 0x1F8C4, 0x1F97A, 0xC14E,
+               0, 0x1D256, 0, 0, 0x2393B, 0x2394D, 0x23952, 0x23955, 0x23979, 0x23993,
+               0x1E2A0, 0x1E2AB, 0x2280C, 0x22812, 0x2281D, 0x2282C, 0x22836, 0x22841, 0x22855, 0x32251,
+               0x22AAF, 0x22AE3, 0, 0x1D755, 0x1E2AE, 0, 0, 0x2A3FB, 0x2A40B, 0},
+     // View Character's name tables (races in Champions' own order: the
+     // engine reorders them)
+     .view = {{0xCBBA, 27, 18}, {0xCDA0, 16, 8}, {0xCE20, 17, 9}, {0xCF35, 7, 2}, {0xCF43, 11, 7}, {0xCF90, 13, 9},
+              0, 0, 0x26DF0, 0x26DDC, 0x26DE4, 0x26DA2, 0, 0, 0x27507, 0, 0, 0, 0xC221, 5},
+     .items = {.words = {0xD005, 21, 255}, .types_file = "ITEMS", .arrow = 73, .quarrel = 28, .dart = 9,
+               .flask = 86, .keep1 = 0x87, .keep2 = 0xB1, .elf_bonus = {41, 42, 43, 44, 37, 36},
+               .buy_items = 0x70E2, .buy = 0x7FAC, .list_next = 0x3C195, .list_prev = 0x3C19B, .list_exit = 0x73FA,
+               .shop_menu = 0x8699, .shop_menu_money = 0x8672, .no_money = 0x83D4, .overloaded = 0x28ED8,
+               .title = 0x2851E, .heading = 0x28524, .ready = 0x284EF, .yes = 0x36A19, .no = 0x36A20,
+               .cursed = 0x28BAC, .wrong_class = 0x28BB8, .already = 0x28BC4, .hands_full = 0x28BD3,
+               .plural_s = 0x37F40, .weapon = 0, .armour = 0,
+               .stat_fx = {0x26, 0x92, 0x0C, 0x0E, 0x44, 0x3E},
+               .hammer = {0x17, 20, 20, 243}, .detect = {0x05, 0x05, 0x0B, 0x4D}, .berserk = 0x4D},
+     // Character rules: Curse's shapes at Champions' places (the knight in
+     // the monk's column) - checked in chunk 4
+     .create = {.ds_image = 0xBC60,
+                .tables = {0x31B3, 0x4400, 0x31B3, 108, 0x3882, 0x38EA, 0x38F2, 0x3903, 0x3908, 0x3968, 0x397B,
+                           0x39D0, 0x3A42, 0x3A7D, 0x3B8B, 0x3BDF, 0x3C45, 0x3D06, 0x4056},
+                .hp_count = 0, .hp_dice = 0, .icon_colours = 0x390B,
+                .con_save = 0x61, .dwarf_orc = 0x1A, .giants = 0x2F, .gnome_giant = 0x12, .gnome_extra = 0x30,
+                .elf_sleep = 0x6B, .halfelf = 0x7C, .prot_evil = 0x08, .ranger_giant = 0x86,
+                .mu_first = {0x0B, 0x12, 0x0C, 0x15}, .mu_level2 = 0x0F, .mu_level3 = {0x22, 0x0A},
+                .mu_level4 = 0x1F, .mu_level5 = 0x2F,
+                .pick_race = 0x20857, .pick_gender = 0x2086C, .pick_class = 0x20878, .pick_alignment = 0x2088C,
+                .select = 0x20865, .reroll = 0x208BD, .char_name = 0x208CC, .save_q = 0x208DD, .qmark = 0x1E2AB,
+                .mu_change = {0x0B, 0x12, 0x0C, 0x15}, .pick_new = 0, .no_qualify = 0, .change_select = 0x20865,
+                .now_first = 0, .dot = 0x1E246},
+     .item_words = {0x284F5, 0x284FA, 0x28501, 0x28507, 0x2850E, 0x28514, 0x2851A, 0x27DE6, 0x2852F, 0x28F8E,
+                    0x2853F, 0x28545, 0x2855A, 0x28EC7, 0x29529, 0x29538, 0x29550, 0x2955F, 0x29565, 0x29741,
+                    0x29782, 0x297A8, 0x29771, 0x20865},
+     .shop_words = {0x5F14, 0x5F3C, 0x5CF4, 0x5D0C,
+                    0x53A5, 0x544B, 0x5541, 0x5553, 0x5567, 0x557C, 0x5A47, 0x57B2, 0x5B6C, 0x5C58,
+                    0x5167, 0x51DD, 0x51EE, 0x51FD, 0x520B, 0x521D,
+                    0x5397, 0x543A, 0x57A5, 0x5A36, 0x5B5D, 0x5C49,
+                    0x5F63, 0x5FAE, 0, 0x8711,
+                    0x2D189, 0x2D1A8, 0x2D1AF, 0x73FA, 0x2D1BF, 0x2D1CB, 0x2D1E1, 0x2D1E9, 0x2D1EE, 0x2D1F8,
+                    0x2D203, 0x2D146, 0x2D159, 0x2D15E, 0x2D164, 0x2D176,
+                    0x2C5B2, 0x20865, 0x2C5E9, 0x2C5D8, 0x2BABC,
+                    0x24EFF, 0, 0x24F1E, 0x24F3D, 0x24F53, 0x24F61, 0x24F70, 0x24F7D, 0x24F94},
+     .cures = {{1000, 1000, 100, 350, 600, 5000, 1000, 5500, 3500, 2000},
+               0x21, {0x1F, 0x22, 0x2B, 0x2C, 0x32, 0x39}, 0x44, 0x37, 0x16, 0x0F, 0x20, 0x24, 0x22, 0x2B, 0x2C, 0x1F},
+     .gem_type = 70, .gem_word = 0x65, .jewel_word = 0xD6,
+     .magic = {.menu = 0xC177, .levels = {0xC883, 41, 5}, .names = {0xDCD7, 41, 108},
+               .words = {0x27A99, 0x2A204, 0x2A20E, 0x2A239, 0x2DE36, 0x2DE00, 0x1B6BB, 0x1B6EE, 0, 0x1B134,
+                         0x1B147, 0x1B16D, 0x1B6D3, 0x1AEFC, 0x1AF23, 0x2AFB5, 0x2B0B7, 0x2B668, 0x2B234, 0x2B2FF,
+                         0x2B677},
+               .rest_period = 0x7ED2, .rest_chance = 0x7ED3,
+               .cast_words = {0x1AF13, 0x1B063, 0x2DDFB, 0x2EFFE, 0x2EFA9, 0x2EFBF, 0x2EE76, 0x38B7B, 0x38B8B,
+                              0x35459, 0x2FCEA, 0x30C10, 0x31C87, 0, 0x311DD, 0x311EA, 0x1BE07, 0x2DE09, 0x2A224,
+                              0x2A245, 0x1B90D, 0x1B925, 0x1B941, 0x1B964, 0x1B8F7, 0x1B983, 0x1AF33, 0x2B3C3,
+                              0x2A22F, 0x2DE10, 0x2EFC9, 0x2EFD3, 0x2EFEC, 0x29229, 0x29236, 0x2923C, 0x2A21A,
+                              0x2EFF5},
+               .camp = kCurseCamp, .n_camp = sizeof kCurseCamp / sizeof kCurseCamp[0],
+               .facts = {2, 0x2A, {0x22, 0x2B, 0x32}, {{0, 0}, {0x2C, 0x1F}, {0x39, 0}}, 0x0C, 0x17, 0x32, 0x36,
+                         0x8F, 0x92,
+                         {{0x28, 1, 6, 0, 10}, {0x39, 5, 4, 0, 1}, {0x3D, 5, 4, 0, 1}, {0x3B, 1, 4, 4, 10},
+                          {0x3F, 1, 10, 10, 10}, {0x43, 0, 0, 1440, 1}}},
+               .spell_named = kCurseSpellNamed, .n_spell_named = sizeof kCurseSpellNamed, .named = kCurseNamed,
+               .n_named = sizeof kCurseNamed / sizeof kCurseNamed[0], .scroll_one_spell = 0xD2, .read_magic = 0x10},
+     .alter = {0xC1A0, 0xC464, 0xC48D,
+               {0, 0x1C5EF, 0x1C61D, 0x1C98B, 0x1C999, 0x1C9B0, 0x1C9B8, 0x73FA, 0x1C9C6, 0x1C734, 0x1C741,
+                0x1C726, 0x1C753, 0x1C765, 0x1C77A, 0x1CB6E, 0x1CB78, 0x1CB87, 0x1CB97, 0xC221},
+               {0xC700, 0xC729, 0xC752, 0xC77B, 0xC7A4},
+               {0x24222, 0x24226, 0x24235, 0x24239, 0x2423F, 0x24258, 0x2425D, 0x24282}},
+     // Fights: Curse's tables at Champions' places (its effect numbers:
+     // chunk 7)
+     .fight = {{0x1EE4, 0x03BA, 0x03CA, 0x03DA, 0x03DE, 0x03E6, 0x03EE, 0x0432, 0x0447},
+               {0xFDDF, 0xB5BD, 0xB5C3, 0xB5CD, 0xB5D2, 0xB5D8, 0xB5E4,
+                0xBABE, 0xBADE, 0xBAE4, 0xBE59,
+                0x17D59, 0x17D65, 0x17D6D, 0x17D7F, 0x17D8B,
+                0xBF27, 0xBF2E, 0xBF3A, 0xBF43, 0x38F50, 0xC1FF, 0xC20B, 0xC211, 0xC219, 0xC221,
+                0x14FE1, 0x14FED, 0x14FFC, 0x15004, 0x15013, 0x15027, 0x15034, 0x1503C, 0x15045, 0x1504F,
+                0x1505A, 0x15067, 0x15071, 0x1509E,
+                0xB89C, 0xB8B3, 0x15B16, 0x15B1F, 0x17C6E, 0xC563, 0xD820, 0xD832,
+                0x39783, 0x15D31, 0x3707A, 0x37084, 0x37087,
+                0x6CFE, 0x6D12, 0x6D42, 0x6D9E, 0x6DD2, 0x6DEB, 0, 0x7C16, 0x7C4C,
+                0x72DD, 0x72E4, 0x73EB, 0x73FA, 0x7400, 0x740D, 0x7422,
+                0x743A, 0x745A, 0x70E2, 0x70EA,
+                0x35CA5, 0x35CAC, 0x35CBF, 0x35CD8, 0x35CE2, 0x35CEC, 0x35CFD, 0x35D07, 0x35D1F,
+                0x36094, 0x333E1, 0x333EF, 0x17618, 0x17608, 0x15FE7, 0x15FF7, 0x16001,
+                0x1600E, 0x17074, 0x2F004, 0x2F012, 0x305D1, 0x11BC4, 0, 0x12727, 0x116BC, 0x1128E, 0x10D3A},
+               {0x03, 0x0B, 0x0D, 0x15, 0x17, 0x1B, 0x23, 0x28, 0x33, 0x34, 0x35, 0x3A, 0x5B, 0x88, 0x89, 0x8B, 0x8E,
+                0x90, 0x1F},
+               {{0x33, 0x34, 0x35, 0x1F}, 0x01, 0x02, 0x31, 0x27, 0x2A, 0x19, 0x08, 0x09, 0x1C,
+                {0x07, 0x08, 0x23, 0x24, 0x25, 0x61}, 0x0B, 0x8E, 0x1E,
+                {9, 21, 100, 28, 31, 73}, {2, 7, 20}, {85, 86}, {47, 98, 101},
+                0x24, 0x25, 0x1B, 0x15, 0x88, 0x03, 0x07, 0x21, 0x45, 0x44},
+               kCurseFight, sizeof kCurseFight / sizeof kCurseFight[0]},
+     .script_words = {0x2D2D, 0x2D3E, 0xAA9C, 0xAAA4, 0xAAB1, 0x35AD},
+     .random_items = &kCurseRandom, .random_rows = 0,
+     .sound = {},
+     .clips = {},
+     .door = {0x1A11B, 0x1A120, 0x1A126, 0x73FA, 0x1A133, 0x1F},
+     .won = {},
+     .variant = {.unfinished = true, .program_words = true, .bars = {20, 23, 24, 25, 20, 23, 24, 25},
+                 .bigpic_from = 0x70, .party_menu_col = 9, .krynn = true, .press_words = {0x1A8E, 0x1AB2}},
+     .overland = nullptr},
     // Pools of Darkness, GOG release (darkness_facts.md; being built -
     // Tom, 2026-10-17): GAME.EXE 64,203 bytes, EXEPACK, unpacked 72,784; its
     // data segment at image 0x9E70; one file a kind (ECL1, GEO1 ...); VGA

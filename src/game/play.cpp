@@ -162,6 +162,7 @@ struct Data {
     char           w_speed[24] = {};           // Darkness: Speed's word list ("Faster Slower Exit")
     char           w_save_which[24] = {}, w_slots[24] = {}, w_saving[24] = {}, w_camp_menu[40] = {}, w_crown_menu[44] = {},
                    w_camp[8] = {}, w_makes_camp[28] = {};
+    char           w_press[2][36] = {};        // Champions: a one-choice menu's word shown as the other (variant.press_words)
 
     // View Character's words (from the program and GAME.OVR)
     char           cls[18][27] = {}, race[8][10] = {}, alignment[9][17] = {}, sex[2][7] = {}, money[7][11] = {},
@@ -1179,9 +1180,29 @@ void tr_lattice(pic::Canvas& c)
     dirty_rows(0, 16);
 }
 
+// Champions' three moons on the frame's top bar (champions_facts.md 1, A6):
+// white at column 8, red at 19, black at 30 - the top table's value there is
+// the phase (area words 0x4CF9-0x4CFB, 0-3) + 10 / 6 / 14 (its START image
+// 0x1280). c: also redraw the three cells now (the top bar is on screen).
+void krynn_moons(pic::Canvas* c = nullptr)
+{
+    if (!d->prof->variant.krynn || !vm || !d->tables.top_row) return;
+    static const uint8_t kCol[3] = {8, 19, 30}, kAdd[3] = {10, 6, 14};
+    for (int i = 0; i < 3; ++i) {
+        const uint8_t v = static_cast<uint8_t>(kAdd[i] + (vm->get(static_cast<uint16_t>(0x4CF9 + i)) & 3));
+        if (d->tables.top[kCol[i]] == v) continue;
+        d->tables.top[kCol[i]] = v;
+        if (c) {
+            layout::tile(*c, d->frame_tiles, layout::kViewTile + v, kCol[i], 0);
+            dirty_rows(0, 1);
+        }
+    }
+}
+
 void draw_frame(pic::Canvas& c)
 {
     c.clear(0);
+    krynn_moons();
     if (dk_overland()) {
         layout::outer(c, d->tables, d->frame_tiles);
         layout::bar(c, d->tables, d->frame_tiles, 16);
@@ -1562,6 +1583,7 @@ void pm_prompt(pic::Canvas& c, const char* note = nullptr)
 void draw_party_menu(pic::Canvas& c)
 {
     c.clear(0);
+    krynn_moons();
     layout::outer(c, d->tables, d->frame_tiles);
     // (Treasures: no member marked on its party menu, its menu's line white
     // - DOSBox)
@@ -1639,23 +1661,30 @@ bool gateway() { return d->prof->game == games::Game::GatewayToTheSavageFrontier
 // Darkness's (variant.darkness_files): 510-byte records (NAME.PC), items
 // .THG (63 bytes), effects .EFX; its saves SAVGAMx.PTY
 bool darkness_files() { return d->prof->variant.darkness_files; }
+// Champions of Krynn's (variant.krynn): 409-byte records (NAME.WHO), items
+// .STF (63 bytes), effects .SFX; saves as Secret's (no script bytes)
+bool krynn() { return d->prof->variant.krynn; }
 party::Format rec_format()
 {
     return pool_files()       ? party::Format::Pool
            : secret_files()   ? party::Format::Secret
            : darkness_files() ? party::Format::Darkness
+           : krynn()          ? party::Format::Krynn
                               : party::Format::Curse;
 }
-const char* ext_guy() { return pool_files() ? ".CHA" : secret_files() ? ".WHO" : darkness_files() ? ".PC" : ".GUY"; }
-const char* ext_items() { return pool_files() ? ".ITM" : secret_files() ? ".STF" : darkness_files() ? ".THG" : ".SWG"; }
-const char* ext_fx() { return pool_files() ? ".SPC" : secret_files() ? ".SFX" : darkness_files() ? ".EFX" : ".FX"; }
+const char* ext_guy() { return pool_files() ? ".CHA" : secret_files() || krynn() ? ".WHO" : darkness_files() ? ".PC" : ".GUY"; }
+const char* ext_items() { return pool_files() ? ".ITM" : secret_files() || krynn() ? ".STF" : darkness_files() ? ".THG" : ".SWG"; }
+const char* ext_fx() { return pool_files() ? ".SPC" : secret_files() || krynn() ? ".SFX" : darkness_files() ? ".EFX" : ".FX"; }
 size_t rec_file_size()
 {
     return pool_files()       ? party::kPoolRecordSize
            : secret_files()   ? party::kSecretRecordSize
            : darkness_files() ? party::kDarknessRecordSize
+           : krynn()          ? party::kKrynnRecordSize
                               : party::kRecordSize;
 }
+// Saves without the running script's bytes (Secret's, Champions')
+bool short_saves() { return secret_files() || krynn(); }
 void save_file_name(char slot, char* out, size_t cap)
 {
     if (darkness_files()) savegame::file_name_darkness(slot, out, cap);
@@ -1804,7 +1833,7 @@ bool load_game(char slot)
     {
         plat::FileSource src(f);
         ok = darkness_files() ? savegame::read_darkness(src, d->gs, d->save)
-                              : savegame::read(src, d->gs, d->save, !pool_files(), !secret_files());
+                              : savegame::read(src, d->gs, d->save, !pool_files(), !short_saves());
     }
     f.close();
     // Whatever was going on is over now (a script's party menu, a wait)
@@ -3263,7 +3292,7 @@ bool save_game(char slot)
             h.look_slot = d->save.look_slot;
             ok = savegame::write_darkness(sink, d->gs, h);
         } else {
-            ok = savegame::write(sink, d->gs, h, !pool_files(), !secret_files());
+            ok = savegame::write(sink, d->gs, h, !pool_files(), !short_saves());
         }
     }
     f.close();
@@ -9969,6 +9998,8 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             {pp.saving, d->w_saving, sizeof d->w_saving}, {pp.camp, d->w_camp, sizeof d->w_camp},
             {pp.makes_camp, d->w_makes_camp, sizeof d->w_makes_camp},
             {d->prof->magic.heading_word, d->w_spells_word, sizeof d->w_spells_word},
+            {d->prof->variant.press_words[0], d->w_press[0], sizeof d->w_press[0]},
+            {d->prof->variant.press_words[1], d->w_press[1], sizeof d->w_press[1]},
         };
         for (auto& wd : words)
             if (wd.at) read_word(src, wd.at, wd.out, wd.cap);
@@ -10710,6 +10741,9 @@ void begin_wait(pic::Canvas& c)
         int at[text::kMaxItems + 1] = {}, until[text::kMaxItems + 1] = {};
         for (int i = 0; i < vm->items() && o + 2 < sizeof menu_text; ++i) {
             const char* it = vm->item(i);
+            // (Champions: "PRESS BUTTON OR RETURN TO CONTINUE." alone shows
+            // as its program's "PRESS <ENTER>/<RETURN> TO CONTINUE")
+            if (vm->items() == 1 && d->w_press[0][0] && strcmp(it, d->w_press[0]) == 0) it = d->w_press[1];
             if (i) menu_text[o++] = ' ';
             if (i <= text::kMaxItems) at[i] = static_cast<int>(o);
             for (int k = 0; it[k] && o + 1 < sizeof menu_text; ++k) {
@@ -13383,6 +13417,8 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     gs.y = 13;
     gs.dir = 0;
     vm->set(0x7F12, gs.game_area);
+    if (d->prof->variant.krynn)             // (Champions: a new game's moons all at phase 2 - GAME.OVR 0x104AB)
+        for (uint16_t w = 0x4CF9; w <= 0x4CFB; ++w) vm->set(w, 2);
     if (d->prof->variant.tr) {
         // Treasures' game block as its start sets it (ovl 0x87 +0x54E): the
         // difficulty 3, in 3D, the text green, BACK1 block 3 ...

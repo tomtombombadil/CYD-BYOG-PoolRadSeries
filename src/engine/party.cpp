@@ -73,7 +73,75 @@ constexpr uint16_t kDarknessExt[][3] = {
     {0x1A5, kExtFlags2, 1},   {0x1EB, kExtMagicRes, 1},  {0x1EC, kExtTrain, 1},    {0xAD, kExtRace, 1},
 };
 
+// Champions offset, Curse offset, length (champions_facts.md 2; pointers left
+// out): name and stats; 0x58-0x59 (THAC0); class; age, HP; the book's spells
+// 1-100; 0xCE-0xE2 (icon size, saves, movement, levels, thief skills); NPC,
+// modified; the coins (steel in gold's place, platinum in platinum's);
+// levels and former levels; sex; alignment to the experience and hit dice;
+// the spell slots (cleric, druid, magic-user); xp award to the icon's
+// colours; flags; hands, save bonus, encumbrance; status to movement
+constexpr uint16_t kKrynnRuns[][3] = {
+    {0x00, 0x00, 0x1E},  {0x58, 0x72, 2},     {0x5B, 0x75, 1},     {0x60, 0x76, 3},     {0x63, 0x79, 100},
+    {0xCE, 0xDD, 0x15},  {0xE7, 0xF7, 2},     {0xED, 0xFB, 4},     {0xF1, 0x103, 2},    {0xF3, 0x101, 2},
+    {0xF5, 0x105, 4},    {0xF9, 0x109, 16},   {0x109, 0x119, 1},   {0x10A, 0x11B, 0x12}, {0x11C, 0x12D, 10},
+    {0x12B, 0x137, 5},   {0x130, 0x13C, 0xF},  {0x13F, 0x14B, 1},  {0x17B, 0x185, 4},   {0x188, 0x195, 0x11},
+};
+// Champions offset, Ext place, length
+constexpr uint16_t kKrynnExt[][3] = {
+    {0xC7, kExtBook, 7},      {0x5C, kExtKnight, 1},    {0x5D, kExtGod, 1},       {0x5E, kExtRobe, 1},
+    {0x5F, kExtK5F, 1},       {0xE9, kExtKE9, 4},       {0x126, kExtKSlots, 5},   {0x140, kExtFlags2, 1},
+    {0x141, kExtK141, 1},     {0x187, kExtMagicRes, 1}, {0x5A, kExtRace, 1},
+};
+
 } // namespace
+
+uint8_t race_from_krynn(uint8_t v)
+{
+    static const uint8_t kTo[8] = {2, 2, 4, 1, 1, 5, 7, 0};
+    return v < 8 ? kTo[v] : v;
+}
+
+uint8_t race_to_krynn(uint8_t v)
+{
+    // (Curse's gnome: a hill dwarf; half-orc: human)
+    static const uint8_t kTo[8] = {7, 3, 1, 4, 2, 5, 6, 6};
+    return v < 8 ? kTo[v] : v;
+}
+
+void from_krynn(const uint8_t* p, uint8_t* r)
+{
+    memset(r, 0, kRecordSize);
+    for (const auto& run : kKrynnRuns) memcpy(r + run[1], p + run[0], run[2]);
+    memcpy(r + kListAt, p + 0x1E, kKrynnMemorized);        // the memorized spells, in place
+    r[0x74] = race_from_krynn(p[0x5A]);
+    r[0x14C] = p[0x142];                                    // (the item count)
+}
+
+void from_krynn(const uint8_t* p, Character& c)
+{
+    from_krynn(p, c.rec);
+    for (const auto& run : kKrynnExt) memcpy(c.ext + run[1], p + run[0], run[2]);
+}
+
+void to_krynn(const Character& c, uint8_t* p)
+{
+    const uint8_t* r = c.rec;
+    memset(p, 0, kKrynnRecordSize);
+    for (const auto& run : kKrynnRuns) memcpy(p + run[0], r + run[1], run[2]);
+    for (const auto& run : kKrynnExt) memcpy(p + run[0], c.ext + run[1], run[2]);
+    p[0x5A] = race_from_krynn(c.ext[kExtRace]) == r[0x74] ? c.ext[kExtRace] : race_to_krynn(r[0x74]);
+    // The memorized spells: 58 places; any the engine put further on go
+    // into its free places, from the end
+    memcpy(p + 0x1E, r + kListAt, kKrynnMemorized);
+    int free_at = kKrynnMemorized - 1;
+    for (int i = kKrynnMemorized; i < kListSize; ++i) {
+        if (!r[kListAt + i]) continue;
+        while (free_at >= 0 && p[0x1E + free_at]) --free_at;
+        if (free_at < 0) break;
+        p[0x1E + free_at] = r[kListAt + i];
+    }
+    p[0x142] = static_cast<uint8_t>(c.n_items);
+}
 
 void from_pool(const uint8_t* p, Character& c) { from_pool(p, c.rec); }
 
@@ -274,6 +342,13 @@ bool read_record(dax::ByteSource& src, Character& out, Format f)
         from_secret(sec, out);
         return true;
     }
+    if (f == Format::Krynn) {
+        uint8_t k[kKrynnRecordSize];
+        out = Character{};
+        if (src.read_at(0, k, kKrynnRecordSize) != kKrynnRecordSize) return false;
+        from_krynn(k, out);
+        return true;
+    }
     uint8_t pool[kPoolRecordSize];
     out = Character{};
     if (src.read_at(0, pool, kPoolRecordSize) != kPoolRecordSize) return false;
@@ -295,6 +370,11 @@ const uint8_t* record_bytes(const Character& c, Format f, uint8_t* buf, size_t* 
     if (f == Format::Secret) {
         to_secret(c, buf);
         *n = kSecretRecordSize;
+        return buf;
+    }
+    if (f == Format::Krynn) {
+        to_krynn(c, buf);
+        *n = kKrynnRecordSize;
         return buf;
     }
     to_pool(c, buf);

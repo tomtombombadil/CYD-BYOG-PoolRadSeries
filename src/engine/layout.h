@@ -89,6 +89,9 @@ struct Tables {
     // bar, cap under a bar, side, cap over a bar; the view frame's edge,
     // its top cap, side, bottom cap
     uint8_t bars[8] = {};
+    // Champions: in bars mode the top bar (row 0) is `top`'s tiles (20 +
+    // value; its moons' cells set by the game from their phases)
+    bool top_row = false;
     // Darkness: the frame drawn by its bar routine from BORDERS.DAX's pieces
     // in slots 20-30 (0-3 corners, 4 / 5 the bars, 6 / 7 junctions, 9 the
     // row-16 bar's left end - darkness_facts.md 7.1)

@@ -712,6 +712,17 @@ struct Profile {
         // loss ...", " The remaining party members ...", "'s body for valuables."
         uint16_t tr_max_age = 0;
         uint32_t tr_age_words[10] = {};
+        // Champions of Krynn (champions_facts.md): its characters (409-byte
+        // records .SAV / .WHO, items .STF of 63 bytes, effects .SFX; races,
+        // knight order, god, robe - party::from_krynn) and the three moons
+        // on the frame's top bar (frame.top: its top row's tiles, the moons'
+        // cells from their phases)
+        bool     krynn = false;
+        // Champions' interpreter (GAME.OVR ovl 0x3E +0x11B5): a one-choice
+        // menu whose choice is the first of these words shows the second
+        // instead ("PRESS BUTTON OR RETURN TO CONTINUE." -> "PRESS
+        // <ENTER>/<RETURN> TO CONTINUE"; GAME.OVR; 0: none)
+        uint32_t press_words[2] = {};
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

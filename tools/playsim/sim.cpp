@@ -206,6 +206,7 @@ static void settle(int choice = 0, int max_ms = 60000)
             for (int i = 0; i < vm->items(); ++i) printf(" [%s]", vm->item(i));
             int c = vm->items() > 1 ? next_choice(choice) : 0;
             printf(" -> %d\n", c);
+            if (getenv("MENULINE")) printf("  menu line [%s%s] %d choices\n", menu.prompt, menu.s, menu.count);
             shot("menu");
             if (c >= vm->items()) c = 0;
             int col = 0;
