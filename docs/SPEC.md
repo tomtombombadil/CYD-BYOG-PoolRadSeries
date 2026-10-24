@@ -177,6 +177,7 @@ stay in the session's scratch space, never in the repo.
 | What | Where | Status |
 |---|---|---|
 | DAX archive: u16 index size, 9-byte entries (id, u32 offset, u16 unpacked, u16 packed), RLE blocks (control `c >= 0`: copy `c+1` bytes; `c < 0`: repeat next byte `-c` times) | `src/engine/dax.*` | **Confirmed**: every DAX file of all four games reads (3,661 blocks). |
+| HLIB library (Dark Queen's .TLB / .GLB): "HLIB", u32 size, u16 count, u8 0, u8 flag (1 = entry 0 a directory of (u16 id, u16 entry)), 4-char kind (TILE / DATA / DIG4 / HLIB), count + 1 u32 offsets; pictures = nested TILE libraries (colours + parts); parts = 8-byte header + mode X planes / RLE (runs 257 - c) / sprite rows / EGA bit planes | `src/engine/hlib.*` | **Confirmed** 2026-10-24: every library of the GOG files opens, 2,496 parts decode (VGA kinds 10 / 11 / 12 / 15 / 17, EGA 00 / 01 / D2; 03 and 19 to do). Facts: the Project's claude/queen_facts.md. |
 | EGA picture: u16 height, u16 width in 8-px columns, u16 x, u16 y, u8 frames, 8 unknown bytes, nibble-packed pixels (high first); the frames fill the block exactly | `src/engine/picture.*` | **Confirmed** on PoolRad (600), Curse (477), Secret (353): TITLE, BIGPIC, HEAD, BODY, CBODY, CHEAD, COMSPR, CPIC, SKY, 8X8D tile sets (70 tiles each), DUNGCOM / WILDCOM / RANDCOM, TILES. |
 | EGA animation (PICn, FINALn, SPRITn): u8 frames, then per frame u32 delay, u16 height, u16 width cols, u16 x, u16 y, u8, 8 unknown bytes, packed pixels; PIC / FINAL frames after the first XORed with the first | `src/engine/picture.*` | **Confirmed** on PoolRad (183), Curse (102), Secret (72); frames checked by eye. SPRIT blocks = 3 frames: near / middle / far. |
 | VGA picture (Darkness): u8 height, u8 width cols, u16 x, u16 y, u8 frames, u8, u8 first palette index, u8 count-1, palette (6-bit RGB), one EGA nibble per entry, 4 bytes, then 1 byte a pixel | `src/engine/picture.*` | **Confirmed** on 479 Darkness blocks: TITLE, BIGPIC, BACK, SKYGRND, CBODY, CHEAD, COMSPR, CPIC, DUNGCOM, WILDCOM, BORDERS, CURSOR. |
@@ -2222,7 +2223,8 @@ Recognised on the card from v0.3.0 (folder names Tom uses: CHAMPIONS, DEATH,
 QUEEN, GATEWAY, TREASURE, UNLIMIT, or the full titles; also KRYNN, SAVAGE,
 FRUA): the DAX games open in the viewer like the main four; Dark Queen and
 Unlimited Adventures are listed as "newer format" (their .TLB / .GLB files,
-looked for up to two folders down, can't be read yet).
+looked for up to two folders down; since 2026-10-24 Dark Queen's open in
+the Resource Test - below).
 
 First look at Tom's GOG files with `dax_inspect` (2026-10-07):
 
@@ -2234,6 +2236,23 @@ First look at Tom's GOG files with `dax_inspect` (2026-10-07):
 | Dark Queen of Krynn | **"HLIB" containers** (`.TLB` / `.GLB`, files split over DISK1-3 folders), plus GAME.FON | not looked at yet - a newer engine generation |
 | Gateway to the Savage Frontier | DAX, all blocks read | EGA pictures parse (238); only 1 animation - its PIC files differ, to check |
 | Unlimited Adventures (FRUA) | "HLIB" `.TLB` / `.GLB` like Dark Queen, plus PCX / LBM pictures | not looked at yet |
+
+**The Dark Queen of Krynn** (2026-10-24, phase 1 - foundations; facts and
+the plan in the Project's claude/queen_facts.md): a new program (DQK.EXE,
+C, RTLink overlays inside the EXE, not EXEPACK) over HLIB libraries; its
+scripts are Darkness's ECL (ECL.GLB, every block decodes with
+kDarknessEcl), maps GEO.GLB (any size, 4 bytes a square), monsters
+MONCHA.GLB, records a C struct (Unlimited Adventures' layout).
+`engine/hlib.*` reads the libraries (directory, ids, nested pictures,
+`EntryReader` with RleReader's calls for data entries) and decodes the
+pictures a row at a time; the Resource Test lists DISK1-3's files and shows
+their pictures and data. **16 colours on the classic boards**: every VGA
+picture carries an EGA colour per palette entry, and the EGA install's
+pictures are exactly the VGA ones through that table (checked pixel for
+pixel) - so the engine reads the player's VGA files as GOG installs them and
+draws them in 16 colours itself, no EGA install and nothing made by the
+scan; 256 colours on the PSRAM boards. The scan finds the folder holding
+DISK1-3 (`data_dir`; a library saved before needs Rescan).
 
 ## 10. Engine UI rules (carried over from CYD-Classic-Games)
 

@@ -157,6 +157,37 @@ int dax_at_depth(fs::FS& fs, const char* rel, int depth, char* out, size_t cap)
     return 0;
 }
 
+// The HLIB games keep their files in DISK1-3: the first folder up to
+// `depth` levels below /GOLDBOX/<rel> (0: rel itself) holding a DISK1
+// folder, relative to /GOLDBOX, into out (GOG: the game's folder; the SNEG
+// release: <folder>/GAME/DQK)
+bool disk_root(fs::FS& fs, const char* rel, int depth, char* out, size_t cap)
+{
+    char path[160];
+    snprintf(path, sizeof path, "%s/%s/DISK1", games::kRootDir, rel);
+    if (fs.exists(path)) {
+        strlcpy(out, rel, cap);
+        return true;
+    }
+    if (depth == 0) return false;
+    snprintf(path, sizeof path, "%s/%s", games::kRootDir, rel);
+    fs::File dir = fs.open(path);
+    if (!dir || !dir.isDirectory()) return false;
+    char names[16][40];
+    int k = 0;
+    for (fs::File f = dir.openNextFile(); f; f = dir.openNextFile()) {
+        if (f.isDirectory() && k < 16) strlcpy(names[k++], base_name(f.name()), sizeof names[0]);
+        f.close();
+    }
+    dir.close();
+    for (int i = 0; i < k; ++i) {
+        char sub[96];
+        if (snprintf(sub, sizeof sub, "%s/%s", rel, names[i]) >= static_cast<int>(sizeof sub)) continue;
+        if (disk_root(fs, sub, depth - 1, out, cap)) return true;
+    }
+    return false;
+}
+
 } // namespace
 
 ScanResult scan(GameDir* out, int max, int* n, Progress progress, void* ctx)
@@ -196,6 +227,7 @@ ScanResult scan(GameDir* out, int max, int* n, Progress progress, void* ctx)
                 if (again && again.isDirectory()) dax = count_hlib(again, 3);   // (SNEG: GAME/<SHORT>/DISK1-3)
                 if (again) again.close();
                 g.format = Format::Hlib;
+                if (dax > 0) disk_root(fs, g.folder, 2, g.data_dir, sizeof g.data_dir);   // (where DISK1-3 are)
             }
             if (dax > 0) {
                 g.game = games::from_folder_name(g.folder);
@@ -243,7 +275,7 @@ ScanResult scan(GameDir* out, int max, int* n, Progress progress, void* ctx)
                     say(progress, ctx, true, "Found game files in %s (a game this engine doesn't know)", g.folder);
                 else
                     say(progress, ctx, true, "Found %s", games::title(g.game));
-                if (g.format == Format::Hlib) say(progress, ctx, false, "  (newer format - not readable yet)");
+                if (g.format == Format::Hlib) say(progress, ctx, false, "  (newer format - not playable yet)");
                 if (g.icon[0]) say(progress, ctx, false, "Found the %s game icon", games::short_title(g.game));
                 if (g.journal[0]) say(progress, ctx, false, "Found the %s journal", games::title(g.game));
                 if (g.gbc[0]) say(progress, ctx, false, "Found the Gold Box Companion's %s journal", games::short_title(g.game));
@@ -380,6 +412,42 @@ int list_dax(const char* data_dir, char (*names)[kNameLen], int max)
             --j;
         }
         strlcpy(names[j + 1], t, kNameLen);
+    }
+    return n;
+}
+
+int list_hlib(const char* data_dir, char (*names)[kNameLen], int max)
+{
+    if (!sd_begin()) return 0;
+    int n = 0;
+    for (int disk = 0; disk <= 3 && n < max; ++disk) {
+        char sub[8] = "";
+        if (disk) snprintf(sub, sizeof sub, "DISK%d", disk);
+        char path[160];
+        snprintf(path, sizeof path, "%s/%s%s%s", games::kRootDir, data_dir, disk ? "/" : "", sub);
+        fs::File dir = sd_fs().open(path);
+        if (!dir || !dir.isDirectory()) continue;
+        const int from = n;
+        for (fs::File f = dir.openNextFile(); f && n < max; f = dir.openNextFile()) {
+            const char* nm = base_name(f.name());
+            char rel[kNameLen];
+            if (!f.isDirectory() && is_hlib(nm) &&
+                snprintf(rel, sizeof rel, "%s%s%s", sub, disk ? "/" : "", nm) < static_cast<int>(sizeof rel))
+                strlcpy(names[n++], rel, kNameLen);
+            f.close();
+        }
+        dir.close();
+        // (sorted by name within each disk)
+        for (int i = from + 1; i < n; ++i) {
+            char t[kNameLen];
+            strlcpy(t, names[i], kNameLen);
+            int j = i - 1;
+            while (j >= from && strcasecmp(names[j], t) > 0) {
+                strlcpy(names[j + 1], names[j], kNameLen);
+                --j;
+            }
+            strlcpy(names[j + 1], t, kNameLen);
+        }
     }
     return n;
 }

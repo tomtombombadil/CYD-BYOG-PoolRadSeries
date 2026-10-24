@@ -68,6 +68,10 @@ jobs:
         run: |
           g++ -std=c++17 -O1 -Wall -Werror -fsanitize=address,undefined -Isrc -o test_dax tools/host_tests/test_dax.cpp src/engine/*.cpp
           ./test_dax
+      - name: HLIB libraries (The Dark Queen of Krynn)
+        run: |
+          g++ -std=c++17 -O1 -Wall -Werror -fsanitize=address,undefined -Isrc -o test_hlib tools/host_tests/test_hlib.cpp src/engine/*.cpp
+          ./test_hlib
       - name: PC inspection tool builds
         run: g++ -std=c++17 -O1 -Wall -Werror -Isrc -o dax_inspect tools/dax_tool/dax_inspect.cpp src/engine/*.cpp
       # The game code needs nothing of the board's (the platform layer,
