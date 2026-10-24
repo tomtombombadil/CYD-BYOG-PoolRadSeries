@@ -4,7 +4,7 @@
 // program: its race / class / alignment tables and experience rows, and the
 // constants of its createPlayer, gods, Modify and steel code) - never
 // against the engine's own code.
-// ONLY= create, train, modify, moons
+// ONLY= create, train, modify, moons, knights
 #include "behave_oracle.inc"
 
 namespace bchamp {
@@ -231,6 +231,46 @@ void moons()
     expect(P, w, nbad == 0, nbad ? "%d wrong" : "%s", nbad ? std::to_string(nbad).c_str() : "");
 }
 
+// The knights' petitions: each order's least level, experience and stats
+// - may become at them, too inexperienced a level or a point under, not
+// qualified a stat under
+void knights()
+{
+    static party::Character c;
+    int nbad = 0, ncase = 0;
+    for (const auto& k : b_rows("knight")) {
+        const int order = k[0], lv = k[1], xp = k[2];
+        dice_usual();
+        create::begin(c, m->tables, m->facts, m->dice, classes::kKrynnRace + 6, 0, create::Monk, 0, 0);
+        create::roll(c, m->tables, m->facts, m->dice);
+        c.ext[party::kExtKnight] = static_cast<uint8_t>(order);
+        auto set = [&](int level, uint32_t e, int low_stat) {
+            c.rec[0x109 + 7] = static_cast<uint8_t>(level);
+            for (int i = 0; i < 4; ++i) c.rec[0x127 + i] = static_cast<uint8_t>(e >> (8 * i));
+            for (int i = 0; i < 6; ++i) c.rec[0x10 + i * 2] = static_cast<uint8_t>(k[3 + i] - (i == low_stat ? 1 : 0));
+        };
+        const struct { int level; uint32_t xp; int low; int want; } cases[] = {
+            {lv, static_cast<uint32_t>(xp), -1, 0}, {lv - 1, static_cast<uint32_t>(xp), -1, 1},
+            {lv, static_cast<uint32_t>(xp - 1), -1, 1}, {lv, static_cast<uint32_t>(xp), 0, 2}, {lv, static_cast<uint32_t>(xp), 4, 2},
+        };
+        for (const auto& t : cases) {
+            set(t.level, t.xp, t.low);
+            ++ncase;
+            const int got = create::knight_petition(c, m->tables, m->facts);
+            if (got != t.want) {
+                ++nbad;
+                char w[120];
+                snprintf(w, sizeof w, "knights: order %d level %d xp %u stat %d low: %d, want %d", order, t.level, t.xp,
+                         t.low, got, t.want);
+                expect(P, w, false);
+            }
+        }
+    }
+    char w[96];
+    snprintf(w, sizeof w, "knights: %d petitions answered as the original", ncase);
+    expect(P, w, nbad == 0 && ncase > 0, nbad ? "%d wrong" : "%s", nbad ? std::to_string(nbad).c_str() : "");
+}
+
 bool open_game()
 {
     play::close();
@@ -272,4 +312,5 @@ static void behave_champions()
     if (want("train")) training();
     if (want("modify")) modify();
     if (want("moons")) moons();
+    if (want("knights")) knights();
 }
