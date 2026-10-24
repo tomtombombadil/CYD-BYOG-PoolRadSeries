@@ -74,6 +74,41 @@ int read_block(const char* file, int block, uint8_t* out, int cap)
 // layout (Pool's 285-byte records moved into it)
 bool read_record_block(const char* file, int block, uint8_t* rec, uint8_t* ext = nullptr, uint8_t* sx = nullptr)
 {
+    if (dkk()) {
+        // Death Knights' 216-byte records with their spell part, the MON<n>WIZ
+        // block of the same number when there is one (party::from_dkk - an
+        // NPC keeps its extension; a monster its flags 2 (0x7B) and magic
+        // resistance (0xC1): sx)
+        uint8_t* k = static_cast<uint8_t*>(malloc(party::kDkkRecordSize + party::kDkkSpellSize));
+        const bool ok = k && read_block(file, block, k, party::kDkkRecordSize) == static_cast<int>(party::kDkkRecordSize);
+        uint8_t* w = nullptr;
+        if (ok) {
+            char wiz[24];
+            snprintf(wiz, sizeof wiz, "%s", file);
+            char* at = strstr(wiz, "CHA.");
+            if (at) memcpy(at, "WIZ.", 4);
+            if (at && read_block(wiz, block, k + party::kDkkRecordSize, party::kDkkSpellSize) ==
+                          static_cast<int>(party::kDkkSpellSize))
+                w = k + party::kDkkRecordSize;
+        }
+        if (ok && sx) {
+            sx[0] = k[0x7B];
+            sx[1] = k[0xC1];
+        }
+        if (ok) {
+            party::Character* tmp = ext ? new (std::nothrow) party::Character : nullptr;
+            if (tmp) {
+                party::from_dkk(k, w, *tmp);
+                memcpy(rec, tmp->rec, party::kRecordSize);
+                memcpy(ext, tmp->ext, party::kExtSize);
+                delete tmp;
+            } else {
+                party::from_dkk(k, w, rec);
+            }
+        }
+        free(k);
+        return ok;
+    }
     if (secret_files()) {
         // Secret's 439-byte records (party::from_secret; an NPC keeps its
         // extension; a monster its flags 2 and magic resistance: sx)
@@ -165,7 +200,7 @@ bool read_record_block(const char* file, int block, uint8_t* rec, uint8_t* ext =
 // (the name is made from its words). How many (up to cap) into out.
 int read_monster_items(const char* file, int block, uint8_t* out, int cap)
 {
-    if (!darkness_files()) {
+    if (!darkness_files() || dkk()) {          // (Death Knights: 63-byte items, as Curse's)
         const int n = read_block(file, block, out, cap * static_cast<int>(items::kRecordSize));
         return n > 0 ? n / static_cast<int>(items::kRecordSize) : 0;
     }
@@ -2732,9 +2767,11 @@ void dk_words(const char* all, const bool* on, int n, char* words, size_t cap)
     words[o] = 0;
 }
 
+bool kr_can_yell(const combat::Fighter& f);
+
 void fight_menu_dk(char* words, size_t cap, const combat::Fighter& f, bool spells)
 {
-    bool on[12] = {};
+    bool on[13] = {};
     on[0] = f.moves > 1;
     on[1] = true;
     on[2] = f.n_items && f.can_use;
@@ -2747,14 +2784,23 @@ void fight_menu_dk(char* words, size_t cap, const combat::Fighter& f, bool spell
     on[5] = can_guard(f);
     on[6] = on[7] = on[9] = on[10] = on[11] = true;
     on[8] = combat::anyone_dying(fg->b);
+    if (dkk()) {
+        // (Death Knights, its GAME.OVR 0x04B +0xCCD: Yell 10th - a kender
+        // while no one taunts; View Speed End after it)
+        on[12] = true;
+        on[9] = kr_can_yell(f);
+        dk_words(fw(profile::kFMenuDk), on, 13, words, cap);
+        return;
+    }
     dk_words(fw(profile::kFMenuDk), on, 12, words, cap);
 }
 
 // Champions: a kender (its own race 5) may Yell while no one has (its
-// GAME.OVR ovl 0x58 +0xA45: the taunter pointer DS 0x71A7 nil)
+// GAME.OVR ovl 0x58 +0xA45: the taunter pointer DS 0x71A7 nil); Death
+// Knights' the same (its Yell in the menu's string)
 bool kr_can_yell(const combat::Fighter& f)
 {
-    return krynn() && d->w_yell[0] && f.member >= 0 && pt->m[f.member].ext[party::kExtRace] == 5 &&
+    return (dkk() || (krynn() && d->w_yell[0])) && f.member >= 0 && pt->m[f.member].ext[party::kExtRace] == 5 &&
            fg->b.taunter < 0 && d->prof->fight.facts.taunted;
 }
 

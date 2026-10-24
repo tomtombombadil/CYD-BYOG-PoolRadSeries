@@ -843,11 +843,13 @@ int ov_area()
     return a >= 0 && a < 3 ? a : -1;
 }
 bool pool_overland() { return d && vm && ov_area() >= 0; }
+bool dkk();
+bool krynn_rules();
 // Darkness's overland (darkness_facts.md S4 / S7): byte 0x24 = 1 and not 3D
 bool dk_overland() { return d && vm && d->prof->variant.dk_overland_pics && vm->get(0x24) == 1 && !vm->get(0x22); }
 // Champions' overland (champions_facts.md 3): area word 0x4BE6 = 0 - the
 // big picture the scripts show (the region's map) with the party's marker
-bool kr_overland() { return d && vm && d->prof->variant.krynn && !vm->get(0x4BE6); }
+bool kr_overland() { return d && vm && krynn_rules() && !vm->get(0x4BE6); }
 // Either game's overland with a marker on a map picture
 bool marker_overland() { return dk_overland() || kr_overland(); }
 // Gateway's wilderness (gateway_facts.md 14): area word 0x4BE6 = 0
@@ -925,7 +927,8 @@ void draw_dk_overland(pic::Canvas& c)
 // Champions' overland marker (GAME.OVR ovl 0x96: CURSOR.DAX's picture at
 // cell (x + 1, y + 1) of area words 0x4BC3 / 0x4BC4, what was under it kept
 // and put back when it moves): on - drawn at the party's square; off - the
-// square under it put back
+// square under it put back. Death Knights (its ovl 0xE2): 8X8D1's block 204
+// (the profile's marker_file / marker_block)
 int kr_mx = -1, kr_my = -1;
 uint8_t kr_under[64];
 void kr_marker(pic::Canvas& c, bool on)
@@ -942,9 +945,10 @@ void kr_marker(pic::Canvas& c, bool on)
     kr_mx = x;
     kr_my = y;
     plat::File f;
-    if (open_dax("CURSOR.DAX", f)) {
+    const auto& pv = d->prof->variant;
+    if (open_dax(pv.marker_file ? pv.marker_file : "CURSOR.DAX", f)) {
         plat::FileSource src(f);
-        const dax::Entry* e = d->idx.find(1);
+        const dax::Entry* e = d->idx.find(pv.marker_file ? pv.marker_block : 1);
         if (e) {
             dax::RleReader r(src, d->idx, *e);
             uint8_t hdr[pic::kHeaderSize];
@@ -1165,6 +1169,27 @@ void dk_background()
 {
     const uint8_t* gb = d->gs.area1;
     const bool in = geo::flags(d->map, d->gs.x, d->gs.y) >= 0x80;
+    if (dkk()) {
+        // Death Knights (its ovl 0xF7 +0x177): indoors the look's BACKn
+        // picture; outdoors SKYGRND 2 with SKYGRND 1's night sky over its top
+        // from hour 14 (0x4BC9)
+        const bool night = !in && vm->get(0x4BC9) >= 14;
+        const int look = d->save.look;
+        const uint8_t id = static_cast<uint8_t>(in ? 0x10 | (look & 15) : night ? 0x2F : 0x22);
+        if (d->world.back && d->world.back_id == id) return;
+        plat::File f;
+        char name[24];
+        if (in ? look > 0 && open_area_dax("BACK", look, f, name, sizeof name) : open_dax("SKYGRND.DAX", f)) {
+            plat::FileSource src(f);
+            if (in) {
+                view3d::load_ega_back(src, d->idx, static_cast<uint8_t>(look), id, d->world);
+            } else if (view3d::load_ega_back(src, d->idx, 2, 0x22, d->world) && night) {
+                view3d::load_ega_back(src, d->idx, 1, id, d->world, true);
+            }
+            f.close();
+        }
+        return;
+    }
     int block;
     if (d->prof->variant.tr) {
         // Treasures (its ovl 0x144 +0x328): indoors BACK1 block game byte
@@ -1260,6 +1285,8 @@ void draw_view(pic::Canvas& c)
 
 bool dk_overland();
 void krynn_moons(pic::Canvas* c = nullptr);
+bool dkk();
+bool krynn_rules();
 void draw_position(pic::Canvas& c)
 {
     krynn_moons(&c);            // (Champions: a day passed - the moons' tiles; its clock routine)
@@ -1373,17 +1400,21 @@ void tr_lattice(pic::Canvas& c)
 // white at column 8, red at 19, black at 30 - the top table's value there is
 // the phase (area words 0x4CF9-0x4CFB, 0-3) + 10 / 6 / 14 (its START image
 // 0x1280). c: also redraw the three cells now (the top bar is on screen).
+// Death Knights (its START image 0x115B): the phase (game bytes 0x4CF9-B) +
+// 0x15 / 0x0D / 0x11 - block 202's tile itself
 void krynn_moons(pic::Canvas* c)
 {
-    if (!d->prof->variant.krynn || !vm || !d->tables.top_row) return;
-    static const uint8_t kCol[3] = {8, 19, 30}, kAdd[3] = {10, 6, 14};
+    if (!krynn_rules() || !vm || !d->tables.top_row) return;
+    static const uint8_t kCol[3] = {8, 19, 30}, kAdd[3] = {10, 6, 14}, kAddDk[3] = {0x15, 0x0D, 0x11};
     magic::set_moons(vm->get(0x4CF9) & 3, vm->get(0x4CFA) & 3, vm->get(0x4CFB) & 3);
+    const bool direct = d->tables.direct;
     for (int i = 0; i < 3; ++i) {
-        const uint8_t v = static_cast<uint8_t>(kAdd[i] + (vm->get(static_cast<uint16_t>(0x4CF9 + i)) & 3));
+        const uint8_t v =
+            static_cast<uint8_t>((direct ? kAddDk[i] : kAdd[i]) + (vm->get(static_cast<uint16_t>(0x4CF9 + i)) & 3));
         if (d->tables.top[kCol[i]] == v) continue;
         d->tables.top[kCol[i]] = v;
         if (c) {
-            layout::tile(*c, d->frame_tiles, layout::kViewTile + v, kCol[i], 0);
+            layout::tile(*c, d->frame_tiles, direct ? v : layout::kViewTile + v, kCol[i], 0);
             dirty_rows(0, 1);
         }
     }
@@ -1563,6 +1594,8 @@ bool secret_files();
 bool darkness_files();
 bool gateway();
 bool krynn();
+bool dkk();
+bool krynn_rules();
 bool move_menu() { return secret_files() || darkness_files() || gateway() || krynn(); }
 void ow(uint32_t at, char* out, size_t cap);
 void idle_menu(pic::Canvas& c)
@@ -1828,7 +1861,7 @@ void pm_flags(bool on[])
             break;
         case 'K':                               // Champions' Knight Change Classes: where training is, a knight below the Rose
             on[i] = false;
-            for (int k = 0; krynn() && (vm->get(0x7EA8) & 0xFF) != 0 && k < pt->count; ++k)
+            for (int k = 0; krynn_rules() && (vm->get(0x7EA8) & 0xFF) != 0 && k < pt->count; ++k)
                 on[i] = on[i] || (pt->m[k].level(classes::Monk) > 0 && pt->m[k].ext[party::kExtKnight] < 3);
             break;
         case 'L':
@@ -1846,6 +1879,11 @@ void pm_flags(bool on[])
 void pm_prompt(pic::Canvas& c, const char* note = nullptr)
 {
     clear_menu_line(c);
+    // (Death Knights: "Select" a highlighted word - DOSBox)
+    if (dkk() && !note) {
+        hl_text(c, d->choose, 0, text::kMenuRow);
+        return;
+    }
     // (Treasures: "Select" white - DOSBox)
     put(c, note ? note : d->choose, 0, text::kMenuRow, d->prof->variant.tr && !note ? 15 : 13);
 }
@@ -1937,21 +1975,40 @@ bool darkness_files() { return d->prof->variant.darkness_files; }
 // Champions of Krynn's (variant.krynn): 409-byte records (NAME.WHO), items
 // .STF (63 bytes), effects .SFX; saves as Secret's (no script bytes)
 bool krynn() { return d->prof->variant.krynn; }
+// Death Knights of Krynn's (variant.dkk; the Darkness engine's front end -
+// darkness_files() - with its own files): 216-byte records (CHRDATxn.GAM in
+// a saved game, NAME.PC alone) with their spells in .WIZ (220 bytes), items
+// .JNK (63 bytes), effects .EFF; Krynn's rules (krynn_rules: the moons,
+// gods, knights, its races)
+bool dkk() { return d->prof->variant.dkk; }
+bool krynn_rules() { return krynn() || dkk(); }
 party::Format rec_format()
 {
     return pool_files()       ? party::Format::Pool
            : secret_files()   ? party::Format::Secret
+           : dkk()            ? party::Format::DeathKnights
            : darkness_files() ? party::Format::Darkness
            : krynn()          ? party::Format::Krynn
                               : party::Format::Curse;
 }
 const char* ext_guy() { return pool_files() ? ".CHA" : secret_files() || krynn() ? ".WHO" : darkness_files() ? ".PC" : ".GUY"; }
-const char* ext_items() { return pool_files() ? ".ITM" : secret_files() || krynn() ? ".STF" : darkness_files() ? ".THG" : ".SWG"; }
-const char* ext_fx() { return pool_files() ? ".SPC" : secret_files() || krynn() ? ".SFX" : darkness_files() ? ".EFX" : ".FX"; }
+const char* ext_items() { return pool_files() ? ".ITM" : secret_files() || krynn() ? ".STF" : dkk() ? ".JNK" : darkness_files() ? ".THG" : ".SWG"; }
+const char* ext_fx() { return pool_files() ? ".SPC" : secret_files() || krynn() ? ".SFX" : dkk() ? ".EFF" : darkness_files() ? ".EFX" : ".FX"; }
+// A saved game's member record (Death Knights: .GAM)
+const char* ext_member() { return dkk() ? ".GAM" : ".SAV"; }
+// Death Knights: a character's spell part beside its record (path: the
+// record's file - its extension replaced by .WIZ)
+void dkk_wiz_name(const char* rec_path, char* out, size_t cap)
+{
+    snprintf(out, cap, "%s", rec_path);
+    char* dot = strrchr(out, '.');
+    if (dot && static_cast<size_t>(dot - out) + 5 <= cap) strcpy(dot, ".WIZ");
+}
 size_t rec_file_size()
 {
     return pool_files()       ? party::kPoolRecordSize
            : secret_files()   ? party::kSecretRecordSize
+           : dkk()            ? party::kDkkRecordSize
            : darkness_files() ? party::kDarknessRecordSize
            : krynn()          ? party::kKrynnRecordSize
                               : party::kRecordSize;
@@ -2009,7 +2066,9 @@ bool write_character_files(const char* dir, const char* rec_fn, const char* item
         }
     }
     const party::Character& ch = *src;
-    uint8_t buf[party::kDarknessRecordSize];    // (the largest: Darkness's record)
+    // (the largest: Darkness's record - or Death Knights' with its spell part)
+    static_assert(party::kDarknessRecordSize >= party::kDkkRecordSize + party::kDkkSpellSize, "record buffer");
+    uint8_t buf[party::kDarknessRecordSize];
     uint8_t fx[party::kMaxAffects * party::kAffectSize];
     size_t n = 0;
     const uint8_t* p = party::record_bytes(ch, rec_format(), buf, &n);
@@ -2019,6 +2078,11 @@ bool write_character_files(const char* dir, const char* rec_fn, const char* item
         f = fx;
     }
     bool ok = write_file(dir, rec_fn, p, n);
+    if (dkk()) {
+        char wz[48];
+        dkk_wiz_name(rec_fn, wz, sizeof wz);
+        ok = ok && write_file(dir, wz, buf + party::kDkkRecordSize, party::kDkkSpellSize);
+    }
     if (item_stride() != party::kItemSize) {
         // Secret's .STF: 67 bytes an item, the 4 after Curse's 63 zero
         const size_t len = static_cast<size_t>(ch.n_items) * item_stride();
@@ -2038,11 +2102,30 @@ bool write_character_files(const char* dir, const char* rec_fn, const char* item
     return ok;
 }
 
+// Death Knights: a character's spell part (rec_path: its record's file)
+void dkk_read_spells(const char* rec_path, party::Character& ch)
+{
+    if (!dkk()) return;
+    char wz[200];
+    dkk_wiz_name(rec_path, wz, sizeof wz);
+    plat::File f = plat::open(wz, "r");
+    if (!f) return;
+    uint8_t w[party::kDkkSpellSize];
+    {
+        plat::FileSource src(f);
+        if (src.read_at(0, w, sizeof w) == sizeof w) party::dkk_spells_in(w, ch);
+    }
+    f.close();
+}
+
 // After reading a character's files: Pool's Strength and Charisma as the engine keeps them
 void character_read(party::Character& ch)
 {
     if (pool_files()) rules::pool_stats_in(ch, d->facts);
     rules::fix_items(ch);                   // (an item the original got wrong, fixed when wanted)
+    // (Death Knights' record keeps no attack level and the like: worked out
+    // as its program does after a load)
+    if (dkk() && names) rules::recalc(ch, *names, d->facts);
 }
 
 // Loads saved game `slot`: the game's memory, position and script, and
@@ -2105,8 +2188,9 @@ bool load_game(char slot)
     bool ok;
     {
         plat::FileSource src(f);
-        ok = darkness_files() ? savegame::read_darkness(src, d->gs, d->save)
-                              : savegame::read(src, d->gs, d->save, !pool_files(), !short_saves());
+        ok = dkk()              ? savegame::read_dkk(src, d->gs, d->save)
+             : darkness_files() ? savegame::read_darkness(src, d->gs, d->save)
+                                : savegame::read(src, d->gs, d->save, !pool_files(), !short_saves());
     }
     f.close();
     // Whatever was going on is over now (a script's party menu, a wait)
@@ -2125,7 +2209,7 @@ bool load_game(char slot)
     for (int i = 0; i < d->save.count; ++i) {
         party::Character& ch = pt->m[pt->count];
         char fn[48];
-        snprintf(fn, sizeof fn, "%s.SAV", d->save.names[i]);
+        snprintf(fn, sizeof fn, "%s%s", d->save.names[i], ext_member());
         if (!open_save_file(fn, f)) {
             plat::log("[play] %s missing\n", fn);
             load_problem = "A character of that saved game is missing from the save folder.";
@@ -2139,6 +2223,11 @@ bool load_game(char slot)
         if (!ok) {
             load_problem = "A character of that saved game couldn't be read.";
             continue;
+        }
+        if (dkk()) {
+            char path[200];
+            save_path(fn, path, sizeof path);
+            dkk_read_spells(path, ch);
         }
         snprintf(fn, sizeof fn, "%s%s", d->save.names[i], ext_items());
         if (open_save_file(fn, f)) {
@@ -2209,7 +2298,12 @@ const Earlier& earlier()
                                     party::kSecretItemSize, ".SFX", 0x1414, 0xFF};
     static const Earlier kGateway = {".GUY", party::kRecordSize, party::Format::Curse, ".SWG", party::kItemSize, ".FX",
                                      0x3214, 0xF7};
-    return d->prof->variant.tr ? kGateway : kSecret;
+    // (Death Knights: Champions' 409-byte .WHO / CHRDATxn.SAV, items .STF of
+    // 63 bytes, effects .SFX, a saved game's names at 0x1414 as Secret's;
+    // its control byte 0xE7)
+    static const Earlier kChampions = {".WHO", party::kKrynnRecordSize, party::Format::KrynnToDkk, ".STF",
+                                       party::kItemSize, ".SFX", 0x1414, 0xE7};
+    return dkk() ? kChampions : d->prof->variant.tr ? kGateway : kSecret;
 }
 
 // A Gateway character as Treasures takes one in (its ovl 0x7C +0x16E6): its
@@ -2228,6 +2322,10 @@ void gateway_to_treasures(party::Character& ch)
 }
 void import_convert(party::Character& ch)
 {
+    if (dkk()) {
+        rules::recalc(ch, *names, d->facts);    // (Death Knights takes the record as copied - party::krynn_to_dkk)
+        return;
+    }
     if (d->prof->variant.tr) gateway_to_treasures(ch);
     else secret_to_darkness(ch);
 }
@@ -2365,7 +2463,7 @@ const char* name_of(const char* table, int stride, int count, int i)
 // A character's race's name (Champions: its own race, kept in ext)
 const char* race_name(const party::Character& ch)
 {
-    return name_of(d->race[0], 16, 8, krynn() ? ch.ext[party::kExtRace] : ch.race());
+    return name_of(d->race[0], 16, 8, krynn_rules() ? ch.ext[party::kExtRace] : ch.race());
 }
 
 const party::Character* new_char = nullptr;   // the character being made (Create New Character)
@@ -2571,7 +2669,9 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
     const layout::Tables& tb = d->tables;
     const layout::Tiles& tl = d->frame_tiles;
     const bool dk = darkness_files();
-    if (dk) {
+    if (dkk()) {
+        layout::character(c, tb, tl);   // (Death Knights: its own View frame - START 0x1482)
+    } else if (dk) {
         layout::outer(c, tb, tl);
     } else {
         static const uint8_t kBars[] = {0, 8, 16, 20, 23};
@@ -2602,7 +2702,7 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
     };
     // (Champions, DOSBox: the name cyan, the class with the knight's order,
     // "Experience " and the number on row 7 from column 20, no commas)
-    const bool kr = krynn();
+    const bool kr = krynn_rules();
     ch.name(t, sizeof t);
     put(c, t, 1, 1, kr ? 11 : !ch.in_combat() ? 12 : ch.enemy() ? 14 : 11);
     put(c, d->v_status, 20, 1, 15);
@@ -3595,7 +3695,12 @@ bool save_game(char slot)
     bool ok;
     {
         FileSink sink(f);
-        if (darkness_files()) {
+        if (dkk()) {
+            // (Death Knights: Curse's .DAT in bytes - the fourth wall set kept)
+            h.wall_block4 = d->save.wall_block4;
+            h.wall_set4 = d->save.wall_set4;
+            ok = savegame::write_dkk(sink, d->gs, h);
+        } else if (darkness_files()) {
             // (Darkness: its modes - 4 in 3D, 3 outside; the look kept)
             h.state = h.last_state = static_cast<uint8_t>(d->save.state ? d->save.state : 4);
             h.look = d->save.look;
@@ -3610,7 +3715,7 @@ bool save_game(char slot)
         const party::Character& ch = pt->m[i];
         char fn[48];
         char fi[48], ff[48];
-        snprintf(fn, sizeof fn, "%s.SAV", h.names[i]);
+        snprintf(fn, sizeof fn, "%s%s", h.names[i], ext_member());
         snprintf(fi, sizeof fi, "%s%s", h.names[i], ext_items());
         snprintf(ff, sizeof ff, "%s%s", h.names[i], ext_fx());
         ok = write_character_files(d->save_dir, fn, fi, ff, ch);
@@ -4868,7 +4973,7 @@ void add_from_tap(int x, int y, pic::Canvas& c)
         draw_add_list(c);
         return;
     }
-    if (darkness_files() && k == (d->prof->variant.tr ? 'G' : 'S')) {
+    if (darkness_files() && k == (d->prof->variant.tr ? 'G' : dkk() ? 'C' : 'S')) {   // (Death Knights: Champions')
         // (Darkness: Secret's characters - its folder on the card; Treasures:
         // Gateway's)
         d->guys = 0;
@@ -5104,6 +5209,7 @@ bool load_rules(Making*& m)
     fa.mu_all_levels = pc.mu_all_levels;
     fa.mu_all_slot = pc.mu_all_slot;
     fa.start_xp = pc.start_xp;
+    memcpy(fa.mu_more, pc.mu_more, 4);
     fa.platinum = pc.platinum;
     fa.kender_fear = pc.kender_fear;
     const uint32_t at[9] = {pc.pick_race, pc.pick_gender, pc.pick_class, pc.pick_alignment, pc.select,
@@ -5292,7 +5398,7 @@ void pick_stage(int stage, pic::Canvas& c)
     mk->stage = stage;
     switch (stage) {
     case 0:
-        if (krynn()) {
+        if (krynn_rules()) {
             // (Champions: its seven races in its order - classes::kKrynnRace + its number)
             for (int r = 0; r < 7; ++r) mk->opt[r] = classes::kKrynnRace + r;
             mk->n_opt = 7;
@@ -5309,7 +5415,7 @@ void pick_stage(int stage, pic::Canvas& c)
     case 2: mk->n_opt = create::classes_for(mk->tables, mk->race, mk->opt, 17); break;
     default:
         mk->n_opt = create::alignments_for(mk->tables, mk->cls, mk->opt, 17,
-                                           krynn() ? create::god_alignments(mk->god) : 0xFF);
+                                           krynn_rules() ? create::god_alignments(mk->god) : 0xFF);
         break;
     }
     screen = Screen::CreatePick;
@@ -5347,7 +5453,7 @@ void picked(int i, pic::Canvas& c)
     case 2:
         mk->cls = v;
         mk->god = 0;
-        if (krynn() && (v == create::Cleric || (v >= create::ClericFighter && v <= create::ClericThief))) {
+        if (krynn_rules() && (v == create::Cleric || (v >= create::ClericFighter && v <= create::ClericThief))) {
             // (Champions: a cleric picks a god - a dwarf's is Reorx, unasked;
             // GAME.OVR 0x211A6)
             const int dwarf = mk->race == classes::kKrynnRace + 3 || mk->race == classes::kKrynnRace + 4;
@@ -5379,7 +5485,7 @@ void create_after_icon(pic::Canvas& c);
 void ask_create(pic::Canvas& c, Ask what, const char* prompt)
 {
     ask_yes_no(c, what, prompt);
-    if (darkness_files()) {
+    if (darkness_files() && !dkk()) {       // (Death Knights' start on No - DOSBox)
         menu.selected = 0;
         show_menu_line(c);
     } else if (gateway() && what == Ask::Reroll) {
@@ -9632,7 +9738,7 @@ bool train_yes_no(Ask what, char k, pic::Canvas& c)
 void start_knight(pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
-    if (!ch || !krynn()) return;
+    if (!ch || !krynn_rules()) return;
     if (!trainer && !load_rules(trainer)) {
         end_training();
         error(c, "Not in the engine yet.");
@@ -9657,7 +9763,16 @@ void start_knight(pic::Canvas& c)
     snprintf(line, sizeof line, "%s%s", nm, what);
     const int len = static_cast<int>(strlen(line));
     put(c, line, (r == 0 || order == 1 ? 19 : 20) - len / 2, 9, 10);
-    if (r == 0) put(c, d->w_knight[order == 1 ? 8 : 11], 10, 11, 10);
+    if (r == 0) {
+        // (Death Knights has no word for the order's whole name: "knight of
+        // the " + "sword" / "rose", as its GAME.OVR 061:50E8 does)
+        const char* full = d->w_knight[order == 1 ? 8 : 11];
+        if (!full[0]) {
+            snprintf(line, sizeof line, "%s%s", d->w_knight[4], d->w_knight[order == 1 ? 2 : 3]);
+            full = line;
+        }
+        put(c, full, 10, 11, 10);
+    }
     dirty(0, pic::kScreenH);
     ask = Ask::Knight;
     screen = Screen::YesNo;
@@ -9818,7 +9933,7 @@ void start_modify(pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
     if (!ch) return;
-    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files(), gateway(), krynn())) {
+    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files(), gateway(), krynn_rules())) {
         char t[60], nm[20];
         ch->name(nm, sizeof nm);
         snprintf(t, sizeof t, "%s%s", nm, rw(Data::kCantModify));
@@ -9924,7 +10039,7 @@ void pm_choose_key(char key, pic::Canvas& c)
 {
     // Gateway: a member's functions ask "Pick Character Select Exit" first
     // (its party menu overlay GAME.OVR 0x2650E +0x27E; DOSBox)
-    if (d->prof->party.pick && !pm_picked && pt->count && strchr(krynn() ? "DMITHVRK" : "DMITHVR", key)) {
+    if (d->prof->party.pick && !pm_picked && pt->count && strchr(krynn_rules() ? "DMITHVRK" : "DMITHVR", key)) {
         char prompt[20], words[16];
         ow(d->prof->party.pick, prompt, sizeof prompt);
         ow(d->prof->party.pick_menu, words, sizeof words);
@@ -10040,7 +10155,7 @@ void pm_choose_key(char key, pic::Canvas& c)
         start_change(c);
         return;
     case 'K':
-        if (krynn()) {
+        if (krynn_rules()) {
             start_knight(c);
             return;
         }
@@ -10441,7 +10556,9 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             // gems, jewelry - in Curse's places 4-6
             char tmp[8][16];
             memcpy(tmp, d->race, sizeof tmp);
-            for (int i = 0; i < 8; ++i) memcpy(d->race[i], tmp[party::race_to_darkness(static_cast<uint8_t>(i))], sizeof tmp[0]);
+            // (Death Knights: its own order kept - race_name reads its own number)
+            if (!dkk())
+                for (int i = 0; i < 8; ++i) memcpy(d->race[i], tmp[party::race_to_darkness(static_cast<uint8_t>(i))], sizeof tmp[0]);
             for (int i = 6; i >= 4; --i) memcpy(d->money[i], d->money[i - 4], sizeof d->money[0]);
             for (int i = 0; i < 4; ++i) d->money[i][0] = 0;
         }
@@ -10701,7 +10818,7 @@ __attribute__((noinline)) void dk_add_rows(const uint8_t* rows, int n, bool iden
     // the spells' class bytes, only when a random scroll is wanted
     uint8_t* cls = nullptr;
     for (int k = 0; k < n; ++k)
-        if (rows[k] == 0xFF && !cls) {
+        if (rows[k] == 0xFF && !cls && !dkk()) {
             uint8_t* t = new (std::nothrow) uint8_t[127 * 16];
             if (t && program_ds(pi.spell_class, t, 127 * 16 - 15)) {
                 cls = new (std::nothrow) uint8_t[127];
@@ -10715,6 +10832,7 @@ __attribute__((noinline)) void dk_add_rows(const uint8_t* rows, int n, bool iden
     const dax::Entry* e = open ? d->idx.find(1) : nullptr;
     for (int k = 0; k < n; ++k) {
         uint8_t row[17] = {};
+        if (rows[k] == 0xFF && dkk()) continue;   // (Death Knights: a row its table hasn't - none)
         if (rows[k] == 0xFF) {
             // (L+0x1ABE: type 0x27, words 0x66 0x27 0x28, plus 1, weight 1, value 3000)
             if (!cls) continue;
@@ -10845,6 +10963,33 @@ struct Host : ecl::Host {
     // tiles of that number (darkness_facts.md 7.3); kept for saving
     void load_look(int look) override
     {
+        if (dkk()) {
+            // Death Knights (LOAD PIECES; its ovl 0xF7 +0xEC5): the look's
+            // WALLDEF block - in WALLDEFn, n from its program's table (here:
+            // the family's file holding the block) - three sets in slots 1-3,
+            // 8X8Dn's tiles, BACKn's picture with the view (dk_background)
+            view3d::World& wd = d->world;
+            plat::File f;
+            char name[24];
+            int n = 0;
+            if (open_area_dax("WALLDEF", look, f, name, sizeof name)) {
+                plat::FileSource src(f);
+                if (!view3d::load_walls(src, d->idx, 1, static_cast<uint8_t>(look), wd, &n)) n = 0;
+                f.close();
+            }
+            bool tiles = false;
+            if (open_area_dax("8X8D", look, f, name, sizeof name)) {
+                plat::FileSource src(f);
+                tiles = view3d::load_ega_tiles(src, d->idx, static_cast<uint8_t>(look), wd);
+                f.close();
+            }
+            wd.back_id = 0;
+            d->save.look = static_cast<uint16_t>(look);
+            d->wall_block[1] = static_cast<int16_t>(look);
+            d->wall_set[1] = 1;
+            plat::log("[play] look %d: %d wall sets, tiles %s\n", look, n, tiles ? "ok" : "missing");
+            return;
+        }
         if (d->prof->variant.tr && d->gs.area1[0x3F]) {
             // Treasures' overland (game byte 0x3F): the look is its map
             // picture, OVER.DAX (o144+0xA70)
@@ -10992,6 +11137,9 @@ struct Host : ecl::Host {
             layout::bar(c, d->tables, d->frame_tiles, 16);
             draw_block(c, "BIGPIC", id, 8, 8);
             dirty(0, 17 * 8);
+            // (Death Knights: the region map, BIGPIC 0x70, with the party's
+            // marker at once - its interpreter +0x9A9)
+            if (dkk() && id == big) kr_marker(c, true);
         } else if (head == 0xFF) {
             // Pool with Monsters off: no picture in the 3D areas (the view stays)
             if (!monster_pics_on() && !pool_overland()) return;
@@ -11131,8 +11279,13 @@ struct Host : ecl::Host {
             plat::log("[play] SHOP %d: %d items\n", n, g.n);
             return;
         }
+        // (Death Knights, its interpreter +0x28D2: n 1-8, else 1; how many from the first)
+        if (pi.goods_count && (n < 1 || n > 8)) n = 1;
+        if (pi.goods_count && pi.goods_rows && program_ds(static_cast<uint16_t>(pi.goods_first + n), &a, 1) &&
+            program_ds(static_cast<uint16_t>(pi.goods_last + n), &b, 1))
+            b = static_cast<uint8_t>(a + b - 1);
         if (!pi.goods_rows || !program_ds(static_cast<uint16_t>(pi.goods_first + n), &a, 1) ||
-            !program_ds(static_cast<uint16_t>(pi.goods_last + n), &b, 1) || b < a ||
+            (!pi.goods_count && !program_ds(static_cast<uint16_t>(pi.goods_last + n), &b, 1)) || b < a ||
             !program_ds(static_cast<uint16_t>(pi.goods_rows + a), rows, b - a + 1u)) {
             log("SHOP: the program's goods didn't read");
             return;
@@ -13917,9 +14070,11 @@ __attribute__((noinline)) bool open_tiles()
         d->world.dk = true;
     } else if (ok) {
         plat::FileSource src(f);
-        ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, d->prof->variant.tile_window) &&
+        ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, d->prof->variant.tile_window,
+                                d->prof->variant.dkk ? 25 : 20) &&
              (d->prof->font_file || font::load(src, d->idx, d->font)) &&
              view3d::load_tiles(src, d->idx, d->prof->common_tiles_block, d->world.common);
+        d->frame_tiles.solid = d->prof->variant.dkk;
         f.close();
     }
     if (ok && d->prof->font_file) ok = load_font_file(d->prof->font_file, d->idx, d->font);
@@ -14094,6 +14249,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
         return msg;
     }
     d->world.frame = &d->frame_tiles;
+    if (d->prof->variant.dkk) d->world.map_base = 25;      // (Death Knights: block 202's 25-40, arrows 41-44)
     d->world.per_set = d->prof->variant.per_set_walls;
     text::set_hanging_space(gateway() || krynn());          // (Champions too - DOSBox)
     open_sky();
@@ -14124,8 +14280,13 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     gs.y = 13;
     gs.dir = 0;
     vm->set(0x7F12, gs.game_area);
-    if (d->prof->variant.krynn)             // (Champions: a new game's moons all at phase 2 - GAME.OVR 0x104AB)
+    if (krynn_rules())                      // (Champions: a new game's moons all at phase 2 - GAME.OVR 0x104AB)
         for (uint16_t w = 0x4CF9; w <= 0x4CFB; ++w) vm->set(w, 2);
+    if (dkk()) {
+        // (Death Knights' new game, GAME.OVR 0x1B4E4: the difficulty 3, in 3D)
+        vm->set(0x4CF4, 3);
+        vm->set(0x4BE6, 1);
+    }
     if (d->prof->variant.tr) {
         // Treasures' game block as its start sets it (ovl 0x87 +0x54E): the
         // difficulty 3, in 3D, the text green, BACK1 block 3 ...

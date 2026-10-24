@@ -1955,6 +1955,48 @@ GAME=5); `variant.krynn`. Play on since 2026-10-24 (branch champions).
   works through `journal::make_gbc`; the GOG PDF (88 entries, 57 tavern
   tales) has its table since branch champions-finish (section 7).
 
+## 6h. Death Knights of Krynn (2026-10-24: started after Champions)
+
+Facts: the Project's claude/krynn_facts.md (section B) and
+deathknights_facts.md (the port; scratch until synced). Darkness's engine
+at its EGA stage with Krynn's rules: START.EXE (EXEPACK, 74,299 / 82,336
+bytes, data segment at image 0xBCE0) + GAME.OVR (35 overlays), DAX files,
+216-byte records + 220-byte spell parts (CHRDATxn.GAM / .WIZ / .JNK /
+.EFF), SAVGAMx.PTY. Game number 6 (playsim / sweep GAME=6); its front end
+`variant.darkness_files`, its rules `krynn_rules()` (Champions' and
+`variant.dkk`). Play on since 2026-10-24 (branch deathknights).
+
+- **Screen**: the outer frame with the three moons (Champions' place, its
+  red moon drawn whole - `Tiles.solid`), 8X8D1 block 202's tiles (window
+  25); title sequence (TITLE 1-4) and credits; party menu of 13 entries
+  ("Knight Change Order" in Human Change's place); "Load from where?" -
+  Death / Champions.
+- **Records**: `party::from_dkk` / `to_dkk`; scripts' character codes
+  read and written as whole fields; steel in the platinum place.
+- **Rule tables** (`classes::Layout::dkk`): THAC0 to 19th, saves 90 a
+  class, class records 204 bytes (experience to 18th - the thief's -
+  gains from + 0x3C), eleven experience rows (paladin 10), spells in
+  Secret's shape (114), paladin / ranger slot tables, race level limits
+  (training while the limit is above the level).
+- **Creation**: 210,003 experience shared (rounded up), trained silently
+  under the race's limits; the races' stat adjustments; seven spells for a
+  magic-user; 500 steel; questions start on No.
+- **Import**: Load and Add from Champions (its SAVE folder on the card;
+  the record re-laid as the original, the age held under the race's
+  limit).
+- **Knights**: Knight Change Order - Sword (3rd, 12,000) / Rose (4th,
+  27,000), the stats DS 0x05A4 / 0x05AA; the order's name "knight of the
+  " + sword / rose; a level lost when short, past 9th 2 hit points.
+- **Fights**: Champions' effect numbers, Darkness's 13-word menu with
+  Yell; shops by SHOP n's tables, the temple through Darkness's.
+- **Sound**: Champions' / Secret's driver (START segment 0x70D0), its
+  numbers 2-12; MUSIC not played.
+- **Journal**: the SNEG Companion's 65 text entries parse; the GOG PDF's
+  table still to make (needs the PDF's bytes from the Project).
+- **Checks**: sweep `behave deathknights` (creation, training, knights;
+  oracle scratch `dkk_oracle.py`); budget fights SAVE=B RUNAT=815B 134.4 KB
+  and RUNAT=98CF (25 monsters) 140.6 KB of 150.
+
 ## 7. The journal (Tom, 2026-10-06)
 
 The games tell the player to "read journal entry N" from the printed
@@ -2622,6 +2664,12 @@ the game's Settings (As Original: all of them).
   fighters walk into acid as the original's do (no check).
 - **Champions' title music** (SOUND.DAX through MIDI.DAX's drivers) isn't
   played; its effects are.
+- **Death Knights' thief skills by race** (`rules::fixes()`): its table
+  is Champions' and read the same way (a kender's row runs into the
+  Dexterity table); with Game Fixes on each race its own row (as
+  Champions'); off as the original.
+- **Death Knights' music** (MUSIC in its scripts) isn't played; its
+  effects are.
 - **Gateway's stirge and squid** (Game Fixes): their holds never hurt in
   the original (the stirge's goes at its next step, the squid's per-turn
   handler is in no list); with Game Fixes on the stirge drinks 1d4 a turn up

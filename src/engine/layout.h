@@ -43,7 +43,8 @@
 
 namespace layout {
 
-constexpr int kTiles = 40;
+constexpr int kTiles = 45;          // (Death Knights: its block 202's 45 - frame, moons, area map)
+constexpr int kOldTiles = 40;       // (the slots the other games' tables may name)
 constexpr int kFrameTile = 30;      // + table value
 constexpr int kViewTile = 20;       // + table value
 constexpr uint8_t kMask = 13;       // tile pixels in this colour aren't drawn
@@ -52,15 +53,19 @@ struct Tiles {
     uint8_t px[kTiles][64];          // palette indexes, row by row
     uint8_t count = 0;               // slots filled (Curse 40, Pool 31)
     uint8_t first = 20;              // the block's tile in slot 20 (Secret 40: slots 20-39 = tiles 40-59)
+    uint8_t window = 20;             // slots from `first` (Death Knights 25: its tiles 20-44)
     bool loaded = false;
     // VGA values (Darkness on a 256-colour screen): colour 13 is drawn too -
     // only the original's EGA mode leaves it out of the frame
     // (darkness_facts.md 7 1.5)
     bool vga = false;
+    // Death Knights: its tile routine draws colour 13 too (the red moon's
+    // full disc - DOSBox)
+    bool solid = false;
     // The slot of the block's tile n (-1: not kept)
     int slot(int n) const {
         if (n < 20) return n;
-        return n >= first && n < first + (kTiles - 20) ? n - first + 20 : -1;
+        return n >= first && n < first + window ? n - first + 20 : -1;
     }
     // The block's tile in slot s
     int tile_of(int s) const { return s < 20 ? s : s - 20 + first; }
@@ -68,7 +73,8 @@ struct Tiles {
 
 // Loads the tiles: an EGA picture block 8 high, 1 column wide, 40 frames
 // (Pool: 31; Secret 101; at least 23); tiles 0-19 and 20 from `first`.
-bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, uint8_t first = 20);
+bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, uint8_t first = 20,
+                uint8_t window = 20);
 
 // Loads a VGA block of 8 x 8 tiles (Darkness: 8X8D0's area map tiles, a
 // BORDERS style) into slots slot0.. (at most n): ega - in their EGA
@@ -105,6 +111,13 @@ struct Tables {
     // columns either side of a divider on the bars it meets
     bool joints = false;
     uint8_t char_split[13] = {};     // Gateway's View Character column 19, rows 8-20
+    // Death Knights (its START image 0x10F0 on): the tables name block 202's
+    // tiles themselves (no base); the sides are tile 7 (the outer frame's
+    // rows 1-22), the 3D view's frame corners 0-3 with 4 across and 7 down;
+    // View Character's columns 0 / 39 by row (char_left / char_right), bars
+    // of tile 4 at rows 8, 16 and 20; the top row's moons are the game's
+    bool direct = false;
+    uint8_t char_left[24] = {}, char_right[24] = {};
     // Treasures (port facts P7): its frames are pieces of BORD.DAX block 7
     // (tr_pieces, tr_size bytes: runs of BORD block 0 tile numbers drawn
     // across or down from a cell, 0xFF a gap, 0xFE a piece's end), each

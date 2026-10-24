@@ -154,6 +154,70 @@ bool write_darkness(Sink& out, const ecl::GameState& gs, const Header& h)
     return out.put(gs.area1, kDarknessBlock) && out.put(b, sizeof b) && names_out(out, h);
 }
 
+bool read_dkk(dax::ByteSource& src, ecl::GameState& gs, Header& h)
+{
+    if (src.size() < kDkkSize) return false;
+    h = Header{};
+    uint8_t b[24];
+    uint32_t p = 0;
+    auto take = [&](uint8_t* out, size_t n) {
+        const bool ok = src.read_at(p, out, n) == n;
+        p += static_cast<uint32_t>(n);
+        return ok;
+    };
+    if (!take(b, 1)) return false;
+    h.game_area = b[0];
+    if (!take(gs.area1, 0x400) || !take(gs.area2, 0x400) || !take(gs.table, 0x200) || !take(b, 5 + 2 + 16))
+        return false;
+    gs.x = b[0] & 15;
+    gs.y = b[1] & 15;
+    gs.dir = b[2] & 7;
+    gs.wall_ahead = b[3];
+    gs.roof = b[4];
+    h.last_state = b[5];
+    h.state = b[6];
+    int16_t blk[4], set[4];
+    for (int i = 0; i < 4; ++i) {
+        blk[i] = static_cast<int16_t>(b[7 + i * 4] | b[8 + i * 4] << 8);
+        set[i] = static_cast<int16_t>(b[9 + i * 4] | b[10 + i * 4] << 8);
+    }
+    for (int i = 0; i < 3; ++i) {
+        h.wall_block[i] = blk[i];
+        h.wall_set[i] = set[i];
+    }
+    h.wall_block4 = blk[3];
+    h.wall_set4 = set[3];
+    h.look = static_cast<uint16_t>(blk[1] > 0 ? blk[1] : 0);    // (its scripts' looks go to slot 1)
+    gs.code_len = 0;
+    gs.moved = false;
+    gs.game_area = h.game_area;
+    return names_in(src, p, h);
+}
+
+bool write_dkk(Sink& out, const ecl::GameState& gs, const Header& h)
+{
+    uint8_t b[24];
+    b[0] = h.game_area;
+    if (!out.put(b, 1) || !out.put(gs.area1, 0x400) || !out.put(gs.area2, 0x400) || !out.put(gs.table, 0x200))
+        return false;
+    b[0] = static_cast<uint8_t>(gs.x);
+    b[1] = static_cast<uint8_t>(gs.y);
+    b[2] = static_cast<uint8_t>(gs.dir);
+    b[3] = gs.wall_ahead;
+    b[4] = gs.roof;
+    b[5] = h.last_state;
+    b[6] = h.state;
+    for (int i = 0; i < 4; ++i) {
+        const uint16_t blk = static_cast<uint16_t>(i < 3 ? h.wall_block[i] : h.wall_block4);
+        const uint16_t set = static_cast<uint16_t>(i < 3 ? h.wall_set[i] : h.wall_set4);
+        b[7 + i * 4] = static_cast<uint8_t>(blk);
+        b[8 + i * 4] = static_cast<uint8_t>(blk >> 8);
+        b[9 + i * 4] = static_cast<uint8_t>(set);
+        b[10 + i * 4] = static_cast<uint8_t>(set >> 8);
+    }
+    return out.put(b, 5 + 2 + 16) && names_out(out, h);
+}
+
 void file_name_darkness(char slot, char* out, size_t cap)
 {
     snprintf(out, cap, "SAVGAM%c.PTY", slot);

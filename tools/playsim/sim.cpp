@@ -723,7 +723,7 @@ int main(int argc, char** argv)
         }
         const int k = (int)(strchr(play::pm_saves, save[0]) - play::pm_saves);
         play::tap(((int)strlen(play::menu.prompt) + play::menu.start[k]) * 8 + 2, text::kMenuRow * 8 + 2, C);
-        for (int i = 0; i < play::pt->count; ++i) { char n[20]; play::pt->m[i].name(n, 20); printf("  %d: %-15s AC %d HP %d/%d race %d class %d saves %d %d %d %d %d levels %d %d %d %d %d %d %d\n", i, n, play::pt->m[i].ac(), play::pt->m[i].hp(), play::pt->m[i].hp_max(), play::pt->m[i].race(), play::pt->m[i].cls(), play::pt->m[i].rec[0xDF], play::pt->m[i].rec[0xE0], play::pt->m[i].rec[0xE1], play::pt->m[i].rec[0xE2], play::pt->m[i].rec[0xE3], play::pt->m[i].rec[0x109], play::pt->m[i].rec[0x10A], play::pt->m[i].rec[0x10B], play::pt->m[i].rec[0x10C], play::pt->m[i].rec[0x10D], play::pt->m[i].rec[0x10E], play::pt->m[i].rec[0x10F]); }
+        for (int i = 0; i < play::pt->count; ++i) { char n[20]; play::pt->m[i].name(n, 20); printf("  %d: %-15s AC %d HP %d/%d race %d/%d class %d saves %d %d %d %d %d levels %d %d %d %d %d %d %d\n", i, n, play::pt->m[i].ac(), play::pt->m[i].hp(), play::pt->m[i].hp_max(), play::pt->m[i].race(), play::pt->m[i].ext[party::kExtRace], play::pt->m[i].cls(), play::pt->m[i].rec[0xDF], play::pt->m[i].rec[0xE0], play::pt->m[i].rec[0xE1], play::pt->m[i].rec[0xE2], play::pt->m[i].rec[0xE3], play::pt->m[i].rec[0x109], play::pt->m[i].rec[0x10A], play::pt->m[i].rec[0x10B], play::pt->m[i].rec[0x10C], play::pt->m[i].rec[0x10D], play::pt->m[i].rec[0x10E], play::pt->m[i].rec[0x10F]); }
         if (getenv("SAVECHECK")) {      // SAVECHECK: each member's saves as the class tables make them
             play::MagicRules* mr = nullptr;
             if (play::load_rules(mr))
@@ -759,8 +759,8 @@ int main(int argc, char** argv)
                         for (int lv = 1; lv <= 9; ++lv) cmp(k == 0 ? "clslot" : k == 1 ? "drslot" : "muslot", classes::slots(o, k, lv), classes::slots(*cc, k, lv));
                     for (int sp = 1; sp <= 126; ++sp) { char bw[16]; snprintf(bw, sizeof bw, "book%d", sp); cmp(bw, classes::in_book(o, sp), classes::in_book(*cc, sp)); }
                     printf("  rules %d %s:%s\n", i, nm, diffs.empty() ? " all the same" : diffs.c_str());
-                    for (int cls = 0; cls < 7; ++cls)
-                        if (o.level(cls) > 0) printf("    class %d level %d: next at %d (has %u)\n", cls, o.level(cls), (int)mr->tables.exp_needed(cls, o.level(cls)), (unsigned)o.exp());
+                    for (int cls = 0; cls < 8; ++cls)
+                        if (o.level(cls) > 0) printf("    class %d level %d: next at %d (has %u)\n", cls, o.level(cls), (int)mr->tables.exp_needed(cls, o.level(cls), &o), (unsigned)o.exp());
                     delete cc;
                 }
             delete mr;
@@ -921,6 +921,26 @@ int main(int argc, char** argv)
             }
             show("after");
             shot("modify_end");
+        }
+        if (getenv("KNIGHT")) {
+            // KNIGHT=n: a training hall's party menu (0x7EA8 set), character n,
+            // the Krynn games' Knight Change; KNIGHTYES=1 then takes Change
+            // (PMKEY=T: Train Character instead; HALL=mask the hall's classes)
+            play::vm->set(0x7EA8, getenv("HALL") ? strtol(getenv("HALL"), nullptr, 0) : 0xFF);
+            play::tap(16, (4 + atoi(getenv("KNIGHT"))) * 8 + 2, C);
+            pm_tap_line(getenv("PMKEY") ? getenv("PMKEY")[0] : 'K');
+            auto tap_word = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { int cx, cy; text::item_cell(play::menu, i, &cx, &cy); play::tap(cx * 8 + 2, cy * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+            shot("knight");
+            printf("  knight menu [%s%s]\n", play::menu.prompt, play::menu.s);
+            if (getenv("KNIGHTYES")) {
+                tap_word(getenv("KNIGHTYES")[0] == '1' ? 'C' : getenv("KNIGHTYES")[0]);
+                settle();
+                if (getenv("KNIGHTYES2")) { tap_word(getenv("KNIGHTYES2")[0]); settle(); }
+                shot("knight_end");
+                for (int i = 0; i < play::pt->count; ++i)
+                    printf("  %d: order %d knight level %d exp %d\n", i, play::pt->m[i].ext[party::kExtKnight],
+                           play::pt->m[i].level(classes::Monk), (int)play::pt->m[i].exp());
+            }
         }
         if (getenv("VIEW")) {
             // Select a character (tap their line), View Character, back

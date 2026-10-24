@@ -50,7 +50,7 @@ Entry entry(const classes::Tables& t, int s)
     Entry e;
     const uint16_t at = t.spell_row(s);
     auto b = [&](int i) { return t.u8(static_cast<uint16_t>(at + i)); };
-    e.cls = t.lay.secret ? static_cast<uint8_t>(t.spell_class(s)) : b(0);
+    e.cls = t.lay.secret || t.lay.dkk ? static_cast<uint8_t>(t.spell_class(s)) : b(0);
     e.level = b(1);
     e.range = static_cast<int8_t>(b(2));
     e.range_level = b(3);
@@ -58,8 +58,8 @@ Entry entry(const classes::Tables& t, int s)
     e.lasts_level = b(5);
     e.targets = b(7);
     // Secret's whole party is 3 (its camp routine GAME.OVR 0x2D949 walks the
-    // party list for 3; Curse's 4)
-    if (t.lay.secret && e.targets == 3) e.targets = kParty;
+    // party list for 3; Curse's 4) - Death Knights' too (its Bless row)
+    if ((t.lay.secret || t.lay.dkk) && e.targets == 3) e.targets = kParty;
     e.affect = b(10);
     e.when = b(11);
     e.aim = b(6);

@@ -77,6 +77,12 @@ enum Ext : uint8_t {
     kExtKE9 = 39,                       // 0xE9-0xEC (4; not known yet)
     kExtKSlots = 43,                    // 0x126-0x12A: a third group of spell slots (5)
     kExtK141 = 48,                      // 0x141 (not known yet)
+    // Death Knights of Krynn (its 216-byte record and 220-byte spell part):
+    // Darkness's places for the slots past 5th level (6-7, 8 in Cleric89
+    // ...), Champions' for knight / god / robe (0x25 in K5F), the third
+    // group of slots (1-8) and the knight's best level of its own
+    kExtDkThird = 50,                   // the spell part's 0xCC-0xD3 (8)
+    kExtDkBestKnight = 58,              // its record's 0x54
 };
 
 struct Character {
@@ -189,9 +195,38 @@ constexpr int    kKrynnMemorized = 58;
 void from_krynn(const uint8_t* k, Character& out);               // out.rec and out.ext
 void from_krynn(const uint8_t* k, uint8_t* rec);                  // a record of Curse's layout (no ext)
 void to_krynn(const Character& c, uint8_t out[kKrynnRecordSize]);
-// Record format: Curse's, Pool's, Secret's, Darkness's or Champions'
-enum class Format : uint8_t { Curse, Pool, Secret, Darkness, Krynn };
+// Death Knights of Krynn's characters (deathknights_facts.md 2; the Gold
+// Box Companion's record list "06"): a 216-byte record (.GAM / .PC) with no
+// spells in it - the memorized ones (74 places), the book (spells 1-114)
+// and the slots (four groups of eight: cleric, druid, a third, magic-user)
+// are a 220-byte part of their own (.WIZ; monsters' MON1WIZ blocks); coins
+// steel (in platinum's place, as Darkness's three coins), gems, jewelry; Champions' races, knight order,
+// god, robe; the best levels / experience / HP before a drain and "able
+// to train" as Darkness's. Items .JNK (63 bytes), effects .EFF (9).
+constexpr size_t kDkkRecordSize = 0xD8;
+constexpr size_t kDkkSpellSize = 0xDC;
+constexpr int    kDkkMemorized = 74;
+void from_dkk(const uint8_t* rec, const uint8_t* wiz, Character& out);   // wiz null: no spells
+void dkk_spells_in(const uint8_t* wiz, Character& out);                 // its spell part alone
+void from_dkk(const uint8_t* rec, const uint8_t* wiz, uint8_t* out);     // a record of Curse's layout (no ext)
+void to_dkk(const Character& c, uint8_t rec[kDkkRecordSize], uint8_t wiz[kDkkSpellSize]);
+// Its scripts' character codes (0x7C00 + off; its operand loader GAME.OVR
+// 0x72E2 / 0x7642): false when off isn't one (the scripts' memory holds it)
+bool script_value_dkk(const uint8_t* rec, const uint8_t* ext, int index, uint16_t off, uint16_t* out);
+bool script_value_dkk(const Party& p, uint16_t off, uint16_t* out);
+void script_set_dkk(uint8_t* rec, uint8_t* ext, uint16_t off, uint16_t v);
+void script_set_dkk(Character& c, uint16_t off, uint16_t v);
+// Record format: Curse's, Pool's, Secret's, Darkness's, Champions' or Death Knights'
+// (KrynnToDkk: a Champions record as Death Knights takes one in - krynn_to_dkk)
+enum class Format : uint8_t { Curse, Pool, Secret, Darkness, Krynn, DeathKnights, KrynnToDkk };
 bool read_record(dax::ByteSource& src, Character& out, Format f);
+// Death Knights' Load / Add from Champions (its GAME.OVR ovl 0x5A +0x1217):
+// a 409-byte Champions record copied into its 216-byte record and spell
+// part by runs (the spells only for a class with any - not a fighter, a
+// thief or a fighter / thief), the pointers cleared, the age held under its
+// race's limit (elves 1,200, half-elves 200, dwarves 300, kender over 199
+// made 70, humans 50)
+void krynn_to_dkk(const uint8_t* k, uint8_t* rec, uint8_t* wiz);
 void from_pool(const uint8_t* pool, Character& out);              // out.rec only
 void from_pool(const uint8_t* pool, uint8_t* rec);                 // a record (kRecordSize bytes) of Curse's layout
 void to_pool(const Character& c, uint8_t out[kPoolRecordSize]);

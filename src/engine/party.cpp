@@ -93,7 +93,201 @@ constexpr uint16_t kKrynnExt[][3] = {
     {0x141, kExtK141, 1},     {0x187, kExtMagicRes, 1}, {0x5A, kExtRace, 1},
 };
 
+// Death Knights offset, Curse offset, length (deathknights_facts.md 2;
+// pointers left out): name and stats; 0x1E (to learn) and THAC0; class; age
+// and HP; icon size, saves; movement, the highest level; level vs undead and
+// thief skills; NPC; steel in platinum's place (Darkness's three coins), gems, jewelry; levels (the
+// knight in the monk's); sex; alignment to the experience; class flags, HP
+// rolled; xp award and bonus; icon, flags; the item count; hands, save
+// bonus, encumbrance; status to movement
+constexpr uint16_t kDkkRuns[][3] = {
+    {0x00, 0x00, 0x1E},  {0x1E, 0x72, 2},     {0x21, 0x75, 1},     {0x26, 0x76, 3},     {0x29, 0xDE, 6},
+    {0x2F, 0xE4, 2},     {0x31, 0xE9, 9},     {0x3E, 0xF7, 1},     {0x3F, 0x103, 2},    {0x41, 0x105, 4},
+    {0x45, 0x109, 8},    {0x55, 0x119, 1},    {0x56, 0x11B, 0x10}, {0x6B, 0x12B, 2},    {0x6D, 0x13C, 3},
+    {0x70, 0x141, 11},   {0x7C, 0x14C, 1},    {0xB5, 0x185, 4},    {0xC7, 0x195, 0x11},
+};
+// Death Knights offset, Ext place, length
+constexpr uint16_t kDkkExt[][3] = {
+    {0x20, kExtRace, 1},      {0x22, kExtKnight, 1},    {0x23, kExtGod, 1},       {0x24, kExtRobe, 1},
+    {0x25, kExtK5F, 1},       {0x4D, kExtBestLevels, 7}, {0x54, kExtDkBestKnight, 1}, {0x66, kExtBestXp, 4},
+    {0x6A, kExtBestHp, 1},    {0x7B, kExtFlags2, 1},    {0xC1, kExtMagicRes, 1},  {0xC6, kExtTrain, 1},
+};
+// Its spell part: offset, Curse offset, length (the memorized places in
+// place, spells 1-100, the slots of levels 1-5)
+constexpr uint16_t kDkkWizRuns[][3] = {
+    {0x00, kListAt, kDkkMemorized}, {0x4A, 0x79, 100}, {0xBC, 0x12D, 5}, {0xC4, 0x132, 5}, {0xD4, 0x137, 5},
+};
+// ... and its Ext places: spells 101-114, levels 6-8 of the three kinds,
+// the third group
+constexpr uint16_t kDkkWizExt[][3] = {
+    {0xAE, kExtBook, 14},      {0xC1, kExtCleric67, 2}, {0xC3, kExtCleric89, 1}, {0xC9, kExtDruidMore, 2},
+    {0xCB, kExtDruid89, 1},    {0xD9, kExtMage67, 2},   {0xDB, kExtMage89, 1},   {0xCC, kExtDkThird, 8},
+};
+
 } // namespace
+
+void krynn_to_dkk(const uint8_t* k, uint8_t* p, uint8_t* w)
+{
+    static const uint16_t kRuns[][3] = {{0x000, 0x00, 0x1E}, {0x058, 0x1E, 0x0B}, {0x0CF, 0x29, 0x08}, {0x0DA, 0x31, 0x0C},
+                                        {0x0F3, 0x3F, 0x27}, {0x11A, 0x6B, 0x02}, {0x130, 0x6D, 0x03}, {0x135, 0x70, 0x0C},
+                                        {0x142, 0x7C, 0x46}, {0x188, 0xC7, 0x11}};
+    memset(p, 0, kDkkRecordSize);
+    memset(w, 0, kDkkSpellSize);
+    for (const auto& r : kRuns) memcpy(p + r[1], k + r[0], r[2]);
+    // (its pointers: 0x3A, 0x7D, 0xB9, 0xBD, 0xC2 - nothing here to clear)
+    const uint8_t cls = p[0x21];
+    if (cls != 2 && cls != 6 && cls != 0x0E) {
+        memcpy(w, k + 0x1E, 0x3A);              // memorized
+        memcpy(w + 0x4A, k + 0x63, 0x6B);       // the book
+        for (int i = 0; i < 4; ++i) memcpy(w + 0xBC + 8 * i, k + 0x11C + 5 * i, 5);   // the slots
+    }
+    const uint16_t age = static_cast<uint16_t>(p[0x26] | p[0x27] << 8);
+    uint16_t a = age;
+    switch (p[0x20]) {
+    case 0: case 1: if (a > 1200) a = 1200; break;
+    case 2: if (a > 200) a = 200; break;
+    case 3: case 4: if (a > 300) a = 300; break;
+    case 5: if (a > 199) a = 70; break;
+    case 6: if (a > 50) a = 50; break;
+    default: break;
+    }
+    p[0x26] = static_cast<uint8_t>(a);
+    p[0x27] = static_cast<uint8_t>(a >> 8);
+}
+
+void from_dkk(const uint8_t* p, const uint8_t* w, uint8_t* r)
+{
+    memset(r, 0, kRecordSize);
+    for (const auto& run : kDkkRuns) memcpy(r + run[1], p + run[0], run[2]);
+    if (w)
+        for (const auto& run : kDkkWizRuns) memcpy(r + run[1], w + run[0], run[2]);
+    r[0x74] = race_from_krynn(p[0x20]);
+}
+
+void dkk_spells_in(const uint8_t* w, Character& c)
+{
+    for (const auto& run : kDkkWizRuns) memcpy(c.rec + run[1], w + run[0], run[2]);
+    for (const auto& run : kDkkWizExt) memcpy(c.ext + run[1], w + run[0], run[2]);
+}
+
+void from_dkk(const uint8_t* p, const uint8_t* w, Character& c)
+{
+    from_dkk(p, nullptr, c.rec);
+    for (const auto& run : kDkkExt) memcpy(c.ext + run[1], p + run[0], run[2]);
+    if (w) dkk_spells_in(w, c);
+}
+
+void to_dkk(const Character& c, uint8_t* p, uint8_t* w)
+{
+    const uint8_t* r = c.rec;
+    memset(p, 0, kDkkRecordSize);
+    memset(w, 0, kDkkSpellSize);
+    for (const auto& run : kDkkRuns) memcpy(p + run[0], r + run[1], run[2]);
+    for (const auto& run : kDkkExt) memcpy(p + run[0], c.ext + run[1], run[2]);
+    for (const auto& run : kDkkWizRuns) memcpy(w + run[0], r + run[1], run[2]);
+    for (const auto& run : kDkkWizExt) memcpy(w + run[0], c.ext + run[1], run[2]);
+    p[0x20] = race_from_krynn(c.ext[kExtRace]) == r[0x74] ? c.ext[kExtRace] : race_to_krynn(r[0x74]);
+    // The memorized spells: 74 places; any the engine put further on go
+    // into its free places, from the end
+    int free_at = kDkkMemorized - 1;
+    for (int i = kDkkMemorized; i < kListSize; ++i) {
+        if (!r[kListAt + i]) continue;
+        while (free_at >= 0 && w[free_at]) --free_at;
+        if (free_at < 0) break;
+        w[free_at] = r[kListAt + i];
+    }
+    p[0x7C] = static_cast<uint8_t>(c.n_items);
+}
+
+bool script_value_dkk(const Party& p, uint16_t off, uint16_t* out)
+{
+    const Character* c = p.sel();
+    if (!c) return false;
+    return script_value_dkk(c->rec, c->ext, p.selected, off, out);
+}
+
+bool script_value_dkk(const uint8_t* r, const uint8_t* ext, int index, uint16_t off, uint16_t* out)
+{
+    // (its operand loader's switch, GAME.OVR 0x72E2 - the Death Knights
+    // record's fields at their places in Curse's layout)
+    auto u16 = [r](int o) { return static_cast<uint16_t>(r[o] | r[o + 1] << 8); };
+    if (off <= 0x0F) { *out = r[1 + off]; return true; }                      // the name's letters
+    if (off >= 0x14 && off <= 0x1A) { *out = r[0x11 + (off - 0x14) * 2]; return true; }   // stats in use
+    if (off >= 0x1B && off <= 0x64) { *out = r[kListAt + (off - 0x1B)]; return true; }   // memorized
+    if (off >= 0x65 && off <= 0x6B) { *out = r[0x10 + (off - 0x65) * 2]; return true; }   // own stats
+    if (off >= 0x9A && off <= 0x9E) { *out = r[0xDF + (off - 0x9A)]; return true; }      // saves
+    if (off >= 0xA5 && off <= 0xAC) { *out = r[0xEA + (off - 0xA5)]; return true; }      // thief skills
+    if (off >= 0xC3 && off <= 0xC8) {                                          // steel, gems, jewelry
+        static const uint16_t kAt[3] = {0x103, 0x105, 0x107};
+        *out = u16(kAt[(off - 0xC3) / 2]);
+        return true;
+    }
+    switch (off) {
+    case 0x71:  *out = r[0x73]; return true;    // THAC0 base
+    case 0x72:                                  // race, in its own numbers
+        *out = ext && race_from_krynn(ext[kExtRace]) == r[0x74] ? ext[kExtRace] : race_to_krynn(r[0x74]);
+        return true;
+    case 0x74:  *out = u16(0x76); return true;  // age
+    case 0x76:  *out = r[0x78]; return true;    // HP max
+    case 0x9F:  *out = r[0x1A5]; return true;   // movement
+    case 0xB8:  *out = r[0xF7]; return true;    // NPC
+    case 0xBB:  *out = ext ? ext[kExtRobe] : 0; return true;
+    case 0xBC:  *out = ext ? ext[kExtGod] : 0; return true;
+    case 0xBF:  *out = ext ? ext[kExtKnight] : 0; return true;
+    case 0xD3:  *out = ext ? ext[kExtMagicRes] : 0; return true;
+    case 0xD6:  *out = r[0x119]; return true;   // sex
+    case 0xD8:  *out = r[0x11B]; return true;   // alignment
+    case 0xEB: {                                // the classes held: mage 1, cleric 2, thief 4, fighter 8,
+        static const uint8_t kCls[7] = {5, 0, 6, 2, 7, 3, 4};      // knight 0x10, paladin 0x40, ranger 0x80
+        static const uint8_t kBit[7] = {1, 2, 4, 8, 0x10, 0x40, 0x80};
+        uint16_t v = 0;
+        for (int i = 0; i < 7; ++i)
+            if (static_cast<int8_t>(r[0x109 + kCls[i]]) > 0) v = static_cast<uint16_t>(v + kBit[i]);
+        *out = v;
+        return true;
+    }
+    case 0x100: *out = r[0x196] ? 1 : 0x80; return true;    // in action
+    case 0x10E: *out = r[0x199]; return true;   // THAC0 in use
+    case 0x10F: *out = r[0x19A]; return true;   // AC
+    case 0x110: *out = r[0x19B]; return true;   // AC behind
+    case 0x119: *out = r[0x1A4]; return true;   // HP now
+    case 0x11A: *out = r[0x1A5]; return true;   // movement
+    case 0x2B1:
+    case 0x2B4: *out = static_cast<uint16_t>(index); return true;
+    default:
+        return false;
+    }
+}
+
+void script_set_dkk(Character& c, uint16_t off, uint16_t v) { script_set_dkk(c.rec, c.ext, off, v); }
+
+void script_set_dkk(uint8_t* r, uint8_t*, uint16_t off, uint16_t v)
+{
+    // (its write switch, GAME.OVR 0x7642)
+    if (off >= 0x1B && off <= 0x64) {           // the memorized spells
+        r[kListAt + (off - 0x1B)] = static_cast<uint8_t>(v);
+        return;
+    }
+    if (off >= 0xC3 && off <= 0xC8) {           // steel, gems, jewelry
+        static const uint16_t kAt[3] = {0x103, 0x105, 0x107};
+        const int o = kAt[(off - 0xC3) / 2];
+        r[o] = static_cast<uint8_t>(v);
+        r[o + 1] = static_cast<uint8_t>(v >> 8);
+        return;
+    }
+    switch (off) {
+    case 0xB8: r[0xF7] = static_cast<uint8_t>(v); break;    // NPC
+    case 0x100:                                 // 1: back to okay, in action
+        if (v == 1) {
+            r[0x195] = 0;
+            r[0x196] = 1;
+        }
+        break;
+    case 0x10C: script_set(r, off, v); break;   // side: as Curse's
+    case 0x119: r[0x1A4] = static_cast<uint8_t>(v); break;   // HP now
+    default: break;
+    }
+}
 
 uint8_t race_from_krynn(uint8_t v)
 {
@@ -349,6 +543,23 @@ bool read_record(dax::ByteSource& src, Character& out, Format f)
         from_krynn(k, out);
         return true;
     }
+    if (f == Format::KrynnToDkk) {
+        uint8_t k[kKrynnRecordSize], dk[kDkkRecordSize], wiz[kDkkSpellSize];
+        out = Character{};
+        if (src.read_at(0, k, kKrynnRecordSize) != kKrynnRecordSize) return false;
+        krynn_to_dkk(k, dk, wiz);
+        from_dkk(dk, wiz, out);
+        return true;
+    }
+    if (f == Format::DeathKnights) {
+        // (the record alone: its spell part is a file of its own, read by
+        // the caller with from_dkk)
+        uint8_t k[kDkkRecordSize];
+        out = Character{};
+        if (src.read_at(0, k, kDkkRecordSize) != kDkkRecordSize) return false;
+        from_dkk(k, nullptr, out);
+        return true;
+    }
     uint8_t pool[kPoolRecordSize];
     out = Character{};
     if (src.read_at(0, pool, kPoolRecordSize) != kPoolRecordSize) return false;
@@ -375,6 +586,13 @@ const uint8_t* record_bytes(const Character& c, Format f, uint8_t* buf, size_t* 
     if (f == Format::Krynn) {
         to_krynn(c, buf);
         *n = kKrynnRecordSize;
+        return buf;
+    }
+    if (f == Format::DeathKnights) {
+        // (the record; buf holds the spell part after it - the caller
+        // saves buf + kDkkRecordSize as the .WIZ)
+        to_dkk(c, buf, buf + kDkkRecordSize);
+        *n = kDkkRecordSize;
         return buf;
     }
     to_pool(c, buf);

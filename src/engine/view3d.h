@@ -68,6 +68,10 @@ struct World {
     // and an 88 x 88 background (BACK1 indoors, SKYGRND outdoors; 4-bit
     // packed, on the heap: back_free)
     bool     dk = false;
+    // Death Knights (its ovl 0xF7 +0): the area map's walls are block 202's
+    // tiles from this one (+ the sides' bits: N 1, E 2, S 4, W 8), its arrows
+    // the 16 after (0: Curse's / Darkness's places)
+    uint8_t  map_base = 0;
     // Gateway: the wall sets' tile numbers aren't moved - 46 on are the
     // set's own tiles, each wall drawn with its set's (its big sets have up
     // to 210: TileSet::extra)
@@ -118,6 +122,15 @@ bool load_horizon(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Wo
 // block's palette entries (nullptr: not wanted)
 bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, World& w,
                     pic::VgaPalette* pal = nullptr);
+// Death Knights (deathknights_facts.md 4): 8X8Dn block `block` - an EGA
+// block of 256 tiles (its header's count says 255; 17 + 256 x 32 bytes) -
+// into w's tile sets as Darkness's (tile 0 never drawn, 1-45 `common`,
+// 46-255 the sets); w.dk set
+bool load_ega_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, World& w);
+// Death Knights: an EGA picture (BACKn 88 x 88, SKYGRND 2) into w.back as
+// `id`; over: drawn over what w.back holds (SKYGRND 1's night sky, 88 x 44,
+// colour 13 see-through) - id the result's
+bool load_ega_back(dax::ByteSource& src, const dax::Index& idx, uint8_t block, uint8_t id, World& w, bool over = false);
 // Darkness: a background picture (BACK1 / SKYGRND, 88 x 88 VGA) into
 // w.back in its EGA colours (w.vga: its values), remembered as `id` (not
 // read again while it's the one held - pal then untouched)

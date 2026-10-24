@@ -20,7 +20,7 @@ void put(pic::Canvas& c, const Tiles& t, int n, int col, int row)
         for (int x = 0; x < 8; ++x) {
             const int px = col * 8 + x;
             const uint8_t v = s[y * 8 + x];
-            if (px >= 0 && px < c.w && (v != kMask || t.vga)) c.set(px, py, v);
+            if (px >= 0 && px < c.w && (v != kMask || t.vga || t.solid)) c.set(px, py, v);
         }
     }
 }
@@ -60,6 +60,36 @@ void view_bars(pic::Canvas& c, const Tables& tb, const Tiles& t, int col, int ro
         const int n = i == 1 ? tb.bars[5] : i == 11 ? tb.bars[7] : tb.bars[6];
         put(c, t, n, col, row + i);
         put(c, t, n, col + 12, row + i);
+    }
+}
+
+// Death Knights: the top row (its moons in it), tile 7 down both sides to
+// the bottom row `last` (23; a fight's 22) and the bottom table there
+void direct_box(pic::Canvas& c, const Tables& tb, const Tiles& t, int last)
+{
+    for (int col = 0; col < kCols; ++col) {
+        put(c, t, tb.top[col], col, 0);
+        put(c, t, tb.bottom[col], col, last);
+    }
+    for (int row = 1; row < last; ++row) {
+        put(c, t, 7, 0, row);
+        put(c, t, 7, kCols - 1, row);
+    }
+}
+
+// Death Knights' 3D view / picture frame (its START image 0x12C8): corners
+// 0-3, tile 4 across, 7 down
+void direct_frame(pic::Canvas& c, const Tiles& t, int col, int row)
+{
+    put(c, t, 0, col, row);
+    put(c, t, 1, col + 12, row);
+    put(c, t, 2, col, row + 12);
+    put(c, t, 3, col + 12, row + 12);
+    for (int i = 1; i <= 11; ++i) {
+        put(c, t, 4, col + i, row);
+        put(c, t, 4, col + i, row + 12);
+        put(c, t, 7, col, row + i);
+        put(c, t, 7, col + 12, row + i);
     }
 }
 
@@ -163,11 +193,12 @@ bool load_tr_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, u
     return true;
 }
 
-bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, uint8_t first)
+bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, uint8_t first, uint8_t window)
 {
     out.loaded = false;
     out.vga = false;
     out.first = first < 20 ? 20 : first;
+    out.window = window > kTiles - 20 ? kTiles - 20 : window;
     const dax::Entry* e = idx.find(block);
     if (!e) return false;
     dax::RleReader r(src, idx, *e);
@@ -215,13 +246,42 @@ Status load_tables(dax::ByteSource& program, const exepack::Info& info, const pr
             case exepack::Status::BadData:   return Status::BadData;
             default:                         return Status::NotPacked;
             }
-            if (!all_below(out.top, 0, 40, kTiles - kViewTile)) return Status::BadTables;
+            if (!all_below(out.top, 0, 40, kOldTiles - kViewTile)) return Status::BadTables;
             out.top_row = true;
         }
         out.loaded = true;
         return Status::Ok;
     }
     const profile::FrameTables& f = p.frame;
+    if (p.variant.dkk) {
+        // Death Knights (its START image 0x10F0 - 0x1673): the top / bottom
+        // rows, the row-16 bar, column 16 (rows 0-16), the fight's column 22
+        // (rows 0-22), View Character's columns 0 / 39 and 19 - tile numbers
+        // themselves; the sides tile 7
+        struct DSlice { uint16_t at; uint8_t* dst; uint8_t len; };
+        const DSlice s[] = {{f.top, out.top, 40}, {f.bottom, out.bottom, 40}, {f.bar, out.bar, 40},
+                            {f.view_split, out.view_split, 17}, {f.combat_split, out.combat_split, 23},
+                            {f.char_left, out.char_left, 24}, {f.char_right, out.char_right, 24},
+                            {static_cast<uint16_t>(f.char_split + 8), out.char_split, 13}};
+        for (const DSlice& x : s) {
+            switch (exepack::read(program, info, p.data_base + x.at, x.dst, x.len)) {
+            case exepack::Status::Ok:        break;
+            case exepack::Status::ReadError: return Status::ReadError;
+            case exepack::Status::BadData:   return Status::BadData;
+            default:                         return Status::NotPacked;
+            }
+            if (!all_below(x.dst, 0, x.len, kTiles)) return Status::BadTables;
+        }
+        memset(out.left, 7, sizeof out.left);
+        memset(out.right, 7, sizeof out.right);
+        memset(out.combat_left, 7, sizeof out.combat_left);
+        memset(out.combat_right, 7, sizeof out.combat_right);
+        out.frame_base = 0;
+        out.direct = true;
+        out.top_row = true;
+        out.loaded = true;
+        return Status::Ok;
+    }
     struct Slice { uint16_t at; uint8_t* dst; uint8_t len; };
     const Slice s[] = {
         {f.top, out.top, 40}, {f.bar, out.bar, 40}, {f.bottom, out.bottom, 40},
@@ -255,7 +315,7 @@ Status load_tables(dax::ByteSource& program, const exepack::Info& info, const pr
     // Sanity: every value used must name a tile
     out.frame_base = p.variant.frame_base ? p.variant.frame_base : kFrameTile;
     out.joints = p.variant.frame_base != 0;
-    const int fmax = kTiles - out.frame_base, vmax = kTiles - kViewTile;
+    const int fmax = kOldTiles - out.frame_base, vmax = kOldTiles - kViewTile;
     if (!all_below(out.top, 0, 40, fmax) || !all_below(out.bar, 0, 40, fmax) || !all_below(out.bottom, 0, 40, fmax) ||
         !all_below(out.left, 0, 24, fmax) || !all_below(out.right, 0, 24, fmax) ||
         !all_below(out.view_split, 0, 17, fmax) ||
@@ -391,6 +451,13 @@ void outer(pic::Canvas& c, const Tables& tb, const Tiles& t)
         box(c, tb, t, 0, 0, kCols - 1, 23);
         return;
     }
+    if (tb.direct) {
+        // (Death Knights' outer frame, its START image 0x10F0 with 0: the
+        // inside cleared, the top row with its moons, the sides, the bottom)
+        c.fill(8, 8, 38 * 8, 22 * 8, 0);
+        direct_box(c, tb, t, 23);
+        return;
+    }
     c.fill(8, 8, 38 * 8, 22 * 8, 0);
     for (int col = 0; col < kCols; ++col) put(c, t, tb.frame_base + tb.top[col], col, 0);
     for (int row = 0; row <= 22; ++row) {
@@ -458,6 +525,11 @@ void explore(pic::Canvas& c, const Tables& tb, const Tiles& t)
         box(c, tb, t, 2, 2, 14, 14);
         return;
     }
+    if (tb.direct) {
+        for (int row = 0; row <= 16; ++row) put(c, t, tb.view_split[row], 16, row);
+        direct_frame(c, t, 2, 2);
+        return;
+    }
     for (int row = 0; row <= 16; ++row) put(c, t, tb.frame_base + tb.view_split[row], 16, row);
     if (tb.joints) {
         // (Gateway's explore frame, GAME.OVR 0x4BD5B)
@@ -486,6 +558,10 @@ void picture_frame(pic::Canvas& c, const Tables& tb, const Tiles& t, int col, in
     }
     if (tb.box[0]) {
         box(c, tb, t, col, row, col + 12, row + 12);
+        return;
+    }
+    if (tb.direct) {
+        direct_frame(c, t, col, row);
         return;
     }
     for (int i = 2; i <= 14; ++i) {
@@ -521,6 +597,13 @@ void combat(pic::Canvas& c, const Tables& tb, const Tiles& t)
         box(c, tb, t, 22, 0, kCols - 1, 22);
         return;
     }
+    if (tb.direct) {
+        // (Death Knights' fight frame, its START image 0x1435: the outer frame
+        // down to row 22, column 22 by its table)
+        direct_box(c, tb, t, 22);
+        for (int row = 0; row <= 22; ++row) put(c, t, tb.combat_split[row], 22, row);
+        return;
+    }
     for (int col = 0; col < kCols; ++col) put(c, t, tb.frame_base + tb.top[col], col, 0);
     for (int row = 0; row <= 22; ++row) {
         put(c, t, tb.frame_base + tb.combat_left[row], 0, row);
@@ -543,6 +626,24 @@ void combat(pic::Canvas& c, const Tables& tb, const Tiles& t)
 
 void character(pic::Canvas& c, const Tables& tb, const Tiles& t)
 {
+    if (tb.direct) {
+        // (Death Knights, its START image 0x1482: the screen cleared, the top
+        // and bottom rows, tile 4 across rows 8, 16 and 20, the sides and
+        // column 19 by their tables)
+        c.fill(0, 0, pic::kScreenW, 24 * 8, 0);
+        for (int col = 0; col < kCols; ++col) {
+            put(c, t, tb.top[col], col, 0);
+            put(c, t, tb.bottom[col], col, 23);
+            if (col && col < kCols - 1)
+                for (int row : {8, 16, 20}) put(c, t, 4, col, row);
+        }
+        for (int row = 1; row <= 22; ++row) {
+            put(c, t, tb.char_left[row], 0, row);
+            put(c, t, tb.char_right[row], kCols - 1, row);
+        }
+        for (int row = 8; row <= 20; ++row) put(c, t, tb.char_split[row - 8], 19, row);
+        return;
+    }
     outer(c, tb, t);
     for (int row : {8, 16, 20})
         for (int col = 0; col < kCols; ++col) put(c, t, tb.frame_base + tb.bar[col], col, row);
