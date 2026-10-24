@@ -912,10 +912,13 @@ int class_con_bonus(int con, int cls)
 }
 } // namespace
 
-bool can_modify(const party::Character& c, bool pool, bool secret, bool dk)
+bool can_modify(const party::Character& c, bool pool, bool secret, bool dk, bool gw)
 {
     const uint32_t e = c.exp();
     if (pool) return e == 0;
+    // (Gateway's: 0 or its starting 3000 / 1000 / 1500, not dual-classed -
+    // GAME.OVR 0x290B7)
+    if (gw) return (e == 0 || e == 3000 || e == 1000 || e == 1500) && c.rec[kMultiLevel] == 0;
     if (dk) return e == 1500001 || e == 750000 || e == 500000;
     // (Secret's: its own starting experience - GAME.OVR 0x1FBF0)
     if (secret) return (e == 0 || e == 66667 || e == 100000 || e == 200000) && c.rec[kMultiLevel] == 0;

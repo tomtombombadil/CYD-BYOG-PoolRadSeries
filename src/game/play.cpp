@@ -9382,7 +9382,7 @@ void start_modify(pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
     if (!ch) return;
-    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files())) {
+    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files(), gateway())) {
         char t[60], nm[20];
         ch->name(nm, sizeof nm);
         snprintf(t, sizeof t, "%s%s", nm, rw(Data::kCantModify));

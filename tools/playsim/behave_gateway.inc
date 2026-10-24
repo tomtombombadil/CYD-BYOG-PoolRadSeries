@@ -75,6 +75,9 @@ void creation()
                         }
                         if (c.hp_max() < 1) why += " no hit points";
                         if (c.alignment() != (*al)[ai]) why += " alignment";
+                        // Modify (GAME.OVR 0x290B7): a new character may be modified
+                        // (experience 0 / 3000 / 1000 / 1500, not dual-classed)
+                        if (!create::can_modify(c, false, false, false, true)) why += " can't be modified";
                         if (!why.empty()) {
                             if (nbad < 12) {
                                 char w[160];
