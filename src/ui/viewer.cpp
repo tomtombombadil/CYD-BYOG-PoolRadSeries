@@ -3503,7 +3503,7 @@ void draw_journal()
     ui::clear();
     const ui::Rect a = view_area();
     // Just "2 of 3" (Tom, v0.66.1): the entry's number is in its picture
-    char page[24];
+    char page[32];
     int pages = 1, at = 1;
     if (jv && jv->have && jv->total_h > a.h) {
         pages = (jv->total_h - a.h + journal_step() - 1) / journal_step() + 1;
@@ -3717,10 +3717,32 @@ void tick_journal()
 
 ui::Rect pdf_area() { return view_area(); }
 
+// Keys (Tom, 2026-10-09 / 10): Back | Zoom | Prev | the page | Next, slim,
+// no title bar - drawn before the page (it takes a while) and again after
+// it (the column count and the ends known then)
+void pdf_keys(const ui::Rect& a, bool known)
+{
+    const bool column = pdf_fit_level == pdfview::Fit::Column;
+    char page[24], col[32];
+    snprintf(page, sizeof page, "%d of %d", pdf_page, pdfview::pages());     // just "3 of 48" (Tom, v0.66.1)
+    snprintf(col, sizeof col, "Col %d of %d", pdf_v.col + 1, pdf_v.cols);
+    const bool first = pdf_page == 1 && (!column || (pdf_v.col == 0 && pdf_v.vy == 0));
+    const bool last = known && pdf_page == pdfview::pages() &&
+                      (!column || (pdf_v.col + 1 >= pdf_v.cols && pdf_v.vy + a.h >= pdf_v.shown_h));
+    ui::key(slim_key(0, 5), "Back");
+    ui::key(slim_key(1, 5), column ? "Column" : "Whole", column ? ui::KeyStyle::Normal : ui::KeyStyle::Lit);
+    ui::key(slim_key(2, 5), "Prev", first ? ui::KeyStyle::Dim : ui::KeyStyle::Normal);
+    const ui::Rect lr = slim_key(3, 5);
+    ui::gfx().fillRect(lr.x, lr.y, lr.w, lr.h, style::kBackground);
+    slim_label(lr, page, known && column && pdf_v.cols > 1 ? col : nullptr);
+    ui::key(slim_key(4, 5), "Next", last ? ui::KeyStyle::Dim : ui::KeyStyle::Normal);
+}
+
 void draw_pdf()
 {
     ui::clear();
     const ui::Rect a = pdf_area();
+    pdf_keys(a, false);
     ui::text(ui::gap() * 3, a.y + ui::gap() * 2, "Reading the page...", style::kTextMuted, ui::Font::Small);
     // JPEG decoding on a stack of its own (deep)
     struct Job {
@@ -3737,19 +3759,8 @@ void draw_pdf()
         },
         &job);
     LGFX& g = ui::gfx();
-    // Keys (Tom, 2026-10-09 / 10): Back | Zoom | Prev | the page | Next, slim, no title bar
     const bool column = pdf_fit_level == pdfview::Fit::Column;
-    char page[24], col[32];
-    snprintf(page, sizeof page, "%d of %d", pdf_page, pdfview::pages());     // just "3 of 48" (Tom, v0.66.1)
-    snprintf(col, sizeof col, "Col %d of %d", pdf_v.col + 1, pdf_v.cols);
-    const bool first = pdf_page == 1 && (!column || (pdf_v.col == 0 && pdf_v.vy == 0));
-    const bool last = pdf_page == pdfview::pages() &&
-                      (!column || (pdf_v.col + 1 >= pdf_v.cols && pdf_v.vy + a.h >= pdf_v.shown_h));
-    ui::key(slim_key(0, 5), "Back");
-    ui::key(slim_key(1, 5), column ? "Column" : "Whole", column ? ui::KeyStyle::Normal : ui::KeyStyle::Lit);
-    ui::key(slim_key(2, 5), "Prev", first ? ui::KeyStyle::Dim : ui::KeyStyle::Normal);
-    slim_label(slim_key(3, 5), page, column && job.r == pdfview::Result::Ok && pdf_v.cols > 1 ? col : nullptr);
-    ui::key(slim_key(4, 5), "Next", last ? ui::KeyStyle::Dim : ui::KeyStyle::Normal);
+    pdf_keys(a, job.r == pdfview::Result::Ok);
     if (job.r != pdfview::Result::Ok) {
         g.fillRect(0, a.y, a.w, a.h, style::kBackground);
         char why[160];
