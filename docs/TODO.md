@@ -161,10 +161,12 @@ the Project as claude/TODO.md.
       start); behave champions; budget fight 129.8 KB. Game Fixes: thief
       skills by race (the original reads Curse's race rows), a knight's
       saves (the original gives every knight row 7's level-0 saves).
-      Open, in order: the kapak's acid pool (ground 0x1D - stepping in not
-      traced); sound (SOUND.DAX driver + effects, MIDI.DAX - silent now);
-      its GOG journal table (the SNEG text journal works); "WHERE DO YOU
-      WISH TO GO?" cleared in shops / temple (the original keeps it).
+      v0.149.0: its GOG journal table (88 entries, 57 tavern tales - the
+      PDF reader now takes cross-reference / object streams; Rescan
+      needed), the kapak's acid pool, "WHERE DO YOU WISH TO GO?" kept in
+      shops / temple, its sound effects (the SSI driver in START.EXE, as
+      Secret's). Open: the title music (SOUND.DAX / MIDI.DAX, not played);
+      an in-game effect not yet compared with DOSBox.
 - [ ] Krynn (survey 2026-10-24, the Project's claude/krynn_facts.md):
       Champions = Secret's engine (port started, branch champions); Death
       Knights = Darkness's engine at 4 bits (LOAD FILES / PIECES 3
