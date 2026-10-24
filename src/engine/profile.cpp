@@ -1796,7 +1796,10 @@ constexpr ecl::OpSet kDeathKnightsEcl = [] {
     s.area_by_block = true;
     s.curse_bytes = true;
     s.moons = true;
-    s.vault_word = 0;
+    // (its COMBAT with no monsters, interpreter +0x16ED: block byte 0x200 the
+    // vault - "View Take Pool Money Items Exit"; 0x7F6C the shop; 0x7EE2 the
+    // temple - Curse's; else the treasure)
+    s.vault_word = 0x4D00;
     return s;
 }();
 
