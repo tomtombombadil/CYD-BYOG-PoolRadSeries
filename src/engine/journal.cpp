@@ -617,6 +617,11 @@ char find_mention(const char* text, int* number)
                     *number = n;
                     break;
                 }
+        } else if (upper_eq(s, "INTRODUCTION TO YOUR JOURNAL")) {
+            // Gateway's start: "... AS THE INTRODUCTION TO YOUR JOURNAL." -
+            // the journal's Introduction (kind 'I', number 1)
+            kind = 'I';
+            *number = 1;
         } else if (upper_eq(s, "TAVERN TALE")) {
             const int n = number_after(s + 11);
             if (n >= 0) {

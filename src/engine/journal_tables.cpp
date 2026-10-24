@@ -550,6 +550,8 @@ const Piece k_gateway_pieces[] = {
     {21, 22, 326, 376, 495},
     {21, 22, 838, 410, 379},
     {21, 398, 89, 417, 564},
+    {3, 26, 70, 392, 1058},
+    {3, 418, 85, 392, 1119},
 };
 const EntryDef k_gateway_entries[] = {
     {'J', 1, 0, 1},
@@ -614,9 +616,10 @@ const EntryDef k_gateway_entries[] = {
     {'J', 60, 84, 1},
     {'J', 61, 85, 1},
     {'J', 62, 86, 1},
+    {'I', 1, 87, 2},
 };
 const Table k_gateway = {"Gateway to the Savage Frontier - Journal (GOG, the copy in the game folder)", 10963455u, "f893d7ffe8bf1c3f956c77942c401ddb", k_gateway_entries,
-    62, k_gateway_pieces, 87};
+    63, k_gateway_pieces, 89};
 
 // Secret of the Silver Blades - Adventurer's Journal (GOG, the copy in the game folder)
 const Piece k_secret_pieces[] = {

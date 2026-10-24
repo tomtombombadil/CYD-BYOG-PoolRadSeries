@@ -206,6 +206,11 @@ def gateway_layout(t):
     p = P(20)
     J[61] = [[p, 22, 829, 432 - 22, 1245 - 829]]
     J[62] = [[p, 398, 81, 417, 700 - 81]]
+    # PDF page 3: "Introduction: The First Night in Yartar", the left page's
+    # two columns - the start's text: "... as the introduction to your
+    # journal" (kind 'I', number 1)
+    p = P(2)
+    t['I'][1] = [[p, 26, 70, 392, 1165], [p, 418, 70, 392, 1165]]
 
 
 # Gateway's picture-and-quote boxes between the columns' text (no entry's):
@@ -609,7 +614,7 @@ def main():
                 c, fi = 0, fi + 1
             y = top
 
-    t = {'J': {}, 'T': {}}
+    t = {'J': {}, 'T': {}, 'I': {}}
     for k, (kind, n, fi, c, y) in enumerate(items):
         nxt = items[k + 1][2:] if k + 1 < len(items) and items[k + 1][0] == kind else None
         t[kind][n] = pieces(fi, c, y - 14, nxt, L['stop'][kind])
@@ -639,7 +644,7 @@ def main():
         return pages[p]
 
     entries = []
-    for kind in 'JT':
+    for kind in 'JTI':
         for n in sorted(t[kind]):
             ps = []
             for p, x, y, w, h in t[kind][n]:
@@ -656,9 +661,13 @@ def main():
         table = json.load(open(store))
     except (OSError, ValueError):
         table = {'format': 1, 'dpi': 150, 'journals': []}
-    table['journals'] = [j for j in table['journals'] if j['sha256'] != L['sha256']]
-    table['journals'].append({'name': name, 'game': L['game'], 'title': L['title'], 'sha256': L['sha256'],
-                              'pdf_size': L['pdf_size'], 'pdf_id': L['pdf_id'], 'entries': entries})
+    new = {'name': name, 'game': L['game'], 'title': L['title'], 'sha256': L['sha256'],
+           'pdf_size': L['pdf_size'], 'pdf_id': L['pdf_id'], 'entries': entries}
+    at = [i for i, j in enumerate(table['journals']) if j['sha256'] == L['sha256']]
+    if at:
+        table['journals'][at[0]] = new          # (in its place: the C++ file's order stays)
+    else:
+        table['journals'].append(new)
     with open(store, 'w') as f:
         json.dump(table, f, separators=(',', ':'))
     write_cpp(table, out_path)

@@ -39,7 +39,7 @@ struct Piece {
 };
 
 struct EntryDef {
-    char     kind;                 // 'J' / 'T'
+    char     kind;                 // 'J' / 'T' / 'I' (the introduction, number 1)
     uint8_t  number;
     uint16_t first;                // into the pieces
     uint8_t  count;
@@ -145,8 +145,9 @@ bool make_gbc(dax::ByteSource& dat, GbcPictures& pics, const char* id, Output& o
 // ---- the game's text ----------------------------------------------------------
 
 // Looks through printed game text for "JOURNAL ENTRY 31" (also "JOURNAL
-// AS ENTRY 59", "JOURNAL\nENTRY 44", "ENTRY #12") or "TAVERN TALE 12".
-// Returns the kind ('J' / 'T') of the last complete mention and sets
+// AS ENTRY 59", "JOURNAL\nENTRY 44", "ENTRY #12") or "TAVERN TALE 12", or
+// "THE INTRODUCTION TO YOUR JOURNAL" (Gateway's start: 'I' 1).
+// Returns the kind ('J' / 'T' / 'I') of the last complete mention and sets
 // *number, else 0.
 char find_mention(const char* text, int* number);
 
