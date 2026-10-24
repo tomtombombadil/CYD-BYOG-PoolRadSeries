@@ -102,6 +102,10 @@ void key_compass(const Rect& r, int dir, KeyStyle s = KeyStyle::Normal);
 // A help key (Tom, v0.84.0): a "?" in a circle, centred in r (all of r
 // takes the tap; its tap highlight is a round ring)
 void key_help(const Rect& r);
+// A part of a key drawn just before (e.g. the Volume key's - and + halves):
+// it takes the tap highlight's ring instead of the whole key. The caller
+// redraws the key after acting on the tap.
+void key_zone(const Rect& r);
 // The fill colour of a key in style s (to draw pictures on it)
 uint16_t key_fill(KeyStyle s);
 

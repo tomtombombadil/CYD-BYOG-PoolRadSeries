@@ -265,7 +265,15 @@ stay in the session's scratch space, never in the repo.
   in hand - Game Fixes for a game with fixes (Pool) - and the version,
   board and memory lines. Every switch has its "?". Bottom: As Original /
   All On (the comforts), and Dev Tools (a game's page) or Back to Game (in
-  the game). The keys before v0.91.0, kept below for their history:
+  the game). **Volume** (Tom, 2026-10-24): one key, no slider - the
+  small "Volume" label at its top, "-" at the left, "+" at the right and
+  the percentage between them (0-100% in 5% steps; a crossed speaker at
+  0% = muted); a tap on the left half takes 5% off, on the right half
+  adds 5%, the tap highlight rings the half tapped (`ui::key_zone`). The
+  same key on the Game menu's Sounds tab. Stored in the 0-255 volume byte
+  (each step the nearest byte, no drift) + `volume_muted`
+  (settings.h `settings_volume_pct`). The keys before v0.91.0, kept below
+  for their history:
 - Settings keys (2 columns; 3 rows on 320x240, 4 on 480x320; more than fit
   go on further pages, arrow keys bottom right): Brightness (a slider in
   one key's space, "Brightness nn%" in small text above it; tap a point or
@@ -2400,8 +2408,8 @@ the game's Settings (As Original: all of them).
   goes back to the gallery instead of straight to "Is this icon ok?".
   With the player's Gold Box Companion on the card its combat icons can be
   picked too (kept by name in the engine's ICONS.TXT, not in the save).
-- **Sound**: Tandy (default), PC speaker or off, with a volume slider in
-  the engine's Settings.
+- **Sound**: Tandy (default), PC speaker or off, with a Volume key in
+  the engine's Settings (- / + in 5% steps, 0% muted; 2026-10-24).
   Pools of Darkness (its effects are samples, ZOUNDS.DAX): Tandy is the
   Tandy 1000 SL / TL's DAC (the samples as they are - the Sound Blaster's
   too, the GOG setting); the EX / TX driver's 16 chip volumes (TANEXTX.COM)
