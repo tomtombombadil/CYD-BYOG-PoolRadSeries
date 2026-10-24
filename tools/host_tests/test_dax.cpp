@@ -3785,7 +3785,7 @@ static void test_journal()
                 ++maps;
                 CHECK(t.entries[e].kind == 'J');
             }
-        CHECK(maps >= 4);                               // (every journal has its maps marked)
+        CHECK(maps >= 2);                               // (every journal has its maps marked; Death Knights' has two)
         CHECK(strlen(t.pdf_id) == 32 && t.n_entries > 0 && t.n_pieces >= t.n_entries);
         for (int e = 0; e < t.n_entries; ++e) {
             const journal::EntryDef& d = t.entries[e];
