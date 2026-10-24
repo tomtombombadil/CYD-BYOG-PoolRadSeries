@@ -236,7 +236,7 @@ static bool pump(int max_iter = 400000)
             switch (fg->st) {
             case FSt::Menu: {
                 const int r = on_menu ? on_menu() : 0;
-                if (r == 0) tap_word('Q');
+                if (r == 0 && !tap_word('Q') && tap_word('D')) tap_word('A');     // (Champions: Done's Auto)
                 break;
             }
             case FSt::Aim: {
