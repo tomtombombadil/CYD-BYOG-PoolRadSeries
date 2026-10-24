@@ -1,8 +1,11 @@
 // The journal PDF as a book (Tom, 2026-10-09: the fallback for a PDF the
-// engine has no table for, or when its entries aren't prepared): each page
-// is a scanned picture (JPEG), shown at one of three sizes - the whole
-// page, the page's width, or the scan's own pixels - with the view moved
-// round it.
+// engine has no table for, or when its entries aren't prepared). Each page
+// is a scanned picture (JPEG) - mostly two facing book pages of two
+// columns each - shown a column at a time (Tom, 2026-10-24: "divide them
+// into columns, two per page, just like the text. The default view would
+// be one column wide"), the column's width across the screen, or the
+// whole page. The columns are found on the board, by the white gutters
+// between them (journal::find_columns).
 #pragma once
 
 #include "ui.h"
@@ -16,21 +19,32 @@ void close();
 bool is_open();
 
 int pages();
-// The page picture's size (scan pixels). False if the page has none.
-bool page_size(int page, int* w, int* h);
 
-// How big a page is shown (v0.23.0, Tom: zoom levels the Zoom key cycles)
-enum class Fit : unsigned char { Page, Width, Full };
-
-// The page's size on the panel at that fit, for a view r (panel pixels).
-bool shown_size(int page, const ui::Rect& r, Fit fit, int* w, int* h);
+// Column: one column across the screen (scrolling down it); Whole: the
+// whole page
+enum class Fit : unsigned char { Column, Whole };
 
 enum class Result : unsigned char { Ok, NoPicture, NoMemory, BadData };
 
-// Draws page `page` (from 1) into r at `fit`, the view's top left at
-// (*vx, *vy) in shown pixels (kept on the page; a page smaller than r is
-// centred). fit_rect (optional) gets where the page landed on the panel.
-// No big buffers: each decoded block goes straight to the panel.
-Result draw(int page, const ui::Rect& r, Fit fit, int* vx, int* vy, ui::Rect* fit_rect = nullptr);
+constexpr int kLastColumn = -1;            // View::col: the page's last column
+constexpr int kBottom = 1 << 30;           // View::vy: the column's bottom
+
+struct View {
+    // in: which column and how far down it (shown pixels); at_x / at_y
+    // (scan pixels, at_x >= 0): the column there instead, with that spot
+    // in the middle (a tap on the whole page)
+    int col = 0, vy = 0;
+    int at_x = -1, at_y = -1;
+    // out: the page's columns, the column's shown height, where the
+    // picture landed on the panel, the page's size (scan pixels)
+    int cols = 0, shown_h = 0;
+    ui::Rect fit{0, 0, 0, 0};
+    int page_w = 0, page_h = 0;
+};
+
+// Draws page `page` (from 1) into r. Column: finds the page's columns
+// first (once a page) and keeps v.col / v.vy in range. Deep: run it on a
+// big stack. No big buffers: rows go to the panel as they're made.
+Result draw(int page, const ui::Rect& r, Fit fit, View& v);
 
 } // namespace pdfview

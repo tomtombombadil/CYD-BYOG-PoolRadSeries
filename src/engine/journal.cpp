@@ -155,44 +155,64 @@ void level_rgb(int index, int black, uint8_t* r, uint8_t* g, uint8_t* b)
 
 // ---- the book's columns -------------------------------------------------------
 
-int find_columns(const uint32_t* ink, int n, int* x0, int* x1, int max)
+void clear_strips(const uint16_t* ink, int stride, int n, int bands, int band_h, uint8_t* clear)
+{
+    // Per column: the strips with print near it (within d), and of those
+    // the ones where the column itself is clear. A strip blank there (the
+    // end of a short column, a page's foot) says nothing either way.
+    const int d = n / 40 > 2 ? n / 40 : 2;
+    uint8_t* near = clear;                       // (counts in clear[], then the ratio)
+    uint8_t own[512];
+    if (n > 512) n = 512;
+    for (int x = 0; x < n; ++x) near[x] = own[x] = 0;
+    for (int b = 0; b < bands; ++b) {
+        const uint16_t* row = ink + static_cast<size_t>(b) * stride;
+        // the 80th percentile, by counting (64 steps of the largest)
+        int top = 0;
+        for (int x = 0; x < n; ++x) top = row[x] > top ? row[x] : top;
+        int level = 0;
+        if (top > 0) {
+            int count[64] = {};
+            for (int x = 0; x < n; ++x) ++count[row[x] * 63 / top];
+            int seen = 0, k = 0;
+            for (; k < 64; ++k) {
+                seen += count[k];
+                if (seen * 5 >= n * 4) break;
+            }
+            level = top * (k + 1) / 64;
+        }
+        int limit = level / 8;
+        if (limit < band_h) limit = band_h;
+        // print within d: a running count over the window
+        int in_window = 0;
+        for (int x = 0; x < d && x < n; ++x) in_window += row[x] > limit;
+        for (int x = 0; x < n; ++x) {
+            if (x + d < n) in_window += row[x + d] > limit;
+            if (x - d - 1 >= 0) in_window -= row[x - d - 1] > limit;
+            if (in_window > 0) {
+                ++near[x];
+                own[x] = static_cast<uint8_t>(own[x] + (row[x] <= limit ? 1 : 0));
+            }
+        }
+    }
+    for (int x = 0; x < n; ++x)
+        clear[x] = static_cast<uint8_t>(near[x] < 2 ? bands : (own[x] * bands + near[x] / 2) / near[x]);
+}
+
+int find_columns(const uint8_t* clear, int n, int bands, int* x0, int* x1, int max)
 {
     if (n <= 0 || max <= 0) return 0;
-    // The level that counts as print: a fraction of a busy column's
-    uint32_t hi = 0;
-    {
-        // the 80th percentile of the columns with any print (a rough sort
-        // by counting: 64 buckets of the largest value)
-        uint32_t top = 0;
-        for (int x = 0; x < n; ++x) top = ink[x] > top ? ink[x] : top;
-        if (top == 0) {
-            x0[0] = 0;
-            x1[0] = n;
-            return 1;
-        }
-        int bucket[64] = {};
-        int used = 0;
-        for (int x = 0; x < n; ++x)
-            if (ink[x] > top / 64) {
-                ++bucket[static_cast<uint64_t>(ink[x]) * 63 / top];
-                ++used;
-            }
-        int seen = 0, b = 0;
-        for (; b < 64; ++b) {
-            seen += bucket[b];
-            if (seen * 5 >= used * 4) break;
-        }
-        hi = static_cast<uint32_t>(static_cast<uint64_t>(top) * (b + 1) / 64);
-    }
-    const uint32_t gap = hi / 8;
+    // A gutter: clear of print in most of the bands (a picture or a
+    // heading across it in a few doesn't close it)
+    auto gutter = [&](int x) { return clear[x] * 2 >= bands; };
     // Runs of print
     int nr = 0;
     int rs[64], re[64];
     for (int x = 0; x < n;) {
-        while (x < n && ink[x] <= gap) ++x;
+        while (x < n && gutter(x)) ++x;
         if (x >= n) break;
         const int s = x;
-        while (x < n && ink[x] > gap) ++x;
+        while (x < n && !gutter(x)) ++x;
         if (nr < 64) {
             rs[nr] = s;
             re[nr] = x;
@@ -233,6 +253,35 @@ int find_columns(const uint32_t* ink, int n, int* x0, int* x1, int max)
             --nr;
             changed = true;
         }
+    }
+    // A run under half the usual column's width (a map's key box beside
+    // it, a picture's margin) joins the neighbour nearer to it
+    for (bool changed = true; changed && nr > 1;) {
+        changed = false;
+        int widths[64];
+        for (int i = 0; i < nr; ++i) widths[i] = re[i] - rs[i];
+        for (int i = 1; i < nr; ++i)
+            for (int k = i; k > 0 && widths[k - 1] > widths[k]; --k) {
+                const int t = widths[k];
+                widths[k] = widths[k - 1];
+                widths[k - 1] = t;
+            }
+        const int median = widths[nr / 2];
+        int narrowest = -1;
+        for (int i = 0; i < nr; ++i)
+            if ((re[i] - rs[i]) * 2 < median && (narrowest < 0 || re[i] - rs[i] < re[narrowest] - rs[narrowest]))
+                narrowest = i;
+        if (narrowest < 0) break;
+        const int gl = narrowest > 0 ? rs[narrowest] - re[narrowest - 1] : 1 << 30;
+        const int gr = narrowest + 1 < nr ? rs[narrowest + 1] - re[narrowest] : 1 << 30;
+        const int a = gl <= gr ? narrowest - 1 : narrowest;   // join a and a + 1
+        re[a] = re[a + 1];
+        for (int i = a + 1; i + 1 < nr; ++i) {
+            rs[i] = rs[i + 1];
+            re[i] = re[i + 1];
+        }
+        --nr;
+        changed = true;
     }
     // Too many: join across the narrowest gaps
     while (nr > max) {
@@ -846,7 +895,7 @@ int piece_black(dax::ByteSource& src, const PieceInfo& p, uint8_t* row)
 {
     if (p.text() || p.w <= 0 || p.h <= 0) return 0;
     uint32_t hist[256] = {};
-    const int n = p.h < 48 ? p.h : 48;
+    const int n = p.h < 32 ? p.h : 32;
     for (int k = 0; k < n; ++k) {
         const int y = static_cast<int>((static_cast<int64_t>(k) * 2 + 1) * p.h / (2 * n));
         if (src.read_at(p.offset + static_cast<uint32_t>(y) * p.w, row, static_cast<size_t>(p.w)) != static_cast<size_t>(p.w))

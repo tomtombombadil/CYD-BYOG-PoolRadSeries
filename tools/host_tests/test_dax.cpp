@@ -3563,20 +3563,23 @@ static void test_journal_view()
     }
 
     // The book's columns: a spread - margin, two columns, the fold, two
-    // more; a page number between (narrow) and a heading across one gutter
+    // more; a page number at the fold (narrow), a picture across the
+    // first gutter in 4 of the 16 strips (a gutter: clear in half of them)
     {
-        uint32_t ink[200] = {};
-        auto block = [&](int a, int b, uint32_t v) {
-            for (int x = a; x < b; ++x) ink[x] += v;
+        const int B = journal::kColumnBands;
+        uint8_t clear[200];
+        for (int x = 0; x < 200; ++x) clear[x] = static_cast<uint8_t>(B);
+        auto print = [&](int a0, int b0, int strips) {
+            for (int x = a0; x < b0; ++x) clear[x] = static_cast<uint8_t>(clear[x] > strips ? clear[x] - strips : 0);
         };
-        block(8, 50, 1000);
-        block(54, 96, 900);
-        block(106, 148, 1100);
-        block(152, 192, 800);
-        block(98, 101, 400);            // a page number at the fold
-        block(48, 56, 60);              // a heading's bit over the first gutter
+        print(8, 50, 12);
+        print(54, 96, 13);
+        print(106, 148, 11);
+        print(152, 192, 12);
+        print(98, 101, 1);              // the page number (one strip: still a gutter)
+        print(40, 70, 4);               // the picture
         int x0[8], x1[8];
-        const int n = journal::find_columns(ink, 200, x0, x1, 8);
+        const int n = journal::find_columns(clear, 200, B, x0, x1, 8);
         CHECK(n == 4);
         if (n == 4) {
             CHECK(x0[0] <= 8 && x0[0] >= 5 && x1[0] >= 50 && x1[0] <= 54);
@@ -3584,15 +3587,35 @@ static void test_journal_view()
             CHECK(x0[2] <= 106 && x1[2] >= 148 && x0[3] <= 152 && x1[3] >= 192);
             for (int i = 0; i + 1 < n; ++i) CHECK(x1[i] <= x0[i + 1]);
         }
+        // a picture across most of a gutter closes it: three columns
+        uint8_t c2[200];
+        memcpy(c2, clear, sizeof c2);
+        for (int x = 50; x < 54; ++x) c2[x] = static_cast<uint8_t>(B / 2 - 1);
+        CHECK(journal::find_columns(c2, 200, B, x0, x1, 8) == 3 && x1[0] >= 96);
         // one picture across the page: one column
-        uint32_t one[100] = {};
-        for (int x = 5; x < 95; ++x) one[x] = 500 + (x % 7) * 40;
-        CHECK(journal::find_columns(one, 100, x0, x1, 8) == 1 && x0[0] <= 5 && x1[0] >= 95);
+        uint8_t one[100];
+        for (int x = 0; x < 100; ++x) one[x] = static_cast<uint8_t>(x >= 5 && x < 95 ? 2 : B);
+        CHECK(journal::find_columns(one, 100, B, x0, x1, 8) == 1 && x0[0] <= 5 && x1[0] >= 95);
         // a blank page: the whole of it
-        uint32_t none[50] = {};
-        CHECK(journal::find_columns(none, 50, x0, x1, 8) == 1 && x0[0] == 0 && x1[0] == 50);
+        uint8_t none[50];
+        memset(none, B, sizeof none);
+        CHECK(journal::find_columns(none, 50, B, x0, x1, 8) == 1 && x0[0] == 0 && x1[0] == 50);
         // at most `max`
-        CHECK(journal::find_columns(ink, 200, x0, x1, 2) == 2);
+        CHECK(journal::find_columns(clear, 200, B, x0, x1, 2) == 2);
+        // From the strips' print: a full column, a gutter, a column that
+        // ends half way down (its blank lower half is no gutter); faint
+        // print counts on a page of faint print
+        static uint16_t ink[journal::kColumnBands * 80];
+        for (int b = 0; b < B; ++b)
+            for (int x = 0; x < 80; ++x) {
+                const bool full = x >= 5 && x < 35, half = x >= 42 && x < 75 && b < B / 2;
+                ink[b * 80 + x] = static_cast<uint16_t>(full || half ? 40 + (x * 7 + b) % 13 : (x % 9 == 0 ? 2 : 0));
+            }
+        uint8_t cs[80];
+        journal::clear_strips(ink, 80, 80, B, 10, cs);
+        CHECK(cs[38] == B && cs[20] == 0 && cs[60] == 0);
+        CHECK(journal::find_columns(cs, 80, B, x0, x1, 8) == 2 && x0[0] <= 5 && x1[0] >= 35 && x0[1] <= 42 &&
+              x1[1] >= 75 && x1[0] <= x0[1]);
     }
 
     // Levels: grey print (the 72 dpi scans) is drawn black, paper stays white

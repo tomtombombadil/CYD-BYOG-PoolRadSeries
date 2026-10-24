@@ -106,12 +106,22 @@ void level_rgb(int index, int black, uint8_t* r, uint8_t* g, uint8_t* b);
 
 // ---- the book's columns -------------------------------------------------------
 // Where a scanned page's columns of print are (Tom, 2026-10-24: "divide
-// them into columns, two per page, just like the text"): ink[x] = how much
-// print column x of the (scaled down) page has; the columns are the runs
-// of print between the white gutters, as [x0, x1) - narrow runs join their
-// neighbours, the margins are left out. Returns how many (1 at least when
-// n > 0; at most max).
-int find_columns(const uint32_t* ink, int n, int* x0, int* x1, int max);
+// them into columns, two per page, just like the text"): the page (scaled
+// down) cut into `bands` strips across; clear[x] = in how many of them
+// column x has no print. The columns are the runs of print between the
+// gutters (clear in most strips: a picture or heading across a gutter in a
+// few doesn't close it), as [x0, x1) - narrow runs join their neighbours,
+// the margins are left out. Returns how many (1 at least when n > 0; at
+// most max).
+constexpr int kColumnBands = 16;
+// clear[] from each strip's print: ink[b * stride + x] = how much print
+// column x has in strip b (band_h rows). Print: more than an eighth of
+// that strip's busy columns (its 80th percentile; print is fainter on some
+// pages than others) and more than a speck a row. Of the strips with
+// print near a column, the share where the column itself has none, out
+// of `bands` (n at most 512).
+void clear_strips(const uint16_t* ink, int stride, int n, int bands, int band_h, uint8_t* clear);
+int find_columns(const uint8_t* clear, int n, int bands, int* x0, int* x1, int max);
 
 // ---- reading it -------------------------------------------------------------
 
@@ -132,7 +142,7 @@ bool read_info(dax::ByteSource& src, Info& out);
 // The entry's pieces: first index and count. False if it isn't there.
 bool find(dax::ByteSource& src, const Info& info, char kind, int number, int* first, int* count);
 bool piece(dax::ByteSource& src, const Info& info, int i, PieceInfo& out);
-// A picture piece's black point (black_point of up to 48 of its rows,
+// A picture piece's black point (black_point of up to 32 of its rows,
 // evenly spread; row: a buffer of the piece's width)
 int piece_black(dax::ByteSource& src, const PieceInfo& p, uint8_t* row);
 
