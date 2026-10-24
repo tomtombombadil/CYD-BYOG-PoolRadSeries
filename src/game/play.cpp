@@ -1787,7 +1787,7 @@ void pm_flags(bool on[])
             break;
         case 'K':                               // Champions' Knight Change Classes: where training is, a knight below the Rose
             on[i] = false;
-            for (int k = 0; krynn() && (vm->get(0x7EA8) & 0xFF) != 0 && k < pt->count; ++k)
+            for (int k = 0; krynn_rules() && (vm->get(0x7EA8) & 0xFF) != 0 && k < pt->count; ++k)
                 on[i] = on[i] || (pt->m[k].level(classes::Monk) > 0 && pt->m[k].ext[party::kExtKnight] < 3);
             break;
         case 'L':
@@ -2374,7 +2374,7 @@ const char* name_of(const char* table, int stride, int count, int i)
 // A character's race's name (Champions: its own race, kept in ext)
 const char* race_name(const party::Character& ch)
 {
-    return name_of(d->race[0], 16, 8, krynn() ? ch.ext[party::kExtRace] : ch.race());
+    return name_of(d->race[0], 16, 8, krynn_rules() ? ch.ext[party::kExtRace] : ch.race());
 }
 
 const party::Character* new_char = nullptr;   // the character being made (Create New Character)
@@ -5306,7 +5306,7 @@ void pick_stage(int stage, pic::Canvas& c)
     mk->stage = stage;
     switch (stage) {
     case 0:
-        if (krynn()) {
+        if (krynn_rules()) {
             // (Champions: its seven races in its order - classes::kKrynnRace + its number)
             for (int r = 0; r < 7; ++r) mk->opt[r] = classes::kKrynnRace + r;
             mk->n_opt = 7;
@@ -5323,7 +5323,7 @@ void pick_stage(int stage, pic::Canvas& c)
     case 2: mk->n_opt = create::classes_for(mk->tables, mk->race, mk->opt, 17); break;
     default:
         mk->n_opt = create::alignments_for(mk->tables, mk->cls, mk->opt, 17,
-                                           krynn() ? create::god_alignments(mk->god) : 0xFF);
+                                           krynn_rules() ? create::god_alignments(mk->god) : 0xFF);
         break;
     }
     screen = Screen::CreatePick;
@@ -5361,7 +5361,7 @@ void picked(int i, pic::Canvas& c)
     case 2:
         mk->cls = v;
         mk->god = 0;
-        if (krynn() && (v == create::Cleric || (v >= create::ClericFighter && v <= create::ClericThief))) {
+        if (krynn_rules() && (v == create::Cleric || (v >= create::ClericFighter && v <= create::ClericThief))) {
             // (Champions: a cleric picks a god - a dwarf's is Reorx, unasked;
             // GAME.OVR 0x211A6)
             const int dwarf = mk->race == classes::kKrynnRace + 3 || mk->race == classes::kKrynnRace + 4;
@@ -9645,7 +9645,7 @@ bool train_yes_no(Ask what, char k, pic::Canvas& c)
 void start_knight(pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
-    if (!ch || !krynn()) return;
+    if (!ch || !krynn_rules()) return;
     if (!trainer && !load_rules(trainer)) {
         end_training();
         error(c, "Not in the engine yet.");
@@ -9831,7 +9831,7 @@ void start_modify(pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
     if (!ch) return;
-    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files(), gateway(), krynn())) {
+    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files(), gateway(), krynn_rules())) {
         char t[60], nm[20];
         ch->name(nm, sizeof nm);
         snprintf(t, sizeof t, "%s%s", nm, rw(Data::kCantModify));
@@ -9937,7 +9937,7 @@ void pm_choose_key(char key, pic::Canvas& c)
 {
     // Gateway: a member's functions ask "Pick Character Select Exit" first
     // (its party menu overlay GAME.OVR 0x2650E +0x27E; DOSBox)
-    if (d->prof->party.pick && !pm_picked && pt->count && strchr(krynn() ? "DMITHVRK" : "DMITHVR", key)) {
+    if (d->prof->party.pick && !pm_picked && pt->count && strchr(krynn_rules() ? "DMITHVRK" : "DMITHVR", key)) {
         char prompt[20], words[16];
         ow(d->prof->party.pick, prompt, sizeof prompt);
         ow(d->prof->party.pick_menu, words, sizeof words);
@@ -10053,7 +10053,7 @@ void pm_choose_key(char key, pic::Canvas& c)
         start_change(c);
         return;
     case 'K':
-        if (krynn()) {
+        if (krynn_rules()) {
             start_knight(c);
             return;
         }
@@ -10712,7 +10712,7 @@ __attribute__((noinline)) void dk_add_rows(const uint8_t* rows, int n, bool iden
     // the spells' class bytes, only when a random scroll is wanted
     uint8_t* cls = nullptr;
     for (int k = 0; k < n; ++k)
-        if (rows[k] == 0xFF && !cls) {
+        if (rows[k] == 0xFF && !cls && !dkk()) {
             uint8_t* t = new (std::nothrow) uint8_t[127 * 16];
             if (t && program_ds(pi.spell_class, t, 127 * 16 - 15)) {
                 cls = new (std::nothrow) uint8_t[127];
@@ -10726,6 +10726,7 @@ __attribute__((noinline)) void dk_add_rows(const uint8_t* rows, int n, bool iden
     const dax::Entry* e = open ? d->idx.find(1) : nullptr;
     for (int k = 0; k < n; ++k) {
         uint8_t row[17] = {};
+        if (rows[k] == 0xFF && dkk()) continue;   // (Death Knights: a row its table hasn't - none)
         if (rows[k] == 0xFF) {
             // (L+0x1ABE: type 0x27, words 0x66 0x27 0x28, plus 1, weight 1, value 3000)
             if (!cls) continue;
@@ -11172,8 +11173,13 @@ struct Host : ecl::Host {
             plat::log("[play] SHOP %d: %d items\n", n, g.n);
             return;
         }
+        // (Death Knights, its interpreter +0x28D2: n 1-8, else 1; how many from the first)
+        if (pi.goods_count && (n < 1 || n > 8)) n = 1;
+        if (pi.goods_count && pi.goods_rows && program_ds(static_cast<uint16_t>(pi.goods_first + n), &a, 1) &&
+            program_ds(static_cast<uint16_t>(pi.goods_last + n), &b, 1))
+            b = static_cast<uint8_t>(a + b - 1);
         if (!pi.goods_rows || !program_ds(static_cast<uint16_t>(pi.goods_first + n), &a, 1) ||
-            !program_ds(static_cast<uint16_t>(pi.goods_last + n), &b, 1) || b < a ||
+            (!pi.goods_count && !program_ds(static_cast<uint16_t>(pi.goods_last + n), &b, 1)) || b < a ||
             !program_ds(static_cast<uint16_t>(pi.goods_rows + a), rows, b - a + 1u)) {
             log("SHOP: the program's goods didn't read");
             return;

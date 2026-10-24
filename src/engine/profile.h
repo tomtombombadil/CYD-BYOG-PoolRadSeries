@@ -393,6 +393,9 @@ struct Profile {
         // rows from DS goods_first + 2, each run ended by 0xFF (0 none, 0xFF
         // the random scroll; goods_last / goods_rows unused)
         bool        goods_runs = false;
+        // Death Knights: DS goods_last + n is how many (from the first), SHOP's n
+        // 1-8 (else 1)
+        bool        goods_count = false;
     } items;
 
     // Character rules (making and training characters): the rule tables in

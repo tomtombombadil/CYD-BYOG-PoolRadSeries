@@ -311,8 +311,11 @@ static bool pump(int max_iter = 400000)
 }
 
 // The Play Test opened, the title passed, saved game `slot` loaded, BEGIN
-static bool boot(char slot = 'A')
+static bool boot(char slot = 0)
 {
+    // (BOOTSLOT=x: the saved game booted when none is named - Death Knights'
+    // save A starts a new game)
+    if (!slot) slot = getenv("BOOTSLOT") ? getenv("BOOTSLOT")[0] : 'A';
     play::close();
     const std::string& host = game_dir;
     const size_t s = host.rfind('/');

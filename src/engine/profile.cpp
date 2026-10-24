@@ -1928,6 +1928,74 @@ constexpr combat::FightSpell kDeathKnightsFight[] = {
     {0x61, SpellDoes::Affect, 0, 0, 0, 0, 0, 0},
 };
 
+// Death Knights' spells in camp: Champions' numbers and workings, its own
+// spells as Darkness's (Heal, Resurrection, Restoration, Stone to Flesh ...),
+// its words in the program's data segment
+constexpr spells::CampSpell kDeathKnightsCamp[] = {
+    {0x01, Does::Affect, 0, 0, 0, kJ | 0},                 // Bless: "is Blessed"
+    {0x69, Does::Affect, 0, 0, 0, kJ | 0},                 // (105)
+    {0x02, Does::Affect, 0, 0, 0, 0},                      // Barkskin (nothing said)
+    {0x03, Does::Heal, 1, 8, 0, 0},                        // Cure Light Wounds: fully / partially healed
+    {0x05, Does::Affect, 0, 0, 0, kP | 0xDA04},            // Detect Magic: "is affected"
+    {0x06, Does::Affect, 0, 0, 0, kP | 0xDA19},            // the protections: "is protected"
+    {0x07, Does::Resurrect, 0, 0, 0, kP | 0xDC6F},         // Resurrection: "is ressurected"
+    {0x08, Does::Affect, 0, 0, 0, kP | 0xDC84},            // Resist Cold: "is cold-resistant"
+    {0x0B, Does::Affect, 0, 0, 0, kP | 0xDA04},
+    {0x0C, Does::Enlarge, 0, 0, 0, kP | 0xDCAE},           // Enlarge: "is stronger"
+    {0x0D, Does::Reduce, 0, 0, 0, kP | 0xDCC3},            // Reduce: "has been reduced"
+    {0x0E, Does::Friends, 0, 0, 0, kP | 0xDCD8},           // Friends: "is friendly"
+    {0x10, Does::Affect, 0, 0, 0, kP | 0xDA19},
+    {0x11, Does::DkRestore, 0, 0, 0, 0},                   // Restoration (nothing said)
+    {0x12, Does::Affect, 0, 0, 0, kP | 0xDA04},            // Read Magic
+    {0x13, Does::Affect, 0, 0, 0, kP | 0xDCED},            // Shield: "is shielded"
+    {0x16, Does::Affect, 0, 0, 0, kP | 0xDA04},            // Find Traps
+    {0x18, Does::Affect, 0, 0, 0, kP | 0xDD2C},            // Resist Fire: "is fire-resistant"
+    {0x1A, Does::SlowPoison, 0, 0, 0, kP | 0xDA04},        // Slow Poison: "is affected"
+    {0x1C, Does::Hammer, 0, 0, 0, kP | 0xDACA},            // Spiritual Hammer: "gains an item"
+    {0x1D, Does::Affect, 0, 0, 0, kP | 0xDA04},            // Detect Invisibility
+    {0x1E, Does::Affect, 0, 0, 0, kP | 0xDD41},            // Invisibility: "is invisible"
+    {0x20, Does::Mirror, 0, 0, 0, kP | 0xDD56},            // Mirror Image: "is duplicated"
+    {0x23, Does::Strength, 0, 0, 0, 0},                    // Strength (no word)
+    {0x25, Does::CureBlind, 0, 0, 0, 0},                   // Cure Blindness
+    {0x27, Does::CureDisease, 0, 0, 0, kP | 0xD6D3},       // Cure Disease: "is cured."
+    {0x29, Does::Dispel, 0, 0, 0, kP | 0xDA04},            // Dispel Magic: "is affected"
+    {0x2A, Does::Prayer, 0, 0, 0, kP | 0xDDBF},            // Prayer: "is praying"
+    {0x2B, Does::RemoveCurse, 0, 0, 0, 0},
+    {0x2E, Does::Dispel, 0, 0, 0, kP | 0xDA04},
+    {0x30, Does::Haste, 0, 0, 0, kP | 0xDE32},             // Haste: "is hasted"
+    {0x32, Does::Affect, 0, 0, 0, kP | 0xDD41},            // Invisibility 10' Radius
+    {0x34, Does::Affect, 0, 0, 0, kP | 0xDA19},
+    {0x35, Does::FullHeal, 1, 4, 0, kP | 0xDC10, kP | 0xDD80, kP | 0xD6D3, kP | 0xDE47},  // Heal: "is healed",
+                                                           // "can see", "is cured.", "regains intellect"
+    {0x36, Does::Affect, 0, 0, 0, kP | 0xDA19},            // Protection from Normal Missiles
+    {0x3A, Does::Heal, 2, 8, 1, 0},                        // Cure Serious Wounds
+    {0x3F, Does::Affect, 0, 0, 0, kP | 0xDA19},            // Globe of Invulnerability: "is protected"
+    {0x42, Does::Unstone, 0, 0, 0, kP | 0xDE9B},           // Stone to Flesh: "is no longer a status"
+    {0x43, Does::Neutralize, 0, 0, 0, 0, kP | 0xD9EF},     // Neutralize Poison: "is unpoisoned" / "is unaffected"
+    {0x45, Does::Affect, 0, 0, 0, kP | 0xDA19},
+    {0x47, Does::Heal, 3, 8, 3, 0},                        // Cure Critical Wounds
+    {0x4B, Does::Raise, 0, 0, 0, 0},                       // Raise Dead: "is raised"
+    {0x4D, Does::Affect, 0, 0, 0, kP | 0xDA04},
+    {0x50, Does::Affect, 0, 0, 0, kP | 0xDD41},            // Invisibility to Animals: "is invisible"
+    {0x55, Does::FireShield, 0, 0, 0, kJ | 4},             // Fire Shield: "is Protected"
+    {0x58, Does::Affect, 0, 0, 0, kP | 0xDA19},            // Minor Globe: "is protected"
+    {0x59, Does::RemoveCurse, 0, 0, 0, 0},
+    {0x5A, Does::Affect, 0, 0, 0, kP | 0xDA19},            // Iron Skin: "is protected"
+    {0x62, Does::Affect, 0, 0, 0, kP | 0xDF79},            // Fire Touch: "is covered in flame"
+    {0x67, Does::Affect, 0, 0, 0, kP | 0xDA04},            // Detect Magic (103)
+    {0x68, Does::RemoveCurse, 0, 0, 0, 0},                 // Remove Curse (104)
+    {0x6D, Does::Affect, 0, 0, 0, kP | 0xDD41},            // Mass Invisibility: "is invisible"
+    {0x70, Does::Affect, 0, 0, 0, kP | 0xDA19},            // Mind Blank: the protections' handler
+    // The items' own spells
+    {0x39, Does::Haste, 0, 0, 0, kP | 0xDE32},             // speed: "is hasted"
+    {0x3B, Does::GiantStrength, 0, 0, 0, kP | 0xDCAE},     // giant strength: "is stronger"
+    {0x3E, Does::Heal, 2, 4, 2, kP | 0xDC10},              // healing: "is healed"
+    {0x63, Does::Heal, 2, 4, 2, kP | 0xDC10},              // extra healing
+    {0x5F, Does::Affect, 0, 0, 0, 0},
+    {0x60, Does::Affect, 0, 0, 0, 0},
+    {0x61, Does::Affect, 0, 0, 0, 0},
+};
+
 const Profile kProfiles[] = {
     {games::Game::CurseOfTheAzureBonds, "GOG", "START.EXE", 57789, 62432, 0x48D0,
      {0x6E60, 0x6E88, 0x6EB0, 0x6EF2, 0x6F1B, 0x6F0A, 0x6ED6, 0x6EE3, 0x6F31, 0x6F3E, 0x6F4D, 0x6F64, 0x6F7B},
@@ -2641,8 +2709,28 @@ const Profile kProfiles[] = {
               0, 0x23CA8, 0x23CF0, 0x23CDA, 0x23CE4, 0x23CA0, 0x243BA, 0x243AE, 0x243D2, 0x243EA, 0x243C6,
               0x243DB, 0, 5},
      // Items: 125 name words of 21 bytes (DS 0x37FF; arrows 30, quarrels 12,
-     // darts 5), the ITEMS type file (Champions', its 2-byte head)
-     .items = {.words = {0xF4DF, 21, 125}, .types_file = "ITEMS", .arrow = 30, .quarrel = 12, .dart = 5},
+     // darts 5), the ITEMS type file (Champions', its 2-byte head); the shop,
+     // the items screen and its words as Darkness's (deathknights_facts.md 6)
+     .items = {.words = {0xF4DF, 21, 125}, .types_file = "ITEMS", .arrow = 30, .quarrel = 12, .dart = 5,
+               // "items : ", "Buy", the shop's menu one string, "not enough money.", "OverLoaded"
+               .buy_items = kP | 0xEE3D, .buy = kP | 0xF1CD,
+               .list_next = kP | 0xF4BE, .list_prev = kP | 0xF4C9, .list_exit = kP | 0xF4D4,
+               .shop_menu = kP | 0xF1D8, .shop_menu_money = kP | 0xF1D8, .no_money = kP | 0xD423,
+               .overloaded = 0x256BD,
+               // "Items", "Ready Item", " Yes ", " No  ", "It's Cursed", "Wrong Class",
+               // "already using ", "Your hands are full!", "'s"
+               .title = kP | 0xCDBF, .heading = kP | 0xCDCA, .yes = kP | 0xE8E2, .no = kP | 0xE8ED, .cursed = 0x2533D,
+               .wrong_class = 0x25349, .already = 0x25355, .hands_full = 0x25364, .plural_s = 0x33CCF,
+               .detect = {5, 0x4D, 0, 0},
+               .sell_secret = true,
+               // "Ready Use Trade Deposit Drop Halve Join Sell Id Exit"
+               .menu = kP | 0xEFA7,
+               // SHOP n (op 0x3C, its interpreter +0x28D2): n 1-8, the goods from
+               // DS[n + 7], DS[n + 0x0F] of them (goods_count), rows DS 0x17 + k of
+               // ITEM0.DAX block 1 (1-based); the temple's 11 cures by spell number
+               // (DS 0x030C)
+               .goods_first = 0x0007, .goods_last = 0x000F, .goods_rows = 0x0017, .spell_class = 0x6A80,
+               .rows_file = "ITEM0.DAX", .temple_spells = 0x030C, .goods_count = true},
      // Character rules (deathknights_facts.md 4): Champions' tables at Death
      // Knights' places with its own extents (classes::Layout dkk: levels to
      // 18, 115 spells in Secret's shape, 204-byte class records in 11 rows,
@@ -2662,12 +2750,74 @@ const Profile kProfiles[] = {
                 .pick_alignment = kP | 0xCF96, .select = kP | 0xEEB6, .reroll = kP | 0xCFAB, .char_name = kP | 0xCFC0,
                 .save_q = kP | 0xCFD5, .qmark = kP | 0xD339, .change_select = kP | 0xEEB6, .cleric_first = 0x81E3,
                 .pick_god = kP | 0xCF8B, .god_names = 0x0BAC, .knight_mins = 0x05A4},
-     .item_words = {},
-     .shop_words = {},
-     .cures = {},
-     .gem_type = 0, .gem_word = 0, .jewel_word = 0,
-     .magic = {},
-     .alter = {},
+     // The items screen's other words (its data segment's, else GAME.OVR)
+     .item_words = {0, 0, 0, 0, 0, 0, 0, 0x24B89, kP | 0xCDFF, 0x2578E, kP | 0xCDDF, kP | 0xCDEA, 0, 0x256AC,
+                    // Sell and Id: "I'll give you " " steel pieces for your " "is it a deal? "
+                    // "Sold!" "overloaded. money will be put in pool." "for 100 steel pieces
+                    // i'll identify your " "i cannot tell anything new about your " "It looks
+                    // like some sort of " "not enough money." "Select"
+                    kP | 0xCE14, kP | 0xCE29, kP | 0xCE48, kP | 0xCE5D, kP | 0xCE68, kP | 0xCE91, kP | 0xCEBA,
+                    kP | 0xCEE3, kP | 0xD423, kP | 0xEEB6, 0},
+     // The shop, Take, Appraise, the training hall, the temple (Darkness's
+     // words at Death Knights' places; its temple's menu "Heal View Take Pool
+     // Share Appraise Exit")
+     .shop_words = {0, 0, kP | 0xD786, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    kP | 0xD6A9, 0, 0, 0, 0, kP | 0xD6D3,
+                    kP | 0xD6DE, kP | 0xD6F3, kP | 0xD71D, kP | 0xD732, kP | 0xD747, kP | 0xD75C,
+                    0, 0, kP | 0xD438, kP | 0xD489,
+                    kP | 0xCCCF, 0, 0, 0, kP | 0xECE3, kP | 0xCCEE, 0, 0, 0, 0,
+                    kP | 0xCD0D, kP | 0xCD61, 0, 0, 0, 0,
+                    kP | 0xCD2C, kP | 0xEEB6, kP | 0xCCAE, kP | 0xCC99, kP | 0xCE68,
+                    kP | 0xD222, 0, 0, kP | 0xD0F2, kP | 0xD107, kP | 0xD11C, kP | 0xD131, kP | 0xD146, kP | 0xD165,
+                    0, 0, 0, 0, 0, 0, 0, kP | 0xD708, 0, 0, 0, 0,
+                    kP | 0xF1D8, kP | 0xE782, kP | 0xE797, kP | 0xD40D, kP | 0xD418, 0x256BD,
+                    0, 0, 0, 0x24C7A, 0, 0, 0, 0, 0,
+                    0,
+                    kP | 0xCD76, kP | 0xCCB9, kP | 0xCCC4, kP | 0xEF03, kP | 0xEF18, kP | 0xCC8E, 0, 0, 0,
+                    kP | 0xF274, kP | 0xF269, 0, kP | 0xD771, kP | 0xDEF9, kP | 0xDC10,
+                    kP | 0xF240, kP | 0xEE48, kP | 0xF22B, kP | 0xF220, kP | 0xD62F, kP | 0xD658, kP | 0xF29D},
+     // The effects its cures take away: blindness 0x21, diseases 0x1F 0x22
+     // 0x2B 0x2C, feeblemind 0x44 (its Feeblemind's row), poison 0x37, Slow
+     // Poison 0x16, poison's damage 0x0F, a curse 0x24
+     .cures = {{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+               0x21, {0x1F, 0x22, 0x2B, 0x2C, 0, 0}, 0x44, 0x37, 0x16, 0x0F, 0, 0x24, 0x22, 0x2B, 0x2C, 0x1F},
+     .gem_type = 70, .gem_word = 0x7A, .jewel_word = 0x7B,
+     // Magic (camp): "Cast Memorize Scribe Display Rest Exit" (DS 0x36F5),
+     // its level names ("1st Level", DS 0x377B, 11 apart), spell names (DS
+     // 0x5825, 41 apart, 115) and effect names (DS 0x458F, 38 apart); the
+     // words as Darkness's at its places; what spells do in camp:
+     // kDeathKnightsCamp
+     .magic = {.menu = 0xF3D5, .levels = {0xF45B, 11, 9}, .names = {0x11505, 41, 115},
+               .words = {0x269C2, 0x26977, 0x26981, 0x269AC, kP | 0xECB9, kP | 0xEECC, kP | 0xED8B, 0, 0, kP | 0xEB7F,
+                         kP | 0xEB94, kP | 0xEBBE, kP | 0xEBE8, kP | 0xEB0C, kP | 0xEB36, kP | 0xE235, kP | 0xEF2D,
+                         kP | 0xCD81, kP | 0xE240, kP | 0xE25F, kP | 0xE289},
+               .rest_period = 0x7ED2, .rest_chance = 0x7ED3,
+               .cast_words = {kP | 0xEB21, kP | 0xEB60, kP | 0xEEC1, kP | 0xCC59, kP | 0xCC05, kP | 0xCBFA, kP | 0xEE72,
+                              kP | 0xE978, kP | 0xE98D, kP | 0xD6D3, kP | 0xD9EF, kP | 0xDD80, kP | 0xDEBA, kP | 0xDEF9,
+                              kP | 0xDDD4, kP | 0xDDE9, 0xFB2E, kP | 0xEEE2, 0x26997, 0x269B8, kP | 0xEC07, kP | 0xEC26,
+                              kP | 0xEC45, kP | 0xEC6E, kP | 0xEDA0, 0, kP | 0xEB4B, kP | 0xE274, 0x269A2, kP | 0xEEED,
+                              kP | 0xCC24, kP | 0xCC2F, kP | 0xCC4E, 0x25A5E, 0x25A6B, 0x25A71, 0x2698D, 0},
+               .camp = kDeathKnightsCamp, .n_camp = sizeof kDeathKnightsCamp / sizeof kDeathKnightsCamp[0],
+               // (its spell rows: speed gives 0x27, giant strength 0x26; the timed
+               // ones as Darkness's at Death Knights' numbers)
+               .facts = {2, 0x2A, {0x22, 0x2B, 0}, {{0, 0}, {0x2C, 0x1F}, {0, 0}}, 0x0C, 0x17, 0x32, 0x36, 0x70, 0x26,
+                         {{0x39, 5, 4, 0, 1}, {0x3D, 5, 4, 0, 1}, {0x3B, 1, 4, 4, 10}, {0x1A, 0, 0, 3780, 1},
+                          {0x70, 0, 0, 1440, 1}, {0x71, 1, 4, 1, 1}},
+                         0, 0x14},
+               .spell_named = nullptr, .n_spell_named = 0, .named = nullptr, .n_named = 0,
+               .scroll_one_spell = 100, .read_magic = 0x10,
+               .level_word = 0, .effect_names = {0x1026F, 38, 128}},
+     // Alter: "Order Drop Speed Icon Level Exit" (DS 0x371E), Order's / Speed's
+     // word lists, the icon editor's five menus (DS 0x35E6 on), "Novice Squire
+     // Veteran Adept Champion" (DS 0x3747)
+     .alter = {.menu = 0xF3FE, .select = 0, .place = 0,
+               .words = {0, kP | 0xEDBF, kP | 0xD359, kP | 0xD36E, 0, 0, 0, 0, kP | 0xEDD4},
+               .icon_menu = {0xF2C6, 0xF2F4, 0xF322, 0xF350, 0xF37E},
+               .icon_words = {kP | 0xD0D2, kP | 0xD0B2, kP | 0xD0C7, 0, 0, 0, 0, kP | 0xD0DD},
+               .level_menu = kP | 0xF427, .level_base = 1, .order_list = 0xF0D5, .speed_list = 0xF0EA,
+               .pick = kP | 0xECF8, .pick_menu = kP | 0xEEB6, .icon_box = 15, .icon_lists = true,
+               .kept_highlight = true},
      // Fights (deathknights_facts.md 5): Champions' tables at its places
      // (the turn table Darkness's shape: 11 columns, DS 0x05A5), its words
      // in the program as Darkness's (the menus whole strings - its two-row
@@ -2695,7 +2845,8 @@ const Profile kProfiles[] = {
                 // (facts L1) "collapses from drainning"
                 kP | 0xDBC7
                },
-               {0x03, 0x0B, 0x15, 0x17, 0x1B, 0x1E, 0x1F, 0x23, 0x33, 0x34, 0x35, 0x5B, 0x6B, 0x6F},
+               // (the effects a fight's end takes away: DS 0x0686, 16 - Darkness's list)
+               {0x03, 0x06, 0x0B, 0x15, 0x17, 0x1B, 0x1E, 0x1F, 0x23, 0x34, 0x35, 0x4D, 0x6A, 0x6B, 0x6F, 0x76},
                {.held = {0x33, 0x34, 0x35, 0x1F}, .bless = 0x01, .curse = 0x02, .prayer = 0x31, .haste = 0x27,
                 .slow = 0x2A, .invisible = 0x19, .prot_evil = 0x08, .prot_good = 0, .mirror = 0x1C,
                 .backstab_weapons = {0x07, 0x08, 0x23, 0x24, 0x25, 0x61}, .charm = 0x0B, .fear = 0x6F, .cough = 0x1E,
