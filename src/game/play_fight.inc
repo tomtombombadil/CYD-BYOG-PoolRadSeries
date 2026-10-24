@@ -127,6 +127,31 @@ bool read_record_block(const char* file, int block, uint8_t* rec, uint8_t* ext =
         free(dk);
         return ok;
     }
+    if (krynn()) {
+        // Champions' 409-byte records (party::from_krynn - an NPC keeps its
+        // extension; a monster its flags 2 (0x140) and magic resistance
+        // (0x187): sx)
+        uint8_t* k = static_cast<uint8_t*>(malloc(party::kKrynnRecordSize));
+        const bool ok = k && read_block(file, block, k, party::kKrynnRecordSize) ==
+                                 static_cast<int>(party::kKrynnRecordSize);
+        if (ok && sx) {
+            sx[0] = k[0x140];
+            sx[1] = k[0x187];
+        }
+        if (ok) {
+            party::Character* tmp = ext ? new (std::nothrow) party::Character : nullptr;
+            if (tmp) {
+                party::from_krynn(k, *tmp);
+                memcpy(rec, tmp->rec, party::kRecordSize);
+                memcpy(ext, tmp->ext, party::kExtSize);
+                delete tmp;
+            } else {
+                party::from_krynn(k, rec);
+            }
+        }
+        free(k);
+        return ok;
+    }
     if (!pool_files()) return read_block(file, block, rec, party::kRecordSize) == static_cast<int>(party::kRecordSize);
     uint8_t pool[party::kPoolRecordSize];
     if (read_block(file, block, pool, sizeof pool) != static_cast<int>(sizeof pool)) return false;

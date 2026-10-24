@@ -758,6 +758,11 @@ int ov_area()
 bool pool_overland() { return d && vm && ov_area() >= 0; }
 // Darkness's overland (darkness_facts.md S4 / S7): byte 0x24 = 1 and not 3D
 bool dk_overland() { return d && vm && d->prof->variant.dk_overland_pics && vm->get(0x24) == 1 && !vm->get(0x22); }
+// Champions' overland (champions_facts.md 3): area word 0x4BE6 = 0 - the
+// big picture the scripts show (the region's map) with the party's marker
+bool kr_overland() { return d && vm && d->prof->variant.krynn && !vm->get(0x4BE6); }
+// Either game's overland with a marker on a map picture
+bool marker_overland() { return dk_overland() || kr_overland(); }
 // Gateway's wilderness (gateway_facts.md 14): area word 0x4BE6 = 0
 bool gw_wild() { return d && vm && d->prof->variant.tile_wild && !vm->get(0x4BE6); }
 // Gateway's way ahead (GAME.OVR 0x4712F +0x82A, kept in area word 0x4CF6 as
@@ -827,6 +832,55 @@ void draw_dk_overland(pic::Canvas& c)
         vga_take();
         f.close();
     }
+    dirty(0, 17 * 8);
+}
+
+// Champions' overland marker (GAME.OVR ovl 0x96: CURSOR.DAX's picture at
+// cell (x + 1, y + 1) of area words 0x4BC3 / 0x4BC4, what was under it kept
+// and put back when it moves): on - drawn at the party's square; off - the
+// square under it put back
+int kr_mx = -1, kr_my = -1;
+uint8_t kr_under[64];
+void kr_marker(pic::Canvas& c, bool on)
+{
+    if (kr_mx >= 0) {
+        for (int i = 0; i < 64; ++i) c.set(kr_mx + i % 8, kr_my + i / 8, kr_under[i]);
+        dirty_rows(kr_my / 8, kr_my / 8 + 1);
+        kr_mx = -1;
+    }
+    if (!on || !kr_overland()) return;
+    const int x = ((vm->get(0x4BC3) & 0xFF) + 1) * 8, y = ((vm->get(0x4BC4) & 0xFF) + 1) * 8;
+    if (x > pic::kScreenW - 8 || y > 17 * 8) return;
+    for (int i = 0; i < 64; ++i) kr_under[i] = c.get(x + i % 8, y + i / 8);
+    kr_mx = x;
+    kr_my = y;
+    plat::File f;
+    if (open_dax("CURSOR.DAX", f)) {
+        plat::FileSource src(f);
+        const dax::Entry* e = d->idx.find(1);
+        if (e) {
+            dax::RleReader r(src, d->idx, *e);
+            uint8_t hdr[pic::kHeaderSize];
+            pic::Header h;
+            if (r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_header(hdr, e->raw_size, h)) pic::draw(r, h, 0, c, x, y);
+        }
+        f.close();
+    }
+    dirty_rows(y / 8, y / 8 + 1);
+}
+// The marker forgotten (the screen under it drawn again)
+void kr_marker_lost() { kr_mx = -1; }
+
+// The map picture the scripts showed last while in the overland (the screen
+// drawn again after a camp or a menu: the frame with a bar at row 16, the
+// picture at 8, 8 - DOSBox)
+int kr_map_pic = -1;
+void draw_kr_overland(pic::Canvas& c)
+{
+    kr_marker_lost();
+    layout::outer(c, d->tables, d->frame_tiles);
+    layout::bar(c, d->tables, d->frame_tiles, 16);
+    if (kr_map_pic >= 0) draw_block(c, "BIGPIC", kr_map_pic, 8, 8);
     dirty(0, 17 * 8);
 }
 
@@ -1036,6 +1090,10 @@ void draw_view(pic::Canvas& c)
         draw_dk_overland(c);
         return;
     }
+    if (kr_overland() && !pic_shown && bigpic < 0) {
+        draw_kr_overland(c);
+        return;
+    }
     if (bigpic >= 0) {
         // A big picture covers the screen: outdoors it stays (the wilderness
         // map); in a 3D area the exploring screen comes back
@@ -1084,7 +1142,7 @@ void draw_view(pic::Canvas& c)
 bool dk_overland();
 void draw_position(pic::Canvas& c)
 {
-    if (dk_overland()) return;
+    if (marker_overland()) return;
     const ecl::GameState& g = d->gs;
     c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);
     char line[40];
@@ -1150,7 +1208,7 @@ void draw_party(pic::Canvas& c, int col, bool mark_sel = true)
 
 void draw_panel(pic::Canvas& c)
 {
-    if (dk_overland()) return;              // (Darkness's overland: its map in the panel's place)
+    if (marker_overland()) return;          // (Darkness's / Champions' overland: its map in the panel's place)
     c.fill(17 * 8, 8, 22 * 8, 14 * 8, 0);
     if (pt->count) draw_party(c, 17);
     else put(c, "NO PARTY YET", 18, 2, 8);
@@ -1203,7 +1261,8 @@ void draw_frame(pic::Canvas& c)
 {
     c.clear(0);
     krynn_moons();
-    if (dk_overland()) {
+    kr_marker_lost();
+    if (marker_overland()) {
         layout::outer(c, d->tables, d->frame_tiles);
         layout::bar(c, d->tables, d->frame_tiles, 16);
     } else {
@@ -1300,15 +1359,18 @@ bool moving = false;
 bool secret_files();
 bool darkness_files();
 bool gateway();
-bool move_menu() { return secret_files() || darkness_files() || gateway(); }
+bool krynn();
+bool move_menu() { return secret_files() || darkness_files() || gateway() || krynn(); }
 void ow(uint32_t at, char* out, size_t cap);
 void idle_menu(pic::Canvas& c)
 {
-    if (dk_overland()) {
-        // Darkness's overland: Move and Encamp (DOSBox)
+    if (marker_overland()) {
+        // Darkness's / Champions' overland: Move and Encamp (DOSBox; Champions'
+        // GAME.OVR 0x19CA5); Champions' marker shows meanwhile
         text::build(menu, "", moving ? "Exit" : "Move Encamp");
         menu.selected = 0;
         show_menu_line(c);
+        if (kr_overland()) kr_marker(c, true);
     } else if (move_menu() && vm->get(0x4BE6)) {
         // (Gateway's move mode: "Move (Use arrow keys):" before Exit - DOSBox)
         static char prompt3d[32];
@@ -10454,6 +10516,9 @@ struct Host : ecl::Host {
         if (head == 0xFF && id >= big) {
             anim_stop();
             bigpic = id;
+            // (Champions' overland: the map the marker goes on)
+            kr_marker_lost();
+            if (kr_overland()) kr_map_pic = id;
             // Big picture: the frame with a bar at row 16, the picture inside
             layout::outer(c, d->tables, d->frame_tiles);
             layout::bar(c, d->tables, d->frame_tiles, 16);
@@ -10462,6 +10527,7 @@ struct Host : ecl::Host {
         } else if (head == 0xFF) {
             // Pool with Monsters off: no picture in the 3D areas (the view stays)
             if (!monster_pics_on() && !pool_overland()) return;
+            kr_marker_lost();
             // (Pool's wilderness: the 3D view's frame drawn over the map first)
             if (pool_overland()) layout::box(c, d->tables, d->frame_tiles, 2, 2, 14, 14);
             c.fill(24, 24, 88, 88, 0);
@@ -10942,6 +11008,27 @@ bool do_move()
         after_move_redraw();
         return true;
     }
+    if (kr_overland()) {
+        // Champions' overland (GAME.OVR ovl 0x92 +0x8D5): the square before
+        // the step in 0x4BF0 / 0x4BF1, eight directions (DS 0x1ED6 / 0x1EDF),
+        // held to 0-37 / 0-14, twelve hours a step (clock slot 3), the marker
+        // moved
+        static const int8_t kDx[8] = {0, 1, 1, 1, 0, -1, -1, -1}, kDy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
+        const int x = vm->get(0x4BC3) & 0xFF, y = vm->get(0x4BC4) & 0xFF;
+        vm->set(0x4BF0, static_cast<uint16_t>(x));
+        vm->set(0x4BF1, static_cast<uint16_t>(y));
+        if (vm->get(0x7EC9) < 0xFF) {
+            int nx = x + kDx[step_dir & 7], ny = y + kDy[step_dir & 7];
+            nx = nx < 0 ? 0 : nx > 37 ? 37 : nx;
+            ny = ny < 0 ? 0 : ny > 14 ? 14 : ny;
+            vm->set(0x4BC3, static_cast<uint16_t>(nx));
+            vm->set(0x4BC4, static_cast<uint16_t>(ny));
+            vm->advance_clock(3, 12);
+        }
+        vm->set(0x7EC9, 0);
+        kr_marker(*cv, true);
+        return true;
+    }
     if (pool_overland()) {
         if (vm->get(0x7EC9) < 0xFF && ov_load()) ov_step();
         vm->set(0x7EC9, 0);
@@ -11126,7 +11213,7 @@ void handle(ecl::Stop r)
         look_pending = false;
         vm->set(0x7ECA, look_search);
     }
-    if (!vm->get(0x4BE6) && !pool_overland() && !dk_overland() && !gw_wild()) {
+    if (!vm->get(0x4BE6) && !pool_overland() && !marker_overland() && !gw_wild()) {
         // Outdoors the scripts run the show: go round again, unless nothing
         // happened (a script with nothing to do would spin forever)
         if (++idle_cycles < 3) {
@@ -11153,7 +11240,7 @@ void step(int dir_of_step)
         const ecl::GameState& g = d->gs;
         const int nx = g.x + geo::dx(dir_of_step), ny = g.y + geo::dy(dir_of_step);
         const bool off = nx < 0 || nx > 15 || ny < 0 || ny > 15;
-        vm->set(0x7ED5, d->map.loaded && off && !pool_overland() && !dk_overland() &&
+        vm->set(0x7ED5, d->map.loaded && off && !pool_overland() && !marker_overland() &&
                             way(g.x, g.y, dir_of_step) != 0
                             ? 1 : 0);
     }
@@ -13556,9 +13643,9 @@ bool act(Act a, pic::Canvas& c)
     }
     if (then != Then::Idle) return false;
     ecl::GameState& g = d->gs;
-    if (dk_overland()) {
-        // Darkness's overland: eight directions - a turn is 45 degrees (its
-        // move mode: up a step, down a turn round)
+    if (marker_overland()) {
+        // Darkness's / Champions' overland: eight directions - a turn is 45
+        // degrees (its move mode: up a step, down a turn round)
         switch (a) {
         case Act::TurnLeft:   g.dir = (g.dir + 7) & 7; break;
         case Act::TurnRight:  g.dir = (g.dir + 1) & 7; break;
@@ -14260,7 +14347,7 @@ void tap(int x, int y, pic::Canvas& c)
         return;
     }
     // The exploring menu: Area Cast View Encamp Search Look (Secret: Move first)
-    if (y >= text::kMenuTapTop && (vm->get(0x4BE6) || pool_overland() || dk_overland() || gw_wild())) {
+    if (y >= text::kMenuTapTop && (vm->get(0x4BE6) || pool_overland() || marker_overland() || gw_wild())) {
         const char k = text::key(menu, text::hit(menu, col));
         if (moving || (k == 'M' && move_menu())) {
             if (moving && k != 'E') return;

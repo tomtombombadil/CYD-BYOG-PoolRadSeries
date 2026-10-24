@@ -2085,7 +2085,8 @@ const Profile kProfiles[] = {
      .door = {0x1A11B, 0x1A120, 0x1A126, 0x73FA, 0x1A133, 0x1F},
      .won = {},
      .variant = {.unfinished = true, .program_words = true, .bars = {20, 23, 24, 25, 20, 23, 24, 25},
-                 .bigpic_from = 0x70, .party_menu_col = 9, .krynn = true, .press_words = {0x1A8E, 0x1AB2}},
+                 .bigpic_from = 0x70, .fight_unswapped = true, .party_menu_col = 9, .krynn = true,
+                 .press_words = {0x1A8E, 0x1AB2}},
      .overland = nullptr},
     // Pools of Darkness, GOG release (darkness_facts.md; being built -
     // Tom, 2026-10-17): GAME.EXE 64,203 bytes, EXEPACK, unpacked 72,784; its
