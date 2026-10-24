@@ -3,6 +3,8 @@
 //   g++ -std=c++17 -O1 -Wall -Werror -fsanitize=address,undefined -Isrc
 //       -o test_hlib tools/host_tests/test_hlib.cpp src/engine/*.cpp
 #include "engine/hlib.h"
+#include "engine/hlpic.h"
+#include "engine/qview.h"
 
 #include <cstdio>
 #include <cstring>
@@ -422,10 +424,165 @@ static void test_pictures()
     }
 }
 
+// A VGA colour entry: entries first.. with these RGBs and EGA colours
+static Bytes vga_colours(int first, const std::vector<int>& ega)
+{
+    Bytes c = {5, 0};
+    put16(c, first);
+    put16(c, static_cast<int>(ega.size()));
+    c.push_back(0);
+    c.push_back(hlib::kVgaColours);
+    for (size_t i = 0; i < ega.size(); ++i) { c.push_back(static_cast<uint8_t>(10 * i)); c.push_back(7); c.push_back(255); }
+    for (size_t i = 0; i < ega.size(); i += 2)
+        c.push_back(static_cast<uint8_t>(ega[i] << 4 | (i + 1 < ega.size() ? ega[i + 1] : 0)));
+    return c;
+}
+
+// A solid VGA part (kind 0x15) of one colour, its place (y, x negated)
+static Bytes solid(int w, int h, int colour, int dy = 0, int dx = 0)
+{
+    Bytes p = part_header(h, -dy, -dx, w / 4, hlib::kVgaKeyed);
+    Img im(h, std::vector<int>(w, colour));
+    Bytes v = vga_planes(im);
+    p.insert(p.end(), v.begin(), v.end());
+    return p;
+}
+
+// Drawing HLIB parts (hlpic) and the 3D view / area map (qview) - a
+// synthetic wall set, backdrop, map and area map tiles
+static void test_view()
+{
+    // hlpic: a part at its place, through the EGA table, transparent pixels kept, clipped
+    {
+        Bytes cols = vga_colours(0x40, {9, 12});
+        Bytes p = part_header(2, -3, -5, 1, hlib::kVgaKeyed);      // at (5, 3) from its anchor
+        const uint8_t px[8] = {0x40, 0x41, 0xFF, 0x40, 0x41, 0x41, 0x40, 0xFF};   // plane by plane, 2 rows
+        // (plane 0: rows 0, 1 = 0x40, 0x41; plane 1: 0xFF, 0x40; plane 2: 0x41, 0x41; plane 3: 0x40, 0xFF)
+        p.insert(p.end(), px, px + 8);
+        Bytes lib = library("TILE", {cols, p});
+        dax::MemorySource s(lib.data(), static_cast<uint32_t>(lib.size()));
+        static uint8_t mem[320 * 200];
+        pic::Canvas c{mem, 320, 200, 4};
+        c.clear(1);
+        static hlpic::Colours col;
+        col.reset();
+        CHECK(col.ega[0x47] == 7);
+        static pic::VgaPalette pal;
+        CHECK(hlpic::draw_picture_part(s, 0, static_cast<uint32_t>(lib.size()), 1, col, &pal, c, 10, 20));
+        CHECK(col.ega[0x40] == 9 && col.ega[0x41] == 12 && pal.first == 0x40 && pal.count == 2 && pal.rgb[0x41].r == 10);
+        CHECK(c.get(15, 23) == 9 && c.get(16, 23) == 1 && c.get(17, 23) == 12 && c.get(18, 23) == 9);   // row 0 (plane 1 transparent)
+        CHECK(c.get(15, 24) == 12 && c.get(16, 24) == 9 && c.get(18, 24) == 1);                      // row 1 (plane 3 transparent)
+        c.clear(1);
+        uint32_t pos, len;
+        hlib::Library l;
+        hlib::Part part;
+        CHECK(hlib::open(s, 0, s.size(), l) == hlib::Status::Ok && hlib::entry(s, l, 1, pos, len) && hlib::read_part(s, pos, len, part));
+        CHECK(hlpic::place_x(part, 10) == 15 && hlpic::place_y(part, 20) == 23);
+        CHECK(hlpic::draw(s, part, col, c, 15, 23, hlpic::Clip{0, 0, 17, 24}));   // only (15, 23) and (16, 23) inside
+        CHECK(c.get(15, 23) == 9 && c.get(17, 23) == 1 && c.get(15, 24) == 1);
+        // a VGA canvas keeps the palette entries
+        static uint8_t mem8[320 * 200];
+        pic::Canvas v{mem8, 320, 200, 8};
+        v.vga = true;
+        v.clear(0);
+        CHECK(hlpic::draw(s, part, col, v, 0, 0) && v.get(0, 0) == 0x40 && v.get(2, 0) == 0x41 && v.get(1, 0) == 0);
+    }
+
+    // qview's parts: pieces 0 / 1 ten slots, 2-4 nine (no second 8 x 8)
+    CHECK(qview::part_of(0, qview::kF3) == 1 && qview::part_of(0, qview::kR0) == 10 && qview::part_of(1, qview::kF1) == 18);
+    CHECK(qview::part_of(2, qview::kF3) == 21 && qview::part_of(2, qview::kF3b) == -1 && qview::part_of(2, qview::kL2) == 22);
+    CHECK(qview::part_of(4, qview::kR0) == 47 && qview::part_of(5, 0) == -1);
+
+    // A wall set: every slot a solid part of its own colour (entry 0x20 + piece);
+    // piece 1's f1 smaller, placed in its slot
+    std::vector<Bytes> parts = {vga_colours(0x20, {4, 14, 2, 3, 5})};
+    static const int kSize[10][2] = {{8, 8}, {8, 8}, {8, 24}, {8, 24}, {24, 24}, {16, 56}, {16, 56}, {56, 56}, {16, 88}, {16, 88}};
+    for (int piece = 0; piece < 5; ++piece)
+        for (int slot = 0; slot < 10; ++slot) {
+            if (piece >= 2 && slot == 1) continue;
+            if (piece == 1 && slot == qview::kF1) parts.push_back(solid(8, 4, 0x21, 50, 24));
+            else parts.push_back(solid(kSize[slot][0], kSize[slot][1], 0x20 + piece));
+        }
+    CHECK(parts.size() == 48);
+    Bytes set = library("TILE", parts);
+    std::vector<std::pair<int, int>> sdir = {{12, 1}};
+    Bytes walls = library("HLIB", {set}, &sdir);
+    // The backdrop: BACK id 4, 88 x 88 of entry 0x90 (EGA 6)
+    Bytes bpic = library("TILE", {vga_colours(0x90, {6}), solid(88, 88, 0x90)});
+    std::vector<std::pair<int, int>> bdir = {{4, 1}};
+    Bytes backs = library("HLIB", {bpic}, &bdir);
+    // A 12 x 9 map: sets (12, none, none); at (3, 4): north wall type 1 (piece 0),
+    // east type 2 (piece 1); (3, 3) - one ahead - its west wall type 3
+    const int mw = 12, mh = 9, n = mw * mh;
+    Bytes g(geo::kHlibHeader + 4 * n, 0);
+    g[0] = mw, g[1] = mh;
+    g[2] = 12, g[3] = 0xFF, g[4] = 0xFF;
+    g[geo::kHlibHeader + 3 + 4 * mw] = 0x12;               // plane 0: north 1, east 2
+    g[geo::kHlibHeader + n + 3 + 3 * mw] = 0x03;           // plane 1: west 3
+    dax::MemorySource gs(g.data(), static_cast<uint32_t>(g.size()));
+    static geo::Map m;
+    CHECK(geo::load_hlib(gs, 0, static_cast<uint32_t>(g.size()), m));
+    dax::MemorySource ws(walls.data(), static_cast<uint32_t>(walls.size())), bs(backs.data(), static_cast<uint32_t>(backs.size()));
+    qview::Libs libs;
+    libs.walls[1] = &ws;          // (found in the second library: the first is null)
+    libs.back = &bs;
+    static uint8_t mem[320 * 200];
+    pic::Canvas c{mem, 320, 200, 4};
+    c.clear(1);
+    static hlpic::Colours col;
+    col.reset();
+    const qview::Look look = qview::look_of(m, 4);
+    CHECK(look.sets[0] == 12 && look.sets[1] == qview::kNoSet && look.back == 4);
+    // Facing north from (3, 4): the north wall is the f1 front (piece 0: EGA 4),
+    // the east wall the right near side (piece 1: EGA 14); the backdrop elsewhere
+    CHECK(qview::draw(c, libs, m, 3, 4, geo::North, look, col));
+    CHECK(c.get(24 + 40, 24 + 40) == 4 && c.get(24 + 80, 24 + 40) == 14 && c.get(24 + 5, 24 + 5) == 6);
+    CHECK(c.get(23, 30) == 1 && c.get(24 + 88, 30) == 1);    // nothing outside the box
+    // Facing west: the north wall is the right side (piece 0 r0: EGA 4), the
+    // square ahead (2, 4) open - its front is nothing; the east wall behind
+    c.clear(1);
+    CHECK(qview::draw(c, libs, m, 3, 4, geo::West, look, col));
+    CHECK(c.get(24 + 80, 24 + 40) == 4 && c.get(24 + 40, 24 + 40) == 6 && c.get(24 + 5, 24 + 40) == 6);
+    // Facing south from (3, 2): (3, 3) one ahead - its west wall is the left
+    // side 1 on (piece 2: EGA 2, at 56..72 - south's right is west); the north
+    // wall of (3, 4) two ahead... not ours (south faces its south side)
+    c.clear(1);
+    CHECK(qview::draw(c, libs, m, 3, 2, geo::South, look, col));
+    CHECK(c.get(24 + 60, 24 + 40) == 2 && c.get(24 + 20, 24 + 40) == 6);
+    // Facing east from (3, 4): the north wall on the left (l0, EGA 4), the east
+    // wall ahead is piece 1's f1: a small part placed in its slot (24, 50)
+    c.clear(1);
+    CHECK(qview::draw(c, libs, m, 3, 4, geo::East, look, col));
+    CHECK(c.get(24 + 5, 24 + 40) == 4 && c.get(24 + 16 + 24, 24 + 16 + 50) == 14 && c.get(24 + 40, 24 + 40) == 6);
+    // No sets found: the backdrop only; no backdrop: black
+    qview::Look none;
+    none.sets[0] = 99;
+    c.clear(1);
+    CHECK(!qview::draw(c, libs, m, 3, 4, geo::North, none, col) && c.get(24 + 40, 24 + 40) == 0);
+
+    // The area map: TOPVIEW's tiles 1-16 (wall bits) and arrows 17-20
+    std::vector<Bytes> tiles = {vga_colours(0x30, {0, 6, 14})};
+    for (int t = 1; t <= 20; ++t) tiles.push_back(solid(8, 8, t <= 16 ? (t == 1 ? 0x30 : 0x31) : 0x32));
+    Bytes tv = library("TILE", tiles);
+    dax::MemorySource ts(tv.data(), static_cast<uint32_t>(tv.size()));
+    libs.topview = &ts;
+    c.clear(1);
+    CHECK(qview::draw_area_map(c, libs, m, 3, 4, geo::North, col));
+    // the window: x 0-10, y 0-8 (the map is 9 high); the party at (3, 4): the arrow
+    CHECK(c.get(24 + 3 * 8 + 2, 24 + 4 * 8 + 2) == 14 && c.get(24 + 3 * 8 + 2, 24 + 3 * 8 + 2) == 6);
+    CHECK(c.get(24 + 1, 24 + 1) == 0 && c.get(24 + 1, 24 + 9 * 8 + 1) == 0);    // open squares; below the map: black
+    // a party far right: the window moves (x 1-11)
+    c.clear(1);
+    CHECK(qview::draw_area_map(c, libs, m, 11, 4, geo::East, col));
+    CHECK(c.get(24 + 10 * 8 + 2, 24 + 4 * 8 + 2) == 14 && c.get(24 + 2 * 8 + 2, 24 + 4 * 8 + 2) == 6);
+    geo::release(m);
+}
+
 int main()
 {
     test_library();
     test_pictures();
+    test_view();
     if (failures) {
         printf("%d failure(s)\n", failures);
         return 1;
