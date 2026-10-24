@@ -69,6 +69,11 @@ struct Layout {
     // numbered its own way (party::race_to_darkness)
     bool     dk = false;
     uint16_t xp_step = 0;
+    // Gateway's training (its GAME.OVR 0x3EB10): each class's last level
+    // (8 bytes at this offset, read through lo2..hi2: training stops when
+    // the level reaches it) and its own race limits (create.cpp
+    // gw_race_limited) instead of Curse's; 0: none
+    uint16_t level_caps = 0;
     // Champions of Krynn's (champions_facts.md 4): Curse's shapes (8 class
     // columns, the knight in the monk's) but its race-indexed tables by its
     // own races (0 Silvanesti elf ... 6 human - the record's own race,
@@ -84,11 +89,6 @@ struct Layout {
     // spell level 1-4 it has slots for, the list at this + level x 10
     // (from the 2nd byte, 10 at most, 0 ends)
     uint16_t cleric_lists = 0;
-    // Gateway's training (its GAME.OVR 0x3EB10): each class's last level
-    // (8 bytes at this offset, read through lo2..hi2: training stops when
-    // the level reaches it) and its own race limits (create.cpp
-    // gw_race_limited) instead of Curse's; 0: none
-    uint16_t level_caps = 0;
 };
 
 // Champions: a race in creation's lists (the Curse number can't tell its two
