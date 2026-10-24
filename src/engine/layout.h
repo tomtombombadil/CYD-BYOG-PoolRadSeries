@@ -43,7 +43,8 @@
 
 namespace layout {
 
-constexpr int kTiles = 40;
+constexpr int kTiles = 45;          // (Death Knights: its block 202's 45 - frame, moons, area map)
+constexpr int kOldTiles = 40;       // (the slots the other games' tables may name)
 constexpr int kFrameTile = 30;      // + table value
 constexpr int kViewTile = 20;       // + table value
 constexpr uint8_t kMask = 13;       // tile pixels in this colour aren't drawn
@@ -52,6 +53,7 @@ struct Tiles {
     uint8_t px[kTiles][64];          // palette indexes, row by row
     uint8_t count = 0;               // slots filled (Curse 40, Pool 31)
     uint8_t first = 20;              // the block's tile in slot 20 (Secret 40: slots 20-39 = tiles 40-59)
+    uint8_t window = 20;             // slots from `first` (Death Knights 25: its tiles 20-44)
     bool loaded = false;
     // VGA values (Darkness on a 256-colour screen): colour 13 is drawn too -
     // only the original's EGA mode leaves it out of the frame
@@ -60,7 +62,7 @@ struct Tiles {
     // The slot of the block's tile n (-1: not kept)
     int slot(int n) const {
         if (n < 20) return n;
-        return n >= first && n < first + (kTiles - 20) ? n - first + 20 : -1;
+        return n >= first && n < first + window ? n - first + 20 : -1;
     }
     // The block's tile in slot s
     int tile_of(int s) const { return s < 20 ? s : s - 20 + first; }
@@ -68,7 +70,8 @@ struct Tiles {
 
 // Loads the tiles: an EGA picture block 8 high, 1 column wide, 40 frames
 // (Pool: 31; Secret 101; at least 23); tiles 0-19 and 20 from `first`.
-bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, uint8_t first = 20);
+bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, uint8_t first = 20,
+                uint8_t window = 20);
 
 // Loads a VGA block of 8 x 8 tiles (Darkness: 8X8D0's area map tiles, a
 // BORDERS style) into slots slot0.. (at most n): ega - in their EGA

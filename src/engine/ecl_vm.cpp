@@ -272,6 +272,19 @@ uint16_t Vm::dkk_addr(uint16_t a)
 
 uint16_t Vm::dkk_read(uint16_t a, int size) const
 {
+    // (a character code is one field, whatever the operand's size: the
+    // loader returns the field's value - a word for the age and the coins)
+    if (a >= 0x7C00 && a <= 0x7FFF && (sel_rec() || (party_ && party_->sel()))) {
+        uint16_t v;
+        const uint16_t off = static_cast<uint16_t>(a - 0x7C00);
+        if (!(a == 0x7D00 && not_found_)) {
+            if (const uint8_t* mr = sel_rec()) {
+                if (party::script_value_dkk(mr, nullptr, (party_ ? party_->count : 0) + sel_mon_, off, &v)) return v;
+            } else if (party::script_value_dkk(*party_, off, &v)) {
+                return v;
+            }
+        }
+    }
     if (size == 2) return static_cast<uint16_t>(dkk_read(a, 1) | dkk_read(static_cast<uint16_t>(a + 1), 1) << 8);
     if (a && a <= 0x400) a = dkk_addr(a);
     if (a == 0) return 0;
@@ -310,6 +323,16 @@ uint16_t Vm::dkk_read(uint16_t a, int size) const
 
 void Vm::dkk_write(uint16_t a, uint16_t v, int size)
 {
+    if (size == 2 && a >= 0x7C00 && a <= 0x7FFF) {
+        // (a character field takes the whole value; the block its bytes)
+        const uint16_t off = static_cast<uint16_t>(a - 0x7C00);
+        s_.area2[off] = static_cast<uint8_t>(v);
+        if (off + 1 < 0x400) s_.area2[off + 1] = static_cast<uint8_t>(v >> 8);
+        if (uint8_t* mr = sel_rec()) party::script_set_dkk(mr, nullptr, off, v);
+        else if (party_ && party_->sel()) party::script_set_dkk(*party_->sel(), off, v);
+        if (a == 0x7F12) s_.game_area = static_cast<uint8_t>(v);
+        return;
+    }
     if (size == 2) {
         dkk_write(a, v & 0xFF, 1);
         dkk_write(static_cast<uint16_t>(a + 1), v >> 8, 1);
@@ -1101,6 +1124,18 @@ bool Vm::dk_step(Stop& r)
         return true;
     }
     case 0x21: {                                // LOAD FILES: map, look
+        if (set_.curse_bytes) {
+            // (Death Knights, its interpreter +0xDAA: the map alone - not 0xFF
+            // / 0x7F, in 3D; the other two read and left)
+            if (!need(3)) return true;
+            const int a = value(o[0]) & 0xFF;
+            if (a != 0xFF && a != 0x7F && get(0x4BE6)) {
+                set(0x4BC5, static_cast<uint16_t>(a));
+                h_.load_map(a);
+                set(0x7EC9, 0);
+            }
+            return true;
+        }
         if (!need(2)) return true;
         const int a = value(o[0]) & 0xFF, b = value(o[1]) & 0xFF;
         if (a < 0x7F && s_.area1[0x21]) {
@@ -1228,6 +1263,15 @@ bool Vm::dk_step(Stop& r)
         dk_write(static_cast<uint16_t>(o[1].word() + value(o[2])), value(o[0]), size_of(o[0]));
         return true;
     case 0x37: {                                // FIND NPC: a name's place in the party (0xFF none; +0x80 not okay)
+        if (set_.curse_bytes) {
+            // (Death Knights: LOAD PIECES - the look of each wall slot, 0xFF
+            // / 0x7F none; its scripts give slot 1 alone: the look's WALLDEF
+            // block of three sets with its tiles and background)
+            if (!need(3)) return true;
+            const int b = value(o[0]) & 0xFF;
+            if (b != 0xFF && b != 0x7F) h_.load_look(b);
+            return true;
+        }
         if (!need(2)) return true;
         const char* nm = string_of(o[0]);
         int place = 0xFF;
@@ -1259,13 +1303,16 @@ bool Vm::dk_step(Stop& r)
     case 0x41: {                                // EXPERIENCE: who (0 the selected), amount x 100
         if (!need(2)) return true;
         const bool all = value(o[0]) != 0;
-        const uint32_t amount = static_cast<uint32_t>(value(o[1])) * 100u;
+        // (Death Knights, its interpreter +0x25F1: the amount itself, shared
+        // by the classes held - the knight's too)
+        const uint32_t amount = static_cast<uint32_t>(value(o[1])) * (set_.curse_bytes ? 1u : 100u);
+        const int kinds = set_.curse_bytes ? 8 : 7;
         for (int i = 0; party_ && i < party_->count; ++i) {
             if (!all && i != party_->selected) continue;
             party::Character& c = party_->m[i];
             if (c.health() != party::Okay) continue;
             int classes = 0;
-            for (int k = 0; k < 7; ++k) classes += c.rec[0x109 + k] > 0;
+            for (int k = 0; k < kinds; ++k) classes += c.rec[0x109 + k] > 0;
             if (!classes) classes = 1;
             uint32_t xp = c.exp() + amount / static_cast<uint32_t>(classes);
             for (int k = 0; k < 4; ++k) c.rec[0x127 + k] = static_cast<uint8_t>(xp >> (8 * k));

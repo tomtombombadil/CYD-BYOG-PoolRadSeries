@@ -96,13 +96,13 @@ constexpr uint16_t kKrynnExt[][3] = {
 // Death Knights offset, Curse offset, length (deathknights_facts.md 2;
 // pointers left out): name and stats; 0x1E (to learn) and THAC0; class; age
 // and HP; icon size, saves; movement, the highest level; level vs undead and
-// thief skills; NPC; steel in gold's place, gems, jewelry; levels (the
+// thief skills; NPC; steel in platinum's place (Darkness's three coins), gems, jewelry; levels (the
 // knight in the monk's); sex; alignment to the experience; class flags, HP
 // rolled; xp award and bonus; icon, flags; the item count; hands, save
 // bonus, encumbrance; status to movement
 constexpr uint16_t kDkkRuns[][3] = {
     {0x00, 0x00, 0x1E},  {0x1E, 0x72, 2},     {0x21, 0x75, 1},     {0x26, 0x76, 3},     {0x29, 0xDE, 6},
-    {0x2F, 0xE4, 2},     {0x31, 0xE9, 9},     {0x3E, 0xF7, 1},     {0x3F, 0x101, 2},    {0x41, 0x105, 4},
+    {0x2F, 0xE4, 2},     {0x31, 0xE9, 9},     {0x3E, 0xF7, 1},     {0x3F, 0x103, 2},    {0x41, 0x105, 4},
     {0x45, 0x109, 8},    {0x55, 0x119, 1},    {0x56, 0x11B, 0x10}, {0x6B, 0x12B, 2},    {0x6D, 0x13C, 3},
     {0x70, 0x141, 11},   {0x7C, 0x14C, 1},    {0xB5, 0x185, 4},    {0xC7, 0x195, 0x11},
 };
@@ -189,7 +189,7 @@ bool script_value_dkk(const uint8_t* r, const uint8_t* ext, int index, uint16_t 
     if (off >= 0x9A && off <= 0x9E) { *out = r[0xDF + (off - 0x9A)]; return true; }      // saves
     if (off >= 0xA5 && off <= 0xAC) { *out = r[0xEA + (off - 0xA5)]; return true; }      // thief skills
     if (off >= 0xC3 && off <= 0xC8) {                                          // steel, gems, jewelry
-        static const uint16_t kAt[3] = {0x101, 0x105, 0x107};
+        static const uint16_t kAt[3] = {0x103, 0x105, 0x107};
         *out = u16(kAt[(off - 0xC3) / 2]);
         return true;
     }
@@ -240,7 +240,7 @@ void script_set_dkk(uint8_t* r, uint8_t*, uint16_t off, uint16_t v)
         return;
     }
     if (off >= 0xC3 && off <= 0xC8) {           // steel, gems, jewelry
-        static const uint16_t kAt[3] = {0x101, 0x105, 0x107};
+        static const uint16_t kAt[3] = {0x103, 0x105, 0x107};
         const int o = kAt[(off - 0xC3) / 2];
         r[o] = static_cast<uint8_t>(v);
         r[o + 1] = static_cast<uint8_t>(v >> 8);

@@ -1099,6 +1099,27 @@ void dk_background()
 {
     const uint8_t* gb = d->gs.area1;
     const bool in = geo::flags(d->map, d->gs.x, d->gs.y) >= 0x80;
+    if (dkk()) {
+        // Death Knights (its ovl 0xF7 +0x177): indoors the look's BACKn
+        // picture; outdoors SKYGRND 2 with SKYGRND 1's night sky over its top
+        // from hour 14 (0x4BC9)
+        const bool night = !in && vm->get(0x4BC9) >= 14;
+        const int look = d->save.look;
+        const uint8_t id = static_cast<uint8_t>(in ? 0x10 | (look & 15) : night ? 0x2F : 0x22);
+        if (d->world.back && d->world.back_id == id) return;
+        plat::File f;
+        char name[24];
+        if (in ? look > 0 && open_area_dax("BACK", look, f, name, sizeof name) : open_dax("SKYGRND.DAX", f)) {
+            plat::FileSource src(f);
+            if (in) {
+                view3d::load_ega_back(src, d->idx, static_cast<uint8_t>(look), id, d->world);
+            } else if (view3d::load_ega_back(src, d->idx, 2, 0x22, d->world) && night) {
+                view3d::load_ega_back(src, d->idx, 1, id, d->world, true);
+            }
+            f.close();
+        }
+        return;
+    }
     int block;
     if (d->prof->variant.tr) {
         // Treasures (its ovl 0x144 +0x328): indoors BACK1 block game byte
@@ -10835,6 +10856,33 @@ struct Host : ecl::Host {
     // tiles of that number (darkness_facts.md 7.3); kept for saving
     void load_look(int look) override
     {
+        if (dkk()) {
+            // Death Knights (LOAD PIECES; its ovl 0xF7 +0xEC5): the look's
+            // WALLDEF block - in WALLDEFn, n from its program's table (here:
+            // the family's file holding the block) - three sets in slots 1-3,
+            // 8X8Dn's tiles, BACKn's picture with the view (dk_background)
+            view3d::World& wd = d->world;
+            plat::File f;
+            char name[24];
+            int n = 0;
+            if (open_area_dax("WALLDEF", look, f, name, sizeof name)) {
+                plat::FileSource src(f);
+                if (!view3d::load_walls(src, d->idx, 1, static_cast<uint8_t>(look), wd, &n)) n = 0;
+                f.close();
+            }
+            bool tiles = false;
+            if (open_area_dax("8X8D", look, f, name, sizeof name)) {
+                plat::FileSource src(f);
+                tiles = view3d::load_ega_tiles(src, d->idx, static_cast<uint8_t>(look), wd);
+                f.close();
+            }
+            wd.back_id = 0;
+            d->save.look = static_cast<uint16_t>(look);
+            d->wall_block[1] = static_cast<int16_t>(look);
+            d->wall_set[1] = 1;
+            plat::log("[play] look %d: %d wall sets, tiles %s\n", look, n, tiles ? "ok" : "missing");
+            return;
+        }
         if (d->prof->variant.tr && d->gs.area1[0x3F]) {
             // Treasures' overland (game byte 0x3F): the look is its map
             // picture, OVER.DAX (o144+0xA70)
@@ -10982,6 +11030,9 @@ struct Host : ecl::Host {
             layout::bar(c, d->tables, d->frame_tiles, 16);
             draw_block(c, "BIGPIC", id, 8, 8);
             dirty(0, 17 * 8);
+            // (Death Knights: the region map, BIGPIC 0x70, with the party's
+            // marker at once - its interpreter +0x9A9)
+            if (dkk() && id == big) kr_marker(c, true);
         } else if (head == 0xFF) {
             // Pool with Monsters off: no picture in the 3D areas (the view stays)
             if (!monster_pics_on() && !pool_overland()) return;
@@ -13860,7 +13911,8 @@ __attribute__((noinline)) bool open_tiles()
         d->world.dk = true;
     } else if (ok) {
         plat::FileSource src(f);
-        ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, d->prof->variant.tile_window) &&
+        ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, d->prof->variant.tile_window,
+                                d->prof->variant.dkk ? 25 : 20) &&
              (d->prof->font_file || font::load(src, d->idx, d->font)) &&
              view3d::load_tiles(src, d->idx, d->prof->common_tiles_block, d->world.common);
         f.close();
@@ -13974,6 +14026,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
         return msg;
     }
     d->world.frame = &d->frame_tiles;
+    if (d->prof->variant.dkk) d->world.map_base = 25;      // (Death Knights: block 202's 25-40, arrows 41-44)
     d->world.per_set = d->prof->variant.per_set_walls;
     text::set_hanging_space(gateway() || krynn());          // (Champions too - DOSBox)
     open_sky();

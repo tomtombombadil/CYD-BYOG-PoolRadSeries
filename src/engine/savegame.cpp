@@ -187,6 +187,7 @@ bool read_dkk(dax::ByteSource& src, ecl::GameState& gs, Header& h)
     }
     h.wall_block4 = blk[3];
     h.wall_set4 = set[3];
+    h.look = static_cast<uint16_t>(blk[1] > 0 ? blk[1] : 0);    // (its scripts' looks go to slot 1)
     gs.code_len = 0;
     gs.moved = false;
     gs.game_area = h.game_area;

@@ -193,11 +193,12 @@ bool load_tr_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, u
     return true;
 }
 
-bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, uint8_t first)
+bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, Tiles& out, uint8_t first, uint8_t window)
 {
     out.loaded = false;
     out.vga = false;
     out.first = first < 20 ? 20 : first;
+    out.window = window > kTiles - 20 ? kTiles - 20 : window;
     const dax::Entry* e = idx.find(block);
     if (!e) return false;
     dax::RleReader r(src, idx, *e);
@@ -245,7 +246,7 @@ Status load_tables(dax::ByteSource& program, const exepack::Info& info, const pr
             case exepack::Status::BadData:   return Status::BadData;
             default:                         return Status::NotPacked;
             }
-            if (!all_below(out.top, 0, 40, kTiles - kViewTile)) return Status::BadTables;
+            if (!all_below(out.top, 0, 40, kOldTiles - kViewTile)) return Status::BadTables;
             out.top_row = true;
         }
         out.loaded = true;
@@ -314,7 +315,7 @@ Status load_tables(dax::ByteSource& program, const exepack::Info& info, const pr
     // Sanity: every value used must name a tile
     out.frame_base = p.variant.frame_base ? p.variant.frame_base : kFrameTile;
     out.joints = p.variant.frame_base != 0;
-    const int fmax = kTiles - out.frame_base, vmax = kTiles - kViewTile;
+    const int fmax = kOldTiles - out.frame_base, vmax = kOldTiles - kViewTile;
     if (!all_below(out.top, 0, 40, fmax) || !all_below(out.bar, 0, 40, fmax) || !all_below(out.bottom, 0, 40, fmax) ||
         !all_below(out.left, 0, 24, fmax) || !all_below(out.right, 0, 24, fmax) ||
         !all_below(out.view_split, 0, 17, fmax) ||

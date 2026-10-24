@@ -335,7 +335,8 @@ const char* open(const char* data_dir, games::Game g)
         // BORDERS style below in 20-30; their EGA colours on this canvas)
         bool ok = dax::read_index(tsrc, d->idx) == dax::Status::Ok &&
                   (p->variant.vga ? layout::load_vga_tiles(tsrc, d->idx, p->tiles_block, d->tiles, 0, 20, true)
-                                  : layout::load_tiles(tsrc, d->idx, p->tiles_block, d->tiles, p->variant.tile_window)) &&
+                                  : layout::load_tiles(tsrc, d->idx, p->tiles_block, d->tiles, p->variant.tile_window,
+                                                       p->variant.dkk ? 25 : 20)) &&
                   (p->font_file || font::load(tsrc, d->idx, d->font));
         f.close();
         if (ok && p->font_file) {

@@ -330,7 +330,8 @@ const char* open(const char* data_dir, games::Game g)
         d->world.dk = true;
     } else if (ok) {
         plat::FileSource src(f);
-        ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, d->prof->variant.tile_window) &&
+        ok = layout::load_tiles(src, d->idx, d->prof->tiles_block, d->frame_tiles, d->prof->variant.tile_window,
+                                d->prof->variant.dkk ? 25 : 20) &&
              (d->prof->font_file || font::load(src, d->idx, d->font)) &&
              view3d::load_tiles(src, d->idx, d->prof->common_tiles_block, d->world.common);
         f.close();

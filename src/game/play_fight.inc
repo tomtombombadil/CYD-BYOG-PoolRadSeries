@@ -74,6 +74,41 @@ int read_block(const char* file, int block, uint8_t* out, int cap)
 // layout (Pool's 285-byte records moved into it)
 bool read_record_block(const char* file, int block, uint8_t* rec, uint8_t* ext = nullptr, uint8_t* sx = nullptr)
 {
+    if (dkk()) {
+        // Death Knights' 216-byte records with their spell part, the MON<n>WIZ
+        // block of the same number when there is one (party::from_dkk - an
+        // NPC keeps its extension; a monster its flags 2 (0x7B) and magic
+        // resistance (0xC1): sx)
+        uint8_t* k = static_cast<uint8_t*>(malloc(party::kDkkRecordSize + party::kDkkSpellSize));
+        const bool ok = k && read_block(file, block, k, party::kDkkRecordSize) == static_cast<int>(party::kDkkRecordSize);
+        uint8_t* w = nullptr;
+        if (ok) {
+            char wiz[24];
+            snprintf(wiz, sizeof wiz, "%s", file);
+            char* at = strstr(wiz, "CHA.");
+            if (at) memcpy(at, "WIZ.", 4);
+            if (at && read_block(wiz, block, k + party::kDkkRecordSize, party::kDkkSpellSize) ==
+                          static_cast<int>(party::kDkkSpellSize))
+                w = k + party::kDkkRecordSize;
+        }
+        if (ok && sx) {
+            sx[0] = k[0x7B];
+            sx[1] = k[0xC1];
+        }
+        if (ok) {
+            party::Character* tmp = ext ? new (std::nothrow) party::Character : nullptr;
+            if (tmp) {
+                party::from_dkk(k, w, *tmp);
+                memcpy(rec, tmp->rec, party::kRecordSize);
+                memcpy(ext, tmp->ext, party::kExtSize);
+                delete tmp;
+            } else {
+                party::from_dkk(k, w, rec);
+            }
+        }
+        free(k);
+        return ok;
+    }
     if (secret_files()) {
         // Secret's 439-byte records (party::from_secret; an NPC keeps its
         // extension; a monster its flags 2 and magic resistance: sx)
@@ -165,7 +200,7 @@ bool read_record_block(const char* file, int block, uint8_t* rec, uint8_t* ext =
 // (the name is made from its words). How many (up to cap) into out.
 int read_monster_items(const char* file, int block, uint8_t* out, int cap)
 {
-    if (!darkness_files()) {
+    if (!darkness_files() || dkk()) {          // (Death Knights: 63-byte items, as Curse's)
         const int n = read_block(file, block, out, cap * static_cast<int>(items::kRecordSize));
         return n > 0 ? n / static_cast<int>(items::kRecordSize) : 0;
     }

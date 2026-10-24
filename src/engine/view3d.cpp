@@ -399,6 +399,70 @@ bool load_vga_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, 
     return true;
 }
 
+bool load_ega_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, World& w)
+{
+    w.dk = true;
+    w.common.count = 0;
+    for (auto& ts : w.sets) ts.count = 0;
+    const dax::Entry* e = idx.find(block);
+    if (!e) return false;
+    dax::RleReader r(src, idx, *e);
+    uint8_t hdr[pic::kHeaderSize];
+    if (r.read(hdr, sizeof hdr) != sizeof hdr || hdr[0] != 8 || hdr[1] != 0 || hdr[2] != 1 || hdr[3] != 0) return false;
+    const int frames = static_cast<int>((e->raw_size - pic::kHeaderSize) / 32);
+    for (int t = 0; t < frames && t < 256; ++t) {
+        uint8_t px[32];
+        if (r.read(px, sizeof px) != sizeof px) return false;
+        if (t == 0) continue;                       // (tile 0: never drawn)
+        uint8_t* out;
+        if (t <= kCommonTiles) {
+            out = w.common.px[t - 1];
+            w.common.count = t;
+        } else {
+            const int k = t - (kCommonTiles + 1);
+            TileSet& ts = w.sets[k / kSetTiles];
+            out = ts.px[k % kSetTiles];
+            ts.count = k % kSetTiles + 1;
+        }
+        memcpy(out, px, sizeof px);
+    }
+    return true;
+}
+
+bool load_ega_back(dax::ByteSource& src, const dax::Index& idx, uint8_t block, uint8_t id, World& w, bool over)
+{
+    if (w.back && w.back_id == id) return true;
+    const dax::Entry* e = idx.find(block);
+    if (!e) return false;
+    dax::RleReader r(src, idx, *e);
+    uint8_t hdr[pic::kHeaderSize];
+    pic::Header h;
+    if (r.read(hdr, sizeof hdr) != sizeof hdr || !pic::parse_header(hdr, e->raw_size, h) ||
+        h.width_px() != kCells * 8 || h.height > kCells * 8)
+        return false;
+    const int half = kCells * 4;                    // (bytes a row: two pixels a byte)
+    if (!w.back) w.back = static_cast<uint8_t*>(malloc(kCells * 8 * half));
+    if (!w.back) return false;
+    if (over && !w.back_id) return false;
+    w.back_id = 0;
+    uint8_t row[kCells * 4];
+    for (int y = 0; y < h.height; ++y) {
+        if (r.read(row, sizeof row) != sizeof row) return false;
+        uint8_t* out = w.back + y * half;
+        if (!over) {
+            memcpy(out, row, sizeof row);
+            continue;
+        }
+        for (int i = 0; i < half; ++i) {
+            const uint8_t hi = row[i] >> 4, lo = row[i] & 15;
+            if (hi != kMask) out[i] = static_cast<uint8_t>((out[i] & 0x0F) | hi << 4);
+            if (lo != kMask) out[i] = static_cast<uint8_t>((out[i] & 0xF0) | lo);
+        }
+    }
+    w.back_id = id;
+    return true;
+}
+
 bool load_tr_tiles(dax::ByteSource& src, const dax::Index& idx, int slot, uint8_t block, World& w, pic::VgaPalette* pal)
 {
     if (slot < 0 || slot > 2) return false;
@@ -618,10 +682,11 @@ void draw_area_map(pic::Canvas& c, const World& w, const geo::Map& m, int x, int
             if (geo::wall(m, mx, my, 4)) bits |= 4;
             if (geo::wall(m, mx, my, 6)) bits |= 8;
             // (Darkness: walls in frames 0-15, the arrows 16-19)
-            put_frame_tile(c, *w.frame, (w.dk ? 0 : 4) + bits, (kCell0 + col) * 8, (kCell0 + r) * 8, kMask, kMask);
+            put_frame_tile(c, *w.frame, (w.map_base ? w.map_base : w.dk ? 0 : 4) + bits, (kCell0 + col) * 8,
+                           (kCell0 + r) * 8, kMask, kMask);
         }
-    put_frame_tile(c, *w.frame, (w.dk ? 16 : 0) + ((dir & 7) >> 1), (kCell0 + x - ox) * 8, (kCell0 + y - oy) * 8, 8,
-                   kMask);
+    put_frame_tile(c, *w.frame, (w.map_base ? w.map_base + 16 : w.dk ? 16 : 0) + ((dir & 7) >> 1),
+                   (kCell0 + x - ox) * 8, (kCell0 + y - oy) * 8, 8, kMask);
 }
 
 } // namespace view3d

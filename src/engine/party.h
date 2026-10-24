@@ -200,7 +200,7 @@ void to_krynn(const Character& c, uint8_t out[kKrynnRecordSize]);
 // spells in it - the memorized ones (74 places), the book (spells 1-114)
 // and the slots (four groups of eight: cleric, druid, a third, magic-user)
 // are a 220-byte part of their own (.WIZ; monsters' MON1WIZ blocks); coins
-// steel (in gold's place), gems, jewelry; Champions' races, knight order,
+// steel (in platinum's place, as Darkness's three coins), gems, jewelry; Champions' races, knight order,
 // god, robe; the best levels / experience / HP before a drain and "able
 // to train" as Darkness's. Items .JNK (63 bytes), effects .EFF (9).
 constexpr size_t kDkkRecordSize = 0xD8;
