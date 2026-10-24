@@ -2489,7 +2489,7 @@ const Profile kProfiles[] = {
      // own rate (DS 0x1794); Curse's numbers
      .clips = {.file = "ZOUNDS.DAX", .hz = 8000, .first = 2, .last = 12,
                .ids = {0, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .to_block = 0, .rate_table = 0x1794,
-               .as_nine = 1u << 3 | 1u << 6},
+               .as_nine = 1u << 3 | 1u << 6, .fixed_as = {0, 0, 0, 4, 0, 0, 12}},
      .door = {0x1C147, 0x1C14C, 0x1C152, 0x1C159, 0x1C15F, 0x1F},
      .variant = {.program_words = true, .treasure_pic = 1, .camp_pic = 29, .eight_black = true, .field_swap = true,
                  .party_menu_col = 9,
@@ -2819,8 +2819,9 @@ const Profile* find(games::Game g, uint32_t program_size, uint32_t image_size)
 bool has_item_fixes(games::Game g)
 {
     for (const Profile& p : kProfiles)
-        if (p.game == g && (p.items.flame.type || p.variant.secret_files || p.variant.darkness_files))
-            return true;                    // (Secret, Darkness: rules::fixes)
+        if (p.game == g && (p.items.flame.type || p.variant.secret_files || p.variant.darkness_files ||
+                            p.fight.facts.gw.ways || p.clips.as_nine))
+            return true;                    // (Secret, Darkness, Gateway: rules::fixes)
     return false;
 }
 

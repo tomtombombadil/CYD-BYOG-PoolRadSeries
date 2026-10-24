@@ -65,8 +65,13 @@ struct Clips {
     // program's data segment from this offset (0: hz for all)
     int8_t   to_block = -1;
     uint16_t rate_table = 0;
-    // The numbers its player plays as 9 (a bit a number; Gateway: 3 and 6)
+    // The numbers its player plays as 9 (a bit a number; Gateway: 3 and 6 -
+    // ZOUNDS.DAX has no blocks 3 and 6, so a magic hit and a sling's shot
+    // sound as a miss); with rules::fixes() these numbers play the one given
+    // instead (0: as the original - Gateway's 3 the magic sound 4, 6 the
+    // missile's 12)
     uint16_t as_nine = 0;
+    uint8_t  fixed_as[16] = {};
 };
 
 // An effect's samples: the DAX block `block` of the source in a block of its
