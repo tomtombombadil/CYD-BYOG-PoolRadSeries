@@ -1672,6 +1672,7 @@ void end_turn(pic::Canvas& c)
 
 // Someone down: "goes down" / "and is Dying" / "is killed", the skull blinking on them
 void bozak_burst(int t);
+void kapak_acid(int t);
 void damage_text(int amount, int kind, char* t, size_t cap);
 void down_page(int t)
 {
@@ -1686,6 +1687,33 @@ void down_page(int t)
     else add_page(t, fw(profile::kGoesDown));
     page_fx_set(1, skull_fx(t));
     bozak_burst(t);
+    kapak_acid(t);
+}
+
+// Champions' kapak going down (GAME.OVR 0x12C1F): "dissolves into acid!",
+// its square an acid pool for 1d6 rounds
+void kapak_acid(int t)
+{
+    combat::Battle& b = fg->b;
+    const uint8_t ac = b.fx ? b.fx->mon.acid_pool : 0;
+    if (!ac || !b.f[t].has(ac) || (fg->burst[t / 8] >> (t % 8) & 1) || !d->w_acid[0][0]) return;
+    fg->burst[t / 8] |= static_cast<uint8_t>(1 << (t % 8));
+    add_page(t, d->w_acid[0]);
+    combat::lay_acid(b, fg->t, b.f[t].x, b.f[t].y, rng);
+}
+
+// The acid's 1d6 on one with a square in it (a step in, a round's end -
+// GAME.OVR 0x34F7F): "takes N points of damage", no save
+void acid_page(int i)
+{
+    bool dn = false;
+    const int done = combat::acid_burn(fg->b, i, rng, &dn);
+    if (done <= 0) return;
+    char t[48];
+    damage_text(done, 0, t, sizeof t);
+    add_page(i, t);
+    page_fx_set(1, hit_fx(i, false));
+    if (dn) down_page(i);
 }
 
 // Champions' bozak going down (krynn_facts; GAME.OVR 0x124A1): "explodes!",
@@ -1760,7 +1788,15 @@ void knives_page(int i)
     if (dn) down_page(i);
 }
 
+void cloud_breath(int i);
+// A step's grounds: a cloud's, then (Champions) the kapak's acid
 void cloud_step(int i)
+{
+    cloud_breath(i);
+    if (fg->b.f[i].up() && combat::on_acid(fg->b, i)) acid_page(i);
+}
+
+void cloud_breath(int i)
 {
     combat::Battle& b = fg->b;
     const combat::Fighter& f = b.f[i];
@@ -2588,6 +2624,8 @@ void round_end(pic::Canvas& c)
         if (f.up() && f.size && combat::in_poison(fg->b, f.x, f.y) && combat::breathe_poison(fg->b, k, rng)) poison_page(k);
         // (Darkness: and those in a blade barrier's knives are cut - R2)
         if (f.up() && f.size && combat::in_knives(fg->b, f.x, f.y)) knives_page(k);
+        // (Champions: and those in a kapak's acid take its 1d6 - GAME.OVR 0x34F7F)
+        if (f.up() && combat::on_acid(fg->b, k)) acid_page(k);
     }
     // A delayed blast fireball whose time has come
     for (auto& bl : fg->blast)
@@ -2603,11 +2641,13 @@ void round_end(pic::Canvas& c)
 // The clouds a round older: those that go clear ("The air clears a little...")
 void round_clouds(pic::Canvas& c)
 {
-    if (combat::clouds_round(fg->b)) {
+    const int gone = combat::clouds_round(fg->b);
+    if (gone || (fg->b.acid_gone && d->w_acid[1][0])) {
         // "The air clears a little..." on the menu line for the game's delay
+        // (Champions' acid pool: "The acid drains away..")
         draw_field(c);
         clear_menu_line(c);
-        put(c, fw(profile::kAirClears), 0, text::kMenuRow, 10);
+        put(c, gone ? fw(profile::kAirClears) : d->w_acid[1], 0, text::kMenuRow, 10);
         fg->st = FSt::RoundRest;
         fg->until = plat::now_ms() + game_delay_ms();
         if (!fg->until) fg->until = 1;

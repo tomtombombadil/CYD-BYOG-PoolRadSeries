@@ -4,7 +4,7 @@
 // program: its race / class / alignment tables and experience rows, and the
 // constants of its createPlayer, gods, Modify and steel code) - never
 // against the engine's own code.
-// ONLY= create, train, modify, moons, knights
+// ONLY= create, train, modify, moons, knights, acid
 #include "behave_oracle.inc"
 
 namespace bchamp {
@@ -288,6 +288,82 @@ void knights()
     expect(P, w, nbad == 0 && ncase > 0, nbad ? "%d wrong" : "%s", nbad ? std::to_string(nbad).c_str() : "");
 }
 
+// The kapak's acid pool (GAME.OVR 0x12C1F / 0x34F7F; the oracle's "acid":
+// ground, effect, its time's dice, the damage's dice from the program's
+// code): a field of plain ground, the kapak's square laid, those with a
+// square in it, the 1d6, the pool's time and the ground back after
+void acid()
+{
+    const auto* r = row("acid", d->prof->fight.facts.acid_ground);
+    if (!r || (*r)[2] != 1 || (*r)[4] != 1) {
+        expect(P, "acid: the oracle's row", false, "ground %d", d->prof->fight.facts.acid_ground);
+        return;
+    }
+    const int ground = (*r)[0], sides = (*r)[3], hsides = (*r)[5];
+    expect(P, "acid: the kapak's effect", d->prof->fight.facts.mon.acid_pool > 0, "%d", d->prof->fight.facts.mon.acid_pool);
+    static combat::Fighter fs[3];
+    static combat::Battle b;
+    static combat::Tables t;
+    const int plain = 0x17;
+    int nbad = 0, seen_r = 0, seen_h = 0, n = 0;
+    for (int k = 0; k < 600; ++k) {
+        b = combat::Battle{};
+        b.fx = &d->prof->fight.facts;
+        b.f = fs;
+        b.cap = 3;
+        b.n = 3;
+        for (int y = 0; y < combat::kH; ++y)
+            for (int x = 0; x < combat::kW; ++x) b.ground[y][x] = plain;
+        static uint8_t recs[3][party::kRecordSize];
+        for (int i = 0; i < 3; ++i) {
+            fs[i] = combat::Fighter{};
+            memset(recs[i], 0, sizeof recs[i]);
+            fs[i].rec = combat::Rec(recs[i]);
+            fs[i].rec[0x196] = 1;
+            fs[i].rec[0x195] = party::Okay;
+            fs[i].rec[0x1A4] = fs[i].rec[0x78] = 60;
+            fs[i].size = 1;
+        }
+        fs[0].x = 10, fs[0].y = 8;                 // (the kapak's square)
+        fs[1].x = 10, fs[1].y = 8;                 // one that steps in
+        fs[2].x = 9, fs[2].y = 7, fs[2].size = 4;  // a large one (2 x 2): its south-east square in it
+        // (an earlier ground under it comes back: here a stinking cloud there first)
+        const bool cloud = k % 2;
+        if (cloud) combat::lay_cloud(b, t, 10, 8, 2);
+        const bool laid = combat::lay_acid(b, t, 10, 8, rng);
+        int rounds = -1;
+        for (int c = 0; c < b.n_clouds; ++c)
+            if (b.clouds[c].acid) rounds = b.clouds[c].rounds;
+        ++n;
+        if (!laid || b.ground[8][10] != ground || rounds < 1 || rounds > sides || !combat::on_acid(b, 1) ||
+            !combat::on_acid(b, 2) || combat::on_acid(b, 0) != true) {
+            ++nbad;
+            continue;
+        }
+        seen_r |= 1 << rounds;
+        bool dn = false;
+        const int hp = fs[1].hp();
+        const int h = combat::acid_burn(b, 1, rng, &dn);
+        if (h < 1 || h > hsides || fs[1].hp() != hp - h) ++nbad;
+        seen_h |= 1 << h;
+        // the round ends: gone after its time - the plain ground back
+        int went = -1;
+        for (int round = 1; round <= sides + 2 && went < 0; ++round) {
+            combat::clouds_round(b);
+            if (b.acid_gone) went = round;
+        }
+        const bool acid_off = !combat::on_acid(b, 1);
+        for (int round = 0; round < 4 && b.n_clouds; ++round) combat::clouds_round(b);    // (the cloud's time too)
+        if (went != rounds || !acid_off || b.ground[8][10] != plain) ++nbad;
+    }
+    const int all_r = ((1 << (sides + 1)) - 2), all_h = ((1 << (hsides + 1)) - 2);
+    char w[120];
+    snprintf(w, sizeof w, "acid: a kapak's pool (ground %d) for 1d%d rounds, 1d%d on those in it, the ground back (%d pools)",
+             ground, sides, hsides, n);
+    expect(P, w, nbad == 0 && seen_r == all_r && seen_h == all_h, "%d wrong, rounds seen %x, damage seen %x", nbad, seen_r,
+           seen_h);
+}
+
 bool open_game()
 {
     play::close();
@@ -330,4 +406,5 @@ static void behave_champions()
     if (want("modify")) modify();
     if (want("moons")) moons();
     if (want("knights")) knights();
+    if (want("acid")) acid();
 }

@@ -239,10 +239,41 @@ bool fill(dax::ByteSource& src, uint32_t at, Obj& o)
     return o.len > 0;
 }
 
-// Object `num` ("num gen obj <value> [stream ...]")
-bool load(dax::ByteSource& src, const Doc& doc, int num, Obj& o)
+// A stream's bytes one at a time (inflate's input)
+struct StreamIn : inflate::Input {
+    dax::ByteSource& src;
+    uint32_t at, end;
+    uint8_t buf[256];
+    uint32_t buf_at = 0, buf_n = 0;
+    StreamIn(dax::ByteSource& s, uint32_t a, uint32_t e) : src(s), at(a), end(e) {}
+    int byte() override
+    {
+        if (at >= end) return -1;
+        if (at < buf_at || at >= buf_at + buf_n) {
+            buf_at = at;
+            buf_n = static_cast<uint32_t>(src.read_at(at, buf, sizeof buf));
+            if (!buf_n) return -1;
+        }
+        return buf[at++ - buf_at];
+    }
+};
+struct BufOut : inflate::Output {
+    char* p;
+    size_t cap, n = 0;
+    BufOut(char* b, size_t c) : p(b), cap(c) {}
+    bool put(uint8_t b) override
+    {
+        if (n >= cap) return false;
+        p[n++] = static_cast<char>(b);
+        return true;
+    }
+};
+
+// The value (and stream) of the object at the file's offset `at`
+// ("num gen obj <value> [stream ...]")
+bool parse_at(dax::ByteSource& src, uint32_t at, int num, Obj& o)
 {
-    if (num <= 0 || num >= kMaxObjects || !doc.offset[num] || !fill(src, doc.offset[num], o)) return false;
+    if (!fill(src, at, o)) return false;
     Parser ps{o};
     int32_t n = 0, g = 0;
     size_t end = 0;
@@ -261,6 +292,104 @@ bool load(dax::ByteSource& src, const Doc& doc, int num, Obj& o)
         o.stream_at = o.file_at + static_cast<uint32_t>(ps.p);
     }
     return true;
+}
+
+// The index-th object of an object stream (Champions' journal: the pages
+// and their resources are kept there): the stream starts with "num offset"
+// pairs (offsets from /First); o.buf gets the header, then the object's own
+// bytes over it - nothing else of the stream is kept
+struct PackedOut : inflate::Output {
+    Obj& o;
+    uint32_t first;
+    int num, index;
+    uint32_t pos = 0, start = 0, end = 0xFFFFFFFFu;
+    bool found = false;
+    size_t n = 0;
+    PackedOut(Obj& ob, uint32_t f, int nu, int i) : o(ob), first(f), num(nu), index(i) {}
+    bool locate()
+    {
+        o.len = first;
+        Parser ps{o};
+        size_t e = 0;
+        for (int i = 0; i <= index + 1; ++i) {
+            int32_t on = 0, off = 0;
+            ps.skip();
+            if (!ps.number_at(ps.p, &on, &e)) {
+                if (i != index + 1) return false;
+                break;                                  // (the stream's last object: to its end)
+            }
+            ps.p = e;
+            ps.skip();
+            if (!ps.number_at(ps.p, &off, &e) || off < 0) return false;
+            ps.p = e;
+            if (i == index) {
+                if (on != num) return false;
+                start = first + static_cast<uint32_t>(off);
+            } else if (i == index + 1) {
+                end = first + static_cast<uint32_t>(off);
+            }
+        }
+        found = end > start;
+        return found;
+    }
+    bool put(uint8_t b) override
+    {
+        const uint32_t at = pos++;
+        if (!found) {
+            if (at >= kObjBuf) return false;
+            o.buf[at] = static_cast<char>(b);
+            return at + 1 < first || locate();
+        }
+        if (at < start) return true;
+        if (at >= end || n >= kObjBuf) return false;
+        o.buf[n++] = static_cast<char>(b);
+        return true;
+    }
+};
+
+bool load(dax::ByteSource& src, const Doc& doc, int num, Obj& o);
+
+bool load_packed(dax::ByteSource& src, const Doc& doc, int num, Obj& o)
+{
+    const uint32_t e = doc.offset[num];
+    const int stm = static_cast<int>((e >> 12) & 0x3FF), index = static_cast<int>(e & 0xFFF);
+    if (stm <= 0 || stm >= kMaxObjects || !doc.offset[stm] || (doc.offset[stm] & kInStream) ||
+        !parse_at(src, doc.offset[stm], stm, o) || !o.stream_at)
+        return false;
+    const int fi = get(o, o.root, "First"), ln = get(o, o.root, "Length");
+    if (!name_is(o, get(o, o.root, "Type"), "ObjStm") || !name_is(o, get(o, o.root, "Filter"), "FlateDecode") || fi < 0 ||
+        o.node[fi].t != T::Num)
+        return false;
+    const int32_t first = o.node[fi].v;
+    const uint32_t from = o.stream_at;
+    int32_t length = -1;
+    if (ln >= 0 && o.node[ln].t == T::Num) length = o.node[ln].v;
+    else if (ln >= 0 && o.node[ln].t == T::Ref && load(src, doc, o.node[ln].v, o) && o.node[o.root].t == T::Num)
+        length = o.node[o.root].v;
+    if (first <= 0 || static_cast<size_t>(first) >= kObjBuf || length <= 2 || from + static_cast<uint32_t>(length) > src.size())
+        return false;
+    uint8_t* window = static_cast<uint8_t*>(malloc(inflate::kWindow));
+    if (!window) return false;
+    StreamIn in(src, from + 2, from + static_cast<uint32_t>(length));      // (past the zlib header)
+    PackedOut out(o, static_cast<uint32_t>(first), num, index);
+    inflate::raw(in, out, window);
+    free(window);
+    if (!out.found || !out.n) return false;
+    o.len = out.n;
+    o.file_at = 0;
+    o.nn = 0;
+    o.stream_at = 0;                          // (an object stream holds no streams)
+    Parser ps{o};
+    o.root = ps.value();
+    return o.root >= 0;
+}
+
+// Object `num`
+bool load(dax::ByteSource& src, const Doc& doc, int num, Obj& o)
+{
+    if (num <= 0 || num >= kMaxObjects || !doc.offset[num]) return false;
+    if (doc.offset[num] & kInStream) return load_packed(src, doc, num, o);
+    return parse_at(src, doc.offset[num], num, o);
 }
 
 // A value that may be a reference: the object it points to, loaded into
@@ -311,12 +440,144 @@ struct Reader {
     }
 };
 
+// The trailer's (or the xref stream's) /Root, /ID and /Prev
+void trailer(const Obj& o, int t, Doc& doc, uint32_t* prev)
+{
+    const int root = get(o, t, "Root");
+    if (!doc.root && root >= 0 && o.node[root].t == T::Ref) doc.root = o.node[root].v;
+    const int id = get(o, t, "ID");
+    if (!doc.id[0] && id >= 0 && o.node[id].t == T::Array && o.node[id].first >= 0) {
+        const Node& s = o.node[o.node[id].first];
+        if (s.t == T::Str && s.v == 1) {
+            size_t k = 0;
+            for (size_t i = 0; i < s.n && k + 1 < sizeof doc.id; ++i) {
+                char c = o.buf[s.s + i];
+                if (c >= 'A' && c <= 'F') c = static_cast<char>(c + 32);
+                if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) doc.id[k++] = c;
+            }
+            doc.id[k] = 0;
+        }
+    }
+    const int pv = get(o, t, "Prev");
+    if (pv >= 0 && o.node[pv].t == T::Num) *prev = static_cast<uint32_t>(o.node[pv].v);
+}
+
+// A cross-reference stream's rows (PDF 1.5 on): /W field widths, PNG
+// predictors (a filter byte before each row), /Index sections
+struct XrefOut : inflate::Output {
+    Doc& doc;
+    int w[3] = {};
+    int cols = 0;                     // a row's bytes (without the filter byte)
+    bool png = false;
+    uint8_t row[33] = {}, up[32] = {};
+    int k = 0;
+    int32_t sect[16] = {};            // (first, count) pairs
+    int nsect = 0, si = 0;
+    int32_t num = 0, left = 0;
+    explicit XrefOut(Doc& d) : doc(d) {}
+    bool put(uint8_t b) override
+    {
+        row[k++] = b;
+        if (k < cols + (png ? 1 : 0)) return true;
+        k = 0;
+        uint8_t* x = png ? row + 1 : row;
+        if (png) {
+            const int f = row[0];
+            for (int i = 0; i < cols; ++i) {
+                const int a = i ? x[i - 1] : 0, u = up[i], c = i ? up[i - 1] : 0;
+                int add = 0;
+                if (f == 1) add = a;
+                else if (f == 2) add = u;
+                else if (f == 3) add = (a + u) / 2;
+                else if (f == 4) {
+                    const int pp = a + u - c, pa = abs(pp - a), pb = abs(pp - u), pc = abs(pp - c);
+                    add = (pa <= pb && pa <= pc) ? a : (pb <= pc ? u : c);
+                } else if (f != 0) {
+                    return false;
+                }
+                x[i] = static_cast<uint8_t>(x[i] + add);
+            }
+            memcpy(up, x, static_cast<size_t>(cols));
+        }
+        while (left == 0) {
+            if (si >= nsect) return false;
+            num = sect[si];
+            left = sect[si + 1];
+            si += 2;
+        }
+        uint32_t f[3] = {};
+        int p = 0;
+        for (int j = 0; j < 3; ++j)
+            for (int q = 0; q < w[j]; ++q) f[j] = f[j] << 8 | x[p++];
+        const uint32_t type = w[0] ? f[0] : 1;
+        if (num < kMaxObjects && doc.offset[num] == 0) {
+            if (type == 1 && f[1] > 0 && f[1] < kInStream) doc.offset[num] = f[1];
+            else if (type == 2 && f[1] > 0 && f[1] < 1024 && f[2] < 4096) doc.offset[num] = kInStream | f[1] << 12 | f[2];
+            if (doc.offset[num] && num + 1 > doc.objects) doc.objects = num + 1;
+        }
+        ++num;
+        --left;
+        return true;
+    }
+};
+
+bool read_xref_stream(dax::ByteSource& src, uint32_t at, Doc& doc, Obj& o, uint32_t* prev)
+{
+    // ("n 0 obj <<... /Type/XRef ...>> stream": its own number first)
+    int32_t n = 0;
+    size_t e = 0;
+    if (!fill(src, at, o)) return false;
+    Parser num{o};
+    num.skip();
+    if (!num.number_at(num.p, &n, &e)) return false;
+    if (!parse_at(src, at, n, o) || !o.stream_at || !name_is(o, get(o, o.root, "Type"), "XRef")) return false;
+    XrefOut out(doc);
+    const int wa = get(o, o.root, "W"), ix = get(o, o.root, "Index"), sz = get(o, o.root, "Size");
+    const int ln = get(o, o.root, "Length"), dp = get(o, o.root, "DecodeParms");
+    if (wa < 0 || o.node[wa].t != T::Array || sz < 0 || o.node[sz].t != T::Num || ln < 0 || o.node[ln].t != T::Num ||
+        !name_is(o, get(o, o.root, "Filter"), "FlateDecode"))
+        return false;
+    int j = 0;
+    for (int k = o.node[wa].first; k >= 0 && j < 3; k = o.node[k].next) out.w[j++] = o.node[k].v;
+    out.cols = out.w[0] + out.w[1] + out.w[2];
+    if (j != 3 || out.w[0] < 0 || out.w[1] < 0 || out.w[2] < 0 || out.w[0] > 4 || out.w[1] > 4 || out.w[2] > 4 ||
+        out.cols <= 0)
+        return false;
+    if (ix >= 0 && o.node[ix].t == T::Array) {
+        for (int k = o.node[ix].first; k >= 0 && out.nsect < 16; k = o.node[k].next) out.sect[out.nsect++] = o.node[k].v;
+        out.nsect &= ~1;
+    } else {
+        out.sect[0] = 0;
+        out.sect[1] = o.node[sz].v;
+        out.nsect = 2;
+    }
+    if (dp >= 0 && o.node[dp].t == T::Dict) {
+        const int pr = get(o, dp, "Predictor"), co = get(o, dp, "Columns");
+        if (pr >= 0 && o.node[pr].v >= 10) {
+            out.png = true;
+            if (co >= 0 && o.node[co].v != out.cols) return false;
+        } else if (pr >= 0 && o.node[pr].v > 1) {
+            return false;                          // (TIFF predictor: not in the journals)
+        }
+    }
+    const uint32_t from = o.stream_at, length = static_cast<uint32_t>(o.node[ln].v);
+    trailer(o, o.root, doc, prev);
+    if (length <= 2 || from + length > src.size()) return false;
+    uint8_t* window = static_cast<uint8_t*>(malloc(inflate::kWindow));
+    if (!window) return false;
+    StreamIn in(src, from + 2, from + length);      // (past the zlib header)
+    const bool ok = inflate::raw(in, out, window);
+    free(window);
+    return ok;
+}
+
 bool read_xref(dax::ByteSource& src, uint32_t at, Doc& doc, Obj& o, uint32_t* prev)
 {
     *prev = 0;
     Reader r{src, at};
     char w[24];
-    if (!r.word(w, sizeof w) || strcmp(w, "xref") != 0) return false;   // xref streams: not supported
+    if (!r.word(w, sizeof w)) return false;
+    if (strcmp(w, "xref") != 0) return read_xref_stream(src, at, doc, o, prev);
     for (;;) {
         const uint32_t mark = r.pos;
         if (!r.word(w, sizeof w)) return false;
@@ -344,23 +605,7 @@ bool read_xref(dax::ByteSource& src, uint32_t at, Doc& doc, Obj& o, uint32_t* pr
     if (!ps.keyword("trailer")) return false;
     const int t = ps.value();
     if (t < 0 || o.node[t].t != T::Dict) return false;
-    const int root = get(o, t, "Root");
-    if (!doc.root && root >= 0 && o.node[root].t == T::Ref) doc.root = o.node[root].v;
-    const int id = get(o, t, "ID");
-    if (!doc.id[0] && id >= 0 && o.node[id].t == T::Array && o.node[id].first >= 0) {
-        const Node& s = o.node[o.node[id].first];
-        if (s.t == T::Str && s.v == 1) {
-            size_t k = 0;
-            for (size_t i = 0; i < s.n && k + 1 < sizeof doc.id; ++i) {
-                char c = o.buf[s.s + i];
-                if (c >= 'A' && c <= 'F') c = static_cast<char>(c + 32);
-                if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) doc.id[k++] = c;
-            }
-            doc.id[k] = 0;
-        }
-    }
-    const int pv = get(o, t, "Prev");
-    if (pv >= 0 && o.node[pv].t == T::Num) *prev = static_cast<uint32_t>(o.node[pv].v);
+    trailer(o, t, doc, prev);
     return true;
 }
 
@@ -506,36 +751,6 @@ bool page_image(dax::ByteSource& src, const Doc& doc, int page_obj, Image& out, 
 }
 
 namespace {
-
-// A stream's bytes one at a time (inflate's input)
-struct StreamIn : inflate::Input {
-    dax::ByteSource& src;
-    uint32_t at, end;
-    uint8_t buf[256];
-    uint32_t buf_at = 0, buf_n = 0;
-    StreamIn(dax::ByteSource& s, uint32_t a, uint32_t e) : src(s), at(a), end(e) {}
-    int byte() override
-    {
-        if (at >= end) return -1;
-        if (at < buf_at || at >= buf_at + buf_n) {
-            buf_at = at;
-            buf_n = static_cast<uint32_t>(src.read_at(at, buf, sizeof buf));
-            if (!buf_n) return -1;
-        }
-        return buf[at++ - buf_at];
-    }
-};
-struct BufOut : inflate::Output {
-    char* p;
-    size_t cap, n = 0;
-    BufOut(char* b, size_t c) : p(b), cap(c) {}
-    bool put(uint8_t b) override
-    {
-        if (n >= cap) return false;
-        p[n++] = static_cast<char>(b);
-        return true;
-    }
-};
 
 constexpr size_t kContentCap = 8192;
 

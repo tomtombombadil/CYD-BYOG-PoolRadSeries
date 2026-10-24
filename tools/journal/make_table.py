@@ -117,6 +117,8 @@ def entry_heads(files, L):
     "ENTRY N" then starts the line"""
     import re
     heads = []
+    # (Champions: "Tavern Tale N" headings too - kind 'T')
+    words = L.get('head_words', {'entry': ('J', r'(?i)rnal$')})
     for fi, f in enumerate(files):
         if fi not in L['pages']:
             continue
@@ -124,17 +126,34 @@ def entry_heads(files, L):
             ws = sorted(ws)
             toks = [w[3] for w in ws]
             for i, t in enumerate(toks[:4]):
-                if not re.fullmatch(r'(?i)entry', t) or i + 1 >= len(toks):
+                word = t.lower()
+                if word not in words or i + 1 >= len(toks):
                     continue
+                kind, before = words[word]
                 m = re.fullmatch(r'(\d+)[.:]?', toks[i + 1])
                 if not m:
                     continue
-                j = i - 1 if i > 0 and re.search(r'(?i)rnal$', toks[i - 1]) else i
+                j = i - 1 if i > 0 and re.search(before, toks[i - 1]) else i
                 if any(len(toks[k]) > 3 for k in range(j)):
                     continue            # (inside a sentence)
-                heads.append(('J', int(m.group(1)), fi, ws[j][0], min(ws[j][1], ws[i][1])))
+                heads.append((kind, int(m.group(1)), fi, ws[j][0], min(ws[j][1], ws[i][1])))
                 break
     return heads
+
+
+def snap_head(path, col, y):
+    """Champions: its headings sit close under the text before them, and
+    OCR's top of a heading is off by a few pixels either way - the first
+    blank row above the heading's line (in its column) is the boundary"""
+    a = np.asarray(Image.open(path).convert('L')).astype(int)
+    x0, x1 = col
+    row = (a[:, x0 + 20:x1 - 10] < 165).sum(axis=1) > 2    # (specks: a blank row may have 2; the page's edge left out)
+    y = min(y + 6, len(row) - 1)
+    k = 0
+    while k < 30 and row[y]:
+        y -= 1
+        k += 1
+    return y
 
 
 def P(fi):
@@ -237,6 +256,38 @@ def pool_layout(t):
     t['T'][5] = t['T'][5][:1]
 
 
+def champions_layout(t):
+    J, T = t['J'], t['T']
+    # PDF page 16: 12 goes on at the top of the next column, 13's map
+    # across the right page under them
+    p = P(15)
+    J[12] = [J[12][0][:4] + [395 - J[12][0][2]], [p, 1245, 122, 395, 370 - 122]]
+    J[13] = [[p, 845, J[13][0][2], 795, 1225 - J[13][0][2]]]
+    # PDF page 17: 22 ends above 23's map, across the right page
+    p = P(16)
+    J[22] = [J[22][0][:4] + [800 - J[22][0][2]]]
+    J[23] = [[p, 845, J[23][0][2], 795, 1225 - J[23][0][2]]]
+    # PDF page 19: 43 goes on at the next column's top, 44 ends above 45's
+    # map across the right page
+    p = P(18)
+    J[43] = [J[43][0][:4] + [700 - J[43][0][2]], [p, 1245, 122, 395, J[44][0][2] - 122]]
+    J[44] = [J[44][0][:4] + [700 - J[44][0][2]]]
+    J[45] = [[p, 845, J[45][0][2], 795, 1225 - J[45][0][2]]]
+    # PDF page 22: 72's map across the right page's top, 73 under it in
+    # both columns
+    p = P(21)
+    J[72] = [[p, 845, J[72][0][2], 795, 778 - J[72][0][2]]]
+    J[73] = [J[73][0], [p, 1245, 801, 395, J[74][0][2] - 801]]
+    # PDF page 24: entry 88 ends above the ornament closing the entries;
+    # tale 7 at its column's foot (a picture over the next column's top)
+    J[88] = [J[88][0][:4] + [870 - J[88][0][2]]] + J[88][1:]
+    T[7] = T[7][:1]
+    # PDF page 25: a picture across the right page's top - tale 26 ends at
+    # its column's foot, tale 30 at the next one's
+    T[26] = T[26][:1]
+    T[30] = T[30][:1]
+
+
 LAYOUTS = {
     'secret': {
         'sha256': 'f26c90627c1cdb2dfacf92ad3f795545a659c7b8c6d0f44a8996f8f3a9a48a74',
@@ -277,6 +328,25 @@ LAYOUTS = {
         'stop': {'J': (20, 1)},
         'fix': gateway_layout,
         'skip': GATEWAY_SKIP,
+    },
+    'champions': {
+        'sha256': 'd67a6ebea82feedd2a2914665374f77331e056032edc551eb2a15c3abeaa9626',
+        'pdf_size': 8017944,
+        'pdf_id': 'd589480a8abe1017dfb963d1fe03217a',
+        'game': 'CHAMPIONS',
+        'title': "Champions of Krynn - Adventurer's Journal (GOG, the copy in the game folder)",
+        # (the scans shift a little from page to page: the edges in the
+        # gaps common to all the entries' pages)
+        'cols': [(30, 442), (442, 845), (845, 1245), (1245, 1640)],
+        'top': 122, 'bottom': 1225,
+        'pages': range(14, 26),
+        'snap_heads': True, 'trim_pad': 8,
+        'ink_lum': 165, 'ink_count': 3, 'trim_in': (20, 10),     # (its headings are a light gold)
+        'heads': entry_heads,
+        'head_words': {'entry': ('J', r'(?i)rnal$'), 'eniry': ('J', r'(?i)rnal$'),   # (OCR misreads entry 86's)
+                       'tale': ('T', r'(?i)vern$')},
+        'stop': {'J': (23, 1), 'T': (25, 3)},
+        'fix': champions_layout,
     },
     'poolrad': {
         'sha256': '67cbfc0c833b835494310680ad298bc4de1cdcc0168115cc3608c2f6074c737c',
@@ -571,6 +641,8 @@ def main():
         for kind, n, fi, x, y in L['heads'](files, L):
             c = col_of(x)
             if c is not None:
+                if L.get('snap_heads'):
+                    y = snap_head(files[fi], cols[c], y) + 14
                 items.append((kind, n, fi, c, y))
         # one each, in the book's order (journal entries, then tales)
         seen, uniq = set(), []
@@ -646,7 +718,7 @@ def main():
             a = np.asarray(Image.open(files[p - 1]).convert('RGB')).astype(int)
             lum = a.sum(axis=2) / 3
             blue = (a[..., 2] - a[..., 0]) > 45
-            pages[p] = (lum < 140) | (blue & (lum < 200))
+            pages[p] = (lum < L.get('ink_lum', 140)) | (blue & (lum < 200))
         return pages[p]
 
     entries = []
@@ -654,10 +726,11 @@ def main():
         for n in sorted(t[kind]):
             ps = []
             for p, x, y, w, h in t[kind][n]:
-                rows = np.nonzero(ink(p)[y:y + h, x + 6:x + w - 6].sum(axis=1) >= 2)[0]
+                l, r = L.get('trim_in', (6, 6))      # (Champions: the pages' edges and the gutter's shade left out)
+                rows = np.nonzero(ink(p)[y:y + h, x + l:x + w - r].sum(axis=1) >= L.get('ink_count', 2))[0]
                 if len(rows) == 0:
                     continue
-                y0 = max(y, y + int(rows[0]) - 6)
+                y0 = max(y, y + int(rows[0]) - L.get('trim_pad', 6))   # (Champions: its headings' faint gold tops)
                 y1 = min(y + h, y + int(rows[-1]) + 8)
                 ps.append([p, x, y0, w, y1 - y0])
             entries.append({'k': kind, 'n': n, 'p': ps})

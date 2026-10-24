@@ -173,6 +173,7 @@ struct Data {
     char           w_order[3][16] = {};        // Champions: " of the Crown" / Sword / Rose (variant.order_words)
     char           w_yell[8] = {}, w_wants[16] = {};
     char           w_burst[3][20] = {};
+    char           w_acid[2][24] = {};         // Champions: "dissolves into acid!", "The acid drains away.." (variant.acid_words)
     char           w_knight[12][28] = {};      // Champions: Knight Change Classes' words (variant.knight_words)        // Champions: "explodes!", "is stunned", "loses his weapon" (variant.burst_words)   // Champions: "Yell ", "wants to kill " (variant.yell_words)
 
     // View Character's words (from the program and GAME.OVR)
@@ -5701,7 +5702,8 @@ void open_shop(pic::Canvas& c)
 {
     screen = Screen::Shop;
     dk_own[kDkShopMain] = 0;
-    if (!darkness_files()) {                // (Darkness: the script's words stay - DOSBox)
+    // (Darkness, Champions: the script's words stay - DOSBox)
+    if (!darkness_files() && !d->prof->variant.shop_words_stay) {
         text::clear(c, text::kTextArea);
         dirty_rows(17, 22);
     }
@@ -10427,6 +10429,8 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             {d->prof->variant.burst_words[0], d->w_burst[0], sizeof d->w_burst[0]},
             {d->prof->variant.burst_words[1], d->w_burst[1], sizeof d->w_burst[1]},
             {d->prof->variant.burst_words[2], d->w_burst[2], sizeof d->w_burst[2]},
+            {d->prof->variant.acid_words[0], d->w_acid[0], sizeof d->w_acid[0]},
+            {d->prof->variant.acid_words[1], d->w_acid[1], sizeof d->w_acid[1]},
             {d->prof->variant.knight_words[0], d->w_knight[0], sizeof d->w_knight[0]},
             {d->prof->variant.knight_words[1], d->w_knight[1], sizeof d->w_knight[1]},
             {d->prof->variant.knight_words[2], d->w_knight[2], sizeof d->w_knight[2]},
