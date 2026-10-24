@@ -867,6 +867,16 @@ void gw_way_ahead()
 }
 // What a step out of (x, y) towards dir meets (geo::passage); in Gateway's
 // wilderness the side's door state alone (its plane 0 holds tiles, not walls)
+// The party's step on the map (wrapped on the DAX games' 16 x 16 maps; a
+// map that doesn't wrap keeps the party at its edge)
+void step_party(int dir)
+{
+    int x = d->gs.x, y = d->gs.y;
+    geo::step(d->map, x, y, dir);
+    d->gs.x = static_cast<uint8_t>(x);
+    d->gs.y = static_cast<uint8_t>(y);
+}
+
 int way(int x, int y, int dir)
 {
     return gw_wild() ? geo::door(d->map, x, y, dir) : geo::passage(d->map, x, y, dir);
@@ -885,7 +895,7 @@ void draw_gw_wild(pic::Canvas& c)
     c.fill(24, 24, 88, 88, 0);
     for (int r = 0; r < view3d::kCells && d->map.loaded; ++r)
         for (int k = 0; k < view3d::kCells; ++k) {
-            const int t = d->map.plane[0][(y0 + r) * geo::kSize + x0 + k];
+            const int t = d->map.pl(0)[(y0 + r) * d->map.w + x0 + k];
             const view3d::TileSet& s = d->world.sets[t / view3d::kSetTiles];
             if (t >= 3 * view3d::kSetTiles || t % view3d::kSetTiles >= s.count) continue;
             const uint8_t* px = s.px[t % view3d::kSetTiles];
@@ -11661,8 +11671,7 @@ bool do_move()
         const int p = way(g.x, g.y, step_dir);
         locked = p >= 2;       // locked or barred: the party would need to bash or pick it
         if (p == 1) {
-            g.x = (g.x + geo::dx(step_dir)) & 15;
-            g.y = (g.y + geo::dy(step_dir)) & 15;
+            step_party(step_dir);
             can_bash = can_pick = can_knock = true;
             // A minute a step, ten when searching (clock slot 1 / 2)
             vm->advance_clock((vm->get(0x7ECA) & 1) ? 2 : 1, 1);
@@ -11744,8 +11753,7 @@ void door_choice(char k)
     }
     if (through) {
         sfx(sound::kStep);
-        g.x = (g.x + geo::dx(step_dir)) & 15;
-        g.y = (g.y + geo::dy(step_dir)) & 15;
+        step_party(step_dir);
         can_bash = can_pick = can_knock = true;
         vm->advance_clock((vm->get(0x7ECA) & 1) ? 2 : 1, 1);
         if (vm->get(0x4BE6)) sfx(sound::kStep);
@@ -14162,7 +14170,7 @@ __attribute__((noinline)) bool prepare_program(const char* data_dir, games::Game
     plat::FileSource* ps = new (std::nothrow) plat::FileSource(pf);
     bool ok = false, fresh = false;
     exepack::Info info;
-    if (ps && exepack::parse(*ps, info) == exepack::Status::Ok && !info.copy_at) {
+    if (ps && exepack::parse(*ps, info) == exepack::Status::Ok && !info.copy_at && !info.plain) {
         const uint32_t sum = exepack::checksum(*ps);
         plat::File cf = plat::exists(copy) ? plat::open(copy, "r") : plat::File();
         if (cf) {

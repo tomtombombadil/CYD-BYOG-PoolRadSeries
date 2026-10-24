@@ -1053,7 +1053,16 @@ static void test_exepack()
     plain[plain.size() - 41] = 'X';     // the "B" of "RB"
     dax::MemorySource s2(plain.data(), static_cast<uint32_t>(plain.size()));
     exepack::Info in;
-    CHECK(exepack::parse(s2, in) == exepack::Status::NotPacked);
+    CHECK(exepack::parse(s2, in) == exepack::Status::Ok);
+    // (not packed: read as it is, the file's own offsets - Dark Queen's DQK.EXE)
+    CHECK(in.plain && !in.copy_at && in.image_size == plain.size() && in.file_size == plain.size());
+    uint8_t pb[4];
+    CHECK(exepack::read(s2, in, 0, pb, 2) == exepack::Status::Ok && pb[0] == 'M' && pb[1] == 'Z');
+    CHECK(exepack::read(s2, in, static_cast<uint32_t>(plain.size()) - 2, pb, 4) == exepack::Status::BadData);
+    {
+        VecSink ps;
+        CHECK(exepack::write_copy(s2, in, 0, ps) == exepack::Status::NotPacked);
+    }
     const Bytes junk(100, 7);
     dax::MemorySource s3(junk.data(), static_cast<uint32_t>(junk.size()));
     CHECK(exepack::parse(s3, in) == exepack::Status::NotExe);
@@ -3931,6 +3940,47 @@ static void test_geo_view()
     CHECK(geo::door(m, 5, 9, geo::East) == 2 && geo::flags(m, 3, 4) == 0x90);
     CHECK(geo::wall(m, 16, 16, geo::North) == 3 && geo::wall(m, -16, 0, geo::North) == 3);      // wraps
     CHECK(geo::dx(geo::East) == 1 && geo::dy(geo::North) == -1 && strcmp(geo::dir_name(5), "SW") == 0);
+    {
+        // A step wraps on a 16 x 16 map
+        int sx = 15, sy = 0;
+        CHECK(geo::step(m, sx, sy, geo::East) && sx == 0 && sy == 0);
+        CHECK(geo::step(m, sx, sy, geo::North) && sx == 0 && sy == 15);
+    }
+    // HLIB maps (Dark Queen's GEO.GLB entries): w, h, 6 header bytes, then
+    // four planes of w x h bytes; any size up to kMaxSquares, no wrapping
+    for (int big = 0; big < 2; ++big) {
+        const int w = big ? 30 : 10, h = big ? 21 : 12, n = w * h;
+        std::vector<uint8_t> g(geo::kHlibHeader + 4 * n + 2, 0);
+        g[0] = static_cast<uint8_t>(w), g[1] = static_cast<uint8_t>(h);
+        for (int k = 0; k < 6; ++k) g[2 + k] = static_cast<uint8_t>(k + 1);
+        auto sq = [&](int plane, int x, int y) -> uint8_t& { return g[geo::kHlibHeader + plane * n + x + y * w]; };
+        sq(0, w - 1, h - 1) = 0x52;          // north 5, east 2
+        sq(1, 3, 2) = 0x0C;                  // west 12
+        sq(2, 3, 2) = 0x85;
+        sq(3, 3, 2) = 0x80;                  // the west side locked
+        dax::MemorySource gs(g.data(), static_cast<uint32_t>(g.size()));
+        static geo::Map hm;
+        CHECK(geo::load_hlib(gs, 0, static_cast<uint32_t>(g.size()), hm) && hm.loaded && !hm.wraps);
+        CHECK(hm.w == w && hm.h == h && (hm.big != nullptr) == (n > 256) && hm.head[0] == 1 && hm.head[5] == 6);
+        CHECK(geo::wall(hm, w - 1, h - 1, geo::North) == 5 && geo::wall(hm, w - 1, h - 1, geo::East) == 2);
+        CHECK(geo::wall(hm, 3, 2, geo::West) == 12 && geo::passage(hm, 3, 2, geo::West) == 2 && geo::flags(hm, 3, 2) == 0x85);
+        CHECK(geo::wall(hm, w, h - 1, geo::North) == 0 && geo::flags(hm, -1, 0) == 0);     // off the map: nothing
+        int sx = w - 1, sy = 0;
+        CHECK(!geo::step(hm, sx, sy, geo::East) && sx == w - 1 && !geo::step(hm, sx, sy, geo::North) && sy == 0);
+        CHECK(geo::step(hm, sx, sy, geo::South) && sy == 1);
+        geo::unlock(hm, 3, 2, geo::West);
+        CHECK(geo::door(hm, 3, 2, geo::West) == 1 && geo::door(hm, 2, 2, geo::East) == 1);
+        CHECK(!geo::load_hlib(gs, 0, static_cast<uint32_t>(g.size()) - 4, hm) && !hm.loaded && !hm.big);   // short
+        geo::release(hm);
+        CHECK(hm.w == geo::kSize && hm.wraps);
+    }
+    {
+        std::vector<uint8_t> g(geo::kHlibHeader + 4 * 40 * 40, 0);
+        g[0] = g[1] = 40;                    // 1,600 squares: more than the engine takes
+        dax::MemorySource gs(g.data(), static_cast<uint32_t>(g.size()));
+        static geo::Map hm;
+        CHECK(!geo::load_hlib(gs, 0, static_cast<uint32_t>(g.size()), hm));
+    }
     // A locked door opened (Bash / Pick): this side and the next square's west side
     {
         static geo::Map u;

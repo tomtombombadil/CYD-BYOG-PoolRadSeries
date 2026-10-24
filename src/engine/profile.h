@@ -772,6 +772,14 @@ struct Profile {
     // (ecl::OpSet::curse_bytes), its frame tables naming tiles directly
     // (layout::Tables::direct) with the three moons on the top row
     bool     dkk = false;
+    // The Dark Queen of Krynn (queen_facts.md): its files are HLIB libraries
+    // (.TLB pictures, .GLB data in DISK1-3 - hlib.h): the scripts ECL.GLB's
+    // entries by id (stored as they are, no DAX prefix), the maps GEO.GLB's
+    // (any size up to geo::kMaxSquares), its pictures VGA parts drawn
+    // through their own EGA tables on the 16-colour boards; its program a
+    // plain MZ (exepack Info::plain: offsets are DQK.EXE's own) with C
+    // strings
+    bool     hlib = false;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

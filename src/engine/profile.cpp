@@ -1537,6 +1537,17 @@ constexpr ecl::OpSet kDarknessEcl = [] {
 
 // Darkness's title: TITLE.DAX's three VGA pictures - the Forgotten Realms
 // one, the game's, the credits (a picture of its own: no print calls)
+// The Dark Queen of Krynn (queen_facts.md 6, krynn_facts.md C3): Darkness's
+// opcodes (every ECL.GLB script follows with them), its scripts stored
+// without the DAX blocks' 2-byte prefix, up to 12,000 bytes (the largest
+// in ECL.GLB; the program's own buffer not found yet)
+constexpr ecl::OpSet kQueenEcl = [] {
+    ecl::OpSet s = kDarknessEcl;
+    s.code_size = 12000;
+    s.no_prefix = true;
+    return s;
+}();
+
 constexpr TitleStep kDarknessTitle[] = {
     {1, 0, 0, true, 5000, 0},
     {2, 0, 0, true, 5000, 0},
@@ -3572,6 +3583,23 @@ const Profile kProfiles[] = {
      // (its font: 8X8D0 block 201 with BORD block 8's text glyphs - the front end)
      .joined = kTreasuresJoined, .n_joined = sizeof kTreasuresJoined / sizeof kTreasuresJoined[0],
      .vault = {.file = "TMPVAULT.DAT", .slot_file = "VAULT%c.DAT", .coins = 3, .item_size = 63}},
+    // The Dark Queen of Krynn, GOG release (queen_facts.md; being built):
+    // DQK.EXE 449,664 bytes, a plain MZ program (not EXEPACK) with
+    // .RTLink/Plus overlays after its load image; offsets are the file's own
+    // (exepack Info::plain) - its C data segment (DS:0) at file 0x63A20
+    // (queen_facts_2.md 1). Its files: HLIB libraries in DISK1-3
+    // (variant.hlib); the scripts Darkness's opcodes, no DAX prefix
+    {.game = games::Game::DarkQueenOfKrynn, .release = "GOG", .program = "DQK.EXE",
+     .program_size = 449664, .image_size = 449664, .data_base = 0x63A20,
+     .frame = {},
+     .tiles_file = "FRAME.TLB", .tiles_block = 0,
+     .press_any_key = 0,
+     .title_file = "TITLE.TLB", .title = nullptr, .title_steps = 0,
+     .title_version = 0, .title_menu = 0,
+     .overlay = nullptr, .overlay_size = 0,
+     .first_area = 1, .last_area = 1,
+     .ecl_ops = &kQueenEcl,
+     .variant = {.unfinished = true, .hlib = true}},
 };
 
 } // namespace

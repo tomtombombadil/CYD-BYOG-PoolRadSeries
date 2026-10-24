@@ -107,7 +107,7 @@ void piece(pic::Canvas& c, const World& w, int group, int type, int row, int col
 
 int left_of(int dir) { return (dir + 6) & 7; }
 int right_of(int dir) { return (dir + 2) & 7; }
-bool on_map(int x, int y) { return x >= 0 && x < geo::kSize && y >= 0 && y < geo::kSize; }
+
 
 // Two squares ahead: fronts along the row (with the corners between them)
 // and the side walls
@@ -120,7 +120,7 @@ void far(pic::Canvas& c, const World& w, const geo::Map& m, int bx, int by, int 
         int x = bx, y = by, col = 0, prev = 0;
         for (int k = 0; k < 4; ++k) {
             const int t = geo::wall(m, x, y, dir);
-            if (!on_map(x, y) && geo::wall(m, x, y, other) == 0) prev = 0;
+            if (!m.on(x, y) && geo::wall(m, x, y, other) == 0) prev = 0;
             if (t) {
                 if (prev) piece(c, w, 9, prev, kGroups[9].row, kGroups[9].col + col + corner);
                 prev = t;
@@ -670,8 +670,12 @@ void draw(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int d
 void draw_area_map(pic::Canvas& c, const World& w, const geo::Map& m, int x, int y, int dir)
 {
     if (!w.frame) return;
-    auto clamp = [](int v) { return v < 0 ? 0 : v > 5 ? 5 : v; };
-    const int ox = clamp(x - 5), oy = clamp(y - 5);
+    // (the window kept on the map: 16 x 16 maps 0-5; a bigger map's further)
+    auto clamp = [](int v, int side) {
+        const int top = side > kCells ? side - kCells : 0;
+        return v < 0 ? 0 : v > top ? top : v;
+    };
+    const int ox = clamp(x - 5, m.w), oy = clamp(y - 5, m.h);
     c.fill(kCell0 * 8, kCell0 * 8, kCells * 8, kCells * 8, 0);
     for (int r = 0; r < kCells; ++r)
         for (int col = 0; col < kCells; ++col) {

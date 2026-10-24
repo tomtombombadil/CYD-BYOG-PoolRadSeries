@@ -157,16 +157,18 @@ void find_maps()
 void pick_start()
 {
     int best = 1 << 30;
-    px = py = 8;
+    const int cx = d->map.w / 2, cy = d->map.h / 2;
+    px = cx;
+    py = cy;
     pdir = 0;
-    for (int y = 0; y < geo::kSize; ++y)
-        for (int x = 0; x < geo::kSize; ++x)
+    for (int y = 0; y < d->map.h; ++y)
+        for (int x = 0; x < d->map.w; ++x)
             for (int dir = 0; dir < 8; dir += 2) {
                 if (geo::passage(d->map, x, y, dir) != 1) continue;
                 const int walls = (geo::wall(d->map, x, y, 0) != 0) + (geo::wall(d->map, x, y, 2) != 0) +
                                   (geo::wall(d->map, x, y, 4) != 0) + (geo::wall(d->map, x, y, 6) != 0);
                 if (walls == 0) continue;     // open ground: little to see
-                const int score = (x - 8) * (x - 8) + (y - 8) * (y - 8);
+                const int score = (x - cx) * (x - cx) + (y - cy) * (y - cy);
                 if (score < best) {
                     best = score;
                     px = x;
@@ -256,17 +258,13 @@ void put(pic::Canvas& c, const char* s, int col, int row, uint8_t fg = 15)
 bool move(int dir)
 {
     const int p = geo::passage(d->map, px, py, dir);
-    if (p == 1) {
-        px = (px + geo::dx(dir)) & 15;
-        py = (py + geo::dy(dir)) & 15;
-        note = "";
-    } else if (p == 0) {
+    if (p == 0) {
         note = "Blocked.";
+    } else if (!geo::step(d->map, px, py, dir)) {
+        note = "The edge of the map.";
     } else {
         // Tom: for testing, locked doors let the party through and say so
-        px = (px + geo::dx(dir)) & 15;
-        py = (py + geo::dy(dir)) & 15;
-        note = "Locked - passed for testing.";
+        note = p == 1 ? "" : "Locked - passed for testing.";
     }
     return true;
 }
@@ -363,6 +361,7 @@ const char* open(const char* data_dir, games::Game g)
 void close()
 {
     if (d) {
+        geo::release(d->map);
         view3d::back_free(d->world);
         for (view3d::TileSet& ts : d->world.sets) view3d::free_extra(ts);
     }
@@ -451,8 +450,11 @@ bool tap(int x, int y, pic::Canvas& c)
     // squares take a few taps.
     const int col = x / 8 - view3d::kCell0, row = y / 8 - view3d::kCell0;
     if (area_view && col >= 0 && col < view3d::kCells && row >= 0 && row < view3d::kCells) {
-        auto clamp = [](int v) { return v < 0 ? 0 : v > 5 ? 5 : v; };
-        teleport(col + clamp(px - 5), row + clamp(py - 5));
+        auto clamp = [](int v, int side) {
+            const int top = side > view3d::kCells ? side - view3d::kCells : 0;
+            return v < 0 ? 0 : v > top ? top : v;
+        };
+        teleport(col + clamp(px - 5, d->map.w), row + clamp(py - 5, d->map.h));
         draw(c);
         return true;
     }
@@ -461,7 +463,7 @@ bool tap(int x, int y, pic::Canvas& c)
 
 void teleport(int x, int y)
 {
-    if (!d || x < 0 || x >= geo::kSize || y < 0 || y >= geo::kSize) return;
+    if (!d || !d->map.on(x, y)) return;
     px = x;
     py = y;
     note = "Moved here. Area = the 3D view.";

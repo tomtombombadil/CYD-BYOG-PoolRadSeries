@@ -82,12 +82,22 @@ Status parse(dax::ByteSource& exe, Info& out)
     const uint32_t load_start = static_cast<uint32_t>(u16(mz + 8)) * 16;
     const uint16_t cs = u16(mz + 0x16);
     const uint32_t hdr_at = load_start + static_cast<uint32_t>(cs) * 16;
+    // Not packed: the file as it is (its offsets are the "image")
+    auto plain = [&]() {
+        out.plain = true;
+        out.image_size = out.file_size = exe.size();
+        out.ip = u16(mz + 0x14);
+        out.cs = cs;
+        out.sp = u16(mz + 0x10);
+        out.ss = u16(mz + 0x0E);
+        return Status::Ok;
+    };
     uint8_t h[18];
-    if (hdr_at + sizeof h > exe.size()) return Status::NotPacked;
+    if (hdr_at + sizeof h > exe.size()) return plain();
     if (exe.read_at(hdr_at, h, sizeof h) != sizeof h) return Status::ReadError;
     uint16_t skip = 1;
     if (h[16] == 'R' && h[17] == 'B') skip = u16(h + 14);
-    else if (!(h[14] == 'R' && h[15] == 'B')) return Status::NotPacked;
+    else if (!(h[14] == 'R' && h[15] == 'B')) return plain();
     if (skip == 0) return Status::BadData;
 
     const uint32_t skip_bytes = static_cast<uint32_t>(skip - 1) * 16;
@@ -110,6 +120,7 @@ Status read(dax::ByteSource& exe, const Info& info, uint32_t pos, uint8_t* buf, 
     if (n == 0) return Status::Ok;
     if (pos > info.image_size || n > info.image_size - pos) return Status::BadData;
     const uint32_t want_end = pos + static_cast<uint32_t>(n);
+    if (info.plain) return exe.read_at(pos, buf, n) == n ? Status::Ok : Status::ReadError;
     if (info.copy_at) {
         // The copy: top byte first, so the piece is one read, turned round
         if (exe.read_at(info.copy_at + info.image_size - want_end, buf, n) != n) return Status::ReadError;
@@ -215,6 +226,7 @@ private:
 Status write_copy(dax::ByteSource& exe, const Info& info, uint32_t sum, Sink& sink)
 {
     if (info.copy_at) return Status::BadData;
+    if (info.plain) return Status::NotPacked;
     uint8_t h[kCopyHeader] = {};
     memcpy(h, kCopyMagic, sizeof kCopyMagic);
     put32(h + 8, info.file_size);
