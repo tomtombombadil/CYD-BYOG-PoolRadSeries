@@ -192,9 +192,11 @@ the Project as claude/TODO.md.
       67 / 82 / 96 / 97) - check it isn't the engine; events block 16 (the intro) - a longer run or the sweep not
       replaying its fight per square; open: DK temple healing assumed free,
       effect 0x44 (feeblemind and drain?), Sivak morale / fleeing. Game
-      Fixes: DK thief skills by race (each race its own row). Finding:
-      Champions' code applies the races' stat adjustments at creation
-      (GAME.OVR 0a4:1680) - the engine's Champions doesn't: check / fix.
+      Fixes: DK thief skills by race (each race its own row).
+- [x] v0.154.2: the Krynn games' race adjustments at creation - the
+      originals never apply them (the code tests a loop counter left at
+      Human; DOSBox: Champions' kender Dex unchanged): Game Fixes on only;
+      the young-Wisdom -1 (Secret's rule) now in Champions / Death Knights.
 - [ ] Secret J45's piece takes in the "Journal Entry 47" heading (the
       map overlaps it; a rectangle can't separate them).
 - [ ] Check: pdfview's State (FileSource cache, >4 KB) lands in PSRAM on
