@@ -2882,7 +2882,12 @@ const Profile kProfiles[] = {
                {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 10, 12, 13, 14, 15}, {15, 10, 16}},
      .script_words = {0, 0, 0x87E7, 0x87EF, 0x87FC, kP | 0xE6FC, kP | 0xC548, kP | 0xE759, 0, 0, kP | 0xEEAB},
      .random_items = nullptr, .random_rows = 0,
-     .sound = {},
+     // Its effects: Champions' (Secret's) driver in START.EXE's segment at
+     // image 0x70D0 - the same tables and byte code 0x31 bytes earlier (+0x477
+     // / +0x51F, 21 entries, byte code to +0x1290); PlaySound's numbers 2-12 as
+     // Champions'. SOUND.DAX / MUSIC.DAX: the music (not played)
+     .sound = {.segment_image = 0x70D0, .lo = 0x0477, .hi = 0x1290, .pc_table = 0x0477, .tandy_table = 0x051F,
+               .sounds = 21, .fireball_spell = 0x2F, .lightning_spell = 0x33, .last_id = 12},
      .clips = {},
      .door = {},
      .won = {},
