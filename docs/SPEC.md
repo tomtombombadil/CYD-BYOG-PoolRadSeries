@@ -357,7 +357,7 @@ can't get the memory says "Not enough memory to show this log."
   Darkness (and Treasures, later) in **their own EGA mode**: their setup
   offers EGA / Tandy / VGA, and the original in EGA shows the same VGA
   pictures in 16 dithered colours (checked in DOSBox) - the engine does
-  what that mode does. Unlimited Adventures: not on these. Dark Queen
+  what that mode does. Unlimited Adventures: on no board (Tom, 2026-10-24; the scan passes it over). Dark Queen
   (Tom, 2026-10-12): to be tried in its own EGA mode (an install choice).
 - **ESP32-S3 / ESP32-C5 boards with PSRAM (v0.88.0, untested until Tom
   runs them)**: the 4.0" ST7796 480x320 capacitive S3 board

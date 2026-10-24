@@ -201,6 +201,12 @@ ScanResult scan(GameDir* out, int max, int* n, Progress progress, void* ctx)
                 g.game = games::from_folder_name(g.folder);
                 if (g.game == games::Game::Unknown && strcmp(g.data_dir, g.folder) != 0)
                     g.game = games::from_folder_name(base_name(g.data_dir));    // (.../GAME/CURSE)
+                if (g.game == games::Game::UnlimitedAdventures) {
+                    // (Tom, 2026-10-24: not part of this engine on any board -
+                    // its folder on the card is passed over)
+                    say(progress, ctx, true, "Unlimited Adventures isn't part of this engine - passed over");
+                    continue;
+                }
                 g.dax_files = dax;
                 g.icon[0] = 0;
                 g.journal[0] = 0;
@@ -338,8 +344,17 @@ bool load_library(GameDir* out, int max, int* n)
               hdr[1] <= static_cast<uint32_t>(max) &&
               f.read(reinterpret_cast<uint8_t*>(out), sizeof(GameDir) * hdr[1]) == sizeof(GameDir) * hdr[1];
     f.close();
-    if (ok) *n = static_cast<int>(hdr[1]);
-    return ok;
+    if (!ok) return false;
+    // (a library saved by an older version may list Unlimited Adventures:
+    // left out - Tom, 2026-10-24)
+    int k = 0;
+    for (uint32_t i = 0; i < hdr[1]; ++i)
+        if (out[i].game != games::Game::UnlimitedAdventures) {
+            if (k != static_cast<int>(i)) out[k] = out[i];
+            ++k;
+        }
+    *n = k;
+    return true;
 }
 
 int list_dax(const char* data_dir, char (*names)[kNameLen], int max)
