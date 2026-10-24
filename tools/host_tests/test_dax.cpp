@@ -3461,6 +3461,7 @@ static void test_journal()
     // (Gateway's start: the journal's Introduction)
     CHECK(journal::find_mention("YOU RECORD THE HIGHLIGHTS OF THE EVENING AS THE INTRODUCTION TO YOUR JOURNAL.", &n) == 'I' &&
           n == 1);
+    CHECK(journal::find_mention("YOU RECORD HIS WORDS AS THE INTRODUCTION TO YOUR JOURNAL.", &n) == 'I' && n == 1);   // (Treasures)
     CHECK(journal::find_mention("YOU OVERHEAR TAVERN TALE #12 ", &n) == 'T' && n == 12);
     CHECK(journal::find_mention("YOU OVERHEAR TAVERN TALE 7", &n) == 'T' && n == 7);
     CHECK(journal::find_mention("AND YOU RECORD IT IN JOURNAL ENTRY ", &n) == 0);
