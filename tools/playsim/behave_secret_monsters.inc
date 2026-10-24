@@ -284,8 +284,11 @@ void every_monster(bool fixes_on)
         b.round = 0;
         combat::start_round(b, rng);
         int half1 = s[0x121], half2 = s[0x122], missiles = 0;
-        for (int k = 0; k < f.n_items; ++k) {
-            if (!f.items[k][0x34] || names->type(f.items[k][0x2E]).slot != 0) continue;
+        // (the weapon is the last readied one, as the recalculation leaves it)
+        int last = -1;
+        for (int k = 0; k < f.n_items; ++k)
+            if (f.items[k][0x34] && names->type(f.items[k][0x2E]).slot == 0) last = k;
+        for (int k = last; k >= 0 && k <= last; ++k) {
             const items::TypeInfo& ti = names->type(f.items[k][0x2E]);
             if (ti.range <= 1) continue;
             const uint8_t* shot = (ti.flags & 0x10) ? f.items[k] : nullptr;
