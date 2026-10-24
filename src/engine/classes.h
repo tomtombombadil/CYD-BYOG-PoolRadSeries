@@ -69,6 +69,11 @@ struct Layout {
     // numbered its own way (party::race_to_darkness)
     bool     dk = false;
     uint16_t xp_step = 0;
+    // Gateway's training (its GAME.OVR 0x3EB10): each class's last level
+    // (8 bytes at this offset, read through lo2..hi2: training stops when
+    // the level reaches it) and its own race limits (create.cpp
+    // gw_race_limited) instead of Curse's; 0: none
+    uint16_t level_caps = 0;
 };
 
 // A copy of the tables (read from the program; on the heap, as big as the

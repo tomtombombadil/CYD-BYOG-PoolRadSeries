@@ -205,7 +205,8 @@ Values expected(const uint8_t* r, const uint8_t (*it)[items::kRecordSize], int n
 // start_fight, block 0 too)
 bool fight(int area, int id, int copies)
 {
-    const uint16_t a = 0x8AC2;
+    // (Gateway, GAME=8: save A's LOAD MONSTER at 91B1, Yartar)
+    const uint16_t a = getenv("GAME") && atoi(getenv("GAME")) == 8 ? 0x91B1 : 0x8AC2;
     play::d->gs.game_area = static_cast<uint8_t>(area);
     play::vm->set(a + 2, static_cast<uint16_t>(id));
     play::vm->set(a + 4, static_cast<uint16_t>(copies));

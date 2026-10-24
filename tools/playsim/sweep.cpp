@@ -349,7 +349,8 @@ static bool start_fight(int area = 0, int mon = 0, int copies = 0)
                        : game == 1       ? 0x85F9
                        : game == 3       ? 0x848A
                        : game == 4       ? 0x85BB
-                       : game == 9       ? 0x9C1D          // (Treasures: save A's 11-monster fight)
+                       : game == 8       ? 0x91B1          // (Gateway: save A's script, Yartar)
+                       : game == 9      ? 0x9C1D          // (Treasures: save A's 11-monster fight)
                                          : 0x8AC2;
     if (mon) {
         play::d->gs.game_area = static_cast<uint8_t>(area);

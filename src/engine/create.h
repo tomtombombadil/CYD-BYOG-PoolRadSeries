@@ -110,6 +110,10 @@ bool restore(party::Character& c, const classes::Tables& t);
 // class mask bits (the tables' class masks; a training hall's 0x7EA8 uses
 // the same bits)
 int trainable(const party::Character& c, const classes::Tables& t);
+// Gateway's race limits for training (its GAME.OVR overlay 0x3EB10 +0x382E:
+// fighters only but the half-elf cleric at 5; by the Strength in use) - the
+// party list's "may train" colour and the classes' own training
+bool gw_race_limited(const party::Character& c, int cls, int lvl);
 // A training hall's choice (the original's train_player, not silent): of
 // the classes ready, the one whose experience figure is the largest - the
 // original compares them all at the level of the LAST class held - (all of

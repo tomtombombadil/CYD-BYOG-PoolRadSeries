@@ -666,7 +666,8 @@ void unpark_world()
         // walls read again from the game's files)
         if (!ok) log_error("The 3D view's walls couldn't be read back after a fight: reloaded.");
         world_big = false;
-        for (int i = 0; i < 3; ++i)
+        // (none when the Play Test closes mid-fight: the host is gone by then)
+        for (int i = 0; host && i < 3; ++i)
             if (d->wall_block[i] >= 0 && d->wall_set[i] > 0) host->load_walls(d->wall_set[i], d->wall_block[i]);
     }
 }

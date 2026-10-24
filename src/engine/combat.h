@@ -952,6 +952,11 @@ enum class SpellDoes : uint8_t {
     Meteors,                            // Meteor Swarm: four meteors round the square aimed at (meteors())
     WordKill,                           // Power Word Kill: one of 11-60 HP max, else all of 10 or less (word)
     Summon,                             // Monster Summoning: the caller brings in the fight's reserve (word / word2)
+    // Gateway to the Savage Frontier (its spell table lets Strength be cast
+    // in fights: the camp's routine, coab's SpellStrength)
+    Strength,                           // + d4 / d6 / d8 by class (magic-user, cleric or thief, fighter - the last
+                                        // that fits), over 18 a fighter's / paladin's / ranger's 18/xx; the
+                                        // spell's effect only when more than theirs (nothing said)
 };
 struct FightSpell {
     uint8_t   spell;

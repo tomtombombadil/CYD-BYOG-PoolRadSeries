@@ -66,9 +66,19 @@ int class_bits(int cls)
     return cls >= 0 && cls < 17 ? bits[cls] : 0;
 }
 
-// The original's race level limits for training (listing ovr018:4DF6-4F6E)
+// Gateway: a class at its last level (the oracle's level_cap - its DS 0x1498;
+// none in Curse's)
+bool at_cap(int k, int lvl)
+{
+    const auto& caps = b_rows("level_cap");
+    return !caps.empty() && k < static_cast<int>(caps[0].size()) && lvl >= caps[0][k];
+}
+// The original's race level limits for training (listing ovr018:4DF6-4F6E;
+// Gateway's hall the same after its classes' last levels - its GAME.OVR
+// 0x2650E +0x5153)
 bool train_limit(int race, int k, int lvl, int str, int in)
 {
+    if (at_cap(k, lvl)) return true;
     switch (race) {
     case 1: return k == 2 && (lvl == 9 || (lvl == 8 && str == 17) || (lvl == 7 && str < 17));
     case 2:
@@ -382,11 +392,12 @@ void creation()
                         snprintf(w, sizeof w, "%s: stats within the limits", tag);
                         expect(P, w, false, "%d(%d) %d %d %d %d %d", c.stat(0), e, c.stat(1), c.stat(2), c.stat(3), c.stat(4), c.stat(5));
                     }
-                    // Money: exactly 300 platinum
+                    // Money: exactly 300 platinum (Gateway 35: its oracle's start_platinum)
+                    const int plat = b_rows("start_platinum").empty() ? 300 : b_rows("start_platinum")[0][0];
                     bool mok = true;
-                    for (int i = 0; i < 7; ++i) mok = mok && c.money(i) == (i == 4 ? 300 : 0);
+                    for (int i = 0; i < 7; ++i) mok = mok && c.money(i) == (i == 4 ? plat : 0);
                     if (!mok) {
-                        snprintf(w, sizeof w, "%s: 300 platinum", tag);
+                        snprintf(w, sizeof w, "%s: %d platinum", tag, plat);
                         expect(P, w, false);
                     }
                     // The race's and class's effects
@@ -568,7 +579,7 @@ void levelling()
             const int need = oxp(k, L);
             const int bit = m->tables.u8(static_cast<uint16_t>(m->tables.lay.class_masks + k));
             char w[64];
-            if (need <= 0) {
+            if (need <= 0 || at_cap(k, L)) {
                 put32(c.rec, 0x127, 3000000);
                 snprintf(w, sizeof w, "class %d level %d: the last level", k, L);
                 expect(P, w, !(create::trainable(c, m->tables) & bit), "trainable with 3,000,000");
@@ -606,7 +617,7 @@ void levelling()
     // Hit points a level: each class, every level, the dice at their top, Con 16 (fighters 18)
     for (int k : single)
         for (int L = 1; L <= 11; ++L) {
-            if (oxp(k, L) <= 0) break;
+            if (oxp(k, L) <= 0 || at_cap(k, L)) break;
             const int con = (k == 2 || k == 3 || k == 4) ? 18 : 16;
             bare(c, 7, k, 12);
             set_stat(c, 4, con);
@@ -707,7 +718,15 @@ void training_hall()
         expect(P, "boot", false);
         return;
     }
-    party::Character& ch = pt->m[0];               // the paladin of the sample party (level 5)
+    // Curse: the paladin of the sample party (level 5); Gateway (GAME=8):
+    // its test save's first member, a fighter, made a fighter of 5
+    const bool gw = getenv("GAME") && atoi(getenv("GAME")) == 8;
+    const int k = gw ? 2 : 3;
+    party::Character& ch = pt->m[0];
+    if (gw) {
+        ch.rec[0x109 + k] = 5;
+        ch.rec[0xE5] = 5;
+    }
     vm->set(0x7EA8, 0xFF);                           // a hall that trains every class
     pt->selected = 0;
     screen = Screen::PartyMenu;
@@ -715,11 +734,11 @@ void training_hall()
     put32(ch.rec, 0x127, 20000);
     const int gold0 = rules::gold_worth(ch);
     train_character(C);
-    expect(P, "training: not enough experience", ch.level(3) == 5 && rules::gold_worth(ch) == gold0, "level %d", ch.level(3));
+    expect(P, "training: not enough experience", ch.level(k) == 5 && rules::gold_worth(ch) == gold0, "level %d", ch.level(k));
     end_training();
     screen = Screen::PartyMenu;
     // Experience for two levels: one level, 1000 gold, experience held to one under the next
-    const int need6 = oxp(3, 5), need7 = oxp(3, 6);
+    const int need6 = oxp(k, 5), need7 = oxp(k, 6);
     put32(ch.rec, 0x127, static_cast<uint32_t>(need7 + 5000));
     for (int i = 0; i < 7; ++i) ch.rec[0xFB + i * 2] = ch.rec[0xFC + i * 2] = 0;
     ch.rec[0xFB + 6] = 0xD0;                         // 2000 gold
@@ -728,12 +747,36 @@ void training_hall()
     train_character(C);
     if (screen == Screen::YesNo) train_yes_no(Ask::Train, 'Y', C);
     char w[120];
-    snprintf(w, sizeof w, "training: one level at a time (paladin 5 with %d experience)", need7 + 5000);
-    expect(P, w, ch.level(3) == 6, "level %d", ch.level(3));
+    snprintf(w, sizeof w, "training: one level at a time (%s 5 with %d experience)", gw ? "fighter" : "paladin", need7 + 5000);
+    expect(P, w, ch.level(k) == 6, "level %d", ch.level(k));
     expect(P, "training: costs 1000 gold", rules::gold_worth(ch) == worth - 1000, "%d -> %d", worth, rules::gold_worth(ch));
     expect(P, "training: experience held to one under the level after (listing ovr018:5240)",
            static_cast<int>(ch.exp()) == need7 - 1, "%u, the original's %d", ch.exp(), need7 - 1);
     (void)need6;
+    end_training();
+    screen = Screen::PartyMenu;
+    if (!gw || pt->count < 3) return;
+    // Gateway (GAME.OVR 0x2650E +0x5153): a trainee without 1000 gp's worth -
+    // "Training costs 1000 gp." and "Who pays 1000 gp" over the party until
+    // one with the money is picked (one without: asked again); the payer pays
+    party::Character& payer = pt->m[2];
+    put32(ch.rec, 0x127, static_cast<uint32_t>(oxp(k, 7) + 5));
+    for (int i = 0; i < 7; ++i)
+        for (int m2 = 0; m2 < pt->count; ++m2) pt->m[m2].rec[0xFB + i * 2] = pt->m[m2].rec[0xFC + i * 2] = 0;
+    payer.rec[0xFB + 6] = 0xD0;                      // 2000 gold
+    payer.rec[0xFC + 6] = 0x07;
+    train_character(C);
+    const bool asked = pm_pick_for == 'P';
+    pt->selected = 1;                                 // one without: asked again
+    tap_word('S');
+    const bool again = pm_pick_for == 'P';
+    pt->selected = 2;
+    tap_word('S');
+    if (screen == Screen::YesNo) train_yes_no(Ask::Train, 'Y', C);
+    expect(P, "training (Gateway): who pays - asked, asked again for one without 1000 gp, the payer pays",
+           asked && again && ch.level(k) == 7 && rules::gold_worth(payer) == 1000 && rules::gold_worth(ch) == 0,
+           "asked %d again %d level %d payer %d trainee %d", asked, again, ch.level(k), rules::gold_worth(payer),
+           rules::gold_worth(ch));
     end_training();
     screen = Screen::PartyMenu;
 }
@@ -922,9 +965,15 @@ void sample_party()
         // gloves' case - listing ovr026:0BD5), so its skills may all be one
         // amount above the table's; the engine's are the table's (that amount 0)
         if (raw.level(6)) {
-            const int k = raw.rec[0xEA] - c.rec[0xEA];
-            bool same = k >= 0;
-            for (int o = 0xEA; o <= 0xF1; ++o) same = same && raw.rec[o] - c.rec[o] == k;
+            // (a byte: Gateway's test save A's thieves have all eight 189 - that is
+            // -67 - over the table's, climbing walls 87 kept as 20)
+            const int k = (raw.rec[0xEA] - c.rec[0xEA]) & 0xFF;
+            bool same = true;
+            // (with a negative local a race's minus can find the skill under it
+            // and make it 0 - the original's clamp: Gateway's elf thief's Open Locks)
+            for (int o = 0xEA; o <= 0xF1; ++o)
+                same = same && (((raw.rec[o] - c.rec[o]) & 0xFF) == k ||
+                                (raw.rec[o] == 0 && static_cast<int8_t>(static_cast<uint8_t>(c.rec[o] + k)) < 0));
             snprintf(w, sizeof w, "sample party %s: thief skills the table's (the original's own + %d)", nm, k);
             expect(P, w, same);
         }

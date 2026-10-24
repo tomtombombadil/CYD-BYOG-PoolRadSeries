@@ -164,6 +164,76 @@ void menus()
     expect(P, w, nbad == 0, nbad ? (std::to_string(nbad) + " wrong").c_str() : "");
 }
 
+// ---- The party list's names: magenta (13) for one who may train - its
+// routine (GAME.OVR overlay 0x3EB10): classes 0-6 below the class's last
+// level (DS 0x1498) and not stopped by its own race limits (by the Strength
+// in use), with the experience the next level needs; the colour read off
+// the drawn list
+bool list_limited(int race, int k, int lvl, int str)
+{
+    const auto& caps = b_rows("level_cap");
+    if (!caps.empty() && lvl >= caps[0][k]) return true;
+    for (const auto& r : b_rows("list_limit"))
+        if (r[0] == race && r[1] == k && r[2] == lvl &&
+            (r[3] == 0 || (r[3] == 1 && str == 17) || (r[3] == 2 && str < 17) || (r[3] == 3 && str < 18)))
+            return true;
+    return false;
+}
+
+void list_colour()
+{
+    if (!pt->count) {
+        expect(P, "list colour: a party", false);
+        return;
+    }
+    static party::Character keep;
+    keep = pt->m[0];
+    party::Character& ch = pt->m[0];
+    int ncase = 0, nbad = 0;
+    for (int race : {1, 2, 3, 4, 5, 7})
+        for (int k : {0, 2, 4, 5, 6})
+            for (int str : {16, 17, 18})
+                for (int lvl = 1; lvl <= 9; ++lvl)
+                    for (int enough = 0; enough < 2; ++enough) {
+                        ch = keep;
+                        ch.rec[0x74] = static_cast<uint8_t>(race);
+                        ch.rec[0x75] = static_cast<uint8_t>(k);
+                        for (int j = 0; j < 8; ++j) ch.rec[0x109 + j] = 0;
+                        ch.rec[0x109 + k] = static_cast<uint8_t>(lvl);
+                        ch.rec[0x10] = ch.rec[0x11] = static_cast<uint8_t>(str);
+                        ch.rec[0x196] = 1;
+                        ch.rec[0x197] = 0;
+                        const auto* xr = row("xp", k);
+                        const int32_t need = xr && lvl + 2 < static_cast<int>(xr->size()) ? (*xr)[lvl + 2] : -1;
+                        const uint32_t xp = enough ? (need > 0 ? static_cast<uint32_t>(need) : 3000000u)
+                                                   : (need > 1 ? static_cast<uint32_t>(need - 1) : 0u);
+                        for (int i = 0; i < 4; ++i) ch.rec[0x127 + i] = static_cast<uint8_t>(xp >> (8 * i));
+                        const bool want = enough && need > 0 && !list_limited(race, k, lvl, str);
+                        pt->selected = pt->count > 1 ? 1 : 0;
+                        C.fill(0, 0, 320, 200, 0);
+                        draw_party(C, 1, true);
+                        // (the name's colour: the first lit pixel of its row)
+                        int colour = -1;
+                        for (int y = 4 * 8; y < 5 * 8 && colour < 0; ++y)
+                            for (int x = 8; x < 8 * 16 && colour < 0; ++x)
+                                if (C.get(x, y)) colour = C.get(x, y);
+                        ++ncase;
+                        if ((colour == 13) != want) {
+                            if (nbad < 8) {
+                                char w[160];
+                                snprintf(w, sizeof w, "list colour: race %d class %d level %d Str %d xp %u: colour %d, the original's %d",
+                                         race, k, lvl, str, xp, colour, want ? 13 : 11);
+                                expect(P, w, false);
+                            }
+                            ++nbad;
+                        }
+                    }
+    pt->m[0] = keep;
+    char w[96];
+    snprintf(w, sizeof w, "list colour: %d characters magenta only when they may train (the original's own limits)", ncase);
+    expect(P, w, nbad == 0, nbad ? (std::to_string(nbad) + " wrong").c_str() : "");
+}
+
 bool open_game()
 {
     play::close();
@@ -207,5 +277,10 @@ static void behave_gateway()
         play::find_saves();
         if (!play::load_game('A')) expect(P, "menus: save A loaded", false);
         else menus();
+    }
+    if (want("list")) {
+        play::find_saves();
+        if (!play::pt->count && !play::load_game('A')) expect(P, "list colour: save A loaded", false);
+        else list_colour();
     }
 }

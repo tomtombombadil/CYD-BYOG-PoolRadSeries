@@ -1405,6 +1405,88 @@ constexpr profile::JoinedWord kGatewayJoined[] = {
     {0xC218, kJ | 20}, {0xC21F, kJ | 21}, {0xC226, kJ | 22}, {0xC22E, 0xC23A},
 };
 
+// Gateway's words for Curse's spell and effect tables (kCurseCamp,
+// kCurseFight, kCurseNamed hold Curse's GAME.OVR offsets): each moved to the
+// same text in Gateway's GAME.OVR (the occurrence whose code around it is
+// Curse's - scratch wmap.py), Prayer's "is praying" to its own "is prayed
+// for"
+struct WordMove {
+    uint32_t from, to;
+};
+constexpr WordMove kGatewayWordMoves[] = {
+    {0x0FFAB, 0x11C9E}, {0x1045C, 0x12205}, {0x112D8, 0x13272}, {0x11465, 0x13441}, {0x19E88, 0x1FC15},
+    {0x19E94, 0x1FC21}, {0x19EA0, 0x1FC2D}, {0x19EA9, 0x1FC36}, {0x19EB2, 0x1FC3F}, {0x19EBB, 0x1FC48},
+    {0x19EC9, 0x1FC56}, {0x19ED9, 0x1FC66}, {0x19EEA, 0x1FC77}, {0x19EF3, 0x1FC80}, {0x19F00, 0x1FC8D},
+    {0x19F10, 0x1FC9D}, {0x19F2F, 0x1FCBC}, {0x19F39, 0x1FCC6}, {0x19F4E, 0x1FCDB}, {0x19F58, 0x1FCE5},
+    {0x19F64, 0x1FCF1}, {0x19F81, 0x1FD0E}, {0x19F89, 0x1FD16}, {0x2FD0A, 0x36925}, {0x2FD3C, 0x3695F},
+    {0x2FDE3, 0x36A1D}, {0x2FE1C, 0x36A5E}, {0x2FE56, 0x36AA0}, {0x2FECA, 0x36B24}, {0x2FED8, 0x36B32},
+    {0x2FFA0, 0x36C38}, {0x300DE, 0x36D7E}, {0x30183, 0x36E38}, {0x3022D, 0x36EF2}, {0x302AE, 0x36F83},
+    {0x303F1, 0x370CE}, {0x3044A, 0x3712F}, {0x30489, 0x37176}, {0x304C2, 0x371B7}, {0x30577, 0x372AF},
+    {0x3067C, 0x373CF}, {0x306EF, 0x37452}, {0x3074F, 0x374BA}, {0x30DC2, 0x37B2F}, {0x30F71, 0x37CE6},
+    {0x30FB6, 0x37D33}, {0x310A2, 0x37E41}, {0x3118D, 0x37F5C}, {0x31544, 0x383B0}, {0x31597, 0x3840E},
+    {0x315A4, 0x3841B}, {0x316BF, 0x3854F}, {0x316FD, 0x38595}, {0x31907, 0x387EB}, {0x31CD9, 0x38BDD},
+    {0x31D11, 0x38C1D}, {0x31ED7, 0x38DEB}, {0x31F60, 0x38E83}, {0x32033, 0x38F66}, {0x3206D, 0x38FA8},
+    {0x320C4, 0x39007}, {0x322FD, 0x39272}, {0x32422, 0x393AE}, {0x3259B, 0x39592}, {0x32663, 0x39662},
+    {0x3271D, 0x39724}, {0x3274C, 0x3975B}, {0x32786, 0x3979D}, {0x32816, 0x39835}, {0x328DC, 0x39903},
+    {0x32A7A, 0x39AD4}, {0x32BD4, 0x39C5B}, {0x32D97, 0x39E26}, {0x32DA1, 0x39E30}, {0x3379C, 0x3A87B},
+    {0x35E27, 0x3D0F6}, {0x35E37, 0x3D106}, {0x35E53, 0x3D122}, {0x36666, 0x3D9E3},
+};
+constexpr uint32_t gw_word(uint32_t w)
+{
+    for (const WordMove& m : kGatewayWordMoves)
+        if (m.from == w) return m.to;
+    return w;
+}
+// Its fights: Curse's, the words moved, and Strength (its spell table lets
+// it be cast in fights - row 0x23's "when" 2)
+constexpr size_t kGatewayFightN = sizeof kCurseFight / sizeof kCurseFight[0] + 1;
+struct GatewayFight {
+    combat::FightSpell s[kGatewayFightN];
+};
+constexpr GatewayFight kGatewayFight = [] {
+    GatewayFight t{};
+    size_t i = 0;
+    for (const combat::FightSpell& f : kCurseFight) {
+        t.s[i] = f;
+        t.s[i].word = gw_word(f.word);
+        t.s[i].word2 = gw_word(f.word2);
+        t.s[i].word3 = gw_word(f.word3);
+        t.s[i].word4 = gw_word(f.word4);
+        ++i;
+    }
+    t.s[i] = combat::FightSpell{0x23, SpellDoes::Strength, 0, 0, 0, 0, 0, 0};
+    return t;
+}();
+// Its camp: Curse's, the words moved, and Blink (castable in camp - row
+// 0x2D's "when" 2: "is blinking", coab's spell_blinking)
+constexpr size_t kGatewayCampN = sizeof kCurseCamp / sizeof kCurseCamp[0] + 1;
+struct GatewayCamp {
+    spells::CampSpell s[kGatewayCampN];
+};
+constexpr GatewayCamp kGatewayCamp = [] {
+    GatewayCamp t{};
+    size_t i = 0;
+    for (const spells::CampSpell& c : kCurseCamp) {
+        t.s[i] = c;
+        t.s[i].word = gw_word(c.word);
+        t.s[i].word2 = gw_word(c.word2);
+        t.s[i].word3 = gw_word(c.word3);
+        t.s[i].word4 = gw_word(c.word4);
+        ++i;
+    }
+    t.s[i] = spells::CampSpell{0x2D, Does::Affect, 0, 0, 0, gw_word(0x316FD)};
+    return t;
+}();
+constexpr size_t kGatewayNamedN = sizeof kCurseNamed / sizeof kCurseNamed[0];
+struct GatewayNamed {
+    profile::EffectName s[kGatewayNamedN];
+};
+constexpr GatewayNamed kGatewayNamed = [] {
+    GatewayNamed t{};
+    for (size_t i = 0; i < kGatewayNamedN; ++i) t.s[i] = profile::EffectName{kCurseNamed[i].type, gw_word(kCurseNamed[i].at)};
+    return t;
+}();
+
 // Treasures of the Savage Frontier (treasures_facts.md 3): Darkness's
 // opcodes and operand counts, plus 0x42 LOAD 3D (4: the map, the three
 // wall slots' blocks), 0x43 FIND ITEM and 0x44 DESTROY ITEM (4 each: the
@@ -2254,7 +2336,11 @@ const Profile kProfiles[] = {
      // 28 bytes further - gateway_facts.md 6), its effects and words
      .create = {0x4C70,
                 {0x435E, 0x5351, 0x435E, 0x65, 0x49BC, 0x4A24, 0x4A2C, 0x4A3E, 0x4A43, 0x4AA3, 0x4AB6, 0x4B28, 0x4B9A,
-                 0x4BEE, 0x4CC4, 0x4D14, 0x4D7A, 0x4E3C, 0x515F},
+                 0x4BEE, 0x4CC4, 0x4D14, 0x4D7A, 0x4E3C, 0x515F,
+                 // (training: the classes' last levels at DS 0x1498 - cleric /
+                 // magic-user 6, ranger 7, the rest 8 - and its own race limits:
+                 // GAME.OVR overlay 0x3EB10)
+                 false, 0, 0x1498, 0x14A0, false, false, 0, 0x1498},
                 0x1032, 0x103A, 0x4A46,
                 0x61, 0x1A, 0x2F, 0x12, 0x30, 0x6B, 0x7C, 0x08, 0x86,
                 {0x0B, 0x12, 0x0C, 0x15}, 0x0F, {0x22, 0x0A}, 0x1F, 0x2F,
@@ -2286,11 +2372,11 @@ const Profile kProfiles[] = {
                 0x37CE6, 0x390CE, 0x39461, 0x3840E, 0x3841B, 0x1FD20, 0x34C61, 0x30C14, 0x30C35, 0x1F7FA, 0x1F812,
                 0x1F82D, 0x1F852, 0x1F7E4, 0x1F871, 0x1F033, 0x31E96, 0x30C1F, 0x34C68,
                 0x35DE2, 0x35DEC, 0x35E05, 0x2FBE9, 0x2FBF6, 0x2FBFC, 0x30C0A, 0x35E0E},
-               kCurseCamp, sizeof kCurseCamp / sizeof kCurseCamp[0],
+               kGatewayCamp.s, kGatewayCampN,
                {2, 0x2A, {0x22, 0x2B, 0x32}, {{0, 0}, {0x2C, 0x1F}, {0x39, 0}}, 0x0C, 0x17, 0x32, 0x36, 0x8F, 0x92,
                 {{0x28, 1, 6, 0, 10}, {0x39, 5, 4, 0, 1}, {0x3D, 5, 4, 0, 1}, {0x3B, 1, 4, 4, 10}, {0x3F, 1, 10, 10, 10},
                  {0x43, 0, 0, 1440, 1}}},
-               kCurseSpellNamed, sizeof kCurseSpellNamed, kCurseNamed, sizeof kCurseNamed / sizeof kCurseNamed[0],
+               kCurseSpellNamed, sizeof kCurseSpellNamed, kGatewayNamed.s, kGatewayNamedN,
                0xD2, 0x10, .kind_names = {0x5EAA, 12, 3}, .heading_word = 0x354FE},
      // Alter: "Order Drop Speed Icon Level Exit" (Level as Secret's: "Novice
      // ... Champion"), the icon editor's menus as Curse's
@@ -2348,7 +2434,7 @@ const Profile kProfiles[] = {
        // the ring's invisibility, the Robe of Vermin (behaviour_facts.md items)
        {0x06, 0x4B, 0x4C, 0x59, 0x38, 0x4A, 0, 0x48},
        0x4D},                                           // berserk (the Berserker sword's)
-              kCurseFight, sizeof kCurseFight / sizeof kCurseFight[0]},
+              kGatewayFight.s, kGatewayFightN},
      .script_words = {0x2C54, 0x2C65, 0xB76A, 0xB772, 0xB77F, 0x357C, 0x3BE5, 0, 0, 0, 0x3BFF},
      .random_items = &kCurseRandom, .random_rows = 0x1058,
      // Its effects (gateway_facts.md 16): DigPak samples, ZOUNDS.DAX block n

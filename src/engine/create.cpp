@@ -100,6 +100,39 @@ bool race_limited(const party::Character& c, int cls, int lvl, bool pool = false
     }
 }
 
+} // namespace
+
+// Gateway's party list (its "may train" colour, GAME.OVR overlay 0x3EB10
+// +0x382E): by the Strength in use, fighters only but the half-elf cleric
+// (5) - with its classes' last levels (DS 0x1498: cleric / magic-user 6,
+// ranger 7, the rest 8)
+bool gw_race_limited(const party::Character& c, int cls, int lvl)
+{
+    const int str = c.stat(0);                  // (record 0x11, as the program reads it)
+    switch (c.race()) {
+    case 1: return cls == Fighter && ((lvl == 8 && str == 17) || (lvl == 7 && str < 17));
+    case 2: return cls == Fighter && (lvl == 7 || (lvl == 6 && str == 17) || (lvl == 5 && str < 17));
+    case 3: return cls == Fighter && (lvl == 6 || (lvl == 5 && str < 18));
+    case 4:
+        if (cls == Cleric) return lvl == 5;
+        return cls == Fighter && (lvl == 8 || (lvl == 7 && str == 17) || (lvl == 6 && str < 17));
+    case 5: return cls == Fighter && (lvl == 6 || (lvl == 5 && str == 17) || (lvl == 4 && str < 17));
+    default: return false;
+    }
+}
+
+// Training stops for class `cls` at `lvl`: its last level (Gateway: its
+// hall, GAME.OVR 0x2650E +0x5153, takes the cap and then Curse's race
+// limits - the party list's colour has the fewer limits above) or the
+// race's limit
+static bool train_limited(const party::Character& c, const classes::Tables& t, int cls, int lvl)
+{
+    if (t.lay.level_caps && lvl >= t.u8(static_cast<uint16_t>(t.lay.level_caps + cls))) return true;
+    return race_limited(c, cls, lvl, t.lay.pool, t.lay.secret, t.lay.dk);
+}
+
+namespace {
+
 // Restoration's own limits (the original's, a routine of its own): fewer
 // than training's - no dwarf fighter 9, no elf magic-user, half-elves'
 // clerics and fighters only
@@ -566,7 +599,7 @@ int trainable(const party::Character& c, const classes::Tables& t)
     const uint32_t xp = c.exp();
     for (int k = 0; k < classes::kClasses; ++k) {
         const int lv = c.level(k);
-        if (lv <= 0 || lv >= t.top_level() || race_limited(c, k, lv, t.lay.pool, t.lay.secret, t.lay.dk)) continue;
+        if (lv <= 0 || lv >= t.top_level() || train_limited(c, t, k, lv)) continue;
         const int32_t need = t.exp_needed(k, lv);
         if (need > 0 && static_cast<uint32_t>(need) <= xp) mask |= t.u8(static_cast<uint16_t>(t.lay.class_masks + k));
     }
@@ -584,7 +617,7 @@ int train_pick(const party::Character& c, const classes::Tables& t, uint32_t* ex
         const int lv = c.level(k);
         if (lv <= 0) continue;
         last = lv;
-        if (race_limited(c, k, lv, t.lay.pool, t.lay.secret, t.lay.dk)) continue;
+        if (train_limited(c, t, k, lv)) continue;
         const int32_t need = need_at(k, lv);
         if (need <= 0 || static_cast<uint32_t>(need) > xp) continue;
         ready |= t.u8(static_cast<uint16_t>(t.lay.class_masks + k));

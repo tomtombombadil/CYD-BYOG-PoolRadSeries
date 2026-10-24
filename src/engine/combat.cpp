@@ -2708,9 +2708,14 @@ int sweep(const Battle& b, int a, int target, int* out, int cap)
 
 int weapon(const Fighter& f, const items::Names& names)
 {
+    // (the last readied one: the original's recalculation puts each readied
+    // item in its slot in turn - coab reclac_player_values, rules::recalc -
+    // so a monster's record with two readied, Gateway's gnolls' long sword
+    // and short bow, fights with the bow)
+    int w = -1;
     for (int i = 0; f.items && i < f.n_items; ++i)
-        if (f.items[i][0x34] && names.type(f.items[i][0x2E]).slot == items::kSlotWeapon) return i;
-    return -1;
+        if (f.items[i][0x34] && names.type(f.items[i][0x2E]).slot == items::kSlotWeapon) w = i;
+    return w;
 }
 
 int missile(const Battle& b, const Fighter& f, int* ammo)
@@ -3732,6 +3737,30 @@ int cast(Battle& b, const classes::Tables& st, int caster, int spell, const Figh
         if (more) say(caster, Did::Word, 0);
         break;
     }
+    case SpellDoes::Strength:
+        // (Gateway: the camp's Strength - spells.cpp Does::Strength, Curse's rules)
+        for (int k = 0; k < m; ++k) {
+            Fighter& f = b.f[who[k]];
+            if (!f.up()) continue;
+            auto had = [&](int cl) { return f.rec[0x109 + cl] > 0 || f.rec[0x111 + cl] > 0; };
+            int die = 0;
+            if (had(classes::MagicUser)) die = 4;
+            if (had(classes::Cleric) || had(classes::Thief)) die = 6;
+            if (had(classes::Fighter)) die = 8;
+            if (!die) continue;
+            const int bonus = d.roll(die, 1);
+            int str = f.rec[0x11] + bonus, str00 = 0;
+            if (str > 18) {
+                if (had(classes::Fighter) || had(classes::Paladin) || had(classes::Ranger)) {
+                    str00 = f.rec[0x1C] + (str - 18) * 10;
+                    if (str00 > 100) str00 = 100;
+                }
+                str = 18;
+            }
+            if (!(str > f.rec[0x11] || (str == 18 && str00 > f.rec[0x1C]))) continue;
+            give_aff(f, e.affect, minutes, 100 + bonus, false);
+        }
+        break;
     case SpellDoes::Defoliate:
         // Plants (monster type 18) take it all, not saving; the rest as
         // when saved (the table's: nothing / half / all) - nothing said for none
