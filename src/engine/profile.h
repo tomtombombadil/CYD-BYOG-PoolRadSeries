@@ -663,7 +663,7 @@ struct Profile {
         uint32_t tr_paper[2] = {};
         // "Battle in snow! Movement restricted." / "... rain! ..." (GAME.OVR)
         uint32_t tr_weather[2] = {};
-        // Old age after a fight (ovl 0x62 +0x3F0): the races' greatest ages
+        // Old age after a fight (Treasures ovl 0x62 +0x3F0, Darkness too): the races' greatest ages
         // (DS words by its race number), "is looking very old", "The strain
         // of this last battle has worn heavily on ", ".  ", "He", "She", " breathes
         // deeply ...", "Sadly, no party member witnesses ...", " weeps at the

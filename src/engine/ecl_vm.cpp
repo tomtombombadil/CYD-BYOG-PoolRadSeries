@@ -114,6 +114,19 @@ void Vm::advance_clock(int slot, int amount)
         if (minutes_ < 100000) minutes_ += m;
     }
     for (int carry = amount; slot >= 0 && slot < 7 && carry; ++slot) {
+        if (slot == 6 && set_.byte_map) {
+            // Darkness / Treasures (their ovl clock routine, Treasures' ovl
+            // 0xCB +0x1F6, Darkness's ovr 0x279E0): the years kept below
+            // 100 - reaching 100 ages every member a year (and the next
+            // fight's end looks at old age); so the clock never ages anyone
+            // in a game. Game Fixes: a year older each year that passes.
+            int v = get(0x4BCC) + carry;
+            const int ages = rules::fixes() ? carry : v / 100;
+            v %= 100;
+            set(0x4BCC, static_cast<uint16_t>(v));
+            if (ages) h_.age_party(ages);
+            break;
+        }
         const int scale = kClockScale[slot] ? kClockScale[slot] : 256;
         const int v = get(static_cast<uint16_t>(0x4BC6 + slot)) + carry;
         set(static_cast<uint16_t>(0x4BC6 + slot), static_cast<uint16_t>(v % scale));

@@ -2152,7 +2152,10 @@ const Profile kProfiles[] = {
                  .fight_unswapped = true, .vga = true, .darkness_files = true, .party_menu_col = 9,
                  // (the overland: DS 0x7D08's regions 0-4 -> BIGPIC 240, 241, 242,
                  // 242, 245; the marker CURSOR.DAX block 1 - DOSBox)
-                 .dk_overland_pics = 0x7D08, .marker_file = "CURSOR.DAX", .marker_block = 1},
+                 .dk_overland_pics = 0x7D08, .marker_file = "CURSOR.DAX", .marker_block = 1,
+                 // (old age after a fight: Treasures' routine, here ovr 0x864B)
+                 .tr_max_age = 0x08E2,
+                 .tr_age_words = {0x84E3, 0x84F7, 0x852B, 0x852F, 0x8532, 0x8536, 0x857F, 0x85BD, 0x85EF, 0x8634}},
      .font_file = "8X8D0.DAX",
      .joined = kDarknessJoined, .n_joined = sizeof kDarknessJoined / sizeof kDarknessJoined[0],
      // Its vault (facts_shops.md 5): VAULTx.DAT a save slot, TMPVAULT.DAT while playing

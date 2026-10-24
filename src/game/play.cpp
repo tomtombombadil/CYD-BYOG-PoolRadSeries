@@ -993,6 +993,9 @@ void tr_lattice(pic::Canvas& c);
 // picture shown later leaves it, and the demo has it from its start)
 bool tr_position = false;
 void tr_background(bool on);
+// Darkness / Treasures: someone aged (haste, the clock) - the next fight's
+// end looks at old age (their DS 0x9CFE / 0x9318; not in the saves)
+bool age_check = false;
 void draw_view(pic::Canvas& c)
 {
     if (world_parked) return;
@@ -1757,6 +1760,7 @@ bool load_game(char slot)
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
     vm->set(0x7F12, d->gs.game_area);
     d->loaded = true;
+    age_check = false;
     {
         char m[32];
         snprintf(m, sizeof m, "loaded saved game %c", slot);
@@ -9887,6 +9891,18 @@ struct Host : ecl::Host {
         if (screen == Screen::Game) draw_view(*cv);
     }
     // Darkness: the frame's style (BORDERS block 0-3), the screen's frame again
+    void age_party(int years) override
+    {
+        // (every member in the party's list, as the original's loop)
+        for (int i = 0; i < pt->count; ++i) {
+            party::Character& ch = pt->m[i];
+            const int age = (ch.rec[0x76] | ch.rec[0x77] << 8) + years;
+            ch.rec[0x76] = static_cast<uint8_t>(age);
+            ch.rec[0x77] = static_cast<uint8_t>(age >> 8);
+        }
+        age_check = true;
+        plat::log("[play] the clock: everyone %d year(s) older\n", years);
+    }
     void season() override
     {
         // (the overland drawn again in the season's colours - DOSBox VGA:
@@ -12815,6 +12831,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
 {
     close();
     cv = &c;
+    age_check = false;
     const char* prog = profile::program_name(g);
     if (!prog) {
         snprintf(msg, sizeof msg, "No play test for %s yet.", games::title(g));

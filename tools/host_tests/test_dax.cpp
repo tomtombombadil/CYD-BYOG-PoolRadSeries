@@ -2058,6 +2058,8 @@ struct TestHost : ecl::Host {
         return true;
     }
     void load_map(int g) override { map = g; }
+    int aged = 0;
+    void age_party(int years) override { aged += years; }
     void load_walls(int set, int block) override { walls[set] = block; }
     void picture(int id, int) override { pic = id; }
     void redraw() override {}
@@ -3943,6 +3945,25 @@ static void test_items()
     vt.advance_clock(1, 5);
     vt.advance_clock(3, 1);
     CHECK(vt.take_minutes() == 75 && vt.take_minutes() == 0);
+
+    // Darkness / Treasures: the years kept below 100, reaching it ages
+    // everyone a year (their clock routine); Game Fixes: a year a year
+    const profile::Profile* dk = profile::find(games::Game::PoolsOfDarkness, 64203, 72784);
+    if (dk && dk->ecl_ops) {
+        ecl::GameState gd;
+        TestHost hd;
+        ecl::Vm vd(gd, hd, *dk->ecl_ops);
+        rules::set_fixes(false);
+        vd.set(0x4BCC, 98);
+        vd.set(0x4BCB, 11);
+        vd.advance_clock(5, 1);                       // a month: a year passes
+        CHECK(vd.get(0x4BCB) == 0 && vd.get(0x4BCC) == 99 && hd.aged == 0);
+        vd.advance_clock(5, 12);
+        CHECK(vd.get(0x4BCC) == 0 && hd.aged == 1);
+        rules::set_fixes(true);
+        vd.advance_clock(5, 24);
+        CHECK(vd.get(0x4BCC) == 2 && hd.aged == 3);
+    }
 }
 
 // Darkness's table shapes (darkness_facts.md 37): THAC0 rows of 22, saves

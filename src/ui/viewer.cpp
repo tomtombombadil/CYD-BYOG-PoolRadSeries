@@ -2730,7 +2730,8 @@ const char* comfort_help_text(int c)
             game_dirs[game_sel].game == games::Game::TreasuresOfTheSavageFrontier)
             return "The original game's mistakes made as AD&D has them: the races' stat adjustments at "
                    "character creation (the original never applies them); a cleric's experience bonus from "
-                   "Wisdom 16; Power Word Blind lasts its worked-out time (the original blinds for good). "
+                   "Wisdom 16; Power Word Blind lasts its worked-out time (the original blinds for good); "
+                   "everyone a year older each year of game time (the original: every hundred). "
                    "Off: as the original.";
         if (game_dirs[game_sel].game == games::Game::SecretOfTheSilverBlades)
             return "The original game's mistakes made as AD&D has them: the elves' +1 to hit with their "
