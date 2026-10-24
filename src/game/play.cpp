@@ -2155,9 +2155,9 @@ bool write_character_files(const char* dir, const char* rec_fn, const char* item
 }
 
 // Death Knights: a character's spell part (rec_path: its record's file)
-void dkk_read_spells(const char* rec_path, party::Character& ch)
+void dkk_read_spells(const char* rec_path, party::Character& ch, bool any = false)
 {
-    if (!dkk()) return;
+    if (!dkk() && !any) return;      // (any: a Death Knights character read by another game - Dark Queen)
     char wz[200];
     dkk_wiz_name(rec_path, wz, sizeof wz);
     plat::File f = plat::open(wz, "r");
@@ -2344,6 +2344,8 @@ struct Earlier {
     const char*   fx;
     uint32_t      names_at;             // the saved game's member count and names
     int           ctl;                  // the record's control byte (0x80 on: an NPC)
+    const char*   save = ".DAT";        // its saved games' extension (SAVGAMx...)
+    const char*   member = ".SAV";      // a saved game's member record's
 };
 const Earlier& earlier()
 {
@@ -2356,7 +2358,14 @@ const Earlier& earlier()
     // its control byte 0xE7)
     static const Earlier kChampions = {".WHO", party::kKrynnRecordSize, party::Format::KrynnToDkk, ".STF",
                                        party::kItemSize, ".SFX", 0x1414, 0xE7};
-    return dkk() ? kChampions : d->prof->variant.tr ? kGateway : kSecret;
+    // (Dark Queen: Death Knights' 216-byte .PC / CHRDATxn.GAM with their .WIZ
+    // spells, items .JNK, effects .EFF; its saves SAVGAMx.PTY - the names
+    // after Curse's memory as bytes, the position, modes and wall sets;
+    // NPC byte 0x3E - queen_facts_2.md 11)
+    static const Earlier kDeathKnights = {".PC", party::kDkkRecordSize, party::Format::DeathKnights, ".JNK",
+                                          party::kItemSize, ".EFF", savegame::kDkkSize - 1 - 8 * 41, 0x3E,
+                                          ".PTY", ".GAM"};
+    return hl() ? kDeathKnights : dkk() ? kChampions : d->prof->variant.tr ? kGateway : kSecret;
 }
 
 // A Gateway character as Treasures takes one in (its ovl 0x7C +0x16E6): its
@@ -2375,6 +2384,13 @@ void gateway_to_treasures(party::Character& ch)
 }
 void import_convert(party::Character& ch)
 {
+    if (hl()) {
+        // (Dark Queen: the Death Knights record as it is, its figures worked
+        // out as Death Knights' load does - how the original converts it is
+        // not known yet: queen_facts_2.md 11)
+        rules::recalc(ch, *names, d->facts);
+        return;
+    }
     if (dkk()) {
         rules::recalc(ch, *names, d->facts);    // (Death Knights takes the record as copied - party::krynn_to_dkk)
         return;
@@ -2388,7 +2404,7 @@ void find_secret_saves()
     int n = 0;
     for (char sl = savegame::kFirst; sl <= savegame::kLast && import_dir[0]; ++sl) {
         char path[200];
-        snprintf(path, sizeof path, "%s/SAVGAM%c.DAT", import_dir, sl);
+        snprintf(path, sizeof path, "%s/SAVGAM%c%s", import_dir, sl, earlier().save);
         if (plat::exists(path)) pm_saves[n++] = sl;
     }
     pm_saves[n] = 0;
@@ -2431,7 +2447,7 @@ bool load_secret_game(char slot)
 {
     load_problem = nullptr;
     char path[200];
-    snprintf(path, sizeof path, "%s/SAVGAM%c.DAT", import_dir, slot);
+    snprintf(path, sizeof path, "%s/SAVGAM%c%s", import_dir, slot, earlier().save);
     plat::File f = plat::open(path, "r");
     if (!f) {
         load_problem = "That saved game couldn't be opened.";
@@ -2460,7 +2476,7 @@ bool load_secret_game(char slot)
         nm[len] = 0;
         party::Character& ch = pt->m[pt->count];
         const Earlier& ea = earlier();
-        snprintf(path, sizeof path, "%s/%s.SAV", import_dir, nm);
+        snprintf(path, sizeof path, "%s/%s%s", import_dir, nm, ea.member);
         f = plat::open(path, "r");
         if (!f) {
             load_problem = "A character of that saved game is missing from its folder.";
@@ -2471,6 +2487,7 @@ bool load_secret_game(char slot)
             ok = f.size() == ea.rec_size && party::read_record(src, ch, ea.fmt);
         }
         f.close();
+        if (ok && ea.fmt == party::Format::DeathKnights) dkk_read_spells(path, ch, true);
         if (!ok || ch.rec[0xF7] >= 0x80) {          // (its NPCs stay behind)
             ch = party::Character{};
             continue;
@@ -4857,6 +4874,7 @@ bool load_secret_guy(int i, party::Character& ch)
     }
     f.close();
     if (!ok) return false;
+    if (ea.fmt == party::Format::DeathKnights) dkk_read_spells(path, ch, true);
     snprintf(path, sizeof path, "%s/%s%s", import_dir, base, ea.items);
     f = plat::open(path, "r");
     if (f) {
@@ -10105,7 +10123,7 @@ void pm_choose_key(char key, pic::Canvas& c)
     pm_picked = false;
     switch (key) {
     case 'L':
-        if (darkness_files() && d->prof->party.load_from && !load_where) {
+        if ((darkness_files() || hl()) && d->prof->party.load_from && !load_where) {
             // Darkness: "Load from where? Pools Secret Exit" first
             // (darkness_facts.md 32)
             load_where = true;
@@ -14376,6 +14394,12 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
         // (Death Knights' new game, GAME.OVR 0x1B4E4: the difficulty 3, in 3D)
         vm->set(0x4CF4, 3);
         vm->set(0x4BE6, 1);
+    }
+    if (hl()) {
+        // (Dark Queen: a new game's block as its GOG save A - a new game -
+        // has it: in 3D, difficulty 3; queen_facts_2.md 10)
+        gs.area1[0x21] = 1;
+        gs.area1[0x26] = 3;
     }
     if (d->prof->variant.tr) {
         // Treasures' game block as its start sets it (ovl 0x87 +0x54E): the
