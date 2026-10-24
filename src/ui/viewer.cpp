@@ -1439,8 +1439,28 @@ bool play_palette(bool all)
     for (int i = 0; i < 256; ++i) frame::set_palette(i, pal[i]);
     return true;
 }
+// The screen a tap on Play shows at once (Tom, 2026-10-24: "put something
+// on the screen so the user knows the game is loading and the device is
+// not locked up"): it stays until the game's first screen is drawn
+void draw_loading(games::Game g)
+{
+    ui::clear();
+    ui::header(games::title(g), false);
+    char line[96];
+    snprintf(line, sizeof line, "Loading %s...", games::title(g));
+    const int x = ui::gap() * 3, w = ui::width() - ui::gap() * 6;
+    const int body = ui::height() - ui::header_h();
+    const int lh = wrap_text(x, 0, w, line, ui::Font::Large, style::kText, false);
+    const int sh = ui::line_h(ui::Font::Normal);
+    int y = ui::header_h() + (body - lh - sh * 2) / 2;
+    if (y < ui::header_h() + ui::gap()) y = ui::header_h() + ui::gap();
+    wrap_text(x, y, w, line, ui::Font::Large, style::kGold, true);
+    wrap_text(x, y + lh + sh, w, "This can take a few seconds.", ui::Font::Normal, style::kTextMuted, true);
+}
+
 void start_play()
 {
+    draw_loading(game_dirs[game_sel].game);
     if (frame::parked()) {
         // The game screen still on the card (after the journal book, short
         // of memory then): it has to come back before any game screen
