@@ -45,7 +45,12 @@ HAL, CI, flasher and UI rules come from there; copy from it freely.
   (Tom, 2026-10-24) - its folder is passed over by the scan and an old
   scan's library entry dropped (`library.cpp`). **Dark Queen** (Tom, 2026-10-12: "not completely wipe
   Dark Queen off the basic CYD builds just yet"): it has an EGA choice
-  at install - try it there in its EGA mode when we get to it. **ESP32-S3
+  at install - try it there in its EGA mode when we get to it. Decided
+  (Claude, 2026-10-24, facts: the Project's claude/queen_facts.md): every
+  board reads the GOG VGA files; the classic boards draw them in 16
+  colours through each picture's own EGA table (the EGA install's
+  pictures are exactly that, checked pixel for pixel) - not the player's
+  EGA install, no conversion at the scan. Its storage: `engine/hlib.*`. **ESP32-S3
   and ESP32-C5 boards with PSRAM are added (v0.88.0)**: the 4.0" ST7796
   480x320 capacitive S3 board (env `cyd40s3_st7796_cap`; Tom's arrives the
   week of 2026-10-12 - he uses a capacitive stylus on it) and the 2.8"
