@@ -1382,6 +1382,10 @@ constexpr ecl::OpSet kGatewayEcl = [] {
     s.facing_alias = 0x03B2;
     s.vault_word = 0x4CFC;          // (its vault: SAVE 1 [4CFC] + COMBAT - gateway_facts.md 12)
     s.sound_word = true;
+    s.item_words = true;            // (0x32 / 0x40: type and name words - overlay 0xAB8 +0x29BD, +0x361F)
+    s.xp_award = true;              // (0x41: the amount shared by the classes - overlay 0xAB8 +0x3767)
+    s.xp_number = true;
+    s.change_call = 0x80F;          // (coins traded up: seg 0xCB entry 0x75 with 3 - gateway_facts.md 10)
     return s;
 }();
 
@@ -2435,7 +2439,7 @@ const Profile kProfiles[] = {
        {0x06, 0x4B, 0x4C, 0x59, 0x38, 0x4A, 0, 0x48},
        0x4D},                                           // berserk (the Berserker sword's)
               kGatewayFight.s, kGatewayFightN},
-     .script_words = {0x2C54, 0x2C65, 0xB76A, 0xB772, 0xB77F, 0x357C, 0x3BE5, 0, 0, 0, 0x3BFF},
+     .script_words = {0x2C54, 0x2C65, 0xB76A, 0xB772, 0xB77F, 0x357C, 0x3BE5, 0, 0, 0, 0x3BFF, 0x41D1, 0x4206, 0x4217, 0x41F2},
      .random_items = &kCurseRandom, .random_rows = 0x1058,
      // Its effects (gateway_facts.md 16): DigPak samples, ZOUNDS.DAX block n
      // = effect n (2-12; 3 and 6 played as 9 - seg 0x17B +0x18), each at its

@@ -96,6 +96,12 @@ int gold_worth(const int money[7], bool round = false);
 int gold_worth(const party::Character& c, bool round = false);
 void pay(int money[7], int gold);
 void pay(party::Character& c, int gold);
+// Gateway's CALL 0x80F (its GAME.OVR seg 0xCB entry 0x75 with 3 - the
+// rates DS 0x104C: 10 copper a silver, 10 silver an electrum, 2 electrum a
+// gold, 5 gold a platinum, these coins' worths): each kind from copper to
+// gold, while there's a coin of the next kind's worth, traded up - its
+// scripts then pay in platinum
+void trade_up(party::Character& c);
 
 // Coins: the party's player characters put all theirs in the pool; the
 // pool shared out (each coin kind from jewellery down: equal shares, one

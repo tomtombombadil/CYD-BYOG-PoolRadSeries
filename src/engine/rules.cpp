@@ -547,6 +547,21 @@ int gold_worth(const int money[7], bool round)
     return static_cast<int>(copper / kPerCopper[3]);
 }
 
+void trade_up(party::Character& c)
+{
+    for (int m = 0; m < 4; ++m) {
+        const int rate = kPerCopper[m + 1] / kPerCopper[m];
+        int have = c.money(m), next = c.money(m + 1);
+        next += have / rate;
+        have %= rate;
+        if (next > 0xFFFF) next = 0xFFFF;
+        c.rec[0xFB + m * 2] = static_cast<uint8_t>(have);
+        c.rec[0xFC + m * 2] = static_cast<uint8_t>(have >> 8);
+        c.rec[0xFB + (m + 1) * 2] = static_cast<uint8_t>(next);
+        c.rec[0xFC + (m + 1) * 2] = static_cast<uint8_t>(next >> 8);
+    }
+}
+
 int gold_worth(const party::Character& c, bool round)
 {
     int m[7];
