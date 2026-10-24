@@ -1843,6 +1843,52 @@ Playable (2026-10-24, branch treasures-finish: Play on its page).
   original's strings).
 - The journal: section 7. The copy protection is skipped as everywhere.
 
+## 6g. Champions of Krynn (2026-10-24: started after the Savage Frontier)
+
+Facts: the Project's claude/krynn_facts.md (the survey) and
+champions_facts.md (the port; scratch until synced). The Secret engine a
+year before: START.EXE (EXEPACK, 61,607 / 65,568 bytes, data segment at
+image 0xBC60) + GAME.OVR, DAX files, 409-byte records (CHRDATAn.SAV /
+.STF / .SFX), SAVGAMx.DAT as Secret's. Game number 5 (playsim / sweep
+GAME=5); `variant.krynn`. Play on since 2026-10-24 (branch champions).
+
+- **Screen**: Secret's bars frame with its own top row (DS 0x0E3A) - the
+  three moons at columns 8 / 19 / 30 (phase + 10 / 6 / 14); the title
+  sequence and credits box; one-choice menus "PRESS <ENTER>/<RETURN> TO
+  CONTINUE"; party menu from column 9, "Pick Character Select Exit" first.
+- **Records**: `party::from_krynn` / `to_krynn` (run tables); its seven
+  races kept in `ext[kExtRace]` (Curse's numbers in the record); knight
+  order, god, robe and the knights' / gods' spells 101-107 in ext; coins
+  copper, bronze (silver's place), platinum, steel (gold's place - the
+  prices' unit), gems, jewelry.
+- **Rule tables** (`classes::Layout::krynn`): race-indexed by its own
+  races, experience / slot rows by `xp_row` (the cleric's god, the
+  knight's order, the mage's robe), alignments by class mask and the
+  god's (`create::god_alignments`).
+- **Creation**: Pick Race (seven), Gender, Class, Pick God (clerics but
+  dwarves - Reorx unasked), Alignment; start levels / experience / steel /
+  robe / order / race effects from its createPlayer; hit points by
+  Secret's routine (knights as fighters, a neutral god's cleric one die);
+  no silent training. Modify: its own starting figures, bounds and "Add
+  Subtract Keep Exit".
+- **Moons**: a day passing steps each (`OpSet.moons`; counters 8 / 1 /
+  6 days); a mage's moon (its robe) gives 1 / 2 extra spells to memorize
+  one phase from full / at full (`magic::moon_bonus`) and -1 / +1 to its
+  saves new / full.
+- **Overland** (area word 0x4BE6 = 0): the map picture with CURSOR.DAX's
+  marker, eight directions, 12 hours a step.
+- **Fights**: its effect numbers (mostly Secret's), Done's Auto, the
+  kender's Yell (taunts: they attack the kender), draconians dying - a
+  bozak explodes (3d6 within a square, a save or stunned), a baaz keeps
+  the weapon that slew it (a d20 at least Dexterity - 3) till the fight's
+  end. Not yet: the kapak's acid pool (effect 0x46: a ground zone).
+- **Checks**: sweep `behave champions` (creation, training, Modify, the
+  moons; oracle from scratch `champions_oracle.py`), saveload, events and
+  monkey runs clean; budget fight (Throtl, AREA=2 BLOCK=34 RUNAT=8441)
+  128.9 KB of 150. Sound: silent (its EA driver not surveyed).
+- **Journal**: the SNEG release's Gold Box Companion text (88 entries)
+  works through `journal::make_gbc`; the GOG PDF's table is not made yet.
+
 ## 7. The journal (Tom, 2026-10-06)
 
 The games tell the player to "read journal entry N" from the printed
@@ -2424,5 +2470,16 @@ the game's Settings (As Original: all of them).
 - **Treasures' romance**: a character the story sends away (LUCK 104 / 116)
   leaves the party as Remove would (the original's ovl 0x83 entry 0x2A,
   not traced further).
+- **Champions' thief skills by race** (`rules::fixes()`): the original
+  reads each race's thief adjustments from the row of the race before it
+  (DS 0x3970); with Game Fixes on each race takes its own row; off as
+  the original.
+- **Champions' bozak stun**: the original gives the stun lasting (no
+  time); the engine ends it with the fight (added to the fight's end
+  list) - its own end isn't traced.
+- **Champions' baaz**: the weapon comes back after the fight unreadied
+  (the original copies it back as it was).
+- **Champions' kapak**: dying it doesn't leave its acid pool yet.
+- **Champions' sound**: silent (its sound driver isn't read yet).
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.
