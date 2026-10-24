@@ -726,8 +726,11 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   (the logs, the brightness slider, the journal entry and book pictures -
   those move when the stylus lifts) and never the only way: taps do it too.
 - Picture viewers' keys (Tom, 2026-10-09): Back | Zoom | Prev Page | Next
-  Page; Zoom cycles levels (whole / width / full size), the key names the
-  level shown.
+  Page; Zoom cycles levels, the key names the level shown. Since
+  2026-10-24 (Tom: "Width should be a column width"; SPEC 7): Column (the
+  start: a column / piece across the screen) and Whole; no Full Size; the
+  book shows a page a column at a time; map entries add Turn (a quarter
+  turn, the long side along the screen's).
 - Tap highlight (Tom, 2026-10-09): what a tap acts on lights up FIRST,
   before any slow work - AS THE STYLUS TOUCHES (Tom, 2026-10-17,
   v0.104.0: `ui::poll_press` then `ui::poll_tap`; the tap still acts on

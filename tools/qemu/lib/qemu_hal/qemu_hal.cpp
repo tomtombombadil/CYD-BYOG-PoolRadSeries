@@ -25,11 +25,16 @@ namespace qemu {
 
 namespace {
 bool mounted = false;
-// The script: "x y wait_ms" a line (# comments); "mem" prints the heap
+// The script: "x y wait_ms" a line (# comments); "mem" prints the heap;
+// "journal J 4 [wait_ms]" opens journal entry J 4 (the viewer's memory
+// and stack without playing to a mention)
 struct Step {
-    int16_t  x, y;                  // x < 0: a heap line only
+    int16_t  x, y;                  // x < 0: a heap line only (-3: a journal entry, kind, number y)
     uint32_t wait;
+    char     kind;
 };
+char     journal_kind = 0;
+int      journal_number = 0;
 Step     steps[256];
 int      n_steps = -1, at = 0, phase = 0;
 uint32_t next = 0;
@@ -59,12 +64,17 @@ void load()
         int x, y;
         unsigned w = 1000;
         if (!strncmp(line, "panic", 5)) {             // (a crash on purpose: the Restarts log's crash line)
-            steps[n_steps++] = Step{-2, -2, 0};
+            steps[n_steps++] = Step{-2, -2, 0, 0};
+        } else if (!strncmp(line, "journal", 7)) {
+            char k = 0;
+            int num = 0;
+            if (sscanf(line + 7, " %c %d %u", &k, &num, &w) >= 2)
+                steps[n_steps++] = Step{-3, static_cast<int16_t>(num), w, k};
         } else if (!strncmp(line, "mem", 3)) {
             sscanf(line + 3, "%u", &w);
-            steps[n_steps++] = Step{-1, -1, w};
+            steps[n_steps++] = Step{-1, -1, w, 0};
         } else if (sscanf(line, "%d %d %u", &x, &y, &w) >= 2) {
-            steps[n_steps++] = Step{static_cast<int16_t>(x), static_cast<int16_t>(y), w};
+            steps[n_steps++] = Step{static_cast<int16_t>(x), static_cast<int16_t>(y), w, 0};
         }
     }
     f.close();
@@ -132,6 +142,14 @@ bool touch(int32_t* x, int32_t* y)
         Serial.println("[qemu] crashing on purpose");
         *reinterpret_cast<volatile int*>(4) = 1;
     }
+    if (s.x == -3) {
+        journal_kind = s.kind;
+        journal_number = s.y;
+        Serial.printf("[qemu] journal %c %d\n", s.kind, s.y);
+        ++at;
+        next = now + s.wait;
+        return false;
+    }
     if (s.x < 0) {
         mem("mem");
         ++at;
@@ -155,5 +173,16 @@ bool touch(int32_t* x, int32_t* y)
     mem(why);
     return false;
 }
+
+bool journal(char* kind, int* number)
+{
+    if (!journal_kind) return false;
+    *kind = journal_kind;
+    *number = journal_number;
+    journal_kind = 0;
+    return true;
+}
+
+void mem_now(const char* why) { mem(why); }
 
 } // namespace qemu
