@@ -14,6 +14,7 @@
 #include "engine/dax.h"
 #include "engine/font.h"
 #include "engine/games.h"
+#include "engine/hlib.h"
 #include "engine/icon.h"
 #include "engine/jpeg_thumb.h"
 #include "engine/inflate.h"
@@ -97,8 +98,21 @@ struct Assets {
     font::Font  cur_font;
     pic::Anim   cur_anim;                    // the animation being viewed
     pic::Rgb    pal[256];                    // a 256-colour picture's palette
+    // An HLIB game's library (The Dark Queen of Krynn): its entries as
+    // blocks (index_.count of them; is_pic / pic_hdr.frames as above)
+    struct HlBlock {
+        uint32_t pos, len;
+        uint16_t id;
+        uint16_t w, h;          // a picture: its first part's size
+        uint8_t  what;          // HlData, HlPicture (a library of parts), HlPart, HlColours
+    } hl[dax::kMaxEntries];
+    int         hl_colours = -1;             // the library's own colour entry (block number), -1 none
+    uint8_t     hl_px[hlib::kMaxWidth], hl_seen[hlib::kMaxWidth], hl_ega[256];
 };
 Assets* A = nullptr;
+enum : uint8_t { HlData, HlPicture, HlPart, HlColours };
+bool hl_file = false;                    // the open file is an HLIB library
+char hl_part_info[48] = "";              // the part on show: size, kind, hot spot
 
 // Files of the chosen game (A->files)
 int   n_files = 0;
@@ -210,6 +224,68 @@ bool any_anim(const dax::Entry& en, pic::Anim& a)
     return pic::parse_anim(r, en.raw_size, a, true);
 }
 
+// An HLIB library (The Dark Queen of Krynn's .TLB / .GLB): its entries as
+// the blocks - pictures (a library of parts, or one part of a library of
+// tiles), colours, data
+bool open_hlib()
+{
+    A->index_.count = 0;
+    A->hl_colours = -1;
+    hlib::Library lib;
+    const hlib::Status st = hlib::open(*src, 0, src->size(), lib);
+    if (st != hlib::Status::Ok) {
+        index_status = st == hlib::Status::ReadError ? dax::Status::ReadError : dax::Status::BadIndex;
+        return false;
+    }
+    index_status = dax::Status::Ok;
+    const bool tiles = strcmp(lib.kind, "TILE") == 0, pictures = strcmp(lib.kind, "HLIB") == 0;
+    int n = 0;
+    for (int i = lib.first_item(); i < lib.count && n < dax::kMaxEntries; ++i) {
+        Assets::HlBlock& b = A->hl[n];
+        b = Assets::HlBlock{};
+        if (!hlib::entry(*src, lib, i, b.pos, b.len)) continue;
+        const int id = hlib::id_of(*src, lib, i);
+        b.id = static_cast<uint16_t>(id < 0 ? i : id);
+        b.what = HlData;
+        A->is_pic[n] = A->is_anim[n] = A->is_vga[n] = A->is_font[n] = false;
+        A->pic_hdr[n] = pic::Header{};
+        hlib::Colours c;
+        hlib::Part p;
+        if (pictures && hlib::is_library(*src, b.pos, b.len)) {
+            // A picture: its parts are its frames (entry 0: its colours)
+            hlib::Library sub;
+            if (hlib::open(*src, b.pos, b.len, sub) == hlib::Status::Ok && strcmp(sub.kind, "TILE") == 0) {
+                b.what = HlPicture;
+                int frames = 0;
+                for (int k = 0; k < sub.count; ++k) {
+                    uint32_t pp, pl;
+                    if (!hlib::entry(*src, sub, k, pp, pl) || hlib::read_colours(*src, pp, pl, c) ||
+                        !hlib::read_part(*src, pp, pl, p))
+                        continue;
+                    if (!frames) { b.w = static_cast<uint16_t>(p.width()); b.h = p.height; }
+                    ++frames;
+                }
+                A->is_pic[n] = frames > 0;
+                A->pic_hdr[n].frames = static_cast<uint8_t>(frames > 255 ? 255 : frames);
+            }
+        } else if (tiles && hlib::read_colours(*src, b.pos, b.len, c)) {
+            b.what = HlColours;
+            if (A->hl_colours < 0) A->hl_colours = n;
+        } else if (tiles && hlib::read_part(*src, b.pos, b.len, p)) {
+            b.what = HlPart;
+            b.w = static_cast<uint16_t>(p.width());
+            b.h = p.height;
+            A->is_pic[n] = true;
+            A->pic_hdr[n].frames = 1;
+        }
+        ++n;
+    }
+    A->index_.count = n;
+    cur_anim_block = -1;
+    Serial.printf("[viewer] HLIB %s: %d entries (%s)\n", A->files[file_sel], n, lib.kind);
+    return true;
+}
+
 bool open_file(int i)
 {
     close_file();
@@ -222,6 +298,8 @@ bool open_file(int i)
         return false;
     }
     src = new (src_mem) library::FileSource(cur_file);
+    hl_file = game_dirs[game_sel].format == library::Format::Hlib;
+    if (hl_file) return open_hlib();
     index_status = dax::read_index(*src, A->index_);
     for (int e = 0; e < A->index_.count; ++e) {
         A->is_pic[e] = A->is_anim[e] = A->is_vga[e] = A->is_font[e] = false;
@@ -1423,8 +1501,10 @@ void tap_home(const ui::Tap& t)
 
 void list_files()
 {
-    n_files = A && game_dirs[game_sel].format == library::Format::Dax
-            ? library::list_dax(game_dirs[game_sel].data_dir, A->files, library::kMaxFiles) : 0;
+    n_files = !A ? 0
+            : game_dirs[game_sel].format == library::Format::Dax
+            ? library::list_dax(game_dirs[game_sel].data_dir, A->files, library::kMaxFiles)
+            : library::list_hlib(game_dirs[game_sel].data_dir, A->files, library::kMaxFiles);
 }
 
 int file_cols() { return ui::large() ? 4 : 3; }
@@ -1453,7 +1533,8 @@ void draw_files()
         const int x = ui::gap() * 3, wdt = ui::width() - ui::gap() * 6;
         const bool hlib = game_dirs[game_sel].format == library::Format::Hlib;
         wrap_text(x, ui::header_h() + ui::gap() * 3, wdt,
-                  hlib    ? "Its files are .TLB / .GLB libraries, a newer format the engine can't read yet."
+                  hlib    ? "Its files are .TLB / .GLB libraries, a newer format: the engine can't play it yet, but its "
+                              "files can be looked at in Settings, Dev Tools."
                   : known() ? "The engine is still being built for this game: what works so far is in Settings, Dev Tools "
                               "(the tests and the Play Test)."
                             : "The engine can't play this game yet; its files can be looked at in Settings, Dev Tools.",
@@ -1586,7 +1667,7 @@ void tap_files(const ui::Tap& t)
 int dev_keys()
 {
     if (known()) return playable() ? 3 : 4;
-    return game_dirs[game_sel].format == library::Format::Hlib ? 0 : 1;
+    return 1;           // the Resource Test (an HLIB game's too - engine/hlib.*)
 }
 ui::Rect dev_key(int i) { return ui::grid_cell(i, 2, 2, false); }
 
@@ -1598,10 +1679,6 @@ void draw_dev()
                                             {"Screen Test", "Pictures and screens"},
                                             {"Walk Test", "Walk the maps"},
                                             {"Play Test", "As far as it goes"}};
-    if (dev_keys() == 0)
-        wrap_text(ui::gap() * 3, ui::header_h() + ui::gap() * 3, ui::width() - ui::gap() * 6,
-                  "Its files are .TLB / .GLB libraries, a newer format the engine can't read yet.", ui::Font::Normal,
-                  style::kText, true);
     for (int i = 0; i < dev_keys(); ++i) ui::key_big(dev_key(i), kKeys[i][0], kKeys[i][1]);
 }
 
@@ -1650,8 +1727,11 @@ void draw_resources()
     ui::header(title, true);
     for (int i = 0; i < p.per_page && p.first() + i < n_files; ++i) {
         // Every file here is a .DAX: show the name without it, so it fits
+        // (an HLIB game's: without its DISKn/ folder)
         char label[library::kNameLen];
-        strlcpy(label, A->files[p.first() + i], sizeof label);
+        const char* nm = A->files[p.first() + i];
+        const char* slash = strrchr(nm, '/');
+        strlcpy(label, slash ? slash + 1 : nm, sizeof label);
         const size_t n = strlen(label);
         if (n > 4 && strcasecmp(label + n - 4, ".DAX") == 0) label[n - 4] = 0;
         ui::key(ui::grid_cell(i, file_cols(), kFileRows), label);
@@ -1697,8 +1777,14 @@ void draw_blocks()
         const int e = p.first() + i;
         const dax::Entry& en = A->index_.entries[e];
         char label[16], sub[24];
-        snprintf(label, sizeof label, "#%u", en.id);
-        if (A->is_font[e]) {
+        snprintf(label, sizeof label, "#%u", hl_file ? A->hl[e].id : en.id);
+        if (hl_file) {
+            const Assets::HlBlock& b = A->hl[e];
+            if (b.what == HlColours) snprintf(sub, sizeof sub, "Colours");
+            else if (A->is_pic[e] && A->pic_hdr[e].frames > 1) snprintf(sub, sizeof sub, "%dx%d x%d", b.w, b.h, A->pic_hdr[e].frames);
+            else if (A->is_pic[e]) snprintf(sub, sizeof sub, "%dx%d", b.w, b.h);
+            else snprintf(sub, sizeof sub, "%lu B", (unsigned long)b.len);
+        } else if (A->is_font[e]) {
             snprintf(sub, sizeof sub, "Font");
         } else if (A->is_pic[e]) {
             snprintf(sub, sizeof sub, "%dx%d x%d", A->pic_hdr[e].width_px(), A->pic_hdr[e].height, A->pic_hdr[e].frames);
@@ -1752,7 +1838,15 @@ ui::Rect view_key(int i)
 void view_info(char* out, size_t cap)
 {
     const dax::Entry& en = A->index_.entries[block_sel];
-    if (A->is_font[block_sel]) {
+    if (hl_file) {
+        const Assets::HlBlock& b = A->hl[block_sel];
+        const char* nm = strrchr(A->files[file_sel], '/');
+        nm = nm ? nm + 1 : A->files[file_sel];
+        if (A->is_pic[block_sel])
+            snprintf(out, cap, "%s #%u  %s  part %d/%d", nm, b.id, hl_part_info, frame_no + 1, A->pic_hdr[block_sel].frames);
+        else
+            snprintf(out, cap, "%s #%u  %lu bytes%s", nm, b.id, (unsigned long)b.len, b.what == HlColours ? " (colours)" : "");
+    } else if (A->is_font[block_sel]) {
         snprintf(out, cap, "%s #%u  the game's font: %d glyphs of 8x8", A->files[file_sel], en.id, font::kGlyphs);
     } else if (A->is_anim[block_sel] && cur_anim_block == block_sel) {
         const pic::Header& h = A->cur_anim.frame[frame_no];
@@ -1784,14 +1878,18 @@ void draw_hex()
     const dax::Entry& en = A->index_.entries[block_sel];
     const int per_line = hex_bytes_per_line(), lines = hex_lines();
     const int per_page = per_line * lines;
-    const int pages = en.raw_size == 0 ? 1 : (en.raw_size + per_page - 1) / per_page;
+    const uint32_t size = hl_file ? A->hl[block_sel].len : en.raw_size;
+    const int pages = size == 0 ? 1 : static_cast<int>((size + per_page - 1) / per_page);
     if (hex_page >= pages) hex_page = 0;
-    dax::RleReader r(*src, A->index_, en);
-    r.skip(static_cast<size_t>(hex_page) * per_page);
+    const uint32_t from = static_cast<uint32_t>(hex_page) * per_page;
+    // (a DAX block unpacked; an HLIB entry as it is stored)
+    dax::RleReader r(*src, A->index_, hl_file ? dax::Entry{} : en);
+    hlib::EntryReader hr(*src, A->hl[block_sel].pos, hl_file ? A->hl[block_sel].len : 0);
+    if (hl_file) hr.skip(from); else r.skip(from);
     const int top = ui::header_h() + ui::gap();
     for (int l = 0; l < lines; ++l) {
         uint8_t b[16];
-        const size_t got = r.read(b, per_line);
+        const size_t got = hl_file ? hr.read(b, per_line) : r.read(b, per_line);
         if (got == 0) break;
         char line[96];
         int o = snprintf(line, sizeof line, "%04X ", hex_page * per_page + l * per_line);
@@ -1823,6 +1921,94 @@ void draw_font_sheet(pic::Canvas& c)
     font::draw_text(c, A->cur_font, "Mixed Case Prints In Capitals", 1, 23, 11, 0);
 }
 
+// An HLIB picture (The Dark Queen of Krynn): frame_no = which part, centred.
+// VGA parts in 256 colours with the picture's (or the library's) colours
+// over the EGA ones; when there's no memory for a byte a pixel, in 16
+// colours through the picture's EGA table - what the 16-colour boards will
+// draw (queen_facts.md: the EGA install's pictures are exactly that).
+// EGA parts (a player's EGA install) in 16 colours.
+bool hl_draw()
+{
+    const Assets::HlBlock& b = A->hl[block_sel];
+    hl_part_info[0] = 0;
+    // The part, and where its colours are
+    uint32_t pp = b.pos, pl = b.len, cp = 0, cl = 0;
+    if (b.what == HlPicture) {
+        hlib::Library sub;
+        if (hlib::open(*src, b.pos, b.len, sub) != hlib::Status::Ok) return false;
+        int frame = 0;
+        bool found = false;
+        hlib::Colours c;
+        hlib::Part p;
+        for (int k = 0; k < sub.count && !found; ++k) {
+            uint32_t ep, el;
+            if (!hlib::entry(*src, sub, k, ep, el)) continue;
+            if (hlib::read_colours(*src, ep, el, c)) {
+                if (!cl) { cp = ep; cl = el; }
+                continue;
+            }
+            if (!hlib::read_part(*src, ep, el, p)) continue;
+            if (frame++ == frame_no) { pp = ep; pl = el; found = true; }
+        }
+        if (!found) return false;
+    } else if (A->hl_colours >= 0) {
+        cp = A->hl[A->hl_colours].pos;
+        cl = A->hl[A->hl_colours].len;
+    }
+    hlib::Part p;
+    if (!hlib::read_part(*src, pp, pl, p)) return false;
+    snprintf(hl_part_info, sizeof hl_part_info, "%dx%d kind %02X at %d,%d", p.width(), p.height, p.kind, p.x, p.y);
+    hlib::Colours c;
+    const bool have_colours = cl && hlib::read_colours(*src, cp, cl, c);
+    // 256 colours when it's a VGA part and there's memory for them
+    bool vga = !p.ega() && frame::set_depth(8);
+    if (!p.ega() && !vga) frame::set_depth(4);
+    if (vga)
+        for (int i = 16; i < 256; ++i) frame::set_palette(i, pic::Rgb{0, 0, 0});   // (entries it doesn't set: black)
+    for (int i = 0; i < 256; ++i) A->hl_ega[i] = static_cast<uint8_t>(i < 16 ? i : 0);
+    if (have_colours) {
+        uint8_t rgb[3];
+        if (c.vga && vga) {
+            for (int i = 0; i < c.count; ++i)
+                if (hlib::colour_rgb(*src, c, i, rgb)) frame::set_palette(c.first + i, pic::Rgb{rgb[0], rgb[1], rgb[2]});
+        } else if (c.vga) {
+            uint8_t* t = A->hl_ega + c.first;          // (first + count <= 256: read_colours checks)
+            hlib::ega_table(*src, c, t, 256 - c.first);
+            // a picture with its own first 16 colours: the EGA screen takes them
+            if (c.first == 0)
+                for (int i = 0; i < 16 && i < c.count; ++i)
+                    if (hlib::colour_rgb(*src, c, i, rgb)) frame::set_palette(i, pic::Rgb{rgb[0], rgb[1], rgb[2]});
+        } else if (c.first == 0) {
+            for (int i = 0; i < 16; ++i)
+                if (hlib::colour_rgb(*src, c, i, rgb)) frame::set_palette(i, pic::Rgb{rgb[0], rgb[1], rgb[2]});
+        }
+    }
+    if (!p.ega() && !vga) strlcat(hl_part_info, " (16 colours)", sizeof hl_part_info);
+    pic::Canvas& cv = frame::canvas();
+    cv.clear(0);
+    if (!p.drawable()) {
+        strlcat(hl_part_info, " (not decoded yet)", sizeof hl_part_info);
+        return true;
+    }
+    hlib::Pixels* px = new (std::nothrow) hlib::Pixels(*src, p);
+    if (!px) return false;
+    bool ok = px->ok();
+    const int x0 = (pic::kScreenW - p.width()) / 2, y0 = (pic::kScreenH - p.height) / 2;
+    for (int r = 0; ok && r < p.height; ++r) {
+        ok = px->row(A->hl_px, A->hl_seen);
+        const int y = y0 + r;
+        if (!ok || y < 0 || y >= pic::kScreenH) continue;
+        for (int x = 0; x < p.width(); ++x) {
+            const int sx = x0 + x;
+            if (sx < 0 || sx >= pic::kScreenW || !A->hl_seen[x]) continue;
+            const uint8_t v = A->hl_px[x];
+            cv.set(sx, y, p.ega() || vga ? v : A->hl_ega[v]);
+        }
+    }
+    delete px;
+    return ok;
+}
+
 // PIC and FINAL files store animation frames as changes from the first one
 bool xor_frames()
 {
@@ -1838,7 +2024,9 @@ void draw_picture()
     const int x = (pic::kScreenW - h.width_px()) / 2, y = (pic::kScreenH - h.height) / 2;
     bool ok;
     frame::set_ega_palette();
-    if (A->is_font[block_sel]) {
+    if (hl_file) {
+        ok = hl_draw();
+    } else if (A->is_font[block_sel]) {
         ok = font::load(*src, A->index_, A->cur_font);
         if (ok) draw_font_sheet(c);
     } else if (A->is_vga[block_sel]) {

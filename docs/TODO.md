@@ -42,7 +42,20 @@ the Project as claude/TODO.md.
       (colours, touch direction, sound level - the codec's volume is
       0 dB); then the 8-bit canvas for the VGA games there.
 - [ ] Dark Queen on the classic boards: try it in its own EGA mode (Tom,
-      2026-10-12) when we get to the Krynn games.
+      2026-10-12) when we get to the Krynn games. Decided (2026-10-24,
+      branch darkqueen, queen_facts.md): its EGA install's pictures are
+      the VGA ones through each picture's own EGA table, pixel for pixel
+      (not dithered by the installer) - the engine reads the GOG VGA files
+      and draws them in 16 colours itself (no EGA install, no scan step).
+      Open: the 16 colours' RGB on the EGA screen for pictures whose
+      colours start at 0 (TITLE's: their own 16?) - check in DOSBox.
+- [ ] **Dark Queen of Krynn** phase 2+ (plan in queen_facts.md): DQK.EXE's
+      data (C data segment, RTLink overlays - a plain-MZ reader in place of
+      exepack), the profile slot (storage = HLIB), scripts from ECL.GLB
+      through `hlib::EntryReader`, GEO.GLB maps of any size, the screens
+      (marble frame from FRAME.TLB, 12-px GAME.FON), records, combat.
+      Undecoded: picture kinds 0x03 (EGA sprites - only an EGA install
+      has them) and 0x19 (FRAME / PICC), SOUNDS.GLB's DIG4, colour cycles.
 - [ ] Darkness's EGA mode: how the original's EGA.DRV turns VGA pictures
       into 16 colours (facts from the player's file), so Darkness plays on
       the classic boards as its own EGA mode shows it.
@@ -217,10 +230,9 @@ the Project as claude/TODO.md.
       Knights = Darkness's engine at 4 bits (LOAD FILES / PIECES 3
       operands, a 216 + 220-byte record); Dark Queen = a new C program
       with HLIB .TLB / .GLB libraries, only the scripts (Darkness's ECL)
-      shared - a near-new port. Dark Queen on classic boards: GOG ships
-      VGA files; its EGA mode comes from its installer rewriting every
-      .TLB dithered - Claude to choose then (the player's EGA install vs
-      the scan converting). Also: the Krynn games' sound is an EA driver
+      shared - a near-new port. Dark Queen on classic boards: chosen
+      2026-10-24 (above: the VGA files drawn in 16 colours through their
+      own EGA tables). Also: the Krynn games' sound is an EA driver
       (SOUND.DAX / MIDI.DAX), not decoded yet.
 - [ ] Gateway to the Savage Frontier (v0.144.0, SPEC 6e): PLAYABLE (Play
       on) - matches DOSBox through Yartar, the wilderness, the vault, shops,

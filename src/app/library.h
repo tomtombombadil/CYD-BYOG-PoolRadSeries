@@ -15,7 +15,9 @@ namespace library {
 //   Dax:  .DAX archives (the Pool of Radiance series, Champions and Death
 //         Knights of Krynn, the Savage Frontier games) - readable.
 //   Hlib: "HLIB" .TLB / .GLB libraries in DISK1-3 folders (The Dark Queen
-//         of Krynn, Unlimited Adventures) - recognised, not readable yet.
+//         of Krynn, Unlimited Adventures) - engine/hlib.* reads them (the
+//         Resource Test); not playable yet. data_dir = the folder holding
+//         DISK1-3.
 enum class Format : uint8_t { Dax, Hlib };
 
 struct GameDir {
@@ -73,6 +75,9 @@ bool load_library(GameDir* out, int max, int* n);
 
 // The .DAX files in a game's data_dir, sorted by name.
 int list_dax(const char* data_dir, char (*names)[kNameLen], int max);
+// The .TLB / .GLB files of an HLIB game: in data_dir and its DISK1-3
+// folders, as "DISK2/CPIC.TLB" (relative to data_dir), disk by disk.
+int list_hlib(const char* data_dir, char (*names)[kNameLen], int max);
 
 // "/GOLDBOX/<data_dir>/<file>"
 void path_of(const char* data_dir, const char* file, char* out, size_t cap);
