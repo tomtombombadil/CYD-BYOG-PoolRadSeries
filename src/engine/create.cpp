@@ -1005,9 +1005,12 @@ int class_con_bonus(int con, int cls)
 }
 } // namespace
 
-bool can_modify(const party::Character& c, bool pool, bool secret, bool dk)
+bool can_modify(const party::Character& c, bool pool, bool secret, bool dk, bool krynn)
 {
     const uint32_t e = c.exp();
+    if (krynn)
+        return (e == 1500 || e == 1251 || e == 2000 || e == 2001 || e == 2251 || e == 2500 || e == 5000) &&
+               c.rec[kMultiLevel] == 0;
     if (pool) return e == 0;
     if (dk) return e == 1500001 || e == 750000 || e == 500000;
     // (Secret's: its own starting experience - GAME.OVR 0x1FBF0)
@@ -1061,6 +1064,54 @@ static int secret_hp_most(const party::Character& c, const classes::Tables& t)
             const int x = lv - t.max_hit_dice(k) + 1;
             static const int kPast[7] = {0x48, 0x70, 0x58, 0x58, 0x58, 0x2C, 0x3C};
             most = k == 1 ? kPast[1] : k == 5 ? x + kPast[5] : 2 * x + kPast[k];
+        }
+        most &= 0xFF;
+    }
+    return n ? most / n : 1;
+}
+
+// Champions' Modify bounds (GAME.OVR 0x24A11 least, 0x24AF2 most): as
+// Secret's with its knights (fighters' Constitution figure, a level more
+// as rangers, a fighter's die and figure past the last), a neutral god's
+// cleric without the extra level; the least's figure once a class
+static int krynn_hp_least(const party::Character& c)
+{
+    int sum = 0, n = 0, con = 0;
+    for (int k = 0; k < 8; ++k) {
+        const int lv = c.level(k);
+        if (lv <= 0) continue;
+        sum += lv + (k == 4 || k == 7);
+        ++n;
+        const int cv = stat_full(c, 4);
+        int v = cv >= 0 && cv < 26 ? kConHp[cv] : 0;
+        if (k == 2 || k == 4 || k == 7)
+            v += cv == 17 ? 1 : cv == 18 ? 2 : cv == 19 || cv == 20 ? 3 : cv >= 21 && cv <= 23 ? 4 : cv >= 24 && cv <= 25 ? 5 : 0;
+        con += v;
+    }
+    if (!n) return 1;
+    sum &= 0xFF;
+    con = static_cast<int8_t>(con & 0xFF);
+    if (con < 0 && sum <= n - con) return 1;
+    return static_cast<uint8_t>((sum + con) / n);
+}
+static int krynn_hp_most(const party::Character& c, const classes::Tables& t)
+{
+    const int con = stat_full(c, 4);
+    int most = 0, n = 0;
+    for (int k = 0; k < 8; ++k) {
+        const int lv = c.level(k);
+        if (lv <= 0) continue;
+        ++n;
+        int b = con == 3 ? -2 : con <= 6 ? -1 : con <= 14 ? 0 : con == 15 ? 1 : con == 16 ? 2 : 0;
+        if (con >= 17 && con <= 19) b = k == 2 || k == 4 || k == 7 ? con - 14 : 2;
+        static const int kDie[8] = {8, 8, 10, 10, 8, 4, 6, 10};
+        if (lv < t.max_hit_dice(k)) {
+            const bool more = k == 4 || k == 7 || (k == 0 && c.ext[party::kExtGod] <= 4);
+            most += (more ? lv + 1 : lv) * (b + kDie[k]);
+        } else {
+            const int x = lv - t.max_hit_dice(k) + 1;
+            most = k == 0 ? 2 * x + 0x48 : k == 1 ? 0x70 : (k == 2 || k == 3 || k == 7) ? 3 * x + 0x5A
+                 : k == 4 ? 2 * x + 0x58 : k == 5 ? x + 0x2C : 2 * x + 0x3C;
         }
         most &= 0xFF;
     }
@@ -1155,6 +1206,7 @@ int hp_least(const party::Character& c, const classes::Tables& t, const Facts& f
 {
     if (t.lay.dk) return dk_hp_least(c, t);
     if (t.lay.secret) return secret_hp_least(c);
+    if (t.lay.krynn) return krynn_hp_least(c);
     int total = 0, n = 0;
     for (int k = 0; k <= classes::Monk; ++k) {
         const int lv = c.level(k);
@@ -1174,6 +1226,7 @@ int hp_most(const party::Character& c, const classes::Tables& t, const Facts& f)
 {
     if (t.lay.dk) return dk_hp_most(c, t, f);
     if (t.lay.secret) return secret_hp_most(c, t);
+    if (t.lay.krynn) return krynn_hp_most(c, t);
     int total = 0, n = 0;
     const int con = stat_full(c, 4);
     if (t.lay.pool) {

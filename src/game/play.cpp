@@ -9481,7 +9481,7 @@ void draw_modify(pic::Canvas& c)
             if (changed) put(c, "*", 12, 9 + i, mod_item == i ? 13 : 10);
         }
     }
-    if (secret_files() || darkness_files()) {
+    if (secret_files() || darkness_files() || krynn()) {
         // Secret's View: the stats from row 9 (the number at column 5), the
         // hit points "95/95" at row 3, column 31; its menu "Add Subtract
         // Keep Exit" (Add / Subtract: the arrows' up / down)
@@ -9558,7 +9558,7 @@ void start_modify(pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
     if (!ch) return;
-    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files())) {
+    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files(), krynn())) {
         char t[60], nm[20];
         ch->name(nm, sizeof nm);
         snprintf(t, sizeof t, "%s%s", nm, rw(Data::kCantModify));
@@ -9606,7 +9606,7 @@ void modify_name(pic::Canvas& c)
 // The item a tap at (row, col) picks (-1: none)
 int modify_item_at(int row, int col)
 {
-    if (secret_files() || darkness_files()) {
+    if (secret_files() || darkness_files() || krynn()) {
         if (row >= 9 && row <= 14 && col >= 1 && col <= 12) return row - 9;
         if (row == 3 && col >= 20 && col <= 38) return 6;
         if (row == 1 && col >= 1 && col <= 16) return 7;
@@ -12389,7 +12389,7 @@ void gal_open(pic::Canvas& c, int page)
     const int pick = gal_pick_now();
     ie->gsel = pick ? (gal_page() == icon_looks::Page::Looks ? icon_looks::kLooks + pick - 1 : -1)
                     : icon_looks::match(gal_page(), ie->ch->rec);
-    gal_draw_page(c, ie->gsel < 0 ? 0 : ie->gsel);
+    gal_draw_page(c, 0);            // (its first page - Tom, 2026-10-24; the icon in use stays marked when there)
     gal_menu(c);
 }
 
