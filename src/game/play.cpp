@@ -3398,11 +3398,12 @@ void save_tap(int x, int y, pic::Canvas& c)
 
 void draw_own_pic(int id);
 
-// The camp's picture (Treasures: its own indoors - PIC 132, DOSBox)
+// The camp's picture (Treasures: game byte 0x4F's when its scripts set one -
+// 132 indoors; ov105+0x3149)
 int camp_pic()
 {
     const auto& v = d->prof->variant;
-    return v.camp_pic_in && geo::flags(d->map, d->gs.x, d->gs.y) >= 0x80 ? v.camp_pic_in : v.camp_pic;
+    return v.camp_pic_byte && d->gs.area1[0x4F] ? d->gs.area1[0x4F] : v.camp_pic;
 }
 
 bool no_rest_here() { return darkness_files() && vm->get(0x2B) == 1 && vm->get(0x2C) >= 100; }
