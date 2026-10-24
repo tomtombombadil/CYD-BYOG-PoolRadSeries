@@ -186,8 +186,10 @@ the Project as claude/TODO.md.
       scaling; GOG map entries from the Companion's JE pictures when
       there; a Rescan remakes JOURNAL.DAT) and the party menu box
       (v0.150.0) from the list below. Tom: check Treasures' map J1.
-- [ ] Death Knights (Play on, v0.153.0): the GOG journal table (agent
-      on it); events block 16 (the intro) - a longer run or the sweep not
+- [ ] Death Knights (Play on, v0.153.0): the GOG journal table (v0.154.1:
+      65 entries, 13 not in the book, maps 37 / 44); the playsim crashed
+      started at JOURNAL instructions in areas 3 / 5 (RUNAT into blocks
+      67 / 82 / 96 / 97) - check it isn't the engine; events block 16 (the intro) - a longer run or the sweep not
       replaying its fight per square; open: DK temple healing assumed free,
       effect 0x44 (feeblemind and drain?), Sivak morale / fleeing. Game
       Fixes: DK thief skills by race (each race its own row). Finding:
