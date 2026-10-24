@@ -1777,7 +1777,7 @@ kinds, 510-byte records, .PTY saves, VGA pictures with their EGA nibbles
 (its own EGA mode on the classic boards, 256 colours on the S3 / C5).
 Game number 9 (playsim / sweep GAME=9); `variant.tr`. Its rule tables
 are Darkness's byte for byte at other places (the profile's offsets).
-`variant.unfinished` stays on until Tom has played it.
+Playable (2026-10-24, branch treasures-finish: Play on its page).
 
 - **The profile and scripts.** Its scripts: Darkness's opcodes plus 0x42
   LOAD 3D (a map and three wall slots), 0x43 FIND ITEM and 0x44 DESTROY
@@ -1816,9 +1816,32 @@ are Darkness's byte for byte at other places (the profile's offsets).
 - Old age: a fight in which someone aged (haste) ends with the race's
   greatest age checked (its program's table) - past it, death with the
   original's sentences; within ten years "is looking very old".
-- Not yet: the 256-colour mode's parchment background (BORD 1), the
-  journal (its PDF has several pictures a page), the copy protection is
-  skipped as everywhere.
+- **256 colours** (PSRAM boards): BORD 1's red parchment (320 x 192) is
+  the canvas's background - the original's VGA clear (img 0x187B) puts it
+  back wherever text or the window clears; it is freed for a fight and
+  read again after it. VGA text: the glyph's ink, a black shadow (BORD 8's
+  own shade pixels), the parchment between. The position line waits for
+  the first 3D view; the overland's seasons: OVER 1-4's palette when the
+  scripts write address 0x41. EGA (classic boards): black, as the
+  original's EGA mode. Checked in DOSBox (VGA) pixel for pixel.
+- **Time and age**: the clock's years are checked only at 100 - then
+  everyone (the dead too) is a year older and the years go back to 0
+  (DOSBox: 99 years 11 months 29 days 23:00, a 2-hour rest - 120 became
+  121). Game Fixes: a year older each year. The old-age check after a
+  fight runs when someone aged (the clock or haste); Darkness the same
+  (its program at ovr 0x864B).
+- **The camp's picture**: game byte 0x4F's PIC block, else 128 (the
+  scripts set 132 in buildings); treasure: PIC 129 always.
+- **Settled** (the Project's treasures_finish_facts.md): LUCK 51-61 are
+  only the lucky papers' texts; a Gateway half-orc comes in as "Monster"
+  (the original's converter); the class masks need nothing; the fight's
+  "Z" is a developers' switch (TREASURE.CFG line 6 "S") - kept hidden.
+- **Late-game checks in DOSBox** (edited save copies): the romance and
+  Crown texts (the scripts' word wrap, a white press-key line), the camp's
+  "Crown Ex", the lucky paper, old age's clock. Not reached there:
+  PROGRAM 4 and the post-fight old-age sentences (the engine's are the
+  original's strings).
+- The journal: section 7. The copy protection is skipped as everywhere.
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -1863,8 +1886,16 @@ IN YOUR JOURNAL" (the number first): the mention finder knows that too.
 boxes between Gateway's columns set by hand), every entry checked by eye.
 Secret prints the number as a text of its own (play::heard joins them);
 Darkness's JOURNAL n op says "...journal entry N." and waits for a key -
-the entry is offered there too. Treasures' GOG PDF (72 dpi grayscale,
-several pictures a page) needs more than one picture a page: not done.
+the entry is offered there too. 2026-10-24 (branch treasures-finish):
+**Treasures** (83 entries, 108 pieces) - its GOG PDF is book spreads, a
+72 dpi grayscale JPEG a book page (several pictures a PDF page: the
+reader orders them by the content stream's placement, `pdf::page_pictures`;
+a table piece has a sixth number, the picture's index; the book view
+shows the big pictures as pages). Its one-component JPEGs say 2x2
+sampling - TJpgDec now takes such a scan as 8x8 blocks (T.81 A.2.2; the
+other journals' pictures unchanged byte for byte). `make_table.py
+treasures`; every entry checked by eye. Its scripts say "... AS JOURNAL
+ENTRY #N." / "... AS ENTRY #N." (both found).
 
 v0.10.0 did this in a browser page (pdf.js) on the player's PC; Tom
 (2026-10-09) wants no PC step: since v0.12.0 the board does it.
@@ -2380,12 +2411,13 @@ the game's Settings (As Original: all of them).
   own). The palette changes with the canvas (the whole screen shown
   again), as the VGA DAC does. The Gold Box Companion's icons (EGA) in
   the icon gallery use the palette's first 16 entries.
-- **Treasures' 256-colour mode** (the boards with PSRAM): black behind the
-  frame where the original's VGA mode shows its red parchment (BORD 1);
-  its EGA mode (the classic boards) is black as the original's.
+- **Darkness's and Treasures' clock and age** (Game Fixes): the
+  originals' clock ages no one until its hundredth year (then everyone a
+  year); with Game Fixes on everyone is a year older each year of game
+  time. Off: as the originals.
 - **Treasures' camp menu with the Crown** shows the program's word list as
   it is ("... Fix Crown Ex": its 41-byte field cuts Exit) - as the
-  original, not checked in DOSBox (the Crown comes at the game's end).
+  original (DOSBox shows the same).
 - **Treasures' PROGRAM 4** (a ship's passage): the engine runs the camp's
   Fix (the healers' rest and healing) where the original does its own
   copy of it; an interrupted rest only ends it.
