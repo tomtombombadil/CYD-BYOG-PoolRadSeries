@@ -53,6 +53,10 @@ struct Canvas {
     // nullptr: none
     const uint8_t* bg = nullptr;
     int bg_rows = 0;
+    // The Dark Queen of Krynn's screens: their boxes' colour - a fill with
+    // colour 0 gives this one instead of black (the original's text and list
+    // boxes are grey; fill_black stays black). -1: none
+    int16_t paper = -1;
     int stride() const { return bpp == 4 ? (w + 1) >> 1 : w; }
     size_t bytes() const { return static_cast<size_t>(stride()) * h; }
     uint8_t get(int x, int y) const
@@ -78,9 +82,12 @@ struct Canvas {
     void fill_black(int x, int y, int fw, int fh)
     {
         const uint8_t* was = bg;
+        const int16_t pa = paper;
         bg = nullptr;
+        paper = -1;
         fill(x, y, fw, fh, 0);
         bg = was;
+        paper = pa;
     }
 };
 

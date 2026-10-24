@@ -1537,6 +1537,19 @@ constexpr ecl::OpSet kDarknessEcl = [] {
 
 // Darkness's title: TITLE.DAX's three VGA pictures - the Forgotten Realms
 // one, the game's, the credits (a picture of its own: no print calls)
+// The Dark Queen of Krynn's words: C strings in its data segment (DS:0 at
+// DQK.EXE 0x63A20; queen_facts_2.md 1) - read as DQK.EXE's own offsets
+constexpr uint32_t kQueenDs = 0x63A20;
+constexpr uint32_t qw(uint32_t ds) { return text::kCString | (kQueenDs + ds); }
+// Its party menu (queen_facts_2.md 6): two columns of buttons - Add, Remove,
+// Modify, Train, Knight New Order, View | Create, Delete, Load, Save, Begin,
+// Exit (its words DS 0x7DCE-0x7E84, built in that order by its menu code,
+// DQK.EXE 0x47940)
+constexpr uint32_t kQueenPartyMenu[] = {
+    qw(0x7E31), qw(0x7E3F), qw(0x7DF0), qw(0x7E01), qw(0x7E11), qw(0x7E22),
+    qw(0x7DCE), qw(0x7DDF), qw(0x7E50), qw(0x7E60), qw(0x7E72), qw(0x7E84),
+};
+
 // The Dark Queen of Krynn (queen_facts.md 6, krynn_facts.md C3): Darkness's
 // opcodes (every ECL.GLB script follows with them), its scripts stored
 // without the DAX blocks' 2-byte prefix, up to 12,000 bytes (the largest
@@ -3593,12 +3606,20 @@ const Profile kProfiles[] = {
      .program_size = 449664, .image_size = 449664, .data_base = 0x63A20,
      .frame = {},
      .tiles_file = "FRAME.TLB", .tiles_block = 0,
-     .press_any_key = 0,
+     .press_any_key = qw(0x425F),                    // "Press button or enter to continue"
      .title_file = "TITLE.TLB", .title = nullptr, .title_steps = 0,
      .title_version = 0, .title_menu = 0,
-     .overlay = nullptr, .overlay_size = 0,
+     // (its words: the program itself - C strings at its own offsets)
+     .overlay = "DQK.EXE", .overlay_size = 449664,
      .first_area = 1, .last_area = 1,
      .ecl_ops = &kQueenEcl,
+     .start_area = 1, .start_script = 4,            // (a new game: ECL.GLB 4 - Palanthas / Caergoth; 1 is a test menu)
+     // The party menu's words; "load which game: ", "Name" (its "AC\tHP"
+     // has a tab: not taken), "save which game: ", "Saving...Please Wait",
+     // "load from where? " "Tdqk Dkk Exit"
+     .party = {.load_which = qw(0x4E25), .name = qw(0x5E59), .save_which = qw(0x4E37), .saving = qw(0x604D),
+               .load_from = qw(0x4E13), .load_sources = qw(0x500C),
+               .words = kQueenPartyMenu, .n_words = sizeof kQueenPartyMenu / sizeof kQueenPartyMenu[0]},
      .variant = {.unfinished = true, .hlib = true}},
 };
 

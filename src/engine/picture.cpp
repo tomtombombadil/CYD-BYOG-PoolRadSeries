@@ -24,6 +24,7 @@ void Canvas::fill(int x, int y, int fw, int fh, uint8_t c)
     if (x + fw > w) fw = w - x;
     if (y + fh > h) fh = h - y;
     if (fw <= 0 || fh <= 0) return;
+    if (c == 0 && paper >= 0) c = static_cast<uint8_t>(paper);
     if (bpp != 4) {
         for (int row = 0; row < fh; ++row) {
             if (c == 0 && bg && y + row < bg_rows) memcpy(px + (y + row) * w + x, bg + (y + row) * w + x, fw);

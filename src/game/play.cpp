@@ -33,6 +33,9 @@
 #include "engine/sound.h"
 #include "engine/text.h"
 #include "engine/view3d.h"
+#include "engine/hlib.h"
+#include "engine/hlpic.h"
+#include "engine/qview.h"
 #include "platform/audio.h"
 #include "platform/memlog.h"
 
@@ -42,6 +45,7 @@ const char* no_memory(const char* what);   // (below: the message with the heap'
 bool make_room(unsigned kb, const char* what);   // (below: drops what reads again until kb KB fit)
 void tidy_memory();
 bool fighting();                                 // (below: a fight is on)
+int font_wanted();                               // (below: the letters the text is in)
 
 namespace {
 
@@ -71,6 +75,7 @@ struct Data {
     Data(view3d::World& w, ecl::GameState& g) : world(w), gs(g) {}
     ~Data()
     {
+        delete hl_col;
         delete ov;
         delete anim_idx;
         free(tr_frame);
@@ -91,6 +96,7 @@ struct Data {
     uint8_t*       tr_bg = nullptr;
     uint8_t      (*tr_shade)[8] = nullptr;  // (and its font's black pixels: font::Font shade)
     uint8_t        tr_over = 0;             // Treasures: the overland's OVER.DAX map (0: none)
+    hlpic::Colours* hl_col = nullptr;       // Dark Queen: the 16-colour table its parts are drawn through
     uint16_t       tr_max_age[8] = {};      // Treasures: the races' greatest ages (old age after a fight)
     font::Font     font;
     font::Font*    alt_font = nullptr;      // the player's Pools of Darkness font while it's chosen
@@ -691,6 +697,8 @@ bool load_font_file(const char* name, dax::Index& idx, font::Font& out)
     return ok;
 }
 
+#include "play_queen.inc"
+
 // GAME.OVR's words, and the program's (Pool keeps a few in START.EXE: the
 // profile marks those text::kInProgram) - text::read_pascal(src, at ...)
 class OvrWords : public dax::ByteSource {
@@ -1271,7 +1279,11 @@ void draw_view(pic::Canvas& c)
         draw_tr_overland(c);
         return;
     }
-    if (!d->map.loaded) {
+    if (hl()) {
+        // (Dark Queen: its view and area map from its own files)
+        if (!d->map.loaded) c.fill_black(24, 24, 88, 88);
+        else q_draw_view(c, area_view && vm->get(0x4BFB) == 0);
+    } else if (!d->map.loaded) {
         c.fill(24, 24, 88, 88, 0);
     } else if (area_view && (vm->get(0x4BFB) == 0)) {
         view3d::draw_area_map(c, d->world, d->map, d->gs.x, d->gs.y, d->gs.dir);
@@ -1432,6 +1444,10 @@ void krynn_moons(pic::Canvas* c)
 
 void draw_frame(pic::Canvas& c)
 {
+    if (hl()) {
+        q_draw_frame(c, true);
+        return;
+    }
     c.clear(0);
     krynn_moons();
     kr_marker_lost();
@@ -1900,9 +1916,13 @@ void pm_prompt(pic::Canvas& c, const char* note = nullptr)
 
 void draw_party_menu(pic::Canvas& c)
 {
-    c.clear(0);
-    krynn_moons();
-    layout::outer(c, d->tables, d->frame_tiles);
+    if (hl()) {
+        q_draw_frame(c, false);
+    } else {
+        c.clear(0);
+        krynn_moons();
+        layout::outer(c, d->tables, d->frame_tiles);
+    }
     // (Treasures: no member marked on its party menu, its menu's line white
     // - DOSBox; the engine marks the selected one in every game, Tom
     // 2026-10-24 - CYD_MENU_HIGHLIGHT)
@@ -2027,7 +2047,8 @@ size_t rec_file_size()
 bool short_saves() { return secret_files() || krynn(); }
 void save_file_name(char slot, char* out, size_t cap)
 {
-    if (darkness_files()) savegame::file_name_darkness(slot, out, cap);
+    if (hl()) savegame::file_name_queen(slot, out, cap);
+    else if (darkness_files()) savegame::file_name_darkness(slot, out, cap);
     else savegame::file_name(slot, out, cap);
 }
 uint32_t item_stride() { return secret_files() ? party::kSecretItemSize : party::kItemSize; }
@@ -2198,7 +2219,8 @@ bool load_game(char slot)
     bool ok;
     {
         plat::FileSource src(f);
-        ok = dkk()              ? savegame::read_dkk(src, d->gs, d->save)
+        ok = hl()               ? savegame::read_queen(src, d->gs, d->save, *pt)
+             : dkk()            ? savegame::read_dkk(src, d->gs, d->save)
              : darkness_files() ? savegame::read_darkness(src, d->gs, d->save)
                                 : savegame::read(src, d->gs, d->save, !pool_files(), !short_saves());
     }
@@ -2215,8 +2237,8 @@ bool load_game(char slot)
         pt->clear();
         return false;
     }
-    pt->clear();
-    for (int i = 0; i < d->save.count; ++i) {
+    if (!hl()) pt->clear();             // (Dark Queen's characters are in its save itself)
+    for (int i = 0; !hl() && i < d->save.count; ++i) {
         party::Character& ch = pt->m[pt->count];
         char fn[48];
         snprintf(fn, sizeof fn, "%s%s", d->save.names[i], ext_member());
@@ -10501,6 +10523,12 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         }
     }
     d->items = 0;
+    // (Dark Queen: its entries are words of their own - C strings)
+    for (int i = 0; pp.words && i < pp.n_words && d->items < Data::kItems; ++i)
+        if (text::read_pascal(exe, info, pp.words[i], d->item[d->items], sizeof d->item[0])) {
+            d->item_on[d->items] = true;
+            ++d->items;
+        }
     if (pp.items && pp.count <= Data::kItems && pp.stride >= 41) {
         uint8_t* buf = static_cast<uint8_t*>(malloc(static_cast<size_t>(pp.count) * pp.stride));
         if (buf && exepack::read(exe, info, pp.items, buf, static_cast<size_t>(pp.count) * pp.stride) ==
@@ -10880,6 +10908,7 @@ __attribute__((noinline)) void dk_add_rows(const uint8_t* rows, int n, bool iden
 struct Host : ecl::Host {
     bool load_script(int block, uint8_t* code, uint32_t* len) override
     {
+        if (hl()) return q_load_script(block, code, len);
         char name[24];
         {
             char t[40];
@@ -10909,6 +10938,10 @@ struct Host : ecl::Host {
     }
     void load_map(int geo_block) override
     {
+        if (hl()) {
+            q_load_map(geo_block);
+            return;
+        }
         char name[24];
         plat::File f;
         d->map.loaded = false;
@@ -10973,6 +11006,14 @@ struct Host : ecl::Host {
     // tiles of that number (darkness_facts.md 7.3); kept for saving
     void load_look(int look) override
     {
+        if (hl()) {
+            // (Dark Queen: the look is the backdrop - BACK.TLB's picture of that
+            // number; the walls are the map's own sets)
+            d->save.look = static_cast<uint16_t>(look);
+            d->save.look_slot = 1;
+            plat::log("[play] look %d\n", look);
+            return;
+        }
         if (dkk()) {
             // Death Knights (LOAD PIECES; its ovl 0xF7 +0xEC5): the look's
             // WALLDEF block - in WALLDEFn, n from its program's table (here:
@@ -13948,7 +13989,7 @@ __attribute__((noinline)) bool open_program(games::Game g, const char* prog)
     exepack::Info info;
     const profile::Profile* p = nullptr;
     if (exepack::parse(src, info) == exepack::Status::Ok) p = profile::find(g, info.file_size, info.image_size);
-    if (p && layout::load_tables(src, info, *p, d->tables) != layout::Status::Ok) p = nullptr;
+    if (p && !p->variant.hlib && layout::load_tables(src, info, *p, d->tables) != layout::Status::Ok) p = nullptr;
     if (p) {
         exepack::read(src, info, p->data_base + p->sky_colours, d->sky, sizeof d->sky);
         if (p->wild.bigpic && p->wild.count <= sizeof d->city_x &&
@@ -13965,7 +14006,7 @@ __attribute__((noinline)) bool open_program(games::Game g, const char* prog)
         snprintf(msg, sizeof msg, "This %s is a release the engine doesn't know yet.", prog);
         return false;
     }
-    if (!p->party.items) {
+    if (!p->party.items && !p->party.words) {
         // (a game being built whose party menu isn't known yet: Secret's
         // screens and maps only, in the Screen and Walk Tests)
         snprintf(msg, sizeof msg, "The Play Test for %s isn't ready yet: try the Screen and Walk Tests.",
@@ -14251,7 +14292,14 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
         d->world.vga = true;
         open_cycles(g, prog);
     }
-    if (!open_tiles()) {
+    if (hl()) {
+        // (Dark Queen: its letters and colour table; the screen's pieces are
+        // read from its files as they're drawn)
+        if (!q_open()) {
+            close();
+            return msg;
+        }
+    } else if (!open_tiles()) {
         snprintf(msg, sizeof msg, "%s: the tiles or font didn't load.", d->prof->tiles_file);
         close();
         return msg;
@@ -14260,8 +14308,10 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     if (d->prof->variant.dkk) d->world.map_base = 25;      // (Death Knights: block 202's 25-40, arrows 41-44)
     d->world.per_set = d->prof->variant.per_set_walls;
     text::set_hanging_space(gateway() || krynn());          // (Champions too - DOSBox)
-    open_sky();
-    open_names();
+    if (!hl()) {
+        open_sky();
+        open_names();
+    }
 
     // The party menu first, as the games begin
     host = new (std::nothrow) Host;
@@ -14387,6 +14437,8 @@ void close()
         view3d::World* w = &d->world;
         ecl::GameState* g = &d->gs;
         view3d::vga_free(*w);                   // (Darkness's background picture, VGA tiles)
+        geo::release(d->map);                   // (Dark Queen: a big map's planes)
+        if (cv) cv->paper = -1;
         if (cv && d->tr_bg && cv->bg == d->tr_bg) cv->bg = nullptr;
         for (view3d::TileSet& ts : w->sets) view3d::free_extra(ts);     // (Gateway's big wall sets)
         delete d->alt_font;

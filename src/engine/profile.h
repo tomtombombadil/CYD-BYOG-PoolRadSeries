@@ -318,6 +318,10 @@ struct Profile {
         // Character " "Select Exit" first (GAME.OVR; 0: the selected one);
         // training's "Who pays 1000 gp " (0: the trainee pays)
         uint32_t pick = 0, pick_menu = 0, who_pays = 0;
+        // Dark Queen: the party menu's entries as words (C strings -
+        // text::kCString) in the engine's list order, instead of `items`
+        const uint32_t* words = nullptr;
+        uint8_t n_words = 0;
     } party;
 
     // View Character: name tables in the program and the screen's words

@@ -162,7 +162,7 @@ void draw_glyph(pic::Canvas& c, const Font& f, int g, int x, int y, uint8_t fg, 
             if (px < 0 || px >= c.w) continue;
             if (bits & (0x80 >> col)) c.set(px, py, fg);
             else if (shadowed) c.set(px, py, (shade & (0x80 >> col)) || py >= c.bg_rows ? 0 : c.bg[py * c.w + px]);
-            else if (bg >= 0) c.set(px, py, static_cast<uint8_t>(bg));
+            else if (bg >= 0) c.set(px, py, static_cast<uint8_t>(bg == 0 && c.paper >= 0 ? c.paper : bg));   // (Dark Queen's boxes)
         }
     }
 }
