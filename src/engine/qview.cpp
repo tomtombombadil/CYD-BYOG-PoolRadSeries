@@ -133,6 +133,51 @@ bool draw(pic::Canvas& c, const Libs& libs, const geo::Map& m, int x, int y, int
     return any || d.any;
 }
 
+namespace {
+
+// Part i of a TILE library at its place
+bool tile_part(hlib::ByteSource& s, const hlib::Library& lib, int i, hlpic::Colours& col, pic::Canvas& c)
+{
+    uint32_t pos, len;
+    hlib::Part p;
+    return hlib::entry(s, lib, i, pos, len) && hlib::read_part(s, pos, len, p) &&
+           hlpic::draw(s, p, col, c, hlpic::place_x(p, 0), hlpic::place_y(p, 0));
+}
+
+} // namespace
+
+bool draw_frame(pic::Canvas& c, hlib::ByteSource* frame, hlib::ByteSource* gen, int dir, const int moons[3],
+                hlpic::Colours& col, pic::VgaPalette* pal, int colours)
+{
+    // FRAME's pieces (queen_facts_2.md 6): the colours, then the bars, the
+    // view's frame, the compass and its needle, the moons
+    static const int8_t kPieces[] = {1, 2, 3, 4, 12, 23};
+    constexpr int kNeedle = 25, kMoon = 29;
+    bool ok = true;
+    hlib::Library lib;
+    const bool fr = frame && hlib::open(*frame, 0, frame->size(), lib) == hlib::Status::Ok;
+    uint32_t pos, len;
+    if (fr && hlib::entry(*frame, lib, colours, pos, len)) hlpic::load_colours(*frame, pos, len, col, pal);
+    if (gen) {
+        // (the lower marble first: the view's frame and the compass go over it)
+        hlib::Library gl;
+        ok = hlib::open(*gen, 0, gen->size(), gl) == hlib::Status::Ok && tile_part(*gen, gl, 1, col, c);
+    }
+    if (frame) {
+        ok = ok && fr;
+        for (int i : kPieces) ok = ok && tile_part(*frame, lib, i, col, c);
+        // (the needles: north, south, west, east)
+        static const int8_t kNeedleOf[4] = {0, 3, 1, 2};
+        if (ok && dir >= 0) ok = tile_part(*frame, lib, kNeedle + kNeedleOf[(dir & 7) >> 1], col, c);
+        for (int k = 0; ok && moons && k < 3; ++k)
+            if (moons[k] >= 0 && moons[k] < 4) ok = tile_part(*frame, lib, kMoon + 4 * k + moons[k], col, c);
+    }
+    // The boxes (the original fills them: entry 23 of the frame's colours)
+    const uint8_t fill = c.vga && c.bpp == 8 ? 23 : col.ega[23];
+    for (const Box& b : {kPartyBox, kPlaceBox, kTextBox}) c.fill(b.x, b.y, b.w, b.h, fill);
+    return ok;
+}
+
 bool draw_area_map(pic::Canvas& c, const Libs& libs, const geo::Map& m, int x, int y, int dir,
                    hlpic::Colours& col, int x0, int y0)
 {

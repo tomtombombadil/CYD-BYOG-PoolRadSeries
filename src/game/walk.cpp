@@ -12,10 +12,13 @@
 #include "engine/ecl.h"
 #include "engine/exepack.h"
 #include "engine/font.h"
+#include "engine/hlib.h"
+#include "engine/hlpic.h"
 #include "engine/layout.h"
 #include "engine/profile.h"
 #include "engine/text.h"
 #include "engine/view3d.h"
+#include "engine/qview.h"
 
 namespace walk {
 
@@ -39,6 +42,10 @@ struct Data {
     char           data_dir[96] = {};
     const profile::Profile* prof = nullptr;
     dax::Index idx;          // reused for each file opened
+    // The Dark Queen of Krynn (HLIB files - variant.hlib): its colours as
+    // the view loads them (the 16-colour table)
+    bool           hl = false;
+    hlpic::Colours col;
 };
 
 Data* d = nullptr;
@@ -56,6 +63,18 @@ bool open_file(const char* name, plat::File& f)
     games::path_of(d->data_dir, name, path, sizeof path);
     f = plat::open(path, "r");
     return static_cast<bool>(f);
+}
+
+// An HLIB game's file (Dark Queen): in the game folder's DISK1-3 (or itself)
+bool open_hl(const char* name, plat::File& f)
+{
+    char rel[40];
+    for (int disk = 1; disk <= 4; ++disk) {
+        if (disk <= 3) snprintf(rel, sizeof rel, "DISK%d/%s", disk, name);
+        else snprintf(rel, sizeof rel, "%s", name);
+        if (open_file(rel, f)) return true;
+    }
+    return false;
 }
 
 // Opens <name> and reads its index into d->idx
@@ -99,9 +118,42 @@ bool open_family(const char* stem, int area, int block, plat::File& f)
     return open_dax(name, f);
 }
 
+// Dark Queen: every map ECL.GLB's scripts load (LOAD FILES: the GEO.GLB
+// id and the look - BACK's id - in walls[0])
+void find_hl_maps()
+{
+    d->n_maps = 0;
+    plat::File f;
+    if (!open_hl("ECL.GLB", f)) return;
+    plat::FileSource src(f);
+    hlib::Library lib;
+    if (hlib::open(src, 0, src.size(), lib) == hlib::Status::Ok)
+        for (int i = lib.first_item(); i < lib.count && d->n_maps < kMaxMaps; ++i) {
+            uint32_t pos, len;
+            if (!hlib::entry(src, lib, i, pos, len) || !len) continue;
+            uint8_t* blk = static_cast<uint8_t*>(malloc(len));
+            if (!blk) break;
+            hlib::EntryReader r(src, pos, len);
+            if (r.read(blk, len) == len) {
+                const ecl::MapLoad ml = ecl::find_map_load(blk, len, *d->prof->ecl_ops);
+                bool dup = false;
+                for (int k = 0; k < d->n_maps; ++k) dup = dup || d->maps[k].load.geo == ml.geo;
+                const int id = hlib::id_of(src, lib, i);
+                if (ml.has_geo() && !dup) d->maps[d->n_maps++] = MapRef{0, static_cast<uint8_t>(id), ml};
+            }
+            free(blk);
+        }
+    f.close();
+    plat::log("[walk] ECL.GLB: %d maps\n", d->n_maps);
+}
+
 // Every map the area scripts load, with their wall sets
 void find_maps()
 {
+    if (d->hl) {
+        find_hl_maps();
+        return;
+    }
     d->n_maps = 0;
     for (int a = d->prof->first_area; a <= d->prof->last_area && d->n_maps < kMaxMaps; ++a) {
         char name[24];
@@ -194,6 +246,21 @@ bool select_map(int i)
 
     char name[24];
     plat::File f;
+    if (d->hl) {
+        // Dark Queen: GEO.GLB's map (its wall sets in its header), the look
+        // its backdrop
+        if (open_hl("GEO.GLB", f)) {
+            plat::FileSource src(f);
+            uint32_t pos, len;
+            if (hlib::find_entry(src, r.load.geo, pos, len)) geo::load_hlib(src, pos, len, d->map);
+            f.close();
+        }
+        plat::log("[walk] map %d: script %d GEO %d look %d, %dx%d %s\n", i, r.script, r.load.geo, r.load.walls[0],
+                  d->map.w, d->map.h, d->map.loaded ? "ok" : "missing");
+        pick_start();
+        note = d->map.loaded ? "" : "This map is missing from GEO.GLB.";
+        return true;
+    }
     area_file(name, sizeof name, "GEO", r.area);
     if (open_dax(name, f)) {
         plat::FileSource src(f);
@@ -301,7 +368,7 @@ const char* open(const char* data_dir, games::Game g)
         exepack::Info info;
         const profile::Profile* p = nullptr;
         if (exepack::parse(src, info) == exepack::Status::Ok) p = profile::find(g, info.file_size, info.image_size);
-        if (p && layout::load_tables(src, info, *p, d->tables) != layout::Status::Ok) p = nullptr;
+        if (p && !p->variant.hlib && layout::load_tables(src, info, *p, d->tables) != layout::Status::Ok) p = nullptr;
         f.close();
         if (!p || !p->ecl_ops) {
             close();
@@ -309,6 +376,25 @@ const char* open(const char* data_dir, games::Game g)
             return msg;
         }
         d->prof = p;
+    }
+    if (d->prof->variant.hlib) {
+        // Dark Queen: its screen from FRAME / GEN.TLB, the view from the
+        // wall sets and BACK; the engine's own letters for the test's lines
+        d->hl = true;
+        d->col.reset();
+        memset(&d->font, 0, sizeof d->font);
+        font::set_letters(d->font, font::kClearLetters, nullptr);
+        d->font.loaded = true;
+        find_maps();
+        if (d->n_maps == 0) {
+            close();
+            return "No 3D maps found in the scripts (ECL.GLB).";
+        }
+        area_view = false;
+        text::build(menu, "", "Area Next Prev");
+        menu.selected = -1;
+        select_map(0);
+        return nullptr;
     }
     // Frame tiles, font and the common wall tiles: 8X8D1 (Darkness: the
     // area map's tiles and the font in 8X8D0, the frame BORDERS' gold
@@ -369,10 +455,66 @@ void close()
     d = nullptr;
 }
 
+// Dark Queen's screen: its frame, the view or the area map, the test's lines
+void draw_hl(pic::Canvas& c)
+{
+    plat::File fa, fb, fc;
+    {
+        const bool a = open_hl("FRAME.TLB", fa), b = open_hl("GEN.TLB", fb);
+        plat::FileSource sa(fa), sb(fb);
+        const int moons[3] = {-1, -1, -1};
+        qview::draw_frame(c, a ? &sa : nullptr, b ? &sb : nullptr, pdir, moons, d->col);
+        if (a) fa.close();
+        if (b) fb.close();
+    }
+    if (d->map.loaded && area_view) {
+        if (open_hl("TOPVIEW.TLB", fa)) {
+            plat::FileSource sa(fa);
+            qview::Libs libs;
+            libs.topview = &sa;
+            qview::draw_area_map(c, libs, d->map, px, py, pdir, d->col);
+            fa.close();
+        }
+    } else if (d->map.loaded) {
+        // (three files at once: the card's slots)
+        const bool a = open_hl("8X8DB.TLB", fa), b = open_hl("8X8DC.TLB", fb), k = open_hl("BACK.TLB", fc);
+        plat::FileSource sa(fa), sb(fb), sc(fc);
+        qview::Libs libs;
+        libs.walls[0] = a ? &sa : nullptr;
+        libs.walls[1] = b ? &sb : nullptr;
+        libs.back = k ? &sc : nullptr;
+        const qview::Look look = qview::look_of(d->map, d->maps[cur].load.walls[0] == ecl::kNone ? 0 : d->maps[cur].load.walls[0]);
+        qview::draw(c, libs, d->map, px, py, pdir, look, d->col);
+        if (a) fa.close();
+        if (b) fb.close();
+        if (k) fc.close();
+    }
+    const MapRef& r = d->maps[cur];
+    char line[48];
+    snprintf(line, sizeof line, "Map %d of %d: GEO %d", cur + 1, d->n_maps, r.load.geo);
+    put(c, line, 18, 2);
+    snprintf(line, sizeof line, "%dx%d, look %d", d->map.w, d->map.h, r.load.walls[0] == ecl::kNone ? 0 : r.load.walls[0]);
+    put(c, line, 18, 3, 7);
+    snprintf(line, sizeof line, "Sets %d %d %d", d->map.head[0], d->map.head[1], d->map.head[2]);
+    put(c, line, 18, 4, 7);
+    snprintf(line, sizeof line, "Script %d", r.script);
+    put(c, line, 18, 5, 7);
+    put(c, "Tap here for", 18, 8, 15);
+    put(c, "the next map", 18, 9, 15);
+    snprintf(line, sizeof line, "%d,%d %s", px, py, geo::dir_name(pdir));
+    put(c, line, 27, 14, 15);
+    if (note[0]) put(c, note, 1, 18, 15);
+    text::draw(c, d->font, menu);
+}
+
 void draw(pic::Canvas& c)
 {
     c.clear(0);
     if (!d) return;
+    if (d->hl) {
+        draw_hl(c);
+        return;
+    }
     layout::explore(c, d->tables, d->frame_tiles);
     if (d->map.loaded) {
         if (area_view) {

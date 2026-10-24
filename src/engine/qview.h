@@ -64,6 +64,21 @@ int part_of(int piece, int slot);
 bool draw(pic::Canvas& c, const Libs& libs, const geo::Map& m, int x, int y, int dir, const Look& look,
           hlpic::Colours& col, pic::VgaPalette* pal = nullptr, int x0 = 24, int y0 = 24);
 
+// The exploring screen's frame (queen_facts_2.md 6): FRAME.TLB's pieces at
+// their places - the top, left, right and bottom bars, the view's frame,
+// the compass (its needle: the north, south, west, east pictures 25-28) - and
+// GEN.TLB's lower marble, in the colours of FRAME's colour part
+// `colours` (its four looks: entries 41-44; DOSBox showed 42); the three
+// boxes (party list, place / time, text) filled with entry 23. moons:
+// the three moons' phases (0-3; -1: none drawn). The libraries one at a
+// time (frame, then gen; either null: left out).
+constexpr int kFrameColours = 42;
+bool draw_frame(pic::Canvas& c, hlib::ByteSource* frame, hlib::ByteSource* gen, int dir, const int moons[3],
+                hlpic::Colours& col, pic::VgaPalette* pal = nullptr, int colours = kFrameColours);
+// The boxes' insides (x, y, w, h): the party list, place / time, the text
+struct Box { int16_t x, y, w, h; };
+constexpr Box kPartyBox{136, 8, 176, 88}, kPlaceBox{205, 103, 107, 25}, kTextBox{8, 135, 304, 49};
+
 // The area map: TOPVIEW's tiles - 1 + walls (bit 0 north, 1 east, 2 south,
 // 3 west), the party's arrow 17 + dir / 2 - 11 x 11 squares round the
 // party, the window kept on the map
