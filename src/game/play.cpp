@@ -1315,6 +1315,21 @@ void draw_position(pic::Canvas& c)
     if (marker_overland()) return;
     if (d->prof->variant.tr && !tr_position) return;
     const ecl::GameState& g = d->gs;
+    if (hl()) {
+        // (Dark Queen: its place box - "x,y" over the 12-hour clock, light
+        // grey - DOSBox; its compass shows the facing)
+        const qview::Box& b = qview::kPlaceBox;
+        c.fill(b.x, b.y, b.w, b.h, 0);
+        char line[24];
+        snprintf(line, sizeof line, "%d,%d", g.x, g.y);
+        put(c, line, 26, 13, 7);
+        const int h24 = vm->get(0x4BC9) % 24, h12 = h24 % 12 ? h24 % 12 : 12;
+        snprintf(line, sizeof line, "%d:%d%d %s", h12, vm->get(0x4BC8) % 10, vm->get(0x4BC7) % 10, h24 < 12 ? "AM" : "PM");
+        put(c, line, 26, 15, 7);
+        q_compass(c);
+        dirty_rows(12, 16);
+        return;
+    }
     // (Treasures clears columns 18-38 only - ovr 0x41207)
     if (d->prof->variant.tr) c.fill(18 * 8, 15 * 8, 21 * 8, 8, 0);
     else c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);
@@ -1389,7 +1404,13 @@ void draw_party(pic::Canvas& c, int col, bool mark_sel = true, bool box = false)
 void draw_panel(pic::Canvas& c)
 {
     if (marker_overland()) return;          // (Darkness's / Champions' overland: its map in the panel's place)
-    c.fill(17 * 8, 8, 22 * 8, 14 * 8, 0);
+    if (hl()) {
+        // (Dark Queen: the party box only - the compass is below it)
+        const qview::Box& b = qview::kPartyBox;
+        c.fill(b.x, b.y, b.w, b.h, 0);
+    } else {
+        c.fill(17 * 8, 8, 22 * 8, 14 * 8, 0);
+    }
     if (pt->count) draw_party(c, 17);
     else put(c, "NO PARTY YET", 18, 2, 8);
     draw_position(c);

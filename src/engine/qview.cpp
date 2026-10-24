@@ -178,6 +178,16 @@ bool draw_frame(pic::Canvas& c, hlib::ByteSource* frame, hlib::ByteSource* gen, 
     return ok;
 }
 
+bool draw_compass(pic::Canvas& c, hlib::ByteSource& frame, int dir, hlpic::Colours& col, int colours)
+{
+    hlib::Library lib;
+    if (hlib::open(frame, 0, frame.size(), lib) != hlib::Status::Ok) return false;
+    uint32_t pos, len;
+    if (hlib::entry(frame, lib, colours, pos, len)) hlpic::load_colours(frame, pos, len, col, nullptr);
+    static const int8_t kNeedleOf[4] = {0, 3, 1, 2};
+    return tile_part(frame, lib, 23, col, c) && tile_part(frame, lib, 25 + kNeedleOf[(dir & 7) >> 1], col, c);
+}
+
 bool draw_area_map(pic::Canvas& c, const Libs& libs, const geo::Map& m, int x, int y, int dir,
                    hlpic::Colours& col, int x0, int y0)
 {

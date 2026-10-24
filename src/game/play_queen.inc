@@ -85,6 +85,21 @@ __attribute__((noinline)) void q_draw_frame(pic::Canvas& c, bool explore)
     dirty(0, pic::kScreenH);
 }
 
+// The compass after a turn
+__attribute__((noinline)) void q_compass(pic::Canvas& c)
+{
+    plat::File f;
+    if (!open_hl("FRAME.TLB", f)) return;
+    {
+        plat::FileSource src(f);
+        const int16_t paper = c.paper;
+        c.paper = -1;
+        qview::draw_compass(c, src, d->gs.dir, q_col());
+        c.paper = paper;
+    }
+    f.close();
+}
+
 // The 3D view or the area map, from the map and the look loaded
 __attribute__((noinline)) void q_draw_view(pic::Canvas& c, bool area)
 {

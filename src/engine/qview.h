@@ -75,6 +75,8 @@ bool draw(pic::Canvas& c, const Libs& libs, const geo::Map& m, int x, int y, int
 constexpr int kFrameColours = 42;
 bool draw_frame(pic::Canvas& c, hlib::ByteSource* frame, hlib::ByteSource* gen, int dir, const int moons[3],
                 hlpic::Colours& col, pic::VgaPalette* pal = nullptr, int colours = kFrameColours);
+// The compass alone (its dial and the needle for dir) - a turn
+bool draw_compass(pic::Canvas& c, hlib::ByteSource& frame, int dir, hlpic::Colours& col, int colours = kFrameColours);
 // The boxes' insides (x, y, w, h): the party list, place / time, the text
 struct Box { int16_t x, y, w, h; };
 constexpr Box kPartyBox{136, 8, 176, 88}, kPlaceBox{205, 103, 107, 25}, kTextBox{8, 135, 304, 49};
