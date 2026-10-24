@@ -183,6 +183,9 @@ the Project as claude/TODO.md.
 - [x] v0.149.1 (Tom, 2026-10-24 12:41: C5 sound fixed in every playable
       game): the C5's Curse / Secret sounds were also distorted - the
       output (PDM up-sampling / quarter scale).
+- [ ] Tom (2026-10-24 12:57): review in testing - the exploring / camp
+      panels keep the originals' white name for the selected member (the
+      party menu has the white box since v0.150.0); box them too?
 - [ ] Tom (2026-10-24, 12:21; 12:34 Settings: one Game Sound key naming
       the mode, tap to change - Tandy / PC Speaker / Darkness / Gateway /
       Treasures by what's on the card; in those three games just the game;
