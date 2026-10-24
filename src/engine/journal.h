@@ -146,7 +146,7 @@ bool make_gbc(dax::ByteSource& dat, GbcPictures& pics, const char* id, Output& o
 
 // Looks through printed game text for "JOURNAL ENTRY 31" (also "JOURNAL
 // AS ENTRY 59", "JOURNAL\nENTRY 44", "ENTRY #12") or "TAVERN TALE 12", or
-// "THE INTRODUCTION TO YOUR JOURNAL" (Gateway's start: 'I' 1).
+// "THE INTRODUCTION TO YOUR JOURNAL" (Gateway's and Treasures' starts: 'I' 1).
 // Returns the kind ('J' / 'T' / 'I') of the last complete mention and sets
 // *number, else 0.
 char find_mention(const char* text, int* number);

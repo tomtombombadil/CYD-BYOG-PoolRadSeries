@@ -117,7 +117,11 @@ The games draw a 320x200 screen. The canvas is presented:
     menu line, they pick the character; in Modify Character they change the
     value). Select = a tap on the highlighted thing (it lights up first, as
     taps do): the menu line's word, the list menu's line, the party menu's
-    line, "press a key". Under the Companion map, stacked: **Game** (was
+    line, "press a key". **The highlight's rule, every game** (Tom,
+    2026-10-24; features.h `CYD_MENU_HIGHLIGHT`; SPEC 12): a white box round
+    the whole word (Treasures' own white letters not used), a menu starts
+    on its first word (questions on their game's word), and after a pick
+    the same menu or question shown again starts on the word picked last. Under the Companion map, stacked: **Game** (was
     "Menu": the engine's Menu, renamed so it isn't confused with the cursor
     keys), **Look** (v0.86.0, Tom: no **Esc** in the game - a stray tap
     left it; Exit Game is in the Game menu only, as on 320x240; Game and
@@ -1761,10 +1765,8 @@ segment at image 0x4C70; run as `GAME UseStart`) + GAME.OVR (51 overlays),
   Gateway to the Savage Frontier/Game.dat in the game's folder) makes it
   with the existing code (62 entries; checked on the GOG companion's copy of
   Game.dat); its "...AS JOURNAL" "ENTRY #32." mentions are found. The GOG
-  release: the PDF's book view when the PDF is on the card - no entry table
-  for its PDF yet (`journal_tables.cpp` has Curse's and Pool's), and the GOG
-  companion at /GOLDBOX/GBC isn't used for journals (no JE pictures there;
-  a choice for Tom).
+  release: its PDF's entry table (v0.142.0: 62 entries; the Introduction as
+  entry 'I' 1 since v0.146.0 - Treasures' too).
 - **Not yet:** no music (MUSIC.DAX: the original's "0x80 up" sounds -
   block 0 is its own x86 driver (MicroMagic's), block 1 the one song, a
   "GLBR" OPL2 / AdLib FM score: not the families the engine plays).
@@ -1906,7 +1908,7 @@ boxes between Gateway's columns set by hand), every entry checked by eye.
 Secret prints the number as a text of its own (play::heard joins them);
 Darkness's JOURNAL n op says "...journal entry N." and waits for a key -
 the entry is offered there too. 2026-10-24 (branch treasures-finish):
-**Treasures** (83 entries, 108 pieces) - its GOG PDF is book spreads, a
+**Treasures** (84 entries, 112 pieces) - its GOG PDF is book spreads, a
 72 dpi grayscale JPEG a book page (several pictures a PDF page: the
 reader orders them by the content stream's placement, `pdf::page_pictures`;
 a table piece has a sixth number, the picture's index; the book view
@@ -1914,7 +1916,11 @@ shows the big pictures as pages). Its one-component JPEGs say 2x2
 sampling - TJpgDec now takes such a scan as 8x8 blocks (T.81 A.2.2; the
 other journals' pictures unchanged byte for byte). `make_table.py
 treasures`; every entry checked by eye. Its scripts say "... AS JOURNAL
-ENTRY #N." / "... AS ENTRY #N." (both found).
+ENTRY #N." / "... AS ENTRY #N." (both found). Its start's "you record his
+words as the introduction to your journal" (Tom, 2026-10-24) is entry
+J 0: the book's Introduction (PDF page 1's right page, page 2's left - 5
+pieces, its opening full width), listed as "Introduction"; a card scanned
+before needs Rescan for it (the entry count changed).
 
 v0.10.0 did this in a browser page (pdf.js) on the player's PC; Tom
 (2026-10-09) wants no PC step: since v0.12.0 the board does it.
@@ -2452,5 +2458,17 @@ the game's Settings (As Original: all of them).
   sling's shot (6) as the miss (ZOUNDS.DAX has no blocks 3 and 6); with
   Game Fixes on the magic sound (4) and the missile's (12). Off: as the
   original.
+- **The menu highlight** (all games; Tom, 2026-10-24; features.h
+  `CYD_MENU_HIGHLIGHT`): a white box round the whole highlighted word -
+  Treasures' original draws white letters (its menu line and lists), its
+  words' first letters white anyway; a new menu starts on its first word -
+  Darkness's and Treasures' originals carry the last menu's place into
+  the next (past a short menu's end its last word); the same menu or
+  question shown again starts on the word picked last - the originals
+  start creation's "Reroll stats?" (Pool's "Keep this character?"), the
+  next fighter's menu, a menu back from the one it opened afresh. Kept as
+  the originals: questions start on their game's word (No; Darkness's /
+  Gateway's Yes; Treasures' scripts' Yes), Darkness's menus with a place of
+  their own.
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.

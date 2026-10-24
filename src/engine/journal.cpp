@@ -618,7 +618,8 @@ char find_mention(const char* text, int* number)
                     break;
                 }
         } else if (upper_eq(s, "INTRODUCTION TO YOUR JOURNAL")) {
-            // Gateway's start: "... AS THE INTRODUCTION TO YOUR JOURNAL." -
+            // Gateway's start: "... AS THE INTRODUCTION TO YOUR JOURNAL." (Treasures':
+            // "YOU RECORD HIS WORDS AS THE INTRODUCTION ...") -
             // the journal's Introduction (kind 'I', number 1)
             kind = 'I';
             *number = 1;

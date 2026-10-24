@@ -447,10 +447,15 @@ void menu_checks()
     expect(D_, "menus: View opens on its first word", screen == Screen::View && menu.selected == 0, "%d", menu.selected);
     tap_word('E');
     expect(D_, "menus: back in camp, View lit", screen == Screen::Camp && menu.selected == view_at, "%d", menu.selected);
-    // A menu with no place of its own (the save slots: GAME.OVR 0x131D2) starts at the last one's
+    // A menu with no place of its own (the save slots: GAME.OVR 0x131D2)
+    // starts at the last one's - the engine's highlight rule (features.h
+    // CYD_MENU_HIGHLIGHT, Tom 2026-10-24): on its first word
     dk_place = 3;
     ask_save(C);
-    expect(D_, "menus: the save slots start where the last menu was left (D)", menu.selected == 3, "%d", menu.selected);
+    if (CYD_MENU_HIGHLIGHT)
+        expect(D_, "menus: the save slots start on their first word (the engine's rule)", menu.selected == 0, "%d", menu.selected);
+    else
+        expect(D_, "menus: the save slots start where the last menu was left (D)", menu.selected == 3, "%d", menu.selected);
     dk_place = 40;
     ask_save(C);
     expect(D_, "menus: past the menu's end - the first word", menu.selected == 0, "%d", menu.selected);

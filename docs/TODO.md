@@ -134,29 +134,24 @@ the Project as claude/TODO.md.
       field tiles (23 KB) in internal RAM - one block would go to PSRAM;
       a Settings switch for EGA on the S3 / C5 (Claude: not now - Tom's
       rule is 256 colours there).
-- [ ] Tom's tests 2026-10-24 (C5, 4.0" S3, v0.145.0):
-      C5 - Gateway's sounds: Volume and Tandy / PC Speaker have no
-      effect, harsh attack, distorted ending (fine on the 4.0" and the S3,
-      a little low there) - the C5's PDM output with the recorded samples.
-      Gateway: the pregenerated characters and the pregenerated saved game
-      are missing; Modify Character says "NAME can't be modified." on a
-      new character; the icon gallery opens on its second page (should be
-      the first); Sling and Magic Hit play the Miss sound; Tandy and PC
-      Speaker sound the same (recorded samples - only a little grain
-      differs, as Darkness's). Gateway and Treasures: the start's
-      "introduction to your journal" isn't shown - show it as an entry.
-      Treasures: the Valhalla Inn's "rest for 1 pp?" asks again forever
-      after No; its highlight only turns the word white (the first letter
-      is white anyway: one-letter save slots can't be told apart) - a
-      white background round the whole word as the earlier games; some
-      menus start on their last word - start on the first.
-      All games: a "Loading..." screen after Play (starts are slow); the
-      creation questions (Reroll Stats? Yes / No) put the highlight back
-      on each Select - keep it where it was. Tom (2026-10-24, 06:21): the
-      highlight rules are for ALL games - a white background round the
-      whole word, menus starting on the first word, the highlight staying
-      where it was after Select - unless decided otherwise earlier for a
-      case. (Branch ui-fixes.)
+- [x] Tom's tests 2026-10-24 (v0.145.1 / v0.146.0): the C5's sound line
+      stays at the middle (v0.145.1 - Tom to listen again); Gateway's
+      ready-made characters (the SNEG copy's 12 .GUY; GAME.CFG's first
+      folder line; no saved game ships with either release), Modify on new
+      characters, the icon gallery's first page, Sling / Magic Hit sounds
+      (the original plays the Miss sample - Game Fixes: the magic and
+      missile sounds), the journal's Introduction (Gateway and Treasures,
+      entry 'I' 1 - Rescan needed); a Loading screen on Play; one menu
+      highlight rule for every game (white box, first word, the place kept
+      after Select - SPEC 12); Treasures' Valhala Inn (a script CALL's
+      operand - Darkness's Rolf tour fixed by it too). Tandy / PC Speaker
+      in the recorded-sample games: only grain differs (told Tom).
+- [ ] Claude: game starts are slow because every exepack::read unpacks
+      the program backwards from its end (Darkness 9.1 MB read at start,
+      Secret 4 MB, Curse 1.7 MB) - unpack the data segment once (at Play or
+      the scan, into _CYD/<folder>/) or batch the lookups.
+- [ ] Tom: Gateway test characters (gateway_itemtest.zip, 2026-10-24):
+      into Gateway's SAVE folder, then Add Character -> ITEMTST1-3.
 - [ ] Krynn (survey 2026-10-24, the Project's claude/krynn_facts.md):
       Champions = Secret's engine (port started, branch champions); Death
       Knights = Darkness's engine at 4 bits (LOAD FILES / PIECES 3
