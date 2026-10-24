@@ -693,8 +693,9 @@ struct Profile {
         // The title's picture shown in the 16-colour mode instead of
         // title_ega[0] (Treasures: block 5 for 4; 0: none)
         uint8_t  title_ega[2] = {};
-        // The camp's picture indoors (0: camp_pic everywhere; Treasures 132)
-        uint8_t  camp_pic_in = 0;
+        // The camp's picture is game byte 0x4F's when it's set (Treasures:
+        // its scripts set 132 indoors - ov105+0x3149; else camp_pic)
+        bool     camp_pic_byte = false;
         // The demo's ECL1 block (0: 0x52; Treasures 4 - its CONTROL "INTRO 1")
         uint8_t  demo_block = 0;
         // Treasures' camp words (GAME.OVR / the program, text::kInProgram):
@@ -705,7 +706,7 @@ struct Profile {
         uint32_t tr_paper[2] = {};
         // "Battle in snow! Movement restricted." / "... rain! ..." (GAME.OVR)
         uint32_t tr_weather[2] = {};
-        // Old age after a fight (ovl 0x62 +0x3F0): the races' greatest ages
+        // Old age after a fight (Treasures ovl 0x62 +0x3F0, Darkness too): the races' greatest ages
         // (DS words by its race number), "is looking very old", "The strain
         // of this last battle has worn heavily on ", ".  ", "He", "She", " breathes
         // deeply ...", "Sadly, no party member witnesses ...", " weeps at the

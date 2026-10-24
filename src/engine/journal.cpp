@@ -194,14 +194,14 @@ bool make(dax::ByteSource& src, const Table& t, Output& out, Progress progress, 
         }
     }
 
-    // The pages the table uses, in order
-    int used[pdf::kMaxPages] = {};
+    // The page pictures the table uses (page x 16 + the picture's index), in order
+    int used[pdf::kMaxPages * 2] = {};
     int n_used = 0;
     for (int i = 0; i < t.n_pieces; ++i) {
-        const int p = t.pieces[i].page;
+        const int p = t.pieces[i].page * 16 + (t.pieces[i].image & 15);
         bool seen = false;
         for (int k = 0; k < n_used; ++k) seen = seen || used[k] == p;
-        if (!seen && n_used < pdf::kMaxPages) used[n_used++] = p;
+        if (!seen && n_used < pdf::kMaxPages * 2) used[n_used++] = p;
     }
     for (int i = 1; i < n_used; ++i)
         for (int k = i; k > 0 && used[k - 1] > used[k]; --k) {
@@ -211,9 +211,9 @@ bool make(dax::ByteSource& src, const Table& t, Output& out, Progress progress, 
         }
 
     for (int u = 0; ok && u < n_used; ++u) {
-        const int page = used[u];
+        const int page = used[u] >> 4, image = used[u] & 15;
         pdf::Image img;
-        ok = page >= 1 && page <= n_pages && pdf::page_image(src, *doc, pages[page - 1], img) && img.jpeg;
+        ok = page >= 1 && page <= n_pages && pdf::page_image(src, *doc, pages[page - 1], img, image) && img.jpeg;
         if (!ok) break;
         PageWork* w = new (std::nothrow) PageWork;
         ok = w != nullptr;
@@ -225,7 +225,7 @@ bool make(dax::ByteSource& src, const Table& t, Output& out, Progress progress, 
         int maxw = 0;
         for (int i = 0; i < t.n_pieces && w->n < 64; ++i) {
             const Piece& p = t.pieces[i];
-            if (p.page != page) continue;
+            if (p.page != page || (p.image & 15) != image) continue;
             w->list[w->n++] = i;
             if (p.x < w->x0) w->x0 = p.x;
             if (p.x + p.w > w->x1) w->x1 = p.x + p.w;

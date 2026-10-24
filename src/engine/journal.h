@@ -35,6 +35,7 @@ namespace journal {
 struct Piece {
     uint8_t  page;                 // PDF page, from 1
     uint16_t x, y, w, h;           // in pixels of the page's picture
+    uint8_t  image = 0;            // which of the page's pictures (pdf::page_image's index; Treasures)
 };
 
 struct EntryDef {

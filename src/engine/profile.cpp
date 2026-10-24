@@ -2203,7 +2203,10 @@ const Profile kProfiles[] = {
                  .fight_unswapped = true, .vga = true, .darkness_files = true, .party_menu_col = 9,
                  // (the overland: DS 0x7D08's regions 0-4 -> BIGPIC 240, 241, 242,
                  // 242, 245; the marker CURSOR.DAX block 1 - DOSBox)
-                 .dk_overland_pics = 0x7D08, .marker_file = "CURSOR.DAX", .marker_block = 1},
+                 .dk_overland_pics = 0x7D08, .marker_file = "CURSOR.DAX", .marker_block = 1,
+                 // (old age after a fight: Treasures' routine, here ovr 0x864B)
+                 .tr_max_age = 0x08E2,
+                 .tr_age_words = {0x84E3, 0x84F7, 0x852B, 0x852F, 0x8532, 0x8536, 0x857F, 0x85BD, 0x85EF, 0x8634}},
      .font_file = "8X8D0.DAX",
      .joined = kDarknessJoined, .n_joined = sizeof kDarknessJoined / sizeof kDarknessJoined[0],
      // Its vault (facts_shops.md 5): VAULTx.DAT a save slot, TMPVAULT.DAT while playing
@@ -2580,9 +2583,9 @@ const Profile kProfiles[] = {
      .sound = {.fireball_spell = 0x2F, .lightning_spell = 0x33, .burst_spells = {0x22, 0x2F, 0x40, 0x57, 0x5B, 0x73, 0x7C}},
      .clips ={.file = "ZOUNDS.DAX", .hz = 9000, .first = 2, .last = 12,
                .ids = {0, 0, 2, 9, 6, 5, 9, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .quiet_turns = true},
-     .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0xF0, .treasure_pic = 129, .camp_pic = 128, .appraise_div = 2,
+     .variant = {.program_words = true, .bigpic_from = 0xF0, .treasure_pic = 129, .camp_pic = 128, .appraise_div = 2,
                  .fight_unswapped = true, .vga = true, .darkness_files = true, .party_menu_col = 9,
-                 .tr = true, .pic_split = 78, .title_ega = {4, 5}, .camp_pic_in = 132, .demo_block = 4,
+                 .tr = true, .pic_split = 78, .title_ega = {4, 5}, .camp_pic_byte = true, .demo_block = 4,
                  .tr_crown_menu = 0xF776, .tr_acquired = 0x145D8,
                  .tr_crystal = {0x145F6, 0x14602, 0x14610}, .tr_accept = 0x1545E, .tr_his = 0x14D01,
                  .tr_her = 0x14D05, .tr_paper = {0x2DEA8, 0x2DEBC},
