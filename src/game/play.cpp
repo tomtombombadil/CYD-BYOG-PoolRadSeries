@@ -343,11 +343,39 @@ sound::Player* snd = nullptr;
 // Darkness: its effects are digitised samples (ZOUNDS.DAX), each read from
 // the card as it sounds (profile clips)
 sound::ClipPlayer* clips = nullptr;
-uint8_t snd_mode = 1, snd_volume = 230;     // (Settings: 1 Tandy, 2 PC speaker, 3 Off)
+uint8_t snd_mode = 1, snd_volume = 230;     // (Settings: 1 Tandy, 2 PC speaker, 3 Off, 4 recorded)
+
+// The older games' effects as a later game's recordings (Tom, 2026-10-24:
+// Settings' Game Sound Darkness / Gateway / Treasures - snd_mode 4): an
+// effect that game has a match for (its profile's clips.lent) is read from
+// its ZOUNDS.DAX in its own folder as it sounds, as that game does; the rest
+// play the game's own Tandy sound. The two mixed (lent_fill).
+char lent_dir[96] = {};                         // the recording game's data_dir ("": none)
+games::Game lent_game = games::Game::Unknown;
+const profile::Profile* lent_prof = nullptr;    // its facts once set up (nullptr: off)
+uint16_t lent_rates[16] = {};                   // (Gateway: each effect's rate, from its program)
+sound::ClipPlayer* lclips = nullptr;            // (made with snd; kept for the session)
 
 bool snd_fill(uint8_t* buf, int n, void* ctx)
 {
     return static_cast<sound::Player*>(ctx)->render(buf, n, kAudioHz, snd_volume);
+}
+
+// The older games' output: the Tandy / PC speaker sound and the lent
+// recordings over it
+bool lent_fill(uint8_t* buf, int n, void*)
+{
+    bool more = snd->render(buf, n, kAudioHz, snd_volume);
+    uint8_t t[64];
+    for (int at = 0; at < n; at += static_cast<int>(sizeof t)) {
+        const int k = n - at < static_cast<int>(sizeof t) ? n - at : static_cast<int>(sizeof t);
+        if (lclips->render(t, k, kAudioHz, snd_volume)) more = true;
+        for (int i = 0; i < k; ++i) {
+            const int v = buf[at + i] + t[i] - 128;
+            buf[at + i] = static_cast<uint8_t>(v < 0 ? 0 : v > 255 ? 255 : v);
+        }
+    }
+    return more;
 }
 
 bool clip_fill(uint8_t* buf, int n, void* ctx)
@@ -357,13 +385,14 @@ bool clip_fill(uint8_t* buf, int n, void* ctx)
 
 bool sound_on()
 {
-    return ((snd && snd->ready()) || clips) && (snd_mode == 1 || snd_mode == 2);
+    return ((snd && snd->ready()) || clips) && (snd_mode == 1 || snd_mode == 2 || snd_mode == 4);
 }
 sound::Device sound_device() { return snd_mode == 2 ? sound::Device::PcSpeaker : sound::Device::Tandy; }
 
 void start_output()
 {
     if (clips) audio_play(clip_fill, clips);
+    else if (lclips) audio_play(lent_fill, nullptr);
     else audio_play(snd_fill, snd);
 }
 
@@ -376,6 +405,7 @@ void sound_hold(bool on)
     }
     if (!sound_on()) return;
     if (clips) audio_hold(true, clip_fill, clips);
+    else if (lclips) audio_hold(true, lent_fill, nullptr);
     else audio_hold(true, snd_fill, snd);
     if (!audio_held()) memlog::note("NOT ENOUGH MEMORY to hold the sound for the fight");
 }
@@ -416,6 +446,33 @@ __attribute__((noinline)) void play_clip(int v)
     start_output();
 }
 
+// A lent recording (the recording game's effect v): false when it didn't
+// read (the Tandy sound then)
+__attribute__((noinline)) bool play_lent(int v)
+{
+    const sound::Clips& cl = lent_prof->clips;
+    char path[160];
+    games::path_of(lent_dir, cl.file, path, sizeof path);
+    plat::File f = plat::open(path, "r");
+    if (!f) return false;
+    plat::FileSource* src = new (std::nothrow) plat::FileSource(f);
+    uint32_t n = 0;
+    uint8_t* pcm = src ? sound::load_clip(*src, v + cl.to_block, &n) : nullptr;
+    delete src;
+    f.close();
+    if (!pcm) {
+        static uint32_t noted = 0;
+        if (!noted || plat::now_ms() - noted > 60000) {
+            noted = plat::now_ms() | 1;
+            memlog::note("a recorded sound didn't read (memory low?): the Tandy one");
+        }
+        return false;
+    }
+    lclips->start(pcm, n, lent_rates[v & 15] ? lent_rates[v & 15] : cl.hz, sound::Device::Tandy);
+    start_output();
+    return true;
+}
+
 // A sound by the engine's number (sound::Id - Curse's), `game`: the game's
 // own number (Darkness's SOUND v)
 void sfx(int id, bool game = false)
@@ -423,6 +480,8 @@ void sfx(int id, bool game = false)
     if (!sound_on()) return;
     if (clips && !game) id = id >= 0 && id < 16 ? d->prof->clips.ids[id] : 0;
     if (clips && !id) return;
+    // (the older games with a later game's recordings: the one lent for it)
+    const int lent = !clips && lent_prof && lclips && id >= 0 && id < 16 ? lent_prof->clips.lent[id] : 0;
     // A sound needs ~7 KB while it plays (its task and DAC): not when that
     // would leave the game short - in a fight nothing is dropped for it
     // (Hit and Miss are never left out - Tom, 2026-10-12: they tell a hit
@@ -430,7 +489,7 @@ void sfx(int id, bool game = false)
     // Darkness: its samples too (up to 5 KB, while they play)
     const bool vital = clips ? !game && (id == d->prof->clips.ids[sound::kHit] || id == d->prof->clips.ids[sound::kMiss])
                              : id == sound::kHit || id == sound::kMiss;
-    const unsigned need = clips ? 15 : 10;
+    const unsigned need = clips || lent ? 15 : 10;
     if (!vital && !audio_running() && memlog::largest_kb() < need && (fighting() || !make_room(need, "a sound"))) {
         static uint32_t noted = 0;
         if (!noted || plat::now_ms() - noted > 60000) {
@@ -443,6 +502,7 @@ void sfx(int id, bool game = false)
         play_clip(id);
         return;
     }
+    if (lent && play_lent(lent)) return;
     snd->start(id, sound_device());
     start_output();
 }
@@ -12705,6 +12765,44 @@ void gal_step(int step, pic::Canvas& c)
 }
 #endif
 
+// The recordings lent to an older game (Settings' Darkness / Gateway /
+// Treasures, set_sound): that game's facts found by its program on the card
+// (its first release's when the player's is one the engine doesn't know -
+// then Gateway's effects all at its usual rate), its ZOUNDS.DAX there
+__attribute__((noinline)) void lent_setup()
+{
+    lent_prof = nullptr;
+    memset(lent_rates, 0, sizeof lent_rates);
+    if (snd_mode != 4 || !lent_dir[0] || !snd || !lclips) return;
+    const profile::Profile* p = profile::first(lent_game);
+    if (!p || !p->clips.file) return;
+    char path[160];
+    games::path_of(lent_dir, p->program, path, sizeof path);
+    plat::File f = plat::open(path, "r");
+    if (f) {
+        plat::FileSource src(f);
+        exepack::Info info;
+        const profile::Profile* exact = exepack::parse(src, info) == exepack::Status::Ok
+                                            ? profile::find(lent_game, info.file_size, info.image_size)
+                                            : nullptr;
+        uint8_t b[32];
+        if (exact && exact->clips.file) {
+            p = exact;
+            if (p->clips.rate_table && exepack::read(src, info, p->create.ds_image + p->clips.rate_table, b,
+                                                     sizeof b) == exepack::Status::Ok)
+                for (int k = 0; k < 16; ++k) lent_rates[k] = static_cast<uint16_t>(b[2 * k] | b[2 * k + 1] << 8);
+        }
+        f.close();
+    }
+    games::path_of(lent_dir, p->clips.file, path, sizeof path);
+    if (!plat::exists(path)) {
+        plat::log("[play] no %s: the recorded sounds are off (Tandy)\n", path);
+        return;
+    }
+    lent_prof = p;
+    plat::log("[play] the effects as %s's recordings (%s)\n", games::title(lent_game), path);
+}
+
 // The sound driver's tables and byte code, from the player's program
 void load_sound()
 {
@@ -12750,7 +12848,10 @@ void load_sound()
         plat::log("[play] the sound driver's data didn't read: no sound\n");
         delete snd;
         snd = nullptr;
+        return;
     }
+    lclips = new (std::nothrow) sound::ClipPlayer;
+    lent_setup();
 }
 
 // ---- the title sequence (Tom, 2026-10-10: "like starting the game for real")
@@ -13597,6 +13698,7 @@ bool make_room(unsigned kb, const char* what)
     };
     if (audio_running() && !audio_held()) {         // (a fight's held output stays: Hit / Miss)
         audio_stop();
+        if (lclips) lclips->clear();                // (the recordings waiting to play: their memory too)
         if (dropped("the sound playing")) return true;
     }
     if (hw && !fg && screen == Screen::Game) {
@@ -13635,11 +13737,16 @@ const char* no_memory(const char* what)
     return msg;
 }
 
-void set_sound(uint8_t mode, uint8_t volume)
+void set_sound(uint8_t mode, uint8_t volume, const char* rec_dir, games::Game rec)
 {
+    const bool lent_changed = mode != snd_mode || rec != lent_game || strcmp(rec_dir ? rec_dir : "", lent_dir) != 0;
     snd_mode = mode;
     snd_volume = volume;
-    if (mode != 1 && mode != 2) audio_stop();
+    strncpy(lent_dir, rec_dir ? rec_dir : "", sizeof lent_dir - 1);
+    lent_dir[sizeof lent_dir - 1] = 0;
+    lent_game = rec;
+    if (mode != 1 && mode != 2 && mode != 4) audio_stop();
+    if (lent_changed) lent_setup();         // (a game open: its effects change now)
 }
 
 uint8_t sound_mode() { return snd_mode; }
@@ -14061,6 +14168,9 @@ void close()
     snd = nullptr;
     delete clips;
     clips = nullptr;
+    delete lclips;
+    lclips = nullptr;
+    lent_prof = nullptr;
     if (d) anim_stop();
     input_mode = Input::None;
     if (vm) {

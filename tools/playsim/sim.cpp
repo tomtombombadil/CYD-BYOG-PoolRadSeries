@@ -557,8 +557,12 @@ int main(int argc, char** argv)
         C.bpp = 8;
         C.vga = true;
     }
-    // SOUNDMODE=2: the PC speaker's sounds (1 Tandy, the default)
-    if (getenv("SOUNDMODE")) play::set_sound(static_cast<uint8_t>(atoi(getenv("SOUNDMODE"))), 230);
+    // SOUNDMODE=2: the PC speaker's sounds (1 Tandy, the default); 4 with
+    // SOUNDREC=<folder beside the game's> SOUNDRECGAME=<its number>: that
+    // game's recordings lent (Settings' Darkness / Gateway / Treasures)
+    if (getenv("SOUNDMODE"))
+        play::set_sound(static_cast<uint8_t>(atoi(getenv("SOUNDMODE"))), 230, getenv("SOUNDREC"),
+                        getenv("SOUNDRECGAME") ? (games::Game)atoi(getenv("SOUNDRECGAME")) : games::Game::Unknown);
     const char* e = play::open(dir, game, C, getenv("CACHE"));
     if (e) { printf("open: %s\n", e); return 1; }
     // NOGALLERY=1: the icon editor opens as the original's (the gallery comfort off)

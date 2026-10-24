@@ -193,7 +193,12 @@ the Project as claude/TODO.md.
       Darkness (or Treasures / Gateway) ZOUNDS.DAX samples for Curse, Pool,
       Secret and Champions' effects, when one of those games is on the card
       (effect numbers already mapped as Darkness's; the player's files read
-      at run time, nothing shipped).
+      at run time, nothing shipped). Built (branch rec-sound): the three
+      modes play the recordings (`Clips::lent`, recorded_sound_facts.md).
+      Tom to listen: Curse / Pool / Secret / Champions in each mode - the
+      step (Darkness's pad 0.2 s, Gateway's / Treasures' a 16 ms tick),
+      hit, miss, sling (the arrow), magic hit (the stars' sound), death;
+      the title and anything else stays Tandy.
 - [ ] Krynn (survey 2026-10-24, the Project's claude/krynn_facts.md):
       Champions = Secret's engine (port started, branch champions); Death
       Knights = Darkness's engine at 4 bits (LOAD FILES / PIECES 3

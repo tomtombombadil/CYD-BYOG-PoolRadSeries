@@ -158,10 +158,13 @@ int fight_colours();
 // shows the whole canvas again. False: no change (or no VGA palette).
 bool palette(const pic::Rgb** rgb, bool all = false);
 
-// The game's sound (Settings: 1 Tandy, 2 PC speaker, 3 Off) and its volume
-// 0-255; the Menu's sound test plays one of the game's sound effects (the
-// games' numbers, engine/sound.h)
-void set_sound(uint8_t mode, uint8_t volume);
+// The game's sound (Settings: 1 Tandy, 2 PC speaker, 3 Off, 4 recorded -
+// a later game's recordings for an older game's effects: `rec`'s ZOUNDS.DAX
+// in its folder `rec_dir` (a data_dir, under /GOLDBOX); the effects it has
+// no match for as Tandy) and its volume 0-255; the Menu's sound test plays
+// one of the game's sound effects (the games' numbers, engine/sound.h)
+void set_sound(uint8_t mode, uint8_t volume, const char* rec_dir = nullptr,
+               games::Game rec = games::Game::Unknown);
 uint8_t sound_mode();
 // (game: the game's own number - Darkness's SOUND v)
 void sound_test(int id, bool game = false);

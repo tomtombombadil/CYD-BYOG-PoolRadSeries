@@ -4162,8 +4162,8 @@ const char* set_help_text(const SetEntry& e)
     case kSound:
         return "The games' own sound effects; tap to go round them. Tandy: the Tandy 1000's three voices and "
                "noise, the better of the two (the default). PC Speaker: the PC's one beeper. Darkness, Gateway, "
-               "Treasures: that game's recorded effects for the older games (listed when that game is on the "
-               "card). Pools of Darkness, Gateway and Treasures play their own. The Game menu's Sounds tab "
+               "Treasures: the older games' effects played with that game's recordings, read from its folder "
+               "(listed when that game is on the card); one it has no match for plays as Tandy. Pools of Darkness, Gateway and Treasures play their own. The Game menu's Sounds tab "
                "plays each effect.";
     case kInvert:
         return "Some screens show every colour inverted, like a photo negative. If yours does, turn this on.";
@@ -4246,16 +4246,28 @@ const char* sound_mode_name(uint8_t m)
     default: return "Tandy";
     }
 }
-// What play gets (1 Tandy, 2 PC speaker, 3 off): muted = off (no output
-// at all); a game's own mode plays as Tandy (in that game: its own
-// recordings, as before; for the older games the recordings' playback
-// isn't built yet - Tandy meanwhile)
-uint8_t play_sound_mode()
+// What play gets (1 Tandy, 2 PC speaker, 3 off, 4 recorded): muted = off
+// (no output at all); in Darkness, Gateway or Treasures their own
+// recordings (play: as Tandy); in the older games Darkness / Gateway /
+// Treasures = 4 with that game's folder (its ZOUNDS.DAX lent: play's
+// lent_setup)
+void apply_sound()
 {
-    if (cfg->volume_muted) return kSoundOff;
-    return shown_sound_mode() == kSoundPc ? kSoundPc : kSoundTandy;
+    const games::Game here = n_games > 0 ? game_dirs[game_sel].game : games::Game::Unknown;
+    const uint8_t m = shown_sound_mode();
+    uint8_t mode = cfg->volume_muted ? kSoundOff : m == kSoundPc ? kSoundPc : kSoundTandy;
+    const char* rec_dir = nullptr;
+    games::Game rec = games::Game::Unknown;
+    if (mode == kSoundTandy && m != kSoundTandy && !own_sound_mode(here))
+        for (int g = 0; g < n_games; ++g)
+            if (game_dirs[g].format == library::Format::Dax && own_sound_mode(game_dirs[g].game) == m) {
+                mode = 4;
+                rec_dir = game_dirs[g].data_dir;
+                rec = game_dirs[g].game;
+                break;
+            }
+    play::set_sound(mode, settings_sound_volume(*cfg), rec_dir, rec);
 }
-void apply_sound() { play::set_sound(play_sound_mode(), settings_sound_volume(*cfg)); }
 
 void draw_game_sound(const ui::Rect& r) { ui::key2(r, "Game Sound", sound_mode_name(shown_sound_mode())); }
 

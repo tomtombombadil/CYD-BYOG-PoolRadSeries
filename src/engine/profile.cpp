@@ -2710,7 +2710,11 @@ const Profile kProfiles[] = {
      // GAME.OVR 0x29D34, +0x1407)
      .sound = {.fireball_spell = 0x2F, .lightning_spell = 0x33, .burst_spells = {0x22, 0x2F, 0x40, 0x57, 0x5B, 0x73, 0x7C}},
      .clips ={.file = "ZOUNDS.DAX", .hz = 9000, .first = 2, .last = 12,
-               .ids = {0, 0, 2, 9, 6, 5, 9, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .quiet_turns = true},
+               .ids = {0, 0, 2, 9, 6, 5, 9, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .quiet_turns = true,
+               // (lent to the older games - recorded_sound_facts.md: as its own
+               // but the magic hit without stars the one with (not the miss's
+               // swish) and a sling's shot the arrow; no title sound)
+               .lent = {0, 0, 2, 6, 6, 5, 12, 7, 8, 9, 10, 11, 12, 0, 0, 0}},
      .variant = {.program_words = true, .bigpic_from = 0xF0, .treasure_pic = 129, .camp_pic = 128, .appraise_div = 2,
                  .fight_unswapped = true, .vga = true, .darkness_files = true, .party_menu_col = 9,
                  // (the overland: DS 0x7D08's regions 0-4 -> BIGPIC 240, 241, 242,
@@ -2856,7 +2860,9 @@ const Profile kProfiles[] = {
      // own rate (DS 0x1794); Curse's numbers
      .clips = {.file = "ZOUNDS.DAX", .hz = 8000, .first = 2, .last = 12,
                .ids = {0, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .to_block = 0, .rate_table = 0x1794,
-               .as_nine = 1u << 3 | 1u << 6, .fixed_as = {0, 0, 0, 4, 0, 0, 12}},
+               .as_nine = 1u << 3 | 1u << 6, .fixed_as = {0, 0, 0, 4, 0, 0, 12},
+               // (lent to the older games: its own numbers, 3 and 6 as the fixed ones)
+               .lent = {0, 0, 2, 4, 4, 5, 12, 7, 8, 9, 10, 11, 12, 0, 0, 0}},
      .door = {0x1C147, 0x1C14C, 0x1C152, 0x1C159, 0x1C15F, 0x1F},
      .variant = {.program_words = true, .treasure_pic = 1, .camp_pic = 29, .eight_black = true, .field_swap = true,
                  .party_menu_col = 9,
@@ -3079,7 +3085,11 @@ const Profile kProfiles[] = {
      // Its sounds: ZOUNDS.DAX, 10 of 11 blocks Darkness's own
      .sound = {.fireball_spell = 0x2F, .lightning_spell = 0x33, .burst_spells = {0x22, 0x2F, 0x40, 0x57, 0x5B, 0x73, 0x7C}},
      .clips ={.file = "ZOUNDS.DAX", .hz = 9000, .first = 2, .last = 12,
-               .ids = {0, 0, 2, 9, 6, 5, 9, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .quiet_turns = true},
+               .ids = {0, 0, 2, 9, 6, 5, 9, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .quiet_turns = true,
+               // (lent to the older games - recorded_sound_facts.md: as its own
+               // but the magic hit without stars the one with (not the miss's
+               // swish) and a sling's shot the arrow; no title sound)
+               .lent = {0, 0, 2, 6, 6, 5, 12, 7, 8, 9, 10, 11, 12, 0, 0, 0}},
      .variant = {.program_words = true, .bigpic_from = 0xF0, .treasure_pic = 129, .camp_pic = 128, .appraise_div = 2,
                  .fight_unswapped = true, .vga = true, .darkness_files = true, .party_menu_col = 9,
                  .tr = true, .pic_split = 78, .title_ega = {4, 5}, .camp_pic_byte = true, .demo_block = 4,
@@ -3154,8 +3164,14 @@ const ViewFacts& view_facts(games::Game g)
 
 const char* program_name(games::Game g)
 {
+    const Profile* p = first(g);
+    return p ? p->program : nullptr;
+}
+
+const Profile* first(games::Game g)
+{
     for (const Profile& p : kProfiles)
-        if (p.game == g) return p.program;
+        if (p.game == g) return &p;
     return nullptr;
 }
 

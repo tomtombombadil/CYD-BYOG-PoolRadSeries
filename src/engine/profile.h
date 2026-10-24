@@ -792,6 +792,9 @@ struct Profile {
 // The game's program file name (to look for it), or nullptr if no
 // release of that game is known yet.
 const char* program_name(games::Game g);
+// The game's first known release (nullptr: none) - its recorded effects'
+// facts when the player's release isn't one the engine knows
+const Profile* first(games::Game g);
 
 // View Character's menu beyond Items / Exit (the originals': Items Spells
 // Trade Drop Heal Cure Exit - Secret: Deposit before Drop; coab's ovr020

@@ -278,7 +278,8 @@ stay in the session's scratch space, never in the repo.
   Speaker, and Darkness / Gateway / Treasures (`kSoundDarkness` 4 /
   `kSoundGateway` 5 / `kSoundTreasures` 6: that game's ZOUNDS.DAX
   recordings for the older games' effects; listed only with that game on
-  the card; played as Tandy until built); in Darkness, Gateway and
+  the card; play's `lent_setup` / `play_lent`, the map `Clips::lent` -
+  the Project's claude/recorded_sound_facts.md); in Darkness, Gateway and
   Treasures the key names the game itself, no going round. No Off (old
   files' Off reads as Tandy, muted). The Game menu's Sounds tab: Game
   Sound, then Volume + Mute on the freed width (two keys' worth). "?"
@@ -2427,6 +2428,16 @@ the game's Settings (As Original: all of them).
   the earlier one has ended - and with the PC speaker, whose driver plays
   in the foreground, during every effect); one waits at most (Tom,
   2026-10-19: OK - the board's sound task plays it beside the game).
+  **Recorded sounds for the older games** (Tom, 2026-10-24; none of the
+  originals could): with Game Sound on Darkness / Gateway / Treasures,
+  Pool, Curse, Secret and Champions play each effect that game has a
+  match for as its recording - its ZOUNDS.DAX read from its own folder as
+  each one sounds (as that game does; Gateway at its own rates), waiting
+  for the recording before it as there - and the rest (Curse's title
+  sound, 13 / 14 from scripts; any that doesn't read) as their own Tandy
+  sound, the two mixed. The magic hit without stars plays the one with
+  stars and a sling's shot the arrow (not the miss, as Darkness /
+  Gateway themselves would).
 - **Saving**: the GOG files' save folder on the card, as the game.
 - **Monsters of one kind share one item list** (a group's): one archer's
   arrows, a wand's charges are the group's (the original gives each copy

@@ -76,6 +76,11 @@ struct Clips {
     // missile's 12)
     uint16_t as_nine = 0;
     uint8_t  fixed_as[16] = {};
+    // Lent to the older games (Settings' Game Sound Darkness / Gateway /
+    // Treasures - Tom, 2026-10-24; recorded_sound_facts.md): their sounds
+    // (Id, Curse's numbers) -> this game's effect that fits best (0: none -
+    // the older game's own Tandy sound plays)
+    uint8_t  lent[16] = {};
 };
 
 // An effect's samples: the DAX block `block` of the source in a block of its
