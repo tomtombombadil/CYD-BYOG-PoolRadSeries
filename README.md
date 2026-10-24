@@ -37,7 +37,7 @@ These five ESP32 boards, the ESP32-C5 board and the ESP32-S3 board are tested wi
 
 1. Format a microSD card as FAT32.
 2. Make a folder **`GOLDBOX`** at the root of the card. Then choose below, the Steam versions of the games, or the GOG versions. You can even mix and match. It doesn't really matter where you pull the game folders from as long as you put them in the SD card's GOLDBOX folder with the proper folder names. (See below.) If you have trouble formatting a larger SD card as FAT32, use the SD Association's official formatter from https://www.sdcard.org/downloads/formatter/
-   <br>**BEWARE:** CYDs do NOT support 64 GB and larger SD cards! If you try to use one, it won't recognize it, and you'll just waste your time.
+   - **BEWARE:** CYDs do NOT support 64 GB and larger SD cards! If you try to use one, it won't recognize it, and you'll just waste your time.
 
 ## Copy the Games to Your SD Card (STEAM VERSION)
 
@@ -46,17 +46,18 @@ These five ESP32 boards, the ESP32-C5 board and the ESP32-S3 board are tested wi
 5. Inside that folder you will find a **games** folder and a **Launcher** folder. Copy the Launcher folder to your SD card's GOLDBOX folder.
 6. Go into the games folder and copy each game's folder to the GOLDBOX folder on your SD card. (You do NOT need to copy the Hillsfar folder or the Unlimited Adventures folder, but it won't hurt anything if you do.)
 7. Your SD card should now have these folders:
-        GOLDBOX\CURSE
-        GOLDBOX\Gateway to the Savage Frontier
-        GOLDBOX\POOLRAD
-        GOLDBOX\Pools of Darkness
-        GOLDBOX\SECRET
-        GOLDBOX\Treasures of the Savage Frontier
+        <br>`GOLDBOX\CURSE`
+        <br>`GOLDBOX\Gateway to the Savage Frontier`
+        <br>`GOLDBOX\Launcher`
+        <br>`GOLDBOX\POOLRAD`
+        <br>`GOLDBOX\Pools of Darkness`
+        <br>`GOLDBOX\SECRET`
+        <br>`GOLDBOX\Treasures of the Savage Frontier`
 9. Go back twice, up to the steamapps\common folder and look for "Dungeons & Dragons Krynn Series". Inside that folder you will find another set of games and Launcher folders. You do not need to copy the Launcher folder again if you already did so from the "Forgotten Realms Archive - Collection Two" folder. Go into the "Dungeons & Dragons Krynn Series" games folder.
 10. Copy each of the game folders to your SD card's GOLDBOX folder. Your SD card should now have these folders:
-        GOLDBOX\Champions of Krynn
-        GOLDBOX\Death Knights of Krynn
-        GOLDBOX\The Dark Queen of Krynn
+        <br>`GOLDBOX\Champions of Krynn`
+        <br>`GOLDBOX\Death Knights of Krynn`
+        <br>`GOLDBOX\The Dark Queen of Krynn`
 12. Copying the whole game folders from Steam will ensure that you have the journal PDF files, logo, and graphics files, as well as the necessary game resource files. This will include any savegame and character files you may have from playing these games on your PC.
 13. All said and done, these folders should take up approximately 400 MB of your SD card. So you don't need a huge SD card. The CYD's only support up to 32 GB cards, so there's plenty of room.
 14. Eject the SD card from your PC (so it doesn't get corrupted) and insert it into your CYD. After you flash this repo to your CYD, the CYD will scan the SD card for the games and do some file processing. This will take a few minutes, but only needs to be done once. If you add or remove any games from the SD card, you will need to run the scan again with the Rescan button on the CYD.
@@ -67,29 +68,23 @@ These five ESP32 boards, the ESP32-C5 board and the ESP32-S3 board are tested wi
 4. There you will see the folders where your GOG games are stored.
 5. Go into the games folder and copy each game's folder to the GOLDBOX folder on your SD card. (You do NOT need to copy the Hillsfar folder or the Unlimited Adventures folder, but it won't hurt anything if you do.)
 6. Your SD card should now have these folders:
-        GOLDBOX\Champions of Krynn
-        GOLDBOX\Curse of the Azure Bonds
-        GOLDBOX\Death Knights of Krynn
-        GOLDBOX\Gateway to the Savage Frontier
-        GOLDBOX\Pool of Radiance
-        GOLDBOX\Pools of Darkness
-        GOLDBOX\Secret of the Silver Blades
-        GOLDBOX\The Dark Queen of Krynn
-        GOLDBOX\Treasures of the Savage Frontier
+        <br>`GOLDBOX\Champions of Krynn`
+        <br>`GOLDBOX\Curse of the Azure Bonds`
+        <br>`GOLDBOX\Death Knights of Krynn`
+        <br>`GOLDBOX\Gateway to the Savage Frontier`
+        <br>`GOLDBOX\Pool of Radiance`
+        <br>`GOLDBOX\Pools of Darkness`
+        <br>`GOLDBOX\Secret of the Silver Blades`
+        <br>`GOLDBOX\The Dark Queen of Krynn`
+        <br>`GOLDBOX\Treasures of the Savage Frontier`
 7. Copying the whole game folders from GOG will ensure that you have the journal PDF files, logo, and graphics files, as well as the necessary game resource files. This will include any savegame and character files you may have from playing these games on your PC.
 8. All said and done, these folders should take up approximately 400 MB of your SD card. So you don't need a huge SD card. The CYD's only support up to 32 GB cards, so there's plenty of room.
 9. Eject the SD card from your PC (so it doesn't get corrupted) and insert it into your CYD. After you flash this repo to your CYD, the CYD will scan the SD card for the games and do some file processing. This will take a few minutes, but only needs to be done once. If you add or remove any games from the SD card, you will need to run the scan again with the Rescan button on the CYD.
 
 ## Settings and logs
 
-**Settings** (from the library): a brightness slider, color fixes (Swap
-Red/Blue shows red, green and blue blocks - if they don't match their
-names, tap it), Rotate 180, touch calibration and **Logs**. The card scan
-ends on its log; read it (tap the top / bottom half of the box, or drag),
-then tap Continue. **Logs** shows the scan log, restarts, errors and memory; to
-send them, tap **Send Logs** and scan its QR code with a phone (the page
-it opens emails them), or take the card to a PC - they're text files in
-`GOLDBOX/_CYD`.
+**Settings** (from the library): a brightness slider, color fixes (Swap Red/Blue shows red, green and blue blocks - if they don't match their names, tap it), Rotate 180, touch calibration and **Logs**. The card scan
+ends on its log; read it (tap the top / bottom half of the box, or drag), then tap Continue. **Logs** shows the scan log, restarts, errors and memory; to send them, tap **Send Logs** and scan its QR code with a phone (the page it opens emails them), or take the card to a PC - they're text files in `GOLDBOX/_CYD`.
 
 ## The Adventurer's Journal
 
@@ -97,9 +92,7 @@ The original games referred to numbered entries in a printed journal. The GOG an
 
 ## BUILDING
 
-VS Code + PlatformIO: open the folder, pick the board's env in the status bar,
-Build / Upload. Host tests of the file-format code run in CI
-(`tools/host_tests/`).
+VS Code + PlatformIO: open the folder, pick the board's env in the status bar, Build / Upload. Host tests of the file-format code run in CI (`tools/host_tests/`).
 
 ## CREDITS
 
