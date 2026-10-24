@@ -1916,7 +1916,15 @@ GAME=5); `variant.krynn`. Play on since 2026-10-24 (branch champions).
 - **Checks**: sweep `behave champions` (creation, training, Modify, the
   moons; oracle from scratch `champions_oracle.py`), saveload, events and
   monkey runs clean (knights' petitions checked too); budget fight (Throtl, AREA=2 BLOCK=34 RUNAT=8441)
-  128.9 KB of 150. Sound: silent (its EA driver not surveyed).
+  128.9 KB of 150.
+- **Sound**: its effects are Secret's driver in START.EXE (segment 0x7E8:
+  tables +0x4A8 / +0x550, 21 entries, byte code to +0x12C1 - 3.6 KB; the
+  Tandy entries 0-11 Secret's byte for byte), Tandy or PC speaker as the
+  others; its PlaySound passes its numbers 2-12 only (`Layout::last_id`).
+  SOUND.DAX (one block) is the title's music - an event stream for
+  Electronic Arts' player in START.EXE (seg 0x661) - and MIDI.DAX's five
+  blocks that player's device drivers (C/MS, Roland LAPC, AdLib, Tandy, PC
+  speaker); music only at the title: not played (facts only).
 - **Journal**: the SNEG release's Gold Box Companion text (88 entries)
   works through `journal::make_gbc`; the GOG PDF (88 entries, 57 tavern
   tales) has its table since branch champions-finish (section 7).
@@ -2539,7 +2547,8 @@ the game's Settings (As Original: all of them).
   ground under both); a cloud and a pool going in the same round show only
   "The air clears a little..." (the original says each). The computer's
   fighters walk into acid as the original's do (no check).
-- **Champions' sound**: silent (its sound driver isn't read yet).
+- **Champions' title music** (SOUND.DAX through MIDI.DAX's drivers) isn't
+  played; its effects are.
 - **Gateway's stirge and squid** (Game Fixes): their holds never hurt in
   the original (the stirge's goes at its next step, the squid's per-turn
   handler is in no list); with Game Fixes on the stirge drinks 1d4 a turn up

@@ -2427,7 +2427,14 @@ const Profile kProfiles[] = {
                kChampionsFight, sizeof kChampionsFight / sizeof kChampionsFight[0]},
      .script_words = {0x2D2D, 0x2D3E, 0xAA9C, 0xAAA4, 0xAAB1, 0x35AD},
      .random_items = &kCurseRandom, .random_rows = 0,
-     .sound = {},
+     // Its effects: Secret's driver in START.EXE's segment 0x7E8 (the tables
+     // at +0x4A8 / +0x550, 21 entries, its byte code to +0x12C1; its Tandy
+     // entries 0-11 Secret's own byte for byte); its PlaySound passes its
+     // numbers 2-12 on (entries 1-11) - champions_finish_facts.md 15.
+     // SOUND.DAX / MIDI.DAX are the title's music (Electronic Arts' player):
+     // not played
+     .sound = {.segment_image = 0x7E80, .lo = 0x04A8, .hi = 0x12C1, .pc_table = 0x04A8, .tandy_table = 0x0550,
+               .sounds = 21, .fireball_spell = 0x2F, .lightning_spell = 0x33, .last_id = 12},
      .clips = {},
      .door = {0x1A11B, 0x1A120, 0x1A126, 0x73FA, 0x1A133, 0x1F},
      .won = {},

@@ -2260,6 +2260,24 @@ static void test_sound()
         }
         CHECK(on2 == 5 && !p2.busy());
     }
+    // A number past the game's last (Champions' PlaySound: 2-12): nothing, the one playing goes on
+    {
+        sound::Layout l3 = lay;
+        l3.last_id = 2;
+        sound::Player p3;
+        CHECK(p3.set_data(l3, seg.data(), seg.size()));
+        p3.start(2, sound::Device::PcSpeaker);
+        p3.tick();
+        p3.start(3, sound::Device::PcSpeaker);
+        p3.tick();
+        CHECK(p3.busy() && p3.out().speaker_on);
+        l3.last_id = 1;
+        sound::Player p4;
+        CHECK(p4.set_data(l3, seg.data(), seg.size()));
+        p4.start(2, sound::Device::PcSpeaker);
+        p4.tick();
+        CHECK(!p4.busy());
+    }
     // A bad pointer in a table: refused
     w16(0x100 + 8, 0x300);
     sound::Player bad;

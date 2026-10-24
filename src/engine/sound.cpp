@@ -89,6 +89,7 @@ uint16_t Player::word(uint32_t off) const { return static_cast<uint16_t>(byte(of
 void Player::start(int id, Device d)
 {
     if (id == 1 || id < 0 || (id > 0x0E && id != 0xFF)) return;      // 1: (an enable flag), 0x0F: not ours
+    if (lay_.last_id && id > lay_.last_id && id != 0xFF) return;      // (Champions' PlaySound: 2-12 only)
     pending_.store((id == 0xFF ? 0 : id) | static_cast<int>(d) << 8);
 }
 

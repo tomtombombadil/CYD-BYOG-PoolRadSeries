@@ -41,6 +41,10 @@ struct Layout {
     // effect again where it lands (darkness_sound_facts.md 4; the fights'
     // rules facts R16; 0: none)
     uint8_t  burst_spells[8] = {};
+    // The last sound number the game's PlaySound passes on to the driver
+    // (Champions of Krynn: 2-12 only - its tables' entries 1-11; a higher
+    // one sounds nothing and leaves the one playing; 0: up to 0x0E)
+    uint8_t  last_id = 0;
     size_t   size() const { return static_cast<size_t>(hi - lo) + (hi2 > lo2 ? hi2 - lo2 : 0); }
 };
 
