@@ -1508,6 +1508,9 @@ static void dice_faces(std::initializer_list<int> f) { dice_usual(); b_faces.ass
 #ifdef BEHAVE_CHAMPIONS
 #include "behave_champions.inc"
 #endif
+#ifdef BEHAVE_DEATHKNIGHTS
+#include "behave_deathknights.inc"
+#endif
 
 int main(int argc, char** argv)
 {
@@ -1572,6 +1575,9 @@ int main(int argc, char** argv)
 #endif
 #ifdef BEHAVE_CHAMPIONS
         if (want("champions")) behave_champions();
+#endif
+#ifdef BEHAVE_DEATHKNIGHTS
+        if (want("deathknights")) behave_deathknights();
 #endif
 #ifdef BEHAVE_TREASURES
         if (want("treasures")) behave_darkness();       // (Darkness's checks, Treasures' oracles)

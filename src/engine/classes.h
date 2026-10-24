@@ -221,8 +221,8 @@ public:
     {
         if (lay.dkk) {
             // (its training, ovl 0x61 +0x44B0: the row's value at the level
-            // reached - none past 14th; 0 or less: no more)
-            if (level < 1 || level + 1 > 14 || cls >= (row ? 11 : classes())) return -1;
+            // reached - to 18th, -1 past a row's last; 0 or less: no more)
+            if (level < 1 || level + 1 > 18 || cls >= (row ? 11 : classes())) return -1;
             return i32(static_cast<uint16_t>(lay.class_records + cls * 204 + (level + 1) * 4));
         }
         if (level < 1 || level > top_level() - 1 || cls >= (row && lay.krynn ? 10 : classes())) return -1;
