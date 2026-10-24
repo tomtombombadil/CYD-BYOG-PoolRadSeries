@@ -1472,7 +1472,7 @@ static bool expect(const char* part, const char* what, bool ok, const char* fmt,
 }
 // The dice: as usual, all highest, all lowest, or these faces in turn (1-based;
 // when they run out: as usual)
-static int b_dice_mode = 0;                 // 0 usual, 1 highest, 2 lowest
+static int b_dice_mode = 0;                 // 0 usual, 1 highest, 2 lowest, 3 middle (a d6's 3)
 static std::vector<int> b_faces;
 static size_t b_face_at = 0;
 static int b_die(int n)
@@ -1483,11 +1483,13 @@ static int b_die(int n)
     }
     if (b_dice_mode == 1) return n - 1;
     if (b_dice_mode == 2) return 0;
+    if (b_dice_mode == 3) return (n - 1) / 2;
     return -1;
 }
 static void dice_usual() { b_dice_mode = 0; b_faces.clear(); b_face_at = 0; create::g_die_hook = b_die; }
 static void dice_high() { dice_usual(); b_dice_mode = 1; }
 static void dice_low() { dice_usual(); b_dice_mode = 2; }
+[[maybe_unused]] static void dice_mid() { dice_usual(); b_dice_mode = 3; }
 static void dice_faces(std::initializer_list<int> f) { dice_usual(); b_faces.assign(f); }
 #endif
 

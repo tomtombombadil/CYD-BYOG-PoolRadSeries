@@ -1980,7 +1980,8 @@ bytes, data segment at image 0xBCE0) + GAME.OVR (35 overlays), DAX files,
   Secret's shape (114), paladin / ranger slot tables, race level limits
   (training while the limit is above the level).
 - **Creation**: 210,003 experience shared (rounded up), trained silently
-  under the race's limits; the races' stat adjustments; seven spells for a
+  under the race's limits; no race adjustment of the rolls (as Champions:
+  SPEC 12); seven spells for a
   magic-user; 500 steel; questions start on No.
 - **Import**: Load and Add from Champions (its SAVE folder on the card;
   the record re-laid as the original, the age held under the race's
@@ -2602,6 +2603,12 @@ the game's Settings (As Original: all of them).
   picked, so dwarves' Con +1 Cha -1, elves' Dex +1 Con -1 and halflings'
   Str -1 Dex +1 never happen; with Game Fixes on the engine applies them
   (AD&D's), off as the original.
+- **The Krynn games' race adjustments at creation** (`rules::fixes()`):
+  Champions' and Death Knights' roll code (GAME.OVR ovl 0xA4 +0x1680 /
+  ovl 0x61 +0x1586) has the races' own - dwarves Con +1 Cha -1, elves Dex
+  +1 Con -1, half-elves Dex +2, kender Str -1 Dex +2 - but tests the race
+  list's loop counter (human), so they never happen (DOSBox: Champions'
+  kender keep their Dex); with Game Fixes on the engine applies them.
 - **Darkness's new characters' item count** (record 0x1A6): the original
   writes 3 whatever its kit holds (a magic-user's 4); the engine writes
   the count (loading counts the file in both).

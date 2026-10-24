@@ -301,6 +301,7 @@ static void behave_deathknights()
     const char* only = getenv("ONLY");
     auto want = [&](const char* s) { return !only || strstr(only, s); };
     if (want("create")) creation();
+    if (want("create")) b_krynn_stats_check(bdkk::m, P);
     if (want("train")) training();
     if (want("knights")) knights();
 }

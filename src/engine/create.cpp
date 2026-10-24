@@ -602,10 +602,15 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
     // Secret adds its races' adjustments to each roll (GAME.OVR 0x1EA28):
     // dwarves Con +1 Cha -1, elves Dex +1 Con -1, halflings Str -1 Dex +1
     auto race_adj = [&](int i) {
-        if (t.lay.dkk) {
-            // Death Knights (GAME.OVR ovl 0x61 +0x1586 - Champions' code has the
-            // same): its races' own - dwarves Con +1 Cha -1, elves Dex +1 Con
-            // -1, half-elves Dex +2, kender Str -1 Dex +2
+        if (t.lay.krynn) {
+            // Champions (GAME.OVR ovl 0xA4 +0x1680) and Death Knights (ovl
+            // 0x61 +0x1586): the code's races' own - dwarves Con +1 Cha -1,
+            // elves Dex +1 Con -1, half-elves Dex +2, kender Str -1 Dex +2 -
+            // but it tests the race list's loop counter, left at its last
+            // line (human), not the race picked, so the originals never add
+            // them (checked in DOSBox: Champions' kender keep their Dex);
+            // with Game Fixes on, the races' own (SPEC 12)
+            if (!rules::fixes()) return 0;
             switch (c.ext[party::kExtRace]) {
             case 3: case 4: return i == 4 ? 1 : i == 5 ? -1 : 0;
             case 0: case 1: return i == 3 ? 1 : i == 4 ? -1 : 0;
@@ -648,8 +653,10 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
         for (int b = 0; b < 5; ++b) {
             const bool past = t.u16(static_cast<uint16_t>(t.lay.age_brackets + t.race_row(race) * 10 + b * 2)) < age;
             // Secret's Wisdom: -1 while NOT past the first bracket - the young
-            // (GAME.OVR 0x1EEB9: the decrement skipped when the bracket < age)
-            if (t.lay.secret && i == 2 && b == 0) {
+            // (GAME.OVR 0x1EEB9: the decrement skipped when the bracket < age;
+            // Champions' ovl 0xA4 +0x1B2B and Death Knights' ovl 0x61 +0x1A32
+            // the same)
+            if ((t.lay.secret || t.lay.krynn) && i == 2 && b == 0) {
                 if (!past) --v;
                 continue;
             }
