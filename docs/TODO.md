@@ -49,13 +49,17 @@ the Project as claude/TODO.md.
       and draws them in 16 colours itself (no EGA install, no scan step).
       Open: the 16 colours' RGB on the EGA screen for pictures whose
       colours start at 0 (TITLE's: their own 16?) - check in DOSBox.
-- [ ] **Dark Queen of Krynn** phase 2+ (plan in queen_facts.md): DQK.EXE's
-      data (C data segment, RTLink overlays - a plain-MZ reader in place of
-      exepack), the profile slot (storage = HLIB), scripts from ECL.GLB
-      through `hlib::EntryReader`, GEO.GLB maps of any size, the screens
-      (marble frame from FRAME.TLB, 12-px GAME.FON), records, combat.
-      Undecoded: picture kinds 0x03 (EGA sprites - only an EGA install
-      has them) and 0x19 (FRAME / PICC), SOUNDS.GLB's DIG4, colour cycles.
+- [ ] **Dark Queen of Krynn** phase 3+ (Claude; facts queen_facts.md +
+      queen_facts_2.md, its section 12 the plan). Done in phase 2 (branch
+      darkqueen2): DQK.EXE as a plain MZ (data segment file 0x63A20), the
+      profile (being built), maps of any size, the 3D view / area map /
+      frame from its files, GAME.FON's text, ECL.GLB scripts in the VM,
+      QSV saves and its characters, Load from Death Knights - the Play
+      Test (Dev Tools) walks the forest after Palanthas. Next: the
+      menus as its buttons, the title, picture animation, the far band of
+      the 3D view, items / effects / spells, View, fights, sound, 256
+      colours on the PSRAM boards. Undecoded: picture kinds 0x03 and
+      0x19, SOUNDS.GLB's DIG4, colour cycles.
 - [ ] Darkness's EGA mode: how the original's EGA.DRV turns VGA pictures
       into 16 colours (facts from the player's file), so Darkness plays on
       the classic boards as its own EGA mode shows it.
