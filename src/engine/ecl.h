@@ -98,6 +98,14 @@ struct OpSet {
     // word). The engine's own calls with Curse's addresses (0x4BF2 the
     // block, 0x4BC6 the clock, 0xC04B x ...) are turned into its places.
     bool byte_map = false;
+    // Death Knights of Krynn (deathknights_facts.md 3; its operand loader,
+    // GAME.OVR overlay 0x41): byte_map's sizes, but at Curse's addresses -
+    // 0x4B00-0x4EFF a 1 KB block, 0x7A00-0x7BFF the 512-byte table,
+    // 0x7C00-0x7FFF a 1 KB block whose character codes are the selected
+    // character's fields (party::script_value_dkk), 0x8000 the script;
+    // C04B-C04F and 033D as Curse's. A byte each address; a word operand
+    // (code 3) the byte there and the next
+    bool curse_bytes = false;
     // Champions (its clock routine, GAME.OVR 0x2ACB7 / 0x2A87C): a day
     // passing (the hours carrying) steps the moons - each its counter
     // (0x4CFC white, 0x4CFD red, 0x4CFE black) up, or, at 8 / 1 / 6, back

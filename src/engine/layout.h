@@ -105,6 +105,13 @@ struct Tables {
     // columns either side of a divider on the bars it meets
     bool joints = false;
     uint8_t char_split[13] = {};     // Gateway's View Character column 19, rows 8-20
+    // Death Knights (its START image 0x10F0 on): the tables name block 202's
+    // tiles themselves (no base); the sides are tile 7 (the outer frame's
+    // rows 1-22), the 3D view's frame corners 0-3 with 4 across and 7 down;
+    // View Character's columns 0 / 39 by row (char_left / char_right), bars
+    // of tile 4 at rows 8, 16 and 20; the top row's moons are the game's
+    bool direct = false;
+    uint8_t char_left[24] = {}, char_right[24] = {};
     // Treasures (port facts P7): its frames are pieces of BORD.DAX block 7
     // (tr_pieces, tr_size bytes: runs of BORD block 0 tile numbers drawn
     // across or down from a cell, 0xFF a gap, 0xFE a piece's end), each

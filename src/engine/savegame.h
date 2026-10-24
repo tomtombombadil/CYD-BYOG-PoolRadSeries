@@ -39,6 +39,10 @@ constexpr uint32_t kSecretSize = kSize - 0x1E00;
 // slot (u16), the count and 8 x 41 names: 1,364 bytes
 constexpr uint32_t kDarknessBlock = 0x400;
 constexpr uint32_t kDarknessSize = kDarknessBlock + 5 + 2 + 2 + 2 + 1 + 8 * 41;
+// Death Knights of Krynn's (deathknights_facts.md 2; its save overlay GAME.OVR
+// 0x144E3): SAVGAMx.PTY - Curse's .DAT with its memory as bytes (0x400 +
+// 0x400 + 0x200), no script, four wall sets: 2,913 bytes
+constexpr uint32_t kDkkSize = 1 + 0x400 + 0x400 + 0x200 + 5 + 2 + 16 + 1 + 8 * 41;
 constexpr char kFirst = 'A', kLast = 'J';    // the games' ten save slots
 
 struct Header {
@@ -46,6 +50,7 @@ struct Header {
     uint8_t last_state = 0, state = 0;   // (Darkness: its modes - 4 3D, 3 the overland)
     uint16_t look = 0, look_slot = 0;    // (Darkness: LOAD FILES' look, its wall-set slot)
     int16_t wall_block[3] = {}, wall_set[3] = {};
+    int16_t wall_block4 = 0, wall_set4 = 0;  // (Death Knights: a fourth)
     int     count = 0;                       // characters
     char    names[party::kMaxParty][41] = {};
 };
@@ -72,6 +77,11 @@ public:
 // are written by the caller (their records as kept, items, effects).
 bool write(Sink& out, const ecl::GameState& gs, const Header& h, bool wall_sets = true, bool script = true);
 bool write_darkness(Sink& out, const ecl::GameState& gs, const Header& h);
+// Death Knights' .PTY: the three blocks into gs.area1 / area2 / table's first
+// 0x400 / 0x400 / 0x200 bytes (a byte an address), the position, modes, the
+// four wall sets and the names
+bool read_dkk(dax::ByteSource& src, ecl::GameState& gs, Header& h);
+bool write_dkk(Sink& out, const ecl::GameState& gs, const Header& h);
 
 // The save file's name for slot 'A'..'J' ("SAVGAMA.DAT"), and the n-th
 // character's (1 ..: "CHRDATA1", + ".SAV" / ".SWG" / ".FX").

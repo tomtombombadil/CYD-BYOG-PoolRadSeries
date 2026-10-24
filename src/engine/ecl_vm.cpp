@@ -233,8 +233,126 @@ uint16_t Vm::dk_addr(uint16_t a)
     return 0;                           // (nothing there)
 }
 
+// ---- Death Knights' memory (deathknights_facts.md 3) --------------------------
+
+uint16_t Vm::dkk_addr(uint16_t a)
+{
+    // (the places Darkness's game block keeps what Curse's addresses hold -
+    // dk_addr's list the other way round; its own bytes have none here)
+    if (a >= 0x05 && a <= 0x0B) return static_cast<uint16_t>(0x4BC6 + (a - 0x05));
+    switch (a) {
+    case 0x16: return 0x4BF2;
+    case 0x13: return 0x4BC5;
+    case 0x02: return 0x4BE5;
+    case 0x22: return 0x4BE6;
+    case 0x17: return 0x4BF0;
+    case 0x18: return 0x4BF1;
+    case 0x1A: return 0x4BFB;
+    case 0x12: return 0x4BFC;
+    case 0x27: return 0x4CF4;
+    case 0x03: return 0x7EC9;
+    case 0x19: return 0x7ECA;
+    case 0x2E: return 0x7ECB;
+    case 0x1B: return 0x7EC6;
+    case 0x14: return 0x7EE2;
+    case 0x28: return 0x7F6D;
+    case 0x30: return 0x7EA8;
+    case 0x2B: return 0x7ED2;
+    case 0x2C: return 0x7ED3;
+    case 0x20: return 0x7F3E;
+    case 0x29: return 0x7F3F;
+    case 0x34: return 0xC04B;
+    case 0x35: return 0xC04C;
+    case 0x11: return 0xC04D;
+    case 0x32: return 0xC04E;
+    case 0x2D: return 0xC04F;
+    }
+    return 0;
+}
+
+uint16_t Vm::dkk_read(uint16_t a, int size) const
+{
+    if (size == 2) return static_cast<uint16_t>(dkk_read(a, 1) | dkk_read(static_cast<uint16_t>(a + 1), 1) << 8);
+    if (a && a <= 0x400) a = dkk_addr(a);
+    if (a == 0) return 0;
+    if (a >= 0x4B00 && a <= 0x4EFF) return s_.area1[a - 0x4B00];
+    if (a >= 0x7A00 && a <= 0x7BFF) return s_.table[a - 0x7A00];
+    if (a >= 0x7C00 && a <= 0x7FFF) {
+        // (its operand loader, GAME.OVR 0x72E2: the character codes read the
+        // selected one's fields - a loaded monster's when LOAD CHARACTER chose
+        // one - the rest the block itself)
+        uint16_t v;
+        const uint16_t off = static_cast<uint16_t>(a - 0x7C00);
+        if (a == 0x7D00 && not_found_) {
+            not_found_ = false;
+            return 0;
+        }
+        if (const uint8_t* mr = sel_rec()) {
+            if (party::script_value_dkk(mr, nullptr, (party_ ? party_->count : 0) + sel_mon_, off, &v)) return v & 0xFF;
+        } else if (party_ && party_->sel() && party::script_value_dkk(*party_, off, &v)) {
+            return v & 0xFF;
+        }
+        if (a == 0x7F12) return s_.game_area;
+        return s_.area2[off];
+    }
+    if (a >= kBase && a < kBase + s_.code_cap) return code_of(s_)[a - kBase];
+    switch (a) {
+    case 0x033D: return static_cast<uint16_t>(s_.dir);
+    case 0x03DE: return sound_kind_;
+    case 0xC04B: return static_cast<uint16_t>(s_.x);
+    case 0xC04C: return static_cast<uint16_t>(s_.y);
+    case 0xC04D: return static_cast<uint16_t>(s_.dir / 2);
+    case 0xC04E: return s_.wall_ahead;
+    case 0xC04F: return s_.roof;
+    }
+    return 0;
+}
+
+void Vm::dkk_write(uint16_t a, uint16_t v, int size)
+{
+    if (size == 2) {
+        dkk_write(a, v & 0xFF, 1);
+        dkk_write(static_cast<uint16_t>(a + 1), v >> 8, 1);
+        return;
+    }
+    if (a && a <= 0x400) a = dkk_addr(a);
+    if (a == 0) return;
+    const uint8_t b = static_cast<uint8_t>(v);
+    if (a >= 0x4B00 && a <= 0x4EFF) {
+        s_.area1[a - 0x4B00] = b;
+        return;
+    }
+    if (a >= 0x7A00 && a <= 0x7BFF) {
+        s_.table[a - 0x7A00] = b;
+        return;
+    }
+    if (a >= 0x7C00 && a <= 0x7FFF) {
+        // (the block, then its write switch GAME.OVR 0x7642: the selected
+        // character's fields)
+        const uint16_t off = static_cast<uint16_t>(a - 0x7C00);
+        s_.area2[off] = b;
+        if (a == 0x7C00 && b == 0) cleared_name_ = true;
+        if (uint8_t* mr = sel_rec()) party::script_set_dkk(mr, nullptr, off, b);
+        else if (party_ && party_->sel()) party::script_set_dkk(*party_->sel(), off, b);
+        if (a == 0x7F12) s_.game_area = b;
+        return;
+    }
+    if (a >= kBase && a < kBase + s_.code_cap) {
+        code_of(s_)[a - kBase] = b;
+        return;
+    }
+    switch (a) {
+    case 0x03DE: sound_kind_ = b; break;
+    case 0xC04B: s_.x = b & 15; s_.moved = true; break;
+    case 0xC04C: s_.y = b & 15; s_.moved = true; break;
+    case 0xC04D: s_.dir = (b % 4) * 2; s_.moved = true; break;
+    default: break;
+    }
+}
+
 uint16_t Vm::dk_read(uint16_t a, int size) const
 {
+    if (set_.curse_bytes) return dkk_read(a, size);
     if (size == 2) return static_cast<uint16_t>(dk_read(a, 1) | dk_read(static_cast<uint16_t>(a + 1), 1) << 8);
     if (a == 0) return 0;
     if (a <= 0x400) {
@@ -270,6 +388,10 @@ uint16_t Vm::dk_read(uint16_t a, int size) const
 
 void Vm::dk_write(uint16_t a, uint16_t v, int size)
 {
+    if (set_.curse_bytes) {
+        dkk_write(a, v, size);
+        return;
+    }
     if (size == 2) {
         dk_write(a, v & 0xFF, 1);
         dk_write(static_cast<uint16_t>(a + 1), v >> 8, 1);
@@ -313,7 +435,7 @@ void Vm::put(const Op& o, uint16_t v)
 
 uint16_t Vm::get(uint16_t a) const
 {
-    if (set_.byte_map) return a == 0x7EE1 ? 0xFF : dk_read(dk_addr(a), 1);    // (no head pictures)
+    if (set_.byte_map) return a == 0x7EE1 ? 0xFF : dk_read(set_.curse_bytes ? a : dk_addr(a), 1);    // (no head pictures)
     if (a >= 0x4B00 && a <= 0x4EFF) return word_at(s_.area1, (a - 0x4B00u) * 2);
     if (a >= 0x7A00 && a <= 0x7BFF) return word_at(s_.table, (a - 0x7A00u) * 2);
     if (a >= 0x7C00 && a <= 0x7FFF) {
@@ -357,7 +479,7 @@ uint16_t Vm::get(uint16_t a) const
 void Vm::set(uint16_t a, uint16_t v)
 {
     if (set_.byte_map) {
-        dk_write(dk_addr(a), v, 1);
+        dk_write(set_.curse_bytes ? a : dk_addr(a), v, 1);
         return;
     }
     if (a >= 0x4B00 && a <= 0x4EFF) {
@@ -405,7 +527,7 @@ void Vm::set(uint16_t a, uint16_t v)
 // Strings in memory: a character a word (a byte in the script), 0 ends
 void Vm::store_string(uint16_t a, const char* t)
 {
-    const uint16_t name_at = set_.byte_map ? 0x401 : 0x7C00;      // (Darkness: its record's name)
+    const uint16_t name_at = set_.byte_map && !set_.curse_bytes ? 0x401 : 0x7C00;      // (Darkness: its record's name)
     uint8_t* mr = a == name_at ? sel_rec() : nullptr;
     if (a == name_at && (mr || (party_ && party_->sel()))) {
         // The selected character's name
@@ -425,7 +547,7 @@ void Vm::store_string(uint16_t a, const char* t)
 
 void Vm::read_string(uint16_t a, char* out, size_t cap) const
 {
-    if (a == (set_.byte_map ? 0x401 : 0x7C00)) {
+    if (a == (set_.byte_map && !set_.curse_bytes ? 0x401 : 0x7C00)) {
         const uint8_t* r = sel_rec();
         if (!r && party_ && party_->sel()) r = party_->sel()->rec;
         if (r) {                                // the selected character's name
@@ -547,6 +669,16 @@ bool Vm::init_script(bool reload)
     view_bytes_[1] = 0x09;
     set(0x7ED2, 0);
     set(0x7ED3, 0);
+    if (set_.curse_bytes) {
+        // Death Knights (its operand loader GAME.OVR 0x6E50): Curse's
+        // per-block bytes 0x4C00-0x4C1F and 0x7F79-0x7F82 cleared but in the
+        // block a saved game was loaded in
+        if (!reload) {
+            memset(s_.area1 + 0x100, 0, 0x20);
+            memset(s_.area2 + 0x379, 0, 10);
+        }
+        return true;
+    }
     if (set_.byte_map) {
         // Darkness: each block's variables (0x97-0xC8) cleared at its start
         // but in the block a saved game was loaded in; the mode stays

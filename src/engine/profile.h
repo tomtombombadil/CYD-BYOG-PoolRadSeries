@@ -43,6 +43,8 @@ struct FrameTables {
     uint16_t combat_split;   //   column 22, rows 0-22
     uint16_t combat_right;   //   column 39, rows 0-22
     uint16_t char_split = 0; // Gateway's View Character: column 19, rows 8-20 (at + row; 0: none)
+    // Death Knights' View Character: columns 0 / 39, rows 1-22 (at + row; 0: none)
+    uint16_t char_left = 0, char_right = 0;
 };
 
 // One step of the title sequence: a TITLE.DAX picture at a cell position,
@@ -750,6 +752,14 @@ struct Profile {
     // " does not qualify.", " may become a", "Knight Of The Sword", "Change
     // Exit", " is too inexperienced", "Knight Of The Rose"
     uint32_t knight_words[12] = {};
+    // Death Knights of Krynn (deathknights_facts.md): Darkness's engine at its
+    // EGA stage with Krynn's rules - its characters (216-byte records .GAM
+    // with a 220-byte spell part .WIZ, items .JNK of 63 bytes, effects
+    // .EFF; party::from_dkk), its saves (.PTY: Curse's memory as bytes, no
+    // script), the scripts' memory at Curse's addresses a byte each
+    // (ecl::OpSet::curse_bytes), its frame tables naming tiles directly
+    // (layout::Tables::direct) with the three moons on the top row
+    bool     dkk = false;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

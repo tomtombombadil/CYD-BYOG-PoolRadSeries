@@ -1769,6 +1769,37 @@ constexpr TitleStep kTreasuresTitle[] = {
     {6, 0, 0, true, 6000, 0},
 };
 
+// Death Knights of Krynn (deathknights_facts.md 1): its title (GAME.OVR
+// overlay at 0xDA, +0x51B): TITLE 1 (SSI) for 5 s, 2 (the game's picture)
+// for 5 s, 3 (the Dragonlance words, 320 x 80) on it from row 11 for 5 s, 4
+// (its name, 320 x 88) there for 20 s; then the credits (32-byte print
+// calls from 0x35B, the code segment at 0xDA) in the outer frame with its
+// moons until a key (its wait is 10,000 s). Its scripts (its interpreter
+// GAME.OVR 0x81D): Darkness's operand counts but LOAD FILES (0x21) and LOAD
+// PIECES (0x37) 3 as Curse's; Curse's memory map a byte an address; areas
+// as Champions' (word 0x7F12, file (area + 1) / 2) - every block of
+// ECL1-3 decodes from its entry points
+constexpr TitleStep kDeathKnightsTitle[] = {
+    {1, 0, 0, true, 5000, 0},
+    {2, 0, 0, true, 5000, 0},
+    {3, 11, 0, false, 5000, 0},
+    {4, 11, 0, false, 20000, 0},
+    {0, 0, 0, true, 60000, 0},
+};
+
+constexpr ecl::OpSet kDeathKnightsEcl = [] {
+    ecl::OpSet s = kDarknessEcl;
+    s.sizes[0x21] = 3;
+    s.sizes[0x37] = 3;
+    s.load_pieces = 0x37;
+    s.files_look = false;
+    s.area_by_block = true;
+    s.curse_bytes = true;
+    s.moons = true;
+    s.vault_word = 0;
+    return s;
+}();
+
 const Profile kProfiles[] = {
     {games::Game::CurseOfTheAzureBonds, "GOG", "START.EXE", 57789, 62432, 0x48D0,
      {0x6E60, 0x6E88, 0x6EB0, 0x6EF2, 0x6F1B, 0x6F0A, 0x6ED6, 0x6EE3, 0x6F31, 0x6F3E, 0x6F4D, 0x6F64, 0x6F7B},
@@ -2438,6 +2469,72 @@ const Profile kProfiles[] = {
                  .knight_words = {0x2595F, 0x25964, 0x2597F, 0x25985, 0x2598A, 0x25999, 0x259B0, 0x259C3, 0x259D1,
                                   0x259E5, 0x259F1, 0x25A07}},
      .overland = nullptr},
+    // Death Knights of Krynn, GOG release (deathknights_facts.md; being
+    // built): START.EXE 74,299 bytes, EXEPACK, unpacked 82,336; its data
+    // segment at image 0xBCE0; GAME.OVR (35 overlays). Darkness's engine at
+    // its EGA stage (its front end: variant.darkness_files) with Krynn's
+    // rules and its own files (variant.dkk); its words mostly in the
+    // program's data segment (kP: image = 0xBCE0 + DS).
+    // - frame: tables naming block 202's tiles (DS 0x070C the top row, 0x0734
+    //   the bottom, 0x075C the row-16 bar, 0x0784 column 16, 0x07AC the
+    //   fight's column 22, 0x07D9 / 0x07EF / 0x07FE View Character's columns
+    //   0 / 39 / 19), the moons on the top row (layout::Tables::direct);
+    // - the font: 8X8D1.DAX block 201.
+    {.game = games::Game::DeathKnightsOfKrynn, .release = "GOG", .program = "START.EXE",
+     .program_size = 74299, .image_size = 82336, .data_base = 0xBCE0,
+     .frame = {.top = 0x070C, .bar = 0x075C, .bottom = 0x0734, .left = 0, .right = 0, .view_split = 0x0784,
+               .view_top = 0, .view_bottom = 0, .view_left = 0, .view_right = 0, .combat_left = 0,
+               .combat_split = 0x07AC, .combat_right = 0, .char_split = 0x07FE, .char_left = 0x07D9,
+               .char_right = 0x07EF},
+     .tiles_file = "8X8D1.DAX", .tiles_block = 202,
+     .press_any_key = 0xC548,
+     .title_file = "TITLE.DAX", .title = kDeathKnightsTitle,
+     .title_steps = sizeof kDeathKnightsTitle / sizeof kDeathKnightsTitle[0],
+     .title_version = 0xEC90, .title_menu = 0xEEA0,
+     .overlay = "GAME.OVR", .overlay_size = 252469, .credits_at = 0x35B, .credits_base = 0xDA, .credits_bars = {0, 0},
+     .first_area = 1, .last_area = 3, .common_tiles_block = 203,
+     .ecl_ops = &kDeathKnightsEcl,
+     .start_area = 1, .start_script = 16,           // (a new game: ECL1 block 16 - its interpreter +0x2E70)
+     .wild = {},
+     // The party menu (13 entries of 42 at DS 0x0CF8: Knight Change Order in
+     // Human Change's place), its words in the data segment; DKK.CFG names
+     // the save folder and Champions' (Load / Add "Death Champions Exit")
+     .party = {.items = 0xC9D8, .count = 13, .stride = 42, .choose = kP | 0xEEB6, .load_which = kP | 0xED61,
+               .name = kP | 0xE8F8, .ac_hp = kP | 0xE903, .cfg = "DKK.CFG", .save_which = kP | 0xED76,
+               .slots = kP | 0xF0C0, .saving = kP | 0x1001D, .camp_menu = 0xF3AC, .makes_camp = kP | 0xD397,
+               .add_from = kP | 0xD073, .add_sources = kP | 0xF017, .add_prompt = kP | 0xD088, .add = kP | 0xF036,
+               .drop = kP | 0xCFEA, .forever = kP | 0xCFF5, .sure = kP | 0xD000, .farewell = kP | 0xD02A,
+               .yes_no = kP | 0xEEAB, .cant_modify = kP | 0xD05E, .modify = kP | 0xED0D, .keep_exit = kP | 0xEFF8,
+               .load_from = kP | 0xED4C, .load_sources = kP | 0xF017},
+     // View Character's name tables (DS 0x08AD classes, 0x0A93 races in its
+     // own order, 0x0B13 alignments, 0x0C28 sex, 0x0C62 its three coins,
+     // 0x0C83 health) and its words (GAME.OVR 0x23CA0 on)
+     .view = {{0xC58D, 27, 18}, {0xC773, 16, 8}, {0xC7F3, 17, 9}, {0xC908, 7, 2}, {0xC942, 11, 3}, {0xC963, 13, 9},
+              0, 0x23CA8, 0x23CF0, 0x23CDA, 0x23CE4, 0x23CA0, 0x243BA, 0x243AE, 0x243D2, 0x243EA, 0x243C6,
+              0x243DB, 0, 5},
+     // Items: 125 name words of 21 bytes (DS 0x37FF; arrows 30, quarrels 12,
+     // darts 5), the ITEMS type file without a head
+     .items = {.words = {0xF4DF, 21, 125}, .types_file = "ITEMS", .arrow = 30, .quarrel = 12, .dart = 5,
+               .types_head = 0},
+     .create = {},
+     .item_words = {},
+     .shop_words = {},
+     .cures = {},
+     .gem_type = 0, .gem_word = 0, .jewel_word = 0,
+     .magic = {},
+     .alter = {},
+     .fight = {},
+     .script_words = {0, 0, 0x87E7, 0x87EF, 0x87FC, kP | 0xE6FC, kP | 0xC548, kP | 0xE759, 0, 0, kP | 0xEEAB},
+     .random_items = nullptr, .random_rows = 0,
+     .sound = {},
+     .clips = {},
+     .door = {},
+     .won = {},
+     .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0x70, .fight_unswapped = true,
+                 .darkness_files = true, .party_menu_col = 9, .marker_file = "8X8D1.DAX", .marker_block = 204,
+                 .order_words = {0x23CB1, 0, 0}, .dkk = true},
+     .overland = nullptr,
+     .font_file = "8X8D1.DAX"},
     // Pools of Darkness, GOG release (darkness_facts.md; being built -
     // Tom, 2026-10-17): GAME.EXE 64,203 bytes, EXEPACK, unpacked 72,784; its
     // data segment at image 0x9E70; one file a kind (ECL1, GEO1 ...); VGA

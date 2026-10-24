@@ -226,6 +226,12 @@ public:
     uint16_t dk_read(uint16_t addr, int size) const;
     void dk_write(uint16_t addr, uint16_t v, int size);
     static uint16_t dk_addr(uint16_t curse);
+    // Death Knights (OpSet::curse_bytes): a byte at each of Curse's
+    // addresses; Darkness's game block places (1-0x400) the engine's
+    // Darkness code names are turned into Death Knights' own
+    uint16_t dkk_read(uint16_t addr, int size) const;
+    void dkk_write(uint16_t addr, uint16_t v, int size);
+    static uint16_t dkk_addr(uint16_t darkness);
     // Pool of Radiance's 3D view colours as the scripts set them (0xC059
     // the floor's, 0xC05F the line's and band's; screen_facts.md 4)
     uint8_t view_byte(int i) const { return view_bytes_[i & 1]; }
