@@ -24,6 +24,7 @@
 #include "engine/journal.h"
 #include "engine/jpeg.h"
 #include "engine/pdf.h"
+#include "engine/resample.h"
 #include "jpeg_vectors.h"
 #include "thumb_vectors.h"
 #include "engine/jpeg_thumb.h"
@@ -3444,6 +3445,202 @@ static void test_journal_gbc()
     CHECK(!journal::gbc_marker("Plain (text) here.", 18, &ma, &mb));
 }
 
+// The journal viewers' scaling (synthetic pictures): 1:1 copies, halving
+// averages, enlarging keeps the ends and stays between its neighbours,
+// Turn puts the picture's top along the left edge; the book's columns
+// from a print profile; levels for grey print
+static void test_journal_view()
+{
+    using resample::Tap;
+    // taps: 1:1 is the pixel itself
+    for (int i = 0; i < 5; ++i) {
+        const Tap t = resample::tap(i, 65536, 5);
+        int sum = 0, own = 0;
+        for (int j = 0; j < resample::kTaps; ++j) {
+            sum += t.w[j];
+            if (resample::tap_index(t, j, 5) == i) own += t.w[j];
+        }
+        CHECK(sum == resample::kOne && own == resample::kOne);
+    }
+    // weights always add up, every index in range (enlarging, shrinking, far shrinking)
+    const int64_t ks[] = {65536 * 3, 65536 * 19 / 10, 65536 * 7 / 10, 65536 / 2, 65536 / 3, 65536 / 7};
+    for (int64_t k : ks)
+        for (int i = 0; i < resample::shown(100, k); ++i) {
+            const Tap t = resample::tap(i, k, 100);
+            int sum = 0;
+            for (int j = 0; j < resample::kTaps; ++j) {
+                sum += t.w[j];
+                const int x = resample::tap_index(t, j, 100);
+                CHECK(x >= 0 && x < 100);
+            }
+            CHECK(sum == resample::kOne);
+        }
+    CHECK(resample::shown(168, resample::fit(168, 320)) == 320 && resample::shown(1086, resample::fit(1086, 480)) == 480);
+    CHECK(resample::fit(10, 320) == 4 * 65536);                 // (at most 4 times enlarged)
+
+    // A palette picture: a grey ramp (indexes 216 + 39 * x / (w - 1))
+    struct Pic : resample::RowSource {
+        int w = 0, h = 0;
+        std::vector<uint8_t> px;
+        int reads = 0;
+        bool row(int y, uint8_t* out) override
+        {
+            ++reads;
+            if (y < 0 || y >= h) return false;
+            memcpy(out, px.data() + static_cast<size_t>(y) * w, static_cast<size_t>(w));
+            return true;
+        }
+    };
+    static uint8_t pal[256][3];
+    for (int i = 0; i < 256; ++i) journal::palette_rgb(i, &pal[i][0], &pal[i][1], &pal[i][2]);
+    Pic p;
+    p.w = 40;
+    p.h = 6;
+    for (int y = 0; y < p.h; ++y)
+        for (int x = 0; x < p.w; ++x) p.px.push_back(static_cast<uint8_t>(216 + 39 * x / (p.w - 1)));
+    std::vector<uint8_t> cache(resample::Scaler::cache_bytes(p.w));
+    static resample::Scaler sc;
+    uint8_t line[480 * 3];
+    // 1:1 - the palette's colours exactly
+    sc.begin(p.w, p.h, 65536, false, cache.data(), &p, pal);
+    CHECK(sc.shown_w() == 40 && sc.shown_h() == 6);
+    sc.line(2, 0, 40, line);
+    bool same = true;
+    for (int x = 0; x < 40; ++x) same = same && line[x * 3] == pal[p.px[2 * p.w + x]][0];
+    CHECK(same);
+    // halved: each shown pixel the mean of its two
+    sc.begin(p.w, p.h, 65536 / 2, false, cache.data(), &p, pal);
+    CHECK(sc.shown_w() == 20 && sc.shown_h() == 3);
+    sc.line(1, 0, 20, line);
+    same = true;
+    for (int x = 0; x < 20; ++x) {
+        const int want = (pal[p.px[2 * x]][0] + pal[p.px[2 * x + 1]][0] + 1) / 2;
+        same = same && std::abs(line[x * 3] - want) <= 1;
+    }
+    CHECK(same);
+    // three times: the ramp still rises, ends kept
+    sc.begin(p.w, p.h, 65536 * 3, false, cache.data(), &p, pal);
+    CHECK(sc.shown_w() == 120);
+    sc.line(9, 0, 120, line);
+    bool rising = true;
+    for (int x = 1; x < 120; ++x) rising = rising && line[x * 3] + 1 >= line[(x - 1) * 3];
+    CHECK(rising && line[0] == pal[216][0] && line[119 * 3] == pal[255][0]);
+    // rows are read once each going down the picture (the card's reads)
+    sc.begin(p.w, p.h, 65536 * 3, false, cache.data(), &p, pal);
+    p.reads = 0;
+    for (int y = 0; y < sc.shown_h(); ++y) sc.line(y, 0, 120, line);
+    CHECK(p.reads == p.h);
+    // Turned: a 3 x 2 picture of distinct colours a b c / d e f shows as
+    // c f / b e / a d (its top along the left edge)
+    Pic q;
+    q.w = 3;
+    q.h = 2;
+    q.px = {0, 5, 30, 180, 185, 215};
+    std::vector<uint8_t> qc(resample::Scaler::cache_bytes(q.w));
+    sc.begin(q.w, q.h, 65536, true, qc.data(), &q, pal);
+    CHECK(sc.shown_w() == 2 && sc.shown_h() == 3);
+    uint8_t col0[9], col1[9];
+    sc.column(0, 0, 3, col0);
+    sc.column(1, 0, 3, col1);
+    auto is = [&](const uint8_t* c, int index) {
+        return c[0] == pal[index][0] && c[1] == pal[index][1] && c[2] == pal[index][2];
+    };
+    CHECK(is(col0, 30) && is(col0 + 3, 5) && is(col0 + 6, 0));
+    CHECK(is(col1, 215) && is(col1 + 3, 185) && is(col1 + 6, 180));
+    // turned and fitted: a tall map (40 x 120) at the width's fit is 320 across
+    {
+        Pic m;
+        m.w = 40;
+        m.h = 120;
+        m.px.assign(static_cast<size_t>(m.w) * m.h, 215);
+        std::vector<uint8_t> mc(resample::Scaler::cache_bytes(m.w));
+        const int64_t k = resample::fit(m.h, 320);
+        sc.begin(m.w, m.h, k, true, mc.data(), &m, pal);
+        CHECK(sc.shown_w() == 320 && sc.shown_h() >= 106 && sc.shown_h() <= 107);
+        uint8_t c[480 * 3];
+        sc.column(sc.shown_w() - 1, 0, sc.shown_h(), c);
+        CHECK(c[0] == 255 && c[(sc.shown_h() - 1) * 3 + 2] == 255);
+    }
+
+    // The book's columns: a spread - margin, two columns, the fold, two
+    // more; a page number at the fold (narrow), a picture across the
+    // first gutter in 4 of the 16 strips (a gutter: clear in half of them)
+    {
+        const int B = journal::kColumnBands;
+        uint8_t clear[200];
+        for (int x = 0; x < 200; ++x) clear[x] = static_cast<uint8_t>(B);
+        auto print = [&](int a0, int b0, int strips) {
+            for (int x = a0; x < b0; ++x) clear[x] = static_cast<uint8_t>(clear[x] > strips ? clear[x] - strips : 0);
+        };
+        print(8, 50, 12);
+        print(54, 96, 13);
+        print(106, 148, 11);
+        print(152, 192, 12);
+        print(98, 101, 1);              // the page number (one strip: still a gutter)
+        print(40, 70, 4);               // the picture
+        int x0[8], x1[8];
+        const int n = journal::find_columns(clear, 200, B, x0, x1, 8);
+        CHECK(n == 4);
+        if (n == 4) {
+            CHECK(x0[0] <= 8 && x0[0] >= 5 && x1[0] >= 50 && x1[0] <= 54);
+            CHECK(x0[1] >= 50 && x0[1] <= 54 && x1[1] >= 96 && x1[1] <= 106);
+            CHECK(x0[2] <= 106 && x1[2] >= 148 && x0[3] <= 152 && x1[3] >= 192);
+            for (int i = 0; i + 1 < n; ++i) CHECK(x1[i] <= x0[i + 1]);
+        }
+        // a picture across most of a gutter closes it: three columns
+        uint8_t c2[200];
+        memcpy(c2, clear, sizeof c2);
+        for (int x = 50; x < 54; ++x) c2[x] = static_cast<uint8_t>(B / 2 - 1);
+        CHECK(journal::find_columns(c2, 200, B, x0, x1, 8) == 3 && x1[0] >= 96);
+        // one picture across the page: one column
+        uint8_t one[100];
+        for (int x = 0; x < 100; ++x) one[x] = static_cast<uint8_t>(x >= 5 && x < 95 ? 2 : B);
+        CHECK(journal::find_columns(one, 100, B, x0, x1, 8) == 1 && x0[0] <= 5 && x1[0] >= 95);
+        // a blank page: the whole of it
+        uint8_t none[50];
+        memset(none, B, sizeof none);
+        CHECK(journal::find_columns(none, 50, B, x0, x1, 8) == 1 && x0[0] == 0 && x1[0] == 50);
+        // at most `max`
+        CHECK(journal::find_columns(clear, 200, B, x0, x1, 2) == 2);
+        // From the strips' print: a full column, a gutter, a column that
+        // ends half way down (its blank lower half is no gutter); faint
+        // print counts on a page of faint print
+        static uint16_t ink[journal::kColumnBands * 80];
+        for (int b = 0; b < B; ++b)
+            for (int x = 0; x < 80; ++x) {
+                const bool full = x >= 5 && x < 35, half = x >= 42 && x < 75 && b < B / 2;
+                ink[b * 80 + x] = static_cast<uint16_t>(full || half ? 40 + (x * 7 + b) % 13 : (x % 9 == 0 ? 2 : 0));
+            }
+        uint8_t cs[80];
+        journal::clear_strips(ink, 80, 80, B, 10, cs);
+        CHECK(cs[38] == B && cs[20] == 0 && cs[60] == 0);
+        CHECK(journal::find_columns(cs, 80, B, x0, x1, 8) == 2 && x0[0] <= 5 && x1[0] >= 35 && x0[1] <= 42 &&
+              x1[1] >= 75 && x1[0] <= x0[1]);
+    }
+
+    // Levels: grey print (the 72 dpi scans) is drawn black, paper stays white
+    {
+        uint32_t hist[256] = {};
+        hist[journal::kPaper] = 5000;
+        hist[journal::index_of(64, 64, 64)] = 300;
+        hist[journal::index_of(150, 150, 150)] = 500;
+        const int black = journal::black_point(hist);
+        CHECK(black >= 50 && black <= 72);
+        uint8_t r, g, b;
+        journal::level_rgb(journal::index_of(64, 64, 64), black, &r, &g, &b);
+        CHECK(r < 16 && r == g && g == b);
+        journal::level_rgb(journal::kPaper, black, &r, &g, &b);
+        CHECK(r == 255 && g == 255 && b == 255);
+        // real black print: nothing changes
+        uint32_t h2[256] = {};
+        h2[journal::kPaper] = 5000;
+        h2[journal::index_of(0, 0, 0)] = 300;
+        CHECK(journal::black_point(h2) == 0);
+        uint32_t h3[256] = {};
+        CHECK(journal::black_point(h3) == 0);
+    }
+}
+
 static void test_journal()
 {
     // JPEG: decodes close to what PIL makes of it, and want() skips MCUs
@@ -3581,7 +3778,14 @@ static void test_journal()
     CHECK(journal::kTableCount >= 5);
     for (int ti = 0; ti < journal::kTableCount; ++ti) {
         const journal::Table& t = *journal::kTables[ti];
-        CHECK(journal::find_table(t.pdf_size, t.pdf_id) == &t);
+        CHECK(journal::find_table(t.pdf_size, t.pdf_id) == &t && journal::find_table(t.pdf_id) == &t);
+        int maps = 0;
+        for (int e = 0; e < t.n_entries; ++e)
+            if (t.entries[e].flags & journal::kMap) {
+                ++maps;
+                CHECK(t.entries[e].kind == 'J');
+            }
+        CHECK(maps >= 4);                               // (every journal has its maps marked)
         CHECK(strlen(t.pdf_id) == 32 && t.n_entries > 0 && t.n_pieces >= t.n_entries);
         for (int e = 0; e < t.n_entries; ++e) {
             const journal::EntryDef& d = t.entries[e];
@@ -3606,6 +3810,55 @@ static void test_journal()
     CHECK(r == 255 && g == 255 && b == 255);
     journal::palette_rgb(journal::index_of(30, 110, 180), &r, &g, &b);
     CHECK(b > r + 60);
+    // (v0.150.0) light greys stay grey - the Treasures maps' shading -
+    // and only near-white is paper
+    journal::palette_rgb(journal::index_of(200, 200, 200), &r, &g, &b);
+    CHECK(r > 180 && r < 230 && r == g && g == b);
+    CHECK(journal::index_of(236, 236, 236) == journal::kPaper && journal::index_of(228, 228, 228) != journal::kPaper);
+    CHECK(info.revision == journal::kRevision && info.maps == 0 && info.version == 1);
+    // Map entries (the viewer's Turn) and the Companion's map pictures in
+    // their place when there are some
+    {
+        static const journal::EntryDef kEm[] = {{'J', 1, 0, 2, journal::kMap}, {'T', 7, 2, 1}};
+        static const journal::Table kTm = {"maps", static_cast<uint32_t>(pdf_bytes.size()),
+                                           "0a1b2c3d4e5f60718293a4b5c6d7e8f9", kEm, 2, kPieces, 3};
+        CHECK(journal::is_map(kTm, 'J', 1) && !journal::is_map(kTm, 'T', 7) && !journal::is_map(kTm, 'J', 7));
+        struct Pics : journal::GbcPictures {
+            dax::MemorySource jpg{kJpeg1, sizeof kJpeg1};
+            int asked = 0;
+            dax::ByteSource* open(int number) override
+            {
+                ++asked;
+                return number == 1 ? &jpg : nullptr;
+            }
+        } pics;
+        MemOut om;
+        CHECK(journal::make(psrc, kTm, om, nullptr, nullptr, &pics) && pics.asked >= 1);
+        dax::MemorySource ms(om.b.data(), om.b.size());
+        static journal::Info mi;
+        CHECK(journal::read_info(ms, mi) && mi.maps == 1 && mi.pieces == 4 && mi.entries == 2);
+        int f = 0, c = 0;
+        journal::PieceInfo pi;
+        CHECK(journal::find(ms, mi, 'J', 1, &f, &c) && f == 3 && c == 1 && journal::piece(ms, mi, f, pi) &&
+              pi.w == kJpeg1W && pi.h == kJpeg1H);
+        int close = 0;
+        for (int y = 0; y < kJpeg1H; ++y)
+            for (int x = 0; x < kJpeg1W; ++x) {
+                const uint8_t* q = kJpeg1Rgb + (y * kJpeg1W + x) * 3;
+                uint8_t r1, g1, b1, r2, g2, b2;
+                journal::palette_rgb(om.b[pi.offset + y * pi.w + x], &r1, &g1, &b1);
+                journal::palette_rgb(journal::index_of(q[0], q[1], q[2]), &r2, &g2, &b2);
+                close += std::abs(r1 - r2) + std::abs(g1 - g2) + std::abs(b1 - b2) <= 60;
+            }
+        CHECK(close * 100 >= kJpeg1W * kJpeg1H * 97);
+        CHECK(journal::find(ms, mi, 'T', 7, &f, &c) && f == 2 && c == 1);
+        // (without the Companion: the table's pieces)
+        MemOut on;
+        CHECK(journal::make(psrc, kTm, on, nullptr, nullptr, nullptr));
+        dax::MemorySource ns(on.b.data(), on.b.size());
+        CHECK(journal::read_info(ns, mi) && mi.maps == 0 && mi.pieces == 3 && journal::find(ns, mi, 'J', 1, &f, &c) &&
+              f == 0 && c == 2);
+    }
 
     // Mentions in the games' text
     int n = 0;
@@ -7911,6 +8164,7 @@ int main()
     test_sound();
     test_clips();
     test_journal();
+    test_journal_view();
     test_journal_gbc();
     test_icon_looks();
     test_gbc_icons();

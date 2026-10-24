@@ -2165,6 +2165,43 @@ How it works (v0.12.0, Curse):
   journal pictures. The game's own title screen (TITLE.DAX: the SSI / AD&D
   page and the "Pool of Radiance" title page) is the only 1988 art there.
 
+- 2026-10-24 (Tom, after using the journal on the boards: "the zoom
+  settings ... are not useful"): **columns, Turn, sharper scans**.
+  Entries: each piece at its own width (a heading paragraph across the
+  page, then the column's pieces - Treasures' Introduction), a little
+  white between; Zoom = **Column** (each piece across the screen; the
+  start) / **Whole** (each piece all on the screen); Full Size is gone.
+  Map entries (marked by eye in the tables, `EntryDef::flags` kMap,
+  `make_table.py maps <name> 4,20,...`; the Companion's picture entries
+  too) get **Turn**: a quarter turn left (the map's top along the left
+  edge), its long side along the screen's - Back | Zoom | Turn | Prev |
+  page | Next. Prev / Next go a screenful, stopping where a piece starts.
+  Scaling (`engine/resample.*`): Catmull-Rom when enlarging, the area
+  each shown pixel covers when shrinking, at most 4x. The Treasures map
+  was "horrible" because its scan is a 72 dpi grey JPEG (168 px a
+  column) **and** because JOURNAL.DAT turned everything lighter than 185
+  into paper - its light grey shading became specks; paper is now from
+  232 up (`index_of`; JOURNAL.DAT revision 1: older files are remade by
+  the next Rescan) and grey print is stretched to black on the screen
+  (`black_point` / `level_rgb`, from 32 of the piece's rows; coloured
+  pictures untouched). The journal's words are never replaced by our
+  own text (they'd be the journal's content in the firmware). When the
+  Gold Box Companion copied to `/GOLDBOX/GBC` has `Games/<nn. Title>/
+  JE_NNN.jpg` for a map entry (the Steam / SNEG Companion's Games
+  folders; GOG's Companion has none), the scan makes that entry from the
+  picture (`journal::make(..., maps)`; the scan log says how many).
+  The book: a **column** at a time (the start), found on the board - the
+  page decoded small, cut into 16 strips; a gutter is clear in at least
+  half the strips that have print near it (a picture or heading across
+  it in a few doesn't close it), narrow runs join their neighbours
+  (`journal::clear_strips` / `find_columns`; all seven GOG journals'
+  220 pages checked: spreads 4 columns, Treasures' pages 2, maps and
+  tables across a page 1); the column's width across the screen,
+  scrolling down it; Next / Prev a screenful, then the next column, then
+  the next page; the label "3 of 48" over "Col 2 of 4"; Zoom = Column /
+  Whole (a tap on the whole page shows the column there); taps on the
+  column's left / right quarter go to the column before / after.
+
 ## 8. Copy protection (Tom, 2026-10-06)
 
 Skipped. The player supplies their own game files, so the journal word
