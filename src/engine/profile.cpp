@@ -2358,7 +2358,7 @@ const Profile kProfiles[] = {
                .ids = {0, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .to_block = 0, .rate_table = 0x1794,
                .as_nine = 1u << 3 | 1u << 6},
      .door = {0x1C147, 0x1C14C, 0x1C152, 0x1C159, 0x1C15F, 0x1F},
-     .variant = {.unfinished = true, .program_words = true, .treasure_pic = 1, .camp_pic = 29, .eight_black = true, .field_swap = true,
+     .variant = {.program_words = true, .treasure_pic = 1, .camp_pic = 29, .eight_black = true, .field_swap = true,
                  .party_menu_col = 9,
                  .sf_pics = true,
                  .frame_base = 20,
