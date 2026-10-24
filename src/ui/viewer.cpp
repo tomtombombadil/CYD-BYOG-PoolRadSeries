@@ -1439,6 +1439,7 @@ void draw_files()
 void canvas_park_path(char* out, size_t cap);
 
 void apply_options();
+void apply_sound();          // (Settings' Game Sound and Volume to play)
 
 // The player's Pools of Darkness folder on the card (its font is the third
 // Game Font choice); false if there's none
@@ -1502,7 +1503,7 @@ void start_play()
     char cdir[160];
     library::make_cache_dirs(game_dirs[game_sel]);
     snprintf(cdir, sizeof cdir, "%s/%s/%s", games::kRootDir, library::kCacheDir, game_dirs[game_sel].folder);
-    play::set_sound(cfg->sound, cfg->volume);
+    apply_sound();
     char dd[160];
     darkness_dir(dd, sizeof dd);
     play::set_darkness_dir(dd);
@@ -2616,54 +2617,43 @@ constexpr SoundKey kSoundKeys[] = {
 };
 constexpr int kSoundKeyCount = sizeof kSoundKeys / sizeof kSoundKeys[0];
 
-void draw_slider(const ui::Rect& r, bool volume);
-bool slider_set(const ui::Rect& r, int x, bool volume);
+void draw_volume(const ui::Rect& r);
+bool tap_volume(const ui::Rect& r, int x);
+void draw_game_sound(const ui::Rect& r);
+void tap_game_sound(const ui::Rect& r);
 
-ui::Rect sound_key(int i)          // i < 0: the top row (-1 Tandy, -2 PC Speaker, -3 the volume slider)
+ui::Rect sound_key(int i)          // i < 0: the top row (-1 Game Sound, -2 Volume + Mute: two keys' width)
 {
     const ui::Rect a = journal_area();
     const int gp = ui::gap(), cols = 4, rows = kSoundKeyCount / cols + 1;
     const int w = (a.w - gp * (cols + 1)) / cols, h = (a.h - gp * (rows + 1)) / rows;
     if (i < 0) {
         const int dw = (a.w - gp * 4) / 3;
-        return {a.x + gp + (-i - 1) * (dw + gp), a.y + gp, dw, h};
+        if (i == -1) return {a.x + gp, a.y + gp, dw, h};
+        return {a.x + gp * 2 + dw, a.y + gp, a.w - gp * 3 - dw, h};
     }
     return {a.x + gp + (i % cols) * (w + gp), a.y + gp + (i / cols + 1) * (h + gp), w, h};
 }
 
 void draw_sounds()
 {
-    ui::key(sound_key(-1), "Tandy", cfg->sound == kSoundTandy ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
-    ui::key(sound_key(-2), "PC Speaker", cfg->sound == kSoundPc ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
-    draw_slider(sound_key(-3), true);
+    draw_game_sound(sound_key(-1));
+    draw_volume(sound_key(-2));
     for (int i = 0; i < kSoundKeyCount; ++i) ui::key(sound_key(i), kSoundKeys[i].name);
 }
 
 void tap_sounds(const ui::Tap& t)
 {
-    if (sound_key(-3).contains(t.x, t.y)) {
-        if (slider_set(sound_key(-3), t.x, true)) {
-            draw_slider(sound_key(-3), true);
-            settings_save(*cfg);
-        }
+    if (sound_key(-2).contains(t.x, t.y)) {
+        tap_volume(sound_key(-2), t.x);
         return;
     }
-    for (int d2 = 1; d2 <= 2; ++d2)
-        if (sound_key(-d2).contains(t.x, t.y)) {
-            cfg->sound = d2 == 1 ? kSoundTandy : kSoundPc;
-            settings_save(*cfg);
-            play::set_sound(cfg->sound, cfg->volume);
-            dirty = true;
-            return;
-        }
+    if (sound_key(-1).contains(t.x, t.y)) {
+        tap_game_sound(sound_key(-1));
+        return;
+    }
     for (int i = 0; i < kSoundKeyCount; ++i)
         if (sound_key(i).contains(t.x, t.y)) {
-            if (cfg->sound != kSoundTandy && cfg->sound != kSoundPc) {
-                cfg->sound = kSoundTandy;           // (it was off: the keys above say which)
-                settings_save(*cfg);
-                play::set_sound(cfg->sound, cfg->volume);
-                dirty = true;
-            }
             play::sound_test(kSoundKeys[i].id);
             return;
         }
@@ -4074,8 +4064,9 @@ void tap_play(const ui::Tap& t)
 
 // ---- Settings: one screen everywhere (the declarations and the comforts:
 // above, before the Game menu) ------------------------------------------
-// The board's keys (Tom, 2026-10-09): Brightness and Volume sliders in a
-// key's space; Swap Red/Blue shows red, green and blue blocks to check the
+// The board's keys (Tom, 2026-10-09): the Brightness slider in a key's
+// space; Volume (Tom, 2026-10-24) one key, its left half - and right
+// half +, 5% a tap, the percentage between (a muted speaker at 0%); Swap Red/Blue shows red, green and blue blocks to check the
 // colours by; Game Sound (Tom, 2026-10-09): the games' effects as on a
 // Tandy 1000 (the default) or a PC speaker, or Off; Logs; the board and
 // memory line. Recalibrate Touch on every board (v0.103.5: a capacitive
@@ -4157,16 +4148,23 @@ const char* set_name(const SetEntry& e)
 }
 bool set_has_help(const SetEntry& e)
 {
-    return e.comfort || e.id == kSound || e.id == kInvert || e.id == kSwap || e.id == kRotate || e.id == kScale;
+    return e.comfort || e.id == kVolume || e.id == kSound || e.id == kInvert || e.id == kSwap || e.id == kRotate ||
+           e.id == kScale;
 }
 const char* set_help_text(const SetEntry& e)
 {
     if (e.comfort) return comfort_help_text(e.id);
     switch (e.id) {
+    case kVolume:
+        return "How loud the game sounds are. Tap the key's left side for 5% less, its right side for 5% more; "
+               "at 0% the sound is off (a crossed speaker). Mute turns the sound off at once; tap it again for "
+               "the volume you had.";
     case kSound:
-        return "The games' own sound effects. Tandy: the Tandy 1000's three voices and noise, the better of the "
-               "two (the default). PC Speaker: the PC's one beeper. Off: silence. Volume sets how loud; the Game "
-               "menu's Sounds tab plays each effect.";
+        return "The games' own sound effects; tap to go round them. Tandy: the Tandy 1000's three voices and "
+               "noise, the better of the two (the default). PC Speaker: the PC's one beeper. Darkness, Gateway, "
+               "Treasures: that game's recorded effects for the older games (listed when that game is on the "
+               "card). Pools of Darkness, Gateway and Treasures play their own. The Game menu's Sounds tab "
+               "plays each effect.";
     case kInvert:
         return "Some screens show every colour inverted, like a photo negative. If yours does, turn this on.";
     case kSwap:
@@ -4189,13 +4187,13 @@ ui::Rect slider_track(const ui::Rect& r)
     return {r.x + pad, top, r.w - pad * 2, r.y + r.h - ui::gap() - top};
 }
 
-void draw_slider(const ui::Rect& r, bool volume)
+void draw_slider(const ui::Rect& r)
 {
     LGFX& g = ui::gfx();
     ui::key(r, "");
     char b[32];
-    const int v = volume ? cfg->volume : cfg->brightness, lo = volume ? kMinVolume : kMinBrightness;
-    snprintf(b, sizeof b, "%s %d%%", volume ? "Volume" : "Brightness", v * 100 / 255);
+    const int v = cfg->brightness, lo = kMinBrightness;
+    snprintf(b, sizeof b, "Brightness %d%%", v * 100 / 255);
     ui::text(r.x + ui::gap() * 2, r.y + ui::gap(), b, style::kText, ui::Font::Small);
     const ui::Rect t = slider_track(r);
     const int cy = t.y + t.h / 2, th = ui::large() ? 6 : 4;
@@ -4208,19 +4206,175 @@ void draw_slider(const ui::Rect& r, bool volume)
     g.drawCircle(pos, cy, kr, style::kText);
 }
 
-// Brightness (or the volume) from a point on the slider
-bool slider_set(const ui::Rect& r, int x, bool volume)
+// ---- Game Sound (Tom, 2026-10-24): one key naming the mode in use, a tap
+// goes round the modes there are - Tandy, PC Speaker, then Darkness /
+// Gateway / Treasures (that game's own recordings, for the older games'
+// effects) when that game is on the card. In Darkness, Gateway or
+// Treasures the key names that game only (its own sound; no going round).
+// No Off: Mute does that.
+uint8_t own_sound_mode(games::Game g)
+{
+    return g == games::Game::PoolsOfDarkness              ? kSoundDarkness
+         : g == games::Game::GatewayToTheSavageFrontier   ? kSoundGateway
+         : g == games::Game::TreasuresOfTheSavageFrontier ? kSoundTreasures
+                                                          : 0;
+}
+// The game in hand (none at Home)
+games::Game sound_game() { return set_from == SetFrom::Home ? games::Game::Unknown : game_dirs[game_sel].game; }
+bool sound_mode_ok(uint8_t m)
+{
+    if (m == kSoundTandy || m == kSoundPc) return true;
+    for (int g = 0; g < n_games; ++g)
+        if (game_dirs[g].format == library::Format::Dax && own_sound_mode(game_dirs[g].game) == m) return true;
+    return false;
+}
+// The mode the key shows: the game's own, else the setting (Tandy when the
+// setting's game isn't on the card)
+uint8_t shown_sound_mode()
+{
+    const uint8_t own = own_sound_mode(sound_game());
+    if (own) return own;
+    return sound_mode_ok(cfg->sound) ? cfg->sound : kSoundTandy;
+}
+const char* sound_mode_name(uint8_t m)
+{
+    switch (m) {
+    case kSoundPc: return "PC Speaker";
+    case kSoundDarkness: return "Darkness";
+    case kSoundGateway: return "Gateway";
+    case kSoundTreasures: return "Treasures";
+    default: return "Tandy";
+    }
+}
+// What play gets (1 Tandy, 2 PC speaker, 3 off): muted = off (no output
+// at all); a game's own mode plays as Tandy (in that game: its own
+// recordings, as before; for the older games the recordings' playback
+// isn't built yet - Tandy meanwhile)
+uint8_t play_sound_mode()
+{
+    if (cfg->volume_muted) return kSoundOff;
+    return shown_sound_mode() == kSoundPc ? kSoundPc : kSoundTandy;
+}
+void apply_sound() { play::set_sound(play_sound_mode(), settings_sound_volume(*cfg)); }
+
+void draw_game_sound(const ui::Rect& r) { ui::key2(r, "Game Sound", sound_mode_name(shown_sound_mode())); }
+
+void tap_game_sound(const ui::Rect& r)
+{
+    if (!own_sound_mode(sound_game())) {
+        uint8_t m = shown_sound_mode();
+        for (int k = 0; k < 6; ++k) {
+            m = m == kSoundTandy ? kSoundPc : m == kSoundPc ? kSoundDarkness : m == kSoundTreasures ? kSoundTandy
+                                                                                                      : static_cast<uint8_t>(m + 1);
+            if (sound_mode_ok(m)) break;
+        }
+        if (m != cfg->sound) {
+            cfg->sound = m;
+            settings_save(*cfg);
+            apply_sound();
+        }
+    }
+    draw_game_sound(r);
+}
+
+// The Volume key (Tom, 2026-10-24): one key, the small "Volume" label at
+// its top, "-" at the left and "+" at the right, the percentage between
+// them - a crossed speaker at 0%. A tap on the left half takes 5% off, on
+// the right half adds 5%; each half takes the tap highlight by itself.
+void draw_mute(int cx, int cy, int s, uint16_t col)
+{
+    LGFX& g = ui::gfx();
+    // the speaker: a box and its cone, s high, at the left of the centre
+    const int h = s, bw = s / 3 > 2 ? s / 3 : 2, bh = h / 2;
+    const int x0 = cx - s;
+    g.fillRect(x0, cy - bh / 2, bw, bh, col);
+    g.fillTriangle(x0 + bw - 1, cy - bh / 2, x0 + bw * 2 + 1, cy - h / 2, x0 + bw * 2 + 1, cy + h / 2, col);
+    g.fillTriangle(x0 + bw - 1, cy - bh / 2, x0 + bw - 1, cy + bh / 2 - 1, x0 + bw * 2 + 1, cy + h / 2, col);
+    // the cross, beside it
+    const int c = h * 3 / 8, xc = cx + s / 2;
+    for (int d = 0; d < (ui::large() ? 3 : 2); ++d) {
+        g.drawLine(xc - c + d, cy - c, xc + c + d, cy + c, col);
+        g.drawLine(xc - c + d, cy + c, xc + c + d, cy - c, col);
+    }
+}
+
+// Volume's space: the - / + key, and Mute (half a key) at its right
+// (Tom, 2026-10-24: a toggle - on, the sound at 0 with the crossed speaker
+// in the Volume key; off, back at the volume it had)
+ui::Rect mute_key(const ui::Rect& a) { return {a.x + a.w - a.w / 4, a.y, a.w / 4, a.h}; }
+ui::Rect volume_key(const ui::Rect& a) { return {a.x, a.y, a.w - a.w / 4 - ui::gap(), a.h}; }
+
+void draw_volume(const ui::Rect& a)
+{
+    LGFX& g = ui::gfx();
+    ui::key_small(mute_key(a), "Mute", cfg->volume_muted ? ui::KeyStyle::Lit : ui::KeyStyle::Normal);
+    const ui::Rect r = volume_key(a);
+    ui::key(r, "");
+    ui::text(r.x + ui::gap() * 2, r.y + ui::gap(), "Volume", style::kText, ui::Font::Small);
+    const ui::Rect t = slider_track(r);
+    const int cy = t.y + t.h / 2;
+    int s = t.h - 2;                                    // the - / + signs' size
+    if (s > (ui::large() ? 20 : 14)) s = ui::large() ? 20 : 14;
+    const int th = ui::large() ? 4 : 3;
+    const int pct = settings_volume_pct(*cfg);
+    const uint16_t minus = pct > 0 ? style::kGold : style::kTextMuted;
+    const uint16_t plus = pct < 100 ? style::kGold : style::kTextMuted;
+    g.fillRect(t.x, cy - th / 2, s, th, minus);
+    const int px = t.x + t.w - s;
+    g.fillRect(px, cy - th / 2, s, th, plus);
+    g.fillRect(px + s / 2 - th / 2, cy - s / 2, th, s, plus);
+    if (pct == 0) {
+        draw_mute(t.x + t.w / 2, cy, s, style::kText);
+    } else {
+        char b[8];
+        snprintf(b, sizeof b, "%d%%", pct);
+        ui::text_center({t.x + s, t.y, t.w - s * 2, t.h}, b, style::kText, ui::Font::Normal);
+    }
+    // the halves: the tap highlight rings the one tapped
+    ui::key_zone({r.x, r.y, r.w / 2, r.h});
+    ui::key_zone({r.x + r.w / 2, r.y, r.w - r.w / 2, r.h});
+}
+
+// A tap in Volume's space at x: Mute on / off, or 5% down (the Volume
+// key's left half) or up (its right half) - up while muted un-mutes at
+// the volume it had; the keys redrawn either way (it takes the tap
+// highlight's ring off)
+bool tap_volume(const ui::Rect& a, int x)
+{
+    bool changed = false;
+    const ui::Rect r = volume_key(a);
+    if (x >= mute_key(a).x) {
+        cfg->volume_muted = !cfg->volume_muted;
+        changed = true;
+    } else if (cfg->volume_muted) {
+        if (x >= r.x + r.w / 2) cfg->volume_muted = 0, changed = true;
+    } else {
+        const int pct = settings_volume_pct(*cfg);
+        int n = pct + (x < r.x + r.w / 2 ? -5 : 5);
+        if (n < 0) n = 0;
+        if (n > 100) n = 100;
+        changed = n != pct;
+        if (changed) settings_set_volume_pct(*cfg, n);
+    }
+    if (changed) {
+        apply_sound();
+        settings_save(*cfg);
+    }
+    draw_volume(a);
+    return changed;
+}
+
+// Brightness from a point on the slider
+bool slider_set(const ui::Rect& r, int x)
 {
     const ui::Rect t = slider_track(r);
-    const int lo = volume ? kMinVolume : kMinBrightness;
+    const int lo = kMinBrightness;
     int v = lo + (x - t.x) * (255 - lo) / (t.w > 0 ? t.w : 1);
     if (v < lo) v = lo;
     if (v > 255) v = 255;
-    uint8_t& cur = volume ? cfg->volume : cfg->brightness;
-    if (v == cur) return false;
-    cur = static_cast<uint8_t>(v);
-    if (volume) play::set_sound(cfg->sound, cfg->volume);
-    else ui::gfx().setBrightness(cfg->brightness);
+    if (v == cfg->brightness) return false;
+    cfg->brightness = static_cast<uint8_t>(v);
+    ui::gfx().setBrightness(cfg->brightness);
     return true;
 }
 
@@ -4278,12 +4432,9 @@ void draw_set_entry(const ui::Rect& cell, const SetEntry& e)
     } else {
         const PanelPrefs& pp = panel_prefs_get();
         switch (e.id) {
-        case kBright: draw_slider(r, false); break;
-        case kVolume: draw_slider(r, true); break;
-        case kSound:
-            ui::key2(r, "Game Sound", cfg->sound == kSoundPc ? "PC Speaker" : cfg->sound == kSoundOff ? "Off" : "Tandy",
-                     lit(cfg->sound != kSoundOff));
-            break;
+        case kBright: draw_slider(r); break;
+        case kVolume: draw_volume(r); break;
+        case kSound: draw_game_sound(r); break;
         case kInvert: ui::key2(r, "Invert Colors", pp.invert ? "On" : "Off", lit(pp.invert)); break;
         case kSwap: draw_swap(r, pp.swap_rb); break;
         case kRotate: ui::key2(r, "Rotate 180", cfg->flipped ? "On" : "Off", lit(cfg->flipped)); break;
@@ -4366,12 +4517,12 @@ bool tap_settings_body(const ui::Tap& t)
         LGFX& g = ui::gfx();
         switch (e.id) {
         case kBright:
-        case kVolume:
-            if (slider_set(r, t.x, e.id == kVolume)) {
-                draw_slider(r, e.id == kVolume);
+            if (slider_set(r, t.x)) {
+                draw_slider(r);
                 settings_save(*cfg);
             }
             return true;
+        case kVolume: tap_volume(r, t.x); return true;
         case kInfo: return false;
         case kLogs:
             if (set_from == SetFrom::InGame) {
@@ -4381,10 +4532,7 @@ bool tap_settings_body(const ui::Tap& t)
                 go(Screen::Logs);
             }
             return true;
-        case kSound:
-            cfg->sound = cfg->sound == kSoundTandy ? kSoundPc : cfg->sound == kSoundPc ? kSoundOff : kSoundTandy;
-            play::set_sound(cfg->sound, cfg->volume);
-            break;
+        case kSound: tap_game_sound(r); return true;
         case kInvert: pp.invert = !pp.invert; panel_prefs_set(g, pp); break;
         case kSwap: pp.swap_rb = !pp.swap_rb; panel_prefs_set(g, pp); break;
         case kRotate:
@@ -4404,9 +4552,9 @@ bool tap_settings_body(const ui::Tap& t)
     return false;
 }
 
-// Dragging a slider: the brightness / volume follows; saved when the stylus lifts
+// Dragging the brightness slider: the brightness follows; saved when the
+// stylus lifts (Volume is - / + taps since 2026-10-24)
 bool slider_dragged = false;
-int  slider_grabbed = -1;               // 0 brightness, 1 volume: the one the drag began on
 
 void settings_tick()
 {
@@ -4418,18 +4566,14 @@ void settings_tick()
         const int first = set_page * kSetPerPage;
         for (int i = 0; i < kSetPerPage && first + i < all; ++i) {
             const SetEntry e = list[first + i];
-            if (e.comfort || (e.id != kBright && e.id != kVolume)) continue;
-            const int k = e.id == kVolume;
-            if (slider_grabbed >= 0 && slider_grabbed != k) continue;
+            if (e.comfort || e.id != kBright) continue;
             const ui::Rect r = set_cell(i);
-            if (slider_grabbed < 0 && (x < r.x || x >= r.x + r.w || y < r.y || y >= r.y + r.h)) continue;
-            slider_grabbed = k;
+            if (!slider_dragged && (x < r.x || x >= r.x + r.w || y < r.y || y >= r.y + r.h)) continue;
             slider_dragged = true;
-            if (slider_set(r, x, k == 1)) draw_slider(r, k == 1);
+            if (slider_set(r, x)) draw_slider(r);
         }
     } else if (!dragging && slider_dragged) {
         slider_dragged = false;
-        slider_grabbed = -1;
         settings_save(*cfg);
     }
 }

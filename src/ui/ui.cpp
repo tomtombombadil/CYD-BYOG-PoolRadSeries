@@ -503,6 +503,8 @@ namespace {
 void help_circle(const Rect& r, int* cx, int* cy, int* rad);
 }
 
+void key_zone(const Rect& r) { note_key(r, static_cast<uint8_t>(KeyStyle::Normal)); }
+
 void key_help(const Rect& r)
 {
     note_key(r, 254);                       // (kHelpStyle: tap_flash rings the circle)
