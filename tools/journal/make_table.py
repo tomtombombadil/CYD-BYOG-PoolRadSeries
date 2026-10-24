@@ -124,8 +124,14 @@ def entry_heads(files, L):
     for fi, f in enumerate(files):
         if fi not in L['pages']:
             continue
-        for x, y, h, ws in ocr_lines(f):
-            ws = sorted(ws)
+        lines = [sorted(ws) for x, y, h, ws in ocr_lines(f)]
+        if L.get('split_cols'):
+            # (Death Knights: OCR joins a column's line to the next one's -
+            # the words taken a column at a time)
+            lines = [[w for w in ws if a <= w[0] < b] for ws in lines
+                     for a, b in zip([0] + [c[0] for c in L['cols'][1:]],
+                                     [c[0] for c in L['cols'][1:]] + [1 << 30])]
+        for ws in lines:
             toks = [w[3] for w in ws]
             for i, t in enumerate(toks[:4]):
                 word = t.lower()
@@ -136,8 +142,8 @@ def entry_heads(files, L):
                 if not m:
                     continue
                 j = i - 1 if i > 0 and re.search(before, toks[i - 1]) else i
-                if any(len(toks[k]) > 3 for k in range(j)):
-                    continue            # (inside a sentence)
+                if any(len(toks[k]) > 3 for k in range(j)) or (j and L.get('split_cols')):
+                    continue            # (inside a sentence: "Go to Journal Entry 20.")
                 heads.append((kind, int(m.group(1)), fi, ws[j][0], min(ws[j][1], ws[i][1])))
                 break
     return heads
@@ -290,6 +296,25 @@ def champions_layout(t):
     T[30] = T[30][:1]
 
 
+def death_layout(t):
+    J = t['J']
+    # PDF page 19: entry 2 ends at its column's foot (the section's title
+    # over the next column's top)
+    J[2] = J[2][:1]
+    # PDF page 25: entry 44's heading and title on one line, its map across
+    # the left page; 45 under it in the left column, then the right
+    # column's foot (the map above it) and on over the page
+    p = P(24)
+    J[44] = [[p, 50, J[44][0][2], 835 - 50, 1022 - J[44][0][2]]]
+    J[45] = [J[45][0], [p, 438, 1022, 835 - 438, 1230 - 1022]] + J[45][2:]
+
+
+# Death Knights' picture-and-quote boxes between the columns' text (no
+# entry's): (PDF page, x0, x1, y0, y1)
+DEATH_SKIP = [(20, 0, 438, 503, 823), (22, 1250, 1650, 356, 677), (23, 0, 438, 340, 660),
+              (26, 1250, 1650, 264, 584)]
+
+
 LAYOUTS = {
     'secret': {
         'sha256': 'f26c90627c1cdb2dfacf92ad3f795545a659c7b8c6d0f44a8996f8f3a9a48a74',
@@ -349,6 +374,22 @@ LAYOUTS = {
                        'tale': ('T', r'(?i)vern$')},
         'stop': {'J': (23, 1), 'T': (25, 3)},
         'fix': champions_layout,
+    },
+    'death': {
+        'sha256': '3c61c6237690c61f9c94c15f1508c8755e64f856786cfe5ad4d7addff6245b8a',
+        'pdf_size': 8091462,
+        'pdf_id': '2e682552b667367d23636128f34cfab8',
+        'game': 'DEATH',
+        'title': "Death Knights of Krynn - Adventurer's Journal (GOG, the copy in the game folder)",
+        'cols': [(50, 438), (438, 835), (865, 1250), (1250, 1630)],
+        'top': 125, 'bottom': 1230,
+        'pages': range(18, 28),
+        'heads': entry_heads,
+        'head_words': {'entry': ('J', r'(?i)(rnal|ial)$')},   # (OCR reads entry 54's as "IAL ENTRY")
+        'split_cols': True,
+        'stop': {'J': (27, 1)},
+        'fix': death_layout,
+        'skip': DEATH_SKIP,
     },
     'poolrad': {
         'sha256': '67cbfc0c833b835494310680ad298bc4de1cdcc0168115cc3608c2f6074c737c',
