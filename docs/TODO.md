@@ -148,10 +148,10 @@ the Project as claude/TODO.md.
       in the recorded-sample games: only grain differs (told Tom).
 - [x] Tom (2026-10-24): Gateway's Modify drew the changing number on
       Curse's rows - Gateway's View layout now (v0.146.1).
-- [ ] Claude: game starts are slow because every exepack::read unpacks
-      the program backwards from its end (Darkness 9.1 MB read at start,
-      Secret 4 MB, Curse 1.7 MB) - unpack the data segment once (at Play or
-      the scan, into _CYD/<folder>/) or batch the lookups.
+- [x] Slow game starts (v0.148.0): each program unpacked once into
+      _CYD/<folder>/PROGRAM.BIN (by the scan, or the first Play on a card
+      scanned before); QEMU: Play to title 6-35 s -> about 1 s.
+- [ ] Tom: time a game's start on a board after Rescan (QEMU says ~1 s).
 - [ ] Tom: Gateway test characters (gateway_itemtest.zip, 2026-10-24):
       into Gateway's SAVE folder, then Add Character -> ITEMTST1-3.
 - [ ] Champions of Krynn (v0.147.0, SPEC 6g): Play on, in testing - plays
