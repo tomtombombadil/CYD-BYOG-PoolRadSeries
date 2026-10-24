@@ -134,6 +134,29 @@ the Project as claude/TODO.md.
       field tiles (23 KB) in internal RAM - one block would go to PSRAM;
       a Settings switch for EGA on the S3 / C5 (Claude: not now - Tom's
       rule is 256 colours there).
+- [ ] Tom's tests 2026-10-24 (C5, 4.0" S3, v0.145.0):
+      C5 - Gateway's sounds: Volume and Tandy / PC Speaker have no
+      effect, harsh attack, distorted ending (fine on the 4.0" and the S3,
+      a little low there) - the C5's PDM output with the recorded samples.
+      Gateway: the pregenerated characters and the pregenerated saved game
+      are missing; Modify Character says "NAME can't be modified." on a
+      new character; the icon gallery opens on its second page (should be
+      the first); Sling and Magic Hit play the Miss sound; Tandy and PC
+      Speaker sound the same (recorded samples - only a little grain
+      differs, as Darkness's). Gateway and Treasures: the start's
+      "introduction to your journal" isn't shown - show it as an entry.
+      Treasures: the Valhalla Inn's "rest for 1 pp?" asks again forever
+      after No; its highlight only turns the word white (the first letter
+      is white anyway: one-letter save slots can't be told apart) - a
+      white background round the whole word as the earlier games; some
+      menus start on their last word - start on the first.
+      All games: a "Loading..." screen after Play (starts are slow); the
+      creation questions (Reroll Stats? Yes / No) put the highlight back
+      on each Select - keep it where it was. Tom (2026-10-24, 06:21): the
+      highlight rules are for ALL games - a white background round the
+      whole word, menus starting on the first word, the highlight staying
+      where it was after Select - unless decided otherwise earlier for a
+      case. (Branch ui-fixes.)
 - [ ] Krynn (survey 2026-10-24, the Project's claude/krynn_facts.md):
       Champions = Secret's engine (port started, branch champions); Death
       Knights = Darkness's engine at 4 bits (LOAD FILES / PIECES 3

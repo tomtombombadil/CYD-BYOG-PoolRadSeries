@@ -770,6 +770,10 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   and firmware URLs carry `?v=<version>` (2026-10-16: GitHub Pages lets a
   browser keep a file 10 minutes, and a board flashed again within that
   got the previous build while the page showed the new version).
+- **The web flasher's game list** (Tom, 2026-10-24): `web/index.html`'s
+  "Games" section lists every game by series, in order, with its status -
+  playable (Tom has played it), in testing (Play on, Tom testing),
+  in development, planned. Update it in the push that changes a status.
 - **Don't publish a release unless Tom asks for one.** Releases: Actions ->
   Build -> Run workflow with `release_tag` = `v` + VERSION (API
   workflow_dispatch; Claude can't push tags).
