@@ -513,7 +513,7 @@ int          n_seen = 0;
 
 void note_seen(char k, int num)
 {
-    if (num <= 0 || num > 255) return;
+    if (num < (k == 'J' ? 0 : 1) || num > 255) return;      // (J 0: the introduction)
     for (int i = 0; i < n_seen; ++i)
         if (seen[i].kind == k && seen[i].num == num) return;
     if (n_seen < kMaxSeen) seen[n_seen++] = Seen{k, static_cast<uint8_t>(num)};

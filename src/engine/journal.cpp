@@ -617,6 +617,11 @@ char find_mention(const char* text, int* number)
                     *number = n;
                     break;
                 }
+        } else if (upper_eq(s, "INTRODUCTION TO YOUR JOURNAL")) {
+            // Treasures: "YOU RECORD HIS WORDS AS THE INTRODUCTION TO YOUR
+            // JOURNAL" - the journal's introduction, entry 0
+            kind = 'J';
+            *number = 0;
         } else if (upper_eq(s, "TAVERN TALE")) {
             const int n = number_after(s + 11);
             if (n >= 0) {

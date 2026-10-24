@@ -2972,7 +2972,8 @@ void draw_game_menu()
         int num;
         if (!play::journal_seen(k, &kind, &num)) break;
         char line[40];
-        snprintf(line, sizeof line, "%s %d", kind == 'T' ? "Tavern Tale" : "Journal Entry", num);
+        if (kind == 'J' && num == 0) snprintf(line, sizeof line, "Introduction");
+        else snprintf(line, sizeof line, "%s %d", kind == 'T' ? "Tavern Tale" : "Journal Entry", num);
         const int y = a.y + i * rh;
         ui::text(x, y + ui::gap(), line, k == n - 1 ? style::kGold : style::kText);
         if (i + 1 < r) ui::gfx().drawFastHLine(x, y + rh - 1, wdt, style::kKeyEdge);

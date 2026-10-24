@@ -320,6 +320,12 @@ TREASURES = {
     'first': (13, 0), 'last': (27, 2),           # the book pages with the entries: PDF page, picture
     'not_entries': [(15, 0), (16, 2)],           # the Savage Frontier map across them (no entry's)
     'top': 30, 'bottom': 548,                    # below the heading strip
+    # The introduction (entry 0: the game's "you record his words as the
+    # introduction to your journal" - Tom, 2026-10-24): PDF page 1's right
+    # book page (its title and the full-width opening, then both columns)
+    # and page 2's left one (both columns); checked by eye
+    'intro': [[1, 8, 36, 344, 123, 0], [1, 8, 165, 168, 307, 0], [1, 176, 165, 168, 347, 0],
+              [2, 11, 83, 168, 408, 3], [2, 180, 82, 168, 363, 3]],
 }
 
 
@@ -524,7 +530,7 @@ def treasures_main(pdf_path):
         if e['n'] == 83:
             p = e['p'][0]
             e['p'] = [[27, p[1], p[2], 336 - p[1], 420 - p[2], 2]]
-    return entries
+    return [{'k': 'J', 'n': 0, 'p': L['intro']}] + entries
 
 
 def main():

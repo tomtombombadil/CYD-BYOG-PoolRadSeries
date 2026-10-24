@@ -1891,7 +1891,7 @@ boxes between Gateway's columns set by hand), every entry checked by eye.
 Secret prints the number as a text of its own (play::heard joins them);
 Darkness's JOURNAL n op says "...journal entry N." and waits for a key -
 the entry is offered there too. 2026-10-24 (branch treasures-finish):
-**Treasures** (83 entries, 108 pieces) - its GOG PDF is book spreads, a
+**Treasures** (84 entries, 112 pieces) - its GOG PDF is book spreads, a
 72 dpi grayscale JPEG a book page (several pictures a PDF page: the
 reader orders them by the content stream's placement, `pdf::page_pictures`;
 a table piece has a sixth number, the picture's index; the book view
@@ -1899,7 +1899,11 @@ shows the big pictures as pages). Its one-component JPEGs say 2x2
 sampling - TJpgDec now takes such a scan as 8x8 blocks (T.81 A.2.2; the
 other journals' pictures unchanged byte for byte). `make_table.py
 treasures`; every entry checked by eye. Its scripts say "... AS JOURNAL
-ENTRY #N." / "... AS ENTRY #N." (both found).
+ENTRY #N." / "... AS ENTRY #N." (both found). Its start's "you record his
+words as the introduction to your journal" (Tom, 2026-10-24) is entry
+J 0: the book's Introduction (PDF page 1's right page, page 2's left - 5
+pieces, its opening full width), listed as "Introduction"; a card scanned
+before needs Rescan for it (the entry count changed).
 
 v0.10.0 did this in a browser page (pdf.js) on the player's PC; Tom
 (2026-10-09) wants no PC step: since v0.12.0 the board does it.
