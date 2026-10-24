@@ -181,7 +181,9 @@ static bool pump(int max_iter = 400000)
         if (god && pt)
             for (int i = 0; i < pt->count; ++i) {
                 party::Character& m = pt->m[i];
-                if (m.health() == party::Okay && m.hp() < m.hp_max()) m.rec[0x1A4] = m.rec[0x78];
+                // (not one fighting for the other side - charmed: the fight
+                // ends only when they fall)
+                if (m.health() == party::Okay && m.hp() < m.hp_max() && !m.rec[0x197]) m.rec[0x1A4] = m.rec[0x78];
             }
         if (input_mode != Input::None) {
             const char* t = input_mode == Input::Number ? "1" : "A";
