@@ -210,7 +210,7 @@ static void settle(int choice = 0, int max_ms = 60000)
             shot("menu");
             if (c >= vm->items()) c = 0;
             int col = 0;
-            if (c < menu.count) col = (int)strlen(menu.prompt) + menu.start[c];
+            if (c < menu.count) col = text::word_col(menu, c);
             if (menu.count == 0) col = 0;
             play::tap(col * 8 + 2, text::kMenuRow * 8 + 2, C);
             continue;
@@ -219,7 +219,7 @@ static void settle(int choice = 0, int max_ms = 60000)
             printf("  WHO [%s%s] -> %d\n", menu.prompt, menu.s, choice);
             shot("who");
             play::tap(17 * 8 + 2, (4 + choice) * 8 + 2, C);
-            for (int i = 0; i < menu.count; ++i) if (text::key(menu, i) == 'S') play::tap(((int)strlen(menu.prompt) + menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C);
+            for (int i = 0; i < menu.count; ++i) if (text::key(menu, i) == 'S') play::tap(text::word_col(menu, i) * 8 + 2, text::kMenuRow * 8 + 2, C);
             continue;
         }
         if (wt == ecl::Wait::Key) { printf("  KEY (press enter)\n"); shot("key"); play::tap(10, 10, C); continue; }
