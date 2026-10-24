@@ -180,6 +180,15 @@ the Project as claude/TODO.md.
       shipped; cleaned-up picture / the Companion's own pictures instead);
       Settings' Volume as one key: tap left -, right +, 5% steps, the small
       "Volume" label, the percentage between - and +, a mute symbol at 0.
+- [ ] Tom (2026-10-24, 12:21): the C5's Curse / Secret sounds are also
+      very distorted (still recognisable) - the output, not the sample
+      games; v0.149.1's quarter-scale PDM to be listened to. Tom's idea:
+      the later games' better sounds on the early games - Claude's plan: a
+      Game Sound choice "Recorded" that plays the player's own Pools of
+      Darkness (or Treasures / Gateway) ZOUNDS.DAX samples for Curse, Pool,
+      Secret and Champions' effects, when one of those games is on the card
+      (effect numbers already mapped as Darkness's; the player's files read
+      at run time, nothing shipped).
 - [ ] Krynn (survey 2026-10-24, the Project's claude/krynn_facts.md):
       Champions = Secret's engine (port started, branch champions); Death
       Knights = Darkness's engine at 4 bits (LOAD FILES / PIECES 3
