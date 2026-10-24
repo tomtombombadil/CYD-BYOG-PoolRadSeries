@@ -37,7 +37,7 @@ These five ESP32 boards, the ESP32-C5 board and the ESP32-S3 board are tested wi
 
 1. Format a microSD card as FAT32.
 2. Make a folder **`GOLDBOX`** at the root of the card. Then choose below, the Steam versions of the games, or the GOG versions. You can even mix and match. It doesn't really matter where you pull the game folders from as long as you put them in the SD card's GOLDBOX folder with the proper folder names. (See below.) If you have trouble formatting a larger SD card as FAT32, use the SD Association's official formatter from https://www.sdcard.org/downloads/formatter/
-   **BEWARE:** CYDs do NOT support 64 GB and larger SD cards! If you try to use one, it won't recognize it, and you'll just waste your time.
+   <br>**BEWARE:** CYDs do NOT support 64 GB and larger SD cards! If you try to use one, it won't recognize it, and you'll just waste your time.
 
 ## Copy the Games to Your SD Card (STEAM VERSION)
 
