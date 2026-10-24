@@ -1875,6 +1875,10 @@ GAME=5); `variant.krynn`. Play on since 2026-10-24 (branch champions).
   6 days); a mage's moon (its robe) gives 1 / 2 extra spells to memorize
   one phase from full / at full (`magic::moon_bonus`) and -1 / +1 to its
   saves new / full.
+- **Knights**: Knight Change Classes (the party menu where training is):
+  the petition to the Sword (3rd level, 12,000) / Rose (4th, 27,000) and
+  the orders' least stats; Change - a level lost when short of the new
+  order's experience for it (`create::knight_petition` / `knight_change`).
 - **Overland** (area word 0x4BE6 = 0): the map picture with CURSOR.DAX's
   marker, eight directions, 12 hours a step.
 - **Fights**: its effect numbers (mostly Secret's), Done's Auto, the
@@ -1884,7 +1888,7 @@ GAME=5); `variant.krynn`. Play on since 2026-10-24 (branch champions).
   end. Not yet: the kapak's acid pool (effect 0x46: a ground zone).
 - **Checks**: sweep `behave champions` (creation, training, Modify, the
   moons; oracle from scratch `champions_oracle.py`), saveload, events and
-  monkey runs clean; budget fight (Throtl, AREA=2 BLOCK=34 RUNAT=8441)
+  monkey runs clean (knights' petitions checked too); budget fight (Throtl, AREA=2 BLOCK=34 RUNAT=8441)
   128.9 KB of 150. Sound: silent (its EA driver not surveyed).
 - **Journal**: the SNEG release's Gold Box Companion text (88 entries)
   works through `journal::make_gbc`; the GOG PDF's table is not made yet.
