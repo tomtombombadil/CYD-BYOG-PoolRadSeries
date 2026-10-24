@@ -1002,6 +1002,12 @@ int main(int argc, char** argv)
     settle(0, getenv("MS") ? atoi(getenv("MS")) : 60000);
     if (getenv("CAMPRUN")) run_ops(getenv("CAMPRUN"));
     shot("start");
+    if (getenv("PICTURE")) {            // PICTURE=id: the event picture shown, each of its animation's frames a snapshot
+        play::host->picture(atoi(getenv("PICTURE")), 0xFF);
+        printf("  picture %s: anim block %d frames %d\n", getenv("PICTURE"), play::anim_block, play::d->anim.frames);
+        for (int k = 0; play::anim_block >= 0 && k < play::d->anim.frames; ++k) { play::anim_draw(k); char t[16]; snprintf(t, 16, "frame%d", k); shot(t); }
+        shot("picture");
+    }
     if (getenv("SPRITESHOT")) {         // SPRITESHOT=id:distance - a monster's sprite on the view, a snapshot
         int id = 0, dist = 0;
         sscanf(getenv("SPRITESHOT"), "%d:%d", &id, &dist);

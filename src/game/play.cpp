@@ -123,6 +123,7 @@ struct Data {
     int16_t        anim_x = 24, anim_y = 24;   // where it's drawn (the view; Pool's ending: elsewhere)
     dax::Index*    anim_idx = nullptr;      // the PIC file's index while a picture animates (3 KB)
     pic::DkAnim*   dk_anim = nullptr;       // Darkness: its animation's header while one shows
+    uint32_t       q_anim_pos = 0, q_anim_len = 0;   // Dark Queen: the picture animating (its library in anim_file)
 
     // A monster's sprite in the 3D view (SPRITn)
     pic::Anim      sprite;
@@ -1781,9 +1782,14 @@ void anim_stop()
     d->dk_anim = nullptr;
 }
 
+bool q_anim_draw(int frame);
 void anim_draw(int frame)
 {
     if (anim_block < 0) return;
+    if (hl()) {
+        q_anim_draw(frame);
+        return;
+    }
     plat::FileSource src(d->anim_file);
     const dax::Entry* e = d->anim_idx ? d->anim_idx->find(static_cast<uint8_t>(anim_block)) : nullptr;
     if (e && d->dk_anim) pic::draw_dk_anim(src, *d->anim_idx, *e, *d->dk_anim, frame, *cv, d->anim_x, d->anim_y);
@@ -9424,7 +9430,7 @@ void start_icon(pic::Canvas& c, Screen from);
 // Animation off: event pictures show their first frame only. Pics itself
 // changes nothing else in Curse.
 bool pics_on() { return !vm || (vm->get(0x4BFF) & 2); }
-bool animation_on() { return !vm || d->prof->variant.pics_portraits || (vm->get(0x4BFF) & 1); }
+bool animation_on() { return !vm || hl() || d->prof->variant.pics_portraits || (vm->get(0x4BFF) & 1); }
 // Pool's Alter -> Pics: Portraits (View Character's portrait) / Monsters
 // (the event pictures while exploring the 3D areas; its ovr8 +0619)
 bool portraits_on() { return !vm || !d->prof->variant.pics_portraits || (vm->get(0x4BFF) & 1); }
@@ -11310,7 +11316,7 @@ struct Host : ecl::Host {
             const bool large = id >= big;
             bigpic = large ? id : -1;
             if (!large) c.fill(24, 24, 88, 88, 0);
-            q_picture(c, id, large);
+            if (large || !q_anim_start(id)) q_picture(c, id, large);
             pic_shown = true;
             dirty(0, large ? 17 * 8 : 14 * 8);
             return;

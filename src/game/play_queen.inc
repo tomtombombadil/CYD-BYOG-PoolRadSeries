@@ -186,6 +186,80 @@ __attribute__((noinline)) void q_load_map(int id)
     plat::log("[play] map %d of GEO.GLB: %s (%dx%d)\n", id, d->map.loaded ? "ok" : "missing", d->map.w, d->map.h);
 }
 
+// ---- Event pictures' animation (queen_facts_3.md 3) ---------------------
+// A picture of more than one part animates: frame 0 its first part (88 x
+// 88), frame k the first with part k + 1 over it - a sprite (0x17; a
+// one-row empty one leaves the first part alone) or a list of parts to draw
+// (kind 0x19: 6 bytes each - the part, then its place); the frames in
+// turn, 0.3 s each (the original's timing not read yet). The library stays
+// open (anim_file) while it animates.
+bool animation_on();
+const char* const kQPicFiles[] = {"PICA.TLB", "PICB.TLB", "PICC.TLB"};
+
+bool q_anim_part(plat::FileSource& src, const hlib::Library& lib, int part, int depth)
+{
+    uint32_t pos, len;
+    hlib::Part p;
+    if (!hlib::entry(src, lib, part, pos, len) || !hlib::read_part(src, pos, len, p)) return false;
+    if (p.kind == hlib::kShapes && depth == 0) {
+        // (a list: part, 0?, then its place - each drawn in turn)
+        for (uint32_t at = pos + hlib::kPartHeader; at + 6 <= pos + len; at += 6) {
+            uint8_t r[6];
+            if (src.read_at(at, r, 6) != 6 || r[0] == 0) break;
+            q_anim_part(src, lib, r[0], depth + 1);
+        }
+        return true;
+    }
+    if (p.height <= 1) return true;                 // (an empty frame)
+    return hlpic::draw(src, p, q_col(), *cv, hlpic::place_x(p, 24), hlpic::place_y(p, 24),
+                       hlpic::Clip{24, 24, 24 + 88, 24 + 88});
+}
+
+__attribute__((noinline)) bool q_anim_draw(int frame)
+{
+    plat::FileSource src(d->anim_file);
+    hlib::Library lib;
+    if (hlib::open(src, d->q_anim_pos, d->q_anim_len, lib) != hlib::Status::Ok) return false;
+    const int16_t paper = cv->paper;
+    cv->paper = -1;
+    const bool ok = hlpic::draw_picture_part(src, d->q_anim_pos, d->q_anim_len, 1, q_col(), nullptr, *cv, 24, 24) &&
+                    (frame <= 0 || q_anim_part(src, lib, frame + 1, 0));
+    cv->paper = paper;
+    dirty_rows(3, 13);
+    return ok;
+}
+
+// Starts picture id's animation (false: not one that animates, or no file
+// - q_picture shows it)
+__attribute__((noinline)) bool q_anim_start(int id)
+{
+    if (!animation_on()) return false;
+    for (const char* name : kQPicFiles) {
+        if (!open_hl(name, d->anim_file)) continue;
+        plat::FileSource src(d->anim_file);
+        uint32_t pos, len;
+        hlib::Library lib;
+        if (hlib::find_entry(src, static_cast<uint16_t>(id), pos, len) &&
+            hlib::open(src, pos, len, lib) == hlib::Status::Ok) {
+            if (lib.count <= 2) break;              // (one picture: no animation)
+            d->q_anim_pos = pos;
+            d->q_anim_len = len;
+            d->anim.frames = lib.count - 1 < pic::kMaxAnimFrames ? lib.count - 1 : pic::kMaxAnimFrames;
+            for (int k = 0; k < d->anim.frames; ++k) d->anim.delay[k] = 3;
+            anim_block = id;
+            anim_frame = 0;
+            anim_at = plat::now_ms();
+            last_pic = id;
+            if (q_anim_draw(0)) return true;
+            anim_block = -1;
+            break;
+        }
+        d->anim_file.close();
+    }
+    if (d->anim_file) d->anim_file.close();
+    return false;
+}
+
 // An event picture (PICTURE id): PICA / PICB / PICC.TLB's picture of that id
 // (ids are each file's own - 5-116, 128-150, 151-239), its first part (88 x
 // 88, run-length) in the view's box; a big one (240 up: BIGPIC.TLB, 304 x
