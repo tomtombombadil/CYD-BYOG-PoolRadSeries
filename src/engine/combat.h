@@ -220,6 +220,10 @@ struct MonFx {
     // -2 poison and the paralysis after attack 1 alone (dk_ways)
     uint8_t fire2d6_hit = 0, fire4d6_2 = 0, fire2d6_2 = 0;
     bool    dk_ways = false;
+    // Champions' draconians dying (krynn_facts; GAME.OVR seg 0x65): the
+    // bozak explodes (0x44), the baaz turns to stone with the weapon that
+    // slew it (0x43)
+    uint8_t explode = 0, stone_death = 0;
 };
 
 // More spells' effects (spell_facts.md 2): Enlarge, Confusion (and going
@@ -378,6 +382,10 @@ struct Facts {
         // of Curse's numbers (6, the lightning's - COMSPR 5), with no sound; 0: the game's own
         uint8_t gaze_pic = 0;
     } dk{};
+    // Champions of Krynn's (champions_facts.md 5; 0: none): a kender's Yell
+    // taunts the other side - this effect on each that fails its save
+    // against spells (Intelligence over 3): their target is the kender
+    uint8_t taunted = 0;
     // Gateway to the Savage Frontier's (its effect handlers DS 0x826A on, the
     // check lists of its work_on_00 - SPEC 6e; 0: none). `ways`: the deadly
     // poison (0x40) after attack 1's hit, not attack 2's, the paralysing bite
@@ -551,6 +559,8 @@ struct Fighter {
     // 2 (0x15E: 8 = unharmed by Slay Living and the Death Spell) and magic
     // resistance (0x1A5, % - by the caster's level as Curse's effects)
     uint8_t flags2 = 0, magic_res = 0;
+    // Champions: a mage's robe (1 White, 2 Red, 3 Black - its moon), 0 none
+    uint8_t robe = 0;
     uint8_t spell_t[24] = {};
     int     team() const { return rec[0x197]; }
     bool    up() const { return rec[0x196] != 0; }          // able to fight
@@ -585,6 +595,7 @@ struct Battle {
     int     to_hit_party = 0, to_hit_monsters = 0;  // the scripts' bonuses
     const Facts* fx = nullptr;
     int     morale_base = 0;            // the script's morale word (0x7EC6)
+    int     taunter = -1;               // Champions: the kender who yelled (-1: none - Yell offered)
     // Darkness's Turn Undead (R13): the undead loaded for the fight (each
     // cleric may turn that many times), the script's penalty (block +0x0E)
     int     undead_loaded = 0, turn_minus = 0;
@@ -1076,7 +1087,20 @@ bool teleport(Battle& b, const Tables& t, int i, int x, int y);
 
 // The fighters in an area: within r squares of (x, y)
 int in_area(const Battle& b, const Tables& t, int x, int y, int r, int* out, int cap);
+// Champions' bozak dying (GAME.OVR 0x124A1): each fighter within a square
+// of it takes 3d6 and, failing a save against spells, is stunned (its
+// effect, lasting - the original's call). out: the fighters hit (cap), the
+// damage each (dmg), whether each went down (dn) and was stunned (st)
+int bozak_burst(Battle& b, const Tables& t, int c, create::Dice& d, int* out, int* dmg, bool* dn, bool* st, int cap);
+// Champions' baaz slain by a blow (GAME.OVR 0x129AD): a d20 at least the
+// slayer's Dexterity - 3 and the weapon stays in the stone body
+bool baaz_keeps_weapon(const Fighter& slayer, create::Dice& d);
 bool saving_throw(const Fighter& f, int type, int bonus, create::Dice& d);
+// Champions' Yell (its GAME.OVR ovl 0xDB +0x28): `kender` becomes the
+// taunter; each fighter of the other side that is okay, has Intelligence
+// over 3 and fails a save against spells gets Facts::taunted (into out, up
+// to cap: how many)
+int taunt(Battle& b, int kender, create::Dice& d, int* out, int cap);
 // The fighter whose turn it is and the damage's kind (saving throws look at
 // them: protection from evil / good, resist fire / cold)
 void set_actor(const Battle& b, int i);

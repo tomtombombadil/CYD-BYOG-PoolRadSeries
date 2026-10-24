@@ -240,7 +240,7 @@ static bool pump(int max_iter = 400000)
             switch (fg->st) {
             case FSt::Menu: {
                 const int r = on_menu ? on_menu() : 0;
-                if (r == 0) tap_word('Q');
+                if (r == 0 && !tap_word('Q') && tap_word('D')) tap_word('A');     // (Champions: Done's Auto)
                 break;
             }
             case FSt::Aim: {
@@ -1496,6 +1496,9 @@ static void dice_faces(std::initializer_list<int> f) { dice_usual(); b_faces.ass
 #ifdef BEHAVE_GATEWAY
 #include "behave_gateway.inc"
 #endif
+#ifdef BEHAVE_CHAMPIONS
+#include "behave_champions.inc"
+#endif
 
 int main(int argc, char** argv)
 {
@@ -1557,6 +1560,9 @@ int main(int argc, char** argv)
 #endif
 #ifdef BEHAVE_GATEWAY
         if (want("gateway")) behave_gateway();
+#endif
+#ifdef BEHAVE_CHAMPIONS
+        if (want("champions")) behave_champions();
 #endif
 #ifdef BEHAVE_TREASURES
         if (want("treasures")) behave_darkness();       // (Darkness's checks, Treasures' oracles)

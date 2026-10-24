@@ -16,20 +16,23 @@ Play SSI's Gold Box games on an ESP32 "Cheap Yellow Display". Your own legitimat
 
 Unlimited Adventures is not on the menu because of the very tight memory constraints of the original ESP32 (most base CYD models). The ESP32-S3 and ESP32-C5 models might be able to support it. As it is: VGA modes are not supported on the base ESP32 CYD models. The original ESP32 just doesn't have enough available SRAM for the game and VGA. Frankly it's a miracle we have these games working with only about 320KB of sram available.
 
+## A Stylus Is Recommended For The Best Game Play Experience!
+The screens on these CYD's are small. Fingertips are not. So we recommend the use of a stylus when playing these games. The game engine allows you to tap on the menu items to select them, as if they were on-screen buttons (which is pretty cool!) or you can use the navigation buttons at the bottom of the screen to move the highlight around and then tap the Select button. Fortunately, most CYD's come with a stylus. You can use any pointed plastic item, such as a pen (with the metal tip retracted) or even a stylus from another system. Nintendo DS styluses work quite well.
+
 ## Install
 
 Easiest method: Use the web flasher!
 **https://tomtombombadil.github.io/CYD-BYOG-PoolRadSeries/** in Chrome or Edge on a computer - pick your board, click Install.
 
-| Board (what's printed on the back) | Firmware |
-|---|---|
-| 2.8" ESP32-2432S028, single micro-USB (ILI9341) | `TTB-CYD-PRS_2.8in_ILI9341_Resistive` |
-| 2.8" ESP32-2432S028, micro-USB + USB-C (ST7789) | `TTB-CYD-PRS_2.8in_ST7789_Resistive` |
-| 3.2" ESP32-32E, 240x320 | `TTB-CYD-PRS_3.2in_ST7789_Resistive` |
-| 3.5" ESP32-32E, 320x480 | `TTB-CYD-PRS_3.5in_ST7796_Resistive` |
-| 4.0" ESP32-32E, 320x480 | `TTB-CYD-PRS_4.0in_ST7796_Resistive` |
-| 4.0" ESP32-S3, 480x320 capacitive touch (FNK0104, ST7796 model) | `TTB-CYD-PRS_4.0in_ST7796_Capacitive_ESP32-S3` |
-| 2.8" ESP32-C5, two USB-C (NM-CYD-C5) | `TTB-CYD-PRS_2.8in_ST7789_Resistive_ESP32-C5` |
+| Board (what's printed on the back) | Firmware | Link |
+|---|---|---|
+| 2.8" ESP32-2432S028, single micro-USB (ILI9341) | `TTB-CYD-PRS_2.8in_ILI9341_Resistive` | https://www.amazon.com/dp/B0FFZ32T3D |
+| 2.8" ESP32-2432S028, micro-USB + USB-C (ST7789) | `TTB-CYD-PRS_2.8in_ST7789_Resistive` | https://www.amazon.com/dp/B0FX2SFCKV |
+| 3.2" ESP32-32E, 240x320 | `TTB-CYD-PRS_3.2in_ST7789_Resistive` | purchased from same Amazon seller as others, but no longer available |
+| 3.5" ESP32-32E, 320x480 | `TTB-CYD-PRS_3.5in_ST7796_Resistive` | https://www.amazon.com/dp/B0FFYWJ8BZ |
+| 4.0" ESP32-32E, 320x480 | `TTB-CYD-PRS_4.0in_ST7796_Resistive` | https://www.amazon.com/dp/B0FFZ599FJ |
+| 4.0" ESP32-S3, 480x320 capacitive touch (FNK0104, ST7796 model) | `TTB-CYD-PRS_4.0in_ST7796_Capacitive_ESP32-S3` | https://www.amazon.com/dp/B0H6W1HJSG |
+| 2.8" ESP32-C5, two USB-C (NM-CYD-C5) | `TTB-CYD-PRS_2.8in_ST7789_Resistive_ESP32-C5` | https://www.amazon.com/dp/B0H1QCHMW6 |
 
 These five ESP32 boards, the ESP32-C5 board and the ESP32-S3 board are tested with this firmware. The base ESP32 CYD boards I tested with were all purchased through Amazon and are 'Freenove' brand. Links below.
 
@@ -80,6 +83,12 @@ These five ESP32 boards, the ESP32-C5 board and the ESP32-S3 board are tested wi
 7. Copying the whole game folders from GOG will ensure that you have the journal PDF files, logo, and graphics files, as well as the necessary game resource files. This will include any savegame and character files you may have from playing these games on your PC.
 8. All said and done, these folders should take up approximately 400 MB of your SD card. So you don't need a huge SD card. The CYD's only support up to 32 GB cards, so there's plenty of room.
 9. Eject the SD card from your PC (so it doesn't get corrupted) and insert it into your CYD. After you flash this repo to your CYD, the CYD will scan the SD card for the games and do some file processing. This will take a few minutes, but only needs to be done once. If you add or remove any games from the SD card, you will need to run the scan again with the Rescan button on the CYD.
+
+## Why Is The Steam Version Preferred?
+The Steam versions of the games came in collections with some extra files (in the Launcher folder) as well as better formatted PDF files (the journals). So you get better logos on the game chooser screens AND you get better formatted journal entries in-game with the Steam versions of the games.
+
+## Can I Use The Original DOS Game Files?
+Yes. You can use the original DOS game files straight from original floppy disks if you still have them and have a way to copy those files over to a micro SD card. You'll need to put them into folders named like the folders listed above, such as `CURSE` or `Curse of the Azure Bonds`. The down side of using the original copies of the games is that they did NOT include the PDFs of the Adventurer's Journal, so the game won't be able to show you the journal entries in-game. So hopefully you still have the printed versions of the journals safely tucked away with those floppy disks.
 
 ## Settings and logs
 

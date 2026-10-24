@@ -127,6 +127,31 @@ bool read_record_block(const char* file, int block, uint8_t* rec, uint8_t* ext =
         free(dk);
         return ok;
     }
+    if (krynn()) {
+        // Champions' 409-byte records (party::from_krynn - an NPC keeps its
+        // extension; a monster its flags 2 (0x140) and magic resistance
+        // (0x187): sx)
+        uint8_t* k = static_cast<uint8_t*>(malloc(party::kKrynnRecordSize));
+        const bool ok = k && read_block(file, block, k, party::kKrynnRecordSize) ==
+                                 static_cast<int>(party::kKrynnRecordSize);
+        if (ok && sx) {
+            sx[0] = k[0x140];
+            sx[1] = k[0x187];
+        }
+        if (ok) {
+            party::Character* tmp = ext ? new (std::nothrow) party::Character : nullptr;
+            if (tmp) {
+                party::from_krynn(k, *tmp);
+                memcpy(rec, tmp->rec, party::kRecordSize);
+                memcpy(ext, tmp->ext, party::kExtSize);
+                delete tmp;
+            } else {
+                party::from_krynn(k, rec);
+            }
+        }
+        free(k);
+        return ok;
+    }
     if (!pool_files()) return read_block(file, block, rec, party::kRecordSize) == static_cast<int>(party::kRecordSize);
     uint8_t pool[party::kPoolRecordSize];
     if (read_block(file, block, pool, sizeof pool) != static_cast<int>(sizeof pool)) return false;
@@ -585,6 +610,12 @@ struct Fight {
     // Thrown weapons used up (a dagger, a spear, darts): onto the treasure after the fight
     uint8_t  thrown[6][items::kRecordSize];
     int      n_thrown = 0;
+    // Champions: weapons left in a baaz's stone body (back to their owners
+    // after the fight - GAME.OVR 0x7B5D) and the bozaks that have exploded
+    uint8_t  lost[6][items::kRecordSize];
+    int8_t   lost_who[6] = {};
+    int      n_lost = 0;
+    uint8_t  burst[(combat::kMaxFighters + 7) / 8] = {};
     // Secret's Delayed Blast Fireballs set to go off (secret_facts_2.md 26)
     struct Blast { int8_t caster = -1; uint8_t x = 0, y = 0, area = 0, rounds = 0, pw = 0; };
     Blast    blast[4];
@@ -1640,6 +1671,8 @@ void end_turn(pic::Canvas& c)
 }
 
 // Someone down: "goes down" / "and is Dying" / "is killed", the skull blinking on them
+void bozak_burst(int t);
+void damage_text(int amount, int kind, char* t, size_t cap);
 void down_page(int t)
 {
     if (fg->b.f[t].escaped) {
@@ -1652,6 +1685,53 @@ void down_page(int t)
     else if (dn == combat::Down::Dying) add_page(t, fw(profile::kGoesDown), fw(profile::kIsDying));
     else add_page(t, fw(profile::kGoesDown));
     page_fx_set(1, skull_fx(t));
+    bozak_burst(t);
+}
+
+// Champions' bozak going down (krynn_facts; GAME.OVR 0x124A1): "explodes!",
+// then each fighter within a square of it: the damage (3d6), down, or
+// "is stunned" when its save against spells fails
+void bozak_burst(int t)
+{
+    combat::Battle& b = fg->b;
+    const uint8_t ex = b.fx ? b.fx->mon.explode : 0;
+    if (!ex || !b.f[t].has(ex) || (fg->burst[t / 8] >> (t % 8) & 1) || !d->w_burst[0][0]) return;
+    fg->burst[t / 8] |= static_cast<uint8_t>(1 << (t % 8));
+    add_page(t, d->w_burst[0]);
+    int who[combat::kMaxFighters], dmg[combat::kMaxFighters];
+    bool dn[combat::kMaxFighters], st[combat::kMaxFighters];
+    const int n = combat::bozak_burst(b, fg->t, t, rng, who, dmg, dn, st, combat::kMaxFighters);
+    char line[48];
+    for (int k = 0; k < n; ++k) {
+        damage_text(dmg[k], 0, line, sizeof line);
+        add_page(who[k], line);
+        page_fx_set(1, hit_fx(who[k], false));
+        if (dn[k]) down_page(who[k]);                   // (another bozak: its own burst)
+        else if (st[k]) add_page(who[k], d->w_burst[1]);
+    }
+}
+
+// Champions' baaz slain by a party member's blow (GAME.OVR 0x129AD): a d20
+// at least the slayer's Dexterity - 3 leaves the weapon in the stone body -
+// "loses his weapon" - till the fight's end
+void baaz_weapon(int a, int t)
+{
+    combat::Battle& b = fg->b;
+    const uint8_t sd = b.fx ? b.fx->mon.stone_death : 0;
+    combat::Fighter& f = b.f[a];
+    if (!sd || !b.f[t].has(sd) || f.member < 0 || !names || fg->n_lost >= 6 || !d->w_burst[2][0]) return;
+    const int w = combat::weapon(f, *names);
+    if (w < 0 || !combat::baaz_keeps_weapon(f, rng)) return;
+    party::Character& ch = pt->m[f.member];
+    // (one kind of weapon never stays: type 6 with word 0x79 - 0x12A61)
+    if (ch.items[w][0x2E] == 6 && ch.items[w][0x31] == 0x79) return;
+    add_page(a, d->w_burst[2]);
+    memcpy(fg->lost[fg->n_lost], ch.items[w], items::kRecordSize);
+    fg->lost[fg->n_lost][0x34] = 0;
+    fg->lost_who[fg->n_lost++] = static_cast<int8_t>(f.member);
+    rules::remove_item(ch, w);
+    f.n_items = ch.n_items;
+    rules::recalc(ch, *names, d->facts);
 }
 
 // Stepping into a cloud: its save or nausea, as a page (the cloud spell's words)
@@ -1902,7 +1982,10 @@ void event_page(const combat::Event& e)
     case combat::Ev::Stoned: fallen(profile::kIsStonedR); break;
     case combat::Ev::GazeStoned: fallen(profile::kIsStonedG); break;
     case combat::Ev::Disintegrated: fallen(profile::kIsDisint); break;
-    case combat::Ev::Killed: fallen(profile::kIsKilled); break;
+    case combat::Ev::Killed:
+        fallen(profile::kIsKilled);
+        bozak_burst(who);
+        break;
     case combat::Ev::Suffocates: fallen(profile::kSuffocates); break;
     case combat::Ev::Damage:
         damage_text(e.amount, e.kind, t, sizeof t);
@@ -1920,6 +2003,7 @@ void event_page(const combat::Event& e)
         else if (dn == combat::Down::Dying) add_page(who, fw(profile::kGoesDownS), fw(profile::kIsDying));
         else add_page(who, fw(profile::kGoesDownS));
         page_fx_set(1, skull_fx(who));
+        bozak_burst(who);
         break;
     }
     case combat::Ev::StandsUp:
@@ -2080,7 +2164,10 @@ void attack_pages(int a, int t, const combat::Attack& at, bool behind, bool shot
     // (swallowed whole: its own pages said it - "is killed" among them)
     bool swallowed = false;
     for (int j = 0; j < at.n_ev; ++j) swallowed = swallowed || at.ev[j].ev == combat::Ev::Swallowed;
-    if (at.down && !swallowed) down_page(t);
+    if (at.down && !swallowed) {
+        down_page(t);
+        if (!shot) baaz_weapon(a, t);
+    }
 }
 
 // After an attack's pages: the turn ends unless attacks are left and the
@@ -2623,6 +2710,30 @@ void fight_menu_dk(char* words, size_t cap, const combat::Fighter& f, bool spell
     dk_words(fw(profile::kFMenuDk), on, 12, words, cap);
 }
 
+// Champions: a kender (its own race 5) may Yell while no one has (its
+// GAME.OVR ovl 0x58 +0xA45: the taunter pointer DS 0x71A7 nil)
+bool kr_can_yell(const combat::Fighter& f)
+{
+    return krynn() && d->w_yell[0] && f.member >= 0 && pt->m[f.member].ext[party::kExtRace] == 5 &&
+           fg->b.taunter < 0 && d->prof->fight.facts.taunted;
+}
+
+// Yell (ovl 0xDB +0x28): each of the other side that is taunted says it
+// "wants to kill" the kender; the kender's turn is over
+void kr_yell(pic::Canvas& c)
+{
+    const int i = fg->cur;
+    int out[24];
+    const int n = combat::taunt(fg->b, i, rng, out, 24);
+    char nm[20], t[48];
+    fighter_name(fg->b.f[i], nm, sizeof nm);
+    snprintf(t, sizeof t, "%s%s", d->w_wants, nm);
+    for (int k = 0; k < n; ++k) add_page(out[k], t);
+    fg->b.f[i].attacks[0] = fg->b.f[i].attacks[1] = 0;
+    draw_fight(c);
+    say(c, FSt::Next);
+}
+
 void fight_menu(pic::Canvas& c)
 {
     const combat::Fighter& f = fg->b.f[fg->cur];
@@ -2654,6 +2765,9 @@ void fight_menu(pic::Canvas& c)
         if (f.rec[magic::kListAt + k] && !(f.rec[magic::kListAt + k] & 0x80)) spells = true;
     if (spells && f.can_cast) strcat(words, fw(profile::kFCast));
     if (f.rec[0x109] > 0 && !f.turned_undead && fg->t.turn_known) strcat(words, fw(profile::kFTurn));
+    // (Champions, GAME.OVR ovl 0x58 +0xA45: Yell for a kender while no one
+    // taunts the enemy yet)
+    if (kr_can_yell(f)) strcat(words, d->w_yell);
     strcat(words, fw(profile::kFQuickDone));
     fg->st = FSt::Menu;
     text::build(menu, "", words);
@@ -3430,6 +3544,7 @@ void fight_start(pic::Canvas& c)
         f.max_aff = party::kMaxAffects;
         f.flags2 = ch.ext[party::kExtFlags2];
         f.magic_res = ch.ext[party::kExtMagicRes];
+        f.robe = krynn() && ch.level(classes::MagicUser) > 0 ? ch.ext[party::kExtRobe] : 0;
     }
     b.party_size = pt->count;
     // The original recalculates every combatant's values at the battle's
@@ -3726,6 +3841,13 @@ void old_age_next(pic::Canvas& c)
 void end_fight(pic::Canvas& c)
 {
     combat::Battle& b = fg->b;
+    // (Champions: the weapons left in stone bodies back to their owners)
+    for (int k = 0; k < fg->n_lost; ++k)
+        if (fg->lost_who[k] < pt->count && rules::add_item(pt->m[fg->lost_who[k]], fg->lost[k])) {
+            rules::recalc(pt->m[fg->lost_who[k]], *names, d->facts);
+            plat::log("[play] member %d's weapon back from the stone\n", fg->lost_who[k]);
+        }
+    fg->n_lost = 0;
     if (d->prof->variant.tr_max_age && age_check && !in_demo) {
         age_check = false;
         if (old_age_begin(c)) return;
@@ -4306,6 +4428,7 @@ void spell_pages(int caster, const combat::SpellLine* l, int n, const combat::Fi
             else if (dn == combat::Down::Dying) add_page(l[k].who, fw(profile::kGoesDownS), fw(profile::kIsDying));
             else add_page(l[k].who, fw(profile::kGoesDownS));
             page_fx_set(1, skull_fx(l[k].who));
+            bozak_burst(l[k].who);
             break;
         }
         }
@@ -4712,6 +4835,9 @@ void fight_menu_key(pic::Canvas& c, char key)
         break;
     case 'D': done_menu(c); break;
     case 0: break;
+    case 'Y':
+        if (kr_can_yell(f)) kr_yell(c);
+        break;
     case 'C': fight_cast_menu(c); break;
     case 'T': fight_turn_undead(c); break;
     case 'U':
@@ -4757,6 +4883,13 @@ void done_key(pic::Canvas& c, char key)
     }
     case 'S': speed_menu(c); break;
     case 'E': fight_menu(c); break;
+    case 'A':
+        // (Champions: its Done menu's Auto - Curse's Quick)
+        f.quick = true;
+        fg->st = FSt::Ai;
+        fg->until = plat::now_ms() + 200;
+        clear_menu_line(c);
+        break;
     default: break;
     }
 }

@@ -404,6 +404,7 @@ void recalc(party::Character& c, const items::Names& names, const ItemFacts& f)
 {
     stats(c, f);
     recalc_values(c, names, f);
+    c.rec[0x14C] = static_cast<uint8_t>(c.n_items);     // (the record's item count, as the saves write it)
 }
 
 void recalc_values(party::Character& c, const items::Names& names, const ItemFacts& f)

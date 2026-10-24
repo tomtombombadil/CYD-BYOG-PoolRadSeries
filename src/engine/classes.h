@@ -74,7 +74,26 @@ struct Layout {
     // the level reaches it) and its own race limits (create.cpp
     // gw_race_limited) instead of Curse's; 0: none
     uint16_t level_caps = 0;
+    // Champions of Krynn's (champions_facts.md 4): Curse's shapes (8 class
+    // columns, the knight in the monk's) but its race-indexed tables by its
+    // own races (0 Silvanesti elf ... 6 human - the record's own race,
+    // Character::ext / a creation code race_krynn), race classes 15 bytes a
+    // race, ages 8 classes (32 bytes), alignments a mask a class (bit i =
+    // the i-th of the list at DS lo2: LG LN NG TN CG CN), and experience by
+    // rows of its own (krynn_xp_row: the cleric's god, the knight's order,
+    // the magic-user's robe); the thief skills' race table read at the
+    // original's place - the row of the race before (with rules::fixes():
+    // the row of Curse's race it maps to)
+    bool     krynn = false;
+    // Champions (GAME.OVR 0x3A03A): the spells a cleric knows - for each
+    // spell level 1-4 it has slots for, the list at this + level x 10
+    // (from the 2nd byte, 10 at most, 0 ends)
+    uint16_t cleric_lists = 0;
 };
+
+// Champions: a race in creation's lists (the Curse number can't tell its two
+// elves and two dwarves apart): kKrynnRace + its own race
+constexpr int kKrynnRace = 100;
 
 // A copy of the tables (read from the program; on the heap, as big as the
 // game's tables are)
@@ -133,15 +152,18 @@ public:
         return u8(static_cast<uint16_t>(lay.class_records + cls * 301 + 0x26 + level * 9 + sl));
     }
     // Spell slots gained on reaching `level` (2-top): row level - 2
+    // (Champions: cls is its row - xp_row)
     int  slots_gained(int cls, int level, int col) const
     {
-        if (cls >= classes()) return 0;
+        if (cls >= (lay.krynn ? 10 : classes())) return 0;
         return u8(static_cast<uint16_t>(lay.class_records + cls * record_size() + (top_level() - 1) * 4 +
                                         (level - 2) * slot_levels() + col));
     }
-    // A race-indexed table's row for the record's race (Curse's numbers)
+    // A race-indexed table's row for the record's race (Curse's numbers;
+    // Champions: kKrynnRace + its own, or Curse's turned into its own)
     int  race_row(int race) const
     {
+        if (lay.krynn) return race >= kKrynnRace ? race - kKrynnRace : party::race_to_krynn(static_cast<uint8_t>(race));
         if (lay.dk) return party::race_to_darkness(static_cast<uint8_t>(race));
         return lay.secret ? party::race_to_secret(static_cast<uint8_t>(race)) : race;
     }
@@ -150,10 +172,34 @@ public:
     {
         return u8(static_cast<uint16_t>(lay.class_records + cls * 56 + 32 + (level - 2) * 3 + col));
     }
+    // Champions (its GAME.OVR 0x39CC4): the experience / slot row of a class
+    // for this character - a cleric's by its god (Paladine ... Mishakal 0,
+    // the others 1), fighter 2, a knight's by the order (Crown 3, Sword 4,
+    // Rose 5), ranger 6, a magic-user's by the robe (White 7, else 8), thief
+    // 9 (the others: the class); not Champions: the class
+    int  xp_row(const party::Character* c, int cls) const
+    {
+        if (!lay.krynn || !c) return cls;
+        switch (cls) {
+        case 0: return c->ext[party::kExtGod] <= 4 ? 0 : 1;
+        case 2: return 2;
+        case 7: return c->ext[party::kExtKnight] == 2 ? 4 : c->ext[party::kExtKnight] == 3 ? 5 : 3;
+        case 4: return 6;
+        case 5: return c->ext[party::kExtRobe] == 1 ? 7 : 8;
+        case 6: return 9;
+        default: return cls;
+        }
+    }
     // Experience needed to go from `level` (1-11) to the next; <= 0: no more
-    int32_t exp_needed(int cls, int level) const
+    // (Champions: by the character's row - xp_row)
+    int32_t exp_needed(int cls, int level, const party::Character* c) const
     {
         if (level < 1 || level > top_level() - 1 || cls >= classes()) return -1;
+        return exp_needed(xp_row(c, cls), level, true);
+    }
+    int32_t exp_needed(int cls, int level, bool row = false) const
+    {
+        if (level < 1 || level > top_level() - 1 || cls >= (row && lay.krynn ? 10 : classes())) return -1;
         if (lay.dk) {
             // (Darkness, ovr 0x39349: the table to 11th level, then steps)
             const uint16_t r = static_cast<uint16_t>(lay.class_records + cls * 301);

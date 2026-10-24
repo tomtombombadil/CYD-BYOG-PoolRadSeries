@@ -146,12 +146,25 @@ the Project as claude/TODO.md.
       after Select - SPEC 12); Treasures' Valhala Inn (a script CALL's
       operand - Darkness's Rolf tour fixed by it too). Tandy / PC Speaker
       in the recorded-sample games: only grain differs (told Tom).
+- [x] Tom (2026-10-24): Gateway's Modify drew the changing number on
+      Curse's rows - Gateway's View layout now (v0.146.1).
 - [ ] Claude: game starts are slow because every exepack::read unpacks
       the program backwards from its end (Darkness 9.1 MB read at start,
       Secret 4 MB, Curse 1.7 MB) - unpack the data segment once (at Play or
       the scan, into _CYD/<folder>/) or batch the lookups.
 - [ ] Tom: Gateway test characters (gateway_itemtest.zip, 2026-10-24):
       into Gateway's SAVE folder, then Add Character -> ITEMTST1-3.
+- [ ] Champions of Krynn (v0.147.0, SPEC 6g): Play on, in testing - plays
+      end to end in the playsim; moons, gods, knights (petitions, Change
+      Classes), kender Yell, draconian deaths (bozak, baaz), creation,
+      Modify, the overland; matches DOSBox (title, party menu, View, the
+      start); behave champions; budget fight 129.8 KB. Game Fixes: thief
+      skills by race (the original reads Curse's race rows), a knight's
+      saves (the original gives every knight row 7's level-0 saves).
+      Open, in order: the kapak's acid pool (ground 0x1D - stepping in not
+      traced); sound (SOUND.DAX driver + effects, MIDI.DAX - silent now);
+      its GOG journal table (the SNEG text journal works); "WHERE DO YOU
+      WISH TO GO?" cleared in shops / temple (the original keeps it).
 - [ ] Krynn (survey 2026-10-24, the Project's claude/krynn_facts.md):
       Champions = Secret's engine (port started, branch champions); Death
       Knights = Darkness's engine at 4 bits (LOAD FILES / PIECES 3

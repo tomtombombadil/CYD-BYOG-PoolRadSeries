@@ -297,6 +297,170 @@ constexpr combat::FightSpell kCurseFight[] = {
     {0x62, SpellDoes::Defoliate, 6, 6, 0, 0, 0, 0},         // defoliation: 6d6, a cone of 3
 };
 
+
+// Champions of Krynn: Curse's spells 1-100 (the same numbers and names), what
+// each does as Curse's, its words where Champions' GAME.OVR has the same text
+// (champions_facts.md 5)
+constexpr combat::FightSpell kChampionsFight[] = {
+    {0x01, SpellDoes::Ours, 0, 0, 0, 0, 0, 0x2FAFB},        // Bless: "is Blessed"
+    {0x02, SpellDoes::Theirs, 0, 0, 0, 0, 0, 0x2FB2D},      // Curse: "is Cursed"
+    {0x03, SpellDoes::Heal, 1, 8, 0, 0, 0, 0},              // Cure Light Wounds
+    {0x04, SpellDoes::Damage, 1, 8, 0, 0, 8, 0},            // Cause Light Wounds (a touch)
+    {0x05, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x1373B},
+    {0x06, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FC3C},
+    {0x07, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FC3C},
+    {0x08, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FC76},
+    {0x09, SpellDoes::Damage, 0, 0, 0, 1, 9, 0},            // Burning Hands: the caster's level
+    {0x0B, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x1373B},
+    {0x0F, SpellDoes::Damage, 0, 4, 0, 2, 8, 0},            // Magic Missile
+    {0x10, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FC3C},
+    {0x11, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FC3C},
+    {0x13, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x30055},      // Shield
+    {0x14, SpellDoes::Damage, 1, 8, 0, 1, 0x0C, 0},         // Shocking Grasp: 1d8 + level
+    {0x15, SpellDoes::Sleep, 0, 0, 0, 0, 0, 0x300D6},       // Sleep: "falls asleep"
+    {0x17, SpellDoes::Hold, 0, 0, 0, 0, 0, 0x30219},        // Hold Person: "is held"
+    {0x18, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x30272},
+    {0x1D, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x1373B},
+    {0x1E, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x304C5},      // Invisibility
+    {0x20, SpellDoes::Mirror, 0, 0, 0, 0, 0, 0x30538},
+    {0x2A, SpellDoes::Prayer, 0, 0, 0, 0, 0, 0x3118A},
+    {0x2F, SpellDoes::Damage, 0, 6, 0, 3, 9, 0},            // Fireball: level d6
+    {0x30, SpellDoes::Haste, 0, 0, 0, 0, 0, 0x31592, 0x35459},     // Haste: "is Hasted"; a slowed one "is Cured"
+    {0x31, SpellDoes::Hold, 0, 0, 0, 0, 0, 0x30219},
+    {0x32, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x304C5},
+    {0x34, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FC3C},
+    {0x35, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FC3C},
+    {0x36, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FC3C},
+    {0x3A, SpellDoes::Heal, 2, 8, 1, 0, 0, 0},
+    {0x42, SpellDoes::Damage, 2, 8, 1, 0, 8, 0},            // Cause Serious Wounds
+    {0x45, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FC3C},
+    {0x47, SpellDoes::Heal, 3, 8, 3, 0, 0, 0},
+    {0x48, SpellDoes::Damage, 3, 8, 3, 0, 8, 0},            // Cause Critical Wounds
+    {0x4A, SpellDoes::Damage, 6, 8, 0, 0, 9, 0},            // Flame Strike
+    {0x58, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x2FC3C},
+    {0x21, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x12045},      // Ray of Enfeeblement: "is weakened"
+    {0x22, SpellDoes::Cloud, 0, 0, 0, 0, 0, 0x34D52, 0x34D42},  // Stinking Cloud: "chokes and gags from nausea" / "starts to cough"
+    {0x0A, SpellDoes::Charm, 0, 0, 0, 0, 0, 0x2FCF8, 0x1323F},  // Charm Person: "is charmed" / "is unaffected"
+    {0x51, SpellDoes::Charm, 0, 0, 0, 0, 1, 0x2FCF8},       // Charm Monsters: "is charmed" (the last picked, non-persons
+                                                            // and large ones unaffected - spell_facts.md 1.10)
+    {0x54, SpellDoes::Fear, 0, 0, 0, 0, 0, 0x320DB},        // Fear: "runs in terror" (a cone, 3 rays, 6 squares)
+    {0x5B, SpellDoes::Poison, 0, 0, 0, 0, 0, 0x12727},      // Cloudkill: "is Poisoned" (a 3 x 3 cloud)
+    {0x5C, SpellDoes::Cone, 0, 4, 0, 6, 0x0A, 0},           // Cone of Cold: level d4 + level (a cone, 2 rays; cold
+                                                            // and magic - spell_facts.md: coab says acid)
+    {0x26, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x30C55},      // Cause Blindness: "is blind"
+    {0x28, SpellDoes::Affect, 1, 6, 0, 4, 0, 0x30D23},      // Cause Disease: "is diseased", d6 x 10 minutes
+                                                            // (then the disease's course: combat::tick,
+                                                            // rules::disease_clock)
+    {0x33, SpellDoes::Bolt, 0, 6, 0, 3, 0x0C, 0, 0, 0, 7},  // Lightning Bolt: level d6, 7 squares (electricity and
+                                                            // magic; curse_finish_facts.md 2)
+    {0x37, SpellDoes::Slow, 0, 0, 0, 0, 0, 0x3195F, 0x35459},       // Slow: "is Slowed"; a hasted one "is Cured"
+    {0x5E, SpellDoes::Hold, 0, 0, 0, 0, 0, 0x30219},        // Hold Monster
+    // spell_facts.md (v0.55.0)
+    {0x19, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x1128E},      // Silence 15' Radius: "is silenced"
+    {0x1B, SpellDoes::SnakeCharm, 0, 0, 0, 0, 0, 0x2FCF8},  // Snake Charm: "is charmed"
+    {0x25, SpellDoes::CureBlind, 0, 0, 0, 0, 0, 0x30C10, 0x35459},   // Cure Blindness: "is Cured", "can see"
+    {0x2C, SpellDoes::Theirs, 0, 0, 0, 0, 0, 0x312FF},      // Bestow Curse: "has been cursed!" (a touch)
+    {0x2D, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x3133D},      // Blink: "is blinking"
+    {0x44, SpellDoes::Kill, 0, 0, 0, 0, 0, 0x12727},        // Poison: "is Poisoned", then "is killed"
+    {0x46, SpellDoes::Snakes, 0, 0, 0, 0, 0, 0x10D3A, 0x31E0D},   // Sticks to Snakes: "is fighting with snakes" /
+                                                            // "smashes them flat"
+    {0x4C, SpellDoes::Slay, 2, 8, 1, 0, 8, 0},        // Slay Living: "is slain"; saved 2d8 + 1
+    {0x4E, SpellDoes::Entangle, 0, 0, 0, 0, 0, 0},    // Entangle: "is entangled" (outdoors)
+    {0x4F, SpellDoes::Faerie, 0, 0, 0, 0, 0, 0},      // Faerie Fire: "is highlighted"
+    {0x50, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x304C5},      // Invisibility to Animals: "is invisible"
+    {0x4D, SpellDoes::Affect, 0, 0, 0, 0, 0, 0x1373B},      // Detect Magic (the druids'): "is affected"
+    {0x56, SpellDoes::Fumble, 0, 0, 0, 0, 0, 0x323F8, 0x32402},  // Fumble: "is clumsy" / "is slowed"
+    {0x57, SpellDoes::Damage, 3, 10, 0, 0, 0x0A, 0},        // Ice Storm: 3d10 cold (and magic), radius 2
+    {0x5D, SpellDoes::Feeble, 0, 0, 0, 0, 0, 0},      // Feeblemind: "is stupid"
+    // spell_facts.md (v0.62.0)
+    {0x0C, SpellDoes::Enlarge, 0, 0, 0, 0, 0, 0x2FDC8},     // Enlarge: "is stronger"
+    {0x0D, SpellDoes::Reduce, 0, 0, 0, 0, 0, 0x2FF06},      // Reduce: "has been reduced"
+    {0x2B, SpellDoes::RemoveCurse, 0, 0, 0, 0, 0, 0x311DD, 0x35459, 0x311EA},   // Remove Curse: "is un-cursed",
+    {0x59, SpellDoes::RemoveCurse, 0, 0, 0, 0, 0, 0x311DD, 0x35459, 0x311EA},   // "is Cured", "has an item un-cursed"
+    {0x29, SpellDoes::Dispel, 0, 0, 0, 0, 0, 0x1373B},      // Dispel Magic: "is affected"
+    {0x2E, SpellDoes::Dispel, 0, 0, 0, 0, 0, 0x1373B},
+    {0x49, SpellDoes::DispelEvil, 0, 0, 0, 0, 0, 0x1373B},  // Dispel Evil: "is affected"
+    {0x52, SpellDoes::Confuse, 0, 0, 0, 0, 0, 0x11940},     // Confusion: "is confused"
+    {0x53, SpellDoes::Teleport, 0, 0, 0, 0, 0, 0x32047},    // Dimension Door: "teleports"
+    {0x55, SpellDoes::FireShield, 0, 0, 0, 0, 0, 0x2FC3C},  // Fire Shield: "is protected" (hot)
+    {0x64, SpellDoes::Affect, 0, 0, 0, 0, 0, 0},            // Bestow Curse (the magic-users'): no effect at all
+    // (v0.63.0)
+    {0x1A, SpellDoes::SlowPoison, 0, 0, 0, 0, 0, 0x1373B},  // Slow Poison: "is affected"
+    {0x1C, SpellDoes::Hammer, 0, 0, 0, 0, 0, 0},            // Spiritual Hammer (the caller: "Gains an item")
+    {0x24, SpellDoes::Animate, 0, 0, 0, 0, 0, 0},     // Animate Dead: "is animated"
+    {0x5A, SpellDoes::Animate, 0, 0, 0, 0, 0, 0},
+    {0x38, SpellDoes::Restore, 0, 0, 0, 0, 0, 0},     // Restoration: "is restored"
+    // The items' own spells (the spell table's monster spells)
+    {0x39, SpellDoes::Haste, 5, 4, 0, 0, 0, 0x3199C, 0x35459},     // speed: "is Speedy", 5d4 rounds
+    {0x3C, SpellDoes::Bolt, 1, 6, 20, 0, 4, 0, 0, 0, 3},    // a lightning stroke: 1d6 + 20, the path 20, 3 squares
+    {0x3D, SpellDoes::Theirs, 5, 4, 0, 0, 0, 0x31B2A},      // paralysis: "is paralyzed", 5d4 rounds
+    {0x3E, SpellDoes::Heal, 2, 4, 2, 0, 0, 0x31B64},        // healing: "is Healed"
+    {0x3F, SpellDoes::Ours, 2, 10, 0, 4, 0, 0x304C5},       // the party invisible: "is invisible", 2d10 x 10
+    {0x40, SpellDoes::Damage, 0, 6, 0, 5, 9, 0},            // a fireball of 3, 5 or 7 dice
+    {0x41, SpellDoes::Damage, 2, 4, 2, 0, 8, 0},            // the wand's missile: 2d4 + 2
+    {0x63, SpellDoes::Heal, 2, 4, 2, 0, 0, 0x31B64},        // extra healing: "is Healed"
+    // (curse_finish_facts.md 10)
+    {0x3B, SpellDoes::GiantStrength, 1, 4, 4, 4, 0, 0x2FDC8},   // giant strength: "is stronger", (d4 + 4) x 10
+    {0x5F, SpellDoes::Affect, 0, 0, 0, 0, 0, 0},            // protection from dragon breath (nothing said)
+    {0x60, SpellDoes::Affect, 0, 0, 0, 0, 0, 0},            // ... from paralysis
+    {0x61, SpellDoes::Affect, 0, 0, 0, 0, 0, 0},            // invisibility
+    {0x62, SpellDoes::Defoliate, 6, 6, 0, 0, 0, 0},         // defoliation: 6d6, a cone of 3
+};
+constexpr spells::CampSpell kChampionsCamp[] = {
+    {0x01, Does::Affect, 0, 0, 0, 0x2FAFB},        // Bless: "is Blessed"
+    {0x03, Does::Heal, 1, 8, 0, 0},                // Cure Light Wounds
+    {0x05, Does::Affect, 0, 0, 0, 0x1373B},        // Detect Magic: "is affected"
+    {0x06, Does::Affect, 0, 0, 0, 0x2FC3C},        // Protection from Evil: "is protected"
+    {0x07, Does::Affect, 0, 0, 0, 0x2FC3C},
+    {0x08, Does::Affect, 0, 0, 0, 0x2FC76},        // Resist Cold: "is cold-resistant"
+    {0x0B, Does::Affect, 0, 0, 0, 0x1373B},
+    {0x0C, Does::Enlarge, 0, 0, 0, 0x2FDC8},       // Enlarge: "is stronger" (spell_facts.md)
+    {0x0D, Does::Reduce, 0, 0, 0, 0x2FF06},        // Reduce: "has been reduced"
+    {0x0E, Does::Friends, 0, 0, 0, 0x2FFAB},       // Friends: "is friendly"
+    {0x10, Does::Affect, 0, 0, 0, 0x2FC3C},
+    {0x11, Does::Affect, 0, 0, 0, 0x2FC3C},
+    {0x12, Does::Affect, 0, 0, 0, 0x1373B},        // Read Magic
+    {0x13, Does::Affect, 0, 0, 0, 0x30055},        // Shield: "is shielded"
+    {0x16, Does::Affect, 0, 0, 0, 0x1373B},        // Find Traps
+    {0x18, Does::Affect, 0, 0, 0, 0x30272},        // Resist Fire: "is fire resistant"
+    {0x1A, Does::SlowPoison, 0, 0, 0, 0x1373B},
+    {0x1C, Does::Hammer, 0, 0, 0, 0x1138F},        // Spiritual Hammer: "Gains an item"
+    {0x1D, Does::Affect, 0, 0, 0, 0x1373B},        // Detect Invisibility
+    {0x1E, Does::Affect, 0, 0, 0, 0x304C5},        // Invisibility: "is invisible"
+    {0x20, Does::Mirror, 0, 0, 0, 0x30538},        // Mirror Image: "is duplicated"
+    {0x23, Does::Strength, 0, 0, 0, 0},            // Strength (no word)
+    {0x25, Does::CureBlind, 0, 0, 0, 0},
+    {0x27, Does::CureDisease, 0, 0, 0, 0},
+    {0x29, Does::Dispel, 0, 0, 0, 0x1373B},        // Dispel Magic: "is affected"
+    {0x2A, Does::Prayer, 0, 0, 0, 0x3118A},        // Prayer: "is praying"
+    {0x2B, Does::RemoveCurse, 0, 0, 0, 0},
+    {0x2E, Does::Dispel, 0, 0, 0, 0x1373B},
+    {0x30, Does::Haste, 0, 0, 0, 0x31592},         // Haste: "is Hasted"
+    {0x32, Does::Affect, 0, 0, 0, 0x304C5},        // Invisibility 10' Radius
+    {0x34, Does::Affect, 0, 0, 0, 0x2FC3C},
+    {0x35, Does::Affect, 0, 0, 0, 0x2FC3C},
+    {0x36, Does::Affect, 0, 0, 0, 0x2FC3C},        // Protection from Normal Missiles
+    {0x38, Does::Restore, 0, 0, 0, 0},       // Restoration: "is restored"
+    {0x3A, Does::Heal, 2, 8, 1, 0},                // Cure Serious Wounds
+    {0x3E, Does::Heal, 2, 4, 2, 0x31B64},          // the items' healing: "is Healed"
+    {0x63, Does::Heal, 2, 4, 2, 0x31B64},
+    {0x43, Does::Neutralize, 0, 0, 0, 0},
+    {0x45, Does::Affect, 0, 0, 0, 0x2FC3C},
+    {0x47, Does::Heal, 3, 8, 3, 0},                // Cure Critical Wounds
+    {0x4B, Does::Raise, 0, 0, 0, 0},
+    {0x4D, Does::Affect, 0, 0, 0, 0x1373B},
+    {0x50, Does::Affect, 0, 0, 0, 0x304C5},        // Invisibility to Animals: "is invisible" (spell_facts.md)
+    {0x55, Does::FireShield, 0, 0, 0, 0x2FC3C},    // Fire Shield: "flame type: Hot Cold"; hot "is protected"
+    {0x58, Does::Affect, 0, 0, 0, 0x2FC3C},        // Minor Globe of Invulnerability
+    // The items' own spells (curse_finish_facts.md 10)
+    {0x39, Does::Haste, 0, 0, 0, 0x3199C},         // speed: a slowed one cured, else "is Speedy"
+    {0x3B, Does::GiantStrength, 0, 0, 0, 0x2FDC8}, // giant strength: "is stronger"
+    {0x3F, Does::Affect, 0, 0, 0, 0x304C5},        // the party invisible: "is invisible"
+    {0x5F, Does::Affect, 0, 0, 0, 0},              // protection from dragon breath (nothing said)
+    {0x60, Does::Affect, 0, 0, 0, 0},              // ... from paralysis
+    {0x61, Does::Affect, 0, 0, 0, 0},              // invisibility
+    {0x59, Does::RemoveCurse, 0, 0, 0, 0},
+};
 // Secret of the Silver Blades: Curse's spells 1-100 (the same numbers),
 // what each does as Curse's; its words where Secret's GAME.OVR has the same
 // text (its spells' results are worded otherwise - most say nothing yet)
@@ -1317,6 +1481,31 @@ constexpr ecl::OpSet kSecretEcl = [] {
     return s;
 }();
 
+// Champions of Krynn (champions_facts.md 1-2): its title (DOSBox) - TITLE 1
+// (SSI) for 5 s, 2 (the game's picture) with 3 (its name) on it for 8 s, 4
+// over them from row 1 (the Dragonlance words) for 7 s, then the credits
+// for 8 s (32-byte print calls in GAME.OVR from 0x34C, the code segment at
+// 0xDA; its box routine's bars at rows 4 and 20). Its scripts: Secret's
+// opcodes and areas (0x3C reads none, 0x41 two; areas 1-6 two to a numbered
+// file, blocks numbered across the files) - every block of ECL1-3 decodes
+// from its entry points.
+constexpr TitleStep kChampionsTitle[] = {
+    {1, 0, 0, true, 5000, 0},
+    {2, 0, 0, true, 0, 0},
+    {3, 1, 5, false, 8000, 0},
+    {4, 1, 0, false, 7000, 0},
+    {0, 0, 0, true, 8000, 0},
+};
+
+constexpr ecl::OpSet kChampionsEcl = [] {
+    ecl::OpSet s = kCurseEcl;
+    s.sizes[0x3C] = 0;
+    s.sizes[0x41] = 2;
+    s.area_by_block = true;
+    s.moons = true;
+    return s;
+}();
+
 // Pools of Darkness (darkness_facts.md 5; its interpreter, GAME.OVR overlay
 // at 0x246): Curse's operand counts but 0x0C 4 (SETUP MONSTER's sides),
 // 0x1D none (PRESS KEY), 0x1F 1 (JOURNAL n), 0x21 2 (LOAD FILES: map,
@@ -2079,6 +2268,176 @@ const Profile kProfiles[] = {
      // the name at row 22 and the version at 23, colour 0 on 10, then the
      // menu with the prompt at 0x55)
      .title_name = 0x05, .title_prompt = 0x55},
+    // Champions of Krynn, GOG release (champions_facts.md; being built):
+    // START.EXE 61,607 bytes, EXEPACK, unpacked 65,568; its data segment at
+    // image 0xBC60 (DS offsets below from there). Curse's program shape and
+    // words at Champions' places; Secret's scripts and areas.
+    // - frame: bars drawn by code (its START image 0x1280 - 0x1870) with
+    //   block 202's tiles 20 (every bar), 23 / 24 / 25 (a vertical's cap under
+    //   a bar, side, cap over a bar), the view frame the same; the top bar
+    //   its own table (DS 0x0E3A: tile 20 + value) with the three moons;
+    // - the font: 8X8D1.DAX block 201 (Curse's).
+    {.game = games::Game::ChampionsOfKrynn, .release = "GOG", .program = "START.EXE",
+     .program_size = 61607, .image_size = 65568, .data_base = 0xBC60,
+     .frame = {.top = 0x0E3A, .bar = 0, .bottom = 0, .left = 0, .right = 0, .view_split = 0, .view_top = 0,
+               .view_bottom = 0, .view_left = 0, .view_right = 0, .combat_left = 0, .combat_split = 0,
+               .combat_right = 0},
+     .tiles_file = "8X8D1.DAX", .tiles_block = 202,
+     .press_any_key = 0x56A2,
+     .title_file = "TITLE.DAX", .title = kChampionsTitle,
+     .title_steps = sizeof kChampionsTitle / sizeof kChampionsTitle[0],
+     .title_version = 0x05, .title_menu = 0x1D,
+     .overlay = "GAME.OVR", .overlay_size = 269031, .credits_at = 0x34C, .credits_base = 0xDA, .credits_bars = {4, 20},
+     .first_area = 1, .last_area = 3, .common_tiles_block = 203, .sky_file = "SKY.DAX", .horizon_block = 252,
+     .ecl_ops = &kChampionsEcl,
+     .sky_colours = 0x0DC4, .start_area = 1, .start_script = 36,
+     .wild = {},
+     // The party menu (13 entries: Knight Change Classes in Curse's Human
+     // Change's place; Initialize Mouse/Joystick the 12th); KRYNN.CFG names the
+     // save folder; a member's functions ask "Pick Character " "Select Exit"
+     // first (DOSBox; as Gateway's)
+     .party = {0xC4D8, 13, 42, 0x20333, 0x1F1A9, 0x36D54, 0x36D59, "KRYNN.CFG", 0x1F8B2, 0x1F8C4, 0x1F97A, 0xC14E,
+               0, 0x1D256, 0, 0, 0x2393B, 0x2394D, 0x23952, 0x23955, 0x23979, 0x23993,
+               0x1E2A0, 0x1E2AB, 0x2280C, 0x22812, 0x2281D, 0x2282C, 0x22836, 0x22841, 0x22855, 0x32251,
+               0x22AAF, 0x22AE3, 0x22AEC, 0x1D755, 0x1E2AE, 0, 0, 0x2A3FB, 0x2A40B, 0},
+     // View Character's name tables (races in Champions' own order: the
+     // engine reorders them)
+     // (its words at GAME.OVR 0x26DA2 on, as Secret's: "Status:", " years",
+     // "Level", "Experience ", "Hit Points ", "Armor Class" ...; the menu's
+     // "Exit" 0x27ABA)
+     .view = {{0xCBBA, 27, 18}, {0xCDA0, 16, 8}, {0xCE20, 17, 9}, {0xCF35, 7, 2}, {0xCF43, 11, 7}, {0xCF90, 13, 9},
+              0, 0x26DAA, 0x26DF0, 0x26DDC, 0x26DE4, 0x26DA2, 0x274EF, 0x274E3, 0x27507, 0x2751F, 0x274FB, 0x27510,
+              0x27ABA, 5},
+     .items = {.words = {0xD005, 21, 255}, .types_file = "ITEMS", .arrow = 73, .quarrel = 28, .dart = 9,
+               .flask = 86, .keep1 = 0x87, .keep2 = 0xB1, .elf_bonus = {41, 42, 43, 44, 37, 36},
+               .buy_items = 0x70E2, .buy = 0x7FAC, .list_next = 0x3C195, .list_prev = 0x3C19B, .list_exit = 0x73FA,
+               .shop_menu = 0x8699, .shop_menu_money = 0x8672, .no_money = 0x83D4, .overloaded = 0x28ED8,
+               .title = 0x2851E, .heading = 0x28524, .ready = 0x284EF, .yes = 0x36A19, .no = 0x36A20,
+               .cursed = 0x28BAC, .wrong_class = 0x28BB8, .already = 0x28BC4, .hands_full = 0x28BD3,
+               .plural_s = 0x37F40, .weapon = 0, .armour = 0,
+               .stat_fx = {0x26, 0x92, 0x0C, 0x0E, 0x44, 0x3E},
+               .hammer = {0x17, 20, 20, 243}, .detect = {0x05, 0x05, 0x0B, 0x4D}, .berserk = 0x4D},
+     // Character rules (champions_facts.md 4): Curse's shapes at Champions'
+     // places (the knight in the monk's column; 108 spells), its race-indexed
+     // tables by its own races (the code reading each: GAME.OVR ovl 0xA4),
+     // race classes 15 bytes a race, ages 8 classes a race, alignments a
+     // mask a class with its list of six at DS 0x0A9A, ten experience rows
+     // (classes::Tables::xp_row), the thief race table as the original reads
+     // it (ovl 0xF7 +0xCC5)
+     .create = {.ds_image = 0xBC60,
+                .tables = {.lo = 0x31B3, .hi = 0x4262, .spells = 0x31B3, .spell_count = 108, .thac0 = 0x3882,
+                           .class_flags = 0x38EA, .class_masks = 0x38F2, .max_hit_dice = 0x3903, .thief_base = 0x3908,
+                           .thief_race = 0x3970, .thief_dex = 0x397B, .stat_limits = 0x39E0, .race_classes = 0x3A50,
+                           .race_ages = 0x3AB9, .age_brackets = 0x3B99, .class_min = 0x3BDF,
+                           .class_alignments = 0x3C45, .class_records = 0x3C6D, .saves = 0x4056, .pool = false,
+                           .money_dice = 0, .lo2 = 0x0A9A, .hi2 = 0x0AA0, .krynn = true, .cleric_lists = 0x4230},
+                .hp_count = 0x0B6E, .hp_dice = 0x0B76, .icon_colours = 0x390B,
+                .con_save = 0x5E, .dwarf_orc = 0x1A, .giants = 0x2F, .gnome_giant = 0x12, .gnome_extra = 0x30,
+                .elf_sleep = 0x5F, .halfelf = 0x12, .prot_evil = 0x08, .ranger_giant = 0x69,
+                .mu_first = {0x0B, 0x12, 0x0C, 0x15}, .mu_level2 = 0x0F, .mu_level3 = {0x22, 0x0A},
+                .mu_level4 = 0x1F, .mu_level5 = 0x2F,
+                .pick_race = 0x20857, .pick_gender = 0x2086C, .pick_class = 0x20878, .pick_alignment = 0x2088C,
+                .select = 0x20865, .reroll = 0x208BD, .char_name = 0x208CC, .save_q = 0x208DD, .qmark = 0x1E2AB,
+                .mu_change = {0x0B, 0x12, 0x0C, 0x15}, .pick_new = 0, .no_qualify = 0, .change_select = 0x20865,
+                .now_first = 0, .dot = 0x1E246, .kender_fear = 0x5C, .cleric_first = 0x423A, .pick_god = 0x20883,
+                .god_names = 0x1259, .knight_mins = 0x0B7E},
+     .item_words = {0x284F5, 0x284FA, 0x28501, 0x28507, 0x2850E, 0x28514, 0x2851A, 0x27DE6, 0x2852F, 0x28F8E,
+                    0x2853F, 0x28545, 0x2855A, 0x28EC7, 0x29529, 0x29538, 0x29550, 0x2955F, 0x29565, 0x29741,
+                    0x29782, 0x297A8, 0x29771, 0x20865},
+     .shop_words = {0x5F14, 0x5F3C, 0x5CF4, 0x5D0C,
+                    0x53A5, 0x544B, 0x5541, 0x5553, 0x5567, 0x557C, 0x5A47, 0x57B2, 0x5B6C, 0x5C58,
+                    0x5167, 0x51DD, 0x51EE, 0x51FD, 0x520B, 0x521D,
+                    0x5397, 0x543A, 0x57A5, 0x5A36, 0x5B5D, 0x5C49,
+                    0x5F63, 0x5FAE, 0, 0x8711,
+                    0x2D189, 0x2D1A8, 0x2D1AF, 0x73FA, 0x2D1BF, 0x2D1CB, 0x2D1E1, 0x2D1E9, 0x2D1EE, 0x2D1F8,
+                    0x2D203, 0x2D146, 0x2D159, 0x2D15E, 0x2D164, 0x2D176,
+                    0x2C5B2, 0x20865, 0x2C5E9, 0x2C5D8, 0x2BABC,
+                    0x24EFF, 0, 0x24F1E, 0x24F3D, 0x24F53, 0x24F61, 0x24F70, 0x24F7D, 0x24F94},
+     .cures = {{1000, 1000, 100, 350, 600, 5000, 1000, 5500, 3500, 2000},
+               0x21, {0x1F, 0x22, 0x2B, 0x2C, 0x32, 0x39}, 0x44, 0x37, 0x16, 0x0F, 0x20, 0x24, 0x22, 0x2B, 0x2C, 0x1F},
+     .gem_type = 70, .gem_word = 0x65, .jewel_word = 0xD6,
+     .magic = {.menu = 0xC177, .levels = {0xC883, 41, 5}, .names = {0xDCD7, 41, 108},
+               .words = {0x27A99, 0x2A204, 0x2A20E, 0x2A239, 0x2DE36, 0x2DE00, 0x1B6BB, 0x1B6EE, 0, 0x1B134,
+                         0x1B147, 0x1B16D, 0x1B6D3, 0x1AEFC, 0x1AF23, 0x2AFB5, 0x2B0B7, 0x2B668, 0x2B234, 0x2B2FF,
+                         0x2B677},
+               .rest_period = 0x7ED2, .rest_chance = 0x7ED3,
+               .cast_words = {0x1AF13, 0x1B063, 0x2DDFB, 0x2EFFE, 0x2EFA9, 0x2EFBF, 0x2EE76, 0x38B7B, 0x38B8B,
+                              0x35459, 0x2FCEA, 0x30C10, 0x31C87, 0, 0x311DD, 0x311EA, 0x1BE07, 0x2DE09, 0x2A224,
+                              0x2A245, 0x1B90D, 0x1B925, 0x1B941, 0x1B964, 0x1B8F7, 0x1B983, 0x1AF33, 0x2B3C3,
+                              0x2A22F, 0x2DE10, 0x2EFC9, 0x2EFD3, 0x2EFEC, 0x29229, 0x29236, 0x2923C, 0x2A21A,
+                              0x2EFF5},
+               .camp = kChampionsCamp, .n_camp = sizeof kChampionsCamp / sizeof kChampionsCamp[0],
+               .facts = {2, 0x2A, {0x22, 0x2B, 0x32}, {{0, 0}, {0x2C, 0x1F}, {0x39, 0}}, 0x0C, 0x17, 0x32, 0x36,
+                         0x8F, 0x92,
+                         {{0x28, 1, 6, 0, 10}, {0x39, 5, 4, 0, 1}, {0x3D, 5, 4, 0, 1}, {0x3B, 1, 4, 4, 10},
+                          {0x3F, 1, 10, 10, 10}, {0x43, 0, 0, 1440, 1}}},
+               .spell_named = kCurseSpellNamed, .n_spell_named = sizeof kCurseSpellNamed, .named = kCurseNamed,
+               .n_named = sizeof kCurseNamed / sizeof kCurseNamed[0], .scroll_one_spell = 0xD2, .read_magic = 0x10},
+     .alter = {0xC1A0, 0xC464, 0xC48D,
+               {0, 0x1C5EF, 0x1C61D, 0x1C98B, 0x1C999, 0x1C9B0, 0x1C9B8, 0x73FA, 0x1C9C6, 0x1C734, 0x1C741,
+                0x1C726, 0x1C753, 0x1C765, 0x1C77A, 0x1CB6E, 0x1CB78, 0x1CB87, 0x1CB97, 0xC221},
+               {0xC700, 0xC729, 0xC752, 0xC77B, 0xC7A4},
+               {0x24222, 0x24226, 0x24235, 0x24239, 0x2423F, 0x24258, 0x2425D, 0x24282}},
+     // Fights: Curse's tables at Champions' places (its effect numbers:
+     // chunk 7)
+     .fight = {{0x1EE4, 0x03BA, 0x03CA, 0x03DA, 0x03DE, 0x03E6, 0x03EE, 0x0432, 0x0447},
+               {0xFDDF, 0xB5BD, 0xB5C3, 0xB5CD, 0xB5D2, 0xB5D8, 0xB5E4,
+                0xBABE, 0xBADE, 0xBAE4, 0xBE59,
+                0x17D59, 0x17D65, 0x17D6D, 0x17D7F, 0x17D8B,
+                0xBF27, 0xBF2E, 0xBF3A, 0xBF43, 0x38F50, 0xC1FF, 0xC20B, 0xC211, 0xC219, 0xC221,
+                0x14FE1, 0x14FED, 0x14FFC, 0x15004, 0x15013, 0x15027, 0x15034, 0x1503C, 0x15045, 0x1504F,
+                0x1505A, 0x15067, 0x15071, 0x1509E,
+                0xB89C, 0xB8B3, 0x15B16, 0x15B1F, 0x17C6E, 0xC563, 0xD820, 0xD832,
+                0x39783, 0x15D31, 0x3707A, 0x37084, 0x37087,
+                0x6CFE, 0x6D12, 0x6D42, 0x6D9E, 0x6DD2, 0x6DEB, 0, 0x7C16, 0x7C4C,
+                0x72DD, 0x72E4, 0x73EB, 0x73FA, 0x7400, 0x740D, 0x7422,
+                0x743A, 0x745A, 0x70E2, 0x70EA,
+                0x35CA5, 0x35CAC, 0x35CBF, 0x35CD8, 0x35CE2, 0x35CEC, 0x35CFD, 0x35D07, 0x35D1F,
+                0x36094, 0x333E1, 0x333EF, 0x17618, 0x17608, 0x15FE7, 0x15FF7, 0x16001,
+                0x1600E, 0x17074, 0x2F004, 0x2F012, 0x305D1, 0x11BC4, 0, 0x12727, 0x116BC, 0x1128E, 0x10D3A},
+               // the effects that end with a fight (Curse's list, in Champions'
+               // numbers where they differ: frightened 0x77, taunted 0x5B)
+               // (0x6A, a bozak's stun - given lasting - ends with the fight too:
+               // SPEC 12)
+               {0x03, 0x0B, 0x15, 0x17, 0x1B, 0x1E, 0x1F, 0x23, 0x33, 0x34, 0x35, 0x5B, 0x6A, 0x6B, 0x77},
+               // Its effect numbers (the Gold Box Companion's list for Champions:
+               // mostly Secret's - the knights' and draconians' own: 0x43-0x45,
+               // 0x52, 0x54, 0x55, 0x58, 0x5B, 0x5E, 0x72-0x77)
+               {.held = {0x33, 0x34, 0x35, 0x1F}, .bless = 0x01, .curse = 0x02, .prayer = 0x31, .haste = 0x27,
+                .slow = 0x2A, .invisible = 0x19, .prot_evil = 0x08, .prot_good = 0x09, .mirror = 0x1C,
+                .backstab_weapons = {0x07, 0x08, 0x23, 0x24, 0x25, 0x61}, .charm = 0x0B, .fear = 0x77, .cough = 0x1E,
+                .shot_pointed = {9, 21, 100, 28, 31, 73}, .shot_spinning = {2, 7, 20}, .shot_flask = {85, 86},
+                .shot_sling = {47, 98, 101},
+                .bestow = 0x24, .blink = 0x25, .fumbling = 0x1B, .silence = 0x15, .entangle = 0, .sticks = 0x03,
+                .faerie = 0, .blinded = 0x21, .animals_blind = 0, .feeble = 0,
+                .mon = {.poison = 0x40, .kreen_bite = 0x45, .need_magic = 0x67, .no_cold = 0x62, .no_elec = 0x06,
+                        .globe = 0x3F, .elf_sleep = 0x5F, .detect = 0x18, .prot_evil_near = 0x2D,
+                        .acid_breath = 0x5A, .fire_breath = 0x68,
+                        .paralyzed = 0x34, .poisoned = 0x37, .sleep = 0x35,
+                        .ghoul = 0x58, .lightning_breath = 0x55, .poison_p4 = 0x41, .no_fear = 0x5C,
+                        .explode = 0x44, .stone_death = 0x43},
+                .sp = {.enlarge = 0x0C, .confuse = 0x23, .berserk = 0x4D, .evil_ward = 0x04, .hot = 0x32,
+                       .cold = 0x36, .zap = 0x70, .slow_poison = 0x16, .poison_damage = 0x0F, .hammer = 0x17,
+                       .con_regen = 0x3E, .shield = 0x11, .enfeeble = 0x1D, .ill = 0x22, .weak = 0x2B, .sick = 0x2C,
+                       .stun = 0x6A},
+                .race = {0x5E, 0x12, 0x1A, 0x07, 0x2F, 0x30, 0x69, true},
+                .items = {.displace = 0x59, .ring_invisible = 0x38, .fire_ring = 0x3D},
+                .berserk = 0x6B, .taunted = 0x5B},
+               kChampionsFight, sizeof kChampionsFight / sizeof kChampionsFight[0]},
+     .script_words = {0x2D2D, 0x2D3E, 0xAA9C, 0xAAA4, 0xAAB1, 0x35AD},
+     .random_items = &kCurseRandom, .random_rows = 0,
+     .sound = {},
+     .clips = {},
+     .door = {0x1A11B, 0x1A120, 0x1A126, 0x73FA, 0x1A133, 0x1F},
+     .won = {},
+     .variant = {.program_words = true, .bars = {20, 23, 24, 25, 20, 23, 24, 25},
+                 .bigpic_from = 0x70, .fight_unswapped = true, .party_menu_col = 9, .krynn = true,
+                 .press_words = {0x1A8E, 0x1AB2}, .order_words = {0x26DB3, 0x26DC1, 0x26DCF},
+                 .yell_words = {0xB5DE, 0x33FBF},
+                 .burst_words = {0x1248C, 0x12496, 0x1299C},
+                 .knight_words = {0x2595F, 0x25964, 0x2597F, 0x25985, 0x2598A, 0x25999, 0x259B0, 0x259C3, 0x259D1,
+                                  0x259E5, 0x259F1, 0x25A07}},
+     .overland = nullptr},
     // Pools of Darkness, GOG release (darkness_facts.md; being built -
     // Tom, 2026-10-17): GAME.EXE 64,203 bytes, EXEPACK, unpacked 72,784; its
     // data segment at image 0x9E70; one file a kind (ECL1, GEO1 ...); VGA
@@ -2767,8 +3126,14 @@ const ViewFacts& view_facts(games::Game g)
                                           kP | 0xDD8A, 0x2F753, 0x2F75F, 0x2F76D, 0x2F860, 0x2F86C, 0x2F87C,
                                           0x2F88A, kP | 0xDDB4},
                                          0x6D, 0x6E, kP | 0xF208};
+    // Champions: Curse's words at its places (its View menu GAME.OVR 0x27A99;
+    // no paladins among its player characters)
+    static const ViewFacts kChampions = {{0x27A99, 0x27AA1, 0, 0x27AA8, 0x27AAE, 0x27AB4, 0x2999C, 0x299A8, 0x299C5,
+                                          0x299CF, 0x29D3D, 0, 0, 0, 0, 0, 0, 0, 0},
+                                         0, 0};
     static const ViewFacts kNone = {};
     switch (g) {
+    case games::Game::ChampionsOfKrynn: return kChampions;
     case games::Game::CurseOfTheAzureBonds: return kCurse;
     case games::Game::PoolOfRadiance: return kPool;
     case games::Game::SecretOfTheSilverBlades: return kSecret;
