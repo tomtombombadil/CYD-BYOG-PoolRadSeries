@@ -2642,26 +2642,34 @@ const Profile kProfiles[] = {
                         .acid_breath = 0x5A, .fire_breath = 0x68,
                         .paralyzed = 0x34, .poisoned = 0x37, .sleep = 0x35,
                         .ghoul = 0x58, .lightning_breath = 0x55, .poison_p4 = 0x41, .no_fear = 0x5C,
-                        .explode = 0x44, .stone_death = 0x43},
+                        .explode = 0x44, .stone_death = 0x43, .acid_pool = 0x46},
                 .sp = {.enlarge = 0x0C, .confuse = 0x23, .berserk = 0x4D, .evil_ward = 0x04, .hot = 0x32,
                        .cold = 0x36, .zap = 0x70, .slow_poison = 0x16, .poison_damage = 0x0F, .hammer = 0x17,
                        .con_regen = 0x3E, .shield = 0x11, .enfeeble = 0x1D, .ill = 0x22, .weak = 0x2B, .sick = 0x2C,
                        .stun = 0x6A},
                 .race = {0x5E, 0x12, 0x1A, 0x07, 0x2F, 0x30, 0x69, true},
                 .items = {.displace = 0x59, .ring_invisible = 0x38, .fire_ring = 0x3D},
-                .berserk = 0x6B, .taunted = 0x5B},
+                // (the kapak's acid pool: GAME.OVR 0x12F1F)
+                .berserk = 0x6B, .acid_ground = 0x1D, .taunted = 0x5B},
                kChampionsFight, sizeof kChampionsFight / sizeof kChampionsFight[0]},
      .script_words = {0x2D2D, 0x2D3E, 0xAA9C, 0xAAA4, 0xAAB1, 0x35AD},
      .random_items = &kCurseRandom, .random_rows = 0,
-     .sound = {},
+     // Its effects: Secret's driver in START.EXE's segment 0x7E8 (the tables
+     // at +0x4A8 / +0x550, 21 entries, its byte code to +0x12C1; its Tandy
+     // entries 0-11 Secret's own byte for byte); its PlaySound passes its
+     // numbers 2-12 on (entries 1-11) - champions_finish_facts.md 15.
+     // SOUND.DAX / MIDI.DAX are the title's music (Electronic Arts' player):
+     // not played
+     .sound = {.segment_image = 0x7E80, .lo = 0x04A8, .hi = 0x12C1, .pc_table = 0x04A8, .tandy_table = 0x0550,
+               .sounds = 21, .fireball_spell = 0x2F, .lightning_spell = 0x33, .last_id = 12},
      .clips = {},
      .door = {0x1A11B, 0x1A120, 0x1A126, 0x73FA, 0x1A133, 0x1F},
      .won = {},
      .variant = {.program_words = true, .bars = {20, 23, 24, 25, 20, 23, 24, 25},
-                 .bigpic_from = 0x70, .fight_unswapped = true, .party_menu_col = 9, .krynn = true,
+                 .bigpic_from = 0x70, .fight_unswapped = true, .party_menu_col = 9, .krynn = true, .shop_words_stay = true,
                  .press_words = {0x1A8E, 0x1AB2}, .order_words = {0x26DB3, 0x26DC1, 0x26DCF},
                  .yell_words = {0xB5DE, 0x33FBF},
-                 .burst_words = {0x1248C, 0x12496, 0x1299C},
+                 .burst_words = {0x1248C, 0x12496, 0x1299C}, .acid_words = {0x12C0A, 0x1387E},
                  .knight_words = {0x2595F, 0x25964, 0x2597F, 0x25985, 0x2598A, 0x25999, 0x259B0, 0x259C3, 0x259D1,
                                   0x259E5, 0x259F1, 0x25A07}},
      .overland = nullptr},

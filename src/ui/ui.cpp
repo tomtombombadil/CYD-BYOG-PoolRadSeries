@@ -269,7 +269,7 @@ void pump()
             return;
         }
 #if defined(CYD_QEMU)
-        Serial.printf("[qemu] tap seen at %d,%d\n", press_x, press_y);
+        Serial.printf("[qemu] tap seen at %d,%d at %lu ms\n", press_x, press_y, (unsigned long)millis());
 #endif
         pending_tap = true;
     }

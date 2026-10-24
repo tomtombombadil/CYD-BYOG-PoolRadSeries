@@ -182,7 +182,7 @@ stay in the session's scratch space, never in the repo.
 | VGA picture (Darkness): u8 height, u8 width cols, u16 x, u16 y, u8 frames, u8, u8 first palette index, u8 count-1, palette (6-bit RGB), one EGA nibble per entry, 4 bytes, then 1 byte a pixel | `src/engine/picture.*` | **Confirmed** on 479 Darkness blocks: TITLE, BIGPIC, BACK, SKYGRND, CBODY, CHEAD, COMSPR, CPIC, DUNGCOM, WILDCOM, BORDERS, CURSOR. |
 | VGA animations (Darkness PIC1, SPRIT1) and 8X8D1 tile sets | - | To do: header starts u16 height, u16 width cols, u16 x, u16 y, then a different layout. Darkness is last in the build order. |
 | Font: block 201 of an 8X8D file (8X8D1 PoolRad / Curse, 8X8D5 Secret, 8X8D0 Darkness): 177 glyphs x 8 bytes, bit 7 = left pixel; glyph = upper-case ASCII mod 64, 64+ = symbols and frame bits. PoolRad, Curse, Secret identical; Darkness differs | `src/engine/font.*` | **v0.2.0**, checked on all four games' files; the viewer shows it as a glyph sheet + sample text. |
-| Game program (START.EXE; Darkness GAME.EXE): Microsoft **EXEPACK** - MZ header, packed program, at CS:0 an 18-byte header (real IP, CS, mem start, size, SP, SS, dest len in paragraphs, skip len, "RB"); unpacked backwards from the end: command byte, length (high byte, low byte), 0xB0 fill (value byte) / 0xB2 copy, bit 0 = last; the bytes below the last output byte stay as they are | `src/engine/exepack.*` | **v0.3.0**: unpacks every Gold Box program Tom has (Curse, PoolRad, Secret, Darkness, Champions, Death Knights, Gateway, Treasures) identically to a reference unpacker. `read()` unpacks just a byte range straight from the file - no 60 KB buffer. |
+| Game program (START.EXE; Darkness GAME.EXE): Microsoft **EXEPACK** - MZ header, packed program, at CS:0 an 18-byte header (real IP, CS, mem start, size, SP, SS, dest len in paragraphs, skip len, "RB"); unpacked backwards from the end: command byte, length (high byte, low byte), 0xB0 fill (value byte) / 0xB2 copy, bit 0 = last; the bytes below the last output byte stay as they are | `src/engine/exepack.*` | **v0.3.0**: unpacks every Gold Box program Tom has (Curse, PoolRad, Secret, Darkness, Champions, Death Knights, Gateway, Treasures) identically to a reference unpacker. `read()` unpacks just a byte range straight from the file - no 60 KB buffer. Since 2026-10-24 Play reads the unpacked copy `_CYD/<folder>/PROGRAM.BIN` (5b) - a start read 1.7-9.1 MB of the program before. |
 | Per-release program facts: file size + unpacked size identify the release; data segment base + table addresses | `src/engine/profile.*` | Curse GOG (`START.EXE` 57,789 bytes, 62,432 unpacked, DS at 0x48D0). Other games: their frame tables aren't where Curse keeps them (and don't match Curse's) - find them when each game's turn comes. |
 | Screen frame: tiles = 8X8D1 block 202 (a picture block 8 high, 1 column, 40 frames; colour 13 not drawn); frame tile = 30 + table value, 3D-view frame tile = 20 + value. Tables (one byte a cell) in the program's data segment: top, bar, bottom (40), left, right (24), the explore screen's split column (17) and 3D-view frame (4 x 15), combat's three columns (23) | `src/engine/layout.*` | **v0.3.0** (Curse). Screens: outer border (rows 0-23, row 24 = menu line), + bar at row 16 (text screen), exploring (3D view cells 3-13, party right of column 16, text rows 17-22), combat (columns 0 / 22 / 39). The viewer's **Screen Test** draws them from Tom's own files. |
 | Strings: Pascal strings (length byte + text) in the program's data (START.EXE, unpacked) and in GAME.OVR, a Turbo Pascal overlay file ("FBOV") whose procedures keep their string constants in their code segment | `src/engine/text.*` | **v0.4.0**: Curse's "Press any key to continue" read from START.EXE. Every string the engine will show comes from the player's files the same way (profile offsets). |
@@ -223,7 +223,15 @@ stay in the session's scratch space, never in the repo.
   `_CYD/<folder>/`: `ICON<px>.BIN` (the GOG icon decoded once at the
   library's icon size: "ICN1", u16 w, u16 h, RGBA rows; a board with
   another screen size makes its own size when first shown), the journal
-  entries (v0.12.0).
+  entries (v0.12.0), `PROGRAM.BIN` (Tom, 2026-10-24: slow starts - the
+  game program unpacked once, `exepack::write_copy`: "CYDXPK1", the
+  program file's size and FNV-1a checksum, the image top byte first; the
+  scan makes it, "Prepared the Curse program"; Play's start checks it
+  against the program file and makes it again when missing or of another
+  file - `play::prepare_program`; the program's facts are then read from
+  it with one read each instead of a walk through the packed program;
+  QEMU's 2.8" build: Play's start 7-35 s before, 0.6-1.6 s with the copy,
+  2.2-2.5 s when Play makes it; the scan's step 0.7-2.5 s a game).
 - The scan screen: header "Scanning Your Card", a scrolling list of what
   it does ("Searching for Gold Box games...", "Looking in CURSE..." ->
   "Found Curse of the Azure Bonds", "Found the Curse game icon", "Found the
@@ -1902,17 +1910,32 @@ GAME=5); `variant.krynn`. Play on since 2026-10-24 (branch champions).
   order's experience for it (`create::knight_petition` / `knight_change`).
 - **Overland** (area word 0x4BE6 = 0): the map picture with CURSOR.DAX's
   marker, eight directions, 12 hours a step.
+- **Shops and the temple** open over the script's words (the outpost's
+  "WHERE DO YOU WISH TO GO?" stays - DOSBox; `variant.shop_words_stay`);
+  back from Buy / Heal the text area is clear, as the original's.
 - **Fights**: its effect numbers (mostly Secret's), Done's Auto, the
   kender's Yell (taunts: they attack the kender), draconians dying - a
   bozak explodes (3d6 within a square, a save or stunned), a baaz keeps
   the weapon that slew it (a d20 at least Dexterity - 3) till the fight's
-  end. Not yet: the kapak's acid pool (effect 0x46: a ground zone).
+  end; a kapak "dissolves into acid!" (effect 0x46, GAME.OVR 0x12C1F): its
+  square ground 0x1D for 1d6 rounds ("The acid drains away.."), 1d6 (no
+  save) on whoever has a square in it as they step in and as each round
+  ends (GAME.OVR 0x34F7F) - `combat::lay_acid`, `on_acid`, `acid_burn`.
 - **Checks**: sweep `behave champions` (creation, training, Modify, the
   moons; oracle from scratch `champions_oracle.py`), saveload, events and
   monkey runs clean (knights' petitions checked too); budget fight (Throtl, AREA=2 BLOCK=34 RUNAT=8441)
-  128.9 KB of 150. Sound: silent (its EA driver not surveyed).
+  128.9 KB of 150.
+- **Sound**: its effects are Secret's driver in START.EXE (segment 0x7E8:
+  tables +0x4A8 / +0x550, 21 entries, byte code to +0x12C1 - 3.6 KB; the
+  Tandy entries 0-11 Secret's byte for byte), Tandy or PC speaker as the
+  others; its PlaySound passes its numbers 2-12 only (`Layout::last_id`).
+  SOUND.DAX (one block) is the title's music - an event stream for
+  Electronic Arts' player in START.EXE (seg 0x661) - and MIDI.DAX's five
+  blocks that player's device drivers (C/MS, Roland LAPC, AdLib, Tandy, PC
+  speaker); music only at the title: not played (facts only).
 - **Journal**: the SNEG release's Gold Box Companion text (88 entries)
-  works through `journal::make_gbc`; the GOG PDF's table is not made yet.
+  works through `journal::make_gbc`; the GOG PDF (88 entries, 57 tavern
+  tales) has its table since branch champions-finish (section 7).
 
 ## 7. The journal (Tom, 2026-10-06)
 
@@ -1971,6 +1994,19 @@ words as the introduction to your journal" (Tom, 2026-10-24) is entry
 J 0: the book's Introduction (PDF page 1's right page, page 2's left - 5
 pieces, its opening full width), listed as "Introduction"; a card scanned
 before needs Rescan for it (the entry count changed).
+2026-10-24 (branch champions-finish): **Champions of Krynn** (88 entries,
+57 tavern tales, 157 pieces; 8,017,944 bytes, /ID d589480a...). Its PDF
+(OmniPage, PDF 1.6) keeps its cross-reference table in a stream and its
+pages in object streams: `engine/pdf.*` reads both now (FlateDecode, PNG
+row predictors; an object in a stream is inflated up to its own bytes
+only, a 32 KB window while it's read). `make_table.py champions`: its
+headings ("Journal Entry N", "Tavern Tale N") are a light gold and sit
+close under the text before them, so a heading's boundary is the first
+blank row above it (`snap_heads`); the maps across a page's columns (13,
+23, 45, 72) and the pictures over a column's top set by hand; every entry
+checked by eye. Its scripts say "... JOURNAL ENTRY " / "YOU HEAR TAVERN
+TALE " with the number printed after (found as Secret's). No introduction
+is mentioned by the game (the book's letter from Mothus has no entry).
 
 v0.10.0 did this in a browser page (pdf.js) on the player's PC; Tom
 (2026-10-09) wants no PC step: since v0.12.0 the board does it.
@@ -1978,7 +2014,7 @@ v0.10.0 did this in a browser page (pdf.js) on the player's PC; Tom
 How it works (v0.12.0, Curse):
 - The card scan finds a .pdf with "journal" in its name in the game's
   folder, reads its cross-reference table and page tree (`engine/pdf.*`,
-  classic xref only) and recognises the edition by file size + the
+  classic xref tables or xref streams) and recognises the edition by file size + the
   trailer's /ID (`journal::find_table`). Curse install-folder PDF: 6779800
   bytes, /ID 36ce730a4edce39469cb5215e05df63d.
 - `engine/journal_tables.cpp` (made by `tools/journal/make_table.py`, which
@@ -2513,8 +2549,14 @@ the game's Settings (As Original: all of them).
   list) - its own end isn't traced.
 - **Champions' baaz**: the weapon comes back after the fight unreadied
   (the original copies it back as it was).
-- **Champions' kapak**: dying it doesn't leave its acid pool yet.
-- **Champions' sound**: silent (its sound driver isn't read yet).
+- **Champions' kapak**: its acid pool (a ground of its own, 1d6 rounds)
+  lives in the engine's cloud list: where it lay on a stinking cloud and
+  goes first, the cloud's ground comes back there (the original shows the
+  ground under both); a cloud and a pool going in the same round show only
+  "The air clears a little..." (the original says each). The computer's
+  fighters walk into acid as the original's do (no check).
+- **Champions' title music** (SOUND.DAX through MIDI.DAX's drivers) isn't
+  played; its effects are.
 - **Gateway's stirge and squid** (Game Fixes): their holds never hurt in
   the original (the stirge's goes at its next step, the squid's per-turn
   handler is in no list); with Game Fixes on the stirge drinks 1d4 a turn up

@@ -2,7 +2,9 @@
 // journal PDFs: every page is one JPEG - Treasures' a few, two pages of the
 // book and their headings, a spread a PDF page): the cross-reference table, the
 // page tree, each page's image XObject and where its JPEG data is.
-// Classic xref tables only (PDF 1.4 and the like); /Prev sections are
+// Classic xref tables (PDF 1.4 and the like) and, since Champions of Krynn's
+// GOG journal (PDF 1.6, OmniPage), cross-reference streams with objects kept
+// in object streams (FlateDecode, PNG predictors); /Prev sections are
 // followed. Not a general PDF reader: no content streams, no fonts.
 //
 // Plain C++, host-tested in tools/host_tests/test_dax.cpp.
@@ -17,9 +19,11 @@ namespace pdf {
 
 constexpr int kMaxObjects = 1024;
 constexpr int kMaxPages = 128;
+constexpr uint32_t kInStream = 0x80000000u;
 
 struct Doc {
-    uint32_t offset[kMaxObjects] = {};     // 0 = not in use
+    uint32_t offset[kMaxObjects] = {};     // 0 = not in use; kInStream | stream << 12 | index:
+                                           // the index-th object of object stream `stream`
     int      objects = 0;
     int      root = 0;                     // the catalog's object number
     char     id[33] = {};                  // the trailer's first /ID string, hex (lower case)

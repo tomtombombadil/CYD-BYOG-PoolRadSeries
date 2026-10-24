@@ -152,7 +152,7 @@ void go(Screen s)
         memlog::note(t);
     }
 #if defined(CYD_QEMU)
-    Serial.printf("[qemu] screen %d: heap free %u, largest block %u\n", static_cast<int>(s),
+    Serial.printf("[qemu] screen %d at %lu ms: heap free %u, largest block %u\n", static_cast<int>(s), (unsigned long)millis(),
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 #endif
     // (the canvas is 4 bits a pixel except while the Resource Test shows a
@@ -1153,8 +1153,32 @@ int prepare_pictures(bool only_missing)
     return failed;
 }
 
+// Each game program's unpacked copy (_CYD/<folder>/PROGRAM.BIN): Play then
+// reads the program's facts straight from it (Tom, 2026-10-24: slow starts)
+void prepare_programs()
+{
+    for (int i = 0; i < n_games; ++i) {
+        const library::GameDir& g = game_dirs[i];
+        if (g.format != library::Format::Dax || !play::available(g.game)) continue;
+        scan_say("Preparing the game program...", false, nullptr);
+        char cdir[160], line[160];
+        snprintf(cdir, sizeof cdir, "%s/%s/%s", games::kRootDir, library::kCacheDir, g.folder);
+        const uint32_t t0 = millis();
+        bool made = false;
+        const bool ok = library::make_cache_dirs(g) && play::prepare_program(g.data_dir, g.game, cdir, &made);
+        if (ok)
+            snprintf(line, sizeof line, "%s the %s program (%lu ms)", made ? "Prepared" : "Checked",
+                     games::short_title(g.game), (unsigned long)(millis() - t0));
+        else
+            snprintf(line, sizeof line, "The %s program wasn't prepared: Play reads it packed (slower to start).",
+                     games::short_title(g.game));
+        scan_say(line, true, nullptr);
+    }
+}
+
 void prepare_made(void*)
 {
+    prepare_programs();
     prepare_pictures(false);
     for (int i = 0; i < n_games; ++i)
         if (game_dirs[i].journal[0] || game_dirs[i].gbc[0]) prepare_journal(game_dirs[i]);

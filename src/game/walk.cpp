@@ -302,7 +302,7 @@ const char* open(const char* data_dir, games::Game g)
         plat::FileSource src(f);
         exepack::Info info;
         const profile::Profile* p = nullptr;
-        if (exepack::parse(src, info) == exepack::Status::Ok) p = profile::find(g, src.size(), info.image_size);
+        if (exepack::parse(src, info) == exepack::Status::Ok) p = profile::find(g, info.file_size, info.image_size);
         if (p && layout::load_tables(src, info, *p, d->tables) != layout::Status::Ok) p = nullptr;
         f.close();
         if (!p || !p->ecl_ops) {

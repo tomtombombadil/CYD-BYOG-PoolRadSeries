@@ -28,6 +28,14 @@ int canvas_depth(games::Game g);
 const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char* cache_dir = nullptr);
 void close();
 
+// The game program's unpacked copy (Tom, 2026-10-24: slow starts):
+// cache_dir/PROGRAM.BIN, made from the player's START.EXE / GAME.EXE when
+// it's missing or of another program file (exepack::write_copy); the
+// facts read from the program come from it then. The card scan makes it,
+// open() checks it (and makes it when it must). made: true when it was
+// made now. False: no copy (the program is read packed, as before).
+bool prepare_program(const char* data_dir, games::Game g, const char* cache_dir, bool* made = nullptr);
+
 enum class Act : uint8_t { TurnLeft, TurnRight, TurnAround, Forward, StepLeft, StepRight, Area, Look };
 
 // Draws the whole game screen.

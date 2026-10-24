@@ -944,6 +944,66 @@ static Bytes test_image()
     return img;
 }
 
+// The unpacked copy (exepack::write_copy): made, read back identical,
+// stale or damaged copies told apart
+struct VecSink : exepack::Sink {
+    Bytes b;
+    size_t fail_after = SIZE_MAX;
+    bool put(const uint8_t* p, size_t n) override
+    {
+        if (b.size() + n > fail_after) return false;
+        b.insert(b.end(), p, p + n);
+        return true;
+    }
+};
+
+static void test_exepack_copy(const Bytes& exe, const Bytes& img)
+{
+    dax::MemorySource src(exe.data(), static_cast<uint32_t>(exe.size()));
+    exepack::Info in;
+    CHECK(exepack::parse(src, in) == exepack::Status::Ok);
+    const uint32_t sum = exepack::checksum(src);
+    VecSink s;
+    CHECK(exepack::write_copy(src, in, sum, s) == exepack::Status::Ok);
+    CHECK(s.b.size() == exepack::kCopyHeader + img.size());
+    dax::MemorySource cs(s.b.data(), static_cast<uint32_t>(s.b.size()));
+    CHECK(exepack::copy_matches(cs, static_cast<uint32_t>(exe.size()), sum));
+    exepack::Info ci;
+    CHECK(exepack::parse(cs, ci) == exepack::Status::Ok);
+    CHECK(ci.copy_at == exepack::kCopyHeader && ci.image_size == in.image_size && ci.file_size == exe.size() &&
+          ci.ip == in.ip && ci.cs == in.cs && ci.sp == in.sp && ci.ss == in.ss);
+    Bytes out(img.size());
+    CHECK(exepack::read(cs, ci, 0, out.data(), out.size()) == exepack::Status::Ok && out == img);
+    bool ok = true;
+    for (uint32_t pos = 0; pos + 50 <= img.size(); pos += 19) {
+        uint8_t a[50], b[50];
+        for (size_t n : {size_t(1), size_t(2), size_t(7), size_t(50)})
+            if (exepack::read(cs, ci, pos, a, n) != exepack::Status::Ok ||
+                exepack::read(src, in, pos, b, n) != exepack::Status::Ok || memcmp(a, b, n) != 0 ||
+                memcmp(a, img.data() + pos, n) != 0)
+                ok = false;
+    }
+    CHECK(ok);
+    uint8_t one;
+    CHECK(exepack::read(cs, ci, static_cast<uint32_t>(img.size()), &one, 1) == exepack::Status::BadData);
+    CHECK(exepack::write_copy(cs, ci, sum, s) == exepack::Status::BadData);     // (not a copy of a copy)
+    // Stale: another program (one byte changed, same size), or another size
+    Bytes other = exe;
+    other[40] ^= 0x5A;
+    dax::MemorySource os(other.data(), static_cast<uint32_t>(other.size()));
+    CHECK(exepack::checksum(os) != sum);
+    CHECK(!exepack::copy_matches(cs, static_cast<uint32_t>(other.size()), exepack::checksum(os)));
+    CHECK(!exepack::copy_matches(cs, static_cast<uint32_t>(exe.size()) + 16, sum));
+    // Cut short (a write that stopped): not taken, and parse says so
+    dax::MemorySource cut(s.b.data(), static_cast<uint32_t>(s.b.size() - 3));
+    CHECK(!exepack::copy_matches(cut, static_cast<uint32_t>(exe.size()), sum));
+    CHECK(exepack::parse(cut, ci) == exepack::Status::BadData);
+    // The card full: write_copy reports it
+    VecSink full;
+    full.fail_after = 100;
+    CHECK(exepack::write_copy(src, in, sum, full) == exepack::Status::ReadError);
+}
+
 static void test_exepack()
 {
     const Bytes img = test_image();
@@ -970,6 +1030,8 @@ static void test_exepack()
         uint8_t one;
         CHECK(exepack::read(src, in, static_cast<uint32_t>(img.size()) - 1, &one, 1) == exepack::Status::Ok && one == img.back());
         CHECK(exepack::read(src, in, static_cast<uint32_t>(img.size()), &one, 1) == exepack::Status::BadData);
+        CHECK(in.file_size == exe.size() && in.copy_at == 0);
+        test_exepack_copy(exe, img);
     }
     // Damaged: a command byte that isn't one
     Bytes bad = make_exe(img, 37, true);
@@ -982,6 +1044,8 @@ static void test_exepack()
         bad[p - 1] = 0x42;
         uint8_t b;
         CHECK(exepack::read(src, in, 0, &b, 1) == exepack::Status::BadData);
+        VecSink s;
+        CHECK(exepack::write_copy(src, in, 0, s) == exepack::Status::BadData);
     }
     // Not packed / not a program
     Bytes plain = make_exe(img, 37, true);
@@ -2260,6 +2324,24 @@ static void test_sound()
         }
         CHECK(on2 == 5 && !p2.busy());
     }
+    // A number past the game's last (Champions' PlaySound: 2-12): nothing, the one playing goes on
+    {
+        sound::Layout l3 = lay;
+        l3.last_id = 2;
+        sound::Player p3;
+        CHECK(p3.set_data(l3, seg.data(), seg.size()));
+        p3.start(2, sound::Device::PcSpeaker);
+        p3.tick();
+        p3.start(3, sound::Device::PcSpeaker);
+        p3.tick();
+        CHECK(p3.busy() && p3.out().speaker_on);
+        l3.last_id = 1;
+        sound::Player p4;
+        CHECK(p4.set_data(l3, seg.data(), seg.size()));
+        p4.start(2, sound::Device::PcSpeaker);
+        p4.tick();
+        CHECK(!p4.busy());
+    }
     // A bad pointer in a table: refused
     w16(0x100 + 8, 0x300);
     sound::Player bad;
@@ -3165,6 +3247,60 @@ static Bytes make_pdf2()
     return Bytes(s.begin(), s.end());
 }
 
+// PDF 1.5 the Champions of Krynn journal's way: a cross-reference stream
+// (PNG Up rows) and the catalog, page tree and pages inside an object stream;
+// the streams zlib with one stored DEFLATE block (no compression needed)
+static std::string zstored(const std::string& d)
+{
+    std::string z = "\x78\x01";
+    z += '\x01';                                            // final, stored
+    const uint16_t n = static_cast<uint16_t>(d.size());
+    z += static_cast<char>(n & 255);
+    z += static_cast<char>(n >> 8);
+    z += static_cast<char>(~n & 255);
+    z += static_cast<char>((~n >> 8) & 255);
+    return z + d + std::string("\0\0\0\0", 4);             // (the Adler-32 isn't checked)
+}
+
+static Bytes make_pdf3()
+{
+    std::string s = "%PDF-1.5\n";
+    std::vector<size_t> off(8, 0);
+    // object stream 5: objects 1 (catalog), 2 (pages), 3 (the page)
+    const std::string o1 = "<</Type/Catalog/Pages 2 0 R>>", o2 = "<</Type/Pages/Kids[3 0 R]/Count 1>>",
+                      o3 = "<</Type/Page/Parent 2 0 R/Resources<</XObject<</Im0 4 0 R>>>>>>";
+    const std::string head = "1 0 2 " + std::to_string(o1.size() + 1) + " 3 " + std::to_string(o1.size() + o2.size() + 2) + " ";
+    const std::string body = o1 + "\n" + o2 + "\n" + o3;
+    off[4] = s.size();
+    s += "4 0 obj\n<</Type/XObject/Subtype/Image/Width " + std::to_string(kJpeg1W) + "/Height " + std::to_string(kJpeg1H) +
+         "/BitsPerComponent 8/Filter/DCTDecode/Length " + std::to_string(sizeof kJpeg1) + ">>stream\n";
+    s.append(reinterpret_cast<const char*>(kJpeg1), sizeof kJpeg1);
+    s += "\nendstream\nendobj\n";
+    const std::string zs = zstored(head + body);
+    off[5] = s.size();
+    s += "5 0 obj\n<</Type/ObjStm/N 3/First " + std::to_string(head.size()) + "/Filter/FlateDecode/Length " +
+         std::to_string(zs.size()) + ">>stream\n" + zs + "\nendstream\nendobj\n";
+    off[6] = s.size();
+    // the xref stream: W [1 3 1]; rows type 0 (free), 2 x3 (in stream 5), 1 (4, 5, 6)
+    const uint32_t rows[7][3] = {{0, 0, 0}, {2, 5, 0}, {2, 5, 1}, {2, 5, 2}, {1, static_cast<uint32_t>(off[4]), 0},
+                                 {1, static_cast<uint32_t>(off[5]), 0}, {1, static_cast<uint32_t>(off[6]), 0}};
+    std::string x;
+    uint8_t up[5] = {};
+    for (const auto& r : rows) {
+        const uint8_t raw[5] = {static_cast<uint8_t>(r[0]), static_cast<uint8_t>(r[1] >> 16), static_cast<uint8_t>(r[1] >> 8),
+                                static_cast<uint8_t>(r[1]), static_cast<uint8_t>(r[2])};
+        x += '\x02';                                        // PNG Up
+        for (int i = 0; i < 5; ++i) x += static_cast<char>(static_cast<uint8_t>(raw[i] - up[i]));
+        memcpy(up, raw, 5);
+    }
+    const std::string zx = zstored(x);
+    s += "6 0 obj\n<</Type/XRef/Size 7/W[1 3 1]/Root 1 0 R/ID[<00000000000000000000000000000003><00>]"
+         "/DecodeParms<</Columns 5/Predictor 12>>/Filter/FlateDecode/Length " + std::to_string(zx.size()) + ">>stream\n" +
+         zx + "\nendstream\nendobj\n";
+    s += "startxref\n" + std::to_string(off[6]) + "\n%%EOF\n";
+    return Bytes(s.begin(), s.end());
+}
+
 // The Gold Box Companion's journal (Steam / SNEG): a synthetic Game.dat
 // The icon gallery's tables: every choice in range, no see-through colour
 // 0, every look distinct; apply / match round trips, the size untouched
@@ -3375,6 +3511,26 @@ static void test_journal()
         CHECK(journal::read_info(j2, i2) && journal::find(j2, i2, 'J', 3, &f2, &c2) && journal::piece(j2, i2, f2, pi2) &&
               pi2.w == kJpeg1W && pi2.h == kJpeg1H);
     }
+    // A cross-reference stream and an object stream (Champions' journal)
+    {
+        Bytes three = make_pdf3();
+        dax::MemorySource s3(three.data(), three.size());
+        static pdf::Doc d3;
+        int p3[2];
+        CHECK(pdf::open(s3, d3) && d3.root == 1 && strcmp(d3.id, "00000000000000000000000000000003") == 0);
+        CHECK((d3.offset[2] & pdf::kInStream) && !(d3.offset[4] & pdf::kInStream));
+        CHECK(pdf::pages(s3, d3, p3, 2) == 1 && p3[0] == 3);
+        CHECK(pdf::page_image(s3, d3, p3[0], im) && im.jpeg && im.width == kJpeg1W && im.data_len == sizeof kJpeg1 &&
+              memcmp(three.data() + im.data_at, kJpeg1, sizeof kJpeg1) == 0);
+        // (a damaged row filter: not read)
+        Bytes bad = three;
+        const std::string bs(bad.begin(), bad.end());
+        const size_t at = bs.find("stream\n", bs.find("/Type/XRef"));
+        CHECK(at != std::string::npos);
+        if (at != std::string::npos) bad[at + 7 + 2 + 5] = 9;       // (past the zlib and stored-block headers: row 0's filter)
+        dax::MemorySource sb(bad.data(), bad.size());
+        CHECK(!pdf::open(sb, d3));
+    }
     Bytes notpdf = {'%', 'P', 'S', '!'};
     dax::MemorySource nsrc(notpdf.data(), notpdf.size());
     CHECK(!pdf::open(nsrc, doc));
@@ -3464,6 +3620,21 @@ static void test_journal()
     CHECK(journal::find_mention("YOU RECORD HIS WORDS AS THE INTRODUCTION TO YOUR JOURNAL.", &n) == 'I' && n == 1);   // (Treasures)
     CHECK(journal::find_mention("YOU OVERHEAR TAVERN TALE #12 ", &n) == 'T' && n == 12);
     CHECK(journal::find_mention("YOU OVERHEAR TAVERN TALE 7", &n) == 'T' && n == 7);
+    // (Champions: the number printed after the words; "AS JOURNAL ENTRY")
+    CHECK(journal::find_mention("YOU HEAR TAVERN TALE 17", &n) == 'T' && n == 17);
+    CHECK(journal::find_mention("RECORD IT AS JOURNAL ENTRY 29.", &n) == 'J' && n == 29);
+    CHECK(journal::find_mention("AND YOU NOTE THIS AS JOURNAL ENTRY 42.", &n) == 'J' && n == 42);
+    // Champions' GOG journal (8,017,944 bytes): 88 entries and 57 tavern tales
+    {
+        const journal::Table* ck = journal::find_table(8017944u, "d589480a8abe1017dfb963d1fe03217a");
+        CHECK(ck != nullptr);
+        int js = 0, ts = 0;
+        for (int e = 0; ck && e < ck->n_entries; ++e) {
+            js += ck->entries[e].kind == 'J' && ck->entries[e].number <= 88;
+            ts += ck->entries[e].kind == 'T' && ck->entries[e].number <= 57;
+        }
+        CHECK(ck && js == 88 && ts == 57 && ck->n_entries == 145);
+    }
     CHECK(journal::find_mention("AND YOU RECORD IT IN JOURNAL ENTRY ", &n) == 0);
     // (Secret prints the number as a text of its own; play::heard joins them)
     CHECK(journal::find_mention(" AND YOU NOTE IT IN JOURNAL ENTRY 37.", &n) == 'J' && n == 37);
