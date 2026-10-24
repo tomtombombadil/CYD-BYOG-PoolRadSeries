@@ -719,7 +719,7 @@ int main(int argc, char** argv)
         }
         const int k = (int)(strchr(play::pm_saves, save[0]) - play::pm_saves);
         play::tap(((int)strlen(play::menu.prompt) + play::menu.start[k]) * 8 + 2, text::kMenuRow * 8 + 2, C);
-        for (int i = 0; i < play::pt->count; ++i) { char n[20]; play::pt->m[i].name(n, 20); printf("  %d: %-15s AC %d HP %d/%d race %d class %d saves %d %d %d %d %d levels %d %d %d %d %d %d %d\n", i, n, play::pt->m[i].ac(), play::pt->m[i].hp(), play::pt->m[i].hp_max(), play::pt->m[i].race(), play::pt->m[i].cls(), play::pt->m[i].rec[0xDF], play::pt->m[i].rec[0xE0], play::pt->m[i].rec[0xE1], play::pt->m[i].rec[0xE2], play::pt->m[i].rec[0xE3], play::pt->m[i].rec[0x109], play::pt->m[i].rec[0x10A], play::pt->m[i].rec[0x10B], play::pt->m[i].rec[0x10C], play::pt->m[i].rec[0x10D], play::pt->m[i].rec[0x10E], play::pt->m[i].rec[0x10F]); }
+        for (int i = 0; i < play::pt->count; ++i) { char n[20]; play::pt->m[i].name(n, 20); printf("  %d: %-15s AC %d HP %d/%d race %d/%d class %d saves %d %d %d %d %d levels %d %d %d %d %d %d %d\n", i, n, play::pt->m[i].ac(), play::pt->m[i].hp(), play::pt->m[i].hp_max(), play::pt->m[i].race(), play::pt->m[i].ext[party::kExtRace], play::pt->m[i].cls(), play::pt->m[i].rec[0xDF], play::pt->m[i].rec[0xE0], play::pt->m[i].rec[0xE1], play::pt->m[i].rec[0xE2], play::pt->m[i].rec[0xE3], play::pt->m[i].rec[0x109], play::pt->m[i].rec[0x10A], play::pt->m[i].rec[0x10B], play::pt->m[i].rec[0x10C], play::pt->m[i].rec[0x10D], play::pt->m[i].rec[0x10E], play::pt->m[i].rec[0x10F]); }
         if (getenv("SAVECHECK")) {      // SAVECHECK: each member's saves as the class tables make them
             play::MagicRules* mr = nullptr;
             if (play::load_rules(mr))

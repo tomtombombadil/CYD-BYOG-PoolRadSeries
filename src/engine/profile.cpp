@@ -2710,9 +2710,13 @@ const Profile kProfiles[] = {
                .name = kP | 0xE8F8, .ac_hp = kP | 0xE903, .cfg = "DKK.CFG", .save_which = kP | 0xED76,
                .slots = kP | 0xF0C0, .saving = kP | 0x1001D, .camp_menu = 0xF3AC, .makes_camp = kP | 0xD397,
                .add_from = kP | 0xD073, .add_sources = kP | 0xF017, .add_prompt = kP | 0xD088, .add = kP | 0xF036,
+               .overwrite = kP | 0xD32E, .qmark = kP | 0xD339,
                .drop = kP | 0xCFEA, .forever = kP | 0xCFF5, .sure = kP | 0xD000, .farewell = kP | 0xD02A,
+               .relief = kP | 0xD03F,
                .yes_no = kP | 0xEEAB, .cant_modify = kP | 0xD05E, .modify = kP | 0xED0D, .keep_exit = kP | 0xEFF8,
-               .load_from = kP | 0xED4C, .load_sources = kP | 0xF017},
+               .new_file = kP | 0xD344, .load_from = kP | 0xED4C, .load_sources = kP | 0xF017,
+               // (a member's functions ask "Pick Character " "Select" first - DOSBox)
+               .pick = kP | 0xECF8, .pick_menu = kP | 0xEEB6},
      // View Character's name tables (DS 0x08AD classes, 0x0A93 races in its
      // own order, 0x0B13 alignments, 0x0C28 sex, 0x0C62 its three coins,
      // 0x0C83 health) and its words (GAME.OVR 0x23CA0 on)
@@ -2896,7 +2900,7 @@ const Profile kProfiles[] = {
      .won = {},
      .variant = {.unfinished = true, .program_words = true, .bigpic_from = 0x70, .fight_unswapped = true,
                  .darkness_files = true, .party_menu_col = 9, .marker_file = "8X8D1.DAX", .marker_block = 204,
-                 .order_words = {0x23CB1, 0, 0}, .yell_words = {0, kP | 0xD8D1}, .dkk = true},
+                 .order_words = {0x23CB1, 0x23CBF, 0x23CCD}, .yell_words = {0, kP | 0xD8D1}, .dkk = true},
      .overland = nullptr,
      .font_file = "8X8D1.DAX",
      .joined = kDeathKnightsJoined, .n_joined = sizeof kDeathKnightsJoined / sizeof kDeathKnightsJoined[0]},
@@ -3593,8 +3597,15 @@ const ViewFacts& view_facts(games::Game g)
     static const ViewFacts kChampions = {{0x27A99, 0x27AA1, 0, 0x27AA8, 0x27AAE, 0x27AB4, 0x2999C, 0x299A8, 0x299C5,
                                           0x299CF, 0x29D3D, 0, 0, 0, 0, 0, 0, 0, 0},
                                          0, 0};
+    // Death Knights: Darkness's at its places (its menu DS 0x3276; "is not
+    // diseased.", "cast cure anyway? ", "is cured." its temple's)
+    static const ViewFacts kDeathKnights = {{0, 0, 0, 0, 0, 0, kP | 0xCD41, kP | 0xCD2C, kP | 0xCCAE, kP | 0xCD4C,
+                                             kP | 0xCF02, 0x26BBE, 0x26BCA, 0x26BD8, 0x26CAC, kP | 0xD6F3, kP | 0xD6A9,
+                                             kP | 0xD6D3, kP | 0xCF17},
+                                            0x6D, 0x6E, kP | 0xEF56};
     static const ViewFacts kNone = {};
     switch (g) {
+    case games::Game::DeathKnightsOfKrynn: return kDeathKnights;
     case games::Game::ChampionsOfKrynn: return kChampions;
     case games::Game::CurseOfTheAzureBonds: return kCurse;
     case games::Game::PoolOfRadiance: return kPool;

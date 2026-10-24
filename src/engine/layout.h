@@ -59,6 +59,9 @@ struct Tiles {
     // only the original's EGA mode leaves it out of the frame
     // (darkness_facts.md 7 1.5)
     bool vga = false;
+    // Death Knights: its tile routine draws colour 13 too (the red moon's
+    // full disc - DOSBox)
+    bool solid = false;
     // The slot of the block's tile n (-1: not kept)
     int slot(int n) const {
         if (n < 20) return n;

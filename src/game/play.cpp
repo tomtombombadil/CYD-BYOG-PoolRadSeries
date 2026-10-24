@@ -2590,7 +2590,9 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
     const layout::Tables& tb = d->tables;
     const layout::Tiles& tl = d->frame_tiles;
     const bool dk = darkness_files();
-    if (dk) {
+    if (dkk()) {
+        layout::character(c, tb, tl);   // (Death Knights: its own View frame - START 0x1482)
+    } else if (dk) {
         layout::outer(c, tb, tl);
     } else {
         static const uint8_t kBars[] = {0, 8, 16, 20, 23};
@@ -2621,7 +2623,7 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
     };
     // (Champions, DOSBox: the name cyan, the class with the knight's order,
     // "Experience " and the number on row 7 from column 20, no commas)
-    const bool kr = krynn();
+    const bool kr = krynn_rules();
     ch.name(t, sizeof t);
     put(c, t, 1, 1, kr ? 11 : !ch.in_combat() ? 12 : ch.enemy() ? 14 : 11);
     put(c, d->v_status, 20, 1, 15);
@@ -10465,7 +10467,9 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             // gems, jewelry - in Curse's places 4-6
             char tmp[8][16];
             memcpy(tmp, d->race, sizeof tmp);
-            for (int i = 0; i < 8; ++i) memcpy(d->race[i], tmp[party::race_to_darkness(static_cast<uint8_t>(i))], sizeof tmp[0]);
+            // (Death Knights: its own order kept - race_name reads its own number)
+            if (!dkk())
+                for (int i = 0; i < 8; ++i) memcpy(d->race[i], tmp[party::race_to_darkness(static_cast<uint8_t>(i))], sizeof tmp[0]);
             for (int i = 6; i >= 4; --i) memcpy(d->money[i], d->money[i - 4], sizeof d->money[0]);
             for (int i = 0; i < 4; ++i) d->money[i][0] = 0;
         }
@@ -13934,6 +13938,7 @@ __attribute__((noinline)) bool open_tiles()
                                 d->prof->variant.dkk ? 25 : 20) &&
              (d->prof->font_file || font::load(src, d->idx, d->font)) &&
              view3d::load_tiles(src, d->idx, d->prof->common_tiles_block, d->world.common);
+        d->frame_tiles.solid = d->prof->variant.dkk;
         f.close();
     }
     if (ok && d->prof->font_file) ok = load_font_file(d->prof->font_file, d->idx, d->font);

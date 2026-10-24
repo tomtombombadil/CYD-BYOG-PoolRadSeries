@@ -20,7 +20,7 @@ void put(pic::Canvas& c, const Tiles& t, int n, int col, int row)
         for (int x = 0; x < 8; ++x) {
             const int px = col * 8 + x;
             const uint8_t v = s[y * 8 + x];
-            if (px >= 0 && px < c.w && (v != kMask || t.vga)) c.set(px, py, v);
+            if (px >= 0 && px < c.w && (v != kMask || t.vga || t.solid)) c.set(px, py, v);
         }
     }
 }
