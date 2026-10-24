@@ -93,6 +93,15 @@ struct Tables {
     // in slots 20-30 (0-3 corners, 4 / 5 the bars, 6 / 7 junctions, 9 the
     // row-16 bar's left end - darkness_facts.md 7.1)
     bool chain = false;
+    // The frame tables' tile = this + value (Curse 30; Gateway 20 - its
+    // values 0-13 for the frame, 14-19 the 3D view's: gateway_facts.md 4)
+    uint8_t frame_base = kFrameTile;
+    // Gateway: the bamboo's joint pieces put next to where bars meet (its
+    // frame routines, GAME.OVR 0x4BC7B on - gateway_facts.md 4): tile 27
+    // on a side two rows (exploring: one and two) from a bar, 33 two
+    // columns either side of a divider on the bars it meets
+    bool joints = false;
+    uint8_t char_split[13] = {};     // Gateway's View Character column 19, rows 8-20
     // Treasures (port facts P7): its frames are pieces of BORD.DAX block 7
     // (tr_pieces, tr_size bytes: runs of BORD block 0 tile numbers drawn
     // across or down from a cell, 0xFF a gap, 0xFE a piece's end), each
@@ -151,5 +160,8 @@ void bars_col(pic::Canvas& c, const Tables& tb, const Tiles& t, int col, int r0,
 // The credits screen: the border and bars at `rows` (0: none); with boxes
 // (Pool) the border goes down to row 24
 void credits(pic::Canvas& c, const Tables& tb, const Tiles& t, const uint8_t rows[2]);
+// Gateway's View Character frame (GAME.OVR 0x4C06C): the outer frame, bars
+// at rows 8, 16 and 20, column 19 from row 8 to 20
+void character(pic::Canvas& c, const Tables& tb, const Tiles& t);
 
 } // namespace layout

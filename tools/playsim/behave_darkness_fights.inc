@@ -34,14 +34,14 @@ combat::Fighter& F(int i) { return play::fg->b.f[i]; }
 bool dk_boot()
 {
     if (!open_game()) return printf("  (dk_boot: open)\n"), false;
-    play::tap(24, (12 + pm_line('L')) * 8 + 2, C);
+    play::tap(24, (play::pm_row0() + pm_line('L')) * 8 + 2, C);
     if (play::load_where)               // ("Load from where?": Pools)
         play::tap(((int)strlen(play::menu.prompt) + play::menu.start[0]) * 8 + 2, text::kMenuRow * 8 + 2, C);
     const char* p = strchr(play::pm_saves, 'A');
     if (!p) return printf("  (dk_boot: no save A [%s])\n", play::pm_saves), false;
     tap_item(static_cast<int>(p - play::pm_saves));
     if (!play::pt->count) return printf("  (dk_boot: no party)\n"), false;
-    play::tap(24, (12 + pm_line('B')) * 8 + 2, C);
+    play::tap(24, (play::pm_row0() + pm_line('B')) * 8 + 2, C);
     for (int it = 0; it < 20000; ++it) {
         g_now += 20;
         play::tick(g_now, C);

@@ -50,8 +50,10 @@ void learn(party::Character& c, int spell) { classes::to_book(c, spell); }
 // The experience a new character starts with: 25,000 for one class, 12,500
 // for two, 8,333 for three - and for the magic-user / thief, as the
 // original gives it (its createPlayer: 8,333 for C/F/MU, F/MU/T and MU/T)
-uint32_t start_exp(int cls, bool secret = false, bool dk = false)
+uint32_t start_exp(int cls, bool secret = false, bool dk = false, uint32_t xp = 0)
 {
+    // (Gateway's: 3,000 shared by the classes - the magic-user / thief's too)
+    if (xp) return xp / (cls < ClericFighter ? 1 : (cls == ClericFighterMU || cls == FighterMUThief) ? 3 : 2);
     // (Darkness's, GAME.OVR 0x14D74: 1,500,001; two classes 750,000 - the
     // magic-user / thief too -, cleric / fighter / magic-user and fighter /
     // magic-user / thief 500,000)
@@ -353,7 +355,7 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
     const uint8_t lv = cls >= 0 && cls < 17 ? kStartLevels[cls] : 0;
     for (int k = 0; k < 8; ++k)
         if (lv & (1 << k)) r[kLevels + k] = 1;
-    put32(r, kExp, t.lay.pool ? 0 : start_exp(cls, t.lay.secret, t.lay.dk));
+    put32(r, kExp, t.lay.pool ? 0 : start_exp(cls, t.lay.secret, t.lay.dk, f.start_xp));
     if (r[kLevels + classes::Paladin]) {
         r[kCures] = 1;
         add_affect(c, f.prot_evil);
@@ -410,7 +412,7 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
     }
     memset(r + kMoney, 0, 14);
     const bool pool = t.lay.pool;
-    put32(r, kExp, pool ? 0 : start_exp(cls, t.lay.secret, t.lay.dk));
+    put32(r, kExp, pool ? 0 : start_exp(cls, t.lay.secret, t.lay.dk, f.start_xp));
 
     // Secret adds its races' adjustments to each roll (GAME.OVR 0x1EA28):
     // dwarves Con +1 Cha -1, elves Dex +1 Con -1, halflings Str -1 Dex +1
@@ -517,7 +519,7 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
     } else if (t.lay.dk) {
         put16(r, kMoney + 4 * 2, 200);          // Darkness: 200 platinum (GAME.OVR 0x15FB5)
     } else if (!t.lay.secret) {
-        put16(r, kMoney + 4 * 2, 300);          // 300 platinum (Secret's start with none)
+        put16(r, kMoney + 4 * 2, f.platinum ? f.platinum : 300);   // 300 platinum (Secret's start with none; Gateway 35)
     }
 
     if (t.lay.secret) {

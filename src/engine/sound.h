@@ -60,6 +60,13 @@ struct Clips {
     uint8_t  first = 0, last = 0;   // the effect numbers it plays: number n = block n - 1
     uint8_t  ids[16] = {};          // the engine's sounds (Id, Curse's numbers) -> this game's (0: none)
     bool     quiet_turns = false;   // turning left / right makes no step sound (Curse's does)
+    // Gateway (gateway_facts.md 16): effect n is block n (Darkness's n - 1:
+    // -1), and each effect has its own rate - a word a number in the
+    // program's data segment from this offset (0: hz for all)
+    int8_t   to_block = -1;
+    uint16_t rate_table = 0;
+    // The numbers its player plays as 9 (a bit a number; Gateway: 3 and 6)
+    uint16_t as_nine = 0;
 };
 
 // An effect's samples: the DAX block `block` of the source in a block of its

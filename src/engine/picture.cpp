@@ -58,6 +58,53 @@ void Canvas::put_row(int x, int y, int n, const uint8_t* in)
     for (int i = 0; i < n; ++i) set(x + i, y, in[i]);
 }
 
+int sf_extra(uint8_t flags)
+{
+    return ((flags & 1) ? 8 : 0) + ((flags & 2) ? 16 : 0) + ((flags & 8) ? 24 : 0);
+}
+
+namespace {
+uint8_t g_sf_map[16] = {0x10, 0x32, 0x54, 0x76, 0x98, 0xBA, 0xDC, 0xFE};
+
+// A Savage Frontier picture's colour map from its header's bytes past the
+// flags (`part`: what of them is in hand, from the byte after the flags)
+// into map, and the program's map with it; without one the program's
+void sf_take_map(uint8_t flags, const uint8_t* part, uint8_t* map)
+{
+    if (flags & 2) memcpy(g_sf_map, part + ((flags & 1) ? 8 : 0), 16);
+    memcpy(map, g_sf_map, 16);
+}
+} // namespace
+
+uint8_t* sf_map() { return g_sf_map; }
+bool g_sf_keep13 = true;
+void sf_keep13(bool on) { g_sf_keep13 = on; }
+void sf_map_reset()
+{
+    for (int i = 0; i < 8; ++i) g_sf_map[i] = static_cast<uint8_t>((2 * i) | (2 * i + 1) << 4);
+    memset(g_sf_map + 8, 0, 8);
+}
+
+void sf_row(const uint8_t* planes, int cols, const uint8_t* map, uint8_t* packed)
+{
+    for (int col = 0; col < cols; ++col) {
+        for (int k = 0; k < 8; k += 2) {
+            uint8_t two = 0;
+            for (int half = 0; half < 2; ++half) {
+                const int bit = 7 - (k + half);
+                int v = 0;
+                for (int p = 0; p < 5; ++p) v |= ((planes[p * cols + col] >> bit) & 1) << p;
+                // (13 stays 13: the see-through value, tested before the map -
+                // the big wall sets map it to black; DOSBox. Not for a head
+                // or body picture: sf_keep13)
+                const uint8_t m = v == 13 && g_sf_keep13 ? 13 : static_cast<uint8_t>((map[v >> 1] >> ((v & 1) * 4)) & 0x0F);
+                two = static_cast<uint8_t>(two | (half ? m : m << 4));
+            }
+            packed[col * 4 + k / 2] = two;
+        }
+    }
+}
+
 bool parse_header(const uint8_t* p, uint32_t raw_size, Header& out, uint32_t* extra_bytes)
 {
     if (raw_size < kHeaderSize) return false;
@@ -67,29 +114,98 @@ bool parse_header(const uint8_t* p, uint32_t raw_size, Header& out, uint32_t* ex
     out.y_cell = static_cast<uint16_t>(p[6] | (p[7] << 8));
     out.frames = p[8];
     memcpy(out.extra, p + 9, 8);
+    out.sf = out.pre = 0;
     // Nothing in these games is bigger than the screen.
     if (out.height == 0 || out.height > kScreenH) return false;
     if (out.width_cols == 0 || out.width_cols > kScreenW / 8) return false;
     if (out.frames == 0) return false;
     const uint64_t need = kHeaderSize + static_cast<uint64_t>(out.frames) * out.frame_bytes();
-    if (need > raw_size) return false;
-    if (need != raw_size) return false;
+    if (need != raw_size) {
+        // Gateway's format: the flags byte (bit 2 set, no high bits) and its parts
+        const uint8_t flags = p[9];
+        if (!(flags & 4) || (flags & 0xF0)) return false;
+        const int head = 10 + sf_extra(flags);
+        if (head < static_cast<int>(kHeaderSize)) return false;
+        out.sf = flags;
+        if (head + static_cast<uint64_t>(out.frames) * out.stored_bytes() != raw_size) {
+            out.sf = 0;
+            return false;
+        }
+        out.pre = static_cast<uint8_t>(head - kHeaderSize);
+    }
     if (extra_bytes) *extra_bytes = 0;
     return true;
+}
+
+bool begin_frames(dax::RleReader& r, const Header& h, uint8_t* map)
+{
+    if (!h.sf) return true;
+    uint8_t part[48];
+    memcpy(part, h.extra + 1, 7);                  // (the bytes after the flags in the 17)
+    if (h.pre > sizeof part - 7 || r.read(part + 7, h.pre) != h.pre) return false;
+    sf_take_map(h.sf, part, map);
+    return true;
+}
+
+bool next_frame(dax::RleReader& r, const Header& h, const uint8_t* map, uint8_t* out)
+{
+    if (!h.sf) return r.read(out, h.frame_bytes()) == h.frame_bytes();
+    const int cols = h.width_cols;
+    uint8_t planes[5 * 4];
+    uint8_t* big = cols > 4 ? new (std::nothrow) uint8_t[5u * cols] : nullptr;
+    uint8_t* p = cols > 4 ? big : planes;
+    if (!p) return false;
+    bool ok = true;
+    for (int row = 0; ok && row < h.height; ++row) {
+        ok = r.read(p, 5u * cols) == 5u * cols;
+        if (ok) sf_row(p, cols, map, out + row * cols * 4);
+    }
+    delete[] big;
+    return ok;
+}
+
+bool read_frame(dax::RleReader& r, const Header& h, int frame, uint8_t* out)
+{
+    if (frame < 0 || frame >= h.frames) return false;
+    uint8_t map[16];
+    if (!begin_frames(r, h, map)) return false;
+    const uint32_t skip = static_cast<uint32_t>(frame) * h.stored_bytes();
+    if (r.skip(skip) != skip) return false;
+    return next_frame(r, h, map, out);
 }
 
 bool draw(dax::RleReader& r, const Header& h, int frame, Canvas& c, int x, int y, int mask)
 {
     if (frame < 0 || frame >= h.frames) return false;
-    const uint32_t skip = static_cast<uint32_t>(frame) * h.frame_bytes();
+    uint8_t map[16];
+    if (!begin_frames(r, h, map)) return false;
+    const uint32_t skip = static_cast<uint32_t>(frame) * h.stored_bytes();
     if (r.skip(skip) != skip) return false;
     const int row_bytes = h.width_cols * 4;
-    for (int row = 0; row < h.height; ++row) {
+    uint8_t* planes = nullptr;
+    uint8_t* packed = nullptr;
+    if (h.sf) {
+        planes = new (std::nothrow) uint8_t[9u * h.width_cols];
+        if (!planes) return false;
+        packed = planes + 5 * h.width_cols;
+    }
+    bool ok = true;
+    for (int row = 0; ok && row < h.height; ++row) {
         const int py = y + row;
         const bool row_in = py >= 0 && py < c.h;
+        if (h.sf) {
+            if (r.read(planes, 5u * h.width_cols) != 5u * h.width_cols) {
+                ok = false;
+                break;
+            }
+            sf_row(planes, h.width_cols, map, packed);
+        }
         for (int i = 0; i < row_bytes; ++i) {
-            const int b = r.next();
-            if (b < 0) return false;
+            const int b = h.sf ? packed[i] : r.next();
+            if (b < 0) {
+                ok = false;
+                break;
+            }
             if (!row_in) continue;
             const int px = x + i * 2;
             const uint8_t hi = static_cast<uint8_t>(b >> 4), lo = static_cast<uint8_t>(b & 0x0F);
@@ -97,7 +213,8 @@ bool draw(dax::RleReader& r, const Header& h, int frame, Canvas& c, int x, int y
             if (px + 1 >= 0 && px + 1 < c.w && lo != mask) c.set(px + 1, py, lo);
         }
     }
-    return true;
+    delete[] planes;
+    return ok;
 }
 
 void draw_pixels(const uint8_t* data, const Header& h, Canvas& c, int x, int y, int mask, int from, int to)
@@ -116,8 +233,50 @@ void draw_pixels(const uint8_t* data, const Header& h, Canvas& c, int x, int y, 
     }
 }
 
-bool parse_anim(dax::RleReader& r, uint32_t raw_size, Anim& out)
+namespace {
+// Gateway's animations: per frame u32 delay, 9 header bytes, the flags and
+// their parts, the planes
+bool parse_sf_anim(dax::RleReader& r, uint32_t raw_size, Anim& out)
 {
+    out.frames = 0;
+    const int n = r.next();
+    if (n <= 0 || n > kMaxAnimFrames) return false;
+    uint32_t at = 1;
+    for (int f = 0; f < n; ++f) {
+        uint8_t hd[14];
+        if (r.read(hd, sizeof hd) != sizeof hd) return false;
+        at += sizeof hd;
+        Header& h = out.frame[f];
+        out.delay[f] = static_cast<uint32_t>(hd[0] | (hd[1] << 8) | (hd[2] << 16)) | (static_cast<uint32_t>(hd[3]) << 24);
+        h.height = static_cast<uint16_t>(hd[4] | (hd[5] << 8));
+        h.width_cols = static_cast<uint16_t>(hd[6] | (hd[7] << 8));
+        h.x_cell = static_cast<uint16_t>(hd[8] | (hd[9] << 8));
+        h.y_cell = static_cast<uint16_t>(hd[10] | (hd[11] << 8));
+        h.frames = 1;
+        h.sf = hd[13];
+        h.pre = 0;
+        if (!(h.sf & 4) || (h.sf & 0xF0) || h.height == 0 || h.height > kScreenH || h.width_cols == 0 ||
+            h.width_cols > kScreenW / 8)
+            return false;
+        const int ext = sf_extra(h.sf);
+        uint8_t part[48];
+        if (at + ext > raw_size || r.read(part, ext) != static_cast<uint32_t>(ext)) return false;
+        if (f == 0) sf_take_map(h.sf, part, out.map);
+        at += ext;
+        out.data_at[f] = at;
+        const uint32_t fb = h.stored_bytes();
+        if (at + fb > raw_size || r.skip(fb) != fb) return false;
+        at += fb;
+    }
+    if (at != raw_size) return false;
+    out.frames = n;
+    return true;
+}
+} // namespace
+
+bool parse_anim(dax::RleReader& r, uint32_t raw_size, Anim& out, bool sf)
+{
+    if (sf) return parse_sf_anim(r, raw_size, out);
     out.frames = 0;
     const int n = r.next();
     if (n <= 0 || n > kMaxAnimFrames) return false;
@@ -150,6 +309,35 @@ bool draw_anim(dax::ByteSource& src, const dax::Index& idx, const dax::Entry& e,
 {
     if (frame < 0 || frame >= a.frames) return false;
     const Header& h = a.frame[frame];
+    if (h.sf) {
+        // Gateway's: row by row - the frame's planes (past the first: XORed
+        // with the first frame's, read alongside) through the first frame's map
+        const int cols = h.width_cols;
+        const bool x0 = xor_first && frame > 0 && a.frame[0].width_cols == cols;
+        dax::RleReader r(src, idx, e), r0(src, idx, e);
+        if (r.skip(a.data_at[frame]) != a.data_at[frame]) return false;
+        if (x0 && r0.skip(a.data_at[0]) != a.data_at[0]) return false;
+        const uint32_t n = 5u * cols;
+        uint8_t* planes = new (std::nothrow) uint8_t[2 * n + 4u * cols];
+        if (!planes) return false;
+        uint8_t* first = planes + n;
+        uint8_t* packed = first + n;
+        Header one = h;
+        one.height = 1;
+        bool ok = true;
+        for (int row = 0; ok && row < h.height; ++row) {
+            ok = r.read(planes, n) == n;
+            if (ok && x0 && row < a.frame[0].height) {
+                ok = r0.read(first, n) == n;
+                for (uint32_t i = 0; ok && i < n; ++i) planes[i] ^= first[i];
+            }
+            if (!ok) break;
+            sf_row(planes, cols, a.map, packed);
+            draw_pixels(packed, one, c, x, y + row, mask, from, to);
+        }
+        delete[] planes;
+        return ok;
+    }
     const uint32_t n = h.frame_bytes();
     uint8_t* buf = new (std::nothrow) uint8_t[n];
     if (!buf) return false;

@@ -68,6 +68,11 @@ struct Facts {
     // every magic-user spell with slots of level mu_all_slot
     const uint8_t (*mu_by_slot)[8] = nullptr;
     uint8_t  mu_by_slot_from = 0, mu_by_slot_n = 0, mu_all_levels = 0, mu_all_slot = 0;
+    // Gateway (its createPlayer, GAME.OVR 0x2650E +0xF63): a new character's
+    // experience - this for one class, shared evenly by two or three - and
+    // platinum (0: the game's own - Curse's 25,000 and 300)
+    uint32_t start_xp = 0;
+    uint16_t platinum = 0;
 };
 
 // Starts a character: race, sex, class, alignment chosen. Sets the

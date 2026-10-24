@@ -1653,6 +1653,120 @@ the scripts' changed ops, the rule tables, fights, the rest.
   The canvas parks to the card through a 2 KB internal buffer (the S3's
   SD/MMC DMA rule). The Look / Walk tests stay in EGA.
 
+## 6e. Gateway to the Savage Frontier (Tom, 2026-10-23: started after Darkness)
+
+Facts in the Project's claude/gateway_facts.md (from the player's GOG
+files, its program and the original in DOSBox, EGA; nothing from the game
+in the repo). Its program is Curse's one step on: GAME.EXE (EXEPACK, data
+segment at image 0x4C70; run as `GAME UseStart`) + GAME.OVR (51 overlays),
+422-byte records, Curse's words and tables at other places. Areas 2-6
+(ECL2-6 ...) and shared files without a number (PIC, BIGPIC, WALLDEF,
+8X8D). Built a chunk a commit, Play off its page until it plays
+(`variant.unfinished`).
+
+- **The profile, pictures, title, party menu.** GAME.EXE (36,603 / 41,168
+  bytes) is recognised. Its pictures are its own format (`variant.sf_pics`,
+  picture.h): the 4-bit header's first 9 bytes, a flags byte and its parts
+  - an EGA colour map of 32 nibbles among them - then five bit planes a row
+  (5 bits a pixel, drawn through the map; a picture without a map uses the
+  last one read); its animations the same a frame, frames past the first
+  XORed with the first. `pic::draw`, `read_frame` / `begin_frames` /
+  `next_frame` and the animations read both formats. Its frame is Curse's
+  tables with the tiles from 20 (`variant.frame_base`). The title: TITLE 1-5
+  (Beyond, SSI, Forgotten Realms, the game's, the credits - a picture),
+  3 / 3 / 10 / 20 / 20 s, then "Gateway v1.2 " "Play Demo". The party menu
+  from row 15 (`variant.party_menu_row`), 14 entries (Icon Select;
+  "initialize JoyStick/Mouse" - its key is J, left out as Secret's). The
+  title pictures, the version line and the party menu's frame, prompt and
+  lines match DOSBox's EGA screens pixel for pixel.
+- **The 3D view, Begin, the scripts' calls.** A family's file without a
+  number first, then the area's (`variant.common_files`: PIC, WALLDEF,
+  8X8D ...). Its big wall sets (210 tiles) keep their own tile numbers
+  (`variant.per_set_walls`, `World::per_set`, tiles past 70 on the heap -
+  let go while a fight parks the view); value 13 stays see-through through
+  its pictures' maps. Its frame's joint pieces where bars meet
+  (`layout::Tables::joints`). CALL 0x809 ("Press Enter to continue.") and
+  0x80C (Yes / No into 0x7F79); its '~'-marked menu words (`Menu::marked`);
+  its text windows let a word's space hang past the edge
+  (`text::set_hanging_space`); the party menu from row 23 - lines (12-15),
+  Icon Select (the icon editor), no Add past 6. Loading a save made by the
+  original (Curse's format), Begin into Yartar (PIC 5, the texts, the
+  prompt, the room at 1,10) and the start room's view match DOSBox.
+- **View, items, character rules, creation.** View Character in its own
+  layout (`layout::character`: bars at rows 8 / 16 / 20, the split column
+  from DS 0x16C8). ITEMS.1's rows are 24 bytes (`items.types_stride`).
+  Curse's rule tables at Gateway's places; a new character has 3,000
+  experience shared by its classes and 35 platinum (`create.start_xp`,
+  `platinum`). Its questions start on Yes, a few with a yellow prompt
+  (`ask_yellow`); "Reroll stats?" on No.
+- **Party menu, training.** A member's functions ask "Pick Character
+  Select Exit" first (`party.pick`); training asks who pays its 1000 gp
+  when the trainee can't (`party.who_pays`).
+- **Shops, temple, magic, camp.** Their menus built from words that apply
+  (`kGatewayJoined` + `keep_words`): the shop's Items (the items screen,
+  Sell / Id / Trade, back to the shop), the temple's Heal list with its bar,
+  the price in the text rows. Magic's headings "1st Level Magic-User
+  Spells" (`magic.kind_names`, `heading_word`), lists starting on their last
+  spell, "to memorize" shown before the question. The camp's picture (PIC
+  29), Alter with Level. All match DOSBox's screens.
+- **Fights.** Curse's rules and tables at Gateway's places, Darkness's
+  two-row menu shape, the field's pictures drawn with 0 and 8 swapped
+  (`variant.field_swap`; the icon editor's 8 black, `eight_black`), the
+  treasure's picture (PIC 1) and menu. A fight's screens, pages and
+  results match DOSBox. The budget fight (`RUNAT=91B1 FIGHT=1`, 6
+  bandits): 137.4 KB at its highest; 30 goblins (MONSWAP=6:8:30, 22
+  placed): 135.9 KB (sounds included).
+- **Behaviour checks:** sweep's `behave gateway` (-DCYD_TEST_HOOKS
+  -DBEHAVE_GATEWAY, GAME=8; ONLY= create, menus): every race / class /
+  alignment / sex made with the dice high and low (experience, platinum,
+  levels against the program's class records) and the shop's, temple's and
+  treasure's menus in every state, against a scratch oracle from the
+  program's tables and overlays (`oracle_gateway.txt`, never in the repo).
+- **The wilderness** (area 6, area word 0x4BE6 = 0; `variant.tile_wild`,
+  `gw_wild`): the view window shows 11 x 11 squares of the region's map
+  (kept inside it), each GEO plane-0 byte a tile of LOAD PIECES' three 8X8D
+  sets (tiles only, no WALLDEF), the party an arrow; LOAD FILES loads the map
+  outdoors too (`OpSet::files_outdoors`); "Move Cast View Encamp Search
+  Look", the move mode's "Move (Use arrow keys):" (`variant.move_prompt`).
+  Its step scripts read the way ahead (area word 0x4CF6, `gw_way_ahead`)
+  and the ground ahead through CALL 0xC01E / 0xC01A, which take the
+  square's values at once (`OpSet::step_square`, `Host::square`); a step
+  out of a square there follows the side's door state alone. A save made
+  there loads back into it. Script address 0x03B2 is the facing as C04D
+  (`OpSet::facing_alias`: the gate a city is entered by). The move mode
+  stays on through the scripts' messages, with its prompt in 3D too.
+  Matches DOSBox pixel for pixel (the map, the arrow, the position and
+  clock, the move mode's line) along the same walk and back into Yartar
+  (0,7 E at the west gate); encounters and outdoor fights run (the
+  snakes' fight 129.3 KB at its highest, its sounds included). Open: after the wilderness's
+  start the original has MERL selected, the engine ARNOLD.
+- **The vault** (Yartar's, 9,5: SAVE 1 [4CFC] + COMBAT as Secret's;
+  GAME.OVR overlay 0x4E7F): the treasure screen under the keeper's head and
+  body over what VAULT.DAT in the save folder keeps (7 coin counts, 63-byte
+  items; `vault.<slot>` with each saved game, as Darkness's), "Deposit
+  [Withdraw] [Vault] [Pool] [Share] Exit" (`vault.menu6`): Deposit = View
+  with Deposit in Drop's place, Withdraw = Take, Vault = the selected's
+  items, Pool / Share. View's coins are picked on its money panel (as
+  Secret's), its question green, the panel's " Select" (`coin_select`). A
+  head or body picture's raw 13s go through its colour map
+  (`pic::sf_keep13`). Every vault screen matches DOSBox pixel for pixel
+  (deposit, withdraw, share, the file's bytes).
+- **Sounds.** DigPak samples as Darkness's (`sound::Clips`): ZOUNDS.DAX
+  block n = effect n, 2-12 (`to_block` 0), each at its own rate from the
+  program's table (DS 0x1794: 4,000-9,000 Hz; `rate_table`), 3 and 6 played
+  as 9 (`as_nine`); the program's numbers are Curse's (steps and turns 10,
+  hit 7, miss 9 ...). A script's CALL 0xB200 plays the effect 0x03DE holds
+  (`OpSet::sound_word`; 0x80 up is music, not played). No music (MUSIC.DAX).
+- **The journal.** The Steam / SNEG release's companion (GBC/Games/08.
+  Gateway to the Savage Frontier/Game.dat in the game's folder) makes it
+  with the existing code (62 entries; checked on the GOG companion's copy of
+  Game.dat); its "...AS JOURNAL" "ENTRY #32." mentions are found. The GOG
+  release: the PDF's book view when the PDF is on the card - no entry table
+  for its PDF yet (`journal_tables.cpp` has Curse's and Pool's), and the GOG
+  companion at /GOLDBOX/GBC isn't used for journals (no JE pictures there;
+  a choice for Tom).
+- **Not yet:** no music (MUSIC.DAX: the original's "0x80 up" sounds).
+
 ## 6f. Treasures of the Savage Frontier (2026-10-23: started after Darkness)
 
 Facts: the Project's claude/treasures_facts.md (the survey) and
@@ -2055,6 +2169,18 @@ the game's Settings (As Original: all of them).
   Heal's two lines show together (rows 21-22), the original one after the
   other. (v0.109.0's Delayed Blast Fireball at once: as the original
   since v0.116.0.)
+- **Gateway to the Savage Frontier** (being built): its party menu's
+  "initialize JoyStick/Mouse" isn't shown (its rows stay where the
+  original puts them) and the menu's own "SELECT" isn't printed; the
+  party menu's selected member is drawn white, the cursor line as the
+  other games'. Add also lists saved games' members (as Curse's). In the
+  wilderness the movement keys step and turn without choosing Move first
+  (the original's arrow keys need its move mode; the side-steps and Area
+  do nothing there), and a tap on a square beside the party's arrow turns
+  that way, on the square ahead steps. After coins are put down from View
+  (the vault's Deposit, Drop) its Encumbrance shows the new load at once
+  (the original only when View opens again). No original mistake against
+  AD&D found so far (none behind Game Fixes yet).
 - **Controls and screens**: taps on menu words, list lines and combat
   squares; on-screen keys (movement pad, cursor keys - Up / Down / Left /
   Right / Select - Game, Look, and on 320x240 Map: the area map over

@@ -83,6 +83,22 @@ bool load_font_file(const char* name, dax::Index& idx, font::Font& out)
 
 void area_file(char* out, size_t cap, const char* stem, int area) { snprintf(out, cap, "%s%d.DAX", stem, area); }
 
+// The family's file holding `block`: Gateway's without a number first, then
+// the area's (gateway_facts.md 8); the area's for the others
+bool open_family(const char* stem, int area, int block, plat::File& f)
+{
+    char name[24];
+    if (d->prof->variant.common_files) {
+        snprintf(name, sizeof name, "%s.DAX", stem);
+        if (open_dax(name, f)) {
+            if (d->idx.find(static_cast<uint8_t>(block))) return true;
+            f.close();
+        }
+    }
+    area_file(name, sizeof name, stem, area);
+    return open_dax(name, f);
+}
+
 // Every map the area scripts load, with their wall sets
 void find_maps()
 {
@@ -167,7 +183,11 @@ bool select_map(int i)
     const MapRef& r = d->maps[i];
     view3d::World& w = d->world;
     for (auto& ws : w.walls) ws.loaded = false;
-    for (auto& ts : w.sets) ts.count = 0;
+    for (auto& ts : w.sets) {
+        ts.count = 0;
+        view3d::free_extra(ts);
+    }
+    w.per_set = d->prof->variant.per_set_walls;
     d->map.loaded = false;
 
     char name[24];
@@ -202,28 +222,25 @@ bool select_map(int i)
     // own too, and the script's numbers for those are then not loaded
     int parts[3] = {0, 0, 0};
     bool filled[3] = {false, false, false};
-    area_file(name, sizeof name, "WALLDEF", r.area);
-    if (open_dax(name, f)) {
+    for (int s = 0; s < 3; ++s) {
+        if (r.load.walls[s] == ecl::kNone || filled[s]) continue;
+        if (!open_family("WALLDEF", r.area, r.load.walls[s], f)) continue;
         plat::FileSource src(f);
-        for (int s = 0; s < 3; ++s) {
-            if (r.load.walls[s] == ecl::kNone || filled[s]) continue;
-            int n = 0;
-            if (view3d::load_walls(src, d->idx, s + 1, r.load.walls[s], w, &n)) {
-                parts[s] = n;
-                for (int k = 0; k < n; ++k) filled[s + k] = true;
-            }
+        int n = 0;
+        if (view3d::load_walls(src, d->idx, s + 1, r.load.walls[s], w, &n)) {
+            parts[s] = n;
+            for (int k = 0; k < n; ++k) filled[s + k] = true;
         }
         f.close();
     }
-    area_file(name, sizeof name, "8X8D", r.area);
-    if (open_dax(name, f)) {
-        plat::FileSource src(f);
-        for (int s = 0; s < 3; ++s)
-            for (int k = 0; k < parts[s]; ++k)
-                view3d::load_tiles(src, d->idx, static_cast<uint8_t>(view3d::tiles_block(r.load.walls[s], parts[s], k)),
-                                   w.sets[s + k]);
-        f.close();
-    }
+    for (int s = 0; s < 3; ++s)
+        for (int k = 0; k < parts[s]; ++k) {
+            const int tb = view3d::tiles_block(r.load.walls[s], parts[s], k);
+            if (!open_family("8X8D", r.area, tb, f)) continue;
+            plat::FileSource src(f);
+            view3d::load_tiles(src, d->idx, static_cast<uint8_t>(tb), w.sets[s + k], w.per_set);
+            f.close();
+        }
     plat::log("[walk] map %d: area %d script %d GEO %d walls %d %d %d, geo %s\n", i, r.area, r.script, r.load.geo,
                   r.load.walls[0], r.load.walls[1], r.load.walls[2], d->map.loaded ? "ok" : "missing");
     pick_start();
@@ -344,7 +361,10 @@ const char* open(const char* data_dir, games::Game g)
 
 void close()
 {
-    if (d) view3d::back_free(d->world);
+    if (d) {
+        view3d::back_free(d->world);
+        for (view3d::TileSet& ts : d->world.sets) view3d::free_extra(ts);
+    }
     delete d;
     d = nullptr;
 }

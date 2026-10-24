@@ -114,6 +114,7 @@ public:
     virtual void redraw() = 0;                          // the 3D view again (a picture goes), position
     virtual void clear_box() { redraw(); }              // the exploring frame again, the picture kept
     virtual void anim_step() {}                         // the event picture's next frame (CALL 6803)
+    virtual void square() {}                            // the square's flags and wall ahead again (Gateway's CALL C01E / C01A)
     // Encounters: the wall type on side `dir` of square (x, y) (0 = none),
     // to see how far the party can see; and a monster's sprite (SPRITn
     // block `id`) drawn in a freshly drawn 3D view, `distance` 0-2 away

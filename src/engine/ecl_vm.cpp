@@ -326,6 +326,7 @@ uint16_t Vm::get(uint16_t a) const
         return word_at(s_.area2, (a - 0x7C00u) * 2);
     }
     if (a >= kBase && a < kBase + s_.code_cap) return code_of(s_)[a - kBase];
+    if (set_.facing_alias && a == set_.facing_alias) a = 0xC04D;
     switch (a) {
     case 0x033D: return static_cast<uint16_t>(s_.dir);
     case 0x03DE: return sound_kind_;
@@ -376,6 +377,7 @@ void Vm::set(uint16_t a, uint16_t v)
         code_of(s_)[a - kBase] = static_cast<uint8_t>(v);
         return;
     }
+    if (set_.facing_alias && a == set_.facing_alias) a = 0xC04D;
     switch (a) {
     case 0x03DE: sound_kind_ = v; break;
     case 0xC04B: s_.x = static_cast<int8_t>(v) & 15; s_.moved = true; break;
@@ -831,6 +833,9 @@ Stop Vm::answer(int v)
         break;
     case 0x39:                          // WHO: that member is selected
         if (party_ && v >= 0 && v < party_->count) party_->selected = v;
+        break;
+    case 0x2D:                          // (Gateway's CALL 0x80C: Yes 0, No 1)
+        set(dest_, static_cast<uint16_t>(v ? 1 : 0));
         break;
     default: break;
     }
@@ -1460,7 +1465,7 @@ Stop Vm::step()
         const int a = value(o[0]) & 0xFF, b = value(o[1]) & 0xFF, c = value(o[2]) & 0xFF;
         const bool dungeon = get(0x4BE6) != 0;
         if (op_ == 0x21) {
-            if (a != 0xFF && a != 0x7F && dungeon) {
+            if (a != 0xFF && a != 0x7F && (dungeon || set_.files_outdoors)) {
                 set(0x4BC5, static_cast<uint16_t>(a));
                 h_.load_map(a);
                 set(0x7EC9, 0);
@@ -1634,14 +1639,39 @@ Stop Vm::step()
             if (speed == 0) speed = 4;
             pause_ms_ = static_cast<uint32_t>(speed) * 100;
             return wait_for(Wait::Pause);
+        } else if (w == set_.sound_call && set_.sound_word) {
+            // Gateway: the effect 0x03DE names (its own number); 0x80 up music
+            if (sound_kind_ < 0x80) h_.game_sound(sound_kind_);
         } else if (w == set_.sound_call) {
             h_.sound(sound_kind_ == 10 ? 0x0B : 0x0A);         // a step; 10: the fireball's roar
+        } else if (set_.press_call && w == set_.press_call) {
+            // Gateway: "Press Enter to continue." and a key
+            prompt_ = word(kWDkPressKey);
+            return wait_for(Wait::Key);
+        } else if (set_.yes_no_call && w == set_.yes_no_call) {
+            // Gateway: Yes / No (the answer into 0x7F79: 0 Yes, 1 No)
+            static char yes[8] = "Yes", no[8] = "No";
+            char yn[24];
+            int k = 0;
+            for (const char* q = word(kWDkYesNo); *q && k < 23; ++q)
+                if (*q != '~') yn[k++] = *q;            // (its marks)
+            yn[k] = 0;
+            if (*yn) sscanf(yn, "%7s %7s", yes, no);
+            n_items_ = 2;
+            item_[0] = yes;
+            item_[1] = no;
+            prompt_ = "";
+            dest_ = 0x7F79;
+            return wait_for(Wait::Menu);
         } else if (w == 0xC018) {
             // The wall type ahead (worked out anyway)
         } else if (w == 0xC01E) {
             s_.x = (s_.x + (s_.dir == 2 ? 1 : s_.dir == 6 ? -1 : 0)) & 15;
             s_.y = (s_.y + (s_.dir == 4 ? 1 : s_.dir == 0 ? -1 : 0)) & 15;
             s_.moved = true;
+            if (set_.step_square) h_.square();
+        } else if (w == 0xC01A && set_.step_square) {
+            h_.square();
         } else if (!set_.pool_map || w == 0x8000 || w == 0x8001) {
             // (Pool's program does nothing for addresses it doesn't know;
             // 0x8000 / 0x8001 are its duels)

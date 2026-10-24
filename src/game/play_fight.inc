@@ -439,7 +439,7 @@ uint8_t* load_pic4(const char* file, int block, int frame, int* w, int* h)
             const uint32_t fb = ph.frame_bytes();
             out = static_cast<uint8_t*>(malloc(fb));
             bool ok = out != nullptr;
-            for (int k = 0; ok && k <= frame; ++k) ok = r.read(out, fb) == fb;
+            ok = ok && pic::read_frame(r, ph, frame, out);
             if (!ok) {
                 free(out);
                 out = nullptr;
@@ -454,6 +454,8 @@ uint8_t* load_pic4(const char* file, int block, int frame, int* w, int* h)
 }
 
 // Draws a 4-bit picture clipped to (cx0, cy0)-(cx1, cy1): mirrored, colour 0 see-through
+bool blit_swap = false;             // Gateway's fight: its pictures' 0 and 8 swapped as they're drawn
+
 void blit4(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y, bool mirror, bool see_through, int cx0,
            int cy0, int cx1, int cy1)
 {
@@ -468,7 +470,7 @@ void blit4(pic::Canvas& c, const uint8_t* p, int w, int h, int x, int y, bool mi
             const int px = mirror ? w - 1 - i : i;
             const int v = nib(p, w, px, j);
             if (see_through && (mk ? masked(mk, w, px, j) : v == 0)) continue;
-            c.set(xx, yy, static_cast<uint8_t>(v));
+            c.set(xx, yy, static_cast<uint8_t>(blit_swap && (v == 0 || v == 8) ? v ^ 8 : v));
         }
     }
 }
@@ -626,6 +628,7 @@ Fight* make_fight()
 // the fight (end_fight_art). False: the card couldn't take them.
 static_assert(kTiles * kTileBytes <= sizeof(view3d::World), "the field's tiles must fit in the 3D view's memory");
 void world_park_path(char* out, size_t cap) { snprintf(out, cap, "%s/_CYD/WORLD.TMP", games::kRootDir); }
+bool world_big = false;             // (Gateway: big wall sets' tiles freed while parked - read again after)
 bool park_world()
 {
     if (world_parked || !plat::card_ready()) return false;
@@ -636,6 +639,14 @@ bool park_world()
     // (Darkness's background picture, 3.8 KB, isn't drawn in a fight
     // either: it goes, and reads again when the 3D view is next drawn)
     view3d::back_free(d->world);
+    // (Gateway's big wall sets' far tiles go too: read again after the fight)
+    bool big = false;
+    for (view3d::TileSet& ts : d->world.sets)
+        if (ts.extra) {
+            view3d::free_extra(ts);
+            big = true;
+        }
+    world_big = big;
     // (Treasures: its wall slots' tiles on the heap go too - read again after)
     if (d->world.tr) view3d::tr_free(d->world);
     const bool ok = f.write(reinterpret_cast<const uint8_t*>(&d->world), sizeof(view3d::World)) == sizeof(view3d::World);
@@ -653,9 +664,11 @@ void unpark_world()
     if (f) f.close();
     world_parked = false;
     if (ok && d->world.tr && host) host->slots_done();     // (Treasures: the slots' tiles again; none when closing)
-    if (!ok) {
-        // (the card lost it: the walls read again from the game's files)
-        log_error("The 3D view's walls couldn't be read back after a fight: reloaded.");
+    if (!ok || world_big) {
+        // (the card lost it - or Gateway's big sets' tiles were let go: the
+        // walls read again from the game's files)
+        if (!ok) log_error("The 3D view's walls couldn't be read back after a fight: reloaded.");
+        world_big = false;
         for (int i = 0; i < 3; ++i)
             if (d->wall_block[i] >= 0 && d->wall_set[i] > 0) host->load_walls(d->wall_set[i], d->wall_block[i]);
     }
@@ -686,8 +699,12 @@ bool park_code()
     f.close();
     if (!ok) return false;
     arena.code_parked = true;
-    arena.at[0] = ecl::code_of(d->gs);
-    arena.cap[0] = d->gs.code_cap;
+    // (from an 8-byte boundary: the code follows GameState's 4-byte
+    // code_cap, and the fighters' records hold pointers)
+    uint8_t* base = ecl::code_of(d->gs);
+    const uint32_t pad = static_cast<uint32_t>((8u - (reinterpret_cast<uintptr_t>(base) & 7u)) & 7u);
+    arena.at[0] = base + pad;
+    arena.cap[0] = d->gs.code_cap > pad ? d->gs.code_cap - pad : 0;
     arena.used[0] = 0;
     return true;
 }
@@ -871,8 +888,12 @@ void load_frames(const char* file, int at, int n)
         pic::Header ph;
         if (r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_header(hdr, e->raw_size, ph) && ph.width_px() == kSq &&
             ph.height == kSq)
-            for (int k = 0; k < n && k < ph.frames && at + k < 40; ++k)
-                if (r.read(fg->tile[at + k], kTileBytes) != kTileBytes) break;
+        {
+            uint8_t map[16];
+            if (pic::begin_frames(r, ph, map))
+                for (int k = 0; k < n && k < ph.frames && at + k < 40; ++k)
+                    if (!pic::next_frame(r, ph, map, fg->tile[at + k])) break;
+        }
     }
     f.close();
 }
@@ -1090,11 +1111,29 @@ void end_fight_art()
 }
 
 // ---- Drawing
-bool fight_palette_on = false;
-
-void palette_fight(bool on)
+// The results' "press <enter>/<return> to continue" (Gateway's lit as a
+// menu's one choice - DOSBox)
+void press_enter_line(pic::Canvas& c)
 {
-    fight_palette_on = on && !d->prof->variant.fight_unswapped;
+    clear_menu_line(c);
+    if (gateway()) {
+        const char* t = fw(profile::kPressEnter);
+        c.fill(0, text::kMenuRow * 8, static_cast<int>(strlen(t)) * 8, 8, 15);
+        font::draw_text(c, d->font, t, 0, text::kMenuRow, 0, -1);
+        return;
+    }
+    put(c, fw(profile::kPressEnter), 0, text::kMenuRow, 15);
+}
+
+int fight_palette_on = 0;          // play::fight_colours()
+
+void palette_fight(bool on, bool editor = false)
+{
+    fight_palette_on = !on ? 0 : editor && d->prof->variant.eight_black ? 2
+                     : d->prof->variant.fight_unswapped || d->prof->variant.field_swap ? 0 : 1;
+    // (Gateway: the field's pictures swap 0 and 8, the panel beside them
+    // stays black - DOSBox)
+    blit_swap = on && !editor && d->prof->variant.field_swap;
     dirty(0, pic::kScreenH);
 }
 
@@ -1125,7 +1164,7 @@ void draw_square(pic::Canvas& c, int x, int y)
     const uint8_t* g = combat::tile(fg->b, fg->t, x, y);
     const int pic_no = x >= 0 && x < combat::kW && y >= 0 && y < combat::kH && fg->b.ground[y][x] ? g[3] : -1;
     if (pic_no < 0 || pic_no >= kTiles || !fg->tile[pic_no])
-        c.fill(sx, sy, kSq, kSq, d->prof->variant.fight_unswapped ? 8 : 0);     // (shown dark grey either way)
+        c.fill(sx, sy, kSq, kSq, d->prof->variant.fight_unswapped || blit_swap ? 8 : 0);     // (shown dark grey either way)
     else blit4(c, fg->tile[pic_no], kSq, kSq, sx, sy, false, false, 0, 0, pic::kScreenW, pic::kScreenH);
 }
 
@@ -3494,7 +3533,7 @@ void fight_back_to_game(pic::Canvas& c)
     pic_shown = false;
     head_shown = body_shown = -1;
     // (Curse's wilderness map; Darkness's overland draws its own map - draw_view)
-    if (!vm->get(0x4BE6) && !pool_overland() && !darkness_files()) host->picture(0x79, 0xFF);
+    if (!vm->get(0x4BE6) && !pool_overland() && !darkness_files() && !gw_wild()) host->picture(0x79, 0xFF);
     draw_frame(c);
     draw_view(c);
     draw_panel(c);
@@ -3758,8 +3797,7 @@ void end_fight(pic::Canvas& c)
             put(c, t, 1, 5, 10);
             put(c, fw(profile::kExpPoints), 1, 7, 10);
         }
-        clear_menu_line(c);
-        put(c, fw(profile::kPressEnter), 0, text::kMenuRow, 15);
+        press_enter_line(c);
         fg->st = FSt::Results;
     }
     fg->until = 0;
@@ -3859,8 +3897,7 @@ void fight_treasure_only(pic::Canvas& c)
         put(c, t, 1, 5, 10);
         put(c, fw(profile::kExpPoints), 1, 7, 10);
     }
-    clear_menu_line(c);
-    put(c, fw(profile::kPressEnter), 0, text::kMenuRow, 15);
+    press_enter_line(c);
     fg->st = FSt::Results;
     dirty(0, pic::kScreenH);
 }
@@ -5042,7 +5079,7 @@ const char* tw(int i)
     const uint32_t at = d->prof->fight.words[i];
     OvrWords src;
     if (!at || !src.open()) return out;
-    text::read_pascal(src, at, out, 48);
+    read_word(src, at, out, 48);
     return out;
 }
 
@@ -5180,6 +5217,47 @@ void treasure_menu(pic::Canvas& c)
         show_menu_line(c);
         return;
     }
+    if (vault && d->prof->vault.menu6) {
+        // Gateway's vault (GAME.OVR overlay 0x4E7F +0x21C, DOSBox): "Deposit
+        // [Withdraw] [Vault] [Pool] [Share] Exit" - Withdraw with coins or
+        // items in it, Vault when the one selected has items, Pool when the
+        // party has coins, Share with coins in it
+        bool party_coins = false;
+        for (int i = 0; i < pt->count; ++i)
+            if (any_money(pt->m[i])) party_coins = true;
+        const party::Character* ch = pt->sel();
+        const bool on[6] = {true, ground->any_money() || ground->n > 0, ch && ch->n_items > 0, party_coins,
+                            ground->any_money(), true};
+        words[0] = 0;
+        OvrWords src;
+        uint32_t at = d->prof->vault.menu6;
+        const bool open = src.open();
+        for (int k = 0; k < 6 && open; ++k) {
+            char w[16];
+            read_word(src, at, w, sizeof w);
+            at += 1 + static_cast<uint32_t>(strlen(w));             // (the next Pascal string)
+            if (on[k]) strlcat(words, w, sizeof words);
+        }
+        text::build(menu, "", words);
+        menu.selected = 0;
+        show_menu_line(c);
+        return;
+    }
+    if (gateway() && !vault) {
+        // Gateway: "View [Take] [Pool] [Share] [Detect] Exit" - Take with
+        // something there, Pool when the party has coins, Share with coins
+        // there, Detect with Detect Magic memorized (GAME.OVR 0x6B85 +0x12DE)
+        bool party_coins = false;
+        for (int i = 0; i < pt->count; ++i)
+            if (any_money(pt->m[i])) party_coins = true;
+        const unsigned mask = 1u | (ground->any_money() || ground->n ? 2u : 0u) | (party_coins ? 4u : 0u) |
+                              (ground->any_money() ? 8u : 0u) | (detect_spell() ? 16u : 0u) | 32u;
+        keep_words(tw(profile::kViewTakePoolShare), mask, words, sizeof words);
+        text::build(menu, "", words);
+        menu.selected = 0;
+        show_menu_line(c);
+        return;
+    }
     if (vault) {
         // "View Take Pool Exit" (Take with something there)
         const auto& v = d->prof->vault;
@@ -5218,6 +5296,10 @@ void open_treasure(pic::Canvas& c)
     dirty_rows(17, 22);
     if (d->prof->variant.treasure_pic && !vault) draw_treasure_pic();
     if (pt->count) draw_party(c, 17);
+    if (gateway() && !vault) {
+        c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);       // (Gateway's treasure: no place and time - DOSBox)
+        dirty_rows(15, 15);
+    }
     treasure_menu(c);
 }
 
@@ -5242,10 +5324,12 @@ void vault_read_dk()
     plat::File f = plat::open(path, "r");
     if (!f) return;
     uint8_t b[items::kRecordSize];
-    if (f.read(b, 12) == 12)
-        for (int m = 0; m < 3; ++m) {
+    // (Darkness: 3 counts - platinum gems jewelry; Gateway: 7 - copper on)
+    const int nc = v.coins == 3 ? 3 : 7, first = nc == 3 ? 4 : 0;
+    if (f.read(b, nc * 4) == nc * 4)
+        for (int m = 0; m < nc; ++m) {
             const uint32_t x = b[m * 4] | b[m * 4 + 1] << 8 | b[m * 4 + 2] << 16 | static_cast<uint32_t>(b[m * 4 + 3]) << 24;
-            ground->money[4 + m] = x > 0x7FFFFFFF ? 0x7FFFFFFF : static_cast<int>(x);
+            ground->money[first + m] = x > 0x7FFFFFFF ? 0x7FFFFFFF : static_cast<int>(x);
         }
     while (ground->n < items::kMaxGround && f.read(b, 63) == 63) {
         memcpy(ground->item[ground->n], b, items::kRecordSize);

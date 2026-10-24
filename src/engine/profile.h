@@ -42,6 +42,7 @@ struct FrameTables {
     uint16_t combat_left;    // combat: column 0, rows 0-22
     uint16_t combat_split;   //   column 22, rows 0-22
     uint16_t combat_right;   //   column 39, rows 0-22
+    uint16_t char_split = 0; // Gateway's View Character: column 19, rows 8-20 (at + row; 0: none)
 };
 
 // One step of the title sequence: a TITLE.DAX picture at a cell position,
@@ -308,6 +309,10 @@ struct Profile {
         uint32_t new_file;
         // Darkness: Load asks "Load from where? " "Pools Secret Exit" first (0: no question)
         uint32_t load_from = 0, load_sources = 0;
+        // Gateway: the party menu's functions for a member ask "Pick
+        // Character " "Select Exit" first (GAME.OVR; 0: the selected one);
+        // training's "Who pays 1000 gp " (0: the trainee pays)
+        uint32_t pick = 0, pick_menu = 0, who_pays = 0;
     } party;
 
     // View Character: name tables in the program and the screen's words
@@ -364,6 +369,7 @@ struct Profile {
         uint8_t     speed_fx = 0;
         bool        sell_secret = false;           // a pile's price: Secret's rule (rules::sell_value)
         uint8_t     types_head = 2;                // the type file's bytes before row 0 (Darkness 0)
+        uint8_t     types_stride = 16;             // a row's bytes (Gateway's ITEMS.1 24: 8 more each)
         // Darkness: the items screen's menu as one string ("Ready Use Trade
         // Deposit Drop Halve Join Sell Id") - "Ready" and the item words
         // Use ... Id, Deposit taken from it (0: the words above / item_words)
@@ -425,6 +431,9 @@ struct Profile {
         uint8_t         mu_by_slot_from, mu_by_slot_n, mu_all_levels, mu_all_slot;
         uint16_t        kit;
         uint8_t         kit_block;
+        // Gateway: a new character's experience (one class's) and platinum (0: Curse's)
+        uint32_t        start_xp = 0;
+        uint16_t        platinum = 0;
     } create;
 
     // Items: Use Trade Drop Halve Join Sell Id and their words (ItemWord order)
@@ -480,6 +489,13 @@ struct Profile {
         // GAME.OVR (its Display, ovr 0xEBB1, tests each effect against it;
         // 0: every effect with a name)
         uint32_t                  effects_shown = 0;
+        // Gateway: a list's headings are the level, a space, the kind
+        // ("Clerical ", "Druidical ", "Magic-User ": program image, 3 names)
+        // and this word ("Spells", GAME.OVR) - a heading where the level or
+        // the kind changes; "NAME" over "can memorize:" (0: Curse's headings
+        // and one line)
+        NameTable                 kind_names = {};
+        uint32_t                  heading_word = 0;
     } magic;
 
     // The camp's Alter: its menu ("Order Drop Speed Icon Pics Exit"), the
@@ -625,6 +641,12 @@ struct Profile {
         // 0 and 8 (Curse's palette while fighting) and the field's empty
         // squares are dark grey (DOSBox)
         bool     fight_unswapped = false;
+        // Gateway: in the icon editor colour 8 shows black, 0 stays black
+        // (its palette then; its fights swap 0 and 8 as Curse's - DOSBox)
+        bool     eight_black = false;
+        // Gateway: in a fight its pictures (the field, the fighters) are
+        // drawn with 0 and 8 swapped, the rest of the screen as it is
+        bool     field_swap = false;
         // Pools of Darkness: its pictures are VGA blocks (picture.h; the EGA
         // colours of each on a 4-bit canvas - the original's EGA mode)
         bool     vga = false;
@@ -641,6 +663,26 @@ struct Profile {
         uint16_t dk_overland_pics = 0;
         const char* marker_file = nullptr;
         uint8_t  marker_block = 0;
+        // Gateway to the Savage Frontier (gateway_facts.md): its pictures and
+        // animations in its own format (picture.h: five bit planes, a colour
+        // map), its frame tables' values from tile 20 (0: Curse's 30), and a
+        // family's file without a number (PIC.DAX, 8X8D.DAX, WALLDEF.DAX,
+        // BIGPIC.DAX) looked in when the area's hasn't the block
+        bool     sf_pics = false;
+        uint8_t  frame_base = 0;
+        bool     common_files = false;
+        uint8_t  party_menu_row = 0;       // the party menu's first row (0: 12; Gateway 15)
+        // Gateway: wall sets' tile numbers per set, up to 210 tiles a set
+        // (view3d::World::per_set)
+        bool     per_set_walls = false;
+        // Gateway's wilderness (gateway_facts.md 14): where area word 0x4BE6
+        // is 0 the view is the region's map - each GEO square's plane-0 byte
+        // a tile (0-209: LOAD PIECES' three 8X8D blocks, 70 each, no
+        // WALLDEF), the window kept inside the map, the party an arrow (a
+        // step's hours are its scripts' ECL CLOCK)
+        bool     tile_wild = false;
+        // The move mode's prompt before its Exit (GAME.OVR; 0: none)
+        uint32_t move_prompt = 0;
         // Treasures of the Savage Frontier (treasures_facts.md; the Darkness
         // engine a year on): its BORD.DAX frame, the wall slots' own tiles
         // (op 0x42), its overland drawn in the view box (OVER.DAX), LUCK.DAX's
@@ -690,6 +732,10 @@ struct Profile {
         // its .STF items)
         const char* slot_file = nullptr;
         uint8_t     coins = 7, item_size = 0;
+        // Gateway (gateway_facts.md 12; GAME.OVR overlay 0x4E7F): its menu's
+        // six words one after another - "Deposit" " Withdraw" " Vault"
+        // " Pool" " Share" " Exit" - the first's place (0: the menu above)
+        uint32_t menu6 = 0;
     } vault;
     // Secret's version screen: the game's name (row 22) over the version
     // line (row 23), black on a green bar, and the menu's own prompt (its
@@ -722,6 +768,9 @@ struct ViewFacts {
     // Darkness: the menu as one string ("Items Spells Trade Deposit Drop
     // Lay Cure Exit"), its words taken for Spells ... Cure (0: words[])
     uint32_t menu = 0;
+    // Gateway: the coin question's own " Select" (after "Select type of
+    // coin "; 0: the items' "Select")
+    uint32_t coin_select = 0;
 };
 // The game's (all zero: none of it)
 const ViewFacts& view_facts(games::Game g);

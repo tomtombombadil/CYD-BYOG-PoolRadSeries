@@ -1354,6 +1354,57 @@ constexpr TitleStep kDarknessTitle[] = {
     {3, 0, 0, true, 10000, 0},
 };
 
+// Gateway to the Savage Frontier (gateway_facts.md 2, 5): its title
+// (GAME.OVR overlay 0x807): TITLE 1 (Beyond Software), each next one 3, 3,
+// 10 and 20 seconds after the one before was shown - 2 (SSI), 3 (Forgotten
+// Realms), 4 (the game's), 5 (the credits, a picture), then 20 seconds; a
+// key ends it. Its scripts' interpreter (overlay 0xAB8, operand loader seg
+// 0x53): Curse's operand counts but 0x32 FIND ITEM and 0x40 DESTROY ITEMS
+// 4 (Curse 1) and 0x41 2 - every block of ECL2-6 decodes, followed from its
+// entry points
+constexpr TitleStep kGatewayTitle[] = {
+    {1, 0, 0, true, 3000, 0},
+    {2, 0, 0, true, 3000, 0},
+    {3, 0, 0, true, 10000, 0},
+    {4, 0, 0, true, 20000, 0},
+    {5, 0, 0, true, 20000, 0},
+};
+
+constexpr ecl::OpSet kGatewayEcl = [] {
+    ecl::OpSet s = kCurseEcl;
+    s.sizes[0x32] = 4;
+    s.sizes[0x40] = 4;
+    s.sizes[0x41] = 2;
+    s.press_call = 0x809;
+    s.yes_no_call = 0x80C;
+    s.files_outdoors = true;
+    s.step_square = true;
+    s.facing_alias = 0x03B2;
+    s.vault_word = 0x4CFC;          // (its vault: SAVE 1 [4CFC] + COMBAT - gateway_facts.md 12)
+    s.sound_word = true;
+    return s;
+}();
+
+// Gateway's menus put together from words, some only when they apply
+// (gateway_facts.md 12): the temple's "Heal View [Take] [Pool] [Share]
+// Appraise Exit" (GAME.OVR overlay 0x58CB +0xF0A: Take with coins or items
+// on the counter, Pool when the party has coins, Share with coins there),
+// the shop's "Buy [Items] View [Take] [Pool] [Share] App Exit" (overlay
+// 0x892A +0x7AE: Items when the one shopping has items) - the whole list
+// here, play.cpp leaves out the words that don't apply
+constexpr profile::JoinedWord kGatewayJoined[] = {
+    {0x66CB, kJ | 1}, {0x66D6, kJ | 2}, {0x66DC, kJ | 3}, {0x66E2, 0x66E9},                    // 0 the temple
+    {0x8F81, kJ | 5}, {0x8F86, kJ | 6}, {0x8F8D, kJ | 7}, {0x8F93, kJ | 8}, {0x8F99, kJ | 9},  // 4 the shop
+    {0x8F9F, 0x8FA6},
+    // 10 the treasure's "View [Take] [Pool] [Share] [Detect] Exit" (overlay
+    // 0x6B85 +0x12DE: Take with something there, Pool when the party has
+    // coins, Share with coins there, Detect with Detect Magic memorized)
+    {0x7D3E, kJ | 11}, {0x7D44, kJ | 12}, {0x7D4A, kJ | 13}, {0x7D50, 0x7D2D},
+    // 14 the fight's menu (overlay 0xBA76 +0x812)
+    {0xC1DC, kJ | 15}, {0xC1E2, kJ | 16}, {0xC1E7, kJ | 17}, {0xC20C, kJ | 18}, {0xC212, kJ | 19},
+    {0xC218, kJ | 20}, {0xC21F, kJ | 21}, {0xC226, kJ | 22}, {0xC22E, 0xC23A},
+};
+
 // Treasures of the Savage Frontier (treasures_facts.md 3): Darkness's
 // opcodes and operand counts, plus 0x42 LOAD 3D (4: the map, the three
 // wall slots' blocks), 0x43 FIND ITEM and 0x44 DESTROY ITEM (4 each: the
@@ -2160,6 +2211,166 @@ const Profile kProfiles[] = {
      .joined = kDarknessJoined, .n_joined = sizeof kDarknessJoined / sizeof kDarknessJoined[0],
      // Its vault (facts_shops.md 5): VAULTx.DAT a save slot, TMPVAULT.DAT while playing
      .vault = {.file = "TMPVAULT.DAT", .slot_file = "VAULT%c.DAT", .coins = 3, .item_size = 63}},
+    // Gateway to the Savage Frontier, GOG release (gateway_facts.md; being
+    // built - Tom, 2026-10-23): GAME.EXE 36,603 bytes, EXEPACK, unpacked
+    // 41,168, its data segment at image 0x4C70 (Curse's program one step on:
+    // its words and tables are Curse's at other places); GAME.OVR 347,622
+    // bytes; areas 2-6 (ECL2-6 ...) and files without a number; its own
+    // picture format (picture.h)
+    {.game = games::Game::GatewayToTheSavageFrontier, .release = "GOG", .program = "GAME.EXE",
+     .program_size = 36603, .image_size = 41168, .data_base = 0x4C70,
+     // The frame tables (DS 0x1596 on, tile 20 + value - gateway_facts.md 4):
+     // top, bar, bottom, left, right, column 16, the 3D view's four sides
+     // (from column / row 0), the fight's columns 0, 22, 39
+     .frame = {0x1596, 0x15E6, 0x15BE, 0x160E, 0x1638, 0x1626, 0x16B2, 0x16C0, 0x1696, 0x16A4, 0x1650, 0x1668, 0x1680,
+               0x16C8},
+     .tiles_file = "8X8D1.DAX", .tiles_block = 202,
+     .press_any_key = 0x1D1F,
+     .title_file = "TITLE.DAX", .title = kGatewayTitle, .title_steps = sizeof kGatewayTitle / sizeof kGatewayTitle[0],
+     .title_version = kP | 0x0000, .title_menu = 0x000E,
+     .overlay = "GAME.OVR", .overlay_size = 347622,
+     .first_area = 2, .last_area = 6, .common_tiles_block = 203, .sky_file = "SKY.DAX", .horizon_block = 252,
+     .ecl_ops = &kGatewayEcl,
+     .sky_colours = 0x14B0, .start_area = 2, .start_script = 1,
+     .wild = {},
+     // The party menu: 14 entries (Icon Select, Initialize JoyStick/Mouse
+     // more than Curse's), the words Curse has in its GAME.OVR (gateway_facts.md 6)
+     .party = {0x5988, 14, 42, 0x26840, 0x252D6, 0x3F3C9, 0x3F3CE, "GAME.CFG", 0x25A73, 0x25A85, 0x25B3B, 0x585E,
+               0x217A1, 0, 0, 0, 0x29E5A, 0x29E6C, 0x29E71, 0, 0x29E9B, 0x29EB5,
+               0x22844, 0x2284F, 0x28D1C, 0x28D22, 0x28D2D, 0, 0, 0x28D48, 0x28D5C, kP | 0x6118,
+               0, 0x29066, 0, 0x21DBB, 0x22852, 0, 0, 0x26769, 0x26604, 0x2B5C5},
+     // View Character's name tables and words ("ARMOR CLASS", "HIT POINTS"
+     // its own; "Experience " with its space)
+     .view = {{0x6434, 27, 18}, {0x661A, 10, 8}, {0x666A, 17, 9}, {0x6704, 7, 2}, {0x6712, 11, 7}, {0x6760, 13, 9},
+              0x2D9FF, 0x2DA0C, 0x2DA25, 0x2DA13, 0x2DA19, 0x2DA05, 0x2E007, 0x2E013, 0x2E020, 0x2E02C, 0x2E033,
+              0x2E040, 0x2E562, 5},
+     // The script machine's words (its interpreter's overlay): the encounter's,
+     // DAMAGE's, CALL 0x809's "~Press Enter to continue." and 0x80C's "~Yes ~No"
+     // Items (gateway_facts.md 12): Curse's words and item types (ITEMS.1:
+     // Curse's 16-byte rows with 8 bytes more each)
+     .items = {{0x67D6, 21, 255}, "ITEMS.1", 73, 28, 9, 86, 0x87, 0xB1, {41, 42, 43, 44, 37, 36},
+               0x8949, 0x8951, 0x45D5C, 0x45D62, 0x45D68, kJ | 4, kJ | 4, 0x8D88, 0x2F863,
+               0x2EA77, 0x2EA7D, 0x2EA3F, 0x3F04B, 0x3F052, 0x2F5E1, 0x2F5ED, 0x2F5F9, 0x2F608, 0x4084B,
+               0x2DA43, 0x2DA4A, {0x26, 0x92, 0x0C, 0x0E, 0x44, 0x3E},
+               {0x17, 20, 20, 243}, {0x05, 0x05, 0x0B, 0x4D}, 0x4D, .types_stride = 24},
+     // Character rules: Curse's tables at a shift (DS 0x435E on; stat limits
+     // 28 bytes further - gateway_facts.md 6), its effects and words
+     .create = {0x4C70,
+                {0x435E, 0x5351, 0x435E, 0x65, 0x49BC, 0x4A24, 0x4A2C, 0x4A3E, 0x4A43, 0x4AA3, 0x4AB6, 0x4B28, 0x4B9A,
+                 0x4BEE, 0x4CC4, 0x4D14, 0x4D7A, 0x4E3C, 0x515F},
+                0x1032, 0x103A, 0x4A46,
+                0x61, 0x1A, 0x2F, 0x12, 0x30, 0x6B, 0x7C, 0x08, 0x86,
+                {0x0B, 0x12, 0x0C, 0x15}, 0x0F, {0x22, 0x0A}, 0x1F, 0x2F,
+                0x26DB7, 0x26DCC, 0x26DD8, 0x26DE3, 0x26DC5, 0x26E14, 0x26E23, 0x26E34, 0x26E3A,
+                {0x0B, 0x12, 0x0C, 0x15}, 0x4376E, 0x4375C, 0x4377E, 0x43785, 0x4379A,
+                .start_xp = 3000, .platinum = 35},
+     .item_words = {0x2EA45, 0x2EA4A, 0x2EA5A, 0x2EA60, 0x2EA67, 0x2EA6D, 0x2EA73, 0x2E8D1, 0x2EA88, 0x2F93E, 0x2EA98,
+                    0x2EAB8, 0x2EACD, 0x2F852, 0x2FEF6, 0x2FF05, 0x2FF1C, 0x2FF2B, 0x2FF31, 0x3013E, 0x30186, 0x301AC,
+                    0x30175, 0x33431, 0x2EA51},
+     .shop_words = {kJ | 0, kJ | 0, 0x64A3, 0x64BB,
+                    0x5B18, 0x5BC6, 0x5CB4, 0x5CC6, 0x5CDA, 0x5CEF, 0x61DB, 0x5EEC, 0x630B, 0x63FF,
+                    0x58CB, 0x5949, 0x595A, 0x5968, 0x5976, 0x5988,
+                    0x5B0A, 0x5BB5, 0x5EDF, 0x61CA, 0x62FC, 0x63F0,
+                    0x6701, 0x674C, 0x8FB8, 0x900B,
+                    0x34001, 0x34020, 0x34027, 0x34031, 0x34037, 0x34043, 0x34059, 0x3405E, 0x34063, 0x3406D,
+                    0x34078, 0x33FBE, 0x33FD1, 0x33FD6, 0x33FDC, 0x33FEE,
+                    0x3341C, 0x33431, 0x33438, 0x33442, 0x32786,
+                    0x2B58E, 0x2B5AD, 0x2B5D7, 0x2B5F6, 0x2B60C, 0x2B61A, 0x2B629, 0x2B636, 0x2B64D},
+     .cures = {{1000, 1000, 100, 350, 600, 5000, 1000, 5500, 3500, 2000},
+               0x21, {0x1F, 0x22, 0x2B, 0x2C, 0x32, 0x39}, 0x44, 0x37, 0x16, 0x0F, 0x20, 0x24, 0x22, 0x2B, 0x2C, 0x1F},
+     .gem_type = 70, .gem_word = 0x65, .jewel_word = 0xD6,
+     // Magic: Curse's (its 101 spells' names at img 0x7FB1); Scribe's
+     // "You are already scribing" spelt right
+     .magic = {0x5887, {0x5D38, 41, 5}, {0x7FB1, 41, 101},
+               {0x2E538, 0x30BF4, 0x30BFE, 0x30C29, 0x34C8E, 0x34C58, 0x1F5D8, 0x1F60B, 0x1F243, 0x1F251, 0x1F264,
+                0x1F277, 0x1F5F0, 0x1EFFC, 0x1F023, 0x31A2E, 0x31B6B, 0x321E2, 0x31CD1, 0x31DAA, 0x321F1},
+               0x7ED2, 0x7ED3,
+               {0x1F013, 0x1F16B, 0x34C53, 0x35E17, 0x35DC2, 0x35DD8, 0x35C8A, 0x4154E, 0x4155E, 0x3D9E3, 0x39AE3,
+                0x37CE6, 0x390CE, 0x39461, 0x3840E, 0x3841B, 0x1FD20, 0x34C61, 0x30C14, 0x30C35, 0x1F7FA, 0x1F812,
+                0x1F82D, 0x1F852, 0x1F7E4, 0x1F871, 0x1F033, 0x31E96, 0x30C1F, 0x34C68,
+                0x35DE2, 0x35DEC, 0x35E05, 0x2FBE9, 0x2FBF6, 0x2FBFC, 0x30C0A, 0x35E0E},
+               kCurseCamp, sizeof kCurseCamp / sizeof kCurseCamp[0],
+               {2, 0x2A, {0x22, 0x2B, 0x32}, {{0, 0}, {0x2C, 0x1F}, {0x39, 0}}, 0x0C, 0x17, 0x32, 0x36, 0x8F, 0x92,
+                {{0x28, 1, 6, 0, 10}, {0x39, 5, 4, 0, 1}, {0x3D, 5, 4, 0, 1}, {0x3B, 1, 4, 4, 10}, {0x3F, 1, 10, 10, 10},
+                 {0x43, 0, 0, 1440, 1}}},
+               kCurseSpellNamed, sizeof kCurseSpellNamed, kCurseNamed, sizeof kCurseNamed / sizeof kCurseNamed[0],
+               0xD2, 0x10, .kind_names = {0x5EAA, 12, 3}, .heading_word = 0x354FE},
+     // Alter: "Order Drop Speed Icon Level Exit" (Level as Secret's: "Novice
+     // ... Champion"), the icon editor's menus as Curse's
+     .alter = {.menu = kP | 0x58B0, .select = kP | 0x58DA, .place = kP | 0x5903,
+               .words = {0, 0x20609, 0x20637, 0x20A5C, 0x20A6A, 0x20A81, 0x20A89, 0x20A91, 0x20A97, 0x207CF, 0x207DC,
+                         0x207C1, 0x207EE, 0x20800, 0x20815},
+               .icon_menu = {kP | 0x5BD4, kP | 0x5BFD, kP | 0x5C26, kP | 0x5C4F, kP | 0x5C78},
+               .icon_words = {0x2A70C, 0x2A710, 0x2A71F, 0x2A723, 0x2A729, 0x2A742, 0x2A747, 0x2A76C},
+               .level_menu = kP | 0x592C, .icon_box = 25},
+     // Fights (gateway_facts.md 13): Curse's tables at a shift (DS 0x03B4 on,
+     // +0xD8), its ground table at DS 0x31AC, the turn table DS 0x0441; the
+     // words where its overlays have them - the menu on two rows as
+     // Darkness's ("Move Aim Use Cast Turn Guard Quick @Delay Bandage View
+     // Speed End", GAME.OVR overlay 0xBA76 +0x812, the words not offered left
+     // out); the effects a fight ends (DS 0x037A, 20); Curse's effects
+     .fight = {{0x31AC, 0x03B4, 0x03C4, 0x03D4, 0x03D8, 0x03E0, 0x03E8, 0x042C, 0x0441},
+              {
+               0x10BF2, 0xC1DC, 0xC1E2, 0xC1E7, 0xC20C, 0xC212, 0xC21F, 0xC796, 0xC7B3, 0xC7B9, 0xCBAE, 0x19324,
+               0x19330, 0x19338, 0x1934A, 0x19356, 0xC218, 0, 0xC22E, 0, 0x41875, 0xCCA4, 0xCCB0, 0xCCB6, 0xCCBE,
+               0xCCC6, 0x162C4, 0x162D0, 0x162DF, 0x162E7, 0x162F6, 0x1630A, 0x16317, 0x1631F, 0x16328, 0x16332,
+               0x1633D, 0x1634A, 0x16354, 0x16381, 0xC61B, 0xC5BD, 0x16E64, 0x16E6D, 0x1923D, 0xCFD2, 0xE455, 0xE467,
+               0x42569, 0x17106, 0x3F93E, 0x3F948, 0, 0x7669, 0x767D, 0x76AD, 0x76C0, 0x76F4, 0x770D, 0x7733, 0x84B6,
+               0x84D4, 0x7C19, 0x7C20, 0, 0x4EAF, 0, kJ | 10, 0, 0x7D60, 0x7D80, 0x79F4, 0x79FC, 0x3E2DB, 0x3E2E2,
+               0x3E2F5, 0x3E30E, 0x3E318, 0x3E322, 0x3E333, 0x3E33D, 0x3E355, 0x3E6C4, 0x3B34D, 0x3B35B, 0x18A3A,
+               0x18A2A, 0x1741A, 0x1742A, 0x17434, 0x17441, 0x1848E, 0x35E1D, 0x35E2B, 0x374FB, 0x1296B, 0x39FD7,
+               0x3D122, 0x124F5, 0x1211C, 0x11C9E, 0x1A471, 0x1AF2F, 0x12CC2, 0x13335, 0x147EC, 0x11F9E, 0x1A817,
+               0x1A830, 0x1A842, 0x1A85D, 0x1A867, 0x1A883, 0x14921, 0x13932, 0x1393F, 0x146AD, 0x3AA67, 0x3ABB1,
+               0x3AD99, 0x3AF2E, 0x3B053, 0x3E8A7, 0x3E8BB, 0x39835, 0x126E2, 0x126F8, 0x12705, 0x14E6F, 0x14E7C,
+               0x14DD8, 0x39C45, 0x39C52, 0x39C69, 0x39C77, 0x12205, 0x125B5, 0x12185, 0x36A1D, 0x123EF, 0x12E10,
+               0x12901, 0x136C2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+               kJ | 14},
+              {0x03, 0x0B, 0x0D, 0x15, 0x17, 0x1B, 0x23, 0x28, 0x33, 0x34, 0x35, 0x3A, 0x5B, 0x88, 0x89, 0x8B, 0x8E,
+               0x90, 0x1F, 0x96},
+      {{0x33, 0x34, 0x35, 0x1F}, 0x01, 0x02, 0x31, 0x27, 0x2A, 0x19, 0x08, 0x09, 0x1C,
+       {0x07, 0x08, 0x23, 0x24, 0x25, 0x61}, 0x0B, 0x8E, 0x1E,
+       {9, 21, 100, 28, 31, 73}, {2, 7, 20}, {85, 86}, {47, 98, 101},     // (spinning: 20 the hammer - Curse's code tests 0x14)
+       0x24, 0x25, 0x1B, 0x15, 0x88, 0x03, 0x07, 0x21, 0x45, 0x44,
+       // The monsters' special abilities (monster_fx_facts.md)
+       {0x40, 0x46, 0x43, 0x7A, 0x7B, 0x4F, 0x50, 0x39, 0x60, 0x67, {0x14, 0x36, 0x3D},
+        0x3C, 0x77, 0x51, 0x55, 0x82, 0x29, 0x68,
+        0x70, 0x6E, 0x87, 0x54, 0x52, 0x71, 0x0A, 0x14, 0x85,
+        0x69, 0x6A, 0x81, 0x3F, 0x6B, 0x6C, 0x6D, 0x7D,
+        0x65, 0x3B, 0x62, 0x64, 0x66,
+        0x8A, 0x18, 0x2D,
+        0x5A, 0x80, 0x83, 0x84, 0x56, 0x79, 0x53, 0x7F, 0x57,
+        0x0D, 0x3A, 0x8B, 0x90, 0x34, 0x37, 0x35,
+        0x76, 0x87, {0x54, 0x37, 0x15}},
+       // More spells' effects (spell_facts.md 2): enlarge, confuse, berserk, dispel evil (0x04, 0x91),
+       // the fire shields (hot 0x32, cold 0x36, the zap 0x8F); Ray of Enfeeblement's 0x1D
+       {0x0C, 0x23, 0x89, 0x04, 0x91, 0x32, 0x36, 0x8F, 0x16, 0x0F, 0x17, 0x20, 0x3E, 0x92, 0x11, 0x1D, 0x22, 0x2B, 0x2C},
+       // The races' and rangers' effects (as created: Constitution saves, half-elf
+       // resistance, dwarf vs orcs, gnome's foes, vs giants, gnome's other, ranger vs giants)
+       {0x61, 0x7C, 0x1A, 0x12, 0x2F, 0x30, 0x86},
+       // The magic items' own effects: Flame Tongue, Dragon Slayer, Frost Brand, displacement,
+       // the ring's invisibility, the Robe of Vermin (behaviour_facts.md items)
+       {0x06, 0x4B, 0x4C, 0x59, 0x38, 0x4A, 0, 0x48},
+       0x4D},                                           // berserk (the Berserker sword's)
+              kCurseFight, sizeof kCurseFight / sizeof kCurseFight[0]},
+     .script_words = {0x2C54, 0x2C65, 0xB76A, 0xB772, 0xB77F, 0x357C, 0x3BE5, 0, 0, 0, 0x3BFF},
+     .random_items = &kCurseRandom, .random_rows = 0x1058,
+     // Its effects (gateway_facts.md 16): DigPak samples, ZOUNDS.DAX block n
+     // = effect n (2-12; 3 and 6 played as 9 - seg 0x17B +0x18), each at its
+     // own rate (DS 0x1794); Curse's numbers
+     .clips = {.file = "ZOUNDS.DAX", .hz = 8000, .first = 2, .last = 12,
+               .ids = {0, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0, 0, 0}, .to_block = 0, .rate_table = 0x1794,
+               .as_nine = 1u << 3 | 1u << 6},
+     .door = {0x1C147, 0x1C14C, 0x1C152, 0x1C159, 0x1C15F, 0x1F},
+     .variant = {.program_words = true, .treasure_pic = 1, .camp_pic = 29, .eight_black = true, .field_swap = true,
+                 .party_menu_col = 9,
+                 .sf_pics = true,
+                 .frame_base = 20,
+                 .common_files = true, .party_menu_row = 15, .per_set_walls = true,
+                 .tile_wild = true, .move_prompt = 0x1BD9A},
+     .joined = kGatewayJoined, .n_joined = sizeof kGatewayJoined / sizeof kGatewayJoined[0],
+     // Its vault (GAME.OVR overlay 0x4E7F): vault.dat in the save folder while
+     // playing, vault.<slot> with each saved game; 7 coin counts, 63-byte items
+     .vault = {.file = "VAULT.DAT", .slot_file = "VAULT.%c", .coins = 7, .item_size = 63, .menu6 = 0x4E89}},
     // Treasures of the Savage Frontier, GOG release (treasures_facts.md;
     // being built): the Pools of Darkness engine a year on - GAME.EXE
     // 71,971 bytes, EXEPACK, unpacked 78,976, its data segment at image
@@ -2416,6 +2627,11 @@ const ViewFacts& view_facts(games::Game g)
                                          kP | 0xB7BD, 0x26B9A, 0x26BA6, 0x26BB4, 0x26C9F, 0x26CAB, 0x26CBB,
                                          0x26CC9, kP | 0xB7E6},
                                         0x6D, 0x6E, kP | 0xCBC0};
+    // Gateway: Curse's words a step on (gateway_facts.md 12)
+    static const ViewFacts kGateway = {{0x2E538, 0x2E540, 0x2E547, 0x2E550, 0x2E556, 0x2E55C, 0x303A1, 0x303AB,
+                                        0x303C8, 0x303D2, 0x30704, 0x30E91, 0x30E9D, 0x30EAB, 0x30FA3, 0x30FAF,
+                                        0x30FBF, 0x30FCD, 0x306F1},
+                                       0x8C, 0x8D, 0, 0x303C0};
     // Treasures: Darkness's words found again (port facts P1)
     static const ViewFacts kTreasures = {{0, 0, 0, 0, 0, 0, kP | 0xDAC0, kP | 0xDA96, kP | 0xD99A, kP | 0xDAEA,
                                           kP | 0xDD8A, 0x2F753, 0x2F75F, 0x2F76D, 0x2F860, 0x2F86C, 0x2F87C,
@@ -2427,6 +2643,7 @@ const ViewFacts& view_facts(games::Game g)
     case games::Game::PoolOfRadiance: return kPool;
     case games::Game::SecretOfTheSilverBlades: return kSecret;
     case games::Game::PoolsOfDarkness: return kDarkness;
+    case games::Game::GatewayToTheSavageFrontier: return kGateway;
     case games::Game::TreasuresOfTheSavageFrontier: return kTreasures;
     default: return kNone;
     }

@@ -42,7 +42,12 @@ constexpr uint32_t kWallSetBytes = kPieces * kPieceTiles;   // 780
 struct TileSet {
     uint8_t px[kSetTiles][32];       // 8 x 8, two pixels a byte (high nibble first)
     int     count = 0;
+    // Gateway's big sets (210 tiles - gateway_facts.md 9): the tiles past
+    // the first 70, on the heap (free_extra; a fight's park frees them)
+    uint8_t (*extra)[32] = nullptr;
+    int     extra_count = 0;
 };
+void free_extra(TileSet& t);
 
 struct WallSet {
     uint8_t id[kPieces][kPieceTiles];
@@ -63,6 +68,10 @@ struct World {
     // and an 88 x 88 background (BACK1 indoors, SKYGRND outdoors; 4-bit
     // packed, on the heap: back_free)
     bool     dk = false;
+    // Gateway: the wall sets' tile numbers aren't moved - 46 on are the
+    // set's own tiles, each wall drawn with its set's (its big sets have up
+    // to 210: TileSet::extra)
+    bool     per_set = false;
     // On a VGA screen (Darkness on the boards with PSRAM; set before the
     // loads): the tiles a byte a pixel in vga_px (255 x 64 bytes, heap)
     // instead of the sets above, `back` a byte a pixel too
@@ -89,8 +98,9 @@ void back_free(World& w);
 // The VGA tiles' memory let go (vga_px; the background too)
 void vga_free(World& w);
 
-// An 8x8 tile block (a picture block 8 high, 1 column, N frames).
-bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, TileSet& out);
+// An 8x8 tile block (a picture block 8 high, 1 column, N frames); big:
+// the tiles past 70 too (in out.extra - Gateway)
+bool load_tiles(dax::ByteSource& src, const dax::Index& idx, uint8_t block, TileSet& out, bool big = false);
 
 // Loads WALLDEF block `block` into wall set `set` (1-3) and on: a block of
 // n x 780 bytes fills sets set .. set + n - 1 (up to set 3). *count = n.

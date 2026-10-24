@@ -134,6 +134,13 @@ the Project as claude/TODO.md.
       field tiles (23 KB) in internal RAM - one block would go to PSRAM;
       a Settings switch for EGA on the S3 / C5 (Claude: not now - Tom's
       rule is 256 colours there).
+- [ ] Gateway to the Savage Frontier (v0.144.0, SPEC 6e): PLAYABLE (Play
+      on) - matches DOSBox through Yartar, the wilderness, the vault, shops,
+      fights; its GOG journal table (v0.142.0). behave gateway is light
+      (creation 1084 cases, 48 menu states) - Claude: a deeper behaviour
+      pass (spells, monsters, items, as Curse's sweeps). Open: music
+      (MUSIC.DAX, sounds 0x80 up - no game plays music yet); the
+      wilderness start selects ARNOLD where the original has MERL.
 - [ ] Treasures of the Savage Frontier (v0.143.0, SPEC 6f; Darkness's
       engine): plays in the playsim from the party menu through exploring,
       camp, fights, the overland, LUCK texts, romance, Crown, the lucky

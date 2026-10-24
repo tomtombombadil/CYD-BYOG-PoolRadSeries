@@ -272,7 +272,7 @@ static bool pump(int max_iter = 400000)
         case Screen::Title: return false;      // (the party is gone: the title again)
         case Screen::PartyMenu:
             if (in_game_menu && pt->count) {
-                play::tap(24, (12 + pm_line('B')) * 8 + 2, C);
+                play::tap(24, (play::pm_row0() + pm_line('B')) * 8 + 2, C);
                 break;
             }
             return false;
@@ -329,12 +329,12 @@ static bool boot(char slot = 'A')
         }
         play::tap(2, 2, C);
     }
-    play::tap(24, (12 + pm_line('L')) * 8 + 2, C);
+    play::tap(24, (play::pm_row0() + pm_line('L')) * 8 + 2, C);
     const char* p = strchr(play::pm_saves, slot);
     if (!p) return false;
     tap_item(static_cast<int>(p - play::pm_saves));
     if (!play::pt->count) return false;
-    play::tap(24, (12 + pm_line('B')) * 8 + 2, C);
+    play::tap(24, (play::pm_row0() + pm_line('B')) * 8 + 2, C);
     return pump();
 }
 
@@ -1488,6 +1488,9 @@ static void dice_faces(std::initializer_list<int> f) { dice_usual(); b_faces.ass
 #if defined(BEHAVE_DARKNESS) || defined(BEHAVE_TREASURES)
 #include "behave_darkness.inc"
 #endif
+#ifdef BEHAVE_GATEWAY
+#include "behave_gateway.inc"
+#endif
 
 int main(int argc, char** argv)
 {
@@ -1546,6 +1549,9 @@ int main(int argc, char** argv)
 #endif
 #ifdef BEHAVE_DARKNESS
         if (want("darkness")) behave_darkness();
+#endif
+#ifdef BEHAVE_GATEWAY
+        if (want("gateway")) behave_gateway();
 #endif
 #ifdef BEHAVE_TREASURES
         if (want("treasures")) behave_darkness();       // (Darkness's checks, Treasures' oracles)

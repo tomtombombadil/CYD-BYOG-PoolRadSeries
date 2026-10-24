@@ -32,13 +32,13 @@ bool start(char slot, bool begin)
         }
         play::tap(2, 2, C);
     }
-    play::tap(24, (12 + pm_line('L')) * 8 + 2, C);
+    play::tap(24, (play::pm_row0() + pm_line('L')) * 8 + 2, C);
     const char* p = strchr(play::pm_saves, slot);
     if (!p) return false;
     tap_item(static_cast<int>(p - play::pm_saves));
     if (play::pt->count <= 0) return false;
     if (!begin) return true;
-    play::tap(24, (12 + pm_line('B')) * 8 + 2, C);
+    play::tap(24, (play::pm_row0() + pm_line('B')) * 8 + 2, C);
     return pump();
 }
 bool load_only(char slot) { return start(slot, false); }

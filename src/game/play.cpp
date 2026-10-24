@@ -64,6 +64,10 @@ struct Host;
 // ~13 KB, and the script memory, ~13 KB) are blocks of their own: the
 // heap is in pieces and no one piece has room for all of it (v0.21.1)
 struct Data {
+    // Gateway: the experience for levels 2-12 of each class (its program's
+    // class records, 8 x 11) - the party list shows who can train (null:
+    // not Gateway)
+    int32_t* gw_xp = nullptr;
     Data(view3d::World& w, ecl::GameState& g) : world(w), gs(g) {}
     ~Data()
     {
@@ -126,7 +130,7 @@ struct Data {
     int            cities = 0;
 
     // The party menu's words (from the program and GAME.OVR)
-    static constexpr int kItems = 13;        // (Secret: 13 with Initialize Mouse/Joystick)
+    static constexpr int kItems = 14;        // (Secret: 13 with Initialize Mouse/Joystick; Gateway 14 with Icon Select)
     char           item[kItems][41] = {};
     bool           item_on[kItems] = {};   // the program's own starting flags
     int            items = 0;
@@ -157,7 +161,8 @@ struct Data {
     char           guy_letter[kMaxGuys] = {};   // a Pool saved game's letter (CHRDAT<letter>n.SAV)
     char           guy_from = 'C';              // the list's source: C(urse) / P(ool)
     int            guys = 0;
-    char           w_magic[44] = {}, w_level[9][12] = {};    // the magic menu, "1st Level" ... (Secret: 7, Darkness 9)
+    char           w_magic[44] = {}, w_level[9][12] = {};
+    char           w_kind[3][12] = {}, w_spells_word[8] = {};      // Gateway's headings: "Magic-User " + "Spells"    // the magic menu, "1st Level" ... (Secret: 7, Darkness 9)
     char           w_these[16] = {};                        // Secret: " these spells?" after Memorize / Scribe
     char           w_alter[36] = {}, w_select[14] = {}, w_place[14] = {};   // Alter's menus
     char           w_speed[24] = {};           // Darkness: Speed's word list ("Faster Slower Exit")
@@ -309,6 +314,9 @@ bool camping = false;              // the camp is open (the position line says s
 int  pm_item[Data::kItems];   // the menu item on each list line
 int  pm_lines = 0;
 bool pm_picking = false;          // Darkness's Drop: "Pick Character Select" on the party menu
+char pm_pick_for = 0;               // Gateway: the function a member is being picked for ('P': who pays)
+int  train_payer = -1, train_who = -1;      // Gateway: who pays for the training, the trainee
+bool pm_picked = false;             // ... picked: the function goes on
 int  pm_sel = 0;              // the party menu line the cursor keys highlight
 bool keys_used = false;       // a cursor key was used: highlights where the games had none (the party menu)
 char pm_saves[12];            // save slots found ("AB")
@@ -367,6 +375,9 @@ void sound_hold(bool on)
 
 bool open_file(const char* name, plat::File& f);
 
+// Gateway: each effect's rate (the program's table, read with the sound; 0: Clips::hz)
+uint16_t clip_rates[16] = {};
+
 // A digitised effect (the game's own number): its block read from the card
 // now (the reader and its file buffer on the heap - a sound starts deep in
 // a fight), handed to the player - it sounds once the one playing ends
@@ -374,11 +385,12 @@ __attribute__((noinline)) void play_clip(int v)
 {
     const sound::Clips& cl = d->prof->clips;
     if (v < cl.first || v > cl.last) return;            // (13 / 14: the game plays nothing)
+    if (cl.as_nine >> v & 1) v = 9;                     // (Gateway's player: 3 and 6 as 9)
     plat::File f;
     if (!open_file(cl.file, f)) return;
     plat::FileSource* src = new (std::nothrow) plat::FileSource(f);
     uint32_t n = 0;
-    uint8_t* pcm = src ? sound::load_clip(*src, v - 1, &n) : nullptr;
+    uint8_t* pcm = src ? sound::load_clip(*src, v + cl.to_block, &n) : nullptr;
     delete src;
     f.close();
     if (!pcm) {
@@ -389,7 +401,7 @@ __attribute__((noinline)) void play_clip(int v)
         }
         return;
     }
-    clips->start(pcm, n, cl.hz, sound_device());
+    clips->start(pcm, n, clip_rates[v & 15] ? clip_rates[v & 15] : cl.hz, sound_device());
     start_output();
 }
 
@@ -680,6 +692,15 @@ void area_fmt(char* out, size_t cap, const char* fmt)
 // file opened)
 bool open_area_dax(const char* stem, int block, plat::File& f, char* name, size_t cap)
 {
+    if (d->prof->variant.common_files && block >= 0) {
+        // Gateway: the family's file without a number first, then the area's
+        // (its loader, GAME.OVR 0x53B0F - gateway_facts.md 8)
+        snprintf(name, cap, "%s.DAX", stem);
+        if (open_dax(name, f)) {
+            if (d->idx.find(static_cast<uint8_t>(block))) return true;
+            f.close();
+        }
+    }
     area_file(name, cap, stem);
     if (open_dax(name, f)) {
         if (!blocks_across() || block < 0 || d->idx.find(static_cast<uint8_t>(block))) return true;
@@ -742,6 +763,53 @@ int ov_area()
 bool pool_overland() { return d && vm && ov_area() >= 0; }
 // Darkness's overland (darkness_facts.md S4 / S7): byte 0x24 = 1 and not 3D
 bool dk_overland() { return d && vm && d->prof->variant.dk_overland_pics && vm->get(0x24) == 1 && !vm->get(0x22); }
+// Gateway's wilderness (gateway_facts.md 14): area word 0x4BE6 = 0
+bool gw_wild() { return d && vm && d->prof->variant.tile_wild && !vm->get(0x4BE6); }
+// Gateway's way ahead (GAME.OVR 0x4712F +0x82A, kept in area word 0x4CF6 as
+// the square's values are taken): the facing side's door state (plane 3),
+// a side without a wall open (1) in 3D only; its scripts' steps stop on 0
+void gw_way_ahead()
+{
+    if (!d || !vm || !d->prof->ecl_ops->step_square || !d->map.loaded) return;
+    const ecl::GameState& g = d->gs;
+    const int dir = g.dir & 6;
+    const int v = vm->get(0x4BE6) && geo::wall(d->map, g.x, g.y, dir) == 0 ? 1 : geo::door(d->map, g.x, g.y, dir);
+    vm->set(0x4CF6, static_cast<uint16_t>(v));
+}
+// What a step out of (x, y) towards dir meets (geo::passage); in Gateway's
+// wilderness the side's door state alone (its plane 0 holds tiles, not walls)
+int way(int x, int y, int dir)
+{
+    return gw_wild() ? geo::door(d->map, x, y, dir) : geo::passage(d->map, x, y, dir);
+}
+
+// Its view (DOSBox, pixel checked): 11 x 11 squares of the region's map in
+// the view's window - its first square kept 0-5 so the window stays on the
+// map - each square GEO plane 0's tile (0-209: sets 1-3, 70 each), opaque;
+// the party's square gets the arrow of its facing (block 202's 256-259,
+// 13 see-through)
+void draw_gw_wild(pic::Canvas& c)
+{
+    const ecl::GameState& g = d->gs;
+    const int x0 = g.x - 5 < 0 ? 0 : g.x - 5 > 5 ? 5 : g.x - 5;
+    const int y0 = g.y - 5 < 0 ? 0 : g.y - 5 > 5 ? 5 : g.y - 5;
+    c.fill(24, 24, 88, 88, 0);
+    for (int r = 0; r < view3d::kCells && d->map.loaded; ++r)
+        for (int k = 0; k < view3d::kCells; ++k) {
+            const int t = d->map.plane[0][(y0 + r) * geo::kSize + x0 + k];
+            const view3d::TileSet& s = d->world.sets[t / view3d::kSetTiles];
+            if (t >= 3 * view3d::kSetTiles || t % view3d::kSetTiles >= s.count) continue;
+            const uint8_t* px = s.px[t % view3d::kSetTiles];
+            const int x = (view3d::kCell0 + k) * 8, y = (view3d::kCell0 + r) * 8;
+            for (int yy = 0; yy < 8; ++yy)
+                for (int xx = 0; xx < 8; ++xx) {
+                    const uint8_t b = px[yy * 4 + xx / 2];
+                    c.set(x + xx, y + yy, static_cast<uint8_t>(xx & 1 ? b & 15 : b >> 4));
+                }
+        }
+    view3d::draw_tile(c, d->world, 256 + (g.dir & 7) / 2, g.y - y0, g.x - x0);
+    dirty_rows(3, 13);
+}
 
 // Its screen (DOSBox): the outer frame with a bar at row 16, the region's
 // map picture (BIGPIC) inside, the party's marker (CURSOR.DAX block 1, 13
@@ -1007,7 +1075,7 @@ void draw_view(pic::Canvas& c)
     if (bigpic >= 0) {
         // A big picture covers the screen: outdoors it stays (the wilderness
         // map); in a 3D area the exploring screen comes back
-        if (!vm->get(0x4BE6) && !pool_overland()) return;
+        if (!vm->get(0x4BE6) && !pool_overland() && !gw_wild()) return;
         bigpic = -1;
         pic_shown = false;
         draw_frame(c);
@@ -1017,6 +1085,10 @@ void draw_view(pic::Canvas& c)
     tr_position = true;
     if (pool_overland()) {
         draw_overland(c);
+        return;
+    }
+    if (gw_wild()) {
+        draw_gw_wild(c);
         return;
     }
     if (d->prof->variant.tr && tr_lattice_drawn != (d->gs.area1[0x3F] ? 2 : 1)) tr_lattice(c);
@@ -1077,6 +1149,20 @@ void draw_position(pic::Canvas& c)
 // row 4 - the selected one's name white, the others cyan (red: out of the
 // fights, yellow: on the other side); AC and HP right-aligned at columns
 // 34 and 38, HP yellow when below the most (as the games print it)
+// Gateway: one with the experience for a class's next level (its party
+// list shows them magenta)
+bool gw_trainable(const party::Character& ch)
+{
+    if (!d->gw_xp) return false;
+    for (int k = 0; k < 8; ++k) {
+        const int lv = ch.level(k);
+        if (lv <= 0 || lv >= 12) continue;
+        const int32_t need = d->gw_xp[k * 11 + lv - 1];
+        if (need > 0 && static_cast<int64_t>(ch.exp()) >= need) return true;
+    }
+    return false;
+}
+
 void draw_party(pic::Canvas& c, int col, bool mark_sel = true)
 {
     c.fill(col * 8, 2 * 8, (39 - col) * 8, 8, 0);      // (a "no party yet" line goes)
@@ -1088,7 +1174,7 @@ void draw_party(pic::Canvas& c, int col, bool mark_sel = true)
         c.fill(col * 8, row * 8, (39 - col) * 8, 8, 0);
         char t[24];
         ch.name(t, sizeof t);
-        const uint8_t fg = i == pt->selected && mark_sel ? 15 : !ch.in_combat() ? 12 : ch.enemy() ? 14 : 11;
+        const uint8_t fg = i == pt->selected && mark_sel ? 15 : !ch.in_combat() ? 12 : ch.enemy() ? 14 : gw_trainable(ch) ? 13 : 11;
         put(c, t, col, row, fg);
         const int ac = ch.ac_raw();
         const int aw = ac <= 0x32 ? 1 : ac <= 0x3C ? 2 : ac <= 0x45 ? 1 : 0;
@@ -1233,7 +1319,9 @@ void hl_picked(int at)
 bool moving = false;
 bool secret_files();
 bool darkness_files();
-bool move_menu() { return secret_files() || darkness_files(); }
+bool gateway();
+bool move_menu() { return secret_files() || darkness_files() || gateway(); }
+void ow(uint32_t at, char* out, size_t cap);
 void idle_menu(pic::Canvas& c)
 {
     if (dk_overland()) {
@@ -1242,7 +1330,11 @@ void idle_menu(pic::Canvas& c)
         menu.selected = 0;
         show_menu_line(c);
     } else if (move_menu() && vm->get(0x4BE6)) {
-        text::build(menu, "", moving ? "Exit" : "Move Area Cast View Encamp Search Look");
+        // (Gateway's move mode: "Move (Use arrow keys):" before Exit - DOSBox)
+        static char prompt3d[32];
+        prompt3d[0] = 0;
+        if (moving) ow(d->prof->variant.move_prompt, prompt3d, sizeof prompt3d);
+        text::build(menu, prompt3d, moving ? "Exit" : "Move Area Cast View Encamp Search Look");
         menu.selected = 0;
         if (!moving && kept_hl()) {
             // (Darkness's exploring routine, GAME.OVR 0xD78B: its place from the
@@ -1255,6 +1347,15 @@ void idle_menu(pic::Canvas& c)
     } else if (pool_overland()) {
         // Pool's wilderness: no Area (its program's words)
         text::build(menu, "", "Cast View Encamp Search Look");
+        menu.selected = 0;
+        show_menu_line(c);
+    } else if (gw_wild()) {
+        // Gateway's wilderness: no Area (DS 0x4D9); its move mode's prompt
+        // "Move (Use arrow keys):" before Exit (DOSBox)
+        static char prompt[32];
+        prompt[0] = 0;
+        if (moving) ow(d->prof->variant.move_prompt, prompt, sizeof prompt);
+        text::build(menu, prompt, moving ? "Exit" : "Move Cast View Encamp Search Look");
         menu.selected = 0;
         show_menu_line(c);
     } else if (vm->get(0x4BE6)) {
@@ -1284,8 +1385,12 @@ bool draw_block(pic::Canvas& c, const char* stem, int block, int x, int y)
         dax::RleReader r(src, d->idx, *e);
         uint8_t hdr[pic::kHeaderSize];
         pic::Header h;
+        // (a head or body: its 13s through its colour map - Gateway, DOSBox)
+        const bool person = !strcmp(stem, "HEAD") || !strcmp(stem, "BODY");
+        if (person) pic::sf_keep13(false);
         ok = r.read(hdr, sizeof hdr) == sizeof hdr && pic::parse_header(hdr, e->raw_size, h) &&
              pic::draw(r, h, 0, c, x, y);
+        pic::sf_keep13(true);
     }
     f.close();
     return ok;
@@ -1338,8 +1443,9 @@ bool anim_start(int id, const char* stem = "PIC", int x = 24, int y = 24)
     // (Treasures: PICTURE ids from pic_split on are PIC1A.DAX's)
     if (d->prof->variant.pic_split && id >= d->prof->variant.pic_split && !strcmp(stem, "PIC"))
         snprintf(name, sizeof name, "PIC%dA.DAX", area_file_no());
-    if (blocks_across()) {
-        // (Secret: whichever of the family's files holds the picture)
+    if (blocks_across() || d->prof->variant.common_files) {
+        // (Secret: whichever of the family's files holds the picture;
+        // Gateway: PIC.DAX's or the area's)
         plat::File probe;
         if (open_area_dax(stem, id, probe, name, sizeof name)) probe.close();
     }
@@ -1374,7 +1480,7 @@ bool anim_start(int id, const char* stem = "PIC", int x = 24, int y = 24)
         d->dk_anim = nullptr;
     } else if (e) {
         dax::RleReader r(src, *d->anim_idx, *e);
-        if (pic::parse_anim(r, e->raw_size, d->anim) && d->anim.frames > 0) {
+        if (pic::parse_anim(r, e->raw_size, d->anim, d->prof->variant.sf_pics) && d->anim.frames > 0) {
             anim_block = id;
             anim_frame = 0;
             anim_at = plat::now_ms();
@@ -1427,9 +1533,32 @@ void cursor_show()
 // entries are on follows the party, as in the games. A tap on a line
 // picks it; a tap on a character selects them.
 
-char pm_key(int i) { return static_cast<char>(toupper(static_cast<unsigned char>(d->item[i][0]))); }
+// An entry's key: its first capital (Gateway's "initialize JoyStick/Mouse" is J)
+char pm_key(int i)
+{
+    for (const char* q = d->item[i]; *q; ++q)
+        if (*q >= 'A' && *q <= 'Z') return *q;
+    return static_cast<char>(toupper(static_cast<unsigned char>(d->item[i][0])));
+}
+// The party menu's first row: 12; Gateway's 23 - its lines, 12 to 15 (its
+// party menu, GAME.OVR 0x2650E + 0x55C)
+void pm_flags(bool on[]);
+int pm_row0()
+{
+    if (!d->prof->variant.party_menu_row) return 12;
+    bool on[Data::kItems];
+    pm_flags(on);
+    int n = 0;
+    for (int i = 0; i < d->items; ++i) n += on[i];
+    // (Gateway's "initialize JoyStick/Mouse", always there in the original,
+    // counts though the engine leaves it out: the lines above it stay where
+    // the original has them - DOSBox; a script's party menu has none)
+    if (gateway() && !in_game_menu) ++n;
+    const int r = 23 - n;
+    return r > d->prof->variant.party_menu_row ? d->prof->variant.party_menu_row : r < 12 ? 12 : r;
+}
 
-void pm_flags(bool on[Data::kItems])
+void pm_flags(bool on[])
 {
     for (int i = 0; i < d->items; ++i) {
         on[i] = d->item_on[i];
@@ -1438,7 +1567,13 @@ void pm_flags(bool on[Data::kItems])
             on[i] = pt->count > 0;
             break;
         case 'I':                               // Secret's Initialize Mouse/Joystick: nothing to set up here
+            on[i] = gateway() && pt->count > 0;     // (Gateway's Icon Select: with a party)
+            break;
+        case 'J':                               // (Gateway's "initialize JoyStick/Mouse")
             on[i] = false;
+            break;
+        case 'A':                               // (Gateway: none past 6 members - DOSBox)
+            if (gateway()) on[i] = pt->count < 6;
             break;
         case 'T':                               // training: only where the game offers it
             on[i] = pt->count > 0 && (vm->get(0x7EA8) & 0xFF) != 0;
@@ -1483,7 +1618,7 @@ void draw_party_menu(pic::Canvas& c)
     const int col0 = d->prof->variant.party_menu_col ? d->prof->variant.party_menu_col : 2;
     for (int i = 0; i < d->items; ++i) {
         if (!on[i]) continue;
-        const int row = 12 + pm_lines;
+        const int row = pm_row0() + pm_lines;
         const uint8_t fg = tr && pm_lines == pm_sel ? 15 : 10;
         char first[2] = {d->item[i][0], 0};
         put(c, first, col0, row, d->prof->variant.party_menu_col ? fg : 15);
@@ -1494,7 +1629,7 @@ void draw_party_menu(pic::Canvas& c)
     if (keys_used && pm_lines) {
         // the cursor keys' line, highlighted as the games' lists are
         const char* it = d->item[pm_item[pm_sel]];
-        hl_text(c, it, col0, 12 + pm_sel);
+        hl_text(c, it, col0, pm_row0() + pm_sel);
     }
     pm_prompt(c);
     dirty(0, pic::kScreenH);
@@ -1540,6 +1675,8 @@ void load_journal_list(char slot);
 // (variant.secret_files; party::from_secret / to_secret)
 bool pool_files() { return d->prof->variant.pool_files; }
 bool secret_files() { return d->prof->variant.secret_files; }
+// Gateway to the Savage Frontier (Curse's files and saves; its own ways)
+bool gateway() { return d->prof->game == games::Game::GatewayToTheSavageFrontier; }
 // Darkness's (variant.darkness_files): 510-byte records (NAME.PC), items
 // .THG (63 bytes), effects .EFX; its saves SAVGAMx.PTY
 bool darkness_files() { return d->prof->variant.darkness_files; }
@@ -1696,7 +1833,7 @@ void vault_saved(char slot)
 bool load_game(char slot)
 {
     load_problem = nullptr;
-    if (darkness_files()) vault_loaded(slot);
+    vault_loaded(slot);                     // (Darkness, Gateway: the slot's own vault)
     char name[24];
     save_file_name(slot, name, sizeof name);
     plat::File f;
@@ -2033,11 +2170,17 @@ void view_keys(const party::Character& ch, char* keys, size_t cap)
     add(d->v_exit);
 }
 
+void draw_character_gateway(pic::Canvas& c, const party::Character& ch);
+
 void draw_character(pic::Canvas& c)
 {
     const party::Character* ch = new_char ? new_char : pt->sel();
     if (ch && (secret_files() || darkness_files())) {
         draw_character_secret(c, *ch);
+        return;
+    }
+    if (ch && gateway()) {
+        draw_character_gateway(c, *ch);
         return;
     }
     c.clear(0);
@@ -2287,6 +2430,115 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
     show_menu_line(c);
 }
 
+// Gateway's View Character (gateway_facts.md 12; DOSBox): its frame (the
+// outer one, bars at rows 8, 16, 20, column 19 from row 8 to 20); name and
+// status (row 1), sex, age, hit points (3), alignment, race (4), class (5),
+// level and experience (7), the stats from row 9 with the money panel beside
+// them, AC / THAC0 / damage (17-19, their numbers to column 18) beside
+// encumbrance / movement (numbers to column 37)
+void draw_character_gateway(pic::Canvas& c, const party::Character& ch)
+{
+    c.clear(0);
+    dirty(0, pic::kScreenH);
+    layout::character(c, d->tables, d->frame_tiles);
+    char t[48];
+    auto right = [&](const char* s, int end_col, int row, uint8_t fg) {
+        put(c, s, end_col + 1 - static_cast<int>(strlen(s)), row, fg);
+    };
+    ch.name(t, sizeof t);
+    put(c, t, 1, 1, !ch.in_combat() ? 11 : ch.enemy() ? 14 : 11);
+    if (ch.npc()) put(c, d->v_npc, static_cast<int>(strlen(t)) + 2, 1, 10);
+    put(c, d->v_status, 20, 1, 15);
+    put(c, name_of(d->health[0], 13, 9, ch.health()), 27, 1, 10);
+    put(c, name_of(d->sex[0], 7, 2, ch.sex()), 1, 3, 15);
+    snprintf(t, sizeof t, "%s%d", d->v_age, ch.age());
+    put(c, t, 12, 3, 15);
+    put(c, d->v_hp, 20, 3, 15);
+    snprintf(t, sizeof t, "%d/%d", ch.hp(), ch.hp_max());
+    right(t, 37, 3, ch.hp() < ch.hp_max() ? 14 : 10);
+    put(c, name_of(d->alignment[0], 17, 9, ch.alignment()), 1, 4, 15);
+    put(c, name_of(d->race[0], 10, 8, ch.race()), 20, 4, 15);
+    put(c, name_of(d->cls[0], 27, 18, ch.cls()), 1, 5, 15);
+    put(c, d->v_level, 1, 7, 15);
+    {
+        int top = 0;
+        for (int k = 0; k < 8; ++k)
+            if (ch.level(k) > top) top = ch.level(k);
+        size_t o = 0;
+        t[0] = 0;
+        for (int k = 0; k < 8; ++k) {
+            const int lv = ch.level(k), old = ch.old_level(k);
+            if (lv > 0 || (old > 0 && old < top)) {
+                o += static_cast<size_t>(snprintf(t + o, sizeof t - o, "%s%d", o ? "/" : "", lv + old));
+                if (o >= sizeof t) break;
+            }
+        }
+        put(c, t, 7, 7, 15);
+    }
+    put(c, d->v_exp, 20, 7, 15);
+    snprintf(t, sizeof t, "%lu", static_cast<unsigned long>(ch.exp()));
+    right(t, 37, 7, 15);
+    for (int i = 0; i < 6; ++i) {
+        put(c, d->v_stat[i], 1, 9 + i, 10);
+        const int v = ch.stat(i);
+        if (i == 0 && v == 18 && ch.str00() > 0) {
+            if (ch.str00() == 100) snprintf(t, sizeof t, "18(00)");
+            else snprintf(t, sizeof t, "18(%02d)", ch.str00());
+        } else {
+            snprintf(t, sizeof t, "%d", v);
+        }
+        put(c, t, 5, 9 + i, 10);
+    }
+    {
+        int row = 9;
+        for (int coin = 0; coin < 7 && row <= 15; ++coin) {
+            const int n = ch.money(coin);
+            if (n <= 0) continue;
+            put(c, name_of(d->money[0], 11, 7, coin), 20, row, 10);
+            snprintf(t, sizeof t, "%d", n);
+            right(t, 37, row, 10);
+            ++row;
+        }
+    }
+    put(c, d->v_ac, 1, 17, 15);
+    const int ac = ch.ac_raw();
+    snprintf(t, sizeof t, "%s%d", ac > 60 ? "-" : "", ac > 60 ? ac - 60 : 60 - ac);
+    right(t, 18, 17, 10);
+    put(c, d->v_thac0, 1, 18, 15);
+    snprintf(t, sizeof t, "%d", ch.thac0());
+    right(t, 18, 18, 10);
+    put(c, d->v_damage, 1, 19, 15);
+    const int b = ch.damage_bonus();
+    if (b) snprintf(t, sizeof t, "%dD%d%s%d", ch.dice(), ch.dice_sides(), b > 0 ? "+" : "-", b > 0 ? b : -b);
+    else snprintf(t, sizeof t, "%dD%d", ch.dice(), ch.dice_sides());
+    right(t, 18, 19, 10);
+    put(c, d->v_enc, 20, 17, 15);
+    snprintf(t, sizeof t, "%d", ch.encumbrance());
+    right(t, 37, 17, 10);
+    int mv = ch.movement();
+    if (ch.has_affect(0x2A)) mv *= 2;          // slow
+    if (ch.has_affect(0x27)) mv /= 2;          // haste
+    put(c, d->v_move, 20, 18, 15);
+    snprintf(t, sizeof t, "%d", mv);
+    right(t, 37, 18, 10);
+    // The readied weapon and armour (rows 21-22)
+    const int wi = items::readied_in(ch.items, ch.n_items, *names, items::kSlotWeapon);
+    const int ai = items::readied_in(ch.items, ch.n_items, *names, items::kSlotArmour);
+    if (wi >= 0) {
+        names->name(items::Item{ch.items[wi]}, t, sizeof t);
+        put(c, t, 1, 21, 10);
+    }
+    if (ai >= 0) {
+        names->name(items::Item{ch.items[ai]}, t, sizeof t);
+        put(c, t, 1, 22, 10);
+    }
+    char keys[80];
+    view_keys(ch, keys, sizeof keys);
+    text::build(menu, "", keys);
+    menu.selected = 0;
+    show_menu_line(c);
+}
+
 void view_character(pic::Canvas& c)
 {
     if (!pt->sel()) return;
@@ -2314,7 +2566,7 @@ void redraw_menu(pic::Canvas& c)
 {
     note_until = 0;
     note_held = false;
-    if (screen == Screen::PartyMenu) pm_prompt(c);      // the party menu's own prompt
+    if (screen == Screen::PartyMenu && !pm_pick_for) pm_prompt(c);      // the party menu's own prompt
     else if (fight_moving()) fight_move_prompt(c);      // a fight's Move: its own prompt
     else show_menu_line(c);
     if (resume_after_note) {
@@ -2428,6 +2680,8 @@ void list_line(int i, char* out, size_t cap)
     }
 }
 
+bool list_unlit = false;            // draw_list without its highlight (Gateway's item questions)
+
 void draw_list(pic::Canvas& c, const char* prompt, const char* what)
 {
     PickList& l = plist;
@@ -2442,7 +2696,7 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
         size_t n = strlen(line);
         while (n && line[n - 1] == ' ') line[--n] = 0;
         const int row = l.row0 + r;
-        if (l.top + r == l.index) {
+        if (l.top + r == l.index && !list_unlit) {
             int lead = 0;
             while (line[lead] == ' ') ++lead;
             hl_text(c, line + lead, l.col0 + lead, row);
@@ -2508,7 +2762,7 @@ void items_keys(char* out, size_t cap)
     const party::Character* ch = pt->sel();
     const bool exploring = view_from == Screen::Game || view_from == Screen::Camp || view_from == Screen::Fight;
     snprintf(out, cap, "%s%s%s%s%s%s%s%s", d->w_ready, exploring && can_use_items(*ch) ? iw(profile::kUse) : "",
-             !ch->npc() && (!in_shop_items() || darkness_files()) && view_from != Screen::Fight ? iw(profile::kTrade) : "",
+             !ch->npc() && (!in_shop_items() || darkness_files() || gateway()) && view_from != Screen::Fight ? iw(profile::kTrade) : "",
              iw(vault_on() ? profile::kDeposit : profile::kDrop),
              ch->n_items < party::kMaxItems ? iw(profile::kHalve) : "", iw(profile::kJoin),
              in_shop_items() && !ch->npc() ? iw(profile::kSell) : "", in_shop_items() ? iw(profile::kId) : "");
@@ -2516,10 +2770,10 @@ void items_keys(char* out, size_t cap)
 
 // What the game says about an item, in the text rows under the list
 // (rows 21-22, colour 14), wrapped
-void say_item(pic::Canvas& c, const char* t, uint8_t colour = 14)
+void say_item(pic::Canvas& c, const char* t, uint8_t colour = 14, int row0 = 21)
 {
-    c.fill(8, 21 * 8, 38 * 8, 16, 0);
-    int row = 21;
+    c.fill(8, row0 * 8, 38 * 8, (23 - row0) * 8, 0);
+    int row = row0;
     const char* s = t;
     while (*s && row <= 22) {
         int n = static_cast<int>(strlen(s));
@@ -2535,7 +2789,7 @@ void say_item(pic::Canvas& c, const char* t, uint8_t colour = 14)
         s += n;
         while (*s == ' ') ++s;
     }
-    dirty_rows(21, 22);
+    dirty_rows(row0, 22);
 }
 
 void item_name(int i, char* out, size_t cap) { names->name(items::Item{pt->sel()->items[i]}, out, cap); }
@@ -2561,6 +2815,16 @@ void draw_items(pic::Canvas& c)
     char keys[48];
     items_keys(keys, sizeof keys);
     draw_list(c, "", keys);
+}
+
+// Gateway's item questions (Drop It?, Is It a Deal?) show the list unlit
+// (DOSBox)
+void gw_unlight(pic::Canvas& c)
+{
+    if (!gateway() || screen != Screen::Items) return;
+    list_unlit = true;
+    draw_items(c);
+    list_unlit = false;
 }
 
 void open_items(pic::Canvas& c)
@@ -2662,6 +2926,7 @@ void drop_item(int i, pic::Canvas& c)
     char nm[48], t[96];
     item_name(i, nm, sizeof nm);
     snprintf(t, sizeof t, "%s%s %s", iw(profile::kYour), nm, iw(profile::kGoneForever));
+    gw_unlight(c);
     say_item(c, t);
     item_at = i;
     ask_yes_no(c, Ask::DropItem, iw(profile::kDropIt));
@@ -2691,6 +2956,9 @@ void trade_item(int i, pic::Canvas& c)
     draw_trade(c);
 }
 
+bool items_from_shop = false;       // Gateway: the items opened by the shop's Items (Exit: the shop)
+void draw_shop(pic::Canvas& c);
+
 // Back to the items of the one who traded (or their sheet when none are left)
 void back_to_items(pic::Canvas& c)
 {
@@ -2699,6 +2967,10 @@ void back_to_items(pic::Canvas& c)
     if (pt->sel()->n_items) {
         screen = Screen::Items;
         draw_items(c);
+    } else if (items_from_shop) {
+        items_from_shop = false;            // (Gateway: none left - the shop again, DOSBox)
+        screen = Screen::Shop;
+        draw_shop(c);
     } else {
         screen = Screen::View;
         draw_character(c);
@@ -2812,6 +3084,7 @@ void sell_item(int i, pic::Canvas& c)
     item_name(i, nm, sizeof nm);
     snprintf(t, sizeof t, "%s%d%s%s", iw(profile::kGiveYou), rules::sell_value(pt->sel()->items[i], d->facts),
              iw(profile::kGoldFor), nm);
+    gw_unlight(c);
     say_item(c, t);
     item_at = i;
     ask_yes_no(c, Ask::SellDeal, iw(profile::kDeal));
@@ -2822,6 +3095,7 @@ void identify_item(int i, pic::Canvas& c)
     char nm[48], t[120];
     item_name(i, nm, sizeof nm);
     snprintf(t, sizeof t, "%s%s", iw(profile::kIdentify), nm);
+    gw_unlight(c);
     say_item(c, t);
     item_at = i;
     ask_yes_first(c, Ask::IdDeal, iw(profile::kDeal));
@@ -3001,7 +3275,7 @@ bool write_file(const char* dir, const char* name, const uint8_t* p, size_t n)
 
 bool save_game(char slot)
 {
-    if (darkness_files()) vault_saved(slot);
+    vault_saved(slot);
     savegame::Header h;
     h.game_area = d->gs.game_area;
     const bool dungeon = vm->get(0x4BE6) != 0;
@@ -3782,6 +4056,20 @@ void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt)
     dk_slot = -1;
     // (Darkness's camp "Lose it?" lights Yes - GAME.OVR 0x2AFCB: 0x108:0x43 with 'Y')
     if (what == Ask::LoseIt && kept_hl()) menu.selected = 0;
+    // (Gateway's questions start on Yes - its question routine, seg 0x116
+    // entry 0x39, GAME.OVR 0x46203; DOSBox)
+    if (gateway()) menu.selected = 0;
+    show_menu_line(c);
+}
+
+// Gateway's questions about memorizing, scribing, overwriting a character
+// and stopping a spell have a yellow prompt (its question routine's callers
+// pass 14, the rest 13 - GAME.OVR 0x1F68C, 0x1F7C0, 0x1F8E6, 0x1FB58,
+// 0x22BBE, 0x361BB; DOSBox)
+void ask_yellow(pic::Canvas& c)
+{
+    if (!gateway()) return;
+    menu.prompt_fg = 14;
     show_menu_line(c);
 }
 
@@ -3807,6 +4095,7 @@ void remove_character(pic::Canvas& c, bool overwrite_ok)
         char t[60];
         snprintf(t, sizeof t, "%s%s%s", rw(Data::kOverwrite), base, rw(Data::kQmark));
         ask_yes_no(c, Ask::Overwrite, t);
+        ask_yellow(c);
         return;
     }
     new_base[0] = 0;
@@ -4139,8 +4428,14 @@ void draw_add_list(pic::Canvas& c)
     char what[12];
     strncpy(what, rw(Data::kAdd), sizeof what - 1);
     what[sizeof what - 1] = 0;
-    for (size_t n = strlen(what); n && what[n - 1] == ' ';) what[--n] = 0;
+    // (Gateway keeps "Add "'s space - it lights with the word: DOSBox)
+    if (!gateway())
+        for (size_t n = strlen(what); n && what[n - 1] == ' ';) what[--n] = 0;
     draw_list(c, rw(Data::kAddPrompt), what);
+    if (gateway() && menu.count > 0 && what[0] && what[strlen(what) - 1] == ' ') {
+        menu.end[0] = static_cast<int8_t>(menu.start[0] + strlen(what) - 1);
+        show_menu_line(c);
+    }
 }
 
 // Adds the chosen character, with the games' rules
@@ -4486,6 +4781,8 @@ bool load_rules(Making*& m)
     fa.mu_by_slot_n = pc.mu_by_slot_n;
     fa.mu_all_levels = pc.mu_all_levels;
     fa.mu_all_slot = pc.mu_all_slot;
+    fa.start_xp = pc.start_xp;
+    fa.platinum = pc.platinum;
     const uint32_t at[9] = {pc.pick_race, pc.pick_gender, pc.pick_class, pc.pick_alignment, pc.select,
                             pc.reroll,    pc.char_name,   pc.save_q,     pc.qmark};
     const uint32_t ch_at[5] = {pc.pick_new, pc.no_qualify, pc.change_select, pc.now_first, pc.dot};
@@ -4732,6 +5029,9 @@ void ask_create(pic::Canvas& c, Ask what, const char* prompt)
     if (darkness_files()) {
         menu.selected = 0;
         show_menu_line(c);
+    } else if (gateway() && what == Ask::Reroll) {
+        menu.selected = 1;          // (Gateway's "Reroll stats?" is a menu of its own on No - DOSBox)
+        show_menu_line(c);
     }
 }
 
@@ -4873,6 +5173,7 @@ void save_new(pic::Canvas& c, bool overwrite_ok)
         char t[60];
         snprintf(t, sizeof t, "%s%s%s", rw(Data::kOverwrite), base, rw(Data::kQmark));
         ask_yes_no(c, Ask::OverwriteNew, t);
+        ask_yellow(c);
         return;
     }
     new_base[0] = 0;
@@ -4996,7 +5297,7 @@ void sw(int i, char* out, size_t cap)
     const uint32_t at = d->prof->shop_words[i];
     OvrWords src;
     if (!at || !src.open()) return;
-    text::read_pascal(src, at, out, cap);
+    read_word(src, at, out, cap);
 }
 
 // The words of a menu string whose bit is set in mask (bit k: word k), as
@@ -5044,6 +5345,36 @@ void shop_menu(pic::Canvas& c)
         show_menu_line(c);
         return;
     }
+    if (gateway()) {
+        // Gateway (gateway_facts.md 12): its menus' words that apply - the
+        // temple's Take with coins or items on the counter, Pool when the
+        // party has coins, Share with coins there; the shop's Items when the
+        // one shopping has items, Take and Share with coins there, Pool as
+        // the temple's
+        char all[48];
+        bool party_coins = false;
+        for (int i = 0; i < pt->count; ++i)
+            if (any_money(pt->m[i])) party_coins = true;
+        const bool coins = ground->any_money();
+        unsigned mask = ~0u;
+        if (temple) {
+            sw(profile::kHealMenuMoney, all, sizeof all);
+            if (!coins && ground->n == 0) mask &= ~(1u << 2);
+            if (!party_coins) mask &= ~(1u << 3);
+            if (!coins) mask &= ~(1u << 4);
+        } else {
+            snprintf(all, sizeof all, "%s", d->w_shop);
+            const party::Character* ch = pt->sel();
+            if (!ch || ch->n_items == 0) mask &= ~(1u << 1);
+            if (!coins) mask &= ~(1u << 3 | 1u << 5);
+            if (!party_coins) mask &= ~(1u << 4);
+        }
+        keep_words(all, mask, words, sizeof words);
+        text::build(menu, "", words);
+        menu.selected = 0;
+        show_menu_line(c);
+        return;
+    }
     if (temple) sw(ground->any_money() ? profile::kHealMenuMoney : profile::kHealMenu, words, sizeof words);
     else snprintf(words, sizeof words, "%s", ground->any_money() ? d->w_shop_money : d->w_shop);
     text::build(menu, "", words);
@@ -5074,6 +5405,10 @@ void draw_shop(pic::Canvas& c)
     else if (last_pic_id >= 0 && (!treasure_on() || vault_on())) host_picture(last_pic_id, last_pic_head);
     else draw_view(c);
     draw_panel(c);
+    if (gateway() && treasure_on() && !vault_on()) {
+        c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);       // (Gateway's treasure: no place and time - DOSBox)
+        dirty_rows(15, 15);
+    }
     shop_menu(c);
 }
 
@@ -5301,7 +5636,7 @@ void draw_heal(pic::Canvas& c)
     }
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
-    if (d->tables.bars[0]) layout::bar(c, d->tables, d->frame_tiles, 16);     // (Secret: the shop's bar stays)
+    if (d->tables.bars[0] || gateway()) layout::bar(c, d->tables, d->frame_tiles, 16);     // (Secret: the shop's bar stays; Gateway too - DOSBox)
     char t[48], nm[20];
     pt->sel()->name(nm, sizeof nm);
     snprintf(t, sizeof t, "%s%s", nm, hw->help);
@@ -5368,7 +5703,15 @@ void offer_cure(pic::Canvas& c)
     sw(profile::kOnlyCost, a, sizeof a);
     sw(profile::kGoldPieces, b, sizeof b);
     snprintf(t, sizeof t, "%s%s%d%s", hw->name[cure_at], a, d->prof->cures.cost[cure_at], b);
-    say_item(c, t, 10);
+    if (gateway()) {
+        // (Gateway: the list unlit, the price from row 17 - DOSBox)
+        list_unlit = true;
+        draw_heal(c);
+        list_unlit = false;
+        say_item(c, t, 10, 17);
+    } else {
+        say_item(c, t, 10);
+    }
     sw(profile::kPayFor, a, sizeof a);
     ask_yes_no(c, Ask::PayCure, a);
 }
@@ -5746,7 +6089,8 @@ int  take_mode = 0, take_to = -1, view_by = -1;
 
 int coins_there(int k) { return take_mode ? pt->m[view_by].money(k) : ground->money[k]; }
 
-bool secret_coin_panel() { return take_mode && secret_files(); }
+// (Gateway's View too - DOSBox: the coin lit on its money panel)
+bool secret_coin_panel() { return take_mode && (secret_files() || gateway()); }
 // Darkness's vault Money: the selected's coins listed in the text area
 // (row 17, the panel's 18-character lines), the screen kept (DOSBox)
 bool dk_vault_coins() { return take_mode == 2 && darkness_files() && vault_on(); }
@@ -5801,7 +6145,8 @@ void draw_take(pic::Canvas& c)
     } else if (secret_coin_panel()) {
         // Secret's View (Trade / Drop / Deposit): the coin is picked on the
         // character's money panel (rows 9-15, columns 20-37), the screen kept
-        draw_character_secret(c, pt->m[view_by]);
+        if (gateway()) draw_character_gateway(c, pt->m[view_by]);
+        else draw_character_secret(c, pt->m[view_by]);
         plist.row0 = 9;
         plist.row1 = 15;
         plist.col0 = 20;
@@ -5820,6 +6165,8 @@ void draw_take(pic::Canvas& c)
         // (View's Trade / Drop: its words)
         snprintf(prompt, sizeof prompt, "%s", vword(profile::kVwCoinType));
         snprintf(sel, sizeof sel, "%s", iw(profile::kSelect));
+        // (Gateway: its own " Select" - a column after the prompt, DOSBox)
+        if (const uint32_t cs = profile::view_facts(d->prof->game).coin_select) ow(cs, sel, sizeof sel);
     } else {
         sw(profile::kCoinType, prompt, sizeof prompt);
         sw(profile::kSelectWord, sel, sizeof sel);
@@ -5858,7 +6205,7 @@ void ask_take(int i, pic::Canvas& c)
     } else {
         snprintf(take_prompt, sizeof take_prompt, "%s%s%s%s", a, d->money[take_coin], b[0] == ' ' ? "" : " ", b);
     }
-    if (dk_vault_coins()) {
+    if (dk_vault_coins() || (gateway() && secret_coin_panel())) {
         // (the line's highlight goes while it asks - DOSBox)
         char line[32];
         take_line(i, line, sizeof line);
@@ -6376,6 +6723,11 @@ void shop_tap(int x, int y, pic::Canvas& c)
             draw_buy(c);
             break;
         case 'V':
+            if (vault_on() && d->prof->vault.menu6) {
+                view_from = Screen::Shop;               // (Gateway's vault: Vault - the selected's items to put in it)
+                open_items(c);
+                break;
+            }
             view_character(c);
             break;
         case 'P':                       // Pool: everyone's coins on the counter
@@ -6385,6 +6737,9 @@ void shop_tap(int x, int y, pic::Canvas& c)
         case 'T':                       // Take: coins from the counter (the treasure: coins, items)
             if (treasure_on()) treasure_take(c);
             else open_take(c);
+            break;
+        case 'W':                       // Gateway's vault: Withdraw (as the treasure's Take)
+            if (vault_on()) treasure_take(c);
             break;
         case 'M':                       // the treasure's "Take: Money Items Exit"
             if (vault_on() && darkness_files() && strncmp(menu.prompt, "", 1) == 0) {
@@ -6405,10 +6760,15 @@ void shop_tap(int x, int y, pic::Canvas& c)
                 open_items(c);
             } else if (treasure_on()) {
                 open_loot(c);
+            } else if (gateway() && !temple) {
+                view_from = Screen::Shop;               // (Gateway's shop: Items - to sell them)
+                items_from_shop = true;
+                open_items(c);
             }
             break;
         case 'D':                       // the treasure's Detect (Detect Magic memorized)
-            if (treasure_on()) treasure_detect(c);
+            if (vault_on() && d->prof->vault.menu6) view_character(c);     // (Gateway's vault: Deposit - View)
+            else if (treasure_on()) treasure_detect(c);
             break;
         case 'A':                       // Appraise: gems and jewellery
             open_appraise(c);
@@ -6514,6 +6874,10 @@ void list_tap(int x, int y, pic::Canvas& c)
         } else if (items_direct) {
             items_direct = false;
             fight_after_view(c);
+        } else if (items_from_shop && screen == Screen::Items) {
+            items_from_shop = false;
+            screen = Screen::Shop;
+            draw_shop(c);
         } else {
             screen = Screen::View;
             draw_character(c);
@@ -6779,6 +7143,7 @@ struct SpellLines {
     int     reading = -1;           // a scroll's spells (the item): "on Scroll", Cast reads one (Use)
     bool    viewing = false;        // View Character's Spells: "in Memory", only looked at
 } sl;
+int gw_preview = -1;                // Gateway: the spells to memorize shown first (the question's word)
 
 // The scrolls' facts for the magic rules
 magic::Scrolls scroll_facts()
@@ -6806,7 +7171,12 @@ void build_lines(const uint8_t* ids, int n)
     // line with its count - "Cure Light Wounds (6)", DOSBox)
     const bool counted = darkness_files() && (sl.casting || sl.viewing);
     for (int i = 0; i < n && sl.n < 143; ++i) {
-        const int lv = t.spell_level(ids[i]);
+        int lv = t.spell_level(ids[i]);
+        // (Gateway: a heading for each level and kind - lvl's high bits the kind)
+        if (d->prof->magic.heading_word) {
+            const int k = t.spell_class(ids[i]);
+            lv |= (k >= 0 && k < 3 ? k : 2) << 4;
+        }
         if (lv != last) {
             sl.id[sl.n] = 0;
             sl.count[sl.n] = 0;
@@ -6833,10 +7203,11 @@ void build_lines(const uint8_t* ids, int n)
 }
 
 // Darkness's lists start on the page's LAST spell, and a turned page's
-// last spell is chosen (DOSBox: Memorize, Cast, the next page)
+// last spell is chosen (DOSBox: Memorize, Cast, the next page); Gateway's
+// too (DOSBox: Memorize)
 void dk_page_sel()
 {
-    if (!darkness_files()) return;
+    if (!darkness_files() && !gateway()) return;
     const int rows = list_rows();
     for (int i = sl.top + rows - 1; i >= sl.top; --i)
         if (i < sl.n && sl.id[i]) {
@@ -6860,7 +7231,14 @@ void draw_counts(pic::Canvas& c)
     mw(profile::kCanMemorize, w1, sizeof w1);
     // (Secret: no "NAME can memorize:" - the kinds from row 18)
     int row = 18;
-    if (w1[0]) {
+    if (w1[0] && d->prof->magic.heading_word) {
+        // (Gateway: the name on row 18, "can memorize:" under it - DOSBox)
+        char nm[20];
+        ch.name(nm, sizeof nm);
+        put(c, nm, 1, 18, ch.npc() ? 10 : 11);
+        put(c, w1, 1, 19, 10);
+        row = 20;
+    } else if (w1[0]) {
         say_status(c, w1, 19);
         row = 20;
     }
@@ -6890,6 +7268,7 @@ void draw_spells(pic::Canvas& c)
 {
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
+    if (gateway() && sl.learning) layout::bar(c, d->tables, d->frame_tiles, 2);    // (its frame GAME.OVR 0x4C43D)
     char nm[20], t[48], a[12], b[16];
     pt->sel()->name(nm, sizeof nm);
     snprintf(t, sizeof t, "%s%s", nm, d->w_s);
@@ -6903,31 +7282,59 @@ void draw_spells(pic::Canvas& c)
     snprintf(t, sizeof t, "%s%s", a, b);
     put(c, t, static_cast<int>(strlen(nm)) + 4, 1, 10);
     const int rows = list_rows();
-    if (darkness_files() && (sl.sel < sl.top || sl.sel >= sl.top + rows)) dk_page_sel();   // (a turned page)
+    if ((darkness_files() || gateway()) && (sl.sel < sl.top || sl.sel >= sl.top + rows)) dk_page_sel();   // (a turned page)
     for (int r = 0; r < rows && sl.top + r < sl.n; ++r) {
         const int i = sl.top + r;
         const int row = 5 + r;
         if (!sl.id[i]) {
-            put(c, d->w_level[sl.lvl[i] - 1], 1, row, 13);       // headings in the prompt colour
+            if (d->prof->magic.heading_word) {
+                char h[40];
+                snprintf(h, sizeof h, "%s %s%s", d->w_level[(sl.lvl[i] & 15) - 1], d->w_kind[sl.lvl[i] >> 4],
+                         d->w_spells_word);
+                put(c, h, 1, row, 13);
+            } else {
+                put(c, d->w_level[sl.lvl[i] - 1], 1, row, 13);       // headings in the prompt colour
+            }
             continue;
         }
         char line[40];
         if (sl.count[i] > 1) snprintf(line, sizeof line, "  %s (%d)", spell_name(sl.id[i]), sl.count[i]);
         else snprintf(line, sizeof line, "  %s", spell_name(sl.id[i]));
+        if (gateway() && sl.learning) {
+            // (Gateway: "*" before a spell to memorize; lit while it's shown first)
+            snprintf(line, sizeof line, " *%s", spell_name(sl.id[i]));
+            if (i == sl.sel && gw_preview >= 0) {
+                c.fill(2 * 8, row * 8, static_cast<int>(strlen(line) - 1) * 8, 8, 15);
+                font::draw_text(c, d->font, line + 1, 2, row, 0, -1);
+            } else {
+                put(c, line, 1, row, 10);
+            }
+            continue;
+        }
         if (i == sl.sel && !sl.learning) {
             hl_text(c, line + 2, 3, row);
         } else {
             put(c, line, 1, row, 10);
         }
     }
-    if (!sl.learning && !sl.casting && !sl.scrolls && !sl.choosing && !sl.viewing && sl.reading < 0) draw_counts(c);
+    if (!sl.learning && !sl.casting && !sl.scrolls && !sl.choosing && !sl.viewing && sl.reading < 0) {
+        if (gateway()) {
+            // (Gateway: the counts boxed off, joints at rows 14, 15, 17, 18 -
+            // its frame routine GAME.OVR 0x4C12C; DOSBox)
+            layout::bar(c, d->tables, d->frame_tiles, 16);
+            for (int col : {0, 39})
+                for (int r : {15, 17}) layout::tile(c, d->frame_tiles, 27, col, r);
+        }
+        draw_counts(c);
+    }
     // The menu
     char keys[40], prompt[20], k1[12];
     keys[0] = 0;
     prompt[0] = 0;
-    if (!sl.learning) {
+    if (!sl.learning || gw_preview >= 0) {
         mw(profile::kChooseSpell, prompt, sizeof prompt);
-        if (sl.viewing) k1[0] = 0;
+        if (gw_preview >= 0) prompt[0] = k1[0] = 0;
+        else if (sl.viewing) k1[0] = 0;
         else if (sl.casting || sl.reading >= 0) cw(profile::kCastKey, k1, sizeof k1);
         else if (sl.scrolls) cw(profile::kScribeKey, k1, sizeof k1);
         else if (sl.choosing) cw(profile::kLearnKey, k1, sizeof k1);
@@ -6955,6 +7362,15 @@ void confirm_memorize(pic::Canvas& c, int word)
     sl.viewing = false;
     build_lines(ids, n);
     screen = Screen::SpellList;
+    if (gateway() && gw_preview < 0) {
+        // Gateway: the list first with its last spell lit and only Exit,
+        // then the question (its memorize overlay, GAME.OVR 0x1EC90 +0x9C2:
+        // the list routine seg 0xC0 entry 0x5C in its mode 5; DOSBox)
+        gw_preview = word;
+        draw_spells(c);
+        return;
+    }
+    gw_preview = -1;
     draw_spells(c);
     char q[40];
     if (d->w_these[0]) {
@@ -6966,6 +7382,7 @@ void confirm_memorize(pic::Canvas& c, int word)
         mw(word, q, sizeof q);
     }
     ask_yes_no(c, Ask::MemorizeThese, q);
+    ask_yellow(c);
 }
 
 void show_grimoire(pic::Canvas& c)
@@ -7016,6 +7433,7 @@ void confirm_scribe(pic::Canvas& c, int word, Ask what)
         cw(word, q, sizeof q);
     }
     ask_yes_no(c, what, q);
+    ask_yellow(c);
 }
 
 void show_scrolls(pic::Canvas& c)
@@ -7196,6 +7614,10 @@ void spells_tap(int x, int y, pic::Canvas& c)
         return;
     }
     const char k = text::key(menu, text::hit(menu, x / 8));
+    if (gw_preview >= 0) {
+        if (k == 'E') confirm_memorize(c, gw_preview);
+        return;
+    }
     if (sl.reading >= 0) {
         reading_tap(k, c);
         return;
@@ -8491,7 +8913,7 @@ void draw_speed(pic::Canvas& c, bool keep = false)
         strcat(words, w1);
     }
     const char* k = words;
-    while (*k == ' ') ++k;
+    while (*k == ' ' && !gateway()) ++k;          // (Gateway's " Faster" keeps its space - DOSBox)
     aw(profile::kSpeedPrompt, prompt, sizeof prompt);
     const int at = menu.selected;
     alter_mode = AlterMode::Speed;
@@ -8756,8 +9178,20 @@ void train_character(pic::Canvas& c)
     }
     // (free once the game is won; Pool rounds; Secret's halls are free - no
     // "Training costs" word: secret_facts_2.md 18)
-    if (!game_won && d->prof->shop_words[profile::kTrainCost] && rules::gold_worth(ch, pool_files()) < 1000) {
+    if (!game_won && d->prof->shop_words[profile::kTrainCost] && train_payer < 0 &&
+        rules::gold_worth(ch, pool_files()) < 1000) {
         train_note(profile::kTrainCost, c);
+        if (d->prof->party.who_pays) {
+            // Gateway: "Training costs 1000 gp." then "Who pays 1000 gp
+            // Select Exit" over the party (GAME.OVR 0x2650E +0x51B3)
+            char prompt[24], words[16];
+            ow(d->prof->party.who_pays, prompt, sizeof prompt);
+            ow(d->prof->party.pick_menu, words, sizeof words);
+            train_who = pt->selected;
+            pm_pick_for = 'P';
+            text::build(menu, prompt, words);
+            menu.selected = 0;
+        }
         return;
     }
     if (!trainer && !load_rules(trainer)) {
@@ -8814,7 +9248,9 @@ bool train_yes_no(Ask what, char k, pic::Canvas& c)
     screen = Screen::PartyMenu;
     party::Character* ch = pt->sel();
     if (k == 'Y' && ch && trainer && train_mask) {
-        if (!game_won && d->prof->shop_words[profile::kTrainCost]) rules::pay(*ch, 1000);
+        if (!game_won && d->prof->shop_words[profile::kTrainCost])
+            rules::pay(train_payer >= 0 && train_payer < pt->count ? pt->m[train_payer] : *ch, 1000);
+        train_payer = -1;
         const int mu = ch->level(classes::MagicUser);
         create::train_classes(*ch, trainer->tables, trainer->facts, trainer->dice, train_mask, false);
         rules::recalc(*ch, *names, d->facts);
@@ -9045,6 +9481,19 @@ void pm_choose_key(char key, pic::Canvas& c);
 void pm_choose(int i, pic::Canvas& c) { pm_choose_key(pm_key(i), c); }
 void pm_choose_key(char key, pic::Canvas& c)
 {
+    // Gateway: a member's functions ask "Pick Character Select Exit" first
+    // (its party menu overlay GAME.OVR 0x2650E +0x27E; DOSBox)
+    if (d->prof->party.pick && !pm_picked && pt->count && strchr("DMITHVR", key)) {
+        char prompt[20], words[16];
+        ow(d->prof->party.pick, prompt, sizeof prompt);
+        ow(d->prof->party.pick_menu, words, sizeof words);
+        pm_pick_for = key;
+        text::build(menu, prompt, words);
+        menu.selected = 0;
+        show_menu_line(c);
+        return;
+    }
+    pm_picked = false;
     switch (key) {
     case 'L':
         if (darkness_files() && d->prof->party.load_from && !load_where) {
@@ -9149,6 +9598,12 @@ void pm_choose_key(char key, pic::Canvas& c)
     case 'H':
         start_change(c);
         return;
+    case 'I':                                   // (Gateway's Icon Select)
+        if (gateway() && pt->sel()) {
+            start_icon(c, Screen::PartyMenu);
+            return;
+        }
+        break;
     default:
         pm_prompt(c, "Not in the engine yet.");
         dirty_rows(text::kMenuRow, text::kMenuRow);
@@ -9314,6 +9769,46 @@ void pm_tap(int x, int y, pic::Canvas& c)
         if (load_problem) error(c, load_problem);
         return;
     }
+    if (pm_pick_for) {
+        // Gateway: a member picked on the list, Select goes on with the
+        // function, Exit (or the party menu's lines) leaves it
+        if (y >= text::kMenuTapTop) {
+            const char k = text::key(menu, text::hit(menu, col));
+            const char f = pm_pick_for;
+            if (k == 'S' && pt->sel() && f == 'P') {
+                // who pays: one with 1000 gp's worth, else asked again
+                if (rules::gold_worth(*pt->sel(), pool_files()) < 1000) {
+                    char t[48];
+                    sw(profile::kTrainCost, t, sizeof t);
+                    note(c, t);
+                    return;
+                }
+                pm_pick_for = 0;
+                train_payer = pt->selected;
+                if (train_who >= 0 && train_who < pt->count) pt->selected = train_who;
+                pm_prompt(c);
+                train_character(c);
+                if (screen == Screen::PartyMenu && !pm_pick_for) train_payer = -1;
+            } else if (k == 'S' && pt->sel()) {
+                pm_pick_for = 0;
+                pm_picked = true;
+                pm_prompt(c);
+                pm_choose_key(f, c);
+            } else if (k == 'E') {
+                pm_pick_for = 0;
+                train_payer = -1;
+                draw_party_menu(c);
+            }
+            return;
+        }
+        if (row >= 4 && row < 4 + pt->count && col >= 1) {
+            pt->selected = row - 4;
+            draw_party_menu(c);
+            show_menu_line(c);
+            return;
+        }
+        pm_pick_for = 0;
+    }
     if (pm_picking) {
         // Darkness's Drop: "Pick Character Select" - a member picked on the
         // list, Select asks "Drop NAME forever?"; a menu line of the party
@@ -9340,7 +9835,7 @@ void pm_tap(int x, int y, pic::Canvas& c)
         draw_party_menu(c);
         return;
     }
-    const int line = row - 12;
+    const int line = row - pm_row0();
     if (line >= 0 && line < pm_lines && y < text::kMenuTapTop) {
         if (d->prof->variant.tr) pm_sel = line;     // (Treasures: its menu keeps the line picked white)
         pm_prompt(c);
@@ -9403,8 +9898,27 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         plat::File tf;
         if (pi.types_file && open_file(pi.types_file, tf)) {
             plat::FileSource src(tf);
-            names->read_types(src, pi.types_head);
+            names->read_types(src, pi.types_head, pi.types_stride);
             tf.close();
+        }
+        if (gateway()) {
+            // (Gateway's party list: a name that may train is magenta - DOSBox)
+            const auto& pc = d->prof->create;
+            uint8_t raw[44];
+            d->gw_xp = static_cast<int32_t*>(malloc(8 * 11 * sizeof(int32_t)));
+            for (int k = 0; d->gw_xp && k < 8; ++k) {
+                if (exepack::read(exe, info, pc.ds_image + pc.tables.class_records + k * 99u, raw, sizeof raw) !=
+                    exepack::Status::Ok) {
+                    free(d->gw_xp);
+                    d->gw_xp = nullptr;
+                    break;
+                }
+                for (int i = 0; i < 11; ++i) {
+                    const uint8_t* p = raw + i * 4;
+                    d->gw_xp[k * 11 + i] =
+                        static_cast<int32_t>(p[0] | p[1] << 8 | p[2] << 16 | static_cast<uint32_t>(p[3]) << 24);
+                }
+            }
         }
     }
     d->items = 0;
@@ -9496,9 +10010,10 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             {pp.save_which, d->w_save_which, sizeof d->w_save_which}, {pp.slots, d->w_slots, sizeof d->w_slots},
             {pp.saving, d->w_saving, sizeof d->w_saving}, {pp.camp, d->w_camp, sizeof d->w_camp},
             {pp.makes_camp, d->w_makes_camp, sizeof d->w_makes_camp},
+            {d->prof->magic.heading_word, d->w_spells_word, sizeof d->w_spells_word},
         };
         for (auto& wd : words)
-            if (wd.at) text::read_pascal(src, wd.at, wd.out, wd.cap);
+            if (wd.at) read_word(src, wd.at, wd.out, wd.cap);
         for (int i = 0; i < profile::kItemWords; ++i)
             if (d->prof->item_words[i]) text::read_pascal(src, d->prof->item_words[i], d->iw[i], sizeof d->iw[i]);
         if (d->prof->magic.effects_shown && src.read_at(d->prof->magic.effects_shown, d->fx_shown, 32) != 32)
@@ -9602,6 +10117,9 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         text::read_pascal(exe, info, pm.levels.at + static_cast<uint32_t>(i) * pm.levels.stride, d->w_level[i],
                           sizeof d->w_level[i]);
     if (pm.these_spells) text::read_pascal(exe, info, pm.these_spells, d->w_these, sizeof d->w_these);
+    for (int i = 0; i < 3 && i < pm.kind_names.count && pm.kind_names.at; ++i)
+        text::read_pascal(exe, info, pm.kind_names.at + static_cast<uint32_t>(i) * pm.kind_names.stride, d->w_kind[i],
+                          sizeof d->w_kind[i]);
     if (pm.level_word) {
         // Secret: "1st" + " Level"
         char lw[12];
@@ -9789,6 +10307,20 @@ struct Host : ecl::Host {
         char name[24];
         int n = 0;
         plat::File f;
+        if (gw_wild()) {
+            // Gateway's wilderness (its wall loader, GAME.OVR 0x4712F +0x134D:
+            // only the tiles while 0x4BE6 is 0): the 8X8D block into the set
+            wd.walls[set - 1].loaded = false;
+            view3d::free_extra(wd.sets[set - 1]);
+            wd.sets[set - 1].count = 0;
+            if (open_area_dax("8X8D", block, f, name, sizeof name)) {
+                plat::FileSource src(f);
+                view3d::load_tiles(src, d->idx, static_cast<uint8_t>(block), wd.sets[set - 1]);
+                f.close();
+            }
+            if (!wd.sets[set - 1].count) plat::log("[play] wilderness tiles %d: block %d not loaded\n", set, block);
+            return;
+        }
         if (open_area_dax("WALLDEF", block, f, name, sizeof name)) {
             plat::FileSource src(f);
             if (!view3d::load_walls(src, d->idx, set, static_cast<uint8_t>(block), wd, &n)) n = 0;
@@ -9804,7 +10336,7 @@ struct Host : ecl::Host {
             plat::FileSource src(f);
             for (int k = 0; k < n; ++k)
                 view3d::load_tiles(src, d->idx, static_cast<uint8_t>(view3d::tiles_block(static_cast<uint8_t>(block), n, k)),
-                                   wd.sets[set - 1 + k]);
+                                   wd.sets[set - 1 + k], wd.per_set);
             f.close();
         }
     }
@@ -10000,6 +10532,12 @@ struct Host : ecl::Host {
         draw_view(*cv);
         draw_position(*cv);
     }
+    void square() override
+    {
+        d->gs.roof = geo::flags(d->map, d->gs.x, d->gs.y);
+        d->gs.wall_ahead = static_cast<uint8_t>(geo::wall(d->map, d->gs.x, d->gs.y, d->gs.dir));
+        gw_way_ahead();
+    }
     void clear_text() override
     {
         text::clear(*cv, text::kTextArea);
@@ -10059,7 +10597,7 @@ struct Host : ecl::Host {
             }
         } else if (e) {
             dax::RleReader r(src, d->idx, *e);
-            if (pic::parse_anim(r, e->raw_size, d->sprite) && distance >= 0 && distance < d->sprite.frames) {
+            if (pic::parse_anim(r, e->raw_size, d->sprite, d->prof->variant.sf_pics) && distance >= 0 && distance < d->sprite.frames) {
                 const pic::Header& h = d->sprite.frame[distance];
                 pic::draw_anim(src, d->idx, *e, d->sprite, distance, false, c, (h.x_cell + 3) * 8, (h.y_cell + 3) * 8, 0,
                                13, 0);
@@ -10178,16 +10716,21 @@ void draw_input(pic::Canvas& c)
     clear_menu_line(c);
     // (Darkness's name input starts a column after its prompt - DOSBox, its
     // creation's "Character name: ")
-    const int x = input_engine ? static_cast<int>(strlen(input_prompt)) +
-                                     (engine_ask == EngineAsk::Name && screen == Screen::CreateName && darkness_files() ? 1 : 0)
-                               : 0;
+    // (Gateway's too, the name white, its cursor the font's glyph 0 - an
+    // underline - in white: DOSBox)
+    const bool name_after = engine_ask == EngineAsk::Name && screen == Screen::CreateName && (darkness_files() || gateway());
+    const int x = input_engine ? static_cast<int>(strlen(input_prompt)) + (name_after ? 1 : 0) : 0;
     // (Darkness's coin questions: the prompt green, the number white - DOSBox)
-    const bool dk = input_engine && darkness_files() && engine_ask == EngineAsk::Coins;
+    // (Gateway's View's coin question: the prompt green too - DOSBox)
+    const bool dk = input_engine && (darkness_files() || (gateway() && take_mode)) && engine_ask == EngineAsk::Coins;
     if (input_engine) put(c, input_prompt, 0, text::kMenuRow, dk ? 10 : 13);
     // (Darkness's typed name is white - DOSBox)
     put(c, input_buf, x, text::kMenuRow,
-        dk ? 15 : input_engine ? (screen == Screen::CreateName && darkness_files() ? 15 : 13) : 10);
-    if (x + input_len < 40) c.fill((x + input_len) * 8, text::kMenuRow * 8, 8, 8, 15);     // the cursor
+        dk ? 15 : input_engine ? (name_after ? 15 : 13) : 10);
+    if (x + input_len < 40) {
+        if (gateway()) font::draw_glyph(c, d->font, 0, (x + input_len) * 8, text::kMenuRow * 8, 15, 0);
+        else c.fill((x + input_len) * 8, text::kMenuRow * 8, 8, 8, 15);     // the cursor
+    }
 }
 
 void start_won(pic::Canvas& c);
@@ -10304,6 +10847,14 @@ void begin_wait(pic::Canvas& c)
         break;
     case ecl::Wait::Key:                // "press <enter>/<return> to continue"
         journal_ready();                // (Darkness: JOURNAL n's sentence waits for a key)
+        if (gateway() && *vm->prompt()) {
+            // Gateway's CALL 0x809: "Press Enter to continue." as its one-word
+            // menu, lit (DOSBox)
+            text::build(menu, "", vm->prompt());
+            menu.selected = 0;
+            show_menu_line(c);
+            break;
+        }
         clear_menu_line(c);
         put(c, d->press_key, 0, text::kMenuRow, 15);
         break;
@@ -10341,7 +10892,7 @@ void begin_wait(pic::Canvas& c)
 
 void run_entry(int i, Then next)
 {
-    moving = false;                         // (a script: Secret's move mode ends)
+    if (!gateway()) moving = false;         // (a script: Secret's move mode ends; Gateway's stays - DOSBox)
     dk_explore_fresh = true;
     then = next;
     handle(vm->run(vm->entry(i)));
@@ -10356,6 +10907,7 @@ void after_move_redraw()
     head_shown = body_shown = -1;
     d->gs.roof = geo::flags(d->map, d->gs.x, d->gs.y);
     d->gs.wall_ahead = static_cast<uint8_t>(geo::wall(d->map, d->gs.x, d->gs.y, d->gs.dir));
+    gw_way_ahead();
     draw_view(*cv);
     draw_panel(*cv);
 }
@@ -10424,8 +10976,8 @@ bool do_move()
     }
     bool locked = false;
     if (vm->get(0x7EC9) < 0xFF && d->map.loaded) {
-        const int p = geo::passage(d->map, g.x, g.y, step_dir);
-        locked = p >= 2;        // locked or barred: the party would need to bash or pick it
+        const int p = way(g.x, g.y, step_dir);
+        locked = p >= 2;       // locked or barred: the party would need to bash or pick it
         if (p == 1) {
             g.x = (g.x + geo::dx(step_dir)) & 15;
             g.y = (g.y + geo::dy(step_dir)) & 15;
@@ -10600,7 +11152,7 @@ void handle(ecl::Stop r)
         look_pending = false;
         vm->set(0x7ECA, look_search);
     }
-    if (!vm->get(0x4BE6) && !pool_overland() && !dk_overland()) {
+    if (!vm->get(0x4BE6) && !pool_overland() && !dk_overland() && !gw_wild()) {
         // Outdoors the scripts run the show: go round again, unless nothing
         // happened (a script with nothing to do would spin forever)
         if (++idle_cycles < 3) {
@@ -10628,13 +11180,14 @@ void step(int dir_of_step)
         const int nx = g.x + geo::dx(dir_of_step), ny = g.y + geo::dy(dir_of_step);
         const bool off = nx < 0 || nx > 15 || ny < 0 || ny > 15;
         vm->set(0x7ED5, d->map.loaded && off && !pool_overland() && !dk_overland() &&
-                            geo::passage(d->map, g.x, g.y, dir_of_step) != 0
+                            way(g.x, g.y, dir_of_step) != 0
                             ? 1 : 0);
     }
     // The original's exploring menu clears 0x7EC9 (field_592) before every
     // key: a "don't move" left by an earlier script (a block's first run)
     // doesn't hold back this step - only this step's script can
     vm->set(0x7EC9, 0);
+    gw_way_ahead();
     // The step script runs before the move, on the square the party is on
     run_entry(0, Then::Move);
 }
@@ -10734,6 +11287,9 @@ void begin_adventuring()
         return;
     }
     tr_position = false;         // (Treasures: none under the start's pictures - DOSBox)
+    // (Gateway's wilderness: saved there, its 0x4BE6 = 0 stays - the map and
+    // tile sets load as the original's, and the view is the map)
+    if (resume && !dungeon && d->prof->variant.tile_wild) vm->set(0x4BE6, 0);
     draw_frame(c);
     if (resume) {
         if (dungeon && pool_files()) {
@@ -10760,7 +11316,8 @@ void begin_adventuring()
             // (Darkness: its map and its look again - darkness_facts.md S8)
             host->load_map(vm->get(0x4BC5) & 0xFF);
             if (d->save.look) host->load_look(d->save.look);
-        } else if (dungeon) {
+        } else if (dungeon || gw_wild()) {
+            // (Gateway's wilderness too: its region's map and tile sets)
             if (d->save.wall_block[0] > 0) host->load_map(vm->get(0x4BC5) & 0xFF);
             for (int i = 0; i < 3; ++i)
                 if (d->save.wall_block[i] > 0) host->load_walls(d->save.wall_set[i], d->save.wall_block[i]);
@@ -11061,7 +11618,8 @@ void icon_menu(pic::Canvas& c)
         if (ie->level == 6) menu.selected = 0;
         else keep_place(at);
     } else {
-        menu.selected = ie->level == 6 ? 1 : 0;
+        // (Gateway's on Yes too: its question routine - DOSBox)
+        menu.selected = ie->level == 6 && !gateway() ? 1 : 0;
     }
     show_menu_line(c);
 }
@@ -11129,7 +11687,7 @@ void start_icon(pic::Canvas& c, Screen from)
     screen = Screen::Icon;
     anim_stop();
     pic_shown = false;
-    palette_fight(true);
+    palette_fight(true, true);
 #if CYD_ICON_GALLERY
     if (opts.gallery) {
         icon_take(ie->keep, ch->rec);
@@ -11170,6 +11728,12 @@ void end_icon(pic::Canvas& c)
     palette_fight(false);
     if (from == Screen::CreateName) {
         create_after_icon(c);
+        return;
+    }
+    if (from == Screen::PartyMenu) {
+        // (Gateway's party menu Icon Select: back to the party menu)
+        screen = Screen::PartyMenu;
+        draw_party_menu(c);
         return;
     }
     draw_camp(c);
@@ -11472,7 +12036,7 @@ bool gal_load(uint8_t** parts, int n, const char* file, int add)
         }
         memset(p, 0, kTileBytes);
         const uint32_t fb = ph.frame_bytes();
-        if (fb > kTileBytes || r.read(p, fb) != fb) {
+        if (fb > kTileBytes || !pic::read_frame(r, ph, 0, p)) {
             free(p);
             continue;
         }
@@ -11678,6 +12242,17 @@ void load_sound()
             clips = new (std::nothrow) sound::ClipPlayer;
         }
         if (!clips) plat::log("[play] no %s: no sound\n", d->prof->clips.file);
+        memset(clip_rates, 0, sizeof clip_rates);
+        if (clips && d->prof->clips.rate_table && open_file(d->prof->program, f)) {
+            // (Gateway: the rates by effect number, from the player's program)
+            plat::FileSource src(f);
+            exepack::Info info;
+            uint8_t b[32];
+            if (exepack::parse(src, info) == exepack::Status::Ok &&
+                exepack::read(src, info, d->prof->create.ds_image + d->prof->clips.rate_table, b, sizeof b) == exepack::Status::Ok)
+                for (int k = 0; k < 16; ++k) clip_rates[k] = static_cast<uint16_t>(b[2 * k] | b[2 * k + 1] << 8);
+            f.close();
+        }
         return;
     }
     const sound::Layout& l = d->prof->sound;
@@ -12832,6 +13407,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     close();
     cv = &c;
     age_check = false;
+    pic::sf_map_reset();                // (Gateway's pictures without a colour map: the last one read)
     const char* prog = profile::program_name(g);
     if (!prog) {
         snprintf(msg, sizeof msg, "No play test for %s yet.", games::title(g));
@@ -12874,6 +13450,8 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
         return msg;
     }
     d->world.frame = &d->frame_tiles;
+    d->world.per_set = d->prof->variant.per_set_walls;
+    text::set_hanging_space(gateway());
     open_sky();
     open_names();
 
@@ -12991,7 +13569,9 @@ void close()
         ecl::GameState* g = &d->gs;
         view3d::vga_free(*w);                   // (Darkness's background picture, VGA tiles)
         if (cv && d->tr_bg && cv->bg == d->tr_bg) cv->bg = nullptr;
+        for (view3d::TileSet& ts : w->sets) view3d::free_extra(ts);     // (Gateway's big wall sets)
         delete d->alt_font;
+        free(d->gw_xp);
         delete d;
         delete w;
         ecl::free_game_state(g);
@@ -13068,6 +13648,9 @@ bool act(Act a, pic::Canvas& c)
         }
         if (dir == -1) return false;
     }
+    // Gateway's wilderness: turns and a step ahead only (its step script
+    // judges the square ahead), no Area
+    if (gw_wild() && (a == Act::StepLeft || a == Act::StepRight || a == Act::Area)) return false;
     switch (a) {
     case Act::TurnLeft:   g.dir = (g.dir + 6) & 7; turn_sound(); break;
     case Act::TurnRight:  g.dir = (g.dir + 2) & 7; turn_sound(); break;
@@ -13326,7 +13909,7 @@ bool walking()
 {
     if (!d || input_mode != Input::None) return false;
     if (screen == Screen::Fight) return fg && (fg->st == FSt::Move || (fg->st == FSt::Aim && fg->manual));
-    return screen == Screen::Game && !waiting && then == Then::Idle && (vm->get(0x4BE6) != 0 || pool_overland());
+    return screen == Screen::Game && !waiting && then == Then::Idle && (vm->get(0x4BE6) != 0 || pool_overland() || gw_wild());
 }
 
 void set_present_now(void (*fn)()) { g_present_now = fn; }
@@ -13383,7 +13966,7 @@ bool nav_point(int* x, int* y)
     if (screen == Screen::PartyMenu) {
         if (!pm_lines) return false;
         *x = ((d->prof->variant.party_menu_col ? d->prof->variant.party_menu_col : 2) + 1) * 8 + 2;
-        *y = (12 + pm_sel) * 8 + 2;
+        *y = (pm_row0() + pm_sel) * 8 + 2;
         return true;
     }
     if (menu_on && menu.count) return at_word();
@@ -13451,7 +14034,7 @@ bool tap_target(int x, int y, int* row, int* c0, int* c1)
         }
         return false;
     }
-    if (screen == Screen::PartyMenu && r >= 12 && r < 12 + pm_lines) {
+    if (screen == Screen::PartyMenu && r >= pm_row0() && r < pm_row0() + pm_lines) {
         *row = r;
         *c0 = 1;
         *c1 = 38;
@@ -13718,6 +14301,20 @@ void tap(int x, int y, pic::Canvas& c)
         if (a != Act::Area) act(a, c);
         return;
     }
+    // Gateway's wilderness: a tap on a square beside the party's arrow faces
+    // that way, a tap on the square ahead steps there (its arrow keys turn
+    // and step)
+    if (gw_wild() && !pic_shown && !bigpic_shown() && x >= 24 && x < 112 && y >= 24 && y < 112) {
+        const ecl::GameState& g = d->gs;
+        const int x0 = g.x - 5 < 0 ? 0 : g.x - 5 > 5 ? 5 : g.x - 5;
+        const int y0 = g.y - 5 < 0 ? 0 : g.y - 5 > 5 ? 5 : g.y - 5;
+        const int dx = (x - 24) / 8 - (g.x - x0), dy = (y - 24) / 8 - (g.y - y0);
+        const int to = dx == 0 && dy < 0 ? 0 : dx > 0 && dy == 0 ? 2 : dx == 0 && dy > 0 ? 4 : dx < 0 && dy == 0 ? 6 : -1;
+        if (to < 0) return;
+        const int turn = (to - (g.dir & 6) + 8) % 8;
+        act(turn == 0 ? Act::Forward : turn == 2 ? Act::TurnRight : turn == 4 ? Act::TurnAround : Act::TurnLeft, c);
+        return;
+    }
     // A tap on a character in the party list selects them
     if (col >= 17 && row >= 4 && row < 4 + pt->count && !bigpic_shown()) {
         pt->selected = row - 4;
@@ -13725,7 +14322,7 @@ void tap(int x, int y, pic::Canvas& c)
         return;
     }
     // The exploring menu: Area Cast View Encamp Search Look (Secret: Move first)
-    if (y >= text::kMenuTapTop && (vm->get(0x4BE6) || pool_overland() || dk_overland())) {
+    if (y >= text::kMenuTapTop && (vm->get(0x4BE6) || pool_overland() || dk_overland() || gw_wild())) {
         const char k = text::key(menu, text::hit(menu, col));
         if (moving || (k == 'M' && move_menu())) {
             if (moving && k != 'E') return;
@@ -14151,7 +14748,7 @@ bool journal_seen(int i, char* kind, int* number)
     return true;
 }
 
-bool fight_colours() { return d && fight_palette_on; }
+int fight_colours() { return d ? fight_palette_on : 0; }
 
 int canvas_depth(games::Game g)
 {

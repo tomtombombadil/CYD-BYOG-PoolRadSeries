@@ -22,11 +22,11 @@ void Names::set_words(const uint8_t* table, int count, int stride)
     }
 }
 
-bool Names::read_types(dax::ByteSource& src, uint32_t head)
+bool Names::read_types(dax::ByteSource& src, uint32_t head, uint32_t stride)
 {
     uint8_t rec[16];
     for (int t = 0; t < kTypes; ++t) {
-        if (src.read_at(head + t * 16u, rec, sizeof rec) != sizeof rec) return t > 0;
+        if (src.read_at(head + t * stride, rec, sizeof rec) != sizeof rec) return t > 0;
         TypeInfo& ti = types_[t];
         ti.slot = rec[0];
         ti.hands = rec[1];

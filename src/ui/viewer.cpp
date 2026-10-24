@@ -197,6 +197,17 @@ int wrap_text(int x, int y, int w, const char* s, ui::Font font, uint16_t col, b
 
 void rescan();
 
+// An animation block in either format (the 4-bit games', Gateway's)
+bool any_anim(const dax::Entry& en, pic::Anim& a)
+{
+    {
+        dax::RleReader r(*src, A->index_, en);
+        if (pic::parse_anim(r, en.raw_size, a)) return true;
+    }
+    dax::RleReader r(*src, A->index_, en);
+    return pic::parse_anim(r, en.raw_size, a, true);
+}
+
 bool open_file(int i)
 {
     close_file();
@@ -237,8 +248,7 @@ bool open_file(int i)
             }
         }
         if (!A->is_pic[e]) {
-            dax::RleReader r(*src, A->index_, en);
-            if (pic::parse_anim(r, en.raw_size, A->cur_anim)) {
+            if (any_anim(en, A->cur_anim)) {
                 A->is_pic[e] = A->is_anim[e] = true;
                 A->pic_hdr[e] = A->cur_anim.frame[0];
                 A->pic_hdr[e].frames = static_cast<uint8_t>(A->cur_anim.frames);
@@ -1773,8 +1783,7 @@ void draw_picture()
         }
     } else if (A->is_anim[block_sel]) {
         if (cur_anim_block != block_sel) {
-            dax::RleReader r(*src, A->index_, A->index_.entries[block_sel]);
-            pic::parse_anim(r, A->index_.entries[block_sel].raw_size, A->cur_anim);
+            any_anim(A->index_.entries[block_sel], A->cur_anim);
             cur_anim_block = block_sel;
         }
         // Frames keep their positions relative to the first frame
@@ -3779,15 +3788,17 @@ void present_play()
         frame::present();
         big_force = true;
     }
-    // A fight swaps colours 0 and 8 (the field's black shows dark grey)
-    static bool fight_colours = false;
+    // A fight swaps colours 0 and 8 (the field's black shows dark grey);
+    // Gateway's shows 8 black
+    static int fight_colours = 0;
     if (play::fight_colours() != fight_colours) {
-        fight_colours = !fight_colours;
-        if (fight_colours) {
+        fight_colours = play::fight_colours();
+        frame::set_ega_palette();
+        if (fight_colours == 1) {
             frame::set_palette(0, pic::kEga[8]);
             frame::set_palette(8, pic::kEga[0]);
-        } else {
-            frame::set_ega_palette();
+        } else if (fight_colours == 2) {
+            frame::set_palette(8, pic::kEga[0]);
         }
         frame::present();
         big_force = true;
