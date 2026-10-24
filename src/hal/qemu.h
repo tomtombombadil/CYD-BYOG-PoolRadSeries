@@ -14,5 +14,9 @@ fs::FS&  sd_fs();
 void     sd_end();
 // The next scripted touch: true while "pressed" (x, y in screen pixels)
 bool     touch(int32_t* x, int32_t* y);
+// A "journal J 4" step of the script (once)
+bool     journal(char* kind, int* number);
+// The heap / stack line now
+void     mem_now(const char* why);
 }
 #endif
