@@ -269,11 +269,20 @@ stay in the session's scratch space, never in the repo.
   small "Volume" label at its top, "-" at the left, "+" at the right and
   the percentage between them (0-100% in 5% steps; a crossed speaker at
   0% = muted); a tap on the left half takes 5% off, on the right half
-  adds 5%, the tap highlight rings the half tapped (`ui::key_zone`). The
-  same key on the Game menu's Sounds tab. Stored in the 0-255 volume byte
-  (each step the nearest byte, no drift) + `volume_muted`
-  (settings.h `settings_volume_pct`). The keys before v0.91.0, kept below
-  for their history:
+  adds 5%, the tap highlight rings the half tapped (`ui::key_zone`); a
+  half-width **Mute** toggle at its right (on: no sound, the crossed
+  speaker; off: the volume it had; + while muted un-mutes too). Stored in
+  the 0-255 volume byte (each step the nearest byte, no drift) +
+  `volume_muted` (settings.h `settings_volume_pct`). **Game Sound** (Tom,
+  2026-10-24): one key naming the mode, a tap goes round them - Tandy, PC
+  Speaker, and Darkness / Gateway / Treasures (`kSoundDarkness` 4 /
+  `kSoundGateway` 5 / `kSoundTreasures` 6: that game's ZOUNDS.DAX
+  recordings for the older games' effects; listed only with that game on
+  the card; played as Tandy until built); in Darkness, Gateway and
+  Treasures the key names the game itself, no going round. No Off (old
+  files' Off reads as Tandy, muted). The Game menu's Sounds tab: Game
+  Sound, then Volume + Mute on the freed width (two keys' worth). "?"
+  help on both. The keys before v0.91.0, kept below for their history:
 - Settings keys (2 columns; 3 rows on 320x240, 4 on 480x320; more than fit
   go on further pages, arrow keys bottom right): Brightness (a slider in
   one key's space, "Brightness nn%" in small text above it; tap a point or
