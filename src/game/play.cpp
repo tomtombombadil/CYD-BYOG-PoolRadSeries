@@ -2063,6 +2063,9 @@ void character_read(party::Character& ch)
 {
     if (pool_files()) rules::pool_stats_in(ch, d->facts);
     rules::fix_items(ch);                   // (an item the original got wrong, fixed when wanted)
+    // (Death Knights' record keeps no attack level and the like: worked out
+    // as its program does after a load)
+    if (dkk() && names) rules::recalc(ch, *names, d->facts);
 }
 
 // Loads saved game `slot`: the game's memory, position and script, and

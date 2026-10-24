@@ -1083,12 +1083,19 @@ static void sweep_saveload()
     }
     pt->m[0].rec[0x103] = 77;
     pt->m[1].rec[0x1A4] = 5;
+    // (Death Knights works a character's derived figures out after a load -
+    // the encumbrance with the steel too)
+    if (d->prof->variant.dkk) rules::recalc(pt->m[0], *names, d->facts);
     // (Pool's area 3 entry script sets 0x4C05 itself - and 0x7F79 / 0x7F7D,
     // a random number and a counter - every time it starts: another word)
     const bool pool = d->prof->variant.pool_files;
-    const uint16_t aw = pool ? 0x4EF0 : 0x4C05;
-    vm->set(aw, 0x1234);
-    vm->set(0x7E10, 0x5678);
+    // (Death Knights: a byte an address, 0x7C00 on the characters' fields -
+    // a byte in the area block and one in the table instead)
+    const bool bytes = d->prof->variant.dkk;
+    const uint16_t aw = pool ? 0x4EF0 : bytes ? 0x4EF0 : 0x4C05, bw = bytes ? 0x7A10 : 0x7E10;
+    const uint16_t av = bytes ? 0x34 : 0x1234, bv = bytes ? 0x56 : 0x5678;
+    vm->set(aw, av);
+    vm->set(bw, bv);
     static ecl::GameState g1;
     static party::Party p1;
     g1 = d->gs;
@@ -1102,7 +1109,7 @@ static void sweep_saveload()
     }
     printf("  loaded C at %d,%d dir %d area %d script %d\n", d->gs.x, d->gs.y, d->gs.dir, d->gs.game_area, d->gs.script);
     if (d->gs.x != x || d->gs.y != y || d->gs.dir != dr) problem("position not the same after load");
-    if (vm->get(aw) != 0x1234 || vm->get(0x7E10) != 0x5678) problem("script memory not the same after load");
+    if (vm->get(aw) != av || vm->get(bw) != bv) problem("script memory not the same after load");
     if (pt->count != p1.count) problem("party size differs");
     for (int i = 0; i < pt->count && i < p1.count; ++i) {
         const party::Character& a = p1.m[i];
@@ -1117,7 +1124,9 @@ static void sweep_saveload()
         if (a.n_affects != b.n_affects || memcmp(a.affects, b.affects, sizeof a.affects[0] * a.n_affects)) problem("effects differ");
     }
     for (size_t o = 0; o < sizeof g1.area1; ++o)
-        if (g1.area1[o] != d->gs.area1[o] && !(pool && (o == 0x20A || o == 0x20B))) {
+        // (Death Knights' block 36 sets 0x4C00 in its first entry - SAVE 1 at
+        // 0x8014 - which a load runs again)
+        if (g1.area1[o] != d->gs.area1[o] && !(pool && (o == 0x20A || o == 0x20B)) && !(bytes && o == 0x100)) {
             char t[64];
             snprintf(t, sizeof t, "area1 byte %03zX differs", o);
             problem(t);
@@ -1131,17 +1140,22 @@ static void sweep_saveload()
     // Saved again as D straight away: the same file
     if (!save_to('D')) problem("couldn't save D");
     std::vector<uint8_t> c1, c2;
-    if (!slurp("SAVGAMC.DAT", c1) || !slurp("SAVGAMD.DAT", c2)) problem("save files not found");
+    // (Death Knights: SAVGAMx.PTY, the characters' CHRDATxn.GAM / .WIZ / .JNK / .EFF)
+    if (!slurp(bytes ? "SAVGAMC.PTY" : "SAVGAMC.DAT", c1) || !slurp(bytes ? "SAVGAMD.PTY" : "SAVGAMD.DAT", c2))
+        problem("save files not found");
     else if (c1 != c2) {
         size_t o = 0;
         // (the characters' file names say C and D: CHRDATC1 / CHRDATD1)
         while (o < c1.size() && o < c2.size() && (c1[o] == c2[o] || (c1[o] == 'C' && c2[o] == 'D'))) ++o;
         if (o == c1.size() && c1.size() == c2.size()) o = SIZE_MAX;
     }
+    static const char* const kExts[4] = {"SAV", "SWG", "FX", nullptr};
+    static const char* const kDkkExts[4] = {"GAM", "WIZ", "JNK", "EFF"};
     if (c1.size() && c2.size() && c1.size() == c2.size()) {
         // the characters' files: the same bytes
         for (int i = 1; i <= pt->count; ++i)
-            for (const char* ext : {"SAV", "SWG", "FX"}) {
+            for (const char* ext : bytes ? kDkkExts : kExts) {
+                if (!ext) break;
                 char a[24], b[24];
                 snprintf(a, sizeof a, "CHRDATC%d.%s", i, ext);
                 snprintf(b, sizeof b, "CHRDATD%d.%s", i, ext);
