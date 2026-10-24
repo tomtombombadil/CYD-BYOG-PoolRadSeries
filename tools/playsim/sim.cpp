@@ -472,7 +472,7 @@ static int pm_line_of(char k) { for (int i = 0; i < play::pm_lines; ++i) if (pla
 // Select for the member selected)
 static void pm_tap_line(char k)
 {
-    play::tap(24, (play::pm_row0() + pm_line_of(k)) * 8 + 2, C);
+    { int px_, py_; play::pm_line_point(pm_line_of(k), &px_, &py_); play::tap(px_, py_, C); }
     if (strncmp(play::menu.prompt, "Pick Character", 14) == 0)
         for (int i = 0; i < play::menu.count; ++i)
             if (text::key(play::menu, i) == 'S') {
@@ -498,7 +498,7 @@ static void shop_run(const char* ops)
             printf("  screen %d temple %d menu [%s%s] %s HP %d/%d gold worth %d counter %d %d %d %d %d gems %d jewels %d items %d\n", (int)play::screen, (int)play::temple, play::menu.prompt, play::menu.s, nm, ch.hp(), ch.hp_max(), rules::gold_worth(ch), play::ground->money[0], play::ground->money[1], play::ground->money[2], play::ground->money[3], play::ground->money[4], ch.money(5), ch.money(6), ch.n_items);
             char t[16]; snprintf(t, 16, "shoprun%d", n++); shot(t);
         } else if (*q == '%') { ++q; play::tap(17 * 8 + 2, (4 + (*q - '0')) * 8 + 2, C); }
-        else if (*q == '^') { ++q; play::tap(24, (play::pm_row0() + pm_line_of(*q)) * 8 + 2, C); }   // a party menu line
+        else if (*q == '^') { ++q; { int px_, py_; play::pm_line_point(pm_line_of(*q), &px_, &py_); play::tap(px_, py_, C); }; }   // a party menu line
         else if (*q == '*') { party::Character& w = *play::pt->sel(); w.rec[0x127] = 0x40; w.rec[0x128] = 0x42; w.rec[0x129] = 0x0F; }   // 1000000 xp (a test)
         else if (*q == '&') { party::Character& w = *play::pt->sel(); w.rec[0x127] = 0xA0; w.rec[0x128] = 0x86; w.rec[0x129] = 0x01; }   // 100000 xp (a test)
         else if (*q == '+') { party::Character& w = *play::pt->sel(); const uint32_t x = w.exp() + 1000000; for (int i = 0; i < 4; ++i) w.rec[0x127 + i] = (uint8_t)(x >> (8 * i)); }   // 1000000 xp more (a test)
@@ -589,7 +589,7 @@ int main(int argc, char** argv)
                 // DEMO: the version line's Demo, then the demo runs by itself
                 // until the title comes back (DEMOSHOTS: a snapshot every 3 s; DEMOSTOP=ms a tap then)
                 for (int k = 0; k < play::menu.count; ++k)
-                    if (text::key(play::menu, k) == 'D') play::tap(((int)strlen(play::menu.prompt) + play::menu.start[k]) * 8 + 2, text::kMenuRow * 8 + 2, C);
+                    if (text::key(play::menu, k) == 'D') play::tap(text::word_col(play::menu, k) * 8 + 2, text::kMenuRow * 8 + 2, C);
                 int last_screen = -1, last_pc = -1;
                 for (int t = 0; t < 600000 && play::screen != play::Screen::Title; t += 20) {
                     g_now += 20;
@@ -605,7 +605,7 @@ int main(int argc, char** argv)
                 return 0;
             }
             for (int k = 0; k < play::menu.count; ++k)
-                if (text::key(play::menu, k) == 'P') { x = (int)(strlen(play::menu.prompt) + play::menu.start[k]) * 8 + 2; y = text::kMenuRow * 8 + 2; }
+                if (text::key(play::menu, k) == 'P') { x = text::word_col(play::menu, k) * 8 + 2; y = text::kMenuRow * 8 + 2; }
             play::tap(x, y, C);
             continue;
         }
@@ -622,7 +622,7 @@ int main(int argc, char** argv)
     if (getenv("HLTEST")) {
         // The tap highlight on a party menu line, then put back
         int y0, y1;
-        const bool on = play::tap_highlight(24, (play::pm_row0() + pm_line('C')) * 8 + 2, C, &y0, &y1);
+        int px_, py_; play::pm_line_point(pm_line('C'), &px_, &py_); const bool on = play::tap_highlight(px_, py_, C, &y0, &y1);
         printf("  highlight %d rows %d-%d\n", on, on ? y0 : 0, on ? y1 : 0);
         shot("hl_on");
         play::tap_highlight_end(C);
@@ -714,7 +714,7 @@ int main(int argc, char** argv)
         if (play::load_where) {         // (Darkness: "Load from where?" - Pools; LOADFROM=S: Secret's, POOLDIR its folder)
             shot("load_where");
             const int w = getenv("LOADFROM") && *getenv("LOADFROM") == 'S' ? 1 : 0;
-            play::tap(((int)strlen(play::menu.prompt) + play::menu.start[w]) * 8 + 2, text::kMenuRow * 8 + 2, C);
+            play::tap(text::word_col(play::menu, w) * 8 + 2, text::kMenuRow * 8 + 2, C);
         }
         printf("  saves [%s] menu [%s%s]\n", play::pm_saves, play::menu.prompt, play::menu.s);
         if (!strchr(play::pm_saves, save[0])) {
@@ -722,7 +722,7 @@ int main(int argc, char** argv)
             return 1;
         }
         const int k = (int)(strchr(play::pm_saves, save[0]) - play::pm_saves);
-        play::tap(((int)strlen(play::menu.prompt) + play::menu.start[k]) * 8 + 2, text::kMenuRow * 8 + 2, C);
+        play::tap(text::word_col(play::menu, k) * 8 + 2, text::kMenuRow * 8 + 2, C);
         for (int i = 0; i < play::pt->count; ++i) { char n[20]; play::pt->m[i].name(n, 20); printf("  %d: %-15s AC %d HP %d/%d race %d/%d class %d saves %d %d %d %d %d levels %d %d %d %d %d %d %d\n", i, n, play::pt->m[i].ac(), play::pt->m[i].hp(), play::pt->m[i].hp_max(), play::pt->m[i].race(), play::pt->m[i].ext[party::kExtRace], play::pt->m[i].cls(), play::pt->m[i].rec[0xDF], play::pt->m[i].rec[0xE0], play::pt->m[i].rec[0xE1], play::pt->m[i].rec[0xE2], play::pt->m[i].rec[0xE3], play::pt->m[i].rec[0x109], play::pt->m[i].rec[0x10A], play::pt->m[i].rec[0x10B], play::pt->m[i].rec[0x10C], play::pt->m[i].rec[0x10D], play::pt->m[i].rec[0x10E], play::pt->m[i].rec[0x10F]); }
         if (getenv("SAVECHECK")) {      // SAVECHECK: each member's saves as the class tables make them
             play::MagicRules* mr = nullptr;
@@ -956,7 +956,7 @@ int main(int argc, char** argv)
             // party / list line (row 4 + n, a list's row 2 + n with '+'), =123; types a
             // number, # a snapshot
             if (const char* q = getenv("VIEWOPS")) {
-                auto vtap = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[i]) * 8 + 2, text::kMenuRow * 8 + 2, C); return; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); };
+                auto vtap = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(text::word_col(play::menu, i) * 8 + 2, text::kMenuRow * 8 + 2, C); return; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); };
                 for (; *q; ++q) {
                     if (*q == '#') { shot("viewop"); continue; }
                     if (*q == '=') { ++q; while (*q && *q != ';') play::input_key(*q++, C); play::input_key('\n', C); if (!*q) break; continue; }
@@ -1217,7 +1217,7 @@ int main(int argc, char** argv)
             const char k = dk && dk[dn] ? dk[dn++] : 0;
             int hit = -1;
             for (int i = 0; k && i < play::menu.count; ++i) if (text::key(play::menu, i) == k) hit = i;
-            if (hit >= 0) { play::tap(((int)strlen(play::menu.prompt) + play::menu.start[hit]) * 8 + 2, text::kMenuRow * 8 + 2, C); printf("  door %c -> at %d,%d\n", k, play::pos_x(), play::pos_y()); }
+            if (hit >= 0) { play::tap(text::word_col(play::menu, hit) * 8 + 2, text::kMenuRow * 8 + 2, C); printf("  door %c -> at %d,%d\n", k, play::pos_x(), play::pos_y()); }
             else play::act(play::Act::Forward, C);
         }
         settle();

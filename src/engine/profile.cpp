@@ -1561,6 +1561,20 @@ constexpr ecl::OpSet kQueenEcl = [] {
     return s;
 }();
 
+// Its title (queen_facts_3.md 2; DOSBox): TITLE.TLB's pictures by id, each
+// over the one before when not cleared - the MicroMagic logo and the SSI
+// one on the red (1 + 2, 1 + 3), the AD&D product (1 + 4), the Dragonlance
+// logo and the game's name on the marble (5 + 6, 5 + 7), the picture (8),
+// then the credits on the marble (5 + 9, 5 + 10) - the original loops the
+// first six until a key (its credits came after keys); then the version
+// screen
+constexpr TitleStep kQueenTitle[] = {
+    {1, 0, 0, true, 0, 0},  {2, 0, 0, false, 3000, 0}, {1, 0, 0, true, 0, 0},  {3, 0, 0, false, 6000, 0},
+    {1, 0, 0, true, 0, 0},  {4, 0, 0, false, 7000, 0}, {5, 0, 0, true, 0, 0},  {6, 0, 0, false, 6000, 0},
+    {5, 0, 0, true, 0, 0},  {7, 0, 0, false, 8000, 0}, {8, 0, 0, true, 7000, 0}, {5, 0, 0, true, 0, 0},
+    {9, 0, 0, false, 8000, 0}, {5, 0, 0, true, 0, 0}, {10, 0, 0, false, 8000, 0},
+};
+
 constexpr TitleStep kDarknessTitle[] = {
     {1, 0, 0, true, 5000, 0},
     {2, 0, 0, true, 5000, 0},
@@ -3607,8 +3621,10 @@ const Profile kProfiles[] = {
      .frame = {},
      .tiles_file = "FRAME.TLB", .tiles_block = 0,
      .press_any_key = qw(0x425F),                    // "Press button or enter to continue"
-     .title_file = "TITLE.TLB", .title = nullptr, .title_steps = 0,
-     .title_version = 0, .title_menu = 0,
+     .title_file = "TITLE.TLB", .title = kQueenTitle, .title_steps = sizeof kQueenTitle / sizeof kQueenTitle[0],
+     // (the version screen: "Version 1.1        July 29,1992", "Play Demo Quit",
+     // "The Dark Queen of Krynn")
+     .title_version = qw(0x4D8B), .title_menu = qw(0x4ED4),
      // (its words: the program itself - C strings at its own offsets)
      .overlay = "DQK.EXE", .overlay_size = 449664,
      .first_area = 1, .last_area = 1,
@@ -3620,7 +3636,10 @@ const Profile kProfiles[] = {
      .party = {.load_which = qw(0x4E25), .name = qw(0x5E59), .save_which = qw(0x4E37), .saving = qw(0x604D),
                .load_from = qw(0x4E13), .load_sources = qw(0x500C),
                .words = kQueenPartyMenu, .n_words = sizeof kQueenPartyMenu / sizeof kQueenPartyMenu[0]},
-     .variant = {.unfinished = true, .bigpic_from = 0xF0, .hlib = true}},     // (BIGPIC ids 240-242)
+     .variant = {.unfinished = true, .bigpic_from = 0xF0,
+                 // ("Press        to continue." with the button "Return" in its gap)
+                 .press_words = {qw(0x1D19), qw(0x1D33)}, .hlib = true},     // (BIGPIC ids 240-242)
+     .title_name = qw(0x4D73)},
 };
 
 } // namespace

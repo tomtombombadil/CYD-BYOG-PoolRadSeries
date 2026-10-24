@@ -278,7 +278,7 @@ static bool pump(int max_iter = 400000)
         case Screen::Title: return false;      // (the party is gone: the title again)
         case Screen::PartyMenu:
             if (in_game_menu && pt->count) {
-                play::tap(24, (play::pm_row0() + pm_line('B')) * 8 + 2, C);
+                { int px_, py_; play::pm_line_point(pm_line('B'), &px_, &py_); play::tap(px_, py_, C); };
                 break;
             }
             return false;
@@ -338,13 +338,13 @@ static bool boot(char slot = 0)
         }
         play::tap(2, 2, C);
     }
-    play::tap(24, (play::pm_row0() + pm_line('L')) * 8 + 2, C);
+    { int px_, py_; play::pm_line_point(pm_line('L'), &px_, &py_); play::tap(px_, py_, C); };
     if (play::load_where) tap_item(0);          // (Darkness, Death Knights: "Load from where?" - the game's own)
     const char* p = strchr(play::pm_saves, slot);
     if (!p) return false;
     tap_item(static_cast<int>(p - play::pm_saves));
     if (!play::pt->count) return false;
-    play::tap(24, (play::pm_row0() + pm_line('B')) * 8 + 2, C);
+    { int px_, py_; play::pm_line_point(pm_line('B'), &px_, &py_); play::tap(px_, py_, C); };
     return pump();
 }
 

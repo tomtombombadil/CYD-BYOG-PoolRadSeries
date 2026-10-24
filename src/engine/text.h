@@ -130,6 +130,14 @@ constexpr int kMaxItems = 20;
 struct MenuColors {
     uint8_t highlight = 15, normal = 10, prompt = 13;   // the games' usual menu colours
     bool    plain_sel = false;      // Treasures: the chosen word white on black, not black on white
+    // The Dark Queen of Krynn's menus are buttons (queen_facts_3.md 1): a
+    // word a raised button (light top / left, black bottom / right, `fill`
+    // inside; its key white, the rest grey - normal), the prompt in a black-
+    // edged `box` of its own (black letters), the text a row of pixels up
+    // (y_text). The caller draws what lies under them first (no row clear).
+    bool    buttons = false;
+    uint8_t b_fill = 8, b_light = 7, b_box = 7;
+    int16_t y_text = kMenuRow * 8 - 4;
 };
 
 // A menu on two rows (Pools of Darkness's fight menu, "Move Aim Use Cast
@@ -145,7 +153,28 @@ struct Menu {
     int     selected = 0;
     bool    marked = false;        // (Gateway's '~' marks: only each choice's first letter lit)
     uint8_t prompt_fg = 0;         // the prompt's colour when not the usual (Gateway's questions: 14)
+    // Where the line starts (a column; -1: menu_origin()) and text after
+    // the words in the prompt's style (Dark Queen's "Press [Return] to
+    // continue." - queen_facts_3.md 1)
+    int8_t  col0 = -1;
+    char    tail[16] = {};
+    bool    lit = false;           // (buttons: every letter white - Dark Queen's Return)
 };
+
+// The column menu lines start at (0; Dark Queen's buttons 1 - set by the
+// Play Test for the game it runs)
+void set_menu_origin(int col);
+int  menu_origin();
+// The first column of a menu's line (its col0, else the origin)
+int  line_col(const Menu& m);
+// The column choice k starts at on a one-row menu (the prompt counted)
+int  word_col(const Menu& m, int k);
+// Dark Queen's buttons: the pixel box of choice k ([x0, x1) x [y0, y1))
+void button_box(const Menu& m, int k, int* x0, int* y0, int* x1, int* y1, const MenuColors& col = MenuColors{});
+// A button as Dark Queen draws its menus' (and its party menu's): x0..x1-1
+// by y0..y1-1, raised (light top / left, black bottom / right) or sunken
+// (the other way round - a choice not offered), filled
+void bevel(pic::Canvas& c, int x0, int y0, int x1, int y1, uint8_t light, uint8_t fill, bool sunken);
 
 // Splits s into choices: each starts at a capital letter or digit.
 void build(Menu& m, const char* prompt, const char* s);

@@ -276,8 +276,96 @@ void build(Menu& m, const char* prompt, const char* s)
 
 bool two_rows(const Menu& m) { return strchr(m.s, kRowBreak) != nullptr; }
 
+namespace {
+int g_origin = 0;
+// Real black (a fill with 0 would give Dark Queen's paper)
+void hline(pic::Canvas& c, int x0, int x1, int y, uint8_t v)
+{
+    if (y < 0 || y >= c.h) return;
+    for (int x = x0 < 0 ? 0 : x0; x < x1 && x < c.w; ++x) c.set(x, y, v);
+}
+void vline(pic::Canvas& c, int x, int y0, int y1, uint8_t v)
+{
+    if (x < 0 || x >= c.w) return;
+    for (int y = y0 < 0 ? 0 : y0; y < y1 && y < c.h; ++y) c.set(x, y, v);
+}
+void solid(pic::Canvas& c, int x0, int y0, int x1, int y1, uint8_t v)
+{
+    for (int y = y0; y < y1; ++y) hline(c, x0, x1, y, v);
+}
+// The button rows: a button's top 1 pixel above its text, 11 high
+constexpr int kAbove = 1, kHigh = 11;
+
+void draw_buttons(pic::Canvas& c, const font::Font& f, const Menu& m, const MenuColors& col)
+{
+    const int c0 = line_col(m), plen = static_cast<int>(strlen(m.prompt)), y = col.y_text;
+    auto text_at = [&](const char* s, int n, int at, uint8_t fg, uint8_t bg, bool key_white) {
+        for (int i = 0; i < n && at + i < font::kCols; ++i) {
+            if (s[i] == ' ' && bg == 0xFF) continue;
+            const bool white = key_white && i == 0;
+            font::draw_glyph(c, f, font::glyph_of(f, s[i]), (at + i) * 8, y, white ? col.highlight : fg, bg);
+        }
+    };
+    // A prompt part: black letters in a black-edged box
+    auto box = [&](const char* s, int at) {
+        int n = static_cast<int>(strlen(s));
+        while (n > 0 && s[n - 1] == ' ') --n;
+        if (n <= 0) return;
+        const int x0 = at * 8, x1 = (at + n) * 8;
+        solid(c, x0, y, x1, y + 9, col.b_box);
+        hline(c, x0 - 1, x1 + 1, y - 1, 0);
+        hline(c, x0 - 1, x1 + 1, y + 9, 0);
+        vline(c, x0 - 1, y - 1, y + 10, 0);
+        vline(c, x1, y - 1, y + 10, 0);
+        text_at(s, n, at, 0, col.b_box, false);
+    };
+    if (plen) box(m.prompt, c0);
+    const int sel = m.selected >= 0 && m.selected < m.count ? m.selected : -1;
+    for (int k = 0; k < m.count; ++k) {
+        int x0, y0, x1, y1;
+        button_box(m, k, &x0, &y0, &x1, &y1, col);
+        bevel(c, x0, y0, x1, y1, col.b_light, col.b_fill, false);
+        const int n = m.end[k] - m.start[k] + 1, at = c0 + plen + m.start[k];
+        if (k == sel) text_at(m.s + m.start[k], n, at, 0, col.highlight, false);     // (the engine's white box)
+        else text_at(m.s + m.start[k], n, at, m.lit ? col.highlight : col.normal, col.b_fill, true);
+    }
+    if (m.tail[0] && m.count) box(m.tail, c0 + plen + m.end[m.count - 1] + 1);
+}
+} // namespace
+
+void set_menu_origin(int col) { g_origin = col; }
+int  menu_origin() { return g_origin; }
+int  line_col(const Menu& m) { return m.col0 >= 0 ? m.col0 : g_origin; }
+int  word_col(const Menu& m, int k)
+{
+    return line_col(m) + static_cast<int>(strlen(m.prompt)) + (k >= 0 && k < m.count ? m.start[k] : 0);
+}
+
+void button_box(const Menu& m, int k, int* x0, int* y0, int* x1, int* y1, const MenuColors& col)
+{
+    const int a = word_col(m, k), b = a + (k >= 0 && k < m.count ? m.end[k] - m.start[k] : 0);
+    *x0 = a * 8 - 4;
+    *x1 = (b + 1) * 8 + 4;
+    *y0 = col.y_text - kAbove;
+    *y1 = *y0 + kHigh;
+}
+
+void bevel(pic::Canvas& c, int x0, int y0, int x1, int y1, uint8_t light, uint8_t fill, bool sunken)
+{
+    solid(c, x0 + 1, y0 + 1, x1 - 1, y1 - 1, fill);
+    const uint8_t tl = sunken ? 0 : light, br = sunken ? light : 0;
+    hline(c, x0, x1 - 1, y0, tl);
+    vline(c, x0, y0, y1 - 1, tl);
+    hline(c, x0 + 1, x1, y1 - 1, br);
+    vline(c, x1 - 1, y0 + 1, y1, br);
+}
+
 void draw(pic::Canvas& c, const font::Font& f, const Menu& m, const MenuColors& col)
 {
+    if (col.buttons && !two_rows(m)) {
+        draw_buttons(c, f, m, col);
+        return;
+    }
     const bool two = two_rows(m);
     if (two) {
         // Two rows: row 23's choices, then row 24's (no prompt)
@@ -301,7 +389,7 @@ void draw(pic::Canvas& c, const font::Font& f, const Menu& m, const MenuColors& 
         return;
     }
     c.fill(0, kMenuRow * 8, pic::kScreenW, 8, 0);
-    int x = 0;
+    int x = line_col(m);
     for (const char* p = m.prompt; *p && x < font::kCols; ++p, ++x)
         font::draw_glyph(c, f, font::glyph_of(f, *p), x * 8, kMenuRow * 8, m.prompt_fg ? m.prompt_fg : col.prompt, 0);
     const int sel = m.selected >= 0 && m.selected < m.count ? m.selected : -1;
@@ -353,14 +441,14 @@ void item_cell(const Menu& m, int k, int* col, int* row)
         *col = at - static_cast<int>(br - m.s) - 1;
         *row = kMenuRow;
     } else {
-        *col = static_cast<int>(strlen(m.prompt)) + at;
+        *col = line_col(m) + static_cast<int>(strlen(m.prompt)) + at;
         *row = kMenuRow;
     }
 }
 
 int hit(const Menu& m, int col)
 {
-    const int rel = col - static_cast<int>(strlen(m.prompt));
+    const int rel = col - line_col(m) - static_cast<int>(strlen(m.prompt));
     for (int k = 0; k < m.count; ++k) {
         const int hi = k + 1 < m.count ? m.start[k + 1] - 1 : m.end[k];
         if (rel >= m.start[k] && rel <= hi) return k;

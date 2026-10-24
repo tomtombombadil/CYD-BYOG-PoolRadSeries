@@ -165,7 +165,9 @@ bool draw_frame(pic::Canvas& c, hlib::ByteSource* frame, hlib::ByteSource* gen, 
     }
     if (frame) {
         ok = ok && fr;
-        for (int i : kPieces) ok = ok && tile_part(*frame, lib, i, col, c);
+        // (the party menu's screen - no facing, no moons: the four bars only)
+        const int n = dir < 0 && !moons ? 4 : static_cast<int>(sizeof kPieces);
+        for (int k = 0; k < n; ++k) ok = ok && tile_part(*frame, lib, kPieces[k], col, c);
         // (the needles: north, south, west, east)
         static const int8_t kNeedleOf[4] = {0, 3, 1, 2};
         if (ok && dir >= 0) ok = tile_part(*frame, lib, kNeedle + kNeedleOf[(dir & 7) >> 1], col, c);
@@ -174,7 +176,8 @@ bool draw_frame(pic::Canvas& c, hlib::ByteSource* frame, hlib::ByteSource* gen, 
     }
     // The boxes (the original fills them: entry 23 of the frame's colours)
     const uint8_t fill = c.vga && c.bpp == 8 ? 23 : col.ega[23];
-    for (const Box& b : {kPartyBox, kPlaceBox, kTextBox}) c.fill(b.x, b.y, b.w, b.h, fill);
+    if (dir >= 0 || moons)
+        for (const Box& b : {kPartyBox, kPlaceBox, kTextBox}) c.fill(b.x, b.y, b.w, b.h, fill);
     return ok;
 }
 

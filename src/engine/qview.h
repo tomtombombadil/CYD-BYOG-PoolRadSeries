@@ -70,7 +70,8 @@ bool draw(pic::Canvas& c, const Libs& libs, const geo::Map& m, int x, int y, int
 // GEN.TLB's lower marble, in the colours of FRAME's colour part
 // `colours` (its four looks: entries 41-44; DOSBox showed 42); the three
 // boxes (party list, place / time, text) filled with entry 23. moons:
-// the three moons' phases (0-3; -1: none drawn). The libraries one at a
+// the three moons' phases (0-3; -1: none drawn). The party menu's screen
+// (dir < 0, no moons): the bars and the lower marble only. The libraries one at a
 // time (frame, then gen; either null: left out).
 constexpr int kFrameColours = 42;
 bool draw_frame(pic::Canvas& c, hlib::ByteSource* frame, hlib::ByteSource* gen, int dir, const int moons[3],

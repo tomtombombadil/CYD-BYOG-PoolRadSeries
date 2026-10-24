@@ -9,6 +9,7 @@
 // not compiled on its own.
 
 bool hl() { return d && d->prof && d->prof->variant.hlib; }
+bool q_pm_up = false;                   // the party menu's buttons are on the screen
 
 // A file of an HLIB game: in DISK1-3 of the game folder (or the folder itself)
 bool open_hl(const char* name, plat::File& f)
@@ -64,10 +65,28 @@ void q_moons(int out[3])
     for (int i = 0; i < 3; ++i) out[i] = vm ? vm->get(static_cast<uint16_t>(0x4CF9 + i)) & 3 : 0;
 }
 
+// The party menu's box (queen_facts_3.md 1): 8-311 x 8-109 (the version
+// screen's to row 183), sunk into the marble - black above and left, light
+// (the frame's 17) below and right
+void q_pm_box(pic::Canvas& c, int last = 109)
+{
+    c.fill(8, 8, 304, last - 7, 0);
+    const uint8_t light = c.vga && c.bpp == 8 ? 17 : q_col().ega[17];
+    for (int x = 7; x <= 312; ++x) {
+        c.set(x, 7, 0);
+        c.set(x, last + 1, light);
+    }
+    for (int y = 7; y <= last + 1; ++y) {
+        c.set(7, y, 0);
+        c.set(312, y, light);
+    }
+}
+
 // The screen: the exploring frame (the view's frame, the compass, the
 // moons) or, for the party menu, the marble with one box
 __attribute__((noinline)) void q_draw_frame(pic::Canvas& c, bool explore)
 {
+    q_pm_up = false;
     c.paper = -1;
     c.clear(0);
     plat::File fa, fb;
@@ -76,12 +95,13 @@ __attribute__((noinline)) void q_draw_frame(pic::Canvas& c, bool explore)
         plat::FileSource sa(fa), sb(fb);
         int moons[3];
         q_moons(moons);
-        qview::draw_frame(c, a ? &sa : nullptr, b ? &sb : nullptr, explore ? d->gs.dir : -1, moons, q_col());
+        qview::draw_frame(c, a ? &sa : nullptr, b ? &sb : nullptr, explore ? d->gs.dir : -1, explore ? moons : nullptr,
+                          q_col());
     }
     if (a) fa.close();
     if (b) fb.close();
     q_paper(c, true);
-    if (!explore) c.fill(8, 8, pic::kScreenW - 16, 176, 0);      // (the party menu: one box)
+    if (!explore) q_pm_box(c);
     dirty(0, pic::kScreenH);
 }
 
@@ -194,4 +214,190 @@ __attribute__((noinline)) bool q_picture(pic::Canvas& c, int id, bool big)
     }
     plat::log("[play] picture %d%s: %s\n", id, big ? " (big)" : "", ok ? "shown" : "missing");
     return ok;
+}
+
+// ---- Buttons (queen_facts_3.md 1) -------------------------------------------
+// The original's menus are buttons on the marble bar at the screen's bottom
+// (FRAME.TLB's part 4, 320 x 16 at row 184): a word a raised button - light
+// top / left (the frame's colour 19), black bottom / right, filled with its
+// boxes' colour (23); the key white, the rest grey (EGA 7) - the prompt in
+// a light grey black-edged box of its own with black letters, the line from
+// column 1, the letters at y 188.
+
+uint8_t q_entry(const pic::Canvas& c, int e) { return c.vga && c.bpp == 8 ? static_cast<uint8_t>(e) : q_col().ega[e]; }
+pic::Canvas* q_canvas = nullptr;            // (the screen's: q_buttons' colours)
+
+text::MenuColors q_buttons()
+{
+    static pic::Canvas none{nullptr, 0, 0, 4};
+    const pic::Canvas& c = q_canvas ? *q_canvas : none;
+    text::MenuColors mc;
+    mc.buttons = true;
+    mc.normal = 7;
+    mc.highlight = 15;
+    mc.b_fill = q_entry(c, 23);
+    mc.b_light = q_entry(c, 19);
+    mc.b_box = 7;
+    return mc;
+}
+
+// The marble bar under the menu (its row 184-199)
+__attribute__((noinline)) void q_bar(pic::Canvas& c)
+{
+    q_canvas = &c;
+    plat::File f;
+    if (!open_hl("FRAME.TLB", f)) {
+        c.fill_black(0, 184, pic::kScreenW, 16);
+        return;
+    }
+    {
+        plat::FileSource src(f);
+        hlib::Library lib;
+        uint32_t pos, len;
+        hlib::Part p;
+        const int16_t paper = c.paper;
+        c.paper = -1;
+        if (hlib::open(src, 0, src.size(), lib) == hlib::Status::Ok && hlib::entry(src, lib, 4, pos, len) &&
+            hlib::read_part(src, pos, len, p))
+            hlpic::draw(src, p, q_col(), c, hlpic::place_x(p, 0), hlpic::place_y(p, 0));
+        c.paper = paper;
+    }
+    f.close();
+}
+
+int q_pm_button_at(int x, int y);
+void q_pm_button_box(int i, int* x0, int* y0, int* x1, int* y1);
+int q_pm_sel_button();
+
+// A tap's ring (play::tap_highlight): the button the cells (row, c0) are a
+// menu word of, or the party menu's button there (row: -1 - c0 its index)
+bool q_tap_button(int row, int c0, int* x0, int* y0, int* x1, int* y1, int* lit)
+{
+    if (!d || !hl()) return false;
+    if (row == -1) {
+        q_pm_button_box(c0, x0, y0, x1, y1);
+        *lit = c0 == q_pm_sel_button();
+        return true;
+    }
+    if (!menu_on || row != text::kMenuRow) return false;
+    for (int k = 0; k < menu.count; ++k)
+        if (text::word_col(menu, k) == c0) {
+            text::button_box(menu, k, x0, y0, x1, y1, q_buttons());
+            *lit = k == menu.selected;
+            return true;
+        }
+    return false;
+}
+
+// ---- The party menu (queen_facts_3.md 1) ----------------------------------
+// Two columns of six buttons under the party's box: Add, Remove, Modify,
+// Train, Knight New Order, View | Create, Delete, Load, Save, Begin, Exit
+// (the profile's words in that order) - the left column x 4-155, the right
+// 164-315, rows from y 117 every 14 pixels, 11 high, the words from 4
+// pixels in (y 118); one not offered now sunken with black letters.
+
+void q_pm_button_box(int i, int* x0, int* y0, int* x1, int* y1)
+{
+    *x0 = i < 6 ? 4 : 164;
+    *x1 = *x0 + 152;
+    *y0 = 117 + 14 * (i % 6);
+    *y1 = *y0 + 11;
+}
+
+int q_pm_button_at(int x, int y)
+{
+    for (int i = 0; i < 12 && i < d->items; ++i) {
+        int x0, y0, x1, y1;
+        q_pm_button_box(i, &x0, &y0, &x1, &y1);
+        // (the gaps between count: the button above or beside)
+        if (x >= x0 - 4 && x < x1 + 4 && y >= y0 - 2 && y < y1 + 1) return i;
+    }
+    return -1;
+}
+
+int q_pm_sel_button() { return keys_used && pm_lines ? pm_item[pm_sel] : -1; }
+
+__attribute__((noinline)) void q_pm_buttons(pic::Canvas& c, const bool on[])
+{
+    q_canvas = &c;
+    const text::MenuColors mc = q_buttons();
+    const int sel = q_pm_sel_button();
+    for (int i = 0; i < 12 && i < d->items; ++i) {
+        int x0, y0, x1, y1;
+        q_pm_button_box(i, &x0, &y0, &x1, &y1);
+        // (the right column always raised - DOSBox, with no party too: a
+        // tap on one with nothing to do does nothing)
+        const bool up = on[i] || i >= 6;
+        text::bevel(c, x0, y0, x1, y1, mc.b_light, mc.b_fill, !up);
+        const char* w = d->item[i];
+        for (int k = 0; w[k] && k < 18; ++k) {
+            if (w[k] == ' ' && i != sel) continue;
+            const uint8_t fg = i == sel ? 0 : !up ? 0 : k == 0 ? 15 : 7;
+            const uint8_t bg = i == sel ? 15 : mc.b_fill;
+            font::draw_glyph(c, d->font, font::glyph_of(d->font, w[k]), x0 + 4 + k * 8, y0 + 1, fg, bg);
+        }
+    }
+    q_pm_up = true;
+    dirty(116, pic::kScreenH);
+}
+
+// The buttons away (a question on the bar - DOSBox: the party menu's
+// buttons go while "Load from where?" asks): the lower marble and the bars
+__attribute__((noinline)) void q_pm_hide(pic::Canvas& c)
+{
+    if (!q_pm_up) return;
+    q_pm_up = false;
+    plat::File fa, fb;
+    const bool a = open_hl("GEN.TLB", fa), b = open_hl("FRAME.TLB", fb);
+    {
+        plat::FileSource sa(fa), sb(fb);
+        const int16_t paper = c.paper;
+        c.paper = -1;
+        hlib::Library lib;
+        uint32_t pos, len;
+        hlib::Part p;
+        auto part = [&](plat::FileSource& s, int i) {
+            if (hlib::open(s, 0, s.size(), lib) == hlib::Status::Ok && hlib::entry(s, lib, i, pos, len) &&
+                hlib::read_part(s, pos, len, p))
+                hlpic::draw(s, p, q_col(), c, hlpic::place_x(p, 0), hlpic::place_y(p, 0), hlpic::Clip{0, 111, 320, 200});
+        };
+        if (a) part(sa, 1);
+        if (b) for (int i : {2, 3, 4}) part(sb, i);
+        c.paper = paper;
+    }
+    if (a) fa.close();
+    if (b) fb.close();
+    dirty(111, pic::kScreenH);
+}
+
+// ---- The title (queen_facts_3.md 2) ----------------------------------------
+// TITLE.TLB's picture `id`: its parts at their places (the first the
+// background or the whole screen, sprites over it), in its own colours
+__attribute__((noinline)) bool q_title_picture(pic::Canvas& c, int id)
+{
+    plat::File f;
+    if (!open_hl("TITLE.TLB", f)) return false;
+    bool ok = false;
+    {
+        plat::FileSource src(f);
+        uint32_t pos, len;
+        hlib::Library lib;
+        if (hlib::find_entry(src, static_cast<uint16_t>(id), pos, len) &&
+            hlib::open(src, pos, len, lib) == hlib::Status::Ok) {
+            const int16_t paper = c.paper;
+            c.paper = -1;
+            for (int part = 1; part < lib.count; ++part)
+                ok = hlpic::draw_picture_part(src, pos, len, part, q_col(), nullptr, c, 0, 0) || ok;
+            c.paper = paper;
+        }
+    }
+    f.close();
+    return ok;
+}
+
+// A line centred on the screen's 40 columns at pixel row y
+void q_centred(pic::Canvas& c, const char* s, int y, uint8_t fg)
+{
+    const int n = static_cast<int>(strlen(s)), x = (font::kCols - n) / 2 * 8;
+    for (int i = 0; i < n; ++i) font::draw_glyph(c, d->font, font::glyph_of(d->font, s[i]), x + i * 8, y, fg, 0);
 }

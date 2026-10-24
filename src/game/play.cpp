@@ -697,6 +697,7 @@ bool load_font_file(const char* name, dax::Index& idx, font::Font& out)
     return ok;
 }
 
+bool menu_on = false;            // the menu line shows `menu` (for the tap highlight)
 #include "play_queen.inc"
 
 // GAME.OVR's words, and the program's (Pool keeps a few in START.EXE: the
@@ -1163,6 +1164,7 @@ bool world_parked = false;           // the 3D view's walls on the card during a
 // scripts give speech 14, yellow; 0 or past 15 is 10 - darkness_facts.md S2)
 uint8_t script_text_colour()
 {
+    if (hl()) return 7;                 // (Dark Queen: light grey - DOSBox)
     if (!d->prof->variant.vga) return 10;
     const uint8_t v = d->gs.area1[0x38];
     return v == 0 || v > 15 ? 10 : v;
@@ -1377,8 +1379,11 @@ bool gw_trainable(const party::Character& ch)
 void draw_party(pic::Canvas& c, int col, bool mark_sel = true, bool box = false)
 {
     c.fill(col * 8, 2 * 8, (39 - col) * 8, 8, 0);      // (a "no party yet" line goes)
-    put(c, d->name_head, col, 2, 15);
-    put(c, d->ac_hp_head, 33, 2, 15);
+    // (Dark Queen: the heads red, the names and numbers grey, the selected
+    // one cyan - DOSBox)
+    const bool q = hl();
+    put(c, d->name_head, col, 2, q ? 12 : 15);
+    put(c, d->ac_hp_head, 33, 2, q ? 12 : 15);
     int row = 4;
     for (int i = 0; i < pt->count; ++i, ++row) {
         const party::Character& ch = pt->m[i];
@@ -1386,16 +1391,16 @@ void draw_party(pic::Canvas& c, int col, bool mark_sel = true, bool box = false)
         char t[24];
         ch.name(t, sizeof t);
         const bool sel = i == pt->selected && mark_sel;
-        const uint8_t fg = sel ? 15 : !ch.in_combat() ? 12 : ch.enemy() ? 14 : gw_trainable(ch) ? 13 : 11;
+        const uint8_t fg = q && sel ? 11 : sel ? 15 : !ch.in_combat() ? 12 : ch.enemy() ? 14 : q ? 7 : gw_trainable(ch) ? 13 : 11;
         if (sel && box) hl_text(c, t, col, row);
         else put(c, t, col, row, fg);
         const int ac = ch.ac_raw();
         const int aw = ac <= 0x32 ? 1 : ac <= 0x3C ? 2 : ac <= 0x45 ? 1 : 0;
         snprintf(t, sizeof t, "%s%d", ac > 60 ? "-" : "", ac > 60 ? ac - 60 : 60 - ac);
-        put(c, t, 0x20 + aw, row, 10);
+        put(c, t, 0x20 + aw, row, q ? 7 : 10);
         const int hp = ch.hp();
         snprintf(t, sizeof t, "%d", hp);
-        put(c, t, 0x24 + (hp <= 9 ? 2 : hp <= 99 ? 1 : 0), row, hp < ch.hp_max() ? 14 : 10);
+        put(c, t, 0x24 + (hp <= 9 ? 2 : hp <= 99 ? 1 : 0), row, hp < ch.hp_max() ? 14 : q ? 7 : 10);
     }
     c.fill(col * 8, row * 8, (39 - col) * 8, 8, 0);
     dirty_rows(2, row);
@@ -1482,8 +1487,6 @@ void draw_frame(pic::Canvas& c)
     dirty(0, pic::kScreenH);
 }
 
-bool menu_on = false;            // the menu line shows `menu` (for the tap highlight)
-
 // The engine's menu highlight rule (Tom, 2026-10-24, every game; features.h
 // CYD_MENU_HIGHLIGHT): a menu starts on its first word (questions on the
 // word their game starts them on), and after a word is picked the highlight
@@ -1554,6 +1557,36 @@ bool hl_plain() { return !CYD_MENU_HIGHLIGHT && d->prof->variant.tr; }
 // (Darkness's fight menu takes rows 23 and 24: text::two_rows)
 bool menu_was_two = false;
 
+void show_menu_line(pic::Canvas& c);
+void clear_menu_line(pic::Canvas& c);
+void put(pic::Canvas& c, const char* s, int col, int row, uint8_t fg);
+// "Press a key" on the menu line (the program's own words, in colour fg;
+// Dark Queen: "Press [Return] to continue." - its Return a button in the
+// gap of its prompt box, the line from column 8 - DOSBox)
+void press_line(pic::Canvas& c, uint8_t fg)
+{
+    if (hl() && d->w_press[0][0] && d->w_press[1][0]) {
+        clear_menu_line(c);
+        text::Menu m;
+        char pre[28];
+        const char* gap = strstr(d->w_press[0], "  ");
+        const size_t n = gap ? static_cast<size_t>(gap - d->w_press[0]) + 1 : 0;
+        snprintf(pre, sizeof pre, "%.*s", static_cast<int>(n), d->w_press[0]);
+        text::build(m, pre, d->w_press[1]);
+        m.col0 = 8;
+        m.lit = true;
+        const char* after = gap ? gap : "";
+        while (*after == ' ') ++after;
+        snprintf(m.tail, sizeof m.tail, "%s", after);
+        m.selected = -1;
+        text::draw(c, d->font, m, q_buttons());
+        dirty_rows(text::kMenuRow - 1, text::kMenuRow);
+        return;
+    }
+    clear_menu_line(c);
+    put(c, d->press_key, 0, text::kMenuRow, fg);
+}
+
 void show_menu_line(pic::Canvas& c)
 {
     menu_on = true;
@@ -1563,6 +1596,14 @@ void show_menu_line(pic::Canvas& c)
     }
     menu_was_two = text::two_rows(menu);
     hl_apply();
+    if (hl()) {
+        // (Dark Queen: buttons on the marble bar - queen_facts_3.md 1)
+        q_pm_hide(c);
+        q_bar(c);
+        text::draw(c, d->font, menu, q_buttons());
+        dirty_rows(text::kMenuRow - 1, text::kMenuRow);
+        return;
+    }
     text::MenuColors mc;
     mc.plain_sel = hl_plain();              // (Treasures' own: the chosen word white - DOSBox)
     text::draw(c, d->font, menu, mc);
@@ -1571,6 +1612,13 @@ void show_menu_line(pic::Canvas& c)
 
 void clear_menu_line(pic::Canvas& c)
 {
+    if (hl()) {
+        menu_on = false;
+        menu_was_two = false;
+        q_bar(c);
+        dirty_rows(text::kMenuRow - 1, text::kMenuRow);
+        return;
+    }
     menu_on = false;
     const int top = menu_was_two ? text::kMenuRow - 1 : text::kMenuRow;
     menu_was_two = false;
@@ -1883,6 +1931,22 @@ int pm_row0()
     return r > d->prof->variant.party_menu_row ? d->prof->variant.party_menu_row : r < 12 ? 12 : r;
 }
 
+// Where a tap picks party menu line `line` (the playsim's and sweep's taps;
+// Dark Queen: its button)
+void q_pm_button_box(int i, int* x0, int* y0, int* x1, int* y1);
+void pm_line_point(int line, int* x, int* y)
+{
+    if (hl() && line >= 0 && line < pm_lines) {
+        int x0, y0, x1, y1;
+        q_pm_button_box(pm_item[line], &x0, &y0, &x1, &y1);
+        *x = x0 + 8;
+        *y = y0 + 4;
+        return;
+    }
+    *x = 24;
+    *y = (pm_row0() + line) * 8 + 2;
+}
+
 void pm_flags(bool on[])
 {
     for (int i = 0; i < d->items; ++i) {
@@ -1897,8 +1961,8 @@ void pm_flags(bool on[])
         case 'J':                               // (Gateway's "initialize JoyStick/Mouse")
             on[i] = false;
             break;
-        case 'A':                               // (Gateway: none past 6 members - DOSBox)
-            if (gateway()) on[i] = pt->count < 6;
+        case 'A':                               // (Gateway, Dark Queen: none past 6 members - DOSBox)
+            if (gateway() || hl()) on[i] = pt->count < 6;
             break;
         case 'T':                               // training: only where the game offers it
             on[i] = pt->count > 0 && (vm->get(0x7EA8) & 0xFF) != 0;
@@ -1908,11 +1972,11 @@ void pm_flags(bool on[])
             break;
         case 'K':                               // Champions' Knight Change Classes: where training is, a knight below the Rose
             on[i] = false;
-            for (int k = 0; krynn_rules() && (vm->get(0x7EA8) & 0xFF) != 0 && k < pt->count; ++k)
+            for (int k = 0; (krynn_rules() || hl()) && (vm->get(0x7EA8) & 0xFF) != 0 && k < pt->count; ++k)
                 on[i] = on[i] || (pt->m[k].level(classes::Monk) > 0 && pt->m[k].ext[party::kExtKnight] < 3);
             break;
-        case 'L':
-            on[i] = pt->count == 0;
+        case 'L':                               // (Dark Queen: with a party too - DOSBox)
+            on[i] = pt->count == 0 || hl();
             break;
         case 'B':                               // the games need a party to begin
             on[i] = pt->count > 0;
@@ -1925,6 +1989,19 @@ void pm_flags(bool on[])
 
 void pm_prompt(pic::Canvas& c, const char* note = nullptr)
 {
+    if (hl()) {
+        // (Dark Queen: no prompt under its buttons; a message in a box of
+        // its own on the bar, the buttons away)
+        if (!note) return;
+        menu_on = false;
+        q_pm_hide(c);
+        q_bar(c);
+        text::Menu m;
+        text::build(m, note, "");
+        text::draw(c, d->font, m, q_buttons());
+        dirty_rows(text::kMenuRow - 1, text::kMenuRow);
+        return;
+    }
     clear_menu_line(c);
     // (Death Knights: "Select" a highlighted word - DOSBox)
     if (dkk() && !note) {
@@ -1938,6 +2015,7 @@ void pm_prompt(pic::Canvas& c, const char* note = nullptr)
 void draw_party_menu(pic::Canvas& c)
 {
     if (hl()) {
+        q_pm_up = false;
         q_draw_frame(c, false);
     } else {
         c.clear(0);
@@ -1959,6 +2037,10 @@ void draw_party_menu(pic::Canvas& c)
     const int col0 = d->prof->variant.party_menu_col ? d->prof->variant.party_menu_col : 2;
     for (int i = 0; i < d->items; ++i) {
         if (!on[i]) continue;
+        if (hl()) {                         // (Dark Queen: its buttons - q_pm_buttons)
+            pm_item[pm_lines++] = i;
+            continue;
+        }
         const int row = pm_row0() + pm_lines;
         const uint8_t fg = tr && pm_lines == pm_sel ? 15 : 10;
         char first[2] = {d->item[i][0], 0};
@@ -1967,6 +2049,10 @@ void draw_party_menu(pic::Canvas& c)
         pm_item[pm_lines++] = i;
     }
     if (pm_sel >= pm_lines) pm_sel = pm_lines ? pm_lines - 1 : 0;
+    if (hl()) {
+        q_pm_buttons(c, on);
+        return;
+    }
     if ((keys_used || (tr && CYD_MENU_HIGHLIGHT)) && pm_lines) {
         // the cursor keys' line, highlighted as the games' lists are
         // (Treasures shows its line from the start - DOSBox - in the
@@ -4285,8 +4371,7 @@ void lk_tick(uint32_t now, pic::Canvas& c)
         }
     }
     if (w.state == text::State::PageFull || w.state == text::State::Done) {
-        clear_menu_line(c);
-        put(c, d->press_key, 0, text::kMenuRow, 15);     // (white, as PRESSKEY's - DOSBox: the romance)
+        press_line(c, 15);     // (white, as PRESSKEY's - DOSBox: the romance)
         lk.prompt = true;
     }
 }
@@ -4358,8 +4443,7 @@ void lucky_paper(const uint8_t* it, pic::Canvas& c)
     }
     lk_free();
     dirty(0, pic::kScreenH);
-    clear_menu_line(c);
-    put(c, d->press_key, 0, text::kMenuRow, 15);      // (white - DOSBox)
+    press_line(c, 15);      // (white - DOSBox)
     lk.on = true;
     lk.prompt = true;
     lk.len = 1;
@@ -10468,6 +10552,18 @@ void pm_tap(int x, int y, pic::Canvas& c)
         draw_party_menu(c);
         return;
     }
+    if (hl()) {
+        // (Dark Queen: its buttons; one not offered does nothing)
+        const int k = q_pm_button_at(x, y);
+        for (int l = 0; k >= 0 && l < pm_lines; ++l)
+            if (pm_item[l] == k) {
+                pm_sel = l;
+                pm_prompt(c);
+                pm_choose(k, c);
+                return;
+            }
+        return;
+    }
     const int line = row - pm_row0();
     if (line >= 0 && line < pm_lines && y < text::kMenuTapTop) {
         if (d->prof->variant.tr) pm_sel = line;     // (Treasures: its menu keeps the line picked white)
@@ -11617,8 +11713,7 @@ void begin_wait(pic::Canvas& c)
             show_menu_line(c);
             break;
         }
-        clear_menu_line(c);
-        put(c, d->press_key, 0, text::kMenuRow, 15);
+        press_line(c, 15);
         break;
     case ecl::Wait::Shop:
         temple = false;
@@ -13129,6 +13224,7 @@ TitleRun* title_run = nullptr;
 
 bool title_picture(pic::Canvas& c, int block, int row, int col)
 {
+    if (hl()) return q_title_picture(c, block);
     plat::File f;
     if (!open_dax(d->prof->title_file, f)) return false;
     plat::FileSource src(f);
@@ -13203,6 +13299,19 @@ void title_prompt(pic::Canvas& c)
         end_title(c);
         return;
     }
+    if (hl()) {
+        // (Dark Queen: the party menu's marble and box, the name and the
+        // version centred in it (y 39 / 47), Play Demo Quit as buttons)
+        q_draw_frame(c, false);
+        q_pm_box(c, 183);
+        q_centred(c, title_run->name, 39, 7);
+        q_centred(c, title_run->version, 47, 7);
+        text::build(menu, "", title_run->words);
+        menu.selected = 0;
+        show_menu_line(c);
+        title_run->since = plat::now_ms();
+        return;
+    }
     if (title_run->name[0]) {
         // Secret: the name and the version black on a green bar (rows 22,
         // 23), the menu under them after its own prompt
@@ -13253,6 +13362,7 @@ void title_tap(int x, int y, pic::Canvas& c)
     menu.selected = k;
     show_menu_line(c);
     if (text::key(menu, k) == 'D') start_demo(c);
+    else if (hl() && text::key(menu, k) == 'Q') exit_wanted = true;     // (Dark Queen's Quit: out of the Play Test)
     else end_title(c);
 }
 
@@ -13311,8 +13421,7 @@ void won_text(int page, pic::Canvas& c)
 void won_prompt(pic::Canvas& c)
 {
     won->stage = WonRun::Key;
-    clear_menu_line(c);
-    put(c, d->press_key, 0, text::kMenuRow, 13);
+    press_line(c, 13);
 }
 
 // After the text (and its window full): the page's picture, or the key
@@ -14358,6 +14467,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     if (d->prof->variant.dkk) d->world.map_base = 25;      // (Death Knights: block 202's 25-40, arrows 41-44)
     d->world.per_set = d->prof->variant.per_set_walls;
     text::set_hanging_space(gateway() || krynn());          // (Champions too - DOSBox)
+    text::set_menu_origin(hl() ? 1 : 0);                    // (Dark Queen's buttons from column 1)
     if (!hl()) {
         open_sky();
         open_names();
@@ -14437,6 +14547,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
 
 void close()
 {
+    text::set_menu_origin(0);
     copy_of = nullptr;
     audio_stop();
     delete snd;
@@ -14876,7 +14987,7 @@ bool nav_point(int* x, int* y)
     keys_used = true;
     auto at_word = [&]() {
         const int sel = menu.selected >= 0 && menu.selected < menu.count ? menu.selected : 0;
-        *x = (static_cast<int>(strlen(menu.prompt)) + menu.start[sel]) * 8 + 2;
+        *x = text::word_col(menu, sel) * 8 + 2;
         *y = text::kMenuRow * 8 + 2;
         return true;
     };
@@ -14911,6 +15022,13 @@ bool nav_point(int* x, int* y)
     }
     if (screen == Screen::PartyMenu) {
         if (!pm_lines) return false;
+        if (hl()) {
+            int x0, y0, x1, y1;
+            q_pm_button_box(pm_item[pm_sel], &x0, &y0, &x1, &y1);
+            *x = x0 + 8;
+            *y = y0 + 4;
+            return true;
+        }
         *x = ((d->prof->variant.party_menu_col ? d->prof->variant.party_menu_col : 2) + 1) * 8 + 2;
         *y = (pm_row0() + pm_sel) * 8 + 2;
         return true;
@@ -14943,10 +15061,9 @@ bool tap_target(int x, int y, int* row, int* c0, int* c1)
     if (note_until) return false;                   // the tap puts a message away
     auto menu_word = [&](int item) {
         if (item < 0 || item >= menu.count) return false;
-        const int p = static_cast<int>(strlen(menu.prompt));
         *row = text::kMenuRow;
-        *c0 = p + menu.start[item];
-        *c1 = p + menu.end[item];
+        *c0 = text::word_col(menu, item);
+        *c1 = *c0 + menu.end[item] - menu.start[item];
         return true;
     };
     // "press a key" (one choice): a tap anywhere is it
@@ -14978,6 +15095,16 @@ bool tap_target(int x, int y, int* row, int* c0, int* c1)
             *c1 = 38;
             return true;
         }
+        return false;
+    }
+    if (screen == Screen::PartyMenu && hl() && !menu_on && y >= 112) {
+        const int k = q_pm_button_at(x, y);
+        for (int l = 0; k >= 0 && l < pm_lines; ++l)
+            if (pm_item[l] == k) {
+                *row = -1;
+                *c0 = *c1 = k;
+                return true;
+            }
         return false;
     }
     if (screen == Screen::PartyMenu && r >= pm_row0() && r < pm_row0() + pm_lines) {
@@ -15025,6 +15152,11 @@ bool tap_target(int x, int y, int* row, int* c0, int* c1)
 
 void ink(pic::Canvas& c, uint8_t colour)
 {
+    if (fl.box && colour == 0) {
+        // (off: what was there)
+        for (int j = 0; j < fl.h; ++j) c.put_row(fl.x0, fl.y0 + j, fl.w, fl.orig + static_cast<size_t>(j) * fl.w);
+        return;
+    }
     if (fl.box) {
         c.fill(fl.x0, fl.y0, fl.w, 2, colour);
         c.fill(fl.x0, fl.y0 + fl.h - 2, fl.w, 2, colour);
@@ -15071,6 +15203,29 @@ bool tap_highlight(int x, int y, pic::Canvas& c, int* y0, int* y1)
 #endif
     int row, c0, c1;
     if (!tap_target(x, y, &row, &c0, &c1)) return false;
+    // (Dark Queen: a ring round the button - its menus' and its party menu's)
+    int bx0, by0, bx1, by1, lit_k = -1;
+    if (q_tap_button(row, c0, &bx0, &by0, &bx1, &by1, &lit_k)) {
+        fl.x0 = bx0;
+        fl.y0 = by0;
+        fl.w = bx1 - bx0;
+        fl.h = by1 - by0;
+        fl.orig = static_cast<uint8_t*>(malloc(static_cast<size_t>(fl.w) * fl.h));
+        if (!fl.orig) return false;
+        for (int j = 0; j < fl.h; ++j) c.get_row(fl.x0, fl.y0 + j, fl.w, fl.orig + static_cast<size_t>(j) * fl.w);
+        fl.box = true;
+        *y0 = fl.y0;
+        *y1 = fl.y0 + fl.h;
+        if (lit_k) {
+            ink(c, 0);
+            return true;
+        }
+        ink(c, 15);
+        fb_y0 = fl.y0;
+        fb_y1 = fl.y0 + fl.h;
+        fb_touched = false;
+        return true;
+    }
     if (c0 < 0) c0 = 0;
     if (c1 > 39) c1 = 39;
     if (c1 < c0) return false;
@@ -15490,8 +15645,7 @@ void tick_screens(uint32_t now, pic::Canvas& c)
         }
     }
     if (w.state == text::State::PageFull && !page_prompt) {
-        clear_menu_line(c);
-        put(c, d->press_key, 0, text::kMenuRow, 13);
+        press_line(c, 13);
         page_prompt = true;
     } else if (w.state == text::State::Done) {
         finish_print_wait();
