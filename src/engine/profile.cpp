@@ -1992,8 +1992,12 @@ const Profile kProfiles[] = {
                0x22AAF, 0x22AE3, 0, 0x1D755, 0x1E2AE, 0, 0, 0x2A3FB, 0x2A40B, 0},
      // View Character's name tables (races in Champions' own order: the
      // engine reorders them)
+     // (its words at GAME.OVR 0x26DA2 on, as Secret's: "Status:", " years",
+     // "Level", "Experience ", "Hit Points ", "Armor Class" ...; the menu's
+     // "Exit" 0x27ABA)
      .view = {{0xCBBA, 27, 18}, {0xCDA0, 16, 8}, {0xCE20, 17, 9}, {0xCF35, 7, 2}, {0xCF43, 11, 7}, {0xCF90, 13, 9},
-              0, 0, 0x26DF0, 0x26DDC, 0x26DE4, 0x26DA2, 0, 0, 0x27507, 0, 0, 0, 0xC221, 5},
+              0, 0x26DAA, 0x26DF0, 0x26DDC, 0x26DE4, 0x26DA2, 0x274EF, 0x274E3, 0x27507, 0x2751F, 0x274FB, 0x27510,
+              0x27ABA, 5},
      .items = {.words = {0xD005, 21, 255}, .types_file = "ITEMS", .arrow = 73, .quarrel = 28, .dart = 9,
                .flask = 86, .keep1 = 0x87, .keep2 = 0xB1, .elf_bonus = {41, 42, 43, 44, 37, 36},
                .buy_items = 0x70E2, .buy = 0x7FAC, .list_next = 0x3C195, .list_prev = 0x3C19B, .list_exit = 0x73FA,
@@ -2003,12 +2007,21 @@ const Profile kProfiles[] = {
                .plural_s = 0x37F40, .weapon = 0, .armour = 0,
                .stat_fx = {0x26, 0x92, 0x0C, 0x0E, 0x44, 0x3E},
                .hammer = {0x17, 20, 20, 243}, .detect = {0x05, 0x05, 0x0B, 0x4D}, .berserk = 0x4D},
-     // Character rules: Curse's shapes at Champions' places (the knight in
-     // the monk's column) - checked in chunk 4
+     // Character rules (champions_facts.md 4): Curse's shapes at Champions'
+     // places (the knight in the monk's column; 108 spells), its race-indexed
+     // tables by its own races (the code reading each: GAME.OVR ovl 0xA4),
+     // race classes 15 bytes a race, ages 8 classes a race, alignments a
+     // mask a class with its list of six at DS 0x0A9A, ten experience rows
+     // (classes::Tables::xp_row), the thief race table as the original reads
+     // it (ovl 0xF7 +0xCC5)
      .create = {.ds_image = 0xBC60,
-                .tables = {0x31B3, 0x4400, 0x31B3, 108, 0x3882, 0x38EA, 0x38F2, 0x3903, 0x3908, 0x3968, 0x397B,
-                           0x39D0, 0x3A42, 0x3A7D, 0x3B8B, 0x3BDF, 0x3C45, 0x3D06, 0x4056},
-                .hp_count = 0, .hp_dice = 0, .icon_colours = 0x390B,
+                .tables = {.lo = 0x31B3, .hi = 0x4240, .spells = 0x31B3, .spell_count = 108, .thac0 = 0x3882,
+                           .class_flags = 0x38EA, .class_masks = 0x38F2, .max_hit_dice = 0x3903, .thief_base = 0x3908,
+                           .thief_race = 0x3970, .thief_dex = 0x397B, .stat_limits = 0x39E0, .race_classes = 0x3A50,
+                           .race_ages = 0x3AB9, .age_brackets = 0x3B99, .class_min = 0x3BDF,
+                           .class_alignments = 0x3C45, .class_records = 0x3C6D, .saves = 0x4056, .pool = false,
+                           .money_dice = 0, .lo2 = 0x0A9A, .hi2 = 0x0AA0, .krynn = true},
+                .hp_count = 0x0B6E, .hp_dice = 0x0B76, .icon_colours = 0x390B,
                 .con_save = 0x61, .dwarf_orc = 0x1A, .giants = 0x2F, .gnome_giant = 0x12, .gnome_extra = 0x30,
                 .elf_sleep = 0x6B, .halfelf = 0x7C, .prot_evil = 0x08, .ranger_giant = 0x86,
                 .mu_first = {0x0B, 0x12, 0x0C, 0x15}, .mu_level2 = 0x0F, .mu_level3 = {0x22, 0x0A},
@@ -2086,7 +2099,7 @@ const Profile kProfiles[] = {
      .won = {},
      .variant = {.unfinished = true, .program_words = true, .bars = {20, 23, 24, 25, 20, 23, 24, 25},
                  .bigpic_from = 0x70, .fight_unswapped = true, .party_menu_col = 9, .krynn = true,
-                 .press_words = {0x1A8E, 0x1AB2}},
+                 .press_words = {0x1A8E, 0x1AB2}, .order_words = {0x26DB3, 0x26DC1, 0x26DCF}},
      .overland = nullptr},
     // Pools of Darkness, GOG release (darkness_facts.md; being built -
     // Tom, 2026-10-17): GAME.EXE 64,203 bytes, EXEPACK, unpacked 72,784; its
@@ -2788,8 +2801,14 @@ const ViewFacts& view_facts(games::Game g)
                                           kP | 0xDD8A, 0x2F753, 0x2F75F, 0x2F76D, 0x2F860, 0x2F86C, 0x2F87C,
                                           0x2F88A, kP | 0xDDB4},
                                          0x6D, 0x6E, kP | 0xF208};
+    // Champions: Curse's words at its places (its View menu GAME.OVR 0x27A99;
+    // no paladins among its player characters)
+    static const ViewFacts kChampions = {{0x27A99, 0x27AA1, 0, 0x27AA8, 0x27AAE, 0x27AB4, 0x2999C, 0x299A8, 0x299C5,
+                                          0x299CF, 0x29D3D, 0, 0, 0, 0, 0, 0, 0, 0},
+                                         0, 0};
     static const ViewFacts kNone = {};
     switch (g) {
+    case games::Game::ChampionsOfKrynn: return kChampions;
     case games::Game::CurseOfTheAzureBonds: return kCurse;
     case games::Game::PoolOfRadiance: return kPool;
     case games::Game::SecretOfTheSilverBlades: return kSecret;

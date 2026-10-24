@@ -163,9 +163,10 @@ struct Data {
     char           w_save_which[24] = {}, w_slots[24] = {}, w_saving[24] = {}, w_camp_menu[40] = {}, w_crown_menu[44] = {},
                    w_camp[8] = {}, w_makes_camp[28] = {};
     char           w_press[2][36] = {};        // Champions: a one-choice menu's word shown as the other (variant.press_words)
+    char           w_order[3][16] = {};        // Champions: " of the Crown" / Sword / Rose (variant.order_words)
 
     // View Character's words (from the program and GAME.OVR)
-    char           cls[18][27] = {}, race[8][10] = {}, alignment[9][17] = {}, sex[2][7] = {}, money[7][11] = {},
+    char           cls[18][27] = {}, race[8][16] = {}, alignment[9][17] = {}, sex[2][7] = {}, money[7][11] = {},
                    health[9][13] = {};
     // Items: shop and item list words (GAME.OVR)
     rules::ItemFacts facts{};
@@ -2150,6 +2151,12 @@ const char* name_of(const char* table, int stride, int count, int i)
     return i >= 0 && i < count ? table + i * stride : "";
 }
 
+// A character's race's name (Champions: its own race, kept in ext)
+const char* race_name(const party::Character& ch)
+{
+    return name_of(d->race[0], 16, 8, krynn() ? ch.ext[party::kExtRace] : ch.race());
+}
+
 const party::Character* new_char = nullptr;   // the character being made (Create New Character)
 
 void view_box(pic::Canvas& c, const party::Character& ch);
@@ -2224,7 +2231,7 @@ void draw_character_gateway(pic::Canvas& c, const party::Character& ch);
 void draw_character(pic::Canvas& c)
 {
     const party::Character* ch = new_char ? new_char : pt->sel();
-    if (ch && (secret_files() || darkness_files())) {
+    if (ch && (secret_files() || darkness_files() || krynn())) {
         draw_character_secret(c, *ch);
         return;
     }
@@ -2245,7 +2252,7 @@ void draw_character(pic::Canvas& c)
     const char* sx = name_of(d->sex[0], 7, 2, ch->sex());
     put(c, sx, col, 3, 15);
     col += static_cast<int>(strlen(sx)) + 1;
-    const char* rc = name_of(d->race[0], 10, 8, ch->race());
+    const char* rc = race_name(*ch);
     put(c, rc, col, 3, 15);
     col += static_cast<int>(strlen(rc)) + 1;
     snprintf(t, sizeof t, "%s%d", d->v_age, ch->age());
@@ -2382,8 +2389,11 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
     auto right = [&](const char* s, int end_col, int row, uint8_t fg) {
         put(c, s, end_col + 1 - static_cast<int>(strlen(s)), row, fg);
     };
+    // (Champions, DOSBox: the name cyan, the class with the knight's order,
+    // "Experience " and the number on row 7 from column 20, no commas)
+    const bool kr = krynn();
     ch.name(t, sizeof t);
-    put(c, t, 1, 1, !ch.in_combat() ? 12 : ch.enemy() ? 14 : 11);
+    put(c, t, 1, 1, kr ? 11 : !ch.in_combat() ? 12 : ch.enemy() ? 14 : 11);
     put(c, d->v_status, 20, 1, 15);
     put(c, name_of(d->health[0], 13, 9, ch.health()), 27, 1, 10);
     const char* sx = name_of(d->sex[0], 7, 2, ch.sex());
@@ -2394,9 +2404,19 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
     snprintf(t, sizeof t, "%d/%d", ch.hp(), ch.hp_max());
     put(c, t, 31, 3, ch.hp() < ch.hp_max() ? 14 : 10);
     put(c, name_of(d->alignment[0], 17, 9, ch.alignment()), 1, 4, 15);
-    put(c, name_of(d->race[0], 10, 8, ch.race()), 20, 4, 15);
-    put(c, name_of(d->cls[0], 27, 18, ch.cls()), 1, 5, 15);
-    put(c, d->v_exp, 24, 6, 15);
+    put(c, race_name(ch), 20, 4, 15);
+    {
+        const char* cn = name_of(d->cls[0], 27, 18, ch.cls());
+        put(c, cn, 1, 5, 15);
+        const int order = ch.ext[party::kExtKnight];
+        if (kr && order >= 1 && order <= 3) put(c, d->w_order[order - 1], 1 + static_cast<int>(strlen(cn)), 5, 15);
+    }
+    if (kr) {
+        snprintf(t, sizeof t, "%s%lu", d->v_exp, static_cast<unsigned long>(ch.exp()));
+        put(c, t, 20, 7, 15);
+    } else {
+        put(c, d->v_exp, 24, 6, 15);
+    }
     put(c, d->v_level, 1, 7, 15);
     {
         int top = 0;
@@ -2413,8 +2433,10 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
         }
         put(c, t, 7, 7, 15);
     }
-    commas(static_cast<unsigned long>(ch.exp()), t, sizeof t);
-    right(t, d->prof->variant.tr ? 31 : 32, 7, 10);       // (Treasures: a column further left - DOSBox)
+    if (!kr) {
+        commas(static_cast<unsigned long>(ch.exp()), t, sizeof t);
+        right(t, d->prof->variant.tr ? 31 : 32, 7, 10);   // (Treasures: a column further left - DOSBox)
+    }
     for (int i = 0; i < 6; ++i) {
         put(c, d->v_stat[i], 1, 9 + i, 10);
         const int v = ch.stat(i);
@@ -2461,8 +2483,13 @@ void draw_character_secret(pic::Canvas& c, const party::Character& ch)
     // The money in the panel right of the stats (rows 9-15): copper first,
     // the number ending at column 37 (GAME.OVR 0x2779B: column 38 - its length)
     {
+        // (Champions: its own order - copper, bronze, platinum, steel, gems,
+        // jewelry - from where party::from_krynn keeps them)
+        static const int8_t kCurse[7] = {0, 1, 2, 3, 4, 5, 6}, kKrynn[7] = {0, 1, 4, 3, 5, 6, -1};
         int row = 9;
-        for (int coin = 0; coin < 7 && row <= 15; ++coin) {
+        for (int k = 0; k < 7 && row <= 15; ++k) {
+            const int coin = kr ? kKrynn[k] : kCurse[k];
+            if (coin < 0) break;
             const int n = ch.money(coin);
             if (n <= 0) continue;
             put(c, name_of(d->money[0], 11, 7, coin), 20, row, 10);
@@ -2506,7 +2533,7 @@ void draw_character_gateway(pic::Canvas& c, const party::Character& ch)
     snprintf(t, sizeof t, "%d/%d", ch.hp(), ch.hp_max());
     right(t, 37, 3, ch.hp() < ch.hp_max() ? 14 : 10);
     put(c, name_of(d->alignment[0], 17, 9, ch.alignment()), 1, 4, 15);
-    put(c, name_of(d->race[0], 10, 8, ch.race()), 20, 4, 15);
+    put(c, race_name(ch), 20, 4, 15);
     put(c, name_of(d->cls[0], 27, 18, ch.cls()), 1, 5, 15);
     put(c, d->v_level, 1, 7, 15);
     {
@@ -4930,7 +4957,7 @@ const char* option_name(int i)
 {
     const int v = mk->opt[i];
     switch (mk->stage) {
-    case 0: return name_of(d->race[0], 10, 8, v);
+    case 0: return name_of(d->race[0], 16, 8, v);
     case 1: return name_of(d->sex[0], 7, 2, v);
     case 2:
     case 4: return name_of(d->cls[0], 27, 18, v);
@@ -9991,7 +10018,7 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
     const auto& pv = d->prof->view;
     const profile::NameTable* tabs[6] = {&pv.cls, &pv.race, &pv.alignment, &pv.sex, &pv.money, &pv.health};
     char* outs[6] = {d->cls[0], d->race[0], d->alignment[0], d->sex[0], d->money[0], d->health[0]};
-    const int caps[6][2] = {{27, 18}, {10, 8}, {17, 9}, {7, 2}, {11, 7}, {13, 9}};
+    const int caps[6][2] = {{27, 18}, {16, 8}, {17, 9}, {7, 2}, {11, 7}, {13, 9}};
     uint32_t lo = 0xFFFFFFFFu, hi = 0;
     for (const profile::NameTable* nt : tabs) {
         if (!nt->at) continue;
@@ -10018,7 +10045,7 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         if (secret_files()) {
             // Secret's races in its own order: put them in Curse's (the
             // record's numbers; party::race_from_secret)
-            char tmp[8][10];
+            char tmp[8][16];
             memcpy(tmp, d->race, sizeof tmp);
             for (int i = 0; i < 8; ++i) memcpy(d->race[i], tmp[party::race_to_secret(static_cast<uint8_t>(i))], sizeof tmp[0]);
         }
@@ -10026,11 +10053,24 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             // Darkness's races in its own order (0 elf ... 6 monster;
             // party::race_from_darkness) and its three coins - platinum,
             // gems, jewelry - in Curse's places 4-6
-            char tmp[8][10];
+            char tmp[8][16];
             memcpy(tmp, d->race, sizeof tmp);
             for (int i = 0; i < 8; ++i) memcpy(d->race[i], tmp[party::race_to_darkness(static_cast<uint8_t>(i))], sizeof tmp[0]);
             for (int i = 6; i >= 4; --i) memcpy(d->money[i], d->money[i - 4], sizeof d->money[0]);
             for (int i = 0; i < 4; ++i) d->money[i][0] = 0;
+        }
+        if (krynn()) {
+            // Champions' coin names (Silver, Copper, Bronze, Platinum, Steel,
+            // Gems, Jewelry) in the places party::from_krynn keeps its coins:
+            // copper, bronze (silver's), -, steel (gold's), platinum, gems,
+            // jewelry; its races stay in its own order (race_name)
+            char tmp[7][11];
+            memcpy(tmp, d->money, sizeof tmp);
+            static const int8_t kFrom[7] = {1, 2, -1, 4, 3, 5, 6};
+            for (int i = 0; i < 7; ++i) {
+                if (kFrom[i] >= 0) memcpy(d->money[i], tmp[kFrom[i]], sizeof tmp[0]);
+                else d->money[i][0] = 0;
+            }
         }
     }
     // (its files closed before the roster's words open theirs: the card
@@ -10062,6 +10102,9 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             {d->prof->magic.heading_word, d->w_spells_word, sizeof d->w_spells_word},
             {d->prof->variant.press_words[0], d->w_press[0], sizeof d->w_press[0]},
             {d->prof->variant.press_words[1], d->w_press[1], sizeof d->w_press[1]},
+            {d->prof->variant.order_words[0], d->w_order[0], sizeof d->w_order[0]},
+            {d->prof->variant.order_words[1], d->w_order[1], sizeof d->w_order[1]},
+            {d->prof->variant.order_words[2], d->w_order[2], sizeof d->w_order[2]},
         };
         for (auto& wd : words)
             if (wd.at) read_word(src, wd.at, wd.out, wd.cap);
@@ -13475,7 +13518,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     }
     d->world.frame = &d->frame_tiles;
     d->world.per_set = d->prof->variant.per_set_walls;
-    text::set_hanging_space(gateway());
+    text::set_hanging_space(gateway() || krynn());          // (Champions too - DOSBox)
     open_sky();
     open_names();
 
@@ -13643,9 +13686,27 @@ bool act(Act a, pic::Canvas& c)
     }
     if (then != Then::Idle) return false;
     ecl::GameState& g = d->gs;
-    if (marker_overland()) {
-        // Darkness's / Champions' overland: eight directions - a turn is 45
-        // degrees (its move mode: up a step, down a turn round)
+    if (kr_overland()) {
+        // Champions' overland: the arrow keys step that way (DOSBox: Right a
+        // square east); the pad's turn keys the diagonals ahead (7 north-west,
+        // 9 north-east - SPEC 12)
+        int dir = -1;
+        switch (a) {
+        case Act::Forward:    dir = 0; break;
+        case Act::TurnRight:  dir = 1; break;
+        case Act::StepRight:  dir = 2; break;
+        case Act::TurnAround: dir = 4; break;
+        case Act::StepLeft:   dir = 6; break;
+        case Act::TurnLeft:   dir = 7; break;
+        default: return false;
+        }
+        g.dir = static_cast<uint8_t>(dir);
+        step(dir);
+        return true;
+    }
+    if (dk_overland()) {
+        // Darkness's overland: eight directions - a turn is 45 degrees (its
+        // move mode: up a step, down a turn round)
         switch (a) {
         case Act::TurnLeft:   g.dir = (g.dir + 7) & 7; break;
         case Act::TurnRight:  g.dir = (g.dir + 1) & 7; break;

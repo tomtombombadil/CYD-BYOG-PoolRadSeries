@@ -249,9 +249,14 @@ int races(int* out, int cap, bool secret)
     return n;
 }
 
+int race_code(const party::Character& c, const classes::Tables& t)
+{
+    return t.lay.krynn ? classes::kKrynnRace + c.ext[party::kExtRace] : c.race();
+}
+
 int classes_for(const classes::Tables& t, int race, int* out, int cap)
 {
-    const int stride = t.lay.pool ? 12 : 14;
+    const int stride = t.lay.pool ? 12 : t.lay.krynn ? 15 : 14;
     const uint16_t at = static_cast<uint16_t>(t.lay.race_classes + t.race_row(race) * stride);
     int n = t.u8(at);
     if (n > stride - 1) n = stride - 1;
@@ -260,8 +265,17 @@ int classes_for(const classes::Tables& t, int race, int* out, int cap)
     return k;
 }
 
-int alignments_for(const classes::Tables& t, int cls, int* out, int cap)
+int alignments_for(const classes::Tables& t, int cls, int* out, int cap, int god_mask)
 {
+    if (t.lay.krynn) {
+        // (Champions, GAME.OVR 0x21496: a mask a class and the god's, bit i
+        // the i-th of its six alignments - DS lo2)
+        const int mask = t.u8(static_cast<uint16_t>(t.lay.class_alignments + cls)) & god_mask;
+        int k = 0;
+        for (int i = 0; i < 6 && k < cap; ++i)
+            if (mask >> i & 1) out[k++] = t.u8(static_cast<uint16_t>(t.lay.lo2 + i));
+        return k;
+    }
     const uint16_t at = static_cast<uint16_t>(t.lay.class_alignments + cls * 10);
     int n = t.u8(at);
     if (n > 9) n = 9;
@@ -304,6 +318,13 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
 {
     c = party::Character{};
     uint8_t* r = c.rec;
+    // (Champions: its own race kept in ext, the record Curse's number; the
+    // tables' rows by its own - race_code)
+    const int code = race;
+    if (race >= classes::kKrynnRace) {
+        c.ext[party::kExtRace] = static_cast<uint8_t>(race - classes::kKrynnRace);
+        race = party::race_from_krynn(c.ext[party::kExtRace]);
+    }
     for (int i = 0; i < 6; ++i) r[kIconColours + i] = static_cast<uint8_t>(((f.icon_colours[i] + 8) << 4) + f.icon_colours[i]);
     r[kBaseAc] = 50;
     r[kThac0] = 40;
@@ -376,7 +397,8 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
 
     // Age: the race's dice for the class; a fixed age for multi-classes
     auto age_entry = [&](int e, int* base, int* count, int* sides) {
-        const uint16_t at = static_cast<uint16_t>(t.lay.race_ages + t.race_row(race) * 28 + e * 4);
+        // (Champions: 8 classes' entries a race - the knight's last)
+        const uint16_t at = static_cast<uint16_t>(t.lay.race_ages + t.race_row(code) * (t.lay.krynn ? 32 : 28) + e * 4);
         *base = t.u16(at);
         *count = t.u8(static_cast<uint16_t>(at + 2));
         *sides = t.u8(static_cast<uint16_t>(at + 3));
@@ -400,7 +422,7 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
 void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d)
 {
     uint8_t* r = c.rec;
-    const int race = c.race(), sex = c.sex() ? 1 : 0, cls = c.cls(), age = c.age();
+    const int race = race_code(c, t), sex = c.sex() ? 1 : 0, cls = c.cls(), age = c.age();
     // Back to level 1, no spells, no money (a reroll starts again)
     for (int k = 0; k < 8; ++k)
         if (r[kLevels + k]) r[kLevels + k] = 1;
@@ -567,7 +589,7 @@ int trainable(const party::Character& c, const classes::Tables& t)
     for (int k = 0; k < classes::kClasses; ++k) {
         const int lv = c.level(k);
         if (lv <= 0 || lv >= t.top_level() || race_limited(c, k, lv, t.lay.pool, t.lay.secret, t.lay.dk)) continue;
-        const int32_t need = t.exp_needed(k, lv);
+        const int32_t need = t.exp_needed(k, lv, &c);
         if (need > 0 && static_cast<uint32_t>(need) <= xp) mask |= t.u8(static_cast<uint16_t>(t.lay.class_masks + k));
     }
     return mask;
@@ -576,7 +598,7 @@ int trainable(const party::Character& c, const classes::Tables& t)
 int train_pick(const party::Character& c, const classes::Tables& t, uint32_t* exp_after)
 {
     // The experience figure to go on from `lvl` (none past the table)
-    auto need_at = [&](int k, int lvl) -> int32_t { return t.exp_needed(k, lvl); };
+    auto need_at = [&](int k, int lvl) -> int32_t { return t.exp_needed(k, lvl, &c); };
     const uint32_t xp = c.exp();
     int ready = 0, last = 0;
     int32_t keep = 0;
@@ -684,7 +706,7 @@ bool restore(party::Character& c, const classes::Tables& t)
     for (int k = 0; k <= classes::Monk; ++k) {
         const int lv = c.level(k);
         if (lv <= 0) continue;
-        const int32_t need = t.exp_needed(k, lv);
+        const int32_t need = t.exp_needed(k, lv, &c);
         if (lv <= lim_level && need > 0 && need < lim_exp && !restore_limited(c, k, lv)) {
             pick = k;
             lim_level = lv;
@@ -1090,7 +1112,7 @@ void modify_hp(party::Character& c, const classes::Tables& t, const Facts& f, in
 void modify_stat(party::Character& c, const classes::Tables& t, const Facts& f, int i, int dir)
 {
     if (i < 0 || i > 5 || !dir) return;
-    const int race = c.race(), sex = c.sex() ? 1 : 0, cls = c.cls();
+    const int race = race_code(c, t), sex = c.sex() ? 1 : 0, cls = c.cls();
     const uint16_t lim = static_cast<uint16_t>(t.lay.stat_limits + t.race_row(race) * 16);
     int lo, hi;
     if (i == 0) {

@@ -1,6 +1,7 @@
 #include "classes.h"
 
 #include "items.h"
+#include "rules.h"
 
 #include <cstring>
 #include <initializer_list>
@@ -202,7 +203,7 @@ void spell_slots(party::Character& c, const Tables& t)
         case Cleric:
             cast(c, 0, 0) += 1;
             for (int L = 2; L <= lv && L <= top; ++L)
-                for (int k = 0; k < cols; ++k) cast(c, 0, k) += t.slots_gained(Cleric, L, k);
+                for (int k = 0; k < cols; ++k) cast(c, 0, k) += t.slots_gained(t.xp_row(&c, Cleric), L, k);
             wisdom_spells(c);
             // Secret (GAME.OVR 0x3C5DD): no 6th level spells under Wisdom 17,
             // no 7th under 18
@@ -227,8 +228,8 @@ void spell_slots(party::Character& c, const Tables& t)
         case Ranger:
             if (lv > 7) {
                 for (int L = 8; L <= lv && L <= top; ++L) {
-                    for (int k = 0; k < 3; ++k) cast(c, 1, k) += t.slots_gained(Ranger, L, k);
-                    for (int k = 3; k < 5; ++k) cast(c, 2, k - 3) += t.slots_gained(Ranger, L, k);
+                    for (int k = 0; k < 3; ++k) cast(c, 1, k) += t.slots_gained(t.xp_row(&c, Ranger), L, k);
+                    for (int k = 3; k < 5; ++k) cast(c, 2, k - 3) += t.slots_gained(t.xp_row(&c, Ranger), L, k);
                 }
                 // the druid spells of the levels they have slots for (Curse's
                 // are all 1st level; Secret's ranger leaves its 2nd level
@@ -245,7 +246,7 @@ void spell_slots(party::Character& c, const Tables& t)
         case MagicUser:
             cast(c, 2, 0) += 1;
             for (int L = 2; L <= lv && L <= top; ++L)
-                for (int k = 0; k < cols; ++k) cast(c, 2, k) += t.slots_gained(MagicUser, L, k);
+                for (int k = 0; k < cols; ++k) cast(c, 2, k) += t.slots_gained(t.xp_row(&c, MagicUser), L, k);
             // Secret (GAME.OVR 0x3C609): no 6th level spells under Intelligence
             // 12, no 7th under 14
             if (t.lay.secret && c.rec[0x13] < 12) cast(c, 2, 5) = 0;
@@ -329,6 +330,18 @@ void saving_throws(party::Character& c, const Tables& t)
     if (!t.lay.pool) c.rec[kSaves] = static_cast<uint8_t>(c.rec[kSaves] + add);
 }
 
+// The thief skills' race row. Champions (its GAME.OVR 0x3ABC5) reads its own
+// race (0 Silvanesti elf ...) as a row of a table that is Curse's (rows by
+// Curse's race: 1 dwarf, 2 elf ...) one row on - a Silvanesti elf gets the
+// dwarf's, a kender the half-orc's (thief_race is set to that place); with
+// Game Fixes (rules::fixes) each race the row of the Curse race it is
+int thief_race_row(const party::Character& c, const Tables& t)
+{
+    if (!t.lay.krynn) return t.race_row(c.race());
+    if (rules::fixes()) return c.race() > 0 ? c.race() - 1 : 0;     // (thief_race is one row on)
+    return c.ext[party::kExtRace];
+}
+
 void thief_skills(party::Character& c, const Tables& t)
 {
     int lv = skill_level(c, Thief);
@@ -366,7 +379,7 @@ void thief_skills(party::Character& c, const Tables& t)
                 bonus = 5;
             }
         }
-        const int race_adj = t.s8(static_cast<uint16_t>(t.lay.thief_race + t.race_row(c.race()) * 8 + skill));
+        const int race_adj = t.s8(static_cast<uint16_t>(t.lay.thief_race + thief_race_row(c, t) * 8 + skill));
         const int base = t.u8(static_cast<uint16_t>(t.lay.thief_base + use * 8 + skill));
         int v;
         if (race_adj < 0 && base < -race_adj + bonus) {      // (the original's test: the bonus on the race's side)

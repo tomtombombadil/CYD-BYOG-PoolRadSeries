@@ -45,7 +45,10 @@ enum ClassId {
 int races(int* out, int cap, bool secret = false);
 // The classes a race allows, the alignments a class allows (from the tables)
 int classes_for(const classes::Tables& t, int race, int* out, int cap);
-int alignments_for(const classes::Tables& t, int cls, int* out, int cap);
+// (Champions: its class masks and the god's - god_mask, GAME.OVR 0x21371)
+int alignments_for(const classes::Tables& t, int cls, int* out, int cap, int god_mask = 0xFF);
+// The race the tables' rows go by (Champions: classes::kKrynnRace + its own)
+int race_code(const party::Character& c, const classes::Tables& t);
 
 // Per-game facts that aren't tables (affect ids, spell ids, starting
 // values) - from the profile

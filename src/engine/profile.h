@@ -723,6 +723,9 @@ struct Profile {
         // instead ("PRESS BUTTON OR RETURN TO CONTINUE." -> "PRESS
         // <ENTER>/<RETURN> TO CONTINUE"; GAME.OVR; 0: none)
         uint32_t press_words[2] = {};
+        // Champions' View: the knight's order after the class (" of the
+        // Crown", " of the Sword", " of the Rose"; GAME.OVR)
+        uint32_t order_words[3] = {};
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;
