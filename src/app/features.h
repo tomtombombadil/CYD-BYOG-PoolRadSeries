@@ -110,15 +110,21 @@
 #define CYD_ITEM_FIXES 1
 #endif
 
-// The highlight kept on a repeated question (Tom, 2026-10-24): character
-// creation's "Reroll stats?" (Pool's "Keep this character?") is asked again
-// after every reroll, and the originals start its highlight afresh each
-// time - a Select on the cursor keys then lands on the other word. Here a
-// question asked again straight after its answer starts with the highlight
-// where that answer was. Built in (no Settings key: it changes no play).
-// 0: as the originals. Where: play.cpp (ask_create, yes_no_last).
-#ifndef CYD_KEEP_ANSWER_PLACE
-#define CYD_KEEP_ANSWER_PLACE 1
+// The menu highlight rule (Tom, 2026-10-24: "My preferences about the
+// highlight should be on ALL games"): one rule for every game's menu line -
+// (1) the highlight is a white box round the whole word (Treasures draws
+// white letters, its words' first letters white anyway, so one-letter
+// choices couldn't be told apart; its lists too); (2) a menu starts on its
+// first word (Darkness / Treasures carried the last menu's place into the
+// next - past a short menu's end that was its last word); questions keep
+// the word their game starts them on (No; Darkness's / Gateway's Yes);
+// (3) after a pick the highlight stays there: the same menu or question
+// shown again (a reroll, a menu back after the one it opened) starts on
+// the word picked last. Built in (no Settings key: it changes no play).
+// 0: as the originals. Where: play.cpp (hl_apply, hl_remember, hl_plain,
+// hl_inherit).
+#ifndef CYD_MENU_HIGHLIGHT
+#define CYD_MENU_HIGHLIGHT 1
 #endif
 
 // Each comfort compiled in can also be switched off by the player: the

@@ -727,10 +727,12 @@ void put(pic::Canvas& c, const char* s, int col, int row, uint8_t fg)
     font::draw_text(c, d->font, s, col, row, fg, 0);
 }
 
-// A list's highlighted line: black on white (Treasures: white on black - DOSBox)
+// A list's highlighted line: black on white (Treasures' own: white on black -
+// DOSBox; the engine's rule: black on white - hl_plain)
+bool hl_plain();
 void hl_text(pic::Canvas& c, const char* s, int col, int row)
 {
-    if (d->prof->variant.tr) {
+    if (hl_plain()) {
         put(c, s, col, row, 15);
         return;
     }
@@ -1235,6 +1237,73 @@ void draw_frame(pic::Canvas& c)
 
 bool menu_on = false;            // the menu line shows `menu` (for the tap highlight)
 
+// The engine's menu highlight rule (Tom, 2026-10-24, every game; features.h
+// CYD_MENU_HIGHLIGHT): a menu starts on its first word (questions on the
+// word their game starts them on), and after a word is picked the highlight
+// stays there - the same menu or question shown again (a reroll, a menu
+// coming back after the one it opened) starts where it was picked last.
+// A menu is known by its prompt and its words' keys; the last 16 kept.
+struct HlMem {
+    int    sig = -1;
+    int8_t at = 0;
+};
+HlMem hl_mem[16];
+int   hl_mem_next = 0;
+int   hl_shown_sig = -1;           // the menu on the line (its signature)
+bool  hl_after_pick = false;        // a word was picked since it was shown
+int   hl_hold_sig = -1;             // the menu shown with a remembered place ...
+int   hl_hold_at = 0;               // ... and that place (till the player moves it)
+int hl_sig()
+{
+    uint32_t v = static_cast<uint32_t>(menu.count);
+    for (const char* p = menu.prompt; *p; ++p) v = v * 31u + static_cast<uint8_t>(*p);
+    for (int k = 0; k < menu.count; ++k) v = v * 31u + static_cast<uint8_t>(text::key(menu, k));
+    return static_cast<int>(v & 0x7FFFFFFF);
+}
+// A word picked on the menu line (a tap, or Select at the highlight)
+void hl_remember(int at)
+{
+#if CYD_MENU_HIGHLIGHT
+    if (at < 0 || at >= menu.count) return;
+    const int s = hl_sig();
+    int slot = -1;
+    for (int i = 0; i < 16 && slot < 0; ++i)
+        if (hl_mem[i].sig == s) slot = i;
+    if (slot < 0) {
+        slot = hl_mem_next;
+        hl_mem_next = (hl_mem_next + 1) % 16;
+    }
+    hl_mem[slot].sig = s;
+    hl_mem[slot].at = static_cast<int8_t>(at);
+    hl_after_pick = true;
+#else
+    (void)at;
+#endif
+}
+// The player moved the highlight: theirs from now on
+void hl_moved() { hl_hold_sig = -1; }
+// A menu about to be drawn: the place it was picked at last, if it was
+void hl_apply()
+{
+#if CYD_MENU_HIGHLIGHT
+    const int s = hl_sig();
+    if (s != hl_shown_sig || hl_after_pick) {
+        hl_shown_sig = s;
+        hl_after_pick = false;
+        hl_hold_sig = -1;
+        for (const HlMem& m : hl_mem)
+            if (m.sig == s && m.at < menu.count) {
+                hl_hold_sig = s;
+                hl_hold_at = m.at;
+            }
+    }
+    if (hl_hold_sig == s) menu.selected = hl_hold_at;
+#endif
+}
+// The highlight as a white box round the whole word (all games: Treasures
+// draws it as white letters - features.h CYD_MENU_HIGHLIGHT)
+bool hl_plain() { return !CYD_MENU_HIGHLIGHT && d->prof->variant.tr; }
+
 // (Darkness's fight menu takes rows 23 and 24: text::two_rows)
 bool menu_was_two = false;
 
@@ -1246,8 +1315,9 @@ void show_menu_line(pic::Canvas& c)
         dirty_rows(text::kMenuRow - 1, text::kMenuRow - 1);
     }
     menu_was_two = text::two_rows(menu);
+    hl_apply();
     text::MenuColors mc;
-    mc.plain_sel = d->prof->variant.tr;     // (Treasures: the chosen word white - DOSBox)
+    mc.plain_sel = hl_plain();              // (Treasures' own: the chosen word white - DOSBox)
     text::draw(c, d->font, menu, mc);
     dirty_rows(menu_was_two ? text::kMenuRow - 1 : text::kMenuRow, text::kMenuRow);
 }
@@ -1286,7 +1356,10 @@ void hl_place(int at) { menu.selected = at >= 0 && at < menu.count ? at : 0; }
 void hl_inherit()
 {
     dk_slot = -1;
-    if (kept_hl()) hl_place(dk_place);
+    if (!kept_hl()) return;
+    // (the engine's rule: a new menu on its first word - CYD_MENU_HIGHLIGHT)
+    if (CYD_MENU_HIGHLIGHT) menu.selected = 0;
+    else hl_place(dk_place);
 }
 // ... on its first word (its routine sets it)
 void hl_first()
@@ -4122,7 +4195,6 @@ void yes_no_key(char k, pic::Canvas& c);
 // after creation's "Reroll stats?" starts with that place lit (its menus
 // keep the highlight's place - alter.kept_highlight)
 int yes_no_place = 0;
-Ask yes_no_last = Ask::None;        // the question that answer was to
 
 void yes_no_tap(int x, int y, pic::Canvas& c)
 {
@@ -4136,7 +4208,6 @@ void yes_no_key(char k, pic::Canvas& c)
     const Ask what = ask;
     ask = Ask::None;
     yes_no_place = k == 'N' ? 1 : 0;
-    yes_no_last = what;
     if (create_yes_no(what, k, c)) return;
     if (view_yes_no(what, k, c)) return;
     if (items_yes_no(what, k, c)) return;
@@ -5017,7 +5088,6 @@ void picked(int i, pic::Canvas& c)
         create::roll(mk->ch, mk->tables, mk->facts, mk->dice);
         rules::recalc(mk->ch, *names, d->facts);
         show_new_character(c);
-        yes_no_last = Ask::None;            // (a new character's first ask: from the start)
         ask_create(c, Ask::Reroll, mk->words[5]);
         return;
     }
@@ -5038,15 +5108,6 @@ void ask_create(pic::Canvas& c, Ask what, const char* prompt)
         menu.selected = 1;          // (Gateway's "Reroll stats?" is a menu of its own on No - DOSBox)
         show_menu_line(c);
     }
-#if CYD_KEEP_ANSWER_PLACE
-    // The same question asked again (Reroll after a reroll): the highlight
-    // where the last answer was, not back at the start (Tom, 2026-10-24 -
-    // the originals start it afresh each time; features.h)
-    if (what == yes_no_last && menu.selected != yes_no_place) {
-        menu.selected = yes_no_place;
-        show_menu_line(c);
-    }
-#endif
 }
 
 // The name, then the icon editor (as the games do), then "save NAME?"
@@ -13880,6 +13941,7 @@ bool nav(Nav n, pic::Canvas& c)
     }
     if (menu_on && menu.count > 1) {
         menu.selected = ((menu.selected < 0 ? 0 : menu.selected) + step + menu.count) % menu.count;
+        hl_moved();
         show_menu_line(c);
         return true;
     }
@@ -14220,6 +14282,8 @@ void tap(int x, int y, pic::Canvas& c)
     }
     // (Darkness: the menu's place follows the word picked - facts L8)
     if (kept_hl() && menu_on && y >= text::kMenuTapTop && menu.count > 0) hl_picked(text::hit(menu, x / 8));
+    // (every game: the menu's place kept for when it comes back - hl_apply)
+    if (menu_on && y >= text::kMenuTapTop && menu.count > 0) hl_remember(text::hit(menu, x / 8));
     if (screen != Screen::Game) {
         pm_tap(x, y, c);
         return;

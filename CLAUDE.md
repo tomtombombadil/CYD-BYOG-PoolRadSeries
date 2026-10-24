@@ -732,6 +732,20 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   screen's menu words, list lines and party menu lines turn to the
   highlight colour (`play::tap_highlight`); one already lit blinks off and
   on. New tappable things must take part.
+- **Menu highlight - one rule for every game** (Tom, 2026-10-24: "My
+  preferences about the highlight should be on ALL games"; features.h
+  `CYD_MENU_HIGHLIGHT`, play.cpp `hl_apply` / `hl_remember` / `hl_plain`):
+  the highlighted word is a white box round the whole word (lists' lines
+  too - never only white letters); a menu starts on its first word; after
+  a pick the highlight stays where it was - the same menu or question
+  shown again (a reroll, a menu back after the one it opened, the next
+  fighter's menu) starts on the word picked last. Kept exceptions,
+  decided before: questions start on the word their game starts them on
+  (No; Darkness's / Gateway's Yes), and Darkness's menus with a place of
+  their own (`hl_own`, Alter's / the icon editor's kept place). New menus
+  go through `show_menu_line` and so take part.
+- Tap on Play shows "Loading <game>..." at once (Tom, 2026-10-24;
+  viewer.cpp `draw_loading`) until the game's first screen is drawn.
 - Slow work inside a tap puts its message up first (`play::present_now`;
   Tom, v0.85.5: saving shows "Saving to slot A...").
 - Errors stay on screen until tapped (Tom, 2026-10-09) - never timed. The

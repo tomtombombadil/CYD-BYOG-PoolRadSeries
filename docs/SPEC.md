@@ -117,7 +117,11 @@ The games draw a 320x200 screen. The canvas is presented:
     menu line, they pick the character; in Modify Character they change the
     value). Select = a tap on the highlighted thing (it lights up first, as
     taps do): the menu line's word, the list menu's line, the party menu's
-    line, "press a key". Under the Companion map, stacked: **Game** (was
+    line, "press a key". **The highlight's rule, every game** (Tom,
+    2026-10-24; features.h `CYD_MENU_HIGHLIGHT`; SPEC 12): a white box round
+    the whole word (Treasures' own white letters not used), a menu starts
+    on its first word (questions on their game's word), and after a pick
+    the same menu or question shown again starts on the word picked last. Under the Companion map, stacked: **Game** (was
     "Menu": the engine's Menu, renamed so it isn't confused with the cursor
     keys), **Look** (v0.86.0, Tom: no **Esc** in the game - a stray tap
     left it; Exit Game is in the Game menu only, as on 320x240; Game and
@@ -2424,10 +2428,17 @@ the game's Settings (As Original: all of them).
 - **Treasures' romance**: a character the story sends away (LUCK 104 / 116)
   leaves the party as Remove would (the original's ovl 0x83 entry 0x2A,
   not traced further).
-- **A repeated question keeps its highlight** (all games; Tom,
-  2026-10-24; features.h `CYD_KEEP_ANSWER_PLACE`): creation's "Reroll
-  stats?" (Pool's "Keep this character?") asked again after a reroll
-  starts with the highlight on the word last answered; the originals
-  start it afresh each time.
+- **The menu highlight** (all games; Tom, 2026-10-24; features.h
+  `CYD_MENU_HIGHLIGHT`): a white box round the whole highlighted word -
+  Treasures' original draws white letters (its menu line and lists), its
+  words' first letters white anyway; a new menu starts on its first word -
+  Darkness's and Treasures' originals carry the last menu's place into
+  the next (past a short menu's end its last word); the same menu or
+  question shown again starts on the word picked last - the originals
+  start creation's "Reroll stats?" (Pool's "Keep this character?"), the
+  next fighter's menu, a menu back from the one it opened afresh. Kept as
+  the originals: questions start on their game's word (No; Darkness's /
+  Gateway's Yes; Treasures' scripts' Yes), Darkness's menus with a place of
+  their own.
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.
