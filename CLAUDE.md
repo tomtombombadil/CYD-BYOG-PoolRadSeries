@@ -342,7 +342,10 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   `src/ui/ui.*` = keys, header, touch filter for the engine's own screens.
 - Facts that live in a game's program (START.EXE / GAME.EXE, EXEPACK-packed;
   e.g. the screen frame's tile tables) are read from the player's copy at
-  run time (`engine/exepack.*` unpacks just the bytes asked for), found via a
+  run time (`engine/exepack.*` unpacks just the bytes asked for; Play
+  reads them from the unpacked copy `_CYD/<folder>/PROGRAM.BIN` the scan
+  / Play's start make - `play::prepare_program`, Tom 2026-10-24: slow
+  starts), found via a
   per-release entry in `engine/profile.*` (file size + unpacked size, data
   segment base, table addresses). Never copy those tables into the repo.
 - Game folders (Tom, 2026-10-09): the GOG install folders copied as they

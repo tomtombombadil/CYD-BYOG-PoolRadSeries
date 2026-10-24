@@ -13516,7 +13516,7 @@ private:
 
 } // namespace
 
-bool prepare_program(const char* data_dir, games::Game g, const char* cache_dir, bool* made)
+__attribute__((noinline)) bool prepare_program(const char* data_dir, games::Game g, const char* cache_dir, bool* made)
 {
     if (made) *made = false;
     const char* prog = profile::program_name(g);
