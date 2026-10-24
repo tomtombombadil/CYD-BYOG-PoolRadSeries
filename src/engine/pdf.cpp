@@ -523,15 +523,13 @@ struct XrefOut : inflate::Output {
 
 bool read_xref_stream(dax::ByteSource& src, uint32_t at, Doc& doc, Obj& o, uint32_t* prev)
 {
+    // ("n 0 obj <<... /Type/XRef ...>> stream": its own number first)
     int32_t n = 0;
-    {
-        Obj& t = o;
-        if (!fill(src, at, t)) return false;
-        Parser ps{t};
-        size_t e = 0;
-        ps.skip();
-        if (!ps.number_at(ps.p, &n, &e)) return false;
-    }
+    size_t e = 0;
+    if (!fill(src, at, o)) return false;
+    Parser num{o};
+    num.skip();
+    if (!num.number_at(num.p, &n, &e)) return false;
     if (!parse_at(src, at, n, o) || !o.stream_at || !name_is(o, get(o, o.root, "Type"), "XRef")) return false;
     XrefOut out(doc);
     const int wa = get(o, o.root, "W"), ix = get(o, o.root, "Index"), sz = get(o, o.root, "Size");
