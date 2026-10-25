@@ -1541,6 +1541,7 @@ constexpr ecl::OpSet kDarknessEcl = [] {
 // DQK.EXE 0x63A20; queen_facts_2.md 1) - read as DQK.EXE's own offsets
 constexpr uint32_t kQueenDs = 0x63A20;
 constexpr uint32_t qw(uint32_t ds) { return text::kCString | (kQueenDs + ds); }
+static_assert(kTrainConscious == 51 && kCongrats == 59, "the Dark Queen's shop_words are placed by number");
 // Its party menu (queen_facts_2.md 6): two columns of buttons - Add, Remove,
 // Modify, Train, Knight New Order, View | Create, Delete, Load, Save, Begin,
 // Exit (its words DS 0x7DCE-0x7E84, built in that order by its menu code,
@@ -3733,9 +3734,18 @@ const Profile kProfiles[] = {
      // are full!", "'s"; its menu one string "Rdy Use Trade Deposit Drop
      // Halve Join Sell Id Exit" (DS 0x4FB0)
      .items = {.words = {kQueenDs + 0x3F59, 4, 154}, .types_file = "DISK1/ITEMS.DAT", .arrow = 30, .quarrel = 12,
-               .dart = 5, .overloaded = qw(0x8FC9), .title = qw(0x4689), .heading = qw(0x468F), .yes = qw(0x21C),
+               .dart = 5,
+               // (an elf's +1 to hit: types 0x15-0x1B, 0x13, 0x12 - its 0x9BF6)
+               .elf_bonus = {0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x13, 0x12}, .overloaded = qw(0x8FC9),
+               .title = qw(0x4689), .heading = qw(0x468F), .yes = qw(0x21C),
                .no = qw(0x222), .cursed = qw(0x8F3B), .wrong_class = qw(0x8F48), .hands_full = qw(0x8F65),
-               .plural_s = qw(0x260), .types_head = 0, .menu = qw(0x4FB0), .words_far = true},
+               .plural_s = qw(0x260),
+               // (its codes as Secret's: 3 Strength 18/00, 5 the girdle - its
+               // Strength routine 0x8AEC; armour's +3 movement for magic
+               // armour only - its 0x9DCF; queen_facts_4.md 6)
+               .passive = items::kSecretPassive, .light_magic_armour = true,
+               // (a kender's hoopak +2 to hit - its 0x9BF6)
+               .race_weapon = {5, 0x43, 2}, .types_head = 0, .menu = qw(0x4FB0), .words_far = true},
      // Character rules (queen_facts_4.md 4-6): its tables' DS offsets, packed
      // into Krynn shapes when read (classes::queen_pack); its createPlayer's
      // effects - the races' as Champions', a paladin's 0x08, a ranger's 0x69 -,
@@ -3753,6 +3763,17 @@ const Profile kProfiles[] = {
                 .con_save = 0x5E, .dwarf_orc = 0x1A, .giants = 0x2F, .elf_sleep = 0x5F, .halfelf = 0x12,
                 .prot_evil = 0x08, .ranger_giant = 0x69, .mu_first = {0x0B, 0x0C, 0x0F, 0x10},
                 .platinum = 200, .kender_fear = 0x5C, .mu_more = {0x12, 0x13}},
+     // The training hall's words (queen_facts_4.md 6): "we only train
+     // conscious people", no cost (free), "we don't train that class here",
+     // "Not Enough Experience", " will become:", "    a level %s %s", "and
+     // a level %s %s", "Do you wish to train? ", "Congratulations..."
+     .shop_words = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, qw(0x74FA), 0, qw(0x7519), qw(0x7538),
+                    qw(0x754E), qw(0x755C), qw(0x756E), qw(0x7580), qw(0x7597)},
      .fight = kQueenFight,
      .variant = {.unfinished = true, .bigpic_from = 0xF0,
                  // ("Press        to continue." with the button "Return" in its gap)

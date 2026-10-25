@@ -478,6 +478,7 @@ void recalc_values(party::Character& c, const items::Names& names, const ItemFac
                     ++plus;
                     break;
                 }
+        if (f.race_weapon[1] && c.race() == f.race_weapon[0] && it.type() == f.race_weapon[1]) plus += f.race_weapon[2];
         hit += plus;
         r[kDice] = t.dice;
         r[kSides] = t.sides;

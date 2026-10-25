@@ -840,11 +840,11 @@ int main(int argc, char** argv)
             pm_tap_line('R');
             if (play::screen == play::Screen::YesNo) tap_word('Y');
             pm_tap_line('A');
-            if (play::screen != play::Screen::AddList) tap_word(play::darkness_files() ? 'P' : 'C');   // (Darkness: Pools)
+            if (play::screen != play::Screen::AddList) tap_word(play::hl() ? 'T' : play::darkness_files() ? 'P' : 'C');   // (Darkness: Pools; Dark Queen: Tdqk)
             for (int i = 0; i < play::d->guys; ++i) {
                 char t[48]; play::list_line(i, t, sizeof t);
                 if (getenv("ADDLIST")) printf("    add list %d [%s]\n", i, t);
-                if (strstr(t, getenv("ADDGUY"))) { play::add_character(i, C); printf("  added [%s]\n", t); break; }
+                if (strstr(t, getenv("ADDGUY"))) { play::add_character(i, C); printf("  added [%s] party %d screen %d note [%s]\n", t, play::pt->count, (int)play::screen, play::note_until ? play::menu.prompt : ""); break; }
             }
             tap_word('E');
             for (int i = 0; i < play::pt->count; ++i) { char n[20]; play::pt->m[i].name(n, 20); printf("  %d: %-15s attacks byte %d\n", i, n, play::pt->m[i].rec[0x11C]); }
@@ -964,6 +964,25 @@ int main(int argc, char** argv)
             show("after");
             shot("modify_end");
         }
+        if (getenv("RECALCCHECK"))
+            // RECALCCHECK=1: each member's record against the same worked out
+            // again (rules::recalc) - the saved figures are the original's
+            for (int i = 0; i < play::pt->count; ++i) {
+                party::Character ch = play::pt->m[i];
+                rules::recalc(ch, *play::names, play::d->facts);
+                char nm[20];
+                ch.name(nm, sizeof nm);
+                printf("  recalc %s:", nm);
+                for (int b = 0; b < party::kRecordSize; ++b)
+                    if (ch.rec[b] != play::pt->m[i].rec[b]) printf(" %03X %d->%d", b, play::pt->m[i].rec[b], ch.rec[b]);
+                printf("\n");
+            }
+        if (getenv("SETXP"))
+            // SETXP=n: every member's experience n (training's checks)
+            for (int i = 0; i < play::pt->count; ++i) {
+                const uint32_t v = static_cast<uint32_t>(strtoul(getenv("SETXP"), nullptr, 0));
+                for (int b = 0; b < 4; ++b) play::pt->m[i].rec[0x127 + b] = static_cast<uint8_t>(v >> (8 * b));
+            }
         if (getenv("KNIGHT")) {
             // KNIGHT=n: a training hall's party menu (0x7EA8 set), character n,
             // the Krynn games' Knight Change; KNIGHTYES=1 then takes Change
@@ -980,8 +999,12 @@ int main(int argc, char** argv)
                 if (getenv("KNIGHTYES2")) { tap_word(getenv("KNIGHTYES2")[0]); settle(); }
                 shot("knight_end");
                 for (int i = 0; i < play::pt->count; ++i)
-                    printf("  %d: order %d knight level %d exp %d\n", i, play::pt->m[i].ext[party::kExtKnight],
-                           play::pt->m[i].level(classes::Monk), (int)play::pt->m[i].exp());
+                    printf("  %d: order %d knight level %d exp %d hp %d/%d thac0 %d levels %d %d %d %d %d %d %d %d\n", i,
+                           play::pt->m[i].ext[party::kExtKnight], play::pt->m[i].level(classes::Monk),
+                           (int)play::pt->m[i].exp(), play::pt->m[i].hp(), play::pt->m[i].hp_max(),
+                           play::pt->m[i].thac0(), play::pt->m[i].level(0), play::pt->m[i].level(1),
+                           play::pt->m[i].level(2), play::pt->m[i].level(3), play::pt->m[i].level(4),
+                           play::pt->m[i].level(5), play::pt->m[i].level(6), play::pt->m[i].level(7));
             }
         }
         if (getenv("VIEW")) {

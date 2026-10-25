@@ -1158,6 +1158,34 @@ int train_pick(const party::Character& c, const classes::Tables& t, uint32_t* ex
         const int32_t after = need_at(k, lv + 1);
         if (after > 0 && xp >= static_cast<uint32_t>(after) && after > keep) keep = after - 1;
     }
+    if (t.lay.queen && ready) {
+        // The Dark Queen's hall (queen_facts_4.md 6) looks again at the ready
+        // class needing the most to go on from the level of the last class
+        // held in its own order (cleric, knight, fighter, paladin, ranger,
+        // magic-user, thief - a level left over from its first loop): the
+        // experience to go a level past that, less one, is kept too when
+        // more
+        int stale = 0;
+        for (int i = 0; i < 7; ++i) {
+            const int k = i == 1 ? 7 : i;
+            if (c.level(k) > 0) stale = c.level(k);
+        }
+        int pk = -1;
+        int32_t most = 0;
+        for (int i = 0; i < 7; ++i) {
+            const int k = i == 1 ? 7 : i;
+            if (!(t.u8(static_cast<uint16_t>(t.lay.class_masks + k)) & ready)) continue;
+            const int32_t need = need_at(k, stale);
+            if (need > most) {
+                most = need;
+                pk = k;
+            }
+        }
+        if (pk >= 0) {
+            const int32_t after = need_at(pk, stale + 1);
+            if (after > 0 && xp >= static_cast<uint32_t>(after) && after - 1 > keep) keep = after - 1;
+        }
+    }
     if (t.lay.pool || t.lay.queen) {
         // Pool (create_facts.md 3): every ready class trains, a level each
         // (the Dark Queen's hall too, ovl 5 +0x5052)

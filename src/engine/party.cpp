@@ -125,14 +125,15 @@ constexpr uint16_t kDkkWizExt[][3] = {
 };
 
 // Dark Queen offset, Curse offset, length (queen_facts_2.md 8; pointers left
-// out): stats (own / in use, Str00 below), THAC0 base, age, HP max, icon size and
+// out): stats (own / in use; Str00 0x84 in use, 0x85 own - its Strength
+// group reads 0x84, queen_facts_4.md 6), THAC0 base, age, HP max, icon size and
 // saves, movement and the highest level, level vs undead, thief skills, NPC,
 // steel gems jewelry (Darkness's places), former levels, sex, alignment,
 // experience, xp award (a monster's), class flags and HP rolled, the icon
 // (CBODY's: in the body's place - queen_facts_3.md 6), flags, hands, save bonus, the item count,
 // status, hostile, quick fight, the fight's figures to movement
 constexpr uint16_t kQueenRuns[][3] = {
-    {0x78, 0x10, 12},    {0x84, 0x1D, 1},     {0x85, 0x1C, 1},     {0x87, 0x73, 1},     {0x52, 0x76, 2},
+    {0x78, 0x10, 12},    {0x84, 0x1C, 1},     {0x85, 0x1D, 1},     {0x87, 0x73, 1},     {0x52, 0x76, 2},
     {0x89, 0x78, 1},     {0x8A, 0xDE, 6},     {0x90, 0xE4, 2},     {0x5C, 0xE9, 1},     {0x93, 0xEA, 8},
     {0x9B, 0xF7, 1},     {0x4C, 0x103, 2},    {0x4E, 0x105, 4},    {0x60, 0x119, 1},    {0x62, 0x11B, 1},
     {0x44, 0x127, 4},    {0x54, 0x13C, 2},    {0xBF, 0x12B, 2},    {0xC4, 0x142, 1},    {0xCA, 0x185, 2},
@@ -140,9 +141,10 @@ constexpr uint16_t kQueenRuns[][3] = {
     {0x18C, 0x198, 1},   {0x18D, 0x199, 13},
     // (queen_facts_4.md 5: the icon's size - 1 the small races -, a paladin's cure)
     {0xC6, 0x144, 1},    {0x88, 0x191, 1},
-    // (queen_facts_3.md 6: the base attacks, dice, sides, bonuses, AC and
-    // uses-strength - Curse's 0x11C-0x125 in the same order)
-    {0xB3, 0x11C, 10},
+    // (queen_facts_3.md 6: the base attacks, dice, sides, bonuses and AC -
+    // Curse's 0x11C-0x124 in the same order; its 0xBC is not Curse's
+    // uses-strength: its figures take Strength always - queen_facts_4.md 6)
+    {0xB3, 0x11C, 9},
 };
 // Dark Queen offset, Ext place, length
 constexpr uint16_t kQueenExt[][3] = {
@@ -166,6 +168,7 @@ void from_queen(const uint8_t* q, Character& c)
     for (const auto& run : kQueenRuns) memcpy(r + run[1], q + run[0], run[2]);
     for (const auto& run : kQueenExt) memcpy(c.ext + run[1], q + run[0], run[2]);
     r[0x74] = race_from_krynn(q[0x58]);
+    r[0x125] = 1;                       // (uses Strength: every character)
     // The class: its knight (1, the druid's place) is the engine's Krynn
     // knight (7, the monk's place); the others as Curse's numbers
     r[0x75] = q[0x5A] == 1 ? 7 : q[0x5A];

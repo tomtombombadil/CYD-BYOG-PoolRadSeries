@@ -9979,13 +9979,28 @@ void train_character(pic::Canvas& c)
     ch.name(nm, sizeof nm);
     put(c, nm, 4, 4, ch.npc() ? 10 : 11);
     sw(profile::kWillBecome, w1, sizeof w1);
-    put(c, w1, 4 + static_cast<int>(strlen(nm)), 4, 10);
+    // (the Dark Queen: its words grey, the lines printf formats "    a level
+    // %s %s" with the level and the class's long name, in its own class
+    // order - queen_facts_4.md 6)
+    const int ink = hl() ? 7 : 10;
+    put(c, w1, 4 + static_cast<int>(strlen(nm)), 4, ink);
     int row = 5;
-    for (int k = 0; k < classes::kClasses; ++k) {
+    for (int i = 0; i < classes::kClasses; ++i) {
+        const int k = hl() ? (i == 1 ? 7 : i == 7 ? 1 : i) : i;
         if (ch.level(k) <= 0 || !(t.u8(static_cast<uint16_t>(t.lay.class_masks + k)) & train_mask)) continue;
         sw(row == 5 ? profile::kALevel : profile::kAndALevel, w1, sizeof w1);
-        snprintf(line, sizeof line, "%s%d %s", w1, ch.level(k) + 1, name_of(d->cls[0], 27, 18, k));
-        put(c, line, 6, row++, 10);
+        if (strstr(w1, "%s")) {
+            char lv[8], cn[24];
+            snprintf(lv, sizeof lv, "%d", ch.level(k) + 1);
+            snprintf(cn, sizeof cn, "%s", name_of(d->cls[0], 27, 18, k));
+            const char* p = strstr(w1, "%s");
+            const char* q = strstr(p + 2, "%s");
+            snprintf(line, sizeof line, "%.*s%s%.*s%s%s", static_cast<int>(p - w1), w1, lv,
+                     static_cast<int>(q ? q - (p + 2) : strlen(p + 2)), p + 2, q ? cn : "", q ? q + 2 : "");
+        } else {
+            snprintf(line, sizeof line, "%s%d %s", w1, ch.level(k) + 1, name_of(d->cls[0], 27, 18, k));
+        }
+        put(c, line, 6, row++, ink);
     }
     dirty(0, pic::kScreenH);
     sw(profile::kWishTrain, w1, sizeof w1);
@@ -10003,14 +10018,16 @@ bool train_yes_no(Ask what, char k, pic::Canvas& c)
         if (!game_won && d->prof->shop_words[profile::kTrainCost])
             rules::pay(train_payer >= 0 && train_payer < pt->count ? pt->m[train_payer] : *ch, 1000);
         train_payer = -1;
-        const int mu = ch->level(classes::MagicUser);
+        const int mu = ch->level(classes::MagicUser), rg = ch->level(classes::Ranger);
         create::train_classes(*ch, trainer->tables, trainer->facts, trainer->dice, train_mask, false);
         rules::recalc(*ch, *names, d->facts);
         end_training();
         // A magic-user's new level, or any training of a ranger past 8th (the
-        // original asks whichever class went up): a new spell
-        if ((ch->level(classes::MagicUser) > mu || ch->level(classes::Ranger) > 8) && open_learn(c))
-            return true;
+        // original asks whichever class went up): a new spell (the Dark
+        // Queen: a ranger's own new level past 8th - ovl 5 +0x563B)
+        const bool ranger = hl() ? ch->level(classes::Ranger) > 8 && ch->level(classes::Ranger) > rg
+                                 : ch->level(classes::Ranger) > 8;
+        if ((ch->level(classes::MagicUser) > mu || ranger) && open_learn(c)) return true;
         train_note(profile::kCongrats, c);
         return true;
     }
@@ -10774,6 +10791,7 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         d->facts.con_regen_fx = pi.stat_fx[5];
         d->facts.berserk_fx = pi.berserk;
         d->facts.light_magic_armour = pi.light_magic_armour;
+        memcpy(d->facts.race_weapon, pi.race_weapon, sizeof d->facts.race_weapon);
         d->facts.speed_fx = pi.speed_fx;
         d->facts.sell_secret = pi.sell_secret;
         rules::set_berserk_fx(pi.berserk);

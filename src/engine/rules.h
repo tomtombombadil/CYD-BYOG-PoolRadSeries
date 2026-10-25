@@ -16,7 +16,7 @@ namespace rules {
 // Per-game item facts the rules need (from the profile)
 struct ItemFacts {
     uint8_t arrow, quarrel;
-    uint8_t elf_bonus[8];
+    uint8_t elf_bonus[10];
     // Secret's weapon part (GAME.OVR 0x38151) gives that +1 to anyone with
     // one of those weapons - its program has no race test there (an
     // original's mistake: applied only with fixes() off)
@@ -43,6 +43,9 @@ struct ItemFacts {
     // effect doubling the movement
     bool    light_magic_armour = false, sell_secret = false;
     uint8_t speed_fx = 0;
+    // A race's own weapon (the Dark Queen's kender and the hoopak): the
+    // engine race, the item type, its to-hit bonus (type 0: none)
+    uint8_t race_weapon[3] = {};
 };
 
 // The stats as they stand (the games' recalculation; spell_facts.md and
