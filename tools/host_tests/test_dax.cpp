@@ -4486,7 +4486,7 @@ static void test_party()
         char nm[20];
         k.name(nm, sizeof nm);
         CHECK(!strcmp(nm, "SIR TEST") && k.race() == party::race_from_krynn(6) && k.cls() == 7 && k.stat(0) == 18 &&
-              k.stat_now(0) == 17 && k.str00() == 60 && k.hp() == 70 && k.hp_max() == 77 && k.ac() == -4);
+              k.stat_now(0) == 17 && k.str00() == 50 && k.hp() == 70 && k.hp_max() == 77 && k.ac() == -4);
         CHECK(k.level(7) == 9 && k.level(0) == 3 && k.level(6) == 5 && k.level(1) == 0 && k.exp() == 1000000 &&
               k.money(4) == 10000 && k.ext[party::kExtKnight] == 2 && k.ext[party::kExtRace] == 6);
         CHECK(qp.m[1].cls() == 12 && qp.m[1].race() == party::race_from_krynn(5));

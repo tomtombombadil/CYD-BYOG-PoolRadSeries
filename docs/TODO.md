@@ -201,6 +201,13 @@ the Project as claude/TODO.md.
       originals never apply them (the code tests a loop counter left at
       Human; DOSBox: Champions' kender Dex unchanged): Game Fixes on only;
       the young-Wisdom -1 (Secret's rule) now in Champions / Death Knights.
+- [ ] Dark Queen (v0.157.0, Play still off - Dev Tools): stopped mid-way
+      (Tom's usage limit, 2026-10-24). In: creation, training, camp magic,
+      shops / temple / vault, Knight New Order, Add list. Next: fight spells,
+      the fights' "@" menus / colours, monster xp / flags2, sound, 256
+      colours on S3 / C5, playing from start, `behave queen`. Its record
+      test's Str00 expectation moved 60 -> 50 with its "Str00's places"
+      change - confirm. Its facts after phase 3 weren't written (stopped).
 - [ ] Secret J45's piece takes in the "Journal Entry 47" heading (the
       map overlaps it; a rectangle can't separate them).
 - [ ] Check: pdfview's State (FileSource cache, >4 KB) lands in PSRAM on
