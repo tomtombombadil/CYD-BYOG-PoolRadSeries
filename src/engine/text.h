@@ -56,6 +56,13 @@ constexpr uint32_t kInNames = 0x20000000u;
 // Krynn's words: its C program's data segment, read where the profile says
 // - DQK.EXE's own offsets); read_pascal takes it so every word reader does
 constexpr uint32_t kCString = 0x10000000u;
+// With kCString: only its first word (to the first space - the Dark Queen's
+// "Cast" of its "Cast Exit")
+constexpr uint32_t kWord1 = 0x04000000u;
+// A C string through a far pointer: the u16 at the offset is the string's
+// place in the program's data segment (the Dark Queen's effect names); the
+// front end resolves it (it knows the data segment)
+constexpr uint32_t kFarC = 0x08000000u;
 class Words : public dax::ByteSource {
 public:
     Words(dax::ByteSource& ovr, dax::ByteSource* exe, const exepack::Info* info) : ovr_(ovr), exe_(exe), info_(info) {}

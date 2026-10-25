@@ -2027,6 +2027,226 @@ constexpr combat::Facts kQueenFightFacts = {.held = {0x33, 0x34, 0x35, 0x1F}, .b
                 .race = {0x5E, 0x12, 0x1A, 0x07, 0x2F, 0x30, 0x69, true},
                 .items = {.displace = 0x59, .ring_invisible = 0x38, .fire_ring = 0x3D},
                 .berserk = 0x6B, .taunted = 0x5B};
+// The Dark Queen's spells (queen_facts_4.md 8): Darkness's numbers 1-126 and
+// their workings (its handler table DS 0xAF45 + 4 x spell shares handlers as
+// Darkness's), its words found again among its C strings; "is " + an effect's
+// name: its "is %s" and the effect's name (a far pointer, DS 0x6524 + 4 x n)
+constexpr uint32_t q_effect(int n) { return text::kFarC | (kQueenDs + 0x6524u + 4u * static_cast<uint32_t>(n)); }
+constexpr uint32_t qw1(uint32_t ds) { return qw(ds) | text::kWord1; }
+constexpr profile::JoinedWord kQueenJoined[] = {
+    {qw(0x8798), q_effect(0x01)},   // 0 is Blessed
+    {qw(0x8798), q_effect(0x02)},   // 1 is Cursed
+    {qw(0x8798), q_effect(0x0B)},   // 2 is Charmed
+    {qw(0x8798), q_effect(0x19)},   // 3 is Invisible (spell)
+    {qw(0x8798), q_effect(0x6A)},   // 4 is STUNNED
+    {qw(0x8A38), q_effect(0x0B)},   // 5 is not Charmed
+};
+constexpr combat::FightSpell kQueenFightSpells[] = {
+    {0x01, SpellDoes::Ours, 0, 0, 0, 0, 0, kJ | 0},   // Bless: "is Blessed"
+    {0x02, SpellDoes::Theirs, 0, 0, 0, 0, 0, kJ | 1},   // Curse: "is Cursed"
+    {0x03, SpellDoes::Heal, 1, 8, 0, 0, 0, 0},   // Cure Light Wounds
+    {0x04, SpellDoes::Damage, 1, 8, 0, 0, 8, 0},   // Cause Light Wounds (a touch)
+    {0x05, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x879E)},   // Detect Magic: "is affected"
+    {0x06, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x87AA)},   // the protections: "is protected"
+    {0x07, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x87AA)},
+    {0x08, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x87B7)},   // Resist Cold: "is cold-resistant"
+    {0x09, SpellDoes::Damage, 0, 0, 0, 1, 9, 0},   // Burning Hands: the caster's level
+    {0x0B, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x879E)},
+    {0x0F, SpellDoes::Damage, 0, 4, 0, 2, 8, 0},   // Magic Missile
+    {0x10, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x87AA)},
+    {0x11, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x87AA)},
+    {0x13, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x882A)},   // Shield: "is shielded"
+    {0x14, SpellDoes::Damage, 1, 8, 0, 1, 0x0C, 0},   // Shocking Grasp: 1d8 + level
+    {0x15, SpellDoes::Sleep, 0, 0, 0, 0, 0, qw(0x8836)},   // Sleep: "falls asleep"
+    {0x17, SpellDoes::Hold, 0, 0, 0, 0, 0, qw(0x8843)},   // Hold Person: "is held"
+    {0x18, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x884B)},   // Resist Fire: "is fire resistant"
+    {0x1D, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x879E)},
+    {0x1E, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x8869)},   // Invisibility: "is invisible"
+    {0x20, SpellDoes::Mirror, 0, 0, 0, 0, 0, qw(0x8882)},   // Mirror Image: "is duplicated"
+    {0x2A, SpellDoes::Prayer, 0, 0, 0, 0, 0, qw(0x88FB)},   // Prayer: "is praying"
+    {0x2F, SpellDoes::Damage, 0, 6, 0, 3, 9, 0},   // Fireball: level d6
+    {0x30, SpellDoes::Haste, 0, 0, 0, 0, 0, qw(0x8946), 0},   // Haste: "is Hasted"
+    {0x31, SpellDoes::Hold, 0, 0, 0, 0, 0, qw(0x8843)},
+    {0x32, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x8869)},
+    {0x34, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x87AA)},
+    {0x35, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x87AA)},
+    {0x36, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x87AA)},
+    {0x3A, SpellDoes::Heal, 2, 8, 1, 0, 0, 0},
+    {0x42, SpellDoes::Damage, 2, 8, 1, 0, 8, 0},   // Cause Serious Wounds
+    {0x45, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x87AA)},
+    {0x47, SpellDoes::Heal, 3, 8, 3, 0, 0, 0},
+    {0x48, SpellDoes::Damage, 3, 8, 3, 0, 8, 0},   // Cause Critical Wounds
+    {0x4A, SpellDoes::Damage, 6, 8, 0, 0, 9, 0},   // Flame Strike
+    {0x58, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x87AA)},   // Minor Globe: "is protected"
+    {0x21, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x835E)},   // Ray of Enfeeblement: "is weakened"
+    {0x22, SpellDoes::Cloud, 0, 0, 0, 0, 0, qw(0x00D4), qw(0x00B7)},   // Stinking Cloud: "chokes and gags from nausea" /
+                                                            // "starts to cough"
+    {0x0A, SpellDoes::Charm, 0, 0, 0, 0, 0, qw(0x87F6), qw(0x87E8)},   // Charm Person: "is charmed" / "is unaffected"
+    {0x51, SpellDoes::Charm, 0, 0, 0, 0, 1, qw(0x87F6)},   // Charm Monsters: "is charmed"
+    {0x54, SpellDoes::Fear, 0, 0, 0, 0, 0, qw(0x89FA)},   // Fear: "flees in terror"
+    {0x5B, SpellDoes::Poison, 0, 0, 0, 0, 0, qw(0x00F0)},   // Cloudkill: "is Poisoned"
+    {0x5C, SpellDoes::Cone, 0, 4, 0, 6, 0x0A, 0},   // Cone of Cold: level d4 + level
+    {0x26, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x88F2)},   // Cause Blindness: "is blind"
+    {0x28, SpellDoes::Affect, 1, 6, 0, 4, 0, qw(0x84AD)},   // Cause Disease: "is Diseased"
+    {0x33, SpellDoes::Bolt, 0, 6, 0, 3, 0x0C, 0, 0, 0, 7},   // Lightning Bolt: level d6, 7 squares
+    {0x37, SpellDoes::Slow, 0, 0, 0, 0, 0, qw(0x8950), 0},   // Slow: "is Slowed"
+    {0x5E, SpellDoes::Hold, 0, 0, 0, 0, 0, qw(0x8843)},   // Hold Monster
+    {0x19, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x885D)},   // Silence 15' Radius: "is silenced"
+    {0x1B, SpellDoes::SnakeCharm, 0, 0, 0, 0, 0, kJ | 2},   // Snake Charm: "is Charmed"
+    {0x25, SpellDoes::CureBlind, 0, 0, 0, 0, 0, qw(0x88EA), 0},   // Cure Blindness: "can see"
+    {0x2C, SpellDoes::Theirs, 0, 0, 0, 0, 0, qw(0x8929)},   // Bestow Curse: "has been cursed!"
+    {0x2D, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x893A)},   // Blink: "is blinking"
+    {0x44, SpellDoes::Kill, 0, 0, 0, 0, 0, qw(0x00F0)},   // Poison: "is Poisoned", then "is killed"
+    {0x46, SpellDoes::Snakes, 0, 0, 0, 0, 0, 0, qw(0x89A3)},   // Sticks to Snakes: "smashes them flat" (no word else)
+    {0x4C, SpellDoes::Slay, 2, 8, 1, 0, 8, qw(0x83B3), qw(0x87E8)},   // Slay Living: "is slain"
+    {0x4E, SpellDoes::Entangle, 0, 0, 0, 0, 0, qw(0x89C8)},   // Entangle: "is entangled"
+    {0x4F, SpellDoes::Faerie, 0, 0, 0, 0, 0, qw(0x89D5)},   // Faerie Fire: "is highlighted"
+    {0x50, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x8869)},   // Invisibility to Animals: "is invisible"
+    {0x4D, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x879E)},
+    {0x56, SpellDoes::Fumble, 0, 0, 0, 0, 0, qw(0x8A17), qw(0x8A21), qw(0x8A17)},   // Fumble: "is clumsy" / "is slowed"
+    {0x57, SpellDoes::Damage, 3, 10, 0, 0, 0x0A, 0},   // Ice Storm: 3d10 cold
+    {0x5D, SpellDoes::Feeble, 0, 0, 0, 0, 0, 0},   // Feeblemind
+    {0x0C, SpellDoes::Enlarge, 0, 0, 0, 0, 0, qw(0x8801)},   // Enlarge: "is stronger"
+    {0x0D, SpellDoes::Reduce, 0, 0, 0, 0, 0, qw(0x880D)},   // Reduce: "has been reduced"
+    {0x2B, SpellDoes::RemoveCurse, 0, 0, 0, 0, 0, qw(0x8906), 0, qw(0x8913)},   // Remove Curse: "is un-cursed",
+    {0x59, SpellDoes::RemoveCurse, 0, 0, 0, 0, 0, qw(0x8906), 0, qw(0x8913)},   // "has an item un-cursed"
+    {0x29, SpellDoes::Dispel, 0, 0, 0, 0, 0, qw(0x879E)},   // Dispel Magic: "is affected"
+    {0x2E, SpellDoes::Dispel, 0, 0, 0, 0, 0, qw(0x879E)},
+    {0x49, SpellDoes::DispelEvil, 0, 0, 0, 0, 0, qw(0x879E)},   // Dispel Evil: "is affected"
+    {0x52, SpellDoes::Confuse, 0, 0, 0, 0, 0, qw(0x86B1)},   // Confusion: "is confused"
+    {0x53, SpellDoes::Teleport, 0, 0, 0, 0, 0, qw(0x89F0)},   // Dimension Door: "teleports"
+    {0x55, SpellDoes::FireShield, 0, 0, 0, 0, 0, qw(0x8A0A)},   // Fire Shield: "is Protected"
+    {0x64, SpellDoes::Affect, 0, 0, 0, 0, 0, 0},   // Bestow Curse (the magic-users'): nothing
+    {0x1A, SpellDoes::SlowPoison, 0, 0, 0, 0, 0, qw(0x879E)},   // Slow Poison: "is affected"
+    {0x1C, SpellDoes::Hammer, 0, 0, 0, 0, 0, 0},   // Spiritual Hammer
+    {0x24, SpellDoes::FullHeal, 1, 4, 0, 0, 0, qw(0x4221), qw(0x88BB), qw(0x82CA), 0, qw(0x88CE)},   // Heal: "is healed",
+                                                            // "is no longer blind", "is cured", "regains intellect"
+    {0x5A, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x8A2B)},   // Barkskin: "is toughened" (its own handler, not Heal's)
+    {0x38, SpellDoes::HarmTouch, 1, 4, 0, 0, 8, qw(0x84AD)},   // Harm: "is Diseased", down to 1d4 hit points
+    {0x60, SpellDoes::Charm, 0, 0, 0, 0, 0, kJ | 2, kJ | 5},   // Charm Person or Mammal: "is Charmed" / "is not Charmed"
+    {0x62, SpellDoes::Heal, 1, 8, 0, 0, 0, 0},   // the druids' Cure Light Wounds
+    {0x6E, SpellDoes::DeathSpell, 0, 0, 0, 0, 8, qw(0x8A5E)},   // Death Spell: "drops dead"
+    {0x6F, SpellDoes::Disintegrate, 0, 0, 0, 0, 8, qw(0x8A69)},   // Disintegrate: "disintegrates"
+    {0x70, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x87AA)},   // Globe of Invulnerability: "is protected"
+    {0x71, SpellDoes::Unstone, 0, 0, 0, 0, 0, qw(0x8A8A)},   // Stone to Flesh: "is no longer a statue"
+    {0x72, SpellDoes::Petrify, 0, 0, 0, 0, 8, qw(0x8380)},   // Flesh to Stone: "is turned to stone"
+    {0x73, SpellDoes::Damage, 0, 6, 0, 6, 9, 0},   // Delayed Blast Fireball: Fireball's handler (no delay)
+    {0x74, SpellDoes::Ours, 0, 0, 0, 0, 0, kJ | 3},   // Mass Invisibility: "is Invisible (spell)"
+    {0x75, SpellDoes::Stun, 0, 0, 0, 0, 0, kJ | 4},   // Power Word Stun: "is Stunned"
+    // Darkness's new spells
+    {0x6A, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x011A)},   // Cure Disease (the druids'): Cure Disease's handler
+    {0x6C, SpellDoes::Hold, 0, 0, 0, 0, 0, qw(0x8843)},   // Hold Animal: "is held"
+    {0x6D, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x8A0A)},   // Protection from Fire: "is Protected"
+    {0x76, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x8AB3)},   // Fire Touch: "is covered in flame"
+    {0x77, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x87AA)},   // Iron Skin: "is protected"
+    {0x7A, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x87AA)},   // Mind Blank: the protections' handler
+    // (the fights' rules facts R2-R10; 102 Restoration and 105 Resurrection are camp spells)
+    {0x65, SpellDoes::Blade, 8, 8, 0, 0, 8, qw(0x0106)},   // Blade Barrier: "is cut by knives", 8d8
+    {0x67, SpellDoes::EnergyDrain, 0, 0, 0, 0, 0, 0},   // Energy Drain: a level (the drain's own words)
+    {0x68, SpellDoes::Destroy, 0, 0, 0, 0, 0x48, qw(0x8A42)},   // Destruction: "is destroyed"
+    {0x78, SpellDoes::MassCharm, 0, 0, 0, 0, 0, qw(0x87F6), qw(0x87E8)},   // Mass Charm: "is charmed" / "is unaffected"
+    {0x79, SpellDoes::Dance, 1, 4, 1, 0, 0, qw(0x8AC7)},   // Otto's: "begins to dance wildly", 1d4 + 1 rounds
+    {0x7B, SpellDoes::WordBlind, 0, 0, 0, 0, 0, qw(0x841C)},   // Power Word Blind: "is blinded"
+    {0x7C, SpellDoes::Meteors, 10, 4, 0, 0, 9, 0},   // Meteor Swarm: 10d4 a meteor, fire and magic
+    {0x7D, SpellDoes::WordKill, 0, 0, 0, 0, 0, qw(0x83B3)},   // Power Word Kill: "is slain"
+    {0x7E, SpellDoes::Summon, 0, 0, 0, 0, 0, qw(0x8AE9), qw(0x8AF2)},   // Monster Summoning: "gates in" /
+                                                            // "summons is not answered"
+    // Its items' spells (the same handlers as these spells: 57 the
+    // protections', 59 Silence's, 60 Detect Magic's, 61 Remove Curse's, 62
+    // Bless's, 63 Charm Person's, 64 Burning Hands', 133 Fireball's - its
+    // handler table; the others' workings as Darkness's item spells)
+    {0x39, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x87AA)},
+    {0x3B, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x885D)},
+    {0x3C, SpellDoes::Affect, 0, 0, 0, 0, 0, qw(0x879E)},
+    {0x3D, SpellDoes::RemoveCurse, 0, 0, 0, 0, 0, qw(0x8906), 0, qw(0x8913)},
+    {0x3E, SpellDoes::Ours, 0, 0, 0, 0, 0, kJ | 0},
+    {0x3F, SpellDoes::Charm, 0, 0, 0, 0, 0, qw(0x87F6), qw(0x87E8)},
+    {0x40, SpellDoes::Damage, 0, 0, 0, 1, 9, 0},
+    {0x7F, SpellDoes::Haste, 5, 4, 0, 0, 0, qw(0x895A), 0},           // Potion of Speed: "is Speedy", 5d4 rounds
+    {0x80, SpellDoes::GiantStrength, 1, 4, 4, 4, 0, qw(0x8801)},      // Potion of Frost (giant strength): "is stronger"
+    {0x81, SpellDoes::Bolt, 1, 6, 20, 0, 4, 0, 0, 0, 3},              // Javelin of Lightning: 1d6 + 20, 3 squares
+    {0x82, SpellDoes::Theirs, 5, 4, 0, 0, 0, qw(0x8964)},             // Wand of Paralyzation: "is paralyzed", 5d4 rounds
+    {0x83, SpellDoes::Heal, 2, 4, 2, 0, 0, qw(0x88E0)},               // Potion of Healing: "is Healed"
+    {0x84, SpellDoes::Youth, 1, 4, 1, 0, 0, qw(0x8985), qw(0x8971)},  // Elixir of Youth: "becomes younger" /
+                                                                       // "is now 18 years old"
+    {0x85, SpellDoes::Damage, 0, 6, 0, 3, 9, 0},                      // Necklace of Missiles: Fireball's (level d6)
+    {0x86, SpellDoes::Damage, 2, 4, 2, 0, 8, 0},                      // Wand of Magic Missiles: 2d4 + 2
+    {0x87, SpellDoes::Affect, 0, 0, 0, 0, 0, 0},                      // Scroll of Protection (nothing said)
+    {0x88, SpellDoes::Affect, 0, 0, 0, 0, 0, 0},                      // Potion of Invisibility
+    {0x89, SpellDoes::Heal, 2, 4, 2, 0, 0, qw(0x88E0)},               // Potion of Extra Healing: "is Healed"
+};
+constexpr spells::CampSpell kQueenCamp[] = {
+    {0x01, Does::Affect, 0, 0, 0, kJ | 0},   // Bless: "is Blessed"
+    {0x03, Does::Heal, 1, 8, 0, 0},   // Cure Light Wounds: fully / partially healed
+    {0x05, Does::Affect, 0, 0, 0, qw(0x879E)},   // Detect Magic: "is affected"
+    {0x06, Does::Affect, 0, 0, 0, qw(0x87AA)},   // the protections: "is protected"
+    {0x07, Does::Affect, 0, 0, 0, qw(0x87AA)},
+    {0x08, Does::Affect, 0, 0, 0, qw(0x87B7)},   // Resist Cold: "is cold-resistant"
+    {0x0B, Does::Affect, 0, 0, 0, qw(0x879E)},
+    {0x0C, Does::Enlarge, 0, 0, 0, qw(0x8801), qw(0x87E8)},   // Enlarge: "is stronger" / "is unaffected"
+    {0x0D, Does::Reduce, 0, 0, 0, qw(0x880D)},   // Reduce: "has been reduced"
+    {0x0E, Does::Friends, 0, 0, 0, qw(0x881E)},   // Friends: "is friendly"
+    {0x10, Does::Affect, 0, 0, 0, qw(0x87AA)},
+    {0x11, Does::Affect, 0, 0, 0, qw(0x87AA)},
+    {0x12, Does::Affect, 0, 0, 0, qw(0x879E)},   // Read Magic
+    {0x13, Does::Affect, 0, 0, 0, qw(0x882A)},   // Shield: "is shielded"
+    {0x16, Does::Affect, 0, 0, 0, qw(0x879E)},   // Find Traps
+    {0x18, Does::Affect, 0, 0, 0, qw(0x884B)},   // Resist Fire: "is fire resistant"
+    {0x1A, Does::SlowPoison, 0, 0, 0, qw(0x879E)},   // Slow Poison: "is affected"
+    {0x1C, Does::Hammer, 0, 0, 0, 0},   // Spiritual Hammer
+    {0x1D, Does::Affect, 0, 0, 0, qw(0x879E)},   // Detect Invisibility
+    {0x1E, Does::Affect, 0, 0, 0, qw(0x8869)},   // Invisibility: "is invisible"
+    {0x20, Does::Mirror, 0, 0, 0, qw(0x8882)},   // Mirror Image: "is duplicated"
+    {0x23, Does::Strength, 0, 0, 0, 0},   // Strength (no word)
+    {0x24, Does::FullHeal, 1, 4, 0, qw(0x4221), qw(0x88BB), qw(0x82CA), qw(0x88CE)},   // Heal: "is healed", "is no longer
+                                                           // blind", "is cured", "regains intellect"
+    {0x25, Does::CureBlind, 0, 0, 0, 0},   // Cure Blindness: "is Cured", "can see"
+    {0x27, Does::CureDisease, 0, 0, 0, qw(0x82CA)},   // Cure Disease: "is Cured" each, "is cured"
+    {0x29, Does::Dispel, 0, 0, 0, qw(0x879E)},   // Dispel Magic: "is affected"
+    {0x2A, Does::Prayer, 0, 0, 0, qw(0x88FB)},   // Prayer: "is praying"
+    {0x2B, Does::RemoveCurse, 0, 0, 0, 0},   // Remove Curse (its 0x2B slip: Facts::curse_dk)
+    {0x2E, Does::Dispel, 0, 0, 0, qw(0x879E)},
+    {0x30, Does::Haste, 0, 0, 0, qw(0x8946)},   // Haste: "is Hasted"
+    {0x32, Does::Affect, 0, 0, 0, qw(0x8869)},   // Invisibility 10' Radius
+    {0x34, Does::Affect, 0, 0, 0, qw(0x87AA)},
+    {0x35, Does::Affect, 0, 0, 0, qw(0x87AA)},
+    {0x36, Does::Affect, 0, 0, 0, qw(0x87AA)},   // Protection from Normal Missiles
+    {0x3A, Does::Heal, 2, 8, 1, 0},   // Cure Serious Wounds
+    {0x43, Does::Neutralize, 0, 0, 0, 0, qw(0x87E8)},   // Neutralize Poison: "is unpoisoned" / "is unaffected"
+    {0x45, Does::Affect, 0, 0, 0, qw(0x87AA)},
+    {0x47, Does::Heal, 3, 8, 3, 0},   // Cure Critical Wounds
+    {0x4B, Does::Raise, 0, 0, 0, 0},   // Raise Dead: "is raised"
+    {0x4D, Does::Affect, 0, 0, 0, qw(0x879E)},
+    {0x50, Does::Affect, 0, 0, 0, qw(0x8869)},   // Invisibility to Animals: "is invisible"
+    {0x55, Does::FireShield, 0, 0, 0, qw(0x8A0A)},   // Fire Shield: "is Protected"
+    {0x58, Does::Affect, 0, 0, 0, qw(0x87AA)},   // Minor Globe: "is protected"
+    {0x59, Does::RemoveCurse, 0, 0, 0, 0},
+    {0x5A, Does::Affect, 0, 0, 0, qw(0x8A2B)},   // Barkskin: "is toughened" (its own handler)
+    {0x62, Does::Heal, 1, 8, 0, 0},   // the druids' Cure Light Wounds
+    {0x66, Does::DkRestore, 0, 0, 0, 0},   // Restoration (nothing said)
+    {0x69, Does::Resurrect, 0, 0, 0, qw(0x8A4F)},   // Resurrection: "is resurrected"
+    {0x6A, Does::CureDisease, 0, 0, 0, qw(0x82CA)},   // the druids' Cure Disease / Neutralize Poison
+    {0x6B, Does::Neutralize, 0, 0, 0, 0, qw(0x87E8)},
+    {0x6D, Does::ProtFire, 0, 0, 0, qw(0x8A0A)},   // Protection from Fire: "is Protected"
+    {0x70, Does::Affect, 0, 0, 0, qw(0x87AA)},   // Globe of Invulnerability: "is protected"
+    {0x71, Does::Unstone, 0, 0, 0, qw(0x8A8A)},   // Stone to Flesh: "is no longer a statue"
+    {0x74, Does::Affect, 0, 0, 0, kJ | 3},   // Mass Invisibility: "is Invisible (spell)"
+    {0x76, Does::Affect, 0, 0, 0, qw(0x8AB3)},   // Fire Touch: "is covered in flame"
+    {0x77, Does::Affect, 0, 0, 0, qw(0x87AA)},   // Iron Skin: "is protected"
+    {0x7A, Does::Affect, 0, 0, 0, qw(0x87AA)},   // Mind Blank: the protections' handler
+    // Its items' spells (as the fights')
+    {0x39, Does::Affect, 0, 0, 0, qw(0x87AA)},
+    {0x3C, Does::Affect, 0, 0, 0, qw(0x879E)},
+    {0x3D, Does::RemoveCurse, 0, 0, 0, 0},
+    {0x3E, Does::Affect, 0, 0, 0, kJ | 0},
+    {0x7F, Does::Haste, 0, 0, 0, qw(0x895A)},
+    {0x80, Does::GiantStrength, 0, 0, 0, qw(0x8801)},
+    {0x83, Does::Heal, 2, 4, 2, qw(0x88E0)},
+    {0x84, Does::Youth, 1, 4, 1, qw(0x8985), qw(0x8971)},
+    {0x87, Does::Affect, 0, 0, 0, 0},
+    {0x88, Does::Affect, 0, 0, 0, 0},
+    {0x89, Does::Heal, 2, 4, 2, qw(0x88E0)},
+};
 constexpr auto kQueenFight = [] {
     decltype(Profile::fight) f{};
     f.tables = {0x6197, 0x5D0B, 0x5D1B, 0x5D2B, 0x5D2F, 0x5D37, 0x5D3F, 0x5D7B, 0x5A5F, 0, 11, 0};
@@ -2035,8 +2255,8 @@ constexpr auto kQueenFight = [] {
     const uint8_t ends[16] = {0x03, 0x06, 0x0B, 0x15, 0x17, 0x1B, 0x1E, 0x1F, 0x23, 0x34, 0x35, 0x4D, 0x6A, 0x6B, 0x6F, 0x76};
     for (int i = 0; i < 16; ++i) f.ends[i] = ends[i];
     f.facts = kQueenFightFacts;
-    f.spells = kDeathKnightsFight;
-    f.n_spells = sizeof kDeathKnightsFight / sizeof kDeathKnightsFight[0];
+    f.spells = kQueenFightSpells;
+    f.n_spells = sizeof kQueenFightSpells / sizeof kQueenFightSpells[0];
     // COMSPR: Death Knights' numbers (its 23 pictures in the same order)
     for (int i = 0; i < 16; ++i) f.comspr[i] = static_cast<uint8_t>(i == 10 ? 11 : i == 11 ? 10 : i);
     f.marks = {15, 10, 16};
@@ -3708,6 +3928,8 @@ const Profile kProfiles[] = {
      // has a tab: not taken), "save which game: ", "Saving...Please Wait",
      // "load from where? " "Tdqk Dkk Exit"
      .party = {.load_which = qw(0x4E25), .name = qw(0x5E59), .save_which = qw(0x4E37), .saving = qw(0x604D),
+               // (the camp: "View Magic Rest Alt Fix Load Save Exit", "the party makes camp...")
+               .camp_menu = qw(0x51D2), .makes_camp = qw(0x4A60),
                // (Add: "add from where? " "Tdqk Dkk Exit", "add a character: ", "Add Exit")
                .add_from = qw(0x4885), .add_sources = qw(0x500C), .add_prompt = qw(0x4896), .add = qw(0x501A),
                .load_from = qw(0x4E13), .load_sources = qw(0x500C),
@@ -3736,7 +3958,11 @@ const Profile kProfiles[] = {
      .items = {.words = {kQueenDs + 0x3F59, 4, 154}, .types_file = "DISK1/ITEMS.DAT", .arrow = 30, .quarrel = 12,
                .dart = 5,
                // (an elf's +1 to hit: types 0x15-0x1B, 0x13, 0x12 - its 0x9BF6)
-               .elf_bonus = {0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x13, 0x12}, .overloaded = qw(0x8FC9),
+               .elf_bonus = {0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x13, 0x12},
+               // (a list's keys: the words of its "Next Prev Manual ..." and
+               // "Select Exit" - the front end puts their spaces before them)
+               .list_next = qw1(0x5102), .list_prev = qw1(0x5107), .list_exit = qw(0x4EF8),
+               .overloaded = qw(0x8FC9),
                .title = qw(0x4689), .heading = qw(0x468F), .yes = qw(0x21C),
                .no = qw(0x222), .cursed = qw(0x8F3B), .wrong_class = qw(0x8F48), .hands_full = qw(0x8F65),
                .plural_s = qw(0x260),
@@ -3763,6 +3989,12 @@ const Profile kProfiles[] = {
                 .con_save = 0x5E, .dwarf_orc = 0x1A, .giants = 0x2F, .elf_sleep = 0x5F, .halfelf = 0x12,
                 .prot_evil = 0x08, .ranger_giant = 0x69, .mu_first = {0x0B, 0x0C, 0x0F, 0x10},
                 .platinum = 200, .kender_fear = 0x5C, .mu_more = {0x12, 0x13}},
+     // The items' words found again among its C strings ("Must be
+     // unreadied", "Must be readied", "Can't halve that", "Your ", "will be
+     // gone forever", "Trade with Whom?", the shop's Sell / Id, "Select")
+     .item_words = {0, 0, 0, 0, 0, 0, 0, qw(0x8E45), qw(0x46B5), qw(0x8FD4), qw(0x469A), qw(0x46A0), 0, qw(0x8FB8),
+                    qw(0x46C5), 0, qw(0x46D4), qw(0x46E3), qw(0x46E9), 0, qw(0x4710), qw(0x4737), qw(0x4AD7),
+                    qw(0x4EEA), 0},
      // The training hall's words (queen_facts_4.md 6): "we only train
      // conscious people", no cost (free), "we don't train that class here",
      // "Not Enough Experience", " will become:", "    a level %s %s", "and
@@ -3774,11 +4006,48 @@ const Profile kProfiles[] = {
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, qw(0x74FA), 0, qw(0x7519), qw(0x7538),
                     qw(0x754E), qw(0x755C), qw(0x756E), qw(0x7580), qw(0x7597)},
+     // Magic (queen_facts_4.md 8): "Cast Memorize Scribe Display Rest Exit",
+     // the level names ("1st Level", 41 apart), the spell names (far
+     // pointers, DS 0x25CB: spell 1 first), the words (C strings - the menu
+     // keys the first words of its "Memorize Exit" ...), the effect names
+     // (far pointers, DS 0x6524); Darkness's camp spells at its numbers
+     .magic = {.menu = qw(0x51F9), .levels = {qw(0x8B57), 41, 9}, .names = {kQueenDs + 0x25CB - 4, 4, 139},
+               .words = {qw(0x8D67), qw(0x8D12), qw(0x8D1C), qw(0x8D51), qw(0x4DAB), qw1(0x4F07), qw(0x4E49), 0, 0,
+                         qw(0x7C18), qw(0x7C25), qw(0x7C32), qw(0x7C42), qw(0x7BB6), qw(0x7BDD), qw(0x0030), qw(0x4F5B),
+                         qw(0x006F), qw(0x003B), qw(0x0055), qw(0x007D)},
+               .rest_period = 0x7ED2, .rest_chance = 0x7ED3,
+               .cast_words = {qw(0x7BCD), qw(0x7C00), qw1(0x4EFD), qw(0x457E), qw(0x453C), qw(0x4532), qw(0x8CFF),
+                              qw(0x0263), qw(0x0273), qw(0x4CBE), qw(0x87E8), qw(0x88EA), qw(0x8995), qw(0x89B5),
+                              qw(0x8906), qw(0x8913), qw(0x7CD8), qw1(0x4F1F), qw(0x8D3C), qw(0x8D5D), qw(0x7C5D),
+                              qw(0x7C75), qw(0x7C91), qw(0x7CB5), qw(0x4E55), 0, qw(0x7BED), qw(0x0063), qw(0x8D47),
+                              qw1(0x4F2B), qw(0x4552), qw(0x455C), qw(0x4575), qw(0x8FF5), qw(0x8F35), qw(0x9002),
+                              qw(0x8D28), 0},
+               .camp = kQueenCamp, .n_camp = sizeof kQueenCamp / sizeof kQueenCamp[0],
+               // (Darkness's effects; its timed ones at its numbers: the potion
+               // of speed 127, the wand of paralyzation 130, frost 128)
+               .facts = {2, 0x2A, {0x22, 0x2B, 0}, {{0, 0}, {0x2C, 0x1F}, {0, 0}}, 0x0C, 0x17, 0x32, 0x36, 0x70, 0x71,
+                         {{0x7F, 5, 4, 0, 1}, {0x82, 5, 4, 0, 1}, {0x80, 1, 4, 4, 10}, {0x1A, 0, 0, 3780, 1},
+                          {0x7A, 0, 0, 1440, 1}, {0x79, 1, 4, 1, 1}},
+                         0x2B, 0x14},
+               .spell_named = nullptr, .n_spell_named = 0, .named = nullptr, .n_named = 0,
+               .scroll_one_spell = 100, .read_magic = 0x10,
+               .level_word = 0, .effect_names = {q_effect(0), 4, 0xB4}},
+     // Alter: "Order Drop Speed Icon Level Exit", Order's / Speed's word
+     // lists, "party order ", "has been selected", the speed line, "game
+     // speed: ", "Novice Squire Veteran Adept Champion", "Pick Character "
+     // "Select" (its icon editor is its own - not in the engine yet)
+     .alter = {.menu = qw(0x5220), .select = 0, .place = 0,
+               .words = {0, qw(0x4E6B), qw(0x4A2A), qw(0x4A3C), 0, 0, 0, 0, qw(0x4E78)},
+               .icon_menu = {}, .icon_words = {}, .level_menu = qw(0x5241), .level_base = 1,
+               .order_list = qw(0x5063), .speed_list = qw(0x5075), .pick = qw(0x4DD2), .pick_menu = qw(0x4EEA)},
      .fight = kQueenFight,
      .variant = {.unfinished = true, .bigpic_from = 0xF0,
+                 // (the camp: PIC 128 in the view - its picture routine's mode 2, 0xB6F6)
+                 .camp_pic = 128,
                  // ("Press        to continue." with the button "Return" in its gap)
                  .fight_unswapped = true, .press_words = {qw(0x1D19), qw(0x1D33)}, .hlib = true,
                  .queen_orders = kQueenDs + 0x8D8C},     // (BIGPIC ids 240-242)
+     .joined = kQueenJoined, .n_joined = sizeof kQueenJoined / sizeof kQueenJoined[0],
      .title_name = qw(0x4D73)},
 };
 

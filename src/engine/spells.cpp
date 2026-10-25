@@ -93,7 +93,9 @@ int power(const party::Character& c, const classes::Tables& t, int s)
         return 6;
     auto most = [](int a, int b) { return a > b ? a : b; };
     switch (t.spell_class(s)) {
-    case 0: return most(skill_level(c, classes::Cleric), skill_level(c, classes::Paladin) - (pal_rule ? 8 : 0));
+    case 0:
+    case 4:     // (the Dark Queen's god-given spells: a cleric's)
+        return most(skill_level(c, classes::Cleric), skill_level(c, classes::Paladin) - (pal_rule ? 8 : 0));
     case 1: return most(skill_level(c, classes::Ranger) - 7, 0);
     case 2: return most(skill_level(c, classes::MagicUser), skill_level(c, classes::Ranger) - 8);
     case 3: return 12;

@@ -127,7 +127,9 @@ int in_memory(const party::Character& c, const classes::Tables& t, bool learning
     for (int i = kListSize - 1; i >= 0 && n < cap; --i) {
         const uint8_t v = c.rec[kListAt + i];
         if (!v || ((v & 0x80) != 0) != learning) continue;
-        if (!can_use(c, t, v & 0x7F)) continue;
+        // (the Dark Queen's god-given spells: memorized, cast from a level of
+        // their own, "Special" - spell_class 4)
+        if (!can_use(c, t, v & 0x7F) && !(t.lay.queen && t.spell_class(v & 0x7F) == 4)) continue;
         ids[n++] = v & 0x7F;
     }
     sort_by_level(t, ids, n);
@@ -146,6 +148,21 @@ int known(const party::Character& c, const classes::Tables& t, uint8_t* ids, int
 int learnable(const party::Character& c, const classes::Tables& t, uint8_t* ids, int cap)
 {
     int n = 0;
+    if (t.lay.queen && t.lay.q_mu_lists) {
+        // The Dark Queen's (its list mode 5, ovl 0xA +0x41C0 - queen_facts_4.md
+        // 8): for each spell level with magic-user slots, the spells of its
+        // robe's list (White's, else the Red / Black one) not yet known
+        const int list = c.ext[party::kExtRobe] == 1 ? 0 : 1;
+        for (int lv = 1; lv <= 9 && n < cap; ++lv) {
+            if (cast_count(c, t, 2, lv) <= 0) continue;
+            for (int i = 0; i < 10 && n < cap; ++i) {
+                const int s = t.u8(static_cast<uint16_t>(t.lay.q_mu_lists + list * 90 + (lv - 1) * 10 + i));
+                if (!s) break;
+                if (!classes::in_book(c, s)) ids[n++] = static_cast<uint8_t>(s);
+            }
+        }
+        return n;
+    }
     for (int s = 1; s < t.lay.spell_count && n < cap; ++s)
         if (usable(t, s) && cast_count(c, t, t.spell_class(s), t.spell_level(s)) > 0 && can_use(c, t, s) &&
             !classes::in_book(c, s))
@@ -176,11 +193,11 @@ void cancel(party::Character& c)
 
 bool memorizing(const party::Character& c) { return first_learning(c) >= 0; }
 
-bool remove(party::Character& c, int s)
+bool remove(party::Character& c, int s, bool relearn)
 {
     for (int i = 0; i < kListSize; ++i)
         if (c.rec[kListAt + i] == s) {
-            c.rec[kListAt + i] = 0;
+            c.rec[kListAt + i] = static_cast<uint8_t>(relearn ? s | 0x80 : 0);
             return true;
         }
     return false;

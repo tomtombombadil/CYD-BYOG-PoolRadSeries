@@ -168,7 +168,7 @@ struct Data {
     char           guy_letter[kMaxGuys] = {};   // a Pool saved game's letter (CHRDAT<letter>n.SAV)
     char           guy_from = 'C';              // the list's source: C(urse) / P(ool)
     int            guys = 0;
-    char           w_magic[44] = {}, w_level[9][12] = {};
+    char           w_magic[44] = {}, w_level[9][12] = {}, w_special[12] = {};
     char           w_kind[3][12] = {}, w_spells_word[8] = {};      // Gateway's headings: "Magic-User " + "Spells"    // the magic menu, "1st Level" ... (Secret: 7, Darkness 9)
     char           w_these[16] = {};                        // Secret: " these spells?" after Memorize / Scribe
     char           w_alter[36] = {}, w_select[14] = {}, w_place[14] = {};   // Alter's menus
@@ -814,8 +814,12 @@ bool open_area_dax(const char* stem, int block, plat::File& f, char* name, size_
 
 // ---- drawing ------------------------------------------------------------------
 
+bool hl();
 void put(pic::Canvas& c, const char* s, int col, int row, uint8_t fg)
 {
+    // (the Dark Queen's words are light grey where the others' are green -
+    // its VGA palette's 10 is green; DOSBox)
+    if (fg == 10 && hl()) fg = 7;
     font::draw_text(c, d->font, s, col, row, fg, 0);
 }
 
@@ -1328,6 +1332,7 @@ void draw_position(pic::Canvas& c)
         char line[24];
         snprintf(line, sizeof line, "%d,%d", g.x, g.y);
         put(c, line, 26, 13, 7);
+        if (camping) put(c, "CAMPING", 26, 14, 7);     // (its status line while camping - DOSBox)
         const int h24 = vm->get(0x4BC9) % 24, h12 = h24 % 12 ? h24 % 12 : 12;
         snprintf(line, sizeof line, "%d:%d%d %s", h12, vm->get(0x4BC8) % 10, vm->get(0x4BC7) % 10, h24 < 12 ? "AM" : "PM");
         put(c, line, 26, 15, 7);
@@ -7698,7 +7703,7 @@ MagicRules* mrules = nullptr;       // the rule tables while camping / casting
 // The spell names, packed: name s at text + at[s] (v0.136.1: 128 x 24
 // fixed was 3 KB at a fight's highest point; the names are ~12 letters)
 struct SpellNames {
-    static constexpr int kMax = 128;    // (Curse 1-100, Secret 1-118, Darkness 1-126)
+    static constexpr int kMax = 140;    // (Curse 1-100, Secret 1-118, Darkness 1-126, the Dark Queen 1-138)
     uint16_t at[kMax];                  // (0: the empty name at text[0])
     char text[1];                       // (malloc'd past its end: every name and its 0)
 };
@@ -7776,6 +7781,7 @@ bool load_magic()
         plat::FileSource src(f);
         exepack::Info info;
         if (exepack::parse(src, info) == exepack::Status::Ok) {
+            const bool far_names = nt.stride == 4 && d->prof->items.words_far;
             const int per = nt.stride && nt.stride < 1024 ? 1024 / nt.stride : 1;
             const int count = nt.count < SpellNames::kMax ? nt.count : SpellNames::kMax;
             uint8_t* buf = static_cast<uint8_t*>(malloc(static_cast<size_t>(per) * nt.stride));
@@ -7801,7 +7807,23 @@ bool load_magic()
                     }
                     for (int j = 0; j < k; ++j) {
                         const uint8_t* e = buf + static_cast<size_t>(j) * nt.stride;
-                        const int n = e[0] >= nt.stride ? 0 : e[0] < 23 ? e[0] : 23;    // (Secret's entry 0 isn't a name)
+                        uint8_t far_name[24];
+                        if (far_names) {
+                            // (the Dark Queen: far pointers to C strings in its
+                            // data segment - made a Pascal string here)
+                            far_name[0] = 0;
+                            uint8_t s[23];
+                            if ((e[0] | e[1]) &&
+                                exepack::read(src, info, d->prof->data_base + (e[0] | e[1] << 8), s, sizeof s) ==
+                                    exepack::Status::Ok) {
+                                int len = 0;
+                                while (len < 22 && s[len] >= 0x20 && s[len] < 0x7F) ++len;
+                                far_name[0] = static_cast<uint8_t>(len);
+                                memcpy(far_name + 1, s, static_cast<size_t>(len));
+                            }
+                            e = far_name;
+                        }
+                        const int n = far_names ? e[0] : e[0] >= nt.stride ? 0 : e[0] < 23 ? e[0] : 23;    // (Secret's entry 0 isn't a name)
                         if (pass == 0) {
                             len[at + j] = static_cast<uint8_t>(n);
                         } else if (n) {
@@ -7917,11 +7939,11 @@ void dk_page_sel();
 void build_lines(const uint8_t* ids, int n)
 {
     sl.n = 0;
-    int last = 0;
+    int last = -1;
     const classes::Tables& t = mrules->tables;
     // (Darkness's Cast and View list a spell held more than once on one
     // line with its count - "Cure Light Wounds (6)", DOSBox)
-    const bool counted = darkness_files() && (sl.casting || sl.viewing);
+    const bool counted = (darkness_files() || hl()) && (sl.casting || sl.viewing);
     for (int i = 0; i < n && sl.n < 143; ++i) {
         int lv = t.spell_level(ids[i]);
         // (Gateway: a heading for each level and kind - lvl's high bits the kind)
@@ -8024,15 +8046,21 @@ void draw_spells(pic::Canvas& c)
     char nm[20], t[48], a[12], b[16];
     pt->sel()->name(nm, sizeof nm);
     snprintf(t, sizeof t, "%s%s", nm, d->w_s);
-    put(c, t, 1, 1, pt->sel()->npc() ? 10 : 11);
+    // (the Dark Queen's list: grey, its headings red - DOSBox)
+    const int ink = hl() ? 7 : 10, head_ink = hl() ? 12 : 13;
+    put(c, t, 1, 1, hl() ? (sl.casting ? 13 : 7) : pt->sel()->npc() ? 10 : 11);     // (its caster's name pink - DOSBox)
     mw(profile::kSpellsWord, a, sizeof a);
     if (sl.choosing) cw(profile::kToChoose, b, sizeof b);
     else if (sl.reading >= 0) cw(profile::kOnScroll, b, sizeof b);
     else if (sl.scrolls) cw(sl.learning ? profile::kToScribe : profile::kOnScrolls, b, sizeof b);
     else mw(sl.learning ? profile::kToMemorize : sl.casting || sl.viewing ? profile::kInMemory : profile::kInGrimoire, b,
             sizeof b);
-    snprintf(t, sizeof t, "%s%s", a, b);
-    put(c, t, static_cast<int>(strlen(nm)) + 4, 1, 10);
+    // (the Dark Queen's heading is a printf "Spells %s" - the word in its place)
+    if (const char* ps = strstr(a, "%s"))
+        snprintf(t, sizeof t, "%.*s%s%s", static_cast<int>(ps - a), a, b, ps + 2);
+    else
+        snprintf(t, sizeof t, "%s%s", a, b);
+    put(c, t, static_cast<int>(strlen(nm)) + 4, 1, ink);
     const int rows = list_rows();
     if ((darkness_files() || gateway()) && (sl.sel < sl.top || sl.sel >= sl.top + rows)) dk_page_sel();   // (a turned page)
     for (int r = 0; r < rows && sl.top + r < sl.n; ++r) {
@@ -8043,9 +8071,10 @@ void draw_spells(pic::Canvas& c)
                 char h[40];
                 snprintf(h, sizeof h, "%s %s%s", d->w_level[(sl.lvl[i] & 15) - 1], d->w_kind[sl.lvl[i] >> 4],
                          d->w_spells_word);
-                put(c, h, 1, row, 13);
+                put(c, h, 1, row, head_ink);
             } else {
-                put(c, d->w_level[sl.lvl[i] - 1], 1, row, 13);       // headings in the prompt colour
+                // (the Dark Queen's god-given spells, level 0: "Special")
+                put(c, sl.lvl[i] ? d->w_level[sl.lvl[i] - 1] : d->w_special, 1, row, head_ink);       // headings in the prompt colour
             }
             continue;
         }
@@ -8066,7 +8095,7 @@ void draw_spells(pic::Canvas& c)
         if (i == sl.sel && !sl.learning) {
             hl_text(c, line + 2, 3, row);
         } else {
-            put(c, line, 1, row, 10);
+            put(c, line, 1, row, ink);
         }
     }
     if (!sl.learning && !sl.casting && !sl.scrolls && !sl.choosing && !sl.viewing && sl.reading < 0) {
@@ -8091,8 +8120,9 @@ void draw_spells(pic::Canvas& c)
         else if (sl.scrolls) cw(profile::kScribeKey, k1, sizeof k1);
         else if (sl.choosing) cw(profile::kLearnKey, k1, sizeof k1);
         else mw(profile::kMemorizeKey, k1, sizeof k1);
+        // (the Dark Queen's choosing has Exit too: "Learn Exit")
         snprintf(keys, sizeof keys, "%s%s%s%s", k1, sl.top + rows < sl.n ? d->w_next : "", sl.top > 0 ? d->w_prev : "",
-                 sl.choosing ? "" : d->w_exit);
+                 sl.choosing && !hl() ? "" : d->w_exit);
         text::build(menu, prompt, keys);
         menu.selected = 0;
         hl_first();                     // (Darkness: GAME.OVR 0x29E86 sets the first)
@@ -8280,7 +8310,7 @@ void learn_tap(char k, pic::Canvas& c)
     }
     if (k == 'N' && sl.top + list_rows() < sl.n) sl.top += list_rows();
     else if (k == 'P' && sl.top > 0) sl.top = sl.top > list_rows() ? sl.top - list_rows() : 0;
-    else return;
+    else if (k != 'E' || !hl()) return;     // (the Dark Queen's Exit: the list again - a spell must be picked)
     draw_spells(c);
 }
 
@@ -8792,8 +8822,24 @@ void read_word(dax::ByteSource& src, uint32_t at, char* out, size_t cap)
         if (!d->prof->joined || i >= d->prof->n_joined) return;
         const profile::JoinedWord& j = d->prof->joined[i];
         read_word(src, j.first, out, cap);
+        // (the Dark Queen's: a printf "is %s" - the second word in its place)
+        if (char* ps = strstr(out, "%s")) {
+            char tail[48], second[48];
+            snprintf(tail, sizeof tail, "%s", ps + 2);
+            read_word(src, j.second, second, sizeof second);
+            snprintf(ps, cap - static_cast<size_t>(ps - out), "%s%s", second, tail);
+            return;
+        }
         const size_t n = strlen(out);
         if (n + 1 < cap) read_word(src, j.second, out + n, cap - n);
+        return;
+    }
+    if (at & text::kFarC) {
+        // (the Dark Queen's effect names: a far pointer's offset in its data
+        // segment)
+        uint8_t p[2];
+        if (src.read_at(at & 0x00FFFFFFu, p, 2) != 2) return;
+        text::read_pascal(src, text::kCString | (d->prof->data_base + (p[0] | p[1] << 8)), out, cap);
         return;
     }
     text::read_pascal(src, at, out, cap);
@@ -8980,7 +9026,7 @@ void do_cast(pic::Canvas& c)
 {
     party::Character& me = pt->m[cr.caster];
     int pw = 0;
-    if (cr.item < 0) magic::remove(me, cr.spell);
+    if (cr.item < 0) magic::remove(me, cr.spell, hl());
     else pw = spells::item_power(me, mrules->tables, cr.spell);
     cr.n = spells::cast(*pt, cr.caster, cr.target, *cr.cs, mrules->tables, d->prof->cures, d->prof->magic.facts, rng,
                         cr.lines, 24, pw, cr.flame);
@@ -9136,7 +9182,7 @@ void cast_tap(int x, int y, pic::Canvas& c)
         } else if (cr.stage == CastRun::FlameAbort && k == 'Y') {
             // The spell is gone (an item's use too), nothing else
             party::Character& me = pt->m[cr.caster];
-            if (cr.item < 0) magic::remove(me, cr.spell);
+            if (cr.item < 0) magic::remove(me, cr.spell, hl());
             else if (cr.scroll) magic::scroll_used(me, scroll_facts(), cr.item, cr.spell);
             else magic::used(me, cr.item);
             rules::recalc(me, *names, d->facts);
@@ -9444,7 +9490,7 @@ void open_effects(pic::Canvas& c)
 
 void lose_spell(bool yes, pic::Canvas& c)
 {
-    if (yes) magic::remove(pt->m[cr.caster], cr.spell);
+    if (yes) magic::remove(pt->m[cr.caster], cr.spell, hl());
     show_memory(c);
 }
 
@@ -10992,6 +11038,12 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         for (auto& wd : words)
             if (wd.at) read_word(src, wd.at, wd.out, wd.cap);
         if (hl()) {
+            // (its list keys are words of longer strings: their spaces before them)
+            for (char* w : {d->w_next, d->w_prev, d->w_exit})
+                if (w[0] && w[0] != ' ' && strlen(w) + 2 <= sizeof d->w_exit) {
+                    memmove(w + 1, w, strlen(w) + 1);
+                    w[0] = ' ';
+                }
             // (Dark Queen's " Yes" / " No" stand before a tab: the names from
             // column 6 - DOSBox)
             char t[8];
@@ -11102,6 +11154,9 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
     for (int i = 0; i < 9 && i < pm.levels.count && pm.levels.at; ++i)
         text::read_pascal(exe, info, pm.levels.at + static_cast<uint32_t>(i) * pm.levels.stride, d->w_level[i],
                           sizeof d->w_level[i]);
+    // (the Dark Queen's "Special" - its god-given spells - just before "1st Level")
+    if (hl() && pm.levels.at)
+        text::read_pascal(exe, info, pm.levels.at - pm.levels.stride, d->w_special, sizeof d->w_special);
     if (pm.these_spells) text::read_pascal(exe, info, pm.these_spells, d->w_these, sizeof d->w_these);
     for (int i = 0; i < 3 && i < pm.kind_names.count && pm.kind_names.at; ++i)
         text::read_pascal(exe, info, pm.kind_names.at + static_cast<uint32_t>(i) * pm.kind_names.stride, d->w_kind[i],

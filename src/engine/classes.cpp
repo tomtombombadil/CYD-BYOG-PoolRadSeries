@@ -701,6 +701,7 @@ bool queen_pack(Tables& t, const Layout& ds, DsReader read, void* ctx)
     l.cleric_lists = static_cast<uint16_t>(l.cleric_lists - 11);   // (+ level x 10 + i, both from 1)
     take(l.q_caps, 7 * 8);
     take(l.q_con_hp, 26);
+    take(l.q_mu_lists, 2 * 90);
     l.lo = 0;
     l.hi = static_cast<uint16_t>(at);
     l.lo2 = l.hi;
@@ -724,7 +725,8 @@ bool queen_pack(Tables& t, const Layout& ds, DsReader read, void* ctx)
             uint8_t* o = b + l.spells + s * 16;
             const uint8_t cls = row[0];
             o[0] = row[21];
-            o[1] = cls == 0 ? 0 : cls == 1 ? 1 : cls == 2 ? 3 : 4;
+            // (its class 3: a god's special spell - kept apart, 5: spell_class 4)
+            o[1] = cls == 0 ? 0 : cls == 1 ? 1 : cls == 2 ? 3 : cls == 3 ? 5 : 4;
             o[2] = row[2];
             o[3] = row[3];
             o[4] = row[4];
@@ -808,7 +810,8 @@ bool queen_pack(Tables& t, const Layout& ds, DsReader read, void* ctx)
     ok = ok && read(ctx, ds.q_xp, b + l.q_xp, 11 * 76) && read(ctx, ds.q_xp_step, b + l.q_xp_step, 11 * 4) &&
          read(ctx, ds.q_slot_map, b + l.q_slot_map, 11) && read(ctx, ds.q_slots, b + l.q_slots, 8 * 261) &&
          read(ctx, static_cast<uint16_t>(ds.cleric_lists + 11), b + l.cleric_lists + 11, 70) &&
-         read(ctx, ds.q_con_hp, b + l.q_con_hp, 26);
+         read(ctx, ds.q_con_hp, b + l.q_con_hp, 26) &&
+         read(ctx, static_cast<uint16_t>(ds.cleric_lists + 11 + 90), b + l.q_mu_lists, 2 * 90);
     if (!ok) {
         delete[] b;
         return false;

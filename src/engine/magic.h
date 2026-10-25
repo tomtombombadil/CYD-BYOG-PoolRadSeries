@@ -54,7 +54,9 @@ bool add(party::Character& c, const classes::Tables& t, int spell);
 void cancel(party::Character& c);
 bool memorizing(const party::Character& c);
 // Takes a memorized spell out (cast); false if it isn't there
-bool remove(party::Character& c, int spell);
+// (relearn: the Dark Queen's - the spell stays, marked to be memorized again
+// at the next rest; its resident 0xAF26)
+bool remove(party::Character& c, int spell, bool relearn = false);
 
 // ---- Scrolls: up to three spells in an item's effect bytes (0x3C-0x3E;
 // + 0x80 while being scribed); the item's second name word counts them

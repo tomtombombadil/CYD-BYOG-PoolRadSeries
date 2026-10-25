@@ -5383,7 +5383,7 @@ void treasure_detect(pic::Canvas& c)
     party::Character* ch = pt->sel();
     const int sp = detect_spell();
     if (!ch || !sp || !load_magic()) return;
-    magic::remove(*ch, sp);
+    magic::remove(*ch, sp, hl());
     const int pw = spells::power(*ch, mrules->tables, sp);
     spells::add_affect(*ch, d->prof->items.detect[0], spells::lasts(mrules->tables, sp, pw), pw, false);
     // "NAME casts" / the spell, "NAME is affected"

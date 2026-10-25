@@ -119,6 +119,9 @@ struct Layout {
     bool     queen = false;
     uint16_t q_xp = 0, q_xp_step = 0, q_slot_map = 0, q_slots = 0, q_caps = 0, q_con_hp = 0;
     uint16_t q_hp_count = 0, q_hp_sides = 0;
+    // (its magic-users' spell lists by robe: White, then Red / Black - 9
+    // levels x 10, 0 ends; queen_pack's copy of DS 0x1728)
+    uint16_t q_mu_lists = 0;
 };
 
 // Champions: a race in creation's lists (the Curse number can't tell its two
