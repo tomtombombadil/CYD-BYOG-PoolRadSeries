@@ -396,14 +396,21 @@ void knight_change(party::Character& c, const classes::Tables& t)
     uint8_t* r = c.rec;
     const int lv = c.level(classes::Monk), order = c.ext[party::kExtKnight];
     if (lv <= 0 || order < 1 || order > 2) return;
-    const int32_t need = lv >= 2 ? t.exp_needed(order == 1 ? 4 : 5, lv - 1, true) : 0;
-    if (static_cast<int64_t>(c.exp()) < need) {
+    // (the Dark Queen, DQK 0x48710: the levels come off one by one while
+    // the new order's experience for the level held is more than the
+    // character has)
+    const bool queen = t.lay.queen;
+    for (int lvn = lv;;) {
+    const int32_t need = lvn >= 2 ? t.exp_needed(order == 1 ? 4 : 5, lvn - 1, true) : 0;
+    if (static_cast<int64_t>(c.exp()) >= need) break;
+    {
+        const int lv = lvn--;
         // (0x258D9: the level's share of the rolled hit points, and the
         // knight's Constitution figure, come off)
         --r[kLevels + classes::Monk];
         // (Death Knights, GAME.OVR 061:4E02: a knight past 9th loses 2 hit
         // points, nothing for Constitution - the levels with fixed points)
-        const bool fixed = t.lay.dkk && lv > 9;
+        const bool fixed = (t.lay.dkk || queen) && lv > 9;
         const int share = fixed ? 2 : r[kHpRolled] / (lv + 1);
         r[kHpRolled] = static_cast<uint8_t>(r[kHpRolled] - share);
         const int con = stat_full(c, 4);
@@ -413,8 +420,11 @@ void knight_change(party::Character& c, const classes::Tables& t)
         r[kHpMax] = static_cast<uint8_t>(r[kHpMax] - (share + b));
         if (r[kHp] >= r[kHpMax]) r[kHp] = r[kHpMax];
     }
+    if (!queen || lvn < 1) break;
+    }
     c.ext[party::kExtKnight] = static_cast<uint8_t>(order + 1);
     classes::class_bonuses(c, t);
+    if (queen) c.ext[party::kExtTrain] = trainable(c, t) ? 1 : 0;
 }
 
 int god_alignments(int god)

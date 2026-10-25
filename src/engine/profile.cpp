@@ -3996,7 +3996,9 @@ const Profile kProfiles[] = {
                            .q_hp_sides = 0x6418},
                 .con_save = 0x5E, .dwarf_orc = 0x1A, .giants = 0x2F, .elf_sleep = 0x5F, .halfelf = 0x12,
                 .prot_evil = 0x08, .ranger_giant = 0x69, .mu_first = {0x0B, 0x0C, 0x0F, 0x10},
-                .platinum = 200, .kender_fear = 0x5C, .mu_more = {0x12, 0x13}},
+                .platinum = 200, .kender_fear = 0x5C,
+                // (Knight New Order's least stats: 2 x 6 u16 - DQK 0x487F2)
+                .knight_mins = 0x7D98, .mu_more = {0x12, 0x13}},
      // The items' words found again among its C strings ("Must be
      // unreadied", "Must be readied", "Can't halve that", "Your ", "will be
      // gone forever", "Trade with Whom?", the shop's Sell / Id, "Select")
@@ -4059,8 +4061,15 @@ const Profile kProfiles[] = {
                  // (the camp: PIC 128 in the view - its picture routine's mode 2, 0xB6F6)
                  .camp_pic = 128,
                  // ("Press        to continue." with the button "Return" in its gap)
-                 .fight_unswapped = true, .press_words = {qw(0x1D19), qw(0x1D33)}, .hlib = true,
-                 .queen_orders = kQueenDs + 0x8D8C},     // (BIGPIC ids 240-242)
+                 .fight_unswapped = true, .press_words = {qw(0x1D19), qw(0x1D33)},
+                 // (Knight New Order, DQK 0x487F2: its messages 64-70, "Exit"
+                 // of the menu "Change Exit" (161) - one " is too
+                 // inexperienced" for both orders; the order's name made of
+                 // "knight of the " + "sword" / "rose")
+                 .knight_words = {qw(0x5036), qw(0x494C), qw(0x4967), qw(0x496D), qw(0x4972), qw(0x4981),
+                                  qw(0x4997), qw(0x49AA), 0, qw(0x502F), qw(0x4981), 0},
+                 .hlib = true,
+                 .queen_orders = kQueenDs + 0x8D8C},     // (BIGPIC ids 240-242),
      .joined = kQueenJoined, .n_joined = sizeof kQueenJoined / sizeof kQueenJoined[0],
      .title_name = qw(0x4D73)},
 };

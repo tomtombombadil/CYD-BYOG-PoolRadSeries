@@ -5435,7 +5435,14 @@ bool load_rules(Making*& m)
                 exepack::read(src, info, pc.ds_image + pc.cleric_first + 1, m->facts.cleric_first, 10) !=
                     exepack::Status::Ok)
                 memset(m->facts.cleric_first, 0, 10);
-            if (pc.knight_mins &&
+            if (pc.knight_mins && pc.tables.queen) {
+                // (the Dark Queen's: 2 x 6 u16, DS 0x7D98 - DQK 0x487F2)
+                uint8_t km[24] = {};
+                if (exepack::read(src, info, pc.ds_image + pc.knight_mins, km, sizeof km) != exepack::Status::Ok)
+                    memset(km, 0, sizeof km);
+                for (int i = 0; i < 12; ++i)
+                    m->facts.knight_mins[i / 6][i % 6] = km[2 * i + 1] ? 0xFF : km[2 * i];
+            } else if (pc.knight_mins &&
                 exepack::read(src, info, pc.ds_image + pc.knight_mins, m->facts.knight_mins[0], 12) !=
                     exepack::Status::Ok)
                 memset(m->facts.knight_mins, 0, 12);
@@ -9986,6 +9993,18 @@ void train_note(int word, pic::Canvas& c)
     note(c, t);
 }
 
+// The training hall's and Knight New Order's page: the screen inside the
+// frame cleared (the Dark Queen's: one box, x 8-311, y 8-183 - DOSBox)
+void hl_page(pic::Canvas& c)
+{
+    if (hl()) {
+        static const QBox kPage = {8, 8, 311, 183};
+        q_screen(c, &kPage, 1, false);
+        return;
+    }
+    c.fill(8, 8, 38 * 8, 22 * 8, 0);
+}
+
 void train_character(pic::Canvas& c)
 {
     party::Character* chp = pt->sel();
@@ -10040,11 +10059,12 @@ void train_character(pic::Canvas& c)
         train_note(profile::kTrainExp, c);
         return;
     }
-    // "NAME will become:" and the new levels
-    c.fill(8, 8, 38 * 8, 22 * 8, 0);
+    // "NAME will become:" and the new levels (the Dark Queen: on one box
+    // x 8-311, y 8-183, the name grey too - DOSBox)
+    hl_page(c);
     char nm[20], w1[24], line[48];
     ch.name(nm, sizeof nm);
-    put(c, nm, 4, 4, ch.npc() ? 10 : 11);
+    put(c, nm, 4, 4, hl() ? 7 : ch.npc() ? 10 : 11);
     sw(profile::kWillBecome, w1, sizeof w1);
     // (the Dark Queen: its words grey, the lines printf formats "    a level
     // %s %s" with the level and the class's long name, in its own class
@@ -10114,7 +10134,7 @@ bool train_yes_no(Ask what, char k, pic::Canvas& c)
 void start_knight(pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
-    if (!ch || !krynn_rules()) return;
+    if (!ch || (!krynn_rules() && !hl())) return;
     if (!trainer && !load_rules(trainer)) {
         end_training();
         error(c, "Not in the engine yet.");
@@ -10127,7 +10147,7 @@ void start_knight(pic::Canvas& c)
         draw_party_menu(c);
         return;
     }
-    c.fill(8, 8, 38 * 8, 22 * 8, 0);
+    hl_page(c);
     char nm[20], line[64];
     ch->name(nm, sizeof nm);
     const int n = static_cast<int>(strlen(nm));
@@ -10531,7 +10551,7 @@ void pm_choose_key(char key, pic::Canvas& c)
         start_change(c);
         return;
     case 'K':
-        if (krynn_rules()) {
+        if (krynn_rules() || hl()) {
             start_knight(c);
             return;
         }
