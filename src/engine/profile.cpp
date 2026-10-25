@@ -3961,6 +3961,7 @@ const Profile kProfiles[] = {
                .elf_bonus = {0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x13, 0x12},
                // (a list's keys: the words of its "Next Prev Manual ..." and
                // "Select Exit" - the front end puts their spaces before them)
+               .buy_items = qw(0x4EC4), .buy = qw1(0x5126),      // ("items : ", "Buy" of "Buy Exit")
                .list_next = qw1(0x5102), .list_prev = qw1(0x5107), .list_exit = qw(0x4EF8),
                .overloaded = qw(0x8FC9),
                .title = qw(0x4689), .heading = qw(0x468F), .yes = qw(0x21C),
@@ -3971,7 +3972,14 @@ const Profile kProfiles[] = {
                // armour only - its 0x9DCF; queen_facts_4.md 6)
                .passive = items::kSecretPassive, .light_magic_armour = true,
                // (a kender's hoopak +2 to hit - its 0x9BF6)
-               .race_weapon = {5, 0x43, 2}, .types_head = 0, .menu = qw(0x4FB0), .words_far = true},
+               .race_weapon = {5, 0x43, 2}, .types_head = 0, .menu = qw(0x4FB0),
+               // SHOP n's goods (queen_facts_4.md 9): u16 tables - the first and
+               // last of a list at DS 0x75C6 / 0x75D8 + 2 x (n - 1), the list
+               // DS 0x75EA + 2 x (i - 1): ITEM.DAT's rows (1-based; 255 a random
+               // magic-user scroll, its spells by the robes' bytes DS 0x253E + s)
+               .goods_first = 0x75C6, .goods_last = 0x75D8, .goods_rows = 0x75EA, .spell_class = 0x253E,
+               // (its temple's 11 cures: u16 spell numbers, DS 0x82A4)
+               .temple_spells = 0x82A4, .words_far = true},
      // Character rules (queen_facts_4.md 4-6): its tables' DS offsets, packed
      // into Krynn shapes when read (classes::queen_pack); its createPlayer's
      // effects - the races' as Champions', a paladin's 0x08, a ranger's 0x69 -,
@@ -3993,24 +4001,30 @@ const Profile kProfiles[] = {
      // unreadied", "Must be readied", "Can't halve that", "Your ", "will be
      // gone forever", "Trade with Whom?", the shop's Sell / Id, "Select")
      .item_words = {0, 0, 0, 0, 0, 0, 0, qw(0x8E45), qw(0x46B5), qw(0x8FD4), qw(0x469A), qw(0x46A0), 0, qw(0x8FB8),
-                    qw(0x46C5), 0, qw(0x46D4), qw(0x46E3), qw(0x46E9), 0, qw(0x4710), qw(0x4737), qw(0x4AD7),
-                    qw(0x4EEA), 0},
-     // The training hall's words (queen_facts_4.md 6): "we only train
-     // conscious people", no cost (free), "we don't train that class here",
-     // "Not Enough Experience", " will become:", "    a level %s %s", "and
-     // a level %s %s", "Do you wish to train? ", "Congratulations..."
-     .shop_words = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, qw(0x74FA), 0, qw(0x7519), qw(0x7538),
-                    qw(0x754E), qw(0x755C), qw(0x756E), qw(0x7580), qw(0x7597)},
-     // Magic (queen_facts_4.md 8): "Cast Memorize Scribe Display Rest Exit",
-     // the level names ("1st Level", 41 apart), the spell names (far
-     // pointers, DS 0x25CB: spell 1 first), the words (C strings - the menu
-     // keys the first words of its "Memorize Exit" ...), the effect names
-     // (far pointers, DS 0x6524); Darkness's camp spells at its numbers
+                    qw(0x46C5), qw(0x80CB), qw(0x823E), qw(0x8178), qw(0x46E9), qw(0x8214), qw(0x825E), qw(0x8286),
+                    qw(0x824D), qw(0x4EEA), 0},
+     // The shop's, Take's, Appraise's, the training hall's and the temple's
+     // words: Darkness's found again among its C strings (queen_facts_4.md 6,
+     // 9; printf words - their "%s" left out when read); the training hall's
+     // "    a level %s %s" (the front end fills it); its training free
+     .shop_words = {0, 0, qw(0x4D5C), 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, qw(0x4C9C), 0,
+                    0, 0, 0, qw(0x82CA), qw(0x4CC8), qw(0x82BA), qw(0x4D0C), qw(0x4D19),
+                    qw(0x4D2A), qw(0x4D39), 0, 0, qw(0x4AE9), qw(0x4B3C), qw(0x45D5), 0,
+                    0, 0, qw(0x4DC6), qw(0x45F4), 0, 0, 0, 0,
+                    qw(0x460A), qw(0x7F97), 0, 0, 0, 0, qw(0x4624), qw(0x4EEA),
+                    qw(0x45B8), qw(0x45A8), qw(0x46E9), qw(0x74FA), 0, qw(0x7519), qw(0x7538), qw(0x754E),
+                    qw(0x755C), qw(0x756E), qw(0x7580), qw(0x7597), 0, 0, 0, 0,
+                    0, 0, 0, qw(0x4CE7), 0, 0, 0, 0,
+                    qw(0x512F), qw(0x8079), qw(0x808F), qw(0x4AC7), qw(0x4ACE), qw(0x806B), qw(0x80E5), qw(0x80F4),
+                    qw(0x80FB), qw(0x469A), qw(0x810C), qw(0x8120), qw(0x8148), qw(0x8157), qw(0x817E), qw(0x81A0),
+                    qw(0x7FAA), qw(0x45C2), qw(0x45CA), qw(0x4F3F), qw(0x4F51), qw(0x459E), qw(0x900E), qw(0x9008),
+                    qw(0x9015), qw(0x519C), qw(0x35C0), qw(0x4CF9), qw(0x4D48), qw(0x89B5), 0, qw(0x5171),
+                    qw(0x4ECD), qw(0x5160), qw1(0x5156), qw(0x4C58), qw(0x4C77), qw(0x51B2)},
+     // The effects its cures take away: Darkness's (its effect numbers)
+     .cures = {{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+               0x21, {0x1F, 0x22, 0x2B, 0x2C, 0, 0}, 0x44, 0x37, 0x16, 0x0F, 0, 0x24, 0x22, 0x2B, 0x2C, 0x1F},
+     // (its Magic words: queen_facts_4.md 8)
      .magic = {.menu = qw(0x51F9), .levels = {qw(0x8B57), 41, 9}, .names = {kQueenDs + 0x25CB - 4, 4, 139},
                .words = {qw(0x8D67), qw(0x8D12), qw(0x8D1C), qw(0x8D51), qw(0x4DAB), qw1(0x4F07), qw(0x4E49), 0, 0,
                          qw(0x7C18), qw(0x7C25), qw(0x7C32), qw(0x7C42), qw(0x7BB6), qw(0x7BDD), qw(0x0030), qw(0x4F5B),

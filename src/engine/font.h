@@ -91,6 +91,9 @@ int glyph_of(const Font& f, char c);
 // black shadow (f.shade, else the pixels right of / under / right-under the
 // ink) and the background picture's pixels elsewhere.
 void draw_glyph(pic::Canvas& c, const Font& f, int g, int x, int y, uint8_t fg, int bg);
+// Ink `from` drawn as `to` (the Dark Queen's: the engine's green text is its
+// light grey - DOSBox); from -1: none
+void set_ink_remap(int from, int to);
 
 // Prints text from cell (col, row) rightwards; stops at the right edge.
 // Returns the column after the last character.

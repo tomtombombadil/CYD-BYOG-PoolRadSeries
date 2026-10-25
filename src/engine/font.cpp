@@ -143,8 +143,13 @@ void set_letters(Font& f, int letters, const Font* alt, pic::Canvas* redraw)
 
 void set_clear(Font& f, bool on, pic::Canvas* redraw) { set_letters(f, on ? kClearLetters : kGameLetters, nullptr, redraw); }
 
+namespace {
+int g_ink_from = -1, g_ink_to = 0;
+}
+
 void draw_glyph(pic::Canvas& c, const Font& f, int g, int x, int y, uint8_t fg, int bg)
 {
+    if (g_ink_from >= 0 && fg == g_ink_from) fg = static_cast<uint8_t>(g_ink_to);
     const bool lower = f.clear && g >= kGlyphs && g < kGlyphs + 26;
     if (g < 0 || (g >= kGlyphs && !lower)) return;
     const bool shadowed = bg == 0 && c.bg && c.bpp == 8;
@@ -165,6 +170,12 @@ void draw_glyph(pic::Canvas& c, const Font& f, int g, int x, int y, uint8_t fg, 
             else if (bg >= 0) c.set(px, py, static_cast<uint8_t>(bg == 0 && c.paper >= 0 ? c.paper : bg));   // (Dark Queen's boxes)
         }
     }
+}
+
+void set_ink_remap(int from, int to)
+{
+    g_ink_from = from;
+    g_ink_to = to;
 }
 
 int draw_text(pic::Canvas& c, const Font& f, const char* s, int col, int row, uint8_t fg, int bg)

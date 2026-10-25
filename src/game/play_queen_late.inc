@@ -888,3 +888,67 @@ __attribute__((noinline)) bool q_write_char(const char* base, const party::Chara
     delete[] old;
     return ok;
 }
+
+// ---- Its shops' goods (queen_facts_4.md 9) ---------------------------------
+// SHOP n: the u16 list entries first[n] .. last[n] (tables of 9 at DS
+// goods_first / goods_last), each an ITEM.DAT row (1-based, 17 bytes); 255
+// a random magic-user scroll (w6 +0x1A83): type 0x27, words 0x66 0x27 and
+// 0x8A - d for a d2 (the robe: 1 White, 2 Red / Black), plus 1, weight 1,
+// value 3000, byte 11 the robe's bit (1 << (6 - d)), three magic-user spells
+// of that robe (DS spell_class + s: 3 either robe) - rolled d126 until one fits
+__attribute__((noinline)) void q_shop_items(int n, items::Ground& g)
+{
+    const auto& pi = d->prof->items;
+    if (n < 1 || n > 9) n = 1;
+    uint8_t ab[4];
+    if (!program_ds(static_cast<uint16_t>(pi.goods_first + 2 * (n - 1)), ab, 2) ||
+        !program_ds(static_cast<uint16_t>(pi.goods_last + 2 * (n - 1)), ab + 2, 2)) {
+        plat::log("[play] SHOP: the program's goods didn't read\n");
+        return;
+    }
+    const int a = ab[0] | ab[1] << 8, b = ab[2] | ab[3] << 8;
+    if (a < 1 || b < a || b - a > 64) return;
+    uint8_t list[130];
+    if (!program_ds(static_cast<uint16_t>(pi.goods_rows + 2 * (a - 1)), list, 2u * static_cast<size_t>(b - a + 1))) return;
+    uint8_t robes[140] = {};
+    uint8_t* cls = nullptr;     // (the spells' class bytes, only for a random scroll)
+    plat::File f;
+    if (!open_hl("ITEM.DAT", f)) return;
+    {
+        plat::FileSource src(f);
+        for (int k = 0; k <= b - a; ++k) {
+            const int r = list[2 * k] | list[2 * k + 1] << 8;
+            uint8_t row[17] = {};
+            if (r == 255) {
+                if (!cls) {
+                    cls = new (std::nothrow) uint8_t[127];
+                    if (!cls || !program_ds(pi.spell_class, robes, sizeof robes)) break;
+                    for (int s = 1; s < 127; ++s) {
+                        uint8_t c2[1] = {0};
+                        cls[s] = program_ds(static_cast<uint16_t>(d->prof->create.tables.spells + 22 * s), c2, 1) ? c2[0] : 0;
+                    }
+                }
+                const int robe = rng.roll(2, 1);
+                row[0] = 0x27, row[1] = 0x66, row[2] = 0x27, row[3] = static_cast<uint8_t>(0x8A - robe);
+                row[4] = 1, row[6] = 3000 & 0xFF, row[7] = 3000 >> 8, row[8] = 1;
+                row[11] = static_cast<uint8_t>(1 << (6 - robe));
+                for (int j = 0; j < 3; ++j) {
+                    int s;
+                    do s = rng.roll(126, 1);
+                    while (cls[s] != 2 || (robes[s] != 3 && robes[s] != robe));
+                    row[14 + j] = static_cast<uint8_t>(s);
+                }
+            } else if (r < 1 || src.read_at(static_cast<uint32_t>(r - 1) * 17, row, sizeof row) != sizeof row ||
+                       row[0] == 0xFF) {
+                continue;
+            }
+            if (g.n >= items::kMaxGround) break;
+            uint8_t* it = g.item[g.n++];
+            party::queen_item_in(row, it);
+            it[0x35] &= 0xF8;
+        }
+    }
+    f.close();
+    delete[] cls;
+    plat::log("[play] SHOP %d: %d items\n", n, g.n);
+}
