@@ -1130,7 +1130,7 @@ void build_icon(const uint8_t* rec, Pic4& ic)
         // byte, + 128 the attack frame; no head, no recolouring)
         for (int fr = 0; fr < 2; ++fr) {
             int bw = 0, bh = 0;
-            ic.px[fr] = q_load_pic4("CBODY", rec[0x13C] + fr * 128, &bw, &bh);
+            ic.px[fr] = q_load_pic4("CBODY", rec[0x142] + fr * 128, &bw, &bh);
             if (ic.px[fr]) ic.w = static_cast<uint8_t>(bw), ic.h = static_cast<uint8_t>(bh);
         }
         return;
