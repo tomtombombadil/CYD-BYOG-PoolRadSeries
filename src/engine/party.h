@@ -55,7 +55,10 @@ enum Health : uint8_t { Okay = 0, Animated, TempGone, Running, Unconscious, Dyin
 // flags 2, magic resistance, its own race) and more after them: spells
 // 118-126, the 8th / 9th level slots, memorized places 85-141, the best
 // levels / experience / HP before a drain, "able to train".
-constexpr size_t kExtSize = 123;
+// The Krynn games' knight order / god / robe sit past them (123-125: The
+// Dark Queen of Krynn has Darkness's spells 118-126, 9 slot levels and 137
+// memorized places as well).
+constexpr size_t kExtSize = 126;
 enum Ext : uint8_t {
     kExtBook = 0,                       // spells 101-117 (17)
     kExtCleric67 = 17,                  // Secret 0x137-0x138 (Darkness 0x182-0x183)
@@ -71,9 +74,10 @@ enum Ext : uint8_t {
     kExtBestXp = 114,                   // best experience before a drain (4)
     kExtBestHp = 118,
     kExtTrain = 119,                    // able to train (0x1EC)
+    // The Krynn games: knight order, god, robe (Champions' record 0x5C-0x5E)
+    kExtKnight = 123, kExtGod = 124, kExtRobe = 125,
     // Champions of Krynn only (in Darkness's places: never both)
-    kExtKnight = 35, kExtGod = 36, kExtRobe = 37,   // its record's 0x5C-0x5E: knight order, god, robe
-    kExtK5F = 38,                       // 0x5F (not known yet)
+    kExtK5F = 38,                      // 0x5F (not known yet)
     kExtKE9 = 39,                       // 0xE9-0xEC (4; not known yet)
     kExtKSlots = 43,                    // 0x126-0x12A: a third group of spell slots (5)
     kExtK141 = 48,                      // 0x141 (not known yet)
@@ -239,6 +243,12 @@ constexpr size_t kQueenItemSize = 17;
 void queen_item_in(const uint8_t* q, uint8_t* item);             // into a 63-byte record
 // The record back (over q: the fields the engine doesn't keep are left)
 void to_queen(const Character& c, uint8_t* q);
+// Its spells (queen_facts_4.md 3): memorized places 0xCE (137: the first
+// 84 in Curse's list, the rest in kExtMemorized), the spells known 0x157
+// (bits; spells 1-126 into the book), the slots 0x167 (cleric, druid,
+// magic-user; 9 levels each) - part of from_queen / to_queen
+void queen_spells_in(const uint8_t* q, Character& c);
+void queen_spells_out(const Character& c, uint8_t* q);
 void queen_item_out(const uint8_t* item, uint8_t* q);
 // Record format: Curse's, Pool's, Secret's, Darkness's, Champions' or Death Knights'
 // (KrynnToDkk: a Champions record as Death Knights takes one in - krynn_to_dkk)

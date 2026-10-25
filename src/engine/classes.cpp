@@ -252,10 +252,79 @@ void dkk_slots(party::Character& c, const Tables& t)
             for (int k = 0; k < 8; ++k) cast(c, 2, k) = static_cast<uint8_t>(cast(c, 2, k) + t.slots_gained(row, L, k));
     }
 }
+// The Dark Queen of Krynn (its slots routine, ovl 0xB +0x5327, and the
+// cleric's +0x514F; queen_facts_4.md 5): its tables' slots in all at the
+// level (to 29th) - a cleric's by its god's row, the Wisdom bonus, no 6th
+// level under Wisdom 17, no 7th under 18, the lists of the levels it has;
+// a knight of the Sword / Rose past 5th its order's row (cleric 1-7) and
+// the lists; a paladin past 8th the paladin row's cleric 1-4 and every
+// cleric spell of the levels it has; a ranger past 7th its row's druid 1-4
+// (columns 1-4) and magic-user 1-4 (5-8), every druid spell of the levels
+// it has and the magic-user spells of the levels it has both kinds of
+// slots for; a magic-user 1 + its robe's row (1-9), none of 6th under
+// Intelligence 12, 7th under 14, 8th under 16, 9th under 18
+void queen_slots(party::Character& c, const Tables& t)
+{
+    clear_slots(c, t);
+    int lv = c.level(Cleric);
+    if (lv > 0) {
+        const int row = t.xp_row(&c, Cleric);
+        for (int k = 0; k < 7; ++k) cast(c, 0, k) = static_cast<uint8_t>(t.queen_slots_at(row, lv, k + 1));
+        wisdom_spells(c);
+        if (c.rec[kWisFull] < 17) cast(c, 0, 5) = 0;
+        if (c.rec[kWisFull] < 18) cast(c, 0, 6) = 0;
+        krynn_cleric_spells(c, t, 7);
+    }
+    lv = c.level(Monk);
+    if (lv > 5 && c.ext[party::kExtKnight] != 1) {
+        const int row = c.ext[party::kExtKnight] == 2 ? 4 : 5;
+        for (int k = 0; k < 7; ++k)
+            cast(c, 0, k) = static_cast<uint8_t>(cast(c, 0, k) + t.queen_slots_at(row, lv, k + 1));
+        krynn_cleric_spells(c, t, 7);
+    }
+    lv = c.level(Paladin);
+    if (lv > 8) {
+        for (int k = 0; k < 4; ++k)
+            cast(c, 0, k) = static_cast<uint8_t>(cast(c, 0, k) + t.queen_slots_at(10, lv, k + 1));
+        for (int s = 1; s < 127 && s < t.lay.spell_count; ++s) {
+            const int lvl = t.spell_level(s);
+            if (t.spell_class(s) == 0 && lvl >= 1 && lvl <= 9 && cast(c, 0, lvl - 1) > 0) learn(c, s);
+        }
+    }
+    lv = c.level(Ranger);
+    if (lv > 7) {
+        for (int k = 0; k < 4; ++k) {
+            cast(c, 1, k) = static_cast<uint8_t>(cast(c, 1, k) + t.queen_slots_at(6, lv, k + 1));
+            cast(c, 2, k) = static_cast<uint8_t>(cast(c, 2, k) + t.queen_slots_at(6, lv, k + 5));
+        }
+        for (int s = 1; s < 127 && s < t.lay.spell_count; ++s) {
+            const int k = t.spell_class(s), lvl = t.spell_level(s);
+            if (lvl < 1 || lvl > 9) continue;
+            // (a magic-user spell wants both kinds of slots of its level)
+            if ((k == 1 || (k == 2 && cast(c, 2, lvl - 1) > 0)) && cast(c, 1, lvl - 1) > 0) learn(c, s);
+        }
+    }
+    lv = c.level(MagicUser);
+    if (lv > 0) {
+        const int row = t.xp_row(&c, MagicUser);
+        cast(c, 2, 0) = static_cast<uint8_t>(cast(c, 2, 0) + 1);
+        for (int k = 0; k < 9; ++k)
+            cast(c, 2, k) = static_cast<uint8_t>(cast(c, 2, k) + t.queen_slots_at(row, lv, k + 1));
+        static const int kNeed[4] = {12, 14, 16, 18};
+        for (int k = 0; k < 4; ++k)
+            if (c.rec[0x13] < kNeed[k]) cast(c, 2, 5 + k) = 0;
+    }
+}
 } // namespace
 
 void spell_slots(party::Character& c, const Tables& t)
 {
+    if (t.lay.queen) {
+        queen_slots(c, t);
+        for (int i = 0; i < c.n_items; ++i)
+            if (c.items[i][0x34] && items::passive(c.items[i]) == items::Passive::Wizardry) wizardry(c, t, true);
+        return;
+    }
     if (t.lay.dkk) {
         dkk_slots(c, t);
         for (int i = 0; i < c.n_items; ++i)
@@ -362,7 +431,7 @@ void wizardry(party::Character& c, const Tables& t, bool on)
 {
     if (on) {
         // (Secret's ready routine, GAME.OVR 0x28BDD: the 5th level's alone - record 0x14B)
-        const int from = t.lay.secret ? 4 : 0, to = t.lay.secret ? 5 : 3;
+        const int from = t.lay.secret || t.lay.queen ? 4 : 0, to = t.lay.secret || t.lay.queen ? 5 : 3;
         for (int k = from; k < to; ++k) cast(c, 2, k) = static_cast<uint8_t>(cast(c, 2, k) * 2);
         return;
     }
@@ -405,7 +474,7 @@ void saving_throws(party::Character& c, const Tables& t)
         // its former level, so a knight above it (every knight: no former
         // level) takes row 7's entry for that level (level 0: 11 10 10 14
         // 11) when lower. Game Fixes: not (SPEC 12)
-        if (t.lay.krynn && !t.lay.dkk && !rules::fixes() && c.level(Monk) > c.old_level(Monk)) {
+        if (t.lay.krynn && !t.lay.dkk && !t.lay.queen && !rules::fixes() && c.level(Monk) > c.old_level(Monk)) {
             const int v = t.save(Monk, c.old_level(Monk), kind);
             if (v < best) best = v;
         }
@@ -444,6 +513,7 @@ void saving_throws(party::Character& c, const Tables& t)
 int thief_race_row(const party::Character& c, const Tables& t)
 {
     if (!t.lay.krynn) return t.race_row(c.race());
+    if (t.lay.queen) return c.ext[party::kExtRace];                 // (the Dark Queen's own table, by its race)
     if (rules::fixes()) return c.race() > 0 ? c.race() - 1 : 0;     // (thief_race is one row on)
     return c.ext[party::kExtRace];
 }
@@ -452,7 +522,7 @@ void thief_skills(party::Character& c, const Tables& t)
 {
     int lv = skill_level(c, Thief);
     if (lv > t.top_level()) lv = t.top_level();
-    if ((t.lay.dk || t.lay.dkk) && lv > 18) lv = 18;   // (Darkness's table: to 18th level, ovr 0x38A11; Death Knights' too)
+    if ((t.lay.dk || t.lay.dkk || t.lay.queen) && lv > 18) lv = 18;   // (Darkness's table: to 18th level, ovr 0x38A11; Death Knights' too)
     const int dex = c.rec[kDexFull];
     // The first readied Gauntlets of Dexterity (item effect 0x82) or Gloves
     // of Thievery (0x8B; curse_finish_facts.md 5.4)
@@ -521,6 +591,9 @@ void class_bonuses(party::Character& c, const Tables& t)
         if (t.lay.secret && (c.level(Fighter) > 12 || c.level(Paladin) > 12 || c.level(Ranger) > 14)) c.rec[kAttacks] = 4;
         // (Death Knights, ovl 0xE5 +0x570: fighters, paladins and knights past 12th; no ranger's)
         if (t.lay.dkk && (c.level(Fighter) > 12 || c.level(Paladin) > 12 || c.level(Monk) > 12)) c.rec[kAttacks] = 4;
+        // (the Dark Queen, ovl 0xB +0x5947: fighters, paladins and knights past 12th, rangers past 14th)
+        if (t.lay.queen && (c.level(Fighter) > 12 || c.level(Paladin) > 12 || c.level(Monk) > 12 || c.level(Ranger) > 14))
+            c.rec[kAttacks] = 4;
     }
     // Champions' gods (GAME.OVR 0x3A40A): Kiri-Jolith's clerics, and
     // Reorx's dwarves, +1 to hit
@@ -578,6 +651,169 @@ void to_book(party::Character& c, int spell)
     if (spell >= 1 && spell <= 100) c.rec[kSpellBook + spell - 1] = 1;
     else if (spell > 100 && spell <= 117) c.ext[party::kExtBook + spell - 101] = 1;   // (Secret's)
     else if (spell > 117 && spell <= 126) c.ext[party::kExtBook2 + spell - 118] = 1;  // (Darkness's)
+}
+
+int queen_class(int k)
+{
+    static const int8_t kTo[8] = {0, -1, 2, 3, 4, 5, 6, 1};
+    return k >= 0 && k < 8 ? kTo[k] : -1;
+}
+
+namespace {
+// A class row of the Dark Queen's 17-row tables for the engine's class k
+// (0-16: the multi-classes are numbered alike)
+int queen_row(int k) { return k < 8 ? queen_class(k) : k; }
+} // namespace
+
+bool queen_pack(Tables& t, const Layout& ds, DsReader read, void* ctx)
+{
+    // The packed copy's parts in order (queen_facts_4.md 4)
+    constexpr int kSpells = 138;
+    constexpr size_t kThiefFrom = 0x641C, kThiefTo = 0x6560;   // thief skills by level, race, Dexterity
+    Layout l{};
+    size_t at = 0;
+    auto take = [&](uint16_t& field, size_t n) {
+        field = static_cast<uint16_t>(at);
+        at += n;
+    };
+    take(l.spells, kSpells * 16);
+    take(l.thac0, 8 * 22);
+    take(l.class_flags, 8);
+    take(l.class_masks, 8);
+    take(l.max_hit_dice, 8);
+    take(l.q_hp_count, 8);
+    take(l.q_hp_sides, 8);
+    take(l.thief_base, kThiefTo - kThiefFrom);
+    l.thief_race = static_cast<uint16_t>(l.thief_base + (ds.thief_race - kThiefFrom));
+    l.thief_dex = static_cast<uint16_t>(l.thief_base + (ds.thief_dex - kThiefFrom));
+    take(l.stat_limits, 7 * 16);
+    take(l.race_classes, 7 * 15);
+    take(l.race_ages, 7 * 32);
+    take(l.age_brackets, 7 * 10);
+    take(l.class_min, 17 * 6);
+    take(l.class_alignments, 34);
+    take(l.saves, 8 * 110);
+    take(l.q_xp, 11 * 76);
+    take(l.q_xp_step, 11 * 4);
+    take(l.q_slot_map, 11);
+    take(l.q_slots, 8 * 261);
+    take(l.cleric_lists, 7 * 10);
+    l.cleric_lists = static_cast<uint16_t>(l.cleric_lists - 11);   // (+ level x 10 + i, both from 1)
+    take(l.q_caps, 7 * 8);
+    take(l.q_con_hp, 26);
+    l.lo = 0;
+    l.hi = static_cast<uint16_t>(at);
+    l.lo2 = l.hi;
+    l.hi2 = static_cast<uint16_t>(l.hi + 6);
+    l.spell_count = kSpells;
+    l.krynn = true;
+    l.queen = true;
+
+    uint8_t* b = new (std::nothrow) uint8_t[at];
+    if (!b) return false;
+    memset(b, 0, at);
+    bool ok = true;
+    // Spells: its 22-byte rows (class word, level, range, range a level,
+    // time, time a level, aim, targets, -, on save, -, save word, effect,
+    // when, -, delay, priority, foe, -, picture) into Death Knights' 16
+    // (picture, class, level, range, ...)
+    {
+        uint8_t row[22];
+        for (int s = 0; ok && s < kSpells; ++s) {
+            ok = read(ctx, static_cast<uint16_t>(ds.spells + s * 22), row, sizeof row);
+            uint8_t* o = b + l.spells + s * 16;
+            const uint8_t cls = row[0];
+            o[0] = row[21];
+            o[1] = cls == 0 ? 0 : cls == 1 ? 1 : cls == 2 ? 3 : 4;
+            o[2] = row[2];
+            o[3] = row[3];
+            o[4] = row[4];
+            o[5] = row[5];
+            o[6] = row[6];
+            o[7] = row[7];
+            o[8] = row[8];
+            o[9] = row[10];
+            o[10] = row[12];
+            o[11] = row[14];
+            o[12] = row[15];
+            o[13] = row[17];
+            o[14] = row[18];
+            o[15] = row[19];
+        }
+    }
+    // Class-indexed bytes: its order to the engine's
+    uint8_t q[7];
+    auto by_class = [&](uint16_t from, uint16_t to) {
+        ok = ok && read(ctx, from, q, 7);
+        for (int k = 0; k < 8; ++k) b[to + k] = queen_class(k) >= 0 ? q[queen_class(k)] : 0;
+    };
+    by_class(ds.class_flags, l.class_flags);
+    by_class(ds.class_masks, l.class_masks);
+    by_class(ds.max_hit_dice, l.max_hit_dice);
+    by_class(ds.q_hp_count, l.q_hp_count);
+    by_class(ds.q_hp_sides, l.q_hp_sides);
+    {
+        uint8_t row[110];
+        for (int k = 0; ok && k < 8; ++k) {
+            const int qk = queen_class(k);
+            if (qk < 0) continue;
+            ok = read(ctx, static_cast<uint16_t>(ds.thac0 + qk * 22), row, 22);
+            memcpy(b + l.thac0 + k * 22, row, 22);
+            ok = ok && read(ctx, static_cast<uint16_t>(ds.saves + qk * 110), row, 110);
+            memcpy(b + l.saves + k * 110, row, 110);
+        }
+    }
+    ok = ok && read(ctx, static_cast<uint16_t>(kThiefFrom), b + l.thief_base, kThiefTo - kThiefFrom);
+    ok = ok && read(ctx, ds.stat_limits, b + l.stat_limits, 7 * 16);
+    ok = ok && read(ctx, ds.age_brackets, b + l.age_brackets, 7 * 10);
+    for (int r = 0; ok && r < 7; ++r) {
+        // races' classes: a count, then u16 class numbers (its knight 1 -
+        // the engine's 7)
+        uint8_t row[29];
+        ok = read(ctx, static_cast<uint16_t>(ds.race_classes + r * 29), row, sizeof row);
+        uint8_t* o = b + l.race_classes + r * 15;
+        int n = row[0] > 14 ? 14 : row[0];
+        o[0] = static_cast<uint8_t>(n);
+        for (int i = 0; i < n; ++i) {
+            const int c = row[1 + i * 2];
+            o[1 + i] = static_cast<uint8_t>(c == 1 ? 7 : c == 7 ? 1 : c);
+        }
+        // ages: 7 classes' entries (u16 base, count, sides)
+        uint8_t ages[28];
+        ok = ok && read(ctx, static_cast<uint16_t>(ds.race_ages + r * 28), ages, sizeof ages);
+        for (int k = 0; k < 8; ++k)
+            if (queen_class(k) >= 0) memcpy(b + l.race_ages + r * 32 + k * 4, ages + queen_class(k) * 4, 4);
+        uint8_t caps[7];
+        ok = ok && read(ctx, static_cast<uint16_t>(ds.q_caps + r * 7), caps, sizeof caps);
+        for (int k = 0; k < 8; ++k) b[l.q_caps + r * 8 + k] = queen_class(k) >= 0 ? caps[queen_class(k)] : 0;
+    }
+    for (int k = 0; ok && k < 17; ++k) {
+        const int qr = queen_row(k);
+        if (qr >= 0) ok = read(ctx, static_cast<uint16_t>(ds.class_min + qr * 6), b + l.class_min + k * 6, 6);
+    }
+    // alignments: rows of a count and u16 alignments (0 LG ... 8 CE) - for
+    // each class, then again for dwarves - as masks over LG LN NG TN CG CN
+    static const uint8_t kList[6] = {0, 1, 3, 4, 6, 7};
+    for (int k = 0; ok && k < 34; ++k) {
+        const int qr = queen_row(k % 17);
+        if (qr < 0) continue;
+        uint8_t row[21];
+        ok = read(ctx, static_cast<uint16_t>(ds.class_alignments + ((k >= 17 ? 17 : 0) + qr) * 21), row, sizeof row);
+        uint8_t m = 0;
+        for (int i = 0; i < row[0] && i < 10; ++i)
+            for (int j = 0; j < 6; ++j)
+                if (row[1 + i * 2] == kList[j] && row[2 + i * 2] == 0) m = static_cast<uint8_t>(m | 1 << j);
+        b[l.class_alignments + k] = m;
+    }
+    ok = ok && read(ctx, ds.q_xp, b + l.q_xp, 11 * 76) && read(ctx, ds.q_xp_step, b + l.q_xp_step, 11 * 4) &&
+         read(ctx, ds.q_slot_map, b + l.q_slot_map, 11) && read(ctx, ds.q_slots, b + l.q_slots, 8 * 261) &&
+         read(ctx, static_cast<uint16_t>(ds.cleric_lists + 11), b + l.cleric_lists + 11, 70) &&
+         read(ctx, ds.q_con_hp, b + l.q_con_hp, 26);
+    if (!ok) {
+        delete[] b;
+        return false;
+    }
+    return t.adopt(l, b, at, kList, sizeof kList);
 }
 
 } // namespace classes

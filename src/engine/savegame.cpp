@@ -147,6 +147,74 @@ bool read_darkness(dax::ByteSource& src, ecl::GameState& gs, Header& h)
     return names_in(src, kDarknessBlock + 11, h);
 }
 
+// A character after its record (`rec`, read at at - kQueenRecordSize): its
+// items (17 bytes each - party::queen_item_in), its effects (a chain from
+// the record's pointer: Curse's 9 bytes); `at` moves past them
+static bool queen_member_in(dax::ByteSource& src, const uint8_t* rec, uint32_t& at, party::Character& c)
+{
+    party::from_queen(rec, c);
+    bool ok = true;
+    for (int k = 0; ok && k < rec[0xC9]; ++k) {
+        uint8_t q[kQueenItem];
+        ok = src.read_at(at, q, sizeof q) == sizeof q;
+        at += kQueenItem;
+        if (ok && c.n_items < party::kMaxItems) party::queen_item_in(q, c.items[c.n_items++]);
+    }
+    bool more = rec[4] || rec[5] || rec[6] || rec[7];
+    for (int k = 0; ok && more && k < 64; ++k) {
+        uint8_t e[kQueenEffect];
+        ok = src.read_at(at, e, sizeof e) == sizeof e;
+        if (!ok) break;
+        at += kQueenEffect;
+        more = e[5] || e[6] || e[7] || e[8];
+        if (c.n_affects < party::kMaxAffects) memcpy(c.affects[c.n_affects++], e, party::kAffectSize);
+    }
+    return ok && at <= src.size();
+}
+
+// ... and written: the record over `q` (the fields the engine doesn't keep
+// as they are there - zeros for a new one), its items, its effects
+static bool queen_member_out(Sink& out, const party::Character& c, uint8_t* q)
+{
+    party::to_queen(c, q);
+    bool ok = out.put(q, party::kQueenRecordSize);
+    for (int k = 0; ok && k < c.n_items; ++k) {
+        uint8_t it[kQueenItem];
+        party::queen_item_out(c.items[k], it);
+        ok = out.put(it, sizeof it);
+    }
+    for (int k = 0; ok && k < c.n_affects; ++k) {
+        uint8_t e[kQueenEffect];
+        memcpy(e, c.affects[k], kQueenEffect);
+        // (the chain: a non-zero pointer but on the last)
+        memset(e + 5, 0, 4);
+        if (k + 1 < c.n_affects) e[8] = 0x5E;
+        ok = out.put(e, sizeof e);
+    }
+    return ok;
+}
+
+bool read_queen_char(dax::ByteSource& src, party::Character& c)
+{
+    uint8_t* rec = new (std::nothrow) uint8_t[party::kQueenRecordSize];
+    if (!rec) return false;
+    uint32_t at = party::kQueenRecordSize;
+    const bool ok = src.read_at(0, rec, party::kQueenRecordSize) == party::kQueenRecordSize && queen_member_in(src, rec, at, c);
+    delete[] rec;
+    return ok;
+}
+
+bool write_queen_char(Sink& out, const party::Character& c, dax::ByteSource* src)
+{
+    uint8_t* q = new (std::nothrow) uint8_t[party::kQueenRecordSize];
+    if (!q) return false;
+    memset(q, 0, party::kQueenRecordSize);
+    if (src && src->read_at(0, q, party::kQueenRecordSize) != party::kQueenRecordSize) memset(q, 0, party::kQueenRecordSize);
+    const bool ok = queen_member_out(out, c, q);
+    delete[] q;
+    return ok;
+}
+
 bool read_queen(dax::ByteSource& src, ecl::GameState& gs, Header& h, party::Party& p)
 {
     if (src.size() < kQueenHead) return false;
@@ -178,26 +246,8 @@ bool read_queen(dax::ByteSource& src, ecl::GameState& gs, Header& h, party::Part
         if (!ok) break;
         at += party::kQueenRecordSize;
         party::Character& c = p.m[p.count];
-        party::from_queen(rec, c);
+        ok = queen_member_in(src, rec, at, c);
         c.name(h.names[i], sizeof h.names[i]);
-        // its items (17 bytes each - party::queen_item_in)
-        for (int k = 0; ok && k < rec[0xC9]; ++k) {
-            uint8_t q[kQueenItem];
-            ok = src.read_at(at, q, sizeof q) == sizeof q;
-            at += kQueenItem;
-            if (ok && c.n_items < party::kMaxItems) party::queen_item_in(q, c.items[c.n_items++]);
-        }
-        // its effects: a chain from the record's pointer (Curse's 9 bytes)
-        bool more = rec[4] || rec[5] || rec[6] || rec[7];
-        for (int k = 0; ok && more && k < 64; ++k) {
-            uint8_t e[kQueenEffect];
-            ok = src.read_at(at, e, sizeof e) == sizeof e;
-            if (!ok) break;
-            at += kQueenEffect;
-            more = e[5] || e[6] || e[7] || e[8];
-            if (c.n_affects < party::kMaxAffects) memcpy(c.affects[c.n_affects++], e, party::kAffectSize);
-        }
-        if (ok && at > src.size()) ok = false;
         if (ok) ++p.count;
     }
     delete[] rec;
@@ -263,21 +313,7 @@ bool write_queen(Sink& out, const ecl::GameState& gs, const Header& h, const par
                     memset(q, 0, party::kQueenRecordSize);
                 break;
             }
-        party::to_queen(c, q);
-        ok = out.put(q, party::kQueenRecordSize);
-        for (int k = 0; ok && k < c.n_items; ++k) {
-            uint8_t it[kQueenItem];
-            party::queen_item_out(c.items[k], it);
-            ok = out.put(it, sizeof it);
-        }
-        for (int k = 0; ok && k < c.n_affects; ++k) {
-            uint8_t e[kQueenEffect];
-            memcpy(e, c.affects[k], kQueenEffect);
-            // (the chain: a non-zero pointer but on the last)
-            memset(e + 5, 0, 4);
-            if (k + 1 < c.n_affects) e[8] = 0x5E;
-            ok = out.put(e, sizeof e);
-        }
+        ok = queen_member_out(out, c, q);
     }
     delete[] q;
     // the rest, as it was

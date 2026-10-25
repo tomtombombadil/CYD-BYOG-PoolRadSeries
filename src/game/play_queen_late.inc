@@ -399,3 +399,492 @@ void q_status(pic::Canvas& c, const char* t)
     }
     dirty_rows(text::kMenuRow - 1, text::kMenuRow);
 }
+
+// ---- Create New Character (queen_facts_4.md 5) -------------------------------
+// One screen of four choices (DOSBox): the grey box 8-311 x 8-183 on the
+// marble, red headings, grey names each beside a round button (7 x 7: a
+// black ring - grey when it can't be picked - white inside, a red dot when
+// picked): PICK RACE (12, 12; races from y 24 every 8), PICK ALIGNMENT
+// (12, 88; LAWFUL NEUTRAL CHAOTIC from 100, GOOD NEUTRAL from 128), PICK
+// GENDER (12, 152; from 164), PICK CLASS (148, 12; its 16 classes - no
+// monk - from 24); the names 12 pixels right of their buttons; Done Exit
+// on the bar. A race picks the classes it allows (the class falls back to
+// the first one allowed); a knight or paladin is lawful only; a good /
+// neutral the alignment allows with the law picked; an alignment the class
+// can't have becomes the class's default (thieves' true neutral, else
+// lawful good). Then a cleric's god (by the alignment: good Paladine ...
+// Mishakal, neutral Sirrion, Reorx, Shinare; the dwarves' Reorx unasked),
+// the roll and its screen with Reroll Stats Modify Done Exit.
+
+constexpr uint16_t kQWords = 0x72C7;          // DS offset of the words' block (Making::q_words)
+const char* q_word(uint16_t ds)
+{
+    if (!mk || ds < kQWords || ds >= kQWords + sizeof mk->q_words) return "";
+    return mk->q_words + (ds - kQWords);
+}
+// (the classes' names in its order, 17 one after another from 0x738A)
+const char* q_class_name(int q)
+{
+    uint16_t at = 0x738A;
+    for (int i = 0; i < q && at < kQWords + sizeof mk->q_words; ++i) at = static_cast<uint16_t>(at + strlen(q_word(at)) + 1);
+    return q_word(at);
+}
+const char* q_race_name(int r)
+{
+    uint16_t at = 0x7330;
+    for (int i = 0; i < r; ++i) at = static_cast<uint16_t>(at + strlen(q_word(at)) + 1);
+    return q_word(at);
+}
+
+int q_ecls(int q) { return q == 1 ? 7 : q == 7 ? 1 : q; }
+bool q_dwarf() { return mk->q_race == 3 || mk->q_race == 4; }
+bool q_class_ok(int q)
+{
+    int list[17];
+    const int n = create::classes_for(mk->tables, classes::kKrynnRace + mk->q_race, list, 17);
+    for (int i = 0; i < n; ++i)
+        if (list[i] == q_ecls(q)) return true;
+    return false;
+}
+bool q_align_ok(int law, int good)
+{
+    if (good < 1 || good > 2 || law < 1 || law > 3) return false;
+    static const uint8_t kBit[9] = {0, 1, 0xFF, 2, 3, 0xFF, 4, 5, 0xFF};
+    const int a = (law - 1) * 3 + good - 1, bit = kBit[a];
+    if (bit == 0xFF) return false;
+    const uint8_t m = mk->tables.u8(static_cast<uint16_t>(mk->tables.lay.class_alignments + q_ecls(mk->q_cls) + (q_dwarf() ? 17 : 0)));
+    return (m >> bit) & 1;
+}
+bool q_law_ok(int law) { return mk->q_cls == 1 || mk->q_cls == 3 ? law == 1 : true; }
+
+// The alignment kept to what the class allows (its +0x2323 / +0x2532)
+void q_fix_alignment()
+{
+    if (q_align_ok(mk->q_law, mk->q_good)) return;
+    for (int g = 1; g <= 2; ++g)
+        if (q_align_ok(mk->q_law, g)) {
+            mk->q_good = g;
+            return;
+        }
+    const int q = mk->q_cls;
+    const bool tn = q == 6 || q == 12 || q == 14 || q == 15 || q == 16;
+    mk->q_law = mk->q_good = tn ? 2 : 1;
+}
+void q_fix_class()
+{
+    if (!q_class_ok(mk->q_cls))
+        for (int q = 0; q <= 16; ++q)
+            if (q != 7 && q_class_ok(q)) {
+                mk->q_cls = q;
+                break;
+            }
+    q_fix_alignment();
+}
+
+// The form's choices as a list: 0-6 races, 7-9 law, 10-11 good, 12-13
+// gender, 14-29 classes; each one's button place and whether it can be picked
+constexpr int kQChoices = 30;
+void q_choice(int i, int* x, int* y)
+{
+    if (i < 7) *x = 12, *y = 24 + 8 * i;
+    else if (i < 10) *x = 12, *y = 100 + 8 * (i - 7);
+    else if (i < 12) *x = 12, *y = 128 + 8 * (i - 10);
+    else if (i < 14) *x = 12, *y = 164 + 8 * (i - 12);
+    else *x = 148, *y = 24 + 8 * (i - 14);
+}
+int q_choice_class(int i)
+{
+    const int j = i - 14;
+    return j < 7 ? j : j + 1;
+}
+bool q_choice_on(int i)
+{
+    if (i < 7 || (i >= 12 && i < 14)) return true;
+    if (i < 10) return q_law_ok(i - 6);
+    if (i < 12) return q_align_ok(mk->q_law, i - 9);
+    return q_class_ok(q_choice_class(i));
+}
+bool q_choice_picked(int i)
+{
+    if (i < 7) return mk->q_race == i;
+    if (i < 10) return mk->q_law == i - 6;
+    if (i < 12) return mk->q_good == i - 9;
+    if (i < 14) return mk->q_sex == i - 12;
+    return mk->q_cls == q_choice_class(i);
+}
+const char* q_choice_name(int i)
+{
+    if (i < 7) return q_race_name(i);
+    if (i < 10) return q_word(i == 7 ? 0x7458 : i == 8 ? 0x745F : 0x7467);
+    if (i < 12) return q_word(i == 10 ? 0x746F : 0x745F);
+    if (i < 14) return q_word(i == 12 ? 0x737E : 0x7383);
+    return q_class_name(q_choice_class(i));
+}
+
+void q_text(pic::Canvas& c, const char* s, int x, int y, uint8_t fg, uint8_t bg = 0)
+{
+    for (int k = 0; s[k] && x + k * 8 < pic::kScreenW; ++k)
+        font::draw_glyph(c, d->font, font::glyph_of(d->font, s[k]), x + k * 8, y, fg, bg);
+}
+
+// A round button (7 x 7): its ring (black, grey when it can't be picked),
+// white inside, the red dot when picked (light red corners, dark red cross)
+void q_radio(pic::Canvas& c, int x, int y, bool on, bool picked)
+{
+    const uint8_t ring = on ? 0 : 7;
+    for (int k = 2; k <= 4; ++k) {
+        c.set(x + k, y, ring);
+        c.set(x + k, y + 6, ring);
+        c.set(x, y + k, ring);
+        c.set(x + 6, y + k, ring);
+    }
+    c.set(x + 1, y + 1, ring);
+    c.set(x + 5, y + 1, ring);
+    c.set(x + 1, y + 5, ring);
+    c.set(x + 5, y + 5, ring);
+    c.fill(x + 2, y + 1, 3, 1, 15);
+    c.fill(x + 1, y + 2, 5, 3, 15);
+    c.fill(x + 2, y + 5, 3, 1, 15);
+    if (picked) {
+        for (int dx : {2, 4})
+            for (int dy : {2, 4}) c.set(x + dx, y + dy, 12);
+        c.set(x + 3, y + 2, 4);
+        c.fill(x + 2, y + 3, 3, 1, 4);
+        c.set(x + 3, y + 4, 4);
+    }
+}
+
+void q_form_draw(pic::Canvas& c)
+{
+    q_draw_frame(c, false);
+    q_pm_box(c, 183);
+    q_bar(c);
+    q_text(c, q_word(0x7300), 12, 12, 12);
+    q_text(c, q_word(0x730A), 12, 88, 12);
+    q_text(c, q_word(0x7319), 12, 152, 12);
+    q_text(c, q_word(0x7325), 148, 12, 12);
+    for (int i = 0; i < kQChoices; ++i) {
+        int x, y;
+        q_choice(i, &x, &y);
+        q_radio(c, x, y, q_choice_on(i), q_choice_picked(i));
+        const bool cur = i == mk->q_cur && keys_used;
+        q_text(c, q_choice_name(i), x + 12, y, cur ? 0 : 7, cur ? 15 : 0);
+    }
+    char words[16];
+    snprintf(words, sizeof words, "%s %s", q_word(0x72CE), q_word(0x72D3));
+    text::build(menu, "", words);
+    menu.selected = 0;
+    hl_first();
+    show_menu_line(c);
+    dirty(0, pic::kScreenH);
+}
+
+// The words (Done ... the names) and the gods' names from the program
+__attribute__((noinline)) bool q_create_words()
+{
+    plat::File f;
+    if (!open_file(d->prof->program, f)) return false;
+    bool ok = false;
+    {
+        plat::FileSource src(f);
+        exepack::Info info;
+        ok = exepack::parse(src, info) == exepack::Status::Ok &&
+             exepack::read(src, info, d->prof->data_base + kQWords, reinterpret_cast<uint8_t*>(mk->q_words),
+                           sizeof mk->q_words - 1) == exepack::Status::Ok;
+        // (its gods: far pointers DS 0x3C0A, 0 None; "Pick Diety" in the
+        // words' far table DS 0x3CE6; "Select Exit" DS 0x4EF1)
+        for (int g = 1; ok && g < 8; ++g)
+            q_far_word(src, info, d->prof->data_base + 0x3C0A, g, mk->q_gods[g], sizeof mk->q_gods[0]);
+        q_far_word(src, info, d->prof->data_base + 0x3CE6, 0, mk->pick_god, sizeof mk->pick_god);
+        uint8_t raw[16] = {};
+        if (exepack::read(src, info, d->prof->data_base + 0x4EF1, raw, sizeof raw - 1) == exepack::Status::Ok)
+            snprintf(mk->words[4], sizeof mk->words[4], "%s", reinterpret_cast<const char*>(raw));
+    }
+    f.close();
+    mk->q_words[sizeof mk->q_words - 1] = 0;
+    return ok;
+}
+
+void q_form_start(pic::Canvas& c)
+{
+    if (!load_making() || !q_create_words()) {
+        delete mk;
+        mk = nullptr;
+        pm_prompt(c, "Not in the engine yet.");
+        return;
+    }
+    // (its start: human, fighter, lawful good, male - DOSBox)
+    mk->q_race = 6;
+    mk->q_cls = 2;
+    mk->q_law = mk->q_good = 1;
+    mk->q_sex = 0;
+    mk->q_cur = 6;
+    screen = Screen::QForm;
+    q_form_draw(c);
+}
+
+void q_pick(int i)
+{
+    if (i < 0 || i >= kQChoices || !q_choice_on(i)) return;
+    if (i < 7) {
+        mk->q_race = i;
+        q_fix_class();
+    } else if (i < 10) {
+        mk->q_law = i - 6;
+        q_fix_alignment();
+    } else if (i < 12) {
+        mk->q_good = i - 9;
+    } else if (i < 14) {
+        mk->q_sex = i - 12;
+    } else {
+        mk->q_cls = q_choice_class(i);
+        q_fix_alignment();
+    }
+}
+
+void q_rolled(pic::Canvas& c);
+void q_god_draw(pic::Canvas& c);
+
+// Done: a cleric's god first (not a dwarf's), then the character
+void q_form_done(pic::Canvas& c)
+{
+    const int q = mk->q_cls;
+    const bool cleric = q == 0 || (q >= 8 && q <= 12);
+    mk->god = cleric && q_dwarf() ? 6 : 0;
+    if (cleric && !q_dwarf()) {
+        const bool good = mk->q_good == 1;
+        mk->q_n_gods = good ? 4 : 3;
+        for (int k = 0; k < mk->q_n_gods; ++k) mk->q_god_opt[k] = good ? 1 + k : 5 + k;
+        mk->q_god_sel = 0;
+        screen = Screen::QGod;
+        q_god_draw(c);
+        return;
+    }
+    q_rolled(c);
+}
+
+void q_form_tap(int x, int y, pic::Canvas& c)
+{
+    if (y >= text::kMenuTapTop) {
+        const int k = text::hit(menu, x / 8);
+        if (k < 0) return;
+        menu.selected = k;
+        if (k == 0) q_form_done(c);
+        else end_create(c);
+        return;
+    }
+    for (int i = 0; i < kQChoices; ++i) {
+        int bx, by;
+        q_choice(i, &bx, &by);
+        const int w = 12 + 8 * static_cast<int>(strlen(q_choice_name(i)));
+        if (x >= bx - 2 && x < bx + w && y >= by - 1 && y < by + 8) {
+            mk->q_cur = i;
+            q_pick(i);
+            q_form_draw(c);
+            return;
+        }
+    }
+}
+
+// The cursor keys: up / down through the choices (those that can be picked)
+bool q_form_nav(int step, pic::Canvas& c)
+{
+    int i = mk->q_cur < 0 ? 0 : mk->q_cur;
+    for (int k = 0; k < kQChoices; ++k) {
+        i = (i + step + kQChoices) % kQChoices;
+        if (q_choice_on(i)) break;
+    }
+    mk->q_cur = i;
+    q_form_draw(c);
+    return true;
+}
+
+bool q_form_point(int* x, int* y)
+{
+    if (mk->q_cur < 0) return false;
+    q_choice(mk->q_cur, x, y);
+    *x += 14;
+    *y += 3;
+    return true;
+}
+
+// ---- Pick Diety (DOSBox): its heading red at (8, 8), the gods from y 16
+// grey, the one picked cyan; Select Exit on the bar
+void q_god_draw(pic::Canvas& c)
+{
+    q_draw_frame(c, false);
+    q_pm_box(c, 183);
+    q_bar(c);
+    q_text(c, mk->pick_god, 8, 8, 12);
+    for (int k = 0; k < mk->q_n_gods; ++k)
+        q_text(c, mk->q_gods[mk->q_god_opt[k]], 16, 16 + 8 * k, k == mk->q_god_sel ? 11 : 7);
+    text::build(menu, "", mk->words[4]);
+    menu.selected = 0;
+    hl_first();
+    show_menu_line(c);
+    dirty(0, pic::kScreenH);
+}
+
+void q_god_tap(int x, int y, pic::Canvas& c)
+{
+    if (y >= text::kMenuTapTop) {
+        const int k = text::hit(menu, x / 8);
+        if (k < 0) return;
+        if (text::key(menu, k) == 'S') {
+            mk->god = mk->q_god_opt[mk->q_god_sel];
+            q_rolled(c);
+        } else {
+            screen = Screen::QForm;
+            q_form_draw(c);
+        }
+        return;
+    }
+    const int k = (y - 16) / 8;
+    if (y >= 16 && k < mk->q_n_gods) {
+        mk->q_god_sel = k;
+        q_god_draw(c);
+    }
+}
+
+bool q_god_nav(int step, pic::Canvas& c)
+{
+    mk->q_god_sel = (mk->q_god_sel + step + mk->q_n_gods) % mk->q_n_gods;
+    q_god_draw(c);
+    return true;
+}
+
+// The new character rolled (its +0x1F25 and +0x1A90) and shown: View
+// Character's screen with "Reroll Stats Modify Done Exit"
+void q_rolled_menu(pic::Canvas& c)
+{
+    // (one button a choice: "Reroll Stats" has a space - text::build's marks)
+    char words[48];
+    snprintf(words, sizeof words, "~%s ~%s ~%s ~%s", q_word(0x72E8), q_word(0x72F5), q_word(0x72CE), q_word(0x72D3));
+    text::build(menu, "", words);
+    menu.selected = 0;
+    hl_first();
+    show_menu_line(c);
+}
+
+void q_rolled(pic::Canvas& c)
+{
+    const int align = (mk->q_law - 1) * 3 + mk->q_good - 1;
+    create::begin(mk->ch, mk->tables, mk->facts, mk->dice, classes::kKrynnRace + mk->q_race, mk->q_sex,
+                  q_ecls(mk->q_cls), align, mk->god);
+    create::roll(mk->ch, mk->tables, mk->facts, mk->dice);
+    mk->ch.rec[0x142] = static_cast<uint8_t>(create::queen_icon(mk->q_sex, mk->q_race, mk->q_cls, align));
+    rules::recalc(mk->ch, *names, d->facts);
+    screen = Screen::QRolled;
+    show_new_character(c);
+    q_rolled_menu(c);
+}
+
+void ask_name(pic::Canvas& c);
+void q_rolled_tap(int x, int y, pic::Canvas& c)
+{
+    if (y < text::kMenuTapTop) return;
+    const int k = text::hit(menu, x / 8);
+    if (k < 0) return;
+    menu.selected = k;
+    switch (text::key(menu, k)) {
+    case 'R':
+        create::roll(mk->ch, mk->tables, mk->facts, mk->dice);
+        rules::recalc(mk->ch, *names, d->facts);
+        show_new_character(c);
+        q_rolled_menu(c);
+        break;
+    case 'M': error(c, "Not in the engine yet."); break;
+    case 'D': ask_name(c); break;
+    case 'E': end_create(c); break;
+    default: break;
+    }
+}
+
+// ---- A new character's kit and its file (queen_facts_4.md 7) ---------------
+// The kit (its save, ovl 5 +0x34E4): five item numbers by race and class
+// (DS 0x180D + race x 170 + class x 10, u16 each; 0 none) - item n is
+// ITEM.DAT's row n - 1 (17 bytes) -, each put at the head of the items;
+// numbers 0x50, 0x56 and 0x5B (arrows, quarrels, darts) 40 of them; the
+// first weapon (the type's slot 0) readied, the rest but numbers 0x52-0x54,
+// 0x56 and 0x5D readied too
+__attribute__((noinline)) void q_kit(party::Character& ch)
+{
+    const int qrace = ch.ext[party::kExtRace] % 7, qcls = ch.cls() == 7 ? 1 : ch.cls() == 1 ? 7 : ch.cls();
+    if (qcls < 0 || qcls > 16) return;
+    uint8_t ids[10] = {};
+    {
+        plat::File f;
+        if (!open_file(d->prof->program, f)) return;
+        plat::FileSource src(f);
+        exepack::Info info;
+        const bool ok = exepack::parse(src, info) == exepack::Status::Ok &&
+                        exepack::read(src, info, d->prof->data_base + 0x180D + qrace * 170 + qcls * 10, ids, 10) ==
+                            exepack::Status::Ok;
+        f.close();
+        if (!ok) return;
+    }
+    plat::File f;
+    if (!open_hl("ITEM.DAT", f)) return;
+    {
+        plat::FileSource src(f);
+        bool weapon = false;
+        for (int k = 0; k < 5; ++k) {
+            const int n = ids[2 * k];
+            uint8_t row[17];
+            if (n == 0 || src.read_at(static_cast<uint32_t>(n - 1) * 17, row, sizeof row) != sizeof row || row[0] == 0xFF ||
+                ch.n_items >= party::kMaxItems)
+                continue;
+            for (int j = ch.n_items; j > 0; --j) memcpy(ch.items[j], ch.items[j - 1], party::kItemSize);
+            ++ch.n_items;
+            uint8_t* it = ch.items[0];
+            party::queen_item_in(row, it);
+            it[0x35] &= 0xF8;                    // (its byte 11, the hidden words: the 63-byte record's 0x35)
+            if (n == 0x50 || n == 0x56 || n == 0x5B) it[0x39] = 40;
+            it[0x34] = 0;
+            if (n == 0x52 || n == 0x53 || n == 0x54 || n == 0x56 || n == 0x5D) continue;
+            if (names && names->type(it[0x2E]).slot != items::kSlotWeapon) {
+                it[0x34] = 1;
+            } else if (!weapon) {
+                weapon = true;
+                it[0x34] = 1;
+            }
+        }
+    }
+    f.close();
+    for (int k = 0; k < ch.n_items; ++k)
+        if (ch.items[k][0x34]) rules::worn(ch, k, true);
+    rules::recalc(ch, *names, d->facts);
+}
+
+// NAME.QCH in the save folder: the record (over the file's own when there
+// is one: the fields the engine doesn't keep stay), its items, its effects
+__attribute__((noinline)) bool q_write_char(const char* base, const party::Character& ch)
+{
+    char fn[24], path[200];
+    snprintf(fn, sizeof fn, "%s.QCH", base);
+    save_path(fn, path, sizeof path);
+    uint8_t* old = nullptr;
+    size_t n_old = 0;
+    {
+        plat::File in = plat::open(path, "r");
+        if (in) {
+            n_old = in.size();
+            old = n_old >= party::kQueenRecordSize && n_old < 8192 ? new (std::nothrow) uint8_t[n_old] : nullptr;
+            if (old && in.read(old, n_old) != static_cast<int>(n_old)) {
+                delete[] old;
+                old = nullptr;
+            }
+            in.close();
+        }
+    }
+    plat::File out = plat::open(path, "w");
+    bool ok = static_cast<bool>(out);
+    if (ok) {
+        dax::MemorySource src(old, old ? n_old : 0);
+        FileSink sink(out);
+        ok = savegame::write_queen_char(sink, ch, old ? &src : nullptr);
+        out.close();
+    }
+    delete[] old;
+    return ok;
+}

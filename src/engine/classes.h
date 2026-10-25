@@ -101,6 +101,24 @@ struct Layout {
     // and class (+ its race x 8 + class: training stops at that level)
     bool     dkk = false;
     uint16_t paladin_slots = 0, ranger_slots = 0, race_caps = 0;
+    // The Dark Queen of Krynn's (queen_facts_4.md 4; set with krynn): a C
+    // program whose tables have shapes of their own - in the profile its DS
+    // offsets, turned by queen_pack into Krynn shapes in the engine's class
+    // order (cleric, druid, fighter, paladin, ranger, magic-user, thief,
+    // knight) at offsets of the packed copy: THAC0 [8][22 levels 0-21],
+    // saves + class x 110 + min(level, 21) x 5, its experience by xp_row
+    // (q_xp: 11 rows of 19 u32 for levels 0-18, past 17th level 17's +
+    // q_xp_step's u32 a level, to 40th), slots "in all" from tables of 29
+    // levels x 9 spell levels (q_slots, 261 bytes each, chosen by
+    // q_slot_map[xp_row]: 0xFF none), race x class level caps (q_caps, 8 a
+    // race), the Constitution's hit points (q_con_hp, by Constitution),
+    // hit dice (q_hp_count / q_hp_sides, 8 each), spells in Death Knights'
+    // 16-byte shape (class codes 0 cleric, 1 druid, 3 magic-user, 4 the
+    // rest), alignments a mask a class over the list at lo2 (LG LN NG TN CG
+    // CN) - 17 classes, then 17 for dwarves
+    bool     queen = false;
+    uint16_t q_xp = 0, q_xp_step = 0, q_slot_map = 0, q_slots = 0, q_caps = 0, q_con_hp = 0;
+    uint16_t q_hp_count = 0, q_hp_sides = 0;
 };
 
 // Champions: a race in creation's lists (the Curse number can't tell its two
@@ -132,12 +150,12 @@ public:
 
     // The highest level the tables have (Curse 12, Pool 9, Secret 18; THAC0
     // one more row in Pool)
-    int  top_level() const { return lay.dk ? 40 : lay.pool ? 9 : lay.secret || lay.dkk ? 18 : 12; }
+    int  top_level() const { return lay.dk || lay.queen ? 40 : lay.pool ? 9 : lay.secret || lay.dkk ? 18 : 12; }
     // Classes with rows in the tables (Secret has no monk's)
     int  classes() const { return lay.secret ? 7 : kClasses; }
     int  thac0(int cls, int level) const
     {
-        const int n = lay.dk ? 22 : lay.pool ? 11 : lay.secret || lay.dkk ? 19 : 13;
+        const int n = lay.dk || lay.queen ? 22 : lay.pool ? 11 : lay.secret || lay.dkk ? 19 : 13;
         if (cls >= classes()) return 0;
         if (level > n - 1) level = n - 1;
         return s8(static_cast<uint16_t>(lay.thac0 + cls * n + level));
@@ -150,6 +168,7 @@ public:
     {
         if (cls >= classes()) return 20;
         if (lay.dk) return u8(static_cast<uint16_t>(lay.saves + cls * 105 + (level > 21 ? 21 : level) * 5 + kind));
+        if (lay.queen) return u8(static_cast<uint16_t>(lay.saves + cls * 110 + (level > 21 ? 21 : level) * 5 + kind));
         if (level > top_level()) level = top_level();
         return u8(static_cast<uint16_t>(lay.saves + cls * (lay.pool ? 45 : lay.secret || lay.dkk ? 90 : 60) + level * 5 +
                                         kind));
@@ -157,7 +176,17 @@ public:
     int  record_size() const { return lay.dk ? 301 : lay.pool ? 56 : lay.secret ? 187 : lay.dkk ? 204 : 99; }
     // Spell levels a class record's slot rows have (Curse 5, Secret 7, Death
     // Knights 8, Darkness 9)
-    int  slot_levels() const { return lay.dk ? 9 : lay.secret ? 7 : lay.dkk ? 8 : 5; }
+    int  slot_levels() const { return lay.dk || lay.queen ? 9 : lay.secret ? 7 : lay.dkk ? 8 : 5; }
+    // The Dark Queen: the slots of spell level `sl` (1-9) of experience row
+    // `row`'s table at `level` (in all; to 29th level; none without a table)
+    int  queen_slots_at(int row, int level, int sl) const
+    {
+        if (row < 0 || row > 10 || level < 1) return 0;
+        const int tab = u8(static_cast<uint16_t>(lay.q_slot_map + row));
+        if (tab == 0xFF) return 0;
+        if (level > 29) level = 29;
+        return u8(static_cast<uint16_t>(lay.q_slots + tab * 261 + (level - 1) * 9 + sl - 1));
+    }
     // Darkness: the slots of spell level `sl` (1-9) a class has in all at `level`
     int  slots_at(int cls, int level, int sl) const
     {
@@ -202,7 +231,7 @@ public:
         switch (cls) {
         case 0: return c->ext[party::kExtGod] <= 4 ? 0 : 1;
         case 2: return 2;
-        case 3: return lay.dkk ? 10 : 3;
+        case 3: return lay.dkk || lay.queen ? 10 : 3;
         case 7: return c->ext[party::kExtKnight] == 2 ? 4 : c->ext[party::kExtKnight] == 3 ? 5 : 3;
         case 4: return 6;
         case 5: return c->ext[party::kExtRobe] == 1 ? 7 : 8;
@@ -219,6 +248,16 @@ public:
     }
     int32_t exp_needed(int cls, int level, bool row = false) const
     {
+        if (lay.queen) {
+            // (its experience routine, ovl 0xB +0x5FDC: the row's table to
+            // 17th level, then 17th's + a step a level; none past 40th)
+            const int next = level + 1;
+            if (level < 1 || cls >= (row ? 11 : classes())) return -1;
+            if (next > 40) return 0x7FFFFFFF;
+            const uint16_t r = static_cast<uint16_t>(lay.q_xp + cls * 76);
+            if (next < 18) return i32(static_cast<uint16_t>(r + next * 4));
+            return i32(static_cast<uint16_t>(r + 17 * 4)) + (next - 17) * i32(static_cast<uint16_t>(lay.q_xp_step + cls * 4));
+        }
         if (lay.dkk) {
             // (its training, ovl 0x61 +0x44B0: the row's value at the level
             // reached - to 18th, -1 past a row's last; 0 or less: no more)
@@ -240,13 +279,13 @@ public:
     // class codes 0 cleric, 1 druid, 3 magic-user, 4 the items' and monsters')
     uint16_t spell_row(int spell) const
     {
-        return static_cast<uint16_t>(lay.spells + spell * 16 + (lay.secret || lay.dkk ? 1 : 0));
+        return static_cast<uint16_t>(lay.spells + spell * 16 + (lay.secret || lay.dkk || lay.queen ? 1 : 0));
     }
     int  spell_class(int spell) const
     {
         const int v = u8(spell_row(spell));
         if (lay.dk) return v;               // (Darkness's own codes are these)
-        if (lay.secret || lay.dkk) return v >= 3 ? v - 1 : v;
+        if (lay.secret || lay.dkk || lay.queen) return v >= 3 ? v - 1 : v;
         return lay.pool && v > 0 ? v + 1 : v;
     }
     int  spell_level(int spell) const { return u8(static_cast<uint16_t>(spell_row(spell) + 1)); }
@@ -275,6 +314,15 @@ void to_book(party::Character& c, int spell);
 
 // Parts of it, for training and creation
 void spell_slots(party::Character& c, const Tables& t);
+
+// The Dark Queen of Krynn's tables (the Layout's queen comment): `ds` has
+// its data-segment offsets; read(ctx, offset, out, n) reads its data
+// segment. Makes `t` the packed, Krynn-shaped copy (about 7.4 KB).
+using DsReader = bool (*)(void* ctx, uint16_t ds, uint8_t* out, size_t n);
+bool queen_pack(Tables& t, const Layout& ds, DsReader read, void* ctx);
+// Its class number (0 cleric, 1 knight, 2 fighter, 3 paladin, 4 ranger, 5
+// magic-user, 6 thief) for the engine's (0-7: knight 7, no druid: -1)
+int queen_class(int k);
 // A Ring of Wizardry readied (on: magic-user levels 1-3 doubled) or put
 // away (the slots without it; magic-user spells past them forgotten, the
 // later ones first) - curse_finish_facts.md 5.3

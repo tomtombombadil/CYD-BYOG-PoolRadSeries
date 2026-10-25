@@ -136,6 +136,16 @@ static bool train_limited(const party::Character& c, const classes::Tables& t, i
     // training goes on while the limit is above the level)
     if (t.lay.dkk && t.lay.race_caps)
         return t.u8(static_cast<uint16_t>(t.lay.race_caps + (c.ext[party::kExtRace] & 7) * 8 + cls)) <= lvl;
+    if (t.lay.queen) {
+        // (the Dark Queen's training, ovl 5 +0x5052: a knight of the Rose 40,
+        // of the Sword (and an order 4) 18, else its race x class table)
+        if (cls == classes::Monk) {
+            const int o = c.ext[party::kExtKnight];
+            if (o == 3) return lvl >= 40;
+            if (o == 2 || o == 4) return lvl >= 18;
+        }
+        return lvl >= t.u8(static_cast<uint16_t>(t.lay.q_caps + (c.ext[party::kExtRace] % 7) * 8 + cls));
+    }
     if (t.lay.level_caps && lvl >= t.u8(static_cast<uint16_t>(t.lay.level_caps + cls))) return true;
     return race_limited(c, cls, lvl, t.lay.pool, t.lay.secret, t.lay.dk);
 }
@@ -458,10 +468,314 @@ void krynn_start(party::Character& c, int god, uint32_t dkk_xp = 0)
 }
 } // namespace
 
+// ---- The Dark Queen of Krynn (queen_facts_4.md 5-6: its createPlayer, ovl
+// 5, and its rules routines, ovl 0xB)
+namespace {
+
+// The engine's classes in its order (cleric, knight, fighter, paladin,
+// ranger, magic-user, thief): the order its loops take them in
+constexpr int kQueenOrder[7] = {Cleric, Monk, Fighter, Paladin, Ranger, MagicUser, Thief};
+
+// Its Constitution figure for hit points (ovl 0xB +0x3A5B): the table's by
+// the Constitution in use, more from 17 for knights, fighters, paladins and
+// rangers (a byte)
+int queen_con(const party::Character& c, const classes::Tables& t, int k)
+{
+    const int con = stat_full(c, 4);
+    int v = static_cast<int8_t>(t.u8(static_cast<uint16_t>(t.lay.q_con_hp + (con < 26 ? con : 25))));
+    if (k == Monk || k == Fighter || k == Paladin || k == Ranger) {
+        if (con == 17) v += 1;
+        else if (con == 18) v += 2;
+        else if (con == 19 || con == 20) v += 3;
+        else if (con >= 21 && con <= 23) v += 4;
+        else if (con == 24 || con == 25) v += 5;
+    }
+    return v;
+}
+
+// Its hit points (ovl 0xB +0x380E): for the classes in `mask` below their
+// last hit die the better of two rolls of their dice (level 1: the table's
+// count) and the Constitution figure times that count; past the hit dice a
+// fixed amount by the experience row that REPLACES the sum (clerics and
+// mages 1, knights, rangers and thieves 2, fighters and paladins 3); both
+// divided by the classes held (the rolls at least 1, the Constitution's
+// byte unsigned); then the most and the rolled hit points grow, the hit
+// points now the most less the damage taken
+void queen_hp(party::Character& c, const classes::Tables& t, Dice& d, int mask, int held)
+{
+    uint8_t* r = c.rec;
+    static const uint8_t kPast[11] = {1, 1, 3, 2, 2, 2, 2, 1, 1, 2, 3};
+    int rolled = 0;
+    uint8_t con = 0;
+    for (int k : kQueenOrder) {
+        const int lv = c.level(k);
+        if (lv <= 0 || !(t.u8(static_cast<uint16_t>(t.lay.class_masks + k)) & mask)) continue;
+        if (lv < t.max_hit_dice(k)) {
+            const int n = lv > 1 ? 1 : t.u8(static_cast<uint16_t>(t.lay.q_hp_count + k));
+            const int sides = t.u8(static_cast<uint16_t>(t.lay.q_hp_sides + k));
+            const int a = d.roll(sides, n), b = d.roll(sides, n);
+            rolled = (rolled + (a > b ? a : b)) & 0xFF;
+            con = static_cast<uint8_t>(con + queen_con(c, t, k) * n);
+        } else {
+            const int row = t.xp_row(&c, k);
+            rolled = row >= 0 && row < 11 ? kPast[row] : 1;
+        }
+    }
+    if (held > 0) {
+        rolled /= held;
+        if (rolled < 1) rolled = 1;
+        con = static_cast<uint8_t>(con / held);
+    }
+    const uint8_t lost = static_cast<uint8_t>(r[kHpMax] - r[kHp]);
+    r[kHpRolled] = static_cast<uint8_t>(r[kHpRolled] + rolled);
+    r[kHpMax] = static_cast<uint8_t>(r[kHpMax] + rolled + con);
+    r[kHp] = r[kHpMax] < lost ? 0 : static_cast<uint8_t>(r[kHpMax] - lost);
+}
+
+// A magic-user's spells from silent training (creation's; ovl 5 +0x5BE3):
+// at 3rd, 5th and 7th level a White robe's list or the others'
+void queen_mu_spells(party::Character& c)
+{
+    static const uint8_t kWhite[3][4] = {{29, 33, 34, 0}, {46, 47, 51, 0}, {81, 82, 85, 87}};
+    static const uint8_t kOther[3][4] = {{30, 31, 32, 34}, {45, 47, 48, 50}, {83, 85, 84, 87}};
+    const int lv = c.level(MagicUser);
+    const int i = lv == 3 ? 0 : lv == 5 ? 1 : lv == 7 ? 2 : -1;
+    if (i < 0) return;
+    for (uint8_t s : (c.ext[party::kExtRobe] == 1 ? kWhite : kOther)[i])
+        if (s) learn(c, s);
+}
+
+// Its record's defaults for a new character (ovl 5 +0x2F95) and the race's
+// effects (+0x1839): kender 0x5C 0x5E, dwarves 0x5E 0x1A 0x2F, elves 0x5F,
+// half-elves 0x12; the small races' icons 1, the rest 2
+void queen_begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, int qrace, int sex, int cls,
+                 int alignment, int god)
+{
+    uint8_t* r = c.rec;
+    c.ext[party::kExtRace] = static_cast<uint8_t>(qrace);
+    r[kRace] = party::race_from_krynn(static_cast<uint8_t>(qrace));
+    r[kBaseAc] = 50;
+    r[kThac0] = 40;
+    r[kInCombat] = 1;
+    r[kFieldDE] = 1;
+    switch (qrace) {
+    case 5: add_affect(c, f.kender_fear); add_affect(c, f.con_save); break;
+    case 3:
+    case 4:
+        add_affect(c, f.con_save);
+        add_affect(c, f.dwarf_orc);
+        add_affect(c, f.giants);
+        break;
+    case 0:
+    case 1: add_affect(c, f.elf_sleep); break;
+    case 2: add_affect(c, f.halfelf); break;
+    default: break;
+    }
+    r[kIconSize] = qrace >= 3 && qrace <= 5 ? 1 : 2;
+    r[kSex] = static_cast<uint8_t>(sex);
+    r[kClass] = static_cast<uint8_t>(cls);
+    r[kAlign] = static_cast<uint8_t>(alignment);
+    // (its Done, +0x220A, and the class's start, +0xDBF: every class at 1st
+    // level, 1,000,001 experience - 500,000 for two classes, 333,333 for
+    // three -, a paladin's cure and its effect, a ranger's, a knight in
+    // the Order of the Crown)
+    const uint8_t lv = cls >= 0 && cls < 17 ? kStartLevels[cls] : 0;
+    int held = 0;
+    for (int k = 0; k < 8; ++k)
+        if (lv & (1 << k)) {
+            r[kLevels + k] = 1;
+            ++held;
+        }
+    r[kHitDice] = 1;
+    put32(r, kExp, held >= 3 ? 333333u : held == 2 ? 500000u : 1000001u);
+    if (r[kLevels + classes::Paladin]) {
+        r[kCures] = 1;
+        add_affect(c, f.prot_evil);
+    }
+    if (r[kLevels + classes::Ranger]) add_affect(c, f.ranger_giant);
+    if (r[kLevels + classes::Monk]) c.ext[party::kExtKnight] = 1;
+    // (its god, +0x36B0: a cleric's - the dwarves' Reorx, unasked)
+    c.ext[party::kExtGod] = static_cast<uint8_t>(!r[kLevels + classes::Cleric] ? 0 : qrace == 3 || qrace == 4 ? 6 : god);
+    // (the god's spells, +0x393F: Paladine 57, Majere 59, Kiri-Jolith 60,
+    // Mishakal 61-63, Sirrion 64, Shinare 63; Reorx none)
+    switch (c.ext[party::kExtGod]) {
+    case 1: learn(c, 57); break;
+    case 2: learn(c, 59); break;
+    case 3: learn(c, 60); break;
+    case 4: learn(c, 61); learn(c, 62); learn(c, 63); break;
+    case 5: learn(c, 64); break;
+    case 7: learn(c, 63); break;
+    default: break;
+    }
+    classes::class_bonuses(c, t);
+    // (its age, +0x1F25: a mage's robe by the alignment - good White,
+    // neutral Red -; a single class's dice + 10 years, a multi-class's
+    // entry - the cleric's, the fighter / thief's fighter one, the other
+    // magic-users' magic-user one - with no 10)
+    const int a = alignment;
+    if (r[kLevels + classes::MagicUser]) c.ext[party::kExtRobe] = a % 3 == 0 ? 1 : a % 3 == 1 ? 2 : 0;
+    const int e = cls <= Monk ? cls : cls == FighterThief ? Fighter : (cls == FighterMU || cls == FighterMUThief || cls == MUThief) ? MagicUser : Cleric;
+    const uint16_t at = static_cast<uint16_t>(t.lay.race_ages + (qrace % 7) * 32 + e * 4);
+    const int age = t.u16(at) + d.roll(t.u8(static_cast<uint16_t>(at + 3)), t.u8(static_cast<uint16_t>(at + 2)));
+    put16(r, kAge, age + (cls <= Monk ? 10 : 0));
+}
+
+// Its stats' roll (+0x1A90): best of six 3d6 + 1 with the race's own
+// adjustments (dwarves Con +1 Cha -1, elves Dex +1 Con -1, half-elves Dex
+// +2, kender Str -1 Dex +2), then each stat (+0xF47): the age's effects -
+// a bracket later than the older games' (its tables' 2nd-5th ages) -, the
+// race's and sex's limits, the class's least, 18/xx for knights, fighters,
+// paladins and rangers. (Curse's multi-class cleric Wisdom of 13 is
+// tested for classes both below 9 and above 11 - never; with Game Fixes,
+// for the cleric multi-classes)
+void queen_stats(party::Character& c, const classes::Tables& t, Dice& d)
+{
+    const int qrace = c.ext[party::kExtRace] % 7, sex = c.sex() ? 1 : 0, cls = c.cls(), age = c.age();
+    auto race_adj = [&](int i) {
+        switch (qrace) {
+        case 3: case 4: return i == 4 ? 1 : i == 5 ? -1 : 0;
+        case 0: case 1: return i == 3 ? 1 : i == 4 ? -1 : 0;
+        case 2: return i == 3 ? 2 : 0;
+        case 5: return i == 0 ? -1 : i == 3 ? 2 : 0;
+        default: return 0;
+        }
+    };
+    static const int8_t kAgeEffect[6][4] = {
+        {1, -1, -2, -1},       // Str
+        {0, 1, 0, 1},          // Int
+        {0, 1, 1, 1},          // Wis (-1 while not past the first)
+        {0, 0, -2, -1},        // Dex
+        {0, -1, -1, -1},       // Con
+        {0, 0, 0, 0},          // Cha
+    };
+    const uint16_t lim = static_cast<uint16_t>(t.lay.stat_limits + qrace * 16);
+    for (int i = 0; i < 7; ++i) set_stat(c, i, 0);
+    for (int i = 0; i < 6; ++i) {
+        int v = 0;
+        for (int k = 0; k < 6; ++k) {
+            const int x = d.roll(6, 3) + 1 + race_adj(i);
+            if (x > v) v = x;
+        }
+        for (int b = 1; b <= 4; ++b) {
+            const bool past = age > t.u16(static_cast<uint16_t>(t.lay.age_brackets + qrace * 10 + b * 2));
+            if (i == 2 && b == 1) {
+                if (!past) --v;
+                continue;
+            }
+            if (v > 0 && past) v += kAgeEffect[i][b - 1];
+        }
+        int lo, hi;
+        if (i == 0) {
+            lo = t.u8(static_cast<uint16_t>(lim + sex));
+            hi = t.u8(static_cast<uint16_t>(lim + 2 + sex));
+        } else {
+            lo = t.u8(static_cast<uint16_t>(lim + 4 + i * 2));
+            hi = t.u8(static_cast<uint16_t>(lim + 5 + i * 2));
+        }
+        if (v > hi) v = hi;
+        if (v < lo) v = lo;
+        const int mn = t.u8(static_cast<uint16_t>(t.lay.class_min + cls * 6 + i));
+        if (v < mn) v = mn;
+        if (rules::fixes() && i == 2 && v < 13 && cls >= ClericFighter && cls <= ClericThief) v = 13;
+        set_stat(c, i, v);
+        if (i == 0 && v == 18 &&
+            (c.level(classes::Fighter) || c.level(classes::Ranger) || c.level(classes::Paladin) || c.level(classes::Monk))) {
+            int e = d.random(100) + 1;
+            const int emax = t.u8(static_cast<uint16_t>(lim + 4 + sex));
+            if (e > emax) e = emax;
+            set_stat(c, 6, e);
+        }
+    }
+}
+
+int queen_held(const party::Character& c)
+{
+    int n = 0;
+    for (int k = 0; k < 8; ++k)
+        if (c.level(k) > 0) ++n;
+    return n;
+}
+
+} // namespace
+
+int queen_icon(int sex, int qrace, int qcls, int alignment)
+{
+    // (its createPlayer, ovl 5 +0x1: by sex, then kender, dwarves or the
+    // rest, then its class; a cleric's and a mage's by good or not)
+    static const uint8_t kMale[3][17] = {
+        {47, 0, 43, 0, 42, 0, 46, 0, 43, 43, 42, 47, 46, 43, 43, 43, 46},
+        {37, 0, 34, 34, 34, 0, 39, 0, 34, 34, 34, 37, 39, 34, 34, 34, 39},
+        {23, 0, 3, 2, 8, 27, 17, 1, 3, 3, 8, 23, 17, 3, 3, 3, 17}};
+    static const uint8_t kFemale[3][17] = {
+        {43, 0, 45, 0, 44, 0, 45, 0, 45, 45, 44, 43, 45, 45, 45, 45, 45},
+        {38, 0, 36, 36, 36, 0, 40, 0, 36, 36, 36, 38, 40, 36, 36, 36, 40},
+        {24, 12, 10, 11, 14, 31, 20, 0, 10, 10, 14, 24, 20, 10, 10, 10, 20}};
+    if (qcls < 0 || qcls > 16) return 0;
+    const int g = qrace == 5 ? 0 : qrace == 3 || qrace == 4 ? 1 : 2;
+    int v = (sex ? kFemale : kMale)[g][qcls];
+    // (the others' clerics and mages: not good the next picture)
+    if (g == 2 && alignment % 3 != 0 && (qcls == 0 || qcls == 5 || qcls == 11)) v = sex ? (qcls == 5 ? 32 : 25) : (qcls == 5 ? 28 : 26);
+    return v;
+}
+
+void queen_mu_book(party::Character& c, const classes::Tables& t)
+{
+    // (its save, ovl 5 +0x30D3: the magic-user spells of 1st level, a
+    // robe's lists by the slots of levels 2-8 - White's or the others' -,
+    // with 9th level slots every magic-user spell)
+    if (c.level(classes::MagicUser) <= 0) return;
+    static const uint8_t kWhite[7][6] = {{29, 33, 34}, {46, 47, 49, 52, 54}, {82, 88, 81, 85, 87}, {91, 92}, {112},
+                                         {115, 117}, {121}};
+    static const uint8_t kOther[7][6] = {{30, 31, 32, 34, 35}, {45, 47, 48, 50, 51, 55}, {84, 83, 85, 87},
+                                         {92, 118, 119}, {113, 114, 111}, {117}, {123}};
+    const bool all = classes::slots(c, 2, 9) > 0;
+    for (int s = 1; s < 127 && s < t.lay.spell_count; ++s)
+        if (t.spell_class(s) == 2 && (all || t.spell_level(s) == 1)) learn(c, s);
+    for (int l = 2; l <= 8; ++l) {
+        if (classes::slots(c, 2, l) <= 0) continue;
+        for (uint8_t s : (c.ext[party::kExtRobe] == 1 ? kWhite : kOther)[l - 2])
+            if (s) learn(c, s);
+    }
+}
+
+void queen_roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d)
+{
+    uint8_t* r = c.rec;
+    for (int k = 0; k < 8; ++k)
+        if (r[kLevels + k]) r[kLevels + k] = 1;
+    r[kHitDice] = 1;
+    queen_stats(c, t, d);
+    r[kAttacks] = 2;
+    r[kDiceBase] = 1;
+    r[kSidesBase] = 2;
+    r[kBaseMove] = 12;
+    // (its slots on nothing: a cleric's 1st level ones by the table and its
+    // first list, a magic-user its six spells - the training that follows
+    // works the slots out again at every level)
+    classes::spell_slots(c, t);
+    if (c.level(classes::MagicUser) > 0) {
+        for (uint8_t s : f.mu_first)
+            if (s) learn(c, s);
+        for (uint8_t s : f.mu_more)
+            if (s) learn(c, s);
+    }
+    put16(r, kMoney + 4 * 2, f.platinum);
+    r[kHpMax] = r[kHp] = r[kHpRolled] = 0;
+    queen_hp(c, t, d, 0xFF, queen_held(c));
+    classes::class_bonuses(c, t);
+    while (train(c, t, f, d, true)) {
+    }
+}
+
 void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, int race, int sex, int cls,
            int alignment, int god)
 {
     c = party::Character{};
+    if (t.lay.queen) {
+        queen_begin(c, t, f, d, race >= classes::kKrynnRace ? race - classes::kKrynnRace : party::race_to_krynn(race), sex,
+                    cls, alignment, god);
+        return;
+    }
     uint8_t* r = c.rec;
     // (Champions: its own race kept in ext, the record Curse's number; the
     // tables' rows by its own - race_code)
@@ -583,6 +897,10 @@ void begin(party::Character& c, const classes::Tables& t, const Facts& f, Dice& 
 
 void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d)
 {
+    if (t.lay.queen) {
+        queen_roll(c, t, f, d);
+        return;
+    }
     uint8_t* r = c.rec;
     const int race = race_code(c, t), sex = c.sex() ? 1 : 0, cls = c.cls(), age = c.age();
     // Back to level 1, no spells, no money (a reroll starts again)
@@ -840,8 +1158,9 @@ int train_pick(const party::Character& c, const classes::Tables& t, uint32_t* ex
         const int32_t after = need_at(k, lv + 1);
         if (after > 0 && xp >= static_cast<uint32_t>(after) && after > keep) keep = after - 1;
     }
-    if (t.lay.pool) {
+    if (t.lay.pool || t.lay.queen) {
         // Pool (create_facts.md 3): every ready class trains, a level each
+        // (the Dark Queen's hall too, ovl 5 +0x5052)
         *exp_after = keep > 0 ? static_cast<uint32_t>(keep) : xp;
         return ready;
     }
@@ -867,6 +1186,17 @@ int train_pick(const party::Character& c, const classes::Tables& t, uint32_t* ex
 void train_classes(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d, int mask, bool silent)
 {
     uint8_t* r = c.rec;
+    if (t.lay.queen) {
+        // (the Dark Queen's, ovl 5 +0x5052: the classes a level each, its
+        // class values again, a magic-user's spells (silent training's
+        // lists; a hall's pick is the caller's), the hit points)
+        for (int k = 0; k < classes::kClasses; ++k)
+            if (c.level(k) > 0 && (t.u8(static_cast<uint16_t>(t.lay.class_masks + k)) & mask)) ++r[kLevels + k];
+        classes::class_bonuses(c, t);
+        if (silent) queen_mu_spells(c);
+        queen_hp(c, t, d, mask, queen_held(c));
+        return;
+    }
     int held = 0;
     for (int k = 0; k < classes::kClasses; ++k) {
         if (c.level(k) <= 0) continue;

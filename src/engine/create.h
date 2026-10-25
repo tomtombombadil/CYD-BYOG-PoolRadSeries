@@ -113,6 +113,18 @@ void knight_change(party::Character& c, const classes::Tables& t);
 // the experience buys. Call again to reroll.
 void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d);
 
+// The Dark Queen of Krynn (queen_facts_4.md 5-6; begin / roll / train take
+// its own ways when the tables are its - classes::Layout::queen):
+// its roll (roll() calls it)
+void queen_roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d);
+// a new character's combat icon (CBODY's picture: by sex, race - its own
+// numbers -, class - its own, the knight 1 - and good or not)
+int queen_icon(int sex, int qrace, int qcls, int alignment);
+// a new magic-user's book when the character is saved: every magic-user
+// spell of 1st level, its robe's lists by the slots it has of levels 2-8,
+// all of them with 9th level slots
+void queen_mu_book(party::Character& c, const classes::Tables& t);
+
 // Sets the name (15 characters at most).
 void set_name(party::Character& c, const char* name);
 

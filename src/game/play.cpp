@@ -307,7 +307,7 @@ void vga_send(int first, int n)
 enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich, AddFrom,
                                AddList, YesNo, CreatePick, CreateName, TradeWho, Heal, Take, Appraise, Magic,
                                SpellList, Rest, Cast, Effects, Alter, Fight, Loot, Modify, Title, Icon, Won,
-                               Portrait, ViewWho };
+                               Portrait, ViewWho, QForm, QGod, QRolled };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
 Screen save_from = Screen::PartyMenu;   // where Save Which Game goes back to
@@ -2136,7 +2136,11 @@ party::Format rec_format()
            : krynn()          ? party::Format::Krynn
                               : party::Format::Curse;
 }
-const char* ext_guy() { return pool_files() ? ".CHA" : secret_files() || krynn() ? ".WHO" : darkness_files() ? ".PC" : ".GUY"; }
+bool hl();
+const char* ext_guy()
+{
+    return hl() ? ".QCH" : pool_files() ? ".CHA" : secret_files() || krynn() ? ".WHO" : darkness_files() ? ".PC" : ".GUY";
+}
 const char* ext_items() { return pool_files() ? ".ITM" : secret_files() || krynn() ? ".STF" : dkk() ? ".JNK" : darkness_files() ? ".THG" : ".SWG"; }
 const char* ext_fx() { return pool_files() ? ".SPC" : secret_files() || krynn() ? ".SFX" : dkk() ? ".EFF" : darkness_files() ? ".EFX" : ".FX"; }
 // A saved game's member record (Death Knights: .GAM)
@@ -4177,8 +4181,10 @@ void guy_base(const party::Character& ch, char* out, size_t cap)
     out[o] = 0;
 }
 
+bool q_write_char(const char* base, const party::Character& ch);
 bool write_character(const char* base, const party::Character& ch)
 {
+    if (hl()) return q_write_char(base, ch);
     char fn[24], fi[24], ff[24];
     snprintf(fn, sizeof fn, "%s%s", base, ext_guy());
     snprintf(fi, sizeof fi, "%s%s", base, ext_items());
@@ -4887,6 +4893,27 @@ void find_guys(char from = 'C')
         const bool guy = n > ne && n <= 12 && strcasecmp(nm + n - ne, ext_guy()) == 0;
         const bool member = CYD_MORE_CHARACTERS && opts.more_guys && n == 12 && strncasecmp(nm, "CHRDAT", 6) == 0 &&
                             strcasecmp(nm + 8, ".SAV") == 0;
+        if (hl()) {
+            // (the Dark Queen's NAME.QCH: its record - the name a C string at
+            // 0x68, NPC 0x9B -, its items and effects after it)
+            uint8_t q[0x9C];
+            if (f.isDirectory() || !guy || f.size() < party::kQueenRecordSize || f.read(q, sizeof q) != sizeof q ||
+                q[0x9B] > 0x7F)
+                continue;
+            char name[16];
+            size_t len = 0;
+            while (len < 15 && q[0x68 + len]) ++len;
+            memcpy(name, q + 0x68, len);
+            name[len] = 0;
+            if (in_party(name)) continue;
+            strncpy(d->guy_file[d->guys], nm, sizeof d->guy_file[0] - 1);
+            strcpy(d->guy_name[d->guys], name);
+            d->guy_added[d->guys] = false;
+            d->guy_src[d->guys] = 0;
+            d->guy_letter[d->guys] = 0;
+            ++d->guys;
+            continue;
+        }
         if (f.isDirectory() || (!guy && !member) || f.size() != rec_file_size()) continue;
         uint8_t rec[0x150];
         const int ctl = pool_files() ? 0x84 : secret_files() ? 0xFF : darkness_files() ? 0x147 : 0xF7;     // (Secret's record: 0xFF)
@@ -5064,6 +5091,18 @@ void add_character(int i, pic::Canvas& c)
     plat::File f;
     if (!open_save_file(d->guy_file[i], f)) return;
     bool ok;
+    if (hl()) {
+        // (the Dark Queen's NAME.QCH: all of it in the one file)
+        {
+            plat::FileSource src(f);
+            ok = savegame::read_queen_char(src, ch);
+        }
+        f.close();
+        if (!ok) return;
+        character_read(ch);
+        add_checked(i, ch, c);
+        return;
+    }
     {
         plat::FileSource src(f);
         ok = party::read_record(src, ch, rec_format());
@@ -5248,8 +5287,24 @@ struct Making {
     int  god = 0;
     char pick_god[16] = {};
     char gods[8][12] = {};
+    // The Dark Queen's form (play_queen_late.inc q_form_*): its choices
+    // (its own numbers: race 0-6, law 1-3, good 1-2, class 0-16 - the
+    // knight 1), the cursor (-1 none), its words (the program's from DS
+    // 0x72C7 on - Done, Exit, the headings, the names), the gods' names
+    int  q_race = 6, q_law = 1, q_good = 1, q_sex = 0, q_cls = 2, q_cur = -1;
+    char q_words[0x1C4] = {};
+    char q_gods[8][14] = {};
+    int  q_god_opt[4] = {}, q_n_gods = 0, q_god_sel = 0;
 };
 Making* mk = nullptr;
+// (play_queen_late.inc: the Dark Queen's creation)
+const char* q_word(uint16_t ds);
+void q_form_tap(int x, int y, pic::Canvas& c);
+void q_god_tap(int x, int y, pic::Canvas& c);
+void q_rolled_tap(int x, int y, pic::Canvas& c);
+bool q_form_nav(int step, pic::Canvas& c);
+bool q_god_nav(int step, pic::Canvas& c);
+bool q_form_point(int* x, int* y);
 
 void end_create(pic::Canvas& c)
 {
@@ -5267,6 +5322,18 @@ void end_create(pic::Canvas& c)
 bool read_rule_tables(plat::FileSource& src, exepack::Info& info, classes::Tables& t)
 {
     const auto& pc = d->prof->create;
+    if (pc.tables.queen) {
+        // (the Dark Queen's: read piece by piece, packed - classes::queen_pack)
+        struct Ctx {
+            plat::FileSource* src;
+            exepack::Info* info;
+            uint32_t base;
+        } ctx{&src, &info, pc.ds_image};
+        return classes::queen_pack(t, pc.tables, [](void* p, uint16_t ds, uint8_t* out, size_t n) {
+            Ctx* x = static_cast<Ctx*>(p);
+            return exepack::read(*x->src, *x->info, x->base + ds, out, n) == exepack::Status::Ok;
+        }, &ctx);
+    }
     const size_t n = pc.tables.hi - pc.tables.lo;
     // (read straight into the tables' own block: no copy at a fight's peak)
     uint8_t* buf = new (std::nothrow) uint8_t[n];
@@ -5349,6 +5416,14 @@ bool load_rules(Making*& m)
                      exepack::Status::Ok;
             memcpy(m->facts.hp_count, hp, 8);
             memcpy(m->facts.hp_dice, hp + 8, 8);
+            if (ok && pc.tables.queen) {
+                // (the Dark Queen's: in its packed tables; no icon colours)
+                for (int k = 0; k < 8; ++k) {
+                    m->facts.hp_count[k] = m->tables.u8(static_cast<uint16_t>(m->tables.lay.q_hp_count + k));
+                    m->facts.hp_dice[k] = m->tables.u8(static_cast<uint16_t>(m->tables.lay.q_hp_sides + k));
+                }
+                memset(m->facts.icon_colours, 0, sizeof m->facts.icon_colours);
+            }
             // (Champions: a new cleric's spells, the gods' names)
             if (pc.cleric_first &&
                 exepack::read(src, info, pc.ds_image + pc.cleric_first + 1, m->facts.cleric_first, 10) !=
@@ -5615,8 +5690,13 @@ void pick_stage(int stage, pic::Canvas& c)
     draw_pick(c);
 }
 
+void q_form_start(pic::Canvas& c);
 void start_create(pic::Canvas& c)
 {
+    if (hl()) {
+        q_form_start(c);
+        return;
+    }
     if (!load_making()) {
         delete mk;
         mk = nullptr;
@@ -5692,6 +5772,12 @@ void create_named(const char* name, pic::Canvas& c)
 {
     if (!mk) return;
     create::set_name(mk->ch, name);
+    if (hl()) {
+        // (the Dark Queen's icon picker - its CBODY pictures - not yet: the
+        // default icon its creation gives, set at the roll)
+        create_after_icon(c);
+        return;
+    }
     if (mk->portrait_menu[0] && d->prof->create.head_blocks) {
         start_portrait(c);
         return;
@@ -5716,7 +5802,15 @@ void create_after_icon(pic::Canvas& c)
     if (!(from_icon && darkness_files())) show_new_character(c);
     char t[72], nm[20];
     mk->ch.name(nm, sizeof nm);
-    snprintf(t, sizeof t, "%s%s%s", mk->words[7], nm, mk->words[8]);
+    if (hl()) {
+        // (the Dark Queen's "Save %s?" - DS 0x7479)
+        const char* f = q_word(0x7479);
+        const char* p = strstr(f, "%s");
+        if (p) snprintf(t, sizeof t, "%.*s%s%s", static_cast<int>(p - f), f, nm, p + 2);
+        else snprintf(t, sizeof t, "%s", f);
+    } else {
+        snprintf(t, sizeof t, "%s%s%s", mk->words[7], nm, mk->words[8]);
+    }
     ask_create(c, Ask::SaveNew, t);
 }
 
@@ -5726,7 +5820,7 @@ void ask_name(pic::Canvas& c)
     screen = Screen::CreateName;
     input_engine = true;
     engine_ask = EngineAsk::Name;
-    input_prompt = mk->words[6];
+    input_prompt = hl() ? q_word(0x72D8) : mk->words[6];
     input_max = party::kNameMax;
     input_mode = Input::Text;
     input_len = 0;
@@ -5812,6 +5906,7 @@ __attribute__((noinline)) void give_kit(party::Character& ch)
 }
 
 // Saves the new character as NAME.GUY (asking first if there is one)
+void q_kit(party::Character& ch);
 void save_new(pic::Canvas& c, bool overwrite_ok)
 {
     char base[12], fn[24], path[200];
@@ -5830,6 +5925,12 @@ void save_new(pic::Canvas& c, bool overwrite_ok)
     if (!mk->kit_given) {
         mk->kit_given = true;
         give_kit(mk->ch);
+        if (hl()) {
+            // (the Dark Queen's save, ovl 5 +0x30D3 and +0x34E4: a mage's
+            // book, the starting kit)
+            create::queen_mu_book(mk->ch, mk->tables);
+            q_kit(mk->ch);
+        }
     }
     const bool ok = write_character(base, mk->ch);
     if (ok && d->prof->create.charlist) add_to_charlist(mk->ch);
@@ -10410,6 +10511,18 @@ void pm_tap(int x, int y, pic::Canvas& c)
         list_tap(x, y, c);
         return;
     }
+    if (screen == Screen::QForm) {
+        q_form_tap(x, y, c);
+        return;
+    }
+    if (screen == Screen::QGod) {
+        q_god_tap(x, y, c);
+        return;
+    }
+    if (screen == Screen::QRolled) {
+        q_rolled_tap(x, y, c);
+        return;
+    }
     if (screen == Screen::CreateName) return;      // the keyboard types the name
     if (screen == Screen::Portrait) {
         if (y >= text::kMenuTapTop) {
@@ -14980,6 +15093,10 @@ bool nav(Nav n, pic::Canvas& c)
         modify_step(step, c);
         return true;
     }
+    // (the Dark Queen's creation form and god list: up / down through them)
+    if ((n == Nav::Up || n == Nav::Down) && mk && screen == Screen::QForm) return q_form_nav(step, c);
+    if ((n == Nav::Up || n == Nav::Down) && mk && screen == Screen::QGod) return q_god_nav(step, c);
+    if ((n == Nav::Left || n == Nav::Right) && mk && screen == Screen::QForm) mk->q_cur = -1;
     if ((n == Nav::Up || n == Nav::Down) && (nav_list(step, c) || party_nav(step, c))) return true;
     // The party menu has no menu line: left / right pick the character
     if (screen == Screen::PartyMenu && (n == Nav::Left || n == Nav::Right)) {
@@ -15088,6 +15205,7 @@ bool nav_point(int* x, int* y)
         }
         return menu_on && menu.count ? at_word() : false;
     }
+    if (screen == Screen::QForm && mk && mk->q_cur >= 0) return q_form_point(x, y);
     if (screen == Screen::PartyMenu) {
         if (!pm_lines) return false;
         if (hl()) {

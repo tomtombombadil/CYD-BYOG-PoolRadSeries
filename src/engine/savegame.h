@@ -101,7 +101,12 @@ bool read_queen(dax::ByteSource& src, ecl::GameState& gs, Header& h, party::Part
 // that name: what the engine doesn't keep stays; else over zeros) - their
 // items and effects, then src's rest (none without a src).
 bool write_queen(Sink& out, const ecl::GameState& gs, const Header& h, const party::Party& p, dax::ByteSource* src);
-void file_name_queen(char slot, char* out, size_t cap);         // "SAVGAMA.QSV"
+void file_name_queen(char slot, char* out, size_t cap);
+// Its characters saved one by one (queen_facts_4.md 7; SAVE\NAME.QCH, Add's
+// "Tdqk" list): the record, its items, its effects as in a saved game. The
+// write lays the record over src's (null: a new one)
+bool read_queen_char(dax::ByteSource& src, party::Character& c);
+bool write_queen_char(Sink& out, const party::Character& c, dax::ByteSource* src);         // "SAVGAMA.QSV"
 
 // The save file's name for slot 'A'..'J' ("SAVGAMA.DAT"), and the n-th
 // character's (1 ..: "CHRDATA1", + ".SAV" / ".SWG" / ".FX").

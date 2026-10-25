@@ -673,6 +673,48 @@ int main(int argc, char** argv)
         if (play::screen == play::Screen::YesNo) { printf("  ask [%s]\n", play::menu.prompt); tap_word('Y'); }
         printf("  screen %d\n", (int)play::screen);
     }
+    if (getenv("QCREATE")) {
+        // The Dark Queen's form: QCREATE=race,law,good,sex,class[,god][,rerolls] (its own numbers: race 0-6,
+        // law 1-3, good 1-2, class 0-16 - the knight 1; god: the list's line), NAME=...; the tap on each
+        // choice's name, Done, the god, then rerolls, Done, the name, Save Yes
+        int v[7] = {6, 1, 1, 0, 2, 0, 0};
+        sscanf(getenv("QCREATE"), "%d,%d,%d,%d,%d,%d,%d", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6]);
+        auto tap_menu = [](char k) { for (int i = 0; i < play::menu.count; ++i) if (text::key(play::menu, i) == k) { play::tap(text::word_col(play::menu, i) * 8 + 2, text::kMenuRow * 8 + 2, C); return true; } printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s); return false; };
+        auto choice = [](int i) { int x, y; play::q_choice(i, &x, &y); play::tap(x + 14, y + 3, C); };
+        pm_tap_line('C');
+        printf("  screen %d (form %d)\n", (int)play::screen, (int)play::Screen::QForm);
+        shot("qform0");
+        choice(v[0]);
+        choice(6 + v[1]);
+        choice(9 + v[2]);
+        choice(12 + v[3]);
+        choice(v[4] < 7 ? 14 + v[4] : 13 + v[4]);
+        printf("  form: race %d law %d good %d sex %d class %d\n", play::mk->q_race, play::mk->q_law, play::mk->q_good, play::mk->q_sex, play::mk->q_cls);
+        shot("qform");
+        tap_menu('D');
+        if (play::screen == play::Screen::QGod) {
+            printf("  gods:"); for (int k = 0; k < play::mk->q_n_gods; ++k) printf(" [%s]", play::mk->q_gods[play::mk->q_god_opt[k]]); printf("\n");
+            play::tap(20, 16 + 8 * v[5] + 3, C);
+            shot("qgod");
+            tap_menu('S');
+        }
+        for (int r = 0; r <= v[6]; ++r) {
+            const party::Character& ch = play::mk->ch;
+            printf("  rolled: %d %d %d %d %d %d (18/%d) hp %d/%d lvls", ch.stat(0), ch.stat(1), ch.stat(2), ch.stat(3), ch.stat(4), ch.stat(5), ch.stat(6), ch.hp(), ch.hp_max());
+            for (int k = 0; k < 8; ++k) printf(" %d", ch.level(k));
+            printf(" age %d thac0 %d ac %d xp %u align %d god %d icon %d\n", ch.age(), ch.thac0(), ch.ac(), ch.exp(), ch.alignment(), ch.ext[party::kExtGod], ch.rec[0x142]);
+            shot("qrolled");
+            if (r < v[6]) tap_menu('R');
+        }
+        tap_menu('D');
+        printf("  input %d prompt [%s]\n", (int)play::input(), play::input_prompt);
+        for (const char* n = getenv("NAME") ? getenv("NAME") : "TESTER"; *n; ++n) play::input_key(*n, C);
+        play::input_key('\n', C);
+        printf("  ask [%s%s]\n", play::menu.prompt, play::menu.s);
+        tap_menu('Y');
+        if (play::screen == play::Screen::YesNo) { printf("  ask [%s]\n", play::menu.prompt); tap_menu('Y'); }
+        printf("  screen %d\n", (int)play::screen);
+    }
     if (getenv("ADDPOOL")) {
         // ADDPOOL=i,j...: Add Character -> Pool (POOLDIR: Pool's folder as /GOLDBOX/...; ADDFROM=C:
         // Curse's list instead), add those lines

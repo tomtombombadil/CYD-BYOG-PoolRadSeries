@@ -3736,8 +3736,23 @@ const Profile kProfiles[] = {
                .dart = 5, .overloaded = qw(0x8FC9), .title = qw(0x4689), .heading = qw(0x468F), .yes = qw(0x21C),
                .no = qw(0x222), .cursed = qw(0x8F3B), .wrong_class = qw(0x8F48), .hands_full = qw(0x8F65),
                .plural_s = qw(0x260), .types_head = 0, .menu = qw(0x4FB0), .words_far = true},
-     // (its data segment for the rule tables a fight reads: create.ds_image)
-     .create = {.ds_image = kQueenDs},
+     // Character rules (queen_facts_4.md 4-6): its tables' DS offsets, packed
+     // into Krynn shapes when read (classes::queen_pack); its createPlayer's
+     // effects - the races' as Champions', a paladin's 0x08, a ranger's 0x69 -,
+     // a new mage's six spells, 200 steel
+     .create = {.ds_image = kQueenDs,
+                .tables = {.lo = 0, .hi = 0, .spells = 0x27E9, .spell_count = 138, .thac0 = 0x6359,
+                           .class_flags = 0x63F3, .class_masks = 0x63FA, .max_hit_dice = 0x640A, .thief_base = 0x641C,
+                           .thief_race = 0x64B4, .thief_dex = 0x64BF, .stat_limits = 0x02B8, .race_classes = 0x0328,
+                           .race_ages = 0x03F3, .age_brackets = 0x04B7, .class_min = 0x04FD,
+                           .class_alignments = 0x0563, .class_records = 0, .saves = 0x13CC, .pool = false,
+                           .money_dice = 0, .lo2 = 0, .hi2 = 0, .krynn = true, .cleric_lists = 0x16C3,
+                           .queen = true, .q_xp = 0x0852, .q_xp_step = 0x028C, .q_slot_map = 0x0847,
+                           .q_slots = 0x0B96, .q_caps = 0x17DC, .q_con_hp = 0x082D, .q_hp_count = 0x6411,
+                           .q_hp_sides = 0x6418},
+                .con_save = 0x5E, .dwarf_orc = 0x1A, .giants = 0x2F, .elf_sleep = 0x5F, .halfelf = 0x12,
+                .prot_evil = 0x08, .ranger_giant = 0x69, .mu_first = {0x0B, 0x0C, 0x0F, 0x10},
+                .platinum = 200, .kender_fear = 0x5C, .mu_more = {0x12, 0x13}},
      .fight = kQueenFight,
      .variant = {.unfinished = true, .bigpic_from = 0xF0,
                  // ("Press        to continue." with the button "Return" in its gap)

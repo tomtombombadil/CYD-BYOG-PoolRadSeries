@@ -138,6 +138,8 @@ constexpr uint16_t kQueenRuns[][3] = {
     {0x44, 0x127, 4},    {0x54, 0x13C, 2},    {0xBF, 0x12B, 2},    {0xC4, 0x142, 1},    {0xCA, 0x185, 2},
     {0x56, 0x187, 2},    {0xC9, 0x14C, 1},    {0x64, 0x195, 1},    {0x66, 0x197, 1},    {0x18B, 0x196, 1},
     {0x18C, 0x198, 1},   {0x18D, 0x199, 13},
+    // (queen_facts_4.md 5: the icon's size - 1 the small races -, a paladin's cure)
+    {0xC6, 0x144, 1},    {0x88, 0x191, 1},
     // (queen_facts_3.md 6: the base attacks, dice, sides, bonuses, AC and
     // uses-strength - Curse's 0x11C-0x125 in the same order)
     {0xB3, 0x11C, 10},
@@ -174,6 +176,60 @@ void from_queen(const uint8_t* q, Character& c)
         r[0x109 + kLevelTo[i]] = q[0xA5 + i];
         r[0x111 + kLevelTo[i]] = q[0xAC + i];
     }
+    queen_spells_in(q, c);
+}
+
+namespace {
+// A spell slot place of the engine's (kind 0 cleric, 1 druid, 2 magic-user;
+// spell level lvl + 1): levels 1-5 in the record (0x12D), 6-7 and 8-9 in
+// the extension (classes.cpp's places)
+uint8_t& slot_place(Character& c, int kind, int lvl)
+{
+    if (lvl < 5) return c.rec[0x12D + kind * 5 + lvl];
+    static const uint8_t kAt[3] = {kExtCleric67, kExtDruidMore, kExtMage67};
+    static const uint8_t kAt89[3] = {kExtCleric89, kExtDruid89, kExtMage89};
+    return lvl < 7 ? c.ext[kAt[kind] + (lvl - 5)] : c.ext[kAt89[kind] + (lvl - 7)];
+}
+constexpr int kQueenMemorized = 137, kListPlaces = 84;
+} // namespace
+
+void queen_spells_in(const uint8_t* q, Character& c)
+{
+    // (queen_facts_4.md 3: memorized 0xCE - 137 places, spell numbers, + 0x80
+    // while being memorized; known 0x157 - a bit a spell; slots 0x167 cleric,
+    // 0x170 druid, 0x179 magic-user, 9 levels each)
+    for (int i = 0; i < kQueenMemorized; ++i) {
+        if (i < kListPlaces) c.rec[0x1E + i] = q[0xCE + i];
+        else c.ext[kExtMemorized + i - kListPlaces] = q[0xCE + i];
+    }
+    memset(c.rec + 0x79, 0, 100);
+    memset(c.ext + kExtBook, 0, 17);
+    memset(c.ext + kExtBook2, 0, 9);
+    for (int s = 1; s <= 126; ++s)
+        if (q[0x157 + (s - 1) / 8] & (1 << ((s - 1) % 8))) {
+            if (s <= 100) c.rec[0x79 + s - 1] = 1;
+            else if (s <= 117) c.ext[kExtBook + s - 101] = 1;
+            else c.ext[kExtBook2 + s - 118] = 1;
+        }
+    for (int k = 0; k < 3; ++k)
+        for (int l = 0; l < 9; ++l) slot_place(c, k, l) = q[0x167 + k * 9 + l];
+}
+
+void queen_spells_out(const Character& c, uint8_t* q)
+{
+    Character& w = const_cast<Character&>(c);
+    for (int i = 0; i < kQueenMemorized; ++i)
+        q[0xCE + i] = i < kListPlaces ? c.rec[0x1E + i] : c.ext[kExtMemorized + i - kListPlaces];
+    // (spells 127-128's bits - the items' - are left as they were)
+    for (int s = 1; s <= 126; ++s) {
+        const bool on = s <= 100 ? c.rec[0x79 + s - 1] != 0
+                      : s <= 117 ? c.ext[kExtBook + s - 101] != 0 : c.ext[kExtBook2 + s - 118] != 0;
+        uint8_t& b = q[0x157 + (s - 1) / 8];
+        const uint8_t bit = static_cast<uint8_t>(1 << ((s - 1) % 8));
+        b = static_cast<uint8_t>(on ? b | bit : b & ~bit);
+    }
+    for (int k = 0; k < 3; ++k)
+        for (int l = 0; l < 9; ++l) q[0x167 + k * 9 + l] = slot_place(w, k, l);
 }
 
 // Item: Dark Queen place, 63-byte record place, length
@@ -197,6 +253,13 @@ void to_queen(const Character& c, uint8_t* q)
         q[0xAC + i] = r[0x111 + kLevelTo[i]];
     }
     q[0xC9] = static_cast<uint8_t>(c.n_items);
+    queen_spells_out(c, q);
+    // (a new character's record: its creation's 0xC5, 0xC7 and 0xC8 - not
+    // known what they are; queen_facts_4.md 5)
+    if (!q[0xC5] && !q[0xC7] && !q[0xC8]) {
+        q[0xC5] = 0x0D;
+        q[0xC7] = q[0xC8] = 2;
+    }
     // (the effects pointer: only whether there are any matters to a load)
     if (!c.n_affects) memset(q + 4, 0, 4);
     else if (!(q[4] | q[5] | q[6] | q[7])) q[7] = 0x5E;
