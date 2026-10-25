@@ -3931,7 +3931,7 @@ const Profile kProfiles[] = {
                // (the camp: "View Magic Rest Alt Fix Load Save Exit", "the party makes camp...")
                .camp_menu = qw(0x51D2), .makes_camp = qw(0x4A60),
                // (Add: "add from where? " "Tdqk Dkk Exit", "add a character: ", "Add Exit")
-               .add_from = qw(0x4885), .add_sources = qw(0x500C), .add_prompt = qw(0x4896), .add = qw(0x501A),
+               .add_from = qw(0x4885), .add_sources = qw(0x500C), .add_prompt = qw(0x4896), .add = qw1(0x501A),
                .load_from = qw(0x4E13), .load_sources = qw(0x500C),
                .words = kQueenPartyMenu, .n_words = sizeof kQueenPartyMenu / sizeof kQueenPartyMenu[0]},
      // View Character (queen_facts_3.md 5): its name tables are far pointers

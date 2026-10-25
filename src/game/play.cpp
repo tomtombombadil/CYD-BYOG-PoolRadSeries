@@ -11232,6 +11232,9 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         if (!d->roster[Data::kModify][0]) strcpy(d->roster[Data::kModify], "Modify: ");
         if (!d->roster[Data::kKeepExit][0]) strcpy(d->roster[Data::kKeepExit], "Keep Exit");
         if (!d->roster[Data::kCantModify][0]) strcpy(d->roster[Data::kCantModify], " can't be modified.");
+        // (the Dark Queen has no such word - its Add lists no saved games'
+        // members; the engine's own, as Curse's list has it)
+        if (hl() && !d->roster[Data::kFromSaved][0]) strcpy(d->roster[Data::kFromSaved], "from saved game ");
     }
     if (!d->w_slots[0]) strcpy(d->w_slots, "A B C D E F G H I J");
     char sub[64] = "SAVE";
