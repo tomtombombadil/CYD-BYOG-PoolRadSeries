@@ -137,6 +137,9 @@ constexpr uint16_t kQueenRuns[][3] = {
     {0x44, 0x127, 4},    {0x54, 0x12B, 2},    {0xC4, 0x13C, 1},    {0xC7, 0x13D, 2},    {0xCA, 0x185, 2},
     {0x56, 0x187, 2},    {0xC9, 0x14C, 1},    {0x64, 0x195, 1},    {0x66, 0x197, 1},    {0x18B, 0x196, 1},
     {0x18C, 0x198, 1},   {0x18D, 0x199, 13},
+    // (queen_facts_3.md 6: the base attacks, dice, sides, bonuses, AC and
+    // uses-strength - Curse's 0x11C-0x125 in the same order)
+    {0xB3, 0x11C, 10},
 };
 // Dark Queen offset, Ext place, length
 constexpr uint16_t kQueenExt[][3] = {

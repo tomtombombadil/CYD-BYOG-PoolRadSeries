@@ -1576,6 +1576,7 @@ constexpr TitleStep kQueenTitle[] = {
     {9, 0, 0, false, 8000, 0}, {5, 0, 0, true, 0, 0}, {10, 0, 0, false, 8000, 0},
 };
 
+
 constexpr TitleStep kDarknessTitle[] = {
     {1, 0, 0, true, 5000, 0},
     {2, 0, 0, true, 5000, 0},
@@ -1969,6 +1970,77 @@ constexpr combat::FightSpell kDeathKnightsFight[] = {
     {0x60, SpellDoes::Affect, 0, 0, 0, 0, 0, 0},
     {0x61, SpellDoes::Affect, 0, 0, 0, 0, 0, 0},
 };
+
+// The Dark Queen of Krynn's fights (queen_facts_3.md 8): Death Knights'
+// engine - its tables at DS 0x5D0B on in the same shapes (the fallback,
+// formation, facing, start columns / rows, the formations' shapes, the
+// terrain), the ground table DS 0x6197, the turn table's rows 1-13 from DS
+// 0x5A6A (its row 0 not found: the 11 bytes before); its words Death
+// Knights' found again among its C strings (case, spaces and printf parts
+// aside - its "%s" and "%d" taken out where they're read); its effects
+// Death Knights' but the monsters' from 0x40 on renumbered (GBC's lists
+// side by side: drain 0x65 / 0x66, acid / fire / lightning breath 0x60 /
+// 0x54 / 0x5B)
+constexpr uint32_t kQueenFightWords[kFightWords] = {
+    qw(0x5ED8), 0, 0, 0, 0, 0, 0, qw(0x591F),
+    qw(0x4AB0), 0, qw(0x5953), qw(0x4A94), 0, 0, 0, 0,
+    0, 0, 0, 0, qw(0x5A2A), qw(0x4E78), qw(0x5973), 0,
+    0, qw(0x72D3), qw(0x5AF9), qw(0x5B05), qw(0x5B14), qw(0x5B1C), qw(0x5B2B), qw(0x5B3F),
+    qw(0x5B50), qw(0x5B5A), qw(0x5B65), qw(0x5B71), qw(0xC7), qw(0x5B8B), qw(0x5B95), qw(0xFC),
+    qw(0x5902), qw(0x4E98), qw(0x5BAC), qw(0x5BB5), qw(0x4A81), qw(0x5DDE), qw(0x5E39), qw(0x5E4B),
+    qw(0x5A33), 0, qw(0x23E), qw(0x248), qw(0x24B), qw(0x4B67), qw(0x4B7B), qw(0x4B94),
+    qw(0x4BEF), qw(0x4C2C), qw(0x4C45), 0, 0, 0, qw(0x4ECD), qw(0x5160),
+    0, qw(0x72D3), 0, 0, 0, qw(0x4C58), 0, 0,
+    0, qw(0x120), qw(0x12B), qw(0x13E), qw(0x157), qw(0x163), qw(0x16F), 0,
+    qw(0x18E), qw(0x5B8B), qw(0x87E8), qw(0x8B17), qw(0x8B25), qw(0x5C5D), qw(0x5C2E), qw(0x5BC7),
+    qw(0x5BD7), qw(0x8A42), qw(0x8FE5), qw(0x5C01), qw(0x4584), qw(0x4590), 0, qw(0x1ED),
+    0, qw(0xF0), qw(0x867A), qw(0x885D), qw(0x865C), 0, 0, qw(0x8354),
+    qw(0x8964), 0, 0, 0, 0, 0, qw(0x8380), 0,
+    0, qw(0x836A), 0, qw(0x8380), 0, 0, 0, 0,
+    0, 0, 0, 0, qw(0x86B1), qw(0x86A7), qw(0x4214), qw(0x86CA),
+    qw(0x8686), qw(0x8693), qw(0x8401), qw(0x4DB9), qw(0x4F36), qw(0x4584), qw(0x4EE3), 0,
+    0, 0, 0, qw(0x8341), 0, qw(0x834F), 0, qw(0x83C9),
+    0, 0, qw(0x83D6), 0, 0, 0, 0, qw(0x836A),
+    qw(0x87F6), 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, qw(0x50B3), 0, 0, qw(0x5102), 0, qw(0x4E85),
+    qw(0x7752), qw(0x4F5), qw(0x5075), qw(0x83BC), 0, qw(0x83B3), qw(0x836A), 0,
+    qw(0x83E9), 0, 0, 0, 0
+};
+constexpr combat::Facts kQueenFightFacts = {.held = {0x33, 0x34, 0x35, 0x1F}, .bless = 0x01, .curse = 0x02, .prayer = 0x31, .haste = 0x27,
+                .slow = 0x2A, .invisible = 0x19, .prot_evil = 0x08, .prot_good = 0, .mirror = 0x1C,
+                .backstab_weapons = {0x07, 0x08, 0x23, 0x24, 0x25, 0x61}, .charm = 0x0B, .fear = 0x6F, .cough = 0x1E,
+                .shot_pointed = {9, 21, 100, 28, 31, 73}, .shot_spinning = {2, 7, 20}, .shot_flask = {85, 86},
+                .shot_sling = {47, 98, 101},
+                .bestow = 0x24, .blink = 0x25, .fumbling = 0x1B, .silence = 0x15, .entangle = 0x06, .sticks = 0x03,
+                .faerie = 0, .blinded = 0x21, .animals_blind = 0, .feeble = 0,
+                .mon = {.poison = 0x40, .poison_m2 = 0x56, .kreen_bite = 0x45, .need_magic = 0x67, .no_cold = 0x62,
+                        .no_elec = 0, .globe = 0x3F, .elf_sleep = 0x5F, .detect = 0x18, .prot_evil_near = 0x2D,
+                        .acid_breath = 0x60, .fire_breath = 0x54,
+                        .paralyzed = 0x34, .poisoned = 0x37, .sleep = 0x35, .drain1 = 0x65, .drain2 = 0x66,
+                        .ghoul = 0x58, .lightning_breath = 0x5B, .no_fear = 0x5C},
+                .sp = {.enlarge = 0x0C, .confuse = 0x23, .berserk = 0x4D, .evil_ward = 0x04, .hot = 0x32,
+                       .cold = 0x36, .zap = 0x70, .slow_poison = 0x16, .poison_damage = 0x0F, .hammer = 0x17,
+                       .con_regen = 0x3E, .shield = 0x11, .enfeeble = 0x1D, .ill = 0x22, .weak = 0x2B, .sick = 0x2C,
+                       .stun = 0x06},
+                .race = {0x5E, 0x12, 0x1A, 0x07, 0x2F, 0x30, 0x69, true},
+                .items = {.displace = 0x59, .ring_invisible = 0x38, .fire_ring = 0x3D},
+                .berserk = 0x6B, .taunted = 0x5B};
+constexpr auto kQueenFight = [] {
+    decltype(Profile::fight) f{};
+    f.tables = {0x6197, 0x5D0B, 0x5D1B, 0x5D2B, 0x5D2F, 0x5D37, 0x5D3F, 0x5D7B, 0x5A5F, 0, 11, 0};
+    for (int i = 0; i < kFightWords; ++i) f.words[i] = kQueenFightWords[i];
+    // (the effects a fight's end takes away: Death Knights' list)
+    const uint8_t ends[16] = {0x03, 0x06, 0x0B, 0x15, 0x17, 0x1B, 0x1E, 0x1F, 0x23, 0x34, 0x35, 0x4D, 0x6A, 0x6B, 0x6F, 0x76};
+    for (int i = 0; i < 16; ++i) f.ends[i] = ends[i];
+    f.facts = kQueenFightFacts;
+    f.spells = kDeathKnightsFight;
+    f.n_spells = sizeof kDeathKnightsFight / sizeof kDeathKnightsFight[0];
+    // COMSPR: Death Knights' numbers (its 23 pictures in the same order)
+    for (int i = 0; i < 16; ++i) f.comspr[i] = static_cast<uint8_t>(i == 10 ? 11 : i == 11 ? 10 : i);
+    f.marks = {15, 10, 16};
+    return f;
+}();
 
 // Death Knights' spells in camp: Champions' numbers and workings, its own
 // spells as Darkness's (Heal, Resurrection, Restoration, Stone to Flesh ...),
@@ -3664,9 +3736,13 @@ const Profile kProfiles[] = {
                .dart = 5, .overloaded = qw(0x8FC9), .title = qw(0x4689), .heading = qw(0x468F), .yes = qw(0x21C),
                .no = qw(0x222), .cursed = qw(0x8F3B), .wrong_class = qw(0x8F48), .hands_full = qw(0x8F65),
                .plural_s = qw(0x260), .types_head = 0, .menu = qw(0x4FB0), .words_far = true},
+     // (its data segment for the rule tables a fight reads: create.ds_image)
+     .create = {.ds_image = kQueenDs},
+     .fight = kQueenFight,
      .variant = {.unfinished = true, .bigpic_from = 0xF0,
                  // ("Press        to continue." with the button "Return" in its gap)
-                 .press_words = {qw(0x1D19), qw(0x1D33)}, .hlib = true, .queen_orders = kQueenDs + 0x8D8C},     // (BIGPIC ids 240-242)
+                 .fight_unswapped = true, .press_words = {qw(0x1D19), qw(0x1D33)}, .hlib = true,
+                 .queen_orders = kQueenDs + 0x8D8C},     // (BIGPIC ids 240-242)
      .title_name = qw(0x4D73)},
 };
 

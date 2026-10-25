@@ -207,3 +207,195 @@ __attribute__((noinline)) bool q_save(char slot, const savegame::Header& h, cons
     if (ok) d->q_src = slot;
     return ok;
 }
+
+// ---- Fights (queen_facts_3.md 8) ---------------------------------------------
+// MONCHA.GLB's monster id: a big-endian u16 (the whole size), then the rest
+// run-length coded (as the DAX blocks: c < 0x80 c + 1 bytes as they are,
+// else the next byte 257 - c times) - its 414-byte record (a character's,
+// the first 0x52 bytes zero), a u8 effect count, a u8 item count, the
+// effects (5 bytes: Curse's first five), the items (17 bytes), a pad byte.
+__attribute__((noinline)) bool q_load_monster(int id, uint8_t* rec, uint8_t* sx, uint8_t* items, int* n_items,
+                                              int items_cap, uint8_t* aff, int* n_aff, int aff_cap)
+{
+    *n_items = *n_aff = 0;
+    plat::File f;
+    if (!open_hl("MONCHA.GLB", f)) return false;
+    uint8_t* raw = nullptr;
+    uint8_t* q = nullptr;
+    uint32_t total = 0;
+    bool ok = false;
+    {
+        plat::FileSource src(f);
+        uint32_t pos, len;
+        if (hlib::find_entry(src, static_cast<uint16_t>(id), pos, len) && len >= 4 && len < 2048) {
+            raw = static_cast<uint8_t*>(malloc(len));
+            if (raw && src.read_at(pos, raw, len) == len) {
+                total = static_cast<uint32_t>(raw[0] << 8 | raw[1]);
+                if (total >= party::kQueenRecordSize + 2 && total < 4096) q = static_cast<uint8_t*>(calloc(1, total));
+                uint32_t o = 0;
+                for (uint32_t i = 2; q && i < len && o < total;) {
+                    const uint8_t c = raw[i++];
+                    if (c < 0x80) {
+                        for (int k = 0; k <= c && i < len && o < total; ++k) q[o++] = raw[i++];
+                    } else if (i < len) {
+                        const uint8_t v = raw[i++];
+                        for (int k = 0; k < 257 - c && o < total; ++k) q[o++] = v;
+                    }
+                }
+                ok = q && o >= party::kQueenRecordSize + 2;
+            }
+        }
+    }
+    f.close();
+    free(raw);
+    if (ok) {
+        party::Character* tmp = new (std::nothrow) party::Character;
+        ok = tmp != nullptr;
+        if (tmp) {
+            party::from_queen(q, *tmp);
+            memcpy(rec, tmp->rec, party::kRecordSize);
+            sx[0] = 0;                                  // (its flags 2: not known)
+            sx[1] = tmp->ext[party::kExtMagicRes];
+            delete tmp;
+        }
+        const int nf = q[party::kQueenRecordSize], ni = q[party::kQueenRecordSize + 1];
+        uint32_t at = party::kQueenRecordSize + 2;
+        for (int k = 0; ok && k < nf && at + 5 <= total; ++k, at += 5)
+            if (*n_aff < aff_cap) {
+                uint8_t* e = aff + party::kAffectSize * (*n_aff)++;
+                memset(e, 0, party::kAffectSize);
+                memcpy(e, q + at, 5);
+            }
+        for (int k = 0; ok && k < ni && at + party::kQueenItemSize <= total; ++k, at += party::kQueenItemSize)
+            if (*n_items < items_cap) party::queen_item_in(q + at, items + items::kRecordSize * (*n_items)++);
+    }
+    free(q);
+    return ok;
+}
+
+// A fight picture: COMSPR / CPIC / CBODY.TLB's part `id` (their directory
+// ids; + 128 the attack frames) - its library's colours first - into a
+// Pic4 (rows of the screen's values, the see-through plane after them)
+__attribute__((noinline)) uint8_t* q_load_pic4(const char* file, int id, int* w, int* h)
+{
+    const char* lib = !strncmp(file, "COMSPR", 6) ? "COMSPR.TLB" : !strncmp(file, "CPIC", 4) ? "CPIC.TLB"
+                      : !strncmp(file, "CBODY", 5) ? "CBODY.TLB" : nullptr;
+    if (!lib) return nullptr;
+    plat::File f;
+    if (!open_hl(lib, f)) return nullptr;
+    uint8_t* out = nullptr;
+    {
+        plat::FileSource src(f);
+        hlib::Library l;
+        uint32_t pos, len;
+        hlib::Part p;
+        if (hlib::open(src, 0, src.size(), l) == hlib::Status::Ok) {
+            // (the colours: the library's colour part - its first)
+            for (int i = l.first_item(); i < l.count; ++i)
+                if (hlib::entry(src, l, i, pos, len) && hlpic::load_colours(src, pos, len, q_col(), vga_load())) {
+                    vga_take();
+                    break;
+                }
+            const int i = hlib::find(src, l, static_cast<uint16_t>(id));
+            if (i >= 0 && hlib::entry(src, l, i, pos, len) && hlib::read_part(src, pos, len, p) && p.drawable() &&
+                p.width() <= hlib::kMaxWidth) {
+                const int pw = p.width(), ph = p.height;
+                const uint32_t nb = static_cast<uint32_t>(rowb(pw)) * ph;
+                out = static_cast<uint8_t*>(calloc(1, nb + mask_bytes(pw, ph)));
+                hlib::Pixels* px = out ? new (std::nothrow) hlib::Pixels(src, p) : nullptr;
+                uint8_t* row = px ? static_cast<uint8_t*>(malloc(2 * hlib::kMaxWidth)) : nullptr;
+                bool ok = px && row && px->ok();
+                uint8_t* m = out ? out + nb : nullptr;
+                for (int y = 0; ok && y < ph; ++y) {
+                    ok = px->row(row, row + hlib::kMaxWidth);
+                    for (int x = 0; ok && x < pw; ++x) {
+                        if (!row[hlib::kMaxWidth + x]) {
+                            const int k = y * pw + x;
+                            m[k >> 3] = static_cast<uint8_t>(m[k >> 3] | 1 << (k & 7));
+                        } else {
+                            const uint8_t v = row[x];
+                            set_nib(out, pw, x, y, p.ega() ? v & 15 : px8() ? v : q_col().ega[v]);
+                        }
+                    }
+                }
+                free(row);
+                delete px;
+                if (!ok) {
+                    free(out);
+                    out = nullptr;
+                } else {
+                    *w = pw;
+                    *h = ph;
+                }
+            }
+        }
+    }
+    f.close();
+    return out;
+}
+
+// The field's pictures: DUNGCOM.TLB's picture of the look under a roof
+// (the square's flags 0x80), else WILDCOM's - the other when that one has
+// none; its parts 1.. the ground table's pictures 0..
+__attribute__((noinline)) void q_load_tiles()
+{
+    const bool roof = geo::flags(d->map, d->gs.x, d->gs.y) >= 0x80;
+    const int look = d->save.look & 0xFF;
+    const char* files[2] = {roof ? "DUNGCOM.TLB" : "WILDCOM.TLB", roof ? "WILDCOM.TLB" : "DUNGCOM.TLB"};
+    for (const char* name : files) {
+        plat::File f;
+        if (!open_hl(name, f)) continue;
+        bool done = false;
+        {
+            plat::FileSource src(f);
+            uint32_t pos, len;
+            hlib::Library lib;
+            if (hlib::find_entry(src, static_cast<uint16_t>(look), pos, len) &&
+                hlib::open(src, pos, len, lib) == hlib::Status::Ok) {
+                uint32_t cp, cl;
+                if (hlib::entry(src, lib, 0, cp, cl)) {
+                    hlpic::load_colours(src, cp, cl, q_col(), vga_load());
+                    vga_take();
+                }
+                for (int k = 0; k < kTiles && k + 1 < lib.count; ++k) {
+                    hlib::Part p;
+                    if (!hlib::entry(src, lib, k + 1, cp, cl) || !hlib::read_part(src, cp, cl, p) || p.width() != kSq ||
+                        p.height != kSq)
+                        continue;
+                    hlib::Pixels* px = new (std::nothrow) hlib::Pixels(src, p);
+                    uint8_t row[kSq];
+                    for (int y = 0; px && px->ok() && y < kSq && px->row(row); ++y)
+                        for (int x = 0; x < kSq; ++x)
+                            set_nib(fg->tile[k], kSq, x, y, p.ega() ? row[x] & 15 : px8() ? row[x] : q_col().ega[row[x]]);
+                    delete px;
+                }
+                done = true;
+                plat::log("[fight] field pictures: %s %d\n", name, look);
+            }
+        }
+        f.close();
+        if (done) return;
+    }
+}
+
+// The fight's screen (DOSBox): the marble, the field's box 8-175 x 8-175,
+// the panel's box 182-311 x 8-175; the bar below for the menu / prompts
+__attribute__((noinline)) void q_draw_fight_frame(pic::Canvas& c)
+{
+    static const QBox kBoxes[] = {{8, 8, 175, 175}, {182, 8, 311, 175}};
+    q_screen(c, kBoxes, 2, false);
+    q_bar(c);
+}
+
+// The status line (row 23 in the other games): a prompt box on the bar
+void q_status(pic::Canvas& c, const char* t)
+{
+    if (menu_on) return;                // (the menu has the bar)
+    q_bar(c);
+    if (t && *t) {
+        text::Menu m;
+        text::build(m, t, "");
+        text::draw(c, d->font, m, q_buttons());
+    }
+    dirty_rows(text::kMenuRow - 1, text::kMenuRow);
+}

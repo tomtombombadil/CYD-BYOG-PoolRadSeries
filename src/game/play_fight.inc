@@ -268,10 +268,21 @@ void fight_load_monster(int id, int copies, int icon, bool reserve)
     new (&g) combat::Group();           // (in place: it's a big block for the stack)
     uint8_t* rec = g.rec;
     uint8_t sx[2] = {};
+    uint8_t aff[combat::kMonsterAffects * party::kAffectSize];
+    int n_aff = 0;
+    if (hl()) {
+        // (Dark Queen: MONCHA.GLB's monster - its record, effects and items in one)
+        int ni = 0;
+        if (!q_load_monster(id, rec, sx, &g.item[0][0], &ni, combat::kGroupItems, aff, &n_aff, combat::kMonsterAffects)) {
+            plat::log("[play] MONCHA.GLB #%d: no monster\n", id);
+            return;
+        }
+        g.n_items = static_cast<uint8_t>(ni);
+    }
     // MON<area>CHA.DAX
     char cha[24];
     area_fmt(cha, sizeof cha, "MON%dCHA.DAX");
-    if (!read_record_block(cha, id, rec, nullptr, sx)) {
+    if (!hl() && !read_record_block(cha, id, rec, nullptr, sx)) {
         plat::log("[play] %s #%d: no monster\n", cha, id);
         return;
     }
@@ -291,15 +302,16 @@ void fight_load_monster(int id, int copies, int icon, bool reserve)
     }
     g.id = static_cast<uint8_t>(id);
     g.icon = static_cast<uint8_t>(icon);
-    char itm[24];
-    area_fmt(itm, sizeof itm, "MON%dITM.DAX");
-    g.n_items = static_cast<uint8_t>(read_monster_items(itm, id, &g.item[0][0], combat::kGroupItems));
+    if (!hl()) {
+        char itm[24];
+        area_fmt(itm, sizeof itm, "MON%dITM.DAX");
+        g.n_items = static_cast<uint8_t>(read_monster_items(itm, id, &g.item[0][0], combat::kGroupItems));
+        char spc[24];
+        area_fmt(spc, sizeof spc, "MON%dSPC.DAX");
+        const int na = read_block(spc, id, aff, sizeof aff);
+        n_aff = na > 0 ? na / static_cast<int>(party::kAffectSize) : 0;
+    }
     for (int k = 0; k < g.n_items; ++k) name_from_words(g.item[k]);
-    uint8_t aff[combat::kMonsterAffects * party::kAffectSize];
-    char spc[24];
-    area_fmt(spc, sizeof spc, "MON%dSPC.DAX");
-    const int na = read_block(spc, id, aff, sizeof aff);
-    const int n_aff = na > 0 ? na / static_cast<int>(party::kAffectSize) : 0;
     if (copies < 1) copies = 1;
     if (ml->n + copies > combat::kMaxMonsters) copies = combat::kMaxMonsters - ml->n;
     if (ml->n + copies > ml->cap) {
@@ -421,7 +433,7 @@ void free_pic(Pic4& p)
 // see-through) since its pictures use every colour, black and dark grey
 // included. The rows' see-through pixels are 0 (the head is OR'd onto the
 // body as the original's EGA path does - GAME.OVR 0x10FC5).
-bool fight_masks() { return d->prof->variant.vga; }
+bool fight_masks() { return d->prof->variant.vga || d->prof->variant.hlib; }      // (Dark Queen's parts: their own see-through)
 constexpr int kMaskColour = 8;
 uint32_t mask_bytes(int w, int h) { return (static_cast<uint32_t>(w) * h + 7) / 8; }
 const uint8_t* mask_of(const uint8_t* p, int w, int h) { return fight_masks() && p ? p + rowb(w) * h : nullptr; }
@@ -483,6 +495,7 @@ uint8_t* load_vga4(dax::RleReader& r, uint32_t raw_size, int frame, int* w, int*
 // (Darkness: a VGA block, its see-through plane after the rows)
 uint8_t* load_pic4(const char* file, int block, int frame, int* w, int* h)
 {
+    if (hl()) return frame ? nullptr : q_load_pic4(file, block, w, h);
     plat::File f;
     if (!open_dax(file, f)) return nullptr;
     plat::FileSource src(f);
@@ -908,6 +921,19 @@ void load_fight_words()
         char t[72];                     // (Darkness's two-row menu: 63)
         t[0] = 0;
         read_word(src, d->prof->fight.words[i], t, sizeof t);
+        if (hl()) {
+            // (Dark Queen's words are printf formats here and there: their
+            // "%s" / "%d" taken out - the engine puts the values after them)
+            char* o = t;
+            for (const char* q = t; *q; ++q) {
+                if (q[0] == '%' && (q[1] == 's' || q[1] == 'd')) {
+                    ++q;
+                    continue;
+                }
+                *o++ = *q;
+            }
+            *o = 0;
+        }
         const int n = static_cast<int>(strlen(t)) + 1;
         if (at + n > Fight::kWordPool) {
             log_error("Fight: the words don't all fit (kWordPool).");
@@ -993,6 +1019,10 @@ void load_tiles(bool indoors)
 {
     for (uint8_t* t : fg->tile)
         if (t) memset(t, 0, tile_bytes());
+    if (hl()) {
+        q_load_tiles();
+        return;
+    }
     if (d->prof->variant.tr) {
         // Treasures (its ovl 0x68 +0xEFA): in 3D and not the overland (game
         // byte 0x3F) DUNGCOM block = game byte 0x51, or wall slot 0's block;
@@ -1095,6 +1125,16 @@ void build_icon(const uint8_t* rec, Pic4& ic)
         }
     }
 #endif
+    if (hl()) {
+        // (Dark Queen: one CBODY picture a character - the record's icon
+        // byte, + 128 the attack frame; no head, no recolouring)
+        for (int fr = 0; fr < 2; ++fr) {
+            int bw = 0, bh = 0;
+            ic.px[fr] = q_load_pic4("CBODY", rec[0x13C] + fr * 128, &bw, &bh);
+            if (ic.px[fr]) ic.w = static_cast<uint8_t>(bw), ic.h = static_cast<uint8_t>(bh);
+        }
+        return;
+    }
     const int head = rec[0x141], body = rec[0x142];
     const bool small = rec[0x144] == 1;
     for (int fr = 0; fr < 2; ++fr) {
@@ -1339,8 +1379,11 @@ void mark(pic::Canvas& c, int i)
 
 void draw_fight(pic::Canvas& c)
 {
-    c.fill(0, 0, pic::kScreenW, 24 * 8, 0);
-    layout::combat(c, d->tables, d->frame_tiles);
+    if (hl()) q_draw_fight_frame(c);
+    else {
+        c.fill(0, 0, pic::kScreenW, 24 * 8, 0);
+        layout::combat(c, d->tables, d->frame_tiles);
+    }
     draw_field(c);
     if (fg->cur >= 0) {
         mark(c, fg->cur);
@@ -1351,6 +1394,10 @@ void draw_fight(pic::Canvas& c)
 
 void status_line(pic::Canvas& c, const char* t)
 {
+    if (hl()) {
+        q_status(c, t);
+        return;
+    }
     c.fill(0, 23 * 8, pic::kScreenW, 8, 0);
     if (t && *t) put(c, t, 0, 23, 10);
     dirty_rows(23, 23);
@@ -3600,6 +3647,9 @@ void fight_start(pic::Canvas& c)
     memcpy(b.level_exp, level_exp, sizeof level_exp);
     combat::g_dk_drain = darkness_files() ? dk_drain_hook : nullptr;     // (its own drain: facts L1)
     b.indoors = vm->get(0x4BE6) != 0;
+    // (Dark Queen: indoors only under a roof - its forests are 3D maps
+    // fought on WILDCOM's ground: q_load_tiles)
+    if (hl() && geo::flags(d->map, d->gs.x, d->gs.y) < 0x80) b.indoors = false;
     if (d->prof->variant.tr) {
         b.weather = d->gs.area1[0x52];
         b.weather_free = 0x9E;
@@ -3609,7 +3659,7 @@ void fight_start(pic::Canvas& c)
     if (d->prof->variant.overland_map && (d->gs.script < over || d->gs.script > over + 2)) b.indoors = true;
     if (b.indoors) combat::build_indoors(b, fg->t, d->map, d->gs.x, d->gs.y, rng);
     else if (d->prof->variant.overland_map) combat::build_outdoors_pool(b, pool_place_flags(), rng);
-    else if (darkness_files()) {
+    else if (darkness_files() || hl()) {
         combat::build_outdoors_dk(b, fg->t, vm->get(0x33) != 0, rng);   // (its own: facts L9)
         plat::log("[fight] outdoors: river %d, region %d\n", vm->get(0x33), vm->get(0x3A));
     }
