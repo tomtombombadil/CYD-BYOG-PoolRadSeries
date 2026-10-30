@@ -202,6 +202,8 @@ static bool pump(int max_iter = 400000)
                      fg ? (int)fg->st : -1, (int)waiting, vm ? (int)vm->wait() : -1, (int)then, menu.prompt, menu.s);
             stuck_why = "stuck";
             problem(t);
+            printf("  (page_prompt %d writer %d note %u text [%s] bigpic %d pic_shown %d)\n", (int)page_prompt, (int)w.state,
+                   (unsigned)note_until, vm && vm->wait() == ecl::Wait::Print ? vm->text() : "", bigpic, (int)pic_shown);
             return false;
         }
         if (it % 50) continue;          // (time passes between the answers)
@@ -1022,6 +1024,12 @@ static void sweep_events(int only)
             const int mw = qov ? 38 : d && d->map.w ? d->map.w : 16, mh = qov ? 30 : d && d->map.h ? d->map.h : 16;
             for (int y = 0; y < mh && lost < 20; ++y)
                 for (int x = 0; x < mw && lost < 20; ++x) {
+                    // (EVAT=x,y: that square only)
+                    if (getenv("EVAT")) {
+                        int ex = -1, ey = -1;
+                        sscanf(getenv("EVAT"), "%d,%d", &ex, &ey);
+                        if (x != ex || y != ey) continue;
+                    }
                     if (!d || screen != Screen::Game || waiting || d->gs.game_area != area || d->gs.script != block) {
                         ++reentries;
                         if (!enter()) {
@@ -1048,6 +1056,9 @@ static void sweep_events(int only)
                         d->gs.dir = static_cast<uint8_t>(pick(8));
                     }
                     after_move_redraw();
+                    if (getenv("EVTRACE"))
+                        printf("  step at %d,%d dir %d: 0x22 %d 0x24 %d bigpic %d pic_shown %d\n", x, y, d->gs.dir, vm->get(0x22),
+                               vm->get(0x24), bigpic, (int)pic_shown);
                     play::act(play::Act::Forward, C);
                     ++steps;
                     if (!pump()) {

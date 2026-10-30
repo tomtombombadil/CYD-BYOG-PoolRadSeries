@@ -2264,6 +2264,14 @@ GAME.FON's rows 0 2 3 5 7 8 9 10 (`font::load_fon`); its characters (a
 414-byte C struct, `party::from_queen`) and SAVGAMx.QSV saves
 (`savegame::read_queen`); the Play Test (Dev Tools only) runs ECL.GLB 4
 from the party menu (`src/game/play_queen.inc`).
+Phase 5 (2026-10-30, queen_facts_5.md): the overland of Taladas (ECL.GLB
+5; game bytes 0x24 = 1 and not 3D - `play::q_overland`): its script holds
+the 38 x 30 map's terrain and moves the party itself (0x111 / 0x112, the
+picture's 0x25 / 0x26, BIGPIC 240 / 241 in 0x3E); the engine draws the
+picture in a sunk box with the marker (ALWAYS.TLB part 29), steps with
+0x23 = the direction and the program's own move when the script leaves
+0x03 under 255; the icon picker (CBODY's 49 icons); Modify without the
+items' figures.
 
 ## 10. Engine UI rules (carried over from CYD-Classic-Games)
 
@@ -2736,11 +2744,15 @@ the game's Settings (As Original: all of them).
   13 rule never fires in the original (a test that can't be true); with
   Game Fixes on the engine applies it. Its fights' Move
   is offered as a word (the original's arrow keys start a move, the word
-  never shows - no arrow keys on the 320 x 240 menu row). Knight New
-  Order's "too inexperienced" / "does not qualify" stay up with "Exit"
-  (the original goes straight back to the party menu). Add's list of
+  never shows - no arrow keys on the 320 x 240 menu row). Add's list of
   Death Knights' saved games' members ("NAME from saved game A", the
-  engine's words). Modify keeps the readied items' figures on the screen
-  (the original's shows them without the items).
+  engine's words). Its overland of Taladas (queen_facts_5.md 13): the
+  movement keys step as Champions' (Forward north, the side-steps east /
+  west, Turn Around south, the turns north-west / north-east - no
+  south-east / south-west key; the original's eight arrow keys); the map
+  picture's colour cycling (the water) not done. Its icon picker: a tap
+  on a cell picks it (the original: the arrow keys - the cursor keys do
+  that here too); the cells' light grey is EGA 7 (the original's VGA
+  blue-grey not found in its files).
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.

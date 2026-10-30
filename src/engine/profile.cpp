@@ -1560,6 +1560,7 @@ constexpr ecl::OpSet kQueenEcl = [] {
     s.code_size = 12000;
     s.no_prefix = true;
     s.krynn_race = true;
+    s.camp_resumes = true;          // (PROGRAM 9: its inns' city menu again after the camp - DOSBox)
     return s;
 }();
 
