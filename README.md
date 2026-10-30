@@ -32,6 +32,7 @@ Easiest method: Use the web flasher!
 | 3.5" ESP32-32E, 320x480 | `TTB-CYD-GBGE_3.5in_ST7796_Resistive` | https://www.amazon.com/dp/B0FFYWJ8BZ |
 | 4.0" ESP32-32E, 320x480 | `TTB-CYD-GBGE_4.0in_ST7796_Resistive` | https://www.amazon.com/dp/B0FFZ599FJ |
 | 4.0" ESP32-S3, 480x320 capacitive touch (FNK0104, ST7796 model) | `TTB-CYD-GBGE_4.0in_ST7796_Capacitive_ESP32-S3` | https://www.amazon.com/dp/B0H6W1HJSG |
+| 5.0" ESP32-S3, 800x480 capacitive touch (FNK0115Q) | `TTB-CYD-GBGE_5.0in_Capacitive_ESP32-S3` | https://www.amazon.com/dp/B0H93PLQVX |
 | 2.8" ESP32-C5, two USB-C (NM-CYD-C5) | `TTB-CYD-GBGE_2.8in_ST7789_Resistive_ESP32-C5` | https://www.amazon.com/dp/B0H1QCHMW6 |
 
 These five ESP32 boards, the ESP32-C5 board and the ESP32-S3 board are tested with this firmware. The base ESP32 CYD boards I tested with were all purchased through Amazon and are 'Freenove' brand. Links below.
