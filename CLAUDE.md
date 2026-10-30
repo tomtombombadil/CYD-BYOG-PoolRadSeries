@@ -325,7 +325,19 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   ST7789 resistive C5 (Tom, 2026-10-12, v0.94.1: both of his - the yellow
   and the "colorful" one - Home, scan and a Secret Play Test); the 4.0"
   ST7796 capacitive S3 (Tom, 2026-10-16, v0.103.3: Pool, Curse, Secret
-  play); a new board starts at `no`.
+  play); a new board starts at `no`. Untested: the 5.0" 800x480 IPS
+  capacitive S3 (`cyd50s3_cap`, 2026-10-30).
+- **5.0" 800x480 S3 board** (FNK0115Q; `src/boards/esp32s3_50_rgb.hpp`,
+  SPEC 5d): an RGB parallel panel; the engine sees **320x240** - the
+  board's `Panel_Double` (a LovyanGFX frame-buffer panel in PSRAM) copies
+  each draw's changed rectangle 2x2 into the panel's 800x480 buffer,
+  centred with black bars (Tom's layout), at endWrite; never draw to the
+  panel any other way. GT911 polled without INT (INT 18 = the NS4168's
+  LRCLK), reset with INT low before any sound; touches in the bars
+  dropped. Serial on UART0 (CH340C: `ARDUINO_USB_CDC_ON_BOOT=0`). Sound
+  `BOARD_AUDIO_I2S` (no codec, clocks kept on as the S3 codec's). The SD
+  card on SPI (FSPI, `BOARD_SD_SPI_PORT` - no VSPI on the S3). QEMU:
+  `qemus3_50` (`run_qemu.py --s3 --env qemus3_50`) checks every 2x copy.
 - 2.8" ESP32-2432S028: touch is bit-banged (`touch_xpt2046_soft.hpp`, an
   `lgfx::ITouch`) so the SD card can have VSPI. Keep it that way - the engine
   needs the card.

@@ -7,6 +7,21 @@ the Project as claude/TODO.md.
 
 ## Tom
 
+- [ ] The 5.0" boards (`TTB-CYD-GBGE_5.0in_Capacitive_ESP32-S3`, the
+      FNK0115Q first; then the Hosyond - its back / box against the
+      Freenove's): (1) the picture: 640x480 in the middle, black bars at
+      the sides, colours right (red / green / blue blocks in Settings -
+      if red and blue are swapped, Swap Red/Blue fixes it; say so and
+      the board's default changes), no flicker or shifting (also while
+      saving and in a fight); (2) touch: taps land where the stylus is,
+      in both Rotate 180 settings, light taps seen, nothing from the
+      bars; (3) the brightness slider dims the backlight (or only on /
+      off?); (4) sound: Hit / Miss and the step sound, whole, and touch
+      still fine while sounds play (the touch's INT pin is also the
+      amplifier's LRCLK); (5) the serial line (115200, the CH340's port)
+      shows "[lcd] whole screen doubled ... us" and "[touch] GT911 at
+      0x.., 800 x 480" - send those two lines; (6) Send Logs after a
+      fight.
 - [ ] Flash the latest build and play a fight-heavy session on the 4.0"
       and the 3.2"; then Send Logs. What to look for: room left in fights
       (MEMORY.TXT), Hit / Miss sounds all through a fight, whether drawing
@@ -212,13 +227,16 @@ the Project as claude/TODO.md.
       a step there does nothing), its own icon editor (Alter Icon, the
       creation's icon), Modify without the items' figures, the camp's cast
       message place. Then Play on.
-- [ ] 5.0" 800x480 IPS capacitive S3 boards (Tom: a Hosyond and a
-      Freenove FNK0115Q, 2026-10-30): pins found (the Project's
-      claude/board_5inch_facts.md - FNK0115Q and LCDwiki's ES3C50P list the
-      same pins, very likely one board). Build the board file (RGB panel,
-      GT911, SD over SPI, NS4168 I2S) with the 320x240 layout at 2x; Tom
-      checks the Hosyond's back / box against the Freenove when they come.
-      Firmware name (Tom's README row): TTB-CYD-GBGE_5.0in_Capacitive_ESP32-S3.
+- [x] 5.0" 800x480 IPS capacitive S3 boards (Tom: a Hosyond and a
+      Freenove FNK0115Q, 2026-10-30): board file built (branch board5in,
+      env `cyd50s3_cap`, `src/boards/esp32s3_50_rgb.hpp`; untested -
+      Tom's checks under Tom). RGB panel (LovyanGFX Bus_RGB, 13 MHz, frame
+      buffer in PSRAM) with the 320x240 layout at 2x, centred (640x480,
+      black bars); GT911 polled without INT; SD over SPI (FSPI); NS4168
+      by I2S (`BOARD_AUDIO_I2S`); serial on UART0 (CH340C). QEMU:
+      `qemus3_50` (2x copies checked: 0 bad pixels through Home, Settings,
+      Rotate 180, Swap Red/Blue, Invert, Pool's Play). Facts:
+      board_5inch_facts_2.md (scratch -> Project).
 - [ ] Secret J45's piece takes in the "Journal Entry 47" heading (the
       map overlaps it; a rectangle can't separate them).
 - [ ] Check: pdfview's State (FileSource cache, >4 KB) lands in PSRAM on

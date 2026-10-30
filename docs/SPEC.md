@@ -391,8 +391,19 @@ can't get the memory says "Not enough memory to show this log."
   branch: `BOARD_PSRAM` in board_select.h, `plat::vga_screen()`,
   `play::canvas_depth`; 6d). Flasher entries carry the chip (ESP Web
   Tools' chipFamily).
-- Board facts: the Project's claude/board_facts.md; the games' needs:
-  claude/other_games_facts.md.
+- **The 5.0" 800x480 IPS capacitive S3 board** (2026-10-30, untested;
+  `cyd50s3_cap`, Freenove FNK0115Q - the Hosyond 5" thought the same
+  board): ESP32-S3 N16R8, RGB parallel panel (no controller; LovyanGFX
+  Bus_RGB, frame buffer in PSRAM), GT911 touch, SD over SPI, NS4168 I2S
+  amplifier (`BOARD_AUDIO_I2S`), CH340C serial. The engine sees a
+  **320x240 display** (the 2.8" layout): `board5::Panel_Double` keeps
+  the 320x240 picture in PSRAM (LovyanGFX's frame-buffer panel does the
+  drawing) and copies each draw's changed rectangle 2x2 into the panel's
+  buffer, centred - 640x480 with 80 px black bars (Tom's choice). Touch
+  back: (x - 80) / 2, y / 2, the bars ignored. Invert / Swap Red/Blue
+  are done in the copy; Rotate 180 as everywhere.
+- Board facts: the Project's claude/board_facts.md, claude/board_5inch_facts.md
+  (+ _2); the games' needs: claude/other_games_facts.md.
 
 ## 6. Milestones
 
