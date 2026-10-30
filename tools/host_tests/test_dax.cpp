@@ -4455,7 +4455,7 @@ static void test_party()
             r[0x58] = static_cast<uint8_t>(race);
             r[0x5A] = static_cast<uint8_t>(cls);
             r[0x78] = 17, r[0x79] = 18;                 // Str own / in use
-            r[0x84] = 50, r[0x85] = 60;                 // Str00 own / in use
+            r[0x84] = 50, r[0x85] = 60;                 // Str00 in use / own (queen_facts_4.md 2)
             r[0x89] = 77, r[0x198] = 70;                // HP max / now
             r[0x18E] = 64;                              // AC 60 - 64 = -4
             r[0xA6] = 9, r[0xA5] = 3, r[0xAB] = 5;      // knight 9, cleric 3, thief 5
