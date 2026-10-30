@@ -208,12 +208,12 @@ the Project as claude/TODO.md.
       colours on S3 / C5, playing from start, `behave queen`. Its record
       test's Str00 expectation moved 60 -> 50 with its "Str00's places"
       change - confirm. Its facts after phase 3 weren't written (stopped).
-- [ ] 5.0" 800x480 IPS capacitive S3 boards (Tom ordered a Hosyond and a
-      Freenove, 2026-10-30): when they arrive, Tom sends the pins / maker's
-      demo or a photo of the back of each (are they the same board?); facts
-      so far in the Project's claude/board_5inch_facts.md (RGB parallel,
-      GT911, SD over SPI, I2S). Plan: 320x240 layout at 2x (640x480 centred)
-      first; maybe a 2x game + 160 px Companion Play layout later.
+- [ ] 5.0" 800x480 IPS capacitive S3 boards (Tom: a Hosyond and a
+      Freenove FNK0115Q, 2026-10-30): pins found (the Project's
+      claude/board_5inch_facts.md - FNK0115Q and LCDwiki's ES3C50P list the
+      same pins, very likely one board). Build the board file (RGB panel,
+      GT911, SD over SPI, NS4168 I2S) with the 320x240 layout at 2x; Tom
+      checks the Hosyond's back / box against the Freenove when they come.
 - [ ] Secret J45's piece takes in the "Journal Entry 47" heading (the
       map overlaps it; a rectangle can't separate them).
 - [ ] Check: pdfview's State (FileSource cache, >4 KB) lands in PSRAM on
