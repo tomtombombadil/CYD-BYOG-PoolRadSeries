@@ -214,6 +214,7 @@ the Project as claude/TODO.md.
       same pins, very likely one board). Build the board file (RGB panel,
       GT911, SD over SPI, NS4168 I2S) with the 320x240 layout at 2x; Tom
       checks the Hosyond's back / box against the Freenove when they come.
+      Firmware name (Tom's README row): TTB-CYD-GBGE_5.0in_Capacitive_ESP32-S3.
 - [ ] Secret J45's piece takes in the "Journal Entry 47" heading (the
       map overlaps it; a rectangle can't separate them).
 - [ ] Check: pdfview's State (FileSource cache, >4 KB) lands in PSRAM on
