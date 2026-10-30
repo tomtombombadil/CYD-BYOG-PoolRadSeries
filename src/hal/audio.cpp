@@ -7,7 +7,7 @@
 
 #if defined(BOARD_AUDIO_DAC)
 #include <driver/dac_continuous.h>
-#elif defined(BOARD_AUDIO_ES8311) || defined(BOARD_AUDIO_PDM)
+#elif defined(BOARD_AUDIO_ES8311) || defined(BOARD_AUDIO_PDM) || defined(BOARD_AUDIO_I2S)
 #include <driver/i2s_std.h>
 #include <driver/i2s_pdm.h>
 #include "hal/es8311.h"
@@ -83,10 +83,11 @@ void out_close()
     digitalWrite(26, LOW);
 }
 
-#elif defined(BOARD_AUDIO_ES8311) || defined(BOARD_AUDIO_PDM)
+#elif defined(BOARD_AUDIO_ES8311) || defined(BOARD_AUDIO_PDM) || defined(BOARD_AUDIO_I2S)
 
-// I2S: the ESP32-S3 board's codec (standard I2S, MCLK = 256 x rate), or the
-// ESP32-C5 board's amplifier input through its filter (PDM as a DAC)
+// I2S: the ESP32-S3 board's codec (standard I2S, MCLK = 256 x rate), the
+// ESP32-C5 board's amplifier input through its filter (PDM as a DAC), or
+// the 5.0" S3 board's I2S amplifier (standard I2S, no MCLK)
 constexpr int kTail = kBufs;            // (the queued samples play out before it stops)
 #if defined(BOARD_AUDIO_ES8311)
 constexpr bool kRamps = false;
@@ -97,6 +98,14 @@ constexpr bool kRamps = false;
 // first 100 ms of every sound, and switching it off as the last samples
 // were still queued ate the end; the codec too came back with each restart
 // of its clocks. With nothing written the I2S sends silence (auto_clear).
+constexpr bool kKeep = true;
+#elif defined(BOARD_AUDIO_I2S)
+// The 5.0" S3 board's NS4168: an I2S amplifier with no enable pin of its
+// own - it stops while its clocks stop and starts again when they come
+// back, so the clocks run from the first sound (or Play's start,
+// audio_prepare) on, as the codec's: the S3 rule (v0.103.6) - a sound
+// started cold lost its start. With nothing written the I2S sends silence.
+constexpr bool kRamps = false;
 constexpr bool kKeep = true;
 #else
 // The C5's PDM line the same way (2026-10-24, Tom's C5: Gateway's sounds
@@ -136,6 +145,19 @@ bool out_open()
     sc.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_256;
     sc.slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
     sc.gpio_cfg.mclk = static_cast<gpio_num_t>(BOARD_PIN_I2S_MCLK);
+    sc.gpio_cfg.bclk = static_cast<gpio_num_t>(BOARD_PIN_I2S_BCLK);
+    sc.gpio_cfg.ws = static_cast<gpio_num_t>(BOARD_PIN_I2S_LRCK);
+    sc.gpio_cfg.dout = static_cast<gpio_num_t>(BOARD_PIN_I2S_DOUT);
+    sc.gpio_cfg.din = I2S_GPIO_UNUSED;
+    const bool ok = i2s_channel_init_std_mode(h, &sc) == ESP_OK;
+#elif defined(BOARD_AUDIO_I2S)
+    i2s_std_config_t sc = {};
+    sc.clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(kAudioHz);
+    // (mono: the ESP32-S3 sends the samples in both slots - left and right -
+    // so the amplifier plays them whichever channel its CTRL pin picks)
+    sc.slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
+    sc.slot_cfg.slot_mask = I2S_STD_SLOT_BOTH;
+    sc.gpio_cfg.mclk = I2S_GPIO_UNUSED;
     sc.gpio_cfg.bclk = static_cast<gpio_num_t>(BOARD_PIN_I2S_BCLK);
     sc.gpio_cfg.ws = static_cast<gpio_num_t>(BOARD_PIN_I2S_LRCK);
     sc.gpio_cfg.dout = static_cast<gpio_num_t>(BOARD_PIN_I2S_DOUT);
@@ -222,6 +244,17 @@ void codec_setup()
         }
     }
     if (!ok) memlog::note("sound: the ES8311 codec didn't answer - no sound");
+}
+#elif defined(BOARD_AUDIO_I2S)
+// The I2S amplifier's clocks, once, and on from then on (kKeep)
+void codec_setup()
+{
+    if (codec_tried) return;
+    codec_tried = true;
+    if (!(out_open() && out_enable())) {
+        if (h) out_close();
+        memlog::note("sound: the I2S output didn't start - no sound");
+    }
 }
 #else
 // The PDM line, once: open, on, and a slow ramp from 0 V to the middle (the
@@ -330,7 +363,7 @@ bool start_task()
 {
     ending = false;
     stop_wanted = false;
-#if defined(BOARD_AUDIO_ES8311) || defined(BOARD_AUDIO_PDM)
+#if defined(BOARD_AUDIO_ES8311) || defined(BOARD_AUDIO_PDM) || defined(BOARD_AUDIO_I2S)
     codec_setup();
 #endif
 #if defined(BOARD_AUDIO_DAC)
@@ -403,7 +436,7 @@ bool audio_held() { return held && task != nullptr; }
 
 void audio_prepare()
 {
-#if (defined(BOARD_AUDIO_ES8311) || defined(BOARD_AUDIO_PDM)) && !defined(CYD_QEMU)
+#if (defined(BOARD_AUDIO_ES8311) || defined(BOARD_AUDIO_PDM) || defined(BOARD_AUDIO_I2S)) && !defined(CYD_QEMU)
     codec_setup();
 #else
     amp(true);          // (awake long before the first sound; it stays on)
