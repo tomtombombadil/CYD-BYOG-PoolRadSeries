@@ -144,6 +144,7 @@ struct MenuColors {
     // (y_text). The caller draws what lies under them first (no row clear).
     bool    buttons = false;
     uint8_t b_fill = 8, b_light = 7, b_box = 7;
+    uint8_t b_box_ink = 0;          // the prompt box's letters (its fights' status: white on the buttons' colour)
     int16_t y_text = kMenuRow * 8 - 4;
 };
 
@@ -177,7 +178,10 @@ int  line_col(const Menu& m);
 // The column choice k starts at on a one-row menu (the prompt counted)
 int  word_col(const Menu& m, int k);
 // Dark Queen's buttons: the pixel box of choice k ([x0, x1) x [y0, y1))
+// (two rows - its fight menu: the first row's letters at y_text - 10, the
+// second's at y_text + 2 - DOSBox)
 void button_box(const Menu& m, int k, int* x0, int* y0, int* x1, int* y1, const MenuColors& col = MenuColors{});
+int  two_row_y(const MenuColors& col, int row);
 // A button as Dark Queen draws its menus' (and its party menu's): x0..x1-1
 // by y0..y1-1, raised (light top / left, black bottom / right) or sunken
 // (the other way round - a choice not offered), filled
@@ -195,7 +199,8 @@ int hit(const Menu& m, int col);
 int hit_row(const Menu& m, int col, int row);
 // Whether the menu takes two rows (rows 23 and 24)
 bool two_rows(const Menu& m);
-// Where choice k is drawn: its first cell's column and row
+// Where choice k is drawn: its first cell's column and row (a two-row
+// menu's from the line's column - 0 but for the Dark Queen's buttons)
 void item_cell(const Menu& m, int k, int* col, int* row);
 // The key a choice stands for (its first character).
 char key(const Menu& m, int item);

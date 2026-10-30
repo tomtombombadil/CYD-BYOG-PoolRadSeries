@@ -201,9 +201,10 @@ void change_class(party::Character& c, const classes::Tables& t, const Facts& f,
 // Pool (pool = true; poolrad_create_facts.md 5): experience 0 only.
 // Darkness (dk; GAME.OVR 0x1675F): experience exactly 1,500,001, 750,000 or
 // 500,000 (its former class not looked at).
-// (gw: Gateway's; krynn: Champions' - its starting experience figures, GAME.OVR 0x22B1A)
+// (gw: Gateway's; krynn: Champions' - its starting experience figures, GAME.OVR 0x22B1A;
+// queen: the Dark Queen's - 1,000,001, 500,000 or 333,333, ovl 5 file 0x3F173)
 bool can_modify(const party::Character& c, bool pool = false, bool secret = false, bool dk = false, bool gw = false,
-                bool krynn = false);
+                bool krynn = false, bool queen = false);
 // A stat (0 Str ... 5 Cha) a step up (dir > 0) or down: within the race's
 // and sex's limits, down no lower than the class's minimums; a fighter,
 // ranger or paladin at Strength 18 goes on into 18/01 ... 18/00 (and back

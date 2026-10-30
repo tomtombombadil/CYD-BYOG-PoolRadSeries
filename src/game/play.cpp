@@ -183,7 +183,11 @@ struct Data {
     char           w_yell[8] = {}, w_wants[16] = {};
     char           w_burst[3][20] = {};
     char           w_acid[2][24] = {};         // Champions: "dissolves into acid!", "The acid drains away.." (variant.acid_words)
-    char           w_knight[12][28] = {};      // Champions: Knight Change Classes' words (variant.knight_words)        // Champions: "explodes!", "is stunned", "loses his weapon" (variant.burst_words)   // Champions: "Yell ", "wants to kill " (variant.yell_words)
+    char           w_knight[12][28] = {};
+    char           w_undo_done[12] = {};       // Dark Queen: Move's "Undo Done" (variant.undo_done)
+    char           w_inv[8] = {};              // Dark Queen: Inv's "Empty!" (variant.inv_empty)
+    // Dark Queen's Inv while it's open: the quest items held (their names)
+    char         (*q_inv)[28] = nullptr;      // Champions: Knight Change Classes' words (variant.knight_words)        // Champions: "explodes!", "is stunned", "loses his weapon" (variant.burst_words)   // Champions: "Yell ", "wants to kill " (variant.yell_words)
 
     // View Character's words (from the program and GAME.OVR)
     char           cls[18][27] = {}, race[8][16] = {}, alignment[9][17] = {}, sex[2][7] = {}, money[7][11] = {},
@@ -307,7 +311,7 @@ void vga_send(int first, int n)
 enum class Screen : uint8_t { Game, PartyMenu, LoadWhich, View, Items, Shop, ShopBuy, Camp, SaveWhich, AddFrom,
                                AddList, YesNo, CreatePick, CreateName, TradeWho, Heal, Take, Appraise, Magic,
                                SpellList, Rest, Cast, Effects, Alter, Fight, Loot, Modify, Title, Icon, Won,
-                               Portrait, ViewWho, QForm, QGod, QRolled };
+                               Portrait, ViewWho, QForm, QGod, QRolled, QInv };
 Screen screen = Screen::Game;
 Screen view_from = Screen::Game;  // where View Character goes back to
 Screen save_from = Screen::PartyMenu;   // where Save Which Game goes back to
@@ -440,7 +444,10 @@ __attribute__((noinline)) void play_clip(int v)
     if (!open_file(cl.file, f)) return;
     plat::FileSource* src = new (std::nothrow) plat::FileSource(f);
     uint32_t n = 0;
-    uint8_t* pcm = src ? sound::load_clip(*src, v + cl.to_block, &n) : nullptr;
+    uint16_t glb_hz = 0;
+    uint8_t* pcm = !src ? nullptr
+                   : cl.glb ? sound::load_glb_clip(*src, v + cl.to_block, &n, &glb_hz)
+                            : sound::load_clip(*src, v + cl.to_block, &n);
     delete src;
     f.close();
     if (!pcm) {
@@ -451,7 +458,7 @@ __attribute__((noinline)) void play_clip(int v)
         }
         return;
     }
-    clips->start(pcm, n, clip_rates[v & 15] ? clip_rates[v & 15] : cl.hz, sound_device());
+    clips->start(pcm, n, glb_hz ? glb_hz : clip_rates[v & 15] ? clip_rates[v & 15] : cl.hz, sound_device(), cl.glb);
     start_output();
 }
 
@@ -484,10 +491,15 @@ __attribute__((noinline)) bool play_lent(int v)
 
 // A sound by the engine's number (sound::Id - Curse's), `game`: the game's
 // own number (Darkness's SOUND v)
+bool hl();
 void sfx(int id, bool game = false)
 {
     if (!sound_on()) return;
+    // (the Dark Queen's step: 14 / 15 on the game byte 0x39's grounds 3 / 6 - res 0x12652)
+    const bool q_step = hl() && !game && id == sound::kStep;
     if (clips && !game) id = id >= 0 && id < 16 ? d->prof->clips.ids[id] : 0;
+    if (q_step && d->gs.area1[0x39] == 3) id = 14;
+    else if (q_step && d->gs.area1[0x39] == 6) id = 15;
     if (clips && !id) return;
     // (the older games with a later game's recordings: the one lent for it)
     const int lent = !clips && lent_prof && lclips && id >= 0 && id < 16 ? lent_prof->clips.lent[id] : 0;
@@ -1580,8 +1592,9 @@ void press_line(pic::Canvas& c, uint8_t fg)
         text::build(m, pre, d->w_press[1]);
         m.col0 = 8;
         m.lit = true;
+        // (its "to" a column past the button: one space kept - DOSBox)
         const char* after = gap ? gap : "";
-        while (*after == ' ') ++after;
+        while (after[0] == ' ' && after[1] == ' ') ++after;
         snprintf(m.tail, sizeof m.tail, "%s", after);
         m.selected = -1;
         text::draw(c, d->font, m, q_buttons());
@@ -1602,11 +1615,19 @@ void show_menu_line(pic::Canvas& c)
     menu_was_two = text::two_rows(menu);
     hl_apply();
     if (hl()) {
-        // (Dark Queen: buttons on the marble bar - queen_facts_3.md 1)
+        // (Dark Queen: buttons on the marble bar - queen_facts_3.md 1; two
+        // rows of them from y 177 - DOSBox)
         q_pm_hide(c);
+        if (menu_was_two) {
+            q_strip_save(c);
+            q_strip_restore(c);
+        } else {
+            q_strip_restore(c);
+            q_strip_drop();
+        }
         q_bar(c);
         text::draw(c, d->font, menu, q_buttons());
-        dirty_rows(text::kMenuRow - 1, text::kMenuRow);
+        dirty_rows(text::kMenuRow - 2, text::kMenuRow);
         return;
     }
     text::MenuColors mc;
@@ -1620,8 +1641,10 @@ void clear_menu_line(pic::Canvas& c)
     if (hl()) {
         menu_on = false;
         menu_was_two = false;
+        q_strip_restore(c);
+        q_strip_drop();
         q_bar(c);
-        dirty_rows(text::kMenuRow - 1, text::kMenuRow);
+        dirty_rows(text::kMenuRow - 2, text::kMenuRow);
         return;
     }
     menu_on = false;
@@ -1737,7 +1760,10 @@ void idle_menu(pic::Canvas& c)
         menu.selected = 0;
         show_menu_line(c);
     } else if (vm->get(0x4BE6)) {
-        text::build(menu, "", "Area Cast View Encamp Search Look");
+        // (the Dark Queen's ends with Inv - its quest items; DS 0x5088's
+        // words but Move - DOSBox)
+        text::build(menu, "", hl() && d->w_inv[0] ? "Area Cast View Encamp Search Look Inv"
+                                                  : "Area Cast View Encamp Search Look");
         menu.selected = 0;
         show_menu_line(c);
     } else {
@@ -3214,6 +3240,10 @@ void list_line(int i, char* out, size_t cap)
     }
     if (screen == Screen::Take) {
         take_line(i, out, cap);
+        return;
+    }
+    if (screen == Screen::QInv) {
+        snprintf(out, cap, "%s", d->q_inv && i >= 0 && i < plist.n ? d->q_inv[i] : "");
         return;
     }
     if (screen == Screen::AddList) {
@@ -7593,6 +7623,57 @@ void shop_tap(int x, int y, pic::Canvas& c)
 void take_loot(int i, pic::Canvas& c);
 void draw_loot(pic::Canvas& c);
 
+// ---- The Dark Queen's Inv (the exploring menu's last word; w6 0x43CA1):
+// the party's quest items - game block bytes 0x6E-0x95 (QSV), each not 0
+// held, named by the far table DS 0x78C8 (40: "Crylokon", "Golden Key"
+// ...) - listed on one box (8-311 x 8-183) from row 1, menu "Exit"; none:
+// "Empty!" (DOSBox)
+void hl_page(pic::Canvas& c);
+void q_inv_draw(pic::Canvas& c)
+{
+    hl_page(c);
+    plist.row0 = 1;
+    plist.row1 = 22;
+    plist.col0 = 1;
+    draw_list(c, "", "");
+}
+
+void q_inv_close(pic::Canvas& c)
+{
+    free(d->q_inv);
+    d->q_inv = nullptr;
+    view_from = Screen::Game;
+    back_from_view(c);
+}
+
+void q_inv_open(pic::Canvas& c)
+{
+    const uint32_t names = d->prof->variant.queen_inv;
+    int held[40], n = 0;
+    for (int i = 0; i < 40; ++i)
+        if (d->gs.area1[0x6E + i]) held[n++] = i;
+    if (!n || !names) {
+        note(c, d->w_inv);
+        return;
+    }
+    free(d->q_inv);
+    d->q_inv = static_cast<char(*)[28]>(calloc(static_cast<size_t>(n), sizeof *d->q_inv));
+    if (!d->q_inv) {
+        error(c, "Not enough memory for the list.");
+        return;
+    }
+    {
+        OvrWords src;
+        if (src.open())
+            for (int k = 0; k < n; ++k)
+                read_word(src, text::kFarC | (names + 4u * static_cast<uint32_t>(held[k])), d->q_inv[k], sizeof d->q_inv[k]);
+    }
+    screen = Screen::QInv;
+    plist = PickList{};
+    plist.n = n;
+    q_inv_draw(c);
+}
+
 // Taps on a list: a line chooses it; the menu line acts on it
 void list_tap(int x, int y, pic::Canvas& c)
 {
@@ -7618,6 +7699,7 @@ void list_tap(int x, int y, pic::Canvas& c)
             else if (screen == Screen::AddList) draw_add_list(c);
             else if (screen == Screen::Heal) draw_heal(c);
             else if (screen == Screen::Take) draw_take(c);
+            else if (screen == Screen::QInv) q_inv_draw(c);
             else draw_items(c);
         }
         return;
@@ -7631,6 +7713,9 @@ void list_tap(int x, int y, pic::Canvas& c)
         l.index = l.top;
     } else if (k == 'E' && screen == Screen::CreatePick) {
         end_create(c);
+        return;
+    } else if (k == 'E' && screen == Screen::QInv) {
+        q_inv_close(c);
         return;
     } else if (screen == Screen::Heal && (k == 'H' || k == 'E')) {
         if (k == 'H') heal_pick(l.index, c);
@@ -7706,6 +7791,7 @@ void list_tap(int x, int y, pic::Canvas& c)
     else if (screen == Screen::CreatePick) draw_pick(c);
     else if (screen == Screen::Heal) draw_heal(c);
     else if (screen == Screen::Take) draw_take(c);
+    else if (screen == Screen::QInv) q_inv_draw(c);
     else draw_items(c);
 }
 
@@ -10224,6 +10310,36 @@ void draw_modify(pic::Canvas& c)
             if (changed) put(c, "*", 12, 9 + i, mod_item == i ? 13 : 10);
         }
     }
+    if (hl()) {
+        // The Dark Queen's (DOSBox, ovl 5 file 0x3F173): its View, the item
+        // being changed white - a stat's value after its label (row 9 + i),
+        // the hit points right at column 37 of row 3, the name -, a "*" at
+        // column 12 by each stat changed (white on the item's line); "Modify:"
+        // "Next Previous Add Sub Keep Exit"
+        auto stat_text = [&](int i, char* out, size_t cap) {
+            const int v = ch->stat(i);
+            if (i == 0 && v == 18 && ch->str00() > 0) snprintf(out, cap, "18(%02d)", ch->str00() == 100 ? 0 : ch->str00());
+            else snprintf(out, cap, "%d", v);
+        };
+        for (int i = 0; modder && i < 6; ++i) {
+            const bool changed = ch->stat(i) != modder->ch.stat(i) || (i == 0 && ch->str00() != modder->ch.str00());
+            if (changed) put(c, "*", 12, 9 + i, mod_item == i ? 15 : 7);
+        }
+        if (mod_item < 6) {
+            stat_text(mod_item, t, sizeof t);
+            put(c, t, 1 + static_cast<int>(strlen(d->v_stat[mod_item])), 9 + mod_item, 15);
+        } else if (mod_item == 6) {
+            snprintf(t, sizeof t, "%d/%d", ch->hp(), ch->hp_max());
+            put(c, t, 37 - static_cast<int>(strlen(t)), 3, 15);
+        } else {
+            ch->name(t, sizeof t);
+            put(c, t, 1, 1, 15);
+        }
+        text::build(menu, rw(Data::kModify), rw(Data::kKeepExit));
+        menu.selected = mod_word;
+        show_menu_line(c);
+        return;
+    }
     if (secret_files() || darkness_files() || krynn()) {
         // Secret's View: the stats from row 9 (the number at column 5), the
         // hit points "95/95" at row 3, column 31; its menu "Add Subtract
@@ -10329,7 +10445,8 @@ void start_modify(pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
     if (!ch) return;
-    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files(), gateway(), krynn_rules())) {
+    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files(), gateway(), krynn_rules(),
+                            hl())) {
         char t[60], nm[20];
         ch->name(nm, sizeof nm);
         snprintf(t, sizeof t, "%s%s", nm, rw(Data::kCantModify));
@@ -10377,7 +10494,7 @@ void modify_name(pic::Canvas& c)
 // The item a tap at (row, col) picks (-1: none)
 int modify_item_at(int row, int col)
 {
-    if (secret_files() || darkness_files() || gateway() || krynn()) {
+    if (secret_files() || darkness_files() || gateway() || krynn() || hl()) {
         if (row >= 9 && row <= 14 && col >= 1 && col <= 12) return row - 9;
         if (row == 3 && col >= 20 && col <= 38) return 6;
         if (row == 1 && col >= 1 && col <= 16) return 7;
@@ -10397,8 +10514,11 @@ void modify_tap(int x, int y, pic::Canvas& c)
         switch (text::key(menu, text::hit(menu, col))) {
         case 'K': end_modify(c, true); break;
         case 'E': end_modify(c, false); break;
-        case 'A': mod_word = 0; modify_step(1, c); break;            // (Secret's Add / Subtract)
-        case 'S': mod_word = 1; modify_step(-1, c); break;
+        case 'A': mod_word = hl() ? 2 : 0; modify_step(1, c); break;            // (Secret's Add / Subtract)
+        case 'S': mod_word = hl() ? 3 : 1; modify_step(-1, c); break;
+        // (the Dark Queen's Next / Previous: the item after / before)
+        case 'N': mod_word = 0; mod_item = (mod_item + 1) % 8; draw_modify(c); break;
+        case 'P': mod_word = 1; mod_item = (mod_item + 7) % 8; draw_modify(c); break;
         default: break;
         }
         return;
@@ -10643,7 +10763,7 @@ void pm_tap(int x, int y, pic::Canvas& c)
         return;
     }
     if (screen == Screen::Items || screen == Screen::ShopBuy || screen == Screen::AddList || screen == Screen::Heal ||
-        screen == Screen::Take) {
+        screen == Screen::Take || screen == Screen::QInv) {
         list_tap(x, y, c);
         return;
     }
@@ -11078,6 +11198,8 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             {d->prof->variant.knight_words[9], d->w_knight[9], sizeof d->w_knight[9]},
             {d->prof->variant.knight_words[10], d->w_knight[10], sizeof d->w_knight[10]},
             {d->prof->variant.knight_words[11], d->w_knight[11], sizeof d->w_knight[11]},
+            {d->prof->variant.undo_done, d->w_undo_done, sizeof d->w_undo_done},
+            {d->prof->variant.inv_empty, d->w_inv, sizeof d->w_inv},
         };
         for (auto& wd : words)
             if (wd.at) read_word(src, wd.at, wd.out, wd.cap);
@@ -12505,7 +12627,7 @@ void begin_adventuring()
             if (d->save.wall_block[0] > 0) host->load_map(vm->get(0x4BC5) & 0xFF);
             for (int i = 0; i < 3; ++i)
                 if (d->save.wall_block[i] > 0) host->load_walls(d->save.wall_set[i], d->save.wall_block[i]);
-        } else if (!d->prof->overland) {
+        } else if (!d->prof->overland && !hl()) {
             host->picture(0x79, 0xFF);          // (Curse's wilderness map; Pool's is drawn as the view)
         }
     }
@@ -14749,7 +14871,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
         close();
         return msg;
     }
-    if (c.vga && c.bpp == 8 && d->prof->variant.vga) {
+    if (c.vga && c.bpp == 8 && (d->prof->variant.vga || d->prof->variant.hlib)) {
         // Darkness on a 256-colour screen (canvas_depth): its VGA palette,
         // the 3D view's tiles a byte a pixel
         vga = new (std::nothrow) Vga;
@@ -14759,7 +14881,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
         }
         for (int i = 0; i < 256; ++i) vga->now[i] = vga->kept[i] = i < 16 ? pic::kEga[i] : pic::Rgb{0, 0, 0};
         d->world.vga = true;
-        open_cycles(g, prog);
+        if (!d->prof->variant.hlib) open_cycles(g, prog);
     }
     if (hl()) {
         // (Dark Queen: its letters and colour table; the screen's pieces are
@@ -15058,7 +15180,8 @@ bool act(Act a, pic::Canvas& c)
 bool plist_screen()
 {
     return screen == Screen::Items || screen == Screen::ShopBuy || screen == Screen::AddList ||
-           screen == Screen::CreatePick || screen == Screen::Heal || screen == Screen::Take || screen == Screen::Loot;
+           screen == Screen::CreatePick || screen == Screen::Heal || screen == Screen::Take || screen == Screen::Loot ||
+           screen == Screen::QInv;
 }
 
 void plist_redraw(pic::Canvas& c)
@@ -15069,6 +15192,7 @@ void plist_redraw(pic::Canvas& c)
     else if (screen == Screen::AddList) draw_add_list(c);
     else if (screen == Screen::Heal) draw_heal(c);
     else if (screen == Screen::Take) draw_take(c);
+    else if (screen == Screen::QInv) q_inv_draw(c);
     else draw_items(c);
 }
 
@@ -15385,6 +15509,13 @@ bool tap_target(int x, int y, int* row, int* c0, int* c1)
     // "press a key" (one choice): a tap anywhere is it
     if (menu_on && screen == Screen::Game && waiting && vm->wait() == ecl::Wait::Menu && vm->items() == 1)
         return menu_word(0);
+    if (menu_on && hl() && text::two_rows(menu) && y >= 176) {
+        const int k = text::hit_row(menu, col, y < 188 ? text::kMenuRow - 1 : text::kMenuRow);
+        if (k < 0) return false;
+        text::item_cell(menu, k, c0, row);
+        *c1 = *c0 + menu.end[k] - menu.start[k];
+        return true;
+    }
     if (menu_on && y >= text::kMenuTapTop) return menu_word(text::hit(menu, col));
     if (screen == Screen::Modify) {
         const int i = modify_item_at(r, col);
@@ -15437,7 +15568,8 @@ bool tap_target(int x, int y, int* row, int* c0, int* c1)
         return true;
     }
     if ((screen == Screen::Items || screen == Screen::ShopBuy || screen == Screen::AddList ||
-         screen == Screen::CreatePick || screen == Screen::Heal || screen == Screen::Take || screen == Screen::Loot) &&
+         screen == Screen::CreatePick || screen == Screen::Heal || screen == Screen::Take || screen == Screen::Loot ||
+         screen == Screen::QInv) &&
         r >= plist.row0 && r <= plist.row1 && plist.top + r - plist.row0 < plist.n) {
         *row = r;
         *c0 = plist.col0;
@@ -15765,6 +15897,9 @@ void tap(int x, int y, pic::Canvas& c)
             run_entry(2, Then::Camp);
             break;
         case 'C': open_cast_exploring(c); break;
+        case 'I':
+            if (hl()) q_inv_open(c);
+            break;
         default: break;
         }
     }
@@ -15907,6 +16042,18 @@ void tick_screens(uint32_t now, pic::Canvas& c)
     if (screen == Screen::Fight) {
         cv = &c;
         fight_tick(now, c);
+        return;
+    }
+    if (hl() && screen == Screen::Camp && anim_block >= 0 && d->anim.frames > 1 && !note_until) {
+        // (the Dark Queen's camp: its fire burns while the camp menu waits -
+        // DOSBox, a frame each half second)
+        cv = &c;
+        const uint32_t delay = d->anim.delay[anim_frame] ? d->anim.delay[anim_frame] * 100 : 100;
+        if (now - anim_at >= delay && anim_next(anim_frame) != anim_frame) {
+            anim_frame = anim_next(anim_frame);
+            anim_draw(anim_frame);
+            anim_at = now;
+        }
         return;
     }
     if (!waiting || screen != Screen::Game) return;
@@ -16172,7 +16319,9 @@ int canvas_depth(games::Game g)
 {
     // (the VGA games: Pools of Darkness, Treasures of the Savage Frontier -
     // profile variant.vga)
-    return (g == games::Game::PoolsOfDarkness || g == games::Game::TreasuresOfTheSavageFrontier) && plat::vga_screen()
+    // (and the Dark Queen - its TLB pictures' VGA colours)
+    return (g == games::Game::PoolsOfDarkness || g == games::Game::TreasuresOfTheSavageFrontier ||
+            g == games::Game::DarkQueenOfKrynn) && plat::vga_screen()
                ? 8
                : 4;
 }

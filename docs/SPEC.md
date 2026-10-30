@@ -2732,5 +2732,15 @@ the game's Settings (As Original: all of them).
   every game (Treasures' original marks none; the others white letters -
   the exploring panel keeps those), and Treasures' menu line in the box
   from the start (its original: white letters).
+- **The Dark Queen** (queen_facts_4.md): its multi-class clerics' Wisdom
+  13 rule never fires in the original (a test that can't be true); with
+  Game Fixes on the engine applies it. Its fights' Move
+  is offered as a word (the original's arrow keys start a move, the word
+  never shows - no arrow keys on the 320 x 240 menu row). Knight New
+  Order's "too inexperienced" / "does not qualify" stay up with "Exit"
+  (the original goes straight back to the party menu). Add's list of
+  Death Knights' saved games' members ("NAME from saved game A", the
+  engine's words). Modify keeps the readied items' figures on the screen
+  (the original's shows them without the items).
 - Smaller things kept from the originals although they look like bugs are
   NOT differences: they're listed as quirks in the facts docs.

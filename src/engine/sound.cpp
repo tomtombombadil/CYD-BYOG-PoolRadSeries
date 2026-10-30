@@ -1,4 +1,5 @@
 #include "sound.h"
+#include "hlib.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -331,6 +332,30 @@ uint8_t* load_clip(dax::ByteSource& src, int block, uint32_t* n)
     return p;
 }
 
+uint8_t* load_glb_clip(dax::ByteSource& src, int entry, uint32_t* n, uint16_t* hz)
+{
+    *n = 0;
+    *hz = 0;
+    hlib::Library lib;
+    uint32_t pos = 0, len = 0;
+    if (hlib::open(src, 0, static_cast<uint32_t>(src.size()), lib) != hlib::Status::Ok ||
+        !hlib::entry(src, lib, entry, pos, len) || len < 6)
+        return nullptr;
+    uint8_t h[6];
+    if (src.read_at(pos, h, 6) != 6) return nullptr;
+    const uint32_t bytes = static_cast<uint32_t>(h[4] << 8 | h[5]);
+    if (!bytes || bytes + 6 > len) return nullptr;
+    uint8_t* p = static_cast<uint8_t*>(malloc(bytes));
+    if (!p) return nullptr;
+    if (src.read_at(pos + 6, p, bytes) != bytes) {
+        free(p);
+        return nullptr;
+    }
+    *n = bytes * 2;
+    *hz = static_cast<uint16_t>(h[0] << 8 | h[1]);
+    return p;
+}
+
 void pc_speaker_levels(uint8_t* p, uint32_t n)
 {
     for (uint32_t at = 0; at < n; at += kPcChunk) {
@@ -369,10 +394,21 @@ void ClipPlayer::clear()
     pos_ = 0;
 }
 
-void ClipPlayer::start(uint8_t* pcm, uint32_t n, uint32_t hz, Device d)
+void ClipPlayer::start(uint8_t* pcm, uint32_t n, uint32_t hz, Device d, bool nibbles)
 {
     if (!pcm) return;
-    Clip* c = n && hz ? new (std::nothrow) Clip{pcm, n, hz, d} : nullptr;
+    if (nibbles && d == Device::PcSpeaker) {
+        // (the speaker's driver works on bytes: spread them out)
+        uint8_t* p = static_cast<uint8_t*>(realloc(pcm, n));
+        if (!p) {
+            free(pcm);
+            return;
+        }
+        for (uint32_t i = n; i-- > 0;) p[i] = static_cast<uint8_t>(((p[i >> 1] >> (i & 1 ? 4 : 0)) & 15) * 17);
+        pcm = p;
+        nibbles = false;
+    }
+    Clip* c = n && hz ? new (std::nothrow) Clip{pcm, n, hz, d, nibbles} : nullptr;
     if (!c) {
         free(pcm);
         return;
@@ -402,7 +438,7 @@ bool ClipPlayer::render(uint8_t* out, int n, int hz, int volume)
         }
         // Between two samples in a straight line (the DAC's and the
         // speaker's own smoothing)
-        const int a = cur_->pcm[k], b = k + 1 < cur_->n ? cur_->pcm[k + 1] : a;
+        const int a = cur_->at(k), b = k + 1 < cur_->n ? cur_->at(k + 1) : a;
         int s = a + (b - a) * static_cast<int>(pos_ & 0xFFFF) / 65536;
         s = cur_->dev == Device::PcSpeaker ? (s - kPcMid) * 127 / kPcMid : s - 128;
         s = s * volume / 255;

@@ -27,6 +27,14 @@ bool open_hl(const char* name, plat::File& f)
 // 256 bytes: made at the start - q_open)
 hlpic::Colours& q_col() { return *d->hl_col; }
 
+// On a 256-colour screen (the boards with PSRAM) the parts' colour entries
+// go to the palette as they're read, as the original's VGA mode: q_pal()
+// before a draw, q_take() after it (nullptr / nothing on a 16-colour one)
+pic::VgaPalette* vga_load();
+void vga_take(bool keep, int from, int n);
+pic::VgaPalette* q_pal() { return vga_load(); }
+void q_take() { vga_take(true, 0, 256); }
+
 // The boxes' paper (the frame's colour 23 - qview::draw_frame): fills with
 // colour 0 on the exploring screen give it (pic::Canvas::paper)
 void q_paper(pic::Canvas& c, bool on)
@@ -59,6 +67,33 @@ __attribute__((noinline)) bool q_open()
     return true;
 }
 
+// Its two-row menus (the fight's) stand 8 pixels higher, over the marble
+// at rows 176-183: that strip is kept while they are up and put back when
+// a one-row menu (or none) takes the bar again; a whole screen drawn again
+// drops it (the marble is there afresh)
+uint8_t* q_strip = nullptr;
+constexpr int kStripY = 176, kStripH = 8;
+
+void q_strip_drop()
+{
+    free(q_strip);
+    q_strip = nullptr;
+}
+
+void q_strip_save(const pic::Canvas& c)
+{
+    if (q_strip) return;
+    q_strip = static_cast<uint8_t*>(malloc(static_cast<size_t>(pic::kScreenW) * kStripH));
+    if (!q_strip) return;
+    for (int j = 0; j < kStripH; ++j) c.get_row(0, kStripY + j, pic::kScreenW, q_strip + j * pic::kScreenW);
+}
+
+void q_strip_restore(pic::Canvas& c)
+{
+    if (!q_strip) return;
+    for (int j = 0; j < kStripH; ++j) c.put_row(0, kStripY + j, pic::kScreenW, q_strip + j * pic::kScreenW);
+}
+
 // The moons' phases (0-3) as the scripts keep them (Champions' words)
 void q_moons(int out[3])
 {
@@ -86,6 +121,7 @@ void q_pm_box(pic::Canvas& c, int last = 109)
 // moons) or, for the party menu, the marble with one box
 __attribute__((noinline)) void q_draw_frame(pic::Canvas& c, bool explore)
 {
+    q_strip_drop();
     q_pm_up = false;
     c.paper = -1;
     c.clear(0);
@@ -96,7 +132,8 @@ __attribute__((noinline)) void q_draw_frame(pic::Canvas& c, bool explore)
         int moons[3];
         q_moons(moons);
         qview::draw_frame(c, a ? &sa : nullptr, b ? &sb : nullptr, explore ? d->gs.dir : -1, explore ? moons : nullptr,
-                          q_col());
+                          q_col(), q_pal());
+        q_take();
     }
     if (a) fa.close();
     if (b) fb.close();
@@ -114,7 +151,8 @@ __attribute__((noinline)) void q_compass(pic::Canvas& c)
         plat::FileSource src(f);
         const int16_t paper = c.paper;
         c.paper = -1;
-        qview::draw_compass(c, src, d->gs.dir, q_col());
+        qview::draw_compass(c, src, d->gs.dir, q_col(), qview::kFrameColours, q_pal());
+        q_take();
         c.paper = paper;
     }
     f.close();
@@ -131,7 +169,8 @@ __attribute__((noinline)) void q_draw_view(pic::Canvas& c, bool area)
             libs.topview = &sa;
             const int16_t paper = c.paper;
             c.paper = -1;                       // (the area map's black)
-            qview::draw_area_map(c, libs, d->map, d->gs.x, d->gs.y, d->gs.dir, q_col());
+            qview::draw_area_map(c, libs, d->map, d->gs.x, d->gs.y, d->gs.dir, q_col(), 24, 24, q_pal());
+            q_take();
             c.paper = paper;
             fa.close();
         }
@@ -145,7 +184,9 @@ __attribute__((noinline)) void q_draw_view(pic::Canvas& c, bool area)
         libs.walls[0] = a ? &sa : nullptr;
         libs.walls[1] = b ? &sb : nullptr;
         libs.back = k ? &sc : nullptr;
-        qview::draw(c, libs, d->map, d->gs.x, d->gs.y, d->gs.dir, qview::look_of(d->map, d->save.look), q_col());
+        qview::draw(c, libs, d->map, d->gs.x, d->gs.y, d->gs.dir, qview::look_of(d->map, d->save.look), q_col(),
+                    q_pal());
+        q_take();
     }
     if (a) fa.close();
     if (b) fb.close();
@@ -222,8 +263,9 @@ __attribute__((noinline)) bool q_anim_draw(int frame)
     if (hlib::open(src, d->q_anim_pos, d->q_anim_len, lib) != hlib::Status::Ok) return false;
     const int16_t paper = cv->paper;
     cv->paper = -1;
-    const bool ok = hlpic::draw_picture_part(src, d->q_anim_pos, d->q_anim_len, 1, q_col(), nullptr, *cv, 24, 24) &&
+    const bool ok = hlpic::draw_picture_part(src, d->q_anim_pos, d->q_anim_len, 1, q_col(), q_pal(), *cv, 24, 24) &&
                     (frame <= 0 || q_anim_part(src, lib, frame + 1, 0));
+    q_take();
     cv->paper = paper;
     dirty_rows(3, 13);
     return ok;
@@ -245,7 +287,8 @@ __attribute__((noinline)) bool q_anim_start(int id)
             d->q_anim_pos = pos;
             d->q_anim_len = len;
             d->anim.frames = lib.count - 1 < pic::kMaxAnimFrames ? lib.count - 1 : pic::kMaxAnimFrames;
-            for (int k = 0; k < d->anim.frames; ++k) d->anim.delay[k] = 3;
+            // (half a second a frame: the camp's fire in DOSBox, game speed 4)
+            for (int k = 0; k < d->anim.frames; ++k) d->anim.delay[k] = 5;
             anim_block = id;
             anim_frame = 0;
             anim_at = plat::now_ms();
@@ -281,7 +324,8 @@ __attribute__((noinline)) bool q_picture(pic::Canvas& c, int id, bool big)
             uint32_t pos, len;
             if (hlib::find_entry(src, static_cast<uint16_t>(id), pos, len)) {
                 const int x = big ? 8 : 24, y = big ? 8 : 24;
-                ok = hlpic::draw_picture_part(src, pos, len, 1, q_col(), nullptr, c, x, y);
+                ok = hlpic::draw_picture_part(src, pos, len, 1, q_col(), q_pal(), c, x, y);
+                q_take();
             }
         }
         f.close();
@@ -353,13 +397,16 @@ bool q_tap_button(int row, int c0, int* x0, int* y0, int* x1, int* y1, int* lit)
         *lit = c0 == q_pm_sel_button();
         return true;
     }
-    if (!menu_on || row != text::kMenuRow) return false;
-    for (int k = 0; k < menu.count; ++k)
-        if (text::word_col(menu, k) == c0) {
+    if (!menu_on || (row != text::kMenuRow && !(row == text::kMenuRow - 1 && text::two_rows(menu)))) return false;
+    for (int k = 0; k < menu.count; ++k) {
+        int kc = text::word_col(menu, k), kr = text::kMenuRow;
+        if (text::two_rows(menu)) text::item_cell(menu, k, &kc, &kr);
+        if (kc == c0 && kr == row) {
             text::button_box(menu, k, x0, y0, x1, y1, q_buttons());
             *lit = k == menu.selected;
             return true;
         }
+    }
     return false;
 }
 
@@ -461,7 +508,10 @@ __attribute__((noinline)) bool q_title_picture(pic::Canvas& c, int id)
             const int16_t paper = c.paper;
             c.paper = -1;
             for (int part = 1; part < lib.count; ++part)
-                ok = hlpic::draw_picture_part(src, pos, len, part, q_col(), nullptr, c, 0, 0) || ok;
+            {
+                ok = hlpic::draw_picture_part(src, pos, len, part, q_col(), q_pal(), c, 0, 0) || ok;
+                q_take();
+            }
             c.paper = paper;
         }
     }
@@ -509,6 +559,7 @@ void q_frame_part_at(pic::Canvas& c, plat::FileSource& src, const hlib::Library&
 
 __attribute__((noinline)) void q_screen(pic::Canvas& c, const QBox* boxes, int n, bool divider)
 {
+    q_strip_drop();
     q_draw_frame(c, false);             // (the bars, the lower marble, the party menu's box)
     plat::File f;
     if (open_hl("FRAME.TLB", f)) {
@@ -541,3 +592,4 @@ uint8_t* q_load_pic4(const char* file, int id, int* w, int* h);
 void q_load_tiles();
 void q_draw_fight_frame(pic::Canvas& c);
 void q_status(pic::Canvas& c, const char* t);
+void q_line_above(pic::Canvas& c, const char* t);

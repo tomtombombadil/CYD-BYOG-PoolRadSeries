@@ -338,7 +338,7 @@ static void run_fight()
                     printf("\n");
                 }
             }
-            if (play::fg) for (int i = 0; i < play::fg->b.n; ++i) { const auto& f = play::fg->b.f[i]; char nm[16] = {}; f.rec.read(reinterpret_cast<uint8_t*>(nm), 1, 15); printf("  fighter %d [%.15s] at %d,%d size %d icon %d px %p up %d rec141 %d 142 %d 144 %d hp %d/%d\n", i, nm, f.x, f.y, f.size, f.icon, (void*)play::fg->icon[f.icon].px[0], f.up(), (int)f.rec[0x141], (int)f.rec[0x142], (int)f.rec[0x144], (int)f.rec[0x1A4], (int)f.rec[0x78]); }
+            if (play::fg) for (int i = 0; i < play::fg->b.n; ++i) { const auto& f = play::fg->b.f[i]; char nm[16] = {}; f.rec.read(reinterpret_cast<uint8_t*>(nm), 1, 15); printf("  fighter %d [%.15s] at %d,%d size %d icon %d px %p up %d rec141 %d 142 %d 144 %d hp %d/%d xp %d+%dx%d\n", i, nm, f.x, f.y, f.size, f.icon, (void*)play::fg->icon[f.icon].px[0], f.up(), (int)f.rec[0x141], (int)f.rec[0x142], (int)f.rec[0x144], (int)f.rec[0x1A4], (int)f.rec[0x78], (int)(f.rec[0x13C] | f.rec[0x13D] << 8), (int)f.rec[0x13E], (int)f.rec[0x12C]); }
             int turns = 0, n = 0;
             const char* fops = getenv("FIGHTOPS");      // taps while the fight waits: letters, &rr rows; then Quick
             for (int k = 0; k < 200000 && (play::screen == play::Screen::Fight || play::screen == play::Screen::SpellList || play::screen == play::Screen::Items); ++k) {
@@ -1239,8 +1239,37 @@ int main(int argc, char** argv)
     }
     if (getenv("FINDLOCK")) for (int y = 0; y < 16; ++y) for (int x = 0; x < 16; ++x) for (int dd = 0; dd < 8; dd += 2) if (geo::passage(play::d->map, x, y, dd) >= 2) printf("locked %d,%d,%d\n", x, y, dd);
     if (getenv("SEARCH")) play::vm->set(0x7ECA, play::vm->get(0x7ECA) | 1);     // SEARCH=1: Search on before the moves
+    // AREA1POKE=off=v,...: game block bytes (gs.area1) set before the moves (hex offsets)
+    for (const char* q = getenv("AREA1POKE"); q && *q;) {
+        unsigned at, v;
+        if (sscanf(q, "%x=%u", &at, &v) == 2 && at < sizeof play::d->gs.area1) play::d->gs.area1[at] = (uint8_t)v;
+        q = strchr(q, ',');
+        if (q) ++q;
+    }
     const char* moves = argc > 2 ? argv[2] : "FFFF";
+    if (getenv("FIGHTALL"))
+        for (int i = 0; i < play::pt->count; ++i) {
+            const party::Character& m = play::pt->m[i];
+            char nm[20]; m.name(nm, 20);
+            printf("   before: %-15s AC %d HP %d/%d effects", nm, m.ac(), m.hp(), m.hp_max());
+            for (int k = 0; k < m.n_items; ++k) printf(" [t%d r%d +%d]", m.items[k][0x2E], m.items[k][0x34], (int8_t)m.items[k][0x35]);
+            printf(" dex %d/%d ac0x19A %d", m.stat(3), m.stat_now(3), m.rec[0x19A]);
+            for (int k = 0; k < m.n_affects; ++k) printf(" %02X", m.affects[k][0]);
+            printf("\n");
+        }
     for (const char* m = moves; *m; ++m) {
+        if (*m == 'M') {
+            // "M": the area's squares - event byte (flags) and the open sides N E S W
+            for (int y = 0; y < play::d->map.h; ++y) {
+                printf("  y%2d", y);
+                for (int x = 0; x < play::d->map.w; ++x)
+                    printf(" %02X:%d%d%d%d", geo::flags(play::d->map, x, y), geo::passage(play::d->map, x, y, 0) != 0,
+                           geo::passage(play::d->map, x, y, 2) != 0, geo::passage(play::d->map, x, y, 4) != 0,
+                           geo::passage(play::d->map, x, y, 6) != 0);
+                printf("\n");
+            }
+            continue;
+        }
         if (*m == '/' && m[1]) {
             // "/X": tap the menu line's word with key X (Encamp, its words ...)
             const char k = *++m;
@@ -1292,6 +1321,40 @@ int main(int argc, char** argv)
             else play::act(play::Act::Forward, C);
         }
         settle();
+        if (play::screen == play::Screen::Fight && getenv("FIGHTALL")) {
+            // FIGHTALL=1: a fight met on the way is fought (Quick for all), its
+            // treasure left (Exit, No), and the moves go on
+            run_fight();
+            for (int g = 0; g < 4 && play::screen != play::Screen::Game; ++g) {
+                for (char want : {'E', 'N'})
+                    for (int i = 0; i < play::menu.count; ++i)
+                        if (text::key(play::menu, i) == want) {
+                            int cx, cy;
+                            text::item_cell(play::menu, i, &cx, &cy);
+                            play::tap(cx * 8 + 2, cy * 8 + 2, C);
+                            break;
+                        }
+                settle();
+            }
+            printf("  after the fight on the way: screen %d menu [%s%s] wait %d waiting %d menu_on %d text [%s]\n", (int)play::screen, play::menu.prompt, play::menu.s, (int)play::vm->wait(), (int)play::waiting, (int)play::menu_on, play::vm->wait() == ecl::Wait::Print ? play::vm->text() : "");
+            settle();
+            shot("fightall");
+            printf("  settled: wait %d waiting %d state %d list_wait %d page_prompt %d note %u then %d\n", (int)play::vm->wait(), (int)play::waiting, (int)play::w.state, (int)play::list_wait, (int)play::page_prompt, (unsigned)play::note_until, (int)play::then);
+            // (the text after it read: a tap a page)
+            for (int g = 0; g < 8 && play::waiting && play::vm->wait() == ecl::Wait::Print && play::screen == play::Screen::Game; ++g) {
+                play::tap(2, 2, C);
+                settle();
+            }
+            for (int i = 0; i < play::pt->count; ++i) {
+                const party::Character& m = play::pt->m[i];
+                char nm[20]; m.name(nm, 20);
+                printf("   %-15s AC %d HP %d/%d effects", nm, m.ac(), m.hp(), m.hp_max());
+            for (int k = 0; k < m.n_items; ++k) printf(" [t%d r%d +%d]", m.items[k][0x2E], m.items[k][0x34], (int8_t)m.items[k][0x35]);
+            printf(" dex %d/%d ac0x19A %d", m.stat(3), m.stat_now(3), m.rec[0x19A]);
+                for (int k = 0; k < m.n_affects; ++k) printf(" %02X", m.affects[k][0]);
+                printf("\n");
+            }
+        }
         { char t[16]; snprintf(t, sizeof t, "after_%c", *m); shot(t); }
         char l1[48], l2[48]; play::describe(l1, l2, 48);
         printf("   now %d,%d %s | %s | %s\n", play::pos_x(), play::pos_y(), geo::dir_name(play::dir()), l1, l2);

@@ -16,9 +16,18 @@ bool load_colours(hlib::ByteSource& src, uint32_t pos, uint32_t len, Colours& c,
     if (h.first + h.count > 256) return false;
     if (h.vga) hlib::ega_table(src, h, c.ega + h.first, 256 - h.first);
     if (pal) {
-        pal->first = h.first;
-        pal->count = h.vga ? h.count : 16;
-        for (int i = 0; i < pal->count && h.first + i < 256; ++i) {
+        const int n = h.vga ? h.count : 16;
+        if (pal->count > 0) {
+            // (a load already in it: the range takes both)
+            const int a = pal->first < h.first ? pal->first : h.first;
+            const int b = pal->first + pal->count > h.first + n ? pal->first + pal->count : h.first + n;
+            pal->first = static_cast<uint16_t>(a);
+            pal->count = static_cast<uint16_t>(b - a);
+        } else {
+            pal->first = h.first;
+            pal->count = static_cast<uint16_t>(n);
+        }
+        for (int i = 0; i < n && h.first + i < 256; ++i) {
             uint8_t rgb[3] = {};
             hlib::colour_rgb(src, h, i, rgb);     // (8 bits a channel)
             pal->rgb[h.first + i] = pic::Rgb{rgb[0], rgb[1], rgb[2]};

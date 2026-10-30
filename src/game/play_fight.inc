@@ -1244,7 +1244,12 @@ void palette_fight(bool on, bool editor = false)
     dirty(0, pic::kScreenH);
 }
 
-uint8_t name_colour(const combat::Fighter& f) { return !f.up() ? 12 : f.team() ? 14 : 11; }
+// (the Dark Queen's: the party's grey, the other side's green - EGA 2, DOSBox)
+uint8_t name_colour(const combat::Fighter& f)
+{
+    if (hl() && f.up()) return f.team() ? 2 : 7;
+    return !f.up() ? 12 : f.team() ? 14 : 11;
+}
 
 void fighter_name(const combat::Fighter& f, char* out, size_t cap)
 {
@@ -1377,6 +1382,9 @@ void mark(pic::Canvas& c, int i)
     draw_icon(c, i);
 }
 
+// (the Dark Queen's Aim: only what's aimed at marked - DOSBox)
+bool q_aim_unmarked = false;
+
 void draw_fight(pic::Canvas& c)
 {
     if (hl()) q_draw_fight_frame(c);
@@ -1386,7 +1394,7 @@ void draw_fight(pic::Canvas& c)
     }
     draw_field(c);
     if (fg->cur >= 0) {
-        mark(c, fg->cur);
+        if (!q_aim_unmarked) mark(c, fg->cur);
         draw_panel_for(c, fg->cur);
     }
     dirty(0, pic::kScreenH);
@@ -2831,7 +2839,7 @@ void fight_menu_dk(char* words, size_t cap, const combat::Fighter& f, bool spell
     on[5] = can_guard(f);
     on[6] = on[7] = on[9] = on[10] = on[11] = true;
     on[8] = combat::anyone_dying(fg->b);
-    if (dkk()) {
+    if (dkk() || hl()) {        // (the Dark Queen's string the same 13 words - DS 0x50B3)
         // (Death Knights, its GAME.OVR 0x04B +0xCCD: Yell 10th - a kender
         // while no one taunts; View Speed End after it)
         on[12] = true;
@@ -2847,7 +2855,7 @@ void fight_menu_dk(char* words, size_t cap, const combat::Fighter& f, bool spell
 // Knights' the same (its Yell in the menu's string)
 bool kr_can_yell(const combat::Fighter& f)
 {
-    return (dkk() || (krynn() && d->w_yell[0])) && f.member >= 0 && pt->m[f.member].ext[party::kExtRace] == 5 &&
+    return (dkk() || hl() || (krynn() && d->w_yell[0])) && f.member >= 0 && pt->m[f.member].ext[party::kExtRace] == 5 &&
            fg->b.taunter < 0 && d->prof->fight.facts.taunted;
 }
 
@@ -2912,6 +2920,14 @@ void move_prompt(pic::Canvas& c)
 {
     char t[48];
     snprintf(t, sizeof t, "%s%d ", fw(profile::kMoveLeft), fg->b.f[fg->cur].moves / 2);
+    if (hl()) {
+        // (the Dark Queen: the line in its prompt box, then "Undo Done" -
+        // DS 0x50F8, DOSBox)
+        text::build(menu, t, d->w_undo_done);
+        menu.selected = -1;
+        show_menu_line(c);
+        return;
+    }
     clear_menu_line(c);
     put(c, t, 0, text::kMenuRow, 15);
     menu_on = false;
@@ -3097,12 +3113,23 @@ void aim_menu(pic::Canvas& c)
         // v0.104.2, the cursor went off the view)
         if (fg->manual) focus_at(fg->mx, fg->my, 2);
         else focus(t, 2);
+        q_aim_unmarked = hl();
         draw_fight(c);
-        mark(c, fg->cur);
+        q_aim_unmarked = false;
+        if (!hl()) mark(c, fg->cur);
         if (t >= 0) draw_panel_for(c, t);
         // The box round what's aimed at
         const int ax = t >= 0 ? b.f[t].x : fg->mx, ay = t >= 0 ? b.f[t].y : fg->my;
-        if (fg->outline)
+        if (hl() && fg->cursor) {
+            // (the Dark Queen: what's aimed at on the turn's grey square, as
+            // the one whose turn it is - DOSBox)
+            if (t >= 0 && b.f[t].size) {
+                mark(c, t);
+            } else {
+                blit4(c, fg->cursor, kSq, kSq, kViewX + (ax - b.vx) * kSq, kViewY + (ay - b.vy) * kSq, false, true,
+                      kViewX, kViewY, kViewX + 7 * kSq, kViewY + 7 * kSq);
+            }
+        } else if (fg->outline)
             blit4(c, fg->outline, kSq, kSq, kViewX + (ax - b.vx) * kSq, kViewY + (ay - b.vy) * kSq, false, true, kViewX,
                   kViewY, kViewX + 7 * kSq, kViewY + 7 * kSq);
     }
@@ -3118,7 +3145,7 @@ void aim_menu(pic::Canvas& c)
     }
     char line[24];
     snprintf(line, sizeof line, "%s%d%s", fw(profile::kRangeIs), sq, fw(profile::kRangeEndDk));
-    status_line(c, t >= 0 ? line : "");
+    if (!hl()) status_line(c, t >= 0 ? line : "");
     char words[64];
     const char* prompt = fg->manual ? "" : fw(profile::kAimPrompt);
     if (d->prof->fight.words[profile::kAimDk]) {
@@ -3137,6 +3164,17 @@ void aim_menu(pic::Canvas& c)
     } else {
         snprintf(words, sizeof words, "%s%s%s", fw(profile::kNextPrevManual), ok ? fw(profile::kFTarget) : "",
                  fw(profile::kCenterExit));
+    }
+    if (hl()) {
+        // (the Dark Queen: the prompt and the range in a line of their own
+        // above the buttons - "AIM: RANGE = 5", DOSBox)
+        char above[48];
+        snprintf(above, sizeof above, "%s%s", prompt, t >= 0 ? line : "");
+        text::build(menu, "", words);
+        menu.selected = 0;
+        show_menu_line(c);
+        q_line_above(c, above);
+        return;
     }
     text::build(menu, prompt, words);
     menu.selected = 0;
@@ -3806,7 +3844,7 @@ void fight_back_to_game(pic::Canvas& c)
     pic_shown = false;
     head_shown = body_shown = -1;
     // (Curse's wilderness map; Darkness's overland draws its own map - draw_view)
-    if (!vm->get(0x4BE6) && !pool_overland() && !darkness_files() && !gw_wild()) host->picture(0x79, 0xFF);
+    if (!vm->get(0x4BE6) && !pool_overland() && !darkness_files() && !gw_wild() && !hl()) host->picture(0x79, 0xFF);
     draw_frame(c);
     draw_view(c);
     draw_panel(c);
@@ -5079,12 +5117,15 @@ void fight_tap(int x, int y, pic::Canvas& c)
         return;
     }
     case FSt::Menu: {
-        if (y < text::kMenuTapTop) return;
+        // (the Dark Queen's two rows of buttons from y 177)
+        const bool q2 = hl() && text::two_rows(menu);
+        if (y < (q2 ? 176 : text::kMenuTapTop)) return;
         combat::Fighter& f = fg->b.f[fg->cur];
         if (dk_menu()) {
             // Darkness's two rows: Guard, Delay, Bandage, Speed, End (as
             // Curse's Done menu's Quit) are on it; View comes with them
-            const int item = text::two_rows(menu) ? text::hit_row(menu, col, y / 8) : text::hit(menu, col);
+            const int row = q2 ? (y < 188 ? text::kMenuRow - 1 : text::kMenuRow) : y / 8;
+            const int item = text::two_rows(menu) ? text::hit_row(menu, col, row) : text::hit(menu, col);
             const char k = text::key(menu, item);
             if (k == 'G' || k == 'D' || k == 'B' || k == 'S' || k == 'E') {
                 done_key(c, k == 'E' ? 'Q' : k);
@@ -5105,6 +5146,12 @@ void fight_tap(int x, int y, pic::Canvas& c)
     }
     case FSt::Move: {
         if (y >= text::kMenuTapTop) {
+            // (the Dark Queen's Undo / Done buttons)
+            if (hl() && text::key(menu, text::hit(menu, col)) == 'U') {
+                fight_back(c);
+                return;
+            }
+            if (hl() && text::hit(menu, col) < 0) return;
             end_move(c);
             return;
         }

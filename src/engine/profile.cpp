@@ -1984,7 +1984,7 @@ constexpr combat::FightSpell kDeathKnightsFight[] = {
 // 0x54 / 0x5B)
 constexpr uint32_t kQueenFightWords[kFightWords] = {
     qw(0x5ED8), 0, 0, 0, 0, 0, 0, qw(0x591F),
-    qw(0x4AB0), 0, qw(0x5953), qw(0x4A94), 0, 0, 0, 0,
+    qw(0x4AB0), 0, qw(0x5953), qw(0x4A8F), 0, 0, 0, 0,
     0, 0, 0, 0, qw(0x5A2A), qw(0x4E78), qw(0x5973), 0,
     0, qw(0x72D3), qw(0x5AF9), qw(0x5B05), qw(0x5B14), qw(0x5B1C), qw(0x5B2B), qw(0x5B3F),
     qw(0x5B50), qw(0x5B5A), qw(0x5B65), qw(0x5B71), qw(0xC7), qw(0x5B8B), qw(0x5B95), qw(0xFC),
@@ -3932,6 +3932,8 @@ const Profile kProfiles[] = {
                .camp_menu = qw(0x51D2), .makes_camp = qw(0x4A60),
                // (Add: "add from where? " "Tdqk Dkk Exit", "add a character: ", "Add Exit")
                .add_from = qw(0x4885), .add_sources = qw(0x500C), .add_prompt = qw(0x4896), .add = qw1(0x501A),
+               // (Modify: " can't be modified.", "Modify:", "Next Previous Add Sub Keep Exit")
+               .cant_modify = qw(0x4871), .modify = qw(0x74D2), .keep_exit = qw(0x74DA),
                .load_from = qw(0x4E13), .load_sources = qw(0x500C),
                .words = kQueenPartyMenu, .n_words = sizeof kQueenPartyMenu / sizeof kQueenPartyMenu[0]},
      // View Character (queen_facts_3.md 5): its name tables are far pointers
@@ -4057,6 +4059,14 @@ const Profile kProfiles[] = {
                .icon_menu = {}, .icon_words = {}, .level_menu = qw(0x5241), .level_base = 1,
                .order_list = qw(0x5063), .speed_list = qw(0x5075), .pick = qw(0x4DD2), .pick_menu = qw(0x4EEA)},
      .fight = kQueenFight,
+     // Its effects (queen_facts_4.md 11): SOUNDS.GLB's 13 entries are its
+     // sound numbers 3-15 (res 0x12636: n - 3), each at its own rate;
+     // Darkness's numbers + 1 (its spell 3, lightning 9, fireball 12, the
+     // step 11 - 14 / 15 on the game byte 0x39's grounds 3 / 6); turning
+     // silent as Darkness's
+     .clips = {.file = "DISK1/SOUNDS.GLB", .hz = 7418, .first = 3, .last = 15,
+               .ids = {0, 0, 3, 10, 7, 6, 10, 8, 9, 10, 11, 12, 13, 0, 0, 0}, .quiet_turns = true, .to_block = -3,
+               .glb = true},
      .variant = {.unfinished = true, .bigpic_from = 0xF0,
                  // (the camp: PIC 128 in the view - its picture routine's mode 2, 0xB6F6)
                  .camp_pic = 128,
@@ -4068,6 +4078,9 @@ const Profile kProfiles[] = {
                  // "knight of the " + "sword" / "rose")
                  .knight_words = {qw(0x5036), qw(0x494C), qw(0x4967), qw(0x496D), qw(0x4972), qw(0x4981),
                                   qw(0x4997), qw(0x49AA), 0, qw(0x502F), qw(0x4981), 0},
+                 .undo_done = qw(0x50F8),
+                 // (Inv: its quest items' names, a far table DS 0x78C8; "Empty!")
+                 .queen_inv = kQueenDs + 0x78C8, .inv_empty = qw(0x7B8F),
                  .hlib = true,
                  .queen_orders = kQueenDs + 0x8D8C},     // (BIGPIC ids 240-242),
      .joined = kQueenJoined, .n_joined = sizeof kQueenJoined / sizeof kQueenJoined[0],
