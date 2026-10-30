@@ -33,10 +33,11 @@ ap.add_argument("--seconds", type=int, default=120)
 ap.add_argument("--out", default="/tmp/claude-0/qemu/run")
 ap.add_argument("--card-mb", type=int, default=128)
 ap.add_argument("--s3", action="store_true", help="the ESP32-S3 build (env qemus3)")
+ap.add_argument("--env", help="the emulator env (default qemus3 / qemu28; qemus3_50 = the 5.0\" S3 board, with --s3)")
 a = ap.parse_args()
 
 os.makedirs(a.out, exist_ok=True)
-env_name = "qemus3" if a.s3 else "qemu28"
+env_name = a.env or ("qemus3" if a.s3 else "qemu28")
 fw = os.path.join(repo, ".pio", "qemu", env_name, "firmware.factory.bin")
 if not os.path.exists(fw):
     sys.exit("build first: pio run -c tools/qemu/qemu.ini -e " + env_name)
