@@ -16010,6 +16010,18 @@ void tick_screens(uint32_t now, pic::Canvas& c)
         fight_tick(now, c);
         return;
     }
+    if (hl() && screen == Screen::Camp && anim_block >= 0 && d->anim.frames > 1 && !note_until) {
+        // (the Dark Queen's camp: its fire burns while the camp menu waits -
+        // DOSBox, a frame each half second)
+        cv = &c;
+        const uint32_t delay = d->anim.delay[anim_frame] ? d->anim.delay[anim_frame] * 100 : 100;
+        if (now - anim_at >= delay && anim_next(anim_frame) != anim_frame) {
+            anim_frame = anim_next(anim_frame);
+            anim_draw(anim_frame);
+            anim_at = now;
+        }
+        return;
+    }
     if (!waiting || screen != Screen::Game) return;
     cv = &c;
     if (pic_shown || bigpic >= 0 || dk_overland()) vga_cycle_tick(now);    // (a VGA screen's colour cycling)

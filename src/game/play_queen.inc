@@ -287,7 +287,8 @@ __attribute__((noinline)) bool q_anim_start(int id)
             d->q_anim_pos = pos;
             d->q_anim_len = len;
             d->anim.frames = lib.count - 1 < pic::kMaxAnimFrames ? lib.count - 1 : pic::kMaxAnimFrames;
-            for (int k = 0; k < d->anim.frames; ++k) d->anim.delay[k] = 3;
+            // (half a second a frame: the camp's fire in DOSBox, game speed 4)
+            for (int k = 0; k < d->anim.frames; ++k) d->anim.delay[k] = 5;
             anim_block = id;
             anim_frame = 0;
             anim_at = plat::now_ms();
