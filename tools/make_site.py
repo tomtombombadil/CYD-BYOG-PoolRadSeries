@@ -6,7 +6,7 @@ merged firmware into the site, and writes one ESP Web Tools manifest per
 board plus boards.json for the page. (From CYD-Classic-Games.)
 
 Usage:
-    python tools/make_site.py --bins <dir with TTB-CYD-PRS_*.bin> --version <v> --out <site dir>
+    python tools/make_site.py --bins <dir with TTB-CYD-GBGE_*.bin> --version <v> --out <site dir>
 """
 import argparse
 import configparser

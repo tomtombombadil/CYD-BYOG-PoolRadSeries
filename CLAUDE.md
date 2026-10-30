@@ -260,7 +260,7 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
 ## Architecture
 - One PlatformIO env per board, each sets exactly one `CYD_BOARD_*` flag;
   `src/boards/board_select.h` is the only file that tests them. Env options
-  `custom_firmware_name` (`TTB-CYD-PRS_<size>in_<DRIVER>_<touch>`, plus
+  `custom_firmware_name` (`TTB-CYD-GBGE_<size>in_<DRIVER>_<touch>`, plus
   `_ESP32-S3` / `_ESP32-C5` for the newer chips),
   `custom_board_title`, `custom_board_hint`, `custom_board_tested`,
   `custom_chip_family` (the flasher's chip, ESP32 when not given) drive CI,

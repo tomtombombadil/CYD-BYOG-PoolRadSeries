@@ -3,7 +3,7 @@
 //
 // Boards are named by what a user can identify: screen size, display driver,
 // touch type. BOARD_NAME says the same in words (e.g. 3.2" ST7789 Resistive);
-// firmware files are TTB-CYD-PRS_<size>in_<DRIVER>_<touch>.bin (platformio.ini).
+// firmware files are TTB-CYD-GBGE_<size>in_<DRIVER>_<touch>.bin (platformio.ini).
 // Board files come from CYD-Classic-Games (same author, MIT); the 2.8" one
 // here reads touch in software so its SD slot works.
 //
