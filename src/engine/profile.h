@@ -775,6 +775,9 @@ struct Profile {
     uint32_t knight_words[12] = {};
     // Dark Queen: Move's buttons "Undo Done" (a C string)
     uint32_t undo_done = 0;
+    // Dark Queen: Inv's names - a far table of 40 (its file offset) - and
+    // its "Empty!"
+    uint32_t queen_inv = 0, inv_empty = 0;
     // Death Knights of Krynn (deathknights_facts.md): Darkness's engine at its
     // EGA stage with Krynn's rules - its characters (216-byte records .GAM
     // with a 220-byte spell part .WIZ, items .JNK of 63 bytes, effects

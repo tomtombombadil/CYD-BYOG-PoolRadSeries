@@ -32,7 +32,8 @@ struct Colours {
 };
 // A colour entry (a 0x18 part / a picture's entry 0) into c (its EGA
 // nibbles for its entries) and pal (its RGB, 6-bit DAC values made 8-bit,
-// for a VGA screen; nullptr: not wanted). False: not a colour entry.
+// for a VGA screen; nullptr: not wanted - a pal already holding entries
+// keeps them, its range made to take both). False: not a colour entry.
 bool load_colours(hlib::ByteSource& src, uint32_t pos, uint32_t len, Colours& c, pic::VgaPalette* pal);
 
 // A rectangle parts are clipped to (the 3D view's box ...)

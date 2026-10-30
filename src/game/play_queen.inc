@@ -27,6 +27,14 @@ bool open_hl(const char* name, plat::File& f)
 // 256 bytes: made at the start - q_open)
 hlpic::Colours& q_col() { return *d->hl_col; }
 
+// On a 256-colour screen (the boards with PSRAM) the parts' colour entries
+// go to the palette as they're read, as the original's VGA mode: q_pal()
+// before a draw, q_take() after it (nullptr / nothing on a 16-colour one)
+pic::VgaPalette* vga_load();
+void vga_take(bool keep, int from, int n);
+pic::VgaPalette* q_pal() { return vga_load(); }
+void q_take() { vga_take(true, 0, 256); }
+
 // The boxes' paper (the frame's colour 23 - qview::draw_frame): fills with
 // colour 0 on the exploring screen give it (pic::Canvas::paper)
 void q_paper(pic::Canvas& c, bool on)
@@ -124,7 +132,8 @@ __attribute__((noinline)) void q_draw_frame(pic::Canvas& c, bool explore)
         int moons[3];
         q_moons(moons);
         qview::draw_frame(c, a ? &sa : nullptr, b ? &sb : nullptr, explore ? d->gs.dir : -1, explore ? moons : nullptr,
-                          q_col());
+                          q_col(), q_pal());
+        q_take();
     }
     if (a) fa.close();
     if (b) fb.close();
@@ -142,7 +151,8 @@ __attribute__((noinline)) void q_compass(pic::Canvas& c)
         plat::FileSource src(f);
         const int16_t paper = c.paper;
         c.paper = -1;
-        qview::draw_compass(c, src, d->gs.dir, q_col());
+        qview::draw_compass(c, src, d->gs.dir, q_col(), qview::kFrameColours, q_pal());
+        q_take();
         c.paper = paper;
     }
     f.close();
@@ -159,7 +169,8 @@ __attribute__((noinline)) void q_draw_view(pic::Canvas& c, bool area)
             libs.topview = &sa;
             const int16_t paper = c.paper;
             c.paper = -1;                       // (the area map's black)
-            qview::draw_area_map(c, libs, d->map, d->gs.x, d->gs.y, d->gs.dir, q_col());
+            qview::draw_area_map(c, libs, d->map, d->gs.x, d->gs.y, d->gs.dir, q_col(), 24, 24, q_pal());
+            q_take();
             c.paper = paper;
             fa.close();
         }
@@ -173,7 +184,9 @@ __attribute__((noinline)) void q_draw_view(pic::Canvas& c, bool area)
         libs.walls[0] = a ? &sa : nullptr;
         libs.walls[1] = b ? &sb : nullptr;
         libs.back = k ? &sc : nullptr;
-        qview::draw(c, libs, d->map, d->gs.x, d->gs.y, d->gs.dir, qview::look_of(d->map, d->save.look), q_col());
+        qview::draw(c, libs, d->map, d->gs.x, d->gs.y, d->gs.dir, qview::look_of(d->map, d->save.look), q_col(),
+                    q_pal());
+        q_take();
     }
     if (a) fa.close();
     if (b) fb.close();
@@ -250,8 +263,9 @@ __attribute__((noinline)) bool q_anim_draw(int frame)
     if (hlib::open(src, d->q_anim_pos, d->q_anim_len, lib) != hlib::Status::Ok) return false;
     const int16_t paper = cv->paper;
     cv->paper = -1;
-    const bool ok = hlpic::draw_picture_part(src, d->q_anim_pos, d->q_anim_len, 1, q_col(), nullptr, *cv, 24, 24) &&
+    const bool ok = hlpic::draw_picture_part(src, d->q_anim_pos, d->q_anim_len, 1, q_col(), q_pal(), *cv, 24, 24) &&
                     (frame <= 0 || q_anim_part(src, lib, frame + 1, 0));
+    q_take();
     cv->paper = paper;
     dirty_rows(3, 13);
     return ok;
@@ -309,7 +323,8 @@ __attribute__((noinline)) bool q_picture(pic::Canvas& c, int id, bool big)
             uint32_t pos, len;
             if (hlib::find_entry(src, static_cast<uint16_t>(id), pos, len)) {
                 const int x = big ? 8 : 24, y = big ? 8 : 24;
-                ok = hlpic::draw_picture_part(src, pos, len, 1, q_col(), nullptr, c, x, y);
+                ok = hlpic::draw_picture_part(src, pos, len, 1, q_col(), q_pal(), c, x, y);
+                q_take();
             }
         }
         f.close();
@@ -492,7 +507,10 @@ __attribute__((noinline)) bool q_title_picture(pic::Canvas& c, int id)
             const int16_t paper = c.paper;
             c.paper = -1;
             for (int part = 1; part < lib.count; ++part)
-                ok = hlpic::draw_picture_part(src, pos, len, part, q_col(), nullptr, c, 0, 0) || ok;
+            {
+                ok = hlpic::draw_picture_part(src, pos, len, part, q_col(), q_pal(), c, 0, 0) || ok;
+                q_take();
+            }
             c.paper = paper;
         }
     }

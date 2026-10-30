@@ -313,11 +313,11 @@ void draw_buttons(pic::Canvas& c, const font::Font& f, const Menu& m, const Menu
         }
     };
     // A prompt part: black letters in a black-edged box
-    auto box = [&](const char* s, int at) {
+    auto box = [&](const char* s, int at, int pad = 0) {
         int n = static_cast<int>(strlen(s));
         while (n > 0 && s[n - 1] == ' ') --n;
         if (n <= 0) return;
-        const int x0 = at * 8, x1 = (at + n) * 8;
+        const int x0 = at * 8 - pad, x1 = (at + n) * 8;
         solid(c, x0, y, x1, y + 9, col.b_box);
         hline(c, x0 - 1, x1 + 1, y - 1, 0);
         hline(c, x0 - 1, x1 + 1, y + 9, 0);
@@ -342,7 +342,14 @@ void draw_buttons(pic::Canvas& c, const font::Font& f, const Menu& m, const Menu
         if (k == sel) text_at(m.s + m.start[k], n, at, 0, col.highlight, false);     // (the engine's white box)
         else text_at(m.s + m.start[k], n, at, m.lit ? col.highlight : col.normal, col.b_fill, true);
     }
-    if (m.tail[0] && m.count) box(m.tail, c0 + plen + m.end[m.count - 1] + 1);
+    if (m.tail[0] && m.count) {
+        // (spaces before it: its box starts 3 pixels before its letters,
+        // just past the button - "Press [Return] to continue.", DOSBox)
+        const char* t = m.tail;
+        int at = c0 + plen + m.end[m.count - 1] + 1;
+        while (*t == ' ') ++t, ++at;
+        box(t, at, t != m.tail ? 3 : 0);
+    }
 }
 } // namespace
 

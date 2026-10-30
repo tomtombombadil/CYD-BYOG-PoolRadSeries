@@ -1239,6 +1239,13 @@ int main(int argc, char** argv)
     }
     if (getenv("FINDLOCK")) for (int y = 0; y < 16; ++y) for (int x = 0; x < 16; ++x) for (int dd = 0; dd < 8; dd += 2) if (geo::passage(play::d->map, x, y, dd) >= 2) printf("locked %d,%d,%d\n", x, y, dd);
     if (getenv("SEARCH")) play::vm->set(0x7ECA, play::vm->get(0x7ECA) | 1);     // SEARCH=1: Search on before the moves
+    // AREA1POKE=off=v,...: game block bytes (gs.area1) set before the moves (hex offsets)
+    for (const char* q = getenv("AREA1POKE"); q && *q;) {
+        unsigned at, v;
+        if (sscanf(q, "%x=%u", &at, &v) == 2 && at < sizeof play::d->gs.area1) play::d->gs.area1[at] = (uint8_t)v;
+        q = strchr(q, ',');
+        if (q) ++q;
+    }
     const char* moves = argc > 2 ? argv[2] : "FFFF";
     for (const char* m = moves; *m; ++m) {
         if (*m == 'M') {

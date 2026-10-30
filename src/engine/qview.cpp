@@ -181,18 +181,19 @@ bool draw_frame(pic::Canvas& c, hlib::ByteSource* frame, hlib::ByteSource* gen, 
     return ok;
 }
 
-bool draw_compass(pic::Canvas& c, hlib::ByteSource& frame, int dir, hlpic::Colours& col, int colours)
+bool draw_compass(pic::Canvas& c, hlib::ByteSource& frame, int dir, hlpic::Colours& col, int colours,
+                  pic::VgaPalette* pal)
 {
     hlib::Library lib;
     if (hlib::open(frame, 0, frame.size(), lib) != hlib::Status::Ok) return false;
     uint32_t pos, len;
-    if (hlib::entry(frame, lib, colours, pos, len)) hlpic::load_colours(frame, pos, len, col, nullptr);
+    if (hlib::entry(frame, lib, colours, pos, len)) hlpic::load_colours(frame, pos, len, col, pal);
     static const int8_t kNeedleOf[4] = {0, 3, 1, 2};
     return tile_part(frame, lib, 23, col, c) && tile_part(frame, lib, 25 + kNeedleOf[(dir & 7) >> 1], col, c);
 }
 
 bool draw_area_map(pic::Canvas& c, const Libs& libs, const geo::Map& m, int x, int y, int dir,
-                   hlpic::Colours& col, int x0, int y0)
+                   hlpic::Colours& col, int x0, int y0, pic::VgaPalette* pal)
 {
     constexpr int kCells = kView / 8;
     c.fill(x0, y0, kView, kView, 0);
@@ -203,7 +204,7 @@ bool draw_area_map(pic::Canvas& c, const Libs& libs, const geo::Map& m, int x, i
     // (its colour entry first)
     for (int i = 0; i < lib.count; ++i) {
         uint32_t pos, len;
-        if (hlib::entry(s, lib, i, pos, len) && hlpic::load_colours(s, pos, len, col, nullptr)) break;
+        if (hlib::entry(s, lib, i, pos, len) && hlpic::load_colours(s, pos, len, col, pal)) break;
     }
     auto clamp = [](int v, int side) {
         const int top = side > kCells ? side - kCells : 0;

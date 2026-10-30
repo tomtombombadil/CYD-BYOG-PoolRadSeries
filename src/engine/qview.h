@@ -77,7 +77,8 @@ constexpr int kFrameColours = 42;
 bool draw_frame(pic::Canvas& c, hlib::ByteSource* frame, hlib::ByteSource* gen, int dir, const int moons[3],
                 hlpic::Colours& col, pic::VgaPalette* pal = nullptr, int colours = kFrameColours);
 // The compass alone (its dial and the needle for dir) - a turn
-bool draw_compass(pic::Canvas& c, hlib::ByteSource& frame, int dir, hlpic::Colours& col, int colours = kFrameColours);
+bool draw_compass(pic::Canvas& c, hlib::ByteSource& frame, int dir, hlpic::Colours& col, int colours = kFrameColours,
+                  pic::VgaPalette* pal = nullptr);
 // The boxes' insides (x, y, w, h): the party list, place / time, the text
 struct Box { int16_t x, y, w, h; };
 constexpr Box kPartyBox{136, 8, 176, 88}, kPlaceBox{205, 103, 107, 25}, kTextBox{8, 135, 304, 49};
@@ -86,6 +87,6 @@ constexpr Box kPartyBox{136, 8, 176, 88}, kPlaceBox{205, 103, 107, 25}, kTextBox
 // 3 west), the party's arrow 17 + dir / 2 - 11 x 11 squares round the
 // party, the window kept on the map
 bool draw_area_map(pic::Canvas& c, const Libs& libs, const geo::Map& m, int x, int y, int dir,
-                   hlpic::Colours& col, int x0 = 24, int y0 = 24);
+                   hlpic::Colours& col, int x0 = 24, int y0 = 24, pic::VgaPalette* pal = nullptr);
 
 } // namespace qview

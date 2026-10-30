@@ -4069,6 +4069,8 @@ const Profile kProfiles[] = {
                  .knight_words = {qw(0x5036), qw(0x494C), qw(0x4967), qw(0x496D), qw(0x4972), qw(0x4981),
                                   qw(0x4997), qw(0x49AA), 0, qw(0x502F), qw(0x4981), 0},
                  .undo_done = qw(0x50F8),
+                 // (Inv: its quest items' names, a far table DS 0x78C8; "Empty!")
+                 .queen_inv = kQueenDs + 0x78C8, .inv_empty = qw(0x7B8F),
                  .hlib = true,
                  .queen_orders = kQueenDs + 0x8D8C},     // (BIGPIC ids 240-242),
      .joined = kQueenJoined, .n_joined = sizeof kQueenJoined / sizeof kQueenJoined[0],
