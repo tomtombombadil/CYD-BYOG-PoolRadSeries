@@ -15504,7 +15504,9 @@ bool walking()
 {
     if (!d || input_mode != Input::None) return false;
     if (screen == Screen::Fight) return fg && (fg->st == FSt::Move || (fg->st == FSt::Aim && fg->manual));
-    return screen == Screen::Game && !waiting && then == Then::Idle && (vm->get(0x4BE6) != 0 || pool_overland() || gw_wild());
+    // (the Dark Queen's overland too: its menu is Encamp alone, the movement keys step)
+    return screen == Screen::Game && !waiting && then == Then::Idle &&
+           (vm->get(0x4BE6) != 0 || pool_overland() || gw_wild() || q_overland());
 }
 
 void set_present_now(void (*fn)()) { g_present_now = fn; }
@@ -16534,7 +16536,8 @@ void take_dirty(int& y0, int& y1)
     dirty0 = dirty1 = 0;
 }
 
-const geo::Map* map() { return d && d->map.loaded ? &d->map : nullptr; }
+// (none on the Dark Queen's overland: its GEO map 2 is a 10 x 10 stand-in)
+const geo::Map* map() { return d && d->map.loaded && !q_overland() ? &d->map : nullptr; }
 int pos_x() { return d ? d->gs.x : 0; }
 int pos_y() { return d ? d->gs.y : 0; }
 int dir() { return d ? d->gs.dir : 0; }

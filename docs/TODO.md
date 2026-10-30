@@ -208,10 +208,16 @@ the Project as claude/TODO.md.
       colours on S3 / C5, animation (0.5 s), Inv, Modify, `behave queen`
       (creation, train, knights, spells, monsters). Str00 test 50 confirmed.
       Plays from the start through Caergoth, the dragons, the Silver Shark
-      and the cave's draconians. Left: the Taladas overland (ECL 5, map 2 -
-      a step there does nothing), its own icon editor (Alter Icon, the
-      creation's icon), Modify without the items' figures, the camp's cast
-      message place. Then Play on.
+      and the cave's draconians. Branch darkqueen5 (queen_facts_5.md
+      13-18): the Taladas overland (its script's 38 x 30 map, the marker,
+      the strait crossings, cities, places, wandering encounters - checked
+      in DOSBox), PROGRAM 9 back to the script (its inns), the icon picker
+      (Alter, creation), Modify without the items, unarmed THAC0 without
+      Strength, Knight New Order's refusals straight back, the camp's cast
+      screens, the Sivaks' black row. Left: the overland map's colour
+      cycling (the water); a city's place box shows "x,y" (the original:
+      the time only); PROGRAM 1 (the gnomes' celebration, 58 / 60) passed
+      over - not known what it does.
 - [ ] 5.0" 800x480 IPS capacitive S3 boards (Tom: a Hosyond and a
       Freenove FNK0115Q, 2026-10-30): pins found (the Project's
       claude/board_5inch_facts.md - FNK0115Q and LCDwiki's ES3C50P list the
