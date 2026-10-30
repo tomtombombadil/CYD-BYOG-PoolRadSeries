@@ -10310,6 +10310,36 @@ void draw_modify(pic::Canvas& c)
             if (changed) put(c, "*", 12, 9 + i, mod_item == i ? 13 : 10);
         }
     }
+    if (hl()) {
+        // The Dark Queen's (DOSBox, ovl 5 file 0x3F173): its View, the item
+        // being changed white - a stat's value after its label (row 9 + i),
+        // the hit points right at column 37 of row 3, the name -, a "*" at
+        // column 12 by each stat changed (white on the item's line); "Modify:"
+        // "Next Previous Add Sub Keep Exit"
+        auto stat_text = [&](int i, char* out, size_t cap) {
+            const int v = ch->stat(i);
+            if (i == 0 && v == 18 && ch->str00() > 0) snprintf(out, cap, "18(%02d)", ch->str00() == 100 ? 0 : ch->str00());
+            else snprintf(out, cap, "%d", v);
+        };
+        for (int i = 0; modder && i < 6; ++i) {
+            const bool changed = ch->stat(i) != modder->ch.stat(i) || (i == 0 && ch->str00() != modder->ch.str00());
+            if (changed) put(c, "*", 12, 9 + i, mod_item == i ? 15 : 7);
+        }
+        if (mod_item < 6) {
+            stat_text(mod_item, t, sizeof t);
+            put(c, t, 1 + static_cast<int>(strlen(d->v_stat[mod_item])), 9 + mod_item, 15);
+        } else if (mod_item == 6) {
+            snprintf(t, sizeof t, "%d/%d", ch->hp(), ch->hp_max());
+            put(c, t, 37 - static_cast<int>(strlen(t)), 3, 15);
+        } else {
+            ch->name(t, sizeof t);
+            put(c, t, 1, 1, 15);
+        }
+        text::build(menu, rw(Data::kModify), rw(Data::kKeepExit));
+        menu.selected = mod_word;
+        show_menu_line(c);
+        return;
+    }
     if (secret_files() || darkness_files() || krynn()) {
         // Secret's View: the stats from row 9 (the number at column 5), the
         // hit points "95/95" at row 3, column 31; its menu "Add Subtract
@@ -10415,7 +10445,8 @@ void start_modify(pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
     if (!ch) return;
-    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files(), gateway(), krynn_rules())) {
+    if (!create::can_modify(*ch, d->prof->variant.pool_files, secret_files(), darkness_files(), gateway(), krynn_rules(),
+                            hl())) {
         char t[60], nm[20];
         ch->name(nm, sizeof nm);
         snprintf(t, sizeof t, "%s%s", nm, rw(Data::kCantModify));
@@ -10463,7 +10494,7 @@ void modify_name(pic::Canvas& c)
 // The item a tap at (row, col) picks (-1: none)
 int modify_item_at(int row, int col)
 {
-    if (secret_files() || darkness_files() || gateway() || krynn()) {
+    if (secret_files() || darkness_files() || gateway() || krynn() || hl()) {
         if (row >= 9 && row <= 14 && col >= 1 && col <= 12) return row - 9;
         if (row == 3 && col >= 20 && col <= 38) return 6;
         if (row == 1 && col >= 1 && col <= 16) return 7;
@@ -10483,8 +10514,11 @@ void modify_tap(int x, int y, pic::Canvas& c)
         switch (text::key(menu, text::hit(menu, col))) {
         case 'K': end_modify(c, true); break;
         case 'E': end_modify(c, false); break;
-        case 'A': mod_word = 0; modify_step(1, c); break;            // (Secret's Add / Subtract)
-        case 'S': mod_word = 1; modify_step(-1, c); break;
+        case 'A': mod_word = hl() ? 2 : 0; modify_step(1, c); break;            // (Secret's Add / Subtract)
+        case 'S': mod_word = hl() ? 3 : 1; modify_step(-1, c); break;
+        // (the Dark Queen's Next / Previous: the item after / before)
+        case 'N': mod_word = 0; mod_item = (mod_item + 1) % 8; draw_modify(c); break;
+        case 'P': mod_word = 1; mod_item = (mod_item + 7) % 8; draw_modify(c); break;
         default: break;
         }
         return;

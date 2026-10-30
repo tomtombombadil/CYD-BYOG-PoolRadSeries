@@ -1496,9 +1496,10 @@ int class_con_bonus(int con, int cls)
 }
 } // namespace
 
-bool can_modify(const party::Character& c, bool pool, bool secret, bool dk, bool gw, bool krynn)
+bool can_modify(const party::Character& c, bool pool, bool secret, bool dk, bool gw, bool krynn, bool queen)
 {
     const uint32_t e = c.exp();
+    if (queen) return e == 1000001 || e == 500000 || e == 333333;
     if (krynn)
         return (e == 1500 || e == 1251 || e == 2000 || e == 2001 || e == 2251 || e == 2500 || e == 5000) &&
                c.rec[kMultiLevel] == 0;
