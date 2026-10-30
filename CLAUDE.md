@@ -5,8 +5,9 @@ Radiance, Curse of the Azure Bonds, Secret of the Silver Blades, Pools of
 Darkness) on ESP32 "Cheap Yellow Display" boards from the player's own DOS game
 files on SD ("bring your own game"). Design and roadmap: `docs/SPEC.md`.
 
-Repo: `tomtombombadil/CYD-BYOG-PoolRadSeries`. Web flasher:
-https://tomtombombadil.github.io/CYD-BYOG-PoolRadSeries/
+Repo: `tomtombombadil/CYD-GoldBoxGameEngine` (renamed from
+CYD-BYOG-PoolRadSeries by Tom, 2026-10-30; no forward from the old flasher). Web flasher:
+https://tomtombombadil.github.io/CYD-GoldBoxGameEngine/
 Reference repo: `tomtombombadil/CYD-Classic-Games` (Tom's, MIT) - board files,
 HAL, CI, flasher and UI rules come from there; copy from it freely.
 

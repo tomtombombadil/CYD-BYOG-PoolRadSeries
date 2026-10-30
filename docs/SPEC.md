@@ -346,7 +346,7 @@ need goes to the next) under a header (board, firmware, memory now) into
 one QR code: `engine/log_pack.*` (from CYD-Classic-Games: raw DEFLATE,
 fixed Huffman, 4 KB window, then base43 - QR's alphanumeric set minus
 space and %), the code = byte segment
-`https://tomtombombadil.github.io/CYD-BYOG-PoolRadSeries/l/#` +
+`https://tomtombombadil.github.io/CYD-GoldBoxGameEngine/l/#` +
 alphanumeric segment, ECC L, Nayuki's qrcodegen
 (`engine/third_party/qrcodegen.*`, MIT). The code fills the screen's
 height at the left (modules 2 px at least, a 3-module white edge: version

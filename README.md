@@ -22,7 +22,7 @@ The screens on these CYD's are small. Fingertips are not. So we recommend the us
 ## Install
 
 Easiest method: Use the web flasher!
-**https://tomtombombadil.github.io/CYD-BYOG-PoolRadSeries/** in Chrome or Edge on a computer - pick your board, click Install.
+**https://tomtombombadil.github.io/CYD-GoldBoxGameEngine/** in Chrome or Edge on a computer - pick your board, click Install.
 
 | Board (what's printed on the back) | Firmware | Link |
 |---|---|---|

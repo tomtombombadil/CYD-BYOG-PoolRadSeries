@@ -17,7 +17,7 @@
 namespace logpack {
 
 // The QR code is this URL followed by the packed text
-constexpr const char* kUrl = "https://tomtombombadil.github.io/CYD-BYOG-PoolRadSeries/l/#";
+constexpr const char* kUrl = "https://tomtombombadil.github.io/CYD-GoldBoxGameEngine/l/#";
 constexpr const char* kAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ$*+-./:";   // 43
 constexpr uint8_t kFormat = 1;          // first byte of the packed data
 

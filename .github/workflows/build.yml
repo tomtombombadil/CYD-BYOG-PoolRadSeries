@@ -171,7 +171,7 @@ jobs:
           prerelease: ${{ contains(needs.boards.outputs.version, '-') }}
           generate_release_notes: true
           body: |
-            **Easiest install:** https://tomtombombadil.github.io/CYD-BYOG-PoolRadSeries/ (Chrome or Edge).
+            **Easiest install:** https://tomtombombadil.github.io/CYD-GoldBoxGameEngine/ (Chrome or Edge).
 
             Bring your own game: copy the original DOS game files from your own copy to /GOLDBOX/<game>/ on a FAT32 microSD card.
 

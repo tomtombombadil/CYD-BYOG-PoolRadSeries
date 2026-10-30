@@ -322,12 +322,12 @@
   </ul>
 
   <h2>Something went wrong?</h2>
-  <p>Please <a href="https://github.com/tomtombombadil/CYD-BYOG-PoolRadSeries/issues">open an issue</a> with your board and what you saw.
+  <p>Please <a href="https://github.com/tomtombombadil/CYD-GoldBoxGameEngine/issues">open an issue</a> with your board and what you saw.
      Or <a href="l/">send the board's logs</a>: on the board, <strong>Settings → Logs → Send Logs</strong> (or the Game menu's <strong>Logs</strong> tab while playing) shows a QR code; your phone's camera opens it as a page that emails them.</p>
 </main>
 
 <footer class="wrap">
-  <p>CYD BYOG Gold Box Engine is open source under the MIT license. <a href="https://github.com/tomtombombadil/CYD-BYOG-PoolRadSeries">Source code</a> and <a href="https://github.com/tomtombombadil/CYD-BYOG-PoolRadSeries/releases">releases</a>.
+  <p>CYD BYOG Gold Box Engine is open source under the MIT license. <a href="https://github.com/tomtombombadil/CYD-GoldBoxGameEngine">Source code</a> and <a href="https://github.com/tomtombombadil/CYD-GoldBoxGameEngine/releases">releases</a>.
      Pool of Radiance, Curse of the Azure Bonds, Secret of the Silver Blades and Pools of Darkness are the property of their owners; this project is not affiliated with them and includes none of their files.</p>
 </footer>
 
@@ -369,7 +369,7 @@
     chosen.replaceChildren(
       b.hint + " ",
       ...(b.tested === false ? [el("span", { class: "untested" }, "Not yet tested on this board - please "),
-                                el("a", { href: "https://github.com/tomtombombadil/CYD-BYOG-PoolRadSeries/issues" }, "tell us"),
+                                el("a", { href: "https://github.com/tomtombombadil/CYD-GoldBoxGameEngine/issues" }, "tell us"),
                                 el("span", { class: "untested" }, " if it works. ")] : []),
       el("a", { href: `firmware/${b.file}`, download: b.file }, `Download the file instead`),
       ` (${kb} KB, flash at 0x0).`);
