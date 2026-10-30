@@ -27,6 +27,7 @@
 // Env: GAME=n (games::Game: 1 Pool of Radiance), BLOCK (events: one block), FIGHTLOG / PAGELOG / TURNLOG / STLOG (a fight's
 // progress), AIMLOG, ENTRIES, ONLY. Each run saves over the slots: give each
 // its own copy of the game folder.
+#include "engine/hlib.h"
 #include <malloc.h>
 #include "game/play.cpp"
 #include "host.h"
@@ -959,15 +960,29 @@ static void sweep_events(int only)
     for (int area = 1; area <= 8; ++area) {          // (Curse 1-6, Pool 1-8)
         if (only && area != only) continue;
         char path[300];
+        std::vector<int> ids;
+        const bool queen = getenv("GAME") && atoi(getenv("GAME")) == 7;
+        if (queen) {
+            // (the Dark Queen: one "area", its scripts ECL.GLB's entries by id)
+            if (area != 1) continue;
+            snprintf(path, sizeof path, "/GOLDBOX/%s/DISK3/ECL.GLB", game_dir.substr(game_dir.rfind('/') + 1).c_str());
+            plat::File f = plat::open(path, "r");
+            if (!f) continue;
+            plat::FileSource src(f);
+            hlib::Library lib;
+            if (hlib::open(src, 0, static_cast<uint32_t>(src.size()), lib) == hlib::Status::Ok)
+                for (int i = lib.first_item(); i < lib.count; ++i) ids.push_back(hlib::id_of(src, lib, i));
+            f.close();
+        } else {
         snprintf(path, sizeof path, "/GOLDBOX/%s/ECL%d.DAX", game_dir.substr(game_dir.rfind('/') + 1).c_str(), area);
         plat::File f = plat::open(path, "r");
         if (!f) continue;
         plat::FileSource src(f);
         static dax::Index dir;
-        std::vector<int> ids;
         if (dax::read_index(src, dir) == dax::Status::Ok)
             for (int i = 0; i < dir.count; ++i) ids.push_back(dir.entries[i].id);
         f.close();
+        }
         for (int block : ids) {
             using namespace play;
             if (getenv("BLOCK") && atoi(getenv("BLOCK")) != block) continue;
@@ -993,8 +1008,10 @@ static void sweep_events(int only)
                 stuck_why = "";
             }
             int steps = 0, lost = 0, reentries = 0;
-            for (int y = 0; y < 16 && lost < 20; ++y)
-                for (int x = 0; x < 16 && lost < 20; ++x) {
+            // (the map's own size - the Dark Queen's up to 39 x 20)
+            const int mw = d && d->map.w ? d->map.w : 16, mh = d && d->map.h ? d->map.h : 16;
+            for (int y = 0; y < mh && lost < 20; ++y)
+                for (int x = 0; x < mw && lost < 20; ++x) {
                     if (!d || screen != Screen::Game || waiting || d->gs.game_area != area || d->gs.script != block) {
                         ++reentries;
                         if (!enter()) {
@@ -1529,6 +1546,9 @@ static void dice_faces(std::initializer_list<int> f) { dice_usual(); b_faces.ass
 #ifdef BEHAVE_DEATHKNIGHTS
 #include "behave_deathknights.inc"
 #endif
+#ifdef BEHAVE_QUEEN
+#include "behave_queen.inc"
+#endif
 
 int main(int argc, char** argv)
 {
@@ -1596,6 +1616,9 @@ int main(int argc, char** argv)
 #endif
 #ifdef BEHAVE_DEATHKNIGHTS
         if (want("deathknights")) behave_deathknights();
+#endif
+#ifdef BEHAVE_QUEEN
+        if (want("queen")) behave_queen();
 #endif
 #ifdef BEHAVE_TREASURES
         if (want("treasures")) behave_darkness();       // (Darkness's checks, Treasures' oracles)

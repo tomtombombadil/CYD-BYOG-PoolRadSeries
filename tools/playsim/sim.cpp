@@ -1247,6 +1247,16 @@ int main(int argc, char** argv)
         if (q) ++q;
     }
     const char* moves = argc > 2 ? argv[2] : "FFFF";
+    if (getenv("FIGHTALL"))
+        for (int i = 0; i < play::pt->count; ++i) {
+            const party::Character& m = play::pt->m[i];
+            char nm[20]; m.name(nm, 20);
+            printf("   before: %-15s AC %d HP %d/%d effects", nm, m.ac(), m.hp(), m.hp_max());
+            for (int k = 0; k < m.n_items; ++k) printf(" [t%d r%d +%d]", m.items[k][0x2E], m.items[k][0x34], (int8_t)m.items[k][0x35]);
+            printf(" dex %d/%d ac0x19A %d", m.stat(3), m.stat_now(3), m.rec[0x19A]);
+            for (int k = 0; k < m.n_affects; ++k) printf(" %02X", m.affects[k][0]);
+            printf("\n");
+        }
     for (const char* m = moves; *m; ++m) {
         if (*m == 'M') {
             // "M": the area's squares - event byte (flags) and the open sides N E S W
@@ -1311,6 +1321,39 @@ int main(int argc, char** argv)
             else play::act(play::Act::Forward, C);
         }
         settle();
+        if (play::screen == play::Screen::Fight && getenv("FIGHTALL")) {
+            // FIGHTALL=1: a fight met on the way is fought (Quick for all), its
+            // treasure left (Exit, No), and the moves go on
+            run_fight();
+            for (int g = 0; g < 4 && play::screen != play::Screen::Game; ++g) {
+                for (char want : {'E', 'N'})
+                    for (int i = 0; i < play::menu.count; ++i)
+                        if (text::key(play::menu, i) == want) {
+                            int cx, cy;
+                            text::item_cell(play::menu, i, &cx, &cy);
+                            play::tap(cx * 8 + 2, cy * 8 + 2, C);
+                            break;
+                        }
+                settle();
+            }
+            printf("  after the fight on the way: screen %d menu [%s%s] wait %d waiting %d menu_on %d text [%s]\n", (int)play::screen, play::menu.prompt, play::menu.s, (int)play::vm->wait(), (int)play::waiting, (int)play::menu_on, play::vm->wait() == ecl::Wait::Print ? play::vm->text() : "");
+            settle();
+            shot("fightall");
+            // (the text after it read: a tap a page)
+            for (int g = 0; g < 8 && play::waiting && play::vm->wait() == ecl::Wait::Print && play::screen == play::Screen::Game; ++g) {
+                play::tap(2, 2, C);
+                settle();
+            }
+            for (int i = 0; i < play::pt->count; ++i) {
+                const party::Character& m = play::pt->m[i];
+                char nm[20]; m.name(nm, 20);
+                printf("   %-15s AC %d HP %d/%d effects", nm, m.ac(), m.hp(), m.hp_max());
+            for (int k = 0; k < m.n_items; ++k) printf(" [t%d r%d +%d]", m.items[k][0x2E], m.items[k][0x34], (int8_t)m.items[k][0x35]);
+            printf(" dex %d/%d ac0x19A %d", m.stat(3), m.stat_now(3), m.rec[0x19A]);
+                for (int k = 0; k < m.n_affects; ++k) printf(" %02X", m.affects[k][0]);
+                printf("\n");
+            }
+        }
         { char t[16]; snprintf(t, sizeof t, "after_%c", *m); shot(t); }
         char l1[48], l2[48]; play::describe(l1, l2, 48);
         printf("   now %d,%d %s | %s | %s\n", play::pos_x(), play::pos_y(), geo::dir_name(play::dir()), l1, l2);
