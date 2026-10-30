@@ -338,7 +338,7 @@ static void run_fight()
                     printf("\n");
                 }
             }
-            if (play::fg) for (int i = 0; i < play::fg->b.n; ++i) { const auto& f = play::fg->b.f[i]; char nm[16] = {}; f.rec.read(reinterpret_cast<uint8_t*>(nm), 1, 15); printf("  fighter %d [%.15s] at %d,%d size %d icon %d px %p up %d rec141 %d 142 %d 144 %d hp %d/%d\n", i, nm, f.x, f.y, f.size, f.icon, (void*)play::fg->icon[f.icon].px[0], f.up(), (int)f.rec[0x141], (int)f.rec[0x142], (int)f.rec[0x144], (int)f.rec[0x1A4], (int)f.rec[0x78]); }
+            if (play::fg) for (int i = 0; i < play::fg->b.n; ++i) { const auto& f = play::fg->b.f[i]; char nm[16] = {}; f.rec.read(reinterpret_cast<uint8_t*>(nm), 1, 15); printf("  fighter %d [%.15s] at %d,%d size %d icon %d px %p up %d rec141 %d 142 %d 144 %d hp %d/%d xp %d+%dx%d\n", i, nm, f.x, f.y, f.size, f.icon, (void*)play::fg->icon[f.icon].px[0], f.up(), (int)f.rec[0x141], (int)f.rec[0x142], (int)f.rec[0x144], (int)f.rec[0x1A4], (int)f.rec[0x78], (int)(f.rec[0x13C] | f.rec[0x13D] << 8), (int)f.rec[0x13E], (int)f.rec[0x12C]); }
             int turns = 0, n = 0;
             const char* fops = getenv("FIGHTOPS");      // taps while the fight waits: letters, &rr rows; then Quick
             for (int k = 0; k < 200000 && (play::screen == play::Screen::Fight || play::screen == play::Screen::SpellList || play::screen == play::Screen::Items); ++k) {

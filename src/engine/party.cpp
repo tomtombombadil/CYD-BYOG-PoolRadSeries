@@ -141,6 +141,9 @@ constexpr uint16_t kQueenRuns[][3] = {
     {0x18C, 0x198, 1},   {0x18D, 0x199, 13},
     // (queen_facts_4.md 5: the icon's size - 1 the small races -, a paladin's cure)
     {0xC6, 0x144, 1},    {0x88, 0x191, 1},
+    // (its flags 0xC7 - the engine's 0x14B, Death Knights' 0x7A: giants 0x0C, the
+    // undead 0x20 ...; flags 2 0xC8 in the Ext - undead 8, giants 1 - queen_facts_4.md 10)
+    {0xC7, 0x14B, 1},
     // (queen_facts_3.md 6: the base attacks, dice, sides, bonuses and AC -
     // Curse's 0x11C-0x124 in the same order; its 0xBC is not Curse's
     // uses-strength: its figures take Strength always - queen_facts_4.md 6)
@@ -150,6 +153,7 @@ constexpr uint16_t kQueenRuns[][3] = {
 constexpr uint16_t kQueenExt[][3] = {
     {0x58, kExtRace, 1}, {0x19A, kExtKnight, 1}, {0x19B, kExtGod, 1}, {0x19D, kExtRobe, 1}, {0xCC, kExtMagicRes, 1},
     {0x9E, kExtBestLevels, 7}, {0x48, kExtBestXp, 4}, {0xBE, kExtBestHp, 1}, {0xCD, kExtTrain, 1},
+    {0xC8, kExtFlags2, 1},
 };
 
 } // namespace

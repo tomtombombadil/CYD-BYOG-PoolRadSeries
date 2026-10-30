@@ -254,7 +254,7 @@ __attribute__((noinline)) bool q_load_monster(int id, uint8_t* rec, uint8_t* sx,
         if (tmp) {
             party::from_queen(q, *tmp);
             memcpy(rec, tmp->rec, party::kRecordSize);
-            sx[0] = 0;                                  // (its flags 2: not known)
+            sx[0] = tmp->ext[party::kExtFlags2];        // (its flags 2: record 0xC8)
             sx[1] = tmp->ext[party::kExtMagicRes];
             delete tmp;
         }
