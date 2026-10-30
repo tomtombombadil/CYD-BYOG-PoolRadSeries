@@ -94,9 +94,9 @@ uint8_t* load_clip(dax::ByteSource& src, int block, uint32_t* n);
 
 // The Dark Queen's (SOUNDS.GLB, an HLIB "DIG4" library, no directory):
 // entry `entry` - u16 big-endian rate, u16 0, u16 big-endian byte count,
-// then 4-bit samples two a byte, the low nibble first - as unsigned 8-bit
-// samples (v x 17) in a block from malloc (nullptr: not there / no
-// memory), *n of them, *hz its rate
+// then 4-bit samples two a byte, the low nibble first - in a block from
+// malloc (nullptr: not there / no memory) as they are (*n samples, half as
+// many bytes - ClipPlayer::start's `nibbles`), *hz its rate
 uint8_t* load_glb_clip(dax::ByteSource& src, int entry, uint32_t* n, uint16_t* hz);
 
 // The PC speaker driver's (IBMSND.COM) treatment of the samples, in place:
@@ -116,8 +116,9 @@ class ClipPlayer {
 public:
     ~ClipPlayer();
     // `pcm`: n samples at `hz`, from malloc - taken over (freed here, also
-    // when it never plays)
-    void start(uint8_t* pcm, uint32_t n, uint32_t hz, Device d);
+    // when it never plays); nibbles: 4-bit samples two a byte, the low
+    // nibble first (v x 17 - the Dark Queen's; kept so while they play)
+    void start(uint8_t* pcm, uint32_t n, uint32_t hz, Device d, bool nibbles = false);
     // As Player::render: n unsigned 8-bit samples at `hz`; false when
     // nothing sounds any more
     bool render(uint8_t* out, int n, int hz, int volume);
@@ -130,6 +131,8 @@ private:
         uint32_t n;
         uint32_t hz;
         Device   dev;
+        bool     nib;
+        int at(uint32_t k) const { return nib ? ((pcm[k >> 1] >> (k & 1 ? 4 : 0)) & 15) * 17 : pcm[k]; }
     };
     static void drop(Clip* c);
     std::atomic<Clip*> next_{nullptr};

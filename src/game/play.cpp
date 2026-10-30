@@ -458,7 +458,7 @@ __attribute__((noinline)) void play_clip(int v)
         }
         return;
     }
-    clips->start(pcm, n, glb_hz ? glb_hz : clip_rates[v & 15] ? clip_rates[v & 15] : cl.hz, sound_device());
+    clips->start(pcm, n, glb_hz ? glb_hz : clip_rates[v & 15] ? clip_rates[v & 15] : cl.hz, sound_device(), cl.glb);
     start_output();
 }
 
