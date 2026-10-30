@@ -20,10 +20,14 @@
 // The card (hal/sdcard.cpp): SPI on a bus of its own (VSPI, the classic
 //   boards), BOARD_SD_SHARED_SPI (on the display's bus, Arduino's SPI) or
 //   BOARD_SD_MMC (SD/MMC 4-bit, BOARD_PIN_SD_CLK / CMD / D0-D3).
+//   BOARD_SD_SPI_PORT: the card's own SPI bus (VSPI when not given; the
+//   ESP32-S3 has FSPI / HSPI).
 // Sound (hal/audio.cpp), one of: BOARD_AUDIO_DAC (the ESP32's DAC on 26),
 //   BOARD_AUDIO_ES8311 (I2S to the codec, BOARD_PIN_I2S_*, set up over
 //   BOARD_I2C_PORT / BOARD_PIN_I2C_*), BOARD_AUDIO_PDM (I2S PDM on
-//   BOARD_PIN_SPEAKER into the amplifier's filter). None = no sound.
+//   BOARD_PIN_SPEAKER into the amplifier's filter), BOARD_AUDIO_I2S (a
+//   plain I2S amplifier, no codec: BOARD_PIN_I2S_BCLK / LRCK / DOUT).
+//   None = no sound.
 //
 // Colors: each board's default inversion is a best guess. If a particular
 // unit shows a negative image or swapped red/blue, fix it on the device
@@ -78,6 +82,15 @@
   #define BOARD_PORTRAIT_W 320
   // Not yet tested on hardware
   class LGFX : public LGFX_S3_40_Cap {};
+
+#elif defined(CYD_BOARD_50_CAP_S3)
+  #include "esp32s3_50_rgb.hpp"
+  #define BOARD_NAME "5.0\" 800x480 IPS Capacitive (ESP32-S3)"
+  #define BOARD_PSRAM 1
+  // The engine sees 320x240 (drawn at 2x, centred on the 800x480 panel)
+  #define BOARD_PORTRAIT_W 240
+  // Not yet tested on hardware
+  class LGFX : public LGFX_S3_50_Rgb {};
 
 #elif defined(CYD_BOARD_28_ST7789_RES_C5)
   #include "esp32c5_28_res.hpp"

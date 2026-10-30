@@ -61,6 +61,8 @@ namespace {
 // On the display's bus: Arduino's SPI, which LovyanGFX started with these
 // pins (the bus lock keeps the display, touch and card apart)
 SPIClass& sd_spi = SPI;
+#elif defined(BOARD_SD_SPI_PORT)
+SPIClass sd_spi(BOARD_SD_SPI_PORT);       // (a bus of its own; the ESP32-S3 has no VSPI)
 #else
 SPIClass sd_spi(VSPI);
 #endif
