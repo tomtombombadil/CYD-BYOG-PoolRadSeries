@@ -217,7 +217,14 @@ the Project as claude/TODO.md.
       screens, the Sivaks' black row. Left: the overland map's colour
       cycling (the water); a city's place box shows "x,y" (the original:
       the time only); PROGRAM 1 (the gnomes' celebration, 58 / 60) passed
-      over - not known what it does.
+      over - not known what it does; the events sweep's fights in blocks
+      36 and 63 (a few of the party against dragons / 17 monsters) ran
+      600+ rounds without an end (god mode - check they end in real play).
+      Play is on (darkqueen5); the flasher's list says "in testing".
+- [ ] Tom: play the Dark Queen (Play on since darkqueen5): the Taladas
+      overland (arrow keys step; the turns are the diagonals ahead), its
+      cities and places, the icon picker (Alter -> Icon, and after a new
+      character's name).
 - [ ] 5.0" 800x480 IPS capacitive S3 boards (Tom: a Hosyond and a
       Freenove FNK0115Q, 2026-10-30): pins found (the Project's
       claude/board_5inch_facts.md - FNK0115Q and LCDwiki's ES3C50P list the
