@@ -12627,7 +12627,7 @@ void begin_adventuring()
             if (d->save.wall_block[0] > 0) host->load_map(vm->get(0x4BC5) & 0xFF);
             for (int i = 0; i < 3; ++i)
                 if (d->save.wall_block[i] > 0) host->load_walls(d->save.wall_set[i], d->save.wall_block[i]);
-        } else if (!d->prof->overland) {
+        } else if (!d->prof->overland && !hl()) {
             host->picture(0x79, 0xFF);          // (Curse's wilderness map; Pool's is drawn as the view)
         }
     }

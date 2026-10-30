@@ -3844,7 +3844,7 @@ void fight_back_to_game(pic::Canvas& c)
     pic_shown = false;
     head_shown = body_shown = -1;
     // (Curse's wilderness map; Darkness's overland draws its own map - draw_view)
-    if (!vm->get(0x4BE6) && !pool_overland() && !darkness_files() && !gw_wild()) host->picture(0x79, 0xFF);
+    if (!vm->get(0x4BE6) && !pool_overland() && !darkness_files() && !gw_wild() && !hl()) host->picture(0x79, 0xFF);
     draw_frame(c);
     draw_view(c);
     draw_panel(c);

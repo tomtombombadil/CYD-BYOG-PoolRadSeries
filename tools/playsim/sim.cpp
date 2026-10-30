@@ -1339,6 +1339,7 @@ int main(int argc, char** argv)
             printf("  after the fight on the way: screen %d menu [%s%s] wait %d waiting %d menu_on %d text [%s]\n", (int)play::screen, play::menu.prompt, play::menu.s, (int)play::vm->wait(), (int)play::waiting, (int)play::menu_on, play::vm->wait() == ecl::Wait::Print ? play::vm->text() : "");
             settle();
             shot("fightall");
+            printf("  settled: wait %d waiting %d state %d list_wait %d page_prompt %d note %u then %d\n", (int)play::vm->wait(), (int)play::waiting, (int)play::w.state, (int)play::list_wait, (int)play::page_prompt, (unsigned)play::note_until, (int)play::then);
             // (the text after it read: a tap a page)
             for (int g = 0; g < 8 && play::waiting && play::vm->wait() == ecl::Wait::Print && play::screen == play::Screen::Game; ++g) {
                 play::tap(2, 2, C);
