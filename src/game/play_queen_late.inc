@@ -971,3 +971,202 @@ __attribute__((noinline)) void q_shop_items(int n, items::Ground& g)
     delete[] cls;
     plat::log("[play] SHOP %d: %d items\n", n, g.n);
 }
+
+// ---- Its icon picker (Alter's Icon, creation's icon step; queen_facts_5.md
+// 15, DOSBox): CBODY.TLB's 49 pictures 0-48 (the record's icon byte 0x142;
+// + 128 the attack frame) in a 7 x 7 grid of raised cells, 24 x 24 from 8, 8 -
+// the character's own cell sunk (dark) - and a box 184-311 x 8-183 with
+// "ready    action" (DS 0x72B7) over the two frames, the name, sex, race
+// and classes (wrapped at the slashes); "Done Exit" (DS 0x72CE / 0x72D3).
+// A tap on a cell (the original: the arrow keys) picks it; Done keeps it,
+// Exit puts the old one back. ie->keep[1]: the icon it had.
+constexpr int kQIcons = 49, kQIconCols = 7, kQCell = 24;
+
+// A cell at (x, y): raised (white top / left, black bottom / right, light
+// grey) or sunk (light grey top / left, black bottom / right, dark grey)
+void q_icon_cell(pic::Canvas& c, int x, int y, bool sunk)
+{
+    c.fill_black(x, y, kQCell, kQCell);
+    c.fill(x, y, kQCell - 2, 2, sunk ? 7 : 15);
+    c.fill(x, y, 2, kQCell - 2, sunk ? 7 : 15);
+    c.fill(x + 2, y + 2, kQCell - 4, kQCell - 4, sunk ? 8 : 7);
+}
+
+void q_icon_cell_xy(int i, int* x, int* y)
+{
+    *x = 8 + kQCell * (i % kQIconCols);
+    *y = 8 + kQCell * (i / kQIconCols);
+}
+
+// CBODY.TLB's pictures `ids` (n of them) drawn at (xs[k], ys[k]) - one open
+// of the file, its colours first
+__attribute__((noinline)) void q_icon_draw_parts(pic::Canvas& c, const int* ids, const int* xs, const int* ys, int n)
+{
+    plat::File f;
+    if (!open_hl("CBODY.TLB", f)) return;
+    {
+        plat::FileSource src(f);
+        hlib::Library l;
+        uint32_t pos, len;
+        hlib::Part p;
+        const int16_t paper = c.paper;
+        c.paper = -1;
+        if (hlib::open(src, 0, src.size(), l) == hlib::Status::Ok) {
+            for (int i = l.first_item(); i < l.count; ++i)
+                if (hlib::entry(src, l, i, pos, len) && hlpic::load_colours(src, pos, len, q_col(), q_pal())) break;
+            for (int k = 0; k < n; ++k) {
+                const int i = hlib::find(src, l, static_cast<uint16_t>(ids[k]));
+                if (i >= 0 && hlib::entry(src, l, i, pos, len) && hlib::read_part(src, pos, len, p))
+                    hlpic::draw(src, p, q_col(), c, xs[k], ys[k]);
+            }
+            q_take();
+        }
+        c.paper = paper;
+    }
+    f.close();
+}
+
+// The grid's cell i with its picture
+void q_icon_grid_cell(pic::Canvas& c, int i)
+{
+    int x, y;
+    q_icon_cell_xy(i, &x, &y);
+    q_icon_cell(c, x, y, i == ie->ch->rec[0x142]);
+    q_icon_draw_parts(c, &i, &x, &y, 1);
+    dirty_rows(y / 8, (y + kQCell - 1) / 8);
+}
+
+// The box's two frames of the icon picked
+void q_icon_previews(pic::Canvas& c)
+{
+    const int id = ie->ch->rec[0x142];
+    q_icon_cell(c, 200, 32, false);
+    q_icon_cell(c, 272, 32, true);
+    const int ids[2] = {id, id + 128}, xs[2] = {200, 272}, ys[2] = {32, 32};
+    q_icon_draw_parts(c, ids, xs, ys, 2);
+    dirty_rows(4, 6);
+}
+
+// Text at a pixel place (no background)
+void q_text_px(pic::Canvas& c, const char* s, int x, int y, uint8_t fg)
+{
+    for (; *s; ++s, x += 8) font::draw_glyph(c, d->font, font::glyph_of(d->font, *s), x, y, fg, -1);
+}
+
+__attribute__((noinline)) void q_icon_screen(pic::Canvas& c)
+{
+    static const QBox kBoxes[] = {{8, 8, 175, 175}, {184, 8, 311, 183}};
+    q_screen(c, kBoxes, 2, false);
+    {
+        // (the marble between the boxes: FRAME.TLB's 8 x 94 bar, twice)
+        plat::File f;
+        if (open_hl("FRAME.TLB", f)) {
+            plat::FileSource src(f);
+            hlib::Library lib;
+            const int16_t paper = c.paper;
+            c.paper = -1;
+            if (hlib::open(src, 0, src.size(), lib) == hlib::Status::Ok) {
+                q_frame_part_at(c, src, lib, 11, 176, 16);
+                q_frame_part_at(c, src, lib, 11, 176, 7);
+            }
+            c.paper = paper;
+            f.close();
+        }
+        // (the boxes' edges there again: the grid's light right, the box's black left)
+        const uint8_t light = c.vga && c.bpp == 8 ? 17 : q_col().ega[17];
+        for (int y = 7; y <= 176; ++y) c.set(176, y, light);
+        for (int y = 7; y <= 184; ++y) c.set(183, y, 0);
+    }
+    // (all the grid's pictures in one pass through the file)
+    int ids[kQIcons], xs[kQIcons], ys[kQIcons];
+    for (int i = 0; i < kQIcons; ++i) {
+        q_icon_cell_xy(i, &xs[i], &ys[i]);
+        q_icon_cell(c, xs[i], ys[i], i == ie->ch->rec[0x142]);
+        ids[i] = i;
+    }
+    q_icon_draw_parts(c, ids, xs, ys, kQIcons);
+    const party::Character& ch = *ie->ch;
+    q_text_px(c, ie->words[0], 190, 16, 7);
+    char t[48];
+    ch.name(t, sizeof t);
+    put(c, t, 23, 8, 7);
+    put(c, name_of(d->sex[0], 7, 2, ch.sex()), 23, 9, 7);
+    put(c, name_of(d->race[0], 16, 8, ch.ext[party::kExtRace]), 23, 10, 7);
+    // (the classes: lines of 16 at most, broken at the slashes)
+    snprintf(t, sizeof t, "%s", name_of(d->cls[0], 27, 18, ch.cls()));
+    int row = 12;
+    char line[20] = {};
+    for (char* part = strtok(t, "/"); part && row < 22; part = strtok(nullptr, "/")) {
+        if (line[0] && strlen(line) + 1 + strlen(part) > 16) {
+            put(c, line, 23, row++, 7);
+            line[0] = 0;
+        }
+        if (line[0]) strlcat(line, "/", sizeof line);
+        strlcat(line, part, sizeof line);
+    }
+    if (line[0]) put(c, line, 23, row, 7);
+    q_icon_previews(c);
+    text::build(menu, "", ie->menus[0]);
+    menu.selected = 0;
+    show_menu_line(c);
+    dirty(0, pic::kScreenH);
+}
+
+__attribute__((noinline)) void q_icon_open(pic::Canvas& c)
+{
+    ie->keep[1] = ie->ch->rec[0x142];
+    uint8_t w[24] = {};
+    if (program_ds(0x72B7, w, 16)) memcpy(ie->words[0], w, 16);
+    char done[8] = {}, quit[8] = {};
+    if (program_ds(0x72CE, w, 10)) {
+        memcpy(done, w, 4);
+        memcpy(quit, w + 5, 4);
+    }
+    snprintf(ie->menus[0], sizeof ie->menus[0], "%s %s", done[0] ? done : "Done", quit[0] ? quit : "Exit");
+    screen = Screen::Icon;
+    anim_stop();
+    pic_shown = false;
+    q_icon_screen(c);
+}
+
+void q_icon_pick(int i, pic::Canvas& c)
+{
+    if (i < 0 || i >= kQIcons || i == ie->ch->rec[0x142]) return;
+    const int was = ie->ch->rec[0x142];
+    ie->ch->rec[0x142] = static_cast<uint8_t>(i);
+    if (was < kQIcons) q_icon_grid_cell(c, was);
+    q_icon_grid_cell(c, i);
+    q_icon_previews(c);
+}
+
+// Done keeps the icon, Exit puts the old one back
+void q_icon_key(char k, pic::Canvas& c)
+{
+    if (k != 'D' && k != 'E') return;
+    if (k == 'E') ie->ch->rec[0x142] = ie->keep[1];
+    end_icon(c);
+}
+
+void q_icon_tap(int x, int y, pic::Canvas& c)
+{
+    if (y >= text::kMenuTapTop) {
+        const int k = text::hit(menu, x / 8);
+        if (k < 0) return;
+        menu.selected = k;
+        show_menu_line(c);
+        q_icon_key(text::key(menu, k), c);
+        return;
+    }
+    if (x >= 8 && y >= 8 && x < 8 + kQCell * kQIconCols && y < 8 + kQCell * kQIconCols)
+        q_icon_pick((y - 8) / kQCell * kQIconCols + (x - 8) / kQCell, c);
+}
+
+// The cursor keys move the pick through the grid (the original's arrow
+// keys); Select is the menu's word lit (Done)
+bool q_icon_nav(Nav n, pic::Canvas& c)
+{
+    const int at = ie->ch->rec[0x142] < kQIcons ? ie->ch->rec[0x142] : 0;
+    const int step = n == Nav::Up ? -kQIconCols : n == Nav::Down ? kQIconCols : n == Nav::Left ? -1 : 1;
+    q_icon_pick((at + step + kQIcons) % kQIcons, c);
+    return true;
+}

@@ -875,8 +875,12 @@ bool dk_overland() { return d && vm && d->prof->variant.dk_overland_pics && vm->
 // Champions' overland (champions_facts.md 3): area word 0x4BE6 = 0 - the
 // big picture the scripts show (the region's map) with the party's marker
 bool kr_overland() { return d && vm && krynn_rules() && !vm->get(0x4BE6); }
-// Either game's overland with a marker on a map picture
-bool marker_overland() { return dk_overland() || kr_overland(); }
+// The Dark Queen's overland of Taladas (queen_facts_5.md 13): Darkness's
+// bytes - 0x24 = 1 and not 3D; the map picture the script shows (BIGPIC
+// 240 / 241, its id in 0x3E) with the party's marker at 0x25 / 0x26
+bool q_overland() { return d && vm && hl() && vm->get(0x24) == 1 && !vm->get(0x22); }
+// Any game's overland with a marker on a map picture
+bool marker_overland() { return dk_overland() || kr_overland() || q_overland(); }
 // Gateway's wilderness (gateway_facts.md 14): area word 0x4BE6 = 0
 bool gw_wild() { return d && vm && d->prof->variant.tile_wild && !vm->get(0x4BE6); }
 // Gateway's way ahead (GAME.OVR 0x4712F +0x82A, kept in area word 0x4CF6 as
@@ -973,12 +977,19 @@ void kr_marker(pic::Canvas& c, bool on)
         dirty_rows(kr_my / 8, kr_my / 8 + 1);
         kr_mx = -1;
     }
-    if (!on || !kr_overland()) return;
-    const int x = ((vm->get(0x4BC3) & 0xFF) + 1) * 8, y = ((vm->get(0x4BC4) & 0xFF) + 1) * 8;
+    const bool q = q_overland();
+    if (!on || !(kr_overland() || q)) return;
+    // (the Dark Queen: game bytes 0x25 / 0x26 - its marker ALWAYS.TLB's part 29)
+    const int x = ((vm->get(q ? 0x25 : 0x4BC3) & 0xFF) + 1) * 8, y = ((vm->get(q ? 0x26 : 0x4BC4) & 0xFF) + 1) * 8;
     if (x > pic::kScreenW - 8 || y > 17 * 8) return;
     for (int i = 0; i < 64; ++i) kr_under[i] = c.get(x + i % 8, y + i / 8);
     kr_mx = x;
     kr_my = y;
+    if (q) {
+        q_draw_marker(c, x, y);
+        dirty_rows(y / 8, y / 8 + 1);
+        return;
+    }
     plat::File f;
     const auto& pv = d->prof->variant;
     if (open_dax(pv.marker_file ? pv.marker_file : "CURSOR.DAX", f)) {
@@ -1007,6 +1018,19 @@ void draw_kr_overland(pic::Canvas& c)
     layout::outer(c, d->tables, d->frame_tiles);
     layout::bar(c, d->tables, d->frame_tiles, 16);
     if (kr_map_pic >= 0) draw_block(c, "BIGPIC", kr_map_pic, 8, 8);
+    dirty(0, 17 * 8);
+}
+
+// The Dark Queen's overland screen above the text box (DOSBox): marble with
+// one sunk box, 8-311 x 8-127, the map picture (game byte 0x3E: BIGPIC
+// 240 / 241) in it and the party's marker
+void q_draw_overland(pic::Canvas& c)
+{
+    kr_marker_lost();
+    q_overland_top(c);
+    const int id = vm->get(0x3E);
+    if (id >= 240) q_picture(c, id, true, true);
+    kr_marker(c, true);
     dirty(0, 17 * 8);
 }
 
@@ -1273,6 +1297,17 @@ void draw_view(pic::Canvas& c)
         draw_kr_overland(c);
         return;
     }
+    if (q_overland() && camping) {
+        // (the Dark Queen's camp in its overland: the exploring screen, the
+        // camp's picture in the view - DOSBox)
+        c.fill_black(24, 24, 88, 88);
+        dirty_rows(3, 13);
+        return;
+    }
+    if (q_overland() && !pic_shown && bigpic < 0) {
+        q_draw_overland(c);
+        return;
+    }
     if (bigpic >= 0) {
         // A big picture covers the screen: outdoors it stays (the wilderness
         // map); in a 3D area the exploring screen comes back
@@ -1330,7 +1365,7 @@ bool krynn_rules();
 void draw_position(pic::Canvas& c)
 {
     krynn_moons(&c);            // (Champions: a day passed - the moons' tiles; its clock routine)
-    if (marker_overland()) return;
+    if (marker_overland() && !(q_overland() && pic_shown)) return;   // (the Dark Queen's: under an event picture the exploring screen)
     if (d->prof->variant.tr && !tr_position) return;
     const ecl::GameState& g = d->gs;
     if (hl()) {
@@ -1340,7 +1375,7 @@ void draw_position(pic::Canvas& c)
         c.fill(b.x, b.y, b.w, b.h, 0);
         char line[24];
         snprintf(line, sizeof line, "%d,%d", g.x, g.y);
-        put(c, line, 26, 13, 7);
+        if (!q_overland()) put(c, line, 26, 13, 7);    // (none in its overland - DOSBox)
         if (camping) put(c, "CAMPING", 26, 14, 7);     // (its status line while camping - DOSBox)
         const int h24 = vm->get(0x4BC9) % 24, h12 = h24 % 12 ? h24 % 12 : 12;
         snprintf(line, sizeof line, "%d:%d%d %s", h12, vm->get(0x4BC8) % 10, vm->get(0x4BC7) % 10, h24 < 12 ? "AM" : "PM");
@@ -1425,7 +1460,9 @@ void draw_party(pic::Canvas& c, int col, bool mark_sel = true, bool box = false)
 
 void draw_panel(pic::Canvas& c)
 {
-    if (marker_overland()) return;          // (Darkness's / Champions' overland: its map in the panel's place)
+    // (Darkness's / Champions' overland: its map in the panel's place; the
+    // Dark Queen's under an event picture: the exploring screen's panel)
+    if (marker_overland() && !(q_overland() && pic_shown)) return;
     if (hl()) {
         // (Dark Queen: the party box only - the compass is below it)
         const qview::Box& b = qview::kPartyBox;
@@ -1726,10 +1763,11 @@ void idle_menu(pic::Canvas& c)
     if (marker_overland()) {
         // Darkness's / Champions' overland: Move and Encamp (DOSBox; Champions'
         // GAME.OVR 0x19CA5); Champions' marker shows meanwhile
-        text::build(menu, "", moving ? "Exit" : "Move Encamp");
+        // (the Dark Queen's: Encamp only - its arrow keys step; DOSBox)
+        text::build(menu, "", q_overland() ? "Encamp" : moving ? "Exit" : "Move Encamp");
         menu.selected = 0;
         show_menu_line(c);
-        if (kr_overland()) kr_marker(c, true);
+        if (kr_overland() || (q_overland() && !pic_shown && bigpic < 0)) kr_marker(c, true);
     } else if (move_menu() && vm->get(0x4BE6)) {
         // (Gateway's move mode: "Move (Use arrow keys):" before Exit - DOSBox)
         static char prompt3d[32];
@@ -5815,13 +5853,7 @@ void create_named(const char* name, pic::Canvas& c)
 {
     if (!mk) return;
     create::set_name(mk->ch, name);
-    if (hl()) {
-        // (the Dark Queen's icon picker - its CBODY pictures - not yet: the
-        // default icon its creation gives, set at the roll)
-        create_after_icon(c);
-        return;
-    }
-    if (mk->portrait_menu[0] && d->prof->create.head_blocks) {
+    if (mk->portrait_menu[0] && d->prof->create.head_blocks && !hl()) {
         start_portrait(c);
         return;
     }
@@ -9112,8 +9144,8 @@ void draw_whom(pic::Canvas& c)
         cr.on_camp = true;
         draw_frame(c);
         draw_view(c);
-        // (Darkness: the camp's picture in the view again - DOSBox)
-        if (camping && darkness_files() && d->prof->variant.camp_pic) draw_own_pic(camp_pic());
+        // (Darkness, the Dark Queen: the camp's picture in the view again - DOSBox)
+        if (camping && (darkness_files() || hl()) && d->prof->variant.camp_pic) draw_own_pic(camp_pic());
         draw_panel(c);
         text::clear(c, text::kTextArea);
         dirty_rows(17, 22);
@@ -10228,7 +10260,9 @@ void start_knight(pic::Canvas& c)
     }
     const int order = ch->ext[party::kExtKnight];
     const int r = ch->level(classes::Monk) > 0 ? create::knight_petition(*ch, trainer->tables, trainer->facts) : -1;
-    if (r < 0) {
+    // (the Dark Queen: "too inexperienced" / "does not qualify" have no menu -
+    // its party menu comes back at once, DQK 0x487F2; queen_facts_4.md 9)
+    if (r < 0 || (hl() && r != 0)) {
         end_training();
         draw_party_menu(c);
         return;
@@ -10298,7 +10332,22 @@ void draw_modify(pic::Canvas& c)
 {
     party::Character* ch = pt->sel();
     if (!ch) return;
-    draw_character(c);
+    if (hl() && names) {
+        // (the Dark Queen's Modify shows the character without the items
+        // readied - their figures and the weapon / armour lines left out
+        // while it runs; DOSBox: AC 7, THAC0 12, 1D2+5; a copy, ~1.8 KB)
+        party::Character* bare = new (std::nothrow) party::Character(*ch);
+        if (bare) {
+            bare->n_items = 0;
+            rules::recalc(*bare, *names, d->facts);
+            q_draw_character(c, *bare);
+            delete bare;
+        } else {
+            draw_character(c);
+        }
+    } else {
+        draw_character(c);
+    }
     char t[24];
     if (darkness_files() && modder) {
         // Darkness marks a stat Modify has changed (its in-use value no longer
@@ -10999,6 +11048,7 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
         d->facts.berserk_fx = pi.berserk;
         d->facts.light_magic_armour = pi.light_magic_armour;
         memcpy(d->facts.race_weapon, pi.race_weapon, sizeof d->facts.race_weapon);
+        d->facts.unarmed_no_str_hit = hl();
         d->facts.speed_fx = pi.speed_fx;
         d->facts.sell_secret = pi.sell_secret;
         rules::set_berserk_fx(pi.berserk);
@@ -11734,6 +11784,13 @@ struct Host : ecl::Host {
             // (Dark Queen: its PIC / BIGPIC libraries - play_queen.inc)
             anim_stop();
             const bool large = id >= big;
+            if (large && q_overland() && id == vm->get(0x3E)) {
+                // (its overland's map - game byte 0x3E - with the party's marker)
+                bigpic = -1;
+                pic_shown = false;
+                q_draw_overland(c);
+                return;
+            }
             bigpic = large ? id : -1;
             if (!large) c.fill(24, 24, 88, 88, 0);
             if (large || !q_anim_start(id)) q_picture(c, id, large);
@@ -12274,6 +12331,28 @@ bool do_move()
         }
         vm->set(0x7EC9, 0);
         kr_marker(*cv, true);
+        return true;
+    }
+    if (q_overland()) {
+        // The Dark Queen's overland (DQK.EXE ovl 6 file 0x43C07 - Darkness's
+        // move): the square before the step in 0x17 / 0x18, eight
+        // directions, held to 0-37 / 0-14, twelve hours a step, when the step
+        // script allowed it (its own moves set 0x03 = 255 and move the party
+        // themselves; its strait crossings leave it to the program)
+        static const int8_t kDx[8] = {0, 1, 1, 1, 0, -1, -1, -1}, kDy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
+        const int x = vm->get(0x25), y = vm->get(0x26);
+        if (vm->get(0x7EC9) < 0xFF) {
+            vm->set(0x17, static_cast<uint16_t>(x));
+            vm->set(0x18, static_cast<uint16_t>(y));
+            int nx = x + kDx[step_dir & 7], ny = y + kDy[step_dir & 7];
+            nx = nx < 0 ? 0 : nx > 37 ? 37 : nx;
+            ny = ny < 0 ? 0 : ny > 14 ? 14 : ny;
+            vm->set(0x25, static_cast<uint16_t>(nx));
+            vm->set(0x26, static_cast<uint16_t>(ny));
+            vm->advance_clock(3, 12);
+        }
+        vm->set(0x7EC9, 0);
+        if (!pic_shown && bigpic < 0) kr_marker(*cv, true);
         return true;
     }
     if (pool_overland()) {
@@ -12958,6 +13037,11 @@ void icon_screen(pic::Canvas& c)
 #if CYD_ICON_GALLERY
 void gal_open(pic::Canvas& c, int page);
 #endif
+// (the Dark Queen's icon picker - play_queen_late.inc)
+void q_icon_open(pic::Canvas& c);
+void q_icon_tap(int x, int y, pic::Canvas& c);
+void q_icon_key(char k, pic::Canvas& c);
+bool q_icon_nav(Nav n, pic::Canvas& c);
 
 void start_icon(pic::Canvas& c, Screen from)
 {
@@ -12971,6 +13055,10 @@ void start_icon(pic::Canvas& c, Screen from)
     }
     ie->ch = ch;
     ie->from = from;
+    if (hl()) {
+        q_icon_open(c);                 // (the Dark Queen's own picker - play_queen_late.inc)
+        return;
+    }
     const auto& pa = d->prof->alter;
     plat::File f;
     if (open_file(d->prof->program, f)) {
@@ -13154,6 +13242,10 @@ void gal_tap(int x, int y, pic::Canvas& c);
 
 void icon_tap(int x, int y, pic::Canvas& c)
 {
+    if (hl() && ie) {
+        q_icon_tap(x, y, c);
+        return;
+    }
 #if CYD_ICON_GALLERY
     if (ie && ie->gpage >= 0) {
         gal_tap(x, y, c);
@@ -13175,6 +13267,10 @@ void gal_key(char k, pic::Canvas& c);
 // Esc: as Exit at the level shown (No at the question); the gallery's Done
 void icon_back(pic::Canvas& c)
 {
+    if (hl()) {
+        q_icon_key('E', c);
+        return;
+    }
 #if CYD_ICON_GALLERY
     if (ie->gpage >= 0) {
         gal_key('D', c);
@@ -15089,10 +15185,11 @@ bool act(Act a, pic::Canvas& c)
     }
     if (then != Then::Idle) return false;
     ecl::GameState& g = d->gs;
-    if (kr_overland()) {
+    if (kr_overland() || q_overland()) {
         // Champions' overland: the arrow keys step that way (DOSBox: Right a
         // square east); the pad's turn keys the diagonals ahead (7 north-west,
-        // 9 north-east - SPEC 12)
+        // 9 north-east - SPEC 12). The Dark Queen's the same (its keys 0x81-
+        // 0x88 set the facing and step - DQK.EXE file 0x4413C)
         int dir = -1;
         switch (a) {
         case Act::Forward:    dir = 0; break;
@@ -15342,6 +15439,8 @@ bool nav(Nav n, pic::Canvas& c)
     }
     if (note_until && !note_held) redraw_menu(c);
     const int step = n == Nav::Up || n == Nav::Left ? -1 : 1;
+    // (the Dark Queen's icon picker: the four through its grid)
+    if (screen == Screen::Icon && hl() && ie) return q_icon_nav(n, c);
     // Modify Character: left / right change the value (the games' arrows)
     if (screen == Screen::Modify && (n == Nav::Left || n == Nav::Right)) {
         modify_step(step, c);

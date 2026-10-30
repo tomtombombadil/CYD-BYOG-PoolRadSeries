@@ -308,7 +308,7 @@ __attribute__((noinline)) bool q_anim_start(int id)
 // 88, run-length) in the view's box; a big one (240 up: BIGPIC.TLB, 304 x
 // 120) at the screen's top left inside the frame. Its other parts are its
 // animation's frames (sprites over the first) - not shown yet.
-__attribute__((noinline)) bool q_picture(pic::Canvas& c, int id, bool big)
+__attribute__((noinline)) bool q_picture(pic::Canvas& c, int id, bool big, bool quiet = false)
 {
     static const char* const kFiles[] = {"PICA.TLB", "PICB.TLB", "PICC.TLB"};
     const char* const* files = kFiles;
@@ -330,8 +330,32 @@ __attribute__((noinline)) bool q_picture(pic::Canvas& c, int id, bool big)
         }
         f.close();
     }
-    plat::log("[play] picture %d%s: %s\n", id, big ? " (big)" : "", ok ? "shown" : "missing");
+    if (!quiet || !ok) plat::log("[play] picture %d%s: %s\n", id, big ? " (big)" : "", ok ? "shown" : "missing");
     return ok;
+}
+
+// The overland's marker (queen_facts_5.md 13): ALWAYS.TLB's part 29, a ring
+// 8 x 8 (0xFF see-through), in its own colours (entry 0 - the frame's)
+__attribute__((noinline)) void q_draw_marker(pic::Canvas& c, int x, int y)
+{
+    plat::File f;
+    if (!open_hl("ALWAYS.TLB", f)) return;
+    {
+        plat::FileSource src(f);
+        hlib::Library lib;
+        uint32_t pos, len;
+        hlib::Part p;
+        const int16_t paper = c.paper;
+        c.paper = -1;
+        if (hlib::open(src, 0, src.size(), lib) == hlib::Status::Ok) {
+            if (hlib::entry(src, lib, 0, pos, len)) hlpic::load_colours(src, pos, len, q_col(), q_pal());
+            if (hlib::entry(src, lib, 29, pos, len) && hlib::read_part(src, pos, len, p))
+                hlpic::draw(src, p, q_col(), c, x, y);
+            q_take();
+        }
+        c.paper = paper;
+    }
+    f.close();
 }
 
 // ---- Buttons (queen_facts_3.md 1) -------------------------------------------
@@ -579,6 +603,26 @@ __attribute__((noinline)) void q_screen(pic::Canvas& c, const QBox* boxes, int n
     dirty(0, pic::kScreenH);
 }
 
+
+// The overland's screen above the text box (DOSBox, queen_facts_5.md 13):
+// the marble (FRAME.TLB's strip) over rows 0-132 and one box sunk into it,
+// 8-311 x 8-127, for the map picture
+__attribute__((noinline)) void q_overland_top(pic::Canvas& c)
+{
+    q_strip_drop();
+    plat::File f;
+    if (open_hl("FRAME.TLB", f)) {
+        plat::FileSource src(f);
+        hlib::Library lib;
+        const int16_t paper = c.paper;
+        c.paper = -1;
+        if (hlib::open(src, 0, src.size(), lib) == hlib::Status::Ok)
+            for (int y = 0; y < 127; y += 7) q_frame_part_at(c, src, lib, 7, 0, y);
+        c.paper = paper;
+        f.close();
+    }
+    q_pm_box(c, 127);
+}
 
 // (play_queen_late.inc)
 void q_draw_character(pic::Canvas& c, const party::Character& ch);

@@ -453,7 +453,7 @@ void recalc_values(party::Character& c, const items::Names& names, const ItemFac
 
     const uint8_t* weapon = slot[items::kSlotWeapon];
     if (!weapon) {
-        hit += str_hit(c);
+        if (!f.unarmed_no_str_hit) hit += str_hit(c);
         dmg += str_damage(c.rec);
     } else {
         // The weapon's to-hit and damage
