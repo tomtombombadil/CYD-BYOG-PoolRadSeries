@@ -183,7 +183,8 @@ struct Data {
     char           w_yell[8] = {}, w_wants[16] = {};
     char           w_burst[3][20] = {};
     char           w_acid[2][24] = {};         // Champions: "dissolves into acid!", "The acid drains away.." (variant.acid_words)
-    char           w_knight[12][28] = {};      // Champions: Knight Change Classes' words (variant.knight_words)        // Champions: "explodes!", "is stunned", "loses his weapon" (variant.burst_words)   // Champions: "Yell ", "wants to kill " (variant.yell_words)
+    char           w_knight[12][28] = {};
+    char           w_undo_done[12] = {};       // Dark Queen: Move's "Undo Done" (variant.undo_done)      // Champions: Knight Change Classes' words (variant.knight_words)        // Champions: "explodes!", "is stunned", "loses his weapon" (variant.burst_words)   // Champions: "Yell ", "wants to kill " (variant.yell_words)
 
     // View Character's words (from the program and GAME.OVR)
     char           cls[18][27] = {}, race[8][16] = {}, alignment[9][17] = {}, sex[2][7] = {}, money[7][11] = {},
@@ -1602,11 +1603,19 @@ void show_menu_line(pic::Canvas& c)
     menu_was_two = text::two_rows(menu);
     hl_apply();
     if (hl()) {
-        // (Dark Queen: buttons on the marble bar - queen_facts_3.md 1)
+        // (Dark Queen: buttons on the marble bar - queen_facts_3.md 1; two
+        // rows of them from y 177 - DOSBox)
         q_pm_hide(c);
+        if (menu_was_two) {
+            q_strip_save(c);
+            q_strip_restore(c);
+        } else {
+            q_strip_restore(c);
+            q_strip_drop();
+        }
         q_bar(c);
         text::draw(c, d->font, menu, q_buttons());
-        dirty_rows(text::kMenuRow - 1, text::kMenuRow);
+        dirty_rows(text::kMenuRow - 2, text::kMenuRow);
         return;
     }
     text::MenuColors mc;
@@ -1620,8 +1629,10 @@ void clear_menu_line(pic::Canvas& c)
     if (hl()) {
         menu_on = false;
         menu_was_two = false;
+        q_strip_restore(c);
+        q_strip_drop();
         q_bar(c);
-        dirty_rows(text::kMenuRow - 1, text::kMenuRow);
+        dirty_rows(text::kMenuRow - 2, text::kMenuRow);
         return;
     }
     menu_on = false;
@@ -11078,6 +11089,7 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             {d->prof->variant.knight_words[9], d->w_knight[9], sizeof d->w_knight[9]},
             {d->prof->variant.knight_words[10], d->w_knight[10], sizeof d->w_knight[10]},
             {d->prof->variant.knight_words[11], d->w_knight[11], sizeof d->w_knight[11]},
+            {d->prof->variant.undo_done, d->w_undo_done, sizeof d->w_undo_done},
         };
         for (auto& wd : words)
             if (wd.at) read_word(src, wd.at, wd.out, wd.cap);
@@ -15385,6 +15397,13 @@ bool tap_target(int x, int y, int* row, int* c0, int* c1)
     // "press a key" (one choice): a tap anywhere is it
     if (menu_on && screen == Screen::Game && waiting && vm->wait() == ecl::Wait::Menu && vm->items() == 1)
         return menu_word(0);
+    if (menu_on && hl() && text::two_rows(menu) && y >= 176) {
+        const int k = text::hit_row(menu, col, y < 188 ? text::kMenuRow - 1 : text::kMenuRow);
+        if (k < 0) return false;
+        text::item_cell(menu, k, c0, row);
+        *c1 = *c0 + menu.end[k] - menu.start[k];
+        return true;
+    }
     if (menu_on && y >= text::kMenuTapTop) return menu_word(text::hit(menu, col));
     if (screen == Screen::Modify) {
         const int i = modify_item_at(r, col);

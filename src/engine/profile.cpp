@@ -1984,7 +1984,7 @@ constexpr combat::FightSpell kDeathKnightsFight[] = {
 // 0x54 / 0x5B)
 constexpr uint32_t kQueenFightWords[kFightWords] = {
     qw(0x5ED8), 0, 0, 0, 0, 0, 0, qw(0x591F),
-    qw(0x4AB0), 0, qw(0x5953), qw(0x4A94), 0, 0, 0, 0,
+    qw(0x4AB0), 0, qw(0x5953), qw(0x4A8F), 0, 0, 0, 0,
     0, 0, 0, 0, qw(0x5A2A), qw(0x4E78), qw(0x5973), 0,
     0, qw(0x72D3), qw(0x5AF9), qw(0x5B05), qw(0x5B14), qw(0x5B1C), qw(0x5B2B), qw(0x5B3F),
     qw(0x5B50), qw(0x5B5A), qw(0x5B65), qw(0x5B71), qw(0xC7), qw(0x5B8B), qw(0x5B95), qw(0xFC),
@@ -4068,6 +4068,7 @@ const Profile kProfiles[] = {
                  // "knight of the " + "sword" / "rose")
                  .knight_words = {qw(0x5036), qw(0x494C), qw(0x4967), qw(0x496D), qw(0x4972), qw(0x4981),
                                   qw(0x4997), qw(0x49AA), 0, qw(0x502F), qw(0x4981), 0},
+                 .undo_done = qw(0x50F8),
                  .hlib = true,
                  .queen_orders = kQueenDs + 0x8D8C},     // (BIGPIC ids 240-242),
      .joined = kQueenJoined, .n_joined = sizeof kQueenJoined / sizeof kQueenJoined[0],

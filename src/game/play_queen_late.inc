@@ -387,6 +387,20 @@ __attribute__((noinline)) void q_draw_fight_frame(pic::Canvas& c)
     q_bar(c);
 }
 
+// A line over a one-row menu (Aim's "AIM: RANGE = 5"): white letters on
+// the buttons' colour from x 8, y 177-185 (no edge - DOSBox); the marble
+// under it comes back with the next menu
+void q_line_above(pic::Canvas& c, const char* t)
+{
+    if (!t || !*t) return;
+    q_strip_save(c);
+    const int n = static_cast<int>(strlen(t));
+    c.fill(8, 177, n * 8, 9, q_buttons().b_fill);
+    for (int i = 0; i < n && i < 38; ++i)
+        font::draw_glyph(c, d->font, font::glyph_of(d->font, t[i]), 8 + i * 8, 177, 15, q_buttons().b_fill);
+    dirty_rows(text::kMenuRow - 2, text::kMenuRow - 1);
+}
+
 // The status line (row 23 in the other games): a prompt box on the bar
 void q_status(pic::Canvas& c, const char* t)
 {
@@ -395,7 +409,12 @@ void q_status(pic::Canvas& c, const char* t)
     if (t && *t) {
         text::Menu m;
         text::build(m, t, "");
-        text::draw(c, d->font, m, q_buttons());
+        // (its fights' status: white letters in a black-edged box of the
+        // buttons' colour - "GUARDING", DOSBox)
+        text::MenuColors mc = q_buttons();
+        mc.b_box = mc.b_fill;
+        mc.b_box_ink = 15;
+        text::draw(c, d->font, m, mc);
     }
     dirty_rows(text::kMenuRow - 1, text::kMenuRow);
 }

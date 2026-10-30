@@ -59,6 +59,33 @@ __attribute__((noinline)) bool q_open()
     return true;
 }
 
+// Its two-row menus (the fight's) stand 8 pixels higher, over the marble
+// at rows 176-183: that strip is kept while they are up and put back when
+// a one-row menu (or none) takes the bar again; a whole screen drawn again
+// drops it (the marble is there afresh)
+uint8_t* q_strip = nullptr;
+constexpr int kStripY = 176, kStripH = 8;
+
+void q_strip_drop()
+{
+    free(q_strip);
+    q_strip = nullptr;
+}
+
+void q_strip_save(const pic::Canvas& c)
+{
+    if (q_strip) return;
+    q_strip = static_cast<uint8_t*>(malloc(static_cast<size_t>(pic::kScreenW) * kStripH));
+    if (!q_strip) return;
+    for (int j = 0; j < kStripH; ++j) c.get_row(0, kStripY + j, pic::kScreenW, q_strip + j * pic::kScreenW);
+}
+
+void q_strip_restore(pic::Canvas& c)
+{
+    if (!q_strip) return;
+    for (int j = 0; j < kStripH; ++j) c.put_row(0, kStripY + j, pic::kScreenW, q_strip + j * pic::kScreenW);
+}
+
 // The moons' phases (0-3) as the scripts keep them (Champions' words)
 void q_moons(int out[3])
 {
@@ -86,6 +113,7 @@ void q_pm_box(pic::Canvas& c, int last = 109)
 // moons) or, for the party menu, the marble with one box
 __attribute__((noinline)) void q_draw_frame(pic::Canvas& c, bool explore)
 {
+    q_strip_drop();
     q_pm_up = false;
     c.paper = -1;
     c.clear(0);
@@ -353,13 +381,16 @@ bool q_tap_button(int row, int c0, int* x0, int* y0, int* x1, int* y1, int* lit)
         *lit = c0 == q_pm_sel_button();
         return true;
     }
-    if (!menu_on || row != text::kMenuRow) return false;
-    for (int k = 0; k < menu.count; ++k)
-        if (text::word_col(menu, k) == c0) {
+    if (!menu_on || (row != text::kMenuRow && !(row == text::kMenuRow - 1 && text::two_rows(menu)))) return false;
+    for (int k = 0; k < menu.count; ++k) {
+        int kc = text::word_col(menu, k), kr = text::kMenuRow;
+        if (text::two_rows(menu)) text::item_cell(menu, k, &kc, &kr);
+        if (kc == c0 && kr == row) {
             text::button_box(menu, k, x0, y0, x1, y1, q_buttons());
             *lit = k == menu.selected;
             return true;
         }
+    }
     return false;
 }
 
@@ -509,6 +540,7 @@ void q_frame_part_at(pic::Canvas& c, plat::FileSource& src, const hlib::Library&
 
 __attribute__((noinline)) void q_screen(pic::Canvas& c, const QBox* boxes, int n, bool divider)
 {
+    q_strip_drop();
     q_draw_frame(c, false);             // (the bars, the lower marble, the party menu's box)
     plat::File f;
     if (open_hl("FRAME.TLB", f)) {
@@ -541,3 +573,4 @@ uint8_t* q_load_pic4(const char* file, int id, int* w, int* h);
 void q_load_tiles();
 void q_draw_fight_frame(pic::Canvas& c);
 void q_status(pic::Canvas& c, const char* t);
+void q_line_above(pic::Canvas& c, const char* t);

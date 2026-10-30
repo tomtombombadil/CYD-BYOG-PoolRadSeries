@@ -773,6 +773,8 @@ struct Profile {
     // " does not qualify.", " may become a", "Knight Of The Sword", "Change
     // Exit", " is too inexperienced", "Knight Of The Rose"
     uint32_t knight_words[12] = {};
+    // Dark Queen: Move's buttons "Undo Done" (a C string)
+    uint32_t undo_done = 0;
     // Death Knights of Krynn (deathknights_facts.md): Darkness's engine at its
     // EGA stage with Krynn's rules - its characters (216-byte records .GAM
     // with a 220-byte spell part .WIZ, items .JNK of 63 bytes, effects

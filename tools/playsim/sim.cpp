@@ -1241,6 +1241,18 @@ int main(int argc, char** argv)
     if (getenv("SEARCH")) play::vm->set(0x7ECA, play::vm->get(0x7ECA) | 1);     // SEARCH=1: Search on before the moves
     const char* moves = argc > 2 ? argv[2] : "FFFF";
     for (const char* m = moves; *m; ++m) {
+        if (*m == 'M') {
+            // "M": the area's squares - event byte (flags) and the open sides N E S W
+            for (int y = 0; y < play::d->map.h; ++y) {
+                printf("  y%2d", y);
+                for (int x = 0; x < play::d->map.w; ++x)
+                    printf(" %02X:%d%d%d%d", geo::flags(play::d->map, x, y), geo::passage(play::d->map, x, y, 0) != 0,
+                           geo::passage(play::d->map, x, y, 2) != 0, geo::passage(play::d->map, x, y, 4) != 0,
+                           geo::passage(play::d->map, x, y, 6) != 0);
+                printf("\n");
+            }
+            continue;
+        }
         if (*m == '/' && m[1]) {
             // "/X": tap the menu line's word with key X (Encamp, its words ...)
             const char k = *++m;

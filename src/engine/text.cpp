@@ -303,7 +303,8 @@ constexpr int kAbove = 1, kHigh = 11;
 
 void draw_buttons(pic::Canvas& c, const font::Font& f, const Menu& m, const MenuColors& col)
 {
-    const int c0 = line_col(m), plen = static_cast<int>(strlen(m.prompt)), y = col.y_text;
+    const int c0 = line_col(m), plen = static_cast<int>(strlen(m.prompt));
+    int y = col.y_text;
     auto text_at = [&](const char* s, int n, int at, uint8_t fg, uint8_t bg, bool key_white) {
         for (int i = 0; i < n && at + i < font::kCols; ++i) {
             if (s[i] == ' ' && bg == 0xFF) continue;
@@ -322,15 +323,22 @@ void draw_buttons(pic::Canvas& c, const font::Font& f, const Menu& m, const Menu
         hline(c, x0 - 1, x1 + 1, y + 9, 0);
         vline(c, x0 - 1, y - 1, y + 10, 0);
         vline(c, x1, y - 1, y + 10, 0);
-        text_at(s, n, at, 0, col.b_box, false);
+        text_at(s, n, at, col.b_box_ink, col.b_box, false);
     };
-    if (plen) box(m.prompt, c0);
+    const bool two = two_rows(m);
+    if (plen && !two) box(m.prompt, c0);
     const int sel = m.selected >= 0 && m.selected < m.count ? m.selected : -1;
     for (int k = 0; k < m.count; ++k) {
         int x0, y0, x1, y1;
         button_box(m, k, &x0, &y0, &x1, &y1, col);
         bevel(c, x0, y0, x1, y1, col.b_light, col.b_fill, false);
-        const int n = m.end[k] - m.start[k] + 1, at = c0 + plen + m.start[k];
+        const int n = m.end[k] - m.start[k] + 1;
+        int at = c0 + plen + m.start[k];
+        if (two) {
+            int row;
+            item_cell(m, k, &at, &row);
+            y = two_row_y(col, row);
+        }
         if (k == sel) text_at(m.s + m.start[k], n, at, 0, col.highlight, false);     // (the engine's white box)
         else text_at(m.s + m.start[k], n, at, m.lit ? col.highlight : col.normal, col.b_fill, true);
     }
@@ -348,12 +356,20 @@ int  word_col(const Menu& m, int k)
 
 void button_box(const Menu& m, int k, int* x0, int* y0, int* x1, int* y1, const MenuColors& col)
 {
-    const int a = word_col(m, k), b = a + (k >= 0 && k < m.count ? m.end[k] - m.start[k] : 0);
+    int a = word_col(m, k), y = col.y_text;
+    if (two_rows(m)) {
+        int row;
+        item_cell(m, k, &a, &row);
+        y = two_row_y(col, row);
+    }
+    const int b = a + (k >= 0 && k < m.count ? m.end[k] - m.start[k] : 0);
     *x0 = a * 8 - 4;
     *x1 = (b + 1) * 8 + 4;
-    *y0 = col.y_text - kAbove;
+    *y0 = y - kAbove;
     *y1 = *y0 + kHigh;
 }
+
+int two_row_y(const MenuColors& col, int row) { return row == kMenuRow - 1 ? col.y_text - 10 : col.y_text + 2; }
 
 void bevel(pic::Canvas& c, int x0, int y0, int x1, int y1, uint8_t light, uint8_t fill, bool sunken)
 {
@@ -367,7 +383,7 @@ void bevel(pic::Canvas& c, int x0, int y0, int x1, int y1, uint8_t light, uint8_
 
 void draw(pic::Canvas& c, const font::Font& f, const Menu& m, const MenuColors& col)
 {
-    if (col.buttons && !two_rows(m)) {
+    if (col.buttons) {
         draw_buttons(c, f, m, col);
         return;
     }
@@ -376,11 +392,11 @@ void draw(pic::Canvas& c, const font::Font& f, const Menu& m, const MenuColors& 
         // Two rows: row 23's choices, then row 24's (no prompt)
         c.fill(0, (kMenuRow - 1) * 8, pic::kScreenW, 16, 0);
         const int sel = m.selected >= 0 && m.selected < m.count ? m.selected : -1;
-        int x = 0, row = kMenuRow - 1;
+        int x = line_col(m), row = kMenuRow - 1;
         for (int i = 0; m.s[i]; ++i) {
             if (m.s[i] == kRowBreak) {
                 row = kMenuRow;
-                x = 0;
+                x = line_col(m);
                 continue;
             }
             if (x >= font::kCols) continue;
@@ -420,7 +436,8 @@ int hit_row(const Menu& m, int col, int row)
     if (!br) return row == kMenuRow ? hit(m, col) : -1;
     const int split = static_cast<int>(br - m.s);
     // The row's own columns: row 23's from 0, row 24's from just after the break
-    const int rel = row == kMenuRow ? col + split + 1 : col;
+    const int at = col - line_col(m);
+    const int rel = row == kMenuRow ? at + split + 1 : at;
     int first = -1, last = -1;
     for (int k = 0; k < m.count; ++k) {
         const bool second = m.start[k] > split;
@@ -440,10 +457,10 @@ void item_cell(const Menu& m, int k, int* col, int* row)
     const char* br = strchr(m.s, kRowBreak);
     const int at = k >= 0 && k < m.count ? m.start[k] : 0;
     if (br && at < br - m.s) {
-        *col = at;
+        *col = line_col(m) + at;
         *row = kMenuRow - 1;
     } else if (br) {
-        *col = at - static_cast<int>(br - m.s) - 1;
+        *col = line_col(m) + at - static_cast<int>(br - m.s) - 1;
         *row = kMenuRow;
     } else {
         *col = line_col(m) + static_cast<int>(strlen(m.prompt)) + at;
