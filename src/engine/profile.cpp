@@ -1560,6 +1560,7 @@ constexpr ecl::OpSet kQueenEcl = [] {
     s.code_size = 12000;
     s.no_prefix = true;
     s.krynn_race = true;
+    s.camp_resumes = true;          // (PROGRAM 9: its inns' city menu again after the camp - DOSBox)
     return s;
 }();
 
@@ -4067,7 +4068,7 @@ const Profile kProfiles[] = {
      .clips = {.file = "DISK1/SOUNDS.GLB", .hz = 7418, .first = 3, .last = 15,
                .ids = {0, 0, 3, 10, 7, 6, 10, 8, 9, 10, 11, 12, 13, 0, 0, 0}, .quiet_turns = true, .to_block = -3,
                .glb = true},
-     .variant = {.unfinished = true, .bigpic_from = 0xF0,
+     .variant = {.bigpic_from = 0xF0,                // (Play on since darkqueen5)
                  // (the camp: PIC 128 in the view - its picture routine's mode 2, 0xB6F6)
                  .camp_pic = 128,
                  // ("Press        to continue." with the button "Return" in its gap)

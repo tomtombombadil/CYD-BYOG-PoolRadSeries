@@ -46,6 +46,9 @@ struct ItemFacts {
     // A race's own weapon (the Dark Queen's kender and the hoopak): the
     // engine race, the item type, its to-hit bonus (type 0: none)
     uint8_t race_weapon[3] = {};
+    // The Dark Queen: with no weapon readied its routine (DQK resident
+    // 0x9BF6) adds nothing - the THAC0 without Strength's to-hit
+    bool unarmed_no_str_hit = false;
 };
 
 // The stats as they stand (the games' recalculation; spell_facts.md and

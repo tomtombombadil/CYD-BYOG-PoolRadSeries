@@ -202,6 +202,8 @@ static bool pump(int max_iter = 400000)
                      fg ? (int)fg->st : -1, (int)waiting, vm ? (int)vm->wait() : -1, (int)then, menu.prompt, menu.s);
             stuck_why = "stuck";
             problem(t);
+            printf("  (page_prompt %d writer %d note %u text [%s] bigpic %d pic_shown %d)\n", (int)page_prompt, (int)w.state,
+                   (unsigned)note_until, vm && vm->wait() == ecl::Wait::Print ? vm->text() : "", bigpic, (int)pic_shown);
             return false;
         }
         if (it % 50) continue;          // (time passes between the answers)
@@ -995,6 +997,14 @@ static void sweep_events(int only)
                 vm->set(0x7F12, d->gs.game_area);
                 d->gs.script = static_cast<uint8_t>(block);
                 waiting = false;
+                // SETVAR=addr=value,...: script memory set before the block's start
+                // (the Dark Queen's overland: SETVAR=16=18 - arriving from Hizden)
+                for (const char* q = getenv("SETVAR"); q && *q;) {
+                    unsigned a, v;
+                    if (sscanf(q, "%x=%u", &a, &v) == 2) vm->set(static_cast<uint16_t>(a), static_cast<uint16_t>(v));
+                    q = strchr(q, ',');
+                    if (q) ++q;
+                }
                 if (!host->load_script(d->gs.script, d->gs.code, &d->gs.code_len) || !vm->init_script()) {
                     problem("script didn't load");
                     return false;
@@ -1008,10 +1018,18 @@ static void sweep_events(int only)
                 stuck_why = "";
             }
             int steps = 0, lost = 0, reentries = 0;
-            // (the map's own size - the Dark Queen's up to 39 x 20)
-            const int mw = d && d->map.w ? d->map.w : 16, mh = d && d->map.h ? d->map.h : 16;
+            // (the map's own size - the Dark Queen's up to 39 x 20; its overland
+            // of Taladas the script's own 38 x 30 squares)
+            const bool qov = q_overland();
+            const int mw = qov ? 38 : d && d->map.w ? d->map.w : 16, mh = qov ? 30 : d && d->map.h ? d->map.h : 16;
             for (int y = 0; y < mh && lost < 20; ++y)
                 for (int x = 0; x < mw && lost < 20; ++x) {
+                    // (EVAT=x,y: that square only)
+                    if (getenv("EVAT")) {
+                        int ex = -1, ey = -1;
+                        sscanf(getenv("EVAT"), "%d,%d", &ex, &ey);
+                        if (x != ex || y != ey) continue;
+                    }
                     if (!d || screen != Screen::Game || waiting || d->gs.game_area != area || d->gs.script != block) {
                         ++reentries;
                         if (!enter()) {
@@ -1027,7 +1045,20 @@ static void sweep_events(int only)
                     d->gs.x = static_cast<uint8_t>(x);
                     d->gs.y = static_cast<uint8_t>(y);
                     d->gs.dir = static_cast<uint8_t>(pick(4) * 2);
+                    if (qov && q_overland()) {
+                        // (the Dark Queen's overland: the whole map's square 0x111 / 0x112,
+                        // the picture's 0x25 / 0x26 - its lower half BIGPIC 241 - any of 8 ways)
+                        vm->set(0x111, static_cast<uint16_t>(x));
+                        vm->set(0x112, static_cast<uint16_t>(y));
+                        vm->set(0x25, static_cast<uint16_t>(x));
+                        vm->set(0x26, static_cast<uint16_t>(y < 15 ? y : y - 15));
+                        vm->set(0x3E, static_cast<uint16_t>(y < 15 ? 240 : 241));
+                        d->gs.dir = static_cast<uint8_t>(pick(8));
+                    }
                     after_move_redraw();
+                    if (getenv("EVTRACE"))
+                        printf("  step at %d,%d dir %d: 0x22 %d 0x24 %d bigpic %d pic_shown %d\n", x, y, d->gs.dir, vm->get(0x22),
+                               vm->get(0x24), bigpic, (int)pic_shown);
                     play::act(play::Act::Forward, C);
                     ++steps;
                     if (!pump()) {

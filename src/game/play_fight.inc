@@ -443,6 +443,32 @@ inline bool masked(const uint8_t* m, int w, int x, int y)
     return (m[k >> 3] >> (k & 7)) & 1;
 }
 
+// A masked picture made w2 x h2 (the Dark Queen's attack frames may be a row
+// shorter than the ready one - CPIC 209 is 24 x 23 to 81's 24 x 24 - and a
+// Pic4 holds one size): its pixels where both have them, see-through
+// elsewhere. p is freed; nullptr when there's no memory.
+uint8_t* fit_masked(uint8_t* p, int w, int h, int w2, int h2)
+{
+    if (!p || (w == w2 && h == h2)) return p;
+    const uint32_t nb = static_cast<uint32_t>(rowb(w2)) * h2;
+    uint8_t* out = static_cast<uint8_t*>(calloc(1, nb + mask_bytes(w2, h2)));
+    if (out) {
+        const uint8_t* m = p + rowb(w) * h;
+        uint8_t* m2 = out + nb;
+        for (int y = 0; y < h2; ++y)
+            for (int x = 0; x < w2; ++x) {
+                const bool in = x < w && y < h;
+                if (in) set_nib(out, w2, x, y, nib(p, w, x, y));
+                if (!in || masked(m, w, x, y)) {
+                    const int k = y * w2 + x;
+                    m2[k >> 3] = static_cast<uint8_t>(m2[k >> 3] | 1 << (k & 7));
+                }
+            }
+    }
+    free(p);
+    return out;
+}
+
 uint8_t* load_vga4(dax::RleReader& r, uint32_t raw_size, int frame, int* w, int* h)
 {
     uint8_t hdr[pic::kVgaHeaderSize];
@@ -1131,7 +1157,8 @@ void build_icon(const uint8_t* rec, Pic4& ic)
         for (int fr = 0; fr < 2; ++fr) {
             int bw = 0, bh = 0;
             ic.px[fr] = q_load_pic4("CBODY", rec[0x142] + fr * 128, &bw, &bh);
-            if (ic.px[fr]) ic.w = static_cast<uint8_t>(bw), ic.h = static_cast<uint8_t>(bh);
+            if (fr && ic.px[0] && ic.px[1]) ic.px[1] = fit_masked(ic.px[1], bw, bh, ic.w, ic.h);      // (one size)
+            else if (ic.px[fr]) ic.w = static_cast<uint8_t>(bw), ic.h = static_cast<uint8_t>(bh);
         }
         return;
     }
@@ -1181,6 +1208,14 @@ void load_monster_icon(int slot, int block)
         int w, h;
         uint8_t* p = load_pic4(file, block + fr * 0x80, 0, &w, &h);
         if (!p) continue;
+        if (fr && ic.px[0] && fight_masks() && (w != ic.w || h != ic.h)) {
+            // (the attack frame made the ready one's size: a Pic4 has one -
+            // the Dark Queen's Sivak 24 x 23 / 24 x 24 drew a black row)
+            p = fit_masked(p, w, h, ic.w, ic.h);
+            if (!p) continue;
+            w = ic.w;
+            h = ic.h;
+        }
         ic.px[fr] = arena_adopt(p, pic_bytes(w, h));
         ic.w = static_cast<uint8_t>(w);
         ic.h = static_cast<uint8_t>(h);

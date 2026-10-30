@@ -2038,7 +2038,7 @@ Stop Vm::step()
         restore_selected();
         if (v == 0) return wait_for(Wait::PartyMenu);      // the party menu, then on
         if (v == 9) {                                       // the camp, then EXIT
-            stop_script();
+            if (!set_.camp_resumes) stop_script();          // (the Dark Queen's goes on)
             return wait_for(Wait::Camp);
         }
         if (set_.tr_ops && (v == 3 || v == 4))             // (Treasures: its ovl 0x74 +0x2A75 / +0x292C)

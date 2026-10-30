@@ -496,6 +496,9 @@ static void shop_run(const char* ops)
         if (*q == '#') {
             char nm[20]; ch.name(nm, 20);
             printf("  screen %d temple %d menu [%s%s] %s HP %d/%d gold worth %d counter %d %d %d %d %d gems %d jewels %d items %d\n", (int)play::screen, (int)play::temple, play::menu.prompt, play::menu.s, nm, ch.hp(), ch.hp_max(), rules::gold_worth(ch), play::ground->money[0], play::ground->money[1], play::ground->money[2], play::ground->money[3], play::ground->money[4], ch.money(5), ch.money(6), ch.n_items);
+            printf("   (waiting %d wait %d page_prompt %d state %d note %u then %d text [%s])\n", (int)play::waiting,
+                   (int)play::vm->wait(), (int)play::page_prompt, (int)play::w.state, (unsigned)play::note_until, (int)play::then,
+                   play::vm->wait() == ecl::Wait::Print ? play::vm->text() : "");
             char t[16]; snprintf(t, 16, "shoprun%d", n++); shot(t);
         } else if (*q == '%') { ++q; play::tap(17 * 8 + 2, (4 + (*q - '0')) * 8 + 2, C); }
         else if (*q == '^') { ++q; { int px_, py_; play::pm_line_point(pm_line_of(*q), &px_, &py_); play::tap(px_, py_, C); }; }   // a party menu line
@@ -710,6 +713,13 @@ int main(int argc, char** argv)
         printf("  input %d prompt [%s]\n", (int)play::input(), play::input_prompt);
         for (const char* n = getenv("NAME") ? getenv("NAME") : "TESTER"; *n; ++n) play::input_key(*n, C);
         play::input_key('\n', C);
+        if (play::screen == play::Screen::Icon) {
+            // (its icon picker: Done)
+            shot("qicon");
+            printf("  icon picker [%s%s] icon %d\n", play::menu.prompt, play::menu.s, play::mk->ch.rec[0x142]);
+            tap_menu('D');
+            printf("  after Done: screen %d input %d\n", (int)play::screen, (int)play::input_mode);
+        }
         printf("  ask [%s%s]\n", play::menu.prompt, play::menu.s);
         tap_menu('Y');
         if (play::screen == play::Screen::YesNo) { printf("  ask [%s]\n", play::menu.prompt); tap_menu('Y'); }
@@ -1358,6 +1368,10 @@ int main(int argc, char** argv)
         { char t[16]; snprintf(t, sizeof t, "after_%c", *m); shot(t); }
         char l1[48], l2[48]; play::describe(l1, l2, 48);
         printf("   now %d,%d %s | %s | %s\n", play::pos_x(), play::pos_y(), geo::dir_name(play::dir()), l1, l2);
+        if (play::q_overland())      // (the Dark Queen's overland: its square, the whole map's, the picture)
+            printf("   overland %d,%d (map %d,%d) picture %d clock %d %d %d %d %d\n", play::vm->get(0x25), play::vm->get(0x26),
+                   play::vm->get(0x111), play::vm->get(0x112), play::vm->get(0x3E), play::vm->get(0x4BC6),
+                   play::vm->get(0x4BC7), play::vm->get(0x4BC8), play::vm->get(0x4BC9), play::vm->get(0x4BCA));
     }
     if (play::screen == play::Screen::Fight && getenv("FIGHT")) run_fight();
     if (getenv("TEXIT")) {

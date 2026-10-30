@@ -68,6 +68,9 @@ struct OpSet {
     // goes on after it (Pool); 3 kills the party (Curse; Pool's program
     // does nothing for it - its handler knows 0, 8 and 9 only)
     bool program_ends = true, program_kills = true;
+    // PROGRAM 9: the camp, then EXIT (Darkness); the Dark Queen's script goes
+    // on after the camp (its inn: the city's menu again - DOSBox)
+    bool camp_resumes = false;
     // Secret: its areas 1-6 share the numbered files two by two (ECL1 for
     // areas 1 and 2 ...: the file is (area + 1) / 2) and the blocks are
     // numbered across a family's files (NEW ECL 33 in area 2: ECL1's) - a
