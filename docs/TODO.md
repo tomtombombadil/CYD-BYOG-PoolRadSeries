@@ -201,13 +201,17 @@ the Project as claude/TODO.md.
       originals never apply them (the code tests a loop counter left at
       Human; DOSBox: Champions' kender Dex unchanged): Game Fixes on only;
       the young-Wisdom -1 (Secret's rule) now in Champions / Death Knights.
-- [ ] Dark Queen (v0.157.0, Play still off - Dev Tools): stopped mid-way
-      (Tom's usage limit, 2026-10-24). In: creation, training, camp magic,
-      shops / temple / vault, Knight New Order, Add list. Next: fight spells,
-      the fights' "@" menus / colours, monster xp / flags2, sound, 256
-      colours on S3 / C5, playing from start, `behave queen`. Its record
-      test's Str00 expectation moved 60 -> 50 with its "Str00's places"
-      change - confirm. Its facts after phase 3 weren't written (stopped).
+- [ ] Dark Queen (Play still off - Dev Tools; branch darkqueen4,
+      queen_facts_4.md 9-12): in since v0.157.0 - the fights' two rows of
+      buttons / status / Aim / Move's Undo Done, names' colours, flags /
+      flags 2, monster xp (record 0x54 - checked), sound (SOUNDS.GLB), 256
+      colours on S3 / C5, animation (0.5 s), Inv, Modify, `behave queen`
+      (creation, train, knights, spells, monsters). Str00 test 50 confirmed.
+      Plays from the start through Caergoth, the dragons, the Silver Shark
+      and the cave's draconians. Left: the Taladas overland (ECL 5, map 2 -
+      a step there does nothing), its own icon editor (Alter Icon, the
+      creation's icon), Modify without the items' figures, the camp's cast
+      message place. Then Play on.
 - [ ] Secret J45's piece takes in the "Journal Entry 47" heading (the
       map overlaps it; a rectangle can't separate them).
 - [ ] Check: pdfview's State (FileSource cache, >4 KB) lands in PSRAM on
