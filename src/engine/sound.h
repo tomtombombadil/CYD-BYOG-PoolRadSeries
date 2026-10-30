@@ -81,12 +81,23 @@ struct Clips {
     // (Id, Curse's numbers) -> this game's effect that fits best (0: none -
     // the older game's own Tandy sound plays)
     uint8_t  lent[16] = {};
+    // The Dark Queen (queen_facts_4.md 11): its effects are the entries of
+    // an HLIB library (SOUNDS.GLB, DIG4 - entry n + to_block), each with its
+    // own rate (load_glb_clip)
+    bool     glb = false;
 };
 
 // An effect's samples: the DAX block `block` of the source in a block of its
 // own from malloc (the caller frees it; nullptr: not there, or no memory),
 // *n its size. Reads only the one index entry (no 3 KB index).
 uint8_t* load_clip(dax::ByteSource& src, int block, uint32_t* n);
+
+// The Dark Queen's (SOUNDS.GLB, an HLIB "DIG4" library, no directory):
+// entry `entry` - u16 big-endian rate, u16 0, u16 big-endian byte count,
+// then 4-bit samples two a byte, the low nibble first - as unsigned 8-bit
+// samples (v x 17) in a block from malloc (nullptr: not there / no
+// memory), *n of them, *hz its rate
+uint8_t* load_glb_clip(dax::ByteSource& src, int entry, uint32_t* n, uint16_t* hz);
 
 // The PC speaker driver's (IBMSND.COM) treatment of the samples, in place:
 // each 2,048 bytes stretched to 0-255 when their range is 40 or more (a

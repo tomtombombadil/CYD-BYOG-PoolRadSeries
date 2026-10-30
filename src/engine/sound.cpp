@@ -1,4 +1,5 @@
 #include "sound.h"
+#include "hlib.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -328,6 +329,37 @@ uint8_t* load_clip(dax::ByteSource& src, int block, uint32_t* n)
         return nullptr;
     }
     *n = static_cast<uint32_t>(got);
+    return p;
+}
+
+uint8_t* load_glb_clip(dax::ByteSource& src, int entry, uint32_t* n, uint16_t* hz)
+{
+    *n = 0;
+    *hz = 0;
+    hlib::Library lib;
+    uint32_t pos = 0, len = 0;
+    if (hlib::open(src, 0, static_cast<uint32_t>(src.size()), lib) != hlib::Status::Ok ||
+        !hlib::entry(src, lib, entry, pos, len) || len < 6)
+        return nullptr;
+    uint8_t h[6];
+    if (src.read_at(pos, h, 6) != 6) return nullptr;
+    const uint32_t bytes = static_cast<uint32_t>(h[4] << 8 | h[5]);
+    if (!bytes || bytes + 6 > len) return nullptr;
+    uint8_t* p = static_cast<uint8_t*>(malloc(bytes * 2));
+    if (!p) return nullptr;
+    // (read into the upper half, then spread forwards: a sample's two
+    // places are never past the byte still to read)
+    if (src.read_at(pos + 6, p + bytes, bytes) != bytes) {
+        free(p);
+        return nullptr;
+    }
+    for (uint32_t i = 0; i < bytes; ++i) {
+        const uint8_t b = p[bytes + i];
+        p[2 * i] = static_cast<uint8_t>((b & 15) * 17);
+        p[2 * i + 1] = static_cast<uint8_t>((b >> 4) * 17);
+    }
+    *n = bytes * 2;
+    *hz = static_cast<uint16_t>(h[0] << 8 | h[1]);
     return p;
 }
 

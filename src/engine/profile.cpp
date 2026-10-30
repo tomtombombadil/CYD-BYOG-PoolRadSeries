@@ -4057,6 +4057,14 @@ const Profile kProfiles[] = {
                .icon_menu = {}, .icon_words = {}, .level_menu = qw(0x5241), .level_base = 1,
                .order_list = qw(0x5063), .speed_list = qw(0x5075), .pick = qw(0x4DD2), .pick_menu = qw(0x4EEA)},
      .fight = kQueenFight,
+     // Its effects (queen_facts_4.md 11): SOUNDS.GLB's 13 entries are its
+     // sound numbers 3-15 (res 0x12636: n - 3), each at its own rate;
+     // Darkness's numbers + 1 (its spell 3, lightning 9, fireball 12, the
+     // step 11 - 14 / 15 on the game byte 0x39's grounds 3 / 6); turning
+     // silent as Darkness's
+     .clips = {.file = "DISK1/SOUNDS.GLB", .hz = 7418, .first = 3, .last = 15,
+               .ids = {0, 0, 3, 10, 7, 6, 10, 8, 9, 10, 11, 12, 13, 0, 0, 0}, .quiet_turns = true, .to_block = -3,
+               .glb = true},
      .variant = {.unfinished = true, .bigpic_from = 0xF0,
                  // (the camp: PIC 128 in the view - its picture routine's mode 2, 0xB6F6)
                  .camp_pic = 128,

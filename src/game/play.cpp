@@ -444,7 +444,10 @@ __attribute__((noinline)) void play_clip(int v)
     if (!open_file(cl.file, f)) return;
     plat::FileSource* src = new (std::nothrow) plat::FileSource(f);
     uint32_t n = 0;
-    uint8_t* pcm = src ? sound::load_clip(*src, v + cl.to_block, &n) : nullptr;
+    uint16_t glb_hz = 0;
+    uint8_t* pcm = !src ? nullptr
+                   : cl.glb ? sound::load_glb_clip(*src, v + cl.to_block, &n, &glb_hz)
+                            : sound::load_clip(*src, v + cl.to_block, &n);
     delete src;
     f.close();
     if (!pcm) {
@@ -455,7 +458,7 @@ __attribute__((noinline)) void play_clip(int v)
         }
         return;
     }
-    clips->start(pcm, n, clip_rates[v & 15] ? clip_rates[v & 15] : cl.hz, sound_device());
+    clips->start(pcm, n, glb_hz ? glb_hz : clip_rates[v & 15] ? clip_rates[v & 15] : cl.hz, sound_device());
     start_output();
 }
 
@@ -488,10 +491,15 @@ __attribute__((noinline)) bool play_lent(int v)
 
 // A sound by the engine's number (sound::Id - Curse's), `game`: the game's
 // own number (Darkness's SOUND v)
+bool hl();
 void sfx(int id, bool game = false)
 {
     if (!sound_on()) return;
+    // (the Dark Queen's step: 14 / 15 on the game byte 0x39's grounds 3 / 6 - res 0x12652)
+    const bool q_step = hl() && !game && id == sound::kStep;
     if (clips && !game) id = id >= 0 && id < 16 ? d->prof->clips.ids[id] : 0;
+    if (q_step && d->gs.area1[0x39] == 3) id = 14;
+    else if (q_step && d->gs.area1[0x39] == 6) id = 15;
     if (clips && !id) return;
     // (the older games with a later game's recordings: the one lent for it)
     const int lent = !clips && lent_prof && lclips && id >= 0 && id < 16 ? lent_prof->clips.lent[id] : 0;
