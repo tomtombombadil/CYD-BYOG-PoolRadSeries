@@ -47,18 +47,29 @@ the Project as claude/TODO.md.
 
 ## Claude
 
-- [ ] Pool full play test, side by side with DOSBox (branch
-      playtest-pool-1, 2026-10-31): Phlan's civilized area (tour, clerk,
-      shop, temple, camp, saves) and the slums' entrance done - 17 fixes
-      (load, wrap, saves' view mode / wall sets, camp / treasure pictures,
-      shop / loot / temple layouts, Add's selection / icon slot, armour
-      movement, View prompt ...). Next: the slums' fights onward. Listed,
-      not fixed: the buy list's opening place (the original's shared list
-      position), the position line after a script move to a new block
-      (the original shows the old square until the next step), the
-      wall-ahead byte after the tour. Check in Curse's play test: the
-      press words, word wrap, load path, camp picture / Quit to DOS, View
-      prompt, shop and temple layouts - Curse may share Pool's ways.
+- [ ] Pool full play test, side by side with DOSBox (part 1, v0.160.3:
+      Phlan's civilized area, 17 fixes). Part 2 (2026-10-31): the three
+      listed differences fixed (Buy list's opening place / page-bound
+      highlight, the position line held after a move into a new block,
+      the wall ahead only at a step / turn / CALL C018), the Locked menu
+      ignores movement keys, a beaten monster's valueless items mostly
+      stay (ovr6 +0x10A). Slums walked to the kobolds (7,0) and their
+      fight fought (Quick) on both. Open: (a) **fight placement** - the
+      original placed the party facing NORTH (formation, monsters above)
+      though the party faced east; the engine with facing N gives the
+      same formation, but its field's walls differ - find where Pool's
+      fight takes its direction / builds its field (ovr11 +0x19F5, its
+      callers); (b) the kobolds' coins: each record has 16 copper, the
+      original's treasure listed "Silver 144" - check the coin type / the
+      Take list's labels (the engine shows copper); (c) dice: fights
+      can't match roll for roll (the engine's draws don't follow the
+      original's order) - the original is run with a fixed seed (patched
+      copy, scratch only) so its replays repeat, the engine's encounter
+      dice told to match (playsim DIEFIX / "~n:v;"). Check in Curse's
+      play test: the press words, word wrap, load path, camp picture /
+      Quit to DOS, View prompt, shop and temple layouts, the list
+      routine (shared top line, page-bound highlight), movement keys at
+      the Locked menu, monsters' valueless items, the fight placement.
 
 - [ ] Code review follow-ups (branch review-fixes-engine, 2026-10-31):
       (a) Dark Queen reroll - the engine's queen_roll keeps spells a
