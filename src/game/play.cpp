@@ -3646,11 +3646,28 @@ void drop_item(int i, pic::Canvas& c)
     ask_yes_no(c, Ask::DropItem, iw(profile::kDropIt));
 }
 
+// Trade's party: Pool picks the one to trade with on its own screen - the
+// camp's (or the game's) with the party at the right (DOSBox); the others
+// over a list of the party alone
+int trade_col() { return pool_files() ? 17 : 1; }
+void draw_camp_screen(pic::Canvas& c);
+
 void draw_trade(pic::Canvas& c)
 {
-    c.clear(0);
-    layout::outer(c, d->tables, d->frame_tiles);
-    draw_party(c, 1);
+    if (pool_files()) {
+        if (camping) {
+            draw_camp_screen(c);
+        } else {
+            draw_frame(c);
+            draw_view(c);
+            draw_panel(c);
+        }
+        text::clear(c, text::kTextArea);
+    } else {
+        c.clear(0);
+        layout::outer(c, d->tables, d->frame_tiles);
+        draw_party(c, 1);
+    }
     char keys[24];
     snprintf(keys, sizeof keys, "%s%s", iw(profile::kSelect), d->w_exit);
     char prompt[44];
@@ -3695,9 +3712,9 @@ void trade_tap(int x, int y, pic::Canvas& c)
 {
     const int row = y / 8, col = x / 8;
     if (y < text::kMenuTapTop) {
-        if (row >= 4 && row < 4 + pt->count && col >= 1) {
+        if (row >= 4 && row < 4 + pt->count && col >= trade_col()) {
             pt->selected = row - 4;
-            draw_party(c, 1);
+            draw_party(c, trade_col());
         }
         return;
     }
@@ -3717,6 +3734,9 @@ void trade_tap(int x, int y, pic::Canvas& c)
     uint8_t it[items::kRecordSize];
     memcpy(it, from.items[item_at], sizeof it);
     if (rules::too_heavy(who, it, *names, d->facts)) {
+        // (Pool: back to the items, "Overloaded" on the status line -
+        // GAME.OVR ovr20 +0x178D; DOSBox)
+        if (pool_files()) back_to_items(c);
         note(c, d->w_over);
         return;
     }
@@ -15733,7 +15753,7 @@ bool nav_list(int step, pic::Canvas& c)
     }
     if (screen == Screen::TradeWho && pt->count) {
         pt->selected = (pt->selected + step + pt->count) % pt->count;
-        draw_party(c, 1);
+        draw_party(c, trade_col());
         return true;
     }
     if (screen == Screen::Modify && modder) {
@@ -16079,8 +16099,9 @@ bool tap_target(int x, int y, int* row, int* c0, int* c1)
     }
     // The party menu's characters, Trade's party (a tap picks one)
     if ((screen == Screen::PartyMenu || screen == Screen::TradeWho) && col >= 1 && r >= 4 && r < 4 + pt->count) {
+        if (screen == Screen::TradeWho && col < trade_col()) return false;
         *row = r;
-        *c0 = 1;
+        *c0 = screen == Screen::TradeWho ? trade_col() : 1;
         *c1 = 38;
         return true;
     }
