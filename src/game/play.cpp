@@ -177,6 +177,7 @@ struct Data {
                    w_camp[8] = {}, w_makes_camp[28] = {};
     char           q_order[3][16] = {};        // Dark Queen: " of the Crown" ... (View Character)
     char           q_src = 0;                  // Dark Queen: the saved game loaded (its records' and rest's source)
+    char           w_view_prompt[8] = {};      // Pool: View Character's menu prompt (variant.view_prompt)
     char           w_press[2][40] = {};        // Champions, Pool: a one-choice menu's word shown as the other (variant.press_words)
     char           gods[8][12] = {};           // Champions: its gods' names (create.god_names; 0 None)
     char           w_order[3][16] = {};        // Champions: " of the Crown" / Sword / Rose (variant.order_words)
@@ -2940,7 +2941,7 @@ void draw_character(pic::Canvas& c)
     // What the character can do: Items (when they have some), Exit
     char keys[80];
     view_keys(*ch, keys, sizeof keys);
-    text::build(menu, "", keys);
+    text::build(menu, d->w_view_prompt, keys);
     menu.selected = 0;
     hl_own(kDkView);
     show_menu_line(c);
@@ -11385,6 +11386,7 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             {pp.saving, d->w_saving, sizeof d->w_saving}, {pp.camp, d->w_camp, sizeof d->w_camp},
             {pp.makes_camp, d->w_makes_camp, sizeof d->w_makes_camp},
             {d->prof->magic.heading_word, d->w_spells_word, sizeof d->w_spells_word},
+            {d->prof->variant.view_prompt, d->w_view_prompt, sizeof d->w_view_prompt},
             {d->prof->variant.press_words[0], d->w_press[0], sizeof d->w_press[0]},
             {d->prof->variant.press_words[1], d->w_press[1], sizeof d->w_press[1]},
             {d->prof->variant.order_words[0], d->w_order[0], sizeof d->w_order[0]},

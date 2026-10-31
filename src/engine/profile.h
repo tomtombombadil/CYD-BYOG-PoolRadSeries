@@ -798,6 +798,8 @@ struct Profile {
         // Sword", " of the Rose": three C strings one after another; a file
         // offset)
         uint32_t queen_orders = 0;
+        // View Character's menu prompt (Pool: "View:"; GAME.OVR - 0: none)
+        uint32_t view_prompt = 0;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;
