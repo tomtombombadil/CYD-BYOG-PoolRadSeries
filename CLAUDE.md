@@ -473,7 +473,11 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   party); since v0.20.0 Create New Character (`engine/create.*`,
   `engine/classes.*`: rule tables read from the program) and BEGIN needs a
   party, as in the games. While text or a one-choice
-  menu waits, any key goes on (like "press a key").
+  menu waits, any key goes on (like "press a key"; movement keys and
+  taps too - Tom, 2026-10-31, though the originals wait for Return).
+  After a script moves the party the position line shows the new square
+  at once (Tom, 2026-10-31; the originals show the old one until the
+  next step).
   The game's questions (INPUT NUMBER / STRING) use an on-screen keyboard
   in the viewer (`play::input()` / `play::input_key()`); event pictures
   animate only while a menu waits (as in the games).
