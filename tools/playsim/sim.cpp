@@ -64,8 +64,10 @@ static std::vector<uint8_t> px(getenv("CANVAS8") ? 320 * 200 : 320 * 200 / 2);  
 // PSRAM, a byte a pixel with the game's palette - play::canvas_depth)
 static pic::Canvas C{px.data(), 320, 200, static_cast<uint8_t>(getenv("CANVAS8") ? 8 : 4)};
 static int shot_n = 0;
+static bool g_quiet = false;         // (moves between two '`': no snapshots)
 static void shot(const char* tag)
 {
+    if (g_quiet) return;
     char name[64];
     snprintf(name, sizeof name, "out/%02d_%s.ppm", shot_n++, tag);
     FILE* f = fopen(name, "wb");
@@ -179,6 +181,13 @@ static void settle(int choice = 0, int max_ms = 60000)
         }
         if (!waiting) return;
         const auto wt = vm->wait();
+        // MANUAL=1 (the side-by-side tool): nothing answered - back to the
+        // moves as soon as the game waits for the player
+        if (getenv("MANUAL") && (page_prompt || play::input() != play::Input::None || wt == ecl::Wait::Menu ||
+                                 wt == ecl::Wait::Who || wt == ecl::Wait::Key || (wt == ecl::Wait::ListMenu && list_wait))) {
+            if (wt == ecl::Wait::Menu) { printf("  MENU prompt=%s:", vm->prompt()); for (int i = 0; i < vm->items(); ++i) printf(" [%s]", vm->item(i)); printf("\n"); }
+            return;
+        }
         if (play::input() != play::Input::None) {
             // TYPE=a,b,c: one answer each time (the last one again after them)
             static int typed = 0;
@@ -761,7 +770,7 @@ int main(int argc, char** argv)
         fresh_gs = play::d->gs;
         for (unsigned a = 0x4B00; a < 0x10000; ++a) fresh_words[a - 0x4B00] = play::vm->get((uint16_t)a);
     }
-    {
+    if (!getenv("PARTYMENU")) {      // (PARTYMENU=1: no load - the moves start at the party menu)
         if (getenv("LOADFROM") && getenv("POOLDIR")) play::set_import_dir(getenv("POOLDIR"));
         pm_tap_line('L');
         if (play::load_where) {         // (Darkness: "Load from where?" - Pools; LOADFROM=S: Secret's, POOLDIR its folder)
@@ -1055,7 +1064,7 @@ int main(int argc, char** argv)
         play::d->loaded = false;
         printf("  new game: area %d script %d\n", play::d->gs.game_area, play::d->gs.script);
     }
-    if (play::screen == play::Screen::PartyMenu) pm_tap_line('B');
+    if (play::screen == play::Screen::PartyMenu && !getenv("PARTYMENU") && !getenv("NOBEGIN")) pm_tap_line('B');
     if (getenv("AREA")) {
         // Start somewhere else: as a script would (SAVE area; NEWECL block)
         play::d->gs.game_area = (uint8_t)atoi(getenv("AREA"));
@@ -1297,9 +1306,25 @@ int main(int argc, char** argv)
             { char t[16]; snprintf(t, sizeof t, "word_%c", k); shot(t); }
             continue;
         }
-        if (*m == '.' || *m == ',') {
-            // ".": a tap (a key: the text's page, Return); ",": settle only
+        if (*m == '`') { g_quiet = !g_quiet; continue; }
+        if (*m == '|' && m[1]) {
+            // "|X": the party menu's line with key X
+            pm_tap_line(*++m);
+            settle();
+            { char t[16]; snprintf(t, sizeof t, "word_%c", *m); shot(t); }
+            continue;
+        }
+        if (*m == '.' || *m == ',' || *m == '@' || *m == '%' || *m == '=' || *m == '^' || *m == 'v' || *m == '!') {
+            // ".": a tap (a key: the text's page, Return); ",": settle only;
+            // "@n": list line n tapped; "%n": party row n; "=text;": typed + Enter;
+            // "^" / "v": the cursor keys Up / Down, "!": Select
             if (*m == '.') play::tap(2, 2, C);
+            else if (*m == '@' && m[1]) { ++m; play::tap(12, (play::list_row0 + (*m - '0')) * 8 + 2, C); }
+            else if (*m == '%' && m[1]) { ++m; play::tap(17 * 8 + 2, (4 + (*m - '0')) * 8 + 2, C); }
+            else if (*m == '=') { ++m; while (*m && *m != ';') play::input_key(*m++, C); play::input_key('\n', C); if (!*m) --m; }
+            else if (*m == '^') play::nav(play::Nav::Up, C);
+            else if (*m == 'v') play::nav(play::Nav::Down, C);
+            else if (*m == '!') { int x = 0, y = 0; if (play::nav_point(&x, &y)) play::tap(x, y, C); }
             settle();
             { char t[16]; snprintf(t, sizeof t, "after_%s", *m == '.' ? "tap" : "wait"); shot(t); }
             char l1[48], l2[48]; play::describe(l1, l2, 48);

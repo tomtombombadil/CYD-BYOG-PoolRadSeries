@@ -5375,6 +5375,8 @@ void add_checked(int i, party::Character& ch, pic::Canvas& c)
     ++pt->count;
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
     d->guy_added[i] = true;
+    // (Pool: the one added is the party menu's selected member - DOSBox)
+    if (d->prof->game == games::Game::PoolOfRadiance) pt->selected = pt->count - 1;
     if (pcs + 1 >= 6 || pt->count >= party::kMaxParty) {
         screen = Screen::PartyMenu;
         draw_party_menu(c);
