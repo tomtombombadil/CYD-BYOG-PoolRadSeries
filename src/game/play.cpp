@@ -9089,6 +9089,15 @@ void rest_tick(uint32_t now, pic::Canvas& c)
         if (period > 0 && ++rest_encounter_steps >= period) {
             rest_encounter_steps = 0;
             if (rng.roll(100, 1) <= chance) {
+                if (pool_files()) {
+                    // (Pool: the camp-interrupted script first - ovr21
+                    // +0xE0A; "The Party is rudely interrupted!" only after
+                    // it, and never seen when it moved the party on - DOSBox,
+                    // the city watch)
+                    rest.interrupted = true;
+                    end_rest(c);
+                    return;
+                }
                 char t[40];
                 mw(profile::kInterrupted, t, sizeof t);
                 c.fill(8, 19 * 8, 38 * 8, 8, 0);
