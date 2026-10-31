@@ -1367,6 +1367,30 @@ int main(int argc, char** argv)
             else if (*m == '!') { int x = 0, y = 0; if (play::nav_point(&x, &y)) play::tap(x, y, C); }
             settle();
             { char t[16]; snprintf(t, sizeof t, "after_%s", *m == '.' ? "tap" : "wait"); shot(t); }
+            static bool field_shown = false;
+            if (getenv("FIELDMAP") && !field_shown && play::fg && play::screen == play::Screen::Fight) {
+                // FIELDMAP=1: the whole field once at the fight's start (# a wall / obstacle,
+                // . floor, digits / letters the fighters: party 0-5, monsters a-z)
+                field_shown = true;
+                const auto& b = play::fg->b;
+                printf("  FIELD (view %d,%d)\n", b.vx, b.vy);
+                for (int y = 0; y < combat::kH; ++y) {
+                    printf("  %2d ", y);
+                    for (int x = 0; x < combat::kW; ++x) {
+                        const int w = b.who[y][x];
+                        const uint8_t* g = combat::tile(b, *b.tables, x, y);
+                        char c = !b.ground[y][x] ? ' ' : (!g || g[0] == 0xFF) ? '#' : '.';
+                        if (w) c = w - 1 < b.party_size ? static_cast<char>('0' + w - 1) : static_cast<char>('a' + (w - 1 - b.party_size) % 26);
+                        putchar(c);
+                    }
+                    printf("\n");
+                }
+                if (FILE* ff = fopen("FIELD_ENGINE.BIN", "wb")) {      // (the ground bytes, as the original's 50 x 25)
+                    fwrite(b.ground, 1, sizeof b.ground, ff);
+                    fclose(ff);
+                }
+                for (int i = 0; i < b.n; ++i) printf("  at %d,%d fighter %d facing %d\n", b.f[i].x, b.f[i].y, i, b.f[i].facing);
+            }
             char l1[48], l2[48]; play::describe(l1, l2, 48);
             printf("   now %d,%d %s | %s | %s\n", play::pos_x(), play::pos_y(), geo::dir_name(play::dir()), l1, l2);
             continue;
