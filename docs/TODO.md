@@ -49,9 +49,9 @@ the Project as claude/TODO.md.
 
 - [ ] Pool full play test, side by side with DOSBox (part 1, v0.160.3:
       Phlan's civilized area, 17 fixes). Part 2 (2026-10-31): the three
-      listed differences fixed (Buy list's opening place / page-bound
-      highlight, the position line held after a move into a new block,
-      the wall ahead only at a step / turn / CALL C018), the Locked menu
+      listed differences settled (Buy list's opening place / page-bound
+      highlight, the wall ahead only at a step / turn / CALL C018; the
+      position line after a script's move: Tom's decision), the Locked menu
       ignores movement keys, a beaten monster's valueless items mostly
       stay (ovr6 +0x10A). Slums walked to the kobolds (7,0) and their
       fight fought (Quick) on both. Open: (a) **fight placement** - the
