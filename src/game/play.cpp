@@ -177,7 +177,8 @@ struct Data {
                    w_camp[8] = {}, w_makes_camp[28] = {};
     char           q_order[3][16] = {};        // Dark Queen: " of the Crown" ... (View Character)
     char           q_src = 0;                  // Dark Queen: the saved game loaded (its records' and rest's source)
-    char           w_press[2][36] = {};        // Champions: a one-choice menu's word shown as the other (variant.press_words)
+    char           w_view_prompt[8] = {};      // Pool: View Character's menu prompt (variant.view_prompt)
+    char           w_press[2][40] = {};        // Champions, Pool: a one-choice menu's word shown as the other (variant.press_words)
     char           gods[8][12] = {};           // Champions: its gods' names (create.god_names; 0 None)
     char           w_order[3][16] = {};        // Champions: " of the Crown" / Sword / Rose (variant.order_words)
     char           w_yell[8] = {}, w_wants[16] = {};
@@ -343,6 +344,10 @@ char pm_saves[12];            // save slots found ("AB")
 bool load_where = false;      // Darkness: Load's "Load from where?" asked, a slot next
 bool load_secret = false;     // Darkness: Load from Secret's saved games (its folder on the card)
 bool exit_wanted = false;     // Exit to DOS: back to the viewer
+// Pool: Load Saved Game goes straight into the game (DOSBox: the original
+// never shows the party menu after a load); the PC tools clear it to work
+// on the loaded party at the party menu
+bool load_begins = true;
 
 bool area_view = false;
 bool pic_shown = false;       // a script picture covers the 3D view
@@ -1199,6 +1204,8 @@ void draw_tr_overland(pic::Canvas& c)
     dirty_rows(3, 13);
 }
 
+uint32_t text_wipe_at = 0;               // (Pool's treasure Detect: its lines cleared then)
+uint32_t game_delay_ms();
 bool world_parked = false;           // the 3D view's walls on the card during a fight (play_fight.inc)
 // The scripts' text colour: light green (Darkness: game byte 0x39 - its
 // scripts give speech 14, yellow; 0 or past 15 is 10 - darkness_facts.md S2)
@@ -2936,7 +2943,7 @@ void draw_character(pic::Canvas& c)
     // What the character can do: Items (when they have some), Exit
     char keys[80];
     view_keys(*ch, keys, sizeof keys);
-    text::build(menu, "", keys);
+    text::build(menu, d->w_view_prompt, keys);
     menu.selected = 0;
     hl_own(kDkView);
     show_menu_line(c);
@@ -3239,6 +3246,7 @@ void handle(ecl::Stop r);
 void draw_items(pic::Canvas& c);
 void draw_buy(pic::Canvas& c);
 void draw_shop(pic::Canvas& c);
+bool pool_shop_blank();
 
 // The menu line again after a message
 bool fight_moving();
@@ -3348,8 +3356,9 @@ void list_line(int i, char* out, size_t cap)
         char nm[48];
         const uint8_t* it = goods(i);
         names->name(items::Item{it}, nm, sizeof nm);
-        if (darkness_files()) {
-            // (30 characters: the price ending at the 30th, the name over the start)
+        if (darkness_files() || d->prof->variant.shop_heading) {
+            // (30 characters: the price ending at the 30th, the name over the
+            // start - Darkness; Pool too, DOSBox)
             char line[31];
             snprintf(line, sizeof line, "%30d", shop_price(it));
             const size_t n = strlen(nm);
@@ -3450,7 +3459,8 @@ void items_keys(char* out, size_t cap)
     const party::Character* ch = pt->sel();
     const bool exploring = view_from == Screen::Game || view_from == Screen::Camp || view_from == Screen::Fight;
     snprintf(out, cap, "%s%s%s%s%s%s%s%s", d->w_ready, exploring && can_use_items(*ch) ? iw(profile::kUse) : "",
-             !ch->npc() && (!in_shop_items() || darkness_files() || gateway()) && view_from != Screen::Fight ? iw(profile::kTrade) : "",
+             !ch->npc() && (!in_shop_items() || darkness_files() || gateway() || d->prof->game == games::Game::PoolOfRadiance) &&
+                     view_from != Screen::Fight ? iw(profile::kTrade) : "",
              iw(vault_on() ? profile::kDeposit : profile::kDrop),
              ch->n_items < party::kMaxItems ? iw(profile::kHalve) : "", iw(profile::kJoin),
              in_shop_items() && !ch->npc() ? iw(profile::kSell) : "", in_shop_items() ? iw(profile::kId) : "");
@@ -4037,10 +4047,24 @@ bool save_game(char slot)
         plat::log("[play] saved game %c: FAILED (the vault)\n", slot);
         return false;
     }
+    if (pool_files()) {
+        // (Pool keeps the wall sets loaded in area words 0x4AFA-0x4AFF - here
+        // 0x4CFA-: the three blocks, then their sets, -1 for none; its load
+        // reads them back - LoadWallSet; a save without them stops the
+        // original: "Unable to load wallset" - DOSBox)
+        for (int i = 0; i < 3; ++i) {
+            vm->set(static_cast<uint16_t>(0x4CFA + i), static_cast<uint16_t>(d->wall_block[i]));
+            vm->set(static_cast<uint16_t>(0x4CFD + i), static_cast<uint16_t>(d->wall_set[i]));
+        }
+    }
     savegame::Header h;
     h.game_area = d->gs.game_area;
     const bool dungeon = vm->get(0x4BE6) != 0;
     h.last_state = static_cast<uint8_t>(dungeon ? 4 : 3);
+    // (Pool: the byte is its view mode - 1 the 3D view, 2 / 3 / 4 the
+    // wilderness of areas 25 / 26 / 27; its load takes the 3D view's 4 as
+    // the eastern wilderness: "26,0" and a rider over the view - DOSBox)
+    if (pool_files()) h.last_state = static_cast<uint8_t>(pool_overland() ? 2 + ov_area() : 1);
     h.state = static_cast<uint8_t>(save_from == Screen::Camp ? 2 : 0);
     for (int i = 0; i < 3; ++i) {
         h.wall_block[i] = d->wall_block[i];
@@ -4153,6 +4177,8 @@ void back_from_save(pic::Canvas& c)
     else draw_party_menu(c);
 }
 
+void aw(int i, char* out, size_t cap);
+bool quit_from_camp = false;         // (Pool: the camp's save asked "Quit TO DOS")
 void save_tap(int x, int y, pic::Canvas& c)
 {
     if (y < text::kMenuTapTop) return;
@@ -4180,6 +4206,11 @@ void save_tap(int x, int y, pic::Canvas& c)
         char t[48];
         snprintf(t, sizeof t, "Couldn't save game %c on the card.", slot);
         error(c, t);
+    } else if (screen == Screen::Camp && d->prof->game == games::Game::PoolOfRadiance) {
+        // (Pool: the camp's save asks "Quit TO DOS" - ovr16, DOSBox)
+        aw(profile::kQuitToDos, t, sizeof t);
+        quit_from_camp = true;
+        ask_yes_no(c, Ask::QuitDos, t);
     }
 }
 
@@ -4847,7 +4878,8 @@ void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt)
     if (what == Ask::LoseIt && kept_hl()) menu.selected = 0;
     // (Gateway's questions start on Yes - its question routine, seg 0x116
     // entry 0x39, GAME.OVR 0x46203; DOSBox)
-    if (gateway()) menu.selected = 0;
+    // (Pool's too - DOSBox: the temple's "Pay for cure?")
+    if (gateway() || d->prof->game == games::Game::PoolOfRadiance) menu.selected = 0;
     show_menu_line(c);
 }
 
@@ -5364,9 +5396,23 @@ void add_checked(int i, party::Character& ch, pic::Canvas& c)
     }
     if ((!ch.npc() && pcs >= 6) || pt->count >= party::kMaxParty) return;
     rules::recalc(ch, *names, d->facts);
+    if (d->prof->game == games::Game::PoolOfRadiance) {
+        // (Pool: the lowest icon slot no one in the party has - record 0x143,
+        // the file's 0xBF; DOSBox: the six added in turn get 0-5)
+        for (int slot = 0; slot < 8; ++slot) {
+            bool used = false;
+            for (int k = 0; k < pt->count; ++k) used = used || pt->m[k].rec[0x143] == slot;
+            if (!used) {
+                ch.rec[0x143] = static_cast<uint8_t>(slot);
+                break;
+            }
+        }
+    }
     ++pt->count;
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
     d->guy_added[i] = true;
+    // (Pool: the one added is the party menu's selected member - DOSBox)
+    if (d->prof->game == games::Game::PoolOfRadiance) pt->selected = pt->count - 1;
     if (pcs + 1 >= 6 || pt->count >= party::kMaxParty) {
         screen = Screen::PartyMenu;
         draw_party_menu(c);
@@ -6362,13 +6408,15 @@ void draw_shop(pic::Canvas& c)
     else if (last_pic_id >= 0 && (!treasure_on() || vault_on())) host_picture(last_pic_id, last_pic_head);
     else draw_view(c);
     draw_panel(c);
-    if (gateway() && treasure_on() && !vault_on()) {
+    if ((gateway() && treasure_on() && !vault_on()) || pool_shop_blank()) {
         c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);       // (Gateway's treasure: no place and time - DOSBox)
         dirty_rows(15, 15);
     }
     shop_menu(c);
 }
 
+// (Pool: a shop's screen has no place and time line - DOSBox)
+bool pool_shop_blank() { return d->prof->game == games::Game::PoolOfRadiance && !vault_on(); }
 void open_shop(pic::Canvas& c)
 {
     screen = Screen::Shop;
@@ -6380,6 +6428,10 @@ void open_shop(pic::Canvas& c)
     }
     menu.selected = 0;
     if (pt->count) draw_party(c, 17);
+    if (pool_shop_blank()) {
+        c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);
+        dirty_rows(15, 15);
+    }
     shop_menu(c);
 }
 
@@ -6400,6 +6452,12 @@ void ask_leave(pic::Canvas& c)
     } else {
         sw(temple ? profile::kPriestSays : profile::kShopSays, says, sizeof says);
         sw(temple ? profile::kPriestRetrieve : profile::kShopRetrieve, back, sizeof back);
+    }
+    if (pool_shop_blank() && !treasure_on() && pt->count) {
+        // (Pool: the question comes with the party's last member selected -
+        // DOSBox, after Pool in the general store)
+        pt->selected = pt->count - 1;
+        draw_party(c, 17);
     }
     text::clear(c, text::kTextArea);
     text::begin(w, c, says, text::kTextArea, 10, true);
@@ -6438,7 +6496,9 @@ void leave_shop(pic::Canvas& c, bool asked)
             else host_picture(0xFF, 0);
         }
     }
+    const bool place = pool_shop_blank();
     screen = Screen::Game;
+    if (place) draw_position(c);        // (Pool: the place line back - DOSBox)
     clear_menu_line(c);
     waiting = false;
     handle(vm->resume());
@@ -6462,6 +6522,13 @@ void draw_buy(pic::Canvas& c)
     plist.row1 = 22;
     plist.col0 = 1;
     plist.n = ground->n;
+    if (d->prof->variant.shop_heading) {
+        // (Pool: "Shop" over the list at column 17, the goods from row 4 - DOSBox)
+        char w[8];
+        ow(d->prof->variant.shop_heading, w, sizeof w);
+        put(c, w, 17, 1, 15);
+        plist.row0 = 4;
+    }
     if (dk_ui()) {
         // (rows 1-18; the buyer's and the counter's platinum at rows 20 / 21)
         plist.row1 = 18;
@@ -6556,7 +6623,14 @@ struct HealWords {
 HealWords* hw = nullptr;
 int cure_at = -1;
 
-void heal_line(int i, char* out, size_t cap) { snprintf(out, cap, "%s", hw && i < 11 ? hw->name[i] : ""); }
+// Pool's temple list (DOSBox): its nine cures (no Heal - the rules' 6th) and
+// "Exit" as the tenth line; bars at rows 2 and 16
+bool pool_temple() { return d->prof->game == games::Game::PoolOfRadiance; }
+void heal_line(int i, char* out, size_t cap)
+{
+    if (pool_temple() && hw) i = i < 5 ? i : i < 9 ? i + 1 : 10;
+    snprintf(out, cap, "%s", hw && i < 11 ? hw->name[i] : "");
+}
 
 // Darkness's temple list (its overlay, GAME.OVR 0x386C; facts_shops.md 3):
 // the outer frame and the row-16 bar, "NAME, how can we help you?" (1, 1),
@@ -6594,7 +6668,8 @@ void draw_heal(pic::Canvas& c)
     }
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
-    if (d->tables.bars[0] || gateway()) layout::bar(c, d->tables, d->frame_tiles, 16);     // (Secret: the shop's bar stays; Gateway too - DOSBox)
+    if (d->tables.bars[0] || gateway() || pool_temple()) layout::bar(c, d->tables, d->frame_tiles, 16);     // (Secret: the shop's bar stays; Gateway too - DOSBox)
+    if (pool_temple()) layout::bar(c, d->tables, d->frame_tiles, 2);
     char t[48], nm[20];
     pt->sel()->name(nm, sizeof nm);
     snprintf(t, sizeof t, "%s%s", nm, hw->help);
@@ -6652,6 +6727,7 @@ void open_heal(pic::Canvas& c)
     char* sp = strchr(he, ' ');
     if (sp) *sp = 0;
     snprintf(hw->heal, sizeof hw->heal, "%s", he);
+    if (sp) snprintf(hw->name[10], sizeof hw->name[10], "%s", sp + 1);     // (Pool: "Exit" as the list's last line)
     screen = Screen::Heal;
     plist = PickList{};
     draw_heal(c);
@@ -6679,7 +6755,7 @@ void offer_cure(pic::Canvas& c)
         list_unlit = false;
         say_item(c, t, 10, 17);
     } else {
-        say_item(c, t, 10);
+        say_item(c, t, 10, pool_temple() ? 17 : 21);       // (Pool: under the bar at row 16 - DOSBox)
     }
     sw(profile::kPayFor, a, sizeof a);
     ask_yes_no(c, Ask::PayCure, a);
@@ -7022,6 +7098,13 @@ void heal_pick(int i, pic::Canvas& c)
     if (free_temple()) {
         secret_cure(i, c);
         return;
+    }
+    if (pool_temple()) {
+        if (i >= 9) {
+            leave_heal(c);
+            return;
+        }
+        if (i >= 5) ++i;
     }
     cure_at = i;
     const rules::Cure cure = static_cast<rules::Cure>(i);
@@ -10077,7 +10160,13 @@ bool alter_yes_no(Ask what, char k, pic::Canvas& c)
     if (d->prof->alter.pick && what != Ask::QuitDos) return alter_drop_dk(what, k, c);
     if (what == Ask::QuitDos) {
         if (k == 'Y') exit_wanted = true;
-        alter_menu(c);
+        if (quit_from_camp) {
+            quit_from_camp = false;
+            screen = Screen::Camp;
+            draw_camp(c);
+        } else {
+            alter_menu(c);
+        }
         return true;
     }
     char t[32];
@@ -11022,8 +11111,12 @@ void pm_tap(int x, int y, pic::Canvas& c)
         if (load_secret) {
             load_secret = false;
             load_secret_game(text::key(menu, k));
-        } else {
-            load_game(text::key(menu, k));
+        } else if (load_game(text::key(menu, k)) && !load_problem && load_begins && d->save.state &&
+                   d->prof->game == games::Game::PoolOfRadiance) {
+            // (a game saved from the camp; one saved from the party menu
+            // - state 0 - comes back to it - DOSBox)
+            begin_adventuring();
+            return;
         }
         screen = Screen::PartyMenu;
         draw_party_menu(c);
@@ -11346,6 +11439,7 @@ __attribute__((noinline)) void load_party_text(dax::ByteSource& exe, const exepa
             {pp.saving, d->w_saving, sizeof d->w_saving}, {pp.camp, d->w_camp, sizeof d->w_camp},
             {pp.makes_camp, d->w_makes_camp, sizeof d->w_makes_camp},
             {d->prof->magic.heading_word, d->w_spells_word, sizeof d->w_spells_word},
+            {d->prof->variant.view_prompt, d->w_view_prompt, sizeof d->w_view_prompt},
             {d->prof->variant.press_words[0], d->w_press[0], sizeof d->w_press[0]},
             {d->prof->variant.press_words[1], d->w_press[1], sizeof d->w_press[1]},
             {d->prof->variant.order_words[0], d->w_order[0], sizeof d->w_order[0]},
@@ -12648,6 +12742,9 @@ void handle(ecl::Stop r)
             return;
         }
         vm->set(0x4BF2, d->gs.script);
+        // (Pool: a load's walls come from the entry's LOAD FILES / PIECES -
+        // the view shows them at once, as the original's)
+        if (pool_files() && screen == Screen::Game && !pic_shown && vm->get(0x4BE6)) draw_view(c);
         break;
     case Then::Arrive:
     case Then::Idle:
@@ -12782,6 +12879,16 @@ void begin_adventuring()
     ecl::GameState& gs = d->gs;
     camping = false;
     if (!d->loaded && !in_demo) vault_new_game();
+    // (Pool: a new game's speed is 1 - DOSBox, Alter's Speed after the tour)
+    if (!d->loaded && !in_demo && d->prof->game == games::Game::PoolOfRadiance) {
+        if (!vm->get(0x4BFC)) vm->set(0x4BFC, 1);
+        // (and its program's words a new game's save holds - DOSBox: area
+        // words 0x4AFB-0x4AFF (here 0x4CFB-) -1 -1 1 -1 -1, game word 0x6DC0 2;
+        // no script reads them)
+        static const uint16_t kWords[5] = {0xFFFF, 0xFFFF, 1, 0xFFFF, 0xFFFF};
+        for (int i = 0; i < 5; ++i) vm->set(static_cast<uint16_t>(0x4CFB + i), kWords[i]);
+        vm->set(0x7EC0, 2);
+    }
     const int last = vm->get(0x4BF2) & 0xFF;
     const bool resume = d->loaded && last != 0;
     const bool dungeon = !d->loaded || vm->get(0x4BE6) != 0;
@@ -12800,7 +12907,17 @@ void begin_adventuring()
     if (resume && !dungeon && d->prof->variant.tile_wild) vm->set(0x4BE6, 0);
     draw_frame(c);
     if (resume) {
-        if (dungeon && pool_files()) {
+        const int16_t pool_b0 = static_cast<int16_t>(vm->get(0x4CFA)), pool_s0 = static_cast<int16_t>(vm->get(0x4CFD));
+        if (dungeon && pool_files() && pool_b0 >= 0 && pool_s0 >= 1 && pool_s0 <= 3) {
+            // Pool: the wall sets its save keeps in area words 0x4CFA- (the
+            // blocks, then their sets; -1 none), as its LoadWallSet
+            host->load_map(vm->get(0x4BC5) & 0xFF);
+            for (int i = 0; i < 3; ++i) {
+                const int16_t b = static_cast<int16_t>(vm->get(static_cast<uint16_t>(0x4CFA + i)));
+                const int16_t st = static_cast<int16_t>(vm->get(static_cast<uint16_t>(0x4CFD + i)));
+                if (b >= 0 && st >= 1 && st <= 3) host->load_walls(st, b);
+            }
+        } else if (dungeon && pool_files()) {
             // Pool's saves keep no wall sets: what the script loads (its
             // first LOAD FILES / LOAD PIECES, as the walk test finds them)
             uint8_t* blk = static_cast<uint8_t*>(malloc(gs.code_len + 2));
@@ -15121,6 +15238,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     if (d->prof->variant.dkk) d->world.map_base = 25;      // (Death Knights: block 202's 25-40, arrows 41-44)
     d->world.per_set = d->prof->variant.per_set_walls;
     text::set_hanging_space(gateway() || krynn());          // (Champions too - DOSBox)
+    text::set_punct_space(d->prof->game == games::Game::PoolOfRadiance);
     text::set_menu_origin(hl() ? 1 : 0);                    // (Dark Queen's buttons from column 1)
     if (!hl()) {
         open_sky();
@@ -16300,9 +16418,19 @@ void tick_screens(uint32_t now, pic::Canvas& c)
         fight_tick(now, c);
         return;
     }
-    if (hl() && screen == Screen::Camp && anim_block >= 0 && d->anim.frames > 1 && !note_until) {
+    if (text_wipe_at && static_cast<int32_t>(now - text_wipe_at) >= 0) {
+        text_wipe_at = 0;
+        if (screen == Screen::Shop) {
+            text::clear(c, text::kTextArea);
+            dirty_rows(17, 22);
+        }
+    }
+    if ((((hl() || d->prof->game == games::Game::PoolOfRadiance) && screen == Screen::Camp) ||
+         (d->prof->game == games::Game::PoolOfRadiance && screen == Screen::Shop && treasure_on() && !vault_on())) &&
+        anim_block >= 0 && d->anim.frames > 1 && !note_until) {
+        // (Pool's treasure chest sparkles too - DOSBox)
         // (the Dark Queen's camp: its fire burns while the camp menu waits -
-        // DOSBox, a frame each half second)
+        // DOSBox, a frame each half second; Pool's camp picture too)
         cv = &c;
         const uint32_t delay = d->anim.delay[anim_frame] ? d->anim.delay[anim_frame] * 100 : 100;
         if (now - anim_at >= delay && anim_next(anim_frame) != anim_frame) {

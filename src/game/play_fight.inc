@@ -5600,6 +5600,8 @@ void treasure_detect(pic::Canvas& c)
     put(c, t, 1, 21, 10);
     dirty_rows(17, 22);
     names->detect = true;
+    // (Pool: the lines go after the game's delay - DOSBox: gone at the next screen)
+    if (d->prof->game == games::Game::PoolOfRadiance) text_wipe_at = plat::now_ms() + 3 * game_delay_ms();
     treasure_menu(c);
 }
 
@@ -5631,6 +5633,13 @@ void draw_loot(pic::Canvas& c)
     plist.row1 = 22;
     plist.col0 = 1;
     plist.n = ground->n;
+    if (d->prof->variant.loot_heading) {
+        // (Pool: "Loot" at column 17 of row 1, the items from row 4 - DOSBox)
+        char w[8];
+        ow(d->prof->variant.loot_heading, w, sizeof w);
+        put(c, w, 17, 1, 15);
+        plist.row0 = 4;
+    }
     char prompt[12], what[8];
     snprintf(prompt, sizeof prompt, "%s", tw(profile::kItemsColon));
     snprintf(what, sizeof what, "%s", tw(profile::kTakeW));
@@ -5789,8 +5798,8 @@ void open_treasure(pic::Canvas& c)
     dirty_rows(17, 22);
     if (d->prof->variant.treasure_pic && !vault) draw_treasure_pic();
     if (pt->count) draw_party(c, 17);
-    if (gateway() && !vault) {
-        c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);       // (Gateway's treasure: no place and time - DOSBox)
+    if ((gateway() || d->prof->game == games::Game::PoolOfRadiance) && !vault) {
+        c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);       // (Gateway's treasure: no place and time - DOSBox; Pool's too)
         dirty_rows(15, 15);
     }
     treasure_menu(c);

@@ -1654,6 +1654,7 @@ static void dice_faces(std::initializer_list<int> f) { dice_usual(); b_faces.ass
 
 int main(int argc, char** argv)
 {
+    play::load_begins = false;          // (Pool: the loaded party at the party menu, to work on)
     if (argc < 3) {
         printf("sweep <game folder> <mode> [arg]\n");
         return 1;

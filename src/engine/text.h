@@ -96,6 +96,10 @@ constexpr Region kCombatPanel{23, 1, 38, 21};
 enum class State : uint8_t { Idle, Writing, PageFull, Done };
 // Gateway's line breaks: a word fits when its letters do (its trailing space
 // may fall past the window's last column, not drawn); off: the space must fit too
+// Pool: a word ending in punctuation may end in the last column (its
+// space past the edge); one ending in a letter needs its space on the line
+// ("PAPERS." ends a line, "PLEASE" there goes to the next - DOSBox)
+void set_punct_space(bool on);
 void set_hanging_space(bool on);
 
 struct Writer {

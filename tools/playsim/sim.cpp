@@ -64,8 +64,10 @@ static std::vector<uint8_t> px(getenv("CANVAS8") ? 320 * 200 : 320 * 200 / 2);  
 // PSRAM, a byte a pixel with the game's palette - play::canvas_depth)
 static pic::Canvas C{px.data(), 320, 200, static_cast<uint8_t>(getenv("CANVAS8") ? 8 : 4)};
 static int shot_n = 0;
+static bool g_quiet = false;         // (moves between two '`': no snapshots)
 static void shot(const char* tag)
 {
+    if (g_quiet) return;
     char name[64];
     snprintf(name, sizeof name, "out/%02d_%s.ppm", shot_n++, tag);
     FILE* f = fopen(name, "wb");
@@ -179,6 +181,13 @@ static void settle(int choice = 0, int max_ms = 60000)
         }
         if (!waiting) return;
         const auto wt = vm->wait();
+        // MANUAL=1 (the side-by-side tool): nothing answered - back to the
+        // moves as soon as the game waits for the player
+        if (getenv("MANUAL") && (page_prompt || play::input() != play::Input::None || wt == ecl::Wait::Menu ||
+                                 wt == ecl::Wait::Who || wt == ecl::Wait::Key || (wt == ecl::Wait::ListMenu && list_wait))) {
+            if (wt == ecl::Wait::Menu) { printf("  MENU prompt=%s:", vm->prompt()); for (int i = 0; i < vm->items(); ++i) printf(" [%s]", vm->item(i)); printf("\n"); }
+            return;
+        }
         if (play::input() != play::Input::None) {
             // TYPE=a,b,c: one answer each time (the last one again after them)
             static int typed = 0;
@@ -195,7 +204,7 @@ static void settle(int choice = 0, int max_ms = 60000)
             play::input_key('\n', C);
             continue;
         }
-        if (wt == ecl::Wait::Print && !play::t_started && last_text != std::string(vm->text()) + std::to_string((long)play::w.row)) { last_text = std::string(vm->text()) + std::to_string((long)play::w.row); printf("  TEXT%s: %s\n", vm->clear() ? " (clear)" : "", vm->text()); }
+        if (wt == ecl::Wait::Print && (getenv("ALLTEXT") ? last_text != std::string(vm->text()) : !play::t_started && last_text != std::string(vm->text()) + std::to_string((long)play::w.row))) { last_text = std::string(vm->text()) + (getenv("ALLTEXT") ? std::string() : std::to_string((long)play::w.row)); printf("  TEXT%s: %s\n", vm->clear() ? " (clear)" : "", vm->text()); }
         if (wt == ecl::Wait::Pause && getenv("PAUSESHOT")) { static int last = -1; if (last != (int)play::vm->pc()) { last = play::vm->pc(); shot("pause"); } }
         if (page_prompt) { shot("page"); play::tap(10, 10, C); continue; }
         if (wt == ecl::Wait::Menu) {
@@ -536,6 +545,7 @@ static void shop_run(const char* ops)
 int main(int argc, char** argv)
 {
     setvbuf(stdout, nullptr, _IOLBF, 0);       // (lines out at once: a hang or a crash keeps them)
+    play::load_begins = getenv("LOADBEGINS") != nullptr;   // (Pool's load straight into the game: LOADBEGINS=1)
     if (getenv("NOFIXES")) rules::set_fixes(false);    // NOFIXES=1: Game Fixes off (the originals' ways)
     if (getenv("SEED")) play::rng = create::Dice(static_cast<uint32_t>(strtoul(getenv("SEED"), nullptr, 10)));   // SEED=n: the game's dice
     // SIZES: the fight's blocks' sizes
@@ -760,7 +770,7 @@ int main(int argc, char** argv)
         fresh_gs = play::d->gs;
         for (unsigned a = 0x4B00; a < 0x10000; ++a) fresh_words[a - 0x4B00] = play::vm->get((uint16_t)a);
     }
-    {
+    if (!getenv("PARTYMENU")) {      // (PARTYMENU=1: no load - the moves start at the party menu)
         if (getenv("LOADFROM") && getenv("POOLDIR")) play::set_import_dir(getenv("POOLDIR"));
         pm_tap_line('L');
         if (play::load_where) {         // (Darkness: "Load from where?" - Pools; LOADFROM=S: Secret's, POOLDIR its folder)
@@ -1054,7 +1064,7 @@ int main(int argc, char** argv)
         play::d->loaded = false;
         printf("  new game: area %d script %d\n", play::d->gs.game_area, play::d->gs.script);
     }
-    pm_tap_line('B');
+    if (play::screen == play::Screen::PartyMenu && !getenv("PARTYMENU") && !getenv("NOBEGIN")) pm_tap_line('B');
     if (getenv("AREA")) {
         // Start somewhere else: as a script would (SAVE area; NEWECL block)
         play::d->gs.game_area = (uint8_t)atoi(getenv("AREA"));
@@ -1294,6 +1304,36 @@ int main(int argc, char** argv)
             if (!hit) printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s);
             settle();
             { char t[16]; snprintf(t, sizeof t, "word_%c", k); shot(t); }
+            continue;
+        }
+        if (*m == '`') { g_quiet = !g_quiet; continue; }
+        if (*m == '_') {                // "_": a second of ticks, a snapshot
+            for (int t = 0; t < 50; ++t) { g_now += 20; play::tick(g_now, C); }
+            shot("after_time");
+            continue;
+        }
+        if (*m == '|' && m[1]) {
+            // "|X": the party menu's line with key X
+            pm_tap_line(*++m);
+            settle();
+            { char t[16]; snprintf(t, sizeof t, "word_%c", *m); shot(t); }
+            continue;
+        }
+        if (*m == '.' || *m == ',' || *m == '@' || *m == '%' || *m == '=' || *m == '^' || *m == 'v' || *m == '!') {
+            // ".": a tap (a key: the text's page, Return); ",": settle only;
+            // "@n": list line n tapped; "%n": party row n; "=text;": typed + Enter;
+            // "^" / "v": the cursor keys Up / Down, "!": Select
+            if (*m == '.') play::tap(2, 2, C);
+            else if (*m == '@' && m[1]) { ++m; play::tap(12, (play::list_row0 + (*m - '0')) * 8 + 2, C); }
+            else if (*m == '%' && m[1]) { ++m; play::tap(17 * 8 + 2, (4 + (*m - '0')) * 8 + 2, C); }
+            else if (*m == '=') { ++m; while (*m && *m != ';') play::input_key(*m++, C); play::input_key('\n', C); if (!*m) --m; }
+            else if (*m == '^') play::nav(play::Nav::Up, C);
+            else if (*m == 'v') play::nav(play::Nav::Down, C);
+            else if (*m == '!') { int x = 0, y = 0; if (play::nav_point(&x, &y)) play::tap(x, y, C); }
+            settle();
+            { char t[16]; snprintf(t, sizeof t, "after_%s", *m == '.' ? "tap" : "wait"); shot(t); }
+            char l1[48], l2[48]; play::describe(l1, l2, 48);
+            printf("   now %d,%d %s | %s | %s\n", play::pos_x(), play::pos_y(), geo::dir_name(play::dir()), l1, l2);
             continue;
         }
         play::Act a = play::Act::Forward;

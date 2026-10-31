@@ -2492,12 +2492,18 @@ const Profile kProfiles[] = {
                // 0x26 Ogre Power / Strength / giant strength and 0x0C Enlarge, both
                // giving the most of them; Friends 0x0E; Constitution 20's 0x3E. The
                // Spiritual Hammer: effect 0x17, type 20, words "Hammer" / "Spiritual")
-               {0, 0x26, 0x0C, 0x0E, 0, 0x3E}, {0x17, 20, 20, 243}, {}, 0,
+               // (Detect Magic as Curse's: effect 5, the cleric's spell 5, the
+               // magic-user's 0x0B - the treasure's Detect, DOSBox)
+               {0, 0x26, 0x0C, 0x0E, 0, 0x3E}, {0x17, 20, 20, 243}, {0x05, 0x05, 0x0B, 0}, 0,
                items::kPoolPassive, 12, 0x89, 0x11BA6, 0x11D77, {0x04, 0x07}, {0xEDCA, 0xEE83},
                // The Flame Tongue (type 36, word 0xF1): +2 (name word 0xA3) with 0x3D
                // 0x16 in Pool's files; fixed as Curse's - +1 (word 0xA2), the effect
                // 0x06, code 0x80
-               {0x24, 0xF1, 2, 0x16, 0x06, 0x80, 0xA3, 0xA2}},
+               {0x24, 0xF1, 2, 0x16, 0x06, 0x80, 0xA3, 0xA2},
+               // (armour's +3 movement only when magic: the GOG party's
+               // plate-wearing cleric moves 6, the original's own record and
+               // its Add / save - DOSBox; was 9)
+               true},
      // Character rules (create_facts.md): the tables' shapes are Pool's
      // (classes::Layout pool); flags / masks at DS 0x5D6 / 0x5DE
      .create = {0xC7C0,
@@ -2600,7 +2606,17 @@ const Profile kProfiles[] = {
      .won = {{0x207B1, 0x207D5, 0x207FA, 0x20818, 0x2083C, 0x20861, 0x20888, 0x208A8, 0x208CD, 0x208D6, 0x208FD,
               0x20925, 0x20938},
              {3, 6, 4}},
-     .variant = {{20, 21, 22}, 29, true, 15, 7, 6, 1, false, true, true, true, 0x3648, 25, true, true},
+     .variant = {.box = {20, 21, 22}, .credits_stride = 29, .flat_view = true, .view_line = 15, .view_band = 7,
+                 .view_floor = 6, .title_flash = 1, .unfinished = false, .program_words = true, .pool_files = true,
+                 .pool_rest_keys = true, .overland_map = 0x3648, .overland_area = 25, .final_end = true,
+                 .pics_portraits = true,
+                 .treasure_pic = 1,            // (the treasure: PIC<area> block 1, the chest - DOSBox)
+                 .camp_pic = 29,               // (the camp: PIC<area> block 29, in every one - DOSBox)
+                 // (a one-choice menu's "PRESS <RETURN> OR BUTTON TO CONTINUE"
+                 // shows as "PRESS <ENTER>/<RETURN> TO CONTINUE" - DOSBox)
+                 .press_words = {0x1DCB, 0x1DF0}, .view_prompt = 0x21AC7,
+                 .shop_heading = 0x6CF3,
+                 .loot_heading = 0x6080},
      .overland = &kPoolOverland},
     // Secret of the Silver Blades (being built: the screens and the maps so
     // far; zero = not known yet)
