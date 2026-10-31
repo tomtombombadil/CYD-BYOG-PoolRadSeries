@@ -12463,7 +12463,7 @@ void run_entry(int i, Then next)
 // shows "0,4 W" over the slums' view; the original's new-block path draws
 // the view without its status line)
 bool hold_place = false;     // (cleared by the next step)
-void after_move_redraw()
+void after_move_redraw(bool step = false)
 {
     // After every step the games draw the 3D view again: pictures go
     cursor_hide();
@@ -12471,7 +12471,11 @@ void after_move_redraw()
     pic_shown = false;
     head_shown = body_shown = -1;
     d->gs.roof = geo::flags(d->map, d->gs.x, d->gs.y);
-    d->gs.wall_ahead = static_cast<uint8_t>(geo::wall(d->map, d->gs.x, d->gs.y, d->gs.dir));
+    // (Pool works the wall ahead out at a step, a turn and CALL C018 only -
+    // a script's move leaves the old one: ovr8 0x19DB, ovr4 0x2DAF; the
+    // tour's end saved 0 where the engine had 1)
+    if (step || !pool_files())
+        d->gs.wall_ahead = static_cast<uint8_t>(geo::wall(d->map, d->gs.x, d->gs.y, d->gs.dir));
     gw_way_ahead();
     draw_view(*cv);
     if (hold_place) {
@@ -12601,14 +12605,14 @@ bool do_move()
     }
     vm->set(0x7EC9, 0);
     if (locked) return false;
-    after_move_redraw();
+    after_move_redraw(true);
     return true;
 }
 
 void door_done()
 {
     clear_menu_line(*cv);
-    after_move_redraw();
+    after_move_redraw(true);
     run_entry(1, Then::Arrive);
 }
 

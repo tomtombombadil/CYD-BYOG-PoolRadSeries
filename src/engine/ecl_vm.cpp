@@ -1891,7 +1891,9 @@ Stop Vm::step()
                 h_.party_changed();
             }
         } else if (w == 0xC018) {
-            // The wall type ahead (worked out anyway)
+            // The wall type ahead (worked out anyway; Pool works it out only
+            // here and at a step / turn - its ovr4 0x2DAF)
+            if (set_.pool_map) h_.square();
         } else if (w == 0xC01E) {
             s_.x = (s_.x + (s_.dir == 2 ? 1 : s_.dir == 6 ? -1 : 0)) & 15;
             s_.y = (s_.y + (s_.dir == 4 ? 1 : s_.dir == 0 ? -1 : 0)) & 15;
