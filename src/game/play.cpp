@@ -4894,7 +4894,8 @@ void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt)
     // (ovr16, ovr17 +0x1F81 / +0x1FA6) - the rest magenta (DOSBox: the camp
     // save's Quit TO DOS, yellow, on No)
     if (d->prof->game == games::Game::PoolOfRadiance) {
-        menu.selected = what == Ask::PayCure || what == Ask::LoseIt || what == Ask::UseIt ? 0 : 1;
+        // (the treasure's "still treasure left" is another routine's: on Yes)
+        menu.selected = what == Ask::PayCure || what == Ask::LoseIt || what == Ask::UseIt || what == Ask::LeaveCoins ? 0 : 1;
         switch (what) {
         case Ask::MemorizeThese: case Ask::ScribeThese: case Ask::ScribeThese2: case Ask::AlterDrop:
         case Ask::QuitDos: case Ask::Drop: case Ask::DropSure:
