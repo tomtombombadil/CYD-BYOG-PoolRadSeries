@@ -4219,6 +4219,7 @@ void end_fight(pic::Canvas& c)
         for (int m = 0; m < 7; ++m) ground->money[m] += fg->out.money[m];
         // (Darkness: its script place 0x1E - GAME.OVR 0x4820)
         int dropped = 0;
+        const int first_new = ground->n;
         if (vm->get(darkness_files() ? 0x1E : 0x7EE3) != 1)
             for (int i = b.party_size; i < b.n; ++i) {
                 const combat::Fighter& f = b.f[i];
@@ -4238,6 +4239,18 @@ void end_fight(pic::Canvas& c)
                     // weapons stayed)
                     if (pool_files() && !items::Item{f.items[k]}.value() && (dropped >= 8 || rng.roll(10, 1) > 3)) continue;
                     ++dropped;
+                    if (ground->n >= items::kMaxGround && pool_files() && ground->n > first_new) {
+                        // (Pool: the list has no end, and the items taken last
+                        // show first - ovr6 +0x1A0 puts each on the list's front;
+                        // the engine's room for 64 keeps those: the fight's
+                        // earliest one gives way, its experience still counts -
+                        // DOSBox: the alerted goblin guards' 80-odd)
+                        const uint8_t* old_one = ground->item[first_new];
+                        if (static_cast<int8_t>(old_one[0x32]) > 0) ground->lost_plus += static_cast<int8_t>(old_one[0x32]);
+                        memmove(ground->item[first_new], ground->item[first_new + 1],
+                                static_cast<size_t>(ground->n - first_new - 1) * items::kRecordSize);
+                        --ground->n;
+                    }
                     if (ground->n >= items::kMaxGround) {
                         // (no room: its experience still counts)
                         if (static_cast<int8_t>(f.items[k][0x32]) > 0) ground->lost_plus += static_cast<int8_t>(f.items[k][0x32]);
