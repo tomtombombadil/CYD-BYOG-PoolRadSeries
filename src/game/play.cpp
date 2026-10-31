@@ -8462,6 +8462,10 @@ void draw_spells(pic::Canvas& c)
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
     if (gateway() && sl.learning) layout::bar(c, d->tables, d->frame_tiles, 2);    // (its frame GAME.OVR 0x4C43D)
+    // (Pool: its spell lists open a window rows 3 - 15 / 22 under the
+    // heading - ovr23 +0x151 with ovr3f1 +0x2E8: a bar at row 2; DOSBox,
+    // training's "Spells to Choose From")
+    if (pool_files() && !sl.learning) layout::bar(c, d->tables, d->frame_tiles, 2);
     char nm[20], t[48], a[12], b[16];
     pt->sel()->name(nm, sizeof nm);
     snprintf(t, sizeof t, "%s%s", nm, d->w_s);
