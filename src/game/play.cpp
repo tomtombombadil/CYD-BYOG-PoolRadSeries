@@ -4866,7 +4866,8 @@ void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt)
     if (what == Ask::LoseIt && kept_hl()) menu.selected = 0;
     // (Gateway's questions start on Yes - its question routine, seg 0x116
     // entry 0x39, GAME.OVR 0x46203; DOSBox)
-    if (gateway()) menu.selected = 0;
+    // (Pool's too - DOSBox: the temple's "Pay for cure?")
+    if (gateway() || d->prof->game == games::Game::PoolOfRadiance) menu.selected = 0;
     show_menu_line(c);
 }
 
@@ -6610,7 +6611,14 @@ struct HealWords {
 HealWords* hw = nullptr;
 int cure_at = -1;
 
-void heal_line(int i, char* out, size_t cap) { snprintf(out, cap, "%s", hw && i < 11 ? hw->name[i] : ""); }
+// Pool's temple list (DOSBox): its nine cures (no Heal - the rules' 6th) and
+// "Exit" as the tenth line; bars at rows 2 and 16
+bool pool_temple() { return d->prof->game == games::Game::PoolOfRadiance; }
+void heal_line(int i, char* out, size_t cap)
+{
+    if (pool_temple() && hw) i = i < 5 ? i : i < 9 ? i + 1 : 10;
+    snprintf(out, cap, "%s", hw && i < 11 ? hw->name[i] : "");
+}
 
 // Darkness's temple list (its overlay, GAME.OVR 0x386C; facts_shops.md 3):
 // the outer frame and the row-16 bar, "NAME, how can we help you?" (1, 1),
@@ -6648,7 +6656,8 @@ void draw_heal(pic::Canvas& c)
     }
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
-    if (d->tables.bars[0] || gateway()) layout::bar(c, d->tables, d->frame_tiles, 16);     // (Secret: the shop's bar stays; Gateway too - DOSBox)
+    if (d->tables.bars[0] || gateway() || pool_temple()) layout::bar(c, d->tables, d->frame_tiles, 16);     // (Secret: the shop's bar stays; Gateway too - DOSBox)
+    if (pool_temple()) layout::bar(c, d->tables, d->frame_tiles, 2);
     char t[48], nm[20];
     pt->sel()->name(nm, sizeof nm);
     snprintf(t, sizeof t, "%s%s", nm, hw->help);
@@ -6706,6 +6715,7 @@ void open_heal(pic::Canvas& c)
     char* sp = strchr(he, ' ');
     if (sp) *sp = 0;
     snprintf(hw->heal, sizeof hw->heal, "%s", he);
+    if (sp) snprintf(hw->name[10], sizeof hw->name[10], "%s", sp + 1);     // (Pool: "Exit" as the list's last line)
     screen = Screen::Heal;
     plist = PickList{};
     draw_heal(c);
@@ -6733,7 +6743,7 @@ void offer_cure(pic::Canvas& c)
         list_unlit = false;
         say_item(c, t, 10, 17);
     } else {
-        say_item(c, t, 10);
+        say_item(c, t, 10, pool_temple() ? 17 : 21);       // (Pool: under the bar at row 16 - DOSBox)
     }
     sw(profile::kPayFor, a, sizeof a);
     ask_yes_no(c, Ask::PayCure, a);
@@ -7076,6 +7086,13 @@ void heal_pick(int i, pic::Canvas& c)
     if (free_temple()) {
         secret_cure(i, c);
         return;
+    }
+    if (pool_temple()) {
+        if (i >= 9) {
+            leave_heal(c);
+            return;
+        }
+        if (i >= 5) ++i;
     }
     cure_at = i;
     const rules::Cure cure = static_cast<rules::Cure>(i);
