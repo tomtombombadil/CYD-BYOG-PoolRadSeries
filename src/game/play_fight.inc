@@ -4267,7 +4267,19 @@ void end_fight(pic::Canvas& c)
     // The result screen
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
-    if (r == combat::Lost) {
+    if (r == combat::Lost && d->prof->variant.the_end) {
+        // (Pool's: its title, the rejoicing in a window from row 5, the key
+        // line magenta - ovr6 +0x15B9, DOSBox)
+        char t[24];
+        ow(d->prof->variant.the_end, t, sizeof t);
+        put(c, t, 19 - static_cast<int>(strlen(t)) / 2, 1, 15);       // (its window 1-38)
+        text::Writer tw;
+        text::begin(tw, c, fw(profile::kRejoice), text::Region{2, 5, 37, 22}, 10, true);
+        text::step(tw, c, d->font, -1);
+        clear_menu_line(c);
+        put(c, fw(profile::kPressAnyKey), 0, text::kMenuRow, 13);
+        fg->st = FSt::Destroyed;
+    } else if (r == combat::Lost) {
         put(c, fw(profile::kRejoice), 1, 3, 10);
         clear_menu_line(c);
         put(c, fw(profile::kPressAnyKey), 0, text::kMenuRow, 15);
@@ -4307,6 +4319,9 @@ void fight_done(pic::Canvas& c)
         while (pt->count) leave_party(pt->count - 1);
         screen = Screen::PartyMenu;
         draw_party_menu(c);
+        // (Pool: its THE END screen's key ends the game - back to DOS, the
+        // viewer here; ovr6 +0x1631, DOSBox)
+        if (d->prof->variant.the_end) exit_wanted = true;
         return;
     }
     fight_back_to_game(c);

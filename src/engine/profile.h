@@ -804,6 +804,11 @@ struct Profile {
         // from row 4, opened a line down - GAME.OVR; 0: Curse's list)
         uint32_t shop_heading = 0;
         uint32_t loot_heading = 0;      // (Pool: the treasure's items list's, "Loot", as the shop's)
+        // Pool: the party destroyed shows its own screen (GAME.OVR ovr6
+        // +0x15B9): this title ("The END!", row 1, centred), the monsters'
+        // rejoicing from row 5, column 2 (wrapped before column 38), "Press
+        // any key to continue" in magenta; 0: Curse's (the text at row 3)
+        uint32_t the_end = 0;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;
