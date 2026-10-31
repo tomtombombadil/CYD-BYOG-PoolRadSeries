@@ -7955,11 +7955,20 @@ void list_tap(int x, int y, pic::Canvas& c)
     }
     const char k = text::key(menu, text::hit(menu, col));
     if (k == 'N' && l.top + l.rows() < l.n) {
+        const int rel = l.index - l.top;
         l.top += l.rows();
         l.index = l.top;
+        if (pool_files()) {
+            // (Pool: a page on, no further than the last page, the highlight
+            // on the same line of it - ovr26 +0xC33)
+            if (l.top > l.n - l.rows()) l.top = l.n - l.rows();
+            l.index = l.top + rel < l.n ? l.top + rel : l.n - 1;
+        }
     } else if (k == 'P' && l.top > 0) {
+        const int rel = l.index - l.top;
         l.top = l.top > l.rows() ? l.top - l.rows() : 0;
         l.index = l.top;
+        if (pool_files()) l.index = l.top + rel < l.n ? l.top + rel : l.n - 1;
     } else if (k == 'E' && screen == Screen::CreatePick) {
         end_create(c);
         return;
@@ -15647,6 +15656,14 @@ bool nav_list(int step, pic::Canvas& c)
         const int lo = screen == Screen::CreatePick ? 1 : 0;
         if (l.n <= lo) return false;
         int i = l.index + step;
+        if (pool_files() && lo == 0) {
+            // (Pool: the highlight goes round the page shown, never scrolls
+            // it - ovr26 +0xCC5: past the page's bottom or the list's end
+            // back to the page's top; above the top to the page's bottom)
+            if (step > 0 && (i > l.top + l.rows() - 1 || i > l.n - 1)) i = l.top;
+            if (step < 0 && i < l.top) i = l.top + l.rows() - 1;
+            if (i > l.n - 1) i = l.n - 1;
+        }
         if (i < lo) i = l.n - 1;
         if (i >= l.n) i = lo;
         l.index = i;
