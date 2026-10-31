@@ -2492,7 +2492,9 @@ const Profile kProfiles[] = {
                // 0x26 Ogre Power / Strength / giant strength and 0x0C Enlarge, both
                // giving the most of them; Friends 0x0E; Constitution 20's 0x3E. The
                // Spiritual Hammer: effect 0x17, type 20, words "Hammer" / "Spiritual")
-               {0, 0x26, 0x0C, 0x0E, 0, 0x3E}, {0x17, 20, 20, 243}, {}, 0,
+               // (Detect Magic as Curse's: effect 5, the cleric's spell 5, the
+               // magic-user's 0x0B - the treasure's Detect, DOSBox)
+               {0, 0x26, 0x0C, 0x0E, 0, 0x3E}, {0x17, 20, 20, 243}, {0x05, 0x05, 0x0B, 0}, 0,
                items::kPoolPassive, 12, 0x89, 0x11BA6, 0x11D77, {0x04, 0x07}, {0xEDCA, 0xEE83},
                // The Flame Tongue (type 36, word 0xF1): +2 (name word 0xA3) with 0x3D
                // 0x16 in Pool's files; fixed as Curse's - +1 (word 0xA2), the effect
@@ -2608,6 +2610,7 @@ const Profile kProfiles[] = {
                  .view_floor = 6, .title_flash = 1, .unfinished = false, .program_words = true, .pool_files = true,
                  .pool_rest_keys = true, .overland_map = 0x3648, .overland_area = 25, .final_end = true,
                  .pics_portraits = true,
+                 .treasure_pic = 1,            // (the treasure: PIC<area> block 1, the chest - DOSBox)
                  .camp_pic = 29,               // (the camp: PIC<area> block 29, in every one - DOSBox)
                  // (a one-choice menu's "PRESS <RETURN> OR BUTTON TO CONTINUE"
                  // shows as "PRESS <ENTER>/<RETURN> TO CONTINUE" - DOSBox)

@@ -4045,6 +4045,16 @@ bool save_game(char slot)
         plat::log("[play] saved game %c: FAILED (the vault)\n", slot);
         return false;
     }
+    if (pool_files()) {
+        // (Pool keeps the wall sets loaded in area words 0x4AFA-0x4AFF - here
+        // 0x4CFA-: the three blocks, then their sets, -1 for none; its load
+        // reads them back - LoadWallSet; a save without them stops the
+        // original: "Unable to load wallset" - DOSBox)
+        for (int i = 0; i < 3; ++i) {
+            vm->set(static_cast<uint16_t>(0x4CFA + i), static_cast<uint16_t>(d->wall_block[i]));
+            vm->set(static_cast<uint16_t>(0x4CFD + i), static_cast<uint16_t>(d->wall_set[i]));
+        }
+    }
     savegame::Header h;
     h.game_area = d->gs.game_area;
     const bool dungeon = vm->get(0x4BE6) != 0;
@@ -6404,7 +6414,7 @@ void draw_shop(pic::Canvas& c)
 }
 
 // (Pool: a shop's screen has no place and time line - DOSBox)
-bool pool_shop_blank() { return d->prof->game == games::Game::PoolOfRadiance && !treasure_on() && !vault_on(); }
+bool pool_shop_blank() { return d->prof->game == games::Game::PoolOfRadiance && !vault_on(); }
 void open_shop(pic::Canvas& c)
 {
     screen = Screen::Shop;
@@ -6441,7 +6451,7 @@ void ask_leave(pic::Canvas& c)
         sw(temple ? profile::kPriestSays : profile::kShopSays, says, sizeof says);
         sw(temple ? profile::kPriestRetrieve : profile::kShopRetrieve, back, sizeof back);
     }
-    if (pool_shop_blank() && pt->count) {
+    if (pool_shop_blank() && !treasure_on() && pt->count) {
         // (Pool: the question comes with the party's last member selected -
         // DOSBox, after Pool in the general store)
         pt->selected = pt->count - 1;
@@ -12895,7 +12905,17 @@ void begin_adventuring()
     if (resume && !dungeon && d->prof->variant.tile_wild) vm->set(0x4BE6, 0);
     draw_frame(c);
     if (resume) {
-        if (dungeon && pool_files()) {
+        const int16_t pool_b0 = static_cast<int16_t>(vm->get(0x4CFA)), pool_s0 = static_cast<int16_t>(vm->get(0x4CFD));
+        if (dungeon && pool_files() && pool_b0 >= 0 && pool_s0 >= 1 && pool_s0 <= 3) {
+            // Pool: the wall sets its save keeps in area words 0x4CFA- (the
+            // blocks, then their sets; -1 none), as its LoadWallSet
+            host->load_map(vm->get(0x4BC5) & 0xFF);
+            for (int i = 0; i < 3; ++i) {
+                const int16_t b = static_cast<int16_t>(vm->get(static_cast<uint16_t>(0x4CFA + i)));
+                const int16_t st = static_cast<int16_t>(vm->get(static_cast<uint16_t>(0x4CFD + i)));
+                if (b >= 0 && st >= 1 && st <= 3) host->load_walls(st, b);
+            }
+        } else if (dungeon && pool_files()) {
             // Pool's saves keep no wall sets: what the script loads (its
             // first LOAD FILES / LOAD PIECES, as the walk test finds them)
             uint8_t* blk = static_cast<uint8_t*>(malloc(gs.code_len + 2));
@@ -16396,8 +16416,10 @@ void tick_screens(uint32_t now, pic::Canvas& c)
         fight_tick(now, c);
         return;
     }
-    if ((hl() || d->prof->game == games::Game::PoolOfRadiance) && screen == Screen::Camp && anim_block >= 0 &&
-        d->anim.frames > 1 && !note_until) {
+    if ((((hl() || d->prof->game == games::Game::PoolOfRadiance) && screen == Screen::Camp) ||
+         (d->prof->game == games::Game::PoolOfRadiance && screen == Screen::Shop && treasure_on() && !vault_on())) &&
+        anim_block >= 0 && d->anim.frames > 1 && !note_until) {
+        // (Pool's treasure chest sparkles too - DOSBox)
         // (the Dark Queen's camp: its fire burns while the camp menu waits -
         // DOSBox, a frame each half second; Pool's camp picture too)
         cv = &c;

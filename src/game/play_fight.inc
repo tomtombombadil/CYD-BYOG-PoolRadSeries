@@ -5789,8 +5789,8 @@ void open_treasure(pic::Canvas& c)
     dirty_rows(17, 22);
     if (d->prof->variant.treasure_pic && !vault) draw_treasure_pic();
     if (pt->count) draw_party(c, 17);
-    if (gateway() && !vault) {
-        c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);       // (Gateway's treasure: no place and time - DOSBox)
+    if ((gateway() || d->prof->game == games::Game::PoolOfRadiance) && !vault) {
+        c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);       // (Gateway's treasure: no place and time - DOSBox; Pool's too)
         dirty_rows(15, 15);
     }
     treasure_menu(c);
