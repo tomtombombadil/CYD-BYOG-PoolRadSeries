@@ -379,12 +379,25 @@ bool load_library(GameDir* out, int max, int* n)
     if (!ok) return false;
     // (a library saved by an older version may list Unlimited Adventures:
     // left out - Tom, 2026-10-24)
+    // (the records are trusted only so far: every name ends inside its
+    // field, the format is one this firmware knows - a damaged file can't
+    // send a string read past its record)
     int k = 0;
-    for (uint32_t i = 0; i < hdr[1]; ++i)
+    for (uint32_t i = 0; i < hdr[1]; ++i) {
+        GameDir& g = out[i];
+        g.folder[sizeof g.folder - 1] = 0;
+        g.data_dir[sizeof g.data_dir - 1] = 0;
+        g.icon[sizeof g.icon - 1] = 0;
+        g.journal[sizeof g.journal - 1] = 0;
+        g.gbc[sizeof g.gbc - 1] = 0;
+        g.box[sizeof g.box - 1] = 0;
+        if (g.format != Format::Dax && g.format != Format::Hlib) continue;
+        if (!g.folder[0] || static_cast<int>(g.game) >= games::kGameCount) continue;
         if (out[i].game != games::Game::UnlimitedAdventures) {
             if (k != static_cast<int>(i)) out[k] = out[i];
             ++k;
         }
+    }
     *n = k;
     return true;
 }
