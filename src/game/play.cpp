@@ -177,7 +177,7 @@ struct Data {
                    w_camp[8] = {}, w_makes_camp[28] = {};
     char           q_order[3][16] = {};        // Dark Queen: " of the Crown" ... (View Character)
     char           q_src = 0;                  // Dark Queen: the saved game loaded (its records' and rest's source)
-    char           w_press[2][36] = {};        // Champions: a one-choice menu's word shown as the other (variant.press_words)
+    char           w_press[2][40] = {};        // Champions, Pool: a one-choice menu's word shown as the other (variant.press_words)
     char           gods[8][12] = {};           // Champions: its gods' names (create.god_names; 0 None)
     char           w_order[3][16] = {};        // Champions: " of the Crown" / Sword / Rose (variant.order_words)
     char           w_yell[8] = {}, w_wants[16] = {};
