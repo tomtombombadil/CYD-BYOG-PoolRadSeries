@@ -455,6 +455,10 @@ struct Monster {
     const uint8_t* base = nullptr;      // its group's record
     uint8_t* own = nullptr;             // its own whole record (malloc'd) once its changes outgrew the list
     uint8_t (*aff)[party::kAffectSize] = nullptr;   // its effects (malloc'd, grown as needed up to kMonsterAffects)
+    // Its own items (malloc'd) once it changed them - a shot, a charge, a
+    // weapon readied: until then it uses its group's list (copy on write)
+    uint8_t (*items)[items::kRecordSize] = nullptr;
+    uint8_t n_items = 0;                // ... how many (with items)
     int     n_aff = 0;
     uint16_t ch_off[kMonsterChanges] = {};
     uint8_t ch_val[kMonsterChanges] = {};

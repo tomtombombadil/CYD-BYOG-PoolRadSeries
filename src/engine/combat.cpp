@@ -75,8 +75,11 @@ void Monster::release()
 {
     free(own);
     free(aff);
+    free(items);
     own = nullptr;
     aff = nullptr;
+    items = nullptr;
+    n_items = 0;
     n_aff = 0;
     aff_cap = 0;
     n_ch = 0;
@@ -934,6 +937,14 @@ void drop_aff(Fighter& f, int i)
 // The clouds' ground values (the game's, else Curse's)
 static uint8_t cloud_g(const Battle& b) { return b.fx && b.fx->cloud_ground ? b.fx->cloud_ground : kCloudGround; }
 static uint8_t poison_g(const Battle& b) { return b.fx && b.fx->poison_ground ? b.fx->poison_ground : kPoisonGround; }
+// A square a cloud covers - the game's own grounds: Stinking Cloud's,
+// Cloudkill's, Darkness's knives, Champions' acid (the cloud keeps what
+// is under it, so nothing is put there)
+static bool cloud_ground(const Battle& b, uint8_t g)
+{
+    return g == cloud_g(b) || g == poison_g(b) || (b.fx && b.fx->dk.knives && g == b.fx->dk.knives) ||
+           (b.fx && b.fx->acid_ground && g == b.fx->acid_ground);
+}
 
 // An item's name words (0x2F-0x31) include w (0: never)
 static bool has_word(const uint8_t* it, uint8_t w)
@@ -1007,7 +1018,7 @@ void fall(Battle& b, int c)
     if (f.size) {
         f.down_size = f.size;
         f.size = 0;
-        if (f.member >= 0 && on_field(f.x, f.y) && b.ground[f.y][f.x] != 0x1E && b.ground[f.y][f.x] != 0x1C) {
+        if (f.member >= 0 && on_field(f.x, f.y) && !cloud_ground(b, b.ground[f.y][f.x])) {
             f.ground = b.ground[f.y][f.x];
             b.ground[f.y][f.x] = kBody;
         }
@@ -3396,7 +3407,9 @@ int power_of(const Rec& r, const classes::Tables& st, int s, bool item)
     const bool past = r[0x74] == 7 && r[0x109 + k] > r[0xE6];
     auto skill = [&](int cls) { return r[0x109 + cls] + (past ? r[0x111 + cls] : 0); };
     switch (st.spell_class(s)) {
-    case 0: return most(skill(0), skill(3) - (pal_rule ? 8 : 0));
+    case 0:
+    case 4:     // (the Dark Queen's god-given spells: a cleric's - as spells::power)
+        return most(skill(0), skill(3) - (pal_rule ? 8 : 0));
     case 1: return most(skill(4) - 7, 0);
     case 2: return most(skill(5), skill(4) - 8);
     case 3: return 12;

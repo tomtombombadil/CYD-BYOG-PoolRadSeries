@@ -44,10 +44,14 @@ struct MonsterLoad {
 };
 MonsterLoad* ml = nullptr;
 
+bool in_arena(const void* p);
 void fight_clear_monsters()
 {
     if (!ml) return;
-    for (int k = 0; k < ml->n; ++k) ml->m[k].release();
+    for (int k = 0; k < ml->n; ++k) {
+        if (in_arena(ml->m[k].items)) ml->m[k].items = nullptr;     // (the arena's, not the heap's)
+        ml->m[k].release();
+    }
     free(ml->m);
     delete ml;
     ml = nullptr;
@@ -390,6 +394,7 @@ void* arena_take(size_t n, bool code_only);
 bool in_arena(const void* p);
 void arena_free(void* p);
 void fight_arena_end();
+void monster_items_off_arena();
 combat::Fighter* make_fighters(int n);
 void release_fighters(combat::Fighter* f);
 
@@ -640,6 +645,7 @@ struct Fight {
         arena_free(outline);
         release_fighters(fighters);
         fighters = nullptr;
+        monster_items_off_arena();
         fight_arena_end();
     }
     Fight(const Fight&) = delete;
@@ -757,6 +763,14 @@ bool park_world()
     const bool ok = f.write(reinterpret_cast<const uint8_t*>(&d->world), sizeof(view3d::World)) == sizeof(view3d::World);
     f.close();
     if (ok) world_parked = true;
+    else {
+        // (the card didn't take it: the walls stay in memory - what was let
+        // go above reads again now, the background when next drawn)
+        if (d->world.tr && host) host->slots_done();
+        for (int i = 0; big && host && i < 3; ++i)
+            if (d->wall_block[i] >= 0 && d->wall_set[i] > 0) host->load_walls(d->wall_set[i], d->wall_block[i]);
+        world_big = false;
+    }
     return ok;
 }
 void unpark_world()
@@ -875,6 +889,21 @@ uint8_t* fight_pic(int block)
     return p ? arena_adopt(p, pic_bytes(w, h)) : nullptr;
 }
 
+// The monsters still loaded keep their own items past the fight: those in
+// the arena go to the heap (no memory: back to the group's list)
+void monster_items_off_arena()
+{
+    for (int k = 0; ml && k < ml->n; ++k) {
+        combat::Monster& m = ml->m[k];
+        if (!in_arena(m.items)) continue;
+        const size_t sz = static_cast<size_t>(m.n_items > 0 ? m.n_items : 1) * items::kRecordSize;
+        auto* p = static_cast<uint8_t(*)[items::kRecordSize]>(malloc(sz));
+        if (p) memcpy(p, m.items, sz);
+        m.items = p;
+        if (!p) m.n_items = 0;
+    }
+}
+
 // The script's code back (the fight is gone: nothing of it is in the arena)
 void fight_arena_end()
 {
@@ -889,7 +918,7 @@ void fight_arena_end()
     if (!ok) {
         // (the card lost it: the script reads again from the game's files)
         log_error("The script couldn't be read back after a fight: reloaded.");
-        host->load_script(d->gs.script, ecl::code_of(d->gs), &d->gs.code_len);
+        if (host) host->load_script(d->gs.script, ecl::code_of(d->gs), &d->gs.code_len);
     }
 }
 
@@ -2434,18 +2463,75 @@ void ask_blast_delay(pic::Canvas& c);
 void blast_off(Fight::Blast& bl);
 const combat::FightSpell* fight_spell(int sp);
 
-// A monster's item gone: off its group's list (the copies share it)
-void remove_group_item(const combat::Fighter& f, int k)
+// A monster's items before it changes one (copy on write): the copies of a
+// group read its one list (v0.138.0's memory saving) until one shoots,
+// uses a charge or readies another weapon - then that one gets a list of
+// its own (each copy has its own items in the originals). False: no memory
+// (the change goes into the shared list, as before)
+// Another fighter reads f's list too
+bool items_shared(const combat::Fighter& f)
 {
+    for (int j = 0; fg && j < fg->b.n; ++j)
+        if (&fg->b.f[j] != &f && fg->b.f[j].items == f.items) return true;
+    return false;
+}
+
+bool own_items(combat::Fighter& f)
+{
+    if (f.member >= 0 || f.monster < 0 || !ml || f.monster >= ml->n || !f.items) return true;
+    combat::Monster& m = ml->m[f.monster];
+    if (m.items && f.items == m.items) {
+        if (!items_shared(f)) return true;
+        // (its list is read by copies that readied the same: it becomes one
+        // of theirs, and this one gets a list of its own below)
+        for (int j = 0; j < fg->b.n; ++j) {
+            const combat::Fighter& o = fg->b.f[j];
+            if (&o == &f || o.items != m.items || o.monster < 0 || o.monster >= ml->n || ml->m[o.monster].items) continue;
+            ml->m[o.monster].items = m.items;
+            ml->m[o.monster].n_items = m.n_items;
+            break;
+        }
+        m.items = nullptr;
+    }
+    const int n = f.n_items > 0 ? f.n_items : 0;
+    const size_t sz = static_cast<size_t>(n > 0 ? n : 1) * items::kRecordSize;
+    // (the arena's script part when it has room - nothing more on the heap;
+    // off it before the arena goes: monster_items_off_arena)
+    void* a = arena_take(sz, true);
+    auto* p = static_cast<uint8_t(*)[items::kRecordSize]>(a ? a : malloc(sz));
+    if (!p) {
+        memlog::note("not enough memory: a monster's own items");
+        return false;
+    }
+    if (n) memcpy(p, f.items, static_cast<size_t>(n) * items::kRecordSize);
+    arena_free(m.items);
+    m.items = p;
+    m.n_items = static_cast<uint8_t>(n);
+    f.items = p;
+    return true;
+}
+
+// A fighter's items as a fight starts: a monster's own list once it has one,
+// else its group's
+void monster_items(combat::Fighter& f, const combat::Monster& m)
+{
+    combat::Group& g = *ml->g[m.group];
+    f.items = m.items ? m.items : g.item;
+    f.n_items = m.items ? m.n_items : g.n_items;
+}
+
+// A monster's item gone: off its own list (made from its group's first)
+void remove_group_item(combat::Fighter& f, int k)
+{
+    if (!f.items || k < 0 || k >= f.n_items) return;
+    own_items(f);
     uint8_t (*list)[items::kRecordSize] = f.items;
     const int n = f.n_items;
-    if (!list || k < 0 || k >= n) return;
     for (int j = k; j + 1 < n; ++j) memcpy(list[j], list[j + 1], items::kRecordSize);
     memset(list[n - 1], 0, items::kRecordSize);
-    for (int j = 0; j < fg->b.n; ++j)
-        if (fg->b.f[j].items == list) fg->b.f[j].n_items = n - 1;
-    for (int g = 0; ml && g < combat::kMaxGroups; ++g)
-        if (ml->g[g] && ml->g[g]->item == list) ml->g[g]->n_items = static_cast<uint8_t>(n - 1);
+    f.n_items = static_cast<int16_t>(n - 1);
+    if (ml && f.monster >= 0 && f.monster < ml->n && ml->m[f.monster].items == list)
+        ml->m[f.monster].n_items = static_cast<uint8_t>(n - 1);
 }
 
 // Shots: `n` arrows / quarrels of the pile (one for each attack made), or
@@ -2479,8 +2565,12 @@ void spend_ammo(int i, int k, int n)
         return;
     }
     const int left = f.items[k][0x39];
-    if (left > n) f.items[k][0x39] = static_cast<uint8_t>(left - n);
-    else remove_group_item(f, k);
+    if (left > n) {
+        own_items(f);
+        f.items[k][0x39] = static_cast<uint8_t>(left - n);
+    } else {
+        remove_group_item(f, k);
+    }
 }
 
 // ---- Use in a fight: the item's spell goes off at once (no casting time),
@@ -2499,7 +2589,8 @@ void spend_item(int i, int sp)
         f.n_items = ch.n_items;
         return;
     }
-    // A monster's: its group's items (shared by the copies)
+    // A monster's: its own items (its group's until now)
+    own_items(f);
     if (magic::use_charge(f.items[k])) remove_group_item(f, k);
 }
 
@@ -3430,9 +3521,29 @@ bool ai_ready_weapon(int i)
         f.n_items = ch.n_items;
         f.items = ch.items;
     } else {
-        // Back into the monster (its record, effects) and its group's items
+        // Back into the monster (its record, effects) and its items - its own
+        // list once they differ from the group's (copy on write)
         f.rec.write(tmp->rec);
-        memcpy(f.items, tmp->items, static_cast<size_t>(tmp->n_items) * items::kRecordSize);
+        const size_t ib = static_cast<size_t>(tmp->n_items) * items::kRecordSize;
+        if (ib && memcmp(f.items, tmp->items, ib) != 0) {
+            // (a copy of its group that readied the same already has the
+            // list: read that one - copies changing one way share it)
+            const combat::Monster& me = ml->m[f.monster];
+            const bool mine = me.items && f.items == me.items;
+            bool shared = false;
+            for (int j = 0; !mine && j < fg->b.n && !shared; ++j) {
+                const combat::Fighter& o = fg->b.f[j];
+                if (j == i || o.monster < 0 || o.monster >= ml->n || ml->m[o.monster].group != me.group ||
+                    o.items == ml->g[me.group]->item || o.n_items != tmp->n_items || memcmp(o.items, tmp->items, ib) != 0)
+                    continue;
+                f.items = o.items;
+                shared = true;
+            }
+            if (!shared) {
+                own_items(f);
+                memcpy(f.items, tmp->items, ib);
+            }
+        }
         if (f.n_aff) {
             int n = tmp->n_affects < f.max_aff ? tmp->n_affects : f.max_aff;
             if (combat::Monster* m = f.rec.monster()) {
@@ -3767,12 +3878,13 @@ void fight_start(pic::Canvas& c)
     party::Character* tmp = new (std::nothrow) party::Character;
     uint8_t* fresh = new (std::nothrow) uint8_t[party::kRecordSize];
     if (tmp && fresh) {
-        auto recalc = [&](const combat::Group& g) {
-            tmp->n_items = g.n_items < party::kMaxItems ? g.n_items : party::kMaxItems;
-            memcpy(tmp->items, g.item, static_cast<size_t>(tmp->n_items) * items::kRecordSize);
+        auto recalc_with = [&](const uint8_t (*list)[items::kRecordSize], int n) {
+            tmp->n_items = n < party::kMaxItems ? n : party::kMaxItems;
+            if (tmp->n_items) memcpy(tmp->items, list, static_cast<size_t>(tmp->n_items) * items::kRecordSize);
             tmp->n_affects = 0;
             rules::recalc_values(*tmp, *names, d->facts);
         };
+        auto recalc = [&](const combat::Group& g) { recalc_with(g.item, g.n_items); };
         for (int gi = 0; gi < ml->groups; ++gi) {
             combat::Group& g = *ml->g[gi];
             memcpy(tmp->rec, g.rec, sizeof tmp->rec);
@@ -3782,7 +3894,8 @@ void fight_start(pic::Canvas& c)
                 combat::Monster& m = ml->m[k];
                 if (m.group != gi || (!m.own && !m.n_ch)) continue;
                 combat::Rec(&m).read(tmp->rec);
-                recalc(g);
+                if (m.items) recalc_with(m.items, m.n_items);      // (its own items, from a fight before)
+                else recalc(g);
                 m.n_ch = 0;
                 m.base = fresh;
                 combat::Rec(&m).write(tmp->rec);
@@ -3800,8 +3913,7 @@ void fight_start(pic::Canvas& c)
         f.rec = combat::Rec(&m);
         f.aff = m.aff;
         f.n_aff = &m.n_aff;
-        f.items = ml->g[m.group]->item;
-        f.n_items = ml->g[m.group]->n_items;
+        monster_items(f, m);
         f.monster = k;
         f.icon = 8 + m.group;
         f.quick = true;
@@ -4334,17 +4446,13 @@ int spell_power(const combat::Fighter& f)
 {
     // An item's spell: the item's level (6 - the monsters' own, 12)
     if (fg->use_item >= 0 && fg->spell && mrules) return combat::power_of(f.rec, mrules->tables, fg->spell, true);
+    // (the caster's own: the same level the spell is cast at - Secret's
+    // paladin rule, a class-changed human's skill levels)
+    if (fg->spell && mrules) return combat::power_of(f.rec, mrules->tables, fg->spell);
     const combat::Rec r = f.rec;
     const int cl = r[0x109], pa = r[0x10C], ra = r[0x10D], mu = r[0x10E];
     if (cl == 0 && mu == 0 && pa < 9 && ra < 8) return 6;
-    if (!fg->spell || !mrules) return cl > mu ? cl : mu;
-    auto most = [](int a, int b2) { return a > b2 ? a : b2; };
-    switch (mrules->tables.spell_class(fg->spell)) {
-    case 0: return most(cl, pa - 8);
-    case 1: return most(ra - 7, 0);
-    case 2: return most(mu, ra - 8);
-    default: return 12;
-    }
+    return cl > mu ? cl : mu;
 }
 
 void forget_spell(combat::Fighter& f, int sp)
@@ -4749,12 +4857,25 @@ void summon(int caster, const combat::FightSpell& fs)
             const combat::Rec r(&m);
             if (r[0x195] != 9) continue;
             int x = -1, y = -1;
+            // (the original tests the one square - GAME.OVR 0x30139 - and a
+            // bigger monster's other squares may lie on someone or a wall;
+            // with Game Fixes every square it takes is free plain ground)
+            const int size = (r[0xDE] & 7) ? (r[0xDE] & 7) : 1;
+            int sx[4] = {}, sy[4] = {};
+            const int n_sq = rules::fixes() ? combat::squares(size, sx, sy) : 1;
+            auto free_at = [&](int xx, int yy) {
+                for (int q = 0; q < n_sq; ++q) {
+                    const int px = xx + sx[q], py = yy + sy[q];
+                    if (px < 0 || py < 0 || px >= combat::kW || py >= combat::kH || b.who[py][px] || b.ground[py][px] != plain)
+                        return false;
+                }
+                return true;
+            };
             while (x < 0 && anchor < b.n) {
                 const combat::Fighter& a = b.f[anchor];
                 for (; a.size && dir < 8 && x < 0; ++dir) {
                     const int xx = a.x + combat::dx(dir), yy = a.y + combat::dy(dir);
-                    if (xx < 0 || yy < 0 || xx >= combat::kW || yy >= combat::kH || b.who[yy][xx] || b.ground[yy][xx] != plain)
-                        continue;
+                    if (!free_at(xx, yy)) continue;
                     x = xx;
                     y = yy;
                 }
@@ -4773,8 +4894,7 @@ void summon(int caster, const combat::FightSpell& fs)
             f->rec = r;
             f->aff = m.aff;
             f->n_aff = &m.n_aff;
-            f->items = ml->g[m.group]->item;
-            f->n_items = ml->g[m.group]->n_items;
+            monster_items(*f, m);
             f->monster = static_cast<int16_t>(k);
             f->icon = static_cast<int16_t>(8 + m.group);
             f->quick = true;
@@ -4787,7 +4907,7 @@ void summon(int caster, const combat::FightSpell& fs)
             r[0x197] = b.f[caster].rec[0x197];
             f->x = static_cast<int16_t>(x);
             f->y = static_cast<int16_t>(y);
-            f->size = static_cast<int16_t>((r[0xDE] & 7) ? (r[0xDE] & 7) : 1);
+            f->size = static_cast<int16_t>(size);
             f->facing = b.f[caster].facing;
             combat::occupancy(b);
             char t[48];
