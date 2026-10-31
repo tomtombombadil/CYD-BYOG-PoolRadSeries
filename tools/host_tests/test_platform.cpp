@@ -101,6 +101,25 @@ int main()
     dir.close();
     CHECK(!plat::open("/GOLDBOX/GAME/NONE.BIN"));
     CHECK(plat::remove("/GOLDBOX/GAME/G.TXT") && !plat::exists("/GOLDBOX/GAME/G.TXT"));
+    // rename: onto a new name, then over an existing file (replaced whole);
+    // a missing source fails and leaves the target as it was
+    {
+        plat::File t = plat::open("/GOLDBOX/GAME/T1~", "w");
+        CHECK(t && t.write(reinterpret_cast<const uint8_t*>("new"), 3) == 3);
+        t.close();
+        CHECK(plat::rename("/GOLDBOX/GAME/T1~", "/GOLDBOX/GAME/T1") && plat::exists("/GOLDBOX/GAME/T1") &&
+              !plat::exists("/GOLDBOX/GAME/T1~"));
+        t = plat::open("/GOLDBOX/GAME/T2~", "w");
+        CHECK(t && t.write(reinterpret_cast<const uint8_t*>("newer!"), 6) == 6);
+        t.close();
+        CHECK(plat::rename("/GOLDBOX/GAME/T2~", "/GOLDBOX/GAME/T1"));
+        t = plat::open("/GOLDBOX/GAME/T1", "r");
+        uint8_t rb[8] = {};
+        CHECK(t && t.size() == 6 && t.read(rb, 8) == 6 && memcmp(rb, "newer!", 6) == 0);
+        t.close();
+        CHECK(!plat::rename("/GOLDBOX/GAME/NONE~", "/GOLDBOX/GAME/T1") && plat::exists("/GOLDBOX/GAME/T1"));
+        plat::remove("/GOLDBOX/GAME/T1");
+    }
     // A default File does nothing
     plat::File none;
     CHECK(!none && none.size() == 0 && none.read(b, 4) == 0 && !none.isDirectory() && !none.openNextFile());

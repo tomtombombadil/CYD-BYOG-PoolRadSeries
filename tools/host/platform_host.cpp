@@ -153,6 +153,13 @@ bool exists(const char* path)
     return stat(pc::host_path(path).c_str(), &st) == 0;
 }
 bool remove(const char* path) { return ::remove(pc::host_path(path).c_str()) == 0; }
+bool rename(const char* from, const char* to)
+{
+    // (as the card: the old file goes first - FatFs won't rename onto a name)
+    if (!exists(from)) return false;
+    if (exists(to) && !remove(to)) return false;
+    return ::rename(pc::host_path(from).c_str(), pc::host_path(to).c_str()) == 0;
+}
 bool mkdir(const char* path)
 {
     ::mkdir(pc::host_path(path).c_str(), 0755);

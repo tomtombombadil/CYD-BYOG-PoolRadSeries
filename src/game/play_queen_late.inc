@@ -158,14 +158,15 @@ __attribute__((noinline)) void q_draw_character(pic::Canvas& c, const party::Cha
 }
 
 // ---- Saving (queen_facts_3.md 7) ---------------------------------------------
-// SAVGAMx.QSV in one go: written to _CYD/QSV.TMP first - its records laid
-// over the loaded game's own (what the engine doesn't keep stays: spells,
-// pointers) and that game's rest after them (the GOG folder's SAVGAMA.QSV
-// for a new game) - then copied over the slot's file.
+// SAVGAMx.QSV in one go: written whole under its temporary name first
+// (temp_name) - its records laid over the loaded game's own (what the
+// engine doesn't keep stays: spells, pointers) and that game's rest after
+// them (the GOG folder's SAVGAMA.QSV for a new game) - then renamed over
+// the slot's file (a failed write leaves the slot as it was).
 __attribute__((noinline)) bool q_save(char slot, const savegame::Header& h, const char* path)
 {
-    char src_path[200], tmp[160];
-    snprintf(tmp, sizeof tmp, "%s/_CYD/QSV.TMP", games::kRootDir);
+    char src_path[200], tmp[204];
+    temp_name(path, tmp, sizeof tmp);
     if (d->q_src) {
         char nm[24];
         save_file_name(d->q_src, nm, sizeof nm);
@@ -191,19 +192,9 @@ __attribute__((noinline)) bool q_save(char slot, const savegame::Header& h, cons
     }
     out.close();
     if (in) in.close();
-    // (the slot's file from the copy)
-    plat::File a = plat::open(tmp, "r");
-    plat::File b = ok && a ? plat::open(path, "w") : plat::File{};
-    if (!a || !b) ok = false;
-    uint8_t buf[256];
-    while (ok) {
-        const int n = a.read(buf, sizeof buf);
-        if (n <= 0) break;
-        ok = b.write(buf, static_cast<size_t>(n)) == static_cast<size_t>(n);
-    }
-    if (a) a.close();
-    if (b) b.close();
-    plat::remove(tmp);
+    // (the slot's file: the whole new one, or the old one as it was)
+    ok = ok && plat::rename(tmp, path);
+    if (!ok) plat::remove(tmp);
     if (ok) d->q_src = slot;
     return ok;
 }

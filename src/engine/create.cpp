@@ -917,11 +917,12 @@ void roll(party::Character& c, const classes::Tables& t, const Facts& f, Dice& d
     for (int k = 0; k < 8; ++k)
         if (r[kLevels + k]) r[kLevels + k] = 1;
     r[kHitDice] = 1;
+    // (the whole book: the spells past 100 are the same array's rest in the
+    // originals' records - Secret 0xD5, Champions 0xC7, Death Knights' spell
+    // part 0xAE, Darkness 0x117 / 0x128 -, kept in ext by the engine)
     memset(r + kSpellBook, 0, 100);
-    if (t.lay.dk) {
-        memset(c.ext + party::kExtBook, 0, 17);
-        memset(c.ext + party::kExtBook2, 0, 9);
-    }
+    memset(c.ext + party::kExtBook, 0, 17);
+    memset(c.ext + party::kExtBook2, 0, 9);
     memset(r + kMoney, 0, 14);
     const bool pool = t.lay.pool;
     put32(r, kExp, pool ? 0 : start_exp(cls, t.lay.secret, t.lay.dk, f.start_xp));
