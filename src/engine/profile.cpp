@@ -2611,7 +2611,8 @@ const Profile kProfiles[] = {
                  .camp_pic = 29,               // (the camp: PIC<area> block 29, in every one - DOSBox)
                  // (a one-choice menu's "PRESS <RETURN> OR BUTTON TO CONTINUE"
                  // shows as "PRESS <ENTER>/<RETURN> TO CONTINUE" - DOSBox)
-                 .press_words = {0x1DCB, 0x1DF0}, .view_prompt = 0x21AC7},
+                 .press_words = {0x1DCB, 0x1DF0}, .view_prompt = 0x21AC7,
+                 .shop_heading = 0x6CF3},
      .overland = &kPoolOverland},
     // Secret of the Silver Blades (being built: the screens and the maps so
     // far; zero = not known yet)

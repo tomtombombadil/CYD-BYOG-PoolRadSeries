@@ -3244,6 +3244,7 @@ void handle(ecl::Stop r);
 void draw_items(pic::Canvas& c);
 void draw_buy(pic::Canvas& c);
 void draw_shop(pic::Canvas& c);
+bool pool_shop_blank();
 
 // The menu line again after a message
 bool fight_moving();
@@ -3353,8 +3354,9 @@ void list_line(int i, char* out, size_t cap)
         char nm[48];
         const uint8_t* it = goods(i);
         names->name(items::Item{it}, nm, sizeof nm);
-        if (darkness_files()) {
-            // (30 characters: the price ending at the 30th, the name over the start)
+        if (darkness_files() || d->prof->variant.shop_heading) {
+            // (30 characters: the price ending at the 30th, the name over the
+            // start - Darkness; Pool too, DOSBox)
             char line[31];
             snprintf(line, sizeof line, "%30d", shop_price(it));
             const size_t n = strlen(nm);
@@ -3455,7 +3457,8 @@ void items_keys(char* out, size_t cap)
     const party::Character* ch = pt->sel();
     const bool exploring = view_from == Screen::Game || view_from == Screen::Camp || view_from == Screen::Fight;
     snprintf(out, cap, "%s%s%s%s%s%s%s%s", d->w_ready, exploring && can_use_items(*ch) ? iw(profile::kUse) : "",
-             !ch->npc() && (!in_shop_items() || darkness_files() || gateway()) && view_from != Screen::Fight ? iw(profile::kTrade) : "",
+             !ch->npc() && (!in_shop_items() || darkness_files() || gateway() || d->prof->game == games::Game::PoolOfRadiance) &&
+                     view_from != Screen::Fight ? iw(profile::kTrade) : "",
              iw(vault_on() ? profile::kDeposit : profile::kDrop),
              ch->n_items < party::kMaxItems ? iw(profile::kHalve) : "", iw(profile::kJoin),
              in_shop_items() && !ch->npc() ? iw(profile::kSell) : "", in_shop_items() ? iw(profile::kId) : "");
@@ -6392,13 +6395,15 @@ void draw_shop(pic::Canvas& c)
     else if (last_pic_id >= 0 && (!treasure_on() || vault_on())) host_picture(last_pic_id, last_pic_head);
     else draw_view(c);
     draw_panel(c);
-    if (gateway() && treasure_on() && !vault_on()) {
+    if ((gateway() && treasure_on() && !vault_on()) || pool_shop_blank()) {
         c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);       // (Gateway's treasure: no place and time - DOSBox)
         dirty_rows(15, 15);
     }
     shop_menu(c);
 }
 
+// (Pool: a shop's screen has no place and time line - DOSBox)
+bool pool_shop_blank() { return d->prof->game == games::Game::PoolOfRadiance && !treasure_on() && !vault_on(); }
 void open_shop(pic::Canvas& c)
 {
     screen = Screen::Shop;
@@ -6410,6 +6415,10 @@ void open_shop(pic::Canvas& c)
     }
     menu.selected = 0;
     if (pt->count) draw_party(c, 17);
+    if (pool_shop_blank()) {
+        c.fill(17 * 8, 15 * 8, 22 * 8, 8, 0);
+        dirty_rows(15, 15);
+    }
     shop_menu(c);
 }
 
@@ -6492,6 +6501,13 @@ void draw_buy(pic::Canvas& c)
     plist.row1 = 22;
     plist.col0 = 1;
     plist.n = ground->n;
+    if (d->prof->variant.shop_heading) {
+        // (Pool: "Shop" over the list at column 17, the goods from row 4 - DOSBox)
+        char w[8];
+        ow(d->prof->variant.shop_heading, w, sizeof w);
+        put(c, w, 17, 1, 15);
+        plist.row0 = 4;
+    }
     if (dk_ui()) {
         // (rows 1-18; the buyer's and the counter's platinum at rows 20 / 21)
         plist.row1 = 18;
@@ -7719,6 +7735,12 @@ void shop_tap(int x, int y, pic::Canvas& c)
         case 'B':
             screen = Screen::ShopBuy;
             plist = PickList{};
+            if (d->prof->variant.shop_heading && ground->n > 1) {
+                // (Pool: the list opens on its second line - at the top,
+                // chosen, Prev offered for the first; DOSBox)
+                plist.top = 1;
+                plist.index = 1;
+            }
             draw_buy(c);
             break;
         case 'V':

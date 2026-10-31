@@ -800,6 +800,9 @@ struct Profile {
         uint32_t queen_orders = 0;
         // View Character's menu prompt (Pool: "View:"; GAME.OVR - 0: none)
         uint32_t view_prompt = 0;
+        // Pool: the buy list's heading ("Shop" at column 17, row 1; the goods
+        // from row 4, opened a line down - GAME.OVR; 0: Curse's list)
+        uint32_t shop_heading = 0;
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;
