@@ -68,11 +68,17 @@ the Project as claude/TODO.md.
       Loot / Take Exits, the encounter distance in 0x7EC0 / 0x7EC1, script
       room zeros, spell list bar, first member after a hall, Memorize's
       screens (words, bars, starred list, Exit before the question), a
-      rest's encounter (script first, no "rudely interrupted"). Open: the
-      arena's duels (CALL 0x8000 / 0x8001 - Pool and Curse; facts in the
-      play-test log); the shared list position (training's spell list
-      opens on its last line); Sokal Keep, camp / items / saves still to
-      compare. Check in Curse's play test: the press words, word wrap,
+      rest's encounter (script first, no "rudely interrupted"). Part 5:
+      the arena's duels built (CALL 0x8000 / 0x8001, ROLF; Curse's code
+      the same, its scripts never call them) and matched side by side; the
+      treasure menu after every fight; spell lists open on the page's last
+      line; training keeps weight / movement; Pool's delay x 225 ms;
+      Trade's picker / Overloaded; Drop It? unlit; an engine save loaded by
+      the original; the boat to Sokal Keep and its undead packs (placement,
+      XP by the rules). Open: an uninterrupted rest (an inn), Cast outside
+      fights, Scribe, Fix, Halve / Join, Sell / Id; Sokal's pale form,
+      orcs, chapel and on; Pool record 0x113 left by a fight (original
+      keeps the attacks left). Check in Curse's play test: the press words, word wrap,
       load path, camp picture / Quit to DOS, View prompt, shop and temple
       layouts, the list routine, movement keys at the Locked menu,
       monsters' valueless items, part 3's: Quick kept across fights, the
