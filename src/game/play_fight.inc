@@ -4221,7 +4221,15 @@ void end_fight(pic::Canvas& c)
             for (int i = b.party_size; i < b.n; ++i) {
                 const combat::Fighter& f = b.f[i];
                 if (f.gone || !f.team() || f.status() == party::Okay || f.status() == party::Running) continue;
-                for (int k = 0; k < f.n_items; ++k) {
+                // (Pool: a LOAD MONSTER's copies - all but the first of its
+                // group - hold their items the other way round: copied item by
+                // item onto the front of the copy's list, ovr4 +0x5B7; DOSBox,
+                // the monster leaders' gnolls)
+                bool copy = false;
+                if (pool_files() && ml && f.monster >= 0)
+                    for (int j = 0; j < f.monster && !copy; ++j) copy = ml->m[j].group == ml->m[f.monster].group;
+                for (int kk = 0; kk < f.n_items; ++kk) {
+                    const int k = copy ? f.n_items - 1 - kk : kk;
                     // (Pool, GAME.OVR ovr6 +0x10A: an item of no value is left
                     // behind unless fewer than 8 were taken so far and 1d10 <= 3;
                     // one with a value is always taken - DOSBox: the kobolds'
