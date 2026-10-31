@@ -803,6 +803,7 @@ struct Profile {
         // Pool: the buy list's heading ("Shop" at column 17, row 1; the goods
         // from row 4, opened a line down - GAME.OVR; 0: Curse's list)
         uint32_t shop_heading = 0;
+        uint32_t loot_heading = 0;      // (Pool: the treasure's items list's, "Loot", as the shop's)
     } variant;
     // Pool's wilderness map (overland.h; null: none)
     const overland::Facts* overland;

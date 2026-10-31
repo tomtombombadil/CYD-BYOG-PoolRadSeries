@@ -1204,6 +1204,8 @@ void draw_tr_overland(pic::Canvas& c)
     dirty_rows(3, 13);
 }
 
+uint32_t text_wipe_at = 0;               // (Pool's treasure Detect: its lines cleared then)
+uint32_t game_delay_ms();
 bool world_parked = false;           // the 3D view's walls on the card during a fight (play_fight.inc)
 // The scripts' text colour: light green (Darkness: game byte 0x39 - its
 // scripts give speech 14, yellow; 0 or past 15 is 10 - darkness_facts.md S2)
@@ -16415,6 +16417,13 @@ void tick_screens(uint32_t now, pic::Canvas& c)
         cv = &c;
         fight_tick(now, c);
         return;
+    }
+    if (text_wipe_at && static_cast<int32_t>(now - text_wipe_at) >= 0) {
+        text_wipe_at = 0;
+        if (screen == Screen::Shop) {
+            text::clear(c, text::kTextArea);
+            dirty_rows(17, 22);
+        }
     }
     if ((((hl() || d->prof->game == games::Game::PoolOfRadiance) && screen == Screen::Camp) ||
          (d->prof->game == games::Game::PoolOfRadiance && screen == Screen::Shop && treasure_on() && !vault_on())) &&
