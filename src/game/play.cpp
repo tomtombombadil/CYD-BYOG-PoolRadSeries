@@ -11823,6 +11823,9 @@ struct Host : ecl::Host {
             if (tmp && dax::load_block(src, d->idx, *e, tmp) == e->raw_size) {
                 memcpy(code, tmp + 2, e->raw_size - 2);
                 *len = e->raw_size - 2;
+                // (Pool: the rest of the script's room is zeros in its saves -
+                // DOSBox, after the slums' longer script)
+                if (pool_files()) memset(code + *len, 0, d->gs.code_cap - *len);
                 ok = true;
             }
             free(tmp);
