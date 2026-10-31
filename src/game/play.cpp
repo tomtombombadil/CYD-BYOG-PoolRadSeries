@@ -3532,10 +3532,10 @@ void draw_items(pic::Canvas& c)
 }
 
 // Gateway's item questions (Drop It?, Is It a Deal?) show the list unlit
-// (DOSBox)
-void gw_unlight(pic::Canvas& c)
+// (DOSBox); Pool's Drop It? too (DOSBox: Brother Sean's mace)
+void gw_unlight(pic::Canvas& c, bool pool = false)
 {
-    if (!gateway() || screen != Screen::Items) return;
+    if (!(gateway() || (pool && pool_files())) || screen != Screen::Items) return;
     list_unlit = true;
     draw_items(c);
     list_unlit = false;
@@ -3640,7 +3640,7 @@ void drop_item(int i, pic::Canvas& c)
     char nm[48], t[96];
     item_name(i, nm, sizeof nm);
     snprintf(t, sizeof t, "%s%s %s", iw(profile::kYour), nm, iw(profile::kGoneForever));
-    gw_unlight(c);
+    gw_unlight(c, true);
     say_item(c, t);
     item_at = i;
     ask_yes_no(c, Ask::DropItem, iw(profile::kDropIt));
