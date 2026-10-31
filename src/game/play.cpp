@@ -7170,6 +7170,13 @@ void list_coins()
             if (coins_there(k) > 0) take_kind[take_n++] = k;
         return;
     }
+    if (pool_files() && !take_mode) {
+        // (Pool's treasure: copper first - its Take, GAME.OVR overlay 22
+        // +0xD33, lists the counter from jewelry down, each in front)
+        for (int k = 0; k < 7; ++k)
+            if (coins_there(k) > 0) take_kind[take_n++] = k;
+        return;
+    }
     for (int k = 6; k >= 0; --k)
         if (coins_there(k) > 0) take_kind[take_n++] = k;
 }
@@ -7229,7 +7236,10 @@ void draw_take(pic::Canvas& c)
         sw(profile::kCoinType, prompt, sizeof prompt);
         sw(profile::kSelectWord, sel, sizeof sel);
     }
-    if (prompt[0] && prompt[strlen(prompt) - 1] != ' ' && strlen(prompt) + 1 < sizeof prompt) strcat(prompt, " ");
+    // (Pool's coin lists - Take, View's Trade / Drop - have no Select word:
+    // Exit only, Return picks the line; overlays 20 / 22)
+    if (pool_files()) sel[0] = 0;
+    if (sel[0] && prompt[0] && prompt[strlen(prompt) - 1] != ' ' && strlen(prompt) + 1 < sizeof prompt) strcat(prompt, " ");
     draw_list(c, prompt, sel);
 }
 
@@ -7263,8 +7273,8 @@ void ask_take(int i, pic::Canvas& c)
     } else {
         snprintf(take_prompt, sizeof take_prompt, "%s%s%s%s", a, d->money[take_coin], b[0] == ' ' ? "" : " ", b);
     }
-    if (dk_vault_coins() || (gateway() && secret_coin_panel())) {
-        // (the line's highlight goes while it asks - DOSBox)
+    if (dk_vault_coins() || (gateway() && secret_coin_panel()) || pool_files()) {
+        // (the line's highlight goes while it asks - DOSBox; Pool's too)
         char line[32];
         take_line(i, line, sizeof line);
         const int row = plist.row0 + i - plist.top;
@@ -7935,6 +7945,13 @@ void list_tap(int x, int y, pic::Canvas& c)
     if (y < text::kMenuTapTop) {
         const int i = l.top + row - l.row0;
         if (row >= l.row0 && row <= l.row1 && i < l.n) {
+            if (screen == Screen::Take && pool_files()) {
+                // (Pool's coin lists have no Select word: Return takes the
+                // line lit - a tap on a line takes it)
+                l.index = i;
+                ask_take(i, c);
+                return;
+            }
             if (screen != Screen::CreatePick) l.index = i;     // (Create's line 0 is its heading)
             if (screen == Screen::CreatePick) {
                 if (i >= 1) {
@@ -15880,6 +15897,12 @@ bool nav_point(int* x, int* y)
         }
         *x = ((d->prof->variant.party_menu_col ? d->prof->variant.party_menu_col : 2) + 1) * 8 + 2;
         *y = (pm_row0() + pm_sel) * 8 + 2;
+        return true;
+    }
+    if (screen == Screen::Take && pool_files() && input_mode == Input::None && plist.n) {
+        // (Pool's coin lists: Select = Return, the line lit)
+        *x = (plist.col0 + 1) * 8 + 2;
+        *y = (plist.row0 + plist.index - plist.top) * 8 + 2;
         return true;
     }
     if (menu_on && menu.count) return at_word();
