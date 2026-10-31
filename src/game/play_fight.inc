@@ -3831,6 +3831,9 @@ void fight_start(pic::Canvas& c)
     memcpy(b.level_exp, level_exp, sizeof level_exp);
     combat::g_dk_drain = darkness_files() ? dk_drain_hook : nullptr;     // (its own drain: facts L1)
     b.indoors = vm->get(0x4BE6) != 0;
+    // (Pool: the picture before the fight isn't come back to - its treasure's
+    // Exit shows the 3D view, DOSBox)
+    if (pool_files()) last_pic_id = -1;
     // (Dark Queen: indoors only under a roof - its forests are 3D maps
     // fought on WILDCOM's ground: q_load_tiles)
     if (hl() && geo::flags(d->map, d->gs.x, d->gs.y) < 0x80) b.indoors = false;
