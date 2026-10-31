@@ -1401,10 +1401,6 @@ int main(int argc, char** argv)
                     }
                     printf("\n");
                 }
-                if (FILE* ff = fopen("FIELD_ENGINE.BIN", "wb")) {      // (the ground bytes, as the original's 50 x 25)
-                    fwrite(b.ground, 1, sizeof b.ground, ff);
-                    fclose(ff);
-                }
                 for (int i = 0; i < b.n; ++i) printf("  at %d,%d fighter %d facing %d\n", b.f[i].x, b.f[i].y, i, b.f[i].facing);
             }
             char l1[48], l2[48]; play::describe(l1, l2, 48);
