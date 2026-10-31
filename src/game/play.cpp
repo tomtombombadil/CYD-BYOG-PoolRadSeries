@@ -4045,6 +4045,10 @@ bool save_game(char slot)
     h.game_area = d->gs.game_area;
     const bool dungeon = vm->get(0x4BE6) != 0;
     h.last_state = static_cast<uint8_t>(dungeon ? 4 : 3);
+    // (Pool: the byte is its view mode - 1 the 3D view, 2 / 3 / 4 the
+    // wilderness of areas 25 / 26 / 27; its load takes the 3D view's 4 as
+    // the eastern wilderness: "26,0" and a rider over the view - DOSBox)
+    if (pool_files()) h.last_state = static_cast<uint8_t>(pool_overland() ? 2 + ov_area() : 1);
     h.state = static_cast<uint8_t>(save_from == Screen::Camp ? 2 : 0);
     for (int i = 0; i < 3; ++i) {
         h.wall_block[i] = d->wall_block[i];
@@ -11026,8 +11030,10 @@ void pm_tap(int x, int y, pic::Canvas& c)
         if (load_secret) {
             load_secret = false;
             load_secret_game(text::key(menu, k));
-        } else if (load_game(text::key(menu, k)) && !load_problem && load_begins &&
+        } else if (load_game(text::key(menu, k)) && !load_problem && load_begins && d->save.state &&
                    d->prof->game == games::Game::PoolOfRadiance) {
+            // (a game saved from the camp; one saved from the party menu
+            // - state 0 - comes back to it - DOSBox)
             begin_adventuring();
             return;
         }
@@ -12654,6 +12660,9 @@ void handle(ecl::Stop r)
             return;
         }
         vm->set(0x4BF2, d->gs.script);
+        // (Pool: a load's walls come from the entry's LOAD FILES / PIECES -
+        // the view shows them at once, as the original's)
+        if (pool_files() && screen == Screen::Game && !pic_shown && vm->get(0x4BE6)) draw_view(c);
         break;
     case Then::Arrive:
     case Then::Idle:
@@ -12788,6 +12797,8 @@ void begin_adventuring()
     ecl::GameState& gs = d->gs;
     camping = false;
     if (!d->loaded && !in_demo) vault_new_game();
+    // (Pool: a new game's speed is 1 - DOSBox, Alter's Speed after the tour)
+    if (!d->loaded && !in_demo && d->prof->game == games::Game::PoolOfRadiance && !vm->get(0x4BFC)) vm->set(0x4BFC, 1);
     const int last = vm->get(0x4BF2) & 0xFF;
     const bool resume = d->loaded && last != 0;
     const bool dungeon = !d->loaded || vm->get(0x4BE6) != 0;
