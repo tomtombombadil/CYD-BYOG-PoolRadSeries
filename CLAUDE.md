@@ -798,6 +798,20 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   then Treasures) without waiting for Tom's input on routine choices
   (follow the originals; fixes behind Game Fixes; note open questions in
   TODO), then the Krynn games (Tom, 2026-10-23).
+- **Full play testing** (Tom, 2026-10-30, after every game became
+  playable): first an in-depth code review and its fixes, then play each
+  game through from start to finish in the engine and compare it with
+  the original in DOSBox - the original series first (Pool, Curse,
+  Secret, Darkness), then Savage Frontier, then Krynn. Everything but our
+  deliberate changes (SPEC 12, Game Fixes, comforts) must behave exactly
+  as the original. Save often (before and after fights); healing /
+  resting the party to get on is allowed - the point is the behaviour,
+  not winning. Method: the engine's saves are the original's bytes, so a
+  checkpoint saved in the engine loads in DOSBox (and back) and the two
+  are compared there (scripts, screens, text, shops, rewards, levels);
+  dice-driven results compared by their rules, not by roll. Findings,
+  fixes and progress per game in docs/TODO.md / the Project's
+  claude/playtest_<game>.md.
 - **Standing answer for originals' mistakes** (Tom, 2026-10-23): the game
   keeps the original's behaviour; the fixed (AD&D) version goes behind
   Game Fixes - don't ask, just do it and list each such case in the
