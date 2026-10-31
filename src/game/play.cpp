@@ -7879,6 +7879,12 @@ void shop_tap(int x, int y, pic::Canvas& c)
             shop_menu(c);
             break;
         case 'E':
+            // (Pool: "Take: Money Items Exit"'s Exit is back to the treasure's
+            // menu - DOSBox, the alerted goblin guards)
+            if (pool_files() && treasure_on() && strcmp(menu.prompt, tw(profile::kTakeColon)) == 0) {
+                shop_menu(c);
+                break;
+            }
             leave_shop(c);
             break;
         case 0:
@@ -8056,6 +8062,9 @@ void list_tap(int x, int y, pic::Canvas& c)
         else {
             screen = Screen::Shop;
             draw_shop(c);
+            // (Pool: the loot list's Exit goes back to "Take: Money Items"
+            // too, as its coin list's - DOSBox, the alerted goblin guards)
+            if (pool_files() && treasure_on() && ground->any_money() && ground->n) treasure_take(c);
         }
         return;
     } else if (screen == Screen::Items && l.index < pt->sel()->n_items &&
