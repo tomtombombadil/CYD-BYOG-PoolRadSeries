@@ -3274,7 +3274,9 @@ void note(pic::Canvas& c, const char* t)
     put(c, t, 0, text::kMenuRow, 10);
     int speed = vm->get(0x4BFC) & 0xFF;
     if (speed == 0) speed = 4;
-    note_until = plat::now_ms() + static_cast<uint32_t>(speed) * 300;
+    // (Pool: its status line waits its one game delay, speed x 225 ms -
+    // START.EXE 0x2233 -> 0x7E4E)
+    note_until = plat::now_ms() + static_cast<uint32_t>(speed) * (pool_files() ? 225 : 300);
     if (!note_until) note_until = 1;
 }
 
@@ -9311,7 +9313,9 @@ uint32_t game_delay_ms()
 {
     int speed = vm->get(0x4BFC) & 0xFF;
     if (speed == 0) speed = 4;
-    return static_cast<uint32_t>(speed) * 100;      // the games' delay: speed x 100 ms
+    // the games' delay: speed x 100 ms (Pool: x 225 - its delay routine,
+    // START.EXE 0x7E4E, waits speed x 0xE1 ms)
+    return static_cast<uint32_t>(speed) * (pool_files() ? 225 : 100);
 }
 
 struct CastRun {
