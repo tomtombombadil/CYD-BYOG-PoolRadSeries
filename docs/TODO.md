@@ -47,28 +47,28 @@ the Project as claude/TODO.md.
 ## Claude
 
 - [ ] Pool full play test, side by side with DOSBox (part 1, v0.160.3:
-      Phlan's civilized area, 17 fixes). Part 2 (2026-10-31): the three
-      listed differences settled (Buy list's opening place / page-bound
-      highlight, the wall ahead only at a step / turn / CALL C018; the
-      position line after a script's move: Tom's decision), the Locked menu
-      ignores movement keys, a beaten monster's valueless items mostly
-      stay (ovr6 +0x10A). Slums walked to the kobolds (7,0) and their
-      fight fought (Quick) on both. Open: (a) **fight placement** - the
-      original placed the party facing NORTH (formation, monsters above)
-      though the party faced east; the engine with facing N gives the
-      same formation, but its field's walls differ - find where Pool's
-      fight takes its direction / builds its field (ovr11 +0x19F5, its
-      callers); (b) the kobolds' coins: each record has 16 copper, the
-      original's treasure listed "Silver 144" - check the coin type / the
-      Take list's labels (the engine shows copper); (c) dice: fights
-      can't match roll for roll (the engine's draws don't follow the
-      original's order) - the original is run with a fixed seed (patched
-      copy, scratch only) so its replays repeat, the engine's encounter
-      dice told to match (playsim DIEFIX / "~n:v;"). Check in Curse's
-      play test: the press words, word wrap, load path, camp picture /
-      Quit to DOS, View prompt, shop and temple layouts, the list
-      routine (shared top line, page-bound highlight), movement keys at
-      the Locked menu, monsters' valueless items, the fight placement.
+      Phlan's civilized area, 17 fixes; part 2, v0.160.4: lists, wall
+      ahead, Locked menu keys, monsters' valueless items). Part 3
+      (2026-10-31): part 2's "facing north" placement and "Silver 144" were
+      a wandering orc fight at 13,2 N (a replay ran into it) - no such
+      bug. The original's placement is now dumped from dosbox-debug and
+      matched square for square (kobolds 22 fighters, large orc 30, guards
+      40, leaders 11); Pool gets its own placement (ovr11 +0x1577). Every
+      slums fight fought side by side (kobolds, goblins, orcs, hobgoblins,
+      large orc, guards, leaders, wandering orcs x3): XP totals and coins
+      equal. Fixed: Quick kept in the record (0x10F), SURPRISE's result,
+      the first member selected after a fight (Detect), the treasure's
+      coin list (order, no Select, Exit -> Take menu, green prompt), the
+      3D view after a treasure, THE END screen and the game's end, a
+      monster copy's items reversed. Open: the slums aren't "cleared" for
+      the clerk yet (more of them: the rope guild etc.); training, Sokal
+      Keep, camp / items / saves still to compare. Check in Curse's play
+      test: the press words, word wrap, load path, camp picture / Quit to
+      DOS, View prompt, shop and temple layouts, the list routine,
+      movement keys at the Locked menu, monsters' valueless items, and
+      part 3's: Quick kept across fights, the selected member after a
+      fight, SURPRISE's result, the coin list, the placement routine
+      (Curse's is likely the same code as Pool's), copies' item order.
 
 - [ ] Code review follow-ups (branch review-fixes-engine, 2026-10-31):
       (a) Dark Queen reroll - the engine's queen_roll keeps spells a
