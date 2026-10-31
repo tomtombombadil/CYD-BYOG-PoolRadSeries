@@ -12458,6 +12458,11 @@ void run_entry(int i, Then next)
     handle(vm->run(vm->entry(i)));
 }
 
+// Pool: a script took the party into another block - the position line
+// keeps the old square until the next step (DOSBox: the slums' entrance
+// shows "0,4 W" over the slums' view; the original's new-block path draws
+// the view without its status line)
+bool hold_place = false;     // (cleared by the next step)
 void after_move_redraw()
 {
     // After every step the games draw the 3D view again: pictures go
@@ -12469,6 +12474,12 @@ void after_move_redraw()
     d->gs.wall_ahead = static_cast<uint8_t>(geo::wall(d->map, d->gs.x, d->gs.y, d->gs.dir));
     gw_way_ahead();
     draw_view(*cv);
+    if (hold_place) {
+        // (the party list alone: draw_panel without the position line)
+        cv->fill(17 * 8, 8, 22 * 8, 14 * 8, 0);
+        if (pt->count) draw_party(*cv, 17);
+        return;
+    }
     draw_panel(*cv);
 }
 
@@ -12703,6 +12714,7 @@ void handle(ecl::Stop r)
         // (no map edge tried in it: coab's facts, sub_29677)
         d->gs.moved = false;
         vm->set(0x7ED5, 0);
+        if (pool_files() && then == Then::Move) hold_place = true;
         run_entry(4, Then::NewFirst);
         return;
     }
@@ -12773,6 +12785,7 @@ void step(int dir_of_step)
 {
     if (waiting || then != Then::Idle) return;
     step_dir = dir_of_step;
+    hold_place = false;
     clear_menu_line(*cv);
     text::clear(*cv, text::kTextArea);
     dirty_rows(17, 22);
