@@ -3376,6 +3376,11 @@ void list_line(int i, char* out, size_t cap)
 }
 
 bool list_unlit = false;            // draw_list without its highlight (Gateway's item questions)
+// Pool: the lists' top line is one variable for every list (DS 0x6B29, 1
+// at the program's start - ovr12; the list routine ovr26 +0xD9A keeps it
+// unless it's past the list's highlight); the Buy list starts on its
+// second line (ovr7 +0x37C) - so it opens where the last list left the top
+int pool_list_top = 1;
 
 void draw_list(pic::Canvas& c, const char* prompt, const char* what)
 {
@@ -3383,6 +3388,7 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
     if (l.index >= l.n) l.index = l.n ? l.n - 1 : 0;
     if (l.index < l.top) l.top = l.index;
     if (l.index >= l.top + l.rows()) l.top = l.index - l.rows() + 1;
+    if (pool_files()) pool_list_top = l.top;
     c.fill(l.col0 * 8, l.row0 * 8, (39 - l.col0) * 8, l.rows() * 8, 0);
     for (int r = 0; r < l.rows() && l.top + r < l.n; ++r) {
         char line[64];
@@ -7772,6 +7778,12 @@ void shop_tap(int x, int y, pic::Canvas& c)
         case 'B':
             screen = Screen::ShopBuy;
             plist = PickList{};
+            if (pool_files()) {
+                // (the second line highlighted, the top kept from the last list - DOSBox)
+                plist.index = 1;
+                plist.top = pool_list_top > 1 ? 1 : pool_list_top;
+                if (plist.top > ground->n) plist.top = 0;
+            }
             draw_buy(c);
             break;
         case 'V':
@@ -15199,6 +15211,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     close();
     cv = &c;
     age_check = false;
+    pool_list_top = 1;
     pic::sf_map_reset();                // (Gateway's pictures without a colour map: the last one read)
     const char* prog = profile::program_name(g);
     if (!prog) {
