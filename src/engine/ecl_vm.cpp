@@ -43,6 +43,17 @@ int Vm::sight() const
     return n;
 }
 
+// Pool keeps the encounter's range and distance in game words 0x7EC0 /
+// 0x7EC1 (its 0x6DC0 / 0x6DC1: START ovr4 +0x3D9 / +0x400, APPROACH +0x82A),
+// which its scripts read and set and its fight's placement uses (ovr11
+// +0x1A44)
+void Vm::pool_enc_words()
+{
+    if (!set_.pool_map) return;
+    set(0x7EC0, static_cast<uint16_t>(enc_.max));
+    set(0x7EC1, static_cast<uint16_t>(enc_.distance));
+}
+
 void Vm::reset_encounter()
 {
     enc_.sprite_on = enc_.pic_on = enc_.pic_due = false;
@@ -930,6 +941,7 @@ Stop Vm::answer(int v)
         auto approach = [&]() {
             if (enc_.distance > 0) {
                 --enc_.distance;
+                pool_enc_words();
                 show_encounter();
                 enc_again_ = true;
                 return true;
@@ -1544,6 +1556,7 @@ Stop Vm::step()
         enc_.pic = static_cast<uint8_t>(value(o[2]));
         enc_.distance = sight();
         if (enc_.distance > enc_.max) enc_.distance = enc_.max;
+        pool_enc_words();
         if (show_encounter()) {
             pause_ms_ = game_delay();
             return wait_for(Wait::Pause);
@@ -1554,6 +1567,7 @@ Stop Vm::step()
         ++pc_;
         if (enc_.distance > 0) {
             --enc_.distance;
+            pool_enc_words();
             if (show_encounter()) {
                 pause_ms_ = game_delay();
                 return wait_for(Wait::Pause);
@@ -1825,6 +1839,7 @@ Stop Vm::step()
         enc_.in_menu = true;
         enc_.distance = sight();
         if (enc_.distance > enc_.max) enc_.distance = enc_.max;
+        pool_enc_words();
         show_encounter();
         enc_phase_ = EncPhase::Text;
         return encounter_step();

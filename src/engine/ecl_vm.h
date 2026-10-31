@@ -202,6 +202,8 @@ public:
     uint8_t fight_sides() const { return enc_.sides; }
     int fight_distance() const
     {
+        // (Pool: its game word 0x7EC1, as its scripts left it - ovr11 +0x1A44)
+        if (set_.pool_map) return get(0x7EC1) & 0xFF;
         const int s = sight();
         return enc_.distance < s ? enc_.distance : s;
     }
@@ -280,6 +282,7 @@ private:
     int  sight() const;                 // squares the party can see ahead (0-2)
     bool show_encounter();              // true: the picture is due after a short pause
     void reset_encounter();
+    void pool_enc_words();              // (Pool: the encounter's range / distance in its game words)
     Stop encounter_step();              // the encounter menu, after a wait
     uint32_t game_delay() const;
 
