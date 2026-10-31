@@ -39,11 +39,10 @@ the Project as claude/TODO.md.
       plays differently from the originals. New in v0.89.0 for Pool:
       potions / wands / the Manual, Gauntlets of Ogre Power, the cloaks
       and rings - worth a look.
-- [ ] Decide (Pool side-by-side play test, 2026-10-31): at a one-choice
-      "PRESS <ENTER>/<RETURN> TO CONTINUE" the original ignores the
-      movement (arrow) keys - the party stays, the menu waits for Return;
-      the engine's movement keys answer it (CLAUDE.md: "any key goes on").
-      Keep, or make the movement keys do nothing there as the original?
+- [x] Decided (Tom, 2026-10-31): a one-choice "PRESS ENTER TO CONTINUE"
+      goes on with any key or a tap (movement keys too), unlike the
+      original; after a script moves the party the position line shows
+      the new square at once (the original shows the old one). SPEC 12.
 
 ## Claude
 
@@ -54,9 +53,8 @@ the Project as claude/TODO.md.
       shop / loot / temple layouts, Add's selection / icon slot, armour
       movement, View prompt ...). Next: the slums' fights onward. Listed,
       not fixed: the buy list's opening place (the original's shared list
-      position), the position line after a script move to a new block
-      (the original shows the old square until the next step), the
-      wall-ahead byte after the tour. Check in Curse's play test: the
+      position), the wall-ahead byte after the tour (the position line
+      after a script move stays ours - Tom). Check in Curse's play test: the
       press words, word wrap, load path, camp picture / Quit to DOS, View
       prompt, shop and temple layouts - Curse may share Pool's ways.
 

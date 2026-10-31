@@ -2448,6 +2448,12 @@ the originals is a bug. Engine comforts with a `features.h` switch are
 marked (switch); since v0.72.0 the player can also turn each one off in
 the game's Settings (As Original: all of them).
 
+- **Every game** (Tom, 2026-10-31): a one-choice "PRESS ENTER TO
+  CONTINUE" menu goes on with any key or a tap, movement keys included
+  (the originals wait for Return); after a script moves the party, the
+  position line shows the new square at once (the originals keep the old
+  one until the next step).
+
 - **Secret of the Silver Blades** (v0.94.0): its party menu's Initialize
   Mouse/Joystick isn't shown (nothing to set up: taps are the mouse);
   when BLADES.CFG's save folder (C:\SAVE\) isn't on the card, the saves
