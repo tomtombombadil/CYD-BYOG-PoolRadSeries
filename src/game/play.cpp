@@ -6440,6 +6440,12 @@ void ask_leave(pic::Canvas& c)
         sw(temple ? profile::kPriestSays : profile::kShopSays, says, sizeof says);
         sw(temple ? profile::kPriestRetrieve : profile::kShopRetrieve, back, sizeof back);
     }
+    if (pool_shop_blank() && pt->count) {
+        // (Pool: the question comes with the party's last member selected -
+        // DOSBox, after Pool in the general store)
+        pt->selected = pt->count - 1;
+        draw_party(c, 17);
+    }
     text::clear(c, text::kTextArea);
     text::begin(w, c, says, text::kTextArea, 10, true);
     text::step(w, c, d->font, -1);
@@ -6477,7 +6483,9 @@ void leave_shop(pic::Canvas& c, bool asked)
             else host_picture(0xFF, 0);
         }
     }
+    const bool place = pool_shop_blank();
     screen = Screen::Game;
+    if (place) draw_position(c);        // (Pool: the place line back - DOSBox)
     clear_menu_line(c);
     waiting = false;
     handle(vm->resume());
@@ -7735,12 +7743,6 @@ void shop_tap(int x, int y, pic::Canvas& c)
         case 'B':
             screen = Screen::ShopBuy;
             plist = PickList{};
-            if (d->prof->variant.shop_heading && ground->n > 1) {
-                // (Pool: the list opens on its second line - at the top,
-                // chosen, Prev offered for the first; DOSBox)
-                plist.top = 1;
-                plist.index = 1;
-            }
             draw_buy(c);
             break;
         case 'V':
