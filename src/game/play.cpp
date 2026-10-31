@@ -8004,6 +8004,9 @@ void list_tap(int x, int y, pic::Canvas& c)
         } else {
             screen = Screen::Shop;
             draw_shop(c);
+            // (Pool: the coin list's Exit goes back to "Take: Money Items" -
+            // DOSBox, the large orc's treasure)
+            if (pool_files() && treasure_on() && ground->any_money() && ground->n) treasure_take(c);
         }
         return;
     } else if (k == 'S' && screen == Screen::CreatePick) {
