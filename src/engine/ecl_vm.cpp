@@ -1725,8 +1725,10 @@ Stop Vm::step()
         // 0x2CB, which its memory map drops (the listing's sub_2771E and
         // cmd_table01 / sub_30723: below 0x4B00 and not one of its special
         // addresses), so the fight's surprise word (0x7ECB) is the scripts'
-        // own to set
-        (void)result;
+        // own to set. Pool's (START.EXE ovr4 +0x16C9) writes it to its
+        // surprise word (its 0x6DCB = Curse's 0x7ECB): its wandering
+        // monsters' "You are surprised by" / "You have surprised"
+        if (set_.pool_map) set(0x7ECB, static_cast<uint16_t>(result));
         return Stop::Running;
     }
     case 0x24:                                  // COMBAT
