@@ -66,7 +66,9 @@ the Project as claude/TODO.md.
       questions' start / colour per caller, the camp save's Quit TO DOS,
       0x7EC8 on a treasure without a fight, loot past 64 keeps the newest,
       Loot / Take Exits, the encounter distance in 0x7EC0 / 0x7EC1, script
-      room zeros, spell list bar, first member after a hall. Open: the
+      room zeros, spell list bar, first member after a hall, Memorize's
+      screens (words, bars, starred list, Exit before the question), a
+      rest's encounter (script first, no "rudely interrupted"). Open: the
       arena's duels (CALL 0x8000 / 0x8001 - Pool and Curse; facts in the
       play-test log); the shared list position (training's spell list
       opens on its last line); Sokal Keep, camp / items / saves still to
