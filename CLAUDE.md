@@ -806,10 +806,14 @@ their headers; update `THIRD_PARTY_NOTICES.md` when anything is brought in.
   deliberate changes (SPEC 12, Game Fixes, comforts) must behave exactly
   as the original. Save often (before and after fights); healing /
   resting the party to get on is allowed - the point is the behaviour,
-  not winning. Method: the engine's saves are the original's bytes, so a
-  checkpoint saved in the engine loads in DOSBox (and back) and the two
-  are compared there (scripts, screens, text, shops, rewards, levels);
-  dice-driven results compared by their rules, not by roll. Findings,
+  not winning. Method (Tom, 2026-10-30: "side by side"): the SAME
+  actions, as a player, in the engine and in DOSBox at the same time -
+  the same inputs step by step, both screens compared after each step
+  (text, menus, pictures, numbers, position); saves only for a common
+  start, checkpoints and recovery. Random numbers: follow the original's
+  generator where practical so fights match roll for roll; otherwise
+  re-sync from the same save after each fight and compare it by its
+  rules. Findings,
   fixes and progress per game in docs/TODO.md / the Project's
   claude/playtest_<game>.md.
 - **Standing answer for originals' mistakes** (Tom, 2026-10-23): the game
