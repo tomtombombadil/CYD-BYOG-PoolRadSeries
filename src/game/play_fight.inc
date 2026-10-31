@@ -3946,8 +3946,11 @@ void fight_start(pic::Canvas& c)
     vm->set(0x7ECB, 0);
     b.to_hit_party = static_cast<int8_t>(vm->get(0x7F71));
     b.to_hit_monsters = static_cast<int8_t>(vm->get(0x7F70));
-    combat::place(b, fg->t, d->gs.dir & 6, vm->fight_distance(), b.indoors ? solid_side : nullptr, nullptr,
-                  darkness_files() ? vm->fight_sides() : 0);
+    if (pool_files())
+        combat::place_pool(b, fg->t, d->gs.dir & 6, vm->fight_distance(), b.indoors ? &d->map : nullptr, d->gs.x, d->gs.y);
+    else
+        combat::place(b, fg->t, d->gs.dir & 6, vm->fight_distance(), b.indoors ? solid_side : nullptr, nullptr,
+                      darkness_files() ? vm->fight_sides() : 0);
     combat::battle_start(b, &rng);           // those invisible from the start
     // Their pictures
     fight_party_icons();

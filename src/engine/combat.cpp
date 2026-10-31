@@ -620,8 +620,18 @@ bool fits(const Battle& b, const Tables& t, int i, int size, int x, int y)
 
 } // namespace
 
+#ifdef CYD_TEST_HOOKS
+void (*g_place_hook)(const Battle& b) = nullptr;
+#endif
+
 void place(Battle& b, const Tables& t, int facing, int distance, SolidSide solid, void* ctx, int sides)
 {
+#ifdef CYD_TEST_HOOKS
+    struct Told {
+        const Battle& b;
+        ~Told() { if (g_place_hook) g_place_hook(b); }
+    } told{b};
+#endif
     const int party_f0 = (facing / 2) & 3;
     bool used[2][4][6][11] = {};
     int width[2] = {};
@@ -723,6 +733,135 @@ void place(Battle& b, const Tables& t, int facing, int distance, SolidSide solid
             }
         }
     }
+}
+
+void place_pool(Battle& b, const Tables& t, int facing, int distance, const geo::Map* m, int px, int py)
+{
+#ifdef CYD_TEST_HOOKS
+    struct Told {
+        const Battle& b;
+        ~Told() { if (g_place_hook) g_place_hook(b); }
+    } told{b};
+#endif
+    const int party_f0 = (facing / 2) & 3;
+    bool used[2][4][6][11] = {};
+    int width[2] = {};
+    for (int i = 0; i < b.n; ++i)
+        if (b.f[i].up()) ++width[b.f[i].team() ? 1 : 0];
+    width[0] = (width[0] + 1) / 2;
+    width[1] = (width[1] + 1) / 2;
+    const Sides sd{m, px, py};
+    // (a side: a wall with no door, seen from both squares - ovr11 +0x1AD == 1;
+    // outdoors never)
+    auto solid = [&](int x, int y, int dir) { return m && sd.flag(x, y, dir) == 1; };
+    auto off = [](int v, int hi) { return v < 0 || v > hi; };
+    memset(b.who, 0, sizeof b.who);
+    // (who-map: the squares of those placed with a size)
+    auto rebuild = [&](int upto) {
+        memset(b.who, 0, sizeof b.who);
+        for (int k = 0; k < upto; ++k) {
+            const Fighter& o = b.f[k];
+            if (!o.size) continue;
+            int sx[4], sy[4];
+            const int n = squares(o.size, sx, sy);
+            for (int q = 0; q < n; ++q)
+                if (on_field(o.x + sx[q], o.y + sy[q])) b.who[o.y + sy[q]][o.x + sx[q]] = static_cast<uint8_t>(k + 1);
+        }
+    };
+    for (int i = 0; i < b.n; ++i) {
+        Fighter& f = b.f[i];
+        const int team = f.team() ? 1 : 0;
+        const int tf = team ? (party_f0 + 2) & 3 : party_f0;
+        f.facing = team ? (t.facing[party_f0] + 4) & 7 : t.facing[party_f0];
+        int size = f.rec[kSize] & 7;
+        if (size < 1 || size > 4) size = 1;
+        if (f.member >= 0) size = 1;
+        f.size = static_cast<uint8_t>(size);              // (its own squares while it's placed)
+        const int tx0 = team ? distance * geo::dx(party_f0 * 2) : 0, ty0 = team ? distance * geo::dy(party_f0 * 2) : 0;
+        int tx = tx0, ty = ty0, at = 0, rank = 0, state = 1, side = 1, count = 1, cx = 0, cy = 0, gx = 0, gy = 0;
+        bool first = true, placed = false;
+        for (int guard = 0; guard < 2000 && !placed; ++guard) {
+            const int ff = (t.formation[tf][at] / 2) & 3;
+            if (state == 1) {
+                const int back = t.facing[(ff + 2) & 3];
+                const int si = at == 0 ? ff : 4 + ff;
+                cx = t.start_x[si] + rank * kDx[back];
+                cy = t.start_y[si] + rank * kDy[back];
+                gx = cx;
+                gy = cy;
+                side = 1;
+                state = 2;
+                count = 1;
+            } else if (state == 2) {
+                const int right = t.facing[(ff + 1) & 3];
+                gx = cx + side * kDx[right];
+                gy = cy + side * kDy[right];
+                state = 3;
+                ++count;
+            } else {
+                const int left = t.facing[(ff + 3) & 3];
+                gx = cx + side * kDx[left];
+                gy = cy + side * kDy[left];
+                state = 2;
+                ++side;
+                ++count;
+            }
+            const bool out = off(gx, 10) || off(gy, 5), both = off(gx, 10) && off(gy, 5);
+            if ((out && !both) || (!out || both ? (first ? count >= width[team] : count > 11) : false)) {
+                // The next rank (the square that got here is still tried below)
+                ++rank;
+                if (team == 0 && (tf & 1) && at == 0 && rank == 1) {
+                    bool open = !m;
+                    for (int k = 1; k < 4 && !open; ++k)
+                        if (!solid(px, py, t.fallback[tf][k])) open = true;
+                    if (open) ++rank;
+                }
+                state = 1;
+                first = false;
+            }
+            if (both) {
+                // The next attempt, its side looked at from the team's map square
+                bool next = false;
+                while (at < 3 && !next) {
+                    ++at;
+                    const int dir = t.fallback[tf][at];
+                    if (solid(px + tx0, py + ty0, dir)) continue;
+                    tx = tx0 + geo::dx(dir);
+                    ty = ty0 + geo::dy(dir);
+                    rank = 0;
+                    state = 1;
+                    next = true;
+                }
+                if (!next) break;
+                continue;
+            }
+            if (out) continue;
+            const int shape = at == 1 ? 4 : tf;
+            const uint8_t* row = t.shapes[shape][gy];
+            if (gx < row[0] || gx > row[1] || used[team][at][gy][gx]) continue;
+            const int x = gx + 6 * tx + 5 * ty + 22, y = gy + 5 * ty + 10;
+            if (!fits(b, t, i, size, x, y)) continue;
+            used[team][at][gy][gx] = true;
+            f.x = x;
+            f.y = y;
+            placed = true;
+        }
+        if (!placed) {
+            f.size = 0;
+            if (f.member < 0) f.gone = true;          // a monster with no room: out of the fight
+            continue;
+        }
+        if (!f.up()) {
+            // A body: its ground
+            f.size = 0;
+            if (f.member >= 0) {
+                f.ground = b.ground[f.y][f.x];
+                b.ground[f.y][f.x] = kBody;
+            }
+        }
+        rebuild(i + 1);         // (the who-map built again after each one - ovr11 +0x1D74)
+    }
+    rebuild(b.n);
 }
 
 int direction(int fx, int fy, int tx, int ty)

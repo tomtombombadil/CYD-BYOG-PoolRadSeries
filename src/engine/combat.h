@@ -760,6 +760,16 @@ const uint8_t* tile(const Battle& b, const Tables& t, int x, int y);
 using SolidSide = bool (*)(void* ctx, int dir);
 // sides: Darkness's SETUP MONSTER sides (bits 0-3 N E S W; 0: ahead)
 void place(Battle& b, const Tables& t, int facing, int distance, SolidSide solid, void* ctx, int sides = 0);
+// Pool of Radiance's own (START.EXE ovr11 +0x1577, +0x19F5; checked side by
+// side): the same tables, but a square off the grid in one direction ends
+// the rank and the next one goes on (off in both: the next attempt), the
+// square that passes the rank's count is still tried, an attempt's side
+// is looked at from the team's own map square (m: the 3D map, null
+// outdoors; px, py the party's square)
+void place_pool(Battle& b, const Tables& t, int facing, int distance, const geo::Map* m, int px, int py);
+#ifdef CYD_TEST_HOOKS
+extern void (*g_place_hook)(const Battle& b);   // (tests: told the squares when place() is done)
+#endif
 void occupancy(Battle& b);
 
 // Distance and sight: the path from fighter a to square (x, y) (2 a
