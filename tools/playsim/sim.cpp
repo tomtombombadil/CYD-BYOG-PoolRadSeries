@@ -82,6 +82,19 @@ static int die_fix(int n)
     return -1;
 }
 #endif
+#ifdef CYD_TEST_HOOKS
+static void place_told(const combat::Battle& b)
+{
+    printf("  PLACED");
+    for (int i = 0; i < b.n; ++i) printf(" %d,%d%s", b.f[i].x, b.f[i].y, b.f[i].size ? "" : "(0)");
+    printf("\n  health"); for (int i = 0; i < b.party_size; ++i) printf(" %d/%d/%d", (int)b.f[i].rec[0x195], (int)b.f[i].rec[0x196], (int)b.f[i].rec[0x1A4]);
+    printf("\n");
+    if (FILE* ff = fopen("FIELD_ENGINE.BIN", "wb")) {
+        fwrite(b.ground, 1, sizeof b.ground, ff);
+        fclose(ff);
+    }
+}
+#endif
 static bool g_quiet = false;         // (moves between two '`': no snapshots)
 static void shot(const char* tag)
 {
@@ -566,6 +579,7 @@ int main(int argc, char** argv)
     play::load_begins = getenv("LOADBEGINS") != nullptr;   // (Pool's load straight into the game: LOADBEGINS=1)
     if (getenv("NOFIXES")) rules::set_fixes(false);    // NOFIXES=1: Game Fixes off (the originals' ways)
 #ifdef CYD_TEST_HOOKS
+    if (getenv("FIELDMAP")) combat::g_place_hook = place_told;     // (the squares as place() leaves them)
     if (getenv("DIEFIX")) for (const char* q = getenv("DIEFIX"); q && *q;) {
         int n = 0, v = 0;
         if (sscanf(q, "%d:%d", &n, &v) == 2) g_die_always.push_back({n, v});
