@@ -10538,8 +10538,16 @@ bool train_yes_no(Ask what, char k, pic::Canvas& c)
             rules::pay(train_payer >= 0 && train_payer < pt->count ? pt->m[train_payer] : *ch, 1000);
         train_payer = -1;
         const int mu = ch->level(classes::MagicUser), rg = ch->level(classes::Ranger);
+        // (Pool's training leaves the carried weight and the movement as they
+        // were - the 1000 gp paid count at the next recalculation; DOSBox)
+        uint8_t kept[3] = {ch->rec[0x187], ch->rec[0x188], ch->rec[0x1A5]};
         create::train_classes(*ch, trainer->tables, trainer->facts, trainer->dice, train_mask, false);
         rules::recalc(*ch, *names, d->facts);
+        if (pool_files()) {
+            ch->rec[0x187] = kept[0];
+            ch->rec[0x188] = kept[1];
+            ch->rec[0x1A5] = kept[2];
+        }
         end_training();
         // A magic-user's new level, or any training of a ranger past 8th (the
         // original asks whichever class went up): a new spell (the Dark
