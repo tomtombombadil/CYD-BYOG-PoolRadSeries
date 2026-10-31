@@ -4251,6 +4251,9 @@ void end_fight(pic::Canvas& c)
         if (r == combat::Fled) ground->clear();
     }
     fight_cleanup_party(r);
+    // (Pool: the first member is the selected one after a fight - ovr6
+    // +0x1296; the treasure's Detect is then theirs)
+    if (pool_files() && pt->count) pt->selected = 0;
     // Left behind (a flight): the fallen stay
     if (r == combat::Fled)
         for (int i = pt->count - 1; i >= 0; --i)
