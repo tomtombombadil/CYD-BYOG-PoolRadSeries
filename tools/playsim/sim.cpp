@@ -87,6 +87,8 @@ static void place_told(const combat::Battle& b)
 {
     printf("  PLACED");
     for (int i = 0; i < b.n; ++i) printf(" %d,%d%s", b.f[i].x, b.f[i].y, b.f[i].size ? "" : "(0)");
+    printf("\n  names");
+    for (int i = 0; i < b.n; ++i) { char nm[16] = {}; b.f[i].rec.read(reinterpret_cast<uint8_t*>(nm), 1, 15); printf(" %.*s,", (int)(uint8_t)b.f[i].rec[0] < 15 ? (int)(uint8_t)b.f[i].rec[0] : 15, nm); }
     printf("\n  health"); for (int i = 0; i < b.party_size; ++i) printf(" %d/%d/%d", (int)b.f[i].rec[0x195], (int)b.f[i].rec[0x196], (int)b.f[i].rec[0x1A4]);
     printf("\n");
     if (FILE* ff = fopen("FIELD_ENGINE.BIN", "wb")) {
