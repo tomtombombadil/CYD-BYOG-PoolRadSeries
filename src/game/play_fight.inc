@@ -4500,7 +4500,9 @@ void fight_done(pic::Canvas& c)
         return;
     }
     fight_back_to_game(c);
-    if (ground->any_money() || ground->n) {
+    // (Pool: the treasure's menu after every fight not lost, "View Pool
+    // Exit" when there's nothing - ovr6 +0x1569 -> +0xECD; DOSBox: the arena)
+    if (ground->any_money() || ground->n || pool_files()) {
         open_treasure(c);
         return;
     }
