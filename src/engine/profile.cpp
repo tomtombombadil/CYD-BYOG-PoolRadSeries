@@ -2497,7 +2497,11 @@ const Profile kProfiles[] = {
                // The Flame Tongue (type 36, word 0xF1): +2 (name word 0xA3) with 0x3D
                // 0x16 in Pool's files; fixed as Curse's - +1 (word 0xA2), the effect
                // 0x06, code 0x80
-               {0x24, 0xF1, 2, 0x16, 0x06, 0x80, 0xA3, 0xA2}},
+               {0x24, 0xF1, 2, 0x16, 0x06, 0x80, 0xA3, 0xA2},
+               // (armour's +3 movement only when magic: the GOG party's
+               // plate-wearing cleric moves 6, the original's own record and
+               // its Add / save - DOSBox; was 9)
+               true},
      // Character rules (create_facts.md): the tables' shapes are Pool's
      // (classes::Layout pool); flags / masks at DS 0x5D6 / 0x5DE
      .create = {0xC7C0,

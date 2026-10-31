@@ -5379,6 +5379,18 @@ void add_checked(int i, party::Character& ch, pic::Canvas& c)
     }
     if ((!ch.npc() && pcs >= 6) || pt->count >= party::kMaxParty) return;
     rules::recalc(ch, *names, d->facts);
+    if (d->prof->game == games::Game::PoolOfRadiance) {
+        // (Pool: the lowest icon slot no one in the party has - record 0x143,
+        // the file's 0xBF; DOSBox: the six added in turn get 0-5)
+        for (int slot = 0; slot < 8; ++slot) {
+            bool used = false;
+            for (int k = 0; k < pt->count; ++k) used = used || pt->m[k].rec[0x143] == slot;
+            if (!used) {
+                ch.rec[0x143] = static_cast<uint8_t>(slot);
+                break;
+            }
+        }
+    }
     ++pt->count;
     vm->set(0x7F3E, static_cast<uint16_t>(pt->count));
     d->guy_added[i] = true;
@@ -12813,7 +12825,15 @@ void begin_adventuring()
     camping = false;
     if (!d->loaded && !in_demo) vault_new_game();
     // (Pool: a new game's speed is 1 - DOSBox, Alter's Speed after the tour)
-    if (!d->loaded && !in_demo && d->prof->game == games::Game::PoolOfRadiance && !vm->get(0x4BFC)) vm->set(0x4BFC, 1);
+    if (!d->loaded && !in_demo && d->prof->game == games::Game::PoolOfRadiance) {
+        if (!vm->get(0x4BFC)) vm->set(0x4BFC, 1);
+        // (and its program's words a new game's save holds - DOSBox: area
+        // words 0x4AFB-0x4AFF (here 0x4CFB-) -1 -1 1 -1 -1, game word 0x6DC0 2;
+        // no script reads them)
+        static const uint16_t kWords[5] = {0xFFFF, 0xFFFF, 1, 0xFFFF, 0xFFFF};
+        for (int i = 0; i < 5; ++i) vm->set(static_cast<uint16_t>(0x4CFB + i), kWords[i]);
+        vm->set(0x7EC0, 2);
+    }
     const int last = vm->get(0x4BF2) & 0xFF;
     const bool resume = d->loaded && last != 0;
     const bool dungeon = !d->loaded || vm->get(0x4BE6) != 0;
