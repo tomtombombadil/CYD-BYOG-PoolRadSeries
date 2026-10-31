@@ -148,6 +148,7 @@ enum AlterWord {
     kSpeedIs, kSpeedRange, kFaster, kSlower, kSpeedExit, kSpeedPrompt,   // "Game Speed = " ... "Game Speed:"
     kWillBeGone, kDropFromParty, kQuitToDos, kBidsFarewell, kDumped, kRelief,
     kPicsOn, kAnimOn, kAnimOff, kPicsOff, kPicsExit,             // Pics: "Pics on  " ... "Exit"
+    kCampQuitToDos,                                              // Pool: the camp save's "Quit TO DOS " (0: kQuitToDos)
     kAlterWords
 };
 

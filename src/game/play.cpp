@@ -4213,8 +4213,9 @@ void save_tap(int x, int y, pic::Canvas& c)
         snprintf(t, sizeof t, "Couldn't save game %c on the card.", slot);
         error(c, t);
     } else if (screen == Screen::Camp && d->prof->game == games::Game::PoolOfRadiance) {
-        // (Pool: the camp's save asks "Quit TO DOS" - ovr16, DOSBox)
-        aw(profile::kQuitToDos, t, sizeof t);
+        // (Pool: the camp's save asks "Quit TO DOS " - its own words, no
+        // colon: ovr16 +0x1F56; DOSBox)
+        aw(d->prof->alter.words[profile::kCampQuitToDos] ? profile::kCampQuitToDos : profile::kQuitToDos, t, sizeof t);
         quit_from_camp = true;
         ask_yes_no(c, Ask::QuitDos, t);
     }
@@ -4884,8 +4885,24 @@ void ask_yes_no(pic::Canvas& c, Ask what, const char* prompt)
     if (what == Ask::LoseIt && kept_hl()) menu.selected = 0;
     // (Gateway's questions start on Yes - its question routine, seg 0x116
     // entry 0x39, GAME.OVR 0x46203; DOSBox)
-    // (Pool's too - DOSBox: the temple's "Pay for cure?")
-    if (gateway() || d->prof->game == games::Game::PoolOfRadiance) menu.selected = 0;
+    if (gateway()) menu.selected = 0;
+    // Pool's question routine (START seg 0x3C5 entry 0x39) takes the
+    // prompt's colour and Yes's / No's - the lit one white: its callers light
+    // Yes only for "pay for cure", "Lose it?" and "Use it?" (ovr5 +0x157,
+    // ovr23 +0xCB2 / +0xD18), and pass yellow for the camp's memorize /
+    // scribe questions, Quit TO DOS, Drop from party, the party menu's drop
+    // (ovr16, ovr17 +0x1F81 / +0x1FA6) - the rest magenta (DOSBox: the camp
+    // save's Quit TO DOS, yellow, on No)
+    if (d->prof->game == games::Game::PoolOfRadiance) {
+        menu.selected = what == Ask::PayCure || what == Ask::LoseIt || what == Ask::UseIt ? 0 : 1;
+        switch (what) {
+        case Ask::MemorizeThese: case Ask::ScribeThese: case Ask::ScribeThese2: case Ask::AlterDrop:
+        case Ask::QuitDos: case Ask::Drop: case Ask::DropSure:
+            menu.prompt_fg = 14;
+            break;
+        default: break;
+        }
+    }
     show_menu_line(c);
 }
 

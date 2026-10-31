@@ -3401,6 +3401,8 @@ void aim_exit(pic::Canvas& c)
         fg->st = FSt::AbortAsk;
         text::build(menu, fw(profile::kAbortSpell), rw(Data::kYesNo));
         menu.selected = 1;
+        // (Pool's in yellow - ovr23 +0xEF8 passes 14)
+        if (d->prof->game == games::Game::PoolOfRadiance) menu.prompt_fg = 14;
         show_menu_line(c);
         return;
     }
