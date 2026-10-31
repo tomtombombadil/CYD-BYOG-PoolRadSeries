@@ -1748,6 +1748,10 @@ Stop Vm::step()
                 set(0x7EE2, 0);
                 return wait_for(Wait::Temple);
             }
+            // (Pool: its fight's end counts the monsters beaten into game
+            // word 0x7EC8 before the treasure - none here; START ovr6
+            // +0x11AC; DOSBox: Ohlo's reward)
+            if (set_.pool_map) set(0x7EC8, 0);
             return wait_for(Wait::Treasure);
         }
         return wait_for(Wait::Combat);
