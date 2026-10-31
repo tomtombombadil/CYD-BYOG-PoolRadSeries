@@ -134,5 +134,12 @@ File open(const char* path, const char* mode)
 bool exists(const char* path) { return sd_fs().exists(path); }
 bool remove(const char* path) { return sd_fs().remove(path); }
 bool mkdir(const char* path) { return sd_fs().mkdir(path); }
+bool rename(const char* from, const char* to)
+{
+    // (FatFs won't rename onto an existing name: that one goes first)
+    if (!sd_fs().exists(from)) return false;
+    if (sd_fs().exists(to) && !sd_fs().remove(to)) return false;
+    return sd_fs().rename(from, to);
+}
 
 } // namespace plat

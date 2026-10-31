@@ -1120,6 +1120,59 @@ static bool save_to(char slot)
     return pump(20000);
 }
 
+// ---- session: a game left mid-run and Play started again
+// Save A booted, a fight started and left up, the session's flags set as a
+// run leaves them (the demo, a shop's items, a pick for training, a spell
+// being cast, Treasures' romance / LUCK text, Darkness's Load question ...);
+// then Play again - another game with DIR2=<folder> GAME2=n: everything
+// must start clean (a flag left over ate the next game's input, a fight's
+// monsters made the next shop a fight) and the game must load and fight
+static void sweep_session()
+{
+    using namespace play;
+    if (!boot('A')) {
+        problem("saved game A doesn't load");
+        return;
+    }
+    const bool fought = start_fight();
+    printf("  first game: fight up %d\n", fought ? 1 : 0);
+    in_demo = auto_tap = true;
+    items_from_shop = true;
+    pm_pick_for = 'P';
+    train_payer = train_who = 1;
+    pm_picked = true;
+    load_where = load_secret = true;
+    moving = party_dead = look_pending = true;
+    vault_slot = 'C';
+    cr.stage = CastRun::Whom;
+    rom.a = 0;
+    rom.asking = true;
+    lk.on = true;
+    lk.buf = static_cast<uint8_t*>(malloc(64));
+    lk.len = 64;
+    if (getenv("DIR2") && *getenv("DIR2")) {
+        game_dir = getenv("DIR2");
+        while (game_dir.size() > 1 && game_dir.back() == '/') game_dir.pop_back();
+        setenv("GAME", getenv("GAME2") && *getenv("GAME2") ? getenv("GAME2") : "2", 1);
+    }
+    if (!boot('A')) {
+        problem("Play again: saved game A doesn't load / begin");
+        return;
+    }
+    if (in_demo || auto_tap) problem("the demo's flag left over");
+    if (items_from_shop) problem("the shop's items flag left over");
+    if (pm_pick_for || train_payer != -1 || train_who != -1 || pm_picked) problem("a pick for training left over");
+    if (load_where || load_secret) problem("Load's question left over");
+    if (moving || party_dead || look_pending) problem("moving / party dead / look left over");
+    if (cr.stage != CastRun::None) problem("a spell being cast left over");
+    if (rom.a != -1 || rom.asking || lk.on || lk.buf) problem("the romance / LUCK text left over");
+    if (vault_slot != 'A') problem("the vault's slot left over (A loaded)");
+    if (fg) problem("a fight left over");
+    const bool again = start_fight();
+    printf("  second game: fight up %d\n", again ? 1 : 0);
+    if (fought && !again) problem("no fight in the second session");
+}
+
 static void sweep_saveload()
 {
     using namespace play;
@@ -1151,6 +1204,19 @@ static void sweep_saveload()
     const int x = d->gs.x, y = d->gs.y, dr = d->gs.dir;
     if (!save_to('C')) problem("couldn't save C");
     printf("  saved C at %d,%d dir %d area %d script %d\n", x, y, dr, d->gs.game_area, d->gs.script);
+    {
+        // (a save's files are written under temporary names, then renamed:
+        // none may be left behind)
+        int left = 0;
+        plat::File dir = plat::open(d->save_dir, "r");
+        for (plat::File e = dir ? dir.openNextFile() : plat::File(); e; e = dir.openNextFile()) {
+            const size_t n = strlen(e.name());
+            if (n && e.name()[n - 1] == '~') ++left;
+            e.close();
+        }
+        if (dir) dir.close();
+        if (left) problem("a save's temporary files left behind");
+    }
     if (!boot('C')) {
         problem("saved game C doesn't load");
         return;
@@ -1188,8 +1254,12 @@ static void sweep_saveload()
     // Saved again as D straight away: the same file
     if (!save_to('D')) problem("couldn't save D");
     std::vector<uint8_t> c1, c2;
-    // (Death Knights: SAVGAMx.PTY, the characters' CHRDATxn.GAM / .WIZ / .JNK / .EFF)
-    if (!slurp(bytes ? "SAVGAMC.PTY" : "SAVGAMC.DAT", c1) || !slurp(bytes ? "SAVGAMD.PTY" : "SAVGAMD.DAT", c2))
+    // (the game's own names: SAVGAMx.DAT / .PTY / .QSV - save_file_name; the
+    // characters' CHRDATxn with the game's extensions)
+    char fc[24], fd[24];
+    save_file_name('C', fc, sizeof fc);
+    save_file_name('D', fd, sizeof fd);
+    if (!slurp(fc, c1) || !slurp(fd, c2))
         problem("save files not found");
     else if (c1 != c2) {
         size_t o = 0;
@@ -1197,16 +1267,17 @@ static void sweep_saveload()
         while (o < c1.size() && o < c2.size() && (c1[o] == c2[o] || (c1[o] == 'C' && c2[o] == 'D'))) ++o;
         if (o == c1.size() && c1.size() == c2.size()) o = SIZE_MAX;
     }
-    static const char* const kExts[4] = {"SAV", "SWG", "FX", nullptr};
-    static const char* const kDkkExts[4] = {"GAM", "WIZ", "JNK", "EFF"};
-    if (c1.size() && c2.size() && c1.size() == c2.size()) {
-        // the characters' files: the same bytes
+    const char* const exts[4] = {ext_member(), ext_items(), ext_fx(), bytes ? ".WIZ" : nullptr};
+    if (c1.size() && c2.size() && c1.size() == c2.size() && !hl()) {
+        // the characters' files: the same bytes (the Dark Queen keeps them in its one file)
         for (int i = 1; i <= pt->count; ++i)
-            for (const char* ext : bytes ? kDkkExts : kExts) {
+            for (const char* ext : exts) {
                 if (!ext) break;
-                char a[24], b[24];
-                snprintf(a, sizeof a, "CHRDATC%d.%s", i, ext);
-                snprintf(b, sizeof b, "CHRDATD%d.%s", i, ext);
+                char a[24], b[24], na[16], nb[16];
+                savegame::char_file('C', i, na, sizeof na);
+                savegame::char_file('D', i, nb, sizeof nb);
+                snprintf(a, sizeof a, "%s%s", na, ext);
+                snprintf(b, sizeof b, "%s%s", nb, ext);
                 std::vector<uint8_t> x1, x2;
                 const bool h1 = slurp(a, x1), h2 = slurp(b, x2);
                 if (h1 != h2 || x1 != x2) {
@@ -1600,6 +1671,7 @@ int main(int argc, char** argv)
     else if (mode == "classes") sweep_classes();
     else if (mode == "events") sweep_events(arg);
     else if (mode == "saveload") sweep_saveload();
+    else if (mode == "session") sweep_session();
     else if (mode == "memloop") sweep_memloop(arg);
     else if (mode == "monkey") {
         rnd.seed(static_cast<unsigned>(arg ? arg : 1));

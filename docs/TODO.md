@@ -42,6 +42,17 @@ the Project as claude/TODO.md.
 
 ## Claude
 
+- [ ] Code review follow-ups (branch review-fixes-engine, 2026-10-31):
+      (a) Dark Queen reroll - the engine's queen_roll keeps spells a
+      previous roll's training learned (its god's spells are learned at
+      Done, before the roll); check DQK.EXE's roll (+0x1A90) / DOSBox
+      whether the original drops them. (b) Death Knights: LOAD CHARACTER
+      | 0x80 never removes a member (its second flag, DS 0xDB60, is never
+      set in GAME.OVR / START.EXE) - as the original; check whether a
+      script relies on it (then a Game Fixes case). (c) the Dark Queen's
+      QSV header u16 at bytes 11-12: kept from the loaded game - find
+      what DQK.EXE writes there. (d) the overland Thenols fight budget
+      (144.6 KB) wasn't re-measured with the per-copy items.
 - [ ] **Engine screens for ports**: the platform layer is done
       (v0.91.1: src/game + src/engine use only src/platform/*.h); still
       CYD-only are the engine's own screens (Settings, journal viewer,

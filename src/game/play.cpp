@@ -2369,11 +2369,18 @@ void vault_loaded(char slot)
     if (plat::exists(path)) plat::remove(path);
 }
 
-void vault_saved(char slot)
+// A file of a save is written whole under its name + "~" first (temp_name),
+// then renamed over the old one - the save's files all written before any
+// is renamed (save_game), so a failed write leaves the slot as it was
+void temp_name(const char* path, char* out, size_t cap) { snprintf(out, cap, "%s~", path); }
+
+// The slot's vault file (VAULTx.DAT), written to its temporary name: the
+// slot's own after the save's files are renamed (vault_commit)
+bool vault_saved(char slot)
 {
     const auto& v = d->prof->vault;
-    if (!v.slot_file) return;
-    char from[200], to[200], name[16];
+    if (!v.slot_file) return true;
+    char from[200], to[200], tmp[204], name[16];
     save_path(v.file, from, sizeof from);
     if (!plat::exists(from)) {
         snprintf(name, sizeof name, v.slot_file, vault_slot);
@@ -2381,17 +2388,54 @@ void vault_saved(char slot)
     }
     snprintf(name, sizeof name, v.slot_file, slot);
     save_path(name, to, sizeof to);
-    if (!strcmp(from, to)) return;
+    temp_name(to, tmp, sizeof tmp);
+    if (plat::exists(tmp)) plat::remove(tmp);           // (a failed save's)
+    if (!strcmp(from, to)) return true;
     plat::File in = plat::open(from, "r");
-    if (!in) return;
-    plat::File out = plat::open(to, "w");
+    if (!in) return true;                               // (no vault yet)
+    plat::File out = plat::open(tmp, "w");
+    bool ok = static_cast<bool>(out);
     if (out) {
         uint8_t buf[256];
         int n;
-        while ((n = in.read(buf, sizeof buf)) > 0) out.write(buf, static_cast<size_t>(n));
+        while (ok && (n = in.read(buf, sizeof buf)) > 0) ok = out.write(buf, static_cast<size_t>(n)) == static_cast<size_t>(n);
         out.close();
     }
     in.close();
+    if (!ok) plat::remove(tmp);
+    return ok;
+}
+
+// A new game's vault (Darkness, Treasures, Gateway): the original leaves
+// the vault in use (TMPVAULT.DAT / VAULT.DAT) as the last game left it -
+// a new party finds the old one's coins and items (DOSBox, Darkness: the
+// file untouched by the start and BEGIN). Game Fixes: an empty one.
+void vault_new_game()
+{
+    const auto& v = d->prof->vault;
+    if (!v.slot_file || !rules::fixes()) return;
+    char path[200];
+    save_path(v.file, path, sizeof path);
+    if (!plat::exists(d->save_dir)) plat::mkdir(d->save_dir);
+    const uint8_t zero[7 * 4] = {};
+    plat::File f = plat::open(path, "w");
+    if (!f) return;
+    f.write(zero, static_cast<size_t>(v.coins == 3 ? 3 : 7) * 4);     // (the coin counts, no items)
+    f.close();
+}
+
+// commit: the vault's temporary file becomes the slot's; else it goes
+void vault_commit(char slot, bool commit)
+{
+    const auto& v = d->prof->vault;
+    if (!v.slot_file) return;
+    char to[200], tmp[204], name[16];
+    snprintf(name, sizeof name, v.slot_file, slot);
+    save_path(name, to, sizeof to);
+    temp_name(to, tmp, sizeof tmp);
+    if (!plat::exists(tmp)) return;
+    if (commit) plat::rename(tmp, to);
+    else plat::remove(tmp);
 }
 
 bool load_game(char slot)
@@ -3900,11 +3944,37 @@ struct FileSink : savegame::Sink {
     bool put(const uint8_t* p, size_t n) override { return f.write(p, n) == n; }
 };
 
+// While a save writes its files (save_game): each stays under its
+// temporary name until all are written (save_commit); an empty one's
+// removal waits too
+bool save_staging = false;
+
+// A file of a staged save: commit - its temporary file renamed over it (no
+// temporary file: it was empty, so it goes); else the temporary file goes
+bool stage_end(const char* path, bool commit)
+{
+    char tmp[204];
+    temp_name(path, tmp, sizeof tmp);
+    const bool have = plat::exists(tmp);
+    if (!commit) {
+        if (have) plat::remove(tmp);
+        return true;
+    }
+    if (have) return plat::rename(tmp, path);
+    if (plat::exists(path)) plat::remove(path);
+    return true;
+}
+
 bool write_file(const char* dir, const char* name, const uint8_t* p, size_t n)
 {
-    char path[200];
+    char path[200], tmp[204];
     snprintf(path, sizeof path, "%s/%s", dir, name);      // dir: a full card path
+    temp_name(path, tmp, sizeof tmp);
     if (!n) {
+        if (save_staging) {
+            if (plat::exists(tmp)) plat::remove(tmp);   // (its removal waits for the commit)
+            return true;
+        }
         if (plat::exists(path)) plat::remove(path);
         return true;
     }
@@ -3917,16 +3987,56 @@ bool write_file(const char* dir, const char* name, const uint8_t* p, size_t n)
         if (!plat::exists(dir)) plat::mkdir(dir);
         checked = h;
     }
-    plat::File f = plat::open(path, "w");
+    plat::File f = plat::open(tmp, "w");
     if (!f) return false;
     const bool ok = f.write(p, n) == n;
     f.close();
-    return ok;
+    if (!ok) {
+        plat::remove(tmp);
+        return false;
+    }
+    return save_staging || plat::rename(tmp, path);
+}
+
+// Every file of save `slot` (header h, its main file at main_path): ended
+// as stage_end says - the members' files first, the main file last
+bool save_commit(char slot, const savegame::Header& h, const char* main_path, bool commit)
+{
+    bool ok = true;
+    char path[200];
+    for (int i = 0; i < h.count; ++i) {
+        char fn[48], fi[48], ff[48], wz[48];
+        snprintf(fn, sizeof fn, "%s%s", h.names[i], ext_member());
+        snprintf(fi, sizeof fi, "%s%s", h.names[i], ext_items());
+        snprintf(ff, sizeof ff, "%s%s", h.names[i], ext_fx());
+        const char* each[4] = {fn, fi, ff, nullptr};
+        if (dkk()) {
+            dkk_wiz_name(fn, wz, sizeof wz);
+            each[3] = wz;
+        }
+        for (const char* nm : each) {
+            if (!nm) continue;
+            snprintf(path, sizeof path, "%s/%s", d->save_dir, nm);
+            ok = stage_end(path, commit) && ok;
+        }
+    }
+    if (d->cache_dir[0]) {
+        char nm[24];
+        snprintf(nm, sizeof nm, "SAVGAM%c.JNL", slot);
+        snprintf(path, sizeof path, "%s/%s", d->cache_dir, nm);
+        ok = stage_end(path, commit) && ok;
+    }
+    vault_commit(slot, commit);
+    return stage_end(main_path, commit) && ok;
 }
 
 bool save_game(char slot)
 {
-    vault_saved(slot);
+    if (!vault_saved(slot)) {
+        vault_commit(slot, false);
+        plat::log("[play] saved game %c: FAILED (the vault)\n", slot);
+        return false;
+    }
     savegame::Header h;
     h.game_area = d->gs.game_area;
     const bool dungeon = vm->get(0x4BE6) != 0;
@@ -3950,11 +4060,20 @@ bool save_game(char slot)
         h.look = d->save.look;
         h.look_slot = d->save.look_slot;
         const bool ok = q_save(slot, h, path);
+        vault_commit(slot, ok);
         plat::log("[play] saved game %c: %s\n", slot, ok ? "ok" : "FAILED");
         return ok;
     }
-    plat::File f = plat::open(path, "w");
-    if (!f) return false;
+    // (every file under its temporary name first; renamed when all are written)
+    char tmp[204];
+    temp_name(path, tmp, sizeof tmp);
+    plat::File f = plat::open(tmp, "w");
+    if (!f) {
+        vault_commit(slot, false);
+        plat::log("[play] saved game %c: FAILED\n", slot);
+        return false;
+    }
+    save_staging = true;
     bool ok;
     {
         FileSink sink(f);
@@ -3991,8 +4110,11 @@ bool save_game(char slot)
             buf[i * 2 + 1] = seen[i].num;
         }
         snprintf(name, sizeof name, "SAVGAM%c.JNL", slot);
-        write_file(d->cache_dir, name, buf, static_cast<size_t>(n_seen) * 2);
+        ok = write_file(d->cache_dir, name, buf, static_cast<size_t>(n_seen) * 2);
     }
+    save_staging = false;
+    // (all written: the slot's files replaced; else the slot stays as it was)
+    ok = save_commit(slot, h, path, ok) && ok;
     plat::log("[play] saved game %c: %s\n", slot, ok ? "ok" : "FAILED");
     return ok;
 }
@@ -12659,6 +12781,7 @@ void begin_adventuring()
     }
     ecl::GameState& gs = d->gs;
     camping = false;
+    if (!d->loaded && !in_demo) vault_new_game();
     const int last = vm->get(0x4BF2) & 0xFF;
     const bool resume = d->loaded && last != 0;
     const bool dungeon = !d->loaded || vm->get(0x4BE6) != 0;
@@ -14534,9 +14657,12 @@ void set_options(const Options& o)
         if (rules::fix_items(pt->m[i]) && names) rules::recalc(pt->m[i], *names, d->facts);
     const int letters = font_wanted();
     if (d->font.letters == letters) return;
-    // Mid-game (Tom, 2026-10-11): the text on the screen changes font too
-    font::set_letters(d->font, letters, d->alt_font, cv);
-    if (cv) {
+    // Mid-game (Tom, 2026-10-11): the text on the screen changes font too -
+    // unless the canvas is parked on the card (the Logs / the book, and no
+    // memory to bring it back): the next screen drawn uses the new letters
+    pic::Canvas* on = cv && cv->px ? cv : nullptr;
+    font::set_letters(d->font, letters, d->alt_font, on);
+    if (on) {
         if (screen == Screen::Game && !pic_shown && bigpic < 0) draw_view(*cv);   // (the 3D view as it was)
         // The party list and the menu line again: their mixed case as written
         if (screen == Screen::Game && bigpic < 0 && !waiting) draw_panel(*cv);
@@ -15073,8 +15199,39 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     return nullptr;
 }
 
+// What a session leaves behind that the next one must not see (Exit Game
+// mid-run - a romance, the demo, a shop's items, a spell being cast, a
+// pick for training ... - then Play again, maybe another game)
+void reset_session()
+{
+    lk_free();                              // (Treasures: a LUCK block's text)
+    lk = LuckRun{};
+    rom = Romance{};
+    in_demo = auto_tap = false;
+    items_from_shop = false;
+    trade_from = -1;
+    cr = CastRun{};
+    pm_pick_for = 0;
+    train_payer = train_who = -1;
+    pm_picked = false;
+    load_where = load_secret = false;
+    moving = false;
+    party_dead = false;
+    look_pending = false;
+    vault_slot = 'A';
+    save_staging = false;
+}
+
 void close()
 {
+    // (a fight first: its end reads the script's parked code back into the
+    // machine - host and vm still there)
+    if (fg) {
+        end_fight_art();
+        delete fg;
+        fg = nullptr;
+    }
+    reset_session();
     font::set_ink_remap(-1, 0);
     text::set_menu_origin(0);
     copy_of = nullptr;
@@ -15108,12 +15265,7 @@ void close()
     new_char = nullptr;
     input_engine = false;
     // Whatever was open goes (the heap is the viewer's again), and the
-    // next Play Test starts clean
-    if (fg) {
-        end_fight_art();
-        delete fg;
-        fg = nullptr;
-    }
+    // next Play Test starts clean (the fight went first, above)
     fight_clear_monsters();
     end_magic();
     delete hw;
@@ -15261,7 +15413,10 @@ bool act(Act a, pic::Canvas& c)
         return true;
     }
     }
+    // (the picture goes as after a step: its animation and file with it)
+    anim_stop();
     pic_shown = false;
+    head_shown = body_shown = -1;
     g.wall_ahead = static_cast<uint8_t>(geo::wall(d->map, g.x, g.y, g.dir));
     draw_view(c);
     draw_position(c);

@@ -2807,6 +2807,19 @@ void open_menu()
 
 void leave_menu()
 {
+    if (frame::parked()) {
+        // (the Logs / the book left the game screen on the card and there was
+        // no memory to bring it back then: again now - the game can't draw
+        // without it)
+        char path[96];
+        canvas_park_path(path, sizeof path);
+        if (!frame::unpark(path)) {
+            strlcpy(menu_note, "Not enough memory for the game screen just now. Try Back to Game again.",
+                    sizeof menu_note);
+            go(Screen::GameMenu);
+            return;
+        }
+    }
     from_menu = false;
     go(Screen::Play);
 }

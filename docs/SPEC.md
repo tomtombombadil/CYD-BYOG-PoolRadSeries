@@ -2676,6 +2676,22 @@ the game's Settings (As Original: all of them).
   original costs no Constitution; with Game Fixes on the one raised loses
   a point as AD&D says (its hit points worked out again); the caster's
   days of rest AD&D asks for aren't in the engine either way.
+- **A new game's vault** (Darkness, Treasures, Gateway; `rules::fixes()`;
+  code review 2026-10-31): the original leaves the vault in use
+  (TMPVAULT.DAT / VAULT.DAT) as the last game left it - a new party
+  (created, or brought from the earlier game) finds the old one's coins
+  and items (DOSBox, Darkness: the file untouched by the start and
+  BEGIN). With Game Fixes on a new game starts with an empty vault; off
+  as the original.
+- **Darkness's Monster Summoning, big monsters** (`rules::fixes()`): the
+  original tests only the square next to the fighter (GAME.OVR 0x30139)
+  and a monster of size 2-4 may stand over someone or a wall with its
+  other squares; with Game Fixes on all its squares must be free plain
+  ground. Off: as the original.
+- **Saving** (code review 2026-10-31): a save's files are written under
+  temporary names (`name~`) and renamed over the slot's only when all are
+  written - a failed write leaves the slot as it was. The files' bytes are
+  the original's.
 - **Darkness's exploring menu's place** after a script: taken from the
   last menu's (its routine's restart as the engine sees it - not checked
   in DOSBox).
