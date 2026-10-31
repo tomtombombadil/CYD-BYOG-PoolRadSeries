@@ -1307,6 +1307,11 @@ int main(int argc, char** argv)
             continue;
         }
         if (*m == '`') { g_quiet = !g_quiet; continue; }
+        if (*m == '_') {                // "_": a second of ticks, a snapshot
+            for (int t = 0; t < 50; ++t) { g_now += 20; play::tick(g_now, C); }
+            shot("after_time");
+            continue;
+        }
         if (*m == '|' && m[1]) {
             // "|X": the party menu's line with key X
             pm_tap_line(*++m);

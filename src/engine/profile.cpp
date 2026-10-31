@@ -2604,6 +2604,7 @@ const Profile kProfiles[] = {
                  .view_floor = 6, .title_flash = 1, .unfinished = false, .program_words = true, .pool_files = true,
                  .pool_rest_keys = true, .overland_map = 0x3648, .overland_area = 25, .final_end = true,
                  .pics_portraits = true,
+                 .camp_pic = 29,               // (the camp: PIC<area> block 29, in every one - DOSBox)
                  // (a one-choice menu's "PRESS <RETURN> OR BUTTON TO CONTINUE"
                  // shows as "PRESS <ENTER>/<RETURN> TO CONTINUE" - DOSBox)
                  .press_words = {0x1DCB, 0x1DF0}},

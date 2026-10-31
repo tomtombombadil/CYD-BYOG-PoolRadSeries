@@ -4161,6 +4161,8 @@ void back_from_save(pic::Canvas& c)
     else draw_party_menu(c);
 }
 
+void aw(int i, char* out, size_t cap);
+bool quit_from_camp = false;         // (Pool: the camp's save asked "Quit TO DOS")
 void save_tap(int x, int y, pic::Canvas& c)
 {
     if (y < text::kMenuTapTop) return;
@@ -4188,6 +4190,11 @@ void save_tap(int x, int y, pic::Canvas& c)
         char t[48];
         snprintf(t, sizeof t, "Couldn't save game %c on the card.", slot);
         error(c, t);
+    } else if (screen == Screen::Camp && d->prof->game == games::Game::PoolOfRadiance) {
+        // (Pool: the camp's save asks "Quit TO DOS" - ovr16, DOSBox)
+        aw(profile::kQuitToDos, t, sizeof t);
+        quit_from_camp = true;
+        ask_yes_no(c, Ask::QuitDos, t);
     }
 }
 
@@ -10087,7 +10094,13 @@ bool alter_yes_no(Ask what, char k, pic::Canvas& c)
     if (d->prof->alter.pick && what != Ask::QuitDos) return alter_drop_dk(what, k, c);
     if (what == Ask::QuitDos) {
         if (k == 'Y') exit_wanted = true;
-        alter_menu(c);
+        if (quit_from_camp) {
+            quit_from_camp = false;
+            screen = Screen::Camp;
+            draw_camp(c);
+        } else {
+            alter_menu(c);
+        }
         return true;
     }
     char t[32];
@@ -16320,9 +16333,10 @@ void tick_screens(uint32_t now, pic::Canvas& c)
         fight_tick(now, c);
         return;
     }
-    if (hl() && screen == Screen::Camp && anim_block >= 0 && d->anim.frames > 1 && !note_until) {
+    if ((hl() || d->prof->game == games::Game::PoolOfRadiance) && screen == Screen::Camp && anim_block >= 0 &&
+        d->anim.frames > 1 && !note_until) {
         // (the Dark Queen's camp: its fire burns while the camp menu waits -
-        // DOSBox, a frame each half second)
+        // DOSBox, a frame each half second; Pool's camp picture too)
         cv = &c;
         const uint32_t delay = d->anim.delay[anim_frame] ? d->anim.delay[anim_frame] * 100 : 100;
         if (now - anim_at >= delay && anim_next(anim_frame) != anim_frame) {
