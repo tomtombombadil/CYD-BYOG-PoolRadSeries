@@ -347,9 +347,13 @@ struct PackedOut : inflate::Output {
     }
 };
 
-bool load(dax::ByteSource& src, const Doc& doc, int num, Obj& o);
+// (depth: an object stream's /Length may be a reference, and a damaged
+// file can make that a loop - an object stream whose length is an object
+// inside itself; the chain stops after a few steps)
+constexpr int kMaxLoadDepth = 4;
+bool load_at_depth(dax::ByteSource& src, const Doc& doc, int num, Obj& o, int depth);
 
-bool load_packed(dax::ByteSource& src, const Doc& doc, int num, Obj& o)
+bool load_packed(dax::ByteSource& src, const Doc& doc, int num, Obj& o, int depth)
 {
     const uint32_t e = doc.offset[num];
     const int stm = static_cast<int>((e >> 12) & 0x3FF), index = static_cast<int>(e & 0xFFF);
@@ -364,7 +368,8 @@ bool load_packed(dax::ByteSource& src, const Doc& doc, int num, Obj& o)
     const uint32_t from = o.stream_at;
     int32_t length = -1;
     if (ln >= 0 && o.node[ln].t == T::Num) length = o.node[ln].v;
-    else if (ln >= 0 && o.node[ln].t == T::Ref && load(src, doc, o.node[ln].v, o) && o.node[o.root].t == T::Num)
+    else if (ln >= 0 && o.node[ln].t == T::Ref && load_at_depth(src, doc, o.node[ln].v, o, depth + 1) &&
+             o.node[o.root].t == T::Num)
         length = o.node[o.root].v;
     if (first <= 0 || static_cast<size_t>(first) >= kObjBuf || length <= 2 || from + static_cast<uint32_t>(length) > src.size())
         return false;
@@ -384,12 +389,17 @@ bool load_packed(dax::ByteSource& src, const Doc& doc, int num, Obj& o)
     return o.root >= 0;
 }
 
+bool load_at_depth(dax::ByteSource& src, const Doc& doc, int num, Obj& o, int depth)
+{
+    if (num <= 0 || num >= kMaxObjects || !doc.offset[num] || depth > kMaxLoadDepth) return false;
+    if (doc.offset[num] & kInStream) return load_packed(src, doc, num, o, depth);
+    return parse_at(src, doc.offset[num], num, o);
+}
+
 // Object `num`
 bool load(dax::ByteSource& src, const Doc& doc, int num, Obj& o)
 {
-    if (num <= 0 || num >= kMaxObjects || !doc.offset[num]) return false;
-    if (doc.offset[num] & kInStream) return load_packed(src, doc, num, o);
-    return parse_at(src, doc.offset[num], num, o);
+    return load_at_depth(src, doc, num, o, 0);
 }
 
 // A value that may be a reference: the object it points to, loaded into
@@ -510,7 +520,7 @@ struct XrefOut : inflate::Output {
         for (int j = 0; j < 3; ++j)
             for (int q = 0; q < w[j]; ++q) f[j] = f[j] << 8 | x[p++];
         const uint32_t type = w[0] ? f[0] : 1;
-        if (num < kMaxObjects && doc.offset[num] == 0) {
+        if (num >= 0 && num < kMaxObjects && doc.offset[num] == 0) {
             if (type == 1 && f[1] > 0 && f[1] < kInStream) doc.offset[num] = f[1];
             else if (type == 2 && f[1] > 0 && f[1] < 1024 && f[2] < 4096) doc.offset[num] = kInStream | f[1] << 12 | f[2];
             if (doc.offset[num] && num + 1 > doc.objects) doc.objects = num + 1;
@@ -544,10 +554,15 @@ bool read_xref_stream(dax::ByteSource& src, uint32_t at, Doc& doc, Obj& o, uint3
         out.cols <= 0)
         return false;
     if (ix >= 0 && o.node[ix].t == T::Array) {
-        for (int k = o.node[ix].first; k >= 0 && out.nsect < 16; k = o.node[k].next) out.sect[out.nsect++] = o.node[k].v;
+        for (int k = o.node[ix].first; k >= 0 && out.nsect < 16; k = o.node[k].next) {
+            const int32_t v = o.node[k].v;
+            if (o.node[k].t != T::Num || v < 0 || v >= kMaxObjects * 64) return false;     // (damaged /Index)
+            out.sect[out.nsect++] = v;
+        }
         out.nsect &= ~1;
     } else {
         out.sect[0] = 0;
+        if (o.node[sz].v < 0) return false;
         out.sect[1] = o.node[sz].v;
         out.nsect = 2;
     }

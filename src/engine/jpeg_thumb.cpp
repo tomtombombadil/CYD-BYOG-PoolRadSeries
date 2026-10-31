@@ -23,6 +23,8 @@ struct Huff {
 bool build_huff(Huff& h, const uint8_t bits[16], const uint8_t* vals, int nvals)
 {
     memset(h.val, 0, sizeof h.val);
+    h.ok = false;
+    if (nvals < 0 || nvals > 256) return false;          // (a damaged table: more values than a table holds)
     memcpy(h.val, vals, static_cast<size_t>(nvals));
     int code = 0, k = 0;
     for (int l = 1; l <= 16; ++l) {
@@ -239,6 +241,10 @@ bool parse(dax::ByteSource& src, Dec& d, bool headers_only)
             for (uint32_t p = 0; p < blen;) {
                 const int pq = seg[p] >> 4, tq = seg[p] & 3;
                 ++p;
+                if (p + (pq ? 128u : 64u) > blen) {          // (a damaged table: shorter than its segment says)
+                    ok = false;
+                    break;
+                }
                 for (int k = 0; k < 64; ++k) {
                     d.q[tq][k] = pq ? be16(seg + p + 2 * k) : seg[p + k];
                 }
@@ -258,10 +264,14 @@ bool parse(dax::ByteSource& src, Dec& d, bool headers_only)
                 p += 17 + static_cast<uint32_t>(nv);
             }
         } else if (mk == 0xDD) {
+            if (blen < 2) {
+                ok = false;
+                break;
+            }
             d.restart = be16(seg);
         } else if (mk >= 0xC0 && mk <= 0xCF && mk != 0xC4 && mk != 0xC8 && mk != 0xCC) {
             // A frame: baseline / extended Huffman (C0, C1) or progressive (C2); the rest refused
-            if (!(mk == 0xC0 || mk == 0xC1 || mk == 0xC2) || seg[0] != 8) {
+            if (!(mk == 0xC0 || mk == 0xC1 || mk == 0xC2) || blen < 6 || seg[0] != 8) {
                 ok = false;
                 break;
             }
@@ -270,7 +280,8 @@ bool parse(dax::ByteSource& src, Dec& d, bool headers_only)
             d.height = be16(seg + 1);
             d.width = be16(seg + 3);
             d.ncomp = seg[5];
-            if ((d.ncomp != 1 && d.ncomp != 3) || d.width <= 0 || d.height <= 0) {
+            if ((d.ncomp != 1 && d.ncomp != 3) || d.width <= 0 || d.height <= 0 ||
+                blen < 6 + 3 * static_cast<uint32_t>(d.ncomp)) {
                 ok = false;
                 break;
             }
@@ -293,8 +304,8 @@ bool parse(dax::ByteSource& src, Dec& d, bool headers_only)
             }
             Scan s;
             s.at = next;
-            s.ncomp = seg[0];
-            if (s.ncomp < 1 || s.ncomp > kMaxComps) {
+            s.ncomp = blen ? seg[0] : 0;
+            if (s.ncomp < 1 || s.ncomp > kMaxComps || blen < 4 + 2 * static_cast<uint32_t>(s.ncomp)) {
                 ok = false;
                 break;
             }
