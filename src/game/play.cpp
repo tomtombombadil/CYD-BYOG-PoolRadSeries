@@ -8406,10 +8406,13 @@ void build_lines(const uint8_t* ids, int n)
 
 // Darkness's lists start on the page's LAST spell, and a turned page's
 // last spell is chosen (DOSBox: Memorize, Cast, the next page); Gateway's
-// too (DOSBox: Memorize)
+// too (DOSBox: Memorize); Pool's open so (its spell lists, ovr23 +0x148,
+// start the list routine on line 0, the level's heading, whose highlight
+// moves up past it - ovr26 +0xB03 - round to the page's last line; DOSBox:
+// training's choice, Memorize)
 void dk_page_sel()
 {
-    if (!darkness_files() && !gateway()) return;
+    if (!darkness_files() && !gateway() && !pool_files()) return;
     const int rows = list_rows();
     for (int i = sl.top + rows - 1; i >= sl.top; --i)
         if (i < sl.n && sl.id[i]) {
@@ -8884,6 +8887,12 @@ void spells_tap(int x, int y, pic::Canvas& c)
     }
     if (k == 'M' && sl.sel >= 0) {
         magic::add(*pt->sel(), mrules->tables, sl.id[sl.sel]);
+        if (pool_files()) {
+            // (Pool: the list from its start again after each pick - its
+            // index back to -1, ovr16 +0x521 - so on the first page's last line)
+            sl.top = 0;
+            dk_page_sel();
+        }
         draw_counts(c);
         draw_spells(c);
     } else if (k == 'N' && sl.top + list_rows() < sl.n) {
