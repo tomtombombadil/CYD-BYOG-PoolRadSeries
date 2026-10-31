@@ -536,6 +536,7 @@ static void shop_run(const char* ops)
 int main(int argc, char** argv)
 {
     setvbuf(stdout, nullptr, _IOLBF, 0);       // (lines out at once: a hang or a crash keeps them)
+    play::load_begins = getenv("LOADBEGINS") != nullptr;   // (Pool's load straight into the game: LOADBEGINS=1)
     if (getenv("NOFIXES")) rules::set_fixes(false);    // NOFIXES=1: Game Fixes off (the originals' ways)
     if (getenv("SEED")) play::rng = create::Dice(static_cast<uint32_t>(strtoul(getenv("SEED"), nullptr, 10)));   // SEED=n: the game's dice
     // SIZES: the fight's blocks' sizes
@@ -1054,7 +1055,7 @@ int main(int argc, char** argv)
         play::d->loaded = false;
         printf("  new game: area %d script %d\n", play::d->gs.game_area, play::d->gs.script);
     }
-    pm_tap_line('B');
+    if (play::screen == play::Screen::PartyMenu) pm_tap_line('B');
     if (getenv("AREA")) {
         // Start somewhere else: as a script would (SAVE area; NEWECL block)
         play::d->gs.game_area = (uint8_t)atoi(getenv("AREA"));

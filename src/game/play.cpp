@@ -343,6 +343,10 @@ char pm_saves[12];            // save slots found ("AB")
 bool load_where = false;      // Darkness: Load's "Load from where?" asked, a slot next
 bool load_secret = false;     // Darkness: Load from Secret's saved games (its folder on the card)
 bool exit_wanted = false;     // Exit to DOS: back to the viewer
+// Pool: Load Saved Game goes straight into the game (DOSBox: the original
+// never shows the party menu after a load); the PC tools clear it to work
+// on the loaded party at the party menu
+bool load_begins = true;
 
 bool area_view = false;
 bool pic_shown = false;       // a script picture covers the 3D view
@@ -11022,8 +11026,10 @@ void pm_tap(int x, int y, pic::Canvas& c)
         if (load_secret) {
             load_secret = false;
             load_secret_game(text::key(menu, k));
-        } else {
-            load_game(text::key(menu, k));
+        } else if (load_game(text::key(menu, k)) && !load_problem && load_begins &&
+                   d->prof->game == games::Game::PoolOfRadiance) {
+            begin_adventuring();
+            return;
         }
         screen = Screen::PartyMenu;
         draw_party_menu(c);
