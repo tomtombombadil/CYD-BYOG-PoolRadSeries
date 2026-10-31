@@ -3376,6 +3376,11 @@ void list_line(int i, char* out, size_t cap)
 }
 
 bool list_unlit = false;            // draw_list without its highlight (Gateway's item questions)
+// Pool: the lists' top line is one variable for every list (DS 0x6B29, 1
+// at the program's start - ovr12; the list routine ovr26 +0xD9A keeps it
+// unless it's past the list's highlight); the Buy list starts on its
+// second line (ovr7 +0x37C) - so it opens where the last list left the top
+int pool_list_top = 1;
 
 void draw_list(pic::Canvas& c, const char* prompt, const char* what)
 {
@@ -3383,6 +3388,7 @@ void draw_list(pic::Canvas& c, const char* prompt, const char* what)
     if (l.index >= l.n) l.index = l.n ? l.n - 1 : 0;
     if (l.index < l.top) l.top = l.index;
     if (l.index >= l.top + l.rows()) l.top = l.index - l.rows() + 1;
+    if (pool_files()) pool_list_top = l.top;
     c.fill(l.col0 * 8, l.row0 * 8, (39 - l.col0) * 8, l.rows() * 8, 0);
     for (int r = 0; r < l.rows() && l.top + r < l.n; ++r) {
         char line[64];
@@ -7772,6 +7778,12 @@ void shop_tap(int x, int y, pic::Canvas& c)
         case 'B':
             screen = Screen::ShopBuy;
             plist = PickList{};
+            if (pool_files()) {
+                // (the second line highlighted, the top kept from the last list - DOSBox)
+                plist.index = 1;
+                plist.top = pool_list_top > 1 ? 1 : pool_list_top;
+                if (plist.top > ground->n) plist.top = 0;
+            }
             draw_buy(c);
             break;
         case 'V':
@@ -7943,11 +7955,20 @@ void list_tap(int x, int y, pic::Canvas& c)
     }
     const char k = text::key(menu, text::hit(menu, col));
     if (k == 'N' && l.top + l.rows() < l.n) {
+        const int rel = l.index - l.top;
         l.top += l.rows();
         l.index = l.top;
+        if (pool_files()) {
+            // (Pool: a page on, no further than the last page, the highlight
+            // on the same line of it - ovr26 +0xC33)
+            if (l.top > l.n - l.rows()) l.top = l.n - l.rows();
+            l.index = l.top + rel < l.n ? l.top + rel : l.n - 1;
+        }
     } else if (k == 'P' && l.top > 0) {
+        const int rel = l.index - l.top;
         l.top = l.top > l.rows() ? l.top - l.rows() : 0;
         l.index = l.top;
+        if (pool_files()) l.index = l.top + rel < l.n ? l.top + rel : l.n - 1;
     } else if (k == 'E' && screen == Screen::CreatePick) {
         end_create(c);
         return;
@@ -12458,7 +12479,7 @@ void run_entry(int i, Then next)
     handle(vm->run(vm->entry(i)));
 }
 
-void after_move_redraw()
+void after_move_redraw(bool step = false)
 {
     // After every step the games draw the 3D view again: pictures go
     cursor_hide();
@@ -12466,7 +12487,11 @@ void after_move_redraw()
     pic_shown = false;
     head_shown = body_shown = -1;
     d->gs.roof = geo::flags(d->map, d->gs.x, d->gs.y);
-    d->gs.wall_ahead = static_cast<uint8_t>(geo::wall(d->map, d->gs.x, d->gs.y, d->gs.dir));
+    // (Pool works the wall ahead out at a step, a turn and CALL C018 only -
+    // a script's move leaves the old one: ovr8 0x19DB, ovr4 0x2DAF; the
+    // tour's end saved 0 where the engine had 1)
+    if (step || !pool_files())
+        d->gs.wall_ahead = static_cast<uint8_t>(geo::wall(d->map, d->gs.x, d->gs.y, d->gs.dir));
     gw_way_ahead();
     draw_view(*cv);
     draw_panel(*cv);
@@ -12590,14 +12615,14 @@ bool do_move()
     }
     vm->set(0x7EC9, 0);
     if (locked) return false;
-    after_move_redraw();
+    after_move_redraw(true);
     return true;
 }
 
 void door_done()
 {
     clear_menu_line(*cv);
-    after_move_redraw();
+    after_move_redraw(true);
     run_entry(1, Then::Arrive);
 }
 
@@ -15182,6 +15207,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     close();
     cv = &c;
     age_check = false;
+    pool_list_top = 1;
     pic::sf_map_reset();                // (Gateway's pictures without a colour map: the last one read)
     const char* prog = profile::program_name(g);
     if (!prog) {
@@ -15450,7 +15476,8 @@ bool act(Act a, pic::Canvas& c)
         return true;
     }
     if (then == Then::Door) {
-        door_choice('E');                   // a key at the door: as Exit
+        // a key at the door: as Exit (Pool: nothing - the menu waits; DOSBox)
+        if (!pool_files()) door_choice('E');
         return true;
     }
     if (then != Then::Idle) return false;
@@ -15617,6 +15644,14 @@ bool nav_list(int step, pic::Canvas& c)
         const int lo = screen == Screen::CreatePick ? 1 : 0;
         if (l.n <= lo) return false;
         int i = l.index + step;
+        if (pool_files() && lo == 0) {
+            // (Pool: the highlight goes round the page shown, never scrolls
+            // it - ovr26 +0xCC5: past the page's bottom or the list's end
+            // back to the page's top; above the top to the page's bottom)
+            if (step > 0 && (i > l.top + l.rows() - 1 || i > l.n - 1)) i = l.top;
+            if (step < 0 && i < l.top) i = l.top + l.rows() - 1;
+            if (i > l.n - 1) i = l.n - 1;
+        }
         if (i < lo) i = l.n - 1;
         if (i >= l.n) i = lo;
         l.index = i;

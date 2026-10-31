@@ -4208,11 +4208,18 @@ void end_fight(pic::Canvas& c)
     if (r == combat::Won) {
         for (int m = 0; m < 7; ++m) ground->money[m] += fg->out.money[m];
         // (Darkness: its script place 0x1E - GAME.OVR 0x4820)
+        int dropped = 0;
         if (vm->get(darkness_files() ? 0x1E : 0x7EE3) != 1)
             for (int i = b.party_size; i < b.n; ++i) {
                 const combat::Fighter& f = b.f[i];
                 if (f.gone || !f.team() || f.status() == party::Okay || f.status() == party::Running) continue;
                 for (int k = 0; k < f.n_items; ++k) {
+                    // (Pool, GAME.OVR ovr6 +0x10A: an item of no value is left
+                    // behind unless fewer than 8 were taken so far and 1d10 <= 3;
+                    // one with a value is always taken - DOSBox: the kobolds'
+                    // weapons stayed)
+                    if (pool_files() && !items::Item{f.items[k]}.value() && (dropped >= 8 || rng.roll(10, 1) > 3)) continue;
+                    ++dropped;
                     if (ground->n >= items::kMaxGround) {
                         // (no room: its experience still counts)
                         if (static_cast<int8_t>(f.items[k][0x32]) > 0) ground->lost_plus += static_cast<int8_t>(f.items[k][0x32]);
@@ -4230,6 +4237,9 @@ void end_fight(pic::Canvas& c)
         }
         total += 400 * ground->lost_plus;
         fg->share = combat::award(b, total, !no_exp_lines());
+        plat::log("[fight] won: monsters' experience %d, coins %d %d %d %d %d %d %d, %d items; %d, each %d\n", fg->out.exp,
+                  ground->money[0], ground->money[1], ground->money[2], ground->money[3], ground->money[4], ground->money[5],
+                  ground->money[6], ground->n, total, fg->share);
         // The party's own thrown weapons: there to take back (no experience for them)
         for (int k = 0; k < fg->n_thrown && ground->n < items::kMaxGround; ++k)
             memcpy(ground->item[ground->n++], fg->thrown[k], items::kRecordSize);

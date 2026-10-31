@@ -64,6 +64,24 @@ static std::vector<uint8_t> px(getenv("CANVAS8") ? 320 * 200 : 320 * 200 / 2);  
 // PSRAM, a byte a pixel with the game's palette - play::canvas_depth)
 static pic::Canvas C{px.data(), 320, 200, static_cast<uint8_t>(getenv("CANVAS8") ? 8 : 4)};
 static int shot_n = 0;
+#ifdef CYD_TEST_HOOKS
+// Dice told what to roll (the side-by-side play test: the original's
+// random encounters made the same in the engine): DIEFIX=n:v,... - every
+// die of n faces rolls v (0 .. n-1); the move "~n:v;" - the next one only
+static std::vector<std::pair<int, int>> g_die_once, g_die_always;
+static int die_fix(int n)
+{
+    for (size_t i = 0; i < g_die_once.size(); ++i)
+        if (g_die_once[i].first == n) {
+            const int v = g_die_once[i].second;
+            g_die_once.erase(g_die_once.begin() + static_cast<long>(i));
+            printf("  (die %d: %d, as told)\n", n, v);
+            return v;
+        }
+    for (auto& f : g_die_always) if (f.first == n) return f.second;
+    return -1;
+}
+#endif
 static bool g_quiet = false;         // (moves between two '`': no snapshots)
 static void shot(const char* tag)
 {
@@ -547,6 +565,15 @@ int main(int argc, char** argv)
     setvbuf(stdout, nullptr, _IOLBF, 0);       // (lines out at once: a hang or a crash keeps them)
     play::load_begins = getenv("LOADBEGINS") != nullptr;   // (Pool's load straight into the game: LOADBEGINS=1)
     if (getenv("NOFIXES")) rules::set_fixes(false);    // NOFIXES=1: Game Fixes off (the originals' ways)
+#ifdef CYD_TEST_HOOKS
+    if (getenv("DIEFIX")) for (const char* q = getenv("DIEFIX"); q && *q;) {
+        int n = 0, v = 0;
+        if (sscanf(q, "%d:%d", &n, &v) == 2) g_die_always.push_back({n, v});
+        q = strchr(q, ',');
+        if (q) ++q;
+    }
+    create::g_die_hook = die_fix;
+#endif
     if (getenv("SEED")) play::rng = create::Dice(static_cast<uint32_t>(strtoul(getenv("SEED"), nullptr, 10)));   // SEED=n: the game's dice
     // SIZES: the fight's blocks' sizes
     if (getenv("SIZES")) { printf("Fight %zu Battle %zu Page %zu Monster %zu Data %zu World %zu GameState %zu Party %zu Names %zu Ground %zu\n", sizeof(play::Fight), sizeof(combat::Battle), sizeof(play::Page), sizeof(combat::Monster), sizeof(play::Data), sizeof(view3d::World), sizeof(ecl::GameState), sizeof(party::Party), sizeof(items::Names), sizeof(*play::ground));
@@ -1307,6 +1334,14 @@ int main(int argc, char** argv)
             continue;
         }
         if (*m == '`') { g_quiet = !g_quiet; continue; }
+#ifdef CYD_TEST_HOOKS
+        if (*m == '~') {                // "~n:v;": the next die of n faces rolls v
+            int n = 0, v = 0;
+            if (sscanf(m + 1, "%d:%d", &n, &v) == 2) g_die_once.push_back({n, v});
+            while (m[1] && *m != ';') ++m;
+            continue;
+        }
+#endif
         if (*m == '_') {                // "_": a second of ticks, a snapshot
             for (int t = 0; t < 50; ++t) { g_now += 20; play::tick(g_now, C); }
             shot("after_time");
@@ -1368,7 +1403,7 @@ int main(int argc, char** argv)
             int hit = -1;
             for (int i = 0; k && i < play::menu.count; ++i) if (text::key(play::menu, i) == k) hit = i;
             if (hit >= 0) { play::tap(text::word_col(play::menu, hit) * 8 + 2, text::kMenuRow * 8 + 2, C); printf("  door %c -> at %d,%d\n", k, play::pos_x(), play::pos_y()); }
-            else play::act(play::Act::Forward, C);
+            else if (!getenv("MANUAL")) play::act(play::Act::Forward, C);     // (MANUAL: the menu waits)
         }
         settle();
         if (play::screen == play::Screen::Fight && getenv("FIGHTALL")) {
