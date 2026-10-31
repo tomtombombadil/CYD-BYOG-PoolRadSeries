@@ -78,7 +78,7 @@ size_t read_tail(int i, uint32_t want, char* out)
     size_t got = 0;
     while (got < want) {
         const size_t piece = want - got < 1024 ? want - got : 1024;
-        const size_t r = f.read(reinterpret_cast<uint8_t*>(out + got), piece);
+        const size_t r = sd_read(f, reinterpret_cast<uint8_t*>(out + got), piece);     // (PSRAM: bounced)
         got += r;
         if (r < piece) break;
     }

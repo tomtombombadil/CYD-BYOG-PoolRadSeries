@@ -134,7 +134,7 @@ bool open_file(const char* path, bool at_end)
         return false;
     }
     f.seek(skip);
-    size_t got = f.read(reinterpret_cast<uint8_t*>(text_ + pre), n);
+    size_t got = sd_read(f, reinterpret_cast<uint8_t*>(text_ + pre), n);     // (PSRAM on the S3: bounced)
     f.close();
     if (skip) {
         // from the next whole line on

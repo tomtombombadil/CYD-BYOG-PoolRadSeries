@@ -86,35 +86,9 @@ bool is_parked = false;
 // The card's DMA never gets a PSRAM buffer (the S3's SD/MMC - CLAUDE.md):
 // a canvas there (the 64 KB one of a game in 256 colours) goes to and from
 // the card through a small internal buffer
-constexpr size_t kBounce = 2048;
-bool card_write(fs::File& f, const uint8_t* p, size_t n)
-{
-    if (esp_ptr_internal(p)) return f.write(p, n) == n;
-    uint8_t* b = static_cast<uint8_t*>(heap_caps_malloc(kBounce, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-    if (!b) return false;
-    bool ok = true;
-    for (size_t at = 0; ok && at < n; at += kBounce) {
-        const size_t k = n - at < kBounce ? n - at : kBounce;
-        memcpy(b, p + at, k);
-        ok = f.write(b, k) == k;
-    }
-    heap_caps_free(b);
-    return ok;
-}
-bool card_read(fs::File& f, uint8_t* p, size_t n)
-{
-    if (esp_ptr_internal(p)) return f.read(p, n) == static_cast<int>(n);
-    uint8_t* b = static_cast<uint8_t*>(heap_caps_malloc(kBounce, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-    if (!b) return false;
-    bool ok = true;
-    for (size_t at = 0; ok && at < n; at += kBounce) {
-        const size_t k = n - at < kBounce ? n - at : kBounce;
-        ok = f.read(b, k) == static_cast<int>(k);
-        if (ok) memcpy(p + at, b, k);
-    }
-    heap_caps_free(b);
-    return ok;
-}
+// (hal/sdcard.h's sd_read / sd_write bounce them)
+bool card_write(fs::File& f, const uint8_t* p, size_t n) { return sd_write(f, p, n) == n; }
+bool card_read(fs::File& f, uint8_t* p, size_t n) { return sd_read(f, p, n) == n; }
 }
 
 bool park(const char* path)

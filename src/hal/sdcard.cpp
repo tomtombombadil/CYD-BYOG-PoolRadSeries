@@ -107,3 +107,51 @@ fs::FS& sd_fs() { return LittleFS; }   // never used: sd_begin() is false
 void sd_lost() {}
 
 #endif
+
+// ---- PSRAM-safe reads and writes (every board; only PSRAM buffers bounce)
+#include <esp_heap_caps.h>
+#include <esp_memory_utils.h>
+
+namespace {
+constexpr size_t kBounce = 2048;
+}
+
+size_t sd_write(fs::File& f, const uint8_t* p, size_t n)
+{
+    if (n == 0) return 0;
+    if (esp_ptr_internal(p)) return f.write(p, n);
+    uint8_t* b = static_cast<uint8_t*>(heap_caps_malloc(kBounce, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    if (!b) return 0;
+    size_t done = 0;
+    while (done < n) {
+        const size_t k = n - done < kBounce ? n - done : kBounce;
+        memcpy(b, p + done, k);
+        const size_t w = f.write(b, k);
+        done += w;
+        if (w != k) break;
+    }
+    heap_caps_free(b);
+    return done;
+}
+
+size_t sd_read(fs::File& f, uint8_t* p, size_t n)
+{
+    if (n == 0) return 0;
+    if (esp_ptr_internal(p)) {
+        const int r = f.read(p, n);
+        return r > 0 ? static_cast<size_t>(r) : 0;
+    }
+    uint8_t* b = static_cast<uint8_t*>(heap_caps_malloc(kBounce, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    if (!b) return 0;
+    size_t done = 0;
+    while (done < n) {
+        const size_t k = n - done < kBounce ? n - done : kBounce;
+        const int r = f.read(b, k);
+        if (r <= 0) break;
+        memcpy(p + done, b, static_cast<size_t>(r));
+        done += static_cast<size_t>(r);
+        if (static_cast<size_t>(r) != k) break;
+    }
+    heap_caps_free(b);
+    return done;
+}

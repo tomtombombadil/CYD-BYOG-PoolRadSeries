@@ -13,3 +13,10 @@ fs::FS& sd_fs();
 
 // Call after a failed read/write: unmounts so the next sd_begin() retries.
 void sd_lost();
+
+// Reads / writes that may use a PSRAM buffer: the S3's SD/MMC DMA never gets
+// one (CLAUDE.md) - a buffer outside internal RAM goes through a small
+// internal bounce buffer. Return the bytes read / written (short = failed;
+// 0 when even the bounce buffer couldn't be had).
+size_t sd_read(fs::File& f, uint8_t* p, size_t n);
+size_t sd_write(fs::File& f, const uint8_t* p, size_t n);
