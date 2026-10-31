@@ -12483,7 +12483,14 @@ void run_entry(int i, Then next)
 // keeps the old square until the next step (DOSBox: the slums' entrance
 // shows "0,4 W" over the slums' view; the original's new-block path draws
 // the view without its status line)
-bool hold_place = false;     // (cleared by the next step)
+bool hold_place = false;     // (cleared by the next step or key)
+// (the exploring menu's next key draws it - DOSBox: Return there)
+void place_after_key(pic::Canvas& c)
+{
+    if (!hold_place || screen != Screen::Game) return;
+    hold_place = false;
+    draw_position(c);
+}
 void after_move_redraw(bool step = false)
 {
     // After every step the games draw the 3D view again: pictures go
@@ -15744,6 +15751,7 @@ bool party_nav(int step, pic::Canvas& c)
 
 bool nav(Nav n, pic::Canvas& c)
 {
+    if (d) place_after_key(c);
     if (!d || input_mode != Input::None) return false;
     cv = &c;
     if (demo_input(c)) return true;
@@ -16162,6 +16170,7 @@ void tap(int x, int y, pic::Canvas& c)
     if (!d) return;
     cv = &c;
     if (demo_input(c)) return;
+    place_after_key(c);
     if (lk.on) {
         if (rom.asking) {
             // (the romance's "Accept Reject")
