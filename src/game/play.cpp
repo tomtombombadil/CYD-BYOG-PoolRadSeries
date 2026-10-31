@@ -12318,7 +12318,8 @@ void draw_input(pic::Canvas& c)
     const int x = input_engine ? static_cast<int>(strlen(input_prompt)) + (name_after ? 1 : 0) : 0;
     // (Darkness's coin questions: the prompt green, the number white - DOSBox)
     // (Gateway's View's coin question: the prompt green too - DOSBox)
-    const bool dk = input_engine && (darkness_files() || (gateway() && take_mode)) && engine_ask == EngineAsk::Coins;
+    // (Pool's coin questions: the prompt green - DOSBox)
+    const bool dk = input_engine && (darkness_files() || (gateway() && take_mode) || pool_files()) && engine_ask == EngineAsk::Coins;
     if (input_engine) put(c, input_prompt, 0, text::kMenuRow, dk ? 10 : 13);
     // (Darkness's typed name is white - DOSBox)
     put(c, input_buf, x, text::kMenuRow,
