@@ -60,15 +60,23 @@ the Project as claude/TODO.md.
       the first member selected after a fight (Detect), the treasure's
       coin list (order, no Select, Exit -> Take menu, green prompt), the
       3D view after a treasure, THE END screen and the game's end, a
-      monster copy's items reversed. Open: the slums aren't "cleared" for
-      the clerk yet (more of them: the rope guild etc.); training, Sokal
-      Keep, camp / items / saves still to compare. Check in Curse's play
-      test: the press words, word wrap, load path, camp picture / Quit to
-      DOS, View prompt, shop and temple layouts, the list routine,
-      movement keys at the Locked menu, monsters' valueless items, and
-      part 3's: Quick kept across fights, the selected member after a
-      fight, SURPRISE's result, the coin list, the placement routine
-      (Curse's is likely the same code as Pool's), copies' item order.
+      monster copy's items reversed. Part 4: the slums finished (hemp
+      market, Ohlo's potion, the guards, the 25th win) and the clerk's
+      reward; training (cleric, magic-user) matched. Fixed: yes/no
+      questions' start / colour per caller, the camp save's Quit TO DOS,
+      0x7EC8 on a treasure without a fight, loot past 64 keeps the newest,
+      Loot / Take Exits, the encounter distance in 0x7EC0 / 0x7EC1, script
+      room zeros, spell list bar, first member after a hall. Open: the
+      arena's duels (CALL 0x8000 / 0x8001 - Pool and Curse; facts in the
+      play-test log); the shared list position (training's spell list
+      opens on its last line); Sokal Keep, camp / items / saves still to
+      compare. Check in Curse's play test: the press words, word wrap,
+      load path, camp picture / Quit to DOS, View prompt, shop and temple
+      layouts, the list routine, movement keys at the Locked menu,
+      monsters' valueless items, part 3's: Quick kept across fights, the
+      selected member after a fight, SURPRISE's result, the coin list,
+      the placement routine, copies' item order; and part 4's: yes/no
+      start / colours, Loot / Take Exits, 0x7EC0 / 0x7EC1, 0x7EC8.
 
 - [ ] Code review follow-ups (branch review-fixes-engine, 2026-10-31):
       (a) Dark Queen reroll - the engine's queen_roll keeps spells a
