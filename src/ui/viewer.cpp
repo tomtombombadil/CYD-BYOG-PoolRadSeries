@@ -527,7 +527,7 @@ struct IconDraw {
 void icon_row(int y, const uint8_t* rgba, int w, void* ctx)
 {
     IconDraw& d = *static_cast<IconDraw*>(ctx);
-    if (d.out) d.out.write(rgba, static_cast<size_t>(w) * 4);
+    if (d.out) sd_write(d.out, rgba, static_cast<size_t>(w) * 4);
     if (!d.draw) return;
     for (int x = 0; x < w; ++x) {
         const uint8_t* p = rgba + x * 4;
@@ -680,7 +680,7 @@ bool box_row(int y, const uint8_t* rgb, int w, void* ctx)
         const uint8_t* p = rgb + x * 3;
         b.line[x] = static_cast<uint16_t>((p[0] >> 3) << 11 | (p[1] >> 2) << 5 | (p[2] >> 3));
     }
-    if (b.out && b.out.write(reinterpret_cast<const uint8_t*>(b.line), static_cast<size_t>(w) * 2) !=
+    if (b.out && sd_write(b.out, reinterpret_cast<const uint8_t*>(b.line), static_cast<size_t>(w) * 2) !=
                      static_cast<size_t>(w) * 2)
         b.write_ok = false;
     if (b.draw) {
@@ -872,6 +872,7 @@ struct ScanScreen {
     char     line[kLines][100];
     int      n = 0;
     fs::File log;
+    bool     log_paused = false;     // closed for a while (scan_log_pause): the card's 3 file slots
     char     pending[200] = {};      // the last line, written to the log once it's final
     int      last_parts = 0;         // screen lines the last one took (wrapped)
 };
@@ -901,6 +902,30 @@ void scan_flush_log()
 {
     if (scr->log && scr->pending[0]) scr->log.printf("%s\n", scr->pending);
     scr->pending[0] = 0;
+}
+
+// The card mounts with 3 file slots (CLAUDE.md): a journal being made holds
+// three of its own (the PDF or Game.dat, JOURNAL.DAT, a JE_NNN.jpg), so
+// SCAN.TXT is closed meanwhile and opened again to add the rest - with it
+// open the pictures couldn't be opened and the journals were made without
+// them. (Lines said meanwhile only replace the last one on screen.)
+void scan_log_pause()
+{
+    if (!scr) return;
+    scan_flush_log();
+    if (scr->log) {
+        scr->log.close();
+        scr->log_paused = true;
+    }
+}
+
+void scan_log_resume()
+{
+    if (!scr || !scr->log_paused) return;
+    scr->log_paused = false;
+    char path[160];
+    library::cache_path("SCAN.TXT", path, sizeof path);
+    scr->log = sd_fs().open(path, "a");
 }
 
 // One line of the list (wrapped if it's too wide); replace = it takes the
@@ -953,7 +978,7 @@ struct SdOutput : journal::Output {
     bool write_at(uint32_t pos, const uint8_t* d, size_t n) override
     {
         yield();            // a long job: let the system's own tasks run
-        return f.seek(pos) && f.write(d, n) == n;
+        return f.seek(pos) && sd_write(f, d, n) == n;      // (PSRAM buffers bounced: the S3's SD/MMC DMA)
     }
 };
 
@@ -1047,7 +1072,9 @@ void prepare_journal_gbc(const library::GameDir& g)
     fs::File f = sd_fs().open(path, "r");
     if (!f) return;
     library::FileSource src(f);
-    snprintf(id, sizeof id, "gbc2:%u", static_cast<unsigned>(src.size()));
+    // ("gbc3": v0.160.x's scans made it with SCAN.TXT open - no file slot
+    // left for the pictures, every entry its text only: those are made again)
+    snprintf(id, sizeof id, "gbc3:%u", static_cast<unsigned>(src.size()));
     char out_path[160];
     library::cache_path(g, "JOURNAL.DAT", out_path, sizeof out_path);
     {
@@ -1067,7 +1094,7 @@ void prepare_journal_gbc(const library::GameDir& g)
     }
     snprintf(line, sizeof line, "Processing the %s journal (the Gold Box Companion's)...", title);
     scan_say(line, false, nullptr);
-    scan_flush_log();
+    scan_log_pause();
     SdOutput out;
     bool ok = library::make_cache_dirs(g);
     if (ok) out.f = sd_fs().open(out_path, "w");
@@ -1079,6 +1106,7 @@ void prepare_journal_gbc(const library::GameDir& g)
     pics.close();
     if (out.f) out.f.close();
     f.close();
+    scan_log_resume();
     if (ok)
         snprintf(line, sizeof line, "Prepared the %s journal from the Gold Box Companion (%lu s)", title,
                  static_cast<unsigned long>((millis() - t0) / 1000));
@@ -1157,8 +1185,7 @@ void prepare_journal_now(const library::GameDir& g)
              static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
              static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
     scan_say(line, false, nullptr);
-    scan_flush_log();
-    if (scr && scr->log) scr->log.flush();
+    scan_log_pause();
     SdOutput out;
     bool ok = library::make_cache_dirs(g);
     if (ok) out.f = sd_fs().open(out_path, "w");
@@ -1171,6 +1198,7 @@ void prepare_journal_now(const library::GameDir& g)
     pics.close();
     if (out.f) out.f.close();
     f.close();
+    scan_log_resume();
     if (ok) {
         snprintf(line, sizeof line, "Prepared the %s journal: %d journal entries, %d tavern tales (%lu s)", title, nj, nt,
                  static_cast<unsigned long>((millis() - t0) / 1000));
