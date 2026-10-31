@@ -130,6 +130,10 @@ struct OpSet {
     // C04D is (0-3) - its scripts keep the facing there leaving a city and
     // choose the gate by it coming back (0: none)
     uint16_t facing_alias = 0;
+    // Curse / Pool: CALL 0x8000 / 0x8001 arrange the arena's fights - the
+    // selected member alone against a copy of itself ("ROLF") / against the
+    // monsters loaded next (Pool START.EXE ovr8 +0x1A6F, Curse ovr8 +0x1BA0)
+    bool duels = false;
     // Gateway (its CALL handler, interpreter overlay +0x3320): the sound call
     // plays the effect 0x03DE holds by the game's own number (0x80 up: its
     // music - not played); Curse's: a step, or the fireball's roar for 10

@@ -541,6 +541,7 @@ void turn_sound()
 }
 
 void fight_load_monster(int id, int copies, int icon, bool reserve = false);
+void fight_duel(bool rolf);
 uint8_t* fight_monster_record(int k);
 bool npc_join(int id);
 bool party_dead = false;      // DAMAGE killed everyone: the party menu after the script
@@ -12348,6 +12349,7 @@ struct Host : ecl::Host {
     }
     void load_monster(int id, int copies, int icon) override { fight_load_monster(id, copies, icon); }
     void clear_monsters() override { fight_clear_monsters(); }
+    void duel(bool rolf) override { fight_duel(rolf); }
     uint8_t* monster_record(int k) override { return fight_monster_record(k); }
     bool add_npc(int id) override { return npc_join(id); }
     void party_changed() override

@@ -220,6 +220,10 @@ enum FightWord {
     // Gateway's monsters: "drains blood from " / "constricts " (the victim's
     // name after), "regenerates", "Falls dead"
     kDrainsBloodGw, kConstrictsGw, kRegeneratesGw, kFallsDeadGw,
+    // The arena's results (Curse / Pool; duel_word): "You have lost the duel."
+    // (Curse: its "You have lost the fight."), "You have won the duel.",
+    // "The duelist receives "
+    kDuelLost, kDuelWon, kDuelistReceives,
     kFightWords
 };
 
@@ -848,6 +852,9 @@ const char* program_name(games::Game g);
 // The game's first known release (nullptr: none) - its recorded effects'
 // facts when the player's release isn't one the engine knows
 const Profile* first(games::Game g);
+// The arena's result words (kDuelLost ... kDuelistReceives, GAME.OVR's
+// ovr6) of a game with duels; 0: none
+uint32_t duel_word(const Profile& p, int word);
 
 // View Character's menu beyond Items / Exit (the originals': Items Spells
 // Trade Drop Heal Cure Exit - Secret: Deposit before Drop; coab's ovr020

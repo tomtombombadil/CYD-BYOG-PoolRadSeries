@@ -1318,6 +1318,7 @@ constexpr ecl::OpSet kCurseEcl = [] {
     s.exit = 0x00; s.go_to = 0x01; s.go_sub = 0x02; s.ret = 0x13; s.new_ecl = 0x20;
     s.on_goto = 0x25; s.on_gosub = 0x26; s.if_first = 0x16; s.if_last = 0x1B;
     s.load_files = 0x21; s.load_pieces = 0x37;
+    s.duels = true;
     return s;
 }();
 
@@ -1469,6 +1470,7 @@ constexpr TitleStep kSecretTitle[] = {
 
 constexpr ecl::OpSet kSecretEcl = [] {
     ecl::OpSet s = kCurseEcl;
+    s.duels = false;
     s.sizes[0x3C] = 0;
     s.sizes[0x41] = 2;
     s.area_by_block = true;
@@ -1499,6 +1501,7 @@ constexpr TitleStep kChampionsTitle[] = {
 
 constexpr ecl::OpSet kChampionsEcl = [] {
     ecl::OpSet s = kCurseEcl;
+    s.duels = false;
     s.sizes[0x3C] = 0;
     s.sizes[0x41] = 2;
     s.area_by_block = true;
@@ -1515,6 +1518,7 @@ constexpr ecl::OpSet kChampionsEcl = [] {
 // PIECES), 0x41 2 (EXPERIENCE): every one of its 56 blocks decodes
 constexpr ecl::OpSet kDarknessEcl = [] {
     ecl::OpSet s = kCurseEcl;
+    s.duels = false;
     s.sizes[0x0C] = 4;
     s.sizes[0x1D] = 0;
     s.sizes[0x1F] = 1;
@@ -1603,6 +1607,7 @@ constexpr TitleStep kGatewayTitle[] = {
 
 constexpr ecl::OpSet kGatewayEcl = [] {
     ecl::OpSet s = kCurseEcl;
+    s.duels = false;
     s.sizes[0x32] = 4;
     s.sizes[0x40] = 4;
     s.sizes[0x41] = 2;
@@ -4180,6 +4185,17 @@ const char* program_name(games::Game g)
 {
     const Profile* p = first(g);
     return p ? p->program : nullptr;
+}
+
+uint32_t duel_word(const Profile& p, int word)
+{
+    if (word < kDuelLost || word > kDuelistReceives) return 0;
+    // (GAME.OVR ovr6's strings, before "Each character receives ")
+    static constexpr uint32_t kCurse[3] = {0x6673, 0x668C, 0x66D4};    // ("You have lost the fight.")
+    static constexpr uint32_t kPool[3] = {0x5DBB, 0x5DD3, 0x5E2F};
+    if (p.game == games::Game::CurseOfTheAzureBonds) return kCurse[word - kDuelLost];
+    if (p.game == games::Game::PoolOfRadiance) return kPool[word - kDuelLost];
+    return 0;
 }
 
 const Profile* first(games::Game g)

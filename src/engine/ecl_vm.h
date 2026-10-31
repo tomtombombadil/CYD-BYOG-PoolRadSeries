@@ -129,6 +129,9 @@ public:
     // fight, its CPIC<area> icon block; CLEARMONSTERS: none
     virtual void load_monster(int id, int copies, int icon) { (void)id; (void)copies; (void)icon; }
     virtual void clear_monsters() {}
+    // CALL 0x8000 / 0x8001 (Curse / Pool's arena): the selected member alone
+    // in the next fight - against a copy of itself ("ROLF") when `rolf`
+    virtual void duel(bool rolf) { (void)rolf; }
     // The k-th monster loaded for the next fight (its own copy's record),
     // nullptr past them: the original's LOAD MONSTER puts them at the end of
     // the party's list, so LOAD CHARACTER can select them
@@ -192,6 +195,10 @@ public:
     // Treasure and shop goods the scripts set out (TREASURE)
     void set_ground(items::Ground* g) { ground_ = g; }
     bool monsters() const { return monsters_; }
+    // An arena fight arranged (CALL 0x8000 / 0x8001) for the next COMBAT
+    // (the original's flag, cleared after that fight or by a load)
+    bool arena() const { return duel_; }
+    void end_arena() { duel_ = false; }
 #ifdef CYD_TEST_HOOKS
     void test_set_monsters(bool v) { monsters_ = v; }     // (tests: a dumped state put back)
 #endif
@@ -322,6 +329,7 @@ private:
     int minutes_ = 0;
     items::Ground* ground_ = nullptr;
     bool monsters_ = false;             // LOAD MONSTER since the last CLEARMONSTERS
+    bool duel_ = false;                 // CALL 0x8000 / 0x8001 since the last fight
     const OpSet& set_;
     uint16_t entry_[5] = {};
     uint32_t pc_ = 0;               // offset in the code

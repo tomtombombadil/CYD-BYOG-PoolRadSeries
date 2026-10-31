@@ -849,6 +849,7 @@ Stop Vm::run(uint16_t address)
         // new game next): its monsters are gone as after any fight, or the
         // next COMBAT (a shop, the vault, a treasure) would take them for a fight
         monsters_ = false;
+        duel_ = false;
         sel_mon_ = -1;
     }
     wait_ = Wait::None;
@@ -861,6 +862,7 @@ Stop Vm::resume()
 {
     if (wait_ == Wait::Combat) {
         monsters_ = false;                              // the fight's monsters are gone
+        duel_ = false;                                 // (and its arena flag: ovr4 +0x18AC)
         sel_mon_ = -1;
     }
     wait_ = Wait::None;
@@ -1747,8 +1749,8 @@ Stop Vm::step()
     }
     case 0x24:                                  // COMBAT
         ++pc_;
-        if (!monsters_) {
-            // No monsters: a shop or temple the script opened, or the
+        if (!monsters_ && !duel_) {
+            // No monsters (and no duel - its copy is the other side): a shop or temple the script opened, or the
             // treasure after a fight (Secret: first its vault)
             if (set_.vault_word && get(set_.vault_word) == 1) {
                 set(set_.vault_word, 0);
@@ -1922,9 +1924,15 @@ Stop Vm::step()
             if (set_.step_square) h_.square();
         } else if (w == 0xC01A && set_.step_square) {
             h_.square();
-        } else if (!set_.pool_map || w == 0x8000 || w == 0x8001) {
-            // (Pool's program does nothing for addresses it doesn't know;
-            // 0x8000 / 0x8001 are its duels)
+        } else if (set_.duels && (w == 0x8000 || w == 0x8001)) {
+            // The arena (Pool ovr4 +0x2D5D -> ovr8 +0x1A6F, Curse ovr8
+            // +0x1BA0): the next COMBAT is a fight of the selected member
+            // alone; game word 0x7EE6 = 1 for a duel with its copy
+            duel_ = true;
+            set(0x7EE6, w == 0x8000 ? 1 : 0);
+            h_.duel(w == 0x8000);
+        } else if (!set_.pool_map) {
+            // (Pool's program does nothing for addresses it doesn't know)
             snprintf(line, sizeof line, "CALL %04X (not in the engine yet)", w);
             h_.log(line);
         }

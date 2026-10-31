@@ -352,6 +352,73 @@ void fight_load_monster(int id, int copies, int icon, bool reserve)
               icon, ml->n);
 }
 
+// The arena (CALL 0x8000 / 0x8001 - Pool START.EXE ovr8 +0x1A6F, Curse
+// ovr8 +0x1BA0, the same code): everyone whose name isn't the selected
+// member's is out of the next fight (in-combat 0); a duel (0x8000) adds a
+// copy of the selected at the list's end - "ROLF", Quick, the monsters'
+// side, control 0xB2, no effects, the next monster icon slot with CPIC
+// block 11, and its items copied one by one onto the front of its list
+// (so the other way round)
+void fight_duel(bool rolf)
+{
+    if (!pt->count || pt->selected < 0 || pt->selected >= pt->count) return;
+    const party::Character& sel = pt->m[pt->selected];
+    const int len = sel.rec[0] < 15 ? sel.rec[0] : 15;
+    for (int i = 0; i < pt->count; ++i) {
+        const uint8_t* r = pt->m[i].rec;
+        if (r[0] != sel.rec[0] || memcmp(r + 1, sel.rec + 1, static_cast<size_t>(len)) != 0) pt->m[i].rec[0x196] = 0;
+    }
+    plat::log("[play] the arena: member %d alone%s\n", pt->selected, rolf ? " against ROLF" : "");
+    if (!rolf) return;
+    if (!ml) ml = new (std::nothrow) MonsterLoad;
+    if (!ml || ml->groups >= combat::kMaxGroups || ml->n >= combat::kMaxMonsters) return;
+    if (!ml->g[ml->groups]) ml->g[ml->groups] = new (std::nothrow) combat::Group;
+    if (!ml->g[ml->groups]) {
+        plat::log("[play] the duel: not enough memory\n");
+        return;
+    }
+    combat::Group& g = *ml->g[ml->groups];
+    new (&g) combat::Group();
+    memcpy(g.rec, sel.rec, sizeof g.rec);
+    memset(g.rec, 0, 16);
+    g.rec[0] = 4;
+    memcpy(g.rec + 1, "ROLF", 4);
+    g.rec[0x196] = 1;
+    g.rec[0x143] = static_cast<uint8_t>(8 + ml->groups);
+    g.icon = 11;
+    if (ml->n + 1 > ml->cap) {
+        void* p = realloc(ml->m, static_cast<size_t>(ml->n + 1) * sizeof(combat::Monster));
+        if (!p) {
+            plat::log("[play] the duel: not enough memory\n");
+            return;
+        }
+        ml->m = static_cast<combat::Monster*>(p);
+        ml->cap = ml->n + 1;
+    }
+    combat::Monster& m = ml->m[ml->n];
+    new (&m) combat::Monster();
+    m.base = g.rec;
+    m.group = static_cast<uint8_t>(ml->groups);
+    m.flags2 = sel.ext[party::kExtFlags2];
+    m.magic_res = sel.ext[party::kExtMagicRes];
+    // Its own items (all of them - a group holds 8), the other way round
+    if (sel.n_items > 0) {
+        auto* list = static_cast<uint8_t(*)[items::kRecordSize]>(malloc(static_cast<size_t>(sel.n_items) * items::kRecordSize));
+        if (list) {
+            for (int k = 0; k < sel.n_items; ++k) memcpy(list[k], sel.items[sel.n_items - 1 - k], items::kRecordSize);
+            m.items = list;
+            m.n_items = static_cast<uint8_t>(sel.n_items);
+        }
+    }
+    // (its differences from the selected's record are its own changes: the
+    // fight's start works its values out again with its own items)
+    m.set(0x198, 1);                    // Quick
+    m.set(0x197, 1);                    // the other side
+    m.set(0xF7, 0xB2);                  // control
+    ++ml->n;
+    ++ml->groups;
+}
+
 // Darkness's Monster Summoning reserve (R10; GAME.OVR 0x7D2B, at every
 // COMBAT): 10 monsters of the MON block the frame style (block +0x39)
 // picks, out of the fight (status 9) until a Monster Summoning brings them
@@ -687,6 +754,7 @@ struct Fight {
     int      pick_budget = -1;          // spell aim 5: picked one by one against this (-1: not that kind)
     bool     pick_size = false;         // ... costs by size (Faerie Fire), else by Hit Dice
     bool     page_dropped = false;      // the last add_page found no room (its pictures / sound aren't set)
+    bool     arena = false;             // an arena fight (CALL 0x8000 / 0x8001): the selected member alone
     // Thrown weapons used up (a dagger, a spear, darts): onto the treasure after the fight
     uint8_t  thrown[6][items::kRecordSize];
     int      n_thrown = 0;
@@ -972,10 +1040,11 @@ void load_fight_words()
     OvrWords src;
     if (!src.open()) return;
     for (int i = 0; i < profile::kFightWords; ++i) {
-        if (!d->prof->fight.words[i]) continue;
+        const uint32_t at_word = d->prof->fight.words[i] ? d->prof->fight.words[i] : profile::duel_word(*d->prof, i);
+        if (!at_word) continue;
         char t[72];                     // (Darkness's two-row menu: 63)
         t[0] = 0;
-        read_word(src, d->prof->fight.words[i], t, sizeof t);
+        read_word(src, at_word, t, sizeof t);
         if (hl()) {
             // (Dark Queen's words are printf formats here and there: their
             // "%s" / "%d" taken out - the engine puts the values after them)
@@ -3754,6 +3823,19 @@ int pool_place_flags()
     return combat::pool_terrain(place, (vm->get(0x4CB3) & 0xFF) == 0xFF);
 }
 
+// The arena's fight over (or never begun): those out of it back in -
+// Pool's end of an arena fight (START.EXE ovr6 +0x7DB): every member okay
+// or animated in the fight again, a dying one unconscious
+void arena_back()
+{
+    if (!vm->arena()) return;
+    for (int i = 0; i < pt->count; ++i) {
+        uint8_t* r = pt->m[i].rec;
+        if (r[0x195] == party::Okay || r[0x195] == party::Animated) r[0x196] = 1;
+        if (r[0x195] == party::Dying) r[0x195] = party::Unconscious;
+    }
+}
+
 void fight_start(pic::Canvas& c)
 {
     // What only other screens use goes first (they load again when needed):
@@ -3765,6 +3847,7 @@ void fight_start(pic::Canvas& c)
         // A game whose fights aren't in the engine yet (Pool while it's built)
         error(c, "Fights aren't in the engine for this game yet.");
         fight_clear_monsters();
+        arena_back();
         vm->set(0x7EC7, 0x81);          // (no fight: as if the party fled - never a win)
         resume_after_note = true;
         return;
@@ -3776,6 +3859,7 @@ void fight_start(pic::Canvas& c)
         delete fg;
         fg = nullptr;
         fight_clear_monsters();
+        arena_back();
         vm->set(0x7EC7, 0x81);          // (no fight: as if the party fled - never a win)
         resume_after_note = true;       // the script goes on once the error is tapped
         return;
@@ -3819,6 +3903,7 @@ void fight_start(pic::Canvas& c)
         delete fg;
         fg = nullptr;
         fight_clear_monsters();
+        arena_back();
         vm->set(0x7EC7, 0x81);          // (no fight: as if the party fled - never a win)
         resume_after_note = true;       // the script goes on once the error is tapped
         return;
@@ -3829,6 +3914,7 @@ void fight_start(pic::Canvas& c)
     new (&b) combat::Battle();         // (in place: a temporary would take a lot of stack)
     b.f = fg->fighters;
     b.cap = n_fighters;
+    fg->arena = b.duel = vm->arena();
     b.tables = &fg->t;
     memcpy(b.level_exp, level_exp, sizeof level_exp);
     combat::g_dk_drain = darkness_files() ? dk_drain_hook : nullptr;     // (its own drain: facts L1)
@@ -4041,7 +4127,23 @@ void fight_cleanup_party(combat::Result r)
                 break;
             }
         uint8_t* rec = ch.rec;
-        if (r == combat::Lost) continue;
+        if (fg && fg->arena && pool_files()) {
+            // Pool's arena (START.EXE ovr6 +0x7DB): every member okay or
+            // animated in the fight again, a dying one unconscious - nothing
+            // more (one unconscious stays so; a runner stays running)
+            if (rec[0x195] == party::Okay || rec[0x195] == party::Animated) rec[0x196] = 1;
+            if (rec[0x195] == party::Dying) rec[0x195] = party::Unconscious;
+            continue;
+        }
+        if (fg && fg->arena && r != combat::Fled && vm->get(0x7EE6)) {
+            // Curse's duel (ovr6 +0x7A9 / +0x804): a dying duelist, or one
+            // unconscious with no hit points, up again with 1
+            if (rec[0x195] == party::Dying || (rec[0x195] == party::Unconscious && rec[0x1A4] == 0)) {
+                rec[0x195] = party::Okay;
+                rec[0x1A4] = 1;
+            }
+        }
+        if (r == combat::Lost && !(fg && fg->arena)) continue;
         if (rec[0x195] == party::Running) rec[0x195] = party::Okay;
         if (r == combat::Fled) continue;
         if (rec[0x195] == party::Dying) rec[0x195] = party::Unconscious;
@@ -4190,11 +4292,35 @@ void end_fight(pic::Canvas& c)
         // survivors in a real game): it wins while one of them stands
         for (int i = 0; i < b.party_size; ++i)
             if (b.f[i].status() == party::Okay || b.f[i].status() == party::Animated) r = combat::Won;
+    // The arena (CALL 0x8000 / 0x8001): Pool (START.EXE ovr6 +0x776) has
+    // won when a fighter of the party's side is still in the fight and okay
+    // - the duelist; Curse (ovr6 +0x618, its demo aside) when any member is
+    // okay or animated (those sat out count: "You have won the duel." though
+    // the duelist fell), fled when one runs and none is up. Neither ends the
+    // game: a lost duel is no party destroyed
+    const bool arena = fg->arena && !in_demo;
+    const bool rolf = arena && vm->get(0x7EE6) != 0;
+    if (arena) {
+        bool won = false, ran = false;
+        for (int i = 0; i < b.n; ++i) {
+            const combat::Fighter& f = b.f[i];
+            if (pool_files()) {
+                if (!f.gone && f.up() && f.status() == party::Okay && !f.team()) won = true;
+            } else if (i < b.party_size) {
+                if (f.status() == party::Okay || f.status() == party::Animated) won = true;
+                if (f.status() == party::Running) ran = true;
+            }
+        }
+        r = won ? combat::Won : ran ? combat::Fled : combat::Lost;
+        plat::log("[fight] the arena: %s\n", won ? "won" : ran ? "fled" : "lost");
+    }
     int out = 0;
     for (int i = b.party_size; i < b.n; ++i)
         if (!b.f[i].gone && !b.f[i].up()) ++out;
     vm->set(0x7EC8, static_cast<uint16_t>(out));
-    vm->set(0x7EC7, static_cast<uint16_t>(r));
+    // (Pool's arena leaves the result word 0 - its 0x80 / 0x81 are set on
+    // the other paths only)
+    vm->set(0x7EC7, static_cast<uint16_t>(arena && pool_files() ? 0 : r));
     if (in_demo) {
         // The demo (demo_facts.md 5): no clean-up, experience, treasure or
         // results; the script goes on (all down: the demo ends)
@@ -4214,6 +4340,18 @@ void end_fight(pic::Canvas& c)
         handle(vm->resume());
         return;
     }
+    if (r == combat::Won && arena && (rolf || !pool_files())) {
+        // A duel's experience (Pool ovr6 +0x6, Curse +0x3D - any arena fight
+        // there): the selected's hit dice x 100 to each in the fight, nothing
+        // gathered from the beaten
+        const int hd = pt->selected >= 0 && pt->selected < pt->count ? pt->m[pt->selected].rec[0xE5] : 0;
+        int members = 0;
+        for (int i = 0; i < b.party_size; ++i)
+            if (b.f[i].up() && b.f[i].status() != party::Animated) ++members;
+        fg->share = combat::award(b, hd * 100 * members, true);
+        if (!members) fg->share = hd * 100;     // (Curse: shown though no one in the fight took it)
+        plat::log("[fight] the duel's experience: %d\n", fg->share);
+    } else
     // The beaten monsters' coins and items go to the treasure
     if (r == combat::Won) {
         for (int m = 0; m < 7; ++m) ground->money[m] += fg->out.money[m];
@@ -4293,7 +4431,18 @@ void end_fight(pic::Canvas& c)
     // The result screen
     c.clear(0);
     layout::outer(c, d->tables, d->frame_tiles);
-    if (r == combat::Lost && d->prof->variant.the_end) {
+    if (arena) {
+        // "You have won the duel." / "You have lost the duel." (Curse: "...
+        // the fight.", its result word 0x80; fled: "The party has fled."),
+        // "The duelist receives N" "experience points." - Pool ovr6 +0x95A
+        put(c, fw(r == combat::Won ? profile::kDuelWon : r == combat::Fled ? profile::kHasFled : profile::kDuelLost), 1, 3, 10);
+        char t[48];
+        snprintf(t, sizeof t, "%s%d", fw(profile::kDuelistReceives), r == combat::Won ? fg->share : 0);
+        put(c, t, 1, 5, 10);
+        put(c, fw(profile::kExpPoints), 1, 7, 10);
+        press_enter_line(c);
+        fg->st = FSt::Results;
+    } else if (r == combat::Lost && d->prof->variant.the_end) {
         // (Pool's: its title, the rejoicing in a window from row 5, the key
         // line magenta - ovr6 +0x15B9, DOSBox)
         char t[24];

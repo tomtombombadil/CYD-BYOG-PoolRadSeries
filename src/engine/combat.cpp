@@ -727,7 +727,7 @@ void place(Battle& b, const Tables& t, int facing, int distance, SolidSide solid
             for (int k = 0; k < n; ++k) b.who[f.y + sy[k]][f.x + sx[k]] = static_cast<uint8_t>(i + 1);
         } else {
             f.size = 0;
-            if (f.member >= 0) {
+            if (f.member >= 0 && !b.duel) {            // (an arena fight: no bodies - ovr11 +0x1AB3)
                 f.ground = b.ground[f.y][f.x];
                 b.ground[f.y][f.x] = kBody;
             }
@@ -854,7 +854,7 @@ void place_pool(Battle& b, const Tables& t, int facing, int distance, const geo:
         if (!f.up()) {
             // A body: its ground
             f.size = 0;
-            if (f.member >= 0) {
+            if (f.member >= 0 && !b.duel) {            // (an arena fight: no bodies - ovr11 +0x1CA9)
                 f.ground = b.ground[f.y][f.x];
                 b.ground[f.y][f.x] = kBody;
             }

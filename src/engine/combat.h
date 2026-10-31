@@ -592,6 +592,7 @@ struct Battle {
     int     cap = 0;
     int     n = 0;
     int     party_size = 0;
+    bool    duel = false;                   // an arena fight (Curse / Pool's CALL 0x8000 / 0x8001)
     int     round = 0, no_action = 15;
     int     surprise = 0;               // 1: our side surprised, 2: the enemies (the script's word 0x7ECB)
     // Treasures' weather (game byte 0x52; its ovl 0x105 +0x1528): 0 snow -
