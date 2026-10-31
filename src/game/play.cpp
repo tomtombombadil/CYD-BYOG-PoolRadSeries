@@ -15496,7 +15496,8 @@ bool act(Act a, pic::Canvas& c)
         return true;
     }
     if (then == Then::Door) {
-        door_choice('E');                   // a key at the door: as Exit
+        // a key at the door: as Exit (Pool: nothing - the menu waits; DOSBox)
+        if (!pool_files()) door_choice('E');
         return true;
     }
     if (then != Then::Idle) return false;
