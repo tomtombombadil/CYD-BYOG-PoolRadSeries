@@ -8299,7 +8299,15 @@ void open_magic(pic::Canvas& c)
 void back_to_magic(pic::Canvas& c)
 {
     screen = Screen::Magic;
-    draw_camp(c);
+    if (pool_files()) {
+        // (Pool: back from Memorize / Display the text window stays empty -
+        // no "The party makes camp..."; DOSBox)
+        draw_camp_screen(c);
+        text::clear(c, text::kTextArea);
+        dirty_rows(17, 22);
+    } else {
+        draw_camp(c);
+    }
     draw_magic_menu(c);
 }
 
@@ -8424,8 +8432,8 @@ void draw_counts(pic::Canvas& c)
     mw(profile::kCanMemorize, w1, sizeof w1);
     // (Secret: no "NAME can memorize:" - the kinds from row 18)
     int row = 18;
-    if (w1[0] && d->prof->magic.heading_word) {
-        // (Gateway: the name on row 18, "can memorize:" under it - DOSBox)
+    if (w1[0] && (d->prof->magic.heading_word || pool_files())) {
+        // (Gateway, Pool: the name on row 18, "can memorize:" under it - DOSBox)
         char nm[20];
         ch.name(nm, sizeof nm);
         put(c, nm, 1, 18, ch.npc() ? 10 : 11);
@@ -8465,7 +8473,7 @@ void draw_spells(pic::Canvas& c)
     // (Pool: its spell lists open a window rows 3 - 15 / 22 under the
     // heading - ovr23 +0x151 with ovr3f1 +0x2E8: a bar at row 2; DOSBox,
     // training's "Spells to Choose From")
-    if (pool_files() && !sl.learning) layout::bar(c, d->tables, d->frame_tiles, 2);
+    if (pool_files()) layout::bar(c, d->tables, d->frame_tiles, 2);
     char nm[20], t[48], a[12], b[16];
     pt->sel()->name(nm, sizeof nm);
     snprintf(t, sizeof t, "%s%s", nm, d->w_s);
@@ -8504,8 +8512,9 @@ void draw_spells(pic::Canvas& c)
         char line[40];
         if (sl.count[i] > 1) snprintf(line, sizeof line, "  %s (%d)", spell_name(sl.id[i]), sl.count[i]);
         else snprintf(line, sizeof line, "  %s", spell_name(sl.id[i]));
-        if (gateway() && sl.learning) {
-            // (Gateway: "*" before a spell to memorize; lit while it's shown first)
+        if ((gateway() || pool_files()) && sl.learning) {
+            // (Gateway, Pool: "*" before a spell to memorize; lit while it's
+            // shown first)
             snprintf(line, sizeof line, " *%s", spell_name(sl.id[i]));
             if (i == sl.sel && gw_preview >= 0) {
                 c.fill(2 * 8, row * 8, static_cast<int>(strlen(line) - 1) * 8, 8, 15);
@@ -8522,6 +8531,9 @@ void draw_spells(pic::Canvas& c)
         }
     }
     if (!sl.learning && !sl.casting && !sl.scrolls && !sl.choosing && !sl.viewing && sl.reading < 0) {
+        // (Pool: its memorize window ends at row 15, the counts under a bar
+        // - ovr23 +0x12A; DOSBox)
+        if (pool_files()) layout::bar(c, d->tables, d->frame_tiles, 16);
         if (gateway()) {
             // (Gateway: the counts boxed off, joints at rows 14, 15, 17, 18 -
             // its frame routine GAME.OVR 0x4C12C; DOSBox)
@@ -8567,8 +8579,8 @@ void confirm_memorize(pic::Canvas& c, int word)
     sl.viewing = false;
     build_lines(ids, n);
     screen = Screen::SpellList;
-    if (gateway() && gw_preview < 0) {
-        // Gateway: the list first with its last spell lit and only Exit,
+    if ((gateway() || pool_files()) && gw_preview < 0) {
+        // Gateway (Pool too - DOSBox): the list first with its last spell lit and only Exit,
         // then the question (its memorize overlay, GAME.OVR 0x1EC90 +0x9C2:
         // the list routine seg 0xC0 entry 0x5C in its mode 5; DOSBox)
         gw_preview = word;
