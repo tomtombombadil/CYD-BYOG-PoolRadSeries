@@ -15138,6 +15138,7 @@ const char* open(const char* data_dir, games::Game g, pic::Canvas& c, const char
     if (d->prof->variant.dkk) d->world.map_base = 25;      // (Death Knights: block 202's 25-40, arrows 41-44)
     d->world.per_set = d->prof->variant.per_set_walls;
     text::set_hanging_space(gateway() || krynn());          // (Champions too - DOSBox)
+    text::set_punct_space(d->prof->game == games::Game::PoolOfRadiance);
     text::set_menu_origin(hl() ? 1 : 0);                    // (Dark Queen's buttons from column 1)
     if (!hl()) {
         open_sky();

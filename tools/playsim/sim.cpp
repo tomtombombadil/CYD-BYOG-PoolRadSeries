@@ -195,7 +195,7 @@ static void settle(int choice = 0, int max_ms = 60000)
             play::input_key('\n', C);
             continue;
         }
-        if (wt == ecl::Wait::Print && !play::t_started && last_text != std::string(vm->text()) + std::to_string((long)play::w.row)) { last_text = std::string(vm->text()) + std::to_string((long)play::w.row); printf("  TEXT%s: %s\n", vm->clear() ? " (clear)" : "", vm->text()); }
+        if (wt == ecl::Wait::Print && (getenv("ALLTEXT") ? last_text != std::string(vm->text()) : !play::t_started && last_text != std::string(vm->text()) + std::to_string((long)play::w.row))) { last_text = std::string(vm->text()) + (getenv("ALLTEXT") ? std::string() : std::to_string((long)play::w.row)); printf("  TEXT%s: %s\n", vm->clear() ? " (clear)" : "", vm->text()); }
         if (wt == ecl::Wait::Pause && getenv("PAUSESHOT")) { static int last = -1; if (last != (int)play::vm->pc()) { last = play::vm->pc(); shot("pause"); } }
         if (page_prompt) { shot("page"); play::tap(10, 10, C); continue; }
         if (wt == ecl::Wait::Menu) {
@@ -1295,6 +1295,15 @@ int main(int argc, char** argv)
             if (!hit) printf("  (no %c in [%s%s])\n", k, play::menu.prompt, play::menu.s);
             settle();
             { char t[16]; snprintf(t, sizeof t, "word_%c", k); shot(t); }
+            continue;
+        }
+        if (*m == '.' || *m == ',') {
+            // ".": a tap (a key: the text's page, Return); ",": settle only
+            if (*m == '.') play::tap(2, 2, C);
+            settle();
+            { char t[16]; snprintf(t, sizeof t, "after_%s", *m == '.' ? "tap" : "wait"); shot(t); }
+            char l1[48], l2[48]; play::describe(l1, l2, 48);
+            printf("   now %d,%d %s | %s | %s\n", play::pos_x(), play::pos_y(), geo::dir_name(play::dir()), l1, l2);
             continue;
         }
         play::Act a = play::Act::Forward;

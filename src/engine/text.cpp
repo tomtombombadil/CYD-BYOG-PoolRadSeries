@@ -24,6 +24,8 @@ int hex_digit(char c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'A' && c <=
 // A colour code at s[pos] (Writer::codes): "%" and a hex digit
 bool code_at(const char* s, int len, int pos) { return pos + 1 < len && s[pos] == '%' && hex_digit(s[pos + 1]) >= 0; }
 
+bool g_punct_space = false;        // (Pool: set_punct_space)
+
 int unit_end(const char* s, int len, int pos)
 {
     int e = pos;
@@ -165,6 +167,7 @@ namespace {
 bool g_hang = false;
 }
 void set_hanging_space(bool on) { g_hang = on; }
+void set_punct_space(bool on) { g_punct_space = on; }
 
 State step(Writer& w, pic::Canvas& c, const font::Font& f, int n)
 {
@@ -194,6 +197,10 @@ State step(Writer& w, pic::Canvas& c, const font::Font& f, int n)
             // (Treasures: a word's trailing space may run off the line - DOSBox;
             // Gateway too: a word fits when its letters do, set_hanging_space)
             if ((w.codes || g_hang) && width > 1 && w.s[e - 1] == ' ') --width;
+            // (Pool: a word ending in punctuation fits when the punctuation
+            // does - its program measures up to the last mark, but up to the
+            // space after a word's letters; START.EXE 0x78AA)
+            else if (g_punct_space && width > 2 && w.s[e - 1] == ' ' && punct(w.s[e - 2])) --width;
             if (w.col + width - 1 > r.x1) {
                 if (w.col == r.x0) {
                     // Longer than a line: as much as fits, the rest below
