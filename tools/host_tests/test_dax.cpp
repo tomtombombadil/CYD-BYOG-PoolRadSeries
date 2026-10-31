@@ -4447,7 +4447,8 @@ static void test_party()
     {
         std::vector<uint8_t> q(savegame::kQueenHead, 0);
         for (uint32_t i = 0; i < savegame::kDarknessBlock; ++i) q[i] = static_cast<uint8_t>(i * 7);
-        const uint8_t pos[15] = {30, 21, 6, 1, 0x80, 4, 0, 2, 0, 0, 0, 0, 0, 2, 0};   // (a map wider than 16)
+        // (a map wider than 16; bytes 11-12 a u16 not worked out - kept on a save)
+        const uint8_t pos[15] = {30, 21, 6, 1, 0x80, 4, 0, 2, 0, 0, 0, 0x34, 0x12, 2, 0};
         memcpy(q.data() + savegame::kDarknessBlock, pos, sizeof pos);
         auto add = [&](const char* nm, int race, int cls, int items, int effects) {
             std::vector<uint8_t> r(party::kQueenRecordSize, 0);
@@ -4490,6 +4491,17 @@ static void test_party()
         CHECK(k.level(7) == 9 && k.level(0) == 3 && k.level(6) == 5 && k.level(1) == 0 && k.exp() == 1000000 &&
               k.money(4) == 10000 && k.ext[party::kExtKnight] == 2 && k.ext[party::kExtRace] == 6);
         CHECK(qp.m[1].cls() == 12 && qp.m[1].race() == party::race_from_krynn(5));
+        {
+            // Saved over the loaded game: the unknown u16 (bytes 11-12) as it
+            // was; with no game to lay it over, 0 (as the GOG save's)
+            VecSink qo;
+            CHECK(savegame::write_queen(qo, qgs, qh, qp, &qs) && qo.v.size() > savegame::kQueenHead);
+            CHECK(qo.v[savegame::kDarknessBlock + 11] == 0x34 && qo.v[savegame::kDarknessBlock + 12] == 0x12 &&
+                  qo.v[savegame::kDarknessBlock + 13] == 2);
+            VecSink qn;
+            CHECK(savegame::write_queen(qn, qgs, qh, qp, nullptr) && qn.v[savegame::kDarknessBlock + 11] == 0 &&
+                  qn.v[savegame::kDarknessBlock + 12] == 0);
+        }
         // short: the second character cut
         q.resize(q.size() - 60);
         dax::MemorySource qs2(q.data(), static_cast<uint32_t>(q.size()));
@@ -4671,6 +4683,52 @@ static void test_items()
     // The second COMBAT: the after-fight step (treasure)
     CHECK(vm.resume() == ecl::Stop::Waiting && vm.wait() == ecl::Wait::Treasure);
     CHECK(vm.resume() == ecl::Stop::Stopped);
+    if (const profile::Profile* kp = profile::first(games::Game::DeathKnightsOfKrynn); kp && kp->ecl_ops) {
+        // Death Knights' memory: 033D the facing (its loader's "else" part,
+        // [0xC075]), 03DE nothing; a write to the name's place sets the flag
+        // whatever the value, but LOAD CHARACTER | 0x80 removes no one (its
+        // other flag is never set in the program)
+        Bytes kc;
+        for (int i = 0; i < 5; ++i) { kc.push_back(0); op_addr(kc, kBase + 20); }
+        kc.push_back(0x09); op_imm(kc, 0x41); op_addr(kc, 0x7C00);          // SAVE 'A' -> the name's first letter
+        kc.push_back(0x0A); op_imm(kc, 0x80);                                // LOAD CHARACTER 0 | 0x80
+        kc.push_back(0x00);
+        ecl::GameState ks;
+        memcpy(ks.code, kc.data(), kc.size());
+        ks.code_len = static_cast<uint32_t>(kc.size());
+        ks.dir = 6;
+        TestHost kh;
+        party::Party kpt;
+        kpt.count = 2;
+        ecl::Vm kv(ks, kh, *kp->ecl_ops);
+        kv.set_party(&kpt);
+        CHECK(kv.get(0x033D) == 6 && kv.get(0x03DE) == 0);
+        CHECK(kv.init_script());
+        kv.run(kBase + 20);
+        CHECK(kpt.count == 2);
+    }
+    {
+        // A fight never resumed (lost: the party menu, then a load): the next
+        // script's COMBAT without monsters is its shop again, not a fight
+        Bytes lc;
+        for (int i = 0; i < 5; ++i) { lc.push_back(0); op_addr(lc, kBase + 20); }
+        lc.push_back(0x0B); op_imm(lc, 1); op_imm(lc, 1); op_imm(lc, 1);      // LOAD MONSTER
+        lc.push_back(0x24);                                                  // COMBAT: a fight
+        lc.push_back(0x00);
+        const uint16_t shop_at = static_cast<uint16_t>(kBase + lc.size());
+        lc.push_back(0x09); op_imm(lc, 1); op_addr(lc, 0x7F6C);
+        lc.push_back(0x24);                                                  // COMBAT: the shop
+        lc.push_back(0x00);
+        ecl::GameState ls;
+        memcpy(ls.code, lc.data(), lc.size());
+        ls.code_len = static_cast<uint32_t>(lc.size());
+        TestHost lh;
+        ecl::Vm lv(ls, lh, *p->ecl_ops);
+        CHECK(lv.init_script());
+        CHECK(lv.run(kBase + 20) == ecl::Stop::Waiting && lv.wait() == ecl::Wait::Combat && lv.monsters());
+        CHECK(lv.init_script());                                             // (lost: no resume)
+        CHECK(lv.run(shop_at) == ecl::Stop::Waiting && lv.wait() == ecl::Wait::Shop && !lv.monsters());
+    }
     // The temple flag: COMBAT opens the temple
     Bytes tc;
     for (int i = 0; i < 5; ++i) { tc.push_back(0); op_addr(tc, kBase + 20); }

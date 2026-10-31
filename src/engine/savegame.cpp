@@ -294,10 +294,15 @@ bool write_queen(Sink& out, const ecl::GameState& gs, const Header& h, const par
     char names[party::kMaxParty][16] = {};
     int n_src = 0;
     if (src && !queen_layout(*src, at, names, &n_src, &rest)) src = nullptr;
+    // (bytes 11-12, a u16 not worked out: the loaded game's, as the rest of
+    // what the engine doesn't keep - 0 without one, as the GOG save's)
+    uint8_t unknown[2] = {0, 0};
+    if (src && src->read_at(kDarknessBlock + 11, unknown, 2) != 2) unknown[0] = unknown[1] = 0;
     const uint8_t b[15] = {static_cast<uint8_t>(gs.x), static_cast<uint8_t>(gs.y), static_cast<uint8_t>(gs.dir),
                            gs.wall_ahead, gs.roof, h.last_state, h.state, static_cast<uint8_t>(h.look),
                            static_cast<uint8_t>(h.look >> 8), static_cast<uint8_t>(h.look_slot),
-                           static_cast<uint8_t>(h.look_slot >> 8), 0, 0, static_cast<uint8_t>(p.count), 0};
+                           static_cast<uint8_t>(h.look_slot >> 8), unknown[0], unknown[1],
+                           static_cast<uint8_t>(p.count), 0};
     if (!out.put(gs.area1, kDarknessBlock) || !out.put(b, sizeof b)) return false;
     uint8_t* q = new (std::nothrow) uint8_t[party::kQueenRecordSize];
     if (!q) return false;

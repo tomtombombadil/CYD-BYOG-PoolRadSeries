@@ -286,7 +286,10 @@ uint16_t Vm::dkk_read(uint16_t a, int size) const
         }
     }
     if (size == 2) return static_cast<uint16_t>(dkk_read(a, 1) | dkk_read(static_cast<uint16_t>(a + 1), 1) << 8);
-    if (a && a <= 0x400) a = dkk_addr(a);
+    // (033D is its own, as Curse's: the facing - its loader's "else" part,
+    // GAME.OVR 0x7A33, [0xC075]; 03DE is nothing there, so 0)
+    if (a == 0x03DE) return 0;
+    if (a && a <= 0x400 && a != 0x033D) a = dkk_addr(a);
     if (a == 0) return 0;
     if (a >= 0x4B00 && a <= 0x4EFF) return s_.area1[a - 0x4B00];
     if (a >= 0x7A00 && a <= 0x7BFF) return s_.table[a - 0x7A00];
@@ -311,7 +314,6 @@ uint16_t Vm::dkk_read(uint16_t a, int size) const
     if (a >= kBase && a < kBase + s_.code_cap) return code_of(s_)[a - kBase];
     switch (a) {
     case 0x033D: return static_cast<uint16_t>(s_.dir);
-    case 0x03DE: return sound_kind_;
     case 0xC04B: return static_cast<uint16_t>(s_.x);
     case 0xC04C: return static_cast<uint16_t>(s_.y);
     case 0xC04D: return static_cast<uint16_t>(s_.dir / 2);
@@ -328,6 +330,7 @@ void Vm::dkk_write(uint16_t a, uint16_t v, int size)
         const uint16_t off = static_cast<uint16_t>(a - 0x7C00);
         s_.area2[off] = static_cast<uint8_t>(v);
         if (off + 1 < 0x400) s_.area2[off + 1] = static_cast<uint8_t>(v >> 8);
+        if (off == 0) cleared_name_ = true;             // (its write switch: offset 0 sets the flag, any value)
         if (uint8_t* mr = sel_rec()) party::script_set_dkk(mr, nullptr, off, v);
         else if (party_ && party_->sel()) party::script_set_dkk(*party_->sel(), off, v);
         if (a == 0x7F12) s_.game_area = static_cast<uint8_t>(v);
@@ -338,7 +341,7 @@ void Vm::dkk_write(uint16_t a, uint16_t v, int size)
         dkk_write(static_cast<uint16_t>(a + 1), v >> 8, 1);
         return;
     }
-    if (a && a <= 0x400) a = dkk_addr(a);
+    if (a && a <= 0x400) a = dkk_addr(a);      // (033D / 03DE: nothing - its writer has neither)
     if (a == 0) return;
     const uint8_t b = static_cast<uint8_t>(v);
     if (a >= 0x4B00 && a <= 0x4EFF) {
@@ -354,7 +357,11 @@ void Vm::dkk_write(uint16_t a, uint16_t v, int size)
         // character's fields)
         const uint16_t off = static_cast<uint16_t>(a - 0x7C00);
         s_.area2[off] = b;
-        if (a == 0x7C00 && b == 0) cleared_name_ = true;
+        // (its write switch GAME.OVR 0x7642: offset 0 sets the name flag
+        // [0xDB61] whatever the value; LOAD CHARACTER's removal (0xB5A) also
+        // wants [0xDB60], which nothing in the program ever sets - so, as the
+        // original, no member leaves this way: cleared_status_ stays false)
+        if (a == 0x7C00) cleared_name_ = true;
         if (uint8_t* mr = sel_rec()) party::script_set_dkk(mr, nullptr, off, b);
         else if (party_ && party_->sel()) party::script_set_dkk(*party_->sel(), off, b);
         if (a == 0x7F12) s_.game_area = b;
@@ -365,7 +372,6 @@ void Vm::dkk_write(uint16_t a, uint16_t v, int size)
         return;
     }
     switch (a) {
-    case 0x03DE: sound_kind_ = b; break;
     case 0xC04B: s_.x = b & 15; s_.moved = true; break;
     case 0xC04C: s_.y = b & 15; s_.moved = true; break;
     case 0xC04D: s_.dir = (b % 4) * 2; s_.moved = true; break;
@@ -827,6 +833,13 @@ Stop Vm::run(uint16_t address)
     if (address < kBase) return Stop::Stopped;
     pc_ = address - kBase;
     stop_ = new_script_ = false;
+    if (wait_ == Wait::Combat) {
+        // A fight never resumed (lost - the party menu after it, a load or a
+        // new game next): its monsters are gone as after any fight, or the
+        // next COMBAT (a shop, the vault, a treasure) would take them for a fight
+        monsters_ = false;
+        sel_mon_ = -1;
+    }
     wait_ = Wait::None;
     budget_ = kBudget;
     if (party_) start_sel_ = party_->selected;
